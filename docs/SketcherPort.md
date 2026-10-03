@@ -4032,8 +4032,7 @@ constraints. Also when moving you need to consider the extra space of the
 editor to not obscure. Also check cases when in the middle of editing what
 will happen if someone undo".
 
-**Status: a proposal, nothing built.** The questions at the end are for
-a ruling.
+**Status: ruled 2026-10-03 and built; see the end of this section.**
 
 #### Measured first: an undo while a box is open
 
@@ -4213,6 +4212,95 @@ same layout and implements none of its behaviour (8.7's rule).
    alone?
 7. Fix the wrong-constraint defect now, on its own, before the editor
    (proposed)?
+
+
+**Ruled 2026-10-03: all seven as proposed; the toggle gets a key.** The
+user added: the browser already has completion logic -- reuse it. As
+built:
+
+- **Undo first** (`Gui::ViewProvider::undoRedoInEdit`, asked by
+  `Gui::Document::undo`/`redo` before anything is undone, so Std_Undo and a
+  client's `undo` op both reach it; the sketch answers it while an entry
+  runs, as Escape). An undo it cannot catch reaches
+  `DatumEditSession::documentRewound` after the redraw: the editor follows
+  its constraint by `Constraint::getTag()` (new, read-only), or ends when the
+  constraint is gone or the undo took the entry's transaction. Test
+  `sketch-datum-undo.py`, written from the probe and failing on the session
+  119 build. The same run found a **segfault**: `DatumEditSession::start`
+  looked the labels up, then ended the previous session -- whose apply
+  redraws and can free them. Reordered.
+- **`Gui::DatumValueEditor`**: one `ExpressionLineEdit` with the lead '='
+  (the spreadsheet cell's rule: completion only after '='), parsed and
+  formatted by a never-shown `QuantitySpinBox`; a result line fed by
+  `Gui::Dialog::checkExpression`, the formula editor's validation taken out
+  of `DlgExpressionInput::onTimer` so both judge alike (one difference:
+  with the completer open a half-typed name leaves OK disabled rather than
+  as it was); the driving toggle (Ctrl+Shift+D -- the command's own "K, X"
+  is letters, which the line takes); the name row (F2). Function calls are
+  disabled only around the evaluation of the typed text: the dialog held
+  the global disabler while shown, which an editor that applies on Tab
+  would have held across its own recomputes.
+- **Placement**: `SoDatumLabel::getLabelAwayDirection()` -- across the
+  dimension line on the text's side, along the radius, along the angle's
+  bisector, from the arc's centre. The line stands over the number, the
+  other rows go to that side (up only when the geometry is clearly below
+  the text), flip when they would leave the view, then clamp.
+- **The session** (`DatumEditSession`, rewritten): one editor; Tab applies
+  into the one transaction and moves; the cycle is the set given, or every
+  dimension the view shows; an App transaction is made active at the start
+  ("Edit sketch datum" unless one is), opened for the document lazily so
+  an entry that changes nothing leaves no step. "Edit Value" is in place
+  too; the dialog is reached only with `EditDatumInPlace` off.
+- **Snell's law** draws an icon, not a label: the editor stands at the
+  refraction point (`Target::point`), with no toggle. The command makes the
+  constraint with the last ratio given (the dialog's history, read and
+  written through a never-shown `PrefQuantitySpinBox`; 1 when there is
+  none) and hands it to the editor. On the browser's command list now.
+- **The browser**: `Gui::OnViewEntry` is the seam the view's registry and
+  the mirror use (`EditableDatumLabel` and `DatumValueEditor` both stand on
+  it). The push gains `ax/ay/az` (after the anchor, before the text, where
+  the viewer's scanner looks), `kind`, and for a datum `field`, `expr`,
+  `result`, `level`, `driving`, `nameShown`, `name`, `nameSel`, `obj`; the
+  uplink gains `onViewAction` (`toggle`, `field`, `replace`). The completion
+  list is the client's: `pathcomplete.ts`, the omni box's object and
+  property completion moved out of `omni.tsx` so both use it; a taken row
+  goes up as `replace`. **Found on the way**: the push numbered boxes by
+  their place among the SHOWN ones and `onViewFocus` looked them up in the
+  whole set, so a tool that hid a parameter made a tap focus the wrong box.
+  The push now carries the registry index.
+
+Two defects the tests found on the way:
+
+- **The auto scale split the entry in two.** Editing the one dimension of
+  a freehand sketch scales it (`performDatumAutoScale` -> `centerScale`),
+  and the scaler opens and commits a command of its own, "Scale
+  geometries": `openCommand` with a transaction active commits it and
+  starts another unless an enabled `App::AutoTransaction` is on the stack.
+  Session 119's apply had one around it; an entry that stays open across
+  Tabs cannot. The scaler takes `inTransaction` now (set when it is part of
+  a larger operation, which `centerScale` always is) and opens and commits
+  nothing.
+- **'=' left the unit behind.** The line opens with the NUMBER selected
+  (as the dialog's box), so '=' typed over it gave "= mm", and a taken
+  completion "=Sketch mm". Found by the browser drive, which types; the
+  desktop test had set the text. '=' at the start of a value, or over a
+  selection that starts there, now makes the whole line "=".
+
+Tests: `sketch-datum-editor.py` (26: one editor, Tab and Shift+Tab apply
+and move, one undo step, Escape takes back what Tab applied, '=', an
+expression set and removed, one that cannot be bound, Ctrl+Shift+D,
+typing into a reference, F2 and the name, placement off the measured line,
+Snell's law), `sketch-datum-undo.py` (15), `sketch-datum-in-place.py` (16,
+an expression now opens in the editor), `serve-datum-in-place.py` (16: the
+datum fields, an expression and the toggle through `onViewAction`; the
+refused-command check moved to `Sketcher_MapSketch`), and by hand, in a
+real Chrome, `serve-datum-browser.py` (13, `scripts/datum-drive.js`: the
+DOM editor, kept off the line, the client's completion offering `Sketch`
+and taken through the server, the toggle, Escape).
+
+Not done: completion of a sketch's own constraint names
+(`Sketch.Constraints.Width`) in the browser -- the property descriptors do
+not list a constraint list's members; the desktop completer does.
 
 ## 8. Phases
 

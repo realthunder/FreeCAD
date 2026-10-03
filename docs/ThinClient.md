@@ -1128,6 +1128,21 @@ modal dialog, and a modal dialog on the GUI thread of a process serving several 
 stops serving all of them, with nobody at the machine to dismiss it. Widening the list is
 gated on an answer to modality, not on appetite.
 
+**A second kind of entry: a value's editor (session 120).** A sketch dimension's value is
+edited in place by one editor (docs/SketcherPort.md "One editor for a constraint's value"):
+the value or an expression, a driving toggle, a name. It stands on the same seam,
+`Gui::OnViewEntry`, which the view's registry and the mirror now use for both kinds. The push
+carries `"kind":"datum"` and that editor's display state (`field`, `expr`, `result`, `level`,
+`driving`, `nameShown`, `name`, `nameSel`, `obj`), plus `ax/ay/az`: a world point one unit from
+the anchor in the direction its other rows grow, so that the client, which places it, keeps
+them off what the dimension measures. Clicks that are not keys go up as one op,
+`onViewAction {index, action: toggle | field | replace}`. The one piece of behaviour the client
+owns is the completion list of an expression: it completes names from what it already holds
+(`pathcomplete.ts`, the omni box's completion) and a taken row goes up as `replace`, so that
+no keystroke waits a round trip for a name to be offered. The `i` of a pushed entry is now its
+place in the view's whole set -- the index `onViewFocus` and `onViewAction` look it up by; it
+was its place among the shown ones, which named another box once a hidden one sat before it.
+
 **What is not solved.** A soft keyboard is not a keyboard: Android's in particular reports
 `keydown` for very few keys and expresses the rest through `beforeinput`, so a phone may
 need those synthesized into key frames before this surface is usable by thumb. Nothing here
