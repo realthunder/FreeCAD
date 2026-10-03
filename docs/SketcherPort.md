@@ -4583,6 +4583,108 @@ read. Keyboard navigation in the Elements list (arrow keys change the
 list's selection with no press): it goes through the same "row last
 entered" logic the press no longer does.
 
+### The two unchecked items (session 123)
+
+**Keyboard navigation in the Elements list** -- `52e60fd1f9`. Probed
+before anything was changed, and the probe did not find what was expected
+(the hovered row toggled by an arrow key). It found this:
+
+| what | before | now |
+|---|---|---|
+| Down, Up, End | nothing: the selection stays where it was | the row the key moves to, alone |
+| Shift+Down, Shift+Up | the row last pressed is DESELECTED | the selection grows and shrinks by a row |
+| a press on one of two selected rows | both deselected | the pressed row stays |
+| Shift+press | sometimes the two end rows alone | the rows in between |
+| a press on the only selected row | stays selected | the same |
+
+One cause. When the list's selection changed, the panel toggled a
+remembered row -- the row last pressed (`777535259e`) or entered -- and
+never read which rows the list had selected. A plain arrow was inert by
+accident: the list reports that change twice, so the row was toggled off
+and on again. Shift+arrow reports once.
+
+The rows' edge flags are read from the list's own selection now, and the
+remembered row, the index before it and the `rowPressed` signal are gone.
+A row's highlight is written only when it disagrees with its flag:
+`QTreeWidgetItem::setSelected()` makes the list commit the range a
+Shift+arrow is extending, and Shift+arrow the other way then takes nothing
+back (found by the test, after the first version of the fix).
+
+Home does not reach the list: it is the application's shortcut for the
+home view. Left as it is.
+
+Test `sketch-elements-keys.py`, 19 checks, 9 failing on the sources before
+the change (rebuilt for the score).
+
+**Verified** at `52e60fd1f9`: full build, ctest 898/898 (897 before, plus
+this test). `FreeCADCmd -t 0` was not run: the change is in SketcherGui,
+which that binary does not load.
+
+**A file saved by upstream** -- measured, NOT built: it needs a ruling.
+There is no upstream build on this box, so the file was forged: a fork
+sketch saved, then its `Document.xml` rewritten to what upstream's tip
+(`bd6be559e8`) writes -- the kind of each external in `ExternalTypes`, no
+`Intersection` flag on the geometry (upstream's extension knows five
+flags, the fork's sixth is this one), no `_Version`. Scripts:
+`~/works/sw/fcad-probes/exttypes/` (`make.py`, `forge.py`, `open.py`).
+
+The file opens and looks right: the external geometry is stored, and it is
+shown as stored. It goes wrong at the first rebuild of the externals --
+here, the box made 2 longer:
+
+| external | a fork file | the upstream-style file |
+|---|---|---|
+| an edge, by intersection | the point, moved with the edge | a LINE, the edge's projection; the sketch point coincident with it jumps to the line's start |
+| a face, by intersection | the cut line, moved | the face's projection |
+| a face square to the sketch, by plain projection | a segment 10 long | a line 20000 long; a point on its end goes to y = -9995 |
+
+No error, no warning, the solver reports success. Two causes:
+
+1. The kind is not read. Upstream keeps it beside the links, the fork on
+   the geometry; neither reads the other's.
+2. The sketch is taken for an old one. `_Version` is absent from an
+   upstream file, so it restores as 0, and 0 means "built before the fork
+   changed this": the 20000 long line, an edge's projection kept beside
+   its cut. But `ExternalTypes` exists since upstream 1.1.0 (`0e5e071d72`,
+   2024-11-08), which is after upstream's own change to the square face
+   (`1c514f5a15`): a sketch that carries the property was built the way
+   version 2 builds. The third row needs no intersection at all.
+
+   (That upstream 1.1 writes the short segment is taken from the port of
+   `1c514f5a15`, not from running upstream.)
+
+How the kinds map:
+
+| upstream | it builds | the fork's word for it |
+|---|---|---|
+| 0 projection | the projection | no flag |
+| 1 intersection | the cut alone | the `Intersection` flag, at `_Version` 2 |
+| 2 both | the projection, then the cut | none: a reference is one or the other (an edge at `_Version` < 2 happens to be both) |
+
+The same holds the other way round, by reading upstream's code, not by
+running it: upstream carries the fork's sixth flag along without knowing
+it, and finds no `ExternalTypes` -- a fork file's intersections are
+projections there.
+
+Put to the user:
+
+- **Read only.** `handleChangedPropertyName` takes `ExternalTypes` when the
+  restore meets it; `onDocumentRestored` sets the flag on the geometry of
+  every reference of kind 1 and gives the sketch `_Version` 2. About 50
+  lines, and it touches no file the fork wrote, which never has the
+  property.
+- **Kind 2** needs a place: a second flag ("also projected") read by the
+  rebuild, so that a reference can be both. Without it a kind 2 reference
+  loses one half or the other.
+- **Both ways.** A real `ExternalTypes` property, written from the flags
+  on save, so that upstream reads the fork's files right. Then the read
+  side is not a hook but the property itself, and when the property was in
+  the file it rules over the flags, which upstream does not maintain.
+
+The backward-compatible restore rule of `CLAUDE.md` is about the fork's own
+files; whether upstream's are to open right here, and the fork's there, is
+the question.
+
 ## 8. Phases
 
 0. Groundwork: ledger, the split, the App-level Python tests.
