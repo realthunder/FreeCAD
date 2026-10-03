@@ -4298,9 +4298,45 @@ real Chrome, `serve-datum-browser.py` (13, `scripts/datum-drive.js`: the
 DOM editor, kept off the line, the client's completion offering `Sketch`
 and taken through the server, the toggle, Escape).
 
-Not done: completion of a sketch's own constraint names
-(`Sketch.Constraints.Width`) in the browser -- the property descriptors do
-not list a constraint list's members; the desktop completer does.
+**A property's members, completed in the browser (session 121).** What
+was left of the editor: typing `=Sketch.Constraints.` offered nothing in a
+browser, while the desktop's completer lists the named constraints. The
+desktop asks the property (`Property::getPaths`, which
+`PropertyConstraintList` answers with its named constraints, a vector with
+`x`/`y`/`z`, a placement with `Base.x` ... `Rotation.Angle`); the browser
+completes from the property descriptors `getProperties` sends, and those
+named the property and stopped. Two ways to close it were weighed: a new
+op asking one property's paths when `Obj.Prop.` is typed, or the members
+in the descriptor. The second was built. Every `getPaths` in the tree is a
+short list of strings, so the descriptor of an object's property gains
+`members` (`ThinClient.md`, the property descriptor) and the reply the
+client already holds for `Sketch.` answers `Sketch.Constraints.` too: no
+op, no round trip, no second cache.
+
+- `Gui/SceneControl.cpp`, `describeProperty`: `members`, the sub-paths as
+  `ObjectIdentifier::getSubPathStr` spells them -- the string the desktop's
+  completer shows. Only for a document object's properties: an expression
+  names no others.
+- `web/src/pathcomplete.ts`: `rows()` takes an `ExprPath`. With it the
+  path goes on past the property (`Sketch.Constraints.Wi`,
+  `Box.Placement.Base.`), the object being the first name and then down
+  while the next names a sub-object; and the properties of the object the
+  expression is on need no object in front (`Constraints.Width`), or the
+  grammar's own leading dot (`.Constraints.Width`; `.5` stays a number). A
+  name that is no identifier completes as `Constraints[<<a name>>]`, the
+  bracket in the dot's place. Without the argument nothing changed: the
+  omni box opens a property's editor, and a member leads to none.
+- `web/src/onview.tsx`: the editor passes its sketch as the expression's
+  object. It names constraints itself and moves from one to the next, so
+  the descriptors are asked again each time it moves
+  (`forgetProperties`). And the lit row is the first again when the token
+  changes -- it stayed where the last list had left it.
+
+Before: `serve-datum-browser.py`, extended first, failed its four new
+checks on the build as it was (`rows: []` after `=Sketch.Constraints.` and
+after `=Constraints.`). Not done: a member's value beside its name in the
+list (the desktop shows none either), and members of a view provider's
+properties, which no expression can name.
 
 **Escape, ruled 2026-10-03 after the build** ("make escape equal to enter.
 for a vim user like me, I hate escape means anything other than escape",
