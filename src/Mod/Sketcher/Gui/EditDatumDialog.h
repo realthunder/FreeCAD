@@ -80,8 +80,10 @@ void editDatums(Sketcher::SketchObject* sketch,
  * and moves it to the next one: the set it was opened for when that is
  * several (the Dimension tool's two), every dimension the view shows when
  * it was one. Everything applied is one transaction: Enter commits it,
- * Escape aborts it (a new constraint goes with it), a click elsewhere is
- * Enter. Std_Undo or Std_Redo while it runs is Escape and nothing older
+ * and so do a click elsewhere and, by default, Escape (ruled 2026-10-03:
+ * Escape means leave; Mod/Sketcher/General/DatumEscapeTakesBack makes it a
+ * cancel). Std_Undo or Std_Redo while it runs aborts it, a new
+ * constraint with it, and undoes nothing older
  * (ViewProviderSketch::undoRedoInEdit); an undo from elsewhere is followed
  * by tag (documentRewound).
  *

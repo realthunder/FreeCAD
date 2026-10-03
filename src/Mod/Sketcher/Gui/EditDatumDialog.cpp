@@ -606,8 +606,8 @@ bool DatumEditSession::start(ViewProviderSketch* vp,
     vp->datumEdit = session;
 
     // The command that made the constraint is still open, and stays open
-    // until the value is in: the two are one undo step, and Escape takes
-    // the constraint back. A command's transaction is closed when the
+    // until the value is in: the two are one undo step, and Std_Undo
+    // takes the constraint back. A command's transaction is closed when the
     // command returns, which the dialog never let happen before the value
     // was in; this returns at once.
     session->ownTransaction = sketch->getDocument()->hasPendingTransaction();
@@ -906,15 +906,27 @@ bool DatumEditSession::eventFilter(QObject* watched, QEvent* event)
                 break;
             }
             switch (key->key()) {
+                case Qt::Key_Escape:
+                    // Escape is Enter by default (ruled 2026-10-03): it
+                    // leaves the entry with what was typed, as Escape
+                    // leaves vim's insert mode, and taking an entry back
+                    // is an undo -- Std_Undo while it runs, or one undo
+                    // after, the entry being one step. The preference
+                    // makes it the cancel it was.
+                    if (App::GetApplication()
+                            .GetParameterGroupByPath(
+                                "User parameter:BaseApp/Preferences/Mod/Sketcher/General")
+                            ->GetBool("DatumEscapeTakesBack", false)) {
+                        finish(false);
+                        return true;
+                    }
+                    [[fallthrough]];
                 case Qt::Key_Return:
                 case Qt::Key_Enter:
                     // what is typed, applied; not while it is no value
                     if (applyCurrent()) {
                         finish(true);
                     }
-                    return true;
-                case Qt::Key_Escape:
-                    finish(false);
                     return true;
                 case Qt::Key_Tab:
                 case Qt::Key_Backtab:

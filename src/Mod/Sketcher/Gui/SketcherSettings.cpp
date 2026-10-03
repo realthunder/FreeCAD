@@ -572,6 +572,7 @@ void SketcherSettingsDisplay::saveSettings()
     ui->SegmentsPerGeometry->onSave();
     ui->dialogOnDistanceConstraint->onSave();
     ui->checkBoxEditDatumInPlace->onSave();
+    ui->checkBoxDatumEscapeTakesBack->onSave();
     ui->continueMode->onSave();
     ui->constraintMode->onSave();
     ui->checkBoxHideUnits->onSave();
@@ -609,6 +610,7 @@ void SketcherSettingsDisplay::loadSettings()
     ui->SegmentsPerGeometry->onRestore();
     ui->dialogOnDistanceConstraint->onRestore();
     ui->checkBoxEditDatumInPlace->onRestore();
+    ui->checkBoxDatumEscapeTakesBack->onRestore();
     ui->continueMode->onRestore();
     ui->constraintMode->onRestore();
     ui->checkBoxHideUnits->onRestore();

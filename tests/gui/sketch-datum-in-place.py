@@ -2,7 +2,8 @@
 
 Ruled 2026-10-02: no modal dialog for a dimension's value -- an entry box
 at the label (the box of a drawing tool's on-view parameter), Enter
-applies, Escape leaves it, a click elsewhere applies a valid value. On by
+applies, and so do Escape (ruled 2026-10-03: Escape means leave) and a
+click elsewhere; Std_Undo while it runs takes it back. On by
 default (Mod/Sketcher/General/EditDatumInPlace); the dialog stays for a
 value the box cannot edit, and behind "Edit Value".
 
@@ -13,8 +14,8 @@ Checks, the box found as the visible line of the view's value editor
   - a dimension made by a command on a selection opens a box at its label
     and no dialog; typing a value and Enter sets the datum, and the
     constraint and its value are ONE undo step;
-  - Escape in the box takes the new constraint back, as the dialog's
-    Cancel does;
+  - Escape in the box applies as Enter does, and Std_Undo while it runs
+    takes the new constraint back;
   - an existing dimension, from the constraints panel: the box holds the
     value, Enter with another sets it in one step;
   - text that is no value keeps the box open on Enter;
@@ -167,7 +168,7 @@ def run():
         check("the constraint and its value are one undo step", doc.UndoCount == undo + 1,
               doc.UndoCount - undo)
 
-        # -- Escape takes a new constraint back ----------------------------
+        # -- Escape applies, as Enter --------------------------------------
         doc.undo()
         settle()
         undo = doc.UndoCount
@@ -176,7 +177,22 @@ def run():
         if check("the box again", len(found) == 1, len(found)):
             type_in(found[0], "31 mm")
             key(found[0], QtCore.Qt.Key_Escape)
-        check("Escape leaves no constraint and no undo step",
+        check("Escape sets the typed value and closes the box, in one undo step",
+              sk.ConstraintCount == 2 and abs(sk.Constraints[1].Value - 31.0) < 1e-9
+              and doc.UndoCount == undo + 1 and not boxes(),
+              (sk.ConstraintCount, [c.Value for c in sk.Constraints], doc.UndoCount - undo))
+        doc.undo()
+        settle()
+
+        # -- Std_Undo takes a new constraint back --------------------------
+        undo = doc.UndoCount
+        distance_on(sk, "Edge2")
+        found = boxes()
+        if check("the box once again", len(found) == 1, len(found)):
+            type_in(found[0], "31 mm")
+            FreeCADGui.runCommand("Std_Undo")
+            settle()
+        check("Std_Undo while it runs leaves no constraint and no undo step",
               sk.ConstraintCount == 1 and doc.UndoCount == undo and not boxes(),
               (sk.ConstraintCount, doc.UndoCount - undo, len(boxes())))
 

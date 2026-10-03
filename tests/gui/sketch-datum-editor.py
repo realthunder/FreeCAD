@@ -4,8 +4,10 @@ Ruled 2026-10-03 (docs/SketcherPort.md "One editor for a constraint's
 value"): the value, an expression ('=' first), driving or reference, and
 the name, in one editor over the constraint's label; Tab applies what is
 typed and moves the editor to the next dimension the view shows; the whole
-entry is one undo step, Escape takes all of it back; the editor's other
-rows grow away from what the dimension measures.
+entry is one undo step; Escape is Enter by default (ruled the same day:
+Escape means leave; Mod/Sketcher/General/DatumEscapeTakesBack makes it take
+the entry back), and Std_Undo while it runs takes all of it back; the
+editor's other rows grow away from what the dimension measures.
 
 Sketch: three horizontal lines, a Distance on each (60, 50, 40).
 
@@ -129,6 +131,7 @@ def run():
         FreeCAD.ParamGet("User parameter:BaseApp/Preferences/Document").SetInt(
             "AutoSaveTimeout", 0)
         FreeCAD.ParamGet(GENERAL).RemBool("EditDatumInPlace")
+        FreeCAD.ParamGet(GENERAL).RemBool("DatumEscapeTakesBack")
         timer = QtCore.QTimer()
         timer.timeout.connect(watchdog)
         timer.start(150)
@@ -188,16 +191,43 @@ def run():
         settle()
         check("one undo takes all of it back", values(sk) == [60.0, 50.0, 40.0], values(sk))
 
-        # -- Escape takes back what Tab applied ----------------------------
+        # -- Escape is Enter -----------------------------------------------
         undo = doc.UndoCount
         open_on(panel, 1)
         type_in("55 mm")
         key(QtCore.Qt.Key_Tab)
         type_in("45 mm")
         key(QtCore.Qt.Key_Escape)
-        check("Escape takes back what Tab applied, and leaves no step",
+        check("Escape applies what is typed and closes, as Enter: one step",
+              values(sk) == [60.0, 55.0, 45.0] and doc.UndoCount == undo + 1
+              and editor() is None, (values(sk), doc.UndoCount - undo))
+        doc.undo()
+        settle()
+
+        # -- Std_Undo takes back what Tab applied --------------------------
+        undo = doc.UndoCount
+        open_on(panel, 1)
+        type_in("55 mm")
+        key(QtCore.Qt.Key_Tab)
+        type_in("45 mm")
+        FreeCADGui.runCommand("Std_Undo")
+        settle()
+        check("Std_Undo while it runs takes back what Tab applied, and leaves no step",
               values(sk) == [60.0, 50.0, 40.0] and doc.UndoCount == undo and editor() is None,
               (values(sk), doc.UndoCount - undo))
+
+        # -- the preference: Escape takes back ------------------------------
+        FreeCAD.ParamGet(GENERAL).SetBool("DatumEscapeTakesBack", True)
+        undo = doc.UndoCount
+        open_on(panel, 1)
+        type_in("55 mm")
+        key(QtCore.Qt.Key_Tab)
+        type_in("45 mm")
+        key(QtCore.Qt.Key_Escape)
+        check("with DatumEscapeTakesBack on, Escape takes back what Tab applied, no step",
+              values(sk) == [60.0, 50.0, 40.0] and doc.UndoCount == undo and editor() is None,
+              (values(sk), doc.UndoCount - undo))
+        FreeCAD.ParamGet(GENERAL).RemBool("DatumEscapeTakesBack")
 
         # -- '=' typed over the selected number begins an expression -------
         open_on(panel, 2)
@@ -208,6 +238,10 @@ def run():
         check("'=' typed over the selected number leaves '=' alone, not '= mm'",
               line() is not None and line().text() == "=", line().text() if line() else None)
         key(QtCore.Qt.Key_Escape)
+        check("Escape on what is no value keeps the editor open, as Enter does",
+              editor() is not None, editor() is not None)
+        FreeCADGui.runCommand("Std_Undo")
+        settle()
 
         # -- an expression, and back to a value ----------------------------
         open_on(panel, 2)
@@ -234,7 +268,10 @@ def run():
         key(QtCore.Qt.Key_Return)
         check("an expression that cannot be bound keeps the editor open, saying why",
               editor() is not None and result_text() != "", result_text())
-        key(QtCore.Qt.Key_Escape)
+        FreeCADGui.runCommand("Std_Undo")
+        settle()
+        check("Std_Undo closes it, nothing bound",
+              editor() is None and abs(values(sk)[2] - 38.0) < 1e-6, values(sk))
 
         # -- reference: the key, and typing into one -----------------------
         open_on(panel, 1)
@@ -313,6 +350,7 @@ def run():
     except Exception:
         note("ABORT:\n" + traceback.format_exc())
     FreeCAD.ParamGet(GENERAL).RemBool("EditDatumInPlace")
+    FreeCAD.ParamGet(GENERAL).RemBool("DatumEscapeTakesBack")
     finish()
 
 

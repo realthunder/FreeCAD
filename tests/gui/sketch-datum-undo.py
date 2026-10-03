@@ -1,7 +1,7 @@
 """An undo while a dimension's value is being typed in place.
 
 Ruled 2026-10-03: Std_Undo or Std_Redo while the value is being typed
-ends the typing as Escape does, and undoes nothing older -- a
+takes the entry back, and undoes nothing older -- a
 spreadsheet's rule for a cell being edited. An undo that does not go
 through the GUI first (a Python doc.undo(), another client) is seen only
 afterwards: the box then follows its constraint by tag, and closes when
@@ -83,9 +83,10 @@ def key(box, k):
     settle()
 
 
-def escape_all():
-    for b in boxes():
-        key(b, QtCore.Qt.Key_Escape)
+def cancel_all():
+    """take back an entry still open: Std_Undo while it runs (Escape is Enter)"""
+    if boxes():
+        FreeCADGui.runCommand("Std_Undo")
     settle()
 
 
@@ -208,7 +209,7 @@ def run():
             key(found[0], QtCore.Qt.Key_Return)
         check("and Enter writes the constraint the box was opened on, not the one now "
               "at its old index", values(sk) == [(0, 60.0), (1, 77.0), (2, 40.0)], values(sk))
-        escape_all()
+        cancel_all()
 
         # -- an undo from Python that takes the edited constraint away -----
         doc.openTransaction("add one")

@@ -19,7 +19,9 @@ Sketch: two lines, 10 long. A client over a real socket:
     client offered is taken that way) and flips the toggle there and back;
   - Enter: the box is gone, the constraint is there with 25 from the
     expression, and the two are ONE undo step;
-  - clicks the second line, and Escape in its box: no constraint is left;
+  - clicks the second line, and Escape in its box: applied as Enter is
+    (ruled 2026-10-03: Escape means leave), a second constraint, a second
+    undo step;
   - all through, the host shows no modal dialog -- watched from the GUI
     thread while the client talks;
   - Sketcher_MapSketch, which has a dialog of its own, is still refused.
@@ -208,7 +210,7 @@ class Client(threading.Thread):
         self.sampled.wait(30.0)
         self.sampled.clear()
 
-        # the second line, and Escape in its box
+        # the second line, and Escape in its box: Enter's way
         mark = len(ws.pushes)
         click_at(ws, *pixel_of(2, 5), t=4000)
         self.opened_again = params_of(ws.next_push("onview", 8.0, since=mark))
@@ -339,8 +341,8 @@ def verify():
               bool(client.opened_again) and len(client.opened_again) == 1,
               client.opened_again)
         escaped = state.get("escaped")
-        check("Escape takes the box away and leaves no constraint behind",
-              client.after_escape == [] and escaped is not None and escaped == (1, 1),
+        check("Escape takes the box away and keeps the dimension, as Enter does",
+              client.after_escape == [] and escaped is not None and escaped == (2, 2),
               (client.after_escape, escaped))
         check("the host showed no modal dialog", state["dialogs"] == 0, state["dialogs"])
         refused = client.refused or {}

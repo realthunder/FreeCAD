@@ -445,8 +445,8 @@ public:
     bool isGestureInProgress() const override;
     /// is called when the Provider is in edit and a key event ocours. Only ESC ends edit.
     bool keyPressed(bool pressed, int key) override;
-    /// Std_Undo or Std_Redo while a value is typed at a label ends the
-    /// typing as Escape does, and undoes nothing older
+    /// Std_Undo or Std_Redo while a value is typed at a label takes the
+    /// entry back, and undoes nothing older
     bool undoRedoInEdit(bool redo) override;
     /// is called when the Provider is in edit and the mouse is clicked
     bool mouseButtonPressed(int Button,

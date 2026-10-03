@@ -13,7 +13,8 @@ the "datum" entry of the onview push, through scripts/datum-drive.js:
     completion (pathcomplete.ts, shared with the omni box), and taking one
     goes up and comes back as the server's text;
   - the toggle is a click, and the server's word comes back;
-  - Escape takes the editor away.
+  - Escape takes the editor away -- applied, as Enter by default -- and the
+    client's undo op takes the entry back in one step.
 
 Needs what serve-onview-browser.py needs: build/wasm with its web bundle,
 node, PUPPETEER_PATH and CHROME. Skips rather than fails without them.
@@ -195,6 +196,13 @@ def build():
 def poll():
     run = state["run"]
     state.setdefault("views", []).append(views_3d())
+    if "escaped" not in state:
+        try:
+            with open(run.phase_path) as f:
+                if "escaped" in f.read().split():
+                    state["escaped"] = state["doc"].getObject(OBJ).ConstraintCount
+        except OSError:
+            pass
     if run.is_alive():
         if clock() - state["t0"] > RUN_WAIT_S:
             check("the browser finished", False,
@@ -238,8 +246,13 @@ def verify():
         check("the toggle is a click, and the server's word comes back",
               toggled.get("toggle") is False, toggled)
         check("Escape takes the editor away", out.get("atEnd") is None, out.get("atEnd"))
+        if "escaped" in state:
+            check("applied, as Enter: the dimension is there", state["escaped"] == 1,
+                  state["escaped"])
+        check("the client's undo op answered", (out.get("undoReply") or {}).get("ok") is True,
+              out.get("undoReply"))
         sketch = state["doc"].getObject(OBJ)
-        check("and leaves no constraint behind", sketch.ConstraintCount == 0,
+        check("and one undo takes the whole entry back", sketch.ConstraintCount == 0,
               sketch.ConstraintCount)
     except Exception:
         note("ABORT verify:\n" + traceback.format_exc())

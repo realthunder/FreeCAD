@@ -12,7 +12,7 @@
 //
 // Usage:  node scripts/datum-drive.js <url> <object> <settle_ms>
 // Phases (also appended to DATUM_PHASES): settled | entered | opened |
-//   completed | toggled | done
+//   completed | toggled | escaped | done
 // DATUM_RESULT names a file the page's readings are written to as JSON.
 const ppPath = process.env.PUPPETEER_PATH || 'puppeteer-core';
 const puppeteer = require(ppPath);
@@ -193,11 +193,19 @@ async function waitFor(page, fn, ms) {
     out.toggled = await page.evaluate(() => window.__fcEditor());
     phase('toggled');
 
-    // Escape at the field that has the keys: the entry is cancelled and
-    // the editor goes
+    // Escape at the field that has the keys: by default it is Enter -- the
+    // entry is applied and the editor goes
     await page.evaluate(() => window.__fcKey('Escape'));
     await waitFor(page, () => !document.querySelector('.fc-onview-datum'), 10000);
     out.atEnd = await page.evaluate(() => window.__fcEditor());
+    phase('escaped');
+    // the caller samples the document on that phase
+    await sleep(1500);
+    // and one undo, the client's own op, takes the entry back: it was one step
+    out.undoSent = await page.evaluate(() => !!window.fcviewerControlSend(JSON.stringify(
+        {id: 9202, op: 'undo'})));
+    await waitFor(page, () => !!window.__fcReplies[9202], 10000);
+    out.undoReply = await page.evaluate(() => window.__fcReplies[9202] || null);
     // the tool, then the edit session
     for (let i = 0; i < 2; ++i) {
       await page.evaluate(() => {
