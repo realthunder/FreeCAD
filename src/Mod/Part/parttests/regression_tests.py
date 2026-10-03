@@ -1302,6 +1302,54 @@ class RegressionTests(unittest.TestCase):
         with self.assertRaises(Exception):
             domes.makeThickness([domes.Faces[0]], 0.5, 1e-7, False, False, 0, 0)
 
+    def test_thickness_of_half_a_ball_with_one_of_its_two_domes_or_lunes_removed(self):
+        """The half ball with its sphere in two domes or two lunes, one of them
+        removed: refused every way. The removed face lies on the kept face's
+        own sphere, and the kept face's offset never meets it. With the
+        Intersection join the kept face runs on round the sphere a thickness
+        into the removed one, to a wall square to the sphere -- a cone from its
+        centre: 91.1786 outward, 74.1857 inward, either face, placed too. On
+        the way, a cone with its apex at a sphere's centre met it in B-splines
+        or not at all as the sphere happened to be turned or placed (OCCT
+        fork, tests/fork/thickness/models/Thickness.md "Sec 23")."""
+        V = Vector
+        ball = Part.makeSphere(5, V(), V(0, 0, 1), -90, 90, 180)
+        equator = Part.ArcOfCircle(Part.Circle(V(), V(0, 0, 1), 5), 0, math.pi).toShape()
+        meridian = Part.Arc(V(0, 0, -5), V(0, 5, 0), V(0, 0, 5)).toShape()
+        domes = ball.generalFuse([equator])[0].Solids[0]
+        lunes = ball.generalFuse([meridian])[0].Solids[0]
+        placed = lunes.copy()
+        placed.Placement = Placement(V(3, 4, 5), Rotation(V(1, 2, 3), 40))
+        for name, shape in (("domes", domes), ("lunes", lunes), ("placed lunes", placed)):
+            for face in (1, 2):
+                for offset, volume in ((0.5, 91.1786), (-0.5, 74.1857)):
+                    msg = "%s, Face%d, %g" % (name, face, offset)
+                    r = shape.makeThickness(
+                        [shape.Faces[face - 1]], offset, 1e-7, False, False, 0, 2
+                    )
+                    self.assertTrue(r.isValid(), msg)
+                    self.assertEqual(len(r.Solids), 1, msg)
+                    self.assertEqual(len(r.Shells), 1, msg)
+                    self.assertAlmostEqual(r.Volume, volume, 3, msg)
+
+        # a cone with its apex at the centre of a sphere meets it in circles,
+        # however the sphere is turned (B-splines walked point by point before)
+        center = V(3, 4, 5)
+        cone = Part.Cone()
+        cone.SemiAngle = math.pi / 2 - 0.1
+        cone.Axis = V(1, 2, 3)
+        cone.Radius = 5 * math.cos(0.1)
+        cone.Center = center + V(1, 2, 3).normalize() * (5 * math.sin(0.1))
+        for axis in (V(0, 0, 1), V(1, 1, 1), V(0.3, 0.1, 0.9)):
+            sphere = Part.Sphere()
+            sphere.Radius = 5
+            sphere.Center = center
+            sphere.Axis = axis
+            curves = cone.intersect(sphere)
+            self.assertTrue(curves, str(axis))
+            for c in curves:
+                self.assertIsInstance(c, Part.ArcOfCircle, str(axis))
+
     def test_thickness_intersection_join_with_one_face_left(self):
         """The Intersection join where one face stays beside the removed ones:
         a cylinder down to its top, a box down to its bottom. It threw
