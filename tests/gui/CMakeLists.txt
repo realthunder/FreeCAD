@@ -969,3 +969,9 @@ fc_add_gui_test(GuiSketchBSplineCancel_tests_run
 fc_add_gui_test(GuiSketchToggleConstructionInternal_tests_run
                 sketch-toggle-construction-internal.py
                 --timeout 120)
+
+# A named reference dimension is read-only in the property editor, as the
+# unnamed ones are.
+fc_add_gui_test(GuiSketchConstraintPropertyReadOnly_tests_run
+                sketch-constraint-property-readonly.py
+                --timeout 120)
