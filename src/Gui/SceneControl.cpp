@@ -38,6 +38,7 @@
 #include <App/AutoTransaction.h>
 #include <App/Document.h>
 #include <App/DocumentObject.h>
+#include <App/ObjectIdentifier.h>
 #include <App/PropertyStandard.h>
 #include <App/PropertyUnits.h>
 #include <App/PropertyGeo.h>
@@ -358,6 +359,30 @@ QJsonObject describeProperty(const App::PropertyContainer *container,
         d[QLatin1String("type")] = QString::fromUtf8(tid.getName());
         d[QLatin1String("value")] = QJsonValue();
         readonly = true;
+    }
+
+    // What the property holds under its name, spelled as an expression
+    // spells it: "Width" of a sketch's Constraints, "Base.x" of a
+    // Placement. The desktop's completer asks the property the same
+    // question (ExpressionCompleter, initPaths); a client completes
+    // "Sketch.Constraints." from this with nothing more off the wire.
+    // An expression names an object's properties only, so only those.
+    if (container->isDerivedFrom(App::DocumentObject::getClassTypeId())) {
+        QJsonArray members;
+        try {
+            std::vector<App::ObjectIdentifier> paths;
+            prop->getPaths(paths);
+            for (const auto &path : paths) {
+                std::string sub = path.getSubPathStr(false, false);
+                if (!sub.empty())
+                    members.push_back(QString::fromStdString(sub));
+            }
+        }
+        catch (Base::Exception &) {
+            members = QJsonArray();
+        }
+        if (!members.isEmpty())
+            d[QLatin1String("members")] = members;
     }
 
     d[QLatin1String("readonly")] = readonly;

@@ -209,6 +209,10 @@ export interface PropDescriptor {
   unit?: string;
   enums?: string[];
   constraints?: { min?: number; max?: number; step?: number };
+  /// What the property holds under its name, as an expression spells it:
+  /// "Width" of a sketch's Constraints, "Base.x" of a Placement,
+  /// "[<<a name>>]" for a name that is no identifier
+  members?: string[];
   doc?: string;
   readonly: boolean;
   hidden: boolean;

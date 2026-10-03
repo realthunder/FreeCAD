@@ -351,7 +351,12 @@ shape). The e2e suite includes a CJK-named document/object/property pass.
 
 The **property descriptor** is the serializable generalization of the hand-written table in
 `TaskRenderSettings.cpp:331`: `{ name, group, type, value, readonly, hidden, unit?,
-constraints?{min,max,step}, enums?[] }`. The `type` set maps 1:1 onto DOM controls:
+constraints?{min,max,step}, enums?[], members?[] }`. `members` is what the property holds
+under its name, spelled as an expression spells it -- `Width` of a sketch's `Constraints`,
+`Base.x` of a `Placement`, `[<<a name>>]` for a name that is no identifier. It is the
+answer of `Property::getPaths`, the question the desktop's expression completer asks, sent
+for an object's properties that have any; a client completes `Sketch.Constraints.` from it
+with nothing more off the wire. The `type` set maps 1:1 onto DOM controls:
 
 | FreeCAD property | descriptor `type` | DOM control |
 |---|---|---|
