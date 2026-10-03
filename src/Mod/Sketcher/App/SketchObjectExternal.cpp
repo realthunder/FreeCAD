@@ -582,7 +582,7 @@ int SketchObject::carbonCopy(App::DocumentObject* pObj, bool construction)
             geoNew->mirror(Base::Vector3d(0, 0, 0), Base::Vector3d(1, 0, 0));
         }
         generateId(geoNew);
-        if(construction && geoNew->getTypeId() != Part::GeomPoint::getClassTypeId()) {
+        if(construction && !geoNew->is<Part::GeomPoint>()) {
             GeometryFacade::setConstruction(geoNew, true);
         }
         newVals.push_back(geoNew);

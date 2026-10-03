@@ -2989,7 +2989,7 @@ bool SketchObject::increaseBSplineDegree(int GeoId, int degreeincrement /*= 1*/)
 
     const Part::Geometry* geo = getGeometry(GeoId);
 
-    if (geo->getTypeId() != Part::GeomBSplineCurve::getClassTypeId())
+    if (!geo->is<Part::GeomBSplineCurve>())
         return false;
 
     const Part::GeomBSplineCurve* bsp = static_cast<const Part::GeomBSplineCurve*>(geo);
@@ -3031,7 +3031,7 @@ bool SketchObject::decreaseBSplineDegree(int GeoId, int degreedecrement /*= 1*/)
 
     const Part::Geometry* geo = getGeometry(GeoId);
 
-    if (geo->getTypeId() != Part::GeomBSplineCurve::getClassTypeId())
+    if (!geo->is<Part::GeomBSplineCurve>())
         return false;
 
     const Part::GeomBSplineCurve* bsp = static_cast<const Part::GeomBSplineCurve*>(geo);

@@ -46,11 +46,11 @@ std::string PythonConverter::convert(const Part::Geometry* geo, Mode mode)
     command = boost::str(boost::format("addGeometry(%s,%s)\n") % sg.creation
                          % (sg.construction ? "True" : "False"));
 
-    if ((geo->getTypeId() != Part::GeomEllipse::getClassTypeId()
-         || geo->getTypeId() != Part::GeomArcOfEllipse::getClassTypeId()
-         || geo->getTypeId() != Part::GeomArcOfHyperbola::getClassTypeId()
-         || geo->getTypeId() != Part::GeomArcOfParabola::getClassTypeId()
-         || geo->getTypeId() != Part::GeomBSplineCurve::getClassTypeId())
+    if ((!geo->is<Part::GeomEllipse>()
+         || !geo->is<Part::GeomArcOfEllipse>()
+         || !geo->is<Part::GeomArcOfHyperbola>()
+         || !geo->is<Part::GeomArcOfParabola>()
+         || !geo->is<Part::GeomBSplineCurve>())
         && mode == Mode::CreateInternalGeometry) {
         command +=
             boost::str(boost::format("exposeInternalGeometry(len(ActiveSketch.Geometry))\n"));
@@ -149,11 +149,11 @@ std::string PythonConverter::convert(const std::string& doc,
     if (mode == Mode::CreateInternalGeometry) {
         for (auto geo : geos) {
             index++;
-            if (geo->getTypeId() != Part::GeomEllipse::getClassTypeId()
-                || geo->getTypeId() != Part::GeomArcOfEllipse::getClassTypeId()
-                || geo->getTypeId() != Part::GeomArcOfHyperbola::getClassTypeId()
-                || geo->getTypeId() != Part::GeomArcOfParabola::getClassTypeId()
-                || geo->getTypeId() != Part::GeomBSplineCurve::getClassTypeId()) {
+            if (!geo->is<Part::GeomEllipse>()
+                || !geo->is<Part::GeomArcOfEllipse>()
+                || !geo->is<Part::GeomArcOfHyperbola>()
+                || !geo->is<Part::GeomArcOfParabola>()
+                || !geo->is<Part::GeomBSplineCurve>()) {
                 std::string newcommand =
                     boost::str(boost::format("exposeInternalGeometry(lastGeoId + %d)\n") % (index));
                 command += newcommand;

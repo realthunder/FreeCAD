@@ -118,6 +118,11 @@ void TaskDlgEditSketch::slotToolChanged(const std::string& toolname)
 //==== calls from the TaskView ===============================================================
 
 
+QDialogButtonBox::StandardButtons TaskDlgEditSketch::getStandardButtons() const
+{
+    return QDialogButtonBox::Ok | QDialogButtonBox::Cancel;
+}
+
 void TaskDlgEditSketch::open()
 {}
 

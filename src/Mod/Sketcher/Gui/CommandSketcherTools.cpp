@@ -1249,7 +1249,7 @@ public:
     /// mode table
     enum SelectMode
     {
-        STATUS_SEEK_First, /**< enum value ----. */
+        STATUS_SEEK_First,
         STATUS_End
     };
 
@@ -1447,7 +1447,7 @@ void SketcherCopy::activate(SketcherCopy::Op op)
         int GeoId;
         Sketcher::PointPos PosId;
         Obj->getGeoVertexIndex(VtId, GeoId, PosId);
-        if (Obj->getGeometry(GeoId)->getTypeId() != Part::GeomPoint::getClassTypeId()) {
+        if (!Obj->getGeometry(GeoId)->is<Part::GeomPoint>()) {
             LastGeoId = GeoId;
             LastPointPos = PosId;
         }
@@ -1743,7 +1743,7 @@ public:
     /// mode table
     enum SelectMode
     {
-        STATUS_SEEK_First, /**< enum value ----. */
+        STATUS_SEEK_First,
         STATUS_End
     };
 
@@ -1967,7 +1967,7 @@ void CmdSketcherRectangularArray::activated(int iMsg)
         int GeoId;
         Sketcher::PointPos PosId;
         Obj->getGeoVertexIndex(VtId, GeoId, PosId);
-        if (Obj->getGeometry(GeoId)->getTypeId() != Part::GeomPoint::getClassTypeId()) {
+        if (!Obj->getGeometry(GeoId)->is<Part::GeomPoint>()) {
             LastGeoId = GeoId;
             LastPointPos = PosId;
         }

@@ -74,10 +74,7 @@ public:
     }
 
     /// Ok leaves the sketch, Cancel reverts it (upstream 189d86ee53)
-    QDialogButtonBox::StandardButtons getStandardButtons() const override
-    {
-        return QDialogButtonBox::Ok | QDialogButtonBox::Cancel;
-    }
+    QDialogButtonBox::StandardButtons getStandardButtons() const override;
 
     /** @brief Function used to register a slot to be triggered when the tool widget is changed. */
     template<typename F>
