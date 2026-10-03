@@ -4438,14 +4438,19 @@ was in session 117, not a sweep.
 | Large features nearly all here | 6 | chamfer (`b3fe5bba28`: one line missing, two stale), symmetry (`e4213fc10f`: eleven stale lines), intersection externals (the fork's own; two icons absent), the perpendicular hint lines, offset with external input, the angle expression as an AST |
 | Others | 10 | `155edc0f53` (isActive), `6e1826295b` (a test hook the fork's copy of the test calls and does not have), `94d39087d3` (the External tool shows no hint), strings, two refactors |
 
-**Put to the user.**
+**Ruled the same day** ("Keep the name"), `bb19c35c18`, which leaves 53.
 
-- The tool bar and menu the fork calls "Sketcher visual" are "Visual
-  Helpers" upstream (`945ba15e18`). A tool bar's name is also the key its
-  place is saved under, so renaming it moves a user's tool bar back to its
-  default place once.
-- The fork's own `Sketcher_ViewSketchGroup` command names an icon that
-  does not exist.
+- The tool bar and menu stay "Sketcher visual" (upstream: "Visual
+  Helpers", `945ba15e18`): a tool bar's name is also the key its place is
+  saved under. What that row fixed on upstream's side -- the translation
+  marker not matching the name -- was true here too: the marker block
+  listed "Sketcher virtual space", a tool bar that does not exist. It
+  names this one now.
+- `Sketcher_ViewSketchGroup` is the fork's own (`3b620b713e`, 2022): the
+  drop-down of "Align View to Sketch" and "View sketch bottom". Upstream
+  has the first command only, with the icon `Sketcher_ViewSketch`. The
+  group named an icon of its own that was never drawn -- the button shows
+  its default member's -- and names upstream's now.
 
 ## 8. Phases
 
