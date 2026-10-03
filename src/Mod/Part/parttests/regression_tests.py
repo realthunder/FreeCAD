@@ -1207,6 +1207,101 @@ class RegressionTests(unittest.TestCase):
                 check("two domes, both removed", domes, [1, 2], offset, join, 39.1390)
         self.assertEqual((len(lunes.Faces), len(domes.Faces)), (4, 4))
 
+    def test_thickness_of_the_rest_of_a_ball_a_sphere_on_another_axis_and_an_edge_in_pieces(self):
+        """A ball wedge on more than half a turn, its sphere removed outward:
+        refused -- the wall is the missing lune with a hole in it, beside none
+        of the lunes the face was cut into. It is the thick solid inward of
+        the rest of the ball. A sphere face whose outline lies on the meridians
+        of another axis is put on that axis: the dome with its flat in two
+        halves, one removed with the Intersection join, was refused; a ball
+        wedge made on an axis through its face was wrong every way, a valid
+        solid of 264.29 for 41.6307. A vertex that only cuts an edge in two
+        broke the faces beside it since the fork's chain was ported -- a box
+        with one on an edge refused or back whole, where upstream is right --
+        and is joined away first. And a result that runs off past the shape,
+        a plane 1e100 across, is refused (OCCT fork,
+        tests/fork/thickness/models/Thickness.md "Sec 22")."""
+        V = Vector
+
+        def check(name, shape, face, offset, join, volume):
+            r = shape.makeThickness([shape.Faces[face - 1]], offset, 1e-7, False, False, 0, join)
+            msg = "%s, Face%d, %g, join %d" % (name, face, offset, join)
+            self.assertTrue(r.isValid(), msg)
+            self.assertEqual(len(r.Solids), 1, msg)
+            self.assertEqual(len(r.Shells), 1, msg)
+            self.assertAlmostEqual(r.Volume, volume, 3, msg)
+
+        def sphere(shape):
+            return [
+                i + 1 for i, f in enumerate(shape.Faces) if f.Surface.TypeId == "Part::GeomSphere"
+            ][0]
+
+        # ball wedges, the sphere removed outward; inward on 240 degrees
+        for ang, volume in ((270, 36.6474), (240, 37.6996)):
+            wedge = Part.makeSphere(5, V(), V(0, 0, 1), -90, 90, ang)
+            for join in (0, 2):
+                check("ball wedge %d" % ang, wedge, 1, 0.5, join, volume)
+        ball150 = Part.makeSphere(5, V(), V(0, 0, 1), -90, 90, 150)
+        check("ball wedge 150", ball150, 1, 0.5, 0, 39.7919)
+        check("ball wedge 150", ball150, 1, 0.5, 2, 39.8071)
+        check(
+            "ball wedge 240", Part.makeSphere(5, V(), V(0, 0, 1), -90, 90, 240), 1, -0.5, 0, 40.4447
+        )
+
+        # the dome with its rim in two arcs and its flat in two halves
+        dome = Part.makeSphere(5, V(), V(0, 1, 0), 0, 90, 360)
+        rim = [e for e in dome.Edges if not e.Degenerated and abs(e.Length - 10 * math.pi) < 1e-6]
+        end = rim[0].Vertexes[0].Point
+        halves = dome.generalFuse([Part.makeLine(end, end * -1)])[0].Solids[0]
+        for flat in (2, 3):
+            check("dome, flat in two halves", halves, flat, 0.5, 2, 113.0909)
+            check("dome, flat in two halves", halves, flat, -0.5, 2, 89.0272)
+
+        # a ball made on an axis through the middle of the wedge it is cut to
+        m = V(math.cos(math.radians(135)), math.sin(math.radians(135)), 0)
+        gap = Part.makeCylinder(10, 20, V(0, 0, -10), V(0, 0, 1), 90)
+        gap.rotate(V(), V(0, 0, 1), 270)
+        on_axis = Part.makeSphere(5, V(), m).cut(gap).Solids[0]
+        for offset, join, volume in (
+            (0.5, 0, 36.6474),
+            (0.5, 2, 36.6474),
+            (-0.5, 0, 41.0978),
+            (-0.5, 2, 41.6307),
+        ):
+            check(
+                "ball wedge on an axis through its face",
+                on_axis,
+                sphere(on_axis),
+                offset,
+                join,
+                volume,
+            )
+
+        # a box with a vertex at the middle of an edge, a face beside it removed
+        box = Part.makeBox(10, 8, 6)
+        edge = box.Edges[0]
+        mid = edge.valueAt((edge.FirstParameter + edge.LastParameter) / 2)
+        split = box.generalFuse([Part.Vertex(mid)])[0].Solids[0]
+        self.assertEqual((len(box.Edges), len(split.Edges)), (12, 13))
+        for offset, join, volume in (
+            (0.5, 0, 177.6136),
+            (0.5, 2, 181.5),
+            (-0.5, 0, 147.5),
+            (-0.5, 2, 147.5),
+        ):
+            check("box, a vertex on an edge", split, 1, offset, join, volume)
+        placed = split.copy()
+        placed.Placement = Placement(V(3, 4, 5), Rotation(V(1, 2, 3), 40))
+        check("box, a vertex on an edge, placed", placed, 1, 0.5, 0, 177.6136)
+
+        # the half ball with its sphere in two domes, one removed: refused, not
+        # a solid 1e100 across
+        ball = Part.makeSphere(5, V(), V(0, 0, 1), -90, 90, 180)
+        equator = Part.ArcOfCircle(Part.Circle(V(), V(0, 0, 1), 5), 0, math.pi).toShape()
+        domes = ball.generalFuse([equator])[0].Solids[0]
+        with self.assertRaises(Exception):
+            domes.makeThickness([domes.Faces[0]], 0.5, 1e-7, False, False, 0, 0)
+
     def test_thickness_intersection_join_with_one_face_left(self):
         """The Intersection join where one face stays beside the removed ones:
         a cylinder down to its top, a box down to its bottom. It threw
