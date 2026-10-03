@@ -948,6 +948,11 @@ public:
     void makeMissingVerticalHorizontal(bool onebyone = false);
     void makeMissingEquality(bool onebyone = true);
 
+    /// Detect degenerated geometries
+    int detectDegeneratedGeometries(double tolerance);
+    /// Remove degenerated geometries
+    int removeDegeneratedGeometries(double tolerance);
+
     // helper
     /// returns the number of redundant constraints detected
     int autoRemoveRedundants(DeleteOptions options = DeleteOption::UpdateGeometry);

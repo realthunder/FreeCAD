@@ -2058,20 +2058,36 @@ void SketchObject::setMissingPointOnPointConstraints(std::vector<ConstraintIds>&
 
 void SketchObject::makeMissingPointOnPointCoincident(bool onebyone)
 {
-    if (analyser)
-        analyser->makeMissingPointOnPointCoincident(onebyone);
+    if (analyser) {
+        onebyone ? analyser->makeMissingPointOnPointCoincidentOneByOne()
+                 : analyser->makeMissingPointOnPointCoincident();
+    }
 }
 
 void SketchObject::makeMissingVerticalHorizontal(bool onebyone)
 {
-    if (analyser)
-        analyser->makeMissingVerticalHorizontal(onebyone);
+    if (analyser) {
+        onebyone ? analyser->makeMissingVerticalHorizontalOneByOne()
+                 : analyser->makeMissingVerticalHorizontal();
+    }
 }
 
 void SketchObject::makeMissingEquality(bool onebyone)
 {
-    if (analyser)
-        analyser->makeMissingEquality(onebyone);
+    if (analyser) {
+        onebyone ? analyser->makeMissingEqualityOneByOne()
+                 : analyser->makeMissingEquality();
+    }
+}
+
+int SketchObject::detectDegeneratedGeometries(double tolerance)
+{
+    return analyser ? analyser->detectDegeneratedGeometries(tolerance) : 0;
+}
+
+int SketchObject::removeDegeneratedGeometries(double tolerance)
+{
+    return analyser ? analyser->removeDegeneratedGeometries(tolerance) : 0;
 }
 
 std::vector<Base::Vector3d> SketchObject::getOpenVertices() const

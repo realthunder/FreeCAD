@@ -1006,3 +1006,9 @@ fc_add_gui_test(GuiSketchElementsEmptyClick_tests_run
 fc_add_gui_test(GuiSketchConstructionIcons_tests_run
                 sketch-construction-icons.py
                 --timeout 120)
+
+# The Validate Sketch panel's fixes are Python commands on the sketch
+# (upstream 37f0ad43f9, 5696ee821c).
+fc_add_gui_test(GuiSketchValidationPanel_tests_run
+                sketch-validation-panel.py
+                --timeout 120)
