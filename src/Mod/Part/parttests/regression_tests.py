@@ -843,7 +843,7 @@ class RegressionTests(unittest.TestCase):
         bottom removed threw, a side removed came back invalid. And a box
         fused of two, one piece of its top removed: right with the Arc join,
         and with the Intersection join refused rather than the box back
-        (OCCT fork, tests/thickness/models/Thickness.md "Sec 17")."""
+        (OCCT fork, tests/fork/thickness/models/Thickness.md "Sec 17")."""
         V = Vector
         for cone in (Part.makeCone(0, 4, 6), Part.makeCone(4, 0, 6)):
             base = [f for f in cone.Faces if isinstance(f.Surface, Part.Plane)]
@@ -893,7 +893,7 @@ class RegressionTests(unittest.TestCase):
         coplanar pieces were intersected with each other's neighbours. Half a
         dome's side with that join, inward: the closing wall never met the
         sphere. And outward, bottom or side: the offset sphere has to grow
-        round its pole (OCCT fork, tests/thickness/models/Thickness.md
+        round its pole (OCCT fork, tests/fork/thickness/models/Thickness.md
         "Sec 18"). Half a ball cut through both poles could not, and was
         refused; test_thickness_of_half_a_ball_and_of_a_placed_shape has it."""
         V = Vector
@@ -947,7 +947,7 @@ class RegressionTests(unittest.TestCase):
         face. With the Arc join an eighth of a ball and a third of a dome were
         refused. And with the sphere itself removed, whose wall lies on the
         sphere past its pole, every one was refused or threw outward (OCCT
-        fork, tests/thickness/models/Thickness.md "Sec 19")."""
+        fork, tests/fork/thickness/models/Thickness.md "Sec 19")."""
         V = Vector
 
         def dome(turn, low=0):
@@ -1008,7 +1008,7 @@ class RegressionTests(unittest.TestCase):
         89.93; a moved dome or cone was refused, or the cone's offset ran to
         the apex it had before the move; a filleted box turned in space lost
         the sphere at a corner, 459.40 for 405.90 (OCCT fork,
-        tests/thickness/models/Thickness.md "Sec 20")."""
+        tests/fork/thickness/models/Thickness.md "Sec 20")."""
         V = Vector
 
         def tolerance(shape):
@@ -1130,7 +1130,7 @@ class RegressionTests(unittest.TestCase):
         middle, which makes it that dome. And the half ball that comes with
         its sphere in two faces, cut the way that does not suit what is done
         with it: the faces are joined first (OCCT fork,
-        tests/thickness/models/Thickness.md "Sec 21")."""
+        tests/fork/thickness/models/Thickness.md "Sec 21")."""
         V = Vector
 
         def tolerance(shape):
