@@ -716,7 +716,9 @@ bool DatumEditSession::applyCurrent()
 
     Gui::DatumValueEditor::Entry entry;
     QString why;
-    if (!editor->read(entry, &why)) {
+    // A reference's number is measured, and nothing in the line is applied
+    // for it: what the line holds stops only a driving entry
+    if (!editor->read(entry, &why) && entry.driving != 0) {
         editor->showError(why);
         return false;
     }
