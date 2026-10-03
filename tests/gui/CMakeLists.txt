@@ -975,3 +975,9 @@ fc_add_gui_test(GuiSketchToggleConstructionInternal_tests_run
 fc_add_gui_test(GuiSketchConstraintPropertyReadOnly_tests_run
                 sketch-constraint-property-readonly.py
                 --timeout 120)
+
+# Select Associated Constraints answers for a point and an axis, not only
+# for an edge (upstream 732501d89d).
+fc_add_gui_test(GuiSketchSelectConstraintsParts_tests_run
+                sketch-select-constraints-parts.py
+                --timeout 120)

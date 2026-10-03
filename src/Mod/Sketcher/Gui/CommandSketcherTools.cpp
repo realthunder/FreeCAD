@@ -34,6 +34,7 @@
 
 #include <boost/algorithm/string/predicate.hpp>
 #include <numeric>
+#include <set>
 
 #include <Base/Console.h>
 #include <App/Application.h>
@@ -396,23 +397,36 @@ void CmdSketcherSelectConstraints::activated(int iMsg)
 
     getSelection().clearSelection();
 
-    std::vector<std::string> constraintSubNames;
-    // go through the selected subelements
+    // What each selected name stands for: a whole curve (an edge, an external
+    // edge, an axis), or one point of one. The sketch says which.
+    std::set<int> curves;
+    std::set<Sketcher::GeoElementId> points;
     for (const auto &Sub : SubNames) {
-        // only handle edges
-        if (boost::starts_with(Sub, "Edge")) {
-            int GeoId = std::atoi(Sub.c_str()+4) - 1;
+        int GeoId = Sketcher::GeoEnum::GeoUndef;
+        Sketcher::PointPos PosId = Sketcher::PointPos::none;
+        if (!Obj->geoIdFromShapeType(Sub.c_str(), GeoId, PosId))
+            continue;
+        if (PosId == Sketcher::PointPos::none)
+            curves.insert(GeoId);
+        else
+            points.insert(Sketcher::GeoElementId(GeoId, PosId));
+    }
 
-            // push all the constraints
-            int i = 0;
-            for (const auto &cstr : vals) {
-                if (cstr->First == GeoId || cstr->Second == GeoId || cstr->Third == GeoId) {
-                    constraintSubNames.push_back(
-                        Sketcher::PropertyConstraintList::getConstraintName(i));
-                }
-                ++i;
-            }
+    // A curve takes every constraint on it or on one of its points; a point
+    // those on that point alone.
+    std::vector<std::string> constraintSubNames;
+    int i = 0;
+    for (const auto &cstr : vals) {
+        bool related = false;
+        for (int e = 0; !related && cstr->hasElement(e); ++e) {
+            Sketcher::GeoElementId element = cstr->getElement(e);
+            related = curves.count(element.GeoId) > 0 || points.count(element) > 0;
         }
+        if (related) {
+            constraintSubNames.push_back(
+                Sketcher::PropertyConstraintList::getConstraintName(i));
+        }
+        ++i;
     }
 
     if (!constraintSubNames.empty())
