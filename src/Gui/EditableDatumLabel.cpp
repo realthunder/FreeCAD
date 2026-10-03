@@ -694,6 +694,25 @@ bool EditableDatumLabel::sendKeyEvent(QKeyEvent* event)
     return handled;
 }
 
+bool EditableDatumLabel::isShownOnView() const
+{
+    return isActive() && isInEdit();
+}
+
+void EditableDatumLabel::describe(State& state) const
+{
+    state.kind = "param";
+    state.anchor = getAnchorPoint();
+    state.text = getText().toStdString();
+    getSelection(state.selStart, state.selLength);
+    state.set = isSet;
+}
+
+void EditableDatumLabel::takeKeys()
+{
+    setFocusToSpinbox();
+}
+
 void EditableDatumLabel::notifyChanged()
 {
     if (viewer) {

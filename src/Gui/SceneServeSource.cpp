@@ -791,21 +791,46 @@ public:
         std::string json = "{\"cmd\":\"onview\",\"doc\":\"" + groupName
             + "\",\"params\":[";
         bool first = true;
-        int index = 0;
         for (const auto &param : mirror->onViewParameters()) {
             if (!first)
                 json += ',';
             first = false;
-            json += "{\"i\":" + std::to_string(index++);
+            json += "{\"i\":" + std::to_string(param.index);
             json += ",\"x\":" + floatJson(param.anchor[0]);
             json += ",\"y\":" + floatJson(param.anchor[1]);
             json += ",\"z\":" + floatJson(param.anchor[2]);
+            // After the anchor and before the text, where the viewer
+            // looks for it (wasm parseOnViewAnchors)
+            if (param.hasAway) {
+                json += ",\"ax\":" + floatJson(param.away[0]);
+                json += ",\"ay\":" + floatJson(param.away[1]);
+                json += ",\"az\":" + floatJson(param.away[2]);
+            }
             json += ",\"text\":";
             jsonQuoted(json, param.text);
             json += ",\"sel\":[" + std::to_string(param.selStart) + ','
                 + std::to_string(param.selLength) + ']';
             json += param.focus ? ",\"focus\":true" : ",\"focus\":false";
-            json += param.set ? ",\"set\":true}" : ",\"set\":false}";
+            json += param.set ? ",\"set\":true" : ",\"set\":false";
+            json += ",\"kind\":";
+            jsonQuoted(json, param.kind);
+            if (std::string(param.kind) == "datum") {
+                json += ",\"field\":";
+                jsonQuoted(json, param.field);
+                json += param.expression ? ",\"expr\":true" : ",\"expr\":false";
+                json += ",\"result\":";
+                jsonQuoted(json, param.result);
+                json += ",\"level\":" + std::to_string(param.resultLevel);
+                json += ",\"driving\":" + std::to_string(param.driving);
+                json += param.nameShown ? ",\"nameShown\":true" : ",\"nameShown\":false";
+                json += ",\"name\":";
+                jsonQuoted(json, param.name);
+                json += ",\"nameSel\":[" + std::to_string(param.nameSelStart) + ','
+                    + std::to_string(param.nameSelLength) + ']';
+                json += ",\"obj\":";
+                jsonQuoted(json, param.objectName);
+            }
+            json += '}';
         }
         json += "]}";
         Render::SceneStreamServer::instance().sendControl(client, json);

@@ -28,6 +28,7 @@
 #include <QString>
 #include <Gui/QuantitySpinBox.h>
 
+#include "OnViewEntry.h"
 #include "SoDatumLabel.h"
 
 #include <FCGlobal.h>
@@ -41,7 +42,7 @@ namespace Gui {
 class ViewerContext;
 
 
-class GuiExport EditableDatumLabel : public QObject
+class GuiExport EditableDatumLabel : public QObject, public OnViewEntry
 {
     Q_OBJECT
     Q_DISABLE_COPY(EditableDatumLabel)
@@ -122,7 +123,12 @@ public:
     /// What selectNumber() left selected, so the client can show the same.
     void getSelection(int& start, int& length) const;
     /// Deliver a key to the box, the desktop's focus having done it there.
-    bool sendKeyEvent(QKeyEvent* event);
+    bool sendKeyEvent(QKeyEvent* event) override;
+    /// In edit and on the view
+    bool isShownOnView() const override;
+    void describe(State& state) const override;
+    /// setFocusToSpinbox()
+    void takeKeys() override;
     //@}
 
     /** @name An entry box at a label that is drawn already

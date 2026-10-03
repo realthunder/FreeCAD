@@ -1012,6 +1012,42 @@ QJsonObject onViewFocusOp(const QJsonObject &req, const std::string &boundDoc,
     return reply;
 }
 
+/// A client's act on an on-view entry that is not a key: a value's editor's
+/// toggle, a click into one of its fields, a completion it offered and the
+/// user took (Gui::OnViewEntry::Action). What the act then does is decided
+/// by the editor, as for a key.
+QJsonObject onViewActionOp(const QJsonObject &req, const std::string &boundDoc,
+                           uint64_t client)
+{
+    const QJsonValue id = req.value(QLatin1String("id"));
+
+    const QString docName = req.value(QLatin1String("doc")).toString();
+    App::Document *doc = requestDocument(req, boundDoc);
+    if (!doc)
+        return errorReply(id, "UnknownDocument", docName);
+
+    SceneServeSource *source = SceneServeSource::sourceFor(doc);
+    MirrorViewer *mirror = source ? source->mirrorViewerFor(client) : nullptr;
+    if (!mirror)
+        return errorReply(id, "NoView",
+                          QStringLiteral("state a camera before editing"));
+
+    const int index = req.value(QLatin1String("index")).toInt(-1);
+    OnViewEntry::Action action;
+    action.name = req.value(QLatin1String("action")).toString().toStdString();
+    action.text = req.value(QLatin1String("text")).toString().toStdString();
+    action.start = req.value(QLatin1String("start")).toInt(0);
+    action.length = req.value(QLatin1String("length")).toInt(0);
+    if (!mirror->actOnViewParameter(index, action))
+        return errorReply(id, "NoSuchParameter", QString::number(index));
+
+    QJsonObject reply;
+    reply[QLatin1String("id")] = id;
+    reply[QLatin1String("ok")] = true;
+    reply[QLatin1String("index")] = index;
+    return reply;
+}
+
 
 /// The client's own object visibility (docs/CoinRetirement.md 5.18,
 /// per client): `map` is an ObjectVisibilities map -- a bare key is the
@@ -1225,6 +1261,7 @@ std::string Gui::handleSceneControlRequest(const std::string &json,
             || op == QLatin1String("resetEdit")
             || op == QLatin1String("command")
             || op == QLatin1String("onViewFocus")
+            || op == QLatin1String("onViewAction")
             || op == QLatin1String("undo")
             || op == QLatin1String("redo")
             || (registered != registeredOps().end() && registered->second.mutating);
@@ -1256,6 +1293,8 @@ std::string Gui::handleSceneControlRequest(const std::string &json,
             reply = runCommandOp(req, boundDoc, client);
         else if (op == QLatin1String("onViewFocus"))
             reply = onViewFocusOp(req, boundDoc, client);
+        else if (op == QLatin1String("onViewAction"))
+            reply = onViewActionOp(req, boundDoc, client);
         else if (op == QLatin1String("view.visibility"))
             reply = viewVisibilityOp(req, boundDoc, client);
         else if (op == QLatin1String("undo"))

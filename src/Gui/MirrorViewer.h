@@ -28,6 +28,7 @@
 #include <string>
 #include <vector>
 
+#include "OnViewEntry.h"
 #include "ViewerContext.h"
 
 class SoCamera;
@@ -201,22 +202,17 @@ public:
      * inside one is taken on this side.
      */
     //@{
-    struct OnViewParam
+    /** One entry as a client is told it (OnViewEntry::State), with what
+     * only the view knows: its place in the set, which is what the client
+     * names it by, and whether it takes the keys.
+     */
+    struct OnViewParam: OnViewEntry::State
     {
-        /// Where the box belongs, in world coordinates: the client projects
-        /// it with the camera of the frame it is drawing, which is the only
-        /// camera that is never behind the picture (section 8.7).
-        SbVec3f anchor {0, 0, 0};
-        /// The text a desktop user would read in the box, units included.
-        std::string text;
-        /// What is selected in it, so a client shows the same highlight.
-        int selStart = 0;
-        int selLength = 0;
-        /// Whether this is the box taking the keys.
+        /// Its place in the set the view keeps, shown or not: the index a
+        /// client's focus or action names
+        int index = 0;
+        /// Whether this is the entry taking the keys
         bool focus = false;
-        /// Whether the value has been fixed by the user rather than driven
-        /// by the pointer -- the desktop says it in the label colour.
-        bool set = false;
     };
     std::vector<OnViewParam> onViewParameters() const;
     /// Told when any of that changes, so the connection can restate it.
@@ -228,9 +224,12 @@ public:
      * whichever box now sits there.
      */
     bool focusOnViewParameter(int index);
-    void addOnViewParameter(EditableDatumLabel* label) override;
-    void removeOnViewParameter(EditableDatumLabel* label) override;
-    void onViewParameterFocused(EditableDatumLabel* label) override;
+    /// A client's act on an entry that is not a key (OnViewEntry::act),
+    /// refused for a stale index as focusing is
+    bool actOnViewParameter(int index, const OnViewEntry::Action& action);
+    void addOnViewParameter(OnViewEntry* entry) override;
+    void removeOnViewParameter(OnViewEntry* entry) override;
+    void onViewParameterFocused(OnViewEntry* entry) override;
     void onViewParametersChanged() override;
     bool sendKeyEvent(QKeyEvent* event) override;
     //@}

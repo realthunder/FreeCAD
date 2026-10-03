@@ -88,6 +88,7 @@ class GLGraphicsItem;
 class SelectionScope;
 class SelectionSingleton;
 class EditableDatumLabel;
+class OnViewEntry;
 
 /** The node an edit session's geometry hangs under (EditingRoot::node()).
  *
@@ -672,9 +673,9 @@ public:
         return false;
     }
     /// Track the set this view is showing, in the order it was built.
-    virtual void addOnViewParameter(EditableDatumLabel*)
+    virtual void addOnViewParameter(OnViewEntry*)
     {}
-    virtual void removeOnViewParameter(EditableDatumLabel*)
+    virtual void removeOnViewParameter(OnViewEntry*)
     {}
     /** Which box takes the keys.
      *
@@ -682,7 +683,7 @@ public:
      * and this is ignored, and a widget that is never shown is never focused
      * by Qt at all, so a mirror keeps the record here.
      */
-    virtual void onViewParameterFocused(EditableDatumLabel*)
+    virtual void onViewParameterFocused(OnViewEntry*)
     {}
     /** Something about that set changed: a value, the focus, a position.
      *

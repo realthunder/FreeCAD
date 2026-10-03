@@ -207,14 +207,14 @@ public:
      * are owned by the controller and merely registered here, which is why
      * this is a vector of raw pointers and why removal is by identity.
      */
-    std::vector<EditableDatumLabel*> onViewParams;
+    std::vector<OnViewEntry*> onViewParams;
     /** Which of them takes the keys.
      *
      * Focus on the desktop is Qt's, and a widget that is never shown is
      * never focused, so for a mirror it is recorded here instead -- set
      * through the same setFocusToSpinbox() the controller already calls.
      */
-    EditableDatumLabel* focusedParam = nullptr;
+    OnViewEntry* focusedParam = nullptr;
     std::function<void()> onViewParamsChanged;
     /** The key frame being routed into an entry box, if any.
      *
@@ -740,7 +740,7 @@ bool MirrorViewer::replayKey(const Input& input)
 
 bool MirrorViewer::routeKeyToParameter(const Input& input)
 {
-    EditableDatumLabel* param = pimpl->focusedParam;
+    OnViewEntry* param = pimpl->focusedParam;
     if (!param) {
         return false;
     }
@@ -793,19 +793,22 @@ std::vector<MirrorViewer::OnViewParam> MirrorViewer::onViewParameters() const
 {
     std::vector<OnViewParam> params;
     params.reserve(pimpl->onViewParams.size());
-    for (EditableDatumLabel* label : pimpl->onViewParams) {
+    for (std::size_t i = 0; i < pimpl->onViewParams.size(); ++i) {
+        OnViewEntry* entry = pimpl->onViewParams[i];
         // A box that is not in edit is not on screen: the controller
         // deactivates the ones that do not belong to the current mode, and
         // the client should stop showing them at the same moment.
-        if (!label->isActive() || !label->isInEdit()) {
+        if (!entry->isShownOnView()) {
             continue;
         }
         OnViewParam param;
-        param.anchor = label->getAnchorPoint();
-        param.text = label->getText().toStdString();
-        label->getSelection(param.selStart, param.selLength);
-        param.focus = label == pimpl->focusedParam;
-        param.set = label->isSet;
+        entry->describe(param);
+        // Its place in the whole set, which is what focusOnViewParameter
+        // and actOnViewParameter look it up by -- not its place among the
+        // shown ones, which named another box once a hidden one sat
+        // before it.
+        param.index = int(i);
+        param.focus = entry == pimpl->focusedParam;
         params.push_back(param);
     }
     return params;
@@ -821,38 +824,51 @@ bool MirrorViewer::focusOnViewParameter(int index)
     if (index < 0 || size_t(index) >= pimpl->onViewParams.size()) {
         return false;
     }
-    EditableDatumLabel* label = pimpl->onViewParams[size_t(index)];
-    if (!label->isActive() || !label->isInEdit()) {
+    OnViewEntry* entry = pimpl->onViewParams[size_t(index)];
+    if (!entry->isShownOnView()) {
         return false;
     }
     ViewerScope scope(this);
-    label->setFocusToSpinbox();
+    entry->takeKeys();
     return true;
 }
 
-void MirrorViewer::addOnViewParameter(EditableDatumLabel* label)
+bool MirrorViewer::actOnViewParameter(int index, const OnViewEntry::Action& action)
 {
-    if (label) {
-        pimpl->onViewParams.push_back(label);
+    if (index < 0 || size_t(index) >= pimpl->onViewParams.size()) {
+        return false;
+    }
+    OnViewEntry* entry = pimpl->onViewParams[size_t(index)];
+    if (!entry->isShownOnView()) {
+        return false;
+    }
+    ViewerScope scope(this);
+    return entry->act(action);
+}
+
+void MirrorViewer::addOnViewParameter(OnViewEntry* entry)
+{
+    if (entry) {
+        pimpl->onViewParams.push_back(entry);
     }
 }
 
-void MirrorViewer::removeOnViewParameter(EditableDatumLabel* label)
+void MirrorViewer::removeOnViewParameter(OnViewEntry* entry)
 {
     auto it = std::find(pimpl->onViewParams.begin(), pimpl->onViewParams.end(),
-                        label);
+                        entry);
     if (it != pimpl->onViewParams.end()) {
         pimpl->onViewParams.erase(it);
     }
-    if (pimpl->focusedParam == label) {
+    if (pimpl->focusedParam == entry) {
         pimpl->focusedParam = nullptr;
     }
     onViewParametersChanged();
 }
 
-void MirrorViewer::onViewParameterFocused(EditableDatumLabel* label)
+void MirrorViewer::onViewParameterFocused(OnViewEntry* entry)
 {
-    pimpl->focusedParam = label;
+    pimpl->focusedParam = entry;
 }
 
 void MirrorViewer::onViewParametersChanged()
