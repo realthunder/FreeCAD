@@ -31,7 +31,11 @@
 # include <QApplication>
 # include <QHelpEvent>
 # include <QImage>
+# include <QAbstractSpinBox>
+# include <QLineEdit>
 # include <QMouseEvent>
+# include <QPlainTextEdit>
+# include <QTextEdit>
 # include <QPainter>
 # include <QStyledItemDelegate>
 # include <QToolTip>
@@ -1011,6 +1015,15 @@ void TaskSketcherElements::on_elementsWidget_itemSelectionChanged(void)
         previouslySelectedItemIndex=focusItemIndex;
 }
 
+/// True while the keyboard is in a text being typed: a field of a panel, a
+/// constraint being renamed, the value editor at a dimension's label.
+static bool textInputHasFocus()
+{
+    QWidget *widget = QApplication::focusWidget();
+    return qobject_cast<QLineEdit*>(widget) || qobject_cast<QAbstractSpinBox*>(widget)
+        || qobject_cast<QTextEdit*>(widget) || qobject_cast<QPlainTextEdit*>(widget);
+}
+
 void TaskSketcherElements::on_elementsWidget_itemEntered(QTreeWidgetItem *item)
 {
     ElementItem *it = dynamic_cast<ElementItem*>(item);
@@ -1018,7 +1031,10 @@ void TaskSketcherElements::on_elementsWidget_itemEntered(QTreeWidgetItem *item)
 
     Gui::Selection().rmvPreselect();
 
-    ui->elementsWidget->setFocus();
+    // The list takes the keyboard under the pointer, so that its keys work
+    // without a click -- but not out of a text that is being typed.
+    if (!textInputHasFocus())
+        ui->elementsWidget->setFocus();
 
     int tempitemindex=ui->elementsWidget->indexOfTopLevelItem(item);
 

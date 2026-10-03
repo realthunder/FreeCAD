@@ -987,3 +987,9 @@ fc_add_gui_test(GuiSketchSelectConstraintsParts_tests_run
 fc_add_gui_test(GuiSketchCopyClipboardLeak_tests_run
                 sketch-copy-clipboard-leak.py
                 --timeout 240)
+
+# Hovering the Elements list does not take the keyboard out of a text
+# being typed (upstream 1d4a09366c).
+fc_add_gui_test(GuiSketchElementsHoverFocus_tests_run
+                sketch-elements-hover-focus.py
+                --timeout 120)
