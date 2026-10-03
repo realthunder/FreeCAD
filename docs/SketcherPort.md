@@ -4620,7 +4620,8 @@ the change (rebuilt for the score).
 this test). `FreeCADCmd -t 0` was not run: the change is in SketcherGui,
 which that binary does not load.
 
-**A file saved by upstream** -- measured, NOT built: it needs a ruling.
+**A file saved by upstream** -- measured first, as below; then ruled and
+built, see "The kind of an external reference" after it.
 There is no upstream build on this box, so the file was forged: a fork
 sketch saved, then its `Document.xml` rewritten to what upstream's tip
 (`bd6be559e8`) writes -- the kind of each external in `ExternalTypes`, no
@@ -4684,6 +4685,98 @@ Put to the user:
 The backward-compatible restore rule of `CLAUDE.md` is about the fork's own
 files; whether upstream's are to open right here, and the fork's there, is
 the question.
+
+### The kind of an external reference (session 123)
+
+**Why upstream has the property.** Asked, and not answered by upstream: the
+commit has no body, PR #17736 (PaddleStroke, merged 2024-11-29) is two
+issue links and a video, and no reviewer asked. The fork had intersection
+externals two years earlier (`f8215651cc`, 2022-07), as a flag on the
+geometry; the PR did not port that, it wrote the feature anew beside the
+five flags it already had from here. What the property does that the flag
+did not: one element can be taken both ways (the references hold an element
+once, so the kind became three-valued per reference), and the kind is known
+before any geometry exists. What it does not do, which I expected: keep the
+kind of a reference that yields nothing. The fork already did -- the
+geometry is kept, flagged missing, and comes back as the cut (measured,
+`lose.py`).
+
+**Ruled** (user, 2026-10-04): "Port upstream. Migrate old file". Built,
+`eb57a2341f`.
+
+- `ExternalTypes` (`App::PropertyIntegerList`, hidden; `ExtType`
+  Projection 0 / Intersection 1 / Both 2) is the fork's property too, and
+  `rebuildExternalGeometry` goes by it. `addExternal` of an element already
+  referred to the other way makes the reference one of both kinds; the
+  External tool lets such a pick through (`addExternalFromPick` answered
+  every pick of a known element with the geometry it had).
+- **The kinds follow the references by key, not by position.** Upstream
+  writes `ExternalGeometry` in thirteen places and `ExternalTypes` in one,
+  the add; its delete does not touch the kinds, so by its code deleting an
+  earlier external shifts the kind of every later one (read, not run).
+  Here the references are written in eight places, and by the document
+  when an object goes; they all pass `onChanged`, and `syncExternalTypes`
+  carries each kind over by the reference's key (`externalGeoRef`). An
+  undo or redo puts both properties back itself.
+- **The flag stays**, on the geometry that is a cut, set by the rebuild.
+  It keeps the kind of a reference whose element is missing -- such a
+  reference has no entry in the list -- and it lets the cut and the
+  projection of one reference each keep their own ids. Without that an
+  edge cut, then projected as well, hands the id of its point to the line,
+  and what was constrained to the point is constrained to a line.
+- `toggleIntersection` changes the kind of the reference (a reference of
+  both kinds goes back to a projection).
+
+Migration, when a sketch is read (`Restore`, `migrateExternalTypes`):
+
+| the file | what it is | what is done |
+|---|---|---|
+| no `ExternalTypes` | this fork's, before now | the kinds are what the flags say; before version 2 a flagged edge is of both kinds |
+| `ExternalTypes`, no `_Version`, schema 4 | upstream's (1.1.0 on) | read as version 2; a cut gets its flag |
+| both | this fork's, from now | nothing |
+
+Two things about telling them apart. A file in this fork's own schema (5)
+leaves a property out when it is at its default, so there a missing
+`_Version` says nothing; only a schema 4 file is taken for upstream's.
+(Found by the test: the first forged "upstream" file was saved in schema 5
+and was, rightly, not taken for one.) And the version gate of session 118
+(`878becdec5`: an edge by intersection keeps its projection before version
+2) is data now: such an edge is a reference of both kinds, and the rebuild
+does not ask the version. **A change in behaviour:** an edge ADDED by
+intersection to a sketch from before version 2 is the cut alone, as in any
+sketch; what the sketch already has is kept.
+
+A reference of both kinds read from a file does not say which piece is the
+cut -- upstream's has no flag, an old fork file has every piece flagged --
+and its first rebuild gives the pieces their ids by position, as before.
+
+Not done: a reference MISSING its element in a sketch from before version
+2, with an edge taken by intersection, comes back as the cut alone (its
+geometry is all flagged, and there is no reference to hold "both").
+Whole-object adds (`addExternal` with no element) report failure when every
+element was already referred to the other way, though each was made both.
+
+Tests: `SketcherTests/TestSketchExternalTypes.py`, 17 cases -- the kinds,
+a deleted reference, an element missing and back, undo, save and load, and
+old and upstream files made by rewriting a saved document. Of the 15
+written before the change all failed on the tree before it: 14 for want of
+the property, one (the square face) on the 20000 long line. Three C++
+cases (`SketchObjectChanges.cpp`), `tests/gui/sketch-external-both-ways.py`
+(6 checks).
+
+**Verified** at `eb57a2341f`: full build, `FreeCADCmd -t 0` 2913 OK (2896
+before, plus the 17), ctest 901/901 (898 before, plus two C++ cases net
+and the GUI test).
+
+**Found on the way, not the port's:** `sketch-external-tool-hint.py`
+(session 122) passed on the first run in a work directory and under the
+whole suite's load, and failed on every other run -- the first Escape did
+not leave the External tool. For some 20 to 50 ms after a sketch enters
+edit, a key sent to the view reaches nobody; the test spun the event loop
+five times without sleeping and was sometimes faster than that. Measured
+on the sources before the port as well. The test waits by the clock now;
+the window is left as it is, no hand being that fast. A scripted client
+could be: not looked into.
 
 ## 8. Phases
 
