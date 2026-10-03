@@ -23,6 +23,7 @@ set(Sketcher_TestScripts
     SketcherTests/TestSketcherEllipse.py
     SketcherTests/TestSketchExternalGeometry.py
     SketcherTests/TestSketcherText.py
+    SketcherTests/TestSketchRadiusDiameter.py
 )
 
 if(BUILD_GUI)

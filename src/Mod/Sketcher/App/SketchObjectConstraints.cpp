@@ -391,6 +391,44 @@ int SketchObject::setDriving(int ConstrId, bool isdriving)
     return 0;
 }
 
+int SketchObject::setDiameter(int ConstrId, bool diameter)
+{
+    // no need to check input data validity as this is an sketchobject managed operation.
+    Base::StateLocker lock(managedoperation, true);
+
+    const std::vector<Constraint*>& vals = this->Constraints.getValues();
+
+    if (ConstrId < 0 || ConstrId >= int(vals.size())) {
+        return -1;
+    }
+    const ConstraintType type = vals[ConstrId]->Type;
+    if (type != Radius && type != Diameter) {
+        return -1;
+    }
+    if ((type == Diameter) == diameter) {
+        return 0;
+    }
+
+    // copy the list
+    std::vector<Constraint*> newVals(vals);
+    newVals[ConstrId] = newVals[ConstrId]->clone();
+    newVals[ConstrId]->Type = diameter ? Diameter : Radius;
+    // The same size in the other measure -- unless an expression gives the
+    // value: that is the expression's, and what it gives is the new measure.
+    if (!constraintHasExpression(ConstrId)) {
+        newVals[ConstrId]->setValue(newVals[ConstrId]->getValue() * (diameter ? 2.0 : 0.5));
+    }
+
+    this->Constraints.setValues(std::move(newVals));
+
+    // if we do not have a recompute, the sketch must be solved to update the DoF of the solver
+    if (noRecomputes) {
+        solve();
+    }
+
+    return 0;
+}
+
 int SketchObject::getDriving(int ConstrId, bool& isdriving)
 {
     const std::vector<Constraint*>& vals = this->Constraints.getValues();

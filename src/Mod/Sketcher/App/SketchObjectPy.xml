@@ -429,6 +429,27 @@ setDriving(constraintIndex:int, state:bool)
         </UserDocu>
       </Documentation>
     </Methode>
+    <Methode Name="setDiameter">
+      <Documentation>
+        <UserDocu>
+Say the size of a circle or an arc as its diameter or as its radius: a
+radius constraint becomes a diameter constraint, or the other way round, in
+place.
+
+setDiameter(constraintIndex:int, state:bool)
+
+    Args:
+        constraintIndex: The zero-based index of a radius or a diameter
+            constraint.
+        state: `True` makes it a diameter constraint, `False` a radius
+            constraint.
+
+The size stays what it is: the constraint's value is doubled or halved with
+its kind. A value an expression gives is left to the expression, which then
+gives the other measure.
+        </UserDocu>
+      </Documentation>
+    </Methode>
     <Methode Name="setDatumsDriving">
       <Documentation>
         <UserDocu>

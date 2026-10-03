@@ -1279,6 +1279,25 @@ PyObject* SketchObjectPy::setDriving(PyObject* args)
     Py_Return;
 }
 
+PyObject* SketchObjectPy::setDiameter(PyObject* args)
+{
+    PyObject* diameter;
+    int constrid;
+
+    if (!PyArg_ParseTuple(args, "iO!", &constrid, &PyBool_Type, &diameter)) {
+        return nullptr;
+    }
+
+    if (this->getSketchObjectPtr()->setDiameter(constrid, Base::asBoolean(diameter))) {
+        std::stringstream str;
+        str << "Not a radius or a diameter constraint, the one with the given index: " << constrid;
+        PyErr_SetString(PyExc_ValueError, str.str().c_str());
+        return nullptr;
+    }
+
+    Py_Return;
+}
+
 PyObject* SketchObjectPy::setDatumsDriving(PyObject* args)
 {
     PyObject* driving;

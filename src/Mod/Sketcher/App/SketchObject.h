@@ -340,6 +340,18 @@ public:
     int setDriving(int ConstrId, bool isdriving);
     /// get the driving status of this constraint
     int getDriving(int ConstrId, bool& isdriving);
+    /** Say a circle's or an arc's size as its diameter (true) or as its
+     * radius (false): the one kind of constraint becomes the other, in place,
+     * with its name, its label and everything else it has.
+     *
+     * The size stays what it is: the constraint's value is doubled or halved
+     * with its kind. Not so a value an expression gives. That is the
+     * expression's, which now gives the other measure.
+     *
+     * Returns 0, also when the constraint is that kind already; -1 for a
+     * constraint that is neither a radius nor a diameter.
+     */
+    int setDiameter(int ConstrId, bool diameter);
     /// toggle the driving status of this constraint
     int toggleDriving(int ConstrId)
     {
