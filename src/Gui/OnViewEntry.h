@@ -127,6 +127,14 @@ public:
         (void)action;
         return false;
     }
+    /** The view this entry was made for is going (ViewerContext::
+     * trackOnViewEntry). While it is still itself (\a viewAlive) the entry
+     * leaves it as it would on its own; after, it only lets go of it:
+     * nothing of the view may be reached then. A panel that holds entries
+     * can outlive their view -- a closed document takes its views first --
+     * and a client's view goes when the client does.
+     */
+    virtual void forgetViewer(bool viewAlive) = 0;
 };
 
 }  // namespace Gui

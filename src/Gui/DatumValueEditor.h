@@ -26,8 +26,10 @@
 
 #include <QIcon>
 #include <QObject>
+#include <QPointer>
 #include <QString>
 #include <QTimer>
+#include <fastsignals/signal.h>
 
 #include <App/ObjectIdentifier.h>
 #include <Base/Placement.h>
@@ -179,6 +181,7 @@ public:
     bool sendKeyEvent(QKeyEvent* event) override;
     void takeKeys() override;
     bool act(const Action& action) override;
+    void forgetViewer(bool viewAlive) override;
     //@}
 
 Q_SIGNALS:
@@ -214,8 +217,9 @@ private:
     /// the rows above the line rather than below it
     bool rowsAbove = false;
 
-    // the widgets: shown on the desktop, never on a mirror
-    QFrame* frame = nullptr;
+    // the widgets: shown on the desktop, never on a mirror. The frame's
+    // parent is the view's widget there, which may go first.
+    QPointer<QFrame> frame;
     QLineEdit* nameEdit = nullptr;
     QWidget* lineRow = nullptr;
     QToolButton* toggle = nullptr;
@@ -239,6 +243,8 @@ private:
     QTimer checkTimer;
     SoNodeSensor* labelSensor = nullptr;
     SoNodeSensor* cameraSensor = nullptr;
+    /// A change of projection replaces the camera node the sensor is on
+    fastsignals::scoped_connection connCameraReplaced;
 };
 
 }  // namespace Gui

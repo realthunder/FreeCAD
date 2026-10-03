@@ -48,8 +48,8 @@
 #include <Base/PyObjectBase.h>
 
 #include "Document.h"
-#include "EditableDatumLabel.h"
 #include "InventorBase.h"
+#include "OnViewEntry.h"
 #include "Selection.h"
 #include "ViewProvider.h"
 #include "ViewProviderLink.h"
@@ -397,16 +397,30 @@ ViewerContext::~ViewerContext()
     }
     // Whatever the implementation did not release: forgotten, not taken
     // out, which would reach a virtual
-    for (EditableDatumLabel* label : std::vector<EditableDatumLabel*>(onViewLabels)) {
-        label->forgetViewer(false);
+    for (OnViewEntry* entry : std::vector<OnViewEntry*>(onViewEntries)) {
+        entry->forgetViewer(false);
     }
 }
 
 void ViewerContext::releaseOnViewParameters()
 {
-    for (EditableDatumLabel* label : std::vector<EditableDatumLabel*>(onViewLabels)) {
-        label->forgetViewer(true);
+    for (OnViewEntry* entry : std::vector<OnViewEntry*>(onViewEntries)) {
+        entry->forgetViewer(true);
     }
+}
+
+void ViewerContext::trackOnViewEntry(OnViewEntry* entry)
+{
+    if (entry && std::find(onViewEntries.begin(), onViewEntries.end(), entry)
+            == onViewEntries.end()) {
+        onViewEntries.push_back(entry);
+    }
+}
+
+void ViewerContext::untrackOnViewEntry(OnViewEntry* entry)
+{
+    onViewEntries.erase(std::remove(onViewEntries.begin(), onViewEntries.end(), entry),
+                        onViewEntries.end());
 }
 
 SoCamera* ViewerContext::getCamera() const

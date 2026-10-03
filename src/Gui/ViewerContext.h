@@ -696,6 +696,12 @@ public:
      */
     virtual void onViewParametersChanged()
     {}
+    /** An entry made for this view, and gone: it is told when the view goes
+     * (OnViewEntry::forgetViewer), whether or not it is on screen. Not
+     * virtual, unlike the set above -- the view's going is what it is for.
+     */
+    void trackOnViewEntry(OnViewEntry* entry);
+    void untrackOnViewEntry(OnViewEntry* entry);
     /** Where an on-view parameter's dimension hangs, in world coordinates.
      *
      * It has to reach whatever draws the view. A mirror's scene graph is
@@ -797,23 +803,22 @@ protected:
     void bindEditingRoot(EditingRoot* root);
     void unbindEditingRoot();
 
-    /** Tell the on-view parameters made for this view that it is going.
+    /** Tell the on-view entries made for this view that it is going.
      *
-     * A panel that holds labels can outlive the view they were made for: a
+     * A panel that holds entries can outlive the view they were made for: a
      * closed document takes its views first and the dialog is deleted
      * after. Taking a label's dimension out of the view reaches
      * getOnViewParameterRoot(), so an implementation calls this from its
      * OWN destructor, while it is still itself; the base destructor only
-     * makes the labels forget it.
+     * makes the entries forget it.
      */
     void releaseOnViewParameters();
 
 private:
-    friend class EditableDatumLabel;
     /// This view's private root, built on first need.
     std::unique_ptr<EditingRoot> ownEditRoot;
-    /// Every label made for this view and not yet gone
-    std::vector<EditableDatumLabel*> onViewLabels;
+    /// Every entry made for this view and not yet gone (trackOnViewEntry)
+    std::vector<OnViewEntry*> onViewEntries;
 };
 
 /** Make \a context the current view for this scope's dynamic extent.

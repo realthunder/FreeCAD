@@ -99,7 +99,7 @@ EditableDatumLabel::EditableDatumLabel(ViewerContext* view,
 {
     initColors();
     if (viewer) {
-        viewer->onViewLabels.push_back(this);
+        viewer->trackOnViewEntry(this);
         viewer->addOnViewParameter(this);
     }
     // NOLINTBEGIN
@@ -237,8 +237,7 @@ void EditableDatumLabel::forgetViewer(bool viewAlive)
         // The camera node goes with the view
         dropCameraSensor();
     }
-    auto& labels = viewer->onViewLabels;
-    labels.erase(std::remove(labels.begin(), labels.end(), this), labels.end());
+    viewer->untrackOnViewEntry(this);
     viewer = nullptr;
 }
 
@@ -753,8 +752,10 @@ SbVec3f EditableDatumLabel::getAnchorPoint() const
 
 double EditableDatumLabel::getFontPointSize() const
 {
-    // SoDatumLabel::drawImage takes its size field as a point size
-    return label->size.getValue();
+    // SoDatumLabel::drawImage takes its size field as a point size. A box
+    // standing at another label's number (setAnchorLabel) takes that one's:
+    // its own label stays empty.
+    return (anchorLabel ? anchorLabel : label)->size.getValue();
 }
 
 void EditableDatumLabel::setAnchorLabel(SoDatumLabel* other)

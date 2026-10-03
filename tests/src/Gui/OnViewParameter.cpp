@@ -57,6 +57,7 @@
 #include <App/Application.h>
 #include <Base/Placement.h>
 
+#include <Gui/DatumValueEditor.h>
 #include <Gui/EditableDatumLabel.h>
 #include <Gui/Inventor/SoAutoZoomTranslation.h>
 #include <Gui/Inventor/SoToggleMarker.h>
@@ -493,6 +494,23 @@ TEST_F(OnViewParameterTest, aLabelOutlivesItsView)
     mirror.reset();
     EXPECT_EQ(scene->getNumChildren(), 0);
     labels.clear();
+}
+
+TEST_F(OnViewParameterTest, aValueEditorOutlivesItsView)
+{
+    // The editor of a value the scene draws -- a sketch dimension's -- is an
+    // entry of the view too, and a client's view goes when the client does:
+    // the editor is told, closes, and does not reach the view afterwards
+    auto editor = std::make_unique<Gui::DatumValueEditor>(mirror.get(), Base::Placement());
+    Gui::DatumValueEditor::Target target;
+    target.point = SbVec3f(1, 2, 0);
+    target.value = 10.0;
+    editor->edit(target);
+    ASSERT_TRUE(editor->isOpen());
+    ASSERT_EQ(mirror->onViewParameters().size(), 1U);
+    mirror.reset();
+    EXPECT_FALSE(editor->isOpen()) << "the editor was not told its view went";
+    editor.reset();
 }
 
 TEST_F(OnViewParameterTest, theBoxTakesTheLabelsSize)

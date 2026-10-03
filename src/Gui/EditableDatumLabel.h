@@ -217,8 +217,7 @@ private:
      * label is taken out of it as deactivate() would; after, it only lets
      * go of it: nothing of the view may be reached then.
      */
-    void forgetViewer(bool viewAlive);
-    friend class ViewerContext;
+    void forgetViewer(bool viewAlive) override;
     static void eventCallback(void* data, SoEventCallback* cb);
     void handleEvent(SoEventCallback* cb);
 
