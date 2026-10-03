@@ -18,6 +18,7 @@ Scored against the tree before the change: see the commit message.
 """
 import os
 import re
+import time
 import traceback
 
 import FreeCAD
@@ -41,9 +42,16 @@ def check(name, cond, detail=""):
     return cond
 
 
-def settle():
-    for _ in range(5):
+def settle(seconds=0.3):
+    # By the clock, not by a count of passes through the event loop: for
+    # some 20 to 50 ms after a sketch enters edit a key sent to the view
+    # reaches nobody, and a count went by faster than that on a warm start.
+    # The first Escape was then lost, and the test failed on every run but
+    # the first in a work directory, or one under load.
+    end = time.monotonic() + seconds
+    while time.monotonic() < end:
         QtWidgets.QApplication.processEvents()
+        time.sleep(0.01)
 
 
 def hint_widget():
