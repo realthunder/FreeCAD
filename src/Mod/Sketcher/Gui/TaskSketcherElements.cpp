@@ -512,9 +512,9 @@ QRect ElementView::iconRect(QTreeWidgetItem *item) const
 
 void ElementView::mousePressEvent(QMouseEvent *event)
 {
+    QPoint pos = event->position().toPoint();
+    QTreeWidgetItem *item = itemAt(pos);
     if (event->button() == Qt::LeftButton) {
-        QPoint pos = event->position().toPoint();
-        QTreeWidgetItem *item = itemAt(pos);
         QRect icon = item ? iconRect(item) : QRect();
         if (icon.contains(pos)) {
             // the icon is a button: it does not select the row
@@ -523,6 +523,11 @@ void ElementView::mousePressEvent(QMouseEvent *event)
             return;
         }
     }
+    // The selection change this press makes is about the row under it. That
+    // is not the row the pointer last entered when the press comes without a
+    // move before it (a tap, a click forwarded from a browser), and it is no
+    // row at all on the empty part of the list, which clears the selection.
+    Q_EMIT rowPressed(item);
     inherited::mousePressEvent(event);
 }
 
@@ -734,6 +739,9 @@ TaskSketcherElements::TaskSketcherElements(ViewProviderSketch* sketchView)
         ui->elementsWidget, SIGNAL(itemEntered(QTreeWidgetItem *, int)),
         this                     , SLOT  (on_elementsWidget_itemEntered(QTreeWidgetItem *))
        );
+    QObject::connect(
+        ui->elementsWidget, &ElementView::rowPressed,
+        this, &TaskSketcherElements::onRowPressed);
     QObject::connect(
         ui->elementsWidget, &ElementView::partButtonClicked,
         this, &TaskSketcherElements::onPartButtonClicked);
@@ -1013,6 +1021,11 @@ void TaskSketcherElements::on_elementsWidget_itemSelectionChanged(void)
 
     if (focusItemIndex>-1 && focusItemIndex<ui->elementsWidget->topLevelItemCount())
         previouslySelectedItemIndex=focusItemIndex;
+}
+
+void TaskSketcherElements::onRowPressed(QTreeWidgetItem *item)
+{
+    focusItemIndex = item ? ui->elementsWidget->indexOfTopLevelItem(item) : -1;
 }
 
 /// True while the keyboard is in a text being typed: a field of a panel, a

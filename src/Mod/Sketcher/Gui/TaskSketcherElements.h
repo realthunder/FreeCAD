@@ -63,6 +63,9 @@ Q_SIGNALS:
     /// the context menu's Layer entry: move the selected elements, or the
     /// clicked row's when nothing is selected, to visual layer \a layer
     void layerRequested(int layer, int clickedGeoId);
+    /// a button went down on \a item's row, or on none of them (nullptr): the
+    /// row the selection change that follows is about
+    void rowPressed(QTreeWidgetItem *item);
 
 protected:
     void contextMenuEvent (QContextMenuEvent* event);
@@ -112,6 +115,7 @@ private:
 public Q_SLOTS:
     void on_elementsWidget_itemSelectionChanged(void); 
     void on_elementsWidget_itemEntered(QTreeWidgetItem *item);
+    void onRowPressed(QTreeWidgetItem *item);
     void onFilterItemChanged(QListWidgetItem *item);
     void onPartButtonClicked(QTreeWidgetItem *item, const QPoint &globalPos);
     void onLayerRequested(int layer, int clickedGeoId);

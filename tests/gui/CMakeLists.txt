@@ -993,3 +993,10 @@ fc_add_gui_test(GuiSketchCopyClipboardLeak_tests_run
 fc_add_gui_test(GuiSketchElementsHoverFocus_tests_run
                 sketch-elements-hover-focus.py
                 --timeout 120)
+
+# A press in the Elements list acts on the row under it, not on the row
+# the pointer last entered; on no row, it clears the selection (upstream
+# 98d64f9939).
+fc_add_gui_test(GuiSketchElementsEmptyClick_tests_run
+                sketch-elements-empty-click.py
+                --timeout 120)
