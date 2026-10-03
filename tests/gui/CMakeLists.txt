@@ -141,6 +141,13 @@ fc_add_gui_test(GuiServePatternLabels_tests_run serve-pattern-labels.py
 fc_add_gui_test(GuiServePatternMarkers_tests_run serve-pattern-markers.py
                 --timeout 200)
 
+# A browser's right click (docs/ThinClient.md sec 8.11b): the desktop's 3D
+# view context menu built for what the ray hits, its entries judged for the
+# connection, an edit entry entered in the client's view with no 3D view
+# opened -- a PartDesign Body's menu included, whose building asks for one.
+fc_add_gui_test(GuiServeContextMenu_tests_run serve-context-menu.py
+                --timeout 200)
+
 # The expression editor on a live desktop (docs/ExpressionEditor.md): its
 # tool bar shown only while an editor is the active view, the split that
 # does not evict the spreadsheet being edited, folding from the margin,

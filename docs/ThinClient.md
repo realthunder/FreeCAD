@@ -2094,6 +2094,103 @@ never ends at all:
 already have selected (`announcePeersTo`), since the pushes are change-driven
 and the peer who already picked has the least reason to pick again.
 
+### 8.11b The right-click menu (built 2026-10-03)
+
+Until this, a browser had no UI to edit an existing object: `window.fcviewerEdit`
+was a JavaScript call and nothing more. A right click on the scene now gets the
+desktop's 3D-view context menu -- the same entries, built by the same code.
+
+**Built on the host, sent as JSON, held per client** (`Gui::SceneContextMenu`,
+`src/Gui/SceneContextMenu.*`). The `contextMenu` op carries the click's world
+ray. The served source resolves it through the client's mirror, exactly as a
+pick (`SceneServeSource::pickSubObject`, the pick half of `pickAndSelect`, now
+shared). Inside the client's `ViewerScope`, the menu is assembled as
+`NavigationStyle::openPopupMenu` assembles it: the active workbench's "View"
+items through `MenuManager`, then the picked object's own submenu from
+`ViewProvider::setupContextMenu`, first. The object submenu is built without the
+tree, because a served document may be one the tree does not show.
+
+The reply describes every entry: text, icon (`img:` ids, fetched with
+`widgets.image`), check state, shortcut, `enabled`, `kind`, `allowed` and the
+reason when not. A command's `enabled` is that command's `isActive()` asked
+inside the client's view. The shared action's state is the desktop's answer,
+kept against the desktop's view.
+
+The real QMenu is held for that client until it picks an entry
+(`contextMenu.trigger`), closes the menu (`contextMenu.close`), right-clicks
+again, or disconnects. An entry runs as the desktop runs it: in the client's
+view, with the clicked object as the selection's context.
+
+The widget stream (Sandbox.md 7.18) was the alternative and is the wrong fit. It
+is a broadcast, its triggers run outside any client's view, and a popup that
+lives for seconds has no use for live diffs.
+
+**Who may run what** is the control channel's rule, judged when the menu is
+built and again on trigger (`SceneContextMenu::allowed`):
+
+| Connection | May run |
+|---|---|
+| Host | Everything, at the host's own modal risk |
+| Edit | Edit-mode entries, which go through the `edit` op's own path (`enterClientEdit`, factored out of it); "Finish editing"; commands on the browser allowlist |
+| View | Only the camera entries |
+
+For an Edit connection, an opaque entry -- arbitrary code, possibly modal on a
+process serving several browsers -- is sent marked refused with the reason, and
+drawn disabled.
+
+An edit-mode entry is recognised by its receiver: `setupContextMenu`'s receiver
+is the menu object, and a disconnect probe asks whether an action is connected
+to it. An entry built as a lambda that only enters its default edit mode
+(`addDefaultAction`, Part's primitives) says so with
+`ViewProviderDocumentObject::EditEntryProperty`, and is then run by its mode.
+
+The camera commands with a browser counterpart (fit all, the standard and
+axonometric views) are `kind: local`. They run on the browser's own camera
+(`fcviewerNaviAction`, actions 5 to 10 added for the six views) and never on
+the host.
+
+**A trap it found:** building a PartDesign Body's menu calls
+`Gui::Document::setActiveView`. Under a client's scope, that created and raised
+a 3D view on the serving desktop. Inside a `ViewerScope` it now creates and
+raises nothing, as `setEdit` already did not.
+
+**The browser** (`web/src/contextmenu.tsx`, `wasm/main.cpp` `openContextMenu`):
+- A right press and release that did not move past the 6 px slop opens the
+  menu; one that moved was a pan, as before.
+- Not on the NaviCube (it has its own menu), not on a page, and not while
+  editing (the panel is the way out, and the sketcher's own menu is a
+  different one).
+- The camera goes up ahead of the ask, so the mirror resolves the ray in this
+  framing.
+- Submenus are walked into in place, which works on a phone too.
+- A refused trigger shows its reason and leaves the menu open.
+
+**Verified:** `tests/gui/serve-context-menu.py`, 21 checks over the socket. Its
+readings include:
+- NoView before a camera;
+- the box's submenu first, by label;
+- `Transform` and the default "Edit" entry are allowed edit entries;
+- opaque entries are refused, on trigger too;
+- `Std_ViewFitAll` is local;
+- a miss gives no target;
+- the edit entry enters the edit in the client's view, with zero 3D views;
+- a used or replaced menu is Stale;
+- a Body's menu opens no 3D view.
+
+In a real headful Chrome (viewer-harness `context-menu*.png`):
+- a right click on a PD pattern opened the menu;
+- "Edit LinearPattern" in its submenu entered the edit, markers and labels
+  drawn;
+- a right drag panned and opened nothing;
+- Fit all and Front ran on the browser's camera, while Home and the rotations
+  are drawn disabled.
+
+**Not done:**
+- touch long-press;
+- "Pick geometry";
+- the sketcher's in-edit menu, which `exec()`s itself;
+- a View-connection socket reading.
+
 ### 8.12 What per client would cost -- the multi-user roadmap
 
 Everything below is what 8.11 shares, listed from the view outward to the data, with what

@@ -1921,6 +1921,16 @@ EM_JS(void, fcviewer_navi_menu, (double x, double y), {
     window.dispatchEvent(new CustomEvent('fc:navimenu', { detail: { x: x, y: y } }));
 });
 
+// A right click on the scene (docs/ThinClient.md sec 8.11b): the DOM layer
+// asks the server for the menu of what the world ray hits and draws it at
+// the click, in client CSS pixels.
+EM_JS(void, fcviewer_context_menu, (double x, double y, double ox, double oy, double oz,
+                                    double dx, double dy, double dz), {
+    window.dispatchEvent(new CustomEvent('fc:contextmenu', {
+        detail: { x: x, y: y, ray: [ox, oy, oz, dx, dy, dz] }
+    }));
+});
+
 static void naviLoad()
 {
     if (s_navi.loaded)
@@ -2239,6 +2249,26 @@ extern "C" EMSCRIPTEN_KEEPALIVE void fcviewer_navi_action(int action)
         s_navi.moved = false;
         fcviewer_navi_store(0, 0, 0, 0, 0);
         naviRefeed();
+        break;
+    // The standard views, as Gui::Camera states them: what the context
+    // menu's Std_View* entries run here (docs/ThinClient.md sec 8.11b)
+    case 5:   // top
+        orientToQuat(0.0f, 0.0f, 0.0f, 1.0f);
+        break;
+    case 6:   // bottom
+        orientToQuat(1.0f, 0.0f, 0.0f, 0.0f);
+        break;
+    case 7:   // front
+        orientToQuat(0.70710678f, 0.0f, 0.0f, 0.70710678f);
+        break;
+    case 8:   // rear
+        orientToQuat(0.0f, 0.70710678f, 0.70710678f, 0.0f);
+        break;
+    case 9:   // right
+        orientToQuat(0.5f, 0.5f, 0.5f, 0.5f);
+        break;
+    case 10:  // left
+        orientToQuat(-0.5f, 0.5f, 0.5f, -0.5f);
         break;
     default:
         return;
@@ -4849,6 +4879,9 @@ static float panScale()
 // pick, and hover raycast throttling.
 static int s_downX = 0, s_downY = 0;
 static bool s_clickOk = false;
+// The same for the right button: a press and release that did not move is
+// the context menu, one that moved was a pan (docs/ThinClient.md 8.11b)
+static bool s_rightClickOk = false;
 static double s_lastHoverMs = 0.0;
 
 static void clientToCanvas(float cx, float cy, float &x, float &y)
@@ -4906,6 +4939,27 @@ static void doTapPick(float px, float py, bool ctrl, bool shift = false)
         // sec 8.2a).
         selectAt(px, py, ctrl, shift);
     }
+}
+
+/// A right click that did not move at canvas pixel (px,py): the context
+/// menu of what is under it, as the desktop's popup (docs/ThinClient.md
+/// sec 8.11b). The cube keeps its own; the server builds the menu for the
+/// ray, against the camera sent ahead of the ask so that its mirror
+/// resolves the ray in this framing; the DOM layer draws it.
+static void openContextMenu(float px, float py)
+{
+    bx::Vec3 dir(bx::InitZero);
+    if (s_haveScene && (pickNaviButton(px, py) != NaviBtnNone || pickNaviCube(px, py, dir)))
+        return;
+    if (!s_wsOpen || s_ws <= 0)
+        return;
+    sendCameraFrame(/*force*/ true);
+    bx::Vec3 orig(bx::InitZero), rdir(bx::InitZero);
+    screenRay(px, py, orig, rdir);
+    double origin[2] = {0.0, 0.0};
+    fcviewer_canvas_origin(origin);
+    fcviewer_context_menu(px / s_dpr + origin[0], py / s_dpr + origin[1],
+                          orig.x, orig.y, orig.z, rdir.x, rdir.y, rdir.z);
 }
 
 // Last committed tap/click (CSS px + time) for double-tap/double-click
@@ -5042,6 +5096,7 @@ static EM_BOOL onMouseDown(int, const EmscriptenMouseEvent *e, void *)
     // Shift+left is grab-pan once it moves, but a motionless shift+click
     // is the whole-object select — the slop check on move/up arbitrates.
     s_clickOk = e->button == 0;
+    s_rightClickOk = e->button == 2;
     // A left press in the middle of the cube drags it once it moves; not
     // moving, it is the click on the face under it, as ever.
     {
@@ -5078,6 +5133,18 @@ static EM_BOOL onMouseUp(int, const EmscriptenMouseEvent *e, void *)
         return EM_TRUE;
     }
     s_navi.armed = false;
+    if (e->button == 2 && s_rightClickOk && !s_editing && !activeIsPage()
+            && std::abs(int(e->clientX) - s_downX) <= 6
+            && std::abs(int(e->clientY) - s_downY) <= 6) {
+        // Not while editing: the edit mode's panel is the way out, and the
+        // sketcher's own menu is not this one
+        s_rightClickOk = false;
+        float px, py;
+        canvasPos(e, px, py);
+        openContextMenu(px, py);
+        return EM_TRUE;
+    }
+    s_rightClickOk = false;
     if (s_clickOk && std::abs(int(e->clientX) - s_downX) <= 6
             && std::abs(int(e->clientY) - s_downY) <= 6) {
         if (activeIsPage()) {
@@ -5121,8 +5188,10 @@ static EM_BOOL onMouseMove(int, const EmscriptenMouseEvent *e, void *)
         return EM_FALSE;
     }
     if (std::abs(int(e->clientX) - s_downX) > 6
-            || std::abs(int(e->clientY) - s_downY) > 6)
+            || std::abs(int(e->clientY) - s_downY) > 6) {
         s_clickOk = false;
+        s_rightClickOk = false;
+    }
     if (s_navi.armed) {
         // Inside the slop it may still be a click on the cube; past it,
         // the cube follows the pointer and the camera stays.

@@ -145,6 +145,7 @@ void ViewProvider::addDefaultAction(QMenu* menu, const QString& text)
 {
     QAction* act = menu->addAction(text);
     act->setData(QVariant((int)ViewProvider::Default));
+    act->setProperty(EditEntryProperty, true);
     Gui::ActionFunction* func = new Gui::ActionFunction(menu);
     func->trigger(act, std::bind(&ViewProvider::startDefaultEditMode, this));
 }

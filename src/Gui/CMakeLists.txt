@@ -969,6 +969,7 @@ SET(View3D_CPP_SRCS
     MirrorViewer.cpp
     OmniControl.cpp
     SceneControl.cpp
+    SceneContextMenu.cpp
     SceneWidgets.cpp
     View3DInventorRiftViewer.cpp
     View3DSettings.cpp
@@ -1003,6 +1004,7 @@ SET(View3D_SRCS
     MirrorViewer.h
     OmniControl.h
     SceneControl.h
+    SceneContextMenu.h
     SceneWidgets.h
     SceneControlP.h
     View3DInventorRiftViewer.h

@@ -52,6 +52,7 @@
 #include "MirrorViewer.h"
 #include "OmniControl.h"
 #include "OmniSearch.h"
+#include "SceneContextMenu.h"
 #include "SceneControl.h"
 #include "SceneWidgets.h"
 #include "SceneControlP.h"
@@ -724,43 +725,11 @@ QJsonObject setEditOp(const QJsonObject &req, const std::string &boundDoc,
     if (!vp)
         return errorReply(id, "NoViewProvider", objName);
 
-    ViewerContext *viewer = nullptr;
-    if (SceneServeSource *source = SceneServeSource::sourceFor(doc)) {
-        viewer = source->viewerFor(client);
-        if (!viewer)
-            return errorReply(id, "NoView",
-                              QStringLiteral("state a camera before editing"));
-    }
-
     const int mode = req.value(QLatin1String("mode")).toInt(0);
     const QString subname = req.value(QLatin1String("subname")).toString();
-    const QByteArray sub = subname.toUtf8();
-
-    // The desktop's edit modes clear the selection as they start, as a
-    // convenience -- and that convenience belongs to the room, not to the
-    // client: what stops being highlighted is the object every viewer can
-    // see, while everything the edit mode does with selection afterwards
-    // is this client's own (docs/ThinClient.md sec 8.4). Inside the scope
-    // below it would have cleared an instance that was empty anyway, and
-    // left the sketch green in everybody's scene for the whole session.
-    Gui::SelectionRoom().rmvPreselect();
-    Gui::SelectionRoom().clearSelection();
-
-    bool ok = false;
-    try {
-        // In the client's view, and so in the client's selection: an edit
-        // mode's own observers attach while this is open, and an observer
-        // that attached to the room here would hear nothing this browser
-        // picked (SelectionObserver::attachSelectionToCurrent).
-        ViewerScope scope(viewer);
-        ok = gdoc->setEdit(vp, mode, subname.isEmpty() ? nullptr : sub.constData());
-    }
-    catch (Base::Exception &e) {
-        return errorReply(id, "EditFailed",
-                          QString::fromUtf8(e.what()));
-    }
-    if (!ok)
-        return errorReply(id, "EditRefused", objName);
+    QJsonObject entered = enterClientEdit(id, gdoc, vp, mode, subname, client);
+    if (!entered.value(QLatin1String("ok")).toBool())
+        return entered;
 
     QJsonObject reply;
     reply[QLatin1String("id")] = id;
@@ -834,6 +803,58 @@ QString groupMemberCommand(Command *group, int index)
     auto owner = qobject_cast<Action *>(members.at(index - 1)->parent());
     Command *cmd = owner ? owner->command() : nullptr;
     return cmd ? QString::fromUtf8(cmd->getName()) : QString();
+}
+
+/// Enter \a vp's edit mode in \a client's view: the edit op's work, and a
+/// browser context menu's edit entry's (SceneContextMenu.cpp).
+QJsonObject enterClientEdit(const QJsonValue &id, Document *gdoc, ViewProvider *vp,
+                            int mode, const QString &subname, uint64_t client)
+{
+    ViewerContext *viewer = nullptr;
+    if (SceneServeSource *source = SceneServeSource::sourceFor(gdoc->getDocument())) {
+        viewer = source->viewerFor(client);
+        if (!viewer)
+            return errorReply(id, "NoView",
+                              QStringLiteral("state a camera before editing"));
+    }
+
+    const QByteArray sub = subname.toUtf8();
+
+    // The desktop's edit modes clear the selection as they start, as a
+    // convenience -- and that convenience belongs to the room, not to the
+    // client: what stops being highlighted is the object every viewer can
+    // see, while everything the edit mode does with selection afterwards
+    // is this client's own (docs/ThinClient.md sec 8.4). Inside the scope
+    // below it would have cleared an instance that was empty anyway, and
+    // left the sketch green in everybody's scene for the whole session.
+    Gui::SelectionRoom().rmvPreselect();
+    Gui::SelectionRoom().clearSelection();
+
+    bool ok = false;
+    try {
+        // In the client's view, and so in the client's selection: an edit
+        // mode's own observers attach while this is open, and an observer
+        // that attached to the room here would hear nothing this browser
+        // picked (SelectionObserver::attachSelectionToCurrent).
+        ViewerScope scope(viewer);
+        ok = gdoc->setEdit(vp, mode, subname.isEmpty() ? nullptr : sub.constData());
+    }
+    catch (Base::Exception &e) {
+        return errorReply(id, "EditFailed",
+                          QString::fromUtf8(e.what()));
+    }
+    if (!ok) {
+        auto vpd = dynamic_cast<ViewProviderDocumentObject *>(vp);
+        return errorReply(id, "EditRefused",
+                          vpd && vpd->getObject()
+                              ? QString::fromUtf8(vpd->getObject()->getNameInDocument())
+                              : QString());
+    }
+
+    QJsonObject reply;
+    reply[QLatin1String("id")] = id;
+    reply[QLatin1String("ok")] = true;
+    return reply;
 }
 
 } // namespace SceneControlDetail
@@ -1103,6 +1124,7 @@ std::string Gui::handleSceneControlRequest(const std::string &json,
     // UnknownOp, and the tool bars never reached a browser.
     OmniControl::install();
     installSceneWidgetOps();
+    installSceneContextMenuOps();
     QJsonParseError err;
     QJsonDocument parsed = QJsonDocument::fromJson(
             QByteArray(json.data(), int(json.size())), &err);
@@ -1172,6 +1194,7 @@ void Gui::installSceneControlHandler(const std::string &docName)
 {
     // the widget stream's ops ride this channel (docs/Sandbox.md 7.18)
     installSceneWidgetOps();
+    installSceneContextMenuOps();
     OmniControl::install();
     // Installed on the named document's group (empty = the default
     // group). The document is bound by NAME and re-resolved per request

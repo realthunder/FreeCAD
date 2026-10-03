@@ -4541,10 +4541,18 @@ MDIView *Document::setActiveView(ViewProviderDocumentObject *vp, Base::Type type
         }
     }
 
-    if (!view && !typeId.isBad())
+    // Asked from inside a client's view (ViewerScope), which no desktop path
+    // opens: the window that is active is the browser's, so no 3D view is
+    // created for the document and none is raised -- as setEdit does not.
+    // Building a PartDesign Body's context menu for a browser asks here,
+    // and opened a GL window on the serving desktop (docs/ThinClient.md
+    // sec 8.11b).
+    const bool remote = ViewerContext::current() != nullptr;
+
+    if (!view && !typeId.isBad() && !remote)
         view = createView(typeId);
 
-    if (view)
+    if (view && !remote)
         getMainWindow()->setActiveWindow(view);
 
     return view;

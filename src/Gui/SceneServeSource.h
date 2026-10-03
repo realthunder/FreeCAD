@@ -39,6 +39,7 @@ class SoFCRenderCacheManager;
 namespace App
 {
 class PropertyContainer;
+class SubObjectT;
 }
 
 namespace Render
@@ -220,6 +221,16 @@ public:
      * (docs/ThinClient.md sec 8.7). GUI thread only.
      */
     MirrorViewer *mirrorViewerFor(uint64_t client) const;
+
+    /*!
+     * What a world ray from \a client hits, as pickAndSelect resolves it --
+     * through the client's mirror when it has stated a camera -- without
+     * selecting anything: the object and the subname down to the element.
+     * False, with \a picked emptied, on a miss. What a browser's right
+     * click is about (SceneContextMenu). GUI thread only.
+     */
+    bool pickSubObject(const SbVec3f &origin, const SbVec3f &dir, uint64_t client,
+                       App::SubObjectT &picked);
 
 private Q_SLOTS:
     void onPublishTimeout();

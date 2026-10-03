@@ -59,6 +59,14 @@ public:
     /// destructor.
     ~ViewProviderDocumentObject() override;
 
+    /** The dynamic property a setupContextMenu() entry carries, true, when
+     * all triggering it does is enter the edit mode its data() names. A
+     * browser's context menu then runs it as the edit op runs one, in the
+     * client's view, rather than the entry's own code (SceneContextMenu).
+     * addDefaultAction() sets it.
+     */
+    static constexpr const char *EditEntryProperty = "fcEditEntry";
+
     // Display properties
     App::PropertyEnumeration DisplayMode;
     /// Display mode override of this object in the ACTIVE 3D view

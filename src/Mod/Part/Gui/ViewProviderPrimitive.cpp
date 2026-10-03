@@ -52,6 +52,7 @@ void ViewProviderPrimitive::setupContextMenu(QMenu* menu, QObject* receiver, con
     Gui::ActionFunction* func = new Gui::ActionFunction(menu);
     QAction* act = menu->addAction(QObject::tr("Edit %1").arg(QString::fromUtf8(getObject()->Label.getValue())));
     act->setData(QVariant((int)ViewProvider::Default));
+    act->setProperty(EditEntryProperty, true);
     func->trigger(act, [this](){
         this->startDefaultEditMode();
     });

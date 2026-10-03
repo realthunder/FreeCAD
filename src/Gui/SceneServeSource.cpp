@@ -53,6 +53,7 @@
 #include <vector>
 #endif
 
+#include <App/DocumentObserver.h>
 #include <App/Application.h>
 #include <Base/Tools.h>
 #include <App/Document.h>
@@ -77,6 +78,7 @@
 #include "NaviCube.h"
 #include "ViewerContext.h"
 #include "ObjectMetaFeed.h"
+#include "SceneContextMenu.h"
 #include "SceneControl.h"
 #include "Selection.h"
 #include "SoFCSelectionAction.h"
@@ -1207,6 +1209,39 @@ public:
         pickroot->addChild(root);
         return pickroot;
     }
+
+    /// What a world ray from \a mirror's client hits, and the object and
+    /// subname it resolves to (null when nothing of the document does).
+    /// Through the client's own viewport point when it has stated a camera,
+    /// so its pick radius in pixels applies; else picked as it arrives.
+    /// \a accept, when given, is offered the hits front to back.
+    ViewProviderDocumentObject *
+    pickObject(MirrorViewer *mirror, const SbVec3f &origin, const SbVec3f &dir,
+               const std::function<bool(const SoPickedPoint &)> &accept,
+               std::unique_ptr<SoPickedPoint> &picked, std::string &subname)
+    {
+        if (mirror && mirror->hasCamera()) {
+            picked.reset(mirror->pickRay(origin, dir, accept));
+        }
+        else {
+            SbViewportRegion viewport{short(kDefaultWidth), short(kDefaultHeight)};
+            SoRayPickAction rp(viewport);
+            rp.setRay(origin, dir);
+            auto pickroot = this->pickRoot();
+            rp.apply(pickroot);
+            if (SoPickedPoint *hit = rp.getPickedPoint())
+                picked = std::make_unique<SoPickedPoint>(*hit);
+        }
+        SoPickedPoint *pp = picked.get();
+        if (!pp || !doc)
+            return nullptr;
+        ViewProviderDocumentObject *vpd = doc->getViewProviderByPathFromHead(
+            static_cast<SoFullPath *>(pp->getPath()));
+        if (vpd && (!vpd->getObject() || !vpd->getObject()->isAttachedToDocument()
+                    || !vpd->getElementPicked(pp, subname)))
+            vpd = nullptr;
+        return vpd;
+    }
 };
 
 /*!
@@ -1745,6 +1780,8 @@ void SceneServeSource::installHandlers()
     server.setClientClosedHandler([self, streams](uint64_t client) {
         QMetaObject::invokeMethod(qApp, [self, streams, client]() {
             SandboxRemote::drop(client);
+            // and the right-click menu it had open
+            dropSceneContextMenu(client);
             auto gone = streams->take(client, -1);
             gone.clear();
             if (self) {
@@ -1796,6 +1833,27 @@ MirrorViewer *SceneServeSource::mirrorViewerFor(uint64_t client) const
 ViewerContext *SceneServeSource::viewerFor(uint64_t client) const
 {
     return mirrorViewerFor(client);
+}
+
+bool SceneServeSource::pickSubObject(const SbVec3f &origin, const SbVec3f &dir,
+                                     uint64_t client, App::SubObjectT &picked)
+{
+    picked = App::SubObjectT();
+    if (!isValid())
+        return false;
+    MirrorViewer *mirror = mirrorViewerFor(client);
+    // Picked in the client's view, as its click is
+    std::unique_ptr<ViewerScope> inView;
+    if (mirror)
+        inView = std::make_unique<ViewerScope>(mirror);
+    std::unique_ptr<SoPickedPoint> hit;
+    std::string subname;
+    ViewProviderDocumentObject *vpd =
+        pimpl->pickObject(mirror, origin, dir, {}, hit, subname);
+    if (!vpd)
+        return false;
+    picked = App::SubObjectT(vpd->getObject(), subname.c_str());
+    return true;
 }
 
 namespace
@@ -1883,52 +1941,30 @@ void SceneServeSource::pickAndSelect(const SbVec3f &origin, const SbVec3f &dir,
     if (mirror)
         inView = std::make_unique<ViewerScope>(mirror);
 
-    // The ray goes back through the client's own viewport point only
-    // when it has stated a camera; without one there is nothing to
-    // resolve it against and it is picked as it arrives.
-    if (mirror && mirror->hasCamera()) {
-        // With an element kind asked for, the hits are offered front to
-        // back until one resolves to that kind: the nearest is usually the
-        // face standing in front of the edge the client's filter is after.
-        // A filtered click that found nothing locally still arrives here,
-        // the served geometry being the real one and the client's a
-        // tessellation of it.
-        std::function<bool(const SoPickedPoint &)> accept;
-        if (kind != 0) {
-            accept = [this, kind](const SoPickedPoint &hit) {
-                std::string name;
-                ViewProviderDocumentObject *vp =
-                    pimpl->doc ? pimpl->doc->getViewProviderByPathFromHead(
-                                     static_cast<SoFullPath *>(hit.getPath()))
-                               : nullptr;
-                return vp && vp->getObject()
-                    && vp->getObject()->isAttachedToDocument()
-                    && vp->getElementPicked(&hit, name)
-                    && elementKindMatches(name, kind);
-            };
-        }
-        picked.reset(mirror->pickRay(origin, dir, accept));
+    // With an element kind asked for, the hits are offered front to back
+    // until one resolves to that kind: the nearest is usually the face
+    // standing in front of the edge the client's filter is after. A
+    // filtered click that found nothing locally still arrives here, the
+    // served geometry being the real one and the client's a tessellation
+    // of it.
+    std::function<bool(const SoPickedPoint &)> accept;
+    if (kind != 0) {
+        accept = [this, kind](const SoPickedPoint &hit) {
+            std::string name;
+            ViewProviderDocumentObject *vp =
+                pimpl->doc ? pimpl->doc->getViewProviderByPathFromHead(
+                                 static_cast<SoFullPath *>(hit.getPath()))
+                           : nullptr;
+            return vp && vp->getObject()
+                && vp->getObject()->isAttachedToDocument()
+                && vp->getElementPicked(&hit, name)
+                && elementKindMatches(name, kind);
+        };
     }
-    else {
-        SbViewportRegion viewport{short(kDefaultWidth), short(kDefaultHeight)};
-        SoRayPickAction rp(viewport);
-        rp.setRay(origin, dir);
-        auto pickroot = pimpl->pickRoot();
-        rp.apply(pickroot);
-        if (SoPickedPoint *hit = rp.getPickedPoint())
-            picked = std::make_unique<SoPickedPoint>(*hit);
-    }
-
-    SoPickedPoint *pp = picked.get();
-    ViewProviderDocumentObject *vpd = nullptr;
     std::string subname;
-    if (pp && pimpl->doc) {
-        vpd = pimpl->doc->getViewProviderByPathFromHead(
-            static_cast<SoFullPath *>(pp->getPath()));
-        if (vpd && (!vpd->getObject() || !vpd->getObject()->isAttachedToDocument()
-                    || !vpd->getElementPicked(pp, subname)))
-            vpd = nullptr;
-    }
+    ViewProviderDocumentObject *vpd =
+        pimpl->pickObject(mirror, origin, dir, accept, picked, subname);
+    SoPickedPoint *pp = picked.get();
     if (!vpd) {
         // A miss still clears, because a plain click on nothing is how a
         // selection is dropped -- and only a replace does: a toggle or an

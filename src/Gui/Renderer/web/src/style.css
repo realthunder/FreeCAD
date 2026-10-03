@@ -1702,3 +1702,36 @@
 .fc-navimenu .fc-menu {
   position: static;
 }
+
+/* The scene's right-click menu (contextmenu.tsx): at the click, like the
+ * cube's, a submenu walked into in place. Long menus scroll. */
+.fc-ctxmenu {
+  position: fixed;
+  z-index: 41;
+  pointer-events: auto;
+}
+.fc-ctxmenu .fc-menu {
+  position: static;
+  width: 260px;
+  max-height: calc(100vh - 16px);
+  overflow-y: auto;
+}
+.fc-ctx-item { min-height: 34px; font-size: 13px; }
+.fc-ctx-disabled { opacity: 0.4; cursor: default; }
+.fc-ctx-disabled:hover { background: transparent; }
+.fc-ctx-back { color: #8ab4f8; }
+.fc-ctx-icon {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  display: inline-flex;
+}
+.fc-ctx-icon img { width: 18px; height: 18px; }
+.fc-ctx-text { overflow: hidden; text-overflow: ellipsis; }
+.fc-ctx-more, .fc-ctx-shortcut { margin-left: auto; opacity: 0.6; }
+.fc-ctx-error {
+  padding: 6px 10px;
+  color: #f28b82;
+  font-size: 12px;
+  white-space: normal;
+}
