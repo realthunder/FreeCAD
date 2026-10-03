@@ -105,6 +105,7 @@ public:
         out->referencePoint = Base::Vector2d(0.0, 0.0);
         out->scaleFactor = scaleFactor;
         out->abortOnFail = abortOnFail;
+        out->inTransaction = !abortOnFail;
         out->allowOriginConstraint = true;
         out->isAllGeoIds = true;
         return out;
@@ -125,7 +126,9 @@ public:
         }
 
         try {
-            openCommand(QT_TRANSLATE_NOOP("Command", "Scale geometries"));
+            if (!inTransaction) {
+                openCommand(QT_TRANSLATE_NOOP("Command", "Scale geometries"));
+            }
 
             createShape(false);
 
@@ -141,7 +144,9 @@ public:
             }
 
             scaleLabels(initialConstraintCount);
-            commitCommand();
+            if (!inTransaction) {
+                commitCommand();
+            }
         }
         catch (const Base::Exception& e) {
             e.reportException();
@@ -288,6 +293,10 @@ private:
     bool deleteOriginal;
     bool abortOnFail;  // When the scale operation is part of a larger transaction, one might want
                        // to continue even if the scaling failed
+    // Part of a transaction the caller holds open (a dimension's value being
+    // entered): neither open a command nor commit one, either of which would
+    // split the caller's undo step in two
+    bool inTransaction = false;
     bool allowOriginConstraint;  // Conserve constraints with origin
     bool isAllGeoIds;            // if true (default for centerScaleAll), and deleteOriginal is true
                        // (default), use deleteAllGeometries to avoid many searches in a vector
