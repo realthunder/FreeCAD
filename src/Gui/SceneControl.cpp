@@ -469,7 +469,8 @@ QJsonObject getProperties(const QJsonObject &req,
     QJsonArray props;
     if (wantObject)
         describeContainer(obj, "object", props);
-    if (wantView) {
+    // No Gui::Application (a test, or a console session): no view provider
+    if (wantView && Application::Instance) {
         if (auto vp = Application::Instance->getViewProvider(obj))
             describeContainer(vp, "view", props);
     }
