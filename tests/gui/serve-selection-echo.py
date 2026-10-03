@@ -362,7 +362,21 @@ def poll():
             return
         QtCore.QTimer.singleShot(50, poll)
         return
-    verify()
+    # The client closed its socket; the server hears of it on its own
+    # thread and takes the route's contribution back in a call queued to
+    # this one. Verified before then, the room still holds it -- every
+    # time on the Windows box (2026-10-03).
+    state.setdefault("closed_at", clock())
+    gone = False
+    try:
+        gone = not FreeCADGui.serveClients()
+    except Exception:
+        gone = True
+    if not gone and clock() - state["closed_at"] < 10.0:
+        QtCore.QTimer.singleShot(50, poll)
+        return
+    # One more turn for the queued take-back behind the listing
+    QtCore.QTimer.singleShot(200, verify)
 
 
 def verify():
