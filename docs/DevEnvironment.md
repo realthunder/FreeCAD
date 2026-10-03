@@ -385,21 +385,24 @@ rebuild -- the imported target's path is read at configure time.
 ### Building the dependencies (conda stack)
 
 Build dirs / installs are parallel to the system stack and never collide:
-`<repo>/build_conda_debug` → `<repo>/install/conda-debug`.
+`<repo>/build_conda_relwithdebinfo` -> `<repo>/install/conda-relwithdebinfo`
+(OCCT's carry the version: `build_conda_relwithdebinfo_801` ->
+`install/conda-relwithdebinfo-801`).
 
-**There is one OCCT install on this box**, 8.0.1 from `LinkVibe-801`:
-`install/conda-relwithdebinfo-801`, the standard stack, where everything is
-built, tested and measured. The recipe below makes it.
+**There is one stack on this box, RelWithDebInfo**: one OCCT install, 8.0.1
+from `LinkVibe-801`, one Coin, one pivy. Everything is built, tested, measured
+and debugged on it. The recipes below make it.
 
-A Debug one (`build_conda_debug_801` -> `install/conda-debug-801`) stood
-beside it until 2026-10-03 and was deleted then. In its last month it was
-rebuilt after every sync and never run: the debug FreeCAD tree that linked it
-was last built on 2026-08-31, and every debugger session of that month ran on
-the RelWithDebInfo tree, which carries full debug info. To have one again it is
-this recipe with `CMAKE_BUILD_TYPE=Debug` and a build and install directory of
-its own. The Coin and pivy recipes under it still name their debug prefixes;
-for the standard stack they are `build_conda_relwithdebinfo` ->
-`install/conda-relwithdebinfo`.
+A Debug stack stood beside it until 2026-10-03 and was deleted then, whole:
+`occt/build_conda_debug_801` + `install/conda-debug-801`,
+`coin/build_conda_debug` + `install/conda-debug`, `pivy/build_conda_debug`, the
+FreeCAD tree `build/conda-debug-occt801` and its `conda-debug-local` preset --
+about 13 GB. In its last month the OCCT half was rebuilt after every sync and
+never run: the debug FreeCAD tree that linked it was last built on 2026-08-31,
+and every debugger session of that month ran on the RelWithDebInfo tree, which
+carries full debug info. It was upkeep with no use. To have one again it is
+these recipes with `CMAKE_BUILD_TYPE=Debug` and build and install directories
+of their own, and the note on a second pivy below.
 
 ```sh
 RUN=~/works/sw/fcad/.conda/run.sh
@@ -421,21 +424,23 @@ $RUN cmake --build ~/works/sw/occt/build_conda_relwithdebinfo_801 \
   && $RUN cmake --install ~/works/sw/occt/build_conda_relwithdebinfo_801
 
 # Coin
-$RUN cmake -S ~/works/sw/coin -B ~/works/sw/coin/build_conda_debug -G Ninja \
-  -DCMAKE_BUILD_TYPE=Debug \
-  -DCMAKE_INSTALL_PREFIX=$HOME/works/sw/coin/install/conda-debug \
+$RUN cmake -S ~/works/sw/coin -B ~/works/sw/coin/build_conda_relwithdebinfo -G Ninja \
+  -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+  -DCMAKE_INSTALL_PREFIX=$HOME/works/sw/coin/install/conda-relwithdebinfo \
   -DUSE_EXTERNAL_EXPAT=ON -DSIMAGE_RUNTIME_LINKING=ON \
   -DCOIN_BUILD_TESTS=OFF -DCOIN_BUILD_DOCUMENTATION=OFF
-$RUN cmake --build ~/works/sw/coin/build_conda_debug && $RUN cmake --install ~/works/sw/coin/build_conda_debug
+$RUN cmake --build ~/works/sw/coin/build_conda_relwithdebinfo \
+  && $RUN cmake --install ~/works/sw/coin/build_conda_relwithdebinfo
 
-# pivy (debug) -- its OWN prefix, NOT site-packages; see the warning below
-$RUN cmake -S ~/works/sw/pivy -B ~/works/sw/pivy/build_conda_debug -G Ninja \
-  -DCMAKE_BUILD_TYPE=Debug \
-  -DCMAKE_PREFIX_PATH=$HOME/works/sw/coin/install/conda-debug \
-  -DCMAKE_INSTALL_RPATH=$HOME/works/sw/coin/install/conda-debug/lib \
-  -DPIVY_Python_SITEARCH=$HOME/works/sw/pivy/install/conda-debug \
+# pivy -- installs into the env's site-packages, where FreeCAD finds it
+# with no PYTHONPATH
+$RUN cmake -S ~/works/sw/pivy -B ~/works/sw/pivy/build_conda_relwithdebinfo -G Ninja \
+  -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+  -DCMAKE_PREFIX_PATH=$HOME/works/sw/coin/install/conda-relwithdebinfo \
+  -DCMAKE_INSTALL_RPATH=$HOME/works/sw/coin/install/conda-relwithdebinfo/lib \
   -DPython_EXECUTABLE=$HOME/works/sw/fcad/.conda/freecad/bin/python
-$RUN cmake --build ~/works/sw/pivy/build_conda_debug && $RUN cmake --install ~/works/sw/pivy/build_conda_debug
+$RUN cmake --build ~/works/sw/pivy/build_conda_relwithdebinfo \
+  && $RUN cmake --install ~/works/sw/pivy/build_conda_relwithdebinfo
 ```
 
 *** **pivy does not compile against a current swig without the fork patch.**
@@ -444,56 +449,35 @@ two siblings; the fix is the `coin.i` commit listed under [fork-local
 patches](#repositories), and swig cannot simply be pinned back. A `rt-0.6.10`
 without that commit is the signature.
 
-*** **One pivy cannot serve both stacks, and installing to site-packages makes
-them fight.** pivy's `_coin.so` links `libCoinRT.so.80`, and the loader resolves
-that SONAME **once per process**. The release and debug Coin installs both
-provide it. Since pivy's install destination defaults to the env's single
-`site-packages`, whichever configuration was installed **last** silently wins
-for every stack -- which is why the pivy in `.conda/freecad` was found built
-against `coin/install/conda-relwithdebinfo` even though this recipe names
-`conda-debug`.
+*** **A second stack needs a second pivy, in a prefix of its own.** What the
+Debug stack taught, kept for the day another one is built. pivy's `_coin.so`
+links `libCoinRT.so.80`, and the loader resolves that SONAME **once per
+process**; two Coin installs both provide it, and pivy's install destination
+defaults to the env's single `site-packages`, so whichever configuration was
+installed **last** silently wins for every stack. `PIVY_Python_SITEARCH`
+(default: `Python_SITEARCH`) is the lever: the standard pivy stays in
+site-packages, the other goes to its own prefix and is selected with
+`PYTHONPATH`. In a headless session pivy alone decides which Coin loads --
+`FreeCADCmd` does not link Coin itself -- so without that `PYTHONPATH` a second
+stack's binary runs on the standard Coin and does not fail; it just is not the
+stack you think you are running. And an install nothing links goes stale
+invisibly: the debug Coin once sat two weeks behind and the first build
+against it failed on a missing fork header (`SoLazyElementEx.h`).
 
-`PIVY_Python_SITEARCH` (default: `Python_SITEARCH`) is the lever. Keep the
-**release** pivy in site-packages, where the standard build finds it with no
-PYTHONPATH, and give the **debug** pivy its own prefix, selected explicitly:
-
-```sh
-PYTHONPATH=$HOME/works/sw/pivy/install/conda-debug $RUN <debug FreeCAD or python>
-```
-
-*** **In a headless session pivy alone decides which Coin loads.**
-`FreeCADCmd` does not link Coin itself, so nothing else pulls the SONAME in --
-the first `from pivy import coin` settles it for the process. Demonstrated on
-the debug FreeCAD build, 2026-08-28: **with** the PYTHONPATH above it maps
-`coin/install/conda-debug` and `occt/install/conda-debug-801`, one of each;
-**without** it, the same debug binary silently ran on the RelWithDebInfo Coin
-through the site-packages pivy. It does not fail, it just is not the stack you
-think you are debugging.
-
-Verified 2026-08-28 -- each pivy loads the Coin it was built against, and a
-`FreeCADCmd` session that imports pivy maps exactly one `libCoinRT`:
+Which Coin a process has, one line:
 
 ```sh
 python -c "from pivy import coin; print([l.split()[-1] for l in \
   open('/proc/self/maps') if 'libCoinRT' in l])"
-# site-packages  -> .../coin/install/conda-relwithdebinfo/lib/libCoinRT.so.80.0.6
-# PYTHONPATH set -> .../coin/install/conda-debug/lib/libCoinRT.so.80.0.6
+# -> .../coin/install/conda-relwithdebinfo/lib/libCoinRT.so.80.0.6
 ```
-
-*** **The debug Coin install goes stale invisibly.** Nothing linked
-`coin/install/conda-debug` for two weeks while only the RelWithDebInfo stack was
-built, so it sat at 2026-08-14 and was missing `SoLazyElementEx.h`; the first
-debug FreeCAD build since then failed on `SoFCVertexCache.cpp` and
-`SoFCRenderCache.cpp`. Rebuild Coin **and** pivy debug before trusting a debug
-FreeCAD build -- a missing fork header is the signature.
 
 ### Building FreeCAD (conda stack)
 
 *** **The standard build is the RelWithDebInfo one, and so is every test run.**
 `conda-relwithdebinfo-801` -> `build/conda-relwithdebinfo-801` is the tree that
-gets built, tested and measured. The debug preset below exists for debugger
-sessions; it is not what the suites run on, and a claim about "the primary
-tree" that names a debug dir is wrong.
+gets built, tested, measured and debugged. There is no other: a claim about
+"the primary tree" that names a debug dir is from before 2026-10-03.
 
 ```sh
 RUN=~/works/sw/fcad/.conda/run.sh
@@ -527,29 +511,15 @@ toolchain to have produced a wheel first -- see [the guest
 toolchain](#the-pyodide-sandbox-guest-toolchain)), and anything naming a
 directory outside `${sourceDir}` or `$env{HOME}/works/sw`.
 
-**The debug stack is retired (2026-10-03).** What follows is what it was. Its
-OCCT prefix, `occt/install/conda-debug-801`, is deleted (see "Building the
-dependencies"), so the preset no longer configures and
-`build/conda-debug-occt801` cannot run; a debugger session uses the
-RelWithDebInfo tree.
-
-The debug preset `conda-debug-local` (in `CMakeUserPresets.json`, gitignored)
-inherits `conda-linux-debug` and overrides: build dir
-`build/conda-debug-occt801`, `CMAKE_PREFIX_PATH`/`OCC_INCLUDE_DIR` pointing at
-the local `occt/install/conda-debug-801` (OCCT 8.0.1) and
-`coin/install/conda-debug` prefixes, plus the same policy shim and `BUILD_BGFX`.
-
-```sh
-$RUN cmake --preset conda-debug-local
-$RUN cmake --build build/conda-debug-occt801
-```
-
-Built and verified 2026-08-28: clean build, `ctest` 445/445, and a headless
-run mapping exactly one Coin (`install/conda-debug`) and one OCCT
-(`install/conda-debug-801`). Testing on it is not the routine -- that stays on
-the RelWithDebInfo tree -- but the stack is known-good rather than assumed.
-Building it needs the debug **Coin and pivy** prefixes to be current first; see
-the two warnings in the dependency section.
+**There is no debug preset any more (2026-10-03).** `conda-debug-local`, in the
+gitignored `CMakeUserPresets.json`, inherited `conda-linux-debug` and built
+`build/conda-debug-occt801` against `occt/install/conda-debug-801` and
+`coin/install/conda-debug`. Preset, tree and prefixes are deleted (see
+"Building the dependencies" for why); a debugger session uses the
+RelWithDebInfo tree. It was last built and verified on 2026-08-28, `ctest`
+445/445. A new one would be the same entry again: `conda-linux-debug` with
+`CMAKE_PREFIX_PATH`, `CMAKE_LIBRARY_PATH` and `OCC_INCLUDE_DIR` at Debug
+prefixes of OCCT and Coin, the policy shim and `BUILD_BGFX`.
 
 **The stack is OCCT 8.0.1; there is no 7.7.2 on this box any more.** The
 frozen 7.7.2 prefixes (`occt/install/conda-debug`,
@@ -557,9 +527,10 @@ frozen 7.7.2 prefixes (`occt/install/conda-debug`,
 (`build/conda-debug`, `build/conda-relwithdebinfo`) were deleted on 2026-08-28
 and 2026-08-29, together with their OCCT build dirs and the pre-conda
 `install/debug` + `build_debug` stacks in occt, coin and pivy -- about 35GB in
-all. The only trees that exist now are the ones this document names: the two
-`*-801` FreeCAD trees plus `build/wasm`, and the `conda-*` prefixes of occt,
-coin and pivy. They had stopped being a
+all. The only trees that exist now are the ones this document names: the
+`conda-relwithdebinfo-801` FreeCAD tree plus `build/wasm`, and the
+`conda-relwithdebinfo*` prefixes of occt and coin. The 7.7.2 ones had stopped
+being a
 usable compile check well before that: `Mod/Part/App/ShapeRefSet.cpp` calls
 `BRepTools_ShapeSet::Curves2d()` and siblings that exist only on occt
 `LinkVibe-801`, unguarded, so 7.7.2 could not compile `Mod/Part` at all. 7.7.2
