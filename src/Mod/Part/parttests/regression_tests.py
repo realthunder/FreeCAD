@@ -1431,6 +1431,61 @@ class RegressionTests(unittest.TestCase):
             name = "three quarters of a dome, a vertex on Edge%d" % (index + 1)
             check(name, split_at(dome, index), 3, 0.5, 0, 111.7391)
 
+    def test_thickness_with_a_vertex_on_a_rim_and_faces_in_another_order(self):
+        """Two things that must change nothing: a vertex on an edge, and the
+        order a solid's faces come in. Half a ball cut from a ball by a box
+        keeps the ball's seam for half its rim, both pcurves still on it;
+        with a vertex there the pieces were taken for a seam's and not
+        joined: refused four ways. And the half ball in two lunes, one removed
+        with the Intersection join, was right or wrong by the order of its
+        faces: the flat's half beside the removed lune holds the arc that
+        bounds the other half too, closed it with the line between them, and
+        the shell had the other half's face twice -- an invalid 87.4583 for
+        91.1786 with both halves before the lune that stays, the order the
+        solid has once a vertex on the meridian or the rim is joined away
+        (OCCT fork, tests/fork/thickness/models/Thickness.md "Sec 26")."""
+        V = Vector
+
+        def split_at(shape, index):
+            e = shape.Edges[index]
+            p = e.valueAt((e.FirstParameter + e.LastParameter) / 2)
+            return shape.generalFuse([Part.Vertex(p)])[0].Solids[0]
+
+        def check(name, shape, face, offset, join, volume):
+            r = shape.makeThickness([shape.Faces[face - 1]], offset, 1e-7, False, False, 0, join)
+            msg = "%s, Face%d, %g, join %d" % (name, face, offset, join)
+            self.assertTrue(r.isValid(), msg)
+            self.assertEqual(len(r.Solids), 1, msg)
+            self.assertEqual(len(r.Shells), 1, msg)
+            self.assertAlmostEqual(r.Volume, volume, 3, msg)
+
+        cut = Part.makeSphere(5).cut(Part.makeBox(20, 20, 20, V(-10, -20, -10)))
+        # the edge that was the ball's seam: closed on the sphere, run once
+        sphere = cut.Faces[0]
+        seams = [i for i, e in enumerate(cut.Edges) if not e.Degenerated and e.isSeam(sphere)]
+        self.assertEqual(seams, [2])
+        cut = split_at(cut, 2)
+        self.assertEqual(cut.Faces[0].Surface.TypeId, "Part::GeomSphere")
+        check("cut half ball, a vertex on its rim", cut, 1, 0.5, 0, 39.1390)
+        check("cut half ball, a vertex on its rim", cut, 1, 0.5, 2, 39.1390)
+        check("cut half ball, a vertex on its rim", cut, 2, 0.5, 2, 86.6556)
+        check("cut half ball, a vertex on its rim", cut, 2, -0.5, 2, 70.9476)
+
+        ball = Part.makeSphere(5, V(), V(0, 0, 1), -90, 90, 180)
+        meridian = Part.Arc(V(0, 0, -5), V(0, 5, 0), V(0, 0, 5)).toShape()
+        lunes = ball.generalFuse([meridian])[0].Solids[0]
+        for order in ((3, 4, 1, 2), (4, 3, 2, 1), (2, 3, 4, 1)):
+            solid = Part.Solid(Part.Shell([lunes.Faces[i - 1] for i in order]))
+            name = "lunes, faces in the order %s" % (order,)
+            for face in (1, 2):
+                check(name, solid, order.index(face) + 1, 0.5, 2, 91.1786)
+                check(name, solid, order.index(face) + 1, -0.5, 2, 74.1857)
+        for index, name in ((0, "the meridian"), (2, "the rim")):
+            solid = split_at(lunes, index)
+            self.assertEqual(len(solid.Edges), len(lunes.Edges) + 1)
+            check("lunes, a vertex on " + name, solid, 1, 0.5, 2, 91.1786)
+            check("lunes, a vertex on " + name, solid, 1, -0.5, 2, 74.1857)
+
     def test_thickness_intersection_join_with_one_face_left(self):
         """The Intersection join where one face stays beside the removed ones:
         a cylinder down to its top, a box down to its bottom. It threw
