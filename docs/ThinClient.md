@@ -2267,6 +2267,130 @@ In headful Chrome (viewer-harness `context-menu-pick-*.png`,
   0.6 s hold selected the face and opened no menu;
 - after the menu closed, the mouse preselected again.
 
+### 8.11c Questions a command asks: ask, roll back, replay (design, 2026-10-03)
+
+**Recorded, not built.** It is built after the transaction log
+(`docs/TransactionLog.md` and `docs/MultiViewEdit.md` on the `Transaction`
+branch) is finished, because it stands on that log's writer branches. Until
+then the browser allowlist of 8.7 stays as it is: a non-host runs the
+sketcher's create tools and the pick tools, and nothing else.
+
+**The problem.** The phase-2 menu left one question open: may a non-host run
+more than the allowlist? The user's answer was to trust an editing connection
+fully, once a modal dialog from a remote client could no longer hold the
+host. A command asks its questions through a modal dialog: `exec()`,
+`QMessageBox::question`, `QInputDialog::get*`, a file chooser. These calls
+appear in 372 files under `src/`, in C++ and in Python, and each one expects
+the answer as a return value. On a serving process the dialog waits in a
+nested event loop on the GUI thread for somebody at the machine, and the
+browser that asked cannot see it.
+
+**Designs considered and dropped:**
+
+- *Refuse every modal raised for a client*, as Escape would refuse it. Safe,
+  but it makes every command that asks something useless from a browser. It
+  also retires M3 (docs/Sandbox.md), the widget layer's path for a client to
+  answer a mirrored `dialog:<n>` root, which is built and tested
+  (`SandboxPanelMirror.test_nested_messagebox`). A prototype of this guard
+  exists: a Qt application event filter that refuses a dialog shown while a
+  client's request is handled, and lists it in the reply as
+  `refusedDialogs`. It becomes step 2 below.
+- *Mirror the dialog and wait in the nested loop.* The process keeps serving,
+  because a nested loop still delivers events. But the op that asked gets no
+  reply until somebody answers, and the desktop is input-blocked all that
+  time. Nested loops also unwind last in, first out: client A's command
+  cannot return while client B's later dialog is still open.
+- *Park the command on a fiber, with the document held.* A separate stack per
+  invocation, switched out while its dialog waits, and a document-level write
+  hold so that nothing changes under the parked transaction. This was too
+  risky: parked C++ and Python stacks, with Python's thread state saved and
+  restored by hand. The hold also blocks every other writer to the document,
+  which is the opposite of what the transaction log's concurrent writers are
+  for (`TransactionLog.md` 17.5).
+
+**The design.** Nothing is ever parked. An invocation that needs an answer is
+rolled back, its question is shown non-modally, and once the answer arrives
+the invocation runs again from its start.
+
+1. **A command runs on a branch of its own (user, 2026-10-03).** When a writer
+   (a client, or the desktop) issues a command, it branches out from the head
+   for the length of that command. Nobody else touches the document state the
+   command sees. The branch merges automatically when the command is done, or
+   when it is aborted, which merges nothing. **This applies to editing as
+   well:** entering an edit branches out, and finishing or cancelling the edit
+   merges. This is `TransactionLog.md` 17.5's writer branch, scoped to one
+   invocation or one edit session. A merge conflict takes 17.5's conflict
+   path.
+2. **The first run answers provisionally.** When the command reaches a modal
+   call with no answer recorded for it, the call is answered as Escape would
+   answer it. The question is written down: the dialog's class, title, text,
+   buttons, and, for a form dialog, its widget state through the widget store.
+   Most code treats that refusal as "cancelled" and returns early.
+3. **The run is rolled back.** When the invocation returns with an
+   unanswered question, the branch is reset to its base. Nothing half-done is
+   merged, and nobody else waits on it.
+4. **The question goes to its owner, non-modally.**
+   - On the desktop, a non-modal dialog, with the application fully usable.
+     The user accepts losing modality on the desktop for this.
+   - For a client, the same dialog mirrored as a `dialog:<n>` root (M3),
+     drawn by the browser once W4 is built.
+5. **Answered, the command runs again.** The command re-runs on the same
+   branch, from the same base, with an answer tape. Each modal call that asks
+   a recorded question (matched by class, title, text and buttons) is
+   answered from the tape at once, and a form dialog gets its recorded widget
+   state applied before it is accepted. The branch makes the replay
+   deterministic: the document is exactly as the first run saw it, so the
+   same code asks the same question. A further question repeats steps 2 to 5,
+   so a wizard of N questions runs N+1 times; questions usually come before
+   the heavy work.
+6. **Done or aborted, the branch merges.** An abort covers a refused or
+   cancelled question, an explicit cancel, and a timeout. A question belongs
+   to its writer and holds nothing global: two clients can each have one
+   pending in the same document. A client that disconnects keeps its branch
+   with the question on it, the resumable session of `MultiViewEdit.md`
+   sec 10, until it comes back or the question times out.
+
+**Inside an edit session**, a question raised by input handling is not
+replayed. The sketcher's datum dialog on a mouse release is one example:
+replaying a gesture is not sensible. The edit's branch already isolates its
+state, so these few sites become explicit non-modal calls instead: the
+dialog's `open()`, with the rest of the work in its `finished` handler.
+
+**What does not replay, and falls back to the refusal guard:**
+- a command with side effects outside the document before its question (a
+  file written, the selection or the view changed), which declares itself
+  not replayable;
+- a form dialog whose widgets have no stable names, so that its state cannot
+  be recorded and applied again;
+- a modal raised outside any invocation (a timer, an observer, an idle
+  callback).
+
+A client gets the refusal, with a notice naming the dialog. On the desktop,
+the dialog stays modal as it is today.
+
+**On the wire.** A control op whose command is waiting on a question answers
+`{"pending": <question id>}`, and its final reply follows when the branch
+merges. The client's questions are pushed to it, so a client that reconnects
+finds them again. An answer is a `question.answer` op carrying the id, the
+result code and, for a form dialog, the widget state. A W4 browser draws the
+dialog from its `dialog:<n>` root and answers through the same op.
+
+**Then the allowlist retires.** An editing connection runs every command,
+context-menu entry and tool bar action. Only the host's preferences, and
+rearranging the host's widgets, stay host-only (docs/ShareAccess.md
+sec 2.2).
+
+**Build order, after the transaction log:**
+1. A branch per command and per edit session, with the auto-merge.
+2. The refusal guard, the question record and the rollback; the desktop's
+   non-modal question.
+3. The replay, with the answer tape.
+4. Routing a question to its client, with `pending`, `question.answer` and
+   the pushes.
+5. W4 in the browser: drawing `dialog:<n>` roots.
+6. The edit-mode sites made explicitly non-modal.
+7. Retiring the allowlist.
+
 ### 8.12 What per client would cost -- the multi-user roadmap
 
 Everything below is what 8.11 shares, listed from the view outward to the data, with what
