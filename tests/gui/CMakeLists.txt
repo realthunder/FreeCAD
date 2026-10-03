@@ -942,3 +942,17 @@ fc_add_gui_test(GuiSketchDatumInPlace_tests_run
 fc_add_gui_test(GuiServeDatumInPlace_tests_run
                 serve-datum-in-place.py
                 --timeout 240)
+
+# An undo while a dimension's value is typed in place (ruled 2026-10-03):
+# Std_Undo/Std_Redo end the typing as Escape does and undo nothing older;
+# an undo from Python is followed by tag, or closes the box.
+fc_add_gui_test(GuiSketchDatumUndo_tests_run
+                sketch-datum-undo.py
+                --timeout 240)
+
+# One editor for a constraint's value (ruled 2026-10-03): Tab applies and
+# moves it, the entry is one undo step, an expression, the reference
+# toggle, the name, and the rows kept off what the dimension measures.
+fc_add_gui_test(GuiSketchDatumEditor_tests_run
+                sketch-datum-editor.py
+                --timeout 240)

@@ -11817,11 +11817,10 @@ void CmdSketcherChangeDimensionConstraint::activated(int iMsg)
     };
 
     try {
-        // "Edit Value" is the full dialog -- name, reference, expression --
-        // wherever there can be a dialog; a served client types the value
-        // at the label.
+        // In place, as every other way to a value: the editor has the
+        // name, the reference and the expression the dialog had.
         auto value = getDimConstraint();
-        editDatums(std::get<0>(value), {std::get<1>(value)}, false, {}, /*preferDialog = */ true);
+        editDatums(std::get<0>(value), {std::get<1>(value)}, false);
     }
     catch (const Base::RuntimeError&) {
         Gui::TranslatedUserWarning(getActiveGuiDocument()->getDocument(),

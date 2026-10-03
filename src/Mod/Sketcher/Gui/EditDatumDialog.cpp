@@ -33,6 +33,7 @@
 
 #include <App/Application.h>
 #include <App/AutoTransaction.h>
+#include <App/Expression.h>
 #include <Base/Console.h>
 #include <Base/Exception.h>
 #include <Base/Quantity.h>
@@ -40,7 +41,9 @@
 #include <Gui/Application.h>
 #include <Gui/CommandT.h>
 #include <Gui/Document.h>
-#include <Gui/EditableDatumLabel.h>
+#include <Gui/BitmapFactory.h>
+#include <Gui/DatumValueEditor.h>
+#include <Gui/SoDatumLabel.h>
 #include <Gui/MainWindow.h>
 #include <Gui/Notifications.h>
 #include <Gui/View3DInventor.h>
@@ -51,6 +54,8 @@
 #include <App/GeoFeatureGroupExtension.h>
 #include <App/OriginFeature.h>
 #include <Precision.hxx>
+#include <Inventor/SbViewportRegion.h>
+#include <algorithm>
 #include <cmath>
 
 #include "CommandSketcherTools.h"
@@ -524,51 +529,253 @@ void rejectDatums(Sketcher::SketchObject* sketch)
     sketch->recomputeFeature();
 }
 
-/// What the dialog's OK does with its value, for every one of them, in
-/// one transaction.
-bool applyDatums(Sketcher::SketchObject* sketch,
-                 std::vector<std::pair<int, Base::Quantity>> values)
+/// The path of a constraint's value as a command writes it
+std::string constraintPath(Sketcher::SketchObject* sketch, int constraint)
 {
-    App::AutoTransaction transaction("Edit sketch datum");
-    try {
-        for (auto& [constraint, quantity] : values) {
-            const auto& constraints = sketch->Constraints.getValues();
-            if (constraint < 0 || constraint >= int(constraints.size())
-                || !constraints[constraint]->isDimensional()) {
-                throw Base::ValueError("The constraint is not there any more");
-            }
-            double newDatum = quantity.getValue();
-            // The first dimension of a sketch drawn freehand scales it.
-            // With one value only: the scaling drops what it cannot scale,
-            // and the other numbers would name other constraints.
-            if (values.size() == 1) {
-                performDatumAutoScale(sketch, constraint, newDatum);
-            }
-            Gui::cmdAppObjectArgs(sketch,
-                                  "setDatum(%i,App.Units.Quantity('%.15g %s'))",
-                                  constraint,
-                                  newDatum,
-                                  Base::Tools::escapeEncodeString(
-                                      QString::fromStdString(quantity.getUnit().getString()))
-                                      .toUtf8()
-                                      .constData());
+    std::string path = sketch->Constraints.createPath(constraint).toEscapedString();
+    if (!path.empty() && path[0] == '.') {
+        path.erase(0, 1);
+    }
+    return path;
+}
+
+std::string pyString(const std::string& text)
+{
+    return Base::Tools::escapeEncodeString(QString::fromStdString(text)).toUtf8().constData();
+}
+
+}  // namespace
+
+DatumEditSession::DatumEditSession(ViewProviderSketch* vp,
+                                   Gui::ViewerContext* viewer,
+                                   std::function<void(bool)> done)
+    : vp(vp)
+    , viewer(viewer)
+    , done(std::move(done))
+{}
+
+DatumEditSession::~DatumEditSession() = default;
+
+bool DatumEditSession::canEdit(ViewProviderSketch* vp, int constraint)
+{
+    const auto& all = vp->getSketchObject()->Constraints.getValues();
+    if (constraint < 0 || constraint >= int(all.size()) || !all[constraint]->isDimensional()) {
+        return false;
+    }
+    // Snell's law draws an icon, not a label: the editor stands at the
+    // refraction point instead
+    return all[constraint]->Type == Sketcher::SnellsLaw
+        || vp->getConstraintDatumLabel(constraint);
+}
+
+SbVec3f DatumEditSession::anchorOf(int index) const
+{
+    if (Gui::SoDatumLabel* label = vp->getConstraintDatumLabel(index)) {
+        return label->getLabelTextCenter();
+    }
+    Sketcher::SketchObject* sketch = vp->getSketchObject();
+    const Sketcher::Constraint* constraint = sketch->Constraints.getValues()[index];
+    Base::Vector3d point = sketch->getPoint(constraint->First, constraint->FirstPos);
+    return {float(point.x), float(point.y), 0.0F};
+}
+
+bool DatumEditSession::start(ViewProviderSketch* vp,
+                             Gui::ViewerContext* viewer,
+                             const std::vector<int>& constraints,
+                             std::function<void(bool)> done)
+{
+    Sketcher::SketchObject* sketch = vp->getSketchObject();
+
+    // One at a time: whatever was being typed is taken as it stands. And
+    // before anything below is looked up: applying it redraws the sketch,
+    // which can free the labels (the auto scale drops constraints).
+    if (vp->datumEdit) {
+        vp->datumEdit->finish(true, false);
+    }
+
+    if (constraints.empty()) {
+        return false;
+    }
+    for (int constraint : constraints) {
+        if (!canEdit(vp, constraint)) {
+            return false;
         }
+    }
 
-        Gui::Command::commitCommand();
+    auto* session = new DatumEditSession(vp, viewer, std::move(done));
+    vp->datumEdit = session;
 
+    // The command that made the constraint is still open, and stays open
+    // until the value is in: the two are one undo step, and Escape takes
+    // the constraint back. A command's transaction is closed when the
+    // command returns, which the dialog never let happen before the value
+    // was in; this returns at once.
+    session->ownTransaction = sketch->getDocument()->hasPendingTransaction();
+    App::AutoTransaction::setEnable(false);
+    // Everything the entry applies, value after value, is one undo step:
+    // the command's, or this one. Opened for the document lazily, so an
+    // entry that changes nothing leaves no step behind.
+    if (!App::GetApplication().getActiveTransaction()) {
+        Gui::Command::openCommand(QT_TRANSLATE_NOOP("Command", "Edit sketch datum"));
+    }
+
+    // Several at once (the Dimension tool's two) are visited in turn; one
+    // alone visits every dimension the view shows, from that one.
+    const auto& all = sketch->Constraints.getValues();
+    if (constraints.size() > 1) {
+        for (int constraint : constraints) {
+            session->cycle.push_back(all[constraint]->getTag());
+        }
+    }
+
+    auto placement = Base::Placement(vp->getDocument()->getEditingTransform());
+    session->editor = std::make_unique<Gui::DatumValueEditor>(viewer, placement);
+    session->editor->setDrivingIcons(
+        Gui::BitmapFactory().iconFromTheme("Sketcher_Toggle_Constraint_Driving"),
+        Gui::BitmapFactory().iconFromTheme("Sketcher_Toggle_Constraint_Driven"));
+    // After the editor's own: Tab, Enter and Escape are the session's.
+    session->editor->installKeyFilter(session);
+    session->show(constraints.front());
+    return true;
+}
+
+int DatumEditSession::indexOf(const boost::uuids::uuid& tag) const
+{
+    const auto& all = vp->getSketchObject()->Constraints.getValues();
+    for (std::size_t i = 0; i < all.size(); ++i) {
+        if (all[i]->getTag() == tag) {
+            return int(i);
+        }
+    }
+    return -1;
+}
+
+int DatumEditSession::current() const
+{
+    return indexOf(editing);
+}
+
+bool DatumEditSession::isShown(int index) const
+{
+    if (!canEdit(vp, index)) {
+        return false;
+    }
+    Sketcher::SketchObject* sketch = vp->getSketchObject();
+    const Sketcher::Constraint* constraint = sketch->Constraints.getValues()[index];
+    if (constraint->isInVirtualSpace != vp->getIsShownVirtualSpace() || !constraint->isVisible) {
+        return false;
+    }
+    // on the screen
+    auto placement = Base::Placement(vp->getDocument()->getEditingTransform());
+    SbVec3f centre = anchorOf(index);
+    Base::Vector3d point(centre[0], centre[1], centre[2]);
+    placement.multVec(point, point);
+    SbVec2s pixel =
+        viewer->getPointOnViewport(SbVec3f(float(point.x), float(point.y), float(point.z)));
+    SbVec2s size = viewer->getViewportRegion().getViewportSizePixels();
+    return pixel[0] >= 0 && pixel[1] >= 0 && pixel[0] < size[0] && pixel[1] < size[1];
+}
+
+void DatumEditSession::show(int index)
+{
+    Sketcher::SketchObject* sketch = vp->getSketchObject();
+    const Sketcher::Constraint* constraint = sketch->Constraints.getValues()[index];
+
+    Gui::DatumValueEditor::Target target;
+    target.label = vp->getConstraintDatumLabel(index);
+    target.point = anchorOf(index);
+    // an angle is shown and typed in degrees, as the dialog has it
+    target.value = constraint->getValue();
+    if (constraint->Type == Sketcher::Angle) {
+        target.value = Base::toDegrees<double>(target.value);
+    }
+    target.unit = datumUnit(constraint);
+    target.path = sketch->Constraints.createPath(index);
+    if (auto info = sketch->getExpression(target.path); info.expression) {
+        target.expression = QString::fromStdString(info.expression->toString());
+    }
+    // Snell's law is a ratio to meet, never a measurement
+    target.driving = constraint->Type == Sketcher::SnellsLaw ? -1 : (constraint->isDriving ? 1 : 0);
+    target.nameShown = true;
+    target.name = QString::fromStdString(constraint->Name);
+
+    editing = constraint->getTag();
+    editor->edit(target);
+}
+
+bool DatumEditSession::applyCurrent()
+{
+    Sketcher::SketchObject* sketch = vp->getSketchObject();
+    const int index = current();
+    if (index < 0) {
+        return false;
+    }
+    if (!editor->isModified()) {
+        return true;
+    }
+
+    Gui::DatumValueEditor::Entry entry;
+    QString why;
+    if (!editor->read(entry, &why)) {
+        editor->showError(why);
+        return false;
+    }
+    const Sketcher::Constraint* constraint = sketch->Constraints.getValues()[index];
+    const std::string name = entry.name.toStdString();
+    if (name != constraint->Name && !SketcherGui::checkConstraintName(sketch, name)) {
+        editor->showError(QObject::tr("Not a name an expression can use"));
+        return false;
+    }
+
+    try {
+        int target = index;
+        const bool driving = entry.driving != 0;
+        if (driving != constraint->isDriving) {
+            Gui::cmdAppObjectArgs(sketch,
+                                  "setDriving(%i, %s)",
+                                  target,
+                                  driving ? "True" : "False");
+        }
+        if (driving) {
+            const std::string path = constraintPath(sketch, target);
+            const bool bound = sketch->constraintHasExpression(target);
+            if (entry.isExpression) {
+                Gui::cmdAppObjectArgs(sketch,
+                                      "setExpression('%s', u'%s')",
+                                      path.c_str(),
+                                      pyString(entry.expression->toString()).c_str());
+            }
+            else {
+                if (bound) {
+                    Gui::cmdAppObjectArgs(sketch, "setExpression('%s', None)", path.c_str());
+                }
+                // The first dimension of a sketch drawn freehand scales it.
+                double newDatum = entry.value.getValue();
+                performDatumAutoScale(sketch, target, newDatum);
+                Gui::cmdAppObjectArgs(sketch,
+                                      "setDatum(%i,App.Units.Quantity('%.15g %s'))",
+                                      target,
+                                      newDatum,
+                                      pyString(entry.value.getUnit().getString()).c_str());
+            }
+        }
+        if (name != sketch->Constraints.getValues()[target]->Name) {
+            Gui::cmdAppObjectArgs(sketch,
+                                  "renameConstraint(%d, u'%s')",
+                                  target,
+                                  pyString(name).c_str());
+        }
         if (sketch->noRecomputes && sketch->ExpressionEngine.depsAreTouched()) {
             sketch->ExpressionEngine.execute();
             sketch->solve();
         }
-
-        tryAutoRecompute(sketch);
+        applied = true;
+        // what the sketch has now is where typing starts again
+        show(target);
         return true;
     }
     catch (const Base::Exception& e) {
-        Gui::NotifyUserError(sketch, QT_TRANSLATE_NOOP("Notifications", "Value Error"), e.what());
-
-        Gui::Command::abortCommand();
-
+        editor->showError(QString::fromUtf8(e.what()));
         // if setDatum failed, the solver's information is likely invalid
         if (sketch->noRecomputes) {
             sketch->solve();
@@ -577,104 +784,43 @@ bool applyDatums(Sketcher::SketchObject* sketch,
     }
 }
 
-}  // namespace
-
-DatumEditSession::DatumEditSession(ViewProviderSketch* vp, std::function<void(bool)> done)
-    : vp(vp)
-    , done(std::move(done))
-{}
-
-DatumEditSession::~DatumEditSession() = default;
-
-bool DatumEditSession::start(ViewProviderSketch* vp,
-                             Gui::ViewerContext* viewer,
-                             const std::vector<int>& constraints,
-                             std::function<void(bool)> done)
+void DatumEditSession::move(int step)
 {
-    Sketcher::SketchObject* sketch = vp->getSketchObject();
-    const auto& all = sketch->Constraints.getValues();
-
-    std::vector<Gui::SoDatumLabel*> labels;
-    for (int constraint : constraints) {
-        Gui::SoDatumLabel* label = vp->getConstraintDatumLabel(constraint);
-        if (!label) {
-            return false;
+    std::vector<int> visits;
+    if (!cycle.empty()) {
+        for (const auto& tag : cycle) {
+            int index = indexOf(tag);
+            if (canEdit(vp, index)) {
+                visits.push_back(index);
+            }
         }
-        labels.push_back(label);
     }
-
-    // One at a time: whatever was being typed is taken as it stands.
-    if (vp->datumEdit) {
-        vp->datumEdit->finish(true, false);
-    }
-
-    auto* session = new DatumEditSession(vp, std::move(done));
-    vp->datumEdit = session;
-
-    // The command that made the constraint is still open, and stays open
-    // until the value is in: the two are one undo step, and Escape takes
-    // the constraint back. A command's transaction is closed when the
-    // command returns, which the dialog never let happen before the value
-    // was in; this returns at once.
-    App::AutoTransaction::setEnable(false);
-
-    auto placement = Base::Placement(vp->getDocument()->getEditingTransform());
-    for (std::size_t i = 0; i < constraints.size(); ++i) {
-        const Sketcher::Constraint* constraint = all[constraints[i]];
-        Entry entry;
-        entry.constraint = constraints[i];
-        entry.label = std::make_unique<Gui::EditableDatumLabel>(viewer, placement);
-        Gui::EditableDatumLabel* box = entry.label.get();
-        box->setAnchorLabel(labels[i]);
-        box->activate();
-
-        // an angle is shown and typed in degrees, as the dialog has it
-        double value = constraint->getValue();
-        if (constraint->Type == Sketcher::Angle) {
-            value = Base::toDegrees<double>(value);
+    else {
+        const int count = int(vp->getSketchObject()->Constraints.getSize());
+        for (int index = 0; index < count; ++index) {
+            if (isShown(index)) {
+                visits.push_back(index);
+            }
         }
-        // This object first among the box's filters: Enter, Escape and
-        // Tab mean the session's here, not a tool parameter's. And the box
-        // takes the mouse -- there is no tool it would be in the way of.
-        box->startEdit(value, session, /*visibleToMouse = */ true);
-        box->setSpinboxValue(value, datumUnit(constraint));
-        session->entries.push_back(std::move(entry));
     }
-    session->focus(0);
-    return true;
-}
-
-void DatumEditSession::focus(int index)
-{
-    if (entries.empty()) {
+    const int here = current();
+    if (visits.empty() || here < 0) {
         return;
     }
-    const int count = int(entries.size());
-    focused = ((index % count) + count) % count;
-    Gui::EditableDatumLabel* box = entries[focused].label.get();
-    box->setFocusToSpinbox();
-    box->setFocus();
-}
-
-bool DatumEditSession::values(std::vector<std::pair<int, Base::Quantity>>& out) const
-{
-    const auto& all = vp->getSketchObject()->Constraints.getValues();
-    for (const Entry& entry : entries) {
-        Base::Quantity quantity;
-        if (!entry.label->getQuantity(quantity)) {
-            return false;
-        }
-        // a length, an angle; a plain number only where the constraint is
-        // one (the dialog's rule)
-        bool plainNumber = entry.constraint < int(all.size())
-            && (all[entry.constraint]->Type == Sketcher::SnellsLaw
-                || all[entry.constraint]->Type == Sketcher::Weight);
-        if (!quantity.isQuantity() && !(plainNumber && quantity.isDimensionless())) {
-            return false;
-        }
-        out.emplace_back(entry.constraint, quantity);
+    // From where the editor is, which need not be among them: a label
+    // that went off the screen
+    auto at = std::find(visits.begin(), visits.end(), here);
+    int position = 0;
+    if (at != visits.end()) {
+        position = int(at - visits.begin()) + step;
     }
-    return true;
+    else {
+        auto after = std::upper_bound(visits.begin(), visits.end(), here);
+        position = int(after - visits.begin()) + (step > 0 ? 0 : -1);
+    }
+    const int count = int(visits.size());
+    position = ((position % count) + count) % count;
+    show(visits[position]);
 }
 
 void DatumEditSession::finish(bool accept, bool notify)
@@ -682,49 +828,67 @@ void DatumEditSession::finish(bool accept, bool notify)
     if (ended) {
         return;
     }
-    std::vector<std::pair<int, Base::Quantity>> typed;
-    if (accept && !values(typed)) {
+    if (accept && !applyCurrent()) {
         accept = false;
     }
     ended = true;
 
     Sketcher::SketchObject* sketch = vp->getSketchObject();
-    // The boxes go first: applying a value redraws the sketch. Off the
-    // screen now and deleted later: this is called from inside one of
-    // them as a rule -- its event filter, or its sendKeyEvent() for a key
-    // off the wire -- and that call has to return into a live object.
-    for (Entry& entry : entries) {
-        entry.label->deactivate();
-        entry.label.release()->deleteLater();
-    }
-    entries.clear();
+    // The editor goes first, off the screen now and deleted later: this is
+    // called from inside it as a rule -- its key filter, or its
+    // sendKeyEvent() for a key off the wire -- and that call has to return
+    // into a live object.
+    editor->close();
+    editor.release()->deleteLater();
     if (vp->datumEdit == this) {
         vp->datumEdit = nullptr;
     }
     std::function<void(bool)> callback = std::move(done);
-    // This runs inside one of the boxes' event filters as a rule.
     deleteLater();
 
-    bool applied = false;
     if (accept) {
-        applied = applyDatums(sketch, std::move(typed));
+        Gui::Command::commitCommand();
+        tryAutoRecompute(sketch);
     }
     else {
         rejectDatums(sketch);
     }
     if (notify && callback) {
-        callback(applied);
+        callback(accept);
     }
 }
 
 bool DatumEditSession::mouseButton(int button, bool pressed)
 {
-    // Elsewhere, that is: a press on a box goes to the box and never
-    // reaches the view, and a served client's goes to its own page.
+    // Elsewhere, that is: a press on the editor goes to the editor and
+    // never reaches the view, and a served client's goes to its own page.
     if (button == 1 && pressed) {
         finish(true);
     }
     return true;
+}
+
+void DatumEditSession::documentRewound()
+{
+    if (ended) {
+        return;
+    }
+    // Document::undo commits the open transaction before it undoes, so an
+    // undo with one open has undone it -- the constraint the command made,
+    // what was applied here -- and the document has moved past the entry.
+    Sketcher::SketchObject* sketch = vp->getSketchObject();
+    if ((ownTransaction || applied) && !sketch->getDocument()->hasPendingTransaction()) {
+        finish(false);
+        return;
+    }
+    // Otherwise the editor follows its constraint to wherever the list now
+    // has it, what is typed kept; gone, the entry ends.
+    const int index = current();
+    if (!canEdit(vp, index)) {
+        finish(false);
+        return;
+    }
+    editor->follow(vp->getConstraintDatumLabel(index), sketch->Constraints.createPath(index));
 }
 
 bool DatumEditSession::eventFilter(QObject* watched, QEvent* event)
@@ -735,24 +899,29 @@ bool DatumEditSession::eventFilter(QObject* watched, QEvent* event)
     switch (event->type()) {
         case QEvent::KeyPress: {
             auto* key = static_cast<QKeyEvent*>(event);
+            // a completion list open takes its own keys
+            if (editor->isCompleting()) {
+                break;
+            }
             switch (key->key()) {
                 case Qt::Key_Return:
-                case Qt::Key_Enter: {
-                    // every box as it stands; not while one holds no value
-                    std::vector<std::pair<int, Base::Quantity>> typed;
-                    if (values(typed)) {
+                case Qt::Key_Enter:
+                    // what is typed, applied; not while it is no value
+                    if (applyCurrent()) {
                         finish(true);
                     }
                     return true;
-                }
                 case Qt::Key_Escape:
                     finish(false);
                     return true;
                 case Qt::Key_Tab:
-                    focus(focused + 1);
-                    return true;
                 case Qt::Key_Backtab:
-                    focus(focused - 1);
+                    if (applyCurrent()) {
+                        move(key->key() == Qt::Key_Tab
+                                     && !(key->modifiers() & Qt::ShiftModifier)
+                                 ? 1
+                                 : -1);
+                    }
                     return true;
                 default:
                     break;
@@ -772,18 +941,11 @@ bool DatumEditSession::eventFilter(QObject* watched, QEvent* event)
             }
             break;
         }
-        case QEvent::FocusIn: {
-            for (std::size_t i = 0; i < entries.size(); ++i) {
-                if (entries[i].label->hasFocus()) {
-                    focused = int(i);
-                }
-            }
-            break;
-        }
         case QEvent::FocusOut: {
-            // The focus gone elsewhere is the click elsewhere, for a box
-            // that is a widget. Not another window coming to the front, or
-            // a menu: nobody chose to end the entry then.
+            // The focus gone elsewhere is the click elsewhere, for an
+            // editor that is a widget. Not another window coming to the
+            // front, or a menu, or the completer's list: nobody chose to
+            // end the entry then.
             Qt::FocusReason reason = static_cast<QFocusEvent*>(event)->reason();
             if (reason == Qt::ActiveWindowFocusReason || reason == Qt::PopupFocusReason
                 || reason == Qt::MenuBarFocusReason) {
@@ -791,13 +953,8 @@ bool DatumEditSession::eventFilter(QObject* watched, QEvent* event)
             }
             // looked at once the focus has arrived where it is going
             QTimer::singleShot(0, this, [this]() {
-                if (ended) {
+                if (ended || editor->hasFocus() || editor->isCompleting()) {
                     return;
-                }
-                for (const Entry& entry : entries) {
-                    if (entry.label->hasFocus()) {
-                        return;
-                    }
                 }
                 finish(true);
             });
@@ -812,8 +969,7 @@ bool DatumEditSession::eventFilter(QObject* watched, QEvent* event)
 void SketcherGui::editDatums(Sketcher::SketchObject* sketch,
                              const std::vector<int>& constraints,
                              bool atCursor,
-                             std::function<void(bool)> done,
-                             bool preferDialog)
+                             std::function<void(bool)> done)
 {
     auto report = [&done](bool applied) {
         if (done) {
@@ -831,19 +987,9 @@ void SketcherGui::editDatums(Sketcher::SketchObject* sketch,
 
     ParameterGrp::handle hGrp = App::GetApplication().GetParameterGroupByPath(
         "User parameter:BaseApp/Preferences/Mod/Sketcher/General");
-    const bool inPlace = widgetless || (!preferDialog && hGrp->GetBool("EditDatumInPlace", true));
+    const bool inPlace = widgetless || hGrp->GetBool("EditDatumInPlace", true);
 
-    // what a box can edit: a driving value that no expression gives
-    const auto& all = sketch->Constraints.getValues();
-    bool plain = true;
-    for (int constraint : constraints) {
-        if (constraint < 0 || constraint >= int(all.size()) || !all[constraint]->isDimensional()
-            || !all[constraint]->isDriving || sketch->constraintHasExpression(constraint)) {
-            plain = false;
-        }
-    }
-
-    if (vp && viewer && inPlace && plain) {
+    if (vp && viewer && inPlace) {
         if (sketch->hasConflicts()) {
             Gui::TranslatedUserWarning(sketch,
                                        QObject::tr("Dimensional constraint"),
@@ -861,9 +1007,8 @@ void SketcherGui::editDatums(Sketcher::SketchObject* sketch,
         // No dialog for a view nobody sits at.
         Gui::TranslatedUserWarning(sketch,
                                    QObject::tr("Dimensional constraint"),
-                                   QObject::tr("This value cannot be edited from here: it is a "
-                                               "reference, driven by an expression, or its label "
-                                               "is not shown."));
+                                   QObject::tr("This value cannot be edited from here: its "
+                                               "label is not shown."));
         rejectDatums(sketch);
         report(false);
         return;

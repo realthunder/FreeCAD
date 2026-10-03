@@ -936,6 +936,10 @@ void ViewProviderSketch::slotUndoDocument(const Gui::Document& /*doc*/)
     //         and before this slot is called.
     // Note 3: Note that recomputes are no longer inhibited during the call to this slot.
     forceUpdateData();
+
+    // after the redraw: a box follows its constraint to its new label
+    if (datumEdit)
+        datumEdit->documentRewound();
 }
 
 void ViewProviderSketch::slotRedoDocument(const Gui::Document& /*doc*/)
@@ -949,6 +953,19 @@ void ViewProviderSketch::slotRedoDocument(const Gui::Document& /*doc*/)
     //         and before this slot is called.
     // Note 3: Note that recomputes are no longer inhibited during the call to this slot.
     forceUpdateData();
+
+    // after the redraw: a box follows its constraint to its new label
+    if (datumEdit)
+        datumEdit->documentRewound();
+}
+
+bool ViewProviderSketch::undoRedoInEdit(bool redo)
+{
+    (void)redo;
+    if (!datumEdit)
+        return false;
+    datumEdit->finish(false);
+    return true;
 }
 
 void ViewProviderSketch::forceUpdateData()

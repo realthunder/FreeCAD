@@ -8,7 +8,7 @@ value the box cannot edit, and behind "Edit Value".
 
 Sketch: two lines, the first with a Distance of 60.
 
-Checks, the box found as the visible QuantitySpinBox of the view:
+Checks, the box found as the visible line of the view's value editor
 
   - a dimension made by a command on a selection opens a box at its label
     and no dialog; typing a value and Enter sets the datum, and the
@@ -22,8 +22,8 @@ Checks, the box found as the visible QuantitySpinBox of the view:
     pick: nothing is selected by it;
   - the Dimension tool's dimension is typed the same way, one undo step
     with its constraint, and the tool goes on afterwards;
-  - a dimension driven by an expression is not edited in place: the dialog
-    opens for it;
+  - a dimension driven by an expression opens in the editor too, on its
+    expression (sketch-datum-editor.py goes on from there);
   - with the preference off the dialog opens, as it always did.
 
 A watchdog closes any modal dialog and counts it, so a dialog where a box
@@ -68,11 +68,10 @@ def watchdog():
 
 
 def boxes():
-    return [w for w in FreeCADGui.getMainWindow().findChildren(QtWidgets.QAbstractSpinBox)
-            if "QuantitySpinBox" in w.metaObject().className() and w.isVisible()
-            and w.parentWidget() is not None
-            and "View3DInventor" in w.window().metaObject().className() + "".join(
-                p.metaObject().className() for p in ancestors(w))]
+    """the value editor's line, where one is shown (DatumValueEditor)"""
+    return [w for w in FreeCADGui.getMainWindow().findChildren(QtWidgets.QLineEdit,
+                                                               "DatumValueEditorLine")
+            if w.isVisible()]
 
 
 def ancestors(w):
@@ -85,7 +84,9 @@ def ancestors(w):
 
 
 def type_in(box, text):
-    box.lineEdit().setText(text)
+    box.setText(text)
+    # what typing does: textEdited, which the editor listens to
+    box.textEdited.emit(text)
     settle(3)
 
 
@@ -249,16 +250,20 @@ def run():
         doc.undo()
         settle()
 
-        # -- what the box cannot edit goes to the dialog --------------------
+        # -- an expression is edited in place too ---------------------------
         sk.setExpression("Constraints[0]", "30 + 5")
         doc.recompute()
         settle()
         dialogs = state["dialogs"]
         panel.itemActivated.emit(panel.item(0))
         settle(25)
-        check("a dimension driven by an expression opens the dialog, not a box",
-              state["dialogs"] == dialogs + 1 and not boxes(),
-              (state["dialogs"] - dialogs, len(boxes())))
+        found = boxes()
+        check("a dimension driven by an expression opens the editor on its expression",
+              state["dialogs"] == dialogs and len(found) == 1
+              and found[0].text().startswith("="),
+              (state["dialogs"] - dialogs, [b.text() for b in found]))
+        for b in found:
+            key(b, QtCore.Qt.Key_Escape)
         sk.setExpression("Constraints[0]", None)
         doc.recompute()
         settle()

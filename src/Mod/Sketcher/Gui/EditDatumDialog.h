@@ -24,6 +24,8 @@
 #define SKETCHERGUI_EditDatumDialog_H
 
 #include <QObject>
+#include <Inventor/SbVec3f.h>
+#include <boost/uuid/uuid.hpp>
 #include <functional>
 #include <memory>
 #include <vector>
@@ -41,7 +43,7 @@ class Quantity;
 }
 namespace Gui
 {
-class EditableDatumLabel;
+class DatumValueEditor;
 class ViewerContext;
 }  // namespace Gui
 
@@ -52,39 +54,39 @@ class Ui_InsertDatum;
 
 /** Ask for the value of dimensional constraints
  *
- * In the view, at each constraint's own label, when the view the event
- * came through has no widgets (a served client's: a modal dialog on the
- * host would stop every client, with nobody there to close it) or the
- * preference Mod/Sketcher/General/EditDatumInPlace is on, which it is by
- * default. Otherwise, and for a constraint the box cannot edit -- a
- * reference, or one driven by an expression -- in the modal dialog, one
- * constraint after the other.
+ * In the view, in one editor that stands over the constraint's own label
+ * (Gui::DatumValueEditor): the value or an expression, driving or
+ * reference, the name. Always so for a view without widgets (a served
+ * client's: a modal dialog on the host would stop every client, with
+ * nobody there to close it), and on the desktop unless the preference
+ * Mod/Sketcher/General/EditDatumInPlace is off, when it is the modal
+ * dialog, one constraint after the other.
  *
- * In place the function returns at once and the values come later: Enter
- * applies every box as it stands, in one transaction; Escape applies none
- * and aborts the open command, as the dialog's Cancel does; a click
- * elsewhere applies them if every box holds a value. Tab moves between
- * the boxes.
+ * In place the function returns at once and the values come later (see
+ * DatumEditSession).
  *
- * @param done: called once with whether the values were applied -- before
+ * @param done: called once with whether the entry was taken -- before
  * this returns when it was the dialog. May be empty.
- * @param preferDialog: the full dialog (name, reference, expression) where
- * there can be one
  */
 void editDatums(Sketcher::SketchObject* sketch,
                 const std::vector<int>& constraints,
                 bool atCursor = true,
-                std::function<void(bool)> done = {},
-                bool preferDialog = false);
+                std::function<void(bool)> done = {});
 
-/** The values of dimensional constraints being typed in a view
+/** A dimension's value edited in place: one editor, which Tab moves
  *
- * One entry box per constraint (Gui::EditableDatumLabel, the box of a
- * drawing tool's on-view parameter, and so what a served client is
- * already shown and types into: docs/ThinClient.md 8.7), each at its
- * constraint's label. Owned by itself; the sketch's view provider knows
- * the one in progress and ends it when the edit, or the tool that asked,
- * goes away.
+ * Ruled 2026-10-03 (docs/SketcherPort.md "One editor for a constraint's
+ * value"). Tab applies what is typed for the constraint the editor is on
+ * and moves it to the next one: the set it was opened for when that is
+ * several (the Dimension tool's two), every dimension the view shows when
+ * it was one. Everything applied is one transaction: Enter commits it,
+ * Escape aborts it (a new constraint goes with it), a click elsewhere is
+ * Enter. Std_Undo or Std_Redo while it runs is Escape and nothing older
+ * (ViewProviderSketch::undoRedoInEdit); an undo from elsewhere is followed
+ * by tag (documentRewound).
+ *
+ * Owned by itself; the sketch's view provider knows the one in progress
+ * and ends it when the edit, or the tool that asked, goes away.
  */
 class DatumEditSession: public QObject
 {
@@ -99,8 +101,8 @@ public:
     ~DatumEditSession() override;
 
     /** End it
-     * @param accept: apply the values; refused, and rejected, when a box
-     * does not hold one
+     * @param accept: apply what is typed and commit; a cancel when it is
+     * no value
      * @param notify: call the continuation. Not when whoever would be
      * called is going away.
      */
@@ -108,24 +110,50 @@ public:
     /// A button event in a view of the sketch while this runs: a press of
     /// the first button elsewhere ends it. Always true: the event is used.
     bool mouseButton(int button, bool pressed);
+    /** The document was undone or redone underneath, by somebody this
+     * could not answer first: a Python undo, another client. When that
+     * took the transaction this runs in, the document has moved past the
+     * entry and it ends. Otherwise the editor follows its constraint by
+     * tag to wherever the list now has it; gone, the entry ends.
+     */
+    void documentRewound();
 
 protected:
     bool eventFilter(QObject* watched, QEvent* event) override;
 
 private:
-    DatumEditSession(ViewProviderSketch* vp, std::function<void(bool)> done);
-    bool values(std::vector<std::pair<int, Base::Quantity>>& out) const;
-    void focus(int index);
+    DatumEditSession(ViewProviderSketch* vp,
+                     Gui::ViewerContext* viewer,
+                     std::function<void(bool)> done);
+    /// A dimensional constraint with its label drawn (or Snell's law)
+    static bool canEdit(ViewProviderSketch* vp, int constraint);
+    /// Where the editor stands for it, in the sketch's plane
+    SbVec3f anchorOf(int index) const;
+    /// canEdit, in the virtual space shown, visible, its number on the screen
+    bool isShown(int index) const;
+    int indexOf(const boost::uuids::uuid& tag) const;
+    /// The constraint the editor is on, by its place in the list now, or -1
+    int current() const;
+    /// The editor on constraint `index`
+    void show(int index);
+    /// What is typed, into the document. False, and said in the editor,
+    /// when it cannot be.
+    bool applyCurrent();
+    /// The editor to the next (1) or previous (-1) one to visit
+    void move(int step);
 
-    struct Entry
-    {
-        int constraint;
-        std::unique_ptr<Gui::EditableDatumLabel> label;
-    };
     ViewProviderSketch* vp;
-    std::vector<Entry> entries;
+    Gui::ViewerContext* viewer;
+    std::unique_ptr<Gui::DatumValueEditor> editor;
+    /// What Tab visits; empty for every dimension the view shows
+    std::vector<boost::uuids::uuid> cycle;
+    boost::uuids::uuid editing {};
     std::function<void(bool)> done;
-    int focused = 0;
+    /// A document transaction was open when this started: the command's
+    /// that made the constraint, which the entry is the end of
+    bool ownTransaction = false;
+    /// Something went into the document
+    bool applied = false;
     bool ended = false;
 };
 
