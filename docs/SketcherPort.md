@@ -4449,8 +4449,11 @@ was in session 117, not a sweep.
 - `Sketcher_ViewSketchGroup` is the fork's own (`3b620b713e`, 2022): the
   drop-down of "Align View to Sketch" and "View sketch bottom". Upstream
   has the first command only, with the icon `Sketcher_ViewSketch`. The
-  group named an icon of its own that was never drawn -- the button shows
-  its default member's -- and names upstream's now.
+  group named an icon of its own, `Sketcher_ViewSketchGroup`, that no file
+  ever was: a group command shows the icon of one of its members and needs
+  none (ruled the same day; none of the fork's other group commands names
+  one). `bb19c35c18` first pointed the name at upstream's icon, which was
+  the wrong answer to a line that should not be there; the line is gone.
 
 ## 8. Phases
 
