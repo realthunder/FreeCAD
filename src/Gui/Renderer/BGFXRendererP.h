@@ -5126,6 +5126,15 @@ public:
         fn(glassBackTex, LifeSized);
         fn(glassFrontDepth, LifeSized);
         fn(glassBackDepth, LifeSized);
+        // The line field's three attachments. lineSdfFbo does not own
+        // them (createFrameBuffer, destroyTextures false), so the sweep
+        // that took the framebuffer and left these out orphaned all
+        // three on every resize and at every view's end: two RGBA16F
+        // and a D24S8 at the viewport's size, 18.6 MB a view at
+        // 1178x823 (measured 2026-10-03, 42 views opened and closed).
+        fn(lineSdfTex, LifeSized);
+        fn(lineSdfAuxTex, LifeSized);
+        fn(lineSdfDepth, LifeSized);
         fn(cloudFrontTex, LifeSized);
         fn(cloudBackTex, LifeSized);
         fn(cloudFrontDepth, LifeSized);
@@ -5300,6 +5309,10 @@ public:
         fn(m_progLineClip, LifeProgram);
         fn(m_progLinePat, LifeProgram);
         fn(m_progLinePatClip, LifeProgram);
+        fn(m_progLineSdf, LifeProgram);
+        fn(m_progLineSdfClip, LifeProgram);
+        fn(m_progPointSdf, LifeProgram);
+        fn(m_progPointSdfClip, LifeProgram);
         fn(m_progPoint, LifeProgram);
         fn(m_progPointClip, LifeProgram);
         fn(m_progMeshTex, LifeProgram);

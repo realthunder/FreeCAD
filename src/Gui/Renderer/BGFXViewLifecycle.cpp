@@ -671,6 +671,7 @@ void BGFXView::freeEffect(EffectGroup g)
             drop(h);
         drop(glassFrontFbo);
         drop(glassBackFbo);
+        drop(lineSdfFbo);
         drop(aoNormalZ);
         drop(aoDepth);
         drop(aoTex);
@@ -682,6 +683,9 @@ void BGFXView::freeEffect(EffectGroup g)
         drop(glassBackTex);
         drop(glassFrontDepth);
         drop(glassBackDepth);
+        drop(lineSdfTex);
+        drop(lineSdfAuxTex);
+        drop(lineSdfDepth);
         // The pyramid is gone, and so is the cached prepass the AO
         // chain would otherwise be told to reuse.
         aoMipCount = 0;
