@@ -779,9 +779,9 @@ CmdSketcherCreatePeriodicBSplineByInterpolation::CmdSketcherCreatePeriodicBSplin
     sMenuText = QT_TR_NOOP("Periodic B-Spline From Knots");
     sToolTipText =
         QT_TR_NOOP("Creates a periodic B-spline defined by knots using interpolation");
-    sWhatsThis = "Sketcher_Create_Periodic_BSplineByInterpolation";
+    sWhatsThis = "Sketcher_CreatePeriodicBSplineByInterpolation";
     sStatusTip = sToolTipText;
-    sPixmap = "Sketcher_Create_Periodic_BSplineByInterpolation";
+    sPixmap = "Sketcher_CreatePeriodicBSplineByInterpolation";
     sAccel = "G, B, O";
     eType = ForEdit;
 }

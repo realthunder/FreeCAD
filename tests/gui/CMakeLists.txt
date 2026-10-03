@@ -1000,3 +1000,9 @@ fc_add_gui_test(GuiSketchElementsHoverFocus_tests_run
 fc_add_gui_test(GuiSketchElementsEmptyClick_tests_run
                 sketch-elements-empty-click.py
                 --timeout 120)
+
+# The "B-spline by knots" commands and the line group follow the
+# construction mode with their icons (upstream 581dee4d48).
+fc_add_gui_test(GuiSketchConstructionIcons_tests_run
+                sketch-construction-icons.py
+                --timeout 120)
