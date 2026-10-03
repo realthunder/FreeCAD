@@ -1036,3 +1036,10 @@ fc_add_gui_test(GuiServeDatumMeasure_tests_run
 fc_add_gui_test(GuiSketchCopyClipboardCost_tests_run
                 sketch-copy-clipboard-cost.py
                 --timeout 240)
+
+# The Elements list selects what its own selection says: arrow keys,
+# Shift+arrow, a press on one of several selected rows. It toggled a
+# remembered row instead.
+fc_add_gui_test(GuiSketchElementsKeys_tests_run
+                sketch-elements-keys.py
+                --timeout 120)

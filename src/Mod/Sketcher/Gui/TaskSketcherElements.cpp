@@ -523,11 +523,6 @@ void ElementView::mousePressEvent(QMouseEvent *event)
             return;
         }
     }
-    // The selection change this press makes is about the row under it. That
-    // is not the row the pointer last entered when the press comes without a
-    // move before it (a tap, a click forwarded from a browser), and it is no
-    // row at all on the empty part of the list, which clears the selection.
-    Q_EMIT rowPressed(item);
     inherited::mousePressEvent(event);
 }
 
@@ -685,8 +680,6 @@ TaskSketcherElements::TaskSketcherElements(ViewProviderSketch* sketchView)
     : TaskBox(Gui::BitmapFactory().pixmap("Sketcher_CreateLine"), tr("Elements"), true, nullptr)
     , sketchView(sketchView)
     , ui(new Ui_TaskSketcherElements())
-    , focusItemIndex(-1)
-    , previouslySelectedItemIndex(-1)
     , inhibitSelectionUpdate(false)
 {
     // we need a separate container widget to add all controls to
@@ -739,9 +732,6 @@ TaskSketcherElements::TaskSketcherElements(ViewProviderSketch* sketchView)
         ui->elementsWidget, SIGNAL(itemEntered(QTreeWidgetItem *, int)),
         this                     , SLOT  (on_elementsWidget_itemEntered(QTreeWidgetItem *))
        );
-    QObject::connect(
-        ui->elementsWidget, &ElementView::rowPressed,
-        this, &TaskSketcherElements::onRowPressed);
     QObject::connect(
         ui->elementsWidget, &ElementView::partButtonClicked,
         this, &TaskSketcherElements::onPartButtonClicked);
@@ -833,20 +823,26 @@ static void setPosSelected(ElementItem *ite, Sketcher::PointPos PosId, bool sele
 
 static void showSelected(ElementItem *ite, int element)
 {
+    bool selected = false;
     switch(element){
     case 0:
-        ite->setSelected(ite->isLineSelected);
+        selected = ite->isLineSelected;
         break;
     case 1:
-        ite->setSelected(ite->isStartingPointSelected);
+        selected = ite->isStartingPointSelected;
         break;
     case 2:
-        ite->setSelected(ite->isEndPointSelected);
+        selected = ite->isEndPointSelected;
         break;
     case 3:
-        ite->setSelected(ite->isMidPointSelected);
+        selected = ite->isMidPointSelected;
         break;
     }
+    // Only a row that disagrees is touched: setSelected() makes the list
+    // commit the range a Shift+arrow is extending, and the next Shift+arrow
+    // could then not take a row back.
+    if (ite->isSelected() != selected)
+        ite->setSelected(selected);
 }
 
 void TaskSketcherElements::onSelectionChanged(const Gui::SelectionChanges& msg)
@@ -930,102 +926,38 @@ void TaskSketcherElements::on_elementsWidget_itemSelectionChanged(void)
 {
     ui->elementsWidget->blockSignals(true);
 
-
-    // selection changed because we acted on the current entered item
-    // we can not do this with ItemPressed because that signal is triggered after this one.
     // A row stands for its element's edge; a point's row for its vertex. The
     // other parts are picked from the row's icon (onPartButtonClicked).
-    const int element = 0;
-
-    ElementItem * itf;
-
-    if(focusItemIndex>-1 && focusItemIndex<ui->elementsWidget->topLevelItemCount())
-      itf=static_cast<ElementItem*>(ui->elementsWidget->topLevelItem(focusItemIndex));
-    else
-      itf=nullptr;
-
-    bool multipleselection=true; // ctrl type of selection in listWidget
-    bool multipleconsecutiveselection=false; // shift type of selection in listWidget
-
+    //
+    // What is selected is read from the list: it is the list that knows what
+    // a press, an arrow key or a Shift+arrow made of its selection. Toggling
+    // a remembered row here agreed with it only for a press on an unselected
+    // row -- an arrow key selected nothing, Shift+arrow deselected, a press on
+    // one of two selected rows deselected both.
     if (!inhibitSelectionUpdate) {
-        if(itf) {
-            switch(element){
-            case 0:
-                itf->isLineSelected=!itf->isLineSelected;
-                itf->followSelection(0, itf->isLineSelected);
-                break;
-            case 1:
-                itf->isStartingPointSelected=!itf->isStartingPointSelected;
-                break;
-            case 2:
-                itf->isEndPointSelected=!itf->isEndPointSelected;
-                break;
-            case 3:
-                itf->isMidPointSelected=!itf->isMidPointSelected;
-                break;
+        // Without Ctrl or Shift the list has replaced its selection, and the
+        // points selected on the rows it left go with it.
+        const bool replaced = !(QApplication::keyboardModifiers()
+                                & (Qt::ControlModifier | Qt::ShiftModifier));
+
+        for (int i=0;i<ui->elementsWidget->topLevelItemCount(); i++) {
+            ElementItem * ite=static_cast<ElementItem*>(ui->elementsWidget->topLevelItem(i));
+            const bool selected = ite->isSelected();
+
+            if (replaced && !selected) {
+                ite->isStartingPointSelected=false;
+                ite->isEndPointSelected=false;
+                ite->isMidPointSelected=false;
+            }
+            if (ite->isLineSelected != selected) {
+                ite->isLineSelected=selected;
+                ite->followSelection(0, selected);
             }
         }
-
-        if (QApplication::keyboardModifiers()==Qt::ControlModifier)// multiple ctrl selection?
-            multipleselection=true;
-        else
-            multipleselection=false;
-
-        if (QApplication::keyboardModifiers()==Qt::ShiftModifier)// multiple shift selection?
-            multipleconsecutiveselection=true;
-        else
-            multipleconsecutiveselection=false;
-
-        if (multipleselection && multipleconsecutiveselection) { // ctrl takes priority over shift functionality
-            multipleselection=true;
-            multipleconsecutiveselection=false;
-        }
-    }
-
-    for (int i=0;i<ui->elementsWidget->topLevelItemCount(); i++) {
-        ElementItem * ite=static_cast<ElementItem*>(ui->elementsWidget->topLevelItem(i));
-
-        if(multipleselection==false && multipleconsecutiveselection==false && ite!=itf) {
-            ite->isLineSelected=false;
-            ite->isStartingPointSelected=false;
-            ite->isEndPointSelected=false;
-            ite->isMidPointSelected=false;
-        }
-
-        if( multipleconsecutiveselection) {
-            if ((( i>focusItemIndex && i<previouslySelectedItemIndex ) ||
-                 ( i<focusItemIndex && i>previouslySelectedItemIndex )) &&
-                previouslySelectedItemIndex>=0){
-              // select the element of the Item
-                      switch(element){
-                  case 0:
-                      ite->isLineSelected=true;
-                      break;
-                  case 1:
-                      ite->isStartingPointSelected=true;
-                      break;
-                  case 2:
-                      ite->isEndPointSelected=true;
-                      break;
-                  case 3:
-                      ite->isMidPointSelected=true;
-                      break;
-                }
-            }
-        }
-
     }
 
     syncSceneSelection();
     ui->elementsWidget->blockSignals(false);
-
-    if (focusItemIndex>-1 && focusItemIndex<ui->elementsWidget->topLevelItemCount())
-        previouslySelectedItemIndex=focusItemIndex;
-}
-
-void TaskSketcherElements::onRowPressed(QTreeWidgetItem *item)
-{
-    focusItemIndex = item ? ui->elementsWidget->indexOfTopLevelItem(item) : -1;
 }
 
 /// True while the keyboard is in a text being typed: a field of a panel, a
@@ -1049,8 +981,6 @@ void TaskSketcherElements::on_elementsWidget_itemEntered(QTreeWidgetItem *item)
     if (!textInputHasFocus())
         ui->elementsWidget->setFocus();
 
-    int tempitemindex=ui->elementsWidget->indexOfTopLevelItem(item);
-
     std::string doc_name = sketchView->getSketchObject()->getDocument()->getName();
     std::string obj_name = sketchView->getSketchObject()->getNameInDocument();
 
@@ -1063,8 +993,6 @@ void TaskSketcherElements::on_elementsWidget_itemEntered(QTreeWidgetItem *item)
 
 
     const int element = 0;
-
-    focusItemIndex=tempitemindex;
 
     int vertex;
 
