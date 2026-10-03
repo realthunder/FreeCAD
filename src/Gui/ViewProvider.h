@@ -80,6 +80,7 @@ namespace Gui {
     }
 class View3DInventorViewer;
 class ViewerContext;
+class MenuItem;
 class ViewProviderPy;
 class ObjectItem;
 class MDIView;
@@ -622,6 +623,15 @@ public:
      * sequence answers false, which is the default.
      */
     virtual bool isGestureInProgress() const { return false; }
+    /** What a right click does in this edit mode, for a view that cannot
+     * pop up a menu of its own -- a served one, whose menu is drawn by a
+     * browser (docs/ThinClient.md sec 8.11b). True when the edit mode has
+     * an answer: \a menu filled with the menu its own right click shows,
+     * or left empty when the click did what it does there (ending a tool).
+     * False, the default, when the edit mode has none and the view's
+     * menu applies. Called inside the clicking client's view.
+     */
+    virtual bool editContextMenu(MenuItem* menu);
     /// set up the context-menu with the supported edit modes
     virtual void setupContextMenu(QMenu*, QObject*, const char*);
     /** Called by tree on mouse event in a specific icon

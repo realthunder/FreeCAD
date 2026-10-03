@@ -9052,6 +9052,37 @@ void ViewProviderSketch::setConstraintSelectability(bool enabled /* = true */)
 
 void ViewProviderSketch::generateContextMenu()
 {
+    Gui::MenuItem menu;
+    setupEditContextMenu(menu);
+    // A view that is not a desktop window has no widget to hang it on
+    auto view = qobject_cast<Gui::View3DInventor*>(this->getActiveView());
+    QMenu contextMenu(view ? view->getViewer()->getGLWidget() : nullptr);
+    Gui::MenuManager::getInstance()->setupContextMenu(&menu, contextMenu);
+    contextMenu.exec(QCursor::pos());
+}
+
+bool ViewProviderSketch::editContextMenu(Gui::MenuItem* menu)
+{
+    // What mouseButtonPressed does with a right button released
+    switch (_Mode) {
+        case STATUS_SKETCH_UseHandler:
+            // make the handler quit
+            if (edit && edit->sketchHandler)
+                edit->sketchHandler->quit();
+            return true;
+        case STATUS_NONE:
+        case STATUS_SELECT_Point:
+        case STATUS_SELECT_Edge:
+            if (menu)
+                setupEditContextMenu(*menu);
+            return true;
+        default:
+            return false;
+    }
+}
+
+void ViewProviderSketch::setupEditContextMenu(Gui::MenuItem& menu)
+{
     int selectedExternalEdges = 0;
     int selectedEdges = 0;
     int selectedLines = 0;
@@ -9074,7 +9105,6 @@ void ViewProviderSketch::generateContextMenu()
         }
     }
 
-    Gui::MenuItem menu;
     menu.setCommand("Sketcher context");
 
     std::vector<Gui::SelectionObject> selection =
@@ -9316,12 +9346,8 @@ void ViewProviderSketch::generateContextMenu()
              << "Separator"
              << "Sketcher_LeaveSketch";
     }
-    // create context menu
+    // the workbench's own entries
     Gui::Application::Instance->setupContextMenu("Sketch", &menu);
-    QMenu contextMenu(
-        qobject_cast<Gui::View3DInventor*>(this->getActiveView())->getViewer()->getGLWidget());
-    Gui::MenuManager::getInstance()->setupContextMenu(&menu, contextMenu);
-    contextMenu.exec(QCursor::pos());
 }
 
 // ---------------------------------------------------------

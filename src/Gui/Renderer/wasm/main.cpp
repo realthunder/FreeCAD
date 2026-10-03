@@ -586,6 +586,31 @@ EM_JS(void, fcviewer_install_control, (), {
     window.fcviewerResetEdit = function() {
         return !!_fcviewer_reset_edit();
     };
+    // Paint {obj, sub} as the hover would, '' to drop it: a context menu's
+    // "Pick geometry" entry under the pointer.
+    window.fcviewerHoverNamed = function(obj, sub) {
+        var o = obj || '', s = sub || '';
+        var ol = lengthBytesUTF8(o) + 1, sl = lengthBytesUTF8(s) + 1;
+        var ob = _malloc(ol), sb = _malloc(sl);
+        stringToUTF8(o, ob, ol);
+        stringToUTF8(s, sb, sl);
+        _fcviewer_hover_named(ob, sb);
+        _free(ob);
+        _free(sb);
+    };
+    // A pick the server made for this client, into its own selection.
+    window.fcviewerSelectNamed = function(obj, sub, extend) {
+        var o = obj || '', s = sub || '';
+        var ol = lengthBytesUTF8(o) + 1, sl = lengthBytesUTF8(s) + 1;
+        var ob = _malloc(ol), sb = _malloc(sl);
+        stringToUTF8(o, ob, ol);
+        stringToUTF8(s, sb, sl);
+        _fcviewer_select_named(ob, sb, extend ? 1 : 0);
+        _free(ob);
+        _free(sb);
+    };
+    // The scene's own preselection held while a context menu is open.
+    window.fcviewerHoldHover = function(on) { _fcviewer_hold_hover(on ? 1 : 0); };
     // State the camera now, for an op the server runs in this client's
     // view -- a tool bar's tool (docs/ThinClient.md 8.11 item 4).
     window.fcviewerStateCamera = function() {
@@ -2686,6 +2711,29 @@ static bool peerItemFromNames(
     return true;
 }
 
+/// The object model as a name-to-key index, for items that arrive by name.
+/// One pass for a whole set rather than a search per item, preferring
+/// document \a home where a name appears in more than one: an object name
+/// is unique within a document, but a scene carries objects of another
+/// one through a link, and then the same name can appear twice.
+static std::map<std::string, std::pair<uint64_t, bool>>
+objectKeysByName(const std::string &home)
+{
+    std::map<std::string, std::pair<uint64_t, bool>> byName;
+    for (const auto &v : s_objects.objects) {
+        const auto &info = v.second.entry.info;
+        if (info.obj.empty())
+            continue;
+        const bool atHome = info.doc == home;
+        auto it = byName.find(info.obj);
+        if (it == byName.end())
+            byName.emplace(info.obj, std::make_pair(v.first, atHome));
+        else if (atHome && !it->second.second)
+            it->second = std::make_pair(v.first, true);
+    }
+    return byName;
+}
+
 /// Rebuild every foreign highlight against the CURRENT scene. Called when
 /// one arrives and after each snapshot, for the same reason
 /// rebuildSelection is: the draws an item resolved against may have been
@@ -2704,23 +2752,7 @@ static void rebuildPeerSelection()
     s_peerSelIds.clear();
     if (s_peerSel.empty())
         return;
-    // One pass over the object model for the whole set rather than a
-    // search per item: a name-to-key index, preferring the served
-    // document where a name appears in more than one. An object name is
-    // unique within a document, but a scene carries objects of another
-    // one through a link, and then the same name can appear twice.
-    std::map<std::string, std::pair<uint64_t, bool>> byName;
-    for (const auto &v : s_objects.objects) {
-        const auto &info = v.second.entry.info;
-        if (info.obj.empty())
-            continue;
-        const bool home = info.doc == s_peerDoc;
-        auto it = byName.find(info.obj);
-        if (it == byName.end())
-            byName.emplace(info.obj, std::make_pair(v.first, home));
-        else if (home && !it->second.second)
-            it->second = std::make_pair(v.first, true);
-    }
+    const auto byName = objectKeysByName(s_peerDoc);
 
     int slot = 0;
     for (const auto &peer : s_peerSel) {
@@ -2783,6 +2815,72 @@ static const char *readJsonString(const char *p, std::string &out)
         }
     }
     return nullptr;
+}
+
+/// A context menu's "Pick geometry" entry under the pointer
+/// (contextmenu.tsx, docs/ThinClient.md sec 8.11b): paint what it names in
+/// the hover's colour, as the desktop preselects the entry under its
+/// cursor. By name, since the server picked it and this viewer did not --
+/// a sub-object path is placed by its element alone, and one this viewer
+/// cannot place lights the whole object. An empty object name drops it.
+extern "C" EMSCRIPTEN_KEEPALIVE void fcviewer_hover_named(const char *obj, const char *sub)
+{
+    if (!s_renderer)
+        return;
+    std::string element = sub ? sub : "";
+    const size_t dot = element.rfind('.');
+    if (dot != std::string::npos)
+        element.erase(0, dot + 1);
+    SelItem item;
+    if (!obj || !*obj
+            || !peerItemFromNames(obj, element, objectKeysByName(s_docName), item)) {
+        applyHover(PickHit{});
+        markDirty();
+        return;
+    }
+    Render::DrawCallList draws;
+    appendSelectionDraws({item}, s_snap.preselconf, draws);
+    // Not a hit applyHover would recognise: the next pointer hover, or
+    // the clear above, replaces it
+    s_hoverKey = item.key;
+    s_hoverPart = -3;
+    s_hoverKind = PickNone;
+    s_renderer->setHighlight(std::move(draws), false);
+    markDirty();
+}
+
+/// A pick the server made for this client -- a context menu's "Pick
+/// geometry" entry chosen (docs/ThinClient.md sec 8.11b) -- taken into this
+/// client's own selection as a click's would be: painted and told to the
+/// DOM layer, replacing the selection or, with \a extend, joining it. Not
+/// sent up: the server made it, and holds it already.
+extern "C" EMSCRIPTEN_KEEPALIVE void fcviewer_select_named(const char *obj, const char *sub,
+                                                           int extend)
+{
+    if (!s_renderer || !obj || !*obj)
+        return;
+    std::string element = sub ? sub : "";
+    const size_t dot = element.rfind('.');
+    if (dot != std::string::npos)
+        element.erase(0, dot + 1);
+    SelItem item;
+    if (!peerItemFromNames(obj, element, objectKeysByName(s_docName), item))
+        return;
+    if (!extend)
+        s_sel.clear();
+    // A whole-object item and the object's element items exclude each
+    // other, as for a click
+    s_sel.erase(std::remove_if(s_sel.begin(), s_sel.end(),
+                               [&](const SelItem &s) {
+                                   return s.key == item.key
+                                       && (item.kind == PickNone || s.kind == PickNone
+                                           || (s.kind == item.kind && s.part == item.part));
+                               }),
+                s_sel.end());
+    s_sel.push_back(item);
+    rebuildSelection();
+    emitSelectionEvent();
+    markDirty();
 }
 
 EM_JS(void, fcviewer_peerselection_event, (const char *json), {
@@ -5018,9 +5116,15 @@ static void applySceneHover(float px, float py)
 /// Preselect whatever sits under a hovering pointer at CSS-pixel
 /// (clientX,clientY). Shared by the mouse move handler and the stylus hover
 /// uplink.
+/// The scene preselects nothing under a pointer the DOM layer has taken:
+/// the mouse is listened to on the whole document, and an open context
+/// menu over the scene would otherwise preselect what is under it, over
+/// the preview its own entries paint (fcviewer_hold_hover).
+static bool s_hoverHeld = false;
+
 static void updateHoverAt(float clientX, float clientY)
 {
-    if (!s_haveScene)
+    if (!s_haveScene || s_hoverHeld)
         return;
     const double now = emscripten_get_now();
     if (now - s_lastHoverMs < 30.0)
@@ -5057,6 +5161,19 @@ static void updateHoverAt(float clientX, float clientY)
         return;
     }
     applySceneHover(px, py);
+}
+
+/// Hold the scene's preselection while the DOM layer has the pointer -- a
+/// context menu open, as a desktop popup has the mouse -- dropping what
+/// it showed; release it after.
+extern "C" EMSCRIPTEN_KEEPALIVE void fcviewer_hold_hover(int on)
+{
+    s_hoverHeld = on != 0;
+    if (s_hoverHeld) {
+        std::snprintf(s_hoverDesc, sizeof(s_hoverDesc), "none");
+        applyHover(PickHit{});
+        markDirty();
+    }
 }
 
 static void updateHover(const EmscriptenMouseEvent *e)
@@ -5133,11 +5250,12 @@ static EM_BOOL onMouseUp(int, const EmscriptenMouseEvent *e, void *)
         return EM_TRUE;
     }
     s_navi.armed = false;
-    if (e->button == 2 && s_rightClickOk && !s_editing && !activeIsPage()
+    if (e->button == 2 && s_rightClickOk && !activeIsPage()
             && std::abs(int(e->clientX) - s_downX) <= 6
             && std::abs(int(e->clientY) - s_downY) <= 6) {
-        // Not while editing: the edit mode's panel is the way out, and the
-        // sketcher's own menu is not this one
+        // While editing too: an edit mode with a right click of its own --
+        // the sketcher's menu, or ending its running tool -- answers on the
+        // server instead of the view's menu
         s_rightClickOk = false;
         float px, py;
         canvasPos(e, px, py);
@@ -5177,6 +5295,10 @@ static EM_BOOL onMouseMove(int, const EmscriptenMouseEvent *e, void *)
     // the edit mode has no business being told about it. Held for the
     // frame rather than sent per DOM event.
     if (s_editing && !s_dragging) {
+        // Not while a context menu has the pointer: the edit mode would
+        // preselect under it
+        if (s_hoverHeld)
+            return EM_TRUE;
         float px, py;
         canvasPos(e, px, py);
         queueEditMove(px, py,
@@ -5467,6 +5589,39 @@ static void loupePick()
     markDirty();
 }
 
+// ---- Hold longer: the context menu ----------------------------------------
+// The loupe held still on its target for kMenuHoldMs more opens the context
+// menu there (docs/ThinClient.md sec 8.11b), a touchscreen's right click:
+// the target is already showing by then. Moving the loupe past the slop
+// starts the wait again, on the new target. Once the menu is up, the
+// finger is done: its lift commits nothing and its drag moves nothing.
+static const double kMenuHoldMs = 500.0;
+static uint32_t s_menuHoldGen = 0;
+static float s_menuHoldX = 0.0f, s_menuHoldY = 0.0f;
+static bool s_menuHeld = false;
+
+static void menuHoldFired(void *arg)
+{
+    if (uint32_t(uintptr_t(arg)) != s_menuHoldGen)
+        return;
+    if (!s_loupe || s_numTouch != 1 || s_editing || activeIsPage())
+        return;
+    float px, py;
+    clientToCanvas(s_loupeX, s_loupeY, px, py);
+    cancelLoupe();
+    s_tapOk = false;
+    s_menuHeld = true;
+    openContextMenu(px, py);
+}
+
+static void armMenuHold()
+{
+    s_menuHoldX = s_loupeX;
+    s_menuHoldY = s_loupeY;
+    ++s_menuHoldGen;
+    emscripten_async_call(menuHoldFired, (void *)uintptr_t(s_menuHoldGen), int(kMenuHoldMs));
+}
+
 /// The hold threshold has passed: if the finger is still down, still still,
 /// and still alone, the press becomes a preselection.
 static void loupeHoldFired(void *arg)
@@ -5485,6 +5640,7 @@ static void loupeHoldFired(void *arg)
     // The pick point is above the fingertip from the start.
     s_loupeY -= loupeLiftPx();
     loupePick();
+    armMenuHold();
 }
 
 /// A stylus hovering over the canvas, from the pointermove listener installed
@@ -5549,6 +5705,7 @@ static EM_BOOL onTouch(int type, const EmscriptenTouchEvent *e, void *)
     }
 
     if (type == EMSCRIPTEN_EVENT_TOUCHSTART) {
+        s_menuHeld = false;
         if (n >= 1) {
             float px, py;
             clientToCanvas(x[0], y[0], px, py);
@@ -5609,6 +5766,18 @@ static EM_BOOL onTouch(int type, const EmscriptenTouchEvent *e, void *)
             s_touchX[0] = x[0];
             s_touchY[0] = y[0];
             loupePick();
+            // A new target waits for the menu anew
+            if (std::abs(s_loupeX - s_menuHoldX) > 8.0f
+                    || std::abs(s_loupeY - s_menuHoldY) > 8.0f)
+                armMenuHold();
+            return EM_TRUE;
+        }
+        if (s_menuHeld && n == 1) {
+            // The finger that opened the menu is still down: it is not
+            // orbiting
+            s_numTouch = n;
+            s_touchX[0] = x[0];
+            s_touchY[0] = y[0];
             return EM_TRUE;
         }
         interact();

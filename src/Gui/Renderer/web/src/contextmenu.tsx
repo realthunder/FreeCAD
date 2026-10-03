@@ -21,6 +21,8 @@ interface Entry {
   reason?: string;
   kind?: string;
   local?: string;
+  /// A "Pick geometry" entry: what it selects, painted while pointed at
+  pick?: { obj: string; sub: string };
   separator?: boolean;
   items?: Entry[];
 }
@@ -73,9 +75,23 @@ export function SceneContextMenu(props: { viewOnly: () => boolean }) {
   let root: HTMLDivElement | undefined;
   // The ask in flight: a second right click before the answer wins
   let asked = 0;
+  // A pick entry's preview, painted by the viewer while pointed at
+  let hovering = false;
+  const hover = (it: Entry) => {
+    if (!it.pick) return;
+    hovering = true;
+    window.fcviewerHoverNamed?.(it.pick.obj, it.pick.sub);
+  };
+  const unhover = () => {
+    if (!hovering) return;
+    hovering = false;
+    window.fcviewerHoverNamed?.('', '');
+  };
 
   const close = (tell = true) => {
     const m = menu();
+    unhover();
+    if (m) window.fcviewerHoldHover?.(false);
     setMenu(null);
     setError(null);
     if (m && tell) sendOp('contextMenu.close', { menu: m.token }).catch(() => {});
@@ -91,6 +107,9 @@ export function SceneContextMenu(props: { viewOnly: () => boolean }) {
         if (ask !== asked) return;
         const items = (r.items as Entry[]) ?? [];
         if (!items.length) return;
+        // The menu has the pointer now, as a desktop popup has the mouse:
+        // the scene preselects nothing under it
+        window.fcviewerHoldHover?.(true);
         setMenu({ token: r.menu as number, x: d.x, y: d.y, path: [items], titles: [] });
       })
       .catch(() => {});
@@ -116,11 +135,12 @@ export function SceneContextMenu(props: { viewOnly: () => boolean }) {
   };
   const usable = (it: Entry) => it.enabled !== false && (it.allowed !== false || !!it.local);
 
-  const choose = (it: Entry) => {
+  const choose = (it: Entry, ev?: MouseEvent) => {
     const m = menu();
     if (!m || busy()) return;
     setError(null);
     if (it.items) {
+      unhover();
       setMenu({ ...m, path: [...m.path, it.items], titles: [...m.titles, it.text ?? ''] });
       return;
     }
@@ -131,8 +151,15 @@ export function SceneContextMenu(props: { viewOnly: () => boolean }) {
       return;
     }
     setBusy(true);
-    sendOp('contextMenu.trigger', { menu: m.token, item: it.id })
-      .then(() => close(false))
+    // Ctrl adds a pick to the selection, as on the desktop
+    const extend = !!(ev && (ev.ctrlKey || ev.metaKey));
+    sendOp('contextMenu.trigger', { menu: m.token, item: it.id, extend })
+      .then(() => {
+        // The server selected it; the viewer paints its own selection
+        if (it.kind === 'pick' && it.pick)
+          window.fcviewerSelectNamed?.(it.pick.obj, it.pick.sub, extend);
+        close(false);
+      })
       .catch((err) => setError(err?.message || err?.code || 'Failed'))
       .finally(() => setBusy(false));
   };
@@ -173,7 +200,9 @@ export function SceneContextMenu(props: { viewOnly: () => boolean }) {
                   aria-disabled={!it.items && !usable(it)}
                   title={(!it.items && it.allowed === false && !it.local
                           ? it.reason : it.tip?.replace(/<[^>]*>/g, ' ').trim()) || undefined}
-                  onClick={() => choose(it)}
+                  onClick={(ev) => choose(it, ev)}
+                  onPointerEnter={() => hover(it)}
+                  onPointerLeave={unhover}
                 >
                   <span class="fc-menu-tick">{it.checkable && it.checked ? '\u2713' : ''}</span>
                   <Icon name={it.icon} />

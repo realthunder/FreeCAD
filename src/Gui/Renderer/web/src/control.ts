@@ -13,6 +13,15 @@ declare global {
     /// 0 isometric, 1 dimetric, 2 trimetric, 3 fit all, 4 reset the
     /// cube to the served view's place for it.
     fcviewerNaviAction?: (action: number) => void;
+    /// Paint {obj, sub} in the hover colour, '' to drop it (main.cpp
+    /// fcviewer_hover_named): the context menu's "Pick geometry" entries.
+    fcviewerHoverNamed?: (obj: string, sub: string) => void;
+    /// A pick the server made for this client, into its own selection
+    /// (main.cpp fcviewer_select_named).
+    fcviewerSelectNamed?: (obj: string, sub: string, extend: boolean) => void;
+    /// Hold the scene's own preselection while a menu has the pointer
+    /// (main.cpp fcviewer_hold_hover).
+    fcviewerHoldHover?: (on: boolean) => void;
     /// Selection menu (main.cpp, docs/ThinClientUI.md): mode 0 single /
     /// 1 multi; filter 0 elements / 1 object / 2 face / 3 edge /
     /// 4 vertex.

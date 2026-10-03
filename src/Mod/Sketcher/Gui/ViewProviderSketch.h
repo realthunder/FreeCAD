@@ -74,6 +74,7 @@ class SbTime;
 struct EditData;
 
 namespace Gui {
+class MenuItem;
 class View3DInventorViewer;
 class ViewerContext;
 }
@@ -297,6 +298,11 @@ public:
 
     // create right click context menu based on selection in the 3D view
     void generateContextMenu();
+    /// The entries of that menu, for the current selection (a preselected
+    /// element not yet selected is selected first, as the click does)
+    void setupEditContextMenu(Gui::MenuItem& menu);
+    /// A served view's right click: the menu above, or a running tool ended
+    bool editContextMenu(Gui::MenuItem* menu) override;
 
     //@}
 

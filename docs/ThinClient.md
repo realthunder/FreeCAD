@@ -2185,11 +2185,87 @@ In a real headful Chrome (viewer-harness `context-menu*.png`):
 - Fit all and Front ran on the browser's camera, while Home and the rotations
   are drawn disabled.
 
-**Not done:**
+**Not done** (in phase 1; all four done since, below):
 - touch long-press;
 - "Pick geometry";
 - the sketcher's in-edit menu, which `exec()`s itself;
 - a View-connection socket reading.
+
+**Phase 2 (2026-10-03).**
+
+*"Pick geometry".* As on the desktop, a click that hits anything gets a
+"Pick geometry" submenu after the object's own: everything the ray went
+through, front to back, grouped by element kind ("Other" last), each entry
+the object's label and its element. The list comes from
+`SceneServeSource::pickAllSubObjects`, a pick-all ray through the client's
+mirror resolved hit by hit as `pickObject` resolves one; the mirror has no
+`SoFCUnifiedSelection` view to ask `getPickedList` of. An entry is
+`kind: "pick"`, carrying `pick: {obj, sub}` named as a selection push names an
+item. Choosing one selects it in the client's selection, in its view, as its
+click would land; `extend` on the trigger adds it, as Ctrl does on the desktop.
+The server tells the client through the usual `selection` push. The viewer
+then takes it into its own selection (`fcviewer_select_named`) without sending
+it up again, since the viewer otherwise paints only what it picked itself. A
+pick needs the right to select: a View connection has its picks dropped, so
+its pick entries are refused.
+
+The desktop preselects the entry under its cursor. The browser paints the
+same thing by name (`fcviewer_hover_named`, the peer selection's name-to-draw
+resolution), since preselection is never routed (8.11a). That only worked once
+the scene's own hover was held while the menu is open
+(`fcviewer_hold_hover`). The viewer listens to the mouse on the whole document,
+so the box under the menu was preselected again over every entry's preview.
+A desktop popup has the mouse in the same way. The hold also stops the
+pointer moves an edit mode is sent.
+
+*Touch long-press.* The loupe (a 350 ms hold preselects under the finger)
+held still on its target for 500 ms more opens the menu there. Moving the
+loupe past the slop starts the wait again on the new target. Once the menu is
+up, the finger's lift commits nothing and its drag orbits nothing. A shorter
+hold commits its selection as before. Not in an edit, whose touches are the
+tool's.
+
+*The sketcher's menu.* `ViewProviderSketch::generateContextMenu` built a
+menu and `exec()`ed it on the desktop. It was also one null `qobject_cast`
+away from a crash under a view that is not a `View3DInventor`. It is split
+now: `setupEditContextMenu(MenuItem&)` fills the entries. A new virtual,
+`ViewProvider::editContextMenu(MenuItem*)`, lets an edit mode answer a served
+view's right click:
+- a filled menu;
+- an empty one when the click did what it does there (the sketcher ends its
+  running tool);
+- false for no answer of its own, in which case the view's menu applies.
+
+The `contextMenu` op asks the client's own edit first, in its view.
+"Leave sketch" is the edit's way out, run as "Finish editing" is, and so
+allowed. The rest of the sketcher's entries are judged by the command
+allowlist like any others: the create tools are allowed, and the constraint
+and transform commands are drawn refused for a non-host, since several open
+dialogs. The browser now asks on a right click while editing too.
+
+**Verified (phase 2):** `tests/gui/serve-context-menu.py`, now 41 checks.
+- The pick submenu follows the object's own, grouped by kind.
+- A ray down through the box lists Face6 and Face5, allowed, by name.
+- A pick replaces the client's selection (told), and an extended one joins it.
+- On a View connection the menu is built, nothing but the camera entries is
+  allowed, and a pick is refused (ViewOnly).
+- In a sketch's edit:
+  - the sketcher's menu comes up with its create tools allowed;
+  - "Leave sketch" is `finishEdit`, and taken, it leaves the edit;
+  - a right click with a line tool running ends the tool and returns no menu,
+    and the next one gives the menu again.
+
+In headful Chrome (viewer-harness `context-menu-pick-*.png`,
+`context-menu-touch-hold.png`), with a box over a cylinder seen from the top:
+- "Pick geometry > Face" listed both of the box's faces and both of the
+  cylinder's;
+- pointing at "Drum (Face3)" outlined the cylinder's top through the box, and
+  pointing at "Crate (Face6)" outlined the box's top;
+- choosing the drum's face selected it, in the selection colour, with
+  `fc:selection` naming it;
+- a CDP touch held 1.3 s opened the menu and its lift selected nothing, while a
+  0.6 s hold selected the face and opened no menu;
+- after the menu closed, the mouse preselected again.
 
 ### 8.12 What per client would cost -- the multi-user roadmap
 

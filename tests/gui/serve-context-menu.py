@@ -20,6 +20,16 @@ What is asserted, on an edit (non-host) connection:
   - a used menu is gone (Stale); so is one replaced by a new right click;
   - a PartDesign Body's menu, whose building asks for an active view,
     opens no 3D view either.
+  - a ray through the box lists what it went through under "Pick geometry",
+    by element kind: the top and the bottom face, each an allowed pick
+    entry naming what it selects; choosing one selects it in this client's
+    selection (the client is told), and with extend it joins the first;
+  - on a view-only connection the menu is built, but nothing in it runs
+    but the browser's own camera entries: a pick is refused, ViewOnly.
+  - in a sketch's edit the right click is the sketcher's own menu, not the
+    view's: its create tools allowed, its "Leave sketch" the edit's way out
+    (and taken, it leaves); with a tool running the click ends the tool and
+    there is no menu, the next one being the menu again.
 
 Run through scripts/gui-test.sh (xvfb, isolated configuration, external
 timeout), or by hand as `FreeCAD <this script>` with GT_OUT set and this
@@ -45,6 +55,7 @@ OUT = os.environ["GT_OUT"]
 RESULT = os.environ.get("GT_RESULT", os.path.join(OUT, "result.txt"))
 DOC = "ServeContextMenu"
 CLIENT_WAIT_S = 120
+VIEW_TOKEN = "view-only-ctx"
 
 # Straight down onto the box (0..10 cube) and the body's pad beside it
 EYE = (5.0, 5.0, 200.0)
@@ -160,9 +171,70 @@ class Client(threading.Thread):
             '{"id":10,"op":"contextMenu","ray":%s}' % ray_down(55, 5)))
         ws.drain(0.3)
         self.sample()
-        ws.op('{"id":11,"op":"contextMenu.close","menu":%d}'
-              % (r["body"] or {}).get("menu", 0))
+
+        # "Pick geometry": a pick replaces the selection, an extended one
+        # joins it
+        r["picks"] = reply_of(ws.op(
+            '{"id":11,"op":"contextMenu","ray":%s}' % ray_down(5, 5)))
+        menu = r["picks"] or {}
+        faces = {e.get("pick", {}).get("sub"): e for e in walk(menu.get("items"))
+                 if e.get("kind") == "pick"}
+        if "Face6" in faces:
+            since = len(ws.pushes)
+            r["pick_top"] = reply_of(ws.op(
+                '{"id":12,"op":"contextMenu.trigger","menu":%d,"item":%d}'
+                % (menu["menu"], faces["Face6"]["id"])))
+            r["sel_top"] = reply_of(ws.next_push("selection", 5.0, since=since))
+        menu = reply_of(ws.op(
+            '{"id":13,"op":"contextMenu","ray":%s}' % ray_down(5, 5))) or {}
+        faces = {e.get("pick", {}).get("sub"): e for e in walk(menu.get("items"))
+                 if e.get("kind") == "pick"}
+        if "Face5" in faces:
+            since = len(ws.pushes)
+            r["pick_bottom"] = reply_of(ws.op(
+                '{"id":14,"op":"contextMenu.trigger","menu":%d,"item":%d,"extend":true}'
+                % (menu["menu"], faces["Face5"]["id"])))
+            r["sel_both"] = reply_of(ws.next_push("selection", 5.0, since=since))
+
+        # A sketch in edit: the sketcher's own right click
+        since = len(ws.pushes)
+        r["sk_edit"] = reply_of(ws.op('{"id":15,"op":"edit","obj":"Sketch","mode":0}'))
+        ws.next_push("edit", 5.0, since=since)
+        ws.drain(0.5)
+        r["sk_menu"] = reply_of(ws.op(
+            '{"id":16,"op":"contextMenu","ray":%s}' % ray_down(150, 150)))
+        r["sk_tool"] = reply_of(ws.op('{"id":17,"op":"command","name":"Sketcher_CreateLine"}'))
+        ws.drain(0.3)
+        r["sk_end_tool"] = reply_of(ws.op(
+            '{"id":18,"op":"contextMenu","ray":%s}' % ray_down(150, 150)))
+        r["sk_menu2"] = reply_of(ws.op(
+            '{"id":19,"op":"contextMenu","ray":%s}' % ray_down(150, 150)))
+        leave = [e for e in walk((r["sk_menu2"] or {}).get("items"))
+                 if e.get("command") == "Sketcher_LeaveSketch"]
+        if leave:
+            r["sk_leave"] = reply_of(ws.op(
+                '{"id":20,"op":"contextMenu.trigger","menu":%d,"item":%d}'
+                % (r["sk_menu2"]["menu"], leave[0]["id"])))
+            ws.drain(0.5)
+            self.sample()
         ws.close()
+
+        # A view-only connection
+        view = WS(self.port, "/scene?token=%s" % VIEW_TOKEN)
+        view.hello("serve-context-menu-view")
+        view.next_binary(20.0)
+        view.next_binary(0.5)
+        view.send(2, wsclient.camera_frame(EYE, QUAT, HEIGHT_ANGLE, NEAR, FAR, VW, VH))
+        view.drain(0.3)
+        r["view"] = reply_of(view.op(
+            '{"id":1,"op":"contextMenu","ray":%s}' % ray_down(5, 5)))
+        vmenu = r["view"] or {}
+        vpicks = [e for e in walk(vmenu.get("items")) if e.get("kind") == "pick"]
+        if vpicks:
+            r["view_pick"] = reply_of(view.op(
+                '{"id":2,"op":"contextMenu.trigger","menu":%d,"item":%d}'
+                % (vmenu["menu"], vpicks[0]["id"])))
+        view.close()
 
 
 def views_3d():
@@ -185,6 +257,10 @@ def build():
         pad.Width = 10
         pad.Height = 10
         body.Placement.Base = FreeCAD.Vector(50, 0, 0)
+        import Part
+        sketch = doc.addObject("Sketcher::SketchObject", "Sketch")
+        sketch.addGeometry(Part.LineSegment(FreeCAD.Vector(100, 100, 0),
+                                            FreeCAD.Vector(120, 100, 0)), False)
         doc.recompute()
 
         port = free_port()
@@ -192,6 +268,9 @@ def build():
         if not check("the document is served headless", ok, "port %d" % port):
             finish()
             return
+        # The view-only token first: a grant that names no token matches
+        # every connection, and of two equally specific the first wins
+        FreeCADGui.serveSetGrants([{"token": VIEW_TOKEN, "access": 1}, {"access": 0}])
         state["client"] = Client(port)
         state["client"].start()
         QtCore.QTimer.singleShot(50, poll)
@@ -273,6 +352,70 @@ def verify():
         check("the body's pad has a menu", body.get("ok") is True
               and (body.get("target") or {}).get("obj") == "Body", body.get("target"))
         check("building it opened no 3D view", len(views) > 1 and views[1][1] == 0, views)
+
+        picks = r.get("picks") or {}
+        top = [i for i in picks.get("items") or [] if "items" in i]
+        pick_menu = top[1] if len(top) > 1 else {}
+        check("\"Pick geometry\" follows the object's submenu",
+              pick_menu.get("text") == "Pick geometry", [i.get("text") for i in top])
+        kinds = [i.get("text") for i in pick_menu.get("items") or []]
+        check("grouped by element kind", "Face" in kinds, kinds)
+        entries = [e for e in walk(pick_menu.get("items")) if e.get("kind") == "pick"]
+        names = sorted(e.get("text") for e in entries)
+        check("the ray went through the top and the bottom face",
+              "Crate (Face6)" in names and "Crate (Face5)" in names, names)
+        check("each a pick entry, allowed, naming what it selects",
+              entries and all(e.get("allowed") is True and (e.get("pick") or {}).get("obj") == "Box"
+                              for e in entries), entries[:2])
+        check("choosing one selects it", (r.get("pick_top") or {}).get("ok") is True,
+              r.get("pick_top"))
+        sel = (r.get("sel_top") or {}).get("items")
+        check("in this client's selection, which it is told",
+              sel == [{"obj": "Box", "sub": "Face6"}], r.get("sel_top"))
+        check("an extended pick runs", (r.get("pick_bottom") or {}).get("ok") is True,
+              r.get("pick_bottom"))
+        sel = (r.get("sel_both") or {}).get("items") or []
+        check("and joins the first",
+              sorted(i.get("sub") for i in sel) == ["Face5", "Face6"], r.get("sel_both"))
+
+        view = r.get("view") or {}
+        check("a view-only connection gets the menu", view.get("ok") is True, view)
+        ventries = list(walk(view.get("items")))
+        check("in which only the browser's own camera entries run",
+              ventries and all(bool(e.get("allowed")) == (e.get("kind") == "local")
+                               for e in ventries),
+              [(e.get("text"), e.get("kind"), e.get("allowed")) for e in ventries
+               if bool(e.get("allowed")) != (e.get("kind") == "local")])
+        check("the pick entries are there, refused as view only",
+              any(e.get("kind") == "pick" and e.get("reason") == "View only" for e in ventries))
+        sk = r.get("sk_menu") or {}
+        check("a sketch is edited from the client", (r.get("sk_edit") or {}).get("ok") is True,
+              r.get("sk_edit"))
+        sk_entries = list(walk(sk.get("items")))
+        sk_commands = [e.get("command") for e in sk_entries]
+        check("in its edit the right click is the sketcher's own menu",
+              sk.get("ok") is True and "Sketcher_CreatePoint" in sk_commands
+              and not any(i.get("text") == "Pick geometry" for i in sk.get("items") or []),
+              sk_commands)
+        point = [e for e in sk_entries if e.get("command") == "Sketcher_CreatePoint"]
+        check("its create tools are allowed", point and point[0].get("allowed") is True, point[:1])
+        leave = [e for e in sk_entries if e.get("command") == "Sketcher_LeaveSketch"]
+        check("its Leave sketch is the edit's way out, allowed",
+              leave and leave[0].get("kind") == "finishEdit" and leave[0].get("allowed") is True,
+              leave[:1])
+        check("a tool runs", (r.get("sk_tool") or {}).get("ok") is True, r.get("sk_tool"))
+        check("with a tool running the right click ends it, and there is no menu",
+              (r.get("sk_end_tool") or {}).get("ok") is True
+              and not (r.get("sk_end_tool") or {}).get("items"), r.get("sk_end_tool"))
+        check("the next right click is the menu again",
+              any(e.get("command") == "Sketcher_CreatePoint"
+                  for e in walk((r.get("sk_menu2") or {}).get("items"))))
+        check("Leave sketch leaves the edit", (r.get("sk_leave") or {}).get("ok") is True
+              and len(views) > 2 and views[2][0] is False, (r.get("sk_leave"), views))
+
+        check("and a pick is refused on trigger",
+              (r.get("view_pick") or {}).get("ok") is not True
+              and (r.get("view_pick") or {}).get("code") is not None, r.get("view_pick"))
     except Exception:
         note("ABORT verify:\n" + traceback.format_exc())
     finish()

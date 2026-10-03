@@ -24,6 +24,7 @@
 #include <cstdint>
 #include <memory>
 #include <string>
+#include <vector>
 
 #include <QHash>
 #include <QJsonArray>
@@ -75,14 +76,18 @@ public:
         FinishEdit,
         /// A camera command the browser has of its own: never run here
         Local,
+        /// One of "Pick geometry"'s: select what the ray went through, in
+        /// the client's selection, as a pick does
+        Pick,
         /// Anything else, code the host runs as it is -- possibly modal
         Action,
     };
 
     /// For \a client of the served document \a doc, about \a target (empty
-    /// for a click on nothing)
+    /// for a click on nothing), with \a picks everything the click's ray went
+    /// through, for "Pick geometry"
     SceneContextMenu(uint64_t client, const std::string& doc, const App::SubObjectT& target,
-                     QObject* parent = nullptr);
+                     std::vector<App::SubObjectT> picks = {}, QObject* parent = nullptr);
     ~SceneContextMenu() override;
 
     /// Build the menu in the client's view and describe it, every entry
@@ -91,8 +96,10 @@ public:
     QJsonArray build(Render::ClientAccess access);
 
     /// Run entry \a item. Null on success, else an error code and, in
-    /// \a message, why.
-    const char* trigger(int item, Render::ClientAccess access, QString& message);
+    /// \a message, why. \a extend adds a pick to the selection rather than
+    /// replacing it, as Ctrl does on the desktop's.
+    const char* trigger(int item, Render::ClientAccess access, QString& message,
+                        bool extend = false);
 
     int token() const
     {
@@ -129,22 +136,32 @@ private:
         /// An edit entry run by its mode alone, not its own code
         /// (ViewProviderDocumentObject::EditEntryProperty)
         bool direct = false;
+        /// A pick's index in _picks
+        int pick = -1;
     };
     /// Enter the target's edit mode \a mode under the edit op's rules
     void runEdit(int mode);
+    /// "Pick geometry", put after \a after (the target's own submenu), or
+    /// first
+    void addPickMenu(QAction* after);
     QJsonObject describeEntry(QAction* action, int id, Render::ClientAccess access);
+    /// Every entry of the menu built, judged for \a access
+    QJsonArray describe(Render::ClientAccess access);
     ViewProviderDocumentObject* targetViewProvider() const;
 
     uint64_t _client;
     std::string _doc;
     int _token;
     App::SubObjectT _target;
+    std::vector<App::SubObjectT> _picks;
     /// The view provider the target's entries were built from: an entry
     /// is run only while the target still resolves to it, since an entry's
     /// code may hold it
     ViewProviderDocumentObject* _builtFrom = nullptr;
     std::unique_ptr<QMenu> _menu;
     QPointer<QAction> _finishEdit;
+    /// The menu is the client's edit mode's own (ViewProvider::editContextMenu)
+    bool _inEdit = false;
     QHash<int, Entry> _entries;
     /// What the last edit entry answered, for trigger()'s reply
     QJsonObject _editReply;

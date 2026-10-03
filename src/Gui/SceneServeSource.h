@@ -25,6 +25,7 @@
 
 #include <cstdint>
 #include <memory>
+#include <vector>
 
 #include <QObject>
 #include <QTimer>
@@ -231,6 +232,15 @@ public:
      */
     bool pickSubObject(const SbVec3f &origin, const SbVec3f &dir, uint64_t client,
                        App::SubObjectT &picked);
+
+    /*!
+     * Everything a world ray from \a client hits through its mirror, front
+     * to back, each object and element once: what the desktop's "Pick
+     * geometry" lists (View3DInventorViewer::getPickedList). Empty for a
+     * client that has stated no camera. GUI thread only.
+     */
+    std::vector<App::SubObjectT> pickAllSubObjects(const SbVec3f &origin, const SbVec3f &dir,
+                                                   uint64_t client);
 
 private Q_SLOTS:
     void onPublishTimeout();

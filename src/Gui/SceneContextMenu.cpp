@@ -103,6 +103,8 @@ const char* kindName(SceneContextMenu::Kind kind)
             return "finishEdit";
         case SceneContextMenu::Kind::Local:
             return "local";
+        case SceneContextMenu::Kind::Pick:
+            return "pick";
         default:
             return "action";
     }
@@ -177,11 +179,13 @@ ViewerContext* clientViewer(App::Document* doc, uint64_t client)
 SceneContextMenu::SceneContextMenu(uint64_t client,
                                    const std::string& doc,
                                    const App::SubObjectT& target,
+                                   std::vector<App::SubObjectT> picks,
                                    QObject* parent)
     : QObject(parent)
     , _client(client)
     , _doc(doc)
     , _target(target)
+    , _picks(std::move(picks))
 {
     static int tokens = 0;
     _token = ++tokens;
@@ -212,6 +216,20 @@ QJsonArray SceneContextMenu::build(Render::ClientAccess access)
     _menu = std::make_unique<QMenu>();
     _entries.clear();
 
+    // An edit mode with a right click of its own -- the sketcher's -- has
+    // it first, as on the desktop the view's popup is then never reached;
+    // only this client's edit, in the view it runs in
+    Gui::Document* gdoc = doc ? Application::Instance->getDocument(doc) : nullptr;
+    ViewProvider* editVp = gdoc ? gdoc->getInEdit() : nullptr;
+    if (editVp && viewer && editVp->getEditViewer() == viewer) {
+        MenuItem editMenu;
+        if (editVp->editContextMenu(&editMenu)) {
+            _inEdit = true;
+            MenuManager::getInstance()->setupContextMenu(&editMenu, *_menu);
+            return describe(access);
+        }
+    }
+
     // The active workbench's entries for a 3D view, as
     // NavigationStyle::openPopupMenu asks for them
     MenuItem view;
@@ -222,6 +240,7 @@ QJsonArray SceneContextMenu::build(Render::ClientAccess access)
     // (TreeWidget::_setupObjectMenu, built here without the tree: a served
     // document may be one the tree does not show). Its edit-mode entries
     // come to onEditEntry() rather than to the tree.
+    QAction* objAction = nullptr;
     if (ViewProviderDocumentObject* vp = targetViewProvider()) {
         _builtFrom = vp;
         auto objMenu = new QMenu(_menu.get());
@@ -232,12 +251,17 @@ QJsonArray SceneContextMenu::build(Render::ClientAccess access)
             _finishEdit = objMenu->addAction(tr("Finish editing"));
         if (!objMenu->actions().isEmpty()) {
             QAction* first = _menu->actions().isEmpty() ? nullptr : _menu->actions().front();
-            _menu->insertMenu(first, objMenu);
+            objAction = _menu->insertMenu(first, objMenu);
             if (first)
                 _menu->insertSeparator(first);
         }
     }
+    addPickMenu(objAction);
+    return describe(access);
+}
 
+QJsonArray SceneContextMenu::describe(Render::ClientAccess access)
+{
     int next = 1;
     QJsonArray items;
     describeInto(*_menu,
@@ -248,6 +272,64 @@ QJsonArray SceneContextMenu::build(Render::ClientAccess access)
                  items);
     tidySeparators(items);
     return items;
+}
+
+void SceneContextMenu::addPickMenu(QAction* after)
+{
+    if (_picks.empty())
+        return;
+    // As the desktop's (NavigationStyle::openPopupMenu, SelectionMenu::
+    // doPick): what the ray went through, under its element's kind, "Other"
+    // last; an entry is the object's label and the element
+    QString title = tr("Pick geometry");
+    Command* cmd = Application::Instance->commandManager().getCommandByName("Std_PickGeometry");
+    if (Action* action = cmd ? cmd->getAction() : nullptr)
+        title = plainText(action->text());
+    auto pickMenu = new QMenu(title, _menu.get());
+
+    std::map<std::string, std::vector<int>> byKind;
+    for (int i = 0; i < int(_picks.size()); ++i) {
+        int index = -1;
+        std::string element = _picks[i].getOldElementName(&index);
+        if (index < 0 || element.empty())
+            element.clear();
+        else
+            element = element.substr(0, element.find_first_of("0123456789"));
+        byKind[element].push_back(i);
+    }
+    auto addKind = [&](const std::string& kind, const std::vector<int>& indices) {
+        auto kindMenu = pickMenu->addMenu(kind.empty() ? tr("Other") : QString::fromUtf8(kind.c_str()));
+        for (int i : indices) {
+            const App::SubObjectT& sel = _picks[i];
+            App::DocumentObject* sobj = sel.getSubObject();
+            if (!sobj)
+                continue;
+            QString text = QString::fromUtf8(sobj->Label.getValue());
+            const std::string element = sel.getOldElementName();
+            if (!element.empty())
+                text += QStringLiteral(" (%1)").arg(QString::fromUtf8(element.c_str()));
+            QIcon icon;
+            if (ViewProvider* vp = Application::Instance->getViewProvider(sobj))
+                icon = vp->getIcon();
+            QAction* action = kindMenu->addAction(icon, text);
+            action->setProperty("fcPickIndex", i);
+        }
+    };
+    for (const auto& kind : byKind) {
+        if (!kind.first.empty())
+            addKind(kind.first, kind.second);
+    }
+    auto other = byKind.find(std::string());
+    if (other != byKind.end())
+        addKind(other->first, other->second);
+
+    // After the target's own submenu, ahead of the view's entries
+    const QList<QAction*> actions = _menu->actions();
+    const int at = after ? int(actions.indexOf(after)) + 1 : 0;
+    QAction* before = at < actions.size() ? actions.at(at) : nullptr;
+    _menu->insertMenu(before, pickMenu);
+    if (before && !before->isSeparator())
+        _menu->insertSeparator(before);
 }
 
 QJsonObject SceneContextMenu::describeEntry(QAction* action, int id, Render::ClientAccess access)
@@ -275,14 +357,31 @@ QJsonObject SceneContextMenu::describeEntry(QAction* action, int id, Render::Cli
     bool enabled = action->isEnabled();
     auto owner = qobject_cast<Action*>(action->parent());
     Command* cmd = owner ? owner->command() : nullptr;
+    const QVariant pick = action->property("fcPickIndex");
     if (action == _finishEdit) {
         entry.kind = Kind::FinishEdit;
+    }
+    else if (pick.isValid()) {
+        entry.kind = Kind::Pick;
+        entry.pick = pick.toInt();
+        // What it names, as a selection push names an item: the browser
+        // paints it while the pointer is over the entry
+        const App::SubObjectT& sel = _picks[entry.pick];
+        QJsonObject names;
+        names[QLatin1String("obj")] = QString::fromUtf8(sel.getObjectName().c_str());
+        names[QLatin1String("sub")] = QString::fromUtf8(sel.getSubName().c_str());
+        item[QLatin1String("pick")] = names;
     }
     else if (cmd) {
         entry.command = QString::fromUtf8(cmd->getName());
         item[QLatin1String("command")] = entry.command;
         const QString local = localAction(entry.command);
-        if (!local.isEmpty()) {
+        if (_inEdit && entry.command == QLatin1String("Sketcher_LeaveSketch")) {
+            // The sketch's way out is the edit's way out, run as the tree's
+            // "Finish editing" is
+            entry.kind = Kind::FinishEdit;
+        }
+        else if (!local.isEmpty()) {
             entry.kind = Kind::Local;
             item[QLatin1String("local")] = local;
             enabled = true;
@@ -354,6 +453,9 @@ bool SceneContextMenu::allowed(Kind kind,
         case Kind::FinishEdit:
             // What the edit and resetEdit ops admit
             return true;
+        case Kind::Pick:
+            // What a pick admits
+            return true;
         case Kind::Command:
             if (isBrowserSafeCommand(command))
                 return true;
@@ -381,7 +483,8 @@ QString SceneContextMenu::localAction(const QString& command)
     return it == actions.end() ? QString() : it->second;
 }
 
-const char* SceneContextMenu::trigger(int item, Render::ClientAccess access, QString& message)
+const char* SceneContextMenu::trigger(int item, Render::ClientAccess access, QString& message,
+                                      bool extend)
 {
     auto it = _entries.find(item);
     if (it == _entries.end()) {
@@ -414,6 +517,28 @@ const char* SceneContextMenu::trigger(int item, Render::ClientAccess access, QSt
     if (SceneServeSource::sourceFor(doc) && !viewer) {
         message = QStringLiteral("state a camera before editing");
         return "NoView";
+    }
+
+    if (entry.kind == Kind::Pick) {
+        // As SelectionMenu::onPicked: the pick replaces the selection, or
+        // with Ctrl joins it; in the client's view, so in its selection, as
+        // its click would land (SceneServeSource::pickAndSelect)
+        const App::SubObjectT& sel = _picks[entry.pick];
+        if (!sel.getSubObject()) {
+            message = QStringLiteral("the object is gone");
+            return "Stale";
+        }
+        ViewerScope scope(viewer);
+        SelectionNoTopParentCheck guard;
+        if (!extend) {
+            Selection().selStackPush();
+            Selection().clearSelection();
+        }
+        Selection().addSelection(sel.getDocumentName().c_str(),
+                                 sel.getObjectName().c_str(),
+                                 sel.getSubName().c_str());
+        Selection().selStackPush();
+        return nullptr;
     }
 
     if (entry.kind == Kind::FinishEdit) {
@@ -508,6 +633,10 @@ void Gui::installSceneContextMenuOps()
 
         App::SubObjectT target;
         source->pickSubObject(origin, dir, client, target);
+        // The desktop offers "Pick geometry" when the click hit anything
+        std::vector<App::SubObjectT> picks;
+        if (!target.getObjectName().empty())
+            picks = source->pickAllSubObjects(origin, dir, client);
 
         auto& menus = openMenus();
         auto previous = menus.find(client);
@@ -515,7 +644,8 @@ void Gui::installSceneContextMenuOps()
             release(std::move(previous->second));
             menus.erase(previous);
         }
-        auto menu = std::make_unique<SceneContextMenu>(client, doc->getName(), target);
+        auto menu = std::make_unique<SceneContextMenu>(client, doc->getName(), target,
+                                                       std::move(picks));
         QJsonArray items;
         try {
             items = menu->build(sceneControlAccess());
@@ -556,7 +686,8 @@ void Gui::installSceneContextMenuOps()
         if (it == menus.end() || !it->second || it->second->token() != token)
             return sceneControlError(id, "Stale", QStringLiteral("no such menu open"));
         QString message;
-        const char* error = it->second->trigger(item, sceneControlAccess(), message);
+        const bool extend = req.value(QLatin1String("extend")).toBool(false);
+        const char* error = it->second->trigger(item, sceneControlAccess(), message, extend);
         // A popup is gone once an entry is chosen; one refused stays open
         // for another try
         if (!error || std::strcmp(error, "Stale") == 0) {

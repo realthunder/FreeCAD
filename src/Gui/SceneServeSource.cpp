@@ -1856,6 +1856,34 @@ bool SceneServeSource::pickSubObject(const SbVec3f &origin, const SbVec3f &dir,
     return true;
 }
 
+std::vector<App::SubObjectT>
+SceneServeSource::pickAllSubObjects(const SbVec3f &origin, const SbVec3f &dir,
+                                    uint64_t client)
+{
+    std::vector<App::SubObjectT> picks;
+    MirrorViewer *mirror = isValid() ? mirrorViewerFor(client) : nullptr;
+    if (!mirror || !mirror->hasCamera() || !pimpl->doc)
+        return picks;
+    ViewerScope inView(mirror);
+    // Every hit is offered and none accepted, so the pick walks them all,
+    // front to back; the pick radius takes in the edges and vertices
+    // around a face, as the desktop's does
+    std::set<std::pair<ViewProviderDocumentObject *, std::string>> seen;
+    std::string subname;
+    std::unique_ptr<SoPickedPoint> none(mirror->pickRay(
+        origin, dir, [&](const SoPickedPoint &hit) {
+            auto vpd = pimpl->doc->getViewProviderByPathFromHead(
+                static_cast<SoFullPath *>(hit.getPath()));
+            subname.clear();
+            if (vpd && vpd->getObject() && vpd->getObject()->isAttachedToDocument()
+                    && vpd->getElementPicked(&hit, subname)
+                    && seen.emplace(vpd, subname).second)
+                picks.emplace_back(vpd->getObject(), subname.c_str());
+            return false;
+        }));
+    return picks;
+}
+
 namespace
 {
 
