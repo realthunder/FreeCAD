@@ -956,3 +956,10 @@ fc_add_gui_test(GuiSketchDatumUndo_tests_run
 fc_add_gui_test(GuiSketchDatumEditor_tests_run
                 sketch-datum-editor.py
                 --timeout 240)
+
+# A B-spline tool that is cancelled leaves nothing, and one that finishes is
+# one undo step: the tool's command, opened as it starts, outlives the
+# command that started it. With continuous mode off, finishing crashed.
+fc_add_gui_test(GuiSketchBSplineCancel_tests_run
+                sketch-bspline-cancel.py
+                --timeout 240)

@@ -506,13 +506,19 @@ protected:
      * A tool says openCommand/commitCommand/abortCommand rather than naming
      * Gui::Command, which is what upstream's handler text does. Upstream
      * carries an id per handler so that several transactions can be open at
-     * once; this fork has one active transaction, so these forward.
+     * once; this fork has one active transaction, so these forward -- and
+     * remember which transaction was opened here, so that a tool left with
+     * its command open takes back that one and no other (deactivate()).
      */
     //@{
     void openCommand(const std::string& name);
     void commitCommand();
     void abortCommand();
     //@}
+
+    /// The transaction openCommand() opened, while it may still be open; 0
+    /// once this tool has committed or aborted it.
+    int ownTransactionId = 0;
 
     /** The view this sketch is being edited in, or null.
      *
