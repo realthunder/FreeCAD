@@ -116,7 +116,7 @@ CmdSketcherConvertToNURBS::CmdSketcherConvertToNURBS()
     sToolTipText = QT_TR_NOOP("Converts the selected geometry to B-splines");
     sWhatsThis = "Sketcher_BSplineConvertToNURBS";
     sStatusTip = sToolTipText;
-    sPixmap = "Sketcher_BSplineApproximate";
+    sPixmap = "Sketcher_BSplineConvertToNURBS";
     sAccel = "";
     eType = ForEdit;
 }
