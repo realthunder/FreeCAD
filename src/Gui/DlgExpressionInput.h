@@ -63,6 +63,40 @@ private:
     bool defined{false};
 };
 
+/** What text typed as an expression for `path` gives, judged as the
+ * formula editor judges it: parsed, checked against the path, evaluated
+ * (function calls as the caller allows them: App::ExpressionFunctionCall
+ * Disabler), its unit against `impliedUnit`, its value in `range` when
+ * there is one.
+ *
+ * One copy of the rule for the dialog and for an editor in the view
+ * (Gui::DatumValueEditor).
+ */
+struct GuiExport ExpressionCheck
+{
+    enum Level
+    {
+        Text,     ///< nothing to say, or a plain message
+        Log,      ///< the value it gives
+        Warning,  ///< a value, with a reservation
+        Error     ///< no value
+    };
+    /// The parsed expression, when it is one that can be bound
+    std::shared_ptr<App::Expression> expression;
+    QString message;
+    Level level = Text;
+    /// Whether it may be taken: the dialog's OK
+    bool acceptable = false;
+};
+
+/// See ExpressionCheck. `completing`: a completion list is open, and a
+/// half-typed name is not an error yet.
+GuiExport ExpressionCheck checkExpression(const App::ObjectIdentifier& path,
+                                          const QString& text,
+                                          const Base::Unit& impliedUnit,
+                                          const NumberRange* range,
+                                          bool completing);
+
 class GuiExport DlgExpressionInput : public QDialog
 {
     Q_OBJECT
