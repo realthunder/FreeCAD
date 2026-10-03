@@ -573,6 +573,7 @@ void SketcherSettingsDisplay::saveSettings()
     ui->dialogOnDistanceConstraint->onSave();
     ui->checkBoxEditDatumInPlace->onSave();
     ui->checkBoxDatumEscapeTakesBack->onSave();
+    ui->checkBoxShowDirectionalAutoConstraintHints->onSave();
     ui->continueMode->onSave();
     ui->constraintMode->onSave();
     ui->checkBoxHideUnits->onSave();
@@ -611,6 +612,7 @@ void SketcherSettingsDisplay::loadSettings()
     ui->dialogOnDistanceConstraint->onRestore();
     ui->checkBoxEditDatumInPlace->onRestore();
     ui->checkBoxDatumEscapeTakesBack->onRestore();
+    ui->checkBoxShowDirectionalAutoConstraintHints->onRestore();
     ui->continueMode->onRestore();
     ui->constraintMode->onRestore();
     ui->checkBoxHideUnits->onRestore();

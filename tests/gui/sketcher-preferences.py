@@ -23,6 +23,9 @@ Claims:
   - the Grid page's line pattern entries are painted in the theme's text
     colour (they were black, whatever the theme) and are upstream's seven
     (00228821d0, b4de78d3d7, ab9188a5dc, a00fe1e886).
+  - the Display page can turn off the helper lines a line tool draws for a
+    parallel or perpendicular direction (upstream bfe1295b6b): the tools
+    read the option, and nothing could set it.
 
 The preferences dialog is modal: every step into it is a timer that fires
 inside its event loop, does its part and presses OK.
@@ -83,7 +86,7 @@ def clear():
 
 
 def in_preferences(action, page=0):
-    """Open one of the Sketcher's pages (0 General, 1 Grid, 3 Appearance), run
+    """Open one of the Sketcher's pages (0 General, 1 Grid, 2 Display, 3 Appearance), run
     action(dialog) inside the dialog's event loop and press OK. Returns
     what action returned."""
     got = {}
@@ -286,6 +289,23 @@ def run():
               stored == (0xFCFC, 2), stored)
         for name in ("ConstructionPattern", "ConstructionWidth"):
             view.RemInt(name)
+
+        # -- the display page: the directional helper lines ----------------
+        general = FreeCAD.ParamGet(SKETCHER + "/General")
+        general.RemBool("ShowDirectionalAutoConstraintHints")
+
+        def helpers(dialog):
+            box = widget(dialog, "checkBoxShowDirectionalAutoConstraintHints")
+            was = box.isChecked()
+            box.setChecked(False)
+            return was
+
+        was = in_preferences(helpers, page=2)
+        check("the display page has a check box for the directional helper lines, "
+              "ticked by default", was is True, was)
+        check("unticking it and OK stores it off, where the drawing tools read it",
+              general.GetBool("ShowDirectionalAutoConstraintHints", True) is False)
+        general.RemBool("ShowDirectionalAutoConstraintHints")
     except Exception:
         note("ABORT:\n" + traceback.format_exc())
     finish()
