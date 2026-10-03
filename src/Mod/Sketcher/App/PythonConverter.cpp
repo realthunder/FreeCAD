@@ -132,13 +132,11 @@ std::string PythonConverter::convert(const std::string& doc,
             currentconstruction = sg.construction;
         }
 
-        if (sg.construction) {
-            geolist =
-                boost::str(boost::format("%sconstrGeoList.append(%s)\n") % geolist % sg.creation);
-        }
-        else {
-            geolist = boost::str(boost::format("%sgeoList.append(%s)\n") % geolist % sg.creation);
-        }
+        // appended, not formatted anew with all that came before: that
+        // copied the whole list once per geometry
+        geolist += sg.construction ? "constrGeoList.append(" : "geoList.append(";
+        geolist += sg.creation;
+        geolist += ")\n";
 
         ngeos++;
     }
@@ -179,8 +177,9 @@ std::string PythonConverter::convert(const std::string& doc,
     for (auto constraint : constraints) {
         auto cg = process(constraint, geoIdMode);
 
-        constraintlist =
-            boost::str(boost::format("%s\nconstraintList.append(%s)") % constraintlist % cg);
+        constraintlist += "\nconstraintList.append(";
+        constraintlist += cg;
+        constraintlist += ")";
     }
 
     if (!constraints.empty()) {

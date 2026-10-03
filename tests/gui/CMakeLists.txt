@@ -1030,3 +1030,9 @@ fc_add_gui_test(GuiSketchDatumMeasure_tests_run
 fc_add_gui_test(GuiServeDatumMeasure_tests_run
                 serve-datum-measure.py
                 --timeout 240)
+
+# A clipboard copy costs in proportion to what is copied, and what is
+# pasted is what was copied.
+fc_add_gui_test(GuiSketchCopyClipboardCost_tests_run
+                sketch-copy-clipboard-cost.py
+                --timeout 240)

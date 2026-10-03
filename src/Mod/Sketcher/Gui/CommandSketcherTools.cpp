@@ -194,19 +194,28 @@ bool copySelectionToClipboard(Sketcher::SketchObject* obj) {
         rawGeos,
         Sketcher::PythonConverter::Mode::OmitInternalGeometry);
 
+    // The copy refers to the geometry by its place in the copied list, not by its id
+    // in this sketch. The map is built first, so that a geometry whose id happens to
+    // equal another's new index is not renumbered twice -- and once, not once per
+    // constraint: it is also what says whether a geometry is among the selected.
+    std::map<int, int> newIdOfGeoId;
+    for (size_t j = 0; j < listOfGeoId.size(); j++) {
+        newIdOfGeoId[listOfGeoId[j]] = static_cast<int>(j);
+    }
+
     // Export constraints of selected geos.
     std::vector<std::unique_ptr<Sketcher::Constraint>> shapeConstraints;
     for (auto constr : obj->Constraints.getValues()) {
 
-        auto isSelectedGeoOrAxis = [](const std::vector<int>& vec, int value) {
-            return (std::find(vec.begin(), vec.end(), value) != vec.end())
+        auto isSelectedGeoOrAxis = [&newIdOfGeoId](int value) {
+            return newIdOfGeoId.count(value) > 0
                 || value == GeoEnum::GeoUndef || value == GeoEnum::RtPnt
                 || value == GeoEnum::VAxis || value == GeoEnum::HAxis;
         };
 
         bool skip = false;
         for (int i = 0; constr->hasElement(i); ++i) {
-            if (!isSelectedGeoOrAxis(listOfGeoId, constr->getGeoId(i))) {
+            if (!isSelectedGeoOrAxis(constr->getGeoId(i))) {
                 skip = true;
                 break;
             }
@@ -218,14 +227,6 @@ bool copySelectionToClipboard(Sketcher::SketchObject* obj) {
         }
         if (skip) {
             continue;
-        }
-
-        // The copy refers to the geometry by its place in the copied list, not by its id
-        // in this sketch. The map is built first, so that a geometry whose id happens to
-        // equal another's new index is not renumbered twice.
-        std::map<int, int> newIdOfGeoId;
-        for (size_t j = 0; j < listOfGeoId.size(); j++) {
-            newIdOfGeoId[listOfGeoId[j]] = static_cast<int>(j);
         }
 
         std::unique_ptr<Constraint> temp(constr->copy());
