@@ -500,6 +500,39 @@ public:
         }
         return false;
     }
+
+    /// What the tool waits for, by flavour. The second line is the gate's own
+    /// rule: an object as a whole is taken only with Alt held.
+    std::list<Gui::InputHint> getToolHints() const override
+    {
+        using enum Gui::InputHint::UserInput;
+
+        QString pick;
+        if (attaching.size()) {
+            pick = tr("%1 pick geometry to attach the external geometry to",
+                      "Sketcher External: hint");
+        }
+        else if (intersection && defining) {
+            pick = tr("%1 pick geometry to add its intersection with the sketch plane "
+                      "as defining geometry",
+                      "Sketcher External: hint");
+        }
+        else if (intersection) {
+            pick = tr("%1 pick geometry to add its intersection with the sketch plane",
+                      "Sketcher External: hint");
+        }
+        else if (defining) {
+            pick = tr("%1 pick geometry to add its projection as defining geometry",
+                      "Sketcher External: hint");
+        }
+        else {
+            pick = tr("%1 pick geometry to add its projection", "Sketcher External: hint");
+        }
+        return {
+            {pick, {MouseLeft}},
+            {tr("%1 pick a whole object", "Sketcher External: hint"), {{KeyAlt, MouseLeft}}},
+        };
+    }
 };
 
 } // namespace SketcherGui
