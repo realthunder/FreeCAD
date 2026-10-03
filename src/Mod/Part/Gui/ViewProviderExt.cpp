@@ -7014,6 +7014,7 @@ bool ViewProviderPartExt::captureVisualFill(const TopoDS_Shape &cShape,
                 IMeshTools_Parameters meshParams;
                 meshParams.Deflection = deflection;
                 meshParams.Relative = Standard_False;
+                meshParams.Angle = AngDeflectionRads;
                 // OCCT's own parallelism splits THIS shape over its
                 // faces. Measured on a 17058-solid load it is worth
                 // keeping (4.8s of a 22s mesh term) but reaches only
