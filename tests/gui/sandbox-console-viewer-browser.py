@@ -56,6 +56,7 @@ DRIVER = os.path.join(REPO, "scripts", "console-drive.js")
 DOC = "ConsoleViewerBrowser"
 DOC2 = "ConsoleViewerSecond"
 TOKEN = "c4-viewer-token"
+NAMES = ("console-viewer", "fcx-ask:viewonly", "fcx-ask:edit", "fcx-ask:done")
 RUN_WAIT_S = 420
 # The browser with no driver: the page drives itself and posts its verdict.
 SAFARI = bool(os.environ.get("SAFARI"))
@@ -161,8 +162,23 @@ def build():
             finish()
             return
         check("a second document is served", FreeCADGui.serveDocument(doc2, port))
-        FreeCADGui.serveSetGrants([{"token": TOKEN}])
-        url = "http://127.0.0.1:%d/?token=%s&doc=%s&doc2=%s&console" % (port, TOKEN, DOC, DOC2)
+        # The page writes, so it is someone (docs/TransactionLog.md sec 30.6
+        # U4, U6): the token is an invitation issued to the name the page
+        # says in its hello, and an open invitation to look for its plain
+        # fetches, which are made before any name is said.
+        # The page also asks the desktop for things by renaming its
+        # connection (below), and an invitation is to one name: one for each
+        # name it takes.
+        FreeCADGui.serveSetGrants(
+            [{"token": TOKEN, "client": name} for name in NAMES]
+            + [{"token": TOKEN, "access": 1}]
+        )
+        url = "http://127.0.0.1:%d/?token=%s&client=console-viewer&doc=%s&doc2=%s&console" % (
+            port,
+            TOKEN,
+            DOC,
+            DOC2,
+        )
         if SAFARI:
             back = free_port()
             server = http.server.ThreadingHTTPServer(("127.0.0.1", back), Collector)

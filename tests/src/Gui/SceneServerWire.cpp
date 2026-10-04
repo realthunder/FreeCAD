@@ -280,6 +280,15 @@ bool has(const std::string& json, const char* fragment)
     return json.find(fragment) != std::string::npos;
 }
 
+/// What makes a client someone: the header a front door would add, which
+/// this suite's server believes from loopback. Only a connection that is
+/// known may act on what it is shown (docs/ShareAccess.md sec 2.3); one
+/// opened with no headers is nobody, and may look.
+WsClient::Headers known()
+{
+    return {{"X-Forwarded-Email", "wire@example.test"}};
+}
+
 /// The wire's binary scene message: 8-byte little-endian version,
 /// then the payload the publisher handed in.
 std::vector<uint8_t> versioned(uint64_t version, const std::vector<uint8_t>& payload)
@@ -429,7 +438,9 @@ protected:
         // The environment must not gate this run: FC_SERVE_TOKEN in the
         // user's shell would turn every open-door case into a 403.
         server.setToken({});
-        server.setTrustProxy(false);
+        // A front door's headers are believed: that is how a test's client
+        // says who it is (known()). One that sends none is unaffected.
+        server.setTrustProxy(true);
         port = freePort();
         ASSERT_GT(port, 0);
         ASSERT_TRUE(server.start(port)) << "the listener did not start";
@@ -572,7 +583,8 @@ TEST_F(SceneServerWire, handshakeThenHelloThenSnapshot)
     Render::SceneClientInfo info;
     ASSERT_TRUE(waitFor([&] { return findClient("wire-snapshot", info); }));
     EXPECT_TRUE(info.viewer) << "a hello makes a viewer";
-    EXPECT_EQ(info.access, Render::ClientAccess::Edit);
+    EXPECT_EQ(info.access, Render::ClientAccess::View)
+        << "nobody vouched for it: it may look (docs/ShareAccess.md sec 2.3)";
     EXPECT_NE(info.peer.find("127.0.0.1:"), std::string::npos);
     EXPECT_EQ(info.address, info.peer) << "no proxy, so the judged address is the peer";
     EXPECT_FALSE(info.proxied);
@@ -605,7 +617,8 @@ TEST_F(SceneServerWire, heldVersionOnTheUpgradeCostsNoPayload)
     // and, being current, must get no snapshot -- so the very next
     // message after its hello is the docs listing it asks for.
     WsClient c(port,
-               "/scene?v=" + std::to_string(version) + "&s=" + std::to_string(session));
+               "/scene?v=" + std::to_string(version) + "&s=" + std::to_string(session),
+               known());
     c.hello("wire-held");
     c.sendText("{\"cmd\":\"docs\"}");
     WsClient::Msg m = c.read();
@@ -637,7 +650,7 @@ TEST_F(SceneServerWire, controlOpReachesTheHandlerAndItsReplyComesBack)
         req.reply("{\"id\":7,\"ok\":true,\"echo\":\"answered\"}");
     });
 
-    WsClient c(port, "/scene");
+    WsClient c(port, "/scene", known());
     c.hello("wire-op");
     WsClient::Msg m = c.readBinary();
     ASSERT_TRUE(m.ok) << m.ec.message();
@@ -731,7 +744,7 @@ TEST_F(SceneServerWire, fragmentedMessagesAreReassembled)
         ops.push_back(req.json);
     });
 
-    WsClient c(port, "/scene");
+    WsClient c(port, "/scene", known());
     c.hello("wire-frag");
     WsClient::Msg m = c.readBinary();
     ASSERT_TRUE(m.ok) << m.ec.message();
@@ -1098,7 +1111,6 @@ TEST_F(SceneServerWire, aHostGrantMakesAHostOnlyOfTheIdentityItNames)
         {
             auto& s = Render::SceneStreamServer::instance();
             s.setGrants({});
-            s.setTrustProxy(false);
         }
     } restore;
     auto grant = [](const char* identity, int access) {
@@ -1150,12 +1162,15 @@ TEST_F(SceneServerWire, aHostGrantMakesAHostOnlyOfTheIdentityItNames)
     const uint64_t guestId = info.id;
 
     auto anon = open(nullptr, "host-anon");
-    EXPECT_EQ(told(*anon), "");
+    EXPECT_TRUE(has(told(*anon), "\"access\":\"view\""))
+        << "an edit grant admits someone unknown to look";
     ASSERT_TRUE(waitFor([&] { return findClient("host-anon", info); }));
     EXPECT_FALSE(server.setClientAccess(info.id, Render::ClientAccess::Host))
         << "a chosen name is never a host";
+    EXPECT_FALSE(server.setClientAccess(info.id, Render::ClientAccess::Edit))
+        << "nor an editor";
     ASSERT_TRUE(findClient("host-anon", info));
-    EXPECT_EQ(info.access, Render::ClientAccess::Edit);
+    EXPECT_EQ(info.access, Render::ClientAccess::View);
 
     EXPECT_TRUE(server.setClientAccess(guestId, Render::ClientAccess::Host))
         << "by hand, for a verified identity";
@@ -1168,6 +1183,100 @@ TEST_F(SceneServerWire, aHostGrantMakesAHostOnlyOfTheIdentityItNames)
     EXPECT_EQ(info.access, Render::ClientAccess::Edit);
 }
 
+/// Only someone known may write (docs/ShareAccess.md sec 2.3,
+/// docs/TransactionLog.md sec 30.6 U4 and U6): a verified identity, or the
+/// holder of an invitation issued to its one name. Anyone else a grant
+/// admits may look, whatever the grant says; the shared token is an open
+/// invitation; an invitation does not follow a rename; and the host cannot
+/// make an unknown connection an editor by hand.
+TEST_F(SceneServerWire, onlySomeoneKnownMayWrite)
+{
+    auto& server = Render::SceneStreamServer::instance();
+    struct Restore
+    {
+        ~Restore()
+        {
+            auto& s = Render::SceneStreamServer::instance();
+            s.setGrants({});
+            s.setToken({});
+        }
+    } restore;
+    auto told = [&](WsClient& c) -> std::string {
+        for (int i = 0; i < 6; ++i) {
+            WsClient::Msg m = c.read(1500);
+            if (!m.ok) {
+                return {};
+            }
+            if (m.text && has(m.data, "\"cmd\":\"config\"")) {
+                return m.data;
+            }
+        }
+        return {};
+    };
+    Render::SceneClientInfo info;
+
+    // The shared token: an open invitation, whoever holds it.
+    server.setToken("s3cret");
+    {
+        WsClient holder(port, "/scene?token=s3cret");
+        holder.hello("rule-holder");
+        EXPECT_TRUE(has(told(holder), "\"access\":\"view\""));
+        ASSERT_TRUE(waitFor([&] { return findClient("rule-holder", info); }));
+        EXPECT_EQ(info.access, Render::ClientAccess::View);
+        EXPECT_FALSE(info.invited);
+        WsClient signedIn(port, "/scene?token=s3cret", known());
+        signedIn.hello("rule-signed-in");
+        ASSERT_TRUE(waitFor([&] { return findClient("rule-signed-in", info); }));
+        EXPECT_EQ(info.access, Render::ClientAccess::Edit) << "verified, so it may write";
+    }
+    server.setToken({});
+
+    // Grants: an invitation to one name, the same token as an open
+    // invitation that says edit, and a name pattern.
+    auto grant = [](const char* token, const char* client, int access) {
+        Render::SceneGrant g;
+        g.token = token;
+        g.client = client;
+        g.access = access;
+        return g;
+    };
+    server.setGrants({grant("inv", "ann", 0), grant("any", "", 0), grant("fam", "lei-*", 0)});
+
+    WsClient ann(port, "/scene?token=inv&client=ann");
+    ann.hello("ann");
+    ASSERT_TRUE(waitFor([&] { return findClient("ann", info); }));
+    EXPECT_EQ(info.access, Render::ClientAccess::Edit) << "invited by name";
+    EXPECT_TRUE(info.invited);
+    const uint64_t annId = info.id;
+
+    WsClient open(port, "/scene?token=any&client=rule-open");
+    open.hello("rule-open");
+    EXPECT_TRUE(has(told(open), "\"access\":\"view\""));
+    ASSERT_TRUE(waitFor([&] { return findClient("rule-open", info); }));
+    EXPECT_EQ(info.access, Render::ClientAccess::View) << "an open invitation that says edit";
+    EXPECT_FALSE(info.invited);
+    EXPECT_FALSE(server.setClientAccess(info.id, Render::ClientAccess::Edit))
+        << "not by hand either";
+
+    WsClient family(port, "/scene?token=fam&client=lei-phone");
+    family.hello("lei-phone");
+    ASSERT_TRUE(waitFor([&] { return findClient("lei-phone", info); }));
+    EXPECT_EQ(info.access, Render::ClientAccess::View) << "a pattern names nobody";
+    EXPECT_FALSE(info.invited);
+
+    // The host may take an invited client's editing away and give it back.
+    EXPECT_TRUE(server.setClientAccess(annId, Render::ClientAccess::View));
+    EXPECT_TRUE(server.setClientAccess(annId, Render::ClientAccess::Edit));
+
+    // An invitation is to the name it names.
+    ann.sendText("{\"cmd\":\"client\",\"name\":\"bea\"}");
+    EXPECT_TRUE(has(told(ann), "\"access\":\"view\"")) << "renamed, it may look";
+    ASSERT_TRUE(waitFor([&] { return findClient("bea", info); }));
+    EXPECT_EQ(info.access, Render::ClientAccess::View);
+    EXPECT_FALSE(info.invited);
+    EXPECT_FALSE(server.setClientAccess(info.id, Render::ClientAccess::Edit));
+}
+
 TEST_F(SceneServerWire, theCapCountsUsersNotAddresses)
 {
     auto& server = Render::SceneStreamServer::instance();
@@ -1178,7 +1287,6 @@ TEST_F(SceneServerWire, theCapCountsUsersNotAddresses)
         ~Restore()
         {
             auto& s = Render::SceneStreamServer::instance();
-            s.setTrustProxy(false);
             s.setConnectionCaps(64, 16);
         }
     } restore;
@@ -1384,7 +1492,7 @@ TEST_F(SceneServerWire, aCombinedFrameIsBothItsHalvesInOrder)
         order.push_back("pick");
     });
 
-    WsClient c(port, "/scene");
+    WsClient c(port, "/scene", known());
     c.hello("wire-combined");
     WsClient::Msg m = c.readBinary();
     ASSERT_TRUE(m.ok) << m.ec.message();
@@ -1485,7 +1593,7 @@ TEST_F(SceneServerWire, anInputEventArrivesInTheClientsOwnCoordinates)
         got.push_back(f);
     });
 
-    WsClient c(port, "/scene");
+    WsClient c(port, "/scene", known());
     c.hello("wire-input");
     WsClient::Msg m = c.readBinary();
     ASSERT_TRUE(m.ok) << m.ec.message();
@@ -1540,7 +1648,7 @@ TEST_F(SceneServerWire, aMalformedInputFrameIsNotAnEvent)
         got.push_back(f);
     });
 
-    WsClient c(port, "/scene");
+    WsClient c(port, "/scene", known());
     c.hello("wire-input-bad");
     WsClient::Msg m = c.readBinary();
     ASSERT_TRUE(m.ok) << m.ec.message();

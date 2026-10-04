@@ -429,6 +429,12 @@ QString ruleHelp()
         "re-enabled without reissuing a link. A grant marked <i>this "
         "session</i> was minted live for a renamed client and dies with "
         "the process — Keep it to write it down.<br><br>"
+        "<b>Only someone known may edit</b>: a signed-in identity, or "
+        "the holder of an invitation issued to one name -- a grant with "
+        "a token and a name written out in full, not a pattern. Anyone "
+        "else a grant admits may look, whatever access it says, and a "
+        "client that renames itself leaves its invitation behind. What "
+        "each one writes is recorded under that identity or name.<br><br>"
         "What holds and what does not: the <b>token</b> is a secret and "
         "the <b>identity</b> is verified by the sign-in door, so those "
         "two are boundaries. The <b>name</b> is whatever the viewer "
@@ -708,6 +714,13 @@ public:
             // A name is what a client chose: only a verified identity may
             // be a host (docs/ShareAccess.md sec 2.2)
             setItemEnabled(mode, 2, !c.identity.empty());
+            // and only someone known may edit: a verified identity, or the
+            // holder of an invitation issued to its one name
+            // (docs/TransactionLog.md sec 30.6 U4, U6)
+            mode->setItemData(0, tr("Only for a signed-in identity, or the holder of an "
+                   "invitation issued to its one name: a grant with a token "
+                   "and the name written out in full."), Qt::ToolTipRole);
+            setItemEnabled(mode, 0, !c.identity.empty() || c.invited);
             mode->setCurrentIndex(c.access == Render::ClientAccess::View ? 1
                                   : c.access == Render::ClientAccess::Host ? 2 : 0);
             mode->setToolTip(tr(
@@ -1372,7 +1385,10 @@ void ShareDocumentManager::openShareDialog()
             ? QObject::tr("Viewers sign in at the front door; who gets "
                           "in, and as what, is the grant list on the "
                           "sharing panel.")
-            : QObject::tr("Anyone holding this link can connect.");
+            : QObject::tr("Anyone holding this link can connect, to look. "
+                          "Editing is for someone known: invite them by name "
+                          "on the sharing panel, or share through a sign-in "
+                          "door.");
         bool ok = true;
         if (door.mode == FrontDoor::Quick && cloudflaredPath().isEmpty()) {
             note = QObject::tr(

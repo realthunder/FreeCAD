@@ -271,6 +271,11 @@ struct SceneClientInfo {
     /// self-declared \a client label is all there is.
     std::string identity;
     bool viewer = false;      ///< sent a hello (a probe may not)
+    /// Admitted on an invitation the host issued to this one name: a
+    /// token, and a name spelled out rather than a pattern. With no
+    /// verified identity it is what lets the connection write
+    /// (docs/TransactionLog.md sec 30.6 U4, U6).
+    bool invited = false;
     /// Past the door: a connection still waiting for a token it has not
     /// presented is on the roster and gets no scene bytes.
     bool authorized = false;

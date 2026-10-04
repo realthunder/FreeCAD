@@ -139,11 +139,13 @@ def run():
         port = free_port()
         check("the document is served", Gui.serveDocument(doc, port))
         # The door: alice by the identity a front door asserts, bob by an
-        # invitation issued to his name, and an open invitation to look.
+        # invitation issued to his name, an open invitation to look, and an
+        # open invitation that says edit.
         Gui.serveSetGrants([
             {"identity": "alice@example.com", "access": 0},
             {"token": "t-bob", "client": "bob", "access": 0},
             {"token": "t-open", "client": "*", "access": 1},
+            {"token": "t-any", "client": "*", "access": 0},
         ])
         settle()
 
@@ -293,7 +295,45 @@ def run():
                       == ["alice@example.com", "alice@example.com", "bob (invited)",
                           "carol (declared)"])
 
-        for ws in (alice, bob, carol):
+        # The door (S.d; U4, U6). An open invitation makes nobody someone:
+        # the grant says edit and its holder may look.
+        dave = connect(port, doc.Name, "dave", "?token=t-any&client=dave")
+        settle(25)
+        roster = dict((c["client"], c) for c in Gui.serveClients())
+        check("an open invitation to edit admits to look %r"
+              % ((roster.get("dave", {}).get("access"), roster.get("dave", {}).get("invited")),),
+              roster.get("dave", {}).get("access") == "view"
+              and roster.get("dave", {}).get("invited") is False
+              and roster.get("bob", {}).get("invited") is True
+              and roster.get("bob", {}).get("access") == "edit")
+        count = len(rows(doc, "user"))
+        reply = set_length(dave, doc.Name, 30.0, 31)
+        check("its holder's write is refused %r" % (reply,),
+              bool(reply) and reply.get("ok") is False and reply.get("code") == "ViewOnly"
+              and len(rows(doc, "user")) == count)
+        check("and the host cannot make it an editor by hand",
+              Gui.serveSetClientMode(roster["dave"]["id"], "edit") is False
+              and Gui.serveSetClientMode(roster["carol"]["id"], "edit") is False)
+        logins = [(t["author"], t["author_kind"]) for t in rows(doc, "login")]
+        check("it is logged as the name it gave, declared %r" % (logins[-1:],),
+              logins[-1:] == [("dave", "declared")])
+        # An invitation is to one name: under another, bob is whoever he
+        # says he is, and no longer writes.
+        off(lambda: bob.send(1, b'{"cmd":"client","name":"bobby"}'))
+        settle(25)
+        roster = dict((c["client"], c) for c in Gui.serveClients())
+        check("renamed, the invited client may only look %r"
+              % ((roster.get("bobby", {}).get("access"), roster.get("bobby", {}).get("invited")),),
+              roster.get("bobby", {}).get("access") == "view"
+              and roster.get("bobby", {}).get("invited") is False)
+        reply = set_length(bob, doc.Name, 31.0, 32)
+        check("and his write is refused %r" % (reply,),
+              bool(reply) and reply.get("ok") is False and reply.get("code") == "ViewOnly")
+        names = dict((s["name"], s) for s in doc.getTransactionSessions() if s["closed"] == 0)
+        check("the log has him as another user from there on %r" % (sorted(names),),
+              "bobby" in names and names["bobby"]["kind"] == "declared" and "bob" not in names)
+
+        for ws in (alice, bob, carol, dave):
             off(ws.close)
         settle(40)
         still = [s["name"] for s in doc.getTransactionSessions()

@@ -126,6 +126,42 @@ refused; an editor's commands off the browser allowlist are. The omni box offers
 `/param` mode to anyone: the host's preferences are not a browser's to change, whatever
 its level.
 
+### 2.3 Who may write: someone known
+
+Added 2026-10-04, with the transaction log's authors (docs/TransactionLog.md sec 30.6
+U4 and U6, 30.9, 30.11). What a connection writes is recorded under who it is, so a
+connection that is nobody does not write. **Sec 2.2's rule for a host, extended to
+edit:**
+
+- **A connection may edit when it is known**, one of two ways:
+  - a **verified identity** -- the front door asserted one (sec 4);
+  - an **invitation issued to its one name** -- the grant that admits it has a token,
+    which is a secret, and a name written out in full rather than a pattern, which is
+    the host saying whose it is, and the connection gives that name. Logged as
+    `invited`, so the record shows no sign-in stood behind it.
+- **Anyone else a grant admits may look**, whatever access the grant says: an edit or a
+  full-control grant matched on a name pattern, an address, or nothing but a token; and
+  the shared token, or no token at all, which is an open invitation. A view-only
+  connection's picks are dropped and its mutating ops are answered `ViewOnly`, as they
+  were.
+- **An invitation is to the name it names.** A client that renames itself is whoever it
+  now says it is: it keeps its place and goes view-only, and the log has it as another
+  user from there on. The easing a rename mints (sec 2) never invites.
+- **By hand, the same.** The host cannot make an unknown connection an editor from the
+  roster (`SceneStreamServer::setClientAccess`, `Gui.serveSetClientMode(id, 'edit')`
+  answer false); the panel's "Can edit" is disabled for it and says why.
+- **One function decides** (`writerRule` in `SceneServer.cpp`), applied wherever a
+  level is: at the upgrade, at every hello, when the grant list changes, at a rename,
+  at a hand change. The roster says which (`SceneClientInfo::invited`,
+  `Gui.serveClients()[i]["invited"]`).
+
+**What it costs.** Sharing with no front door -- a LAN, a tunnel with a bare token --
+is view-only for everyone but the desktop, until the host invites by name: a grant
+with the token and the person's name, and a link carrying both (`?token=...&client=
+...`; the viewer says `?client=` in its hello). A page that fetches before it has said
+a name is admitted for those fetches by the same token as an open invitation to look
+beside the named one; the most specific match judges the socket's hello.
+
 ## 3. Prior art
 
 - **Ticket exchange** — a long-lived credential buys a short-lived, often single-use

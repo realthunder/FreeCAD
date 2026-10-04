@@ -404,7 +404,34 @@ public:
         bool admitted = false;
         ClientAccess access = ClientAccess::Edit;
         uint64_t grant = 0;   ///< admitting grant id; 0 = legacy door
+        /// Admitted on an invitation issued to its one name (invitedBy).
+        bool invited = false;
     };
+
+    /// Whether \a grant is an invitation the host issued to one named
+    /// person, and \a client that person (docs/TransactionLog.md sec 30.6
+    /// U6): it has a token, which is a secret, and its name field spells
+    /// a name out rather than a pattern, which is the host saying whose
+    /// it is. An easing the server minted for a rename names nobody the
+    /// host chose, and an open invitation makes nobody anyone.
+    static bool invitedBy(const SceneGrant &grant, const std::string &client)
+    {
+        return !grant.liveOnly && !grant.token.empty() && !grant.client.empty()
+            && grant.client.find_first_of("*?") == std::string::npos
+            && grant.client == client;
+    }
+
+    /// Only a user who is known may write (docs/TransactionLog.md sec
+    /// 30.6 U4): a connection with no verified identity and no
+    /// invitation to its name is view-only, whatever its grant says --
+    /// the rule a host grant already had for an identity it does not
+    /// name literally (docs/ShareAccess.md sec 2.2), extended to edit.
+    static ClientAccess writerRule(ClientAccess access,
+                                   const std::string &identity, bool invited)
+    {
+        return access != ClientAccess::View && identity.empty() && !invited
+            ? ClientAccess::View : access;
+    }
 
     /// Whether a host grant's identity pattern makes \a identity a host
     /// (docs/ShareAccess.md sec 2.2): only a literal naming the verified
@@ -463,10 +490,13 @@ public:
         if (!best || best->access == 2)
             return out;
         out.admitted = true;
-        out.access = best->access == 1 ? ClientAccess::View
+        out.invited = identity.empty() && invitedBy(*best, client);
+        out.access = writerRule(
+            best->access == 1 ? ClientAccess::View
             : best->access == 3 && hostIdentity(best->identity, identity)
                 ? ClientAccess::Host
-                : ClientAccess::Edit;
+                : ClientAccess::Edit,
+            identity, out.invited);
         out.grant = best->id;
         return out;
     }
@@ -478,9 +508,12 @@ public:
     {
         std::lock_guard<std::mutex> guard(tokenMutex);
         if (grantList.empty()) {
+            // The shared token, or no token at all, is an open
+            // invitation: it says nothing of who holds it.
             Judgement out;
             out.admitted = tokenSecret.empty()
                 || secretEqual(token, tokenSecret);
+            out.access = writerRule(ClientAccess::Edit, identity, false);
             return out;
         }
         return judgeWith(grantList, token, identity, client, address);
@@ -1207,6 +1240,10 @@ public:
         /// changes it from the GUI thread): View drops picks and refuses
         /// mutating ops, Host may act beyond the document.
         ClientAccess access = ClientAccess::Edit;
+        /// Admitted on an invitation issued to its one name (invitedBy);
+        /// connMutex. With no verified identity this is what lets it
+        /// write.
+        bool invited = false;
         /// The host asked this connection closed (guarded by
         /// connMutex): its farewell is on the outbox, and its own loop
         /// sends that and hangs up. Set only through kick().
@@ -1461,6 +1498,9 @@ public:
                 if (list.empty()) {
                     entry.admitted = secret.empty()
                         || conn->presentedToken == secret;
+                    // What the host set by hand stands, where it may.
+                    entry.access = writerRule(conn->access, conn->identity,
+                                              false);
                 }
                 else {
                     entry = judgeWith(list, conn->presentedToken,
@@ -1474,12 +1514,15 @@ public:
                     changed = true;
                 }
                 else {
-                    if (!list.empty() && conn->access != entry.access) {
+                    if (conn->access != entry.access) {
                         conn->access = entry.access;
                         // told, as a mode set by hand is
                         conn->queueText(configJson(entry.access));
                         changed = true;
                     }
+                    if (conn->invited != entry.invited)
+                        changed = true;
+                    conn->invited = entry.invited;
                     conn->grant = entry.grant;
                 }
             }
@@ -1505,6 +1548,7 @@ public:
             info.identity = conn->identity;
             info.grant = conn->grant;
             info.viewer = conn->viewer;
+            info.invited = conn->invited;
             info.authorized = conn->authorized;
             info.access = conn->access;
             info.connectedMs = uint64_t(
@@ -1533,6 +1577,10 @@ public:
                 if (conn->id == id) {
                     // A host is a verified person, never a chosen name
                     if (access == ClientAccess::Host && conn->identity.empty())
+                        return false;
+                    // and a writer is someone known (sec 30.6 U4)
+                    if (writerRule(access, conn->identity, conn->invited)
+                            != access)
                         return false;
                     conn->access = access;
                     // Tell the client its mode, so its UI can say so.
@@ -2417,6 +2465,7 @@ public:
         conn.authorized = boot.entry.admitted;
         conn.admitted = boot.entry.admitted;
         conn.access = boot.entry.access;
+        conn.invited = boot.entry.invited;
         conn.grant = boot.entry.grant;
         conn.presentedToken = boot.presentedToken;
         conn.addr = boot.addr;
@@ -3372,13 +3421,12 @@ public:
                     conn.admitted = true;
                     conn.presentedToken = offered;
                     conn.grant = entry.grant;
-                    if (grants) {
-                        conn.access = entry.access;
-                        // Said at once, so the page offers only what
-                        // this connection may do
-                        if (entry.access != ClientAccess::Edit)
-                            conn.queueText(configJson(entry.access));
-                    }
+                    conn.invited = entry.invited;
+                    conn.access = entry.access;
+                    // Said at once, so the page offers only what this
+                    // connection may do
+                    if (entry.access != ClientAccess::Edit)
+                        conn.queueText(configJson(entry.access));
                     // The user is known only now when the grant or the
                     // name decided it (sec 7.4).
                     if (!admitUser(conn)) {
@@ -3387,6 +3435,14 @@ public:
                         refuseOverCap(conn);
                         return;
                     }
+                }
+                else {
+                    // Admitted at the upgrade on the shared token: its
+                    // mode was decided there and is said here, where a
+                    // viewer is first listening.
+                    std::lock_guard<std::mutex> guard(connMutex);
+                    if (conn.access != ClientAccess::Edit)
+                        conn.queueText(configJson(conn.access));
                 }
             }
             else if (!conn.authorized) {
@@ -3450,6 +3506,17 @@ public:
                     else if (entry.grant != fromGrant) {
                         std::lock_guard<std::mutex> guard(connMutex);
                         conn.grant = entry.grant;
+                    }
+                    // An invitation is to one name (docs/TransactionLog.md
+                    // sec 30.6 U6): under another the connection is
+                    // whoever it says it is, and no longer writes.
+                    std::lock_guard<std::mutex> guard(connMutex);
+                    conn.invited = entry.admitted && entry.invited;
+                    const ClientAccess now =
+                        writerRule(conn.access, conn.identity, conn.invited);
+                    if (now != conn.access) {
+                        conn.access = now;
+                        conn.queueText(configJson(now));
                     }
                 }
                 {

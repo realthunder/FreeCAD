@@ -263,7 +263,8 @@ PyMethodDef Application::Methods[] = {
    "\n"
    "The scene stream server's connected clients, one dict each: id,\n"
    "client (label), identity (verified by the front door, may be\n"
-   "empty), doc, address, viewer, viewOnly, access ('view', 'edit' or\n"
+   "empty), invited (admitted on an invitation issued to its one name),\n"
+   "doc, address, viewer, viewOnly, access ('view', 'edit' or\n"
    "'host'), connectedMs, and the\n"
    "uplink counters uplinkMsgs/uplinkBytes/uplinkWire with the camera\n"
    "frames (cameraMsgs/cameraWire), picks (pickMsgs/pickWire) and\n"
@@ -1208,6 +1209,7 @@ PyObject* Application::sServeClients(PyObject * /*self*/, PyObject *args)
         entry.setItem("id", Py::Long(static_cast<unsigned long long>(c.id)));
         entry.setItem("client", Py::String(c.client));
         entry.setItem("identity", Py::String(c.identity));
+        entry.setItem("invited", Py::Boolean(c.invited));
         entry.setItem("grant",
                       Py::Long(static_cast<unsigned long long>(c.grant)));
         entry.setItem("doc", Py::String(c.doc));

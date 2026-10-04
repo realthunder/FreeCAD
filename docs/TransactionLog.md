@@ -12468,3 +12468,133 @@ unfrozen; 6 expected failures; +1), ctest 871/871 (+3) -- 870 at first,
 own step -- and the GUI checks RC 15, BC 27, VC 18, PC 28, FC 16, VW 14,
 MC 28, the two-document check 24, the tree check 19 and the author check
 29 (+8).
+
+### 30.11 S.d as built: the clients, and the door (2026-10-04)
+
+**A connection is an actor** since S.b, and since S.c its `undo` / `redo`
+are its own, with its own stacks told back and a refusal answered
+`Refused`. What S.d adds is the door.
+
+**The rule (U4, U6), in the server.** `SceneServer.cpp`, one function,
+`writerRule(access, identity, invited)`: an access above view-only stays
+only for a connection with a verified identity or one that is invited;
+anything else is view-only. `invitedBy(grant, client)` is the test of U6
+-- the grant has a token, its name field spells a name out rather than a
+pattern, the connection gives that name, and the grant is not an easing
+the server minted for a rename. It is applied wherever a level is
+decided:
+
+- the judgement of a grant list (`judgeWith`), which now also says
+  whether the admitting grant invited the connection;
+- the shared token, or none: an open invitation, so view-only for anyone
+  no front door verified;
+- every hello, which is where a name first arrives, and the re-judging
+  of every connection when the grant list changes;
+- a rename: an invitation is to the name it names, so a client that
+  renames itself goes view-only, is told, and is another user in the log
+  from there on (S.b's roster cue does the logout and the login);
+- a change by hand: `setClientAccess` refuses to make an unknown
+  connection an editor, as it refused to make one a host.
+
+A connection admitted at the upgrade on the shared token used to hear
+its level only when it was not edit and grants were set; it is now told
+at its hello whenever the level is not edit, which under this rule is
+the common case.
+
+`SceneClientInfo::invited` carries the verdict to the roster, and
+`SceneActors::describe` reads it instead of judging the grant a second
+time. `Gui.serveClients()` rows have `invited`.
+
+**The panel.** The grant help says the rule; a live connection's "Can
+edit" is disabled, with the reason, unless it is known; the link note
+says a bare link admits to look.
+
+**The documents.** `docs/ShareAccess.md` sec 2.3 is the rule on the
+sharing side, with what it costs.
+
+**History replies.** No op gives a client the document's history yet;
+the two stacks of the `undo` / `redo` reply are the only history a
+client is told, and they are its own. An op that lists rows reads
+`author` and `author_kind` off them (30.9).
+
+**R5** needs nothing built, as 30.3 said: one process applies writes one
+after another, each on the head as it stands. Per-client edit sessions
+(`docs/MultiViewEdit.md`) are where it will be a rule to keep.
+
+**What the rule did to the tests.** Every test that acted on a served
+document through a connection nobody vouched for stopped being able to:
+17 of the 24 Gui tests failed -- picks are dropped for a view-only
+connection, so the pick tests with the edit tests.
+
+- **The server's own wire tests** (`tests/src/Gui/SceneServerWire.cpp`)
+  failed 8 of 25: the cases that send a pick, an input event or an op,
+  and the two that read a connection's level. The suite's server now
+  trusts its proxy throughout, a client that acts sends `known()`, the
+  header a front door would, and the cases that read a level read what
+  the rule gives. One case is the rule itself, `onlySomeoneKnownMayWrite`:
+  the shared token with and without an identity; an invitation to one
+  name, an open invitation that says edit and a name pattern; the host
+  taking an invited client's editing away and giving it back, and
+  refused for one that is unknown; a rename ending the invitation.
+- **The raw-socket tests** say who they are the way a front door would.
+  `tests/gui/wsclient.py` sets `FC_SERVE_TRUST_PROXY` on import -- the
+  server reads it when it is first made -- and its `WS` sends
+  `X-Forwarded-Email: tester@example.com` unless given headers of its
+  own; `""` is a client nobody vouched for. `serve-selection-echo.py`
+  has a socket class of its own and does the same.
+- **`sandbox-bridge-serve.py`** tested clients admitted by a token
+  alone; its two edit tokens are invitations issued to a name each.
+- **The browser tests**, which a page cannot give a header to: an
+  invitation. `wsclient.invitation(token, name)` is the grant list --
+  the token as an invitation to the page's name, and as an open
+  invitation to look, which admits the fetches a page makes before it
+  has said a name. The viewer takes `?client=`; the sandbox pages say a
+  fixed name in their hello (the console panel's is its name with
+  ` (console)` after it). `sandbox-console-viewer-browser.py` asks the
+  desktop for things by renaming its connection, so it invites each name
+  the page takes.
+
+Run by hand as `docs/Testing.md` says, under the rule: `serve-edit-browser`
+19 checks OK, `serve-onview-browser` 16, `serve-toolbar-browser` 21,
+`sandbox-bridge-browser` 15, `sandbox-console-browser` 11 (it only reads,
+and needed no change), `sandbox-console-viewer-browser` 17,
+`sandbox-latency-browser` 147. `sandbox-console-safari.py` is changed the
+same way and not run: there is no Safari here.
+
+**Two failures that are not the door's.** `sandbox-console-panel-browser`
+fails its two Tab-completion checks and `camera-uplink-browser` its four
+"picked something through the mirror" checks. The first was run again
+with the rule compiled out and the test as it was: the same two fail.
+The second reads the desktop's selection for a client's pick, which has
+been the client's own since `docs/ThinClient.md` 8.11. Neither chased.
+
+**The Gui check** (`scripts/transaction-log-author-check.py`) has 7
+more: an open invitation that says edit admits to look, its holder's
+write is refused, the host cannot make it or the view-only client an
+editor by hand, it is logged under the name it gave as declared; and the
+invited client, renamed, may only look, its write refused, the log
+having it as another user from there on.
+
+**Left, and the user's to choose.** The demo recipes of `docs/Sandbox.md`
+-- a `scripts/demo-*.py` through `scripts/renderer-serve.sh` under
+`FC_SERVE_TOKEN`, driven by `scripts/panel-drive.js` or opened in a
+browser by hand -- serve through the shared token, which under the rule
+admits to look. A page cannot send a front door's header, and the shared
+token has no way to say whose it is: only a grant list does
+(`Gui.serveSetGrants`, the Share panel). So those recipes are view-only
+in a browser as they stand, and what they click and type is refused. Not
+built, because it is new surface: either a setting beside
+`FC_SERVE_TOKEN` naming the one person the shared token was issued to
+(U6 for the shared token: the link then carries `?token=...&client=<name>`),
+or each demo issuing an invitation itself. The browser tests above take
+the second way.
+
+**Gates**, frozen and unfrozen each: Python 3002 OK (52 skipped frozen, 53
+unfrozen; 6 expected failures), ctest 871/871 -- the wire tests are one
+entry, 26 cases in it -- and the GUI checks RC 15, BC 27, VC 18, PC 28,
+FC 16, VW 14, MC 28, the two-document check 24, the tree check 19 and
+the author check 36 (+7). Seen once and not again: in the first frozen
+run, `-j6`, `GuiServeClaimChildren_tests_run` failed after 9 s where it
+takes about 23; it passed in the unfrozen run of that pass, four times
+alone, and in a second pass of both, and what it wrote the first time
+was overwritten before it was read.

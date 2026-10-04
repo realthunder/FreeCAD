@@ -20,10 +20,37 @@ import time
 
 clock = time.perf_counter
 
+# Who a test's client is. Only a user who is known may write to a served
+# document (docs/TransactionLog.md sec 30.6 U4): one a front door verified,
+# or one holding an invitation issued to its name. A client here says who
+# it is the first way -- the identity header a front door in front of the
+# server would add (docs/ShareAccess.md sec 4), which the server believes
+# from a loopback peer once it is told to trust its proxy. It reads that
+# when it is first made, so this module sets it on import, before anything
+# is served. A test of the door itself passes its own headers: "" is a
+# client nobody vouched for.
+IDENTITY = "tester@example.com"
+IDENTITY_HEADER = "X-Forwarded-Email"
+os.environ.setdefault("FC_SERVE_TRUST_PROXY", "1")
+
 # The two viewer event frames (docs/ThinClient.md sec 8.5) and the
 # combined one of sec 8.10a.
 CAMERA_SIZE = 6 + 13 * 4
 PICK_SIZE = 2 + 6 * 4
+
+
+def invitation(token, name):
+    """The door for a browser page that edits: its grant list.
+
+    A page cannot add a front door's header to its own socket, so it is
+    known the other way (docs/TransactionLog.md sec 30.6 U6): by an
+    invitation the host issued to its one name -- `name` is what the page
+    says in its hello, or `?client=` for the viewer. The same token is also
+    an open invitation to look, which is what admits the page's plain
+    fetches: they are made before any name is said. The named grant is the
+    more specific one, so the socket's hello is judged by it."""
+    return [{"token": token, "client": name, "access": 0},
+            {"token": token, "access": 1}]
 
 
 def free_port():
@@ -88,9 +115,12 @@ class WS:
     """One client connection: the upgrade, masked frames out, unmasked
     frames in."""
 
-    def __init__(self, port, path="/scene", headers=""):
+    def __init__(self, port, path="/scene", headers=None):
         """`headers`: extra request header lines, each ending in CRLF --
-        what a front door in front of the server would add."""
+        what a front door in front of the server would add. Left out, the
+        one that says who this client is (IDENTITY); "" for none."""
+        if headers is None:
+            headers = "%s: %s\r\n" % (IDENTITY_HEADER, IDENTITY)
         last = None
         for _ in range(200):
             try:

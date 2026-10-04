@@ -75,6 +75,15 @@ def free_port():
     return port
 
 
+# Who this client is: a pick is refused to a connection nobody vouched for
+# (docs/TransactionLog.md sec 30.6 U4), so it says so the way a front door
+# would, in a header the server believes from a loopback peer once told to
+# trust its proxy -- which it reads when it is first made.
+IDENTITY = "tester@example.com"
+IDENTITY_HEADER = "X-Forwarded-Email"
+os.environ.setdefault("FC_SERVE_TRUST_PROXY", "1")
+
+
 class WS:
     """Just enough of RFC 6455 for one client: the upgrade, masked
     frames out, unmasked frames in."""
@@ -94,7 +103,8 @@ class WS:
         self.sock.sendall((
             "GET /scene HTTP/1.1\r\nHost: 127.0.0.1:%d\r\nUpgrade: websocket\r\n"
             "Connection: Upgrade\r\nSec-WebSocket-Key: %s\r\n"
-            "Sec-WebSocket-Version: 13\r\n\r\n" % (port, key)).encode())
+            "Sec-WebSocket-Version: 13\r\n%s: %s\r\n\r\n"
+            % (port, key, IDENTITY_HEADER, IDENTITY)).encode())
         self.buf = b""
         while b"\r\n\r\n" not in self.buf:
             chunk = self.sock.recv(4096)

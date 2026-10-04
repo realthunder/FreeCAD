@@ -47,12 +47,6 @@ std::map<uint64_t, std::shared_ptr<const App::Actor>>& registry()
     return actors;
 }
 
-/// A grant field that names one thing, not a pattern.
-bool literal(const std::string& pattern)
-{
-    return !pattern.empty() && pattern.find_first_of("*?") == std::string::npos;
-}
-
 bool sameUser(const App::Actor& a, const App::Actor& b)
 {
     return a.kind == b.kind && a.name == b.name;
@@ -61,10 +55,9 @@ bool sameUser(const App::Actor& a, const App::Actor& b)
 /// The registry's actor of a connection the roster lists, replaced when
 /// the roster now says otherwise: a rename is another user (sec 30.6 U3),
 /// a change of mode the same one with another access.
-std::shared_ptr<const App::Actor> known(const Render::SceneClientInfo& info,
-                                        const std::vector<Render::SceneGrant>& grants)
+std::shared_ptr<const App::Actor> known(const Render::SceneClientInfo& info)
 {
-    App::Actor now = SceneActors::describe(info, grants);
+    App::Actor now = SceneActors::describe(info);
     auto& slot = registry()[info.id];
     if (!slot || !sameUser(*slot, now) || slot->access != now.access)
         slot = std::make_shared<const App::Actor>(std::move(now));
@@ -73,8 +66,7 @@ std::shared_ptr<const App::Actor> known(const Render::SceneClientInfo& info,
 
 }  // namespace
 
-App::Actor SceneActors::describe(const Render::SceneClientInfo& info,
-                                 const std::vector<Render::SceneGrant>& grants)
+App::Actor SceneActors::describe(const Render::SceneClientInfo& info)
 {
     App::Actor actor;
     actor.login = info.id;
@@ -84,21 +76,11 @@ App::Actor SceneActors::describe(const Render::SceneClientInfo& info,
         actor.name = info.identity;
         return actor;
     }
-    actor.kind = App::Actor::Declared;
+    // The door has said whether it holds an invitation issued to this one
+    // name (SceneClientInfo::invited); else the name is only what it says.
+    actor.kind = info.invited && !info.client.empty() ? App::Actor::Invited
+                                                      : App::Actor::Declared;
     actor.name = info.client.empty() ? std::string("guest") : info.client;
-    if (!info.grant || info.client.empty())
-        return actor;
-    for (const auto& grant : grants) {
-        if (grant.id != info.grant)
-            continue;
-        // An invitation to one named person: the token is a secret and the
-        // host has said whose it is. An easing the server minted for a
-        // rename names nobody the host chose.
-        if (!grant.liveOnly && !grant.token.empty() && literal(grant.client)
-            && grant.client == info.client)
-            actor.kind = App::Actor::Invited;
-        break;
-    }
     return actor;
 }
 
@@ -112,7 +94,7 @@ std::shared_ptr<const App::Actor> SceneActors::of(uint64_t client)
     server.clients(clients);
     for (const auto& info : clients) {
         if (info.id == client)
-            return known(info, server.grants());
+            return known(info);
     }
     // Gone before what it sent was run. Not kept: the id is never reused.
     App::Actor guest;
@@ -128,7 +110,6 @@ void SceneActors::sync(const std::string& group, App::Document* doc, Logins& log
     auto& server = Render::SceneStreamServer::instance();
     std::vector<Render::SceneClientInfo> clients;
     server.clients(clients);
-    const auto grants = server.grants();
     App::TransactionLog* log = doc ? doc->getTransactionLog() : nullptr;
 
     std::set<uint64_t> connected;
@@ -138,7 +119,7 @@ void SceneActors::sync(const std::string& group, App::Document* doc, Logins& log
         if (info.doc != group || !info.authorized || !info.viewer)
             continue;
         here.insert(info.id);
-        auto actor = known(info, grants);
+        auto actor = known(info);
         auto& login = logins[info.id];
         if (login && sameUser(*login, *actor)) {
             login = actor;

@@ -27,7 +27,6 @@
 #include <map>
 #include <memory>
 #include <string>
-#include <vector>
 
 #include <FCGlobal.h>
 
@@ -40,7 +39,6 @@ struct Actor;
 namespace Render
 {
 struct SceneClientInfo;
-struct SceneGrant;
 }
 
 namespace Gui
@@ -55,17 +53,15 @@ namespace Gui
 namespace SceneActors
 {
 
-/** The actor a connection is, from its roster row and the door's grants.
+/** The actor a connection is, from its roster row.
  *
  * `Verified` under the identity an authenticating front door asserted
- * (docs/ShareAccess.md sec 4); `Invited` under its name when the grant that
- * admitted it is an invitation issued to that one name -- a token, and a
- * name spelled out rather than a pattern (sec 30.6 U6); else `Declared`
- * under the name of its hello, `guest` when it gave none. One login per
- * connection: its id.
+ * (docs/ShareAccess.md sec 4); `Invited` under its name when the door
+ * admitted it on an invitation issued to that one name (sec 30.6 U6,
+ * SceneClientInfo::invited); else `Declared` under the name of its hello,
+ * `guest` when it gave none. One login per connection: its id.
  */
-GuiExport App::Actor describe(const Render::SceneClientInfo& info,
-                              const std::vector<Render::SceneGrant>& grants);
+GuiExport App::Actor describe(const Render::SceneClientInfo& info);
 
 /** The actor of connection `client`. Known from the roster the first time
  * it is asked for and kept until the connection is gone; a connection the
