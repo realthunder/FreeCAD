@@ -1070,3 +1070,9 @@ fc_add_gui_test(GuiSketchOnViewTypedValues_tests_run
 fc_add_gui_test(GuiTaskDialogPythonAccept_tests_run
                 task-dialog-python-accept.py
                 --timeout 120)
+
+# A vertical distance on a vertex of blocked geometry is a reference, as
+# the horizontal one is.
+fc_add_gui_test(GuiSketchDistanceFixedVertex_tests_run
+                sketch-distance-fixed-vertex.py
+                --timeout 120)

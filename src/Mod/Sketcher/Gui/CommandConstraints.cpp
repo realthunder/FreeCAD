@@ -7116,6 +7116,9 @@ void CmdSketcherConstrainDistanceY::activated(int iMsg)
         Base::Vector3d pnt = Obj->getPoint(GeoId1, PosId1);
         double ActY = pnt.y;
 
+        // External, or of blocked geometry: as the x-coordinate asks
+        arebothpointsorsegmentsfixed = isPointOrSegmentFixed(Obj, GeoId1);
+
         openCommand(QT_TRANSLATE_NOOP("Command", "Add fixed y-coordinate constraint"));
         Gui::cmdAppObjectArgs(selection[0].getObject(),
                               "addConstraint(Sketcher.Constraint('DistanceY',%d,%d,%.15g))",
@@ -7123,7 +7126,7 @@ void CmdSketcherConstrainDistanceY::activated(int iMsg)
                               static_cast<int>(PosId1),
                               ActY);
 
-        if (GeoId1 <= Sketcher::GeoEnum::RefExt || constraintCreationMode == Reference) {
+        if (arebothpointsorsegmentsfixed || constraintCreationMode == Reference) {
             // it is a constraint on a external line, make it non-driving
             const std::vector<Sketcher::Constraint*>& ConStr = Obj->Constraints.getValues();
 
