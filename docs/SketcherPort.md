@@ -4787,15 +4787,58 @@ cases (`SketchObjectChanges.cpp`), `tests/gui/sketch-external-both-ways.py`
 before, plus the 17), ctest 901/901 (898 before, plus two C++ cases net
 and the GUI test).
 
-**Found on the way, not the port's:** `sketch-external-tool-hint.py`
+### Input swallowed for 200 ms after any operation (session 123)
+
+Found on the way, and not the port's: `sketch-external-tool-hint.py`
 (session 122) passed on the first run in a work directory and under the
-whole suite's load, and failed on every other run -- the first Escape did
-not leave the External tool. For some 20 to 50 ms after a sketch enters
-edit, a key sent to the view reaches nobody; the test spun the event loop
-five times without sleeping and was sometimes faster than that. Measured
-on the sources before the port as well. The test waits by the clock now;
-the window is left as it is, no hand being that fast. A scripted client
-could be: not looked into.
+whole suite's load, and failed alone on every other run -- the first
+Escape did not leave the External tool. The same on the sources before the
+port.
+
+First account, wrong (`761d4e81d9`): "for 20 to 50 ms after a sketch
+enters edit a key sent to the view reaches nobody", the test made to wait
+by the clock, the window left alone as nothing a hand could hit. That was
+a measurement, not a cause. Chased on the user's word.
+
+The cause (`3ca6a628c1`). The progress indicator stays engaged for a grace
+period of 200 ms after a sequence stops (`SequencerBar`, `teardownTimer`),
+so that a sequence per work item -- one per shape of an import -- does not
+set up and tear down the wait cursor, the application event filter and the
+status bar each time. The claim on the input was kept with the rest. The
+bar's own filter lets events pass once nothing runs; the `Gui::WaitCursor`
+it holds has no such test, and swallows every key and mouse button event
+while it lives. **A key or a click within 200 ms of the end of any blocking
+operation went nowhere** -- here, the Escape after the recompute that
+entering edit runs. A slow start (first run, loaded box, gdb) sends the key
+after the period; a warm one, inside it.
+
+The claim is per instance now (`WaitCursor::setFiltering`): every wait
+cursor holds the input from its construction, as before, and the progress
+bar's gives it back in `resetData()` and takes it again if a blocking
+sequence starts within the period. Not `setIgnoreEvents()`, which is one
+setting for all and would have unfiltered a command's own wait cursor
+around the work -- some ninety places hold one.
+
+How it was found, for the next one: under gdb the start is slower and the
+key arrives, so gdb shows nothing. Temporary prints, gated by an
+environment variable, at `GUIApplication::notify`, the two application
+filters, the viewer's `processSoEvent`, the view provider's callback and
+the sketch's key handler; the line "wait cursor swallows a key event" was
+the answer. Ruled out before that, each by a probe: the wait after the
+key, a preselection under the idle pointer, the focus widget, the edit's
+input admission. And twice I read a trace cut short by `head` and
+concluded something else was restarting the tool: count the events before
+reading them.
+
+Test `tests/gui/sequencer-input-after-stop.py`, 6 checks with a line edit
+and a button, no sketch: four fail on the tree before. The probe that lost
+the Escape, with no wait added: every repeat run before, none of four
+after.
+
+**Verified** at `3ca6a628c1`: full build, ctest 902/902 (901 before, plus
+this test). `FreeCADCmd -t 0` not run again: the change is in Gui. Not
+tested: a command's own wait cursor around a sequence (Python cannot make
+one); that it still holds the input is from the code.
 
 ## 8. Phases
 
