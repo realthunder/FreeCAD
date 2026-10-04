@@ -5201,8 +5201,8 @@ not load.
 
 ### Fit All in a sketch (session 126)
 
-Two commits, `81d67adc66` and `804a03a4b3`. The empty sketch was one
-symptom of two; the other had not been noticed.
+Three commits, `81d67adc66`, `804a03a4b3` and `f13743c56b`. The empty
+sketch was one symptom of two; the other had not been noticed.
 
 **What a fit framed.** The viewer's scene box is the scene's own box
 plus the box of the editing root, with everything under a
@@ -5249,6 +5249,11 @@ it; framing a lone point is intended and stays.
   what is being edited is nothing to fit. `getSceneBoundBox` answers
   false and `viewAll` leaves the camera, as in an empty document. The
   box is still handed back for the callers that want a centre.
+- `f13743c56b`, the viewer again: with nothing to frame but that one
+  point, `viewAll` goes to it -- no zoom, no turn, the view moved onto
+  the point by the navigation style's `lookAtPoint`. Asked for by the
+  user ("there is no need to zoom. but did you rotate and center to its
+  origin"), and the commit before had lost it: see below.
 
 A viewer-side test with a tolerance was considered and dropped: the
 sketch's layers are spaced by a preference, and a tolerance wide enough
@@ -5258,24 +5263,48 @@ origin marker is in a skip group), was not taken either: it changes the
 fit of every sketch, and an empty sketch beside a model would be framed
 without its origin.
 
+**Turning and centring, measured.** An empty sketch at (100,50,20) on
+the XZ plane, entered from a view looking at the global origin:
+
+| | view direction | sketch origin, from the view centre |
+|---|---|---|
+| entering, default preferences | turned to the plane | 950 px, off the screen |
+| entering, `FitSketchOnEdit` on | turned to the plane | 0 px, no zoom |
+| Fit All after `804a03a4b3` | unchanged | where it was |
+| Fit All after `f13743c56b` | unchanged | 0.5 px, no zoom |
+
+Entering a sketch turns the view about its focal point
+(`setEditViewer`, under `AdjustCamera`, on by default) and does not move
+it; `fitOnEdit` does both and skips the fit for a sketch with no
+geometry, but only under `FitSketchOnEdit`, which is off by default.
+Fit All turns nothing, for an empty sketch as for any other.
+
 **The choices in this, mine and open to a ruling.** An empty sketch:
-the camera stays. A sketch with geometry: framed with its origin, as
+the view goes to its origin at the zoom it has (ruled, as above). A
+sketch with geometry: framed with its origin, as
 before. An empty sketch beside a model: the model and the origin, as
 before. A tool's rubber band in mid-draw no longer counts toward a fit.
 
-**Test.** `tests/gui/sketch-fit-all.py`, 11 checks; 4 failed before
-(the empty sketch by the call, by the command and with its origin
-selected; the fit after a tool), 7 are controls: geometry with origin,
-the model with the empty sketch, a lone vertex object still framed.
+**Test.** `tests/gui/sketch-fit-all.py`, 14 checks. Scored in two
+steps, as it grew. Its first form, 11 checks, against the tree before
+the first two commits: 4 fail -- the empty sketch by the call, by the
+command and with its origin selected (a zoom to 0.028), and the fit
+after a tool. Its present form against the tree before the third
+commit: 4 fail -- the same three empty-sketch checks, now asking for
+the origin at the centre, and the placed sketch. The 14 were not run
+against the tree before all three. The rest are controls: geometry with
+origin, the model with the empty sketch, a lone vertex object still
+framed.
 
 **Not checked.** A browser client's own framing: no fit code was found
 on the client under the names looked for, and the served view's
 `MirrorViewer::getSceneBoundBox` applies a plain bounding box action
 with no exclusion asked -- whether the axes reach its box was not run.
 
-**Verified** on the tip: full build; ctest 911 of 911, the 910 of
-before and the new test. The Python suite was not run: both changes
-are in Gui libraries `FreeCADCmd` does not load.
+**Verified** on the tip (`f13743c56b`), and before it on `804a03a4b3`:
+full build; ctest 911 of 911, the 910 of before and the new test. The
+Python suite was not run: the changes are in Gui libraries `FreeCADCmd`
+does not load.
 
 ## 8. Phases
 
