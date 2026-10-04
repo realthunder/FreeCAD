@@ -2,7 +2,8 @@
 
 A drawing tool shows its parameters in the view as dimension labels
 (Gui::EditableDatumLabel: an SoDatumLabel under an SoAnnotation hung on
-the viewer's scene graph), with an entry box over each. While the
+the view's on-view root, "OnViewRoot" in its aux graph), with an entry box
+over each. While the
 backend draws the edit graph the label's own GLRender stands down, and
 the label gives the render-cache capture nothing by itself: a Sketcher
 constraint's datum reaches the backend through the companion sub-graph
@@ -47,6 +48,20 @@ def check(name, cond, detail=""):
     return cond
 
 
+def on_view_labels(view):
+    """How many labels hang on the view's on-view root. They hung on the
+    scene graph itself until the root was given its own overlay feed, and
+    counting the scene graph's children then read 0 with the labels up."""
+    from pivy import coin
+
+    search = coin.SoSearchAction()
+    search.setName(coin.SbName("OnViewRoot"))
+    search.setInterest(coin.SoSearchAction.FIRST)
+    search.apply(view.getAuxSceneGraph())
+    path = search.getPath()
+    return path.getTail().getNumChildren() if path else 0
+
+
 def dump(view, name):
     path = os.path.join(OUT, name)
     view.saveRenderDump(path, "renderer")
@@ -85,7 +100,7 @@ def start_tool():
         if not check("the bgfx renderer draws the view", active, detail):
             finish()
             return
-        state["children"] = view.getSceneGraph().getNumChildren()
+        state["children"] = on_view_labels(view)
         FreeCADGui.runCommand("Sketcher_CreateLine")
         vp = view.graphicsView().viewport()
         w, h = vp.width(), vp.height()
@@ -106,9 +121,9 @@ def measure():
     try:
         view = state["view"]
         view.waitFrameComplete()
-        added = view.getSceneGraph().getNumChildren() - state["children"]
+        added = on_view_labels(view) - state["children"]
         if not check("the line tool opened its on-view parameters", added > 0,
-                     "%d nodes added to the scene graph" % added):
+                     "%d nodes added to the on-view root" % added):
             finish()
             return
         before, after = state["before"], dump(view, "after.png")
