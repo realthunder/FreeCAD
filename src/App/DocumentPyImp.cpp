@@ -1132,6 +1132,7 @@ PyObject* DocumentPy::getTransactionBranches(PyObject *args)
             d.setItem("last_id", Py::Long(b.lastId));
             d.setItem("created", Py::Float(b.created));
             d.setItem("closed", Py::Float(b.closed));
+            d.setItem("target", Py::Long(static_cast<long long>(b.target)));
             d.setItem("current", Py::Boolean(b.id == log->branch()));
             list.append(d);
         }
@@ -1264,6 +1265,46 @@ Py::Dict mergePreviewToPy(const App::Document::MergePreview& p)
 }
 
 } // namespace
+
+PyObject* DocumentPy::openTransactionWriter(PyObject *args)
+{
+    const char* name = "";
+    PyObject* view = Py_True;
+    if (!PyArg_ParseTuple(args, "|sO!", &name, &PyBool_Type, &view))
+        return nullptr;
+    PY_TRY {
+        Document* doc = getDocumentPtr()->openWriter(name, Base::asBoolean(view));
+        if (!doc)
+            Py_Return;
+        return doc->getPyObject();
+    } PY_CATCH;
+}
+
+PyObject* DocumentPy::getTransactionWriter(PyObject *args)
+{
+    if (!PyArg_ParseTuple(args, ""))
+        return nullptr;
+    PY_TRY {
+        const auto state = getDocumentPtr()->writerState();
+        Py::Dict d;
+        d.setItem("writer", Py::Boolean(state.writer));
+        d.setItem("branch", Py::String(state.branch));
+        d.setItem("target", Py::String(state.target));
+        d.setItem("unpushed", Py::Long(static_cast<unsigned long long>(state.unpushed)));
+        d.setItem("conflicts", Py::Long(static_cast<unsigned long long>(state.conflicts)));
+        d.setItem("behind", Py::Boolean(state.behind));
+        return Py::new_reference_to(d);
+    } PY_CATCH;
+}
+
+PyObject* DocumentPy::syncTransactionWriter(PyObject *args)
+{
+    if (!PyArg_ParseTuple(args, ""))
+        return nullptr;
+    PY_TRY {
+        return Py::new_reference_to(Py::Boolean(getDocumentPtr()->syncWriter()));
+    } PY_CATCH;
+}
 
 PyObject* DocumentPy::previewTransactionMerge(PyObject *args)
 {

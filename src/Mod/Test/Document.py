@@ -5505,3 +5505,74 @@ class TransactionBranchCases(unittest.TestCase):
         self.assertEqual(rest["base"], first["preview"]["theirs"])
         self.assertGreater(doc.mergeTransactionBranch("side")["seq"], 0)
         self.assertEqual(doc.Obj.String, "later")
+
+    def testWritersOfAFileFollowEachOther(self):
+        # Sec 29.2: a writer is another document of the file on a branch
+        # that writes to this one. What either does the other has at once,
+        # shapes included, with no recompute of its own.
+        doc = self.track(FreeCAD.newDocument("Writers"))
+        doc.UndoMode = 1
+        doc.openTransaction("create")
+        box = doc.addObject("Part::Box", "Box")
+        doc.recompute()
+        doc.commitTransaction()
+        path = os.path.join(self.dir, "writers.FCStd")
+        doc.saveAs(path)
+        self.assertFalse(doc.getTransactionWriter()["writer"])
+
+        writer = self.track(doc.openTransactionWriter("desk", False))
+        self.assertNotEqual(writer.Name, doc.Name)
+        state = writer.getTransactionWriter()
+        self.assertEqual((state["writer"], state["branch"], state["target"]), (True, "desk", "main"))
+        self.assertTrue(writer.FileName.startswith(path + "@desk@v"), writer.FileName)
+        branches = self.branches(doc)
+        self.assertEqual(branches["desk"]["target"], branches["main"]["id"])
+        with self.assertRaises(ValueError):
+            writer.openTransactionWriter()
+        with self.assertRaises(ValueError):
+            doc.openTransactionWriter("desk")
+
+        recomputed = []
+
+        class Seen:
+            def slotRecomputedObject(self, obj):
+                recomputed.append(obj.Document.Name)
+
+        seen = Seen()
+        FreeCAD.addDocumentObserver(seen)
+        try:
+            writer.openTransaction("longer")
+            writer.Box.Length = 20
+            writer.recompute()
+            writer.commitTransaction()
+            self.assertAlmostEqual(doc.Box.Shape.Volume, 2000.0)
+            self.assertNotIn(doc.Name, recomputed)
+            self.assertNotIn("Touched", doc.Box.State)
+            row = [t for t in doc.getTransactionLog() if t["name"] == "longer"][-1]
+            self.assertEqual((row["kind"], row["branch"]), ("user", "main"))
+
+            del recomputed[:]
+            doc.openTransaction("lower")
+            doc.Box.Height = 5
+            doc.recompute()
+            doc.commitTransaction()
+            self.assertAlmostEqual(writer.Box.Shape.Volume, 1000.0)
+            self.assertNotIn(writer.Name, recomputed)
+        finally:
+            FreeCAD.removeDocumentObserver(seen)
+        state = writer.getTransactionWriter()
+        self.assertEqual((state["unpushed"], state["conflicts"], state["behind"]), (0, 0, False))
+
+        # Each undoes its own.
+        self.assertEqual(writer.UndoNames, ["longer"])
+        writer.undo()
+        self.assertAlmostEqual(doc.Box.Length.Value, 10.0)
+        self.assertAlmostEqual(doc.Box.Height.Value, 5.0)
+
+        # Closed with nothing of its own, it leaves no branch.
+        FreeCAD.closeDocument(writer.Name)
+        self.assertNotIn("desk", self.branches(doc))
+        doc.openTransaction("after")
+        doc.Box.Width = 3
+        doc.commitTransaction()
+        self.assertAlmostEqual(doc.Box.Width.Value, 3.0)

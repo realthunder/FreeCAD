@@ -168,6 +168,9 @@ struct DocumentP
     /// The log's last seq when the document was opened: undo reaches no
     /// further back on any branch (docs/TransactionLog.md sec 26.4).
     int64_t undoFloor {0};
+    /// A writer whose last pull was refused (docs/TransactionLog.md sec
+    /// 29.2): how many conflicts wait for a side.
+    size_t writerConflicts {0};
     /// A saveCopy() without history: the copy embeds nothing, and the
     /// History property the live document had is put back afterwards.
     bool savingWithoutHistory {false};

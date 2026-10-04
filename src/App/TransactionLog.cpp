@@ -275,6 +275,8 @@ public:
     { return inner().renameBranch(id, name); }
     bool updateBranch(const LogBranch& branch) override { return inner().updateBranch(branch); }
     bool removeBranch(int64_t id) override { return inner().removeBranch(id); }
+    bool forwardBranch(int64_t id, int64_t head, const std::vector<int64_t>& seqs) override
+    { return inner().forwardBranch(id, head, seqs); }
     std::string getMeta(const std::string& key) override { return inner().getMeta(key); }
     void setMeta(const std::string& key, const std::string& value) override
     { inner().setMeta(key, value); }
@@ -1191,6 +1193,65 @@ int64_t TransactionLog::record(const char* kind, const std::string& name,
     return t.seq;
 }
 
+int64_t TransactionLog::makeWriter(int64_t target, const std::string& name)
+{
+    flush();
+    auto& store = *_c._store;
+    LogBranch taken;
+    if (name.empty() || store.findBranch(name, taken))
+        THROWM(Base::ValueError, "branch name '" + name + "' is empty or taken");
+    LogBranch branch;
+    branch.name = name;
+    branch.fromVersion = _at;
+    branch.fromSeq = _head;
+    branch.head = _head;
+    branch.target = target;
+    branch.created = now();
+    store.addBranch(branch);
+    auto held = _c._holders.find(_branch);
+    if (held != _c._holders.end() && held->second == this)
+        _c._holders.erase(held);
+    _c._holders[branch.id] = this;
+    _branch = branch.id;
+    _at = 0;
+    return branch.id;
+}
+
+bool TransactionLog::writtenPast(int64_t seq)
+{
+    auto& rows = store();
+    if (_recentAt != _c._rewrites) {
+        _recent.clear();
+        _recentAt = _c._rewrites;
+    }
+    for (const auto& t : rows.chain(_head, seq + 1)) {
+        if (t.seq > seq && !_recent.count(t.seq) && !rows.ops(t.seq).empty())
+            return true;
+    }
+    return false;
+}
+
+void TransactionLog::moveHead(int64_t head)
+{
+    flush();
+    _head = head;
+}
+
+int64_t TransactionLog::recordOn(int64_t branch, LogTransaction t, std::vector<LogOp> ops)
+{
+    flush();
+    LogBranch on;
+    if (!_c._store->getBranch(branch, on))
+        return 0;
+    t.parent = on.head;
+    t.branch = branch;
+    t.seq = ++_c._nextSeq;
+    t.time = now();
+    t.session = _c._session;
+    post([this, t, ops]() mutable { _c._store->append(t, ops); });
+    return t.seq;
+}
+
 bool TransactionLog::setBranch(int64_t id)
 {
     flush();
@@ -1420,11 +1481,14 @@ void TransactionLog::forgetLiveValues()
     // transaction, so nothing the log knew of its live values holds -- what
     // an after ref waits on, which properties it holds current, the copies
     // kept for the next edit. The next snapshot serialises afresh.
+    // This document's only: the hashes are the file's, by property, and
+    // another document of the file still holds its own current (sec 29.6).
     flush();
     _pending.clear();
+    for (int64_t key : _recorded)
+        _c._hashById.erase(key);
     _recorded.clear();
     _misses.clear();
-    _c._hashById.clear();
     TransactionCopyCache::dropOwner(this);
 }
 

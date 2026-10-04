@@ -59,6 +59,7 @@ namespace App
     class FileHistory;
     class PropertyXLink;
     class TransactionLogCore;
+    struct LogVersion;
     class TransactionLog;
     struct LogBranch;
     class Transaction;
@@ -497,6 +498,44 @@ public:
      * counters stay. Nothing without a log.
      */
     CompactResult compactFileState();
+    /** Open a writer of the branch this document is on
+     * (docs/TransactionLog.md sec 29): another editable document of the
+     * file, on a new branch `name` made at this branch's head and writing
+     * to it -- `<branch>~<n>` when no name is given. After each of its
+     * operations the writer is brought level with its target
+     * (syncWriter()). Throws when the document is itself a writer, or the
+     * name is taken.
+     */
+    Document* openWriter(const std::string& name = std::string(), bool createView = true);
+    /// Where a document stands as a writer (sec 29.2).
+    struct WriterState
+    {
+        bool writer {false};
+        std::string branch;
+        std::string target;
+        size_t unpushed {0};    ///< operations of its own the target has not taken
+        size_t conflicts {0};   ///< what its last pull was refused for
+        bool behind {false};    ///< the target has moved since it was level
+    };
+    WriterState writerState();
+    /** Bring this writer and its target level (sec 29.2). With nothing of
+     * its own, it follows the target where that moved. With operations of
+     * its own, the target takes them: as they are when it has not moved
+     * since -- its head moves onto the writer's rows -- else after the
+     * target is merged into the writer (a conflict there keeps the branch,
+     * and writerState() says so), as one row of their net change, and the
+     * writer's branch starts again at the target's head. A document on the
+     * target follows what it took. Nothing happens while this document, or
+     * the one on the target, is in the middle of something. Returns
+     * whether the two are level.
+     */
+    bool syncWriter();
+    /// syncWriter() of every writer open; what ends an operation (sec 29.2).
+    static void syncWriters();
+    /// The Gui's say on whether a document is in the middle of something
+    /// App cannot see -- an object in edit -- so a writer waits (sec 29.4 Q3).
+    static void setWriterBusy(std::function<bool(const Document&)> busy);
+
     /// What _noteDroppedRows estimated (sec 27.48).
     struct CompactEstimate
     {
@@ -1290,6 +1329,18 @@ protected:
     /// Sec 27.7: share `history`, another document's of the same file.
     void _joinHistory(const std::shared_ptr<FileHistory>& history);
     int64_t _snapshotToLog(const char* kind);
+    /// openFileVersion() once it is known no open document is the version.
+    static Document* _openVersionDocument(const std::shared_ptr<FileHistory>& history,
+                                          const LogVersion& version, bool createView,
+                                          const Document* from, bool frozen);
+    /// Sec 29.2: nothing open, applied, restored or recomputed here now.
+    bool _writerIdle() const;
+    /// Sec 29.2: another document of the file has changed something since
+    /// `step`'s row.
+    bool _writtenPast(const Transaction& step);
+    /// Sec 29.2: the log's head was moved; the document follows from the
+    /// state at row `from`, with nothing recorded.
+    void _followHead(int64_t from);
     /// Sec 26: refuse a branch operation in the middle of something else;
     /// an implicit transaction is committed first.
     void _checkBranchable(const char* what);

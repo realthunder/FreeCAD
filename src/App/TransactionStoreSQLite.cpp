@@ -148,7 +148,8 @@ public:
         // Sec 26: branches; `main` is id 1.
         exec("CREATE TABLE IF NOT EXISTS branch(id INTEGER PRIMARY KEY, name TEXT UNIQUE,"
              " from_version INTEGER, from_seq INTEGER, head_seq INTEGER, id_base INTEGER,"
-             " last_id INTEGER DEFAULT 0, created REAL, closed REAL)");
+             " last_id INTEGER DEFAULT 0, created REAL, closed REAL,"
+             " target INTEGER DEFAULT 0)");
         if (!hasRow("SELECT 1 FROM branch WHERE id=1"))
             exec("INSERT INTO branch(id,name,from_version,from_seq,head_seq,id_base,created,"
                  "closed) VALUES(1,'main',0,0,(SELECT COALESCE(MAX(seq),0) FROM txn),0,"
@@ -1662,12 +1663,13 @@ public:
         b.lastId = static_cast<long>(sqlite3_column_int64(s, 6));
         b.created = sqlite3_column_double(s, 7);
         b.closed = sqlite3_column_double(s, 8);
+        b.target = sqlite3_column_int64(s, 9);
     }
 
     std::vector<LogBranch> branches() override
     {
-        auto s = prepare("SELECT id,name,from_version,from_seq,head_seq,id_base,last_id,created,closed"
-                         " FROM branch ORDER BY id");
+        auto s = prepare("SELECT id,name,from_version,from_seq,head_seq,id_base,last_id,created,closed,"
+                         "target FROM branch ORDER BY id");
         std::vector<LogBranch> out;
         while (sqlite3_step(s) == SQLITE_ROW) {
             LogBranch b;
@@ -1680,8 +1682,8 @@ public:
 
     bool getBranch(int64_t id, LogBranch& b) override
     {
-        auto s = prepare("SELECT id,name,from_version,from_seq,head_seq,id_base,last_id,created,closed"
-                         " FROM branch WHERE id=?");
+        auto s = prepare("SELECT id,name,from_version,from_seq,head_seq,id_base,last_id,created,closed,"
+                         "target FROM branch WHERE id=?");
         sqlite3_bind_int64(s, 1, id);
         bool found = sqlite3_step(s) == SQLITE_ROW;
         if (found)
@@ -1692,8 +1694,8 @@ public:
 
     bool findBranch(const std::string& name, LogBranch& b) override
     {
-        auto s = prepare("SELECT id,name,from_version,from_seq,head_seq,id_base,last_id,created,closed"
-                         " FROM branch WHERE name=?");
+        auto s = prepare("SELECT id,name,from_version,from_seq,head_seq,id_base,last_id,created,closed,"
+                         "target FROM branch WHERE name=?");
         bindText(s, 1, name);
         bool found = sqlite3_step(s) == SQLITE_ROW;
         if (found)
@@ -1716,7 +1718,7 @@ public:
             sqlite3_reset(m);
         }
         auto s = prepare("INSERT INTO branch(id,name,from_version,from_seq,head_seq,id_base,"
-                         "last_id,created,closed) VALUES(?,?,?,?,?,?,?,?,?)");
+                         "last_id,created,closed,target) VALUES(?,?,?,?,?,?,?,?,?,?)");
         sqlite3_bind_int64(s, 1, b.id);
         bindText(s, 2, b.name);
         sqlite3_bind_int64(s, 3, b.fromVersion);
@@ -1726,6 +1728,7 @@ public:
         sqlite3_bind_int64(s, 7, b.lastId);
         sqlite3_bind_double(s, 8, b.created);
         sqlite3_bind_double(s, 9, b.closed);
+        sqlite3_bind_int64(s, 10, b.target);
         step(s);
         b.id = sqlite3_last_insert_rowid(db);
         return b.id;
@@ -1734,7 +1737,7 @@ public:
     bool updateBranch(const LogBranch& b) override
     {
         auto s = prepare("UPDATE branch SET name=?, from_version=?, from_seq=?, id_base=?,"
-                         " last_id=?, created=?, closed=? WHERE id=?");
+                         " last_id=?, created=?, closed=?, target=? WHERE id=?");
         bindText(s, 1, b.name);
         sqlite3_bind_int64(s, 2, b.fromVersion);
         sqlite3_bind_int64(s, 3, b.fromSeq);
@@ -1742,9 +1745,38 @@ public:
         sqlite3_bind_int64(s, 5, b.lastId);
         sqlite3_bind_double(s, 6, b.created);
         sqlite3_bind_double(s, 7, b.closed);
-        sqlite3_bind_int64(s, 8, b.id);
+        sqlite3_bind_int64(s, 8, b.target);
+        sqlite3_bind_int64(s, 9, b.id);
         step(s);
         return sqlite3_changes(db) > 0;
+    }
+
+    bool forwardBranch(int64_t id, int64_t head, const std::vector<int64_t>& seqs) override
+    {
+        exec("BEGIN");
+        try {
+            auto s = prepare("UPDATE branch SET head_seq=? WHERE id=?");
+            sqlite3_bind_int64(s, 1, head);
+            sqlite3_bind_int64(s, 2, id);
+            step(s);
+            const bool found = sqlite3_changes(db) > 0;
+            for (int64_t seq : seqs) {
+                s = prepare("UPDATE txn SET branch=? WHERE seq=?");
+                sqlite3_bind_int64(s, 1, id);
+                sqlite3_bind_int64(s, 2, seq);
+                step(s);
+                s = prepare("UPDATE version SET branch=? WHERE seq=?");
+                sqlite3_bind_int64(s, 1, id);
+                sqlite3_bind_int64(s, 2, seq);
+                step(s);
+            }
+            exec("COMMIT");
+            return found;
+        }
+        catch (...) {
+            exec("ROLLBACK");
+            throw;
+        }
     }
 
     bool removeBranch(int64_t id) override

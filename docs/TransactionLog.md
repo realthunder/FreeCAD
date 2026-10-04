@@ -11511,3 +11511,162 @@ Each step with the gates, frozen and unfrozen, and tests of its own.
    selectively.
 6. **W.f** The panel -- who pushed a row, a writer's unpushed count -- and
    a Gui check with two documents of one file.
+
+### 29.6 W.a to W.f as built (2026-10-04)
+
+**One fact first, which shapes the rest.** One process has one transaction
+open at a time: `Application::setActiveTransaction` commits every
+document's open transaction before it opens the next. So two documents of
+one file are never both in the middle of an explicit transaction; "a writer
+that is busy while another pushes" happens only where the Gui holds state
+App cannot see -- an object in edit -- and is told through
+`Document::setWriterBusy`. The whole of 29.2 is built and tested; inside
+one process most of it runs as its simplest case.
+
+**W.a, the writer branch.** `branch.target`, `LogBranch::target`, added in
+place (27.55): the branch a writer writes to, with `fromSeq` the target's
+head the writer was last level with. `Document::openWriter(name,
+createView)`, Python `openTransactionWriter`: the tip of this branch is
+snapshotted as a switch would (`_leaveBranch`), the version at its head
+opened as an editable document of the file (`_openVersionDocument`, the
+half of `openFileVersion` after "is a document already that version" --
+which at the tip is this document itself), and its cursor put on a new
+branch at the target's head with no `branch` record
+(`TransactionLog::makeWriter`), so the two heads are one. Named
+`<target>~<n>` unless a name is given; a writer of a writer is refused. A
+writer closed while level with its target takes its branch row with it.
+
+**W.b to W.d, pull, push, re-fork.** `Document::syncWriter()` brings one
+writer and its target level; `Document::syncWriters()` does every open
+writer, twice -- what one pushes in the first round the others follow in
+the second -- and runs when the outermost `OperationScope` (27.39) ends,
+which `Application::commitImplicitTransactions` now is too. Nothing
+happens while the writer, or the document on the target, is in the middle
+of something (`_writerIdle`: a transaction open, an undo or a restore or a
+recompute running, or busy by the Gui's word); it is tried again when the
+next operation ends. A writer's own rows are those on its chain that are
+still its branch's.
+
+- *Nothing of its own, the target moved:* the writer follows -- its head
+  moved onto the target's and the document moved along the log
+  (`_followHead`: `_checkoutHead` and `forgetLiveValues`, as a switch
+  arrives), nothing recorded.
+- *Operations of its own, the target not moved:* **a true fast-forward,
+  where 29.2 wrote a merge row.** The target's head moves onto the
+  writer's rows and they become the target's
+  (`TransactionStore::forwardBranch`): no row is copied, each operation
+  stays the row it was made as, under its own name and kind, and the
+  writer's undo steps stay as they are. This is the common case and the
+  one that reads as "a row per operation".
+- *Operations of its own, the target moved:* the target is merged into the
+  writer (28), unpicked. A conflict returns there: the count is kept
+  (`writerState().conflicts`), the branch stays, the writer works on.
+  Clean, the pull's step is taken off the writer's undo stack -- it is
+  not its operation -- and the target gets one row, kind `merge`, origin
+  `writer`, named after the writer's operations, whose ops are the net
+  change from the target's head to the writer's and whose second parent is
+  the writer's head (`TransactionLog::recordOn`, a row appended on a branch
+  from outside it). The writer's rows go, its head becomes the target's,
+  and its steps that named them become one step naming the row pushed.
+- *A document on the target follows* what it took, as a writer follows.
+
+**W.e, per-user undo.** Each document's stack is its own operations: what
+another pushed arrives with no step, and a transaction is no longer
+mirrored into the active document as `-> name` between a writer and the
+documents of its file (`_openTransaction`: that mirror is how one document
+undoes another's command, which here is the opposite of the rule). In a
+file with writers, a step someone else has written past
+(`TransactionLog::writtenPast`: a row with ops on the chain after it that
+this document did not number) is undone through the log as a selective
+undo is (24.7) though it is the top of the stack: refused when what it
+left has changed since, and what recomputes wrote left to a recompute.
+With nothing written past it the undo is the hot one, as ever. The
+target's own document goes by the same rule.
+
+**W.f, the panel.** **Writer** on the branch bar opens one; the status
+line says `writer of <target>`, how many operations are unpushed and how
+many conflicts wait, with Merge... the way to pick. `getTransactionBranches()`
+rows carry `target`; Python `getTransactionWriter()`,
+`syncTransactionWriter()`.
+
+**Attribution** (29.2) is the row's session, which names the process and,
+under the preference, the user: inside one process every writer is the
+same user, and nothing more is recorded. A writer in another process has
+a session of its own.
+
+**Two defects found on the way**, both of several documents on one file
+(27.7), both older than writers:
+
+- *One document's forgetting forgot for all.* `forgetLiveValues` -- after a
+  switch, and now after every follow -- cleared the map from a property to
+  the hash of its current value, which is the file's, not the document's.
+  The other documents of the file still claimed their properties as held,
+  and their next snapshot failed on the worker with "claimed but not held":
+  no version, no record, and `snapshotToLog` had already returned the
+  number. It showed as "no version to open a writer from" for a second
+  writer. A document now forgets the hashes of the properties it holds, no
+  others. Before writers it took a branch switch in one of two documents of
+  a file, then a snapshot of the other.
+- *A version document opened with a view hashed on its own.* A new
+  document with a view had hashed something by the time it joined the
+  file's history, so `shareHasher` left it its own hasher, and its restore
+  then looked for a string table member no version carries: "the string
+  table StringTable.txt is missing" in the report view of every version
+  opened in the Gui -- the version, pin and frozen checks all logged it and
+  passed. `_restoreAsVersion` now gives the document the file's hasher
+  outright: a version is read from the log, whose strings are the file's.
+
+**The Gui check.** `scripts/transaction-log-writer-check.py`, one GUI run in
+a fresh user home:
+
+    cd build/conda-relwithdebinfo-801
+    QT_QPA_PLATFORM=offscreen FREECAD_USER_HOME=/tmp/fchome-wc \
+      WRITERCHECK_OUT=/tmp/wc/out.txt ~/works/sw/fcad/.conda/run.sh ./bin/FreeCAD \
+      ~/works/sw/fcad/scripts/transaction-log-writer-check.py
+
+A red box, and a writer of its document, shown. The writer makes the box
+longer and blue and adds a green cylinder: the target's document has the
+length, the recomputed volume, the colour, the cylinder with its view
+provider and colour, and none of it as undo steps of its own. The target
+makes the box lower: the writer has it. The writer undoes twice -- the
+cylinder goes in both, the target's height stays -- and the target undoes
+its own. The panel says `writer of main` for the writer and offers it no
+Writer button; for the target it does, the button opens one on `main~1`,
+and closing that takes its branch away. 21 checks, all PASS on 2026-10-04.
+
+**Tests.** Gtests (`tests/src/App/TransactionLog.cpp`):
+`aWriterPushesWhatItDoes` (the fast-forward, an object arriving under its
+id, the target's own operation followed, the writer's undo, the branch
+gone with the writer), `writersMergeWhatTheyDidAtOnce` (two writers; one
+busy while the other pushes, then merged and pushed as one row, its rows
+gone, its step that row), `aWritersConflictKeepsItsBranch` (the count, the
+branch kept and worked on, a side picked and everything pushed),
+`aWriterUndoesItsOwnPastOthers` (past another property's change, refused
+past the same property's, and the target's own document by the same
+rule). Python (`Document.TransactionBranchCases`):
+`testWritersOfAFileFollowEachOther` (a Part box in a saved file: shapes
+followed with no recompute, the names, the branch's `target`, each one's
+own undo, the branch gone at close).
+
+**Left.**
+
+- A pull's merge clears the writer's redo stack, as any merge does.
+- A file saved while a writer is open carries the writer's branch row;
+  opened again it is a branch with a target and no document. Nothing
+  reads it; it is deleted by hand.
+- A selective undo leaves what it touched to a recompute, which nobody
+  runs for the writer.
+- Records on the target with no ops -- a save, a snapshot -- move its head,
+  so a writer with operations of its own then takes the merge path, and
+  its rows become one.
+
+**Gates**, frozen and unfrozen each: Python 2999 OK (52 skipped frozen, 53
+unfrozen; 6 expected failures; +1), ctest 865/865 (+4; `-j6` frozen, `-j1`
+unfrozen), the GUI checks RC 15, BC 27, VC 18, PC 28, FC 16, VW 14, MC 28,
+WC 21 -- and none of them logs the missing string table any more.
+
+Section 29 is built for the documents of one file in one process (29.4
+Q1). Clients of a shared session as writers, and two processes on one
+file, are the same mechanism with more under it: a document per client
+(`docs/ThinClient.md` 8.12, `docs/MultiViewEdit.md` sec 10), and the store
+and its allocators shared across processes (27.41 Q6).

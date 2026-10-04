@@ -173,6 +173,7 @@ int Application::InvocationScope::depth()
 
 void Application::commitImplicitTransactions()
 {
+    OperationScope scope;   // sec 29.2: the writers follow once they are in
     for (auto& v : DocMap)
         v.second->commitImplicitTransaction();
 }

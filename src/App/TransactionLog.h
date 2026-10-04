@@ -277,6 +277,23 @@ public:
     /// Put the log on branch `id` (sec 26): the next row follows its head.
     /// Kept in `meta` so a recovery continues on it. False if no such branch.
     bool setBranch(int64_t id);
+    /** Put this cursor, a version document's not yet on a branch, on a new
+     * branch `name` that writes to branch `target` (sec 29.2): made where
+     * the cursor is, with no record of its own, so its head is the target's.
+     * Returns its id; throws on a name taken.
+     */
+    int64_t makeWriter(int64_t target, const std::string& name);
+    /// The cursor follows its branch to `head`, where the document was
+    /// just moved without a row (sec 29.2: a pull, a push it received).
+    void moveHead(int64_t head);
+    /** Append a row with `ops` on branch `branch` from outside it (sec
+     * 29.2, a push onto a target no row of the writer's can become): its
+     * parent is that branch's head. Returns its seq.
+     */
+    int64_t recordOn(int64_t branch, LogTransaction t, std::vector<LogOp> ops);
+    /// Whether a row with ops that this document did not number follows
+    /// row `seq` on its chain (sec 29.2): someone else wrote past it.
+    bool writtenPast(int64_t seq);
     /// On no branch yet: a version document before its first change.
     bool detached() const { return _branch == 0; }
     /// The version a detached cursor is at, 0 for none.

@@ -317,6 +317,10 @@ TransactionLogView::TransactionLogView(Gui::Document* pcDocument, QWidget* paren
     _mergeBranch->setToolTip(tr("Merge another branch into this one: what it changed and this "
                                 "one did not, as one undoable step (sec 28)"));
     branchBar->addWidget(_mergeBranch);
+    _openWriter = new QPushButton(tr("Writer"), this);
+    _openWriter->setToolTip(tr("Open another document of this file that writes to this branch: "
+                               "each follows what the other does (sec 29)"));
+    branchBar->addWidget(_openWriter);
     _allBranches = new QCheckBox(tr("All branches"), this);
     _allBranches->setToolTip(tr("Show the rows of every branch, not only this branch's history"));
     branchBar->addWidget(_allBranches);
@@ -464,6 +468,7 @@ TransactionLogView::TransactionLogView(Gui::Document* pcDocument, QWidget* paren
     connect(_deleteBranch, &QPushButton::clicked, this, &TransactionLogView::onDeleteBranch);
     connect(_renameBranch, &QPushButton::clicked, this, &TransactionLogView::onRenameBranch);
     connect(_mergeBranch, &QPushButton::clicked, this, &TransactionLogView::onMergeBranch);
+    connect(_openWriter, &QPushButton::clicked, this, &TransactionLogView::onOpenWriter);
     connect(_allBranches, &QCheckBox::toggled, this, &TransactionLogView::applyVisibility);
     connect(_hideRecords, &QCheckBox::toggled, this, &TransactionLogView::applyVisibility);
 
@@ -1112,6 +1117,7 @@ void TransactionLogView::refreshBranches()
         _deleteBranch->setEnabled(false);
         _renameBranch->setEnabled(false);
         _mergeBranch->setEnabled(false);
+        _openWriter->setEnabled(false);
         return;
     }
     int current = -1;
@@ -1134,6 +1140,13 @@ void TransactionLogView::refreshBranches()
     _newBranch->setEnabled(_doc != nullptr);
     _deleteBranch->setEnabled(_doc != nullptr && _branch->count() > 1);
     _mergeBranch->setEnabled(_doc != nullptr && _branch->count() > 1);
+    bool writer = false;
+    try {
+        writer = _doc && _doc->writerState().writer;
+    }
+    catch (Base::Exception&) {
+    }
+    _openWriter->setEnabled(_doc != nullptr && !writer && !l->detached());
     _renameBranch->setEnabled(_doc != nullptr && _branch->currentIndex() >= 0);
 }
 
@@ -1343,6 +1356,19 @@ private:
 };
 
 } // namespace
+
+void TransactionLogView::onOpenWriter()
+{
+    if (!_doc)
+        return;
+    try {
+        _doc->openWriter();
+    }
+    catch (Base::Exception& e) {
+        FC_ERR("open a writer of " << _doc->getName() << ": " << e.what());
+        _status->setText(tr("No writer opened -- the report view says why"));
+    }
+}
 
 void TransactionLogView::onMergeBranch()
 {
@@ -1640,6 +1666,19 @@ void TransactionLogView::updateStatus()
         App::LogBranch branch;
         if (l->store().getBranch(l->branch(), branch))
             modeText += QStringLiteral(", ") + tr("branch %1").arg(QString::fromStdString(branch.name));
+        // A writer (sec 29.2): what it writes to, and what stands between.
+        const auto writer = _doc->writerState();
+        if (writer.writer) {
+            modeText += QStringLiteral(", ")
+                      + tr("writer of %1").arg(QString::fromStdString(writer.target));
+            if (writer.unpushed)
+                modeText += QStringLiteral(", ")
+                          + tr("%1 unpushed").arg(static_cast<qulonglong>(writer.unpushed));
+            if (writer.conflicts)
+                modeText += QStringLiteral(", ")
+                          + tr("%1 conflicts: Merge... to pick")
+                                .arg(static_cast<qulonglong>(writer.conflicts));
+        }
     }
     catch (Base::Exception&) {
     }

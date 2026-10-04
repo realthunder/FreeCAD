@@ -75,6 +75,9 @@ struct LogBranch
     long lastId {0};
     double created {0};
     double closed {0};
+    /// A writer's branch (sec 29.2): the branch it writes to, whose head it
+    /// was last level with at `fromSeq`. 0 for any other branch.
+    int64_t target {0};
 };
 
 /// A session row (sec 11): one open-close of this log by one process.
@@ -362,6 +365,12 @@ public:
     /// Drop a branch row; its transactions and versions are the caller's
     /// (sec 16.7). False if there is no such branch.
     virtual bool removeBranch(int64_t id) = 0;
+    /** Fast-forward branch `id` to `head` (sec 29.2, push): its head moves
+     * there, and the rows `seqs` -- another branch's, which `id` now holds
+     * as its own -- and the versions taken at them become `id`'s. False if
+     * there is no such branch.
+     */
+    virtual bool forwardBranch(int64_t id, int64_t head, const std::vector<int64_t>& seqs) = 0;
 
     virtual std::string getMeta(const std::string& key) = 0;
     virtual void setMeta(const std::string& key, const std::string& value) = 0;
