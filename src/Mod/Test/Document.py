@@ -5506,6 +5506,40 @@ class TransactionBranchCases(unittest.TestCase):
         self.assertGreater(doc.mergeTransactionBranch("side")["seq"], 0)
         self.assertEqual(doc.Obj.String, "later")
 
+    def testALoadOnFirstReadIsNotAnEdit(self):
+        # Sec 30.8: a shape is read from the file when it is first asked for.
+        # That is the restore's value arriving late, not a change: no row, no
+        # undo step, and a transaction open at the time does not take the
+        # value not yet read for what was there before.
+        doc = self.track(FreeCAD.newDocument("LazyLoad"))
+        doc.addObject("Part::Box", "Box")
+        doc.addObject("Part::Box", "Other")
+        doc.recompute()
+        path = os.path.join(self.dir, "lazy.FCStd")
+        doc.saveAs(path)
+        FreeCAD.closeDocument(doc.Name)
+
+        doc = self.track(FreeCAD.openDocument(path))
+        doc.UndoMode = 1
+        rows = len(doc.getTransactionLog())
+        self.assertAlmostEqual(doc.Box.Shape.Volume, 1000.0)
+        self.assertEqual(doc.UndoNames, [])
+        self.assertEqual(len(doc.getTransactionLog()), rows)
+
+        doc.openTransaction("longer")
+        self.assertAlmostEqual(doc.Other.Shape.Volume, 1000.0)  # read inside it
+        doc.Other.Length = 20
+        doc.recompute()
+        doc.commitTransaction()
+        self.assertAlmostEqual(doc.Other.Shape.Volume, 2000.0)
+        self.assertEqual(doc.UndoNames, ["longer"])
+        doc.undo()
+        self.assertAlmostEqual(doc.Other.Length.Value, 10.0)
+        self.assertFalse(doc.Other.Shape.isNull())
+        self.assertAlmostEqual(doc.Other.Shape.Volume, 1000.0)
+        doc.redo()
+        self.assertAlmostEqual(doc.Other.Shape.Volume, 2000.0)
+
     def testABranchInASecondDocumentIsMergedWhenAsked(self):
         # Sec 30.3 S.a: a branch opened in a second document of the file.
         # Neither follows the other; a merge that is asked for takes the

@@ -132,6 +132,10 @@ recompute path. Also, it enables more complicated dependencies beyond trees.
 #ifdef _MSC_VER
 #include <zipios++/zipios-config.h>
 #endif
+#include <config.h>
+#if defined(HAVE_BACKTRACE_SYMBOLS)
+# include <execinfo.h>
+#endif
 #include <zipios++/zipfile.h>
 #include <zipios++/zipinputstream.h>
 #include <zipios++/zipoutputstream.h>
@@ -1308,6 +1312,18 @@ void Document::_openImplicitTransaction()
         name += origin;
     }
     name += '>';
+#if defined(HAVE_BACKTRACE_SYMBOLS)
+    // FC_TXNLOG_TRACE_IMPLICIT: who writes outside a command. The stack of
+    // every implicit transaction as it opens, on stderr; names are mangled
+    // (c++filt).
+    static const bool trace = std::getenv("FC_TXNLOG_TRACE_IMPLICIT") != nullptr;
+    if (trace) {
+        void* stack[48];
+        const int frames = backtrace(stack, 48);
+        std::fprintf(stderr, "== implicit transaction %s in %s\n", name.c_str(), getName());
+        backtrace_symbols_fd(stack, frames, 2);
+    }
+#endif
     if (_openTransaction(name.c_str(), 0, true) && d->activeUndoTransaction) {
         d->activeUndoTransaction->Origin = origin ? origin : "";
         // Opened outside any invocation -- a GUI event that is not a
@@ -1839,6 +1855,17 @@ void Document::onBeforeChangeProperty(const TransactionalObject *Who, const Prop
 {
     if(Who->isDerivedFrom(App::DocumentObject::getClassTypeId()))
         signalBeforeChangeObject(*static_cast<const App::DocumentObject*>(Who), *What);
+    // A value served to an object under its own Restore status, in a
+    // document that is not restoring: a deferred load (docs/DocumentLoad.md
+    // sec 14), which runs when the value is first read. It is the restore's
+    // value, not a change -- no transaction is opened for it, and one that
+    // is open does not take the unserved value as what was there before
+    // (docs/TransactionLog.md sec 30.8).
+    if (!testStatus(Restoring)) {
+        auto obj = Base::freecad_dynamic_cast<const DocumentObject>(Who);
+        if (obj && obj->testStatus(ObjectStatus::Restore))
+            return;
+    }
     if(!d->rollback) {
         _checkTransaction(nullptr, What, __LINE__);
         if (d->activeUndoTransaction)
