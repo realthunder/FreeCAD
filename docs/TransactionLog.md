@@ -11900,3 +11900,9 @@ one.
 counts as verified -- the token is a secret, and the host has said whose
 it is -- so that sharing with no front door can still have writers. An
 open invitation never would.
+
+**U6 ruled (user, 2026-10-04): allowed, and logged as such.** A fourth
+kind of user, `invited`: the holder of an invitation the host issued to
+one named person. It may write; its rows and its logins say `invited`, so
+the panel shows it was not verified by a login. An open invitation makes
+nobody a user who may write.
