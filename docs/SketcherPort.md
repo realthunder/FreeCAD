@@ -3090,7 +3090,7 @@ against the fork's own code, each measured before it was changed.
 | `387d25c219` | **have**: the line-extension hint and its PointOnObject snap came in with group C (`338b27fea2`); every function the commit adds is here, guarded by `sketch-line-extension-autoconstraint.py` |
 | `9ce1cae190` | **n/a**: the invalid projections it guards cannot reach the fork's sketch. A mirror exists only once its client has stated a camera (`mirrorFor`), the wire refuses a non-finite, zero-size or zero-extent camera, a desktop view always has one, and a view parallel to the plane already throws `ZeroDivisionError` to callers that catch it. The no-camera early return in `getProjectingLine` leaves the line uninitialised, but nothing reaches it |
 | `35f151d99e` | **adapted** `56aa886d28` (session 114, user ruling): the panel is Core's `TaskSolverMessages` (already here from the Assembly port), "Sketch Edit", with a settings menu: auto-update and the toolbar's grid, snap and rendering order widgets, built by `addViewSettingsActions` (`Command.h`) because the fork keeps those classes inside `Command.cpp`. State `empty_sketch` -> `empty` in the eight stylesheets. `sketch-solver-panel-settings.py` (no Core panel before) |
-| `5587b48a0f` | **adapted** `8013767cd2` (session 114, user ruling; the Core half is the fork's own): an edit element's box by geometry id, composed with the editing placement as upstream does (`aaf94ad58c` corrected the first version, which used the sketch's own Placement on a wrong argument that a container's placement counts twice: a container's walk passes transform=false with the matrix already global, and asked directly only the editing placement knows the edited occurrence, through a Link too); the fit on entering edit behind `Mod/Sketcher/General/FitSketchOnEdit`, off by default, orientation set directly so an animated turn cannot outlive the fit. `sketch-view-fit-edit.py` (5/7 failed before; 10 checks now, with direct and Link queries). Found on the way, Core: an element's box dropped its object's own placement (`9ad0f2098b`), and a point's fit zeroed the zoom (`d15ea789aa`), `view-selection-point.py` |
+| `5587b48a0f` | **adapted** `8013767cd2` (session 114, user ruling; the Core half is the fork's own): an edit element's box by geometry id, composed with the editing placement as upstream does (`aaf94ad58c` corrected the first version, which used the sketch's own Placement on a wrong argument that a container's placement counts twice: a container's walk passes transform=false with the matrix already global, and asked directly only the editing placement knows the edited occurrence, through a Link too); the fit on entering edit behind `Mod/Sketcher/General/FitSketchOnEdit`, off by default (on since `1690017f04`, session 126, user ruling), orientation set directly so an animated turn cannot outlive the fit. `sketch-view-fit-edit.py` (5/7 failed before; 10 checks now, with direct and Link queries). Found on the way, Core: an element's box dropped its object's own placement (`9ad0f2098b`), and a point's fit zeroed the zoom (`d15ea789aa`), `view-selection-point.py` |
 | `6321ac28a3` | **declined**: the fork draws a drag from the solved sketch (`draw(true)` extracts it), so `moveConstraint` reading the same is what is on screen; reading the object instead measured no faster (about 18 ms a move on 2000 lines, the redraw dominates) |
 
 `8a6f859a57` was ruled after: the faces follow the preference as upstream's
@@ -5268,16 +5268,53 @@ the XZ plane, entered from a view looking at the global origin:
 
 | | view direction | sketch origin, from the view centre |
 |---|---|---|
-| entering, default preferences | turned to the plane | 950 px, off the screen |
-| entering, `FitSketchOnEdit` on | turned to the plane | 0 px, no zoom |
+| entering, `FitSketchOnEdit` off (the default then) | turned to the plane | 950 px, off the screen |
+| entering, `FitSketchOnEdit` on (the default since `1690017f04`) | turned to the plane | 0 px, no zoom |
 | Fit All after `804a03a4b3` | unchanged | where it was |
 | Fit All after `f13743c56b` | unchanged | 0.5 px, no zoom |
 
 Entering a sketch turns the view about its focal point
 (`setEditViewer`, under `AdjustCamera`, on by default) and does not move
 it; `fitOnEdit` does both and skips the fit for a sketch with no
-geometry, but only under `FitSketchOnEdit`, which is off by default.
+geometry, but only under `FitSketchOnEdit`, which was off by default.
 Fit All turns nothing, for an empty sketch as for any other.
+
+**The default, ruled.** The user remembered entering a sketch as always
+turning and aligning the view, and asked whether upstream had changed
+it. It had not changed here: the turn is the fork's own code of 2022
+(`6cc6236e149`, under `AdjustCamera`), the same at the merge base with
+`LinkVibe`, and it turns the view about the point it is looking at
+without moving it. Upstream changed in `5587b48a0f` (2026-07-07): every
+entry moves the camera to the sketch's origin, turns it, and fits the
+geometry, with no setting. The port took that behind `FitSketchOnEdit`,
+off, on the ruling of 2026-10-01. Ruled again 2026-10-04 ("I want it to
+be default true"): `1690017f04`, on in both places it is read and on
+the preference page. One test of the suite had depended on the old
+default, `sketch-edit-hide.py`, which samples the other sketches in a
+frame it set up; it switches the setting off for itself.
+
+**A timer that stopped the view in sight** (`37e3e4408c`). Found as a
+flake of the test above: 4 runs in 6, the fit did not move the camera.
+Each 3D view stops animating some time after it goes to the background
+(`View/stopAnimatingIfDeactivated`, 3 s). `windowStateChanged` arms
+that timer when another view is reported maximized and cancels it when
+the view itself is reported; a switch of views makes both reports in no
+fixed order. Under gdb, on opening a fourth view: the three older views
+are armed, and then the new one; three seconds later it fires on the
+view in sight. A fixed-time camera animation that is stopped is left
+where it had got to. The test's fit began about 2.7 s after its view
+opened. The timer now asks `isBackgroundView()` when its time is up --
+the question `armBackgroundRelease` already asks for the same reason.
+`tests/gui/view-animation-background-timer.py` makes it happen every
+time (timeout 0.4 s, animation 1.5 s): 3 runs of 3 the turn stopped at
+about (0, 0.35, -0.94) before; the view behind, left spinning, is still
+stopped.
+
+**Seen, not chased.** With `FitSketchOnEdit` off and no pause between
+creating a document and entering a sketch in it, the entry's turn does
+not happen at all (view direction unchanged two seconds later); with a
+second's pause it does. With the setting on the pose is set directly
+and the question does not arise.
 
 **The choices in this, mine and open to a ruling.** An empty sketch:
 the view goes to its origin at the zoom it has (ruled, as above). A
@@ -5292,7 +5329,9 @@ command and with its origin selected (a zoom to 0.028), and the fit
 after a tool. Its present form against the tree before the third
 commit: 4 fail -- the same three empty-sketch checks, now asking for
 the origin at the centre, and the placed sketch. The 14 were not run
-against the tree before all three. The rest are controls: geometry with
+against the tree before all three. It has 15 since `1690017f04`: the
+placed sketch is entered on untouched preferences, which checks the
+default, and the view is moved away before the fit is asked for. The rest are controls: geometry with
 origin, the model with the empty sketch, a lone vertex object still
 framed.
 
@@ -5301,10 +5340,14 @@ on the client under the names looked for, and the served view's
 `MirrorViewer::getSceneBoundBox` applies a plain bounding box action
 with no exclusion asked -- whether the axes reach its box was not run.
 
-**Verified** on the tip (`f13743c56b`), and before it on `804a03a4b3`:
-full build; ctest 911 of 911, the 910 of before and the new test. The
-Python suite was not run: the changes are in Gui libraries `FreeCADCmd`
-does not load.
+**Verified** on `f13743c56b`, and before it on `804a03a4b3`: full
+build; ctest 911 of 911, the 910 of before and the new test. On
+`7cd571832d`, the default change before the edit-hide test was fixed:
+911 of 912, the one failure that test; with the fix folded in
+(`1690017f04`) it and the three tests of this section pass through
+ctest on their own -- the full suite was not run again. The Python
+suite was not run: the changes are in Gui libraries `FreeCADCmd` does
+not load.
 
 ## 8. Phases
 
