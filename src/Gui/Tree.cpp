@@ -188,7 +188,7 @@ protected:
                     QTreeWidgetItem *parent=0, int index=-1,
                     DocumentObjectDataPtr ptrs = DocumentObjectDataPtr());
 
-    void setupTreeRank(DocumentObjectItem *item);
+    void setupTreeRank(DocumentObjectItem *item, bool moved = false);
 
     int findRootIndex(App::DocumentObject *childObj);
 
@@ -1187,6 +1187,17 @@ TreeWidget::TreeWidget(const char *name, QWidget* parent)
 
     // Setup connections
     connectNewDocument = Application::Instance->signalNewDocument.connect(std::bind(&TreeWidget::slotNewDocument, this, sp::_1, sp::_2));
+    // What a command did to the tree's structure is settled before its
+    // transaction closes, so a rank the tree writes for it -- an object the
+    // command moved out to the root, sent last -- is part of that command's
+    // step and not an edit of the tree's own from its timer
+    // (docs/TransactionLog.md sec 30.8). The flush is the one
+    // checkTopParent() asks for, and does nothing when nothing is pending.
+    connectBeforeCloseTransaction = App::GetApplication().signalBeforeCloseTransaction.connect(
+        [this](bool abort) {
+            if (!abort)
+                _updateStatus(false);
+        });
     connectDelDocument = Application::Instance->signalDeleteDocument.connect(std::bind(&TreeWidget::slotDeleteDocument, this, sp::_1));
     connectRenDocument = Application::Instance->signalRenameDocument.connect(std::bind(&TreeWidget::slotRenameDocument, this, sp::_1));
     connectActDocument = Application::Instance->signalActiveDocument.connect(std::bind(&TreeWidget::slotActiveDocument, this, sp::_1));
@@ -1272,6 +1283,7 @@ TreeWidget::TreeWidget(const char *name, QWidget* parent)
 TreeWidget::~TreeWidget()
 {
     connectNewDocument.disconnect();
+    connectBeforeCloseTransaction.disconnect();
     connectDelDocument.disconnect();
     connectRenDocument.disconnect();
     connectActDocument.disconnect();
@@ -5934,7 +5946,7 @@ void DocumentItem::slotNewObject(const Gui::ViewProviderDocumentObject& obj) {
     getTree()->_updateStatus();
 }
 
-void DocumentItem::setupTreeRank(DocumentObjectItem *item)
+void DocumentItem::setupTreeRank(DocumentObjectItem *item, bool moved)
 {
     if(!this->connectChgObject.connected()) {
         // This means the document is not fully restored yet by the tree view.
@@ -5943,7 +5955,29 @@ void DocumentItem::setupTreeRank(DocumentObjectItem *item)
     }
     auto ranks = document()->getDocument()->treeRanks();
     auto obj = item->object()->getObject();
-    if (obj->TreeRank.getValue() < ranks.second) {
+    const long rank = obj->TreeRank.getValue();
+    // An item new to the tree is not an object new to the document: the
+    // document ranks an object as it is added, a restored, undone or merged
+    // one carries the rank it had, and the tree may be seeing either late --
+    // several made by one command before its timer ran, a document shown
+    // for the first time. Writing a rank then is an edit nobody made: with
+    // the transaction log it was an undo step of its own after the command,
+    // and it cleared the redo stack after an undo
+    // (docs/TransactionLog.md sec 30.8). Only an object with no rank at all
+    // is given one.
+    //
+    // An item moved out to the root goes last, so the user finds it -- as
+    // part of the command that moved it. The tree is brought up to date
+    // before a transaction closes (TreeWidget's connection to
+    // signalBeforeCloseTransaction), so the rank is written while that
+    // command's transaction is open and is undone with it. When the tree
+    // learns of the move with no transaction open -- an undo put the object
+    // back out, the tree was hidden or busy at the commit -- the object
+    // stays where its rank puts it: the tree makes no step of its own.
+    const bool write = moved
+        ? rank < ranks.second && document()->getDocument()->hasPendingTransaction()
+        : rank == 0 && ranks.second != 0;
+    if (write) {
         obj->TreeRank.setValue(ranks.second + 1);
         if (itemSorted) {
             itemSorted = false;
@@ -6295,7 +6329,7 @@ void DocumentItem::populateItem(DocumentObjectItem *item, bool refresh, bool del
                     updateItemsVisibility(childItem,false);
                 childItem->myData->rootItem = childItem;
                 ++_TreeItemGeneration;
-                setupTreeRank(childItem);
+                setupTreeRank(childItem, true);
                 continue;
             }
         }

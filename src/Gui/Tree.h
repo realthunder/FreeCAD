@@ -336,6 +336,7 @@ private:
     Connection connectChangedViewObj;
     Connection connectChangedChildren;
     Connection connectFinishRestoreDocument;
+    Connection connectBeforeCloseTransaction;
 };
 
 class TreePanel : public QWidget

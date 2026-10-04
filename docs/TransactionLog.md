@@ -12029,3 +12029,126 @@ checks RC 15, BC 27, VC 18, PC 28, FC 16, VW 14, MC 28 and the
 two-document check 24. The first run had one Python failure,
 `testMergeUpToAVersion`: the fast-forward did not name the version merged
 in.
+
+### 30.8 Edits nobody made: the tree's ranks, a shape read on first use (user: chase it, 2026-10-04)
+
+30.7 left one thing seen and not chased: in the offscreen check a branch
+level with its target read `1 ahead`, the row an implicit transaction
+that wrote `TreeRank`. The user asked for it before S.b. It was two
+defects, neither of them the offscreen run's, both in every Gui session
+with the log on -- which it is by default (27.9) -- and a rule of the
+tree's that the same cause had made a third.
+
+**Found with** a switch kept for the next one: `FC_TXNLOG_TRACE_IMPLICIT`
+in the environment prints the stack of every implicit transaction as it
+opens (`Document::_openImplicitTransaction`; names mangled, `c++filt`).
+An implicit transaction outside a command is by definition a write nobody
+asked for, or one whose site should have a command around it; the stack
+says which site.
+
+**1. The tree ranked what it showed.** `DocumentItem::setupTreeRank`
+(`src/Gui/Tree.cpp`) ran for every root item new to the tree and gave its
+object `max + 1` when its rank was below the document's highest. The
+document already ranks an object as it is added (`Document::addObject`),
+so for one object made by a command it wrote nothing. But the tree works
+from a timer, and an item new to the tree is not an object new to the
+document:
+
+- *several objects made by one command* -- ranks 1, 2, 3 at the commit --
+  were all renumbered when the timer ran, 4, 5, 6: an `<implicit>` row
+  with their `TreeRank`s, and an undo step of its own on top of the
+  command's. Undo took two presses, the first doing nothing to see;
+- *an object back by undo of its removal* came back with the rank it had,
+  below the highest: renumbered, and the implicit transaction that did it
+  **cleared the redo stack**. A delete undone could not be redone;
+- *a document shown late* -- the offscreen check's case -- the same for
+  every object but the last.
+
+Fixed at the site: an item new to the tree gets a rank only when its
+object has none (0, among objects that have); a rank it carries -- given
+by the document, restored, put back by an undo, brought by a merge -- is
+left alone.
+
+**2. A shape read from the file on first use was recorded as an edit.**
+A reopened document's shapes are read when first asked for
+(`docs/DocumentLoad.md` sec 14). `PropertyPartShape::serveFromBlob` puts
+the value in with `setValue` under the object's `Restore` status, so
+observers see a restoring object -- and `Document::onBeforeChangeProperty`
+looked only at the document's `Restoring`, which was long over. So the
+first reader of each shape, the view provider's deferred draw on a timer,
+opened an implicit transaction: after opening a file, an `<implicit>` row
+setting every `Shape`, and an undo step in a document nobody had touched.
+Inside a command's transaction it was worse in kind: the transaction took
+the value not yet read as what the shape was before.
+
+Fixed where the decision is made: a write to an object under its own
+`Restore` status, in a document that is not restoring, is the restore's
+value arriving late. No transaction is opened for it and an open one does
+not record it. That covers the three deferred serves there are
+(`Document::restoreDeferredFile`, and the shape property's from the blob
+and from the store), which are the only places outside a document's
+restore that set the status.
+
+**3. An item moved out to the root goes last -- in the command that moved
+it (user, 2026-10-04).** Its parent removed, or it taken out of a group:
+the tree sends it last by rewriting its rank, from its timer, so after
+the command -- `ungroup`, then `<implicit>` with the object's rank 2 -> 5
+in the probe. Asked which to keep, the user first took "leave it where
+its rank puts it", then remembered why the rule is there -- an object
+that moves out is otherwise hard to find -- and ruled: keep it, and see
+that it is logged in the transaction of the command that moved the
+object out.
+
+It is. The tree has a synchronous flush of its structure
+(`TreeWidget::_updateStatus(false)`, what `checkTopParent` asks for when
+selection code needs the items current), and the application says when a
+transaction is about to close (`signalBeforeCloseTransaction`, fired by
+`TransactionSignaller` before a document commits). The tree now flushes
+there. So what a command did to the structure is settled while its
+transaction is open, the rank is written into that transaction -- one
+step, the rank's op in the command's row, undone and redone with it --
+and nothing is left for the timer.
+
+When the tree learns of the move with no transaction open -- an undo put
+the object back out, the tree was hidden or dragging at the commit -- it
+writes nothing and the object stays where its rank puts it
+(`setupTreeRank(item, true)` asks `hasPendingTransaction()`). The tree
+makes no step of its own in any case; the one write it still makes
+outside a command is a rank for an object that has none.
+
+**What changed (user: "I remember it used to behave like this").** Not
+the tree. `setupTreeRank`, both of its calls and its `rank < max` test are
+as they were written on 2021-12-05 (`638f3bbf20`, "support object
+reordering through drag and drop"); "goes last" for an item moved out is
+in that commit. What changed is what a write outside a command is:
+
+- until the log, `Document::_checkTransaction` opened a transaction only
+  when the application had one active. The tree's writes from its timer
+  were applied and recorded nowhere: no undo step, the redo stack left
+  alone. Several objects were still renumbered 1, 2, 3 -> 4, 5, 6, but in
+  the same order, so nothing showed;
+- 2026-09-22 (`44a585781b`, sec 9.1): with the log every write is
+  transacted, one with no transaction open in an implicit transaction of
+  its own -- a row, an undo step, the redo stack cleared;
+- 2026-09-26 (`ed9b35d358`, sec 27.9): the log on by default.
+
+The shape read on first use is the same story with a newer first half:
+the geometry became a file read on demand on 2026-08-17 (`f5ec09308b`),
+silent until the log made its `setValue` a transaction.
+
+**Tests.** Python `testALoadOnFirstReadIsNotAnEdit` (a file with two
+boxes reopened: a first read makes no row and no step; a read inside a
+transaction, then an edit, an undo and a redo leave the shape whole). Gui
+check `scripts/transaction-log-tree-check.py` (`TREECHECK_OUT`), 19
+checks with the tree shown: three objects by one command; an undo of a
+delete; an object taken out of a group -- last, one step, its rank in
+the command's row, undone, out again by an undo of the grouping, redone;
+a file opened and its shapes read. Run against the code without fixes 1
+and 2 first, in its first 12 checks: 10 failed and the Python case
+failed -- `['<implicit>', 'three']`, the redo `[]` after the undo of a
+delete, `['<implicit>']` after an open.
+
+**Gates**, frozen and unfrozen each: Python 3000 OK (52 skipped frozen, 53
+unfrozen; 6 expected failures; +1), ctest 865/865, the GUI checks RC 15,
+BC 27, VC 18, PC 28, FC 16, VW 14, MC 28, the two-document check 24 and
+the tree check 19.
