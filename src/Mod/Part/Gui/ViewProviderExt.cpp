@@ -38,6 +38,7 @@
 # include <BRepMesh_Deflection.hxx>
 # include <BRepMesh_IncrementalMesh.hxx>
 # include <BRepMesh_ShapeTool.hxx>
+# include <BRepTools.hxx>
 # include <BRepAdaptor_Surface.hxx>
 # include <BRepGProp.hxx>
 # include <GProp_GProps.hxx>
@@ -6363,7 +6364,7 @@ void ViewProviderPartExt::updateVisual()
     // before every early exit, so a claim made for a build that took
     // the stand-in or instanced path (or errored out) cannot leak
     // into a later rebuild it knows nothing about.
-    const bool residentLanded = meshLadder.residentLanded;
+    bool residentLanded = meshLadder.residentLanded;
     meshLadder.residentLanded = false;
     // Whatever path this rebuild takes below -- the null install, the
     // stand-in, the instanced build, the inline or the pooled fill --
@@ -6594,6 +6595,29 @@ void ViewProviderPartExt::updateVisual()
         double exactDeflection = deflection;
         double exactAngle = AngDeflectionRads;
         float builtError = 0.0f;
+        // A new ANGLE on a shape built before: OCCT records a
+        // triangulation's linear deflection but not its angle, so the
+        // mesher keeps a resident mesh whose deflection still fits
+        // whatever angle is asked, and an AngularDeflection edit (or
+        // its preference, or OverrideTessellation) changed nothing on
+        // screen. Clear the mesh, as upstream does before every mesh
+        // call, and with it the ladder's claims about what is resident.
+        // exactAng is the last build's ask for this very TShape (rebind
+        // zeroes it for any other), and a shape a pre-mesh worker holds
+        // never gets here -- updateVisual parked it above. Not forced:
+        // a face with no surface keeps its mesh either way (it is all
+        // the geometry it has), and forcing would also strip the edge
+        // polygons that belong to OTHER shapes' faces.
+        if (meshLadder.exactAng > 0.0
+                && std::abs(meshLadder.exactAng - exactAngle) > Precision::Angular()) {
+            BRepTools::Clean(cShape);
+            meshLadder.exactResident = false;
+            meshLadder.exactCoarseError = 0.0f;
+            meshLadder.coarseResolved = false;
+            // The landing claim this build consumed said the resident
+            // mesh is the one to show; there is none now.
+            residentLanded = false;
+        }
         // The desktop refine already put this very TShape's exact
         // triangulation in place (sec 13): build at the display deviation
         // -- the mesher finds the finer mesh resident and keeps it -- and

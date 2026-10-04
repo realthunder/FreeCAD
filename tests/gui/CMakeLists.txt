@@ -764,6 +764,14 @@ fc_add_gui_test(GuiPartTessellationReload_tests_run
                 part-tessellation-reload.py
                 --timeout 240)
 
+# A Part object re-meshes when only its AngularDeflection changes: OCCT
+# keeps a resident mesh whose linear deflection still fits and does not
+# record the angle, so an angle-only edit (property or preference) drew
+# the old mesh until the build learned to clear it.
+fc_add_gui_test(GuiPartAngleOnlyRemesh_tests_run
+                part-angle-only-remesh.py
+                --timeout 240)
+
 # A SubShapeBinder keeps its saved Map*Color settings when opened: reading
 # ShapeColor from the file after MapFaceColor switched the mapping off, as
 # a colour picked by the user does (docs/DocumentLoad.md sec 19).
