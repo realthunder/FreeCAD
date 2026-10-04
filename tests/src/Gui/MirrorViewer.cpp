@@ -685,14 +685,21 @@ TEST_F(SharedEditingRootTest, theInitiatorShowsThroughTheSessionsRoot)
     EXPECT_TRUE(mirror->isEditingInitiator());
     EXPECT_EQ(mirror->getEditRootNode(), root->node());
     EXPECT_EQ(mirror->editingRoot(), root.get());
-    // Beside the served graph, never in it: last in this view's own
-    // event graph, once. What clients see of it is the serving source's
-    // overlay capture, not the shared scene.
+    // Beside the served graph, never in it: in this view's own event
+    // graph, once, followed by the session's on-view root -- the last
+    // two. What clients see of both is the serving source's overlay
+    // capture, not the shared scene.
     EXPECT_EQ(scene->findChild(root->node()), -1);
     SoGroup* events = eventGraph(*mirror);
-    ASSERT_GT(events->getNumChildren(), 0);
-    EXPECT_EQ(events->getChild(events->getNumChildren() - 1), root->node());
+    ASSERT_GT(events->getNumChildren(), 1);
+    EXPECT_EQ(events->getChild(events->getNumChildren() - 2), root->node());
+    EXPECT_EQ(events->getChild(events->getNumChildren() - 1), root->onViewNode());
     EXPECT_EQ(timesIn(events, root->node()), 1);
+    EXPECT_EQ(timesIn(events, root->onViewNode()), 1);
+    // ...which is where its on-view parameters go while it is in the
+    // session, and not the served root
+    EXPECT_EQ(mirror->getOnViewParameterRoot(), root->onViewNode());
+    EXPECT_EQ(scene->findChild(root->onViewNode()), -1);
 
     mirror->resetEditingViewProvider();
     EXPECT_FALSE(mirror->isEditingViewProvider());
@@ -700,6 +707,9 @@ TEST_F(SharedEditingRootTest, theInitiatorShowsThroughTheSessionsRoot)
     EXPECT_NE(mirror->getEditRootNode(), root->node());
     EXPECT_EQ(scene->findChild(root->node()), -1);
     EXPECT_EQ(timesIn(events, root->node()), 0);
+    EXPECT_EQ(timesIn(events, root->onViewNode()), 0);
+    // Out of the session the served root again
+    EXPECT_NE(mirror->getOnViewParameterRoot(), root->onViewNode());
     EXPECT_EQ(static_cast<SoSeparator*>(mirror->getEditRootNode())->getNumChildren(), 1);
 }
 
