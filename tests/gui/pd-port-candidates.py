@@ -22,6 +22,7 @@ on 2026-10-01, each as the user meets it:
 Run: FreeCAD <this script>, GT_OUT set to a directory; result.txt there.
 """
 import ctypes
+import ctypes.util
 import os
 import traceback
 
@@ -349,17 +350,51 @@ def test_pipe_edges():
 
 VK_SHIFT = 0x10
 KEYUP = 0x0002
+XK_SHIFT_L = 0xFFE1
+
+
+def hold_shift(down):
+    """Press or release the real Shift key.
+
+    PartDesign_NewSketch asks the window system for the key's state
+    (QApplication::queryKeyboardModifiers), not Qt for the modifiers of
+    the last event, so a key event sent through Qt -- QTest's included --
+    does not reach it. The key is pressed where the window system reads
+    it: keybd_event on Windows, the XTEST extension on X11 (which Xvfb
+    has)."""
+    if hasattr(ctypes, "windll"):
+        ctypes.windll.user32.keybd_event(VK_SHIFT, 0, 0 if down else KEYUP, 0)
+        return
+    x11 = ctypes.CDLL(ctypes.util.find_library("X11") or "libX11.so.6")
+    xtst = ctypes.CDLL(ctypes.util.find_library("Xtst") or "libXtst.so.6")
+    x11.XOpenDisplay.restype = ctypes.c_void_p
+    x11.XOpenDisplay.argtypes = [ctypes.c_char_p]
+    x11.XKeysymToKeycode.restype = ctypes.c_ubyte
+    x11.XKeysymToKeycode.argtypes = [ctypes.c_void_p, ctypes.c_ulong]
+    x11.XSync.argtypes = [ctypes.c_void_p, ctypes.c_int]
+    x11.XCloseDisplay.argtypes = [ctypes.c_void_p]
+    xtst.XTestFakeKeyEvent.argtypes = [ctypes.c_void_p, ctypes.c_uint, ctypes.c_int,
+                                       ctypes.c_ulong]
+    display = x11.XOpenDisplay(None)
+    if not display:
+        raise RuntimeError("no X display to press Shift on")
+    try:
+        code = x11.XKeysymToKeycode(display, XK_SHIFT_L)
+        xtst.XTestFakeKeyEvent(display, code, 1 if down else 0, 0)
+        x11.XSync(display, 0)
+    finally:
+        x11.XCloseDisplay(display)
 
 
 def new_sketch(doc, shift=False):
     before = set(o.Name for o in doc.Objects)
     if shift:
-        ctypes.windll.user32.keybd_event(VK_SHIFT, 0, 0, 0)
+        hold_shift(True)
     try:
         FreeCADGui.runCommand("PartDesign_NewSketch")
     finally:
         if shift:
-            ctypes.windll.user32.keybd_event(VK_SHIFT, 0, KEYUP, 0)
+            hold_shift(False)
     settle(800)
     new = [doc.getObject(n) for n in set(o.Name for o in doc.Objects) - before]
     sketches = [o for o in new if o.TypeId == "Sketcher::SketchObject"]
