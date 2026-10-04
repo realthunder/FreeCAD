@@ -268,6 +268,7 @@ void SketchObject::syncExternalTypes(const std::vector<std::string> &oldRefs)
 void SketchObject::migrateExternalTypes()
 {
     std::vector<long> types;
+    legacyCutExternalRefs.clear();
     if (restoredExternalTypes) {
         types = getExternalTypes();
         // The kinds and no version: the file is upstream's. It has the kinds
@@ -288,6 +289,17 @@ void SketchObject::migrateExternalTypes()
                     && boost::starts_with(Data::oldElementName(subs[i].c_str()), "Edge"))
                 kind = ExtType::Both;
             types.push_back(static_cast<long>(kind));
+        }
+        // A reference missing its element is not among the links, and
+        // whether it is an edge is not known before the element is found
+        // again: rebuildExternalGeometry() asks then.
+        if (_Version.getValue() < 2) {
+            const std::set<std::string> listed(externalGeoRef.begin(), externalGeoRef.end());
+            for (const auto &v : externalGeoRefMap) {
+                if (!listed.count(v.first)
+                        && externalTypeFromGeometry(v.first) == ExtType::Intersection)
+                    legacyCutExternalRefs.insert(v.first);
+            }
         }
     }
     if (types != ExternalTypes.getValues())
@@ -1782,6 +1794,9 @@ void SketchObject::rebuildExternalGeometry(bool defining)
         }
     }
 
+    // The kind of each reference (upstream 0e5e071d72)
+    std::vector<long> Types = getExternalTypes();
+
     // re-check for any missing geometry element. The code here has a side
     // effect that the linked external geometry will continue to work even if
     // ExternalGeometry is wiped out.
@@ -1808,6 +1823,18 @@ void SketchObject::rebuildExternalGeometry(bool defining)
                 Objects.push_back(obj);
                 SubElements.push_back(elementName.second);
                 keys.push_back(ref);
+
+                // It lost its kind with its link, and its geometry still
+                // says what it was -- but for an edge in a sketch from
+                // before version 2, of both kinds with every piece flagged
+                // (migrateExternalTypes).
+                ExtType kind = externalTypeFromGeometry(ref);
+                if (legacyCutExternalRefs.count(ref)
+                        && boost::starts_with(elementName.second, "Edge")) {
+                    kind = ExtType::Both;
+                    unsplitExternalRefs.insert(ref);
+                }
+                Types.push_back(static_cast<long>(kind));
             }
         }
     }
@@ -1844,13 +1871,6 @@ void SketchObject::rebuildExternalGeometry(bool defining)
     Handle(Geom_Plane) gPlane = new Geom_Plane(sketchPlane);
     BRepBuilderAPI_MakeFace mkFace(sketchPlane);
     TopoDS_Shape aProjFace = mkFace.Shape();
-
-    // The kind of each reference (upstream 0e5e071d72). One put back above,
-    // its element found again, lost its entry with its link: its geometry
-    // still says what it was.
-    std::vector<long> Types = getExternalTypes();
-    for (std::size_t i = Types.size(); i < keys.size(); ++i)
-        Types.push_back(static_cast<long>(externalTypeFromGeometry(keys[i])));
 
     std::set<std::string> refSet;
     // We use a vector here to keep the order (roughly) the same as ExternalGeometry
@@ -2878,6 +2898,7 @@ void SketchObject::rebuildExternalGeometry(bool defining)
         // where no piece or every piece is flagged, and the pieces go by
         // position this once.
         const bool split = unsplitExternalRefs.erase(egf->getRef()) == 0;
+        legacyCutExternalRefs.erase(egf->getRef());
         std::vector<std::string> oldElements;
         std::vector<bool> oldCut;
         oldElements.reserve(refs.size());

@@ -108,6 +108,16 @@ def asUpstream(xml):
     return dropProperty(xml, "_Version")
 
 
+def asForkBeforeVersion2(xml):
+    """An old file of this fork from before version 2, where an edge taken by
+    intersection came with its projection and every piece was flagged."""
+    xml = asOldFork(xml)
+    xml = setFlags(xml, lambda flags, index: flags | INTERSECTION_FLAG)
+    return re.sub(
+        r'(<Property name="_Version".*?<Integer value=)"\d+"', r'\1"1"', xml, flags=re.S
+    )
+
+
 class TestSketchExternalTypes(unittest.TestCase):
     def setUp(self):
         self.doc = App.newDocument("TestSketchExternalTypes")
@@ -360,15 +370,7 @@ class TestSketchExternalTypes(unittest.TestCase):
         self.sketch.addExternal("Box", self.far, False, True)
         self.doc.recompute()
         ids = [id for id, _, _ in externals(self.sketch)]
-
-        def legacy(xml):
-            xml = asOldFork(xml)
-            xml = setFlags(xml, lambda flags, index: flags | INTERSECTION_FLAG)
-            return re.sub(
-                r'(<Property name="_Version".*?<Integer value=)"\d+"', r'\1"1"', xml, flags=re.S
-            )
-
-        sketch = self.reopen(legacy, schema)
+        sketch = self.reopen(asForkBeforeVersion2, schema)
         self.assertEqual(sketch._Version, 1)
         self.assertEqual(flagged(sketch), [True, True])
         self.assertEqual(self.kinds(), [BOTH])
@@ -380,6 +382,43 @@ class TestSketchExternalTypes(unittest.TestCase):
 
     def testOldForkFileFromBeforeVersion2Schema4(self):
         self.testOldForkFileFromBeforeVersion2(schema=4)
+
+    def testOldForkFileFromBeforeVersion2MissingEdge(self):
+        # The same edge, its element missing when the file was written: the
+        # reference is not among the links, and only its geometry -- every
+        # piece flagged -- says what it was. Back, it is of both kinds, and
+        # the line keeps its id and what is constrained to it.
+        ids = self.farEdgeBothWaysAndGone()
+        sketch = self.reopen(asForkBeforeVersion2)
+        self.assertEqual(sketch._Version, 1)
+        self.assertEqual(self.links(), [])
+        self.assertEqual(flagged(sketch), [True, True])
+        sketch = self.giveBack()
+        self.assertEqual(self.links(), [("Source", self.far)])
+        self.assertEqual(self.kinds(), [BOTH])
+        self.assertEqual(shapes(sketch), ["LineSegment", "Point"])
+        self.assertEqual([id for id, _, _ in externals(sketch)], ids)
+        self.assertEqual(flagged(sketch), [False, True])
+        self.assertEqual(len(sketch.Constraints), 2)
+        self.assertCutAtFarEdge(sketch, 12)
+
+    def testOldForkFileFromBeforeVersion2MissingFace(self):
+        # A face taken by intersection was the cut alone before version 2 as
+        # well, and stays that when it comes back.
+        self.looseSource()
+        self.sketch.addExternal("Source", self.face, False, True)
+        self.doc.recompute()
+        cut = shapes(self.sketch)
+        ids = [id for id, _, _ in externals(self.sketch)]
+        self.takeAway()
+        sketch = self.reopen(asForkBeforeVersion2)
+        self.assertEqual(self.links(), [])
+        sketch = self.giveBack()
+        self.assertEqual(self.links(), [("Source", self.face)])
+        self.assertEqual(self.kinds(), [INTERSECTION])
+        self.assertEqual(shapes(sketch), cut)
+        self.assertEqual([id for id, _, _ in externals(sketch)], ids)
+        self.assertTrue(all(flagged(sketch)))
 
     def testUpstreamFile(self):
         self.sketch.addExternal("Box", self.far, False, True)
