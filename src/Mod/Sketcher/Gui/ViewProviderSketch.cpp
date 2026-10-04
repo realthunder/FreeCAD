@@ -5834,7 +5834,7 @@ void ViewProviderSketch::OnChange(Base::Subject<const char*> &rCaller, const cha
     else if (boost::equals(sReason, _ParamViewBottomOnEdit))
         _ViewBottomOnEdit = edit->hSketchGeneral->GetBool(_ParamViewBottomOnEdit, false);
     else if (boost::equals(sReason, _ParamAdjustCamera))
-        _AdjustCamera = edit->hSketchGeneral->GetBool(_ParamAdjustCamera, false);
+        _AdjustCamera = edit->hSketchGeneral->GetBool(_ParamAdjustCamera, true);
     else if (boost::equals(sReason, _ParamFitOnEdit))
         _FitOnEdit = edit->hSketchGeneral->GetBool(_ParamFitOnEdit, true);
 }
