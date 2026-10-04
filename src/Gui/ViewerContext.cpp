@@ -117,6 +117,17 @@ EditingRoot::EditingRoot(Gui::Document* document)
     transform->ref();
     transform->setName("EditingTransform");
     root->addChild(transform);
+    onView = new SoSeparator;
+    onView->ref();
+    onView->setName("EditingOnViewRoot");
+    // Labels move with the camera and the pointer; a cache here would be
+    // rebuilt on every frame that matters
+    onView->renderCaching = SoSeparator::OFF;
+    publish = new SoGroup;
+    publish->ref();
+    publish->setName("EditingPublishRoot");
+    publish->addChild(root);
+    publish->addChild(onView);
 }
 
 EditingRoot::~EditingRoot()
@@ -129,6 +140,8 @@ EditingRoot::~EditingRoot()
     if (restore) {
         FC_ERR("editing root destroyed while still holding an edit's geometry");
     }
+    publish->unref();
+    onView->unref();
     transform->unref();
     root->unref();
 }
@@ -136,6 +149,11 @@ EditingRoot::~EditingRoot()
 bool EditingRoot::hasContent() const
 {
     return root->getNumChildren() > 1;
+}
+
+bool EditingRoot::hasOnViewContent() const
+{
+    return onView->getNumChildren() > 0;
 }
 
 void EditingRoot::hangUnder(SoGroup* parent, int index)

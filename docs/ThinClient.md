@@ -2619,6 +2619,24 @@ sketch axes -- `serve-edit-browser.py` measured the 10 mm edit line at 20 pixels
 the camera alone. That test now counts the edit overlay's pixels before, during and after the
 session (the edited-edge colour set to magenta).
 
+**Built 2026-10-04: a session's on-view parameters ride the same overlay.** A mirror's
+`getOnViewParameterRoot()` was the served root, so the dimension lines of its on-view
+labels (`EditableDatumLabel`) and a pattern's instance markers (`PatternInstanceMarkers`)
+were published in the one scene every client shares: a viewer outside the session saw
+them, and a label following the pointer spoiled the shared scene's caches on every move,
+the cost the edit overlay had just removed. Each session's `EditingRoot` now owns an
+on-view node beside its editing root -- not under it, since a label is in world
+coordinates and the editing transform must not move it -- and a mirror in the session
+answers that node, hanging it after the editing root in its event graph so a replayed
+click still picks a label or a marker. The serving source watches and captures the
+session's publish group (editing root, then on-view node) into overlay 7, and publishes
+it when either has content: a pattern panel edits with nothing in the editing root.
+Outside a session a mirror still answers the served root. The desktop keeps its own
+on-view feed and never hangs the session's node, so a client's labels are not drawn
+there. A label remembers the group it hung under, since a mirror's answer now changes as
+it joins and leaves a session. `serve-pattern-markers.py` asserts the markers hang under
+the session's node (`EditingOnViewRoot`) during the edit and nothing is left after it.
+
 **Reading the list.** A is done; C, D and J have their seams built; B, E, F and I are
 wide but mechanical -- each is the move stages 1-5 made, a global becoming a row on a
 context read under a scope; G and H are why only Onshape does this. The shared session

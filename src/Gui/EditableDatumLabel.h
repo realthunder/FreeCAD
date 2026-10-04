@@ -35,6 +35,7 @@
 #include <FCGlobal.h>
 
 class SoEventCallback;
+class SoGroup;
 class SoNodeSensor;
 class SoPickStyle;
 class SoTransform;
@@ -222,7 +223,15 @@ private:
     void handleEvent(SoEventCallback* cb);
 
 private:
+    /// Take root out of the group activate() hung it under.
+    void unhang();
+
     SoSeparator* root;
+    /// Where activate() hung root, held: the view's on-view root of the
+    /// moment, which on a mirror changes as the view joins and leaves an
+    /// edit session -- asking the view again on the way out would miss
+    /// the label it hung before.
+    SoGroup* hungUnder = nullptr;
     SoTransform* transform;
     ViewerContext* viewer;
     QuantitySpinBox* spinBox;

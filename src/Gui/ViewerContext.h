@@ -156,6 +156,31 @@ public:
     {
         return transform;
     }
+    /** Where the session's views that have no on-view root of their own
+     * hang their on-view parameters (a mirror's getOnViewParameterRoot()
+     * while it is in the session): dimension lines and pattern markers,
+     * in WORLD coordinates, so not under the editing transform.
+     *
+     * It is the session's, like node(), and for the same reason: the
+     * serving source publishes both as the session's overlay, tagged with
+     * it (docs/ThinClient.md 8.12 item J), where a mirror's labels used to
+     * go into the served root every client shares -- seen by viewers
+     * outside the session, and a moving label spoiling the shared scene's
+     * caches on every drag. The desktop's views keep a root of their own
+     * (View3DInventorViewer's on-view feed), so nothing here is drawn
+     * twice there.
+     */
+    SoSeparator* onViewNode() const
+    {
+        return onView;
+    }
+    /// node() then onViewNode(): what the serving source captures.
+    SoGroup* publishNode() const
+    {
+        return publish;
+    }
+    /// Whether a view has hung an on-view parameter in onViewNode().
+    bool hasOnViewContent() const;
     /// The document whose session this is, or null for a private root.
     Gui::Document* document() const
     {
@@ -279,6 +304,8 @@ public:
 private:
     SoSeparator* root {nullptr};
     SoTransform* transform {nullptr};
+    SoSeparator* onView {nullptr};
+    SoGroup* publish {nullptr};
     Gui::Document* doc {nullptr};
     std::map<SoGroup*, int> parents;
     std::vector<ViewerContext*> viewList;

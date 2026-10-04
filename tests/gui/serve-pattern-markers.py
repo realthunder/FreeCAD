@@ -13,7 +13,12 @@ What is asserted:
   - a second click there, on the marker now showing a plus, brings it
     back -- so the markers were shown again where they were, in their new
     state, after the first;
-  - a click on the first instance's marker leaves the first one out.
+  - a click on the first instance's marker leaves the first one out;
+  - while the client edits, the markers hang under the session's on-view
+    root (EditingRoot::onViewNode, "EditingOnViewRoot"), which the serving
+    source publishes as the session's tagged overlay, not in the served
+    root every client shares (docs/ThinClient.md 8.12 item J); once the
+    session is over nothing is left there.
 
 Run through scripts/gui-test.sh (xvfb, isolated configuration, external
 timeout), or by hand as `FreeCAD <this script>` with GT_OUT set and this
@@ -64,6 +69,21 @@ def note(msg):
 def check(name, cond, detail=""):
     note(("PASS " if cond else "FAIL ") + name + (" | " + str(detail) if detail else ""))
     return cond
+
+
+def session_markers():
+    """SoToggleMarker nodes under the session's on-view root, -1 when
+    there is no such root."""
+    from pivy import coin
+    node = coin.SoNode.getByName("EditingOnViewRoot")
+    if node is None:
+        return -1
+    sa = coin.SoSearchAction()
+    sa.setType(coin.SoType.fromName("SoToggleMarker"))
+    sa.setInterest(coin.SoSearchAction.ALL)
+    sa.setSearchingAll(True)
+    sa.apply(node)
+    return sa.getPaths().getLength()
 
 
 class Client(threading.Thread):
@@ -159,6 +179,8 @@ def build():
 def poll():
     client = state["client"]
     if client.clicks > len(state["seen"]):
+        if not state["seen"]:
+            state["markers_in_session"] = session_markers()
         state["seen"].append(list(state["doc"].LinearPattern.SuppressedIndices))
         client.read.set()
     if client.is_alive():
@@ -186,6 +208,11 @@ def verify():
               len(seen) > 1 and seen[1] == [], seen)
         check("a click on the first instance's marker leaves the first out",
               len(seen) > 2 and seen[2] == [0], seen)
+        during = state.get("markers_in_session")
+        check("the markers hang under the session's on-view root",
+              during is not None and during >= 2, during)
+        after = session_markers()
+        check("nothing is left there once the session is over", after == 0, after)
     except Exception:
         note("ABORT verify:\n" + traceback.format_exc())
     finish()

@@ -464,6 +464,13 @@ public:
      * Under 8.11 every client with a view joins the one session, so all
      * of them draw it today; the tag is what keeps that a decision rather
      * than an accident once sessions fork.
+     *
+     * The capture is the session's publish group: the editing root and,
+     * beside it, the session's on-view root (EditingRoot::onViewNode),
+     * where a mirror in the session hangs its dimension lines and pattern
+     * markers. Those went into the served root, so a viewer outside the
+     * session saw them and a label following the pointer spoiled the
+     * shared scene's caches the way an in-scene edit root once did.
      */
     std::unique_ptr<SoFCRenderCacheManager> editCapture;
     /// The node the capture was built on: a new session's root is a
@@ -783,7 +790,7 @@ public:
             editSession = lastEditSession = 1;
         editSensor.detach();
         if (doc)
-            editSensor.attach(doc->editingRoot()->node());
+            editSensor.attach(doc->editingRoot()->publishNode());
     }
 
     void endEditSession()
@@ -812,12 +819,15 @@ public:
      * traverse).
      *
      * Content means more than the editing transform, the desktop's own
-     * gate (View3DInventorViewer::Private::updateOverlayCaptures).
+     * gate (View3DInventorViewer::Private::updateOverlayCaptures), or an
+     * on-view parameter: a pattern's panel edits with nothing in the
+     * editing root and its markers and spacing labels beside it.
      */
     void feedEditOverlay(const SbViewportRegion &viewport)
     {
         EditingRoot *edit = editSession && doc ? doc->editingRoot() : nullptr;
-        SoNode *node = edit && edit->hasContent() ? edit->node() : nullptr;
+        SoNode *node = edit && (edit->hasContent() || edit->hasOnViewContent())
+            ? edit->publishNode() : nullptr;
         if (editCapture && editCaptureRoot != node)
             dropEditOverlay();
         if (!node || !renderer)

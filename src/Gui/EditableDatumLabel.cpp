@@ -174,6 +174,8 @@ void EditableDatumLabel::activate()
     // how the dimension line reaches a browser at all
     if (SoGroup* parent = viewer->getOnViewParameterRoot()) {
         parent->addChild(root);
+        hungUnder = parent;
+        hungUnder->ref();
     }
 
     //track camera movements to update spinbox position.
@@ -246,14 +248,23 @@ void EditableDatumLabel::deactivate()
     stopEdit();
     dropCameraSensor();
 
+    unhang();
     if (viewer) {
-        if (SoGroup* parent = viewer->getOnViewParameterRoot()) {
-            if (parent->findChild(root) >= 0) {
-                parent->removeChild(root);
-            }
-        }
         notifyChanged();
     }
+}
+
+void EditableDatumLabel::unhang()
+{
+    if (!hungUnder) {
+        return;
+    }
+    const int index = hungUnder->findChild(root);
+    if (index >= 0) {
+        hungUnder->removeChild(index);
+    }
+    hungUnder->unref();
+    hungUnder = nullptr;
 }
 
 void EditableDatumLabel::startEdit(double val, QObject* eventFilteringObj, bool visibleToMouse)
