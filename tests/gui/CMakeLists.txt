@@ -1076,3 +1076,10 @@ fc_add_gui_test(GuiTaskDialogPythonAccept_tests_run
 fc_add_gui_test(GuiSketchDistanceFixedVertex_tests_run
                 sketch-distance-fixed-vertex.py
                 --timeout 120)
+
+# A distance to a line whose foot falls past an end of the segment has a
+# helper line from that end to the foot (upstream cb5a28acd7), set by the
+# sketch and drawn by the label.
+fc_add_gui_test(GuiSketchDistanceLabelExtension_tests_run
+                sketch-distance-label-extension.py
+                --timeout 200)

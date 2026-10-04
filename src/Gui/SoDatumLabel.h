@@ -138,6 +138,9 @@ public:
     SoSFFloat  param4;
     SoSFFloat  param5;
     SoMFVec3f  pnts;
+    /// pairs of points: lines from the datum's anchors to the finite geometry
+    /// they stand for (upstream cb5a28acd7), drawn as the leaders are
+    SoMFVec3f  extensionLines;
     SoSFVec3f  norm;
     SoSFImage  image;
     SoSFFloat  lineWidth;

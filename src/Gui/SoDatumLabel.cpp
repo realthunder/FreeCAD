@@ -280,6 +280,7 @@ SoDatumLabel::SoDatumLabel()
     SO_NODE_ADD_FIELD(string, (""));
     SO_NODE_ADD_FIELD(textColor, (SbVec3f(1.0f,1.0f,1.0f)));
     SO_NODE_ADD_FIELD(pnts, (SbVec3f(.0f,.0f,.0f)));
+    SO_NODE_ADD_FIELD(extensionLines, (SbVec3f(.0f,.0f,.0f)));
     SO_NODE_ADD_FIELD(norm, (SbVec3f(.0f,.0f,1.f)));
 
     SO_NODE_ADD_FIELD(name, ("Helvetica"));
@@ -320,6 +321,10 @@ SoDatumLabel::SoDatumLabel()
     this->imageZoom = nullptr;
     this->imageShape = nullptr;
     this->leaderShape = nullptr;
+
+    // No helper line to begin with. Down here because it notifies, and
+    // notify() reads the members above.
+    extensionLines.setNum(0);
 }
 
 SoDatumLabel::~SoDatumLabel()
@@ -491,6 +496,9 @@ public:
         else if (label->datumtype.getValue() == SoDatumLabel::ARCLENGTH) {
             corners = computeArcLengthBBox();
         }
+
+        const SbVec3f* extension = label->extensionLines.getValues(0);
+        corners.insert(corners.end(), extension, extension + label->extensionLines.getNum());
 
         getBBox(corners, box, center);
     }
@@ -1454,6 +1462,13 @@ void SoDatumLabel::generateLeaderPrimitives(SoAction * action)
         return a;
     };
 
+    // From an anchor to the finite geometry it stands for: world points
+    // both, whatever the type of the datum.
+    const SbVec3f* extension = this->extensionLines.getValues(0);
+    for (int i = 0; i + 1 < this->extensionLines.getNum(); i += 2) {
+        emitLine(at(extension[i]), at(extension[i + 1]));
+    }
+
     if (dt == DISTANCE || dt == DISTANCEX || dt == DISTANCEY) {
         if (npts < 2)
             return;
@@ -1920,6 +1935,17 @@ void SoDatumLabel::GLRender(SoGLRenderAction * action)
     // Set GL Properties
     glLineWidth(this->lineWidth.getValue());
     glColor3f(t[0], t[1], t[2]);
+
+    // From an anchor to the finite geometry it stands for
+    if (this->extensionLines.getNum() > 1) {
+        const SbVec3f* extension = this->extensionLines.getValues(0);
+        glBegin(GL_LINES);
+        for (int i = 0; i + 1 < this->extensionLines.getNum(); i += 2) {
+            glVertex2f(extension[i][0], extension[i][1]);
+            glVertex2f(extension[i + 1][0], extension[i + 1][1]);
+        }
+        glEnd();
+    }
 
     SbVec3f textOffset;
 

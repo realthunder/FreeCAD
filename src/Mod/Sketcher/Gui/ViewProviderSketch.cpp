@@ -7795,6 +7795,13 @@ Restart:
                         assert(Constr->First >= -extGeoCount && Constr->First < intGeoCount);
 
                         Base::Vector3d pnt1(0.,0.,0.), pnt2(0.,0.,0.);
+                        // A distance to a line is measured to the line's
+                        // infinite support. Where the foot falls past an end
+                        // of the segment the witness line started in mid-air:
+                        // a line from that end to the foot joins them
+                        // (upstream cb5a28acd7).
+                        Base::Vector3d helperStart, helperEnd;
+                        bool hasHelper = false;
                         if (Constr->SecondPos != PointPos::none) { // point to point distance
                             if (temp) {
                                 pnt1 = getSolvedSketch().getPoint(Constr->First, Constr->FirstPos);
@@ -7815,10 +7822,31 @@ Restart:
                                 const Part::GeomLineSegment* lineSeg = static_cast<const Part::GeomLineSegment*>(geo);
                                 Base::Vector3d l2p1 = lineSeg->getStartPoint();
                                 Base::Vector3d l2p2 = lineSeg->getEndPoint();
+                                auto reachSegment = [&](const Base::Vector3d& foot) {
+                                    const Base::Vector3d lineDir = l2p2 - l2p1;
+                                    const double lengthSquared = lineDir.Sqr();
+                                    if (lengthSquared <= 0.)
+                                        return;
+                                    const double at = ((foot - l2p1) * lineDir) / lengthSquared;
+                                    // a foot ON an end, to round-off, is on the segment
+                                    constexpr double tolerance =
+                                        64. * std::numeric_limits<double>::epsilon();
+                                    if (at < -tolerance) {
+                                        helperStart = l2p1;
+                                        helperEnd = foot;
+                                        hasHelper = true;
+                                    }
+                                    else if (at > 1. + tolerance) {
+                                        helperStart = l2p2;
+                                        helperEnd = foot;
+                                        hasHelper = true;
+                                    }
+                                };
                                 if (Constr->FirstPos != Sketcher::PointPos::none) {// point to line distance
                                     // calculate the projection of p1 onto line2
                                     pnt2.ProjectToLine(pnt1 - l2p1, l2p2 - l2p1);
                                     pnt2 += pnt1;
+                                    reachSegment(pnt2);
                                 }
                                 else {
                                     const Part::Geometry* geo1 = GeoById(*geomlist, Constr->First);
@@ -7830,6 +7858,7 @@ Restart:
                                         Base::Vector3d dir = pnt1;
                                         dir.Normalize();
                                         pnt1 += ct;
+                                        reachSegment(pnt1);
                                         pnt2 = ct + dir * radius;
                                     }
                                 }
@@ -7905,6 +7934,23 @@ Restart:
                         verts[1] = SbVec3f (pnt2.x,pnt2.y,zDatum);
 
                         asciiText->pnts.finishEditing();
+
+                        // Written only when it changes: the label is
+                        // captured again on every write.
+                        if (hasHelper) {
+                            const SbVec3f helper[2] = {
+                                SbVec3f(helperStart.x, helperStart.y, zDatum),
+                                SbVec3f(helperEnd.x, helperEnd.y, zDatum)};
+                            if (asciiText->extensionLines.getNum() != 2
+                                || asciiText->extensionLines[0] != helper[0]
+                                || asciiText->extensionLines[1] != helper[1]) {
+                                asciiText->extensionLines.setValues(0, 2, helper);
+                                asciiText->extensionLines.setNum(2);
+                            }
+                        }
+                        else if (asciiText->extensionLines.getNum() != 0) {
+                            asciiText->extensionLines.setNum(0);
+                        }
 
                         //Assign the Label Distance
                         asciiText->param1 = Constr->LabelDistance;
