@@ -12652,3 +12652,74 @@ their seqs meet.
 unfrozen; 6 expected failures; +1), ctest 872/872 (+1), the GUI checks RC
 15, BC 27, VC 18, PC 28, FC 16, VW 14, MC 28, the two-document check 24,
 the tree check 19 and the author check 36.
+
+### 30.13 S.f, a fork imported as a branch: survey and questions (2026-10-04)
+
+Not built. 30.3 asked for a survey of the hard case before it is; this
+is it, with what has to be ruled.
+
+**What there is to build on.**
+
+- **The other file's history without its document**
+  (`FileHistory::openFile`, 27.13), and **the base** (`forkBase`, 30.12).
+- **The merge** (28) reads theirs as a branch *of the same store*: each
+  side's net change from the base, by content hash, and an object theirs
+  made is made here "under its id and name, free in this branch by 27.41
+  Q3". That freedom is the file's one allocator. A fork has its own.
+- **Rows applied to a document with nothing recorded**: `_replayLog`,
+  `_moveAlongLog`, over `restoreValue(prop, value)`.
+- **Names mapped on the way in**: a reader's name map
+  (`Base::XMLReader::addName` / `getName`, what paste uses), and a string
+  of another table found or made by content (`StringHasher::importID`,
+  27.78).
+
+**What a row names by number or by name**, all of it the file's and none
+of it the fork's once the two have parted:
+
+| What | Where it is written |
+| --- | --- |
+| object ids | `op.cid`; the recompute and touched records in a row's script |
+| object names | `op.cname`; inside values -- links, expressions; the `objname` table |
+| string ids | inside values that name elements; `strref`; the string table |
+| geometry ids | inside a sketch's values; `lastgeoid` |
+| seq, version numbers | `txn.parent` / `inverts` / `merge_from`, `version.seq`, a branch's `from_seq` |
+
+**How often the hard case is the case.** 30.3 split "nothing made on this
+side since the base" from "both sides made objects or strings". A shape
+mints string ids at every recompute, so a side that has recomputed
+anything has made strings: the second case is the usual one whenever
+both sides worked at all, and the first is, in practice, "this side did
+nothing". What keeps it tractable is 28.2 item 4: derived values are not
+merged, and shapes are derived. The values that carry ids and are *not*
+derived are the references -- a link to a sub-element, an expression
+naming one, a sketch's external geometry (27.75) -- and the sketch's own
+geometry ids.
+
+**Two ways to bring the rows over.**
+
+- **(a) Copy.** The rows after the base under new seqs, their entities by
+  hash, the allocators moved up to the fork's. Right only when nothing
+  collides, which by the above is when this side has not moved.
+- **(b) Replay.** A version document at the base, on a new branch here;
+  the fork's rows applied to it in order, through the maps -- names by
+  the reader's map, strings by content, new objects under new ids -- each
+  committed as a row under the author it had. Its values are captured
+  again in this file's terms. Derived ops are left out and their owners
+  touched; the recompute is the merge's.
+
+(b) is one path for every case, and (a) is the case of it where every
+map is the identity. It costs a document and a pass over the fork's
+values, once, at import.
+
+**To rule.**
+
+| | Question | Proposed |
+| --- | --- | --- |
+| F1 | Copy where nothing collides and replay otherwise, or replay always | **Replay always.** One path to keep right; (a) later, as a short cut, if import time asks for it. |
+| F2 | The imported rows' derived values | **Left out**, owners touched: the branch is for merging, and 28 recomputes. Opening the imported branch in a document of its own then recomputes it. |
+| F3 | What an imported row is known by | **The fork's own identity** (30.12), with its sessions brought over, so importing the same fork again continues after what is already here and a merge back finds its base. |
+| F4 | The fork's desktop user, `host` unless its preference named them (30.6), beside this file's own `host` | **Kept apart**: the fork's users are brought over as its own -- `host` of that file, shown with the file's name -- since two people both called `host` are two people. |
+| F5 | The fork's versions after the base | **Its named versions come** as versions of the branch, renumbered; unnamed ones do not. |
+| F6 | A fork with several branches | **The branch its file reopens on.** The others on request, one import each. |
+| F7 | The branch's name, and a second import | **Named after the file**; a second import of the same fork extends that branch from the last row brought over (F3 is what finds it). |
+| F8 | A row the replay cannot apply -- an object's type this build lacks, a value that will not restore | **The import stops there and says so**, keeping the rows before it: the branch is the fork up to that row. |
