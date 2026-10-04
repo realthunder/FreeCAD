@@ -30,6 +30,8 @@
 # include <QClipboard>
 # include <QComboBox>
 # include <QDateTime>
+# include <QDialog>
+# include <QDialogButtonBox>
 # include <QFontDatabase>
 # include <QHBoxLayout>
 # include <QHeaderView>
@@ -73,12 +75,13 @@ using namespace Gui::DockWnd;
 namespace {
 
 enum TxnColumn { TxnGraph, TxnSeq, TxnKind, TxnOrigin, TxnName, TxnTime, TxnParent, TxnInverts,
-                 TxnBranch, TxnColumns };
+                 TxnMerged, TxnBranch, TxnColumns };
 
 // Item data roles of a transaction row, besides the seq on TxnSeq.
 constexpr int RoleParent = Qt::UserRole + 1;   // on TxnParent: the parent seq
 constexpr int RoleBranch = Qt::UserRole + 2;   // on TxnBranch: the branch id
 constexpr int RoleRecord = Qt::UserRole + 3;   // on TxnKind: true for a row with no ops
+constexpr int RoleMerged = Qt::UserRole + 4;   // on TxnMerged: a merge's second parent
 enum OpColumn { OpIdx, OpOp, OpContainer, OpProp, OpType, OpBefore, OpAfter, OpDerived, OpColumns };
 enum VerColumn { VerNum, VerKind, VerName, VerBranch, VerSeq, VerSchema, VerCreated, VerDocXml,
                  VerEntries, VerColumns };
@@ -125,6 +128,7 @@ struct TransactionLogView::GraphLayout
         bool record {false};
         std::vector<Lane> top;      // lanes coming in from above
         std::vector<Lane> bottom;   // lanes going on below
+        std::vector<Lane> out;      // from this node down to another lane: a merge
         QStringList heads;
         bool current {false};
         QStringList versions;
@@ -222,6 +226,13 @@ public:
             painter->setPen(pen(l.branch));
             painter->drawLine(QPointF(x(l.lane), mid), QPointF(x(l.lane), bottom));
         }
+        for (const auto& l : row->out) {
+            painter->setPen(pen(l.branch));
+            QPainterPath path(QPointF(x(l.lane), mid));
+            path.cubicTo(QPointF(x(l.lane), bottom), QPointF(x(l.to), mid),
+                         QPointF(x(l.to), bottom));
+            painter->drawPath(path);
+        }
         // The node: filled for a change, hollow for a record.
         const QColor colour = branchColour(row->branch);
         painter->setPen(QPen(colour, 2.0));
@@ -302,6 +313,10 @@ TransactionLogView::TransactionLogView(Gui::Document* pcDocument, QWidget* paren
     _deleteBranch->setToolTip(tr("Delete another branch: the rows only it holds and its "
                                  "versions, but those a branch forked from (sec 16.7)"));
     branchBar->addWidget(_deleteBranch);
+    _mergeBranch = new QPushButton(tr("Merge..."), this);
+    _mergeBranch->setToolTip(tr("Merge another branch into this one: what it changed and this "
+                                "one did not, as one undoable step (sec 28)"));
+    branchBar->addWidget(_mergeBranch);
     _allBranches = new QCheckBox(tr("All branches"), this);
     _allBranches->setToolTip(tr("Show the rows of every branch, not only this branch's history"));
     branchBar->addWidget(_allBranches);
@@ -333,7 +348,8 @@ TransactionLogView::TransactionLogView(Gui::Document* pcDocument, QWidget* paren
     _transactions = new QTreeWidget(txnSplitter);
     _transactions->setColumnCount(TxnColumns);
     _transactions->setHeaderLabels({tr("Graph"), tr("Seq"), tr("Kind"), tr("Origin"), tr("Name"),
-                                    tr("Time"), tr("Parent"), tr("Inverts"), tr("Branch")});
+                                    tr("Time"), tr("Parent"), tr("Inverts"), tr("Merged"),
+                                    tr("Branch")});
     _transactions->hideColumn(TxnGraph);
     _graphView->setModel(_transactions->model());
     _graphView->setSelectionModel(_transactions->selectionModel());
@@ -447,6 +463,7 @@ TransactionLogView::TransactionLogView(Gui::Document* pcDocument, QWidget* paren
     connect(_newBranch, &QPushButton::clicked, this, &TransactionLogView::onNewBranch);
     connect(_deleteBranch, &QPushButton::clicked, this, &TransactionLogView::onDeleteBranch);
     connect(_renameBranch, &QPushButton::clicked, this, &TransactionLogView::onRenameBranch);
+    connect(_mergeBranch, &QPushButton::clicked, this, &TransactionLogView::onMergeBranch);
     connect(_allBranches, &QCheckBox::toggled, this, &TransactionLogView::applyVisibility);
     connect(_hideRecords, &QCheckBox::toggled, this, &TransactionLogView::applyVisibility);
 
@@ -772,6 +789,13 @@ void TransactionLogView::appendTransactions(int64_t fromSeq)
             item->setText(TxnInverts, QString::number(t.inverts));
             item->setTextAlignment(TxnInverts, Qt::AlignRight | Qt::AlignVCenter);
         }
+        // A merge's second parent (sec 28.2): the head merged in.
+        item->setData(TxnMerged, RoleMerged,
+                      QVariant::fromValue(static_cast<qlonglong>(t.mergeFrom)));
+        if (t.mergeFrom > 0) {
+            item->setText(TxnMerged, QString::number(t.mergeFrom));
+            item->setTextAlignment(TxnMerged, Qt::AlignRight | Qt::AlignVCenter);
+        }
         if (!t.script.empty())
             item->setToolTip(TxnName, QString::fromStdString(t.script));
         item->setText(TxnBranch, branches[t.branch]);
@@ -1034,8 +1058,36 @@ void TransactionLogView::layoutGraph()
             waiting[node] = parent;
             colour[node] = row.branch;
         }
+        // A merge's second parent (sec 28.2), with every branch shown: a
+        // lane from this node down to the row merged in -- the one already
+        // waiting for it, when the branch went on after the merge.
+        int started = -1;
+        const qlonglong merged
+            = all ? nearestShown(item->data(TxnMerged, RoleMerged).toLongLong()) : 0;
+        if (merged && merged != parent) {
+            int lane = -1;
+            for (size_t i = 0; i < waiting.size() && lane < 0; ++i) {
+                if (waiting[i] == merged && static_cast<int>(i) != node)
+                    lane = static_cast<int>(i);
+            }
+            if (lane < 0) {
+                for (size_t i = 0; i < waiting.size() && lane < 0; ++i) {
+                    if (!waiting[i] && static_cast<int>(i) != node)
+                        lane = static_cast<int>(i);
+                }
+                if (lane < 0) {
+                    lane = static_cast<int>(waiting.size());
+                    waiting.push_back(0);
+                    colour.push_back(0);
+                }
+                waiting[lane] = merged;
+                colour[lane] = shown[merged]->data(TxnBranch, RoleBranch).toLongLong();
+                started = lane;
+            }
+            row.out.push_back({node, lane, colour[lane]});
+        }
         for (size_t i = 0; i < waiting.size(); ++i) {
-            if (waiting[i])
+            if (waiting[i] && static_cast<int>(i) != started)
                 row.bottom.push_back({static_cast<int>(i), static_cast<int>(i), colour[i]});
         }
         row.heads = heads[seq];
@@ -1059,6 +1111,7 @@ void TransactionLogView::refreshBranches()
         _newBranch->setEnabled(false);
         _deleteBranch->setEnabled(false);
         _renameBranch->setEnabled(false);
+        _mergeBranch->setEnabled(false);
         return;
     }
     int current = -1;
@@ -1080,6 +1133,7 @@ void TransactionLogView::refreshBranches()
     _branch->setEnabled(true);
     _newBranch->setEnabled(_doc != nullptr);
     _deleteBranch->setEnabled(_doc != nullptr && _branch->count() > 1);
+    _mergeBranch->setEnabled(_doc != nullptr && _branch->count() > 1);
     _renameBranch->setEnabled(_doc != nullptr && _branch->currentIndex() >= 0);
 }
 
@@ -1129,6 +1183,215 @@ void TransactionLogView::onDeleteBranch()
     }
     catch (Base::Exception& e) {
         FC_ERR("delete branch " << name.toStdString() << ": " << e.what());
+    }
+}
+
+namespace {
+
+/// A value as one line of text: its fragment, and how many files go with
+/// it. A derived value -- a shape -- is named by its ref alone: reading it
+/// would read its geometry.
+QString valueText(App::TransactionLog* log, const std::string& ref, bool derived)
+{
+    if (ref.empty())
+        return QStringLiteral("-");
+    App::CapturedValue v;
+    if (derived || !log || !log->readValue(ref, v))
+        return shortRef(ref);
+    QString text = QString::fromStdString(v.fragment).simplified();
+    if (!v.attachments.empty())
+        text += QStringLiteral(" [+%1]").arg(v.attachments.size());
+    return text;
+}
+
+/** What a merge would do, and a side for each conflict (docs/TransactionLog.md
+ * sec 28.2 item 10): every change the other branch made, the conflicts
+ * first, each with the value at the base, ours and theirs as text. A
+ * conflict starts on ours; a view-provider conflict is listed with the
+ * rest and keeps ours unless changed here (sec 28.6 Q2).
+ */
+class MergeDialog: public QDialog
+{
+public:
+    enum Column { Kind, Object, Property, Base, Ours, Theirs, Takes, Columns };
+
+    MergeDialog(const App::Document::MergePreview& preview, const QString& ours,
+                App::TransactionLog* log, QWidget* parent)
+        : QDialog(parent)
+    {
+        setObjectName(QStringLiteral("TransactionMergeDialog"));
+        setWindowTitle(QObject::tr("Merge %1 into %2")
+                           .arg(QString::fromStdString(preview.branch), ours));
+        auto layout = new QVBoxLayout(this);
+        QString summary = QObject::tr("%1 changes since row %2, %3 conflicts.")
+                              .arg(preview.changes.size())
+                              .arg(preview.base)
+                              .arg(preview.conflicts);
+        if (preview.fastForward)
+            summary += QLatin1Char(' ')
+                     + QObject::tr("This branch has changed nothing since: the other is taken "
+                                   "whole, with no recompute.");
+        else
+            summary += QLatin1Char(' ')
+                     + QObject::tr("Derived values are not merged; the result is recomputed.");
+        layout->addWidget(new QLabel(summary, this));
+
+        _tree = new QTreeWidget(this);
+        _tree->setColumnCount(Columns);
+        _tree->setHeaderLabels({QObject::tr("Change"), QObject::tr("Object"),
+                                QObject::tr("Property"), QObject::tr("Base"), QObject::tr("Ours"),
+                                QObject::tr("Theirs"), QObject::tr("Takes")});
+        _tree->setRootIsDecorated(false);
+        _tree->setAlternatingRowColors(true);
+        _tree->setSelectionMode(QAbstractItemView::SingleSelection);
+        layout->addWidget(_tree, 1);
+
+        // Conflicts first, then what goes in, then what does not.
+        auto rank = [](const std::string& kind) {
+            return kind == "conflict" ? 0 : kind == "take" ? 1 : kind == "view" ? 2
+                 : kind == "derived" ? 3 : 4;
+        };
+        std::vector<const App::Document::MergeChange*> order;
+        for (const auto& c : preview.changes)
+            order.push_back(&c);
+        std::stable_sort(order.begin(), order.end(),
+                         [&](const auto* a, const auto* b) { return rank(a->kind) < rank(b->kind); });
+        const QColor quiet = _tree->palette().color(QPalette::Disabled, QPalette::Text);
+        for (const auto* c : order) {
+            auto item = new QTreeWidgetItem(_tree);
+            item->setText(Kind, QString::fromStdString(c->kind + " " + c->op));
+            item->setText(Object, c->ckind == "doc" ? QObject::tr("(document)")
+                                                    : QString::fromStdString(c->object));
+            item->setText(Property, QString::fromStdString(c->prop));
+            item->setData(Kind, Qt::UserRole, QString::fromStdString(c->key));
+            if (!c->note.empty())
+                item->setToolTip(Kind, QString::fromStdString(c->note));
+            if (!c->prop.empty()) {
+                item->setText(Base, valueText(log, c->base, c->derived));
+                item->setText(Ours, valueText(log, c->ours, c->derived));
+                item->setText(Theirs, valueText(log, c->theirs, c->derived));
+                for (int col : {Base, Ours, Theirs})
+                    item->setToolTip(col, item->text(col));
+            }
+            else if (!c->note.empty()) {
+                item->setText(Base, QString::fromStdString(c->note));
+            }
+            const bool conflict = c->kind == "conflict";
+            if (conflict || c->kind == "view") {
+                auto side = new QComboBox(_tree);
+                side->addItems({QStringLiteral("ours"), QStringLiteral("theirs")});
+                _tree->setItemWidget(item, Takes, side);
+                _sides.emplace_back(c->key, side);
+                if (conflict) {
+                    _conflicts.push_back(side);
+                    QFont bold = item->font(Kind);
+                    bold.setBold(true);
+                    for (int col = 0; col < Columns; ++col)
+                        item->setFont(col, bold);
+                }
+            }
+            else if (c->kind == "take") {
+                item->setText(Takes, QStringLiteral("theirs"));
+            }
+            else {
+                item->setText(Takes, c->kind == "derived" ? QObject::tr("recomputed")
+                                                           : QStringLiteral("-"));
+                for (int col = 0; col < Columns; ++col)
+                    item->setForeground(col, quiet);
+            }
+        }
+        for (int col = 0; col < Columns; ++col)
+            _tree->resizeColumnToContents(col);
+        for (int col : {Base, Ours, Theirs})
+            _tree->setColumnWidth(col, std::min(_tree->columnWidth(col), 260));
+
+        auto buttons = new QDialogButtonBox(this);
+        auto merge = buttons->addButton(QObject::tr("Merge"), QDialogButtonBox::AcceptRole);
+        merge->setObjectName(QStringLiteral("merge"));
+        buttons->addButton(QDialogButtonBox::Cancel);
+        auto allOurs = buttons->addButton(QObject::tr("All ours"), QDialogButtonBox::ActionRole);
+        auto allTheirs = buttons->addButton(QObject::tr("All theirs"), QDialogButtonBox::ActionRole);
+        allOurs->setEnabled(!_conflicts.empty());
+        allTheirs->setEnabled(!_conflicts.empty());
+        QObject::connect(allOurs, &QPushButton::clicked, this, [this]() { setAll(0); });
+        QObject::connect(allTheirs, &QPushButton::clicked, this, [this]() { setAll(1); });
+        QObject::connect(buttons, &QDialogButtonBox::accepted, this, &QDialog::accept);
+        QObject::connect(buttons, &QDialogButtonBox::rejected, this, &QDialog::reject);
+        layout->addWidget(buttons);
+        resize(900, 480);
+    }
+
+    /// The side of every conflict, by its key.
+    std::map<std::string, std::string> picks() const
+    {
+        std::map<std::string, std::string> out;
+        for (const auto& kv : _sides)
+            out[kv.first] = kv.second->currentText().toStdString();
+        return out;
+    }
+
+private:
+    void setAll(int index)
+    {
+        for (auto side : _conflicts)
+            side->setCurrentIndex(index);
+    }
+
+    QTreeWidget* _tree {nullptr};
+    std::vector<std::pair<std::string, QComboBox*>> _sides;
+    std::vector<QComboBox*> _conflicts;
+};
+
+} // namespace
+
+void TransactionLogView::onMergeBranch()
+{
+    auto l = log();
+    if (!l || !_doc)
+        return;
+    QStringList names;
+    for (const auto& b : l->store().branches()) {
+        if (b.id != l->branch())
+            names << QString::fromStdString(b.name);
+    }
+    if (names.isEmpty())
+        return;
+    bool ok = false;
+    const QString name = QInputDialog::getItem(this, tr("Merge a branch"), tr("Merge into this branch:"),
+                                               names, 0, false, &ok);
+    if (ok && !name.isEmpty())
+        mergeBranch(name);
+}
+
+void TransactionLogView::mergeBranch(const QString& name)
+{
+    auto l = log();
+    if (!l || !_doc)
+        return;
+    try {
+        const auto preview = _doc->previewMerge(name.toStdString());
+        if (preview.changes.empty()) {
+            _status->setText(tr("Nothing of %1 to merge").arg(name));
+            return;
+        }
+        App::LogBranch mine;
+        l->store().getBranch(l->branch(), mine);
+        MergeDialog dialog(preview, QString::fromStdString(mine.name), l, this);
+        if (dialog.exec() != QDialog::Accepted)
+            return;
+        const auto result = _doc->mergeBranch(name.toStdString(), dialog.picks());
+        if (!result.unresolved.empty())
+            _status->setText(tr("Merge of %1 refused: %2 conflicts have no side")
+                                 .arg(name).arg(result.unresolved.size()));
+        else if (!result.failed.empty())
+            _status->setText(tr("Merged %1 as row %2; %3 objects failed to recompute")
+                                 .arg(name).arg(result.seq).arg(result.failed.size()));
+        else
+            _status->setText(tr("Merged %1 as row %2").arg(name).arg(result.seq));
+    }
+    catch (Base::Exception& e) {
+        FC_ERR("merge of branch " << name.toStdString() << ": " << e.what());
+        _status->setText(tr("Branch not merged -- the report view says why"));
     }
 }
 

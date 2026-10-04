@@ -11202,3 +11202,194 @@ All four as recommended.
 | Q2 | **View-provider properties merge by the same rule, and a view conflict is never asked**: ours wins, the row's annotation lists it. |
 | Q3 | **An unpicked conflict refuses the merge**: nothing moves, the conflicts are returned. The caller picks, or passes a fallback side. "Default ours" is the picker's preselection. |
 | Q4 | **Merge and the text picker now** (28.4), then a design section for 17.5. Comparing two branches in the 3D view is later. |
+
+### 28.7 6.a to 6.d as built (2026-10-04)
+
+**6.a, the store.** `txn.merge_from`, `LogTransaction::mergeFrom`, added to
+the one layout in place (27.55: a store written before it is not read).
+`TransactionStore::history(head)` is every stored row the `parent` and
+`merge_from` edges reach, oldest first -- one recursive query, `UNION` so a
+merge and the branch it took reach their fork once; `chain(head)` is
+unchanged and still one branch's. `Transaction::MergeFrom` carries the edge
+to the commit; `TransactionLog::record` takes it for a row with no ops. A
+squash and a trim's bridge (16.7, 27.71) keep the newest merge edge of the
+rows they fold: a row has one, so an older merge of another branch folded
+with it is forgotten, and that branch's next merge starts from an older
+base -- it finds what ours already has, and asks again only where ours was
+kept in a conflict. `getTransactionLog()` rows gain `merge_from`.
+
+**Two corrections to 28.2**, both made in its text above.
+
+- *The base is the newest row both histories hold* -- the largest seq in
+  both `history(ours)` and `history(theirs)`; a row's ancestors all come
+  before it, so that one is an ancestor of no other common row. As first
+  written the base was the newest row of theirs' *chain* that ours' history
+  holds. That finds nothing new for a merge back: after `side` went into
+  `main` as row M, merging `main` into `side` must start at the row of
+  `side` that M took, which is on *ours'* chain, not theirs'. From the fork
+  instead, every property `side` has changed since reads as changed by
+  both.
+- *Each side's change is a walk, not a chain.* With the base off a side's
+  own chain, its change is the rows from the base back to where the two
+  parent chains meet, taken back, then the rows up to its head
+  (`diffRows`). A row taken back is its ops reversed and inverted
+  (`invertedOps`: a `create` is a `remove`, a `delprop` an `addprop` and a
+  set of what it held), folded by the same `NetChange` the squash uses --
+  `netOps` is now that struct plus a loop. Ours' state is ours' own net
+  change from the base, not `lastOpOn`.
+
+**Where two chains meet at no row.** A file opened without a history
+starts one at version 1, the file as found, stamped at seq 0; a branch made
+from that version and `main` share that state and no row, and the base is
+0. The closed branches of 16.6 also hang off 0, from another file. The two
+are told apart by the state each chain starts from (`zeroStateOf`): the
+Document.xml hash of the version taken at seq 0 on the chain's oldest
+row's branch, or of the version that branch was made from. Unequal, and
+the merge is refused as sharing no history. An open's record that jumped
+the document (27.28, 27.57) between the base and either head refuses it
+too: the rows there do not say what changed.
+
+**6.b, the diff.** `Document::previewMerge(branch, version)`, Python
+`previewTransactionMerge`. Theirs' net change against ours':
+
+| Theirs | Ours | Kind |
+| --- | --- | --- |
+| changed a property | did not | `take` |
+| changed a property | left it the same as theirs | `same` |
+| changed a property | changed it otherwise | `conflict`; `view` on a view provider |
+| a value its recompute wrote | any | `derived`; `take` when ours changed nothing |
+| created an object | -- | `take create`, one row: its values go in with it |
+| removed an object | did not change it, nothing ours made or changed uses it | `take remove` |
+| removed an object | changed it, or made or changed an object that links to it | `conflict remove` |
+| changed an object | removed it | `conflict revive`, one row for the object |
+
+"Ours changed" leaves out what ours' own recomputes wrote and its view
+state (28.6 Q1, Q2), and the document properties a restore leaves alone
+(`keptOnRestore`). The "uses it" rule is not in 17.3: removing an object
+breaks every link to it without a word, and a link ours added is one
+theirs never saw. A dependent ours did not touch is theirs' to have dealt
+with -- `removeObject` wrote its cleared link, and that set is in theirs'
+change. A conflict is named by a key: `<object>.<property>`, `.<property>`
+for the document's own, `view:<object>.<property>`, `<object>`.
+
+**6.c, the apply.** `Document::mergeBranch(branch, picks, fallback,
+version)`, Python `mergeTransactionBranch`, returning the row, the
+unresolved conflicts, the objects whose recompute failed, and the preview.
+
+- A conflict with no side -- no pick, no fallback -- returns with nothing
+  moved (Q3). A view conflict's side is ours unless picked (Q2).
+- Every value is read before anything is written; one the log does not
+  have refuses the merge.
+- One transaction, kind `merge`, `MergeFrom` theirs' head. **Ours
+  unchanged** (Q1): `_moveAlongLog` from ours' head to theirs', views
+  left out -- the move of 27.34, recorded this time, so derived values and
+  the touched state arrive as theirs has them and nothing recomputes; view
+  properties then go by the rule. **Otherwise** the passes of a move:
+  objects made under their ids and names, dynamic properties added and
+  dropped, values under a `RestoreBatch`, objects removed; then the owners
+  of theirs' derived values touched and the document recomputed, inside
+  the step.
+- `revive` picked as theirs: the object is made again under the id, name
+  and type ours' removal recorded, each property at its value at the base
+  (the removal's before), theirs' changes on top.
+- A label a live object of ours has comes in suffixed by `Label`'s own
+  restore, which goes through `setValue`; the row notes the object under
+  `relabelled`.
+- The row's `script` is the touched record of 27.63 (`objects`) with a
+  `merge` member beside it: the branch, the head merged, the base, whether
+  it was taken whole, the count of each kind, and the side of every
+  conflict.
+- **A merge that wrote nothing of theirs is a record** -- the `merge` row
+  with no ops and the second parent -- so the base moves and a conflict
+  kept as ours is not asked again. It does not recompute: ours is what it
+  was. A merge that finds no change of theirs writes no row.
+- The version at the head merged in, when there is one, is named `merged
+  into <ours>` (17.3). Theirs is left as it is.
+- Theirs held by another document of the file (17.1): its implicit
+  transaction is committed and its pending afters resolved first; an
+  explicit one open there refuses the merge.
+
+**6.d, the panel.** **Merge...** on the branch bar asks which branch and
+opens the picker on its preview: a row per change -- conflicts first, in
+bold -- with the value at the base, ours and theirs as the text of its
+fragment (a derived value by its ref: reading a shape to show it would
+read its geometry), and for each conflict a side, ours to begin with.
+View conflicts are listed with a side too, on ours. **All ours** and **All
+theirs** set the conflicts. The list has a **Merged** column, the head a
+merge row took. With **All branches** on, the graph draws a merge's second
+parent: a lane from the merge's node down to the row merged in, joining
+the lane already waiting for that row when the branch went on after the
+merge. `mergeBranch(QString)` is a public slot, which is how the Gui check
+reaches it.
+
+**Two defects the Gui check found**, neither visible headless:
+
+- *A view provider's `create` taken for its object's.* The Gui logs a
+  `create` op for an object's view provider under the object's id, with the
+  provider's type. `NetChange` -- the squash's fold before it was the
+  merge's -- took every `create` as an object's, so the object's type came
+  out as `PartGui::ViewProviderCylinderParametric` and a merge could not
+  make it ("cannot create"). It predates the merge: a squash or a trim's
+  bridge over an object made in the Gui wrote that type into its `create`
+  op, for a cold undo or a replay to fail on. A `create` or `remove` that
+  is not an object's is now left out of the fold.
+- *Every taken value written, changed or not.* A new object came in with
+  the default colour: its `ShapeColor`, `ShapeAppearance` and
+  `ShapeMaterial` are one value under three names, the last written back
+  put the default over the green the first two had set, and theirs had
+  only ever changed two of them. The apply now writes a value only where
+  it differs from the document's, as `_moveAlongLog` does -- which also
+  keeps an unchanged input from touching its object.
+
+**The Gui check.** `scripts/transaction-log-merge-check.py`, one GUI run in
+a fresh user home:
+
+    cd build/conda-relwithdebinfo-801
+    QT_QPA_PLATFORM=offscreen FREECAD_USER_HOME=/tmp/fchome-mc \
+      MERGECHECK_OUT=/tmp/mc/out.txt ~/works/sw/fcad/.conda/run.sh ./bin/FreeCAD \
+      ~/works/sw/fcad/scripts/transaction-log-merge-check.py
+
+A red box on `main`. On `side` it is made longer and narrower and blue, and
+a green cylinder is added; on `main` it is made lower and narrow -- another
+width -- and yellow. The preview has the width as the one conflict, the
+length taken, the colour a view conflict. The merge goes through the
+panel's slot, a timer answering the dialog: the conflict is the first row,
+bold, on ours, with both widths as text; the view conflicts are on ours;
+the cylinder is one row. With theirs picked for the width: length 30,
+height 5, width 5, the volume recomputed, the box still yellow, the
+cylinder in and green, one undo step; the list's merge row names the head
+it took, and both branches show with it under All branches; undo and redo;
+a second merge finds nothing. Then a branch off the merged head, made
+taller and white, merged into a `main` that has not changed: taken whole,
+volume and colour both. 28 checks, all PASS on 2026-10-04.
+
+**Tests.** Gtests (`tests/src/App/TransactionLog.cpp`):
+`aRowsHistoryFollowsBothParents`, `mergeTakesWhatOursLeftAlone` (the take,
+the created object with its dynamic property, the one undo step, the row's
+second parent, a second merge that finds nothing, the merge back from the
+row `main` took, and a third merge from where the first ended),
+`mergeConflictsRefuseUntilPicked` (both changed a property; both changed
+it the same; removed there and changed here; removed there and used here;
+removed here and changed there, brought back under its id; the refusal
+with nothing moved and no row; sides picked and a fallback; nothing asked
+twice), `mergeKeepingOursIsARecord`,
+`mergeFastForwardsWhenOursIsUnchanged`. Python
+(`Document.TransactionBranchCases`): `testMergeRecomputesWhatBothSidesChanged`
+and `testMergeTakesTheShapeWhenOursIsUnchanged` (a Part box; the second
+with an observer that sees no recompute), `testMergeABranchMadeFromTheFileAsFound`
+(base 0), `testMergeABranchOpenInAnotherDocument`,
+`testMergeSuffixesALabelOursHas`, `testMergeUpToAVersion`.
+
+**Not built, and not asked for:** comparing the two branches in the 3D
+view (28.6 Q4); a merge when the two share history only in rows a trim
+without a bridge took (refused -- a three-way from the fork's version
+would do it); more than one base (two branches merged into each other both
+ways before a third merge: the newest common row is used, where git would
+merge the bases first).
+
+**Gates**, frozen and unfrozen each: Python 2998 OK (52 skipped frozen, 53
+unfrozen; 6 expected failures; +6), ctest 861/861 (+5; `-j6` frozen, `-j1`
+unfrozen), the GUI checks RC 15, BC 27, VC 18, PC 28, FC 16, VW 14, MC 28.
+
+Phase 6 is built: merge, its preview and picker. Concurrent writers (17.5,
+28.5) are next, in a section of their own.

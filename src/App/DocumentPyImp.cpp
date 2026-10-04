@@ -1243,6 +1243,7 @@ Py::Dict mergeChangeToPy(const App::Document::MergeChange& c)
     d.setItem("ours", Py::String(c.ours));
     d.setItem("theirs", Py::String(c.theirs));
     d.setItem("note", Py::String(c.note));
+    d.setItem("derived", Py::Boolean(c.derived));
     return d;
 }
 

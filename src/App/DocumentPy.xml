@@ -496,7 +496,8 @@ What merging `branch` into the branch this document is on would do
 (docs/TransactionLog.md sec 28), read only: {'branch', 'ours', 'theirs',
 'base', 'fast_forward', 'conflicts', 'changes'}. `base` is the newest log
 row both histories hold. Each change is {'kind', 'op', 'key', 'ckind',
-'cid', 'object', 'prop', 'type', 'base', 'ours', 'theirs', 'note'}; kind
+'cid', 'object', 'prop', 'type', 'base', 'ours', 'theirs', 'note',
+'derived'}; kind
 is 'take' (ours has not changed it), 'same', 'conflict' (a side must be
 picked, by `key`), 'view' (a view-provider conflict, ours kept unless
 picked) or 'derived' (not merged, recomputed). With `version`, the branch

@@ -542,6 +542,7 @@ public:
         /// The value at the base, ours and theirs, as entity refs; empty
         /// where the property is not there.
         std::string base, ours, theirs;
+        bool derived {false};   ///< a value theirs' recompute wrote
         std::string note;     ///< why, where the kind alone does not say
     };
     /// What merging a branch would do (sec 28.2 item 9).

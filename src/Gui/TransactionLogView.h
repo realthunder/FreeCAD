@@ -90,11 +90,18 @@ private Q_SLOTS:
     void onNewBranch();
     void onDeleteBranch();
     void onRenameBranch();
+    void onMergeBranch();
     void applyVisibility();
     /// Lay the graph out over the rows shown (docs/TransactionLog.md sec 26).
     void layoutGraph();
     /// The transaction row's context menu, at `global`.
     void transactionMenu(QTreeWidgetItem* item, const QPoint& global);
+
+public Q_SLOTS:
+    /// Merge branch `name` into the one the document is on
+    /// (docs/TransactionLog.md sec 28): the preview in a dialog where each
+    /// conflict gets a side, then the merge.
+    void mergeBranch(const QString& name);
 
 protected:
     void showEvent(QShowEvent*) override;
@@ -137,6 +144,7 @@ private:
     QPushButton* _newBranch {nullptr};
     QPushButton* _deleteBranch {nullptr};
     QPushButton* _renameBranch {nullptr};
+    QPushButton* _mergeBranch {nullptr};
     QCheckBox* _allBranches {nullptr};
     QCheckBox* _hideRecords {nullptr};
 public:

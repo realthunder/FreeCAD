@@ -5470,3 +5470,38 @@ class TransactionBranchCases(unittest.TestCase):
         self.assertTrue(label.startswith("Bracket"))
         row = [t for t in doc.getTransactionLog() if t["seq"] == result["seq"]][0]
         self.assertIn('"relabelled":["Theirs"]', row["script"])
+
+    def testMergeUpToAVersion(self):
+        # Sec 28.2 item 9: theirs merged up to one of its versions, then the
+        # rest of it from there.
+        doc = self.track(FreeCAD.newDocument("MergeVersion"))
+        doc.UndoMode = 1
+        doc.openTransaction("create")
+        obj = doc.addObject("App::FeatureTest", "Obj")
+        obj.Integer = 1
+        doc.commitTransaction()
+        doc.createTransactionBranch("side")
+        doc.openTransaction("first")
+        obj.Integer = 2
+        doc.commitTransaction()
+        middle = doc.snapshotTransactionLog()
+        doc.openTransaction("second")
+        obj.String = "later"
+        doc.commitTransaction()
+        doc.switchTransactionBranch("main")
+        with self.assertRaises(ValueError):
+            doc.previewTransactionMerge("side", 1000)
+        preview = doc.previewTransactionMerge("side", middle)
+        self.assertEqual(self.kindsOf(preview), {"Obj.Integer": "take set"})
+        first = doc.mergeTransactionBranch("side", {}, "", middle)
+        self.assertGreater(first["seq"], 0)
+        self.assertEqual(doc.Obj.Integer, 2)
+        self.assertEqual(doc.Obj.String, "4711")
+        named = [v for v in doc.getTransactionVersions() if v["num"] == middle][0]
+        self.assertEqual(named["kind"], "named")
+        self.assertEqual(named["name"], "merged into main")
+        rest = doc.previewTransactionMerge("side")
+        self.assertEqual(self.kindsOf(rest), {"Obj.String": "take set"})
+        self.assertEqual(rest["base"], first["preview"]["theirs"])
+        self.assertGreater(doc.mergeTransactionBranch("side")["seq"], 0)
+        self.assertEqual(doc.Obj.String, "later")

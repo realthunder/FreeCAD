@@ -7120,6 +7120,11 @@ struct NetChange
     {
         for (const auto& o : rowOps) {
             if (o.op == "create" || o.op == "remove") {
+                // A view provider's comes and goes with its object, under
+                // the same id: it is not the object, and its type is not
+                // the one to make again.
+                if (o.ckind != "obj")
+                    continue;
                 Obj& obj = object(o.cid, o.op == "create");
                 obj.alive = o.op == "create";
                 obj.cname = o.cname;
@@ -8010,6 +8015,7 @@ void planMerge(Document& doc, const std::string& name, int64_t version, MergePla
             }
         }
         if (v.derived) {
+            c.derived = true;
             c.kind = pv.fastForward ? "take" : "derived";
             add(std::move(c));
             continue;
@@ -8271,6 +8277,20 @@ Document::MergeResult Document::mergeBranch(const std::string& branch,
                 Property* prop = c->getPropertyByName(std::get<2>(kv.first).c_str());
                 if (!prop)
                     throw Base::RuntimeError("no such property");
+                // Only what differs is written, as a move along the log
+                // does: a write touches its object, and view properties
+                // that are one value under several names -- a colour, its
+                // appearance, its material -- undo each other when all are
+                // written back.
+                const CapturedValue now = captureValue(config, *prop);
+                const CapturedValue& v = kv.second;
+                if (now.ok && now.fragment == v.fragment
+                        && now.attachments.size() == v.attachments.size()
+                        && std::equal(now.attachments.begin(), now.attachments.end(),
+                                      v.attachments.begin(), [](const auto& x, const auto& y) {
+                                          return x.name == y.name && x.bytes == y.bytes;
+                                      }))
+                    return;
                 log->restoreBlobsOf(sets[kv.first]);
                 restoreValue(*prop, kv.second);
                 // A label a live object of ours has comes in suffixed, by
