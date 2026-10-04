@@ -324,6 +324,21 @@ class TestSketchExternalTypes(unittest.TestCase):
         self.assertEqual(len(sketch.Constraints), 2)
         self.assertCutAtFarEdge(sketch, 12)
 
+    def testWholeObjectIsOneReference(self):
+        # No element named: the object itself is the reference, one however
+        # much is in it, and of both kinds like any other.
+        self.sketch.addExternal("Box", "")
+        self.assertEqual(self.links(), [("Box", "")])
+        self.assertEqual(self.kinds(), [PROJECTION])
+        projected = len(shapes(self.sketch))
+        self.sketch.addExternal("Box", "", False, True)
+        self.assertEqual(self.links(), [("Box", "")])
+        self.assertEqual(self.kinds(), [BOTH])
+        self.assertGreater(len(shapes(self.sketch)), projected)
+        with self.assertRaises(ValueError):
+            self.sketch.addExternal("Box", "", False, True)
+        self.assertEqual(self.kinds(), [BOTH])
+
     def testUndoAndRedo(self):
         self.doc.UndoMode = 1
         self.sketch.addExternal("Box", self.near)
