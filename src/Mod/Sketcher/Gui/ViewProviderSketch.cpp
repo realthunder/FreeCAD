@@ -9842,9 +9842,22 @@ void ViewProviderSketch::createEditInventorNodes(void)
     SbColor cursorTextColor(0,0,1);
     cursorTextColor.setPackedValue((uint32_t)hGrp->GetUnsigned("CursorTextColor", cursorTextColor.getPackedValue()), transparency);
 
+    // What a tool shows while it works -- the curve being drawn, its
+    // markers, the hints, the cursor's coordinates -- and the copies a
+    // highlight draws are not the sketch: a fit leaves them out, as it
+    // does the axes. Each has coordinates of its own, and a coordinate
+    // node with nothing set is one point at the origin; the cursor's text
+    // keeps its last position when its string is emptied, so a fit framed
+    // where a tool's pointer had last been.
+    auto notFitted = [](SoNode *node) {
+        SoGroup *group = new Gui::SoSkipBoundingGroup;
+        group->addChild(node);
+        return group;
+    };
+
     // stuff for the EditMarkers +++++++++++++++++++++++++++++++++++++++
     SoSeparator* editMarkersRoot = new SoSeparator;
-    edit->EditRoot->addChild(editMarkersRoot);
+    edit->EditRoot->addChild(notFitted(editMarkersRoot));
     edit->EditMarkersMaterials = new SoMaterial;
     edit->EditMarkersMaterials->setName("EditMarkersMaterials");
     editMarkersRoot->addChild(edit->EditMarkersMaterials);
@@ -9984,11 +9997,11 @@ void ViewProviderSketch::createEditInventorNodes(void)
     edit->EditRoot->addChild(infoMtlBind);
     edit->EditRoot->addChild(edit->InformationDrawStyle);
     edit->EditRoot->addChild(edit->infoGroup);
-    edit->EditRoot->addChild(lineExtensionHintRoot);
-    edit->EditRoot->addChild(parallelPerpendicularHintRoot);
+    edit->EditRoot->addChild(notFitted(lineExtensionHintRoot));
+    edit->EditRoot->addChild(notFitted(parallelPerpendicularHintRoot));
     edit->EditRoot->addChild(edit->CurveSwitch);
-    edit->EditRoot->addChild(editCurvesRoot);
-    edit->EditRoot->addChild(Coordsep);
+    edit->EditRoot->addChild(notFitted(editCurvesRoot));
+    edit->EditRoot->addChild(notFitted(Coordsep));
     edit->EditRoot->addChild(cstrMtlBind);
     edit->EditRoot->addChild(edit->ConstraintDrawStyle);
 
@@ -10002,8 +10015,8 @@ void ViewProviderSketch::createEditInventorNodes(void)
     edit->EditRoot->addChild(ps);
 
     edit->EditRoot->addChild(edit->PointSwitch);
-    edit->EditRoot->addChild(selCurvesRoot);
-    edit->EditRoot->addChild(selPointsRoot);
+    edit->EditRoot->addChild(notFitted(selCurvesRoot));
+    edit->EditRoot->addChild(notFitted(selPointsRoot));
 
 }
 
