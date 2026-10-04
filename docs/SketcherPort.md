@@ -54,6 +54,12 @@ in the ledger: the rows marked `deferred` (upstream's Sketcher GUI test
 files, whose ground the fork's `tests/gui` covers) and whatever upstream
 has added after `bd6be559e8`.
 
+**The deferred rows (2026-10-04, session 125).** Upstream's GUI test files
+were run on the fork instead of read: three of the twelve rows were here
+already, and the run turned up five defects or gaps of the fork's, each
+fixed with a test ("The deferred rows", before section 8). Nine rows stay
+`deferred` on one decision -- whether upstream's files come into the tree.
+
 Branch `SketcherPort` off `RemoteEdit`
 `b7dbdd191d`. Upstream reference: `upstream/main` `bd6be559e8`
 (2026-09-12).
@@ -4964,6 +4970,157 @@ already.
 and the first was not built on its own. With the flag and the Home key on
 top: full build, `FreeCADCmd -t 0` 2919 OK, ctest 902/902 (no new entry:
 the checks went into tests already there).
+
+### The deferred rows (session 125)
+
+Twelve rows were marked `deferred`: one gtest refactor and eleven commits
+that maintain upstream's Sketcher GUI test files. They were deferred, not
+dropped, because adopting upstream's suite was "a real option, not an
+impossibility" (section 7, "What the sweep deliberately did not close").
+This is what was found when the option was tried.
+
+**Three rows were here already.** `8ff4736a05`, the gtest half of the
+angle cluster: the fork's `tests/src/Mod/Sketcher/App/SketchObject.cpp`
+is that refactor (`setupAngleConstraint`) with two cases of its own on top
+(`64fffd18d4`), and no `DISABLED_` case is left in the Sketcher tests.
+`4b7f8e5e07` and `865fc12a8e`: the fork's `TestConstraintPreselectionGui.py`
+is upstream's tip byte for byte, run by
+`tests/gui/sketch-preselection-upstream.py` (`b8c15f572f`); the
+`SoDatumLabel` half of `865fc12a8e` is comments and a renamed constant.
+
+**The other nine maintain four files the fork does not carry**
+(`GuiTestCase.py`, `TestOnViewParameterGui.py`,
+`TestExternalFacePreselection.py`, `TestPlacementUpdate.py`). Reading
+what a test claims says little about whether the claim holds here, so
+the suite was run instead: upstream's files at `bd6be559e8`, put on the
+`SketcherTests` package path from a scratch directory and run by a
+driver of the `sketch-preselection-upstream.py` kind, one FreeCAD per
+module. Nothing of it is in the tree. Two more of upstream's files that
+no deferred row names went along: `TestConstraintCommandsGui.py` (from
+`fe7c1d18be`, declined) and `TestDistanceLabelExtensionGui.py` (from
+`cb5a28acd7`, which the ledger had as n/a for touching an `EditMode*`
+file).
+
+| upstream module | cases | first run | now | what is left |
+|---|---|---|---|---|
+| `TestPlacementUpdate` | 4 | 4 | 4 | |
+| `TestExternalFacePreselection` | 3 | 2 | 3 | with `Sketcher_External` for `Sketcher_Projection` |
+| `TestDistanceLabelExtensionGui` | 6 | 0 | 6 | file unchanged |
+| `TestConstraintCommandsGui` | 16 | 12, and a hang | 15 | the declined `fe7c1d18be` |
+| `TestOnViewParameterGui` | 11 | 2 | 5 of the 7 that can run | Escape, by ruling |
+
+A failing case was one of four things, and only the first is work.
+
+**A defect or a gap of the fork's.** Five, each fixed in its own commit
+with a test scored against the build before it:
+
+- *A number typed into a tool's on-view box was not the number used*
+  (`d82b85a861`). The box commits on Enter and Tab from a key filter
+  (upstream `9b40afea7a`, here `4d210d07f8`) that runs ahead of the box's
+  own handling of the key, and the box ran with keyboard tracking off,
+  where typed text waits in the box until that handling or a loss of
+  focus. So the filter committed what the box held before the typing.
+  `10 Enter 20 Enter` made a rectangle 10 by the pointer's height and
+  constrained that height -- the width was put right by losing the focus,
+  the last box of a stage has nothing to lose it to. `10 Tab 20 Enter`
+  made nothing: Tab took the "nothing entered" branch and 20 was appended
+  to the width. A pointer move while typing wiped the number. Upstream
+  turned keyboard tracking on in the same commit; that one line had not
+  come along. A browser's keys go through the same filter and had the
+  same three. `tests/gui/sketch-onview-typed-values.py`, 17 checks, 8
+  failed before.
+- *`Gui.Control.activeTaskDialog().accept()` and `.reject()` did nothing*
+  (`093e99de21`), for every task dialog: they click a button of the
+  dialog's button box, and the line that hands the dialog its box
+  (`TaskDialogAttorney::setButtonBox`, in the merge base) had gone in a
+  merge. `tests/gui/task-dialog-python-accept.py`, 15 checks, 9 failed
+  before.
+- *A vertical distance on a vertex of blocked geometry was driving*
+  (`e759c368bd`) where the horizontal one is a reference: the Y command
+  only asked whether the point was external. As old as the merge base.
+  `tests/gui/sketch-distance-fixed-vertex.py`, 20 checks, 1 failed
+  before.
+- *A distance to a line did not reach the line* (`e7311b86ca`, upstream
+  `cb5a28acd7`): with the foot of the perpendicular past an end of the
+  segment the witness line started in mid-air. Adapted by hand, as
+  decision 3 says for an `EditMode*` fix whose gap exists here: the
+  sketch's draw sets `SoDatumLabel::extensionLines`, only when it
+  changes, and the label draws it in GLRender and in the leader
+  primitives the capture takes. `tests/gui/sketch-distance-label-
+  extension.py`, 10 checks in mode 3; upstream's own file passes
+  unchanged.
+- *Converting a B-spline to NURBS stripped it* (`43ab7f5be7`):
+  `convertToNURBS` deletes every constraint on the curve but a
+  coincidence, an existing B-spline's internal alignment with them, and
+  the command's re-expose then doubled its poles and knots -- 7
+  geometries became 12. Upstream has the same; its test claiming
+  otherwise was deleted the day it was added (`6e1fc38d86`). A B-spline
+  of the sketch's own is now returned as it is. Two gtest cases.
+
+**The harness, not the behaviour.** The origin marker cases look for a
+scene node `OriginPointSet`; here the origin is point 0 of the vertex
+marker set. What those cases claim beyond the fork's own test -- the
+rectangle and circle tools, a right click to leave, a marker size change
+with a tool running, no outline carried into the next edit -- was added
+to `tests/gui/sketch-origin-marker.py` (`8ba44b4acd`, 20 checks) and all
+of it held. The origin's transparency holds by construction: the axis
+transparency is on the axes' own material. The case that on-view labels
+are never put at the origin between a tool's stages asserts four labels
+the moment a tool starts; here a label is in the scene only while it is
+shown. Run with the labels taken where and when the fork has them, over
+the same three tools: 6 to 7 completed updates each, none at the origin.
+The rectangle Enter case typed into the first box Qt lists, which here
+is the height and not the one with the keys; it passes since the fix
+above. `Sketcher_Projection` is `Sketcher_External` here.
+
+**A difference by ruling.** Upstream's Escape in a tool's on-view box
+puts the tool back to its first stage, a second Escape ends the tool, a
+third leaves the sketch; here the first ends the tool and the second
+leaves. Three cases, one of which then right-clicks with no tool running
+and blocks on the sketch's context menu. And the constraint commands
+with continuous mode switched off: `fe7c1d18be`, declined.
+
+**A claim upstream dropped.** The B-spline case above.
+
+**Found on the way and not fixed.**
+
+- *Render cache mode 0 draws no sketch dimension.* No leaders, no
+  arrows, no number: a translucent box stands where the number would be.
+  A trace in `SoDatumLabel::GLRender` shows every call arriving with
+  Coin's `SHADOWMAP` style flag, that is from a shadow-map pass, where a
+  shape that casts no shadow is skipped; the main pass never calls it.
+  `tests/gui/sketch-line-angle-labels.py` passed under
+  `GT_RENDER_CACHE=0` when it was written (`4b4e56c5d6`, 2026-09-25) and
+  fails now, with every label check at 0 pixels. Not bisected. The
+  default, mode 3, is not affected.
+- *Fit All on an empty sketch in edit zooms in a hundred and fifty
+  times.* The camera height goes from 4.14 to 0.028, by `view.fitAll()`
+  and by `Std_ViewFitAll` alike. Upstream's tests do it at the start of
+  every case, which is how it showed: the first on-view boxes read
+  micrometres. Why was not looked into; what a fit should do with
+  nothing to fit is a choice.
+- *One hang, not seen again.* The first run of
+  `TestConstraintCommandsGui` stopped in its last case; the case passes
+  alone, and the module ran through three times on the fixed build. The
+  first run was on the build before the fixes, with a driver that could
+  not report a modal dialog. Cause not established.
+
+**The decision the nine rows wait on** is whether upstream's files come
+into the tree. They can: `TestPlacementUpdate`, `TestDistanceLabel-
+ExtensionGui` and `TestConstraintCommandsGui` run as they are but for
+the one declined case, `TestExternalFacePreselection` with one word
+changed. `TestOnViewParameterGui` cannot without being rewritten for the
+origin node, the Escape rule and the label lifetime -- at which point it
+is the fork's test, and the fork has those. The nine rows are all
+maintenance of that file and of the base class.
+
+**Verified** on the final tree: full build; `FreeCADCmd -t 0` 2919 OK
+(the new tests are GUI and C++ ones, none of them a Python case); ctest
+907 of 907, which is the 902 of before, three of the four new GUI tests
+and the two gtest cases -- the fourth, the helper line, was registered
+after that run and passed through ctest on its own. Upstream's modules
+were run from the scratch copy against the same build for the table
+above.
 
 ## 8. Phases
 
