@@ -1107,3 +1107,11 @@ set_tests_properties(GuiSketchLineAngleLabelsGL_tests_run
 fc_add_gui_test(GuiSketchFitAll_tests_run
                 sketch-fit-all.py
                 --timeout 200)
+
+# The view in sight keeps its camera animation: the timer that stops a
+# view's animation once it is in the background was left armed on the
+# view just switched to, and cut a turn of its camera short three
+# seconds after it opened.
+fc_add_gui_test(GuiViewAnimationBackgroundTimer_tests_run
+                view-animation-background-timer.py
+                --timeout 120)

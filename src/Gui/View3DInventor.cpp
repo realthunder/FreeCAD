@@ -209,7 +209,16 @@ View3DInventor::View3DInventor(Gui::Document* pcDocument, QWidget* parent,
         onMsg("OrthographicCamera", nullptr);
 
     stopSpinTimer = new QTimer(this);
-    connect(stopSpinTimer, &QTimer::timeout, this, &View3DInventor::stopAnimating);
+    // Asked again when the time is up. What armed the timer is one of the
+    // two reports a switch of views makes (windowStateChanged), and when
+    // "another view is maximized" is the one that comes last, the view
+    // just switched to has a live timer: it stopped whatever ran in the
+    // view in sight three seconds after it opened, a turn of the camera
+    // left where it had got to.
+    connect(stopSpinTimer, &QTimer::timeout, this, [this]() {
+        if (isBackgroundView())
+            stopAnimating();
+    });
 
     camInfo.sensor.setData(this);
     camInfo.sensor.setFunction([](void *arg, SoSensor*) {
