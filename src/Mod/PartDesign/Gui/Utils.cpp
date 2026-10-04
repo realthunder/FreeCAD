@@ -1020,8 +1020,27 @@ public:
                 Gui::Application::Instance->getViewProvider(editObj));
         if (vp) {
             auto feat = Base::freecad_dynamic_cast<PartDesign::Feature>(editObj);
-            if (feat)
+            if (feat) {
+                const bool wasPaused = feat->isRecomputePaused();
                 feat->setPauseRecompute(false);
+                // The preview paused the feature's own recompute, and
+                // un-pausing only touches it. The panel's OK recomputes
+                // after this and its Cancel has already rolled the change
+                // back -- both run inside TaskView's accept/reject, which
+                // marks the dialog. Any other way out of the edit (Esc in
+                // a view, a served client leaving it, a script's
+                // resetEdit) closed the dialog without either and keeps
+                // the change, as upstream does, where nothing is paused:
+                // so the feature is made now rather than left touched
+                // with its pre-edit shape on screen.
+                auto dlg = Gui::Control().activeDialog();
+                const bool viaDialog =
+                    dlg && dlg->property("taskview_accept_or_reject").isValid();
+                if (wasPaused && !viaDialog && feat->isTouched()) {
+                    Gui::WaitCursor cursor;
+                    feat->recomputeFeature(true);
+                }
+            }
             vp->setPreviewDisplayMode(false);
             if (hideEditObject)
                 vp->Visibility.setValue(false);

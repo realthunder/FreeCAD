@@ -141,6 +141,12 @@ fc_add_gui_test(GuiServePatternLabels_tests_run serve-pattern-labels.py
 fc_add_gui_test(GuiServePatternMarkers_tests_run serve-pattern-markers.py
                 --timeout 200)
 
+# Leaving a PartDesign feature's edit by a bare resetEdit (Esc in a view, a
+# served client leaving it) keeps the change and shows it: preview-on-edit
+# paused the feature's recompute, and only the panel's OK made it again.
+fc_add_gui_test(GuiPdLeaveEditRecompute_tests_run pd-leave-edit-recompute.py
+                --timeout 200)
+
 # A browser's right click (docs/ThinClient.md sec 8.11b): the desktop's 3D
 # view context menu built for what the ray hits, its entries judged for the
 # connection, an edit entry entered in the client's view with no 3D view
