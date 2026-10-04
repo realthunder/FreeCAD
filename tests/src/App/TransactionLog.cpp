@@ -5176,3 +5176,102 @@ TEST_F(TransactionLogTest, aForkIsImportedAsABranch)
     Base::FileInfo(fork).deleteFile();
     Base::FileInfo(strange).deleteFile();
 }
+
+TEST_F(TransactionLogTest, aForkImportTakesTheBranchAskedForAndTheFilesItNames)
+{
+    // Sec 30.14 F6: a copy with branches of its own gives the one that is
+    // asked for, each to a branch of its own here; and a value that names
+    // a file brings the file (sec 30.15).
+    App::DocumentParams::setTransactionLog(2);   // embedded
+    edit(doc(), "create", [&]() { make("Obj")->Integer.setValue(1); });
+    const std::string tmp = Base::FileInfo::getTempPath();
+    const std::string path = tmp + "txnlog-import2-ours.FCStd";
+    const std::string fork = tmp + "txnlog-import2-theirs.FCStd";
+    Base::FileInfo(path).deleteFile();
+    Base::FileInfo(fork).deleteFile();
+    ASSERT_TRUE(doc()->saveAs(path.c_str()));
+    ASSERT_TRUE(Base::FileInfo(path).copyTo(fork.c_str()));
+
+    App::Document* other = App::GetApplication().openDocument(fork.c_str());
+    ASSERT_TRUE(other);
+    const std::string otherName = other->getName();
+    other->setUndoMode(1);
+    ASSERT_GT(other->createBranch("side"), 0);
+    edit(other, "theirs side", [&]() { featureOf(other, "Obj")->Integer.setValue(5); });
+    ASSERT_TRUE(other->switchBranch("main"));
+    const std::string bytes = blobText(-1);
+    edit(other, "theirs file", [&]() {
+        auto obj = other->getObject("Obj");
+        ASSERT_TRUE(obj->addDynamicProperty("App::PropertyFileIncluded", "File"));
+        const std::string src = tmp + "txnlog-import2-blob.txt";
+        {
+            Base::ofstream out(Base::FileInfo(src), std::ios::out | std::ios::binary);
+            out << bytes;
+        }
+        static_cast<App::PropertyFileIncluded*>(obj->getPropertyByName("File"))
+            ->setValue(src.c_str(), "data.txt");
+        Base::FileInfo(src).deleteFile();
+    });
+    ASSERT_TRUE(other->save());
+    App::GetApplication().closeDocument(otherName.c_str());
+    App::GetApplication().setActiveDocument(doc());
+
+    // Both branches are offered, the one the file reopens on marked.
+    std::map<std::string, App::Document::ForkBranch> offered;
+    for (const auto& b : doc()->forkBranches(fork))
+        offered[b.name] = b;
+    ASSERT_TRUE(offered.count("main"));
+    ASSERT_TRUE(offered.count("side"));
+    EXPECT_TRUE(offered["main"].current);
+    EXPECT_FALSE(offered["side"].current);
+    EXPECT_GT(offered["main"].base, 0);
+    EXPECT_EQ(offered["side"].base, offered["main"].base);
+    EXPECT_EQ(offered["main"].ahead, 1u);
+    EXPECT_EQ(offered["side"].ahead, 1u);
+
+    // None named: the one its file reopens on, to a branch named after
+    // the file.
+    const auto first = doc()->importFork(fork);
+    EXPECT_EQ(first.from, "main");
+    EXPECT_EQ(first.branch, "txnlog-import2-theirs");
+    EXPECT_EQ(first.rows, 1u) << first.reason;
+    EXPECT_EQ(first.stoppedAt, 0) << first.reason;
+    // The other, asked for by name: a branch of its own, named for both.
+    const auto second = doc()->importFork(fork, "side");
+    EXPECT_EQ(second.from, "side");
+    EXPECT_EQ(second.branch, "txnlog-import2-theirs@side");
+    EXPECT_FALSE(second.extended);
+    EXPECT_EQ(second.rows, 1u) << second.reason;
+    EXPECT_EQ(second.base, first.base);
+    auto& store = log().store();
+    for (const auto& name : {first.branch, second.branch}) {
+        App::LogBranch b;
+        ASSERT_TRUE(store.findBranch(name, b)) << name;
+        std::vector<std::string> names;
+        for (const auto& t : store.chain(b.head, first.base + 1)) {
+            if (!store.ops(t.seq).empty())
+                names.push_back(t.name);
+        }
+        ASSERT_EQ(names.size(), 1u) << name;
+        EXPECT_EQ(names[0], name == first.branch ? "theirs file" : "theirs side");
+    }
+
+    // Each merged when asked: the file with its content, then the value.
+    const auto merged = doc()->mergeBranch(first.branch);
+    EXPECT_TRUE(merged.unresolved.empty());
+    auto obj = doc()->getObject("Obj");
+    ASSERT_TRUE(obj);
+    auto file = dynamic_cast<App::PropertyFileIncluded*>(obj->getPropertyByName("File"));
+    ASSERT_TRUE(file);
+    EXPECT_EQ(readFile(file->getValue()), bytes);
+    EXPECT_EQ(featureOf(doc(), "Obj")->Integer.getValue(), 1);
+    const auto side = doc()->mergeBranch(second.branch);
+    EXPECT_TRUE(side.unresolved.empty());
+    EXPECT_EQ(featureOf(doc(), "Obj")->Integer.getValue(), 5);
+    file = dynamic_cast<App::PropertyFileIncluded*>(obj->getPropertyByName("File"));
+    ASSERT_TRUE(file);
+    EXPECT_EQ(readFile(file->getValue()), bytes);
+
+    Base::FileInfo(path).deleteFile();
+    Base::FileInfo(fork).deleteFile();
+}

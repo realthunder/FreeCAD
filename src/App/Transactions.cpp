@@ -761,11 +761,14 @@ void TransactionObject::addOrRemoveProperty(const Property* pcProp, bool add)
     data.propertyOrig = pcProp;
     static_cast<DynamicProperty::PropData&>(data) = 
         pcProp->getContainer()->getDynamicPropertyData(pcProp);
+    // The type of an added property too: the transaction log names it in
+    // the op, and a row that said `BadType` could not be replayed
+    // (docs/TransactionLog.md sec 30.18).
+    data.propertyType = pcProp->getTypeId();
     if(add) 
         data.property = nullptr;
     else {
         data.property = pcProp->Copy();
-        data.propertyType = pcProp->getTypeId();
         data.property->setStatusValue(pcProp->getStatus());
     }
 }

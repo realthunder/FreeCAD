@@ -8960,6 +8960,12 @@ Document::ImportResult Document::importFork(const std::string& path, const std::
         const std::string meta = store.getMeta(importKey(b.id));
         if (meta.empty())
             continue;
+        // Of this file's same branch: another branch of the copy is
+        // another branch here (sec 30.14).
+        const auto was = nlohmann::json::parse(meta, nullptr, false);
+        if (!was.is_object() || was.value("file", std::string()) != fork.file
+                || was.value("branch", std::string()) != from.name)
+            continue;
         const auto after = store.chain(b.head, result.base);
         if (after.empty() || after.front().seq != result.base)
             continue;
@@ -8969,7 +8975,7 @@ Document::ImportResult Document::importFork(const std::string& path, const std::
         if (moved)
             continue;
         mine = b;
-        kept = nlohmann::json::parse(meta, nullptr, false);
+        kept = was;
         break;
     }
     result.extended = mine.id != 0;
@@ -9091,25 +9097,34 @@ Document::ImportResult Document::importFork(const std::string& path, const std::
     };
 
     using Key = std::tuple<std::string, long, std::string>;   // ckind, cid here, prop
-    // The copy's blobs a value names, made files of this file's store.
-    std::function<void(const std::string&, const std::string&, int)> bringBlob =
-        [&](const std::string& hash, const std::string& ext, int depth) {
-            if (depth > 1024 || core.liveBlob(hash))
+    // The copy's blobs a value names, made files of this file's store,
+    // with the files each reads. The handles go into `held`: a blob nobody
+    // holds is gone at once, and the value restored next finds it by hash.
+    std::function<void(const std::string&, const std::string&, std::vector<FileBlobHandle>&, int)>
+        bringBlob = [&](const std::string& hash, const std::string& ext,
+                        std::vector<FileBlobHandle>& held, int depth) {
+            if (depth > 1024)
                 return;
             LogEntity e;
             if (theirs.getEntity(hash, e)) {
                 for (const auto& r : e.refs) {
                     if (r.role == "blob")
-                        bringBlob(r.target, r.name, depth + 1);
+                        bringBlob(r.target, r.name, held, depth + 1);
                 }
             }
-            fork.core->flush();
-            fork.core->restoreBlob(hash, ext);
-            FileBlobHandle blob = fork.core->liveBlob(hash);
-            std::string bytes;
-            if (!blob || !blob->read(bytes))
-                throw Base::RuntimeError("a file the value names is not in the copy's history");
-            d->history->blobs().adoptBytes(bytes, ext.empty() ? nullptr : ext.c_str());
+            FileBlobHandle mine = core.liveBlob(hash);
+            if (!mine) {
+                fork.core->flush();
+                fork.core->restoreBlob(hash, ext);
+                FileBlobHandle blob = fork.core->liveBlob(hash);
+                std::string bytes;
+                if (!blob || !blob->read(bytes))
+                    throw Base::RuntimeError(
+                        "a file the value names is not in the copy's history");
+                mine = d->history->blobs().adoptBytes(bytes, ext.empty() ? nullptr : ext.c_str());
+            }
+            if (mine)
+                held.push_back(std::move(mine));
         };
 
     std::map<int64_t, int64_t> seqs;   // the copy's rows, to the rows here
@@ -9175,11 +9190,8 @@ Document::ImportResult Document::importFork(const std::string& path, const std::
                 LogEntity e;
                 if (theirs.getEntity(o.vafter, e)) {
                     for (const auto& r : e.refs) {
-                        if (r.role != "blob")
-                            continue;
-                        bringBlob(r.target, r.name, 0);
-                        if (FileBlobHandle blob = core.liveBlob(r.target))
-                            held.push_back(std::move(blob));
+                        if (r.role == "blob")
+                            bringBlob(r.target, r.name, held, 0);
                     }
                 }
                 values.emplace_back(&o, std::move(v));
@@ -9252,10 +9264,11 @@ Document::ImportResult Document::importFork(const std::string& path, const std::
                     }
                     const bool has = c->getPropertyByName(o.prop.c_str()) != nullptr;
                     if (o.op == "addprop" && !has) {
-                        // A property whose type has no name in the type
-                        // system (`BadType`) is a cache some module hung
-                        // on the object -- Part's shape cache -- and
-                        // nothing of the document's.
+                        // A row written before the log named the type of
+                        // a property added to an object that was there
+                        // (sec 30.18) says `BadType`: nothing can be made
+                        // of it. Most were a module's cache -- Part's
+                        // shape cache -- and nothing of the document's.
                         if (o.ptype.find("::") == std::string::npos)
                             untyped.emplace(here(o.cid), o.prop);
                         else

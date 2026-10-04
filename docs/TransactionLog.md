@@ -12874,10 +12874,9 @@ the object has not got -- is rolled back whole (`_abortTransaction`), and
 the import ends there: `stopped_at` and `reason`, the rows before it
 kept, the record saying so. A second import begins at the same row.
 
-**Left out without stopping.** A dynamic property whose type has no name
-in the type system (`BadType`), and its value: Part hangs its shape cache
-on an object as one, and the log records it. A view provider's ops when
-there is no Gui. A row that changes nothing here.
+**Left out without stopping.** A dynamic property a row gives no type
+(`BadType`), and its value: 30.18 has why a row said so. A view
+provider's ops when there is no Gui. A row that changes nothing here.
 
 **The merge, and what the rows left out.** An imported row is marked by
 its script. Where a merge takes rows as they are -- the fast-forward of
@@ -13034,3 +13033,51 @@ shares nothing: no dialog, and the panel says so.
 unfrozen; 6 expected failures; +2), ctest 873/873 (+1), and the GUI
 checks RC 15, BC 27, VC 18, PC 28, FC 16, VW 14, MC 28, the two-document
 check 24, the tree check 19, the author check 36 and the import check 29.
+
+### 30.18 S.f, seen after it was in: an added property's type, the branch asked for, files (2026-10-05)
+
+A test of F6 -- a copy with two branches, each imported -- and of a value
+that names a file found three things. The first two are older than S.f.
+
+**A property added to an object that was already there was logged with
+no type.** `TransactionObject::addOrRemoveProperty` kept a property's
+type only when it was removed, so the op of an added one said `BadType`,
+and no replay could make it: a recovery, a switch along the rows, a
+merge and the import all lost a dynamic property added to an existing
+object, with an error in the report view. A property added with its
+object was right, its op being written from the object. Fixed where the
+record is made: the type is kept for an added property too.
+
+**A property that is not saved was logged when it was a dynamic one
+added.** The log leaves out what is `Prop_Transient` or `Prop_NoPersist`
+everywhere but there. Part's shape cache, `_Part_ShapeCache`, is such a
+property, hung on whatever object a shape is asked of: every row that
+first asked had an `addprop` for it, and -- having no type, by the above
+-- it could not be replayed, which is the only reason it did no harm.
+Fixed in `onCommit`: an added property that is not saved is not logged.
+The import still leaves out an `addprop` with no type, for rows written
+before.
+
+**A second branch of the copy went onto the first one's branch.** The
+import continued any import branch whose last movement was the base; a
+branch brought from the copy's `side` after one brought from its `main`
+found the first, when that had brought nothing past the base. The branch
+continued is now the one made for this file and this branch of it: the
+maps kept with it say which.
+
+**Files.** A file a value names is made a file of this file's store
+before the value is restored, with the files it reads in turn; every
+handle is held until the row is committed, where only the first was.
+
+**Tests.** Gtest `aForkImportTakesTheBranchAskedForAndTheFilesItNames`:
+the copy makes a branch `side` and changes a value on it, goes back to
+`main` and adds a file-included property with content. Both branches are
+offered, the file's marked; with none named `main` comes to a branch
+named after the file, and `side`, asked for, to `<file>@side`, not onto
+the first; each holds the one row it should; merged, the object has the
+file with its content, then the value.
+
+**Gates**, frozen and unfrozen each: Python 3005 OK (52 skipped frozen, 53
+unfrozen; 6 expected failures), ctest 874/874 (+1), and the GUI checks
+RC 15, BC 27, VC 18, PC 28, FC 16, VW 14, MC 28, the two-document check
+24, the tree check 19, the author check 36 and the import check 29.

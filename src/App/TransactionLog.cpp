@@ -3093,6 +3093,11 @@ int64_t TransactionLog::onCommit(const Transaction& txn, const char* kind, const
                 auto prop = const_cast<Property*>(data.propertyOrig);
                 std::string typeName = data.propertyType.getName();
                 if (!data.property) {
+                    // Nothing that is not saved is logged: a cache a module
+                    // hangs on an object as a dynamic property (Part's
+                    // shape cache) is not the document's (sec 30.18).
+                    if ((data.attr & Prop_Transient) || (data.attr & Prop_NoPersist))
+                        continue;
                     // Dynamic property added: metadata, then its value pending.
                     auto a = emit("addprop", data.name, typeName);
                     const char* name = c.container->getPropertyName(prop);
