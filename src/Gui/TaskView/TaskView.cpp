@@ -558,6 +558,8 @@ void TaskView::showDialog(TaskDialog *dlg)
     // first create the control element, set it up and wire it:
     ActiveCtrl = new TaskEditControl(this);
     ActiveCtrl->buttonBox->setStandardButtons(dlg->getStandardButtons());
+    // What TaskDialogPy's accept() and reject() press
+    TaskDialogAttorney::setButtonBox(dlg, ActiveCtrl->buttonBox);
 
     // clang-format off
     // make connection to the needed signals

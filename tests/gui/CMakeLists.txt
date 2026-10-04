@@ -1064,3 +1064,9 @@ fc_add_gui_test(GuiSequencerInputAfterStop_tests_run
 fc_add_gui_test(GuiSketchOnViewTypedValues_tests_run
                 sketch-onview-typed-values.py
                 --timeout 200)
+
+# Gui.Control.activeTaskDialog().accept() and .reject() press the dialog's
+# buttons; the dialog was never given its button box, so they did nothing.
+fc_add_gui_test(GuiTaskDialogPythonAccept_tests_run
+                task-dialog-python-accept.py
+                --timeout 120)
