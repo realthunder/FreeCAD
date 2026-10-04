@@ -221,7 +221,12 @@ void EditableDatumLabel::startEdit(double val, QObject* eventFilteringObj, bool 
     spinBox->setMinimum(-INT_MAX);
     spinBox->setMaximum(INT_MAX);
     spinBox->setButtonSymbols(QAbstractSpinBox::NoButtons);
-    spinBox->setKeyboardTracking(false);
+    // On, so that the box has read its text by the time a key is filtered
+    // below: the filter commits on Enter and Tab ahead of the box's own
+    // handling of them, and with tracking off a typed number waits in the
+    // box until then -- the filter committed the number from BEFORE the
+    // typing, and a typed number did not count as entered (isSet).
+    spinBox->setKeyboardTracking(true);
     spinBox->setFocusPolicy(Qt::ClickFocus); // prevent passing focus with tab.
     // Installed first, so it runs LAST: Qt calls a widget's filters in
     // reverse order of installation, and the sketcher's keyboard manager

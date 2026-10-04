@@ -1057,3 +1057,10 @@ fc_add_gui_test(GuiSketchExternalBothWays_tests_run
 fc_add_gui_test(GuiSequencerInputAfterStop_tests_run
                 sequencer-input-after-stop.py
                 --timeout 120)
+
+# A number typed into a tool's on-view box is the number the tool uses: the
+# box commits on Enter and Tab ahead of reading its own text, and committed
+# what it held before the typing.
+fc_add_gui_test(GuiSketchOnViewTypedValues_tests_run
+                sketch-onview-typed-values.py
+                --timeout 200)
