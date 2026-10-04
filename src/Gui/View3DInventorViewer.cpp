@@ -7775,6 +7775,11 @@ void View3DInventorViewer::viewAll()
 {
     SbBox3f box;
     if(!getSceneBoundBox(box)) {
+        // Nothing to frame, but a place to look at: the one point of what
+        // is being edited, an empty sketch's origin. No zoom and no turn;
+        // the view goes there, wherever it was.
+        if (!box.isEmpty())
+            navigation->lookAtPoint(box.getCenter());
         return;
     }
 
@@ -7801,8 +7806,12 @@ void View3DInventorViewer::viewAll(float factor)
 
     if (factor != 1.0F) {
         SbBox3f box;
-        if(!getSceneBoundBox(box))
+        if(!getSceneBoundBox(box)) {
+            // as viewAll() does
+            if (!box.isEmpty())
+                navigation->lookAtPoint(box.getCenter());
             return;
+        }
 
         float dx,dy,dz;
         box.getSize(dx,dy,dz);

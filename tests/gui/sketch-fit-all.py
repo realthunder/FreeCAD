@@ -18,7 +18,9 @@ Two things went into the box a fit frames that are not the sketch:
 
 Now the feedback is left out of the scene's box, as the axes are, and a
 scene that holds nothing but one point of what is being edited is
-nothing to fit: the camera stays, as it does in an empty document.
+nothing to frame: the fit does not zoom and does not turn. It does go
+to that point -- a sketch's origin may well be off the screen, entering
+a sketch turns the view and does not move it.
 
 What must not change, and is checked: a sketch's fit takes its origin
 with its geometry; an empty sketch beside a model is framed with it; a
@@ -105,6 +107,14 @@ def near(got, want, tolerance):
     return all(abs(g - w) <= tolerance for g, w in zip(got, want))
 
 
+def off_centre(view, point):
+    """How far, in pixels, a point is drawn from the centre of the view."""
+    vp = view.graphicsView().viewport()
+    dpr = vp.devicePixelRatioF()
+    x, y = view.getPointOnViewport(point)
+    return ((x - vp.width() * dpr / 2.0) ** 2 + (y - vp.height() * dpr / 2.0) ** 2) ** 0.5
+
+
 def describe(cam):
     return "centre (%.4g, %.4g) height %.5g" % cam
 
@@ -130,15 +140,16 @@ def run():
         V = FreeCAD.Vector
         FreeCADGui.getMainWindow().showMaximized()
 
-        # 1. An empty sketch: nothing to fit, by the call and by the command.
+        # 1. An empty sketch: nothing to frame, by the call and by the
+        # command. The view goes to the origin at the zoom it had.
         doc, view = new_view("FitEmpty")
         sk = doc.addObject("Sketcher::SketchObject", "Sketch")
         check("the empty sketch is in edit", edit(doc, sk, view))
         for how in ("call", "command"):
             frame(view, 5.0, 5.0, 50.0)
             cam = fit(view, how)
-            check("an empty sketch gives a fit nothing to frame: the camera stays (%s)" % how,
-                  near(cam, (5.0, 5.0, 50.0), 0.01), describe(cam))
+            check("an empty sketch: the fit goes to its origin and does not zoom (%s)" % how,
+                  near(cam, (0.0, 0.0, 50.0), 0.01), describe(cam))
 
         # The origin selected: its highlight is a copy one layer higher,
         # which made the box a point no longer.
@@ -146,9 +157,9 @@ def run():
         settle(0.5)
         frame(view, 5.0, 5.0, 50.0)
         cam = fit(view, "call")
-        check("nor does its origin, selected, give a fit something to frame",
+        check("nor does its origin, selected, give a fit something to zoom to",
               len(FreeCADGui.Selection.getSelectionEx()) == 1
-              and near(cam, (5.0, 5.0, 50.0), 0.01), describe(cam))
+              and near(cam, (0.0, 0.0, 50.0), 0.01), describe(cam))
         FreeCADGui.Selection.clearSelection()
 
         # 2. Geometry: the fit is the geometry and the origin.
@@ -201,7 +212,32 @@ def run():
         check("a document whose only object is a vertex is still framed",
               near(cam[:2], (30.0, 20.0), 0.01) and cam[2] < 1.0, describe(cam))
 
-        for name in ("FitEmpty", "FitModel"):
+        # 6. An empty sketch off the global origin, on another plane.
+        # Entering it turns the view and leaves its origin where it was.
+        doc4, view4 = new_view("FitPlaced")
+        origin = V(100, 50, 20)
+        sk4 = doc4.addObject("Sketcher::SketchObject", "Sketch")
+        sk4.Placement = FreeCAD.Placement(origin, FreeCAD.Rotation(V(1, 0, 0), 90))
+        doc4.recompute()
+        view4.getCameraNode().height.setValue(60.0)
+        FreeCADGui.getDocument(doc4.Name).setEdit(sk4)
+        settle(2.0)
+        direction = view4.getViewDirection()
+        check("entering the placed sketch turned the view to its plane, its origin off centre",
+              abs(direction.y - 1.0) < 1e-3 and off_centre(view4, origin) > 100.0,
+              "direction (%.2f, %.2f, %.2f), origin %.0f px off" % (
+                  direction.x, direction.y, direction.z, off_centre(view4, origin)))
+        view4.fitAll()
+        settle(1.2)
+        after = view4.getViewDirection()
+        check("the fit brings the origin to the centre of the view",
+              off_centre(view4, origin) < 2.0, "%.1f px off" % off_centre(view4, origin))
+        check("at the zoom the view had, and facing the way it did",
+              abs(view4.getCameraNode().height.getValue() - 60.0) < 0.01
+              and (after - direction).Length < 1e-4,
+              "height %.5g" % view4.getCameraNode().height.getValue())
+
+        for name in ("FitEmpty", "FitModel", "FitPlaced"):
             FreeCADGui.getDocument(name).resetEdit()
         settle(0.5)
     except Exception:
