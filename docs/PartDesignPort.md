@@ -3201,7 +3201,10 @@ was where the worst one hid.
   `visualFillSeq` check stays as the backstop. Both stopped the
   tessellation box from reading a resident mesh. SketcherPort's
   `meshingBoundsOf` (geometry only) is the same box the pre-mesh measures,
-  so `preMeshBox` is now unused. The pre-mesh park no longer parks a
+  so the build stopped reading `preMeshBox`. (It has one reader again:
+  `_getBoundingBox` answers from an in-flight claim's box rather than
+  read a shape a worker is meshing -- DocumentLoad.md sec 18.3.) The
+  pre-mesh park no longer parks a
   secondary view, which SketcherPort had stopped `deferVisualForLoad` from
   doing.
 - *Sketcher menu.* The desktop's `blockContextMenu` guard (a right press

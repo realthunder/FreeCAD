@@ -5696,8 +5696,7 @@ static void collectPreMeshItems(App::Document *doc,
         // GEOMETRY box, which is what the claim carries so the build can
         // derive the same one without measuring a meshed shape.
         Bnd_Box box;
-        BRepBndLib::Add(shape, box, /*useTriangulation*/ Standard_False);
-        box.SetGap(0.0);
+        meshingBounds(shape, box);
         if (box.IsVoid())
             continue;
         Standard_Real xMin, yMin, zMin, xMax, yMax, zMax;
@@ -8245,15 +8244,31 @@ ViewProviderPartExt::_getBoundingBox(const char *subname,
     // changes, and a progressive load's drain builds without one. The
     // binder of a user file kept +-1e100 after the drain (eager, which
     // builds before anyone asks: +-50), and a datum plane sized over it.
+    //
+    // A shape a pre-mesh worker is still meshing is not read at all
+    // (docs/DocumentLoad.md sec 18.3): BRepMesh writes the triangulation
+    // into the TShape, BRepBndLib reads it, and the shape a load parks is
+    // exactly the one a camera fit asks about. Its claim carries the
+    // geometry box measured before the worker started. Any other shape
+    // keeps the resident mesh's box, which for a curve is the tighter one
+    // (sec 19: a helix's poles box the 207.8 x 277.5 it draws as 226.97
+    // x 284.27).
     if (VisualTouched && !(subname && subname[0])) {
         try {
             TopoDS_Shape shape = getShape().getShape();
             if (!shape.IsNull()) {
-                if (!transform)
-                    shape = shape.Located(TopLoc_Location());
                 Bnd_Box bounds;
-                BRepBndLib::Add(shape, bounds);
-                bounds.SetGap(0.0);
+                if (preMeshBox(shape.TShape().get(), bounds)) {
+                    if (transform && !shape.Location().IsIdentity())
+                        bounds = bounds.Transformed(
+                            shape.Location().Transformation());
+                }
+                else {
+                    if (!transform)
+                        shape = shape.Located(TopLoc_Location());
+                    BRepBndLib::Add(shape, bounds);
+                    bounds.SetGap(0.0);
+                }
                 Standard_Real xMin = 0, yMin = 0, zMin = 0, xMax = 0, yMax = 0, zMax = 0;
                 if (!bounds.IsVoid())
                     bounds.Get(xMin, yMin, zMin, xMax, yMax, zMax);

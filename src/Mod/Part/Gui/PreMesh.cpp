@@ -247,8 +247,10 @@ bool preMeshBox(const void *tshape, Bnd_Box &box)
         return false;
     std::lock_guard<std::mutex> guard(s_mutex);
     auto it = s_claims.find(tshape);
+    // Set at submit, under this mutex, and not written while the worker
+    // runs: safe to hand out before it publishes.
     if (it == s_claims.end()
-            || !it->second->done.load(std::memory_order_acquire)
+            || it->second->done.load(std::memory_order_acquire)
             || it->second->geomBox.IsVoid())
         return false;
     box = it->second->geomBox;

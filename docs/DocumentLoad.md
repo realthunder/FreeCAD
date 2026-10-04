@@ -1270,7 +1270,13 @@ therefore carries the box measured BEFORE any triangulation existed, and
 triangulation into the TShape. A claim is IN FLIGHT until its worker has
 published it, and a build that lands on such a shape parks itself the way
 the load parks one; the drain then moves on to the next slice rather than
-walking a queue whose every item is in flight.
+walking a queue whose every item is in flight. A bounds question about
+an unbuilt visual (`ViewProviderPartExt::_getBoundingBox`, which must not
+build) used to read the shape anyway -- `BRepBndLib::Add` reads the
+resident triangulation, and even with `useTriangulation` off it fetches
+each face's handle. It now answers from the claim's geometry box while
+the claim is in flight (`preMeshBox`); a reopen of 300 finely meshed tori
+asked about every object in a loop answered 56 of its questions that way.
 
 Excluded, on the principle that a doubt excludes: roots sharing a face or
 an edge TShape with another root (two workers would write one

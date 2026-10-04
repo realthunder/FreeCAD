@@ -101,8 +101,15 @@ bool preMeshInFlight(const void *tshape);
 /// worker and then builds as it always did.
 bool waitPreMesh(const void *tshape, double seconds);
 
-/// The geometry box the pre-mesh measured for \a tshape, if it claimed
-/// it at all. False leaves \a box untouched.
+/// The geometry box the pre-mesh measured for \a tshape while its claim
+/// is still IN FLIGHT. False -- no claim, or published -- leaves \a box
+/// untouched, and the shape is then safe to read.
+///
+/// For the bounds question that must not build the visual
+/// (ViewProviderPartExt::_getBoundingBox): the box was measured on the
+/// GUI thread before the worker started, so it answers without reading
+/// a shape a worker may be writing. Even the geometry-only
+/// BRepBndLib::Add fetches each face's triangulation handle.
 bool preMeshBox(const void *tshape, Bnd_Box &box);
 
 /// What the pre-mesh has done so far, for the line the drain reports
