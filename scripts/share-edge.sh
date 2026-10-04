@@ -8,6 +8,9 @@
 #
 #   FC_SERVE_TRUST_PROXY=1   believe those headers from loopback peers
 #   FC_SERVE_TOKEN=...       optional bearer door on top (or instead)
+#   FC_SERVE_INVITE=<name>   whose that token is: its holder may edit under
+#                            that name (&client=<name> on the link); the
+#                            token alone admits to look
 #
 # Modes:
 #   quick  [port]             cloudflared quick tunnel (trycloudflare.com).
@@ -36,7 +39,7 @@
 #         scripts/share-edge.sh caddy cad.example.com [8077]
 set -u
 MODE=${1:-}
-usage() { sed -n '2,38p' "$0" | sed 's/^# \{0,1\}//'; exit 2; }
+usage() { sed -n '2,41p' "$0" | sed 's/^# \{0,1\}//'; exit 2; }
 
 need() {
     command -v "$1" >/dev/null && return
@@ -53,6 +56,9 @@ quick)
     echo "  FC_SERVE_TRUST_PROXY=1 FC_SERVE_TOKEN=<secret> scripts/renderer-serve.sh <scene.py> $PORT"
     echo "tunnel starting; share the https://….trycloudflare.com link it prints"
     echo "(with your ?token=… tail — the quick tunnel itself checks nobody)."
+    echo "The token alone admits to look. For the one person who may edit, start"
+    echo "the backend with FC_SERVE_INVITE=<name> too and give them the link"
+    echo "with &client=<name> after the token."
     exec cloudflared tunnel --url "http://localhost:$PORT"
     ;;
 access)

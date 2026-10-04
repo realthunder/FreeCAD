@@ -372,6 +372,17 @@ public:
     /// FC_SERVE_TOKEN presets it at first use.
     void setToken(const std::string &token);
     std::string token();
+    /// Say whose the shared token is: the one person it was issued to,
+    /// by the name their connection gives. The token is then an
+    /// invitation to that name, and its holder under that name may
+    /// write (docs/ShareAccess.md sec 2.3, docs/TransactionLog.md sec
+    /// 30.6 U6); under any other name, or with no invitee set, the
+    /// shared token admits to look. Empty (the default) = nobody. No
+    /// effect without a token, or while a grant list is the door.
+    /// FC_SERVE_INVITE presets it at first use, beside FC_SERVE_TOKEN;
+    /// the viewer's link then carries `?token=...&client=<name>`.
+    void setTokenInvitee(const std::string &name);
+    std::string tokenInvitee();
 
     /// Believe `X-Forwarded-For` when the connection came from a
     /// loopback peer — which is what a reverse proxy on this machine,

@@ -9598,13 +9598,16 @@ The puppeteer knobs they need are in `docs/Testing.md`: `PUPPETEER_PATH`,
 `CHROME`, `CHROME_LIBS`, and emsdk's node.
 
 **Getting a phone onto it again** (this session's recipe):
-`FC_SERVE_TOKEN=<secret> FC_SERVE_TRUST_PROXY=1
+`FC_SERVE_TOKEN=<secret> FC_SERVE_INVITE=<who> FC_SERVE_TRUST_PROXY=1
 scripts/renderer-serve.sh scripts/demo-taskpanel.py 8077`, then
 `cloudflared tunnel --protocol http2 --url http://127.0.0.1:8077`.
 **QUIC is blocked outbound on this box**, so without `--protocol http2`
 the tunnel comes up degraded and says so.  The page is
-`/fcviewer.html?doc=<name>&token=<secret>`, with `&panel`, `&console` or
-`&sheet` to open a card on load.  The bundle is `npm run build` in
+`/fcviewer.html?doc=<name>&token=<secret>&client=<who>`, with `&panel`,
+`&console` or `&sheet` to open a card on load.  Since 2026-10-04 the token
+alone admits to look: `FC_SERVE_INVITE` says whose it is, and the page that
+gives that name in `client=` may click and type (`docs/ShareAccess.md` sec
+2.3).  The bundle is `npm run build` in
 `src/Gui/Renderer/web` into `build/wasm/web`, `npm run gate` is the pure
 gate and `npm run typecheck` the types.  The viewer bundle answers
 before the door, so the PAGE loads without a token while every route

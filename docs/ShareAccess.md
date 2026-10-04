@@ -147,6 +147,13 @@ edit:**
 - **An invitation is to the name it names.** A client that renames itself is whoever it
   now says it is: it keeps its place and goes view-only, and the log has it as another
   user from there on. The easing a rename mints (sec 2) never invites.
+- **The shared token can be issued to one person too.** With no grant list, the host
+  may say whose the shared token is (`SceneStreamServer::setTokenInvitee`, or
+  `FC_SERVE_INVITE=<name>` beside `FC_SERVE_TOKEN`): the token is then an invitation to
+  that one name, and the connection that presents it and gives that name may edit,
+  logged as `invited`. Under any other name it admits to look, as before. It does
+  nothing without a token -- a name with no secret behind it invites nobody -- and
+  nothing while a grant list is the door.
 - **By hand, the same.** The host cannot make an unknown connection an editor from the
   roster (`SceneStreamServer::setClientAccess`, `Gui.serveSetClientMode(id, 'edit')`
   answer false); the panel's "Can edit" is disabled for it and says why.
@@ -160,7 +167,10 @@ is view-only for everyone but the desktop, until the host invites by name: a gra
 with the token and the person's name, and a link carrying both (`?token=...&client=
 ...`; the viewer says `?client=` in its hello). A page that fetches before it has said
 a name is admitted for those fetches by the same token as an open invitation to look
-beside the named one; the most specific match judges the socket's hello.
+beside the named one; the most specific match judges the socket's hello. For the one
+person a served scene is started for -- the demo recipes of `docs/Sandbox.md`, a quick
+tunnel -- `FC_SERVE_INVITE=<name>` does the same with no grant list: the link is
+`?token=<secret>&client=<name>`.
 
 ## 3. Prior art
 

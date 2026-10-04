@@ -1198,6 +1198,7 @@ TEST_F(SceneServerWire, onlySomeoneKnownMayWrite)
         {
             auto& s = Render::SceneStreamServer::instance();
             s.setGrants({});
+            s.setTokenInvitee({});
             s.setToken({});
         }
     } restore;
@@ -1229,6 +1230,28 @@ TEST_F(SceneServerWire, onlySomeoneKnownMayWrite)
         ASSERT_TRUE(waitFor([&] { return findClient("rule-signed-in", info); }));
         EXPECT_EQ(info.access, Render::ClientAccess::Edit) << "verified, so it may write";
     }
+    // -- until the host says whose it is: then it is an invitation to that
+    // one name, by the name the hello gives, and to nobody else.
+    server.setTokenInvitee("lei");
+    {
+        WsClient lei(port, "/scene?token=s3cret");
+        lei.hello("lei");
+        ASSERT_TRUE(waitFor([&] { return findClient("lei", info); }));
+        EXPECT_EQ(info.access, Render::ClientAccess::Edit) << "the token was issued to lei";
+        EXPECT_TRUE(info.invited);
+        WsClient other(port, "/scene?token=s3cret");
+        other.hello("rule-not-lei");
+        EXPECT_TRUE(has(told(other), "\"access\":\"view\""));
+        ASSERT_TRUE(waitFor([&] { return findClient("rule-not-lei", info); }));
+        EXPECT_EQ(info.access, Render::ClientAccess::View);
+        EXPECT_FALSE(info.invited);
+        // The invitation is to the name: under another it is gone.
+        lei.sendText("{\"cmd\":\"client\",\"name\":\"rule-was-lei\"}");
+        EXPECT_TRUE(has(told(lei), "\"access\":\"view\""));
+        ASSERT_TRUE(waitFor([&] { return findClient("rule-was-lei", info); }));
+        EXPECT_FALSE(info.invited);
+    }
+    server.setTokenInvitee({});
     server.setToken({});
 
     // Grants: an invitation to one name, the same token as an open

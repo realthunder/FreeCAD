@@ -10,8 +10,13 @@ FC_BGFX_SERVE_SCENE and points FC_BGFX_VIEWER_BUILD at build/wasm so the
 one port carries the viewer page, the scene stream and the widget stream
 alike:
 
-    FC_SERVE_TOKEN=<secret> FC_SERVE_TRUST_PROXY=1 \\
+    FC_SERVE_TOKEN=<secret> FC_SERVE_INVITE=<who> FC_SERVE_TRUST_PROXY=1 \\
       scripts/renderer-serve.sh scripts/demo-taskpanel.py 8077
+
+and open `/fcviewer.html?doc=<name>&token=<secret>&client=<who>&panel`. The
+shared token alone admits to look (docs/ShareAccess.md sec 2.3):
+FC_SERVE_INVITE says whose it is, and the page that gives that name in
+`client=` may click and type.
 
 Nothing here starts the panel mirror: it starts with the first client that
 subscribes with `panels` (7.19) and stops with the last, which is what the

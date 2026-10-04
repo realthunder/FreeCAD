@@ -183,6 +183,9 @@ public:
     /// never participate in an ordering cycle.
     std::mutex tokenMutex;
     std::string tokenSecret;
+    /// The one person the shared token was issued to (SceneServer.h,
+    /// setTokenInvitee); empty for none. Guarded by tokenMutex.
+    std::string tokenInvitee;
 
     std::string tokenNow()
     {
@@ -421,6 +424,21 @@ public:
             && grant.client == client;
     }
 
+    /// The shared token as an invitation: there is a token, the host has
+    /// named the one person it was issued to, and \a client is that name.
+    static bool tokenInvites(const std::string &secret,
+                             const std::string &invitee,
+                             const std::string &client)
+    {
+        return !secret.empty() && !invitee.empty() && client == invitee;
+    }
+
+    bool hasTokenInvitee()
+    {
+        std::lock_guard<std::mutex> guard(tokenMutex);
+        return grantList.empty() && !tokenSecret.empty() && !tokenInvitee.empty();
+    }
+
     /// Only a user who is known may write (docs/TransactionLog.md sec
     /// 30.6 U4): a connection with no verified identity and no
     /// invitation to its name is view-only, whatever its grant says --
@@ -513,7 +531,11 @@ public:
             Judgement out;
             out.admitted = tokenSecret.empty()
                 || secretEqual(token, tokenSecret);
-            out.access = writerRule(ClientAccess::Edit, identity, false);
+            // -- unless the host has said whose the token is, which makes
+            // it an invitation to that one name (sec 30.6 U6).
+            out.invited = identity.empty() && out.admitted
+                && tokenInvites(tokenSecret, tokenInvitee, client);
+            out.access = writerRule(ClientAccess::Edit, identity, out.invited);
             return out;
         }
         return judgeWith(grantList, token, identity, client, address);
@@ -1483,10 +1505,12 @@ public:
     {
         std::vector<SceneGrant> list;
         std::string secret;
+        std::string invitee;
         {
             std::lock_guard<std::mutex> guard(tokenMutex);
             list = grantList;
             secret = tokenSecret;
+            invitee = tokenInvitee;
         }
         bool changed = false;
         {
@@ -1499,8 +1523,10 @@ public:
                     entry.admitted = secret.empty()
                         || conn->presentedToken == secret;
                     // What the host set by hand stands, where it may.
+                    entry.invited = entry.admitted && conn->identity.empty()
+                        && tokenInvites(secret, invitee, conn->client);
                     entry.access = writerRule(conn->access, conn->identity,
-                                              false);
+                                              entry.invited);
                 }
                 else {
                     entry = judgeWith(list, conn->presentedToken,
@@ -3405,7 +3431,10 @@ public:
                 std::string name;
                 jsonStr(json, "client", name);
                 const bool grants = grantsActive();
-                if (grants || !conn.authorized) {
+                // Judged when a grant may match the name, when the door has
+                // not opened yet, and when the shared token is an
+                // invitation to one name: the name only exists now.
+                if (grants || !conn.authorized || hasTokenInvitee()) {
                     Judgement entry = judge(offered, conn.identity, name,
                                             conn.matchAddr);
                     if (!entry.admitted) {
@@ -3510,6 +3539,24 @@ public:
                     // An invitation is to one name (docs/TransactionLog.md
                     // sec 30.6 U6): under another the connection is
                     // whoever it says it is, and no longer writes.
+                    std::lock_guard<std::mutex> guard(connMutex);
+                    conn.invited = entry.admitted && entry.invited;
+                    const ClientAccess now =
+                        writerRule(conn.access, conn.identity, conn.invited);
+                    if (now != conn.access) {
+                        conn.access = now;
+                        conn.queueText(configJson(now));
+                    }
+                }
+                else if (conn.authorized && hasTokenInvitee()) {
+                    // The shared token issued to one name: the same rule.
+                    std::string token;
+                    {
+                        std::lock_guard<std::mutex> guard(connMutex);
+                        token = conn.presentedToken;
+                    }
+                    const Judgement entry = judge(token, conn.identity, name,
+                                                  conn.matchAddr);
                     std::lock_guard<std::mutex> guard(connMutex);
                     conn.invited = entry.admitted && entry.invited;
                     const ClientAccess now =
@@ -3975,6 +4022,9 @@ SceneStreamServer::Private *SceneStreamServer::ensure()
             if (*env)
                 pimpl->tokenSecret = env;
         }
+        // and whose it is, beside it (SceneServer.h, setTokenInvitee)
+        if (const char *env = std::getenv("FC_SERVE_INVITE"))
+            pimpl->tokenInvitee = env;
         if (const char *env = std::getenv("FC_SERVE_TRUST_PROXY"))
             pimpl->trustProxy.store(std::atoi(env) != 0);
         if (const char *env = std::getenv("FC_SERVE_IDENTITY_HEADER"))
@@ -4010,6 +4060,20 @@ void SceneStreamServer::setToken(const std::string &token)
     Private *p = ensure();
     std::lock_guard<std::mutex> guard(p->tokenMutex);
     p->tokenSecret = token;
+}
+
+void SceneStreamServer::setTokenInvitee(const std::string &name)
+{
+    Private *p = ensure();
+    std::lock_guard<std::mutex> guard(p->tokenMutex);
+    p->tokenInvitee = name;
+}
+
+std::string SceneStreamServer::tokenInvitee()
+{
+    Private *p = ensure();
+    std::lock_guard<std::mutex> guard(p->tokenMutex);
+    return p->tokenInvitee;
 }
 
 void SceneStreamServer::setIdentityHeader(const std::string &name)

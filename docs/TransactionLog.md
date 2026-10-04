@@ -12587,7 +12587,7 @@ built, because it is new surface: either a setting beside
 `FC_SERVE_TOKEN` naming the one person the shared token was issued to
 (U6 for the shared token: the link then carries `?token=...&client=<name>`),
 or each demo issuing an invitation itself. The browser tests above take
-the second way.
+the second way. Ruled and built since: the setting, 30.14.
 
 **Gates**, frozen and unfrozen each: Python 3002 OK (52 skipped frozen, 53
 unfrozen; 6 expected failures), ctest 871/871 -- the wire tests are one
@@ -12723,3 +12723,71 @@ values, once, at import.
 | F6 | A fork with several branches | **The branch its file reopens on.** The others on request, one import each. |
 | F7 | The branch's name, and a second import | **Named after the file**; a second import of the same fork extends that branch from the last row brought over (F3 is what finds it). |
 | F8 | A row the replay cannot apply -- an object's type this build lacks, a value that will not restore | **The import stops there and says so**, keeping the rows before it: the branch is the fork up to that row. |
+
+### 30.14 Rulings on 30.13, and the shared token issued to one person (2026-10-04)
+
+**F1-F8 (user).** Agreed as proposed, but for F6: **the user chooses
+which of the fork's branches to import**, and the default is the one the
+proposal took -- the opening document's branch, the branch the fork's
+file reopens on. As they stand:
+
+| | Ruling |
+| --- | --- |
+| F1 | **Replay always**, through a version document at the base, with the name, string and id maps. The copy is a short cut for later, if import time asks for it. |
+| F2 | **Derived values are left out** and their owners touched. |
+| F3 | **An imported row keeps the fork's identity** (30.12); the fork's sessions come with it. |
+| F4 | **The fork's `host` is kept apart** from this file's. |
+| F5 | **Named versions come**, renumbered; unnamed ones do not. |
+| F6 | **The user picks the branch.** Default: the branch the fork's file reopens on. One branch an import. |
+| F7 | **The branch is named after the file**; a second import of the same fork extends it from the last row brought over. |
+| F8 | **The import stops at a row it cannot apply** and says so, keeping the rows before it. |
+
+F6 as ruled asks one thing of F7 that the proposal did not have to
+answer: two branches of one fork are two branches here, so the name of
+the file alone is the name of the default branch's import, and another
+branch's is the file's name with the fork's name for that branch after
+it. F3 finds what a second import of either continues.
+
+**The demo recipes (user: "add setting").** 30.11 left the recipes of
+`docs/Sandbox.md` view-only in a browser: they serve under the shared
+token, which says nothing of who holds it. The setting beside it says
+whose it is.
+
+- `SceneStreamServer::setTokenInvitee(name)`, preset by
+  `FC_SERVE_INVITE` where `FC_SERVE_TOKEN` is read. With a token and no
+  grant list, the token is an invitation to that one name (U6): the
+  connection that presents it and gives that name in its hello may
+  write, and is `invited` on the roster and in the log. Under any other
+  name the token admits to look, as it did.
+- **No token, no invitation.** A name is not a secret; the setting does
+  nothing alone. And nothing while a grant list is the door: a grant
+  says whose its own token is.
+- **Where it is judged**: the legacy judge, which is the upgrade and the
+  hello; the hello is now judged again when the token has an invitee,
+  since an upgrade knows no name yet; the re-judge that follows a
+  change of the grant list or the token; and a rename, after which the
+  connection is whoever it now says it is and may only look. A
+  connection that takes the name later does not become a writer where
+  it stands, the same as under a grant: it reconnects under the name.
+- **The link** carries both: `?token=<secret>&client=<name>`. The
+  recipes say so -- `scripts/demo-taskpanel.py`, `demo-sketcherpanel.py`,
+  `demo-messageboxpanel.py`, `scripts/share-edge.sh quick`,
+  `docs/Sandbox.md` -- and `docs/ShareAccess.md` sec 2.3 has the rule.
+
+**Tests.** The wire case `onlySomeoneKnownMayWrite` has it: the shared
+token issued to `lei` -- a hello as `lei` may edit and is invited, a
+hello under another name is told view and is not, and `lei` renamed is
+told view and is invited no longer.
+
+**By hand in a browser.** `scripts/demo-taskpanel.py` served under
+`FC_SERVE_TOKEN` with `FC_SERVE_INVITE=lei`, and `scripts/panel-drive.js`
+on `/fcviewer.html?doc=TaskPanel&token=...&client=lei&panel` typing 17
+into Pad's length: the card drew the panel and the host answered
+`17.00`. The same page under `client=nobody` drew a card that says
+"The panel stream is unavailable (ViewOnly)".
+
+**Gates**, frozen and unfrozen each: Python 3003 OK (52 skipped frozen, 53
+unfrozen; 6 expected failures), ctest 872/872 -- the wire tests are one
+entry, still 26 cases -- and the GUI checks RC 15, BC 27, VC 18, PC 28,
+FC 16, VW 14, MC 28, the two-document check 24, the tree check 19 and
+the author check 36.
