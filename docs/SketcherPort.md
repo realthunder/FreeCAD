@@ -57,8 +57,9 @@ has added after `bd6be559e8`.
 **The deferred rows (2026-10-04, session 125).** Upstream's GUI test files
 were run on the fork instead of read: three of the twelve rows were here
 already, and the run turned up five defects or gaps of the fork's, each
-fixed with a test ("The deferred rows", before section 8). Nine rows stay
-`deferred` on one decision -- whether upstream's files come into the tree.
+fixed with a test ("The deferred rows", before section 8). The other nine
+are n/a by ruling: upstream's files are not carried, their claims are
+covered by `tests/gui`. No row is `deferred` any more.
 
 Branch `SketcherPort` off `RemoteEdit`
 `b7dbdd191d`. Upstream reference: `upstream/main` `bd6be559e8`
@@ -5105,7 +5106,7 @@ with continuous mode switched off: `fe7c1d18be`, declined.
   first run was on the build before the fixes, with a driver that could
   not report a modal dialog. Cause not established.
 
-**The decision the nine rows wait on** is whether upstream's files come
+**The decision the nine rows waited on** was whether upstream's files come
 into the tree. They can: `TestPlacementUpdate`, `TestDistanceLabel-
 ExtensionGui` and `TestConstraintCommandsGui` run as they are but for
 the one declined case, `TestExternalFacePreselection` with one word
@@ -5113,6 +5114,10 @@ changed. `TestOnViewParameterGui` cannot without being rewritten for the
 origin node, the Escape rule and the label lifetime -- at which point it
 is the fork's test, and the fork has those. The nine rows are all
 maintenance of that file and of the base class.
+
+Ruled (user, 2026-10-04): the nine are n/a, their claims covered by
+`tests/gui`; upstream's files are not taken. Render cache mode 0 is
+chased next.
 
 **Verified** on the final tree: full build; `FreeCADCmd -t 0` 2919 OK
 (the new tests are GUI and C++ ones, none of them a Python case); ctest
