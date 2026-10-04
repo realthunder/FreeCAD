@@ -96,6 +96,91 @@ def send_escape():
     return False
 
 
+def right_click_in_view():
+    """A right button press and release in the view, off the geometry.
+
+    Only ever with a tool running: it ends the tool. With none it opens the
+    sketch's context menu, and a menu nobody closes is a hung test.
+    """
+    viewport = FreeCADGui.ActiveDocument.ActiveView.graphicsView().viewport()
+    pos = QtCore.QPointF(viewport.rect().center() + QtCore.QPoint(60, -45))
+    glob = viewport.mapToGlobal(pos.toPoint())
+    none, right = QtCore.Qt.NoButton, QtCore.Qt.RightButton
+    for kind, button, buttons in ((QtCore.QEvent.MouseMove, none, none),
+                                  (QtCore.QEvent.MouseButtonPress, right, right),
+                                  (QtCore.QEvent.MouseButtonRelease, right, none)):
+        QtWidgets.QApplication.sendEvent(
+            viewport, QtGui.QMouseEvent(kind, pos, glob, button, buttons,
+                                        QtCore.Qt.NoModifier))
+        pump(10)
+
+
+def origin_stands_out(markers):
+    """The origin wears a marker of its own, every other vertex one other."""
+    return (markers is not None and len(markers) > 1
+            and len(set(markers[1:])) == 1 and markers[0] != markers[1])
+
+
+def upstream_claims(sketch, filled):
+    """What upstream's own test of the marker claims besides
+    (TestOnViewParameterGui, 86518416ee), in this fork's terms."""
+    # Each of these tools, and a right click to leave it.
+    for command in ("Sketcher_CreateLine", "Sketcher_CreateRectangle",
+                    "Sketcher_CreateCircle"):
+        FreeCADGui.runCommand(command)
+        pump()
+        check("%s: the origin stands out" % command,
+              origin_stands_out(point_markers()), point_markers())
+        right_click_in_view()
+        pump()
+        back = point_markers()
+        check("%s: a right click ends the tool and the origin is as the rest" % command,
+              back is not None and set(back) == {filled}, back)
+
+    # The marker size changed while a tool runs: the outline is made again
+    # at the new size, and the origin still stands out.
+    view_params = FreeCAD.ParamGet("User parameter:BaseApp/Preferences/View")
+    # Unset is the usual case, and is put back as unset: the default is the
+    # view's to know.
+    was_set = "MarkerSize" in view_params.GetInts()
+    old_size = view_params.GetInt("MarkerSize", 0)
+    new_size = 13 if old_size != 13 else 15
+    FreeCADGui.runCommand("Sketcher_CreateLine")
+    pump()
+    before = point_markers()
+    try:
+        view_params.SetInt("MarkerSize", new_size)
+        pump(60)
+        resized = point_markers()
+        check("a marker size change with a tool running: the origin still stands out",
+              origin_stands_out(resized), resized)
+        check("and its outline is made again at the new size",
+              bool(before) and bool(resized) and resized[0] != before[0],
+              (before, resized))
+    finally:
+        if was_set:
+            view_params.SetInt("MarkerSize", old_size)
+        else:
+            view_params.RemInt("MarkerSize")
+    pump(60)
+    restored = point_markers()
+    check("the size put back: the outline as it was",
+          bool(before) and restored == before, (before, restored))
+
+    # Leaving the edit with the tool still running, and entering again: the
+    # outline does not come along.
+    FreeCADGui.ActiveDocument.resetEdit()
+    pump()
+    FreeCADGui.ActiveDocument.setEdit(sketch, 0)
+    pump()
+    again = point_markers()
+    check("an edit left with a tool running, entered again: every vertex the same",
+          again is not None and len(set(again)) == 1, again)
+    if again:
+        check("and the origin wears the marker it started with", again[0] == filled,
+              (again[0], filled))
+
+
 def finish():
     if state["done"]:
         return
@@ -164,6 +249,7 @@ def run():
         if back:
             check("and it is the marker it started with", back[0] == filled,
                   (back[0], filled))
+        upstream_claims(sketch, filled)
     except Exception:
         note("ABORT run:\n" + traceback.format_exc())
     finish()
