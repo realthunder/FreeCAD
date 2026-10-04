@@ -198,6 +198,7 @@ int SketchObject::toggleIntersection(const std::vector<int> &geoIds, bool defini
         geo = geo->clone();
         auto egf = ExternalGeometryFacade::getFacade(geo);
         egf->setFlag(ExternalGeometryExtension::Intersection, it->second);
+        egf->setFlag(ExternalGeometryExtension::Cut, it->second);
         if (defining)
             egf->setFlag(ExternalGeometryExtension::Defining, it->second);
     }
@@ -268,7 +269,6 @@ void SketchObject::syncExternalTypes(const std::vector<std::string> &oldRefs)
 void SketchObject::migrateExternalTypes()
 {
     std::vector<long> types;
-    legacyCutExternalRefs.clear();
     if (restoredExternalTypes) {
         types = getExternalTypes();
         // The kinds and no version: the file is upstream's. It has the kinds
@@ -290,17 +290,8 @@ void SketchObject::migrateExternalTypes()
                 kind = ExtType::Both;
             types.push_back(static_cast<long>(kind));
         }
-        // A reference missing its element is not among the links, and
-        // whether it is an edge is not known before the element is found
-        // again: rebuildExternalGeometry() asks then.
-        if (_Version.getValue() < 2) {
-            const std::set<std::string> listed(externalGeoRef.begin(), externalGeoRef.end());
-            for (const auto &v : externalGeoRefMap) {
-                if (!listed.count(v.first)
-                        && externalTypeFromGeometry(v.first) == ExtType::Intersection)
-                    legacyCutExternalRefs.insert(v.first);
-            }
-        }
+        // A reference missing its element is not among the links. Its turn
+        // comes when the element is found again, see rebuildExternalGeometry().
     }
     if (types != ExternalTypes.getValues())
         ExternalTypes.setValues(types);
@@ -308,27 +299,28 @@ void SketchObject::migrateExternalTypes()
     restoredVersion = false;
 
     // What the geometry must say for the list to be found again when a
-    // reference is dropped and put back. A cut is all cut: upstream's file
-    // has no flag at all. Of a reference of both kinds only a rebuild can
-    // tell the pieces apart.
+    // reference is dropped and put back. A cut is all cut, and says so with
+    // both flags: upstream's file has neither, and one of this fork from
+    // before the second has the first. Of a reference of both kinds only a
+    // rebuild can tell the pieces apart.
     unsplitExternalRefs.clear();
     for (std::size_t i = 0; i < externalGeoRef.size() && i < types.size(); ++i) {
         const std::string &ref = externalGeoRef[i];
-        const ExtType said = externalTypeFromGeometry(ref);
         if (types[i] == static_cast<long>(ExtType::Both)) {
-            if (said != ExtType::Both)
+            if (externalTypeFromGeometry(ref) != ExtType::Both)
                 unsplitExternalRefs.insert(ref);
         }
-        else if (types[i] == static_cast<long>(ExtType::Intersection)
-                 && said != ExtType::Intersection) {
+        else if (types[i] == static_cast<long>(ExtType::Intersection)) {
             auto it = externalGeoRefMap.find(ref);
             if (it == externalGeoRefMap.end())
                 continue;
             for (long id : it->second) {
                 auto iter = externalGeoMap.find(id);
-                if (iter != externalGeoMap.end())
-                    ExternalGeometryFacade::getFacade(ExternalGeo[iter->second])->setFlag(
-                            ExternalGeometryExtension::Intersection);
+                if (iter == externalGeoMap.end())
+                    continue;
+                auto egf = ExternalGeometryFacade::getFacade(ExternalGeo[iter->second]);
+                egf->setFlag(ExternalGeometryExtension::Intersection);
+                egf->setFlag(ExternalGeometryExtension::Cut);
             }
         }
     }
@@ -1825,11 +1817,14 @@ void SketchObject::rebuildExternalGeometry(bool defining)
                 keys.push_back(ref);
 
                 // It lost its kind with its link, and its geometry still
-                // says what it was -- but for an edge in a sketch from
-                // before version 2, of both kinds with every piece flagged
-                // (migrateExternalTypes).
+                // says what it was -- but for an edge as a sketch from
+                // before version 2 flagged it, its projection with its cut:
+                // that is a reference of both kinds (migrateExternalTypes
+                // makes it one where the link is there). A cut made since
+                // carries the Cut flag, and is told from it by that.
                 ExtType kind = externalTypeFromGeometry(ref);
-                if (legacyCutExternalRefs.count(ref)
+                if (kind == ExtType::Intersection && _Version.getValue() < 2
+                        && !egf->testFlag(ExternalGeometryExtension::Cut)
                         && boost::starts_with(elementName.second, "Edge")) {
                     kind = ExtType::Both;
                     unsplitExternalRefs.insert(ref);
@@ -2832,9 +2827,11 @@ void SketchObject::rebuildExternalGeometry(bool defining)
                 for (const auto &s : intersectionShape.getSubShapes(TopAbs_VERTEX, TopAbs_EDGE))
                     importVertex(s);
 
-                for (auto &geo : geos)
-                    ExternalGeometryFacade::getFacade(geo.get())->setFlag(
-                            ExternalGeometryExtension::Intersection);
+                for (auto &geo : geos) {
+                    auto egf = ExternalGeometryFacade::getFacade(geo.get());
+                    egf->setFlag(ExternalGeometryExtension::Intersection);
+                    egf->setFlag(ExternalGeometryExtension::Cut);
+                }
                 geos.insert(geos.begin(), std::make_move_iterator(projected.begin()),
                             std::make_move_iterator(projected.end()));
             }
@@ -2898,7 +2895,6 @@ void SketchObject::rebuildExternalGeometry(bool defining)
         // where no piece or every piece is flagged, and the pieces go by
         // position this once.
         const bool split = unsplitExternalRefs.erase(egf->getRef()) == 0;
-        legacyCutExternalRefs.erase(egf->getRef());
         std::vector<std::string> oldElements;
         std::vector<bool> oldCut;
         oldElements.reserve(refs.size());
@@ -2987,6 +2983,8 @@ void SketchObject::rebuildExternalGeometry(bool defining)
             ExternalGeometryFacade::copyFlags(geoms[it->second], geo.get());
             ExternalGeometryFacade::getFacade(geo.get())->setFlag(
                     ExternalGeometryExtension::Intersection, cut);
+            ExternalGeometryFacade::getFacade(geo.get())->setFlag(
+                    ExternalGeometryExtension::Cut, cut);
             geoms[it->second] = geo.release();
         }
     }

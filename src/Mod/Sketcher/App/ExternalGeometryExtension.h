@@ -76,13 +76,18 @@ public:
         Missing = 3,   // geometry with missing external reference
         Sync = 4,      // signal the intention to synchronize a frozen geometry
         Intersection = 5, // import this external edge as a vertex where it intersects the sketch plane 
+        // Set with Intersection since version 2 of a sketch, where what is
+        // flagged is a cut and nothing else. Before, an edge taken by
+        // intersection had its projection flagged with its cut: Intersection
+        // without this flag is of that rule.
+        Cut = 6,
         NumFlags       // Must be the last type
     };
     // END_CREDIT_BLOCK: Credit under LGPL for this block to Zheng, Lei (realthunder)
     // <realthunder.dev@gmail.com>
 
     constexpr static std::array<const char *,NumFlags> flag2str {
-        {"Defining", "Frozen", "Detached","Missing", "Sync", "Intersection"}};
+        {"Defining", "Frozen", "Detached","Missing", "Sync", "Intersection", "Cut"}};
 
 public:
     ExternalGeometryExtension() = default;

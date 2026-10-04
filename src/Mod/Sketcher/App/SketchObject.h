@@ -1243,11 +1243,6 @@ private:
     // their ids by position
     std::set<std::string> unsplitExternalRefs;
 
-    // References missing their element in a file from before version 2,
-    // every piece flagged a cut. What such a one is the cut of is known when
-    // its element is found again: an edge was taken with its projection too
-    std::set<std::string> legacyCutExternalRefs;
-
     // mapping from ExternalGeo[*].Id to index of ExternalGeo
     std::map<long,int> externalGeoMap;
 

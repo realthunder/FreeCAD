@@ -22,6 +22,7 @@ from FreeCAD import Vector
 
 PROJECTION, INTERSECTION, BOTH = 0, 1, 2
 INTERSECTION_FLAG = 32  # ExternalGeometryExtension::Intersection, as a bit
+CUT_FLAG = 64  # ExternalGeometryExtension::Cut: no file from before it, or upstream's, has it
 
 
 def externals(sketch):
@@ -97,14 +98,25 @@ def setFlags(xml, change):
     )
 
 
+def cuts(sketch):
+    """Which of the referring geometries carry the Cut flag."""
+    out = []
+    for geo in sketch.ExternalGeo:
+        facade = Sketcher.ExternalGeometryFacade(geo)
+        if facade.Ref:
+            out.append(facade.testFlag("Cut"))
+    return out
+
+
 def asOldFork(xml):
     """What this fork wrote before the property: the kind is the flag alone."""
+    xml = setFlags(xml, lambda flags, index: flags & ~CUT_FLAG)
     return dropProperty(xml, "ExternalTypes")
 
 
 def asUpstream(xml):
     """What upstream writes: the property, no flag, no sketch version."""
-    xml = setFlags(xml, lambda flags, index: flags & ~INTERSECTION_FLAG)
+    xml = setFlags(xml, lambda flags, index: flags & ~(INTERSECTION_FLAG | CUT_FLAG))
     return dropProperty(xml, "_Version")
 
 
@@ -192,7 +204,9 @@ class TestSketchExternalTypes(unittest.TestCase):
         self.assertEqual(self.kinds(), [INTERSECTION])
         self.assertEqual(shapes(self.sketch), ["Point"])
         self.assertEqual(flagged(self.sketch), [True])
+        self.assertEqual(cuts(self.sketch), [True])
         self.assertCutAtFarEdge(self.lengthen(), 12)
+        self.assertEqual(cuts(self.sketch), [True])
 
     def testTheSameKindTwiceIsRefused(self):
         self.sketch.addExternal("Box", self.far, False, True)
@@ -207,6 +221,7 @@ class TestSketchExternalTypes(unittest.TestCase):
         self.assertEqual(len(self.sketch.ExternalGeometry), 1)
         self.assertEqual(shapes(self.sketch), ["LineSegment", "Point"])
         self.assertEqual(flagged(self.sketch), [False, True])
+        self.assertEqual(cuts(self.sketch), [False, True])
         for intersection in (False, True):
             with self.assertRaises(ValueError):
                 self.sketch.addExternal("Box", self.far, False, intersection)
@@ -408,13 +423,52 @@ class TestSketchExternalTypes(unittest.TestCase):
         self.assertEqual(sketch._Version, 1)
         self.assertEqual(self.links(), [])
         self.assertEqual(flagged(sketch), [True, True])
+        self.assertEqual(cuts(sketch), [False, False])
+        self.assertFarEdgeBackBothWays(ids)
+
+    def assertFarEdgeBackBothWays(self, ids):
         sketch = self.giveBack()
         self.assertEqual(self.links(), [("Source", self.far)])
         self.assertEqual(self.kinds(), [BOTH])
         self.assertEqual(shapes(sketch), ["LineSegment", "Point"])
         self.assertEqual([id for id, _, _ in externals(sketch)], ids)
         self.assertEqual(flagged(sketch), [False, True])
+        self.assertEqual(cuts(sketch), [False, True])
         self.assertEqual(len(sketch.Constraints), 2)
+        self.assertCutAtFarEdge(sketch, 12)
+
+    def testOldForkFileFromBeforeVersion2MissingEdgeSavedInBetween(self):
+        # Saved here with the element still missing, and opened again. The
+        # file states the kinds now and is no old file any more; the
+        # reference is told from a cut made since by the flag such a cut
+        # carries, and this geometry lacks.
+        ids = self.farEdgeBothWaysAndGone()
+        self.reopen(asForkBeforeVersion2)
+        sketch = self.reopen()
+        self.assertEqual(sketch._Version, 1)
+        self.assertEqual(self.links(), [])
+        self.assertEqual(flagged(sketch), [True, True])
+        self.assertFarEdgeBackBothWays(ids)
+
+    def testEdgeCutInAnOldSketchStaysACut(self):
+        # The other way round: an edge taken by intersection now, in a
+        # sketch from before version 2, is the cut alone, and comes back as
+        # that when its element was missing -- across a save as well.
+        self.looseSource()
+        self.doc.recompute()
+        sketch = self.reopen(asForkBeforeVersion2)
+        self.assertEqual(sketch._Version, 1)
+        sketch.addExternal("Source", self.far, False, True)
+        self.doc.recompute()
+        self.assertEqual(self.kinds(), [INTERSECTION])
+        self.assertEqual(shapes(sketch), ["Point"])
+        self.takeAway()
+        sketch = self.reopen()
+        self.assertEqual(self.links(), [])
+        sketch = self.giveBack()
+        self.assertEqual(self.links(), [("Source", self.far)])
+        self.assertEqual(self.kinds(), [INTERSECTION])
+        self.assertEqual(shapes(sketch), ["Point"])
         self.assertCutAtFarEdge(sketch, 12)
 
     def testOldForkFileFromBeforeVersion2MissingFace(self):
