@@ -13158,9 +13158,15 @@ its file as one.
 - **The panel** brings a file in and puts the branch to the merge dialog
   at once (30.17). Cancelled, the branch stays, and nothing but the
   branch list shows it.
-- **No file comes over the wire on this branch.** The upload a browser's
-  file chooser makes over the control lane (docs/Sandbox.md 7.22, W4b) is
-  on `RemoteEdit`; `Transaction` has none.
+- **A file can come over the wire already** -- corrected 2026-10-05: this
+  said the lane was on `RemoteEdit` only, from a search that looked for
+  the wrong name. `RemoteEdit` was merged before this branch was made,
+  and the control op is here: `widgets.upload` (`SceneWidgets.cpp`,
+  docs/Sandbox.md 7.22, W4b), made for a mirrored panel's file chooser.
+  The client sends a name and bytes; the host writes them under
+  `<temp>/BrowserUploads` and answers with the path it chose. One way
+  only -- no listing, no read, no path from the client -- for a
+  connection that may edit, 16 MB at most.
 - **A file a client sends is input nobody here vouched for.** The replay
   creates objects of the types the file's rows name and restores their
   values: a `FeaturePython`'s proxy among them, which is code.
@@ -13172,7 +13178,7 @@ its file as one.
 | H1 | What a request is | **An import branch the branch it was made from has not taken**: its preview is not empty. Derived each time; no table, nothing to keep in step. |
 | H2 | Where it shows | **A "Requests" list in the log panel**, above the rows: the file, who -- the authors of its rows -- when it was brought, how many operations, how many conflicts the preview finds. Merge... opens the dialog; Delete drops the branch; Open puts it in a document of its own. |
 | H3 | "Merge from file..." | **As built**: import, then the dialog at once. Cancelling leaves a request in the list, which is where it is taken up again. |
-| H4 | A client's file: how it arrives | **Over the control lane's upload**, which means `RemoteEdit` merged into this branch first -- or the reverse. Not to be done twice. |
+| H4 | A client's file: how it arrives | **An op of its own beside `widgets.upload`**, built the same way: a cap sized for a file that carries its history, where 16 MB was sized for a font or a hatch pattern; a directory of its own, since H6 keeps the file as it came; and the sender recorded with it. The other way is `widgets.upload` as it is, then an op naming the path it answered. An upload is not needed for a request to exist: a file sent by any other road is brought in with "Merge from file...". What the op adds is that the client needs no other road, and that the server knows who sent it. |
 | H5 | Who may send one | **Anyone who may write** (30.6 U4, U6): a request is rows in the log. A view-only client may not. |
 | H6 | When a sent file is read | **When the owner asks**, never on arrival: the file is kept as it came, listed as a request with its sender and its size, and imported -- replayed, its objects made -- only by the owner's click. With the sandbox's rules for a document from elsewhere applied to that replay (docs/Sandbox.md), whatever they then are. |
 | H7 | The sender, in the log | **The import's record names who sent it** (30.6), and the rows keep the authors the file gives them. |
