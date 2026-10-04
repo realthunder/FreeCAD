@@ -11013,3 +11013,187 @@ section.
 unfrozen; 6 expected failures; +1), ctest 856/856 (`-j6` frozen, `-j1`
 unfrozen), the fork's thickness suite PASS 156, no XFAIL, its sweep 712 of
 712.
+
+## 28. Phase 6: merge (design, 2026-10-04)
+
+The user, back from the thickness detour (27.88-27.108): phase 6. Section
+15's phase 6 is the three-way property merge, the diff and conflict picker,
+and the `merge` transaction (17.3); concurrent writers (17.5) sit on top of
+it and are set out at the end of this section, not designed in it. Where
+this section and 17.3 disagree, this one wins.
+
+Where the phases stand, since section 15's own text is from 2026-09-22:
+0 to 5 are built (20, 21, 22.2, 24, 26, 27), 7's recovery half is built
+(25), 8's generic `enc = delta` is built (23.2, 23.8) and its sketch codec
+is not. Open besides this phase: the rest of 7 (streaming, per-user undo), the
+four items of 27.70, and the sandbox guest image of 27.84.
+
+### 28.1 What exists (survey, 2026-10-04)
+
+- **Nothing of merge.** No row kind `merge`, no diff call, no picker. A row
+  has one parent: `txn(seq, parent, ..., inverts, branch)`.
+  (`App/MergeDocuments.cpp` is upstream's document import and is unrelated.)
+- **Two chains and where they meet.** `_moveAlongLog` (27.34) finds the
+  newest point of one chain that the other holds, and folds the rows either
+  side of it. A trim leaves a bridge row so two branches still meet in rows
+  (27.71); a trim without one, and the closed branches of 16.6 (a root
+  row, parent 0), do not.
+- **The net change of a run of rows.** `netOps(store, path)` (16.7's
+  squash, 27.71's bridge): per (container, property) the value before the
+  first row and after the last, each as a content hash; objects born,
+  gone, or both; dynamic properties added and removed; the derived flag.
+  That is one side of a three-way diff, already.
+- **"Has this changed since" is a comparison.** `lastOpOn(ckind, cid, prop,
+  after, head)` is the selective undo's refuse rule (24.7): the newest op
+  on a property on one chain, whose after ref says what state it is in.
+- **Identity across branches is settled.** 17.2 expected ids and names to
+  collide and merge to repair them. Since 27.40-27.45 the object id counter,
+  the name table (one to one, id <-> name, never freed), the last geometry
+  id of each object and the string hasher are the file's: two branches of
+  one file cannot make two objects with one id or one name, nor two strings
+  with one id. What is left to a merge is what 27.41 Q4 left it -- labels
+  -- and history written before those tables.
+- **Writing a run of ops into the live document** exists twice: the cold
+  revert's passes (`_applyRevert`, 24.6) and `_moveAlongLog`'s (objects,
+  dynamic properties, values under a `RestoreBatch`, touched state,
+  removals). Inside an open transaction what they write is recorded, which
+  is how the selective undo (`undoLogged`) makes its row: a new
+  `Transaction` with `LogKind` and `Inverts` set, the passes, a commit.
+- **One document per branch.** `holderOf(branch)` names the document of the
+  file that is on a branch, if one is open (17.1, 27.7): the other side of
+  a merge may be live in this process, its newest after values pending.
+- **The panel** draws the history as lanes by `parent` (26.7), written
+  with a merge's second parent in mind.
+
+### 28.2 Proposed shape
+
+"Ours" is the branch the document is on, "theirs" the branch merged in.
+Theirs is only read.
+
+1. **The second parent.** `txn.merge_from`: the seq of theirs' head as
+   merged, 0 on every other row. A column added in place (27.55). 17.3
+   named a version there; a row is what chains are made of, and the version
+   at that row, when there is one, is named (`merged into <branch>`) so it
+   survives eviction as 17.3 wanted. A row's **history** is what its
+   `parent` and `merge_from` edges reach.
+2. **The base** is the newest row of theirs' chain that ours' history
+   holds. For a first merge that is the fork; after `side` was merged into
+   `main`, the next merge of `side` starts where the last one ended, and
+   only what `side` did since is looked at. Refused, saying so, when theirs'
+   chain does not reach a row of ours' history in stored rows.
+3. **Three-way, by content hash, no version read.**
+   - *Theirs' change* is `netOps` over theirs' chain after the base: per
+     property a before (its value at the base) and an after (at theirs'
+     head).
+   - *Ours' state* of that property is the after of the newest op on it on
+     ours' chain since the two chains meet (`lastOpOn`); no such op, or one
+     that left it at theirs' before, means ours has not changed it.
+   - Then, per property theirs changed: ours unchanged -> **take** theirs'
+     after; ours at theirs' after already -> **nothing**; otherwise
+     **conflict**.
+   - Objects: one theirs created is created under its id and name (free in
+     this branch by 27.41 Q3) and takes its values; one theirs removed is
+     removed when ours has no op on it since, a conflict when it has; a
+     property theirs changed on an object ours removed is a conflict on the
+     object. A dynamic property added or removed goes by the same rule on
+     its key.
+   - Whole-array properties conflict as wholes (17.3, 9.3).
+   - The document's own properties merge like any, less the ones
+     `_applyVersion` leaves alone (where the document lives, who it is,
+     `History`/`Version`/`Branch`, the stamps).
+4. **Derived values are not merged** (17.3): a derived op of theirs is
+   skipped and its owner touched, and the merge recomputes before it
+   commits, so the merge is one undo step with its recompute inside it
+   (24.1's rule for a command). A recompute that fails on the merged state
+   is the merge's result, reported, not hidden. See Q1 for the case where
+   ours has changed nothing.
+5. **Labels** (27.41 Q4 (a)): an incoming label a live object of ours has
+   is suffixed as `Label`'s own setter would, and noted on the row.
+6. **The result is one transaction**, kind `merge`, named `Merge <theirs>`,
+   on ours, `merge_from` theirs' head. Its ops are ordinary, so it is undone
+   hot or cold, replayed, squashed and streamed like any row. Its
+   annotation (the `script` field, JSON, as `branch` and `switch` records
+   use it) names theirs, the base, the counts, and every conflict with the
+   side taken. A merge with nothing to take writes no row.
+7. **Theirs is left as it is**: open, at its head, mergeable again -- the
+   base moves (item 2). Merging `main` back into `side` afterwards finds
+   the merge row's ops already there on `side` ("changed identically") and
+   takes only what `main` did besides. Deleting a merged branch is 26.8's
+   delete, by hand.
+8. **Theirs open in another document** (17.1): its implicit transaction is
+   committed and its pending afters resolved before its rows are read; an
+   explicit transaction open there refuses the merge, as `_checkBranchable`
+   refuses a switch.
+9. **Calls.**
+   - `Document::previewMerge(branch, version = 0)` -- read only: the base,
+     and every change of theirs as (container, object name, property, kind
+     `take` / `same` / `conflict` / `derived`, the three refs). Python
+     `previewTransactionMerge`. With `version`, theirs is merged up to that
+     version instead of its head.
+   - `Document::mergeBranch(branch, picks, fallback, version = 0)` --
+     `picks` names a side per conflict; `fallback` is what an unpicked
+     conflict gets (Q3). Python `mergeTransactionBranch`. Returns the row.
+   - A pick of "theirs" where ours removed the object recreates it under
+     its id and name from what ours' remove recorded (the cold revert's
+     primitive, 24.3), then applies theirs' sets.
+10. **The panel.** "Merge into <current>..." on a branch opens a dialog on
+    the preview: objects, under each the properties theirs changed, columns
+    for base, ours and theirs as the value's text, conflicts marked with a
+    side to pick, and Merge. The graph draws the merge row joining theirs'
+    lane (26.7). A Gui check script as for branches.
+
+### 28.3 Questions
+
+| | Question | Recommended |
+| --- | --- | --- |
+| Q1 | Derived values when ours has changed nothing since the base -- the case 17.5's auto-merge hits whenever one writer is active | **Take theirs whole, cached derived values included, no recompute**: with no change of ours the merged state is theirs' state exactly. Everywhere else, skip and recompute (item 4). The alternatives: always recompute (17.3 as written; a merge of a large branch costs its whole recompute), or keep theirs' derived value per object wherever nothing ours changed is among its dependencies (finer, and more to get wrong). |
+| Q2 | View-provider properties (24.10 records them all; `Visibility` changes on every branch all the time) | **Merged by the same rule, but a view conflict is never asked**: ours wins, and the row's annotation lists it. Alternatives: ask like any conflict; or leave view state out of merge altogether. |
+| Q3 | A conflict nobody picked a side for | **Refuse, nothing moved, the conflicts returned** -- as the selective undo refuses (24.7) and as 17.5 needs ("a conflict keeps the branch"). The caller picks, or passes `fallback = ours` or `theirs` to say every unpicked one goes that way. 17.3's "default ours" then is the picker's preselection, not the call's silent behaviour. |
+| Q4 | What this phase builds | **Merge and the picker (28.4), then a design section for 17.5** once merge runs. The picker shows values as text; comparing two branches in the 3D view (Onshape's visual diff) is left for later. |
+
+### 28.4 Build order (proposed)
+
+Each step with the gates -- Python, ctest, the Gui checks -- frozen and
+unfrozen, and tests of its own.
+
+1. **6.a** The store: `txn.merge_from`, a row's history through both
+   edges, the base of two heads; `getTransactionLog()` rows gain
+   `merge_from`. Store gtests.
+2. **6.b** The diff: `previewMerge` and its Python call. Gtests, one per
+   rule of item 3, and the bases of a second merge and of a merge back.
+3. **6.c** The apply: `mergeBranch` -- the passes, picks, labels, the
+   recompute, the annotation; undone hot and cold; theirs held by another
+   document; a Part case whose merged shape is the recompute's.
+4. **6.d** The panel: the dialog, the graph's second parent, the Gui check.
+5. **6.e** This section's "as built", `docs/Testing.md`.
+
+### 28.5 After merge: concurrent writers (17.5), not designed here
+
+17.5 is a branch per writer, a merge after each operation, the writer's
+branch trimmed away when the merge is clean and kept when it conflicts, and
+per-user undo as an inverse appended to the writer's branch and merged.
+What it needs beyond 28.2, to be surveyed and designed once merge runs:
+
+- **Who a writer is.** Two documents of one file in one process exist
+  today (27.7), each on its branch. The clients of a shared session
+  (`docs/ThinClient.md` 8.11, the sandbox) are views on one document, and
+  two processes on one file have no shared store -- 27.41 Q6 delayed the
+  allocator that would need.
+- **Where the merge runs**: in the document that holds the shared head, at
+  the end of the writer's invocation (9.1), without disturbing an edit in
+  progress there.
+- **The writer's own document after its merge**: it must come to the
+  shared head too, which is a merge the other way or a move along the log.
+- `docs/MultiViewEdit.md` sec 10 has a client's view state and edit session
+  ride its branch, and amends the auto-trim.
+
+### 28.6 Rulings (user, 2026-10-04)
+
+All four as recommended.
+
+| | Ruling |
+| --- | --- |
+| Q1 | **Ours unchanged since the base: theirs is taken whole**, cached derived values included, with no recompute. Otherwise a derived op is skipped, its owner touched, and the merge recomputes. |
+| Q2 | **View-provider properties merge by the same rule, and a view conflict is never asked**: ours wins, the row's annotation lists it. |
+| Q3 | **An unpicked conflict refuses the merge**: nothing moves, the conflicts are returned. The caller picks, or passes a fallback side. "Default ours" is the picker's preselection. |
+| Q4 | **Merge and the text picker now** (28.4), then a design section for 17.5. Comparing two branches in the 3D view is later. |
