@@ -260,6 +260,60 @@ class TestSketchExternalTypes(unittest.TestCase):
         self.assertEqual(self.kinds(), [INTERSECTION])
         self.assertEqual(shapes(self.sketch), ["Point"])
 
+    def links(self, sketch=None):
+        return [
+            (obj.Name, sub)
+            for obj, subs in (sketch or self.sketch).ExternalGeometry
+            for sub in subs
+        ]
+
+    def looseSource(self):
+        """A box whose shape, and with it every element, can be taken away."""
+        source = self.doc.addObject("Part::Feature", "Source")
+        source.Shape = Part.makeBox(10, 10, 10)
+        return source
+
+    def takeAway(self):
+        self.doc.getObject("Source").Shape = Part.Vertex(0, 0, 0)
+        self.doc.recompute()
+        self.assertEqual(self.links(), [])
+
+    def giveBack(self):
+        """The source again, its far edge at x = 12."""
+        self.doc.getObject("Source").Shape = Part.makeBox(12, 10, 10)
+        self.doc.recompute()
+        return self.sketch
+
+    def farEdgeBothWaysAndGone(self):
+        """The far edge of a loose source taken both ways, something
+        constrained to its line and to its cut, and the source taken away.
+        Gives the ids of the two geometries."""
+        self.looseSource()
+        self.sketch.addExternal("Source", self.far)
+        self.sketch.addExternal("Source", self.far, False, True)
+        self.sketch.addGeometry(Part.Point(Vector(3, 1, 0)))
+        self.sketch.addGeometry(Part.Point(Vector(4, 2, 0)))
+        self.sketch.addConstraint(Sketcher.Constraint("PointOnObject", 0, 1, -3))
+        self.sketch.addConstraint(Sketcher.Constraint("Coincident", 1, 1, -4, 1))
+        self.doc.recompute()
+        self.assertEqual(shapes(self.sketch), ["LineSegment", "Point"])
+        ids = [id for id, _, _ in externals(self.sketch)]
+        self.takeAway()
+        return ids
+
+    def testMissingReferenceComesBackOnce(self):
+        # Two geometries are missing the one reference. It is put back as
+        # one reference, of the kind it was, and they keep their ids and
+        # what is constrained to them.
+        ids = self.farEdgeBothWaysAndGone()
+        sketch = self.giveBack()
+        self.assertEqual(self.links(), [("Source", self.far)])
+        self.assertEqual(self.kinds(), [BOTH])
+        self.assertEqual(shapes(sketch), ["LineSegment", "Point"])
+        self.assertEqual([id for id, _, _ in externals(sketch)], ids)
+        self.assertEqual(len(sketch.Constraints), 2)
+        self.assertCutAtFarEdge(sketch, 12)
+
     def testUndoAndRedo(self):
         self.doc.UndoMode = 1
         self.sketch.addExternal("Box", self.near)

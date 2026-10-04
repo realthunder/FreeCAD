@@ -1785,6 +1785,7 @@ void SketchObject::rebuildExternalGeometry(bool defining)
     // re-check for any missing geometry element. The code here has a side
     // effect that the linked external geometry will continue to work even if
     // ExternalGeometry is wiped out.
+    std::set<std::string> known(keys.begin(), keys.end());
     for(auto &geo : ExternalGeo.getValues()) {
         auto egf = ExternalGeometryFacade::getFacade(geo);
         if(egf->getRef().size() && egf->testFlag(ExternalGeometryExtension::Missing)) {
@@ -1801,6 +1802,9 @@ void SketchObject::rebuildExternalGeometry(bool defining)
             if(elementName.second.size()
                     && !App::GeoFeature::hasMissingElement(elementName.second.c_str()))
             {
+                // one reference, however many geometries are missing it
+                if (!known.insert(ref).second)
+                    continue;
                 Objects.push_back(obj);
                 SubElements.push_back(elementName.second);
                 keys.push_back(ref);
