@@ -5093,7 +5093,10 @@ with continuous mode switched off: `fe7c1d18be`, declined.
   `tests/gui/sketch-line-angle-labels.py` passed under
   `GT_RENDER_CACHE=0` when it was written (`4b4e56c5d6`, 2026-09-25) and
   fails now, with every label check at 0 pixels. Not bisected. The
-  default, mode 3, is not affected.
+  default, mode 3, is not affected. **Correction** (session 126): the
+  flag was misread. No shadow pass runs; the cause is a transparent
+  material, and it is fixed -- see "Render cache mode 0 drew no
+  dimension" below.
 - *Fit All on an empty sketch in edit zooms in a hundred and fifty
   times.* The camera height goes from 4.14 to 0.028, by `view.fitAll()`
   and by `Std_ViewFitAll` alike. Upstream's tests do it at the start of
@@ -5126,6 +5129,74 @@ and the two gtest cases -- the fourth, the helper line, was registered
 after that run and passed through ctest on its own. Upstream's modules
 were run from the scratch copy against the same build for the table
 above.
+
+### Render cache mode 0 drew no dimension (session 126)
+
+Fixed in `77a96dc7a3`. The cause was this port's own `4bcb25919d`, the
+axis transparency of family 4 above, and not any of the commits the
+bisect list named.
+
+**What was wrong with the first reading.** The trace of session 125 saw
+`SoDatumLabel::GLRender` called with the style flags `0x300108` and
+took `0x200000` for Coin's `SHADOWMAP`. It is not: `SHADOWMAP` is
+`0x400000`. The word decodes as `TRANSP_MATERIAL |
+TRANSP_SORTED_TRIANGLES | LIGHTING`. So the main pass did reach the
+label, no shadow pass was involved, and the question was never "who
+skips the label" but "why is the material transparent there".
+
+**The mechanism.** The axes' material was a direct child of the axes'
+group (`SoSkipBoundingGroup`, a group and not a separator), and that
+group is the first child of the edit root. Since `4bcb25919d` the
+material carries `AxisTransparency`, 0.3 by default, and it stayed in
+the traversal state for everything the edit root draws after the axes.
+The curve, point, hint and cursor-text roots are separators with a
+material of their own, which resets it. A dimension has none: the label
+draws itself by hand, in the label colour. With a transparent material
+in the state, `SoShape::shouldGLRender` does not let it: under the
+viewer's sorted-triangles transparency it renders what
+`generatePrimitives` gives -- for a label, the pick box of its number --
+and returns false. That is the translucent box, and the reason no
+leader, arrow or number was drawn.
+
+Upstream has the same material and the same group, and scopes it: the
+material, coordinates and line set sit in a separator,
+`RootCrossVisible`. The fork builds the edit scene in
+`ViewProviderSketch.cpp` (`EditModeCoinManager.cpp` is not compiled), so
+`cda241dbd0` was adapted by hand onto that builder, and the separator
+was not carried over. It is now.
+
+**Measured.**
+
+| | before | after |
+|---|---|---|
+| `sketch-line-angle-labels.py`, mode 0 | 6 of 8 checks fail, 0 px each | 8 of 8 |
+| the same, mode 0, `AxisTransparency` set to 0 | 8 of 8 | -- |
+| `sketch-distance-label-extension.py`, mode 0 | 3 of 10 fail | 10 of 10 |
+| both, mode 3 | pass | pass |
+| mode 3 frame, before against after | | identical, 0 pixels differ |
+| mode 0 frame, the row of the horizontal axis | | identical, 802 of 802 pixels |
+
+The second row is what established the cause, on the old build and
+without a line of code changed: the preference at 0, and the labels are
+back. The last row says the axes kept their blend.
+
+**Test.** `GuiSketchLineAngleLabelsGL_tests_run` and
+`GuiSketchDistanceLabelExtensionGL_tests_run`: the two label tests
+registered a second time with `GT_RENDER_CACHE=0` in the test's
+environment. Nothing ran the GL path of a sketch dimension in ctest
+before, which is how the regression stood for two days.
+
+**Not done.** The label itself is still open to this: any transparent
+material above an `SoDatumLabel` on the GL path gets the pick box
+instead of the label. Upstream's label is the same and upstream avoids
+it by scoping, as here. The on-view parameters of a drawing tool were
+never under the leak (they hang off the viewer's scene root). The
+label's other users, outside the Sketcher, were not looked at.
+
+**Verified** on the fixed tree: full build; ctest 910 of 910, which is
+the 908 of before and the two new entries. The Python suite was not
+run: the change is in the sketch's edit scene, which `FreeCADCmd` does
+not load.
 
 ## 8. Phases
 
