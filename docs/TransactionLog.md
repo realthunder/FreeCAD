@@ -11848,3 +11848,55 @@ user; the server knows a connection by a verified identity when a front
 door asserts one (stable across logins), else by a name the client
 declares (a label, not proof), and neither reaches the log. Design to
 follow as 30.6 once the user has answered what was put to them.
+
+### 30.6 Users and logins (rulings, user, 2026-10-04)
+
+| | Ruling |
+| --- | --- |
+| U1 | **A user is known across logins.** The log gets users; a session names its user, so one person's logins are one author. |
+| U2 | **A login is a row**: a record with no ops, written when a connection is admitted, view-only ones too. The panel hides them unless asked. No row for leaving: the session's closing time says it. |
+| U3 | **A name nothing verified**: the same declared name is the same user, marked as declared, so the panel can say it is not proof. |
+| U4 | **Only a user with a verified identity may write.** A connection with none is view-only, whatever its grant says. The desktop user, whose process it is, writes as before. |
+| U5 | **A user's undo and redo stacks last as long as the server's process** and survive a reconnect -- for verified users, which by U4 is every client that writes. |
+
+**Shape.** S.b and S.c of 30.3 are read with this.
+
+- `user(id, kind, name)`, kind `verified`, `declared` or `local`, one row
+  per kind and name. `session.user` names it; the session keeps what is of
+  one login -- environment, opened, closed, the access it was admitted
+  with, and S.e's uuid.
+  - *verified*: the identity an authenticating front door asserted
+    (`docs/ShareAccess.md` sec 4).
+  - *declared*: the name of a connection's hello. Never an author (U4);
+    such a user appears in login rows only.
+  - *local*: the desktop user -- the OS name under the privacy
+    preference, `host` without it (P3).
+- **The author of a row is its session's user** (S.b): a verified user or
+  the desktop's.
+- **The login row**: kind `login`, its session the one just opened, its
+  annotation the access and whether the identity was verified. The
+  address is not recorded.
+- **Records are not movement.** The fast-forward test (P1) and "written
+  past" (S.c) count rows with ops; a login, like a save or a snapshot,
+  moves neither.
+- **The stacks** (S.c) are kept by user, not by connection, for the life
+  of the process.
+- **The door.** A grant of edit or host admits a connection with no
+  verified identity as view-only -- the rule a host grant already has for
+  an identity it does not name literally (`docs/ShareAccess.md` 2.2). The
+  change is in `SceneServer` and that document.
+- **A request** (S.h) is a write: sent by a verified user, or imported by
+  the owner at the desktop. The fork's rows keep the authors they were
+  made under -- its own desktop user, `host` unless its preference named
+  them -- and the import's record names who sent it.
+
+**What U4 costs.** Sharing with no front door -- a LAN, a bare token --
+becomes view-only for everyone but the desktop. The headless checks that
+edit through a token-only connection need an identity; the header
+believed from a loopback peer (`docs/ShareAccess.md` sec 4) gives them
+one.
+
+**Open (U6).** Whether an invitation the host issued to one named person
+counts as verified -- the token is a secret, and the host has said whose
+it is -- so that sharing with no front door can still have writers. An
+open invitation never would.
