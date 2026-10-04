@@ -42,6 +42,7 @@
 #include <Base/Uuid.h>
 
 #include "TransactionLog.h"
+#include "Actor.h"
 #include "Application.h"
 #include "Document.h"
 #include "DocumentObject.h"
@@ -232,9 +233,12 @@ public:
     }
     int64_t environment(const std::string& json) override { return inner().environment(json); }
     std::string environmentJson(int64_t id) override { return inner().environmentJson(id); }
-    int64_t openSession(int64_t env, const std::string& user, const std::string& host,
-                        double opened) override
-    { return inner().openSession(env, user, host, opened); }
+    int64_t user(const std::string& kind, const std::string& name) override
+    { return inner().user(kind, name); }
+    std::vector<LogUser> users() override { return inner().users(); }
+    int64_t openSession(int64_t env, int64_t user, const std::string& host,
+                        const std::string& access, double opened) override
+    { return inner().openSession(env, user, host, access, opened); }
     void closeSession(int64_t id, double closed) override { inner().closeSession(id, closed); }
     std::vector<LogSession> sessions() override { return inner().sessions(); }
     int64_t addVersion(LogVersion& version, const std::vector<LogManifestEntry>& manifest) override
@@ -367,16 +371,18 @@ TransactionLogCore::TransactionLogCore(FileHistory& history)
     }
     env += '}';
     _envJson = env;
+    // The desktop user (sec 30.4 P3): `host` until the privacy preference
+    // names them.
+    _localName = "host";
     if (DocumentParams::getTransactionLogIdentity()) {
         auto u = config.find("UserName");
-        if (u != config.end())
-            _user = u->second;
+        if (u != config.end() && !u->second.empty())
+            _localName = u->second;
         auto h = config.find("HostName");
         if (h != config.end())
             _host = h->second;
     }
-    _environment = _store->environment(_envJson);
-    _session = _store->openSession(_environment, _user, _host, now());
+    openProcessSession();
     _worker = std::thread([this]() { run(); });
     liveLogs(this, true);
     FC_LOG("transaction log " << _path << " session " << _session);
@@ -388,11 +394,75 @@ TransactionLogCore::~TransactionLogCore()
     try {
         stopWorker();
         _blobs.clear();
-        if (_store && _session)
-            _store->closeSession(_session, now());
+        closeSessions();
     }
     catch (...) {
     }
+}
+
+void TransactionLogCore::openProcessSession()
+{
+    // Main thread, with the store its own: at open, before the worker has
+    // anything, or with the queue drained.
+    _environment = _store->environment(_envJson);
+    _localUser = _store->user(Actor::kindName(Actor::Local), _localName);
+    _session = _store->openSession(_environment, _localUser, _host, std::string(), now());
+    _actorSessions.clear();
+}
+
+void TransactionLogCore::closeSessions()
+{
+    if (!_store)
+        return;
+    const double closed = now();
+    for (const auto& s : _actorSessions)
+        _store->closeSession(s.second, closed);
+    _actorSessions.clear();
+    if (_session)
+        _store->closeSession(_session, closed);
+    _session = 0;
+}
+
+namespace
+{
+/// What tells one login from the next: the connection when there is one,
+/// else the user, who then has one session for the life of the process.
+std::string actorKey(const Actor& actor)
+{
+    if (actor.login)
+        return "#" + std::to_string(actor.login);
+    return std::string(Actor::kindName(actor.kind)) + ":" + actor.name;
+}
+}  // namespace
+
+int64_t TransactionLogCore::sessionOf(const Actor* actor)
+{
+    if (!actor || actor->kind == Actor::Local)
+        return _session;
+    const std::string key = actorKey(*actor);
+    auto it = _actorSessions.find(key);
+    if (it != _actorSessions.end())
+        return it->second;
+    // The first this log sees of the login: its user, made if this is the
+    // first of them too, and its session. Once per login, so the wait for
+    // the worker is not on any path that repeats.
+    flush();
+    const int64_t user = _store->user(Actor::kindName(actor->kind), actor->name);
+    const int64_t session = _store->openSession(_environment, user, std::string(),
+                                                actor->access, now());
+    _actorSessions[key] = session;
+    return session;
+}
+
+bool TransactionLogCore::closeLogin(const Actor& actor)
+{
+    auto it = _actorSessions.find(actorKey(actor));
+    if (it == _actorSessions.end())
+        return false;
+    flush();
+    _store->closeSession(it->second, now());
+    _actorSessions.erase(it);
+    return true;
 }
 
 void TransactionLogCore::openStore()
@@ -674,8 +744,7 @@ bool TransactionLogCore::adoptEmbedded(const std::string& path)
         FC_WARN("transaction log of " << _history.path() << " has history; not adopting the embedded copy");
         return false;
     }
-    if (_store && _session)
-        _store->closeSession(_session, now());
+    closeSessions();
     _store.reset();
     Base::FileInfo(_path).deleteFile();
     Base::FileInfo(_path + "-wal").deleteFile();
@@ -698,8 +767,7 @@ bool TransactionLogCore::adoptEmbedded(const std::string& path)
             FC_WARN("embedded history of " << _history.path() << ": blob " << hash
                     << " is not in the file's store");
     }
-    _environment = _store->environment(_envJson);
-    _session = _store->openSession(_environment, _user, _host, now());
+    openProcessSession();
     FC_LOG("transaction log of " << _history.path() << " continues from the embedded copy: seq "
            << _nextSeq << ", next version " << (_nextVersion + 1));
     return true;
@@ -887,7 +955,7 @@ int64_t TransactionLogCore::recordFile(const std::string& path, const Transactio
     t.kind = "restore";
     t.name = "restore";
     t.time = v.created;
-    t.session = _session;
+    t.session = sessionOf(ActorScope::current().get());
     TransactionLog::Captures captures;
     for (const auto& e : entries)
         captures.emplace_back(e.first, Base::EntryCapture(e.second));
@@ -1045,6 +1113,15 @@ TransactionLog::Embedded TransactionLogCore::embed(const std::string& saveDate, 
             continue;
         out.blobs.emplace_back(hash, e.data.empty() ? std::string() : "." + e.data);
     }
+    // The copy's history ends at this save: a session still open here is
+    // closed there, now. A closing time is all that says a user left (sec
+    // 30.6 U2), and a file would otherwise say of everyone who was in when
+    // it was saved that they never did.
+    const double saved = now();
+    for (const auto& session : copy->sessions()) {
+        if (session.closed == 0)
+            copy->closeSession(session.id, saved);
+    }
     copy->setMeta("save_id", out.saveId);
     copy->setMeta("save_date", saveDate);
     copy->setMeta("version_counter", std::to_string(out.version));
@@ -1102,8 +1179,7 @@ bool TransactionLog::recover(const std::string& oldDir, RecoverInfo& info)
                << oldDir);
         return false;
     }
-    if (_c._store && _c._session)
-        _c._store->closeSession(_c._session, now());
+    _c.closeSessions();
     _c._store.reset();
     for (const char* suffix : {"", "-wal", "-shm"}) {
         Base::FileInfo(_c._path + suffix).deleteFile();
@@ -1123,7 +1199,7 @@ bool TransactionLog::recover(const std::string& oldDir, RecoverInfo& info)
     if (!moved) {
         FC_ERR("cannot take over the log of " << oldDir);
         openStore();
-        _c._session = _c._store->openSession(_c._environment, _c._user, _c._host, now());
+        _c.openProcessSession();
         return false;
     }
 
@@ -1165,8 +1241,7 @@ bool TransactionLog::recover(const std::string& oldDir, RecoverInfo& info)
     }
     info.label = _c._store->getMeta("label");
     info.fileName = _c._store->getMeta("file");
-    _c._environment = _c._store->environment(_c._envJson);
-    _c._session = _c._store->openSession(_c._environment, _c._user, _c._host, now());
+    _c.openProcessSession();
     FC_LOG("transaction log of " << _doc.getName() << " recovered from " << oldDir << ": seq "
            << _c._nextSeq << ", versions " << _c._nextVersion);
     return true;
@@ -1186,13 +1261,52 @@ int64_t TransactionLog::record(const char* kind, const std::string& name,
     t.kind = kind;
     t.name = name;
     t.time = now();
-    t.session = _c._session;
     t.script = script;
     post([this, t]() mutable {
         std::vector<LogOp> none;
         _c._store->append(t, none);
     });
     return t.seq;
+}
+
+int64_t TransactionLog::login(const Actor& actor)
+{
+    const int64_t session = _c.sessionOf(&actor);
+    // A version document not yet changed is on no branch, and a login is
+    // no change (sec 27.5): the session says who came, with no row.
+    if (_branch == 0 || !session || session == _c._session)
+        return 0;
+    auto quoted = [](const std::string& text) {
+        std::string j = "\"";
+        for (char c : text) {
+            if (c == '"' || c == '\\')
+                j += '\\';
+            j += static_cast<unsigned char>(c) < 0x20 ? ' ' : c;
+        }
+        return j + '"';
+    };
+    // Who, how the name is known, and what the connection may do (sec 30.6
+    // U2). Where it came from is not recorded.
+    std::string script = "{\"user\":" + quoted(actor.name) + ",\"kind\":\""
+        + Actor::kindName(actor.kind) + "\",\"access\":" + quoted(actor.access)
+        + ",\"verified\":" + (actor.kind == Actor::Verified ? "true" : "false") + "}";
+    LogTransaction t;
+    t.session = session;
+    number(t);
+    t.kind = "login";
+    t.name = "Login " + actor.name;
+    t.time = now();
+    t.script = script;
+    post([this, t]() mutable {
+        std::vector<LogOp> none;
+        _c._store->append(t, none);
+    });
+    return t.seq;
+}
+
+bool TransactionLog::logout(const Actor& actor)
+{
+    return _c.closeLogin(actor);
 }
 
 int64_t TransactionLog::reappend(LogTransaction t)
@@ -1352,7 +1466,6 @@ void TransactionLog::ensureBranch()
     t.kind = "branch";
     t.name = "Branch " + name;
     t.time = now();
-    t.session = _c._session;
     t.script = script.str();
     post([this, t]() mutable {
         std::vector<LogOp> none;
@@ -1558,7 +1671,9 @@ void TransactionLog::onRecompute(const std::vector<RecomputedObject>& objects, d
         t.kind = "recompute";
         t.name = "recompute";
         t.time = now();
-        t.session = _c._session;
+        // Recorded after an operation, the recompute is its author's (sec
+        // 30.3 S.b): the open transaction's, else whoever acts now.
+        t.session = _c.sessionOf(open ? open->Author.get() : ActorScope::current().get());
         // The record, as JSON in the script column: the duration, and per
         // object its id, the seconds it took, and its error text if any;
         // then its touched state before ("b" the bits, "p" the touched
@@ -1818,7 +1933,6 @@ int64_t TransactionLog::snapshot(const char* kind, const std::string& path,
         t.kind = kind;
         t.name = kind;
         t.time = v.created;
-        t.session = _c._session;
 
         // The file's strings go first, and the ids this version uses with it
         // (sec 27.50 items 2, 4).
@@ -2629,6 +2743,11 @@ void TransactionLog::number(LogTransaction& t)
     t.branch = _branch;
     t.seq = ++_c._nextSeq;
     _head = t.seq;
+    // Whoever acts now (sec 30.3 S.b), unless the row names its author: a
+    // transaction's is the actor it was opened under, a record appended
+    // again keeps the one it was made under.
+    if (!t.session)
+        t.session = _c.sessionOf(ActorScope::current().get());
     // Every row, so a walk back from the head finds its parent in memory.
     remember(t, nullptr);
 }
@@ -2717,14 +2836,16 @@ int64_t TransactionLog::onCommit(const Transaction& txn, const char* kind, const
             flush();
             _config.hasher = _doc.getHasher().get();
         }
+        // The author is the actor the transaction was opened under (sec
+        // 30.3 S.b), whoever closes it.
         LogTransaction t;
+        t.session = _c.sessionOf(txn.Author.get());
         number(t);
         t.id = txn.getID();
         t.kind = kind;
         t.origin = origin;
         t.name = txn.Name;
         t.time = now();
-        t.session = _c._session;
         t.inverts = inverts;
         t.mergeFrom = txn.MergeFrom;
         t.script = txn.LogScript;

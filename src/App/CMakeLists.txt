@@ -623,6 +623,7 @@ SOURCE_GROUP("Properties" FILES ${Properties_SRCS})
 SET(FreeCADApp_CPP_SRCS
     ${Document_CPP_SRCS}
     ${Properties_CPP_SRCS}
+    Actor.cpp
     Application.cpp
     ApplicationPy.cpp
     AutoTransaction.cpp
@@ -654,6 +655,7 @@ SET(FreeCADApp_CPP_SRCS
 SET(FreeCADApp_HPP_SRCS
     ${Document_HPP_SRCS}
     ${Properties_HPP_SRCS}
+    Actor.h
     Application.h
     AutoTransaction.h
     Branding.h

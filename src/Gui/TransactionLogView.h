@@ -149,6 +149,7 @@ private:
     QPushButton* _openBranch {nullptr};
     QCheckBox* _allBranches {nullptr};
     QCheckBox* _hideRecords {nullptr};
+    QCheckBox* _showLogins {nullptr};
 public:
     /// The graph column's lanes, nodes and labels per row, for its delegate.
     struct GraphLayout;

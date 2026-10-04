@@ -27,6 +27,7 @@
 #include <Base/Interpreter.h>
 #include <Base/Stream.h>
 
+#include "Actor.h"
 #include "Document.h"
 #include "DocumentObject.h"
 #include "DocumentObjectPy.h"
@@ -905,6 +906,13 @@ PyObject* DocumentPy::getTransactionLog(PyObject *args)
         std::map<int64_t, std::string> branches;
         for (const auto& b : log->store().branches())
             branches[b.id] = b.name;
+        // The author of a row is its session's user (sec 30.6).
+        std::map<int64_t, LogUser> users;
+        for (auto& u : log->store().users())
+            users[u.id] = u;
+        std::map<int64_t, int64_t> sessions;
+        for (const auto& s : log->store().sessions())
+            sessions[s.id] = s.user;
         for (auto& t : log->store().transactions(from, limit)) {
             Py::Dict d;
             d.setItem("seq", Py::Long(static_cast<long long>(t.seq)));
@@ -918,9 +926,128 @@ PyObject* DocumentPy::getTransactionLog(PyObject *args)
             d.setItem("inverts", Py::Long(static_cast<long long>(t.inverts)));
             d.setItem("merge_from", Py::Long(static_cast<long long>(t.mergeFrom)));
             d.setItem("branch", Py::String(branches[t.branch]));
+            const LogUser& author = users[sessions[t.session]];
+            d.setItem("session", Py::Long(static_cast<long long>(t.session)));
+            d.setItem("author", Py::String(author.name));
+            d.setItem("author_kind", Py::String(author.kind));
             list.append(d);
         }
         return Py::new_reference_to(list);
+    } PY_CATCH;
+}
+
+PyObject* DocumentPy::getTransactionSessions(PyObject *args)
+{
+    if (!PyArg_ParseTuple(args, ""))
+        return nullptr;
+    Py::List list;
+    auto log = getDocumentPtr()->getTransactionLog();
+    if (!log)
+        return Py::new_reference_to(list);
+    PY_TRY {
+        std::map<int64_t, LogUser> users;
+        for (auto& u : log->store().users())
+            users[u.id] = u;
+        for (const auto& s : log->store().sessions()) {
+            const LogUser& user = users[s.user];
+            Py::Dict d;
+            d.setItem("id", Py::Long(static_cast<long long>(s.id)));
+            d.setItem("user", Py::Long(static_cast<long long>(s.user)));
+            d.setItem("kind", Py::String(user.kind));
+            d.setItem("name", Py::String(user.name));
+            d.setItem("access", Py::String(s.access));
+            d.setItem("host", Py::String(s.host));
+            d.setItem("opened", Py::Float(s.opened));
+            d.setItem("closed", Py::Float(s.closed));
+            list.append(d);
+        }
+        return Py::new_reference_to(list);
+    } PY_CATCH;
+}
+
+namespace
+{
+/// The actor a Python caller names; false with the error set.
+bool actorFromPy(const char* kind, const char* name, const char* access, unsigned long long login,
+                 Actor& actor)
+{
+    if (!Actor::kindFromName(kind, actor.kind) || actor.kind == Actor::Local) {
+        PyErr_SetString(PyExc_ValueError,
+                        "kind must be 'verified', 'invited' or 'declared'");
+        return false;
+    }
+    if (!name[0]) {
+        PyErr_SetString(PyExc_ValueError, "an actor has a name");
+        return false;
+    }
+    actor.name = name;
+    actor.access = access;
+    actor.login = login;
+    return true;
+}
+}  // namespace
+
+PyObject* DocumentPy::pushTransactionActor(PyObject *args, PyObject *kwd)
+{
+    const char* kind;
+    const char* name;
+    const char* access = "edit";
+    unsigned long long login = 0;
+    static const std::array<const char *, 5> kwlist {"kind", "name", "access", "login", nullptr};
+    if (!Base::Wrapped_ParseTupleAndKeywords(args, kwd, "ss|sK", kwlist, &kind, &name, &access,
+                                             &login))
+        return nullptr;
+    Actor actor;
+    if (!actorFromPy(kind, name, access, login, actor))
+        return nullptr;
+    ActorScope::push(std::make_shared<const Actor>(actor));
+    Py_Return;
+}
+
+PyObject* DocumentPy::popTransactionActor(PyObject *args)
+{
+    if (!PyArg_ParseTuple(args, ""))
+        return nullptr;
+    return Py::new_reference_to(Py::Boolean(ActorScope::pop()));
+}
+
+PyObject* DocumentPy::transactionLogin(PyObject *args, PyObject *kwd)
+{
+    const char* kind;
+    const char* name;
+    const char* access = "edit";
+    unsigned long long login = 0;
+    static const std::array<const char *, 5> kwlist {"kind", "name", "access", "login", nullptr};
+    if (!Base::Wrapped_ParseTupleAndKeywords(args, kwd, "ss|sK", kwlist, &kind, &name, &access,
+                                             &login))
+        return nullptr;
+    Actor actor;
+    if (!actorFromPy(kind, name, access, login, actor))
+        return nullptr;
+    PY_TRY {
+        long long seq = 0;
+        if (auto log = getDocumentPtr()->getTransactionLog())
+            seq = log->login(actor);
+        return Py::new_reference_to(Py::Long(seq));
+    } PY_CATCH;
+}
+
+PyObject* DocumentPy::transactionLogout(PyObject *args, PyObject *kwd)
+{
+    const char* kind;
+    const char* name;
+    unsigned long long login = 0;
+    static const std::array<const char *, 4> kwlist {"kind", "name", "login", nullptr};
+    if (!Base::Wrapped_ParseTupleAndKeywords(args, kwd, "ss|K", kwlist, &kind, &name, &login))
+        return nullptr;
+    Actor actor;
+    if (!actorFromPy(kind, name, "", login, actor))
+        return nullptr;
+    PY_TRY {
+        bool closed = false;
+        if (auto log = getDocumentPtr()->getTransactionLog())
+            closed = log->logout(actor);
+        return Py::new_reference_to(Py::Boolean(closed));
     } PY_CATCH;
 }
 

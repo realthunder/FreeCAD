@@ -13,6 +13,7 @@
 #include <sqlite3.h>
 #include <zipios++/zipfile.h>
 
+#include "App/Actor.h"
 #include "App/Application.h"
 #include "Base/Interpreter.h"
 #include "App/PropertyPythonObject.h"
@@ -394,8 +395,15 @@ TEST_F(TransactionLogTest, recomputeRecordAndSession)
     EXPECT_EQ(sessions[0].id, log().session());
     EXPECT_EQ(sessions[0].env, log().environment());
     EXPECT_EQ(sessions[0].closed, 0.0);
-    // Identity is off by default: nothing personal in the row.
-    EXPECT_TRUE(sessions[0].user.empty());
+    // Identity is off by default: nothing personal in the row -- the
+    // desktop user is `host` (sec 30.4 P3), the machine not named.
+    auto users = store.users();
+    ASSERT_EQ(users.size(), 1u);
+    EXPECT_EQ(sessions[0].user, users[0].id);
+    EXPECT_EQ(users[0].kind, "local");
+    EXPECT_EQ(users[0].name, "host");
+    EXPECT_TRUE(sessions[0].host.empty());
+    EXPECT_TRUE(sessions[0].access.empty());
     EXPECT_NE(store.environmentJson(log().environment()).find("BuildVersionMajor"),
               std::string::npos);
 
@@ -4377,6 +4385,245 @@ TEST_F(TransactionLogTest, aFastForwardKeepsTheRecordsBetween)
     ASSERT_TRUE(other->undo());
     EXPECT_EQ(featureOf(other, "A")->Integer.getValue(), 1);
     EXPECT_EQ(featureOf(doc(), "A")->Integer.getValue(), 7);
+
+    App::GetApplication().closeDocument(otherName.c_str());
+}
+
+namespace
+{
+
+App::Actor actor(App::Actor::Kind kind, const char* name, uint64_t login,
+                 const char* access = "edit")
+{
+    App::Actor a;
+    a.kind = kind;
+    a.name = name;
+    a.access = access;
+    a.login = login;
+    return a;
+}
+
+/// The user of row `seq`: its session's (sec 30.6).
+App::LogUser authorOf(App::TransactionLog& log, int64_t seq)
+{
+    auto& store = log.store();
+    int64_t session = 0;
+    for (const auto& t : store.transactions(seq, 1)) {
+        if (t.seq == seq)
+            session = t.session;
+    }
+    int64_t user = 0;
+    for (const auto& s : store.sessions()) {
+        if (s.id == session)
+            user = s.user;
+    }
+    for (const auto& u : store.users()) {
+        if (u.id == user)
+            return u;
+    }
+    return {};
+}
+
+/// The newest row named `name`, 0 for none.
+int64_t rowNamed(App::TransactionLog& log, const std::string& name)
+{
+    int64_t seq = 0;
+    for (const auto& t : log.store().transactions()) {
+        if (t.name == name)
+            seq = t.seq;
+    }
+    return seq;
+}
+
+}  // namespace
+
+// Sec 30.3 S.b, 30.6: the author of a row is its session's user -- the
+// desktop's for what nobody else did, the actor's for a transaction opened
+// while one acted -- and one person's logins are one user.
+TEST_F(TransactionLogTest, theAuthorOfARowIsItsSessionsUser)
+{
+    edit(doc(), "mine", [&]() { make("A")->Integer.setValue(1); });
+    const App::Actor alice = actor(App::Actor::Verified, "alice@example.com", 7);
+    const App::Actor again = actor(App::Actor::Verified, "alice@example.com", 8);
+    const App::Actor bob = actor(App::Actor::Invited, "bob", 9);
+    {
+        App::ActorScope scope(alice);
+        edit(doc(), "hers", [&]() { featureOf(doc(), "A")->Integer.setValue(2); });
+    }
+    {
+        App::ActorScope scope(again);
+        edit(doc(), "hers again", [&]() { featureOf(doc(), "A")->Integer.setValue(3); });
+    }
+    {
+        App::ActorScope scope(bob);
+        edit(doc(), "his", [&]() { featureOf(doc(), "A")->Integer.setValue(4); });
+    }
+    edit(doc(), "mine again", [&]() { featureOf(doc(), "A")->Integer.setValue(5); });
+
+    auto mine = authorOf(log(), rowNamed(log(), "mine"));
+    EXPECT_EQ(mine.kind, "local");
+    EXPECT_EQ(mine.name, "host");
+    EXPECT_EQ(authorOf(log(), rowNamed(log(), "mine again")).id, mine.id);
+    auto hers = authorOf(log(), rowNamed(log(), "hers"));
+    EXPECT_EQ(hers.kind, "verified");
+    EXPECT_EQ(hers.name, "alice@example.com");
+    auto his = authorOf(log(), rowNamed(log(), "his"));
+    EXPECT_EQ(his.kind, "invited");
+    EXPECT_EQ(his.name, "bob");
+
+    // Two logins of one person: two sessions, one user.
+    auto& store = log().store();
+    std::map<std::string, int64_t> sessionOf;
+    for (const auto& t : store.transactions())
+        sessionOf[t.name] = t.session;
+    EXPECT_NE(sessionOf["hers"], sessionOf["hers again"]);
+    EXPECT_NE(sessionOf["hers"], log().session());
+    EXPECT_EQ(authorOf(log(), rowNamed(log(), "hers again")).id, hers.id);
+    EXPECT_EQ(sessionOf["mine"], log().session());
+    EXPECT_EQ(sessionOf["mine again"], log().session());
+    EXPECT_EQ(store.users().size(), 3u);
+    for (const auto& s : store.sessions()) {
+        if (s.id != log().session())
+            EXPECT_EQ(s.access, "edit");
+    }
+
+    // A transaction is its opener's, whoever closes it, and whenever: an
+    // implicit one a client's event opened is closed at the event loop,
+    // where nobody acts.
+    {
+        App::ActorScope scope(alice);
+        featureOf(doc(), "A")->Integer.setValue(6);
+    }
+    doc()->commitImplicitTransaction();
+    const int64_t implicit = log().store().transactions().back().seq;
+    EXPECT_EQ(log().store().transactions().back().kind, "implicit");
+    EXPECT_EQ(authorOf(log(), implicit).id, hers.id);
+
+    // The recompute recorded while a transaction is open is its author's.
+    {
+        App::ActorScope scope(bob);
+        doc()->openTransaction("his recompute");
+        featureOf(doc(), "A")->Integer.setValue(7);
+        doc()->recompute();
+    }
+    doc()->commitTransaction();
+    const auto last = log().store().transactions().back();
+    EXPECT_EQ(last.kind, "recompute");
+    EXPECT_EQ(authorOf(log(), last.seq).id, his.id);
+    EXPECT_EQ(authorOf(log(), rowNamed(log(), "his recompute")).id, his.id);
+
+    // An undo is a row of whoever undid.
+    {
+        App::ActorScope scope(alice);
+        ASSERT_TRUE(doc()->undo());
+    }
+    const auto undone = log().store().transactions().back();
+    EXPECT_EQ(undone.kind, "undo");
+    EXPECT_EQ(authorOf(log(), undone.seq).id, hers.id);
+}
+
+// Sec 30.6 U2: a login is a row with no ops, written when a connection is
+// admitted, view-only ones too; leaving closes the session and writes
+// nothing. U3: a name nothing verified is the same user each time, marked
+// as declared.
+TEST_F(TransactionLogTest, aLoginIsARecord)
+{
+    edit(doc(), "create", [&]() { make("A")->Integer.setValue(1); });
+    const App::Actor carol = actor(App::Actor::Declared, "carol", 21, "view");
+    const App::Actor later = actor(App::Actor::Declared, "carol", 22, "view");
+    const App::Actor alice = actor(App::Actor::Verified, "alice@example.com", 23);
+
+    const int64_t first = log().login(carol);
+    ASSERT_GT(first, 0);
+    const int64_t second = log().login(alice);
+    ASSERT_GT(second, first);
+    auto& store = log().store();
+    for (int64_t seq : {first, second}) {
+        const auto rows = store.transactions(seq, 1);
+        ASSERT_EQ(rows.size(), 1u);
+        EXPECT_EQ(rows[0].kind, "login");
+        EXPECT_TRUE(store.ops(seq).empty());
+    }
+    const auto row = store.transactions(first, 1)[0];
+    EXPECT_EQ(row.name, "Login carol");
+    EXPECT_NE(row.script.find("\"kind\":\"declared\""), std::string::npos) << row.script;
+    EXPECT_NE(row.script.find("\"access\":\"view\""), std::string::npos) << row.script;
+    EXPECT_NE(row.script.find("\"verified\":false"), std::string::npos) << row.script;
+    EXPECT_EQ(authorOf(log(), first).kind, "declared");
+    EXPECT_NE(store.transactions(second, 1)[0].script.find("\"verified\":true"),
+              std::string::npos);
+
+    // The row is the login's own session, opened by it.
+    int64_t session = row.session;
+    EXPECT_NE(session, log().session());
+    auto closedOf = [&](int64_t id) {
+        for (const auto& s : log().store().sessions()) {
+            if (s.id == id)
+                return s.closed;
+        }
+        return -1.0;
+    };
+    EXPECT_EQ(closedOf(session), 0.0);
+    const auto count = store.transactions().size();
+    EXPECT_TRUE(log().logout(carol));
+    EXPECT_GT(closedOf(session), 0.0);
+    EXPECT_EQ(log().store().transactions().size(), count);   // no row for leaving
+    EXPECT_FALSE(log().logout(carol));
+
+    // The same declared name again: another session of the same user.
+    const int64_t third = log().login(later);
+    ASSERT_GT(third, second);
+    EXPECT_NE(log().store().transactions(third, 1)[0].session, session);
+    EXPECT_EQ(authorOf(log(), third).id, authorOf(log(), first).id);
+
+    // The desktop user logs in by opening the log: no row.
+    EXPECT_EQ(log().login(App::Actor()), 0);
+    // An undo steps over the logins: they are not steps.
+    EXPECT_EQ(doc()->getAvailableUndoNames(), (std::vector<std::string> {"create"}));
+}
+
+// Sec 30.6: records are not movement. A login on the receiving branch does
+// not turn a merge that can fast-forward into a merge row, and the login is
+// still on the chain after it.
+TEST_F(TransactionLogTest, aLoginDoesNotStandInAFastForwardsWay)
+{
+    edit(doc(), "create", [&]() { make("A")->Integer.setValue(1); });
+    App::Document* other = doc()->openNewBranch("side");
+    ASSERT_TRUE(other);
+    const std::string otherName = other->getName();
+    const App::Actor alice = actor(App::Actor::Verified, "alice@example.com", 31);
+    {
+        App::ActorScope scope(alice);
+        edit(other, "theirs", [&]() { featureOf(other, "A")->Integer.setValue(7); });
+    }
+    const int64_t login = log().login(actor(App::Actor::Declared, "carol", 32, "view"));
+    ASSERT_GT(login, 0);
+
+    auto preview = doc()->previewMerge("side");
+    ASSERT_FALSE(preview.forward.empty());
+    auto result = doc()->mergeBranch("side");
+    EXPECT_GT(result.forwarded, 0u);
+    EXPECT_EQ(featureOf(doc(), "A")->Integer.getValue(), 7);
+    log().flush();
+    bool sawLogin = false;
+    bool sawTheirs = false;
+    for (const auto& t : log().store().chain(log().head())) {
+        EXPECT_NE(t.kind, "merge");
+        if (t.kind == "login") {
+            sawLogin = true;
+            // Appended again past the rows taken, under the session it was
+            // made in.
+            EXPECT_TRUE(sawTheirs);
+            EXPECT_EQ(authorOf(log(), t.seq).name, "carol");
+        }
+        if (t.name == "theirs") {
+            sawTheirs = true;
+            // Taken as made: each row under its author (sec 30.4 P1).
+            EXPECT_EQ(authorOf(log(), t.seq).name, "alice@example.com");
+        }
+    }
+    EXPECT_TRUE(sawLogin);
+    EXPECT_TRUE(sawTheirs);
 
     App::GetApplication().closeDocument(otherName.c_str());
 }

@@ -81,13 +81,32 @@ struct LogBranch
     int64_t target {0};
 };
 
-/// A session row (sec 11): one open-close of this log by one process.
+/** A user row (sec 30.6 U1): who the author of a row is, known across
+ * logins. One row per kind and name; the kinds are App::Actor's -- `local`,
+ * the desktop user, named `host` unless the privacy preference names them
+ * (sec 30.4 P3); `verified`, `invited`, `declared`.
+ */
+struct LogUser
+{
+    int64_t id {0};
+    std::string kind;
+    std::string name;
+};
+
+/** A session row (sec 11, 30.6): one login of one user -- the process's
+ * own for the desktop user, opened with the log, and one more for each
+ * admitted connection. `user` names its LogUser; `access` is what a
+ * connection was admitted with (`view`, `edit`, `host`), empty for the
+ * desktop's. `host` is the machine, recorded only if the preference says
+ * so.
+ */
 struct LogSession
 {
     int64_t id {0};
     int64_t env {0};
-    std::string user;        ///< recorded only if the preference says so
+    int64_t user {0};
     std::string host;
+    std::string access;
     double opened {0};
     double closed {0};
 };
@@ -326,8 +345,11 @@ public:
     /// Id of the environment row holding `json`, made if absent (sec 11).
     virtual int64_t environment(const std::string& json) = 0;
     virtual std::string environmentJson(int64_t id) = 0;
-    virtual int64_t openSession(int64_t env, const std::string& user,
-                                const std::string& host, double opened) = 0;
+    /// Id of the user row of `kind` and `name`, made if absent (sec 30.6).
+    virtual int64_t user(const std::string& kind, const std::string& name) = 0;
+    virtual std::vector<LogUser> users() = 0;
+    virtual int64_t openSession(int64_t env, int64_t user, const std::string& host,
+                                const std::string& access, double opened) = 0;
     virtual void closeSession(int64_t id, double closed) = 0;
     virtual std::vector<LogSession> sessions() = 0;
 

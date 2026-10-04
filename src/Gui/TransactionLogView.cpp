@@ -74,8 +74,8 @@ using namespace Gui::DockWnd;
 
 namespace {
 
-enum TxnColumn { TxnGraph, TxnSeq, TxnKind, TxnOrigin, TxnName, TxnTime, TxnParent, TxnInverts,
-                 TxnMerged, TxnBranch, TxnColumns };
+enum TxnColumn { TxnGraph, TxnSeq, TxnKind, TxnOrigin, TxnName, TxnAuthor, TxnTime, TxnParent,
+                 TxnInverts, TxnMerged, TxnBranch, TxnColumns };
 
 // Item data roles of a transaction row, besides the seq on TxnSeq.
 constexpr int RoleParent = Qt::UserRole + 1;   // on TxnParent: the parent seq
@@ -329,6 +329,10 @@ TransactionLogView::TransactionLogView(Gui::Document* pcDocument, QWidget* paren
     _hideRecords->setToolTip(tr("Hide the rows that changed nothing: recompute records, "
                                 "snapshots, saves, switches"));
     branchBar->addWidget(_hideRecords);
+    _showLogins = new QCheckBox(tr("Logins"), this);
+    _showLogins->setToolTip(tr("Show the rows that record a connection being admitted to a "
+                               "shared session (sec 30.6)"));
+    branchBar->addWidget(_showLogins);
     branchBar->addStretch(1);
     layout->addLayout(branchBar);
 
@@ -353,8 +357,8 @@ TransactionLogView::TransactionLogView(Gui::Document* pcDocument, QWidget* paren
     _transactions = new QTreeWidget(txnSplitter);
     _transactions->setColumnCount(TxnColumns);
     _transactions->setHeaderLabels({tr("Graph"), tr("Seq"), tr("Kind"), tr("Origin"), tr("Name"),
-                                    tr("Time"), tr("Parent"), tr("Inverts"), tr("Merged"),
-                                    tr("Branch")});
+                                    tr("Author"), tr("Time"), tr("Parent"), tr("Inverts"),
+                                    tr("Merged"), tr("Branch")});
     _transactions->hideColumn(TxnGraph);
     _graphView->setModel(_transactions->model());
     _graphView->setSelectionModel(_transactions->selectionModel());
@@ -472,6 +476,7 @@ TransactionLogView::TransactionLogView(Gui::Document* pcDocument, QWidget* paren
     connect(_openBranch, &QPushButton::clicked, this, &TransactionLogView::onOpenBranch);
     connect(_allBranches, &QCheckBox::toggled, this, &TransactionLogView::applyVisibility);
     connect(_hideRecords, &QCheckBox::toggled, this, &TransactionLogView::applyVisibility);
+    connect(_showLogins, &QCheckBox::toggled, this, &TransactionLogView::applyVisibility);
 
     //NOLINTBEGIN
     _connActiveDoc = Application::Instance->signalActiveDocument.connect(
@@ -767,6 +772,13 @@ void TransactionLogView::appendTransactions(int64_t fromSeq)
     for (const auto& b : l->store().branches())
         branches[b.id] = QString::fromStdString(b.name);
     const QColor recordColour = _transactions->palette().color(QPalette::Disabled, QPalette::Text);
+    // The author of a row is its session's user (sec 30.6).
+    std::map<int64_t, App::LogUser> users;
+    for (auto& u : l->store().users())
+        users[u.id] = u;
+    std::map<int64_t, App::LogSession> sessions;
+    for (auto& s : l->store().sessions())
+        sessions[s.id] = s;
     for (const auto& t : l->store().transactions(fromSeq, 0)) {
         // Newest first, as git lists history: each new row goes on top.
         auto item = new QTreeWidgetItem();
@@ -776,6 +788,22 @@ void TransactionLogView::appendTransactions(int64_t fromSeq)
         item->setText(TxnKind, QString::fromStdString(t.kind));
         item->setText(TxnOrigin, QString::fromStdString(t.origin));
         item->setText(TxnName, QString::fromStdString(t.name));
+        {
+            // A name a login verified, or the desktop's, stands alone; one
+            // nothing verified says so beside it.
+            const App::LogSession& session = sessions[t.session];
+            const App::LogUser& author = users[session.user];
+            QString name = QString::fromStdString(author.name);
+            if (author.kind == "invited" || author.kind == "declared")
+                name += QStringLiteral(" (%1)").arg(QString::fromStdString(author.kind));
+            item->setText(TxnAuthor, name);
+            QString tip = tr("%1 user, session %2")
+                              .arg(QString::fromStdString(author.kind))
+                              .arg(session.id);
+            if (!session.access.empty())
+                tip += tr(", admitted with %1 access").arg(QString::fromStdString(session.access));
+            item->setToolTip(TxnAuthor, tip);
+        }
         item->setText(TxnTime, QDateTime::fromMSecsSinceEpoch(static_cast<qint64>(t.time * 1000))
                                    .toString(QStringLiteral("HH:mm:ss.zzz")));
         item->setText(TxnParent, QString::number(t.parent));
@@ -939,6 +967,9 @@ void TransactionLogView::applyVisibility()
             match = chain.count(item->data(TxnSeq, Qt::UserRole).toLongLong()) != 0;
         if (match && _hideRecords->isChecked())
             match = !item->data(TxnKind, RoleRecord).toBool();
+        // A login is hidden unless asked for (sec 30.6 U2).
+        if (match && !_showLogins->isChecked())
+            match = item->text(TxnKind) != QLatin1String("login");
         item->setHidden(!match);
         _graphView->setRowHidden(i, QModelIndex(), !match);
     }

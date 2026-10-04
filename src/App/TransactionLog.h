@@ -86,6 +86,7 @@ class Transaction;
  * to drain first.
  */
 class TransactionLogCore;
+struct Actor;
 
 class AppExport TransactionLog
 {
@@ -347,8 +348,21 @@ public:
         _haveVersionStrings = true;
     }
 
+    /// The process's own session, the desktop user's (sec 30.6).
     int64_t session() const;
     int64_t environment() const;
+    /** A connection was admitted (sec 30.6 U2): its session is opened --
+     * under its user, made if this is the first login of them -- and a
+     * `login` record written at the head, a row with no ops whose
+     * annotation says who, how the name is known and with what access.
+     * Returns the row's seq; 0 for a version document not yet changed,
+     * where the session alone says it, and for the desktop user, who logs
+     * in by opening the log.
+     */
+    int64_t login(const Actor& actor);
+    /// The connection left: its session is closed, which is all that says
+    /// so (sec 30.6 U2). False when the log had no session of it.
+    bool logout(const Actor& actor);
 
     /// Serialise the live value behind every pending after ref. What a
     /// version snapshot does first; also what makes the log complete for
@@ -702,6 +716,19 @@ public:
     /// Sorted ids as the inclusive ranges the store keeps them in.
     static std::vector<std::pair<long, long>> idRanges(const std::vector<long>& ids);
 
+    /// Open the process's own session, the desktop user's (sec 30.6): at
+    /// open, and again whenever the store is replaced by another.
+    void openProcessSession();
+    /// Close every session this process opened, the logins' and its own.
+    void closeSessions();
+    /** The session of `actor` in this log (sec 30.3 S.b): the process's own
+     * for none or for the desktop user, else the one of that login, opened
+     * at its first use here -- its user row with it. Main thread.
+     */
+    int64_t sessionOf(const Actor* actor);
+    /// Close the session of `actor`'s login; false when there is none.
+    bool closeLogin(const Actor& actor);
+
     void run();
     void post(std::function<void()> job);
     void flush();
@@ -715,10 +742,16 @@ public:
     FileHistory& _history;
     std::string _path;
     std::string _envJson;
-    std::string _user;
+    /// The desktop user's name as recorded: `host` unless the privacy
+    /// preference names them (sec 30.4 P3), and the machine's with it.
+    std::string _localName;
     std::string _host;
     int64_t _environment {0};
+    int64_t _localUser {0};
     int64_t _session {0};
+    /// The sessions of the logins this process has seen, by login (sec
+    /// 30.6); main thread.
+    std::map<std::string, int64_t> _actorSessions;
     std::unique_ptr<TransactionStore> _store;
     class FlushingStore;
     std::unique_ptr<FlushingStore> _reader;

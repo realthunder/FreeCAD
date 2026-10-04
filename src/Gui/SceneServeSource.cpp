@@ -52,15 +52,18 @@
 #include <vector>
 #endif
 
+#include <App/Actor.h>
 #include <App/Application.h>
 #include <Base/Tools.h>
 #include <App/Document.h>
 #include <App/DocumentObject.h>
+#include <App/TransactionLog.h>
 #include <Base/Console.h>
 
 #include "SceneServeSource.h"
 #include "SandboxRemote.h"
 #include "SandboxServe.h"
+#include "SceneActors.h"
 
 #include "Document.h"
 #include "Inventor/SoFCRenderCache.h"
@@ -366,6 +369,9 @@ public:
      * only -- both the camera handler and the pick handler marshal.
      */
     std::map<uint64_t, std::unique_ptr<MirrorViewer>> mirrors;
+    /// The connections whose login this document's log has recorded
+    /// (docs/TransactionLog.md sec 30.6), kept level with the roster.
+    SceneActors::Logins logins;
 
     /// Adopt what a client stated, building its mirror on first sight.
     void setClientCamera(const Render::SceneCameraFrame &frame)
@@ -1456,10 +1462,14 @@ void SceneServeSource::installHandlers()
     server.setPickHandler([self](const Render::ScenePickRequest &req) {
         Render::ScenePickRequest r = req;
         QMetaObject::invokeMethod(qApp, [self, r]() {
-            if (self)
-                self->pickAndSelect(SbVec3f(r.origin[0], r.origin[1], r.origin[2]),
-                                    SbVec3f(r.dir[0], r.dir[1], r.dir[2]),
-                                    r.modifiers, r.client);
+            if (!self)
+                return;
+            // What a client does is the client's (docs/TransactionLog.md
+            // sec 30.3 S.b): a pick may run a command.
+            App::ActorScope actor(SceneActors::of(r.client));
+            self->pickAndSelect(SbVec3f(r.origin[0], r.origin[1], r.origin[2]),
+                                SbVec3f(r.dir[0], r.dir[1], r.dir[2]),
+                                r.modifiers, r.client);
         }, Qt::QueuedConnection);
     }, pimpl->groupName);
 
@@ -1486,7 +1496,11 @@ void SceneServeSource::installHandlers()
         QMetaObject::invokeMethod(qApp, [self, f]() {
             if (!self)
                 return;
-            self->pimpl->replayInput(f);
+            {
+                // The edit this event drives is its sender's.
+                App::ActorScope actor(SceneActors::of(f.client));
+                self->pimpl->replayInput(f);
+            }
             // Unconditionally, not only when something claimed the
             // event: a preselect highlight changes the scene without
             // the event being handled, and a publish with nothing to
@@ -1559,6 +1573,20 @@ void SceneServeSource::installHandlers()
 
     // A viewer that leaves takes its served viewport and its mirror with
     // it -- the session is the expensive part, and nobody is looking.
+    // Who came and who left, into the document's log (docs/TransactionLog.md
+    // sec 30.6 U2): a login is a row, view-only ones too, and leaving
+    // closes the session.
+    server.setRosterNotifier([self]() {
+        QMetaObject::invokeMethod(qApp, [self]() {
+            if (!self)
+                return;
+            Document *gdoc = self->document();
+            SceneActors::sync(self->pimpl->groupName,
+                              gdoc ? gdoc->getDocument() : nullptr,
+                              self->pimpl->logins);
+        }, Qt::QueuedConnection);
+    }, docName);
+
     server.setClientClosedHandler([self, streams](uint64_t client) {
         QMetaObject::invokeMethod(qApp, [self, streams, client]() {
             SandboxRemote::drop(client);
@@ -1882,6 +1910,25 @@ void SceneServeSource::unserve(Document *doc)
 {
     auto &order = serveOrder();
     order.erase(std::remove(order.begin(), order.end(), doc), order.end());
+    // No longer served: nobody is logged in to it (docs/TransactionLog.md
+    // sec 30.6 U2). Here and not in the destructor, where the document may
+    // be gone; the caller's is alive.
+    auto it = servedDocuments().find(doc);
+    if (it != servedDocuments().end() && doc && doc->getDocument()) {
+        auto &logins = it->second->pimpl->logins;
+        if (auto log = doc->getDocument()->getTransactionLog()) {
+            for (const auto &login : logins) {
+                try {
+                    if (login.second)
+                        log->logout(*login.second);
+                }
+                catch (const Base::Exception &e) {
+                    e.ReportException();
+                }
+            }
+        }
+        logins.clear();
+    }
     servedDocuments().erase(doc);
 }
 

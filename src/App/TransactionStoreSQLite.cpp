@@ -118,8 +118,11 @@ public:
              " inverts INTEGER DEFAULT 0, branch INTEGER DEFAULT 1,"
              " merge_from INTEGER DEFAULT 0)");
         exec("CREATE TABLE IF NOT EXISTS environment(id INTEGER PRIMARY KEY, json TEXT UNIQUE)");
-        exec("CREATE TABLE IF NOT EXISTS session(id INTEGER PRIMARY KEY, env INTEGER, user TEXT,"
-             " host TEXT, opened REAL, closed REAL)");
+        // Sec 30.6: a session is one login of one user.
+        exec("CREATE TABLE IF NOT EXISTS user(id INTEGER PRIMARY KEY, kind TEXT, name TEXT,"
+             " UNIQUE(kind, name))");
+        exec("CREATE TABLE IF NOT EXISTS session(id INTEGER PRIMARY KEY, env INTEGER,"
+             " user INTEGER, host TEXT, access TEXT, opened REAL, closed REAL)");
         exec("CREATE TABLE IF NOT EXISTS op(txn INTEGER, idx INTEGER, op TEXT, ckind TEXT,"
              " cid INTEGER, cname TEXT, ctype TEXT, prop TEXT, ptype TEXT, meta TEXT,"
              " vbefore TEXT, vafter TEXT, derived INTEGER, touched INTEGER, PRIMARY KEY(txn, idx))");
@@ -1505,14 +1508,49 @@ public:
         return v;
     }
 
-    int64_t openSession(int64_t env, const std::string& user, const std::string& host,
-                        double opened) override
+    int64_t user(const std::string& kind, const std::string& name) override
     {
-        auto s = prepare("INSERT INTO session(env,user,host,opened,closed) VALUES(?,?,?,?,0)");
+        auto find = prepare("SELECT id FROM user WHERE kind=? AND name=?");
+        bindText(find, 1, kind);
+        bindText(find, 2, name);
+        int64_t id = 0;
+        if (sqlite3_step(find) == SQLITE_ROW)
+            id = sqlite3_column_int64(find, 0);
+        sqlite3_reset(find);
+        if (id)
+            return id;
+        auto s = prepare("INSERT INTO user(kind,name) VALUES(?,?)");
+        bindText(s, 1, kind);
+        bindText(s, 2, name);
+        step(s);
+        return sqlite3_last_insert_rowid(db);
+    }
+
+    std::vector<LogUser> users() override
+    {
+        auto s = prepare("SELECT id,kind,name FROM user ORDER BY id");
+        std::vector<LogUser> out;
+        while (sqlite3_step(s) == SQLITE_ROW) {
+            LogUser r;
+            r.id = sqlite3_column_int64(s, 0);
+            r.kind = text(s, 1);
+            r.name = text(s, 2);
+            out.push_back(std::move(r));
+        }
+        sqlite3_reset(s);
+        return out;
+    }
+
+    int64_t openSession(int64_t env, int64_t user, const std::string& host,
+                        const std::string& access, double opened) override
+    {
+        auto s = prepare("INSERT INTO session(env,user,host,access,opened,closed)"
+                         " VALUES(?,?,?,?,?,0)");
         sqlite3_bind_int64(s, 1, env);
-        bindText(s, 2, user);
+        sqlite3_bind_int64(s, 2, user);
         bindText(s, 3, host);
-        sqlite3_bind_double(s, 4, opened);
+        bindText(s, 4, access);
+        sqlite3_bind_double(s, 5, opened);
         step(s);
         return sqlite3_last_insert_rowid(db);
     }
@@ -1527,16 +1565,17 @@ public:
 
     std::vector<LogSession> sessions() override
     {
-        auto s = prepare("SELECT id,env,user,host,opened,closed FROM session ORDER BY id");
+        auto s = prepare("SELECT id,env,user,host,access,opened,closed FROM session ORDER BY id");
         std::vector<LogSession> out;
         while (sqlite3_step(s) == SQLITE_ROW) {
             LogSession r;
             r.id = sqlite3_column_int64(s, 0);
             r.env = sqlite3_column_int64(s, 1);
-            r.user = text(s, 2);
+            r.user = sqlite3_column_int64(s, 2);
             r.host = text(s, 3);
-            r.opened = sqlite3_column_double(s, 4);
-            r.closed = sqlite3_column_double(s, 5);
+            r.access = text(s, 4);
+            r.opened = sqlite3_column_double(s, 5);
+            r.closed = sqlite3_column_double(s, 6);
             out.push_back(std::move(r));
         }
         sqlite3_reset(s);

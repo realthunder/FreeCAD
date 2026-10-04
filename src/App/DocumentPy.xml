@@ -293,8 +293,55 @@ maxCount: to limit the number of links returned
 
 Transactions of this document's log (docs/TransactionLog.md), each a
 dict with seq, parent, id, kind, origin, name, time, script, inverts
-(the seq an undo or redo inverts, else 0). Empty when
+(the seq an undo or redo inverts, else 0), and who wrote it (sec 30.6):
+session, author (the user's name) and author_kind ('local', 'verified',
+'invited' or 'declared'). Empty when
 the log is off (preference Document/TransactionLog).</UserDocu>
+      </Documentation>
+    </Methode>
+    <Methode Name="getTransactionSessions">
+      <Documentation>
+        <UserDocu>getTransactionSessions() -> list of dict
+
+The sessions of this document's log (docs/TransactionLog.md sec 30.6), one
+per login of one user: {'id', 'user', 'kind', 'name', 'access', 'host',
+'opened', 'closed'} -- 'user' the id of the user row, which every login of
+one person shares; 'closed' 0 while the session is open.</UserDocu>
+      </Documentation>
+    </Methode>
+    <Methode Name="pushTransactionActor" Keyword="true">
+      <Documentation>
+        <UserDocu>pushTransactionActor(kind, name, access='edit', login=0)
+
+Act as someone else from here on in this thread, in every document
+(docs/TransactionLog.md sec 30.3 S.b): the rows of the transactions opened
+until popTransactionActor() name that user as their author. `kind` is
+'verified', 'invited' or 'declared'; `login` tells one connection of the
+user from another, 0 for one session per user. What a served document's
+host does for each client; here for tests and scripts.</UserDocu>
+      </Documentation>
+    </Methode>
+    <Methode Name="popTransactionActor">
+      <Documentation>
+        <UserDocu>popTransactionActor() -> bool
+
+End the last pushTransactionActor(). False when there was none.</UserDocu>
+      </Documentation>
+    </Methode>
+    <Methode Name="transactionLogin" Keyword="true">
+      <Documentation>
+        <UserDocu>transactionLogin(kind, name, access='edit', login=0) -> int
+
+Record that a connection was admitted (docs/TransactionLog.md sec 30.6 U2):
+its session is opened and a `login` row, a record with no ops, is written.
+Returns the row's seq, 0 when the log is off.</UserDocu>
+      </Documentation>
+    </Methode>
+    <Methode Name="transactionLogout" Keyword="true">
+      <Documentation>
+        <UserDocu>transactionLogout(kind, name, login=0) -> bool
+
+The connection left: its session is closed. No row is written.</UserDocu>
       </Documentation>
     </Methode>
     <Methode Name="getTransactionOps">

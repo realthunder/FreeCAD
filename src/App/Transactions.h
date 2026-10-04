@@ -43,6 +43,7 @@ class TransactionObject;
 class TransactionalObject;
 class TransactionMeasure;
 class TransactionLog;
+struct Actor;
 
 
 /** Represents a atomic transaction of the document
@@ -90,6 +91,11 @@ public:
     /// The row's script (sec 27.63): an undo's, a redo's or a restore's
     /// record of the touched state it changed.
     std::string LogScript;
+    /// Who opened it (docs/TransactionLog.md sec 30.3 S.b), null for the
+    /// desktop user: the actor of the thread when it was made, kept so a
+    /// row written later -- at the event loop, by whoever closes it -- is
+    /// still its author's.
+    std::shared_ptr<const Actor> Author;
     /** Log writes held until this transaction's own row is written
      * (docs/TransactionLog.md sec 27.59): a recompute run while it is open
      * comes after its writes, and its record must follow its row. Dropped

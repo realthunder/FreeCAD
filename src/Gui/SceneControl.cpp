@@ -33,6 +33,7 @@
 #include <QJsonObject>
 #include <QJsonValue>
 
+#include <App/Actor.h>
 #include <App/Application.h>
 #include <App/AutoTransaction.h>
 #include <App/Document.h>
@@ -52,6 +53,7 @@
 #include "MirrorViewer.h"
 #include "OmniControl.h"
 #include "OmniSearch.h"
+#include "SceneActors.h"
 #include "SceneControl.h"
 #include "SceneWidgets.h"
 #include "SceneControlP.h"
@@ -1132,6 +1134,10 @@ std::string Gui::handleSceneControlRequest(const std::string &json,
             std::max(mutating ? Render::ClientAccess::Edit : Render::ClientAccess::View,
                      OmniControl::requiredAccess(op));
         AccessScope scope(access);
+        // What a connection's op writes is the connection's
+        // (docs/TransactionLog.md sec 30.3 S.b); a request with no
+        // connection behind it is the desktop's own.
+        App::ActorScope actor(client ? SceneActors::of(client) : nullptr);
         if (access < required && access == Render::ClientAccess::View)
             reply = errorReply(req.value(QLatin1String("id")), "ViewOnly",
                                QStringLiteral("this connection may not edit"));

@@ -12152,3 +12152,176 @@ delete, `['<implicit>']` after an open.
 unfrozen; 6 expected failures; +1), ctest 865/865, the GUI checks RC 15,
 BC 27, VC 18, PC 28, FC 16, VW 14, MC 28, the two-document check 24 and
 the tree check 19.
+
+### 30.9 S.b as built: the author of a row (2026-10-04)
+
+**The store.** Two tables, changed in place (27.55: no release has
+shipped the layout).
+
+- `user(id, kind, name)`, one row per kind and name. The kinds are
+  `App::Actor`'s: `local`, `verified`, `invited`, `declared`.
+- `session(id, env, user, host, access, opened, closed)`. `user` was the
+  OS name as text and is now the id of a user row; `access` is what a
+  connection was admitted with (`view`, `edit`, `host`), empty for the
+  desktop's.
+
+The desktop user is `local` / `host` (P3) until `TransactionLogIdentity`
+is on, then `local` under the OS name, and the machine's name is recorded
+with it as before. `TransactionStore::user(kind, name)` makes the row if
+absent; `users()` lists them.
+
+**Who acts.** `src/App/Actor.h`: `App::Actor` is one login of one user --
+kind, name, the access it was admitted with, and `login`, a number that
+tells one connection from the next. `App::ActorScope` sets the actor of
+what the thread does while it lives; scopes nest, and no scope is the
+desktop user.
+
+- **A transaction keeps its author.** `Transaction::Author` is the actor
+  of the thread when the transaction was made, so a row written later is
+  still its opener's: an implicit transaction a client's event opened is
+  closed at the event loop, where nobody acts.
+- **A row is stamped where it is numbered.** `TransactionLog::number`
+  takes the actor of the thread unless the row names its own:
+  `onCommit` gives the transaction's, `onRecompute` the open
+  transaction's when there is one (a recompute run inside an operation
+  is its author's; a bare one is whoever asked), and a record appended
+  again by a fast-forward keeps the session it was made under.
+- **An undo is the row of whoever undid**: the inverse is a transaction
+  made during the undo, under that scope. Whose step it takes is still
+  the document's one stack -- S.c.
+
+**A session per login.** `TransactionLogCore::sessionOf(actor)`: the
+process's own for no actor, else the session of that login, opened in
+this file's log the first time it is asked for -- its user row with it,
+which is what makes two logins of one person one author. Keyed by
+`login`, or by kind and name for an actor with none (one session for the
+process's life, what a script gets). Opened once, on the main thread
+with the worker's queue drained, so the wait is on no path that repeats.
+The map is dropped whenever the store is replaced by another (an
+embedded copy adopted, a recovery) and every session is closed with the
+log.
+
+**The login row** (U2). `TransactionLog::login(actor)`: the session is
+opened and a record written at the head -- kind `login`, name
+`Login <name>`, no ops, the row's session the login's own, its
+annotation `{"user", "kind", "access", "verified"}`. The address is not
+recorded. `logout(actor)` closes the session and writes nothing. Two
+cases write no row: the desktop user, who logs in by opening the log,
+and a version document not yet changed, which is on no branch and which
+a login must not put on one (27.5) -- the session row alone says who
+came.
+
+**A file's sessions end at its save.** Found by reading a saved file's
+store: the embedded copy is the live store as it stood, so every session
+open at the save -- the desktop's own, and every client's -- was open in
+the file for good, and "the session's closing time says it" said of
+everyone in at a save that they never left. `embed()` now closes the
+copy's open sessions at the time of the save; the live store's go on.
+The desktop's own session had been so since sessions were first written
+(sec 11); it took a second kind of session to show it.
+
+**A login moves the head, and is still not movement.** The alternative
+30.6 left open -- a login row that does not move the head -- was not
+taken: a row off the chain is reached by no walk, shown by no panel and
+kept by no collector. Nothing had to be built for the rule instead: the
+fast-forward test, the undo stack and "ahead / behind" all count rows
+with ops already, and a fast-forward takes the receiver's records off
+the chain and appends them again past the rows taken (30.7). The gtest
+below holds it there.
+
+**The Gui: a connection as an actor.** `src/Gui/SceneActors.{h,cpp}`.
+
+- `describe(info, grants)`: **verified** under the identity a front door
+  asserted (`docs/ShareAccess.md` sec 4); **invited** under its name when
+  the grant that admitted it is an invitation to that one name -- it has
+  a token, its name field is spelled out rather than a pattern, the
+  connection's name is that name, and it is not an easing the server
+  minted for a rename (U6); else **declared** under the name of its
+  hello, `guest` when it gave none. `login` is the connection's id.
+- `of(client)`: the actor of a connection, known from the roster at
+  first sight and kept until it is gone. A connection that left before
+  what it sent was run is a declared `guest`, so what it left queued is
+  still not the desktop user's.
+- **The scope is set at four places**, each on the GUI thread around the
+  call that acts: a pick, a replayed input event
+  (`SceneServeSource`), a control op (`handleSceneControlRequest`, which
+  the default group's handler shares) and a sandbox bridge op
+  (`SandboxRemote`).
+- **The desktop's own input stays the desktop's.**
+  `GUIApplication::notify` sets no actor for an event the window system
+  delivers while a client's scope is live -- a client's operation that
+  opened a dialog spins an event loop of its own, and what the desktop
+  user does inside it is not that client's.
+- **Who came and who left.** The server tells each served document when
+  its roster changes (`SceneStreamServer::setRosterNotifier`, fired
+  beside the sharing UI's own cue and held under the handler lock alone,
+  so it never waits behind a serialization), and a roster row now says
+  whether the connection is past the door (`SceneClientInfo::authorized`).
+  `SceneActors::sync` then reads the roster: a connection past the door,
+  with its hello said, joined to this document and not yet recorded is a
+  **login**; one recorded and no longer there is a **logout**. A
+  connection that moved to another document is a logout here and a login
+  there; one that renamed itself is another user (U3), so a logout and a
+  login; one whose mode the host changed keeps its session, whose
+  `access` is what it was admitted with. A document that stops being
+  served logs everyone out (`SceneServeSource::unserve`).
+- **The panel** has an Author column -- the name alone for a verified
+  user and for the desktop's, `bob (invited)` / `carol (declared)` for
+  one nothing verified, the kind, the session and the access in the tool
+  tip -- and hides login rows until its `Logins` box is checked.
+
+**Python.** `getTransactionLog()` rows carry `session`, `author` and
+`author_kind`; `getTransactionSessions()` lists the sessions with their
+users. `pushTransactionActor(kind, name, access='edit', login=0)` /
+`popTransactionActor()` act as someone for the thread, in every
+document; `transactionLogin(...)` / `transactionLogout(...)` are what
+the Gui does when a connection comes and goes.
+
+**What it does not do yet.**
+
+- **The door is as it was** (S.d): a connection with nothing verified
+  and an edit grant still writes, and its rows say `declared`. U4 takes
+  that away.
+- **Undo is the document's one stack** (S.c): a client's `undo` takes
+  the top step, whoever made it; the row it writes is the client's.
+- **Work a client's operation leaves for later** -- a timer, a queued
+  call -- runs with no actor, and what it writes is the desktop's. The
+  one case the log itself has, an implicit transaction closed at the
+  event loop, is covered by the transaction keeping its author.
+- **The default group** -- a viewer's own renderer serving, with no
+  `SceneServeSource` -- gets its rows authored, the session opened at a
+  connection's first write, and no login rows.
+- **History replies to a client do not name authors** (S.d).
+
+**Seen.** A file saved with its history by an earlier build of this
+branch does not open that history: the embedded store is the old layout,
+and the first statement naming a column it lacks throws
+(`no such column: target`, S.a's, in a file of 2026-10-03). That is
+27.55's rule at work, and S.b adds two more such columns; said here so
+it is not taken for a new defect.
+
+**Tests.** Gtests `theAuthorOfARowIsItsSessionsUser` (the desktop's rows,
+two logins of one verified user, an invited one; an implicit transaction
+closed outside the scope; the recompute of an open transaction; an undo
+under another actor), `aLoginIsARecord` (the row, its annotation, a
+view-only login, the session closed by leaving and no row for it, the
+same declared name again, no undo step) and
+`aLoginDoesNotStandInAFastForwardsWay`; `recomputeRecordAndSession` now
+reads the desktop's user row. Python
+`testTheAuthorOfARowTravelsWithTheFile`: authors and logins through a
+save with history and a reopen, and the same user coming again in the
+reopened file, with every session of the run that saved it closed in
+it. Gui check `scripts/transaction-log-author-check.py`
+(`AUTHORCHECK_OUT`), 21 checks: a document served, three clients on real
+sockets -- one with an identity header believed from loopback, one
+holding an invitation issued to its name, one on an open view-only
+invitation -- their login rows and sessions, a property set by each of
+the two that may, the desktop's own edit between, the view-only one
+refused, a client leaving and coming back as a second session of one
+user, the panel's column and its `Logins` box, and every session closed
+when they have all left.
+
+**Gates**, frozen and unfrozen each: Python 3001 OK (52 skipped frozen, 53
+unfrozen; 6 expected failures; +1), ctest 868/868 (+3), the GUI checks RC
+15, BC 27, VC 18, PC 28, FC 16, VW 14, MC 28, the two-document check 24,
+the tree check 19 and the author check 21.

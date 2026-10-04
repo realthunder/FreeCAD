@@ -37,6 +37,7 @@
 #include <Base/Writer.h>
 
 #include "Transactions.h"
+#include "Actor.h"
 #include "PropertyLinks.h"
 
 #include "Application.h"
@@ -59,6 +60,7 @@ Transaction::Transaction(int id)
 {
     if(!id) id = getNewID();
     transID = id;
+    Author = ActorScope::current();
 }
 
 /**

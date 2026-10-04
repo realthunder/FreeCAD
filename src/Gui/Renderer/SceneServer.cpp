@@ -1374,16 +1374,29 @@ public:
     /// The sharing UI's roster-changed cue. Guarded by handlerMutex
     /// like the group handlers; invoked with no lock held.
     std::function<void()> clientsChanged;
+    /// Each served document's own roster cue (setRosterNotifier), by
+    /// document name. Kept here rather than on the group, so firing them
+    /// needs handlerMutex alone and never waits behind a serialization
+    /// holding the payload lock.
+    std::map<std::string, std::function<void()>> rosterNotifiers;
 
     void notifyClientsChanged()
     {
         std::function<void()> notify;
+        // Each served document's own cue too: its source records who
+        // came and who left.
+        std::vector<std::function<void()>> rosters;
         {
             std::lock_guard<std::mutex> guard(handlerMutex);
             notify = clientsChanged;
+            rosters.reserve(rosterNotifiers.size());
+            for (auto &entry : rosterNotifiers)
+                rosters.push_back(entry.second);
         }
         if (notify)
             notify();
+        for (auto &roster : rosters)
+            roster();
     }
 
     /// Mint the live-only easing for a renamed connection
@@ -1492,6 +1505,7 @@ public:
             info.identity = conn->identity;
             info.grant = conn->grant;
             info.viewer = conn->viewer;
+            info.authorized = conn->authorized;
             info.access = conn->access;
             info.connectedMs = uint64_t(
                 std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -4292,6 +4306,17 @@ void SceneStreamServer::setClientClosedHandler(
     g->clientClosedHandler = std::move(handler);
 }
 
+void SceneStreamServer::setRosterNotifier(std::function<void()> notifier,
+                                          const std::string &doc)
+{
+    Private *p = ensure();
+    std::lock_guard<std::mutex> guard(p->handlerMutex);
+    if (notifier)
+        p->rosterNotifiers[doc] = std::move(notifier);
+    else
+        p->rosterNotifiers.erase(doc);
+}
+
 bool SceneStreamServer::sendControl(uint64_t client, const std::string &json)
 {
     Private *p = ensure();
@@ -4400,6 +4425,7 @@ void SceneStreamServer::releaseGroup(const std::string &doc)
         g->bridgeHandler = nullptr;
         g->workNotifier = nullptr;
         g->clientClosedHandler = nullptr;
+        pimpl->rosterNotifiers.erase(doc);
     }
     // The document left the listing; tell the menus.
     pimpl->pushDocs();

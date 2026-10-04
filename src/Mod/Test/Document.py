@@ -5631,3 +5631,81 @@ class TransactionBranchCases(unittest.TestCase):
         doc.Box.Width = 3
         doc.commitTransaction()
         self.assertAlmostEqual(doc.Box.Width.Value, 3.0)
+
+    def testTheAuthorOfARowTravelsWithTheFile(self):
+        # Sec 30.3 S.b, 30.6: a row is written under whoever acted when its
+        # transaction opened; a login is a row with no ops; the users and
+        # their sessions are in the history a save embeds, and one who comes
+        # again after the file is reopened is the user they were.
+        doc = self.track(FreeCAD.newDocument("Authors"))
+        doc.UndoMode = 1
+        doc.openTransaction("mine")
+        obj = doc.addObject("App::FeatureTest", "Obj")
+        obj.Integer = 1
+        doc.commitTransaction()
+        with self.assertRaises(ValueError):
+            doc.pushTransactionActor("local", "me")
+        self.assertFalse(doc.popTransactionActor())
+
+        login = doc.transactionLogin("verified", "alice@example.com", login=7)
+        self.assertGreater(login, 0)
+        doc.pushTransactionActor("verified", "alice@example.com", login=7)
+        try:
+            doc.openTransaction("hers")
+            obj.Integer = 2
+            doc.commitTransaction()
+        finally:
+            self.assertTrue(doc.popTransactionActor())
+        self.assertGreater(doc.transactionLogin("declared", "carol", access="view", login=8), 0)
+        doc.openTransaction("mine again")
+        obj.Integer = 3
+        doc.commitTransaction()
+
+        def authors(d):
+            return [
+                (t["name"], t["author"], t["author_kind"])
+                for t in d.getTransactionLog()
+                if t["kind"] in ("user", "login")
+            ]
+
+        expected = [
+            ("mine", "host", "local"),
+            ("Login alice@example.com", "alice@example.com", "verified"),
+            ("hers", "alice@example.com", "verified"),
+            ("Login carol", "carol", "declared"),
+            ("mine again", "host", "local"),
+        ]
+        self.assertEqual(authors(doc), expected)
+        # A login is not a step.
+        self.assertEqual(doc.UndoNames, ["mine again", "hers", "mine"])
+        self.assertTrue(doc.transactionLogout("declared", "carol", login=8))
+        self.assertFalse(doc.transactionLogout("declared", "carol", login=8))
+        sessions = {s["name"]: s for s in doc.getTransactionSessions()}
+        self.assertEqual(sessions["carol"]["access"], "view")
+        self.assertGreater(sessions["carol"]["closed"], 0)
+        self.assertEqual(sessions["alice@example.com"]["closed"], 0)
+        alice = sessions["alice@example.com"]["user"]
+
+        path = os.path.join(self.dir, "authors.FCStd")
+        doc.saveAs(path)
+        FreeCAD.closeDocument(doc.Name)
+        doc = self.track(FreeCAD.openDocument(path))
+        doc.UndoMode = 1
+        self.assertEqual(authors(doc)[: len(expected)], expected)
+        # Every session of the run that wrote the file is closed in it.
+        for s in doc.getTransactionSessions():
+            if s["name"] in ("alice@example.com", "carol"):
+                self.assertGreater(s["closed"], 0, s)
+
+        doc.pushTransactionActor("verified", "alice@example.com", login=9)
+        try:
+            doc.openTransaction("hers, another day")
+            doc.Obj.Integer = 4
+            doc.commitTransaction()
+        finally:
+            doc.popTransactionActor()
+        last = [t for t in doc.getTransactionLog() if t["kind"] == "user"][-1]
+        self.assertEqual((last["name"], last["author"]), ("hers, another day", "alice@example.com"))
+        hers = [s for s in doc.getTransactionSessions() if s["name"] == "alice@example.com"]
+        self.assertEqual(len(hers), 2)
+        self.assertEqual({s["user"] for s in hers}, {alice})

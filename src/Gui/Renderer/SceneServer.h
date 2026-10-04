@@ -271,6 +271,9 @@ struct SceneClientInfo {
     /// self-declared \a client label is all there is.
     std::string identity;
     bool viewer = false;      ///< sent a hello (a probe may not)
+    /// Past the door: a connection still waiting for a token it has not
+    /// presented is on the roster and gets no scene bytes.
+    bool authorized = false;
     /// View: picks and mutating ops refused; Host: may act beyond the
     /// document (ClientAccess)
     ClientAccess access = ClientAccess::Edit;
@@ -617,6 +620,15 @@ public:
     /// marshal itself.
     void setClientClosedHandler(std::function<void(uint64_t)> handler,
                                 const std::string &doc = {});
+    /// Install this document's cue that the roster changed -- what
+    /// setClientsChangedNotifier is for the sharing UI, for the source
+    /// that serves the document: it records who came and who left
+    /// (docs/TransactionLog.md sec 30.6). Fired for every change of any
+    /// connection, since a connection that left this document for
+    /// another is a change of both; the handler reads clients() and
+    /// decides. Called on a server thread -- it must marshal itself.
+    void setRosterNotifier(std::function<void()> notifier,
+                           const std::string &doc = {});
     /// Queue a JSON control message to ONE connection, by id; false
     /// when it is gone. Any thread.
     bool sendControl(uint64_t client, const std::string &json);

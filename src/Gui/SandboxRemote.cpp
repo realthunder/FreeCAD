@@ -32,8 +32,10 @@
 
 #include "Renderer/SceneServer.h"
 #include "SandboxRemote.h"
+#include "SceneActors.h"
 
 #ifdef FC_EXPR_IMAGE_HOST
+#include <App/Actor.h>
 #include <App/Document.h>
 #include <App/ExpressionImageBridge.h>
 #include <App/ExpressionSecurityRuntime.h>
@@ -129,6 +131,9 @@ std::vector<uint8_t> dispatch(App::Document* doc, const Render::SceneBridgeReque
         e.table.setOwner(face);
         Py_DECREF(face);
         App::ExpressionSecurity::Runtime::Scope scope(doc, client);
+        // What the guest writes is its connection's (docs/TransactionLog.md
+        // sec 30.3 S.b).
+        App::ActorScope actor(SceneActors::of(req.client));
         std::string opName;
         std::string missing;
         return Sandbox::dispatchHostBytes(e.table, data, len, opName, missing);

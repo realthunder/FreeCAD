@@ -25,6 +25,7 @@
 
 #ifndef _PreComp_
 # include <chrono>
+# include <optional>
 # include <sstream>
 # include <QAbstractSpinBox>
 # include <QByteArray>
@@ -55,6 +56,7 @@
 # include <pthread.h>
 #endif
 
+#include <App/Actor.h>
 #include <App/Application.h>
 #include <Base/Console.h>
 #include <Base/CrashLog.h>
@@ -325,6 +327,13 @@ bool GUIApplication::notify (QObject * receiver, QEvent * event)
         return false;
     }
     SlowDispatchTrace slowTrace(receiver, event);
+    // The desktop user's own input is the desktop user's
+    // (docs/TransactionLog.md sec 30.3 S.b): an event the window system
+    // delivers while a client's operation spins an event loop of its own --
+    // a dialog it opened -- is not that client's.
+    std::optional<App::ActorScope> own;
+    if (event->spontaneous() && App::ActorScope::current())
+        own.emplace(std::shared_ptr<const App::Actor>());
     try {
         if (event->type() == Spaceball::ButtonEvent::ButtonEventType ||
             event->type() == Spaceball::MotionEvent::MotionEventType)
