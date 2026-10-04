@@ -4846,9 +4846,10 @@ one); that it still holds the input is from the code.
 ### The leftovers of session 123 (session 124)
 
 The user, at the end of session 123: "Next session chase the leftover
-issues". Four were listed. Two are closed here, one of them by finding it
-was never there; a third defect turned up on the way; two wait for a
-ruling.
+issues". Four were listed. Three are closed here, one of them by finding
+it was never there, and a defect nobody had listed turned up on the way.
+The fourth -- a real upstream file, and with it running upstream's delete
+-- the user put off ("Skip for now").
 
 **A reference missing its element, in a sketch from before version 2.**
 Measured first, on a forged file: the far edge of a loose box taken both
@@ -4861,19 +4862,41 @@ was not.
 
 Whether such a reference is an edge cannot be told when the file is read:
 it is not among the links, and a key with a mapped name carries no element
-type. It can when the rebuild finds the element again. So
-`migrateExternalTypes` remembers the missing references of a sketch below
-version 2 whose every piece is flagged (`legacyCutExternalRefs`), and the
-put-back in `rebuildExternalGeometry` makes one of them that turns out to
-be an edge a reference of both kinds, its pieces taking their ids by
-position as for any such reference read from a file. A face stays the cut.
+type. It can when the rebuild finds the element again, and the put-back in
+`rebuildExternalGeometry` asks then: an edge whose every piece is flagged
+the old way, in a sketch below version 2, is a reference of both kinds,
+its pieces taking their ids by position as for any such reference read
+from a file. A face stays the cut.
 
-**Its limit, measured.** What is remembered is the session's. Open such a
-file, save it with the reference still missing, open it again: the file
-states the kinds now, the missing reference is all flagged like any cut,
-and it comes back as the cut alone, the line and its constraint lost as
-before. Nothing in the file can say otherwise today; a flag on the
-geometry could. Put to the user, since it is one more bit in the format.
+**"Flagged the old way" is a flag in the file.** Every piece flagged, in a
+sketch below version 2, is also what a cut made by THIS build in an old
+sketch looks like -- the cut alone, since session 123. The first fix
+(`9dd87e6055`) told the two apart by remembering, when the file was read,
+which missing references it found all flagged. That holds for the session:
+saved with the reference still missing and opened again, the file states
+the kinds, is no old file any more, and the edge came back as the cut
+alone, line and constraint lost as before (measured). Put to the user as
+one more bit in the format, and ruled: "Add the flag bit".
+
+`ExternalGeometryExtension::Cut` (bit 6, 64 in `Flags`). It is set with
+`Intersection` on what is a cut and nothing else: by the rebuild, by
+`toggleIntersection`, and when a file is read on every piece of a
+reference the list says is a cut. A piece flagged `Intersection` without
+it is of the old rule. The remembered set is gone again.
+
+It is the cut that carries the bit, not the old geometry, and that is
+deliberate. Marking the old pieces would be done where the file is found
+to have no kinds -- and in this fork's own schema a property at its
+default is left out of the file, so a sketch whose references are all
+missing states no kinds at any load, and a cut made here would be marked
+old the second time round. The price is that every cut written from now
+on has the bit, not the few migrated ones. Upstream, and older builds of
+this fork, keep a bit they do not know and do nothing with it; upstream
+could one day give bit 6 a meaning of its own, as it could bit 5.
+
+Not covered: a cut made in an old sketch by the builds of sessions 123
+and 124 before this one, saved with its element missing. It has no bit,
+and comes back as both kinds. Those builds never left this box.
 
 **A missing reference was put back once for each of its geometries.**
 Found by the same probe, in a file with nothing old about it: the put-back
@@ -4901,31 +4924,46 @@ whole object becomes one reference for each face.)
 2026-10-03): unchanged. `ExternalTypes` is written where a reference is
 added and read by the rebuild; the delete rewrites the links alone. Two
 searches of upstream's issues for the property's name find nothing. Still
-read and not run -- running it takes an upstream build.
+read and not run -- running it takes an upstream build -- and nothing was
+reported to upstream.
 
-**A real upstream file.** There is no upstream build on this box.
-conda-forge has `freecad` 1.1.0, 1.1.3 and 2026.09.16; an environment of
-its own for 1.1.3 is 304 packages, an 848 MB download. Asked before
-fetching it.
+**A real upstream file: put off.** There is no upstream build on this
+box. conda-forge has `freecad` 1.1.0, 1.1.3 and 2026.09.16; an environment
+of its own for 1.1.3 is 304 packages, an 848 MB download. Asked; the user:
+"Skip for now". The script it would run is kept,
+`~/works/sw/fcad-probes/exttypes/upmake.py`: sketches with a reference of
+each kind, and a delete in front of a cut. Open with it, and not looked
+into at all: what upstream does with the kind of a reference whose
+element is missing.
 
 **Home in the Elements list.** It is the shortcut of the home view
 (`Std_ViewHome`) and a shortcut is tried before the list sees the key. The
 list has the keyboard while the pointer is over it and no longer: it takes
 the focus when a row is entered and gives it up when the pointer leaves
-the panel. Down, Up and End are the list's on those terms already; Home
-would be too, by the list accepting the `ShortcutOverride` for it, and
-would then not be the view's key while the pointer rests on the list.
-Asked before building.
+the panel. Down, Up and End were the list's on those terms already. Put to
+the user with what it costs -- Home is not the view's key while the
+pointer rests on the list -- and ruled: Home to the list.
+`ElementView::event` accepts the `ShortcutOverride` for Home, plain or
+with Shift, and the key then reaches the list as any other. Everywhere
+else it is the home view's as before.
 
-Tests: `SketcherTests/TestSketchExternalTypes.py`, four more cases (21) --
-a missing reference comes back once; the old file's missing edge; the old
-file's missing face stays a cut; a whole object is one reference. On the
-tree before, two fail (both on the doubled link, the first thing they
-check); the other two pin what already held.
+Tests. `SketcherTests/TestSketchExternalTypes.py`, six more cases (23): a
+missing reference comes back once; the old file's missing edge, and the
+same saved in between; the old file's missing face stays a cut; an edge
+cut in an old sketch by this build stays a cut, across a save; a whole
+object is one reference. Scored on the tree before each change: the
+doubled link failed two; the save in between failed on the kind (`[1]`
+for `[2]`); the rest pin what already held. The helpers that forge an old
+or an upstream file strip the new bit, which neither has.
+`tests/gui/sketch-elements-keys.py`, five more checks (24): before, plain
+Home ran the home view and selected nothing; Shift+Home reached the list
+already.
 
-**Verified** on the tree with all of it: full build, `FreeCADCmd -t 0`
-2917 OK (2913 before, plus the four), ctest 902/902. The two fixes are two
-commits; the first was not built on its own.
+**Verified**, twice. With the two fixes: full build, `FreeCADCmd -t 0`
+2917 OK (2913 before, plus four), ctest 902/902; the two are two commits
+and the first was not built on its own. With the flag and the Home key on
+top: full build, `FreeCADCmd -t 0` 2919 OK, ctest 902/902 (no new entry:
+the checks went into tests already there).
 
 ## 8. Phases
 
