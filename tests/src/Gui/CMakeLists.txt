@@ -131,6 +131,25 @@ if(TARGET FreeCADGui)
     add_test(NAME RenderProperties_tests_run
              COMMAND RenderProperties_tests_run)
 
+    # A native fault inside an event handler ends the process, on the
+    # record: GUIApplication's SEH guard, which only MSVC builds have.
+    # A death test with a real GUIApplication and an offscreen platform.
+    if(MSVC)
+        add_executable(NotifyFault_tests_run
+                       ${CMAKE_CURRENT_SOURCE_DIR}/NotifyFault.cpp)
+        target_include_directories(NotifyFault_tests_run PRIVATE
+            ${CMAKE_SOURCE_DIR}
+            ${CMAKE_SOURCE_DIR}/src
+            ${CMAKE_BINARY_DIR}/src
+            ${Python3_INCLUDE_DIRS}
+            ${XercesC_INCLUDE_DIRS}
+            ${COIN3D_INCLUDE_DIRS}
+            ${Boost_INCLUDE_DIRS})
+        target_link_libraries(NotifyFault_tests_run
+                              gtest_main FreeCADGui FreeCADApp FreeCADBase)
+        add_test(NAME NotifyFault_tests_run COMMAND NotifyFault_tests_run)
+    endif()
+
     # The selection instance stack (docs/ThinClient.md section 8.4). What
     # it asserts -- which instance Gui::Selection() resolves to, and that
     # an observer stays pinned to the room -- is settled entirely inside

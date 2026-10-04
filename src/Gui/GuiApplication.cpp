@@ -37,6 +37,11 @@
 # include <QMessageBox>
 #endif
 
+#if defined(_MSC_VER)
+# include <cstring>
+# include <windows.h>
+#endif
+
 #include <QLocalServer>
 #include <QLocalSocket>
 
@@ -303,6 +308,108 @@ void logNotifyException(Base::CrashLog::Severity severity,
     }
 }
 
+#if defined(_MSC_VER)
+/* A native fault -- an access violation and its kin, an SEH exception rather
+ * than a C++ one -- inside an event handler.
+ *
+ * notify()'s catch (...) never sees one: the tree is built with /EHsc, where
+ * C++ handlers catch C++ exceptions only. Left alone, the fault searches on
+ * past Qt and user32 for whoever claims it. Normally nobody does, and it
+ * reaches the top-level crash handler (MyCrashHandlerExceptionFilter in
+ * MainGui.cpp: crash.dmp, crash.log). But whatever hooks the window procedure
+ * sits further out and can claim it first: on a box running the Digital
+ * Guardian agent, dgapi64.dll subclasses the windows, its frame handler takes
+ * the fault and unwinds to its own frame, and the event loop runs on as if
+ * the handler had returned -- a Python call that never comes back, and state
+ * the fault left half written. That made an OCCT STEP writer crash look like
+ * a hang (OCCT tests/occ-issues local05; caught under cdb, the RtlUnwindEx
+ * that discarded it was dgapi64's).
+ *
+ * So the decision is taken here, innermost of all of them: a fault that
+ * reaches notify() is fatal. It is recorded, handed to the crash handler as if
+ * nothing had claimed it, and the process ends. A fault something below means
+ * to survive -- ctypes' guarded calls, a driver probing memory -- is claimed
+ * in a frame below this one and never gets here.
+ */
+bool isFatalNativeException(DWORD code)
+{
+    switch (code) {
+        case EXCEPTION_ACCESS_VIOLATION:
+        case EXCEPTION_IN_PAGE_ERROR:
+        case EXCEPTION_ILLEGAL_INSTRUCTION:
+        case EXCEPTION_PRIV_INSTRUCTION:
+        case EXCEPTION_STACK_OVERFLOW:
+        case EXCEPTION_INT_DIVIDE_BY_ZERO:
+        case EXCEPTION_ARRAY_BOUNDS_EXCEEDED:
+        case EXCEPTION_DATATYPE_MISALIGNMENT:
+        case EXCEPTION_NONCONTINUABLE_EXCEPTION:
+        case 0xC0000374:  // STATUS_HEAP_CORRUPTION, from ntstatus.h
+            return true;
+        default:
+            return false;
+    }
+}
+
+void recordNativeFault(const EXCEPTION_RECORD* record, QObject* receiver, QEvent* event)
+{
+    std::ostringstream headline;
+    headline << "native exception 0x" << std::hex << record->ExceptionCode << " at "
+             << record->ExceptionAddress;
+    HMODULE module = nullptr;
+    char path[MAX_PATH] = {};
+    if (GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS
+                               | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                           static_cast<LPCSTR>(record->ExceptionAddress),
+                           &module)
+        && GetModuleFileNameA(module, path, MAX_PATH)) {
+        const char* name = strrchr(path, '\\');
+        headline << " (" << (name ? name + 1 : path) << "+0x"
+                 << (static_cast<const char*>(record->ExceptionAddress)
+                     - reinterpret_cast<const char*>(module))
+                 << ')';
+    }
+    if (record->ExceptionCode == EXCEPTION_ACCESS_VIOLATION && record->NumberParameters >= 2) {
+        const ULONG_PTR op = record->ExceptionInformation[0];
+        headline << ", " << (op == 0 ? "reading" : op == 1 ? "writing" : "executing") << " 0x"
+                 << record->ExceptionInformation[1];
+    }
+    logNotifyException(Base::CrashLog::Severity::Fatal, headline.str().c_str(), nullptr, "",
+                       receiver, event);
+}
+
+/// recordNativeFault() under a guard of its own: the receiver may be what the
+/// fault corrupted, and a second fault raised while the filter below runs
+/// would be offered to that same filter again.
+void recordNativeFaultGuarded(const EXCEPTION_RECORD* record, QObject* receiver, QEvent* event)
+{
+    __try {
+        recordNativeFault(record, receiver, event);
+    }
+    __except (EXCEPTION_EXECUTE_HANDLER) {
+    }
+}
+
+LONG notifyFaultFilter(EXCEPTION_POINTERS* info, QObject* receiver, QEvent* event)
+{
+    // A C++ exception (0xE06D7363) and anything not a fault go on to
+    // notify()'s catch clauses, or out, as before.
+    if (!isFatalNativeException(info->ExceptionRecord->ExceptionCode)) {
+        return EXCEPTION_CONTINUE_SEARCH;
+    }
+    recordNativeFaultGuarded(info->ExceptionRecord, receiver, event);
+    if (!IsDebuggerPresent()) {
+        // What an unclaimed fault gets: the top-level filter (the crash
+        // handler's dump and log), then Windows Error Reporting.
+        UnhandledExceptionFilter(info);
+        TerminateProcess(GetCurrentProcess(), info->ExceptionRecord->ExceptionCode);
+    }
+    // Under a debugger: stop there, in the fault's own context, instead of
+    // letting a hook further out claim the second chance.
+    RaiseFailFastException(info->ExceptionRecord, info->ContextRecord, 0);
+    return EXCEPTION_EXECUTE_HANDLER;
+}
+#endif
+
 }  // namespace
 
 GUIApplication::GUIApplication(int & argc, char ** argv)
@@ -317,6 +424,27 @@ GUIApplication::GUIApplication(int & argc, char ** argv)
 
 GUIApplication::~GUIApplication() = default;
 
+bool GUIApplication::dispatchEvent(QObject * receiver, QEvent * event)
+{
+    if (event->type() == Spaceball::ButtonEvent::ButtonEventType ||
+        event->type() == Spaceball::MotionEvent::MotionEventType)
+        return processSpaceballEvent(receiver, event);
+    return QApplication::notify(receiver, event);
+}
+
+#if defined(_MSC_VER)
+// No object with a destructor in here: /EHsc refuses __try beside one (C2712).
+bool GUIApplication::guardedDispatch(GUIApplication * app, QObject * receiver, QEvent * event)
+{
+    __try {
+        return app->dispatchEvent(receiver, event);
+    }
+    __except (notifyFaultFilter(GetExceptionInformation(), receiver, event)) {
+        return false;  // not reached: the filter ends the process
+    }
+}
+#endif
+
 bool GUIApplication::notify (QObject * receiver, QEvent * event)
 {
     if (!receiver) {
@@ -326,11 +454,11 @@ bool GUIApplication::notify (QObject * receiver, QEvent * event)
     }
     SlowDispatchTrace slowTrace(receiver, event);
     try {
-        if (event->type() == Spaceball::ButtonEvent::ButtonEventType ||
-            event->type() == Spaceball::MotionEvent::MotionEventType)
-            return processSpaceballEvent(receiver, event);
-        else
-            return QApplication::notify(receiver, event);
+#if defined(_MSC_VER)
+        return guardedDispatch(this, receiver, event);
+#else
+        return dispatchEvent(receiver, event);
+#endif
     }
     catch (const Base::AccessViolation &e) {
         // Fatal: the process survived, but only because the fault was turned

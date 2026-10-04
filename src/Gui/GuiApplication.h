@@ -36,7 +36,7 @@ namespace Gui
 /** Override QCoreApplication::notify() to fetch exceptions in Qt widgets
  * properly that are not handled in the event handler or slot.
  */
-class GUIApplication : public GUIApplicationNativeEventAware
+class GuiExport GUIApplication : public GUIApplicationNativeEventAware
 {
     Q_OBJECT
 
@@ -58,6 +58,13 @@ public Q_SLOTS:
 
 protected:
     bool event(QEvent * event) override;
+
+private:
+    /// What notify() does once the event is admitted: no exception handling.
+    bool dispatchEvent(QObject * receiver, QEvent * event);
+    /// dispatchEvent() under a native (SEH) fault guard -- MSVC only, see
+    /// the comment at its definition.
+    static bool guardedDispatch(GUIApplication * app, QObject * receiver, QEvent * event);
 };
 
 class GUISingleApplication : public GUIApplication
