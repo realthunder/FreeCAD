@@ -317,10 +317,11 @@ TransactionLogView::TransactionLogView(Gui::Document* pcDocument, QWidget* paren
     _mergeBranch->setToolTip(tr("Merge another branch into this one: what it changed and this "
                                 "one did not, as one undoable step (sec 28)"));
     branchBar->addWidget(_mergeBranch);
-    _openWriter = new QPushButton(tr("Writer"), this);
-    _openWriter->setToolTip(tr("Open another document of this file that writes to this branch: "
-                               "each follows what the other does (sec 29)"));
-    branchBar->addWidget(_openWriter);
+    _openBranch = new QPushButton(tr("Branch to document"), this);
+    _openBranch->setToolTip(tr("Make a branch here and open it in another document of this "
+                               "file; this one stays where it is, and either is merged into "
+                               "the other with Merge... (sec 30)"));
+    branchBar->addWidget(_openBranch);
     _allBranches = new QCheckBox(tr("All branches"), this);
     _allBranches->setToolTip(tr("Show the rows of every branch, not only this branch's history"));
     branchBar->addWidget(_allBranches);
@@ -468,7 +469,7 @@ TransactionLogView::TransactionLogView(Gui::Document* pcDocument, QWidget* paren
     connect(_deleteBranch, &QPushButton::clicked, this, &TransactionLogView::onDeleteBranch);
     connect(_renameBranch, &QPushButton::clicked, this, &TransactionLogView::onRenameBranch);
     connect(_mergeBranch, &QPushButton::clicked, this, &TransactionLogView::onMergeBranch);
-    connect(_openWriter, &QPushButton::clicked, this, &TransactionLogView::onOpenWriter);
+    connect(_openBranch, &QPushButton::clicked, this, &TransactionLogView::onOpenBranch);
     connect(_allBranches, &QCheckBox::toggled, this, &TransactionLogView::applyVisibility);
     connect(_hideRecords, &QCheckBox::toggled, this, &TransactionLogView::applyVisibility);
 
@@ -1117,7 +1118,7 @@ void TransactionLogView::refreshBranches()
         _deleteBranch->setEnabled(false);
         _renameBranch->setEnabled(false);
         _mergeBranch->setEnabled(false);
-        _openWriter->setEnabled(false);
+        _openBranch->setEnabled(false);
         return;
     }
     int current = -1;
@@ -1140,13 +1141,7 @@ void TransactionLogView::refreshBranches()
     _newBranch->setEnabled(_doc != nullptr);
     _deleteBranch->setEnabled(_doc != nullptr && _branch->count() > 1);
     _mergeBranch->setEnabled(_doc != nullptr && _branch->count() > 1);
-    bool writer = false;
-    try {
-        writer = _doc && _doc->writerState().writer;
-    }
-    catch (Base::Exception&) {
-    }
-    _openWriter->setEnabled(_doc != nullptr && !writer && !l->detached());
+    _openBranch->setEnabled(_doc != nullptr && !l->detached());
     _renameBranch->setEnabled(_doc != nullptr && _branch->currentIndex() >= 0);
 }
 
@@ -1240,7 +1235,12 @@ public:
                               .arg(preview.changes.size())
                               .arg(preview.base)
                               .arg(preview.conflicts);
-        if (preview.fastForward)
+        if (!preview.forward.empty())
+            summary += QLatin1Char(' ')
+                     + QObject::tr("This branch has not moved since: a fast-forward, the "
+                                   "other's %1 rows taken as they are.")
+                           .arg(preview.forward.size());
+        else if (preview.fastForward)
             summary += QLatin1Char(' ')
                      + QObject::tr("This branch has changed nothing since: the other is taken "
                                    "whole, with no recompute.");
@@ -1357,16 +1357,16 @@ private:
 
 } // namespace
 
-void TransactionLogView::onOpenWriter()
+void TransactionLogView::onOpenBranch()
 {
     if (!_doc)
         return;
     try {
-        _doc->openWriter();
+        _doc->openNewBranch();
     }
     catch (Base::Exception& e) {
-        FC_ERR("open a writer of " << _doc->getName() << ": " << e.what());
-        _status->setText(tr("No writer opened -- the report view says why"));
+        FC_ERR("open a branch of " << _doc->getName() << ": " << e.what());
+        _status->setText(tr("No branch opened -- the report view says why"));
     }
 }
 
@@ -1396,7 +1396,7 @@ void TransactionLogView::mergeBranch(const QString& name)
         return;
     try {
         const auto preview = _doc->previewMerge(name.toStdString());
-        if (preview.changes.empty()) {
+        if (preview.changes.empty() && preview.forward.empty()) {
             _status->setText(tr("Nothing of %1 to merge").arg(name));
             return;
         }
@@ -1409,6 +1409,9 @@ void TransactionLogView::mergeBranch(const QString& name)
         if (!result.unresolved.empty())
             _status->setText(tr("Merge of %1 refused: %2 conflicts have no side")
                                  .arg(name).arg(result.unresolved.size()));
+        else if (result.forwarded)
+            _status->setText(tr("Merged %1: fast-forward, %2 rows taken as they are")
+                                 .arg(name).arg(result.forwarded));
         else if (!result.failed.empty())
             _status->setText(tr("Merged %1 as row %2; %3 objects failed to recompute")
                                  .arg(name).arg(result.seq).arg(result.failed.size()));
@@ -1666,18 +1669,20 @@ void TransactionLogView::updateStatus()
         App::LogBranch branch;
         if (l->store().getBranch(l->branch(), branch))
             modeText += QStringLiteral(", ") + tr("branch %1").arg(QString::fromStdString(branch.name));
-        // A writer (sec 29.2): what it writes to, and what stands between.
-        const auto writer = _doc->writerState();
-        if (writer.writer) {
-            modeText += QStringLiteral(", ")
-                      + tr("writer of %1").arg(QString::fromStdString(writer.target));
-            if (writer.unpushed)
+        // A branch made from another (sec 30.3 S.a): which, and what
+        // stands between the two until one is merged into the other.
+        if (branch.target) {
+            const auto state = _doc->branchState();
+            if (!state.target.empty()) {
                 modeText += QStringLiteral(", ")
-                          + tr("%1 unpushed").arg(static_cast<qulonglong>(writer.unpushed));
-            if (writer.conflicts)
-                modeText += QStringLiteral(", ")
-                          + tr("%1 conflicts: Merge... to pick")
-                                .arg(static_cast<qulonglong>(writer.conflicts));
+                          + tr("from %1").arg(QString::fromStdString(state.target));
+                if (state.ahead)
+                    modeText += QStringLiteral(", ")
+                              + tr("%1 ahead").arg(static_cast<qulonglong>(state.ahead));
+                if (state.behind)
+                    modeText += QStringLiteral(", ")
+                              + tr("%1 behind").arg(static_cast<qulonglong>(state.behind));
+            }
         }
     }
     catch (Base::Exception&) {

@@ -277,6 +277,8 @@ public:
     bool removeBranch(int64_t id) override { return inner().removeBranch(id); }
     bool forwardBranch(int64_t id, int64_t head, const std::vector<int64_t>& seqs) override
     { return inner().forwardBranch(id, head, seqs); }
+    void anchorVersions(const std::vector<int64_t>& seqs, int64_t to) override
+    { inner().anchorVersions(seqs, to); }
     std::string getMeta(const std::string& key) override { return inner().getMeta(key); }
     void setMeta(const std::string& key, const std::string& value) override
     { inner().setMeta(key, value); }
@@ -1193,7 +1195,30 @@ int64_t TransactionLog::record(const char* kind, const std::string& name,
     return t.seq;
 }
 
-int64_t TransactionLog::makeWriter(int64_t target, const std::string& name)
+int64_t TransactionLog::reappend(LogTransaction t)
+{
+    // The record as it was made -- its kind, name, annotation, time and
+    // session -- at the head, under a new number.
+    number(t);
+    t.mergeFrom = 0;
+    t.inverts = 0;
+    post([this, t]() mutable {
+        std::vector<LogOp> none;
+        _c._store->append(t, none);
+    });
+    return t.seq;
+}
+
+bool TransactionLog::othersStandOn(const std::vector<int64_t>& seqs) const
+{
+    for (const TransactionLog* cursor : _c._cursors) {
+        if (cursor != this && std::find(seqs.begin(), seqs.end(), cursor->_head) != seqs.end())
+            return true;
+    }
+    return false;
+}
+
+int64_t TransactionLog::forkHere(int64_t target, const std::string& name)
 {
     flush();
     auto& store = *_c._store;
@@ -1217,39 +1242,10 @@ int64_t TransactionLog::makeWriter(int64_t target, const std::string& name)
     return branch.id;
 }
 
-bool TransactionLog::writtenPast(int64_t seq)
-{
-    auto& rows = store();
-    if (_recentAt != _c._rewrites) {
-        _recent.clear();
-        _recentAt = _c._rewrites;
-    }
-    for (const auto& t : rows.chain(_head, seq + 1)) {
-        if (t.seq > seq && !_recent.count(t.seq) && !rows.ops(t.seq).empty())
-            return true;
-    }
-    return false;
-}
-
 void TransactionLog::moveHead(int64_t head)
 {
     flush();
     _head = head;
-}
-
-int64_t TransactionLog::recordOn(int64_t branch, LogTransaction t, std::vector<LogOp> ops)
-{
-    flush();
-    LogBranch on;
-    if (!_c._store->getBranch(branch, on))
-        return 0;
-    t.parent = on.head;
-    t.branch = branch;
-    t.seq = ++_c._nextSeq;
-    t.time = now();
-    t.session = _c._session;
-    post([this, t, ops]() mutable { _c._store->append(t, ops); });
-    return t.seq;
 }
 
 bool TransactionLog::setBranch(int64_t id)

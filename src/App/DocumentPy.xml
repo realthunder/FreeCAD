@@ -488,36 +488,25 @@ like any; unnamed versions between go. Raises when `from` is not behind
 the rows folded.</UserDocu>
       </Documentation>
     </Methode>
-    <Methode Name="openTransactionWriter">
+    <Methode Name="openTransactionBranch">
       <Documentation>
-        <UserDocu>openTransactionWriter(name='', gui=True) -> Document
+        <UserDocu>openTransactionBranch(name='', gui=True) -> Document
 
-Open a writer of the branch this document is on (docs/TransactionLog.md
-sec 29): another editable document of the file, on a new branch -- `name`,
-or `&lt;branch&gt;~&lt;n&gt;` -- made at this branch's head and writing to it. After
-each of its operations the writer and its target are brought level: the
-target takes what the writer did, a document on the target follows, and
-the other writers follow the target. Raises when the document is itself a
-writer or the name is taken.</UserDocu>
+Make a branch at the head this document is on and open it in a second
+document of the file, this one staying where it is (docs/TransactionLog.md
+sec 30.3) -- `name`, or `&lt;branch&gt;~&lt;n&gt;`. The new branch names this one
+as its target; neither follows the other, and one is merged into the other
+with mergeTransactionBranch(). Raises when the name is taken.</UserDocu>
       </Documentation>
     </Methode>
-    <Methode Name="getTransactionWriter">
+    <Methode Name="getTransactionBranchState">
       <Documentation>
-        <UserDocu>getTransactionWriter() -> dict
+        <UserDocu>getTransactionBranchState() -> dict
 
-Where the document stands as a writer (docs/TransactionLog.md sec 29.2):
-{'writer', 'branch', 'target', 'unpushed', 'conflicts', 'behind'} -- the
-operations of its own its target has not taken, the conflicts its last
-pull was refused for, and whether the target has moved since it was
-level.</UserDocu>
-      </Documentation>
-    </Methode>
-    <Methode Name="syncTransactionWriter">
-      <Documentation>
-        <UserDocu>syncTransactionWriter() -> bool
-
-Bring this writer and its target level now (docs/TransactionLog.md sec
-29.2), as the end of each operation does. Returns whether they are.</UserDocu>
+Where the branch this document is on stands against the branch it was made
+from (docs/TransactionLog.md sec 30.3): {'branch', 'target', 'ahead',
+'behind'} -- the operations here its target does not hold, and those of
+its target not held here. 'target' is empty for a branch with none.</UserDocu>
       </Documentation>
     </Methode>
     <Methode Name="previewTransactionMerge">

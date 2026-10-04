@@ -498,43 +498,24 @@ public:
      * counters stay. Nothing without a log.
      */
     CompactResult compactFileState();
-    /** Open a writer of the branch this document is on
-     * (docs/TransactionLog.md sec 29): another editable document of the
-     * file, on a new branch `name` made at this branch's head and writing
-     * to it -- `<branch>~<n>` when no name is given. After each of its
-     * operations the writer is brought level with its target
-     * (syncWriter()). Throws when the document is itself a writer, or the
-     * name is taken.
+    /** Make a branch at the head this document is on and open it in a
+     * second document of the file, this one staying where it is
+     * (docs/TransactionLog.md sec 30.3 S.a) -- `<branch>~<n>` when no name
+     * is given. The new branch names this one as its target, the one its
+     * merges go to and come from unless another is named; neither follows
+     * the other. Throws when the name is taken.
      */
-    Document* openWriter(const std::string& name = std::string(), bool createView = true);
-    /// Where a document stands as a writer (sec 29.2).
-    struct WriterState
+    Document* openNewBranch(const std::string& name = std::string(), bool createView = true);
+    /// Where the branch this document is on stands against the branch it
+    /// was made from (sec 30.3 S.a), by the rows stored so far.
+    struct BranchState
     {
-        bool writer {false};
         std::string branch;
-        std::string target;
-        size_t unpushed {0};    ///< operations of its own the target has not taken
-        size_t conflicts {0};   ///< what its last pull was refused for
-        bool behind {false};    ///< the target has moved since it was level
+        std::string target;   ///< the branch it was made from; empty for none
+        size_t ahead {0};     ///< operations here its target does not hold
+        size_t behind {0};    ///< operations of its target not held here
     };
-    WriterState writerState();
-    /** Bring this writer and its target level (sec 29.2). With nothing of
-     * its own, it follows the target where that moved. With operations of
-     * its own, the target takes them: as they are when it has not moved
-     * since -- its head moves onto the writer's rows -- else after the
-     * target is merged into the writer (a conflict there keeps the branch,
-     * and writerState() says so), as one row of their net change, and the
-     * writer's branch starts again at the target's head. A document on the
-     * target follows what it took. Nothing happens while this document, or
-     * the one on the target, is in the middle of something. Returns
-     * whether the two are level.
-     */
-    bool syncWriter();
-    /// syncWriter() of every writer open; what ends an operation (sec 29.2).
-    static void syncWriters();
-    /// The Gui's say on whether a document is in the middle of something
-    /// App cannot see -- an object in edit -- so a writer waits (sec 29.4 Q3).
-    static void setWriterBusy(std::function<bool(const Document&)> busy);
+    BranchState branchState();
 
     /// What _noteDroppedRows estimated (sec 27.48).
     struct CompactEstimate
@@ -594,6 +575,11 @@ public:
         /// Ours has changed nothing since the base: theirs is taken whole,
         /// derived values included, with no recompute (sec 28.6 Q1).
         bool fastForward {false};
+        /// This branch has not moved since the base at all -- records
+        /// only -- and the base is on both chains (sec 30.4 P1): theirs'
+        /// rows, oldest first, which the merge takes as they are, writing
+        /// no row of its own. Empty when it writes one.
+        std::vector<int64_t> forward;
         std::vector<MergeChange> changes;
         size_t conflicts {0};
     };
@@ -601,6 +587,9 @@ public:
     struct MergeResult
     {
         int64_t seq {0};      ///< the merge row, 0 when none was written
+        /// The rows taken as they are (sec 30.4 P1); `seq` is then the
+        /// last of them, the head merged in.
+        size_t forwarded {0};
         /// The conflicts nobody picked a side for: the merge was refused
         /// and nothing moved (sec 28.6 Q3).
         std::vector<MergeChange> unresolved;
@@ -620,6 +609,14 @@ public:
      * conflict key; `fallback` is the side of every conflict not picked.
      * A conflict with no side refuses the merge: nothing moves, and the
      * result lists them. The other branch is left as it is.
+     *
+     * When this branch has not moved since the base (sec 30.4 P1) the
+     * merge is a fast-forward: the other branch's rows are taken as they
+     * are, this branch's head moves onto them, the document follows as a
+     * switch arrives -- its undo steps the rows of the chain -- and no
+     * row is written. Records this branch made since the base, a save or
+     * a snapshot, are written again after the rows taken, and their
+     * versions stay at the base.
      */
     MergeResult mergeBranch(const std::string& branch,
                             const std::map<std::string, std::string>& picks = {},
@@ -1333,13 +1330,8 @@ protected:
     static Document* _openVersionDocument(const std::shared_ptr<FileHistory>& history,
                                           const LogVersion& version, bool createView,
                                           const Document* from, bool frozen);
-    /// Sec 29.2: nothing open, applied, restored or recomputed here now.
-    bool _writerIdle() const;
-    /// Sec 29.2: another document of the file has changed something since
-    /// `step`'s row.
-    bool _writtenPast(const Transaction& step);
-    /// Sec 29.2: the log's head was moved; the document follows from the
-    /// state at row `from`, with nothing recorded.
+    /// The log's head was moved (sec 30.4 P1, a fast-forward): the
+    /// document follows from the state at row `from`, with nothing recorded.
     void _followHead(int64_t from);
     /// Sec 26: refuse a branch operation in the middle of something else;
     /// an implicit transaction is committed first.

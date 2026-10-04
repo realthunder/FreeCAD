@@ -4045,14 +4045,25 @@ TEST_F(TransactionLogTest, mergeFastForwardsWhenOursIsUnchanged)
     ASSERT_TRUE(doc()->switchBranch("main"));
     a = dynamic_cast<App::FeatureTest*>(doc()->getObject("A"));
     EXPECT_EQ(a->ExecCount.getValue(), execBase);
+    log().flush();
+    // Main has not moved since the fork but for the record of the switch
+    // back: side's rows are taken as they are (sec 30.4 P1).
+    App::LogBranch mainRow;
+    ASSERT_TRUE(log().store().getBranch(1, mainRow));
+    const int64_t mainHead = mainRow.head;
     auto preview = doc()->previewMerge("side");
     EXPECT_TRUE(preview.fastForward);
+    EXPECT_FALSE(preview.forward.empty());
+    EXPECT_NE(preview.ours, preview.base);
     EXPECT_EQ(preview.conflicts, 0u);
     for (const auto& ch : preview.changes)
         EXPECT_NE(ch.kind, "derived") << ch.key;
 
     auto result = doc()->mergeBranch("side");
     ASSERT_GT(result.seq, 0);
+    EXPECT_EQ(result.forwarded, preview.forward.size());
+    a = dynamic_cast<App::FeatureTest*>(doc()->getObject("A"));
+    ASSERT_TRUE(a);
     EXPECT_EQ(a->Integer.getValue(), 2);
     // Theirs' own count, not one more: nothing was recomputed.
     EXPECT_EQ(a->ExecCount.getValue(), execSide);
@@ -4061,15 +4072,38 @@ TEST_F(TransactionLogTest, mergeFastForwardsWhenOursIsUnchanged)
     EXPECT_EQ(merged->ExecCount.getValue(), cExec);
     EXPECT_FALSE(a->isTouched());
     log().flush();
+    // The chain: side's rows as they were made, then main's record of the
+    // switch, written again after them -- and no row of the merge's own.
+    bool sawSwitch = false;
+    bool sawEdit = false;
+    int64_t last = 0;
     for (const auto& t : log().store().chain(log().head())) {
-        if (t.seq == result.seq) {
-            EXPECT_EQ(t.kind, "merge");
-            EXPECT_NE(t.script.find("\"fast_forward\":true"), std::string::npos);
+        EXPECT_GT(t.seq, last);   // a row is numbered after the one it follows
+        last = t.seq;
+        EXPECT_NE(t.seq, mainHead);
+        EXPECT_NE(t.kind, "merge");
+        if (t.name == "side edit") {
+            EXPECT_EQ(t.kind, "user");
+            EXPECT_EQ(t.branch, 1);   // side was made from main: main's now
+            sawEdit = true;
+        }
+        if (t.kind == "switch" && t.seq > result.seq) {
+            EXPECT_TRUE(sawEdit);
+            sawSwitch = true;
         }
     }
-    ASSERT_TRUE(doc()->undo());
+    EXPECT_TRUE(sawSwitch);
+    EXPECT_TRUE(sawEdit);
+    // The steps are the rows of the chain, undone one at a time.
+    int steps = 0;
+    while (doc()->getObject("C") && steps < 8) {
+        ASSERT_TRUE(doc()->undo());
+        ++steps;
+    }
+    EXPECT_GT(steps, 0);
+    a = dynamic_cast<App::FeatureTest*>(doc()->getObject("A"));
+    ASSERT_TRUE(a);
     EXPECT_EQ(a->Integer.getValue(), 1);
-    EXPECT_EQ(a->ExecCount.getValue(), execBase);
     EXPECT_FALSE(doc()->getObject("C"));
 }
 
@@ -4087,219 +4121,262 @@ void edit(App::Document* doc, const char* what, const std::function<void()>& cha
     doc->commitTransaction();
 }
 
+App::Document::BranchState stateOf(App::Document* doc)
+{
+    doc->getTransactionLog()->flush();
+    return doc->branchState();
+}
+
 } // namespace
 
-// Sec 29.2: a writer is another document of the file on a branch that
-// writes to this one. What it does the target takes as it was made -- the
-// target's head moves onto the writer's rows -- and a document on the
-// target follows; what the target's document does the writer follows.
-TEST_F(TransactionLogTest, aWriterPushesWhatItDoes)
+// Sec 30.3 S.a: a branch opened in a second document of the file. Neither
+// follows the other; one is merged into the other when that is asked for,
+// and a merge into the one that has not moved takes the rows as they are.
+TEST_F(TransactionLogTest, aBranchInASecondDocumentIsMergedWhenAsked)
 {
     edit(doc(), "create", [&]() { make("A")->Integer.setValue(1); });
-    App::Document* writer = doc()->openWriter();
-    ASSERT_TRUE(writer);
-    ASSERT_NE(writer, doc());
-    const std::string writerName = writer->getName();
-    auto state = writer->writerState();
-    EXPECT_TRUE(state.writer);
+    App::Document* other = doc()->openNewBranch();
+    ASSERT_TRUE(other);
+    ASSERT_NE(other, doc());
+    const std::string otherName = other->getName();
+    auto state = stateOf(other);
     EXPECT_EQ(state.branch, "main~1");
     EXPECT_EQ(state.target, "main");
-    EXPECT_FALSE(doc()->writerState().writer);
-    EXPECT_EQ(writer->getTransactionLog()->head(), log().head());
-    EXPECT_THROW(writer->openWriter(), Base::Exception);   // not of a writer
-    ASSERT_TRUE(featureOf(writer, "A"));
-    EXPECT_EQ(featureOf(writer, "A")->Integer.getValue(), 1);
+    EXPECT_EQ(state.ahead, 0u);
+    EXPECT_EQ(state.behind, 0u);
+    EXPECT_TRUE(stateOf(doc()).target.empty());
+    EXPECT_EQ(other->getTransactionLog()->head(), log().head());
+    ASSERT_TRUE(featureOf(other, "A"));
+    EXPECT_EQ(featureOf(other, "A")->Integer.getValue(), 1);
 
-    // The writer's operation: on the target as its own row, in its document.
-    edit(writer, "longer", [&]() { featureOf(writer, "A")->Integer.setValue(2); });
-    EXPECT_EQ(featureOf(doc(), "A")->Integer.getValue(), 2);
-    state = writer->writerState();
-    EXPECT_EQ(state.unpushed, 0u);
-    EXPECT_FALSE(state.behind);
-    EXPECT_EQ(log().head(), writer->getTransactionLog()->head());
-    App::LogBranch main;
-    ASSERT_TRUE(log().store().getBranch(1, main));
-    EXPECT_EQ(main.head, log().head());
-    const auto row = log().store().chain(main.head).back();
-    EXPECT_EQ(row.name, "longer");
-    EXPECT_EQ(row.kind, "user");
-    EXPECT_EQ(row.branch, 1);   // the target's now
-    EXPECT_EQ(log().store().ops(row.seq).size(), 1u);
-
-    // An object made there arrives under its id.
-    edit(writer, "new", [&]() {
-        writer->addObject("App::FeatureTest", "B");
-        featureOf(writer, "B")->String.setValue("theirs");
+    // What it does stays on its branch.
+    edit(other, "longer", [&]() { featureOf(other, "A")->Integer.setValue(2); });
+    edit(other, "new", [&]() {
+        other->addObject("App::FeatureTest", "B");
+        featureOf(other, "B")->String.setValue("theirs");
     });
-    ASSERT_TRUE(featureOf(doc(), "B"));
-    EXPECT_EQ(featureOf(doc(), "B")->getID(), featureOf(writer, "B")->getID());
-    EXPECT_STREQ(featureOf(doc(), "B")->String.getValue(), "theirs");
-
-    // What the target's own document does, the writer follows.
-    edit(doc(), "ours", [&]() { featureOf(doc(), "A")->String.setValue("main"); });
-    EXPECT_STREQ(featureOf(writer, "A")->String.getValue(), "main");
-    EXPECT_EQ(writer->getTransactionLog()->head(), log().head());
-    EXPECT_FALSE(writer->writerState().behind);
-
-    // Its undo is its own operation's, and the target follows that too.
-    EXPECT_EQ(writer->getAvailableUndoNames(), (std::vector<std::string> {"new", "longer"}));
-    ASSERT_TRUE(writer->undo());
-    EXPECT_FALSE(featureOf(writer, "B"));
+    EXPECT_EQ(featureOf(doc(), "A")->Integer.getValue(), 1);
     EXPECT_FALSE(featureOf(doc(), "B"));
-    EXPECT_STREQ(featureOf(doc(), "A")->String.getValue(), "main");
+    state = stateOf(other);
+    EXPECT_EQ(state.ahead, 2u);
+    EXPECT_EQ(state.behind, 0u);
 
-    // A writer with nothing of its own leaves no branch behind.
-    App::GetApplication().closeDocument(writerName.c_str());
-    App::LogBranch gone;
-    EXPECT_FALSE(log().store().findBranch("main~1", gone));
+    // Merged when asked: main has not moved, so the rows are taken as made.
+    auto preview = doc()->previewMerge("main~1");
+    EXPECT_EQ(preview.conflicts, 0u);
+    ASSERT_FALSE(preview.forward.empty());
+    auto result = doc()->mergeBranch("main~1");
+    EXPECT_EQ(result.forwarded, preview.forward.size());
+    ASSERT_GT(result.seq, 0);
+    EXPECT_EQ(featureOf(doc(), "A")->Integer.getValue(), 2);
+    ASSERT_TRUE(featureOf(doc(), "B"));
+    EXPECT_EQ(featureOf(doc(), "B")->getID(), featureOf(other, "B")->getID());
+    EXPECT_STREQ(featureOf(doc(), "B")->String.getValue(), "theirs");
+    log().flush();
+    int taken = 0;
+    for (const auto& t : log().store().chain(log().head())) {
+        if (t.name != "longer" && t.name != "new")
+            continue;
+        ++taken;
+        EXPECT_EQ(t.kind, "user") << t.name;
+        EXPECT_EQ(t.branch, 1) << t.name;   // main's now
+    }
+    EXPECT_EQ(taken, 2);
+    EXPECT_EQ(result.seq, other->getTransactionLog()->head());
+    for (const auto& t : log().store().chain(log().head()))
+        EXPECT_NE(t.kind, "merge");   // no row of the merge's own
+    state = stateOf(other);
+    EXPECT_EQ(state.ahead, 0u);
+    EXPECT_EQ(state.behind, 0u);
+    // The other document is where it was, with its own steps.
+    EXPECT_EQ(other->getAvailableUndoNames(), (std::vector<std::string> {"new", "longer"}));
+
+    // The receiving document's steps are the rows of its chain.
+    EXPECT_EQ(doc()->getAvailableUndoNames(),
+              (std::vector<std::string> {"new", "longer", "create"}));
+    ASSERT_TRUE(doc()->undo());
+    EXPECT_FALSE(featureOf(doc(), "B"));
+    EXPECT_TRUE(featureOf(other, "B"));
+    ASSERT_TRUE(doc()->redo());
+    ASSERT_TRUE(featureOf(doc(), "B"));
+
+    // The other way: main does something, and the branch takes it when it
+    // asks -- main's rows staying main's.
+    edit(doc(), "ours", [&]() { featureOf(doc(), "A")->String.setValue("main"); });
+    EXPECT_STRNE(featureOf(other, "A")->String.getValue(), "main");
+    state = stateOf(other);
+    EXPECT_EQ(state.ahead, 0u);
+    EXPECT_GT(state.behind, 0u);
+    auto pulled = other->mergeBranch("main");
+    EXPECT_GT(pulled.forwarded, 0u);
+    EXPECT_STREQ(featureOf(other, "A")->String.getValue(), "main");
+    ASSERT_TRUE(featureOf(other, "B"));
+    other->getTransactionLog()->flush();
+    for (const auto& t : log().store().chain(other->getTransactionLog()->head())) {
+        if (t.name == "ours")
+            EXPECT_EQ(t.branch, 1);
+    }
+    state = stateOf(other);
+    EXPECT_EQ(state.ahead, 0u);
+    EXPECT_EQ(state.behind, 0u);
+
+    // A branch is not its document: closed, it stays.
+    App::GetApplication().closeDocument(otherName.c_str());
+    App::LogBranch kept;
+    EXPECT_TRUE(log().store().findBranch("main~1", kept));
     edit(doc(), "after", [&]() { featureOf(doc(), "A")->Integer.setValue(3); });
     EXPECT_EQ(featureOf(doc(), "A")->Integer.getValue(), 3);
 }
 
-// Sec 29.2: two writers. One that is in the middle of something while the
-// other pushes falls behind; once it is free the target is merged into it
-// and what it did goes on the target as one row.
-TEST_F(TransactionLogTest, writersMergeWhatTheyDidAtOnce)
+// Sec 30.4 P1: when both moved the merge is a row of its own, as sec 28
+// has it, and the branch keeps its rows.
+TEST_F(TransactionLogTest, aMergeOfTwoThatMovedIsARow)
 {
     edit(doc(), "create", [&]() {
         make("A")->Integer.setValue(1);
         make("B")->Integer.setValue(1);
     });
-    App::Document* one = doc()->openWriter("one");
-    App::Document* two = doc()->openWriter("two");
-    ASSERT_TRUE(one && two && one != two);
-    const std::string oneName = one->getName();
-    const std::string twoName = two->getName();
+    App::Document* other = doc()->openNewBranch("side");
+    ASSERT_TRUE(other);
+    const std::string otherName = other->getName();
 
-    // One at a time: everyone follows.
-    edit(one, "one's", [&]() { featureOf(one, "A")->Integer.setValue(2); });
-    EXPECT_EQ(featureOf(doc(), "A")->Integer.getValue(), 2);
-    EXPECT_EQ(featureOf(two, "A")->Integer.getValue(), 2);
-
-    // Both at once, on different objects. One process has one transaction
-    // open at a time, so "in the middle of something" is the Gui's say: an
-    // object in edit.
-    App::Document::setWriterBusy([&](const App::Document& d) { return &d == two; });
-    edit(two, "two's", [&]() { featureOf(two, "B")->Integer.setValue(7); });
-    EXPECT_EQ(two->writerState().unpushed, 1u);
+    edit(other, "theirs", [&]() { featureOf(other, "B")->Integer.setValue(7); });
+    edit(doc(), "ours", [&]() { featureOf(doc(), "A")->Integer.setValue(3); });
     EXPECT_EQ(featureOf(doc(), "B")->Integer.getValue(), 1);
-    edit(one, "one's again", [&]() { featureOf(one, "A")->Integer.setValue(3); });
+    EXPECT_EQ(featureOf(other, "A")->Integer.getValue(), 1);
+    auto state = stateOf(other);
+    EXPECT_EQ(state.ahead, 1u);
+    EXPECT_EQ(state.behind, 1u);
+
+    auto preview = doc()->previewMerge("side");
+    EXPECT_TRUE(preview.forward.empty());
+    auto result = doc()->mergeBranch("side");
+    EXPECT_EQ(result.forwarded, 0u);
+    ASSERT_GT(result.seq, 0);
     EXPECT_EQ(featureOf(doc(), "A")->Integer.getValue(), 3);
-    EXPECT_EQ(featureOf(two, "A")->Integer.getValue(), 2);   // busy: it has not followed
-    EXPECT_TRUE(two->writerState().behind);
-    App::Document::setWriterBusy({});
-    // Free again: on its own, as the end of any operation would have it.
-    EXPECT_TRUE(two->syncWriter());
-    App::Document::syncWriters();
-    EXPECT_EQ(featureOf(two, "A")->Integer.getValue(), 3);
-    EXPECT_EQ(featureOf(two, "B")->Integer.getValue(), 7);
     EXPECT_EQ(featureOf(doc(), "B")->Integer.getValue(), 7);
-    EXPECT_EQ(featureOf(one, "B")->Integer.getValue(), 7);
-    for (App::Document* d : {one, two}) {
-        const auto state = d->writerState();
-        EXPECT_EQ(state.unpushed, 0u) << d->getName();
-        EXPECT_FALSE(state.behind) << d->getName();
-        EXPECT_EQ(d->getTransactionLog()->head(), log().head()) << d->getName();
+    log().flush();
+    bool sawMerge = false;
+    for (const auto& t : log().store().chain(log().head())) {
+        if (t.seq != result.seq)
+            continue;
+        sawMerge = true;
+        EXPECT_EQ(t.kind, "merge");
+        EXPECT_FALSE(log().store().ops(t.seq).empty());
     }
-    // The target's history is one line; two's operation is one row on it,
-    // under its name, and nothing of two's branch is left.
-    const auto chain = log().store().chain(log().head());
-    const auto& last = chain.back();
-    EXPECT_EQ(last.name, "two's");
-    EXPECT_EQ(last.kind, "merge");
-    EXPECT_EQ(last.branch, 1);
-    App::LogBranch twoRow;
-    ASSERT_TRUE(log().store().findBranch("two", twoRow));
-    for (const auto& t : log().store().transactions())
-        EXPECT_NE(t.branch, twoRow.id) << t.seq;
-    // Its step is that row: undone, everyone follows.
-    ASSERT_TRUE(two->undo());
-    EXPECT_EQ(featureOf(two, "B")->Integer.getValue(), 1);
+    EXPECT_TRUE(sawMerge);
+    App::LogBranch side;
+    ASSERT_TRUE(log().store().findBranch("side", side));
+    bool kept = false;
+    for (const auto& t : log().store().chain(side.head)) {
+        if (t.name == "theirs") {
+            EXPECT_EQ(t.branch, side.id);
+            kept = true;
+        }
+    }
+    EXPECT_TRUE(kept);
+    // One step, undone like any.
+    ASSERT_TRUE(doc()->undo());
     EXPECT_EQ(featureOf(doc(), "B")->Integer.getValue(), 1);
-    EXPECT_EQ(featureOf(one, "B")->Integer.getValue(), 1);
     EXPECT_EQ(featureOf(doc(), "A")->Integer.getValue(), 3);
+    ASSERT_TRUE(doc()->redo());
 
-    App::GetApplication().closeDocument(oneName.c_str());
-    App::GetApplication().closeDocument(twoName.c_str());
+    // The branch takes main, merge row and all, when it asks.
+    EXPECT_EQ(featureOf(other, "A")->Integer.getValue(), 1);
+    auto back = other->mergeBranch("main");
+    EXPECT_TRUE(back.unresolved.empty());
+    EXPECT_EQ(featureOf(other, "A")->Integer.getValue(), 3);
+    EXPECT_EQ(featureOf(other, "B")->Integer.getValue(), 7);
+
+    App::GetApplication().closeDocument(otherName.c_str());
 }
 
-// Sec 29.4 Q4: a pull that conflicts keeps the writer on its branch with
-// what it did, unpushed, until a side is picked.
-TEST_F(TransactionLogTest, aWritersConflictKeepsItsBranch)
+// Sec 30.3 S.a: a conflict is found at the merge that was asked for, and
+// nothing moves until a side is picked.
+TEST_F(TransactionLogTest, aConflictWaitsForTheMergeThatIsAsked)
 {
     edit(doc(), "create", [&]() { make("A")->Integer.setValue(1); });
-    App::Document* one = doc()->openWriter("one");
-    App::Document* two = doc()->openWriter("two");
-    const std::string oneName = one->getName();
-    const std::string twoName = two->getName();
+    App::Document* other = doc()->openNewBranch("side");
+    ASSERT_TRUE(other);
+    const std::string otherName = other->getName();
 
-    App::Document::setWriterBusy([&](const App::Document& d) { return &d == two; });
-    edit(two, "two's", [&]() { featureOf(two, "A")->Integer.setValue(7); });
-    edit(one, "one's", [&]() { featureOf(one, "A")->Integer.setValue(3); });
-    App::Document::setWriterBusy({});
-    EXPECT_FALSE(two->syncWriter());
-    EXPECT_EQ(featureOf(two, "A")->Integer.getValue(), 7);
+    edit(other, "theirs", [&]() { featureOf(other, "A")->Integer.setValue(7); });
+    edit(doc(), "ours", [&]() { featureOf(doc(), "A")->Integer.setValue(3); });
+    // Each keeps working where it is; nothing is told to the other.
+    edit(other, "theirs more", [&]() { featureOf(other, "A")->String.setValue("side"); });
     EXPECT_EQ(featureOf(doc(), "A")->Integer.getValue(), 3);
-    auto state = two->writerState();
-    EXPECT_EQ(state.conflicts, 1u);
-    EXPECT_EQ(state.unpushed, 1u);
-    EXPECT_TRUE(state.behind);
-    // It keeps working there; the conflict stays.
-    edit(two, "two's more", [&]() { featureOf(two, "A")->String.setValue("two"); });
-    EXPECT_EQ(two->writerState().unpushed, 2u);
+    EXPECT_EQ(featureOf(other, "A")->Integer.getValue(), 7);
+
+    log().flush();
+    const int64_t head = log().head();
+    auto refused = doc()->mergeBranch("side");
+    EXPECT_EQ(refused.unresolved.size(), 1u);
+    EXPECT_EQ(refused.seq, 0);
+    EXPECT_EQ(log().head(), head);
+    EXPECT_EQ(featureOf(doc(), "A")->Integer.getValue(), 3);
     EXPECT_STREQ(featureOf(doc(), "A")->String.getValue(), "4711");
 
-    // A side picked: the merge goes in and everything it did is pushed.
-    auto merged = two->mergeBranch("main", {{"A.Integer", "ours"}});
+    auto merged = doc()->mergeBranch("side", {{"A.Integer", "theirs"}});
     EXPECT_TRUE(merged.unresolved.empty());
-    state = two->writerState();
-    EXPECT_EQ(state.conflicts, 0u);
-    EXPECT_EQ(state.unpushed, 0u);
+    EXPECT_GT(merged.seq, 0);
     EXPECT_EQ(featureOf(doc(), "A")->Integer.getValue(), 7);
-    EXPECT_STREQ(featureOf(doc(), "A")->String.getValue(), "two");
-    EXPECT_EQ(featureOf(one, "A")->Integer.getValue(), 7);
+    EXPECT_STREQ(featureOf(doc(), "A")->String.getValue(), "side");
 
-    App::GetApplication().closeDocument(oneName.c_str());
-    App::GetApplication().closeDocument(twoName.c_str());
+    App::GetApplication().closeDocument(otherName.c_str());
 }
 
-// Sec 29.2, per-user undo: a writer undoes its own operation though others
-// have written since, through the log -- refused when what it left has been
-// changed by someone else.
-TEST_F(TransactionLogTest, aWriterUndoesItsOwnPastOthers)
+// Sec 30.4 P1: records on the receiving branch since the base -- a
+// snapshot, a save -- are not movement: the merge is still a fast-forward.
+// Their versions, the state at the base, stay there; the records follow
+// the rows taken.
+TEST_F(TransactionLogTest, aFastForwardKeepsTheRecordsBetween)
 {
     edit(doc(), "create", [&]() { make("A")->Integer.setValue(1); });
-    App::Document* writer = doc()->openWriter();
-    const std::string writerName = writer->getName();
+    App::Document* other = doc()->openNewBranch("side");
+    ASSERT_TRUE(other);
+    const std::string otherName = other->getName();
+    edit(other, "theirs", [&]() { featureOf(other, "A")->Integer.setValue(7); });
 
-    edit(writer, "theirs", [&]() { featureOf(writer, "A")->Integer.setValue(2); });
-    edit(doc(), "ours", [&]() { featureOf(doc(), "A")->String.setValue("main"); });
-    EXPECT_STREQ(featureOf(writer, "A")->String.getValue(), "main");
-    // Its own steps only: the target's operation is not one.
-    EXPECT_EQ(writer->getAvailableUndoNames(), (std::vector<std::string> {"theirs"}));
-    EXPECT_EQ(doc()->getAvailableUndoNames(), (std::vector<std::string> {"ours", "create"}));
+    const int64_t version = doc()->snapshotToLog();
+    ASSERT_GT(version, 0);
+    log().flush();
+    App::LogVersion taken;
+    ASSERT_TRUE(log().store().getVersion(version, taken));
 
-    // Another property changed since: the undo goes through, and is pushed.
-    ASSERT_TRUE(writer->undo());
-    EXPECT_EQ(featureOf(writer, "A")->Integer.getValue(), 1);
-    EXPECT_STREQ(featureOf(writer, "A")->String.getValue(), "main");
-    EXPECT_EQ(featureOf(doc(), "A")->Integer.getValue(), 1);
-    EXPECT_STREQ(featureOf(doc(), "A")->String.getValue(), "main");
-    ASSERT_TRUE(writer->redo());
-    EXPECT_EQ(featureOf(doc(), "A")->Integer.getValue(), 2);
+    auto preview = doc()->previewMerge("side");
+    EXPECT_NE(preview.ours, preview.base);
+    ASSERT_FALSE(preview.forward.empty());
+    auto result = doc()->mergeBranch("side");
+    EXPECT_GT(result.forwarded, 0u);
+    EXPECT_EQ(featureOf(doc(), "A")->Integer.getValue(), 7);
+    log().flush();
+    App::LogVersion kept;
+    ASSERT_TRUE(log().store().getVersion(version, kept));
+    EXPECT_EQ(kept.seq, preview.base);
+    bool sawBase = false;
+    bool sawRow = false;
+    bool sawRecord = false;
+    int64_t last = 0;
+    for (const auto& t : log().store().chain(log().head())) {
+        EXPECT_GT(t.seq, last);
+        last = t.seq;
+        EXPECT_NE(t.seq, preview.ours);   // the record's old row is gone
+        if (t.seq == preview.base)
+            sawBase = true;
+        if (t.name == "theirs") {
+            EXPECT_TRUE(sawBase);
+            sawRow = true;
+        }
+        if (sawRow && t.name != "theirs" && log().store().ops(t.seq).empty())
+            sawRecord = true;
+    }
+    EXPECT_TRUE(sawRow);
+    EXPECT_TRUE(sawRecord);
+    // The other document still stands on its rows.
+    EXPECT_EQ(other->getAvailableUndoNames(), (std::vector<std::string> {"theirs"}));
+    ASSERT_TRUE(other->undo());
+    EXPECT_EQ(featureOf(other, "A")->Integer.getValue(), 1);
+    EXPECT_EQ(featureOf(doc(), "A")->Integer.getValue(), 7);
 
-    // The same property changed since: refused, nothing moved.
-    edit(doc(), "ours too", [&]() { featureOf(doc(), "A")->Integer.setValue(5); });
-    EXPECT_EQ(featureOf(writer, "A")->Integer.getValue(), 5);
-    const int64_t head = log().head();
-    EXPECT_FALSE(writer->undo());
-    EXPECT_EQ(featureOf(writer, "A")->Integer.getValue(), 5);
-    EXPECT_EQ(featureOf(doc(), "A")->Integer.getValue(), 5);
-    EXPECT_EQ(log().head(), head);
-    // And the target's own document undoes its own, the same way.
-    ASSERT_TRUE(doc()->undo());
-    EXPECT_EQ(featureOf(doc(), "A")->Integer.getValue(), 2);
-    EXPECT_EQ(featureOf(writer, "A")->Integer.getValue(), 2);
-
-    App::GetApplication().closeDocument(writerName.c_str());
+    App::GetApplication().closeDocument(otherName.c_str());
 }

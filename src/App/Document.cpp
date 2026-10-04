@@ -274,45 +274,6 @@ std::function<void()>& implicitCloser()
     return closer;
 }
 
-/// The writers open in this process (docs/TransactionLog.md sec 29.2).
-std::set<Document*>& writerDocs()
-{
-    static std::set<Document*> docs;
-    return docs;
-}
-
-std::function<bool(const Document&)>& writerBusy()
-{
-    static std::function<bool(const Document&)> busy;
-    return busy;
-}
-
-/// A writer is being brought level with its target right now.
-bool& writerSyncing()
-{
-    static bool syncing = false;
-    return syncing;
-}
-
-/// A writer going: no longer synchronised, and its branch, when it holds
-/// nothing its target does not, goes with it.
-void forgetWriter(Document& doc)
-{
-    if (!writerDocs().erase(&doc))
-        return;
-    try {
-        TransactionLog* log = doc.getTransactionLog();
-        if (!log || log->detached())
-            return;
-        auto& store = log->store();
-        LogBranch mine;
-        if (store.getBranch(log->branch(), mine) && mine.target && log->head() == mine.fromSeq)
-            store.removeBranch(mine.id);
-    }
-    catch (...) {
-    }
-}
-
 /// The dynamic-property metadata of an addprop/delprop op, as
 /// TransactionLog writes it: group, doc, then "attr[ ro][ hidden]" and
 /// " status=N" (sec 27.67; absent from rows written before it).
@@ -1031,12 +992,7 @@ bool Document::undo(int id)
 
         Transaction* step = mUndoTransactions.back();
         ColdRevert cold;
-        // A step others have written past (sec 29.2) is undone through the
-        // log like one that is not the tip: refused when what it left has
-        // changed since, and what recomputes wrote left to a recompute.
-        cold.selective = _writtenPast(*step);
-        const bool viaLog = step->Cold || cold.selective;
-        if (viaLog && !_prepareRevert(step->LogSeq, step->Name, cold))
+        if (step->Cold && !_prepareRevert(step->LogSeq, step->Name, cold))
             return false;
         StepTouched touched;   // sec 27.63
         if (auto log = getTransactionLog())
@@ -1050,13 +1006,13 @@ bool Document::undo(int id)
 
         Base::FlagToggler<bool> flag(d->undoing);
         // applying the undo
-        if (viaLog)
+        if (step->Cold)
             _applyRevert(cold);
         else
             step->apply(*this,false);
         if (touched.active)
             touched.leave(*this, *d->activeUndoTransaction, cold.touched);
-        logInverse(*step, "undo", viaLog ? &cold : nullptr);
+        logInverse(*step, "undo", step->Cold ? &cold : nullptr);
 
         // save the redo
         mRedoMap[d->activeUndoTransaction->getID()] = d->activeUndoTransaction;
@@ -1097,9 +1053,7 @@ bool Document::redo(int id)
 
         Transaction* step = mRedoTransactions.back();
         ColdRevert cold;
-        cold.selective = _writtenPast(*step);   // as for an undo
-        const bool viaLog = step->Cold || cold.selective;
-        if (viaLog && !_prepareRevert(step->LogSeq, step->Name, cold))
+        if (step->Cold && !_prepareRevert(step->LogSeq, step->Name, cold))
             return false;
         StepTouched touched;   // sec 27.63
         if (auto log = getTransactionLog())
@@ -1113,13 +1067,13 @@ bool Document::redo(int id)
 
         // do the redo
         Base::FlagToggler<bool> flag(d->undoing);
-        if (viaLog)
+        if (step->Cold)
             _applyRevert(cold);
         else
             step->apply(*this,true);
         if (touched.active)
             touched.leave(*this, *d->activeUndoTransaction, cold.touched);
-        logInverse(*step, "redo", viaLog ? &cold : nullptr);
+        logInverse(*step, "redo", step->Cold ? &cold : nullptr);
 
         mUndoMap[d->activeUndoTransaction->getID()] = d->activeUndoTransaction;
         mUndoTransactions.push_back(d->activeUndoTransaction);
@@ -1302,16 +1256,11 @@ int Document::_openTransaction(const char* name, int id, bool implicit)
         // it stays out of the application's transaction as it does at commit,
         // and a mirror, not implicit itself, was never closed with it
         // (docs/TransactionLog.md sec 24.13).
-        // Nor is a writer's into another document of its file, or that
-        // one's into the writer (sec 29.2): what one does the other
-        // follows, and each undoes its own.
         auto &app = GetApplication();
         auto activeDoc = app.getActiveDocument();
         if(!implicit &&
            activeDoc &&
            activeDoc!=this &&
-           !(d->history && activeDoc->d->history == d->history
-               && (writerDocs().count(this) || writerDocs().count(activeDoc))) &&
            !activeDoc->hasPendingTransaction())
         {
             std::string aname("-> ");
@@ -2075,7 +2024,6 @@ Document::~Document()
     }
     catch (const boost::exception&) {
     }
-    forgetWriter(*this);
 
 #ifdef FC_LOGUPDATECHAIN
     Console().Log("-Delete Features of %s \n",getName());
@@ -7049,6 +6997,15 @@ int64_t Document::createBranch(const std::string& name, int64_t version, int64_t
     branch.fromVersion = fork.num;
     branch.fromSeq = forkSeq;
     branch.head = forkSeq;
+    // The branch it is made from (sec 30.3 S.a): the one the fork row is
+    // on, which is this document's unless an older row or version was named.
+    branch.target = left.id;
+    if (forkSeq != leftHead) {
+        for (const auto& t : store.transactions(forkSeq, 1)) {
+            if (t.seq == forkSeq && t.branch)
+                branch.target = t.branch;
+        }
+    }
     branch.created = std::chrono::duration<double>(
                          std::chrono::system_clock::now().time_since_epoch()).count();
     store.addBranch(branch);
@@ -7966,6 +7923,44 @@ void planMerge(Document& doc, const std::string& name, int64_t version, MergePla
             oursChanged.insert(std::get<1>(kv.first));
     }
     pv.fastForward = !changed;
+    // Sec 30.4 P1: ours has not moved since the base at all -- records, a
+    // save or a snapshot, are all it has -- and the base is on both chains:
+    // theirs' rows can be taken as they are.
+    {
+        const auto oursAfter = store.chain(pv.ours, pv.base + 1);
+        const auto theirsAfter = store.chain(pv.theirs, pv.base + 1);
+        bool direct = !theirsAfter.empty() && theirsAfter.front().parent == pv.base
+                   && (oursAfter.empty() ? pv.ours == pv.base
+                                         : oursAfter.front().parent == pv.base);
+        std::vector<int64_t> records;
+        for (const auto& t : oursAfter) {
+            direct = direct && store.ops(t.seq).empty();
+            records.push_back(t.seq);
+        }
+        // Those records leave the chain for its end (mergeBranch): not
+        // when another branch, or another document of the file, stands on
+        // one of them.
+        if (direct && !records.empty()) {
+            direct = !log->othersStandOn(records);
+            for (const auto& b : store.branches()) {
+                if (!direct || b.id == log->branch())
+                    continue;
+                for (const auto& t : store.chain(b.head, pv.base + 1)) {
+                    if (std::find(records.begin(), records.end(), t.seq) != records.end())
+                        direct = false;
+                }
+            }
+        }
+        bool any = false;
+        if (direct) {
+            for (const auto& t : theirsAfter)
+                any = any || !store.ops(t.seq).empty();
+        }
+        if (any) {
+            for (const auto& t : theirsAfter)
+                pv.forward.push_back(t.seq);
+        }
+    }
 
     auto nameOf = [&](long cid) -> std::string {
         if (auto obj = doc.getObjectByID(cid))
@@ -8139,6 +8134,82 @@ Document::MergeResult Document::mergeBranch(const std::string& branch,
     planMerge(*this, branch, version, plan);
     result.preview = plan.preview;
     const MergePreview& pv = plan.preview;
+    // The version at the head merged in is what was merged (sec 17.3): it
+    // is named, so it outlives eviction and says where a merge was.
+    auto nameMerged = [&]() {
+        const LogVersion* at = nullptr;
+        const auto versions = log->store().versions();
+        for (const auto& v : versions) {
+            if (v.seq == pv.theirs && (!at || v.num > at->num))
+                at = &v;
+        }
+        if (at && at->kind != "named")
+            log->store().nameVersion(at->num, "merged into " + plan.oursName);
+    };
+    if (!pv.forward.empty()) {
+        // Sec 30.4 P1, a fast-forward: ours has not moved since the base,
+        // so theirs' rows are taken as they are -- each the row it was made
+        // as, under its author -- and ours' head moves onto them. The merge
+        // writes no row of its own.
+        auto& store = log->store();
+        LogBranch mine;
+        LogBranch theirs;
+        store.getBranch(log->branch(), mine);
+        store.findBranch(branch, theirs);
+        // Made from this branch, theirs gives its rows up: they are this
+        // branch's now, and theirs starts again where they end. Any other
+        // branch keeps its rows, and this one's head rests on them as a
+        // new branch's rests on the rows it was made from.
+        std::vector<int64_t> own;
+        if (theirs.target == mine.id) {
+            for (const auto& t : store.chain(pv.theirs, pv.base + 1)) {
+                if (t.branch == theirs.id)
+                    own.push_back(t.seq);
+            }
+        }
+        // Records of ours since the base -- a save, a snapshot -- changed
+        // nothing. A row is numbered after the row it follows, so they
+        // cannot stay between the base and theirs' rows: the versions
+        // taken at them, which are the state at the base, are the base's
+        // now, and the records are written again once the rows are in.
+        const std::vector<LogTransaction> records = store.chain(pv.ours, pv.base + 1);
+        if (!records.empty()) {
+            std::vector<int64_t> seqs;
+            for (const auto& t : records)
+                seqs.push_back(t.seq);
+            store.anchorVersions(seqs, pv.base);
+            store.removeTransactions(seqs);
+        }
+        store.forwardBranch(mine.id, pv.theirs, own);
+        if (theirs.target == mine.id) {
+            theirs.fromSeq = pv.theirs;
+            store.updateBranch(theirs);
+        }
+        else if (mine.target == theirs.id) {
+            mine.fromSeq = pv.theirs;
+            store.updateBranch(mine);
+        }
+        // The document arrives as a switch does (sec 26.4): moved along the
+        // rows with nothing recorded, its steps the rows of the chain.
+        clearUndos();
+        _clearRedos();
+        log->moveHead(pv.theirs);
+        _followHead(pv.base);
+        for (const auto& t : records)
+            log->reappend(t);
+        _arriveOnBranch();
+        result.seq = pv.theirs;
+        result.forwarded = pv.forward.size();
+        nameMerged();
+        Document* holder = log->holderOf(theirs.id);
+        if (holder && holder != this) {
+            holder->refreshVersionNames();
+            holder->signalBranchesChanged(*holder);
+        }
+        refreshVersionNames();
+        signalBranchesChanged(*this);
+        return result;
+    }
     if (pv.changes.empty())
         return result;
 
@@ -8451,47 +8522,9 @@ Document::MergeResult Document::mergeBranch(const std::string& branch,
                 result.seq = t.seq;
         }
     }
-    // The version at the head merged in is what was merged (sec 17.3): it
-    // is named, so it outlives eviction.
-    const LogVersion* at = nullptr;
-    const auto versions = log->store().versions();
-    for (const auto& v : versions) {
-        if (v.seq == pv.theirs && (!at || v.num > at->num))
-            at = &v;
-    }
-    if (at && at->kind != "named")
-        log->store().nameVersion(at->num, "merged into " + plan.oursName);
+    nameMerged();
     signalBranchesChanged(*this);
     return result;
-}
-
-bool Document::_writtenPast(const Transaction& step)
-{
-    // Only in a file with writers: elsewhere nobody writes past a step but
-    // this document, and a hot undo never waits for the log.
-    TransactionLog* log = getTransactionLog();
-    if (!log || log->detached() || step.LogSeq <= 0)
-        return false;
-    bool shared = false;
-    for (const Document* doc : writerDocs())
-        shared = shared || doc->d->history == d->history;
-    if (!shared)
-        return false;
-    log->resolvePending();
-    return log->writtenPast(step.LogSeq);
-}
-
-void Document::setWriterBusy(std::function<bool(const Document&)> busy)
-{
-    writerBusy() = std::move(busy);
-}
-
-bool Document::_writerIdle() const
-{
-    return !d->activeUndoTransaction && !isPerformingTransaction() && !d->committing
-        && !d->checkingOut && !d->snapshotting && !testStatus(Restoring)
-        && !testStatus(Recomputing) && !testStatus(PartialDoc)
-        && !(writerBusy() && writerBusy()(*this));
 }
 
 void Document::_followHead(int64_t from)
@@ -8502,23 +8535,23 @@ void Document::_followHead(int64_t from)
     getTransactionLog()->forgetLiveValues();
 }
 
-Document* Document::openWriter(const std::string& name, bool createView)
+Document* Document::openNewBranch(const std::string& name, bool createView)
 {
     OperationScope scope;   // sec 27.38
-    // docs/TransactionLog.md sec 29.2: a second document of the file, on a
-    // branch of its own that writes to this one.
-    checkNotFrozen("open a writer");
+    // docs/TransactionLog.md sec 30.3 S.a: a branch made at this
+    // document's head and opened in a second document of the file, this
+    // one staying where it is. Neither follows the other: one is merged
+    // into the other when that is asked for.
+    checkNotFrozen("open a branch");
     TransactionLog* log = getTransactionLog();
     if (!log)
         THROWM(Base::RuntimeError, "no transaction log");
-    _checkBranchable("open a writer");
+    _checkBranchable("open a branch");
     if (log->detached())
         THROWM(Base::RuntimeError, "the document is a version with no branch of its own yet");
     auto& store = log->store();
     LogBranch mine;
     store.getBranch(log->branch(), mine);
-    if (mine.target)
-        THROWM(Base::ValueError, "branch '" + mine.name + "' is a writer itself");
     std::string branchName = name;
     LogBranch taken;
     if (branchName.empty()) {
@@ -8529,8 +8562,8 @@ Document* Document::openWriter(const std::string& name, bool createView)
         THROWM(Base::ValueError, "branch name '" + branchName + "' is taken");
     }
 
-    // The writer is opened as the version at this branch's head, which the
-    // tip snapshot makes when there is none.
+    // The branch's document is opened as the version at this branch's
+    // head, which the tip snapshot makes when there is none.
     _leaveBranch();
     const std::set<int64_t> onChain = chainPoints(store, log->head());
     LogVersion tip;
@@ -8544,251 +8577,52 @@ Document* Document::openWriter(const std::string& name, bool createView)
         }
     }
     if (!haveTip)
-        THROWM(Base::RuntimeError, "no version to open a writer from");
+        THROWM(Base::RuntimeError, "no version to open a branch from");
     getFileHistory();
-    Document* writer = _openVersionDocument(d->history, tip, createView, this, false);
-    TransactionLog* wlog = writer->getTransactionLog();
-    // Level with the target: at its head, the records after the version
-    // included.
-    wlog->moveHead(log->head());
-    wlog->makeWriter(mine.id, branchName);
-    writerDocs().insert(writer);
-    writer->refreshVersionNames();
+    Document* other = _openVersionDocument(d->history, tip, createView, this, false);
+    TransactionLog* olog = other->getTransactionLog();
+    // At this branch's head, the records after the version included.
+    olog->moveHead(log->head());
+    olog->forkHere(mine.id, branchName);
+    other->refreshVersionNames();
     signalBranchesChanged(*this);
-    return writer;
+    return other;
 }
 
-Document::WriterState Document::writerState()
+Document::BranchState Document::branchState()
 {
-    WriterState state;
+    BranchState state;
     TransactionLog* log = getTransactionLog();
     if (!log || log->detached())
         return state;
     auto& store = log->store();
     LogBranch mine;
-    if (!store.getBranch(log->branch(), mine) || !mine.target)
+    if (!store.getBranch(log->branch(), mine))
         return state;
-    state.writer = true;
     state.branch = mine.name;
-    state.conflicts = d->writerConflicts;
     LogBranch target;
-    if (store.getBranch(mine.target, target)) {
-        state.target = target.name;
-        state.behind = target.head != mine.fromSeq;
+    if (!mine.target || !store.getBranch(mine.target, target))
+        return state;
+    state.target = target.name;
+    // What each has that the other's history does not reach, in the rows
+    // stored by now; records -- a save, a snapshot -- are not operations.
+    const auto here = store.history(log->head());
+    const auto there = store.history(target.head);
+    std::set<int64_t> hereSeqs;
+    std::set<int64_t> thereSeqs;
+    for (const auto& t : here)
+        hereSeqs.insert(t.seq);
+    for (const auto& t : there)
+        thereSeqs.insert(t.seq);
+    for (const auto& t : here) {
+        if (!thereSeqs.count(t.seq) && !store.ops(t.seq).empty())
+            ++state.ahead;
     }
-    for (const auto& t : store.chain(log->head(), mine.fromSeq + 1)) {
-        if (t.branch == mine.id && !store.ops(t.seq).empty())
-            ++state.unpushed;
+    for (const auto& t : there) {
+        if (!hereSeqs.count(t.seq) && !store.ops(t.seq).empty())
+            ++state.behind;
     }
     return state;
-}
-
-bool Document::syncWriter()
-{
-    // docs/TransactionLog.md sec 29.2: pull, push, re-fork.
-    TransactionLog* log = getTransactionLog();
-    if (!log || log->detached())
-        return true;
-    auto& store = log->store();
-    LogBranch mine;
-    if (!store.getBranch(log->branch(), mine) || !mine.target)
-        return true;
-    LogBranch target;
-    if (!store.getBranch(mine.target, target) || target.closed != 0)
-        return true;
-    // One at a time: the merge and the moves below end operations of their
-    // own, which must not start this again half way.
-    if (writerSyncing() || !_writerIdle())
-        return false;
-    Base::StateLocker syncing(writerSyncing());
-    log->resolvePending();
-    const int64_t head = log->head();
-    store.getBranch(mine.target, target);
-
-    // Its own rows: those on its chain that are still its branch's. A push
-    // makes them the target's.
-    std::vector<int64_t> own;
-    bool ownOps = false;
-    std::string names;
-    auto ownRows = [&](int64_t from) {
-        own.clear();
-        ownOps = false;
-        names.clear();
-        for (const auto& t : store.chain(from, mine.fromSeq + 1)) {
-            if (t.branch != mine.id)
-                continue;
-            own.push_back(t.seq);
-            if (store.ops(t.seq).empty() || t.kind == "merge")
-                continue;
-            ownOps = true;
-            if (!t.name.empty())
-                names += (names.empty() ? "" : ", ") + t.name;
-        }
-    };
-    ownRows(head);
-    const bool moved = target.head != mine.fromSeq;
-    if (!moved && !ownOps) {
-        d->writerConflicts = 0;
-        return true;
-    }
-    // Rows that go, and the unnamed versions taken at them.
-    auto drop = [&](const std::vector<int64_t>& rows) {
-        if (rows.empty())
-            return;
-        const std::set<int64_t> gone(rows.begin(), rows.end());
-        std::set<int64_t> forks;
-        for (const auto& b : store.branches()) {
-            if (b.fromVersion)
-                forks.insert(b.fromVersion);
-        }
-        std::vector<int64_t> versions;
-        for (const auto& v : store.versions()) {
-            if (gone.count(v.seq) && v.kind != "named" && !forks.count(v.num))
-                versions.push_back(v.num);
-        }
-        const std::set<long> named = _objectIdsOfRows(rows);
-        store.removeTransactions(rows);
-        if (!versions.empty())
-            store.evictVersions(versions);
-        _noteDroppedRows(named);
-    };
-
-    if (!ownOps) {
-        // Nothing of its own: it follows the target. Records of its own
-        // changed nothing, so it is still what it was when last level.
-        store.forwardBranch(mine.id, target.head, {});
-        log->moveHead(target.head);
-        _followHead(mine.fromSeq);
-        drop(own);
-        mine.fromSeq = target.head;
-        store.updateBranch(mine);
-        d->writerConflicts = 0;
-        refreshVersionNames();
-        signalBranchesChanged(*this);
-        return true;
-    }
-
-    // The target takes what the writer did; a document on it follows, and
-    // must be free to.
-    Document* holder = log->holderOf(target.id);
-    if (holder == this)
-        holder = nullptr;
-    if (holder && !holder->_writerIdle())
-        return false;
-    int64_t newHead = head;
-    if (!moved) {
-        // The target has not moved: its head goes onto the writer's rows,
-        // which become its own -- one row per operation, as they were made.
-        store.forwardBranch(target.id, head, own);
-    }
-    else {
-        // The target moved: it is merged into the writer first, where a
-        // conflict stays (sec 29.4 Q4), and the pull is no step of the
-        // writer's own.
-        const MergeResult pulled = mergeBranch(target.name);
-        if (!pulled.unresolved.empty()) {
-            if (d->writerConflicts != pulled.unresolved.size()) {
-                d->writerConflicts = pulled.unresolved.size();
-                signalBranchesChanged(*this);
-            }
-            return false;
-        }
-        if (!mUndoTransactions.empty() && mUndoTransactions.back()->LogKind == "merge") {
-            Transaction* step = mUndoTransactions.back();
-            mUndoTransactions.pop_back();
-            mUndoMap.erase(step->getID());
-            _deleteTransaction(step);
-        }
-        log->resolvePending();
-        const int64_t merged = log->head();
-        ownRows(merged);
-        NetChange net;
-        std::string why;
-        if (!diffRows(store, store.versions(), target.head, merged, net, why)) {
-            FC_ERR(getName() << ": cannot push to " << target.name << ": " << why);
-            return false;
-        }
-        std::vector<LogOp> ops = net.ops();
-        newHead = target.head;
-        if (!ops.empty()) {
-            LogTransaction t;
-            t.kind = "merge";
-            t.origin = "writer";
-            t.name = names.empty() ? "Merge " + mine.name : names;
-            t.mergeFrom = merged;
-            std::ostringstream script;
-            script << "{\"merge\":{\"branch\":" << jsonString(mine.name) << ",\"from\":" << merged
-                   << ",\"base\":" << target.head << ",\"rows\":" << own.size() << "}}";
-            t.script = script.str();
-            newHead = log->recordOn(target.id, t, ops);
-        }
-        // Re-fork (17.5's auto-trim): the writer's rows are on the target
-        // as that one row, and its branch starts again at the target's head.
-        // Its steps that named them are one step now, the row pushed.
-        const std::set<int64_t> gone(own.begin(), own.end());
-        for (auto it = mUndoTransactions.begin(); it != mUndoTransactions.end();) {
-            if (gone.count((*it)->LogSeq)) {
-                mUndoMap.erase((*it)->getID());
-                _deleteTransaction(*it);
-                it = mUndoTransactions.erase(it);
-            }
-            else {
-                ++it;
-            }
-        }
-        _clearRedos();
-        if (!ops.empty() && d->iUndoMode) {
-            auto stub = new Transaction(0);
-            stub->Name = names.empty() ? "Merge " + mine.name : names;
-            stub->LogSeq = newHead;
-            stub->Cold = true;
-            mUndoMap[stub->getID()] = stub;
-            mUndoTransactions.push_back(stub);
-        }
-        drop(own);
-        store.forwardBranch(mine.id, newHead, {});
-        log->moveHead(newHead);
-    }
-    mine.fromSeq = newHead;
-    store.updateBranch(mine);
-    d->writerConflicts = 0;
-    if (holder && newHead != target.head) {
-        TransactionLog* hlog = holder->getTransactionLog();
-        hlog->moveHead(newHead);
-        holder->_followHead(target.head);
-        holder->signalBranchesChanged(*holder);
-    }
-    refreshVersionNames();
-    signalBranchesChanged(*this);
-    return true;
-}
-
-void Document::syncWriters()
-{
-    auto& docs = writerDocs();
-    if (writerSyncing() || docs.empty())
-        return;
-    auto& app = GetApplication();
-    if (app.isRestoring() || app.isClosingAll())
-        return;
-    // Twice: what one pushes in the first round the others follow in the
-    // second.
-    for (int round = 0; round < 2; ++round) {
-        std::vector<Document*> order(docs.begin(), docs.end());
-        std::sort(order.begin(), order.end(), [](const Document* a, const Document* b) {
-            return std::strcmp(a->getName(), b->getName()) < 0;
-        });
-        for (Document* doc : order) {
-            if (!docs.count(doc))
-                continue;
-            try {
-                doc->syncWriter();
-            }
-            catch (Base::Exception& e) {
-                FC_ERR(doc->getName() << ": writer not synchronised: " << e.what());
-            }
-        }
-    }
 }
 
 void Document::noteVersionTaken()

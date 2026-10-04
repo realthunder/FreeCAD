@@ -538,15 +538,6 @@ Application::Application(bool GUIenabled)
             });
         });
 
-        // A writer of a file waits while an object of its document is in
-        // edit (docs/TransactionLog.md sec 29.4 Q3): the edit holds state
-        // App cannot see.
-        App::Document::setWriterBusy([](const App::Document& doc) {
-            auto self = Application::Instance;
-            auto gdoc = self ? self->getDocument(&doc) : nullptr;
-            return gdoc && gdoc->getInEdit() != nullptr;
-        });
-
         App::GetApplication().signalFinishOpenDocument.connect([]() {
             std::vector<App::Document*> docs;
             for(auto doc : App::GetApplication().getDocuments()) {
@@ -756,7 +747,6 @@ Application::~Application()
     Base::Console().Log("Destruct Gui::Application\n");
     App::Document::setViewResolver({});
     App::Document::setImplicitCloser({});
-    App::Document::setWriterBusy({});
     // A path tracer session released by a closing view is destroyed by
     // a worker, not where it was released (docs/CyclesIntegration.md
     // sec 5.12). Wait for those here: past this point the process

@@ -758,9 +758,7 @@ OperationScope::OperationScope()
 OperationScope::~OperationScope()
 {
     auto& app = GetApplication();
-    if (--app._operationDepth != 0)
-        return;
-    if (!app._releasedVersions.empty()) {
+    if (--app._operationDepth == 0 && !app._releasedVersions.empty()) {
         try {
             app.closeReleasedVersions();
         }
@@ -770,17 +768,6 @@ OperationScope::~OperationScope()
         catch (...) {
             FC_ERR("closing released versions failed");
         }
-    }
-    // The writers of a file follow their target, and it them
-    // (docs/TransactionLog.md sec 29.2), once the operation is over.
-    try {
-        Document::syncWriters();
-    }
-    catch (Base::Exception& e) {
-        e.ReportException();
-    }
-    catch (...) {
-        FC_ERR("the writers of a file could not be synchronised");
     }
 }
 

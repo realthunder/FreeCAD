@@ -91,7 +91,7 @@ private Q_SLOTS:
     void onDeleteBranch();
     void onRenameBranch();
     void onMergeBranch();
-    void onOpenWriter();
+    void onOpenBranch();
     void applyVisibility();
     /// Lay the graph out over the rows shown (docs/TransactionLog.md sec 26).
     void layoutGraph();
@@ -146,7 +146,7 @@ private:
     QPushButton* _deleteBranch {nullptr};
     QPushButton* _renameBranch {nullptr};
     QPushButton* _mergeBranch {nullptr};
-    QPushButton* _openWriter {nullptr};
+    QPushButton* _openBranch {nullptr};
     QCheckBox* _allBranches {nullptr};
     QCheckBox* _hideRecords {nullptr};
 public:

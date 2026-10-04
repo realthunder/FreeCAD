@@ -11906,3 +11906,126 @@ kind of user, `invited`: the holder of an invitation the host issued to
 one named person. It may write; its rows and its logins say `invited`, so
 the panel shows it was not verified by a login. An open invitation makes
 nobody a user who may write.
+
+### 30.7 S.a as built: section 29 made explicit (2026-10-04)
+
+**What went.** The sync at the end of an operation (`syncWriters` in
+`OperationScope`, and the scope `commitImplicitTransactions` had taken for
+it), `syncWriter`, the follow when the target moved, the push with its
+re-fork, the count of a refused pull's conflicts, `setWriterBusy` and the
+Gui's hook for it, `TransactionLog::recordOn`, and the branch a closed
+writer took with it: a branch is not its document, and stays when the
+document is closed.
+
+Two rules W.e added went with the follow, where 30.3 had said they would
+stay. With nothing arriving in a document that it did not ask for, a
+transaction is mirrored into the active document again as between any two
+documents, and a step is never undone "past" another's rows
+(`_writtenPast`, `TransactionLog::writtenPast`): S.c brings undo by author
+in their place.
+
+**What stayed.** `branch.target`, now on every branch: the branch it was
+made from -- `createBranch` sets it too, to the branch the fork row is on
+-- and the default side of its merges. `openWriter` is
+`Document::openNewBranch(name, createView)`, Python
+`openTransactionBranch`: a branch made at this document's head and opened
+in a second document of the file, this one staying where it is; a branch
+of such a branch is allowed. `TransactionLog::forkHere` (was `makeWriter`),
+`moveHead`, `TransactionStore::forwardBranch`, `_followHead`, and the two
+defects 29.6 fixed. `Document::branchState()`, Python
+`getTransactionBranchState()`: the branch, its target, and how many
+operations each holds that the other's history does not reach -- `ahead`,
+`behind` -- by the rows stored; records are not counted.
+
+**P1, the fast-forward.** `previewMerge` says when it applies
+(`MergePreview::forward`, the rows that would be taken; Python `forward`,
+their count), and `mergeBranch` then does it instead of 28's merge
+(`MergeResult::forwarded`; `seq` is the head merged in):
+
+- *When:* the base is on both chains, this branch has no row with ops
+  after it, and the other has one. A branch whose base is reached through
+  a merge's second parent is not a fast-forward; it takes 28's path, where
+  an unchanged receiver still gets the other whole, as one row.
+- *The rows* are not copied or renumbered: this branch's head moves onto
+  them (`forwardBranch`). When the other branch was made from this one
+  they become this branch's, with the versions taken at them, and the
+  other starts again at that row; any other branch keeps its rows, and
+  this one's head rests on them as a new branch's rests on what it was
+  made from -- so a branch that takes its target's rows does not take
+  them over.
+- *The document* arrives as a switch does: moved along the rows with
+  nothing recorded, derived values and view providers with them, no
+  recompute; its undo steps cleared and made again from the chain
+  (`_arriveOnBranch`), so the rows taken are its steps, undone one at a
+  time through the log. The document on the other branch is not touched.
+- *No row is written.* The first build wrote a `merge` record; it would
+  have been a record on the receiver after the base at the next merge.
+  What marks the merge is the version at the head merged in, when there
+  is one: named `merged into <branch>`, as 28 names it.
+
+**Records are not movement, and why that took more than a test.** A save,
+a snapshot, the record a switch leaves: rows with no ops, on the receiving
+branch after the base. First built by making the other's first row follow
+them -- one `UPDATE` of its parent. That put a row before the row it
+follows by number, and the log reads "the rows of a chain after row N" as
+`chain(head, N + 1)` everywhere: `_rebuildUndoFromLog`, `rowsBackTo`, the
+merge's own row lookup, a dozen more. A row is numbered after the row it
+follows, and that stays. So:
+
+- the versions taken at those records become versions at the base
+  (`TransactionStore::anchorVersions`) -- they are the state at the base,
+  and anything that reads a version and replays the rows after it stays
+  right;
+- the records are removed, and written again after the rows taken, each
+  as it was made -- kind, name, annotation, time, session -- under a new
+  number (`TransactionLog::reappend`);
+- not when another branch's chain, or another document's cursor, stands
+  on one of them: then it is not a fast-forward, and 28's merge runs.
+
+**The panel.** **Branch to document** where **Writer** was; the status
+says `from <target>` with `N ahead` and `N behind`; the merge dialog says
+when a merge will be a fast-forward and of how many rows, and the status
+after it says so.
+
+**Tests.** Gtests: `mergeFastForwardsWhenOursIsUnchanged` (one document:
+main with only the record of the switch back; the rows as made, main's,
+no merge row, the record after them, numbers rising along the chain, the
+steps undone one at a time), `aBranchInASecondDocumentIsMergedWhenAsked`
+(nothing follows; ahead and behind; the fast-forward; each document's
+steps; the other way round with main's rows staying main's; the branch
+outliving its document), `aMergeOfTwoThatMovedIsARow`,
+`aConflictWaitsForTheMergeThatIsAsked`,
+`aFastForwardKeepsTheRecordsBetween` (a snapshot on the receiver: its
+version at the base, its record after the rows). They replace the four
+writer cases. Python: `testABranchInASecondDocumentIsMergedWhenAsked`
+replaces `testWritersOfAFileFollowEachOther` (a Part box: shapes taken
+with no recompute, either way). The Gui check is
+`scripts/transaction-log-twodoc-check.py` (`TWODOCCHECK_OUT`), which
+replaces `transaction-log-writer-check.py`.
+
+**Left.**
+
+- A fast-forward is several changes to the store and a move of the
+  document, not one atomic step: a throw half way leaves the branch's
+  head moved and the document where it was.
+- There is no undo of "the merge" as one step after a fast-forward; the
+  rows are undone one at a time, or the document restored to the version
+  before.
+- A merge is asked for in the document that receives. A branch cannot
+  push itself into a target no document holds.
+- A document that took rows by fast-forward is not marked modified in
+  the Gui, as after a switch.
+- Seen, not chased: the tree view writes `TreeRank` on a document's
+  objects when it first shows them, outside any command -- an implicit
+  row with ops. In the offscreen check, where the tree is hidden until
+  the panel is shown, that made a branch level with its target read
+  `1 ahead`. A write outside a command is fixed at its site (24.10); this
+  one is the tree's.
+
+**Gates**, frozen and unfrozen each: Python 2999 OK (52 skipped frozen, 53
+unfrozen; 6 expected failures; one case replaced by one), ctest 865/865
+(four cases replaced by four; `-j6` frozen, `-j1` unfrozen), the GUI
+checks RC 15, BC 27, VC 18, PC 28, FC 16, VW 14, MC 28 and the
+two-document check 24. The first run had one Python failure,
+`testMergeUpToAVersion`: the fast-forward did not name the version merged
+in.

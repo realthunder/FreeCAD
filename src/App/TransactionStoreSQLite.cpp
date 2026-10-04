@@ -1779,6 +1779,16 @@ public:
         }
     }
 
+    void anchorVersions(const std::vector<int64_t>& seqs, int64_t to) override
+    {
+        for (int64_t seq : seqs) {
+            auto s = prepare("UPDATE version SET seq=? WHERE seq=?");
+            sqlite3_bind_int64(s, 1, to);
+            sqlite3_bind_int64(s, 2, seq);
+            step(s);
+        }
+    }
+
     bool removeBranch(int64_t id) override
     {
         auto s = prepare("DELETE FROM branch WHERE id=?");

@@ -5506,31 +5506,33 @@ class TransactionBranchCases(unittest.TestCase):
         self.assertGreater(doc.mergeTransactionBranch("side")["seq"], 0)
         self.assertEqual(doc.Obj.String, "later")
 
-    def testWritersOfAFileFollowEachOther(self):
-        # Sec 29.2: a writer is another document of the file on a branch
-        # that writes to this one. What either does the other has at once,
-        # shapes included, with no recompute of its own.
-        doc = self.track(FreeCAD.newDocument("Writers"))
+    def testABranchInASecondDocumentIsMergedWhenAsked(self):
+        # Sec 30.3 S.a: a branch opened in a second document of the file.
+        # Neither follows the other; a merge that is asked for takes the
+        # other's rows as they are when this side has not moved, shapes
+        # included, with no recompute of its own.
+        doc = self.track(FreeCAD.newDocument("Branches"))
         doc.UndoMode = 1
         doc.openTransaction("create")
         box = doc.addObject("Part::Box", "Box")
         doc.recompute()
         doc.commitTransaction()
-        path = os.path.join(self.dir, "writers.FCStd")
+        path = os.path.join(self.dir, "branches.FCStd")
         doc.saveAs(path)
-        self.assertFalse(doc.getTransactionWriter()["writer"])
+        self.assertEqual(doc.getTransactionBranchState()["target"], "")
 
-        writer = self.track(doc.openTransactionWriter("desk", False))
-        self.assertNotEqual(writer.Name, doc.Name)
-        state = writer.getTransactionWriter()
-        self.assertEqual((state["writer"], state["branch"], state["target"]), (True, "desk", "main"))
-        self.assertTrue(writer.FileName.startswith(path + "@desk@v"), writer.FileName)
+        other = self.track(doc.openTransactionBranch("desk", False))
+        self.assertNotEqual(other.Name, doc.Name)
+        state = other.getTransactionBranchState()
+        self.assertEqual(
+            (state["branch"], state["target"], state["ahead"], state["behind"]),
+            ("desk", "main", 0, 0),
+        )
+        self.assertTrue(other.FileName.startswith(path + "@desk@v"), other.FileName)
         branches = self.branches(doc)
         self.assertEqual(branches["desk"]["target"], branches["main"]["id"])
         with self.assertRaises(ValueError):
-            writer.openTransactionWriter()
-        with self.assertRaises(ValueError):
-            doc.openTransactionWriter("desk")
+            doc.openTransactionBranch("desk")
 
         recomputed = []
 
@@ -5541,37 +5543,56 @@ class TransactionBranchCases(unittest.TestCase):
         seen = Seen()
         FreeCAD.addDocumentObserver(seen)
         try:
-            writer.openTransaction("longer")
-            writer.Box.Length = 20
-            writer.recompute()
-            writer.commitTransaction()
+            other.openTransaction("longer")
+            other.Box.Length = 20
+            other.recompute()
+            other.commitTransaction()
+            # Nothing follows: main is where it was.
+            self.assertAlmostEqual(doc.Box.Shape.Volume, 1000.0)
+            state = other.getTransactionBranchState()
+            self.assertGreater(state["ahead"], 0)
+            self.assertEqual(state["behind"], 0)
+
+            del recomputed[:]
+            preview = doc.previewTransactionMerge("desk")
+            self.assertGreater(preview["forward"], 0)
+            self.assertEqual(preview["conflicts"], 0)
+            merged = doc.mergeTransactionBranch("desk")
+            self.assertEqual(merged["forwarded"], preview["forward"])
             self.assertAlmostEqual(doc.Box.Shape.Volume, 2000.0)
             self.assertNotIn(doc.Name, recomputed)
             self.assertNotIn("Touched", doc.Box.State)
             row = [t for t in doc.getTransactionLog() if t["name"] == "longer"][-1]
             self.assertEqual((row["kind"], row["branch"]), ("user", "main"))
+            self.assertFalse([t for t in doc.getTransactionLog() if t["kind"] == "merge"])
 
-            del recomputed[:]
+            # The other way: main's operation, taken when the branch asks.
             doc.openTransaction("lower")
             doc.Box.Height = 5
             doc.recompute()
             doc.commitTransaction()
-            self.assertAlmostEqual(writer.Box.Shape.Volume, 1000.0)
-            self.assertNotIn(writer.Name, recomputed)
+            self.assertAlmostEqual(other.Box.Shape.Volume, 2000.0)
+            self.assertGreater(other.getTransactionBranchState()["behind"], 0)
+            del recomputed[:]
+            pulled = other.mergeTransactionBranch("main")
+            self.assertGreater(pulled["forwarded"], 0)
+            self.assertAlmostEqual(other.Box.Shape.Volume, 1000.0)
+            self.assertNotIn(other.Name, recomputed)
         finally:
             FreeCAD.removeDocumentObserver(seen)
-        state = writer.getTransactionWriter()
-        self.assertEqual((state["unpushed"], state["conflicts"], state["behind"]), (0, 0, False))
+        state = other.getTransactionBranchState()
+        self.assertEqual((state["ahead"], state["behind"]), (0, 0))
 
-        # Each undoes its own.
-        self.assertEqual(writer.UndoNames, ["longer"])
-        writer.undo()
-        self.assertAlmostEqual(doc.Box.Length.Value, 10.0)
-        self.assertAlmostEqual(doc.Box.Height.Value, 5.0)
+        # The steps of the document that took the rows are the rows.
+        self.assertEqual(doc.UndoNames[0], "lower")
+        self.assertIn("longer", doc.UndoNames)
+        doc.undo()
+        self.assertAlmostEqual(doc.Box.Height.Value, 10.0)
+        self.assertAlmostEqual(other.Box.Height.Value, 5.0)
 
-        # Closed with nothing of its own, it leaves no branch.
-        FreeCAD.closeDocument(writer.Name)
-        self.assertNotIn("desk", self.branches(doc))
+        # A branch is not its document: closed, it stays.
+        FreeCAD.closeDocument(other.Name)
+        self.assertIn("desk", self.branches(doc))
         doc.openTransaction("after")
         doc.Box.Width = 3
         doc.commitTransaction()

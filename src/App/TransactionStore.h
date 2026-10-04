@@ -75,8 +75,9 @@ struct LogBranch
     long lastId {0};
     double created {0};
     double closed {0};
-    /// A writer's branch (sec 29.2): the branch it writes to, whose head it
-    /// was last level with at `fromSeq`. 0 for any other branch.
+    /// The branch this one was made from when it was opened in a document
+    /// of its own (sec 30.3 S.a): the default side of its merges. 0 for
+    /// none.
     int64_t target {0};
 };
 
@@ -365,12 +366,18 @@ public:
     /// Drop a branch row; its transactions and versions are the caller's
     /// (sec 16.7). False if there is no such branch.
     virtual bool removeBranch(int64_t id) = 0;
-    /** Fast-forward branch `id` to `head` (sec 29.2, push): its head moves
+    /** Fast-forward branch `id` to `head` (sec 30.4 P1): its head moves
      * there, and the rows `seqs` -- another branch's, which `id` now holds
      * as its own -- and the versions taken at them become `id`'s. False if
      * there is no such branch.
      */
     virtual bool forwardBranch(int64_t id, int64_t head, const std::vector<int64_t>& seqs) = 0;
+    /** The versions taken at the rows `seqs` are taken at row `to` instead
+     * (sec 30.4 P1): for records after `to` with nothing between that
+     * changed the document, which a fast-forward takes off the chain --
+     * the versions are the state at `to`, and stay on it.
+     */
+    virtual void anchorVersions(const std::vector<int64_t>& seqs, int64_t to) = 0;
 
     virtual std::string getMeta(const std::string& key) = 0;
     virtual void setMeta(const std::string& key, const std::string& value) = 0;
