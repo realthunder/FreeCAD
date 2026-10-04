@@ -2905,6 +2905,13 @@ bool SketchObject::convertToNURBS(int GeoId)
     if (geo->is<Part::GeomPoint>())
         return false;
 
+    // One already: there is nothing to convert, and going on would delete
+    // every constraint on the curve but a coincidence -- its internal
+    // alignment with them, leaving its poles and knots loose. An external
+    // B-spline is still copied in, below.
+    if (GeoId >= 0 && geo->is<Part::GeomBSplineCurve>())
+        return true;
+
     const Part::GeomCurve* geo1 = static_cast<const Part::GeomCurve*>(geo);
 
     Part::GeomBSplineCurve* bspline;

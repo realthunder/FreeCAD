@@ -831,6 +831,47 @@ TEST_F(SketchObjectTest, testReverseAngleConstraintToSupplementaryExpressionNotA
     EXPECT_EQ(std::string("180 - 60 + 5"), getObject()->getConstraintExpression(id));
 }
 
+// A curve that is a B-spline already has nothing to convert. Converting it
+// anyway stripped it of its internal alignment -- every constraint on the curve
+// but a coincidence goes -- and the command exposes the internal geometry
+// again afterwards: the poles and knots stayed as loose circles and points,
+// and a second set was made beside them.
+TEST_F(SketchObjectTest, testConvertToNURBSLeavesABSplineAlone)
+{
+    // Arrange
+    auto nonPeriodicBSpline = createTypicalNonPeriodicBSpline();
+    int geoId = getObject()->addGeometry(nonPeriodicBSpline.get());
+    getObject()->exposeInternalGeometry(geoId);
+    int highest = getObject()->getHighestCurveIndex();
+    int constraints = getObject()->Constraints.getSize();
+
+    // Act: as Sketcher_BSplineConvertToNURBS does
+    bool converted = getObject()->convertToNURBS(geoId);
+    getObject()->exposeInternalGeometry(geoId);
+
+    // Assert
+    EXPECT_TRUE(converted);
+    EXPECT_EQ(getObject()->getHighestCurveIndex(), highest);
+    EXPECT_EQ(getObject()->Constraints.getSize(), constraints);
+}
+
+// The control: a line is still made a B-spline.
+TEST_F(SketchObjectTest, testConvertToNURBSConvertsALine)
+{
+    // Arrange
+    Base::Vector3d p1(0.0, 0.0, 0.0), p2(1.0, 0.0, 0.0);
+    Part::GeomLineSegment line;
+    line.setPoints(p1, p2);
+    int geoId = getObject()->addGeometry(&line);
+
+    // Act
+    bool converted = getObject()->convertToNURBS(geoId);
+
+    // Assert
+    EXPECT_TRUE(converted);
+    EXPECT_TRUE(getObject()->getGeometry(geoId)->is<Part::GeomBSplineCurve>());
+}
+
 TEST_F(SketchObjectTest, testGetElementName)
 {
     // Arrange
