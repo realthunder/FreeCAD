@@ -13081,3 +13081,98 @@ file with its content, then the value.
 unfrozen; 6 expected failures), ctest 874/874 (+1), and the GUI checks
 RC 15, BC 27, VC 18, PC 28, FC 16, VW 14, MC 28, the two-document check
 24, the tree check 19, the author check 36 and the import check 29.
+
+### 30.19 S.g, a copy with no history: survey and questions (2026-10-04)
+
+Not built. 30.3 has it as one row -- the difference between the file as
+found and the version its `Version` names. This is what stands under
+that, and what has to be ruled before it is built.
+
+**What a file says of where it came from.**
+
+- **`Version`**, a hidden document property: `<num> <save id>`. Written
+  by a save that embeds the history (`embedHistory`), and by nothing
+  else. The save id is the embedded copy's `save_id`, which the guard on
+  open compares with it (16.4).
+- **A save that does not embed** empties `History` and leaves `Version`
+  as the last embedding save wrote it. A file never saved with its
+  history has no `Version`.
+- **A copy saved without history** (`saveCopy(file, withHistory=false)`)
+  carries the `Version` of the last embedding save too: not the state the
+  copy is, which may be many rows on.
+- **The live store keeps no save id.** A version row has a uuid the file
+  does not carry; the save id is in the embedded copy's `meta` and
+  nowhere else. So "the version the file's `Version` names" is, today, a
+  number -- and a number is no proof the file is of this history.
+- **The version itself may be gone.** A save's version is unnamed, and
+  unnamed versions are evicted past `TransactionLogKeepVersions`. The row
+  it was taken at stays as long as nothing trims it.
+
+**Two kinds of file.**
+
+- **(a) Its history is there, and the file is not its tip** -- edited by
+  a FreeCAD that knows no log, which kept `History` and `Version` as it
+  found them. `FileHistory::openFile` adopts such a history closed
+  (16.6): every branch closed, `main` renamed `main@<save date>`, and the
+  file as found the first version of a new `main` with no ancestry.
+  S.f, asked for the branch such a file reopens on, finds no row both
+  hold and refuses; asked for the closed branch, it imports that -- and
+  the edit made since is not in it.
+- **(b) No history**: `Version` at most.
+
+**What there is to build on.** `_applyVersion` makes a document what
+another document is, object by object under the same ids, every value
+that differs (24.5); S.f's maps and scopes (30.15, 30.16) carry ids,
+names, strings and tags across; `_moveAlongLog` reaches a row from the
+nearest version, as the import's replay does.
+
+**To rule.**
+
+| | Question | Proposed |
+| --- | --- | --- |
+| G1 | What names the base, exactly | **The save, by its id.** Every embedding save is recorded in the live store -- `meta` `save:<save id>` = its version number and the row it is at -- so a file's `Version` names a save this history made, and the state at its row can be reached though the version is evicted. No such save: refused, saying so. |
+| G2 | A copy saved without history | **Stamped as what it is**: `Version` gets a save id of its own, recorded as G1, at the row the copy's state is. It then comes back against the state it left with, where today it would come back against the last embedding save. |
+| G3 | The row's values | **Every value that differs, derived ones with them.** A state has no record of which values a recompute wrote. The merge recomputes where it writes (28), so nothing is left stale; the cost is the shapes in the log. The other way -- leaving out what `Prop_Output` marks, touching the owners -- loses a shape nothing recomputes. |
+| G4 | The row's author | **A user of kind `fork`**, named by the file's `LastModifiedBy` and the file's name -- `<who> (<file>)`, `(<file>)` alone when the file names nobody. One session per import. |
+| G5 | The same file brought again | **Known by its `Document.xml`'s hash**, kept with the branch's maps. The same: nothing is done. Changed: one more row on the same branch, the difference from the branch's head. |
+| G6 | Kind (a) | **Both**: the closed branch that was the file's, by S.f, then the one row for what was edited since. `closeAdopted` records which branch that was. |
+| G7 | Which objects are the same | **An object whose id the base has, of the same type** is that object. Any other is the file's own: a new id, and its name mapped (30.4 P4). |
+| G8 | Strings, and the ids names carry | **As S.f**: read from the document's own table, taken in by content, tags mapped. A FreeCAD that knows no log may have renumbered the table; by content it does not matter. |
+
+G1 and G2 change what a save writes into the store and into `Version`.
+Nothing has shipped with either, so they are changes in place.
+
+### 30.20 S.h, the request: survey and questions (2026-10-04)
+
+Not built. 30.3: an imported branch not yet merged is shown as a request
+and merged or deleted by the owner; a client of a served document sends
+its file as one.
+
+**What there is.**
+
+- **An imported branch is known as one**: `meta` `import:<branch id>`
+  names the file and the copy's branch (30.15), and each import ends in a
+  record -- who ran it, when, how many rows, where it stopped.
+- **Whether it is merged** needs no state of its own: `previewMerge`
+  says what the branch has that the one it was made from has not.
+- **The panel** brings a file in and puts the branch to the merge dialog
+  at once (30.17). Cancelled, the branch stays, and nothing but the
+  branch list shows it.
+- **No file comes over the wire on this branch.** The upload a browser's
+  file chooser makes over the control lane (docs/Sandbox.md 7.22, W4b) is
+  on `RemoteEdit`; `Transaction` has none.
+- **A file a client sends is input nobody here vouched for.** The replay
+  creates objects of the types the file's rows name and restores their
+  values: a `FeaturePython`'s proxy among them, which is code.
+
+**To rule.**
+
+| | Question | Proposed |
+| --- | --- | --- |
+| H1 | What a request is | **An import branch the branch it was made from has not taken**: its preview is not empty. Derived each time; no table, nothing to keep in step. |
+| H2 | Where it shows | **A "Requests" list in the log panel**, above the rows: the file, who -- the authors of its rows -- when it was brought, how many operations, how many conflicts the preview finds. Merge... opens the dialog; Delete drops the branch; Open puts it in a document of its own. |
+| H3 | "Merge from file..." | **As built**: import, then the dialog at once. Cancelling leaves a request in the list, which is where it is taken up again. |
+| H4 | A client's file: how it arrives | **Over the control lane's upload**, which means `RemoteEdit` merged into this branch first -- or the reverse. Not to be done twice. |
+| H5 | Who may send one | **Anyone who may write** (30.6 U4, U6): a request is rows in the log. A view-only client may not. |
+| H6 | When a sent file is read | **When the owner asks**, never on arrival: the file is kept as it came, listed as a request with its sender and its size, and imported -- replayed, its objects made -- only by the owner's click. With the sandbox's rules for a document from elsewhere applied to that replay (docs/Sandbox.md), whatever they then are. |
+| H7 | The sender, in the log | **The import's record names who sent it** (30.6), and the rows keep the authors the file gives them. |
