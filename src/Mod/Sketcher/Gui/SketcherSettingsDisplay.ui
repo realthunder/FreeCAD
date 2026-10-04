@@ -775,7 +775,7 @@ the characters listed here will be drawn using a substitute font.</string>
          <string>Fit the view to the sketch on editing</string>
         </property>
         <property name="checked">
-         <bool>false</bool>
+         <bool>true</bool>
         </property>
         <property name="prefPath" stdset="0">
          <cstring>Mod/Sketcher/General</cstring>

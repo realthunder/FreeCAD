@@ -8,9 +8,10 @@ altogether, so a picked construction line fitted the view to nothing
 -- or to some other edge. The sketch now answers the bounding box of an
 edit element itself, by geometry id.
 
-And, behind Mod/Sketcher/General FitSketchOnEdit (off by default, on the
-user's ruling: upstream does it on every edit), entering edit centres
-the camera on the sketch's plane and fits the view to its geometry.
+And, behind Mod/Sketcher/General FitSketchOnEdit (on by default, on the
+user's ruling; upstream does it on every edit and has no setting),
+entering edit centres the camera on the sketch's plane and fits the view
+to its geometry.
 
 Measured on the view's camera, top view, orthographic:
 
@@ -226,6 +227,25 @@ def probe_entry(fit):
         # The whole sketch: (-5..420, 0..300) about its origin, +100 in x.
         check("and a sketch in a placed container is framed where it is drawn",
               near((x, y), (307.5, 150), 3.0), "(%.2f, %.2f), want (307.5, 150)" % (x, y))
+        FreeCADGui.activeDocument().resetEdit()
+        settle(0.5)
+
+        # Nothing stored: the default. Switched off first, so that what
+        # the last entry left set cannot answer for it.
+        FreeCAD.ParamGet(PARAM).SetBool("FitSketchOnEdit", False)
+        settle(0.3)
+        FreeCAD.ParamGet(PARAM).RemBool("FitSketchOnEdit")
+        settle(0.3)
+        view.viewTop()
+        cam = view.getCameraNode()
+        cam.position.setValue(0.0, 0.0, cam.position.getValue()[2])
+        cam.height.setValue(50.0)
+        settle(0.3)
+        FreeCADGui.activeDocument().setEdit(state["far"])
+        settle(1.5)
+        x, y, h = centre(view)
+        check("with nothing stored the view fits the sketch on entry: it is the default",
+              near((x, y), (505, 400), 2.0), "(%.2f, %.2f), want (505, 400)" % (x, y))
         FreeCADGui.activeDocument().resetEdit()
         settle(0.5)
     except Exception:

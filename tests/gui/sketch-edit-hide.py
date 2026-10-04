@@ -122,6 +122,11 @@ def saved_visibilities(path):
 
 def run():
     try:
+        # The other sketches are sampled in the frame set up below, so
+        # entering a sketch must not fit the view to it and take them out
+        # of the viewport (FitSketchOnEdit, on by default).
+        FreeCAD.ParamGet("User parameter:BaseApp/Preferences/Mod/Sketcher/General").SetBool(
+            "FitSketchOnEdit", False)
         params = FreeCAD.ParamGet("User parameter:BaseApp/Preferences/View")
         if params.GetInt("RenderCache", 3) != 3:
             note("ABORT render cache is not mode 3")

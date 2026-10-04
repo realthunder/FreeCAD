@@ -307,7 +307,7 @@ struct EditData {
         _SnapTolerance = hSketchGeneral->GetFloat(_ParamSnapTolerance, 0.2);
         _ViewBottomOnEdit = hSketchGeneral->GetBool(_ParamViewBottomOnEdit, false);
         _AdjustCamera = hSketchGeneral->GetBool(_ParamAdjustCamera, true);
-        _FitOnEdit = hSketchGeneral->GetBool(_ParamFitOnEdit, false);
+        _FitOnEdit = hSketchGeneral->GetBool(_ParamFitOnEdit, true);
 
         timer.setSingleShot(true);
         QObject::connect(&timer, &QTimer::timeout, [master]() {
@@ -5836,7 +5836,7 @@ void ViewProviderSketch::OnChange(Base::Subject<const char*> &rCaller, const cha
     else if (boost::equals(sReason, _ParamAdjustCamera))
         _AdjustCamera = edit->hSketchGeneral->GetBool(_ParamAdjustCamera, false);
     else if (boost::equals(sReason, _ParamFitOnEdit))
-        _FitOnEdit = edit->hSketchGeneral->GetBool(_ParamFitOnEdit, false);
+        _FitOnEdit = edit->hSketchGeneral->GetBool(_ParamFitOnEdit, true);
 }
 
 bool ViewProviderSketch::allowFaceExternalPick()
@@ -5846,10 +5846,10 @@ bool ViewProviderSketch::allowFaceExternalPick()
 
 void ViewProviderSketch::fitOnEdit(Gui::ViewerContext *viewer)
 {
-    // Upstream 5587b48a0f, behind Mod/Sketcher/General FitSketchOnEdit (off
-    // by default; upstream does it on every edit): look at the sketch's
-    // plane head on, centred on its origin, and fit the view to its
-    // geometry.
+    // Upstream 5587b48a0f, behind Mod/Sketcher/General FitSketchOnEdit (on
+    // by default; upstream does it on every edit and has no setting): look
+    // at the sketch's plane head on, centred on its origin, and fit the
+    // view to its geometry.
     SoCamera *camera = viewer->getSoRenderManager()->getCamera();
     if (!camera)
         return;

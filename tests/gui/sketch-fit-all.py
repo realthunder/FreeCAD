@@ -20,7 +20,8 @@ Now the feedback is left out of the scene's box, as the axes are, and a
 scene that holds nothing but one point of what is being edited is
 nothing to frame: the fit does not zoom and does not turn. It does go
 to that point -- a sketch's origin may well be off the screen, entering
-a sketch turns the view and does not move it.
+a sketch goes there only while FitSketchOnEdit is on, and the view may
+have been moved since.
 
 What must not change, and is checked: a sketch's fit takes its origin
 with its geometry; an empty sketch beside a model is framed with it; a
@@ -213,7 +214,9 @@ def run():
               near(cam[:2], (30.0, 20.0), 0.01) and cam[2] < 1.0, describe(cam))
 
         # 6. An empty sketch off the global origin, on another plane.
-        # Entering it turns the view and leaves its origin where it was.
+        # Entering it turns the view to its plane and goes to its origin
+        # (FitSketchOnEdit, which nothing here has stored: the default).
+        # Then the view is moved away, and the fit brings the origin back.
         doc4, view4 = new_view("FitPlaced")
         origin = V(100, 50, 20)
         sk4 = doc4.addObject("Sketcher::SketchObject", "Sketch")
@@ -223,10 +226,16 @@ def run():
         FreeCADGui.getDocument(doc4.Name).setEdit(sk4)
         settle(2.0)
         direction = view4.getViewDirection()
-        check("entering the placed sketch turned the view to its plane, its origin off centre",
-              abs(direction.y - 1.0) < 1e-3 and off_centre(view4, origin) > 100.0,
+        check("entering the placed sketch turns the view to its plane and goes to its origin",
+              abs(direction.y - 1.0) < 1e-3 and off_centre(view4, origin) < 2.0,
               "direction (%.2f, %.2f, %.2f), origin %.0f px off" % (
                   direction.x, direction.y, direction.z, off_centre(view4, origin)))
+        cam4 = view4.getCameraNode()
+        pos = cam4.position.getValue()
+        cam4.position.setValue(pos[0] + 40.0, pos[1], pos[2] + 15.0)
+        settle(0.5)
+        check("the view moved away, the origin is well off its centre",
+              off_centre(view4, origin) > 100.0, "%.0f px off" % off_centre(view4, origin))
         view4.fitAll()
         settle(1.2)
         after = view4.getViewDirection()
