@@ -91,8 +91,10 @@ Ubuntu 24.04 ships no PySide6 at all; pip wheels for Python 3.12 start at PySide
 which cannot pair with the distro's Qt 6.4.2 (in-process SONAME collision). conda-forge
 is the one channel with a matched Qt6/PySide6/shiboken6 for py3.12. All our components
 are built inside the env with conda's compilers so there is exactly one ABI in the
-process — no mixed-toolchain loader mysteries. Our components are still full `-g`
-Debug builds; only the prebuilt deps (Qt, Python, boost, …) are release.
+process -- no mixed-toolchain loader mysteries. Our components are RelWithDebInfo
+builds with full `-g` (there is no Debug stack since 2026-10-03, see [Building the
+dependencies](#building-the-dependencies-conda-stack)); the prebuilt deps (Qt,
+Python, boost, ...) are conda's release packages.
 
 ### Python is pinned to 3.13 for this dev cycle
 
@@ -338,8 +340,8 @@ resolved per process, so a conda pivy would pull a second Coin into a
 process that already has ours. It is built from `~/works/sw/pivy`
 (`rt-0.6.10`) against the Coin install the stack uses -- the recipe is
 in [Building the dependencies](#building-the-dependencies-conda-stack),
-along with the warning about one pivy not being able to serve both the
-release and the debug stack.
+along with the warning about one pivy not being able to serve two
+stacks, should a second one ever be built.
 
 ### Packages from the realthunder channel
 
@@ -1359,30 +1361,25 @@ or every sandbox case skips while the gate still reports `RESULT OK`.
 
 ### An optimized stack, for measuring anything
 
-The debug stack is unusable for performance work: a large STEP import runs ~6x slower,
-which turns a single experiment into an afternoon. Build the dependencies a second time
-as `RelWithDebInfo` (optimized, still symbolized for gdb and callgrind) into parallel
-prefixes, and configure FreeCAD with the `conda-relwithdebinfo-801` user preset
-(`build/conda-relwithdebinfo-801`):
+This section was written when a Debug stack was primary and the RelWithDebInfo one
+was built beside it for measurements; since 2026-10-03 RelWithDebInfo is the only
+stack (see [Building the dependencies](#building-the-dependencies-conda-stack), whose
+recipes now make it). Why it had to exist still holds for any future Debug build:
+a Debug stack is unusable for performance work -- a large STEP import runs ~6x
+slower, which turns a single experiment into an afternoon. RelWithDebInfo is
+optimized and still symbolized for gdb and callgrind:
 
 ```sh
 RUN=~/works/sw/fcad/.conda/run.sh
-
-# OCCT and Coin: same recipes as above, only the build type and prefixes differ
-#   -DCMAKE_BUILD_TYPE=RelWithDebInfo
-#   -DINSTALL_DIR=$HOME/works/sw/occt/install/conda-relwithdebinfo-801  (OCCT, LinkVibe-801)
-#   -DCMAKE_INSTALL_PREFIX=$HOME/works/sw/coin/install/conda-relwithdebinfo  (Coin)
-# then rebuild pivy against the release Coin (same recipe, new prefix).
-
 $RUN cmake --preset conda-relwithdebinfo-801
 $RUN cmake --build build/conda-relwithdebinfo-801 -j 14
 ```
 
-**Measure on the same OCCT the debug stack uses.** The streamed STEP transfer and
-parallel healing only exist on the 8.0.1 fork; against 7.7.2 they compile, but fall
-back to the one-shot path, so a timing taken there measures a different importer.
-`conda-relwithdebinfo-local` (OCCT 7.7.2, `build/conda-relwithdebinfo`) is kept only
-as the before-picture for that comparison.
+**Measure on OCCT 8.0.1.** The streamed STEP transfer and parallel healing only
+exist on the 8.0.1 fork; against 7.7.2 they compile, but fall back to the one-shot
+path, so a timing taken there measures a different importer. (The 7.7.2
+before-picture, `conda-relwithdebinfo-local` / `build/conda-relwithdebinfo`, was
+deleted on 2026-08-28.)
 
 **Build every dependency optimized, not just OCCT.** Leaving Coin in debug is the easy
 mistake, and a costly one: in a progressive-import profile ~77% of the instructions
@@ -1405,10 +1402,11 @@ $RUN cmake -B build/conda-relwithdebinfo-801 \
 from stock Coin's soname because the fork's ABI diverges; FreeCAD refuses to
 start on a fork ABI mismatch, see `coin_fork_abi()` in the coin repo.)
 
-**The optimized stack goes stale silently, and it fails one layer at a time.**
-The debug stack is rebuilt daily, so it stays honest; the optimized one is only
-touched when somebody measures something, which can be weeks apart. In between,
-the fork moves and its two dependency *installs* do not. Nothing warns you --
+**A stack nobody builds daily goes stale silently, and it fails one layer at a
+time.** (Written of the optimized stack while the Debug one was primary; it holds
+for whichever stack is the second one.) The daily stack stays honest; the other is
+only touched when somebody needs it, which can be weeks apart. In between, the
+fork moves and its two dependency *installs* do not. Nothing warns you --
 the tree simply fails to compile, and the error names a FreeCAD source file even
 though the fault is in a dependency install, which reads like a source bug and
 is not one.
@@ -1426,7 +1424,7 @@ three dated to the same early-August measurement:
 
 **A cached CMake variable survives `cmake --preset`.** The first one above is not
 fixed by reconfiguring: `BUILD_ENABLE_CXX_STD` is a cache entry, so a plain
-re-run of the preset keeps whatever it already had (the debug tree had `C++20`,
+re-run of the preset keeps whatever it already had (the then debug tree had `C++20`,
 the optimized tree still `C++17`). Pass it explicitly, and confirm in the
 generated ninja file rather than in the cache:
 
@@ -3382,9 +3380,10 @@ untouched, so the tree stays clean.
 **Configure and build.** cmake and ninja come from the conda env; the
 host `shaderc` the essl pack needs is already in the desktop build tree,
 so nothing extra is built for it. The `FCVIEWER_SHADERC` default in
-`src/Gui/Renderer/wasm/CMakeLists.txt` is a Linux `conda-debug` path, so
-it has to be given here, and so do the node paths, since neither is on
-PATH by default:
+`src/Gui/Renderer/wasm/CMakeLists.txt` is that tree's `shaderc.exe` on a
+Windows host (it named a Linux `conda-debug` tree until 2026-10-04; passing
+it as below is harmless). The node paths have to be given, since they
+are not on PATH by default:
 
     call D:\works\sw\emsdk\emsdk_env.bat
     emcmake .conda\freecad\Library\bin\cmake.exe ^
