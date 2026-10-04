@@ -11670,3 +11670,165 @@ Q1). Clients of a shared session as writers, and two processes on one
 file, are the same mechanism with more under it: a document per client
 (`docs/ThinClient.md` 8.12, `docs/MultiViewEdit.md` sec 10), and the store
 and its allocators shared across processes (27.41 Q6).
+
+## 30. A shared head, explicit branches, forks (rulings and plan, 2026-10-04)
+
+Section 29 was built and the user then named what 17.5 missed: if every
+client branches whenever it writes, the cost is not practical. A writer as
+built is a whole second `App::Document` of the file -- opened by
+snapshotting the tip, materialising that version and restoring every
+object -- and every operation of anyone makes every other idle document of
+the file move along the log, on the main thread. Under 17.5's merge after
+each operation the branches are level again as soon as an operation ends,
+so N documents hold N copies of one state.
+
+Words, as the user uses them (git's): a **branch** is a separate moving
+head; a **tag** is a named point. Onshape's workspace is a branch, its
+version a tag, its microversion a commit -- a `txn` row here. A branch is a
+state someone stood in: opening it shows what its holder saw. Rows of one
+line labelled by who made them are not a branch (discussed and refused,
+2026-10-04).
+
+### 30.1 Rulings (user, 2026-10-04)
+
+| | Ruling |
+| --- | --- |
+| R1 | **Onshape's model.** The clients of a shared session write to one shared head: one document, one line of rows, a row per operation. No branch per client. 17.5's "every writer works on its own branch" is withdrawn for them. |
+| R2 | **The author of a transaction is recorded**, always in a shared session; the name is the connection's identity. The privacy preference (`TransactionLogIdentity`, 13.3) covers the local OS name only. |
+| R3 | **A branch is explicit and a merge is explicit**, as Onshape's are. Section 29's sync after every operation goes. |
+| R4 | **Forks, the addition** (Onshape has none): a user copies the file to their own machine, works apart, and requests a merge back. A fork that carries no history falls back to comparing its state against the version it was copied from. |
+| R5 | **A clash on the shared head: the last commit wins**, as in Onshape. |
+
+### 30.2 What exists (survey, 2026-10-04)
+
+- **Author.** `txn.session` names a `session` row: `user`, `host`, opened,
+  closed, environment. One session per process, opened with the log; user
+  and host filled from the OS `UserName` / `HostName` only when
+  `TransactionLogIdentity` is on, off by default. Every client of a served
+  document writes under the server's one session: no author per client.
+- **Who a client is.** A scene server connection carries a verified
+  identity when a trusted front door asserts one, else a self-declared
+  name, and the grant that admitted it (`docs/ShareAccess.md` sec 2, 4;
+  `SceneServer.h`).
+- **Undo in a shared session** is the document's one stack
+  (`docs/ThinClient.md` 8.11): `{"op":"undo"}` undoes whatever is on top,
+  whoever made it. 8.12 G names per-user undo as the hard part.
+- **Selective undo** (24.7) and, from W.e, a top step undone through the
+  log when someone has written past it (`TransactionLog::writtenPast`, by
+  "rows this document numbered").
+- **Merge** between two branches of one store (28), with the picker.
+- **Section 29**: `branch.target`, `openWriter`, `syncWriters` at the end
+  of the outermost `OperationScope`, follow, fast-forward
+  (`TransactionStore::forwardBranch`), pull-merge and re-fork, the busy
+  hook, the panel's Writer button. Local, not pushed.
+- **A file's history opened without its document** (5.d,
+  `FileHistory::openFile`), and the file as found recorded as a version
+  (`recordFile`).
+- **What a saved file carries** (16.4): `Version`, the number of the
+  version the file is, written at every save; `History`, the embedded
+  store, when the save writes history; `Uid`. The store's `meta.document`
+  is the `Uid` of the document that started it.
+- **Nothing survives a copy as an identity of a row.** `seq` and version
+  numbers are counters of the store; the file's allocators (27.40) --
+  object ids, names, string ids, geometry ids -- count on in each copy, so
+  two copies hand out the same ones for different things.
+- **Strings of another table imported by content**
+  (`StringHasher::importID`, 27.78), and names mapped while values are
+  restored, as paste does.
+
+### 30.3 Plan
+
+Each step with the gates, frozen and unfrozen, and tests of its own.
+
+**S.a Section 29 made explicit (R3).** What goes: the sync at the end of
+an operation, the follow when the target moves, the automatic push and
+re-fork, `setWriterBusy`, the panel's writer status. What stays:
+
+- `branch.target` as the branch this one was made from -- the default
+  side of its merges, as git's upstream is;
+- `openWriter` as "branch, opened in a second document" in one call --
+  Onshape's branch to a new workspace;
+- `forwardBranch` as how an explicit merge lands when the receiving branch
+  has not moved since the base: the rows are taken as they are, each under
+  its author, where 28 would write one merge row (proposed, P1);
+- per document undo between two documents of a file, and the two defects
+  29.6 fixed.
+
+The four gtests, the Python case and the writer Gui check are rewritten
+for the explicit form. Section 29's commits are local; this is a commit on
+top, not a rewrite.
+
+**S.b The author of a row (R2).** An author is a `session` row: the
+process's own for the desktop user, one more for each connection at its
+first write, its `user` the verified identity, else the declared name,
+else a guest name the server gives. `App::ActorScope`, set by Gui where it
+replays a client's event or runs its control op, read when a transaction
+opens: the row's `session` is the actor's. A recompute recorded after an
+operation belongs to the operation's author. The panel has an Author
+column; the Python rows carry it. The desktop user's name stays under the
+preference; with it off the row says `local`.
+
+**S.c Per-user undo on the shared head (R1).** Each author has an undo
+and a redo stack per document, session only: the rows it made. Its undo
+takes its newest row -- hot when that row is the top of the chain and
+nothing was written past it, through the log as a selective undo
+otherwise (W.e's rule, by author where it was by document) -- and is
+recorded as a new row of that author. Refused, saying what changed, when
+someone else has since written what the row touched (P2). The desktop's
+undo is the desktop user's.
+
+**S.d The clients (R1, R5).** A connection is an actor; `undo` / `redo`
+are the client's own, and the stacks told back are its own; history
+replies name authors. R5 needs nothing built for property writes -- one
+process applies operations one after another, each on the head as it is
+-- and is recorded as the rule for when edit sessions become per client
+(`docs/MultiViewEdit.md`); until then there is one edit slot (8.11). A Gui
+check with two clients, each undoing its own past the other's.
+
+**S.e What survives a copy (R4).** A row gets an identity that is not its
+`seq`: the uuid of the session that made it and its ordinal in that
+session. Two copies open new sessions, so rows made apart differ where
+their `seq` is the same, and a row imported under a new `seq` is still
+known. Two files are one history when they hold a row in common; the base
+of a fork is the newest such row.
+
+**S.f A fork with history, imported as a branch (R4).** "Merge from
+file...": the other file's history is opened without its document, the
+base found, and its rows after the base copied into this store as a
+branch named after the file -- `seq` and version numbers renumbered,
+values and blobs by hash, authors with their rows. Then the merge is 28's,
+explicit, with the picker: the owner decides, which is the request.
+
+- *Nothing made on this side since the base:* nothing collides; the rows
+  go in as they are and the allocators move up to the fork's.
+- *Both sides made objects or strings:* the fork's new objects take new
+  ids, and new names where the names are taken (P4), mapped through its
+  rows and the values that name them; its strings are imported by
+  content; its derived values are left out and their owners recomputed at
+  the merge, which 28.2 item 4 does already.
+
+The second case is the hard one, and gets a survey of its own before it
+is built.
+
+**S.g A fork without history (R4).** The base is the version the file's
+`Version` names -- refused, saying so, when this history no longer
+reaches it. The file as found is recorded on a new branch from the base
+as one row, the difference of the two states, objects past the base's
+last id being the fork's own and mapped as in S.f. One row, one author:
+the file.
+
+**S.h The request.** An imported branch not yet merged is shown as a
+request -- who, when, how many operations, the conflicts the preview
+finds -- and merged or deleted by the owner. A client of a served
+document sends its file as a request; the host sees it in the panel.
+
+Order: S.a, S.b, S.c, S.d, then S.e to S.h.
+
+### 30.4 Points to confirm
+
+| | Point | Proposed |
+| --- | --- | --- |
+| P1 | An explicit merge into a branch that has not moved since the base | **Fast-forward**: the rows as they are, each under its author. One merge row only when both sides moved. |
+| P2 | An undo of a row someone else has since written over | **Refused, saying what changed** (24.7). R5 is for edits; an undo that silently takes another's later work back is not an edit. |
+| P3 | The host of a shared session, with the privacy preference off | **`host`**: clients are named, the desktop user is not, until the preference says so. |
+| P4 | A fork's new object whose name this side has given to another since | **Renamed on import** (`Pad002` arrives as `Pad003`), noted on the row. |
