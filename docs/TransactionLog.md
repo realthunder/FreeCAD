@@ -11832,3 +11832,19 @@ Order: S.a, S.b, S.c, S.d, then S.e to S.h.
 | P2 | An undo of a row someone else has since written over | **Refused, saying what changed** (24.7). R5 is for edits; an undo that silently takes another's later work back is not an edit. |
 | P3 | The host of a shared session, with the privacy preference off | **`host`**: clients are named, the desktop user is not, until the preference says so. |
 | P4 | A fork's new object whose name this side has given to another since | **Renamed on import** (`Pad002` arrives as `Pad003`), noted on the row. |
+
+### 30.5 Rulings on 30.4 (user, 2026-10-04)
+
+P1 to P4 as proposed: an explicit merge into a branch that has not moved
+is a fast-forward; an undo of a row someone else has since written over is
+refused; the desktop user of a shared session is `host` until the privacy
+preference names them; a fork's new object whose name is taken is renamed
+on import.
+
+Raised with them (user): a login should be a transaction of its own, and
+whether a user is known as the same one across logins. As surveyed, it is
+not: the log has a `session` row per run of a process and no notion of a
+user; the server knows a connection by a verified identity when a front
+door asserts one (stable across logins), else by a name the client
+declares (a label, not proof), and neither reaches the log. Design to
+follow as 30.6 once the user has answered what was put to them.
