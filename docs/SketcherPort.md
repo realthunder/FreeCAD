@@ -5310,11 +5310,35 @@ time (timeout 0.4 s, animation 1.5 s): 3 runs of 3 the turn stopped at
 about (0, 0.35, -0.94) before; the view behind, left spinning, is still
 stopped.
 
-**Seen, not chased.** With `FitSketchOnEdit` off and no pause between
-creating a document and entering a sketch in it, the entry's turn does
-not happen at all (view direction unchanged two seconds later); with a
-second's pause it does. With the setting on the pose is set directly
-and the question does not arise.
+**Seen, and chased since.** Two things noted on the way.
+
+*The entry's turn that "did not happen".* With `FitSketchOnEdit` off
+and no pause between creating a document and entering a sketch in it,
+the view was still looking down two seconds later; with a pause it had
+turned. Not a defect, and the first reading of it was wrong. Sampled
+every hundredth of a second: `setEdit` returns after 0.2 s, the next
+pass through the event loop takes 4.5 s, and the turn then plays in its
+250 ms, from 4.76 s to 5.03 s. Qt starts an animation's clock when the
+event loop first reaches it, so the turn was queued, not lost. The 4.5 s
+is the first frame of the process's first 3D view -- the same with no
+sketch entered at all, 4.5 s against 0.02 s for the pass after it. What
+it is made of was not measured here; a test process's first document
+is known to pay for shader compilation under software GL. The probe had
+waited "two seconds" by the
+clock, all of them inside that one pass, and then started another camera
+move, which stops an animation that has not begun and leaves the camera
+where it is. A trace under gdb shows the turn reaching its target, and
+the only later write of the camera's orientation is the sketch
+restoring the saved camera on leaving.
+
+*`AdjustCamera` read with two defaults* (`3708cdd1b0`). True when an edit
+starts and on the preference page, false in the change handler. They
+differ only when the stored entry is removed during an edit and the
+flag is asked again in that edit (the edit moving to another view, a
+SketchExport's double click). Made true. No test: a second view of the
+document is not an MDI window of its own, and switching windows did not
+move the edit, so the path was not driven. The five settings read in
+both places agree now.
 
 **The choices in this, mine and open to a ruling.** An empty sketch:
 the view goes to its origin at the zoom it has (ruled, as above). A
