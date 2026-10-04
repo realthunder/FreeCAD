@@ -4746,6 +4746,25 @@ does not ask the version. **A change in behaviour:** an edge ADDED by
 intersection to a sketch from before version 2 is the cut alone, as in any
 sketch; what the sketch already has is kept.
 
+**Who reads what** (the user's reminder, 2026-10-04). Schema 5 shuts out
+more than upstream: its root element is `FCDocument`, not `Document`
+(`FC_ELEM_FCDOCUMENT`, `src/App/Document.cpp`), and no released reader --
+upstream's, or an older release of this fork -- finds its root; each fails
+loudly rather than open the file wrong. A schema 5 file is read by the
+builds of this fork that know it and by nothing else. So every question of
+one program reading another's sketch is a question about schema 4, and for
+a schema 4 file written here it has two answers, both from reading the
+code, neither run:
+
+| read by | goes by | a cut | both kinds |
+|---|---|---|---|
+| upstream 1.1 on | `ExternalTypes` | the cut | both |
+| an older release of this fork | the flag on the geometry | the cut; of an edge, with its projection again, as before version 2 | an edge: both; a face: the cut alone |
+
+The second row is why the flag is still written: without it an older
+release of this fork would take every reference for a projection. What it
+cannot be told is that a face is taken both ways.
+
 A reference of both kinds read from a file does not say which piece is the
 cut -- upstream's has no flag, an old fork file has every piece flagged --
 and its first rebuild gives the pieces their ids by position, as before.
