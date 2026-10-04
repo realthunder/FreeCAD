@@ -326,7 +326,15 @@ void BGFXRenderer::Private::publishScene(const void *viewMatrix,
         if (server.running()
                 && (dirtyChanged || !scenePublished
                     || levelsBuilt != publishedLevelsBuilt)
-                && !(scene.empty() && overlays.empty())
+                // Nothing to show is no reason to claim a stream -- for
+                // a renderer that names no group. One that names its
+                // own is that document's publisher, and an empty
+                // document is a state its clients have to be told like
+                // any other: a hello to one went unanswered, and the
+                // publish before a document's last object was deleted
+                // stayed the one every client was handed.
+                && (!publishGroup.empty()
+                    || !(scene.empty() && overlays.empty()))
                 // Claims the stream on the first publish and states
                 // which publish this is; 0 means another renderer
                 // owns it and this one stays off the wire.

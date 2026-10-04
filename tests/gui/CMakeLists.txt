@@ -1197,3 +1197,12 @@ fc_add_gui_test(GuiViewAnimationBackgroundTimer_tests_run
 fc_add_gui_test(GuiExportHiddenComponent_tests_run
                 export-hidden-component.py
                 --timeout 180)
+
+# A served document with nothing to draw still answers its clients: a
+# hello to an empty document went unanswered, and deleting a document's
+# last object was never published -- the serve source alone publishes a
+# served document now, and a publish was refused for want of a draw or an
+# overlay.
+fc_add_gui_test(GuiServeEmptyDocument_tests_run
+                serve-empty-document.py
+                --timeout 180)
