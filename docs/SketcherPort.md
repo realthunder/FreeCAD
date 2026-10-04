@@ -5343,11 +5343,9 @@ with no exclusion asked -- whether the axes reach its box was not run.
 **Verified** on `f13743c56b`, and before it on `804a03a4b3`: full
 build; ctest 911 of 911, the 910 of before and the new test. On
 `7cd571832d`, the default change before the edit-hide test was fixed:
-911 of 912, the one failure that test; with the fix folded in
-(`1690017f04`) it and the three tests of this section pass through
-ctest on their own -- the full suite was not run again. The Python
-suite was not run: the changes are in Gui libraries `FreeCADCmd` does
-not load.
+911 of 912, the one failure that test. On the tip, with the fix folded
+in (`1690017f04`): 912 of 912. The Python suite was not run: the
+changes are in Gui libraries `FreeCADCmd` does not load.
 
 ## 8. Phases
 
