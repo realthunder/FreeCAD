@@ -95,6 +95,7 @@ struct FileFacts
     std::string label;
     std::string version;        ///< "<num> <save id>"
     std::string lastModified;
+    std::string lastModifiedBy;
     std::string historyDb;
 };
 
@@ -169,6 +170,7 @@ bool readFacts(const std::string& xml, FileFacts& facts)
     facts.label = value("Label");
     facts.version = value("Version");
     facts.lastModified = value("LastModifiedDate");
+    facts.lastModifiedBy = value("LastModifiedBy");
     const size_t history = property("History");
     if (history != std::string::npos) {
         const size_t end = xml.find("</Property>", history);
@@ -180,6 +182,43 @@ bool readFacts(const std::string& xml, FileFacts& facts)
 }
 
 } // namespace
+
+bool FileHistory::savedAs(const std::string& path, Saved& saved, std::string* reason)
+{
+    auto fail = [reason](const std::string& why) {
+        if (reason)
+            *reason = why;
+        return false;
+    };
+    Base::FileInfo fi(path);
+    if (!fi.exists() || fi.isDir())
+        return fail("no such file");
+    std::string docXml;
+    try {
+        zipios::ZipFile zip(path);
+        if (!zip.isValid())
+            return fail("not a document archive");
+        std::unique_ptr<std::istream> in(zip.getInputStream("Document.xml"));
+        if (!in)
+            return fail("no Document.xml");
+        std::ostringstream buffer;
+        buffer << in->rdbuf();
+        docXml = buffer.str();
+    }
+    catch (const std::exception& e) {
+        return fail(std::string("cannot read the archive: ") + e.what());
+    }
+    FileFacts facts;
+    if (!readFacts(docXml, facts))
+        return fail("Document.xml cannot be read");
+    saved = Saved();
+    std::istringstream version(facts.version);
+    version >> saved.version >> saved.saveId;
+    saved.modifiedBy = facts.lastModifiedBy;
+    saved.hash = FileBlobManager::hashBytes(docXml);
+    saved.history = !facts.historyDb.empty();
+    return true;
+}
 
 std::shared_ptr<FileHistory> FileHistory::openFile(const std::string& path, std::string* reason)
 {

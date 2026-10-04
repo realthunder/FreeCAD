@@ -2,8 +2,9 @@
 # file brought in through the log panel's "Merge from file..." -- the copy's
 # rows as a branch named after it, each under its author, then the merge
 # dialog any branch gets, a side picked for a conflict, the view providers
-# following, and a second import continuing the branch. One GUI run in a
-# fresh user home, given this script at startup:
+# following, a second import continuing the branch, and a copy with no
+# history coming as one row (sec 30.19). One GUI run in a fresh user home,
+# given this script at startup:
 #
 #   cd build/conda-relwithdebinfo-801
 #   QT_QPA_PLATFORM=offscreen FREECAD_USER_HOME=/tmp/fchome-ic \
@@ -261,6 +262,50 @@ def run():
             check("second: the cylinder is the one that came, taller",
                   cyl is not None and abs(cyl.Height.Value - 25) < 1e-9
                   and abs(doc.getObject("Box").Width.Value - 5) < 1e-9)
+
+            # A copy handed out without its history (sec 30.19), edited
+            # where there is no log, comes back as one row.
+            plain = os.path.join(where, "plain.FCStd")
+            doc.saveCopy(plain, False)
+            doc.openTransaction("ours taller")
+            doc.getObject("Box").Height = 12
+            doc.recompute()
+            doc.commitTransaction()
+            p.SetInt("TransactionLog", 0)
+            other = App.openDocument(plain)
+            settle()
+            other.Box.Length = 44
+            other.recompute()
+            other.save()
+            App.closeDocument(other.Name)
+            p.SetInt("TransactionLog", 2)
+            App.setActiveDocument(doc.Name)
+            settle()
+            offered = doc.getTransactionForkBranches(plain)
+            check("no history: the file offers itself, one thing to bring (%r)" % offered,
+                  len(offered) == 1 and offered[0]["base"] > 0 and offered[0]["ahead"] == 1)
+            seen = bring(dock, plain, pick="Length")
+            check("no history: dialog shown (%r)" % seen.get("title"),
+                  seen.get("found") is True and "plain" in (seen.get("title") or ""))
+            box = doc.getObject("Box")
+            check("no history: its length, this file's height, volume %g" % box.Shape.Volume,
+                  abs(box.Length.Value - 44) < 1e-9 and abs(box.Height.Value - 12) < 1e-9
+                  and abs(box.Shape.Volume - 44 * 5 * 12) < 1e-6)
+            for c in dock.findChildren(QtWidgets.QCheckBox):
+                if c.text().replace("&", "") == "All branches":
+                    c.setChecked(True)
+            settle()
+            found = [tree.topLevelItem(i) for i in range(tree.topLevelItemCount())
+                     if tree.topLevelItem(i).text(ncol) == "As found: plain"]
+            check("no history: one row, the file as found, its author the file (%r)"
+                  % [i.text(acol) for i in found],
+                  len(found) == 1 and "(plain)" in found[0].text(acol)
+                  and found[0].text(bcol) == "plain")
+            before = len(doc.getTransactionLog())
+            seen = bring(dock, plain)
+            check("no history, again: nothing",
+                  seen.get("found") is not True and len(doc.getTransactionLog()) == before
+                  and any("Nothing new" in text for text in status(dock)))
 
             # A file that shares nothing is told apart.
             alone = App.newDocument("Alone")

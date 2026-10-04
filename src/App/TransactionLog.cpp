@@ -816,6 +816,12 @@ int64_t TransactionLogCore::closeAdopted()
     std::string date = _store->getMeta("save_date");
     if (date.empty())
         date = std::to_string(static_cast<int64_t>(closed));
+    // Which of them was the file's (sec 30.19 G6): what the file as found
+    // was made from, elsewhere, and what an import of it starts with.
+    {
+        int64_t head = 0;
+        _store->setMeta("closed_branch", std::to_string(metaBranch(head)));
+    }
     for (auto b : _store->branches()) {
         if (b.name == "main") {
             std::string name = "main@" + date;
@@ -1112,6 +1118,15 @@ TransactionLog::Embedded TransactionLogCore::embed(const std::string& saveDate, 
     // the file carries them as a member of its own.
     syncStrings(true);
     flush();
+    // The save, by its id (sec 30.19 G1): the version it becomes and the
+    // row its state is at, so a file that says only `Version` names a save
+    // this history made. Before the copy is taken, which carries it.
+    if (branch) {
+        LogBranch saving;
+        if (_store->getBranch(branch, saving))
+            _store->setMeta("save:" + out.saveId,
+                            std::to_string(out.version) + " " + std::to_string(saving.head));
+    }
     _store->setMeta("last_object_id", std::to_string(_history.lastObjectId()));
     std::vector<std::pair<long, std::string>> names;
     names.reserve(_history.objectNames().size());
@@ -1623,6 +1638,30 @@ TransactionLog::Embedded TransactionLog::embedForFile(const std::string& saveDat
                                                       const std::string& saveId)
 {
     return _c.embed(saveDate, 0, saveId);
+}
+
+std::string TransactionLog::noteSave()
+{
+    flush();
+    const std::string id = Base::Uuid::createUuid();
+    const std::string num = std::to_string(_c._store->lastVersion());
+    _c._store->setMeta("save:" + id, num + " " + std::to_string(_head));
+    return num + " " + id;
+}
+
+bool TransactionLog::savedAt(TransactionStore& store, const std::string& saveId,
+                             int64_t& version, int64_t& seq)
+{
+    version = 0;
+    seq = 0;
+    if (saveId.empty())
+        return false;
+    const std::string meta = store.getMeta("save:" + saveId);
+    if (meta.empty())
+        return false;
+    std::istringstream in(meta);
+    in >> version >> seq;
+    return seq > 0;
 }
 
 Document* TransactionLog::holderOf(int64_t id) const

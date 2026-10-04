@@ -5213,6 +5213,31 @@ void Document::embedHistory(bool archive)
                 history->setValue({}, {}, {});
             }
         }
+        // A copy written without the history says which state of it the
+        // copy is (sec 30.19 G2): a save id of its own, recorded at the row
+        // the document is at, so the copy comes back against the state it
+        // left with. For the copy only: the live document keeps its own.
+        TransactionLog* mine = archive && d->savingWithoutHistory ? getTransactionLog() : nullptr;
+        if (mine) {
+            if (!version) {
+                version = Base::freecad_dynamic_cast<PropertyString>(addDynamicProperty(
+                    "App::PropertyString", "Version", "Base",
+                    "The version of the transaction log this file is, and its save id",
+                    Prop_Hidden | Prop_ReadOnly));
+                if (version)
+                    version->setStatus(Property::NoModify, true);
+            }
+            if (version) {
+                const std::string was = version->getValue();
+                version->setValue(mine->noteSave());
+                auto restore = d->restoreHistory;
+                d->restoreHistory = [restore, version, was]() {
+                    if (restore)
+                        restore();
+                    version->setValue(was);
+                };
+            }
+        }
         return;
     }
     try {
@@ -8840,18 +8865,30 @@ namespace {
 
 /// The copy of a file an import reads (docs/TransactionLog.md sec 30.13):
 /// its history, opened without its document, and the branch asked for.
+/// A file with no history has none of that, and `saved` -- what the file
+/// says of the save it is from (sec 30.19).
 struct ForkSource
 {
     std::shared_ptr<FileHistory> history;
     TransactionLogCore* core {nullptr};
     std::string file;      ///< the file's name, as branches and users show it
     int64_t current {0};   ///< the branch its file reopens on
+    FileHistory::Saved saved;
 };
 
 ForkSource openFork(const std::shared_ptr<FileHistory>& mine, const std::string& path)
 {
     ForkSource fork;
     std::string reason;
+    fork.file = Base::FileInfo(path).fileNamePure();
+    if (!FileHistory::savedAs(path, fork.saved, &reason))
+        THROWM(Base::RuntimeError, "cannot read '" + path + "': " + reason);
+    if (!mine->path().empty()
+            && FileHistory::canonicalPath(path) == FileHistory::canonicalPath(mine->path()))
+        THROWM(Base::ValueError, "'" + path + "' is this document's own file");
+    // No history: a state, and the save it names (sec 30.19).
+    if (!fork.saved.history)
+        return fork;
     fork.history = FileHistory::openFile(path, &reason);
     if (!fork.history)
         THROWM(Base::RuntimeError, "cannot read the history of '" + path + "': " + reason);
@@ -8866,7 +8903,6 @@ ForkSource openFork(const std::shared_ptr<FileHistory>& mine, const std::string&
     }
     // Every string its values name, in its table.
     fork.core->loadStrings();
-    fork.file = Base::FileInfo(path).fileNamePure();
     int64_t head = 0;
     fork.current = fork.core->metaBranch(head);
     return fork;
@@ -8893,6 +8929,73 @@ std::string importKey(int64_t branch)
     return "import:" + std::to_string(branch);
 }
 
+/// The maps an import branch kept (sec 30.15): the copy's object ids and
+/// names to the ones here.
+void importMaps(const nlohmann::json& kept, std::map<long, long>& ids,
+                std::map<std::string, std::string>& names)
+{
+    if (!kept.is_object())
+        return;
+    if (kept.contains("ids") && kept["ids"].is_array()) {
+        for (const auto& e : kept["ids"]) {
+            if (e.is_array() && e.size() == 2 && e[0].is_number_integer()
+                    && e[1].is_number_integer())
+                ids[e[0].get<long>()] = e[1].get<long>();
+        }
+    }
+    if (kept.contains("names") && kept["names"].is_object()) {
+        for (auto it = kept["names"].begin(); it != kept["names"].end(); ++it) {
+            if (it.value().is_string())
+                names[it.key()] = it.value().get<std::string>();
+        }
+    }
+}
+
+/// The import branch that holds a file as found (sec 30.19 G5): the one
+/// made for `file` and `branch` of it whose maps name a state. False when
+/// there is none; `kept` is its meta.
+bool stateBranch(TransactionStore& store, const std::string& file, const std::string& branch,
+                 LogBranch& mine, nlohmann::json& kept)
+{
+    for (const auto& b : store.branches()) {
+        const std::string meta = store.getMeta(importKey(b.id));
+        if (meta.empty())
+            continue;
+        auto was = nlohmann::json::parse(meta, nullptr, false);
+        if (!was.is_object() || !was.contains("state")
+                || was.value("file", std::string()) != file
+                || was.value("branch", std::string()) != branch)
+            continue;
+        mine = b;
+        kept = std::move(was);
+        return true;
+    }
+    return false;
+}
+
+/// A copy whose history is there but whose file is not its tip (sec 16.6,
+/// 30.19 G6): `closed` the branch that was the file's when it was edited
+/// elsewhere, `found` the file as found -- the first version of the branch
+/// the file reopens on. False for any other copy.
+bool closedPart(TransactionStore& theirs, int64_t current, LogBranch& closed, LogVersion& found)
+{
+    const std::string was = theirs.getMeta("closed_branch");
+    if (was.empty())
+        return false;
+    int64_t id = 0;
+    std::istringstream(was) >> id;
+    if (!id || id == current || !theirs.getBranch(id, closed))
+        return false;
+    bool have = false;
+    for (const auto& v : theirs.versions()) {
+        if (v.branch == current && (!have || v.num < found.num)) {
+            found = v;
+            have = true;
+        }
+    }
+    return have;
+}
+
 } // namespace
 
 std::vector<Document::ForkBranch> Document::forkBranches(const std::string& path)
@@ -8902,20 +9005,477 @@ std::vector<Document::ForkBranch> Document::forkBranches(const std::string& path
         THROWM(Base::RuntimeError, "no transaction log");
     getFileHistory();
     ForkSource fork = openFork(d->history, path);
-    auto& theirs = fork.core->store();
+    auto& store = log->store();
     TransactionLogCore& core = TransactionLogCore::of(*d->history);
     std::vector<ForkBranch> out;
+    LogBranch held;
+    nlohmann::json kept;
+    if (!fork.history) {
+        // One thing to bring, the file as it is, when the save it names is
+        // one of this history's and the state is not here already.
+        ForkBranch f;
+        f.current = true;
+        int64_t version = 0;
+        if (TransactionLog::savedAt(store, fork.saved.saveId, version, f.base)) {
+            const bool here = stateBranch(store, fork.file, std::string(), held, kept)
+                && kept.value("state", std::string()) == fork.saved.hash;
+            f.ahead = here ? 0 : 1;
+        }
+        out.push_back(std::move(f));
+        return out;
+    }
+    auto& theirs = fork.core->store();
     for (const auto& b : theirs.branches()) {
         ForkBranch f;
         f.name = b.name;
         f.current = b.id == fork.current;
         f.closed = b.closed > 0;
         const int64_t base = core.forkBase(theirs, b.head, f.base);
-        if (base)
+        if (base) {
             f.ahead = operationsIn(theirs, theirs.chain(b.head, base + 1));
+        }
+        else if (f.current) {
+            // G6: what was the file's, the file as found, and what it has
+            // done since.
+            LogBranch closed;
+            LogVersion found;
+            if (closedPart(theirs, fork.current, closed, found)) {
+                const int64_t shared = core.forkBase(theirs, closed.head, f.base);
+                if (shared) {
+                    const bool here = stateBranch(store, fork.file, b.name, held, kept)
+                        && kept.value("state", std::string()) == found.docxml_hash;
+                    f.ahead = operationsIn(theirs, theirs.chain(closed.head, shared + 1))
+                        + operationsIn(theirs, theirs.chain(b.head)) + (here ? 0 : 1);
+                }
+            }
+        }
         out.push_back(std::move(f));
     }
     return out;
+}
+
+Document* Document::_importReplay(int64_t base, const std::string& stem, LogBranch& mine,
+                                  bool& scratch)
+{
+    // docs/TransactionLog.md sec 30.15 step 4: the document the rows are
+    // replayed in -- the one holding the branch, or one of its own, at the
+    // row both hold, closed when the import is done.
+    TransactionLog* log = getTransactionLog();
+    auto& store = log->store();
+    TransactionLogCore& core = TransactionLogCore::of(*d->history);
+    auto& app = GetApplication();
+    Document* active = app.getActiveDocument();
+    Document* replay = nullptr;
+    scratch = false;
+    if (mine.id) {
+        replay = core.holderOf(mine.id);
+        scratch = !replay;
+        if (!replay)
+            replay = openFileBranch(d->history, mine.name, 0, false);
+        else
+            replay->_checkBranchable("import a file's history");
+        if (active && app.getActiveDocument() != active)
+            app.setActiveDocument(active);
+        return replay;
+    }
+    LogTransaction at;
+    for (const auto& t : store.transactions(base, 1))
+        at = t;
+    const std::set<int64_t> onChain = chainPoints(store, base);
+    LogVersion anchor;
+    bool haveAnchor = false;
+    for (const auto& v : store.versions()) {
+        if (!onChain.count(v.seq))
+            continue;
+        if (!haveAnchor || v.seq > anchor.seq || (v.seq == anchor.seq && v.num > anchor.num)) {
+            anchor = v;
+            haveAnchor = true;
+        }
+    }
+    if (!haveAnchor)
+        THROWM(Base::RuntimeError, "no version to reach the row both files hold from");
+    std::string name = stem;
+    LogBranch taken;
+    for (int i = 2; store.findBranch(name, taken); ++i)
+        name = stem + "~" + std::to_string(i);
+    replay = _openVersionDocument(d->history, anchor, false, this, false);
+    scratch = true;
+    try {
+        TransactionLog* rlog = replay->getTransactionLog();
+        if (anchor.seq != base) {
+            Base::FlagToggler<> replaying(replay->d->replaying);
+            if (!replay->_moveAlongLog(anchor.seq, base, false))
+                THROWM(Base::RuntimeError, "cannot reach the row both files hold");
+        }
+        rlog->moveHead(base);
+        rlog->forgetLiveValues();
+        rlog->forkHere(at.branch ? at.branch : log->branch(), name);
+        replay->refreshVersionNames();
+        store.getBranch(rlog->branch(), mine);
+    }
+    catch (...) {
+        app.closeDocument(replay->getName());
+        if (active && app.getActiveDocument() != active)
+            app.setActiveDocument(active);
+        throw;
+    }
+    if (active && app.getActiveDocument() != active)
+        app.setActiveDocument(active);
+    return replay;
+}
+
+void Document::_finishImport(Document* replay, bool scratch, int64_t branch,
+                             const std::string& file, const std::string& record,
+                             const std::string& keep, ImportResult& result)
+{
+    // The import's record, and the maps a second import continues from.
+    auto& app = GetApplication();
+    Document* active = app.getActiveDocument() == replay ? this : app.getActiveDocument();
+    TransactionLog* rlog = replay->getTransactionLog();
+    result.seq = rlog->record("import", "Import " + file, record);
+    rlog->flush();
+    getTransactionLog()->store().setMeta(importKey(branch), keep);
+    if (scratch) {
+        // The tip left as a version, so the branch opens without a replay.
+        try {
+            replay->_leaveBranch();
+        }
+        catch (Base::Exception& e) {
+            FC_WARN("import of " << file << ": " << e.what());
+        }
+        app.closeDocument(replay->getName());
+        if (active && app.getActiveDocument() != active)
+            app.setActiveDocument(active);
+    }
+    signalBranchesChanged(*this);
+}
+
+void Document::_applyForeignState(Document& from, std::map<long, long>& ids,
+                                  std::map<std::string, std::string>& names,
+                                  std::map<std::string, std::string>& renamed)
+{
+    // docs/TransactionLog.md sec 30.19 G3, G7, G8: this document made what
+    // `from` -- a document of another copy of the file -- is, recorded
+    // into the open transaction. As _applyVersion() does for a version of
+    // this file, but nothing here may be taken for the same by its number
+    // alone: an object of theirs is the one here with its id only when its
+    // type and its name say so too, and any other is the file's own, made
+    // under an id and a name of this file. Values come through the maps and
+    // out of the other table, as an imported row's do. A failure throws:
+    // the caller rolls the whole row back.
+    auto here = [&](long id) {
+        auto it = ids.find(id);
+        return it == ids.end() ? id : it->second;
+    };
+    std::vector<std::pair<DocumentObject*, DocumentObject*>> pairs;   // theirs, the one here
+    std::set<long> kept;
+    for (auto theirs : from.getObjects()) {
+        const std::string name = theirs->getNameInDocument();
+        DocumentObject* mine = getObjectByID(here(theirs->getID()));
+        const std::string expect = names.count(name) ? names[name] : name;
+        if (mine && (mine->getTypeId() != theirs->getTypeId() || kept.count(mine->getID())
+                     || expect != mine->getNameInDocument()))
+            mine = nullptr;
+        if (!mine) {
+            auto obj = static_cast<DocumentObject*>(theirs->getTypeId().createInstance());
+            if (!obj)
+                throw Base::RuntimeError(std::string("cannot create ")
+                                         + theirs->getTypeId().getName());
+            addObject(obj, name.c_str(), false);
+            ids[theirs->getID()] = obj->getID();
+            const std::string made = obj->getNameInDocument();
+            if (made != name) {
+                names[name] = made;
+                renamed[name] = made;
+            }
+            else {
+                names.erase(name);
+            }
+            mine = obj;
+        }
+        kept.insert(mine->getID());
+        pairs.emplace_back(theirs, mine);
+    }
+
+    CaptureConfig config(*this);
+    CaptureConfig theirConfig(from);
+    auto& manager = getFileBlobManager();
+    const auto& fromManager = from.getFileBlobManager();
+    std::vector<FileBlobHandle> held;
+    // What the document is, not which file it is, when it was saved, or
+    // what it carries of a log: none of that is the file's to change here,
+    // by having it otherwise or by not having it.
+    auto ofTheFile = [](const std::string& name) {
+        return keptOnRestore(name.c_str()) || name == "Label" || name == "Uid";
+    };
+    auto container = [&](PropertyContainer& live, const PropertyContainer& other, bool isDocument,
+                         bool values) {
+        std::map<std::string, Property*> want, have;
+        other.getPropertyMap(want);
+        live.getPropertyMap(have);
+        if (!values) {
+            for (auto& kv : have) {
+                if (isDocument && ofTheFile(kv.first))
+                    continue;
+                if (!want.count(kv.first) && !live.getDynamicPropertyData(kv.second).name.empty())
+                    live.removeDynamicProperty(kv.first.c_str());
+            }
+        }
+        for (auto& kv : want) {
+            const short type = other.getPropertyType(kv.second);
+            if ((type & Prop_Transient) || (type & Prop_NoPersist))
+                continue;
+            if (isDocument && ofTheFile(kv.first))
+                continue;
+            Property* prop = live.getPropertyByName(kv.first.c_str());
+            if (!values) {
+                if (prop)
+                    continue;
+                auto dyn = other.getDynamicPropertyData(kv.second);
+                if (dyn.name.empty())
+                    continue;
+                prop = live.addDynamicProperty(kv.second->getTypeId().getName(), kv.first.c_str(),
+                                               dyn.group.c_str(), dyn.getDoc(), dyn.attr,
+                                               dyn.readonly, dyn.hidden);
+                continue;
+            }
+            if (!prop)
+                continue;
+            CapturedValue theirs = captureValue(theirConfig, *kv.second);
+            if (!theirs.ok)
+                throw Base::RuntimeError("cannot read the value of " + kv.first);
+            const CapturedValue now = captureValue(config, *prop);
+            if (now.ok && now.fragment == theirs.fragment
+                    && now.attachments.size() == theirs.attachments.size()
+                    && std::equal(now.attachments.begin(), now.attachments.end(),
+                                  theirs.attachments.begin(), [](const auto& a, const auto& b) {
+                                      return a.name == b.name && a.bytes == b.bytes;
+                                  }))
+                continue;
+            for (const auto& blob : theirs.blobs)
+                copyBlob(manager, fromManager, blob, held);
+            if (auto referrer = dynamic_cast<const BlobReferrerProperty*>(kv.second))
+                copyBlob(manager, fromManager, referrer->contentBlob(), held);
+            restoreValue(*prop, theirs);
+        }
+    };
+    {
+        RestoreNames through(names);
+        StringHasher::ImportTags tags(ids);
+        RestoreStrings strings(from.getStringHasher(), getStringHasher());
+        for (bool values : {false, true}) {
+            RestoreBatch batch;
+            container(*this, from, true, values);
+            for (auto& pair : pairs) {
+                container(*pair.second, *pair.first, false, values);
+                auto live = viewOf(pair.second);
+                auto other = viewOf(pair.first);
+                if (live && other)
+                    container(*live, *other, false, values);
+            }
+            batch.finish();
+        }
+    }
+    // What the file no longer has.
+    std::vector<std::string> gone;
+    for (auto obj : getObjects()) {
+        if (!kept.count(obj->getID()))
+            gone.emplace_back(obj->getNameInDocument());
+    }
+    for (const auto& name : gone) {
+        if (getObject(name.c_str()))
+            removeObject(name.c_str());
+    }
+}
+
+bool Document::_importStateRow(Document& from, const std::string& file,
+                               std::map<long, long>& ids,
+                               std::map<std::string, std::string>& names, ImportResult& result)
+{
+    // docs/TransactionLog.md sec 30.19: one row, the difference between
+    // this document and the file as found; one author, the file (G4).
+    TransactionLog* rlog = getTransactionLog();
+    const std::string who = from.LastModifiedBy.getValue();
+    LogUser user;
+    user.kind = Actor::kindName(Actor::Fork);
+    user.name = who.empty() ? "(" + file + ")" : who + " (" + file + ")";
+    LogSession session;
+    session.uuid = Base::Uuid::createUuid();
+    session.opened = std::chrono::duration<double>(
+                         std::chrono::system_clock::now().time_since_epoch()).count();
+    session.closed = session.opened;
+    const int64_t here = rlog->importSession(session, user, "{}", file);
+    Actor actor;
+    actor.kind = Actor::Fork;
+    actor.name = user.name;
+
+    _clearMyRedos();
+    {
+        ActorScope as(actor);
+        d->activeUndoTransaction = new Transaction(0);
+    }
+    Transaction* txn = d->activeUndoTransaction;
+    txn->Name = "As found: " + file;
+    mUndoMap[txn->getID()] = txn;
+    const auto idsBefore = ids;
+    const auto namesBefore = names;
+    std::map<std::string, std::string> renamed;
+    std::string why;
+    bool failed = false;
+    try {
+        _applyForeignState(from, ids, names, renamed);
+    }
+    catch (Base::Exception& e) {
+        why = e.what();
+        failed = true;
+    }
+    catch (std::exception& e) {
+        why = e.what();
+        failed = true;
+    }
+    if (failed) {
+        // F8, for a state: nothing of it comes.
+        _abortTransaction();
+        ids = idsBefore;
+        names = namesBefore;
+        result.stoppedAt = -1;
+        result.reason = "the file as found: " + why;
+        FC_WARN("import of " << file << " stopped at " << result.reason);
+        return false;
+    }
+    if (txn->isEmpty()) {
+        mUndoMap.erase(txn->getID());
+        delete txn;
+        d->activeUndoTransaction = nullptr;
+        ++result.skipped;
+        return true;
+    }
+    nlohmann::json j;
+    j["imported"] = {{"file", file}, {"state", true}};
+    if (!renamed.empty())
+        j["renamed"] = renamed;
+    txn->LogScript = j.dump();
+    TransactionLog::Stamp stamp;
+    stamp.session = here;
+    rlog->setStamp(&stamp);
+    try {
+        _commitTransaction(false);
+    }
+    catch (...) {
+        rlog->setStamp(nullptr);
+        throw;
+    }
+    rlog->setStamp(nullptr);
+    if (stamp.seq) {
+        ++result.rows;
+        for (const auto& kv : renamed)
+            result.renamed[kv.first] = kv.second;
+    }
+    else {
+        ++result.skipped;
+    }
+    return true;
+}
+
+Document::ImportResult Document::_importState(const std::string& path, const std::string& file,
+                                              const std::string& saveId, const std::string& hash)
+{
+    // docs/TransactionLog.md sec 30.19: a file with no history. Its
+    // `Version` names the save it is from (G1); the state at that save's
+    // row is the base, and the file as found comes as one row on a branch
+    // from there -- or, brought before (G5), as one more on the branch it
+    // made.
+    TransactionLog* log = getTransactionLog();
+    auto& store = log->store();
+    ImportResult result;
+    int64_t version = 0;
+    if (!TransactionLog::savedAt(store, saveId, version, result.base))
+        THROWM(Base::ValueError, "'" + path + "' carries no history, and "
+                                     + (saveId.empty() ? "names no save"
+                                                       : "the save it names is none")
+                                     + " of this file's");
+    bool reached = false;
+    for (const auto& t : store.transactions(result.base, 1))
+        reached = t.seq == result.base;
+    if (!reached)
+        THROWM(Base::ValueError, "this file's history no longer reaches the save '" + path
+                                     + "' is from");
+    LogBranch mine;
+    nlohmann::json kept;
+    if (stateBranch(store, file, std::string(), mine, kept)
+            && kept.value("state", std::string()) == hash) {
+        result.reason = "nothing new";
+        return result;
+    }
+    result.extended = mine.id != 0;
+    std::map<long, long> ids;
+    std::map<std::string, std::string> names;
+    importMaps(kept, ids, names);
+
+    // The file as a document: the one open, or one opened for this.
+    auto& app = GetApplication();
+    Document* active = app.getActiveDocument();
+    const std::string canonical = FileHistory::canonicalPath(path);
+    Document* theirs = nullptr;
+    for (auto doc : app.getDocuments()) {
+        if (doc != this && !doc->testStatus(VersionDoc) && doc->FileName.getStrValue().size()
+                && FileHistory::canonicalPath(doc->FileName.getStrValue()) == canonical)
+            theirs = doc;
+    }
+    const bool opened = !theirs;
+    if (theirs)
+        theirs->commitImplicitTransaction();
+    else
+        theirs = app.openDocument(path.c_str(), false);
+    if (!theirs || theirs == this)
+        THROWM(Base::RuntimeError, "cannot open '" + path + "'");
+    auto closeTheirs = [&]() {
+        if (opened)
+            app.closeDocument(theirs->getName());
+        if (active && app.getActiveDocument() != active)
+            app.setActiveDocument(active);
+    };
+    Document* replay = nullptr;
+    bool scratch = false;
+    try {
+        replay = _importReplay(result.base, file, mine, scratch);
+        result.branch = mine.name;
+        replay->_importStateRow(*theirs, file, ids, names, result);
+    }
+    catch (...) {
+        if (replay && scratch)
+            app.closeDocument(replay->getName());
+        closeTheirs();
+        throw;
+    }
+    closeTheirs();
+
+    nlohmann::json j;
+    nlohmann::json m;
+    m["file"] = file;
+    m["state"] = hash;
+    m["base"] = result.base;
+    m["rows"] = result.rows;
+    if (result.stoppedAt) {
+        m["stopped_at"] = result.stoppedAt;
+        m["reason"] = result.reason;
+    }
+    if (!result.renamed.empty())
+        m["renamed"] = result.renamed;
+    j["import"] = std::move(m);
+    nlohmann::json keep;
+    keep["file"] = file;
+    keep["path"] = canonical;
+    keep["branch"] = std::string();
+    // A state that did not come is asked for again.
+    keep["state"] = result.stoppedAt ? kept.value("state", std::string()) : hash;
+    auto list = nlohmann::json::array();
+    for (const auto& kv : ids)
+        list.push_back({kv.first, kv.second});
+    keep["ids"] = std::move(list);
+    keep["names"] = names;
+    _finishImport(replay, scratch, mine.id, file, j.dump(), keep.dump(), result);
+    return result;
 }
 
 Document::ImportResult Document::importFork(const std::string& path, const std::string& branch)
@@ -8933,6 +9493,13 @@ Document::ImportResult Document::importFork(const std::string& path, const std::
     TransactionLogCore& core = TransactionLogCore::of(*d->history);
 
     ForkSource fork = openFork(d->history, path);
+    if (!fork.history) {
+        // No history: the file as it is, against the save it names.
+        if (!branch.empty())
+            THROWM(Base::ValueError, "'" + path + "' carries no history, and so no branch '"
+                                         + branch + "'");
+        return _importState(path, fork.file, fork.saved.saveId, fork.saved.hash);
+    }
     auto& theirs = fork.core->store();
     // F6: the branch asked for, else the one the copy's file reopens on.
     LogBranch from;
@@ -8941,42 +9508,71 @@ Document::ImportResult Document::importFork(const std::string& path, const std::
 
     ImportResult result;
     result.from = from.name;
-    const int64_t base = core.forkBase(theirs, from.head, result.base);
+    int64_t base = core.forkBase(theirs, from.head, result.base);
+    // G6: the branch the file reopens on has no ancestry when the file was
+    // edited where there is no log. What it was made from is the branch
+    // closed then; the edit is the file as found; and the branch's own rows
+    // are what it has done since.
+    LogBranch tail;
+    LogVersion found;
+    if (!base && from.id == fork.current) {
+        LogBranch closed;
+        if (closedPart(theirs, fork.current, closed, found)) {
+            tail = from;
+            from = closed;
+            base = core.forkBase(theirs, from.head, result.base);
+        }
+    }
+    const bool gap = tail.id != 0;
     if (!base)
-        THROWM(Base::ValueError, "branch '" + from.name + "' of '" + path
+        THROWM(Base::ValueError, "branch '" + result.from + "' of '" + path
                                      + "' shares no history with this file");
     const auto rows = theirs.chain(from.head, base + 1);
-    if (!operationsIn(theirs, rows)) {
-        result.reason = "nothing new";
-        return result;
-    }
+    std::vector<LogTransaction> tailRows;
+    if (gap)
+        tailRows = theirs.chain(tail.head);
 
     // F7: the branch an earlier import of this copy made, when the row
     // both hold is the last thing that moved on it -- found by the row's
-    // own identity (F3) -- and else a new one.
+    // own identity (F3) -- and else a new one. A file as found is known by
+    // what it is, not by a row (G5): the branch that holds one is the one.
     LogBranch mine;
     nlohmann::json kept;
-    for (const auto& b : store.branches()) {
-        const std::string meta = store.getMeta(importKey(b.id));
-        if (meta.empty())
-            continue;
-        // Of this file's same branch: another branch of the copy is
-        // another branch here (sec 30.14).
-        const auto was = nlohmann::json::parse(meta, nullptr, false);
-        if (!was.is_object() || was.value("file", std::string()) != fork.file
-                || was.value("branch", std::string()) != from.name)
-            continue;
-        const auto after = store.chain(b.head, result.base);
-        if (after.empty() || after.front().seq != result.base)
-            continue;
-        bool moved = false;
-        for (const auto& t : after)
-            moved = moved || (t.seq != result.base && !store.ops(t.seq).empty());
-        if (moved)
-            continue;
-        mine = b;
-        kept = was;
-        break;
+    if (gap) {
+        stateBranch(store, fork.file, result.from, mine, kept);
+        if (mine.id && kept.value("state", std::string()) == found.docxml_hash
+                && !operationsIn(theirs, rows) && !operationsIn(theirs, tailRows)) {
+            result.reason = "nothing new";
+            return result;
+        }
+    }
+    else {
+        if (!operationsIn(theirs, rows)) {
+            result.reason = "nothing new";
+            return result;
+        }
+        for (const auto& b : store.branches()) {
+            const std::string meta = store.getMeta(importKey(b.id));
+            if (meta.empty())
+                continue;
+            // Of this file's same branch: another branch of the copy is
+            // another branch here (sec 30.14).
+            const auto was = nlohmann::json::parse(meta, nullptr, false);
+            if (!was.is_object() || was.value("file", std::string()) != fork.file
+                    || was.value("branch", std::string()) != from.name)
+                continue;
+            const auto after = store.chain(b.head, result.base);
+            if (after.empty() || after.front().seq != result.base)
+                continue;
+            bool moved = false;
+            for (const auto& t : after)
+                moved = moved || (t.seq != result.base && !store.ops(t.seq).empty());
+            if (moved)
+                continue;
+            mine = b;
+            kept = was;
+            break;
+        }
     }
     result.extended = mine.id != 0;
 
@@ -8984,84 +9580,17 @@ Document::ImportResult Document::importFork(const std::string& path, const std::
     // What both had at the base is the same in both, and is not in them.
     std::map<long, long> ids;
     std::map<std::string, std::string> names;
-    if (kept.is_object()) {
-        if (kept.contains("ids") && kept["ids"].is_array()) {
-            for (const auto& e : kept["ids"]) {
-                if (e.is_array() && e.size() == 2 && e[0].is_number_integer()
-                        && e[1].is_number_integer())
-                    ids[e[0].get<long>()] = e[1].get<long>();
-            }
-        }
-        if (kept.contains("names") && kept["names"].is_object()) {
-            for (auto it = kept["names"].begin(); it != kept["names"].end(); ++it) {
-                if (it.value().is_string())
-                    names[it.key()] = it.value().get<std::string>();
-            }
-        }
-    }
+    importMaps(kept, ids, names);
 
-    // The document the rows are replayed in: the one holding the branch,
-    // or one of its own, at the row both hold, closed when it is done.
+    // Named after the file, and after the copy's branch when that is not
+    // its file's own (30.14).
     auto& app = GetApplication();
     Document* active = app.getActiveDocument();
-    Document* replay = nullptr;
+    std::string name = fork.file;
+    if (!gap && from.id != fork.current)
+        name += "@" + from.name;
     bool scratch = false;
-    if (result.extended) {
-        replay = core.holderOf(mine.id);
-        scratch = !replay;
-        if (!replay)
-            replay = openFileBranch(d->history, mine.name, 0, false);
-        else
-            replay->_checkBranchable("import a file's history");
-    }
-    else {
-        LogTransaction at;
-        for (const auto& t : store.transactions(result.base, 1))
-            at = t;
-        const std::set<int64_t> onChain = chainPoints(store, result.base);
-        LogVersion anchor;
-        bool haveAnchor = false;
-        for (const auto& v : store.versions()) {
-            if (!onChain.count(v.seq))
-                continue;
-            if (!haveAnchor || v.seq > anchor.seq || (v.seq == anchor.seq && v.num > anchor.num)) {
-                anchor = v;
-                haveAnchor = true;
-            }
-        }
-        if (!haveAnchor)
-            THROWM(Base::RuntimeError, "no version to reach the row both files hold from");
-        // Named after the file, and after the copy's branch when that is
-        // not its file's own (30.14).
-        std::string name = fork.file;
-        if (from.id != fork.current)
-            name += "@" + from.name;
-        LogBranch taken;
-        const std::string stem = name;
-        for (int i = 2; store.findBranch(name, taken); ++i)
-            name = stem + "~" + std::to_string(i);
-        replay = _openVersionDocument(d->history, anchor, false, this, false);
-        scratch = true;
-        try {
-            TransactionLog* rlog = replay->getTransactionLog();
-            if (anchor.seq != result.base) {
-                Base::FlagToggler<> replaying(replay->d->replaying);
-                if (!replay->_moveAlongLog(anchor.seq, result.base, false))
-                    THROWM(Base::RuntimeError, "cannot reach the row both files hold");
-            }
-            rlog->moveHead(result.base);
-            rlog->forgetLiveValues();
-            rlog->forkHere(at.branch ? at.branch : log->branch(), name);
-            replay->refreshVersionNames();
-            store.getBranch(rlog->branch(), mine);
-        }
-        catch (...) {
-            app.closeDocument(replay->getName());
-            if (active && app.getActiveDocument() != active)
-                app.setActiveDocument(active);
-            throw;
-        }
-    }
+    Document* replay = _importReplay(result.base, name, mine, scratch);
     result.branch = mine.name;
     TransactionLog* rlog = replay->getTransactionLog();
 
@@ -9130,305 +9659,325 @@ Document::ImportResult Document::importFork(const std::string& path, const std::
     std::map<int64_t, int64_t> seqs;   // the copy's rows, to the rows here
     // Dynamic properties left out for having no type, by object and name.
     std::set<std::pair<long, std::string>> untyped;
-    // F5: the copy's named versions past the base come as versions of the
-    // branch, each taken when the replay has reached the row it is at.
-    std::multimap<int64_t, std::string> named;
-    {
-        std::set<int64_t> past;
-        for (const auto& t : rows)
-            past.insert(t.seq);
-        for (const auto& v : theirs.versions()) {
-            if (v.kind == "named" && past.count(v.seq))
-                named.emplace(v.seq, v.name);
-        }
-    }
-    auto versionsAt = [&](int64_t seq) {
-        const auto range = named.equal_range(seq);
-        for (auto it = range.first; it != range.second; ++it) {
-            const int64_t num = replay->snapshotToLog();
-            if (!num)
-                continue;
-            rlog->flush();
-            store.nameVersion(num, it->second);
-            ++result.versions;
-        }
-    };
-    for (const auto& t : rows) {
-        const auto ops = theirs.ops(t.seq);
-        if (ops.empty()) {
-            ++result.skipped;   // a record: a save, a snapshot, a recompute
-            versionsAt(t.seq);
-            continue;
-        }
-        const int64_t session = author(t.session);
-        std::map<std::string, std::string> renamed;
-        std::string why;
-        try {
-            // Everything read, and every object's type known, before
-            // anything moves.
-            std::set<long> removed;
-            for (const auto& o : ops) {
-                if (o.op == "remove" && o.ckind == "obj")
-                    removed.insert(o.cid);
+    auto replayRows = [&](const std::vector<LogTransaction>& list) {
+        // F5: the copy's named versions past the base come as versions of the
+        // branch, each taken when the replay has reached the row it is at.
+        std::multimap<int64_t, std::string> named;
+        {
+            std::set<int64_t> past;
+            for (const auto& t : list)
+                past.insert(t.seq);
+            for (const auto& v : theirs.versions()) {
+                if (v.kind == "named" && past.count(v.seq))
+                    named.emplace(v.seq, v.name);
             }
-            std::vector<std::pair<const LogOp*, CapturedValue>> values;
-            std::vector<FileBlobHandle> held;
-            for (const auto& o : ops) {
-                if (o.op == "create" && o.ckind == "obj") {
-                    if (Base::Type::getTypeIfDerivedFrom(o.ctype.c_str(),
-                                                         DocumentObject::getClassTypeId(), true)
-                            .isBad())
-                        throw Base::RuntimeError("no object type " + o.ctype + " in this build");
-                }
-                if (o.op != "set" || o.derived || removed.count(o.cid))
+        }
+        auto versionsAt = [&](int64_t seq) {
+            const auto range = named.equal_range(seq);
+            for (auto it = range.first; it != range.second; ++it) {
+                const int64_t num = replay->snapshotToLog();
+                if (!num)
                     continue;
-                if (o.vafter.empty())
-                    throw Base::RuntimeError("the value of " + o.prop + " never reached its log");
-                CapturedValue v;
-                if (!fork.core->readValue(o.vafter, v))
-                    throw Base::RuntimeError("the value of " + o.prop + " is not in its log");
-                LogEntity e;
-                if (theirs.getEntity(o.vafter, e)) {
-                    for (const auto& r : e.refs) {
-                        if (r.role == "blob")
-                            bringBlob(r.target, r.name, held, 0);
-                    }
-                }
-                values.emplace_back(&o, std::move(v));
+                rlog->flush();
+                store.nameVersion(num, it->second);
+                ++result.versions;
             }
-
-            // The row, as a transaction of its author's. Only the
-            // transaction is: what the commit records beside it -- a
-            // snapshot -- is this process's.
-            replay->_clearMyRedos();
-            {
-                ActorScope as(authors[t.session]);
-                replay->d->activeUndoTransaction = new Transaction(0);
+    };
+        for (const auto& t : list) {
+            const auto ops = theirs.ops(t.seq);
+            if (ops.empty()) {
+                ++result.skipped;   // a record: a save, a snapshot, a recompute
+                versionsAt(t.seq);
+                continue;
             }
-            Transaction* txn = replay->d->activeUndoTransaction;
-            txn->Name = t.name;
-            txn->Origin = t.origin;
-            if (t.kind != "user" && t.kind != "implicit")
-                txn->LogKind = t.kind == "merge" ? std::string("user") : t.kind;
-            txn->Implicit = t.kind == "implicit";
-            if (t.inverts) {
-                auto it = seqs.find(t.inverts);
-                LogRowId id;
-                if (it != seqs.end())
-                    txn->Inverts = it->second;
-                else if (theirs.rowId(t.inverts, id))
-                    txn->Inverts = store.findRow(id);
-            }
-            replay->mUndoMap[txn->getID()] = txn;
+            const int64_t session = author(t.session);
+            std::map<std::string, std::string> renamed;
+            std::string why;
             try {
-                auto here = [&](long cid) {
-                    auto it = ids.find(cid);
-                    return it == ids.end() ? cid : it->second;
-                };
-                auto container = [&](const LogOp& o) -> PropertyContainer* {
-                    LogOp mapped;
-                    mapped.ckind = o.ckind;
-                    mapped.cid = here(o.cid);
-                    return opContainer(*replay, mapped);
-                };
-                // 1. What it made, under ids of this file, and under new
-                // names where its own are taken (sec 30.4 P4).
+                // Everything read, and every object's type known, before
+                // anything moves.
+                std::set<long> removed;
                 for (const auto& o : ops) {
-                    if (o.op != "create" || o.ckind != "obj")
-                        continue;
-                    Base::Type type = Base::Type::getTypeIfDerivedFrom(
-                        o.ctype.c_str(), DocumentObject::getClassTypeId(), true);
-                    auto obj = static_cast<DocumentObject*>(type.createInstance());
-                    if (!obj)
-                        throw Base::RuntimeError("cannot create " + o.ctype);
-                    replay->addObject(obj, o.cname.c_str(), false);
-                    ids[o.cid] = obj->getID();
-                    const std::string name = obj->getNameInDocument();
-                    if (name != o.cname) {
-                        names[o.cname] = name;
-                        renamed[o.cname] = name;
-                    }
-                    else {
-                        names.erase(o.cname);
-                    }
+                    if (o.op == "remove" && o.ckind == "obj")
+                        removed.insert(o.cid);
                 }
-                // 2. Dynamic properties.
+                std::vector<std::pair<const LogOp*, CapturedValue>> values;
+                std::vector<FileBlobHandle> held;
                 for (const auto& o : ops) {
-                    if (o.op != "addprop" && o.op != "delprop")
+                    if (o.op == "create" && o.ckind == "obj") {
+                        if (Base::Type::getTypeIfDerivedFrom(o.ctype.c_str(),
+                                                             DocumentObject::getClassTypeId(), true)
+                                .isBad())
+                            throw Base::RuntimeError("no object type " + o.ctype
+                                                     + " in this build");
+                    }
+                    if (o.op != "set" || o.derived || removed.count(o.cid))
                         continue;
-                    auto c = container(o);
-                    if (!c) {
-                        if (o.ckind == "view")
-                            continue;   // no Gui
-                        throw Base::RuntimeError("no object for property " + o.prop);
+                    if (o.vafter.empty())
+                        throw Base::RuntimeError("the value of " + o.prop
+                                                 + " never reached its log");
+                    CapturedValue v;
+                    if (!fork.core->readValue(o.vafter, v))
+                        throw Base::RuntimeError("the value of " + o.prop + " is not in its log");
+                    LogEntity e;
+                    if (theirs.getEntity(o.vafter, e)) {
+                        for (const auto& r : e.refs) {
+                            if (r.role == "blob")
+                                bringBlob(r.target, r.name, held, 0);
+                        }
                     }
-                    const bool has = c->getPropertyByName(o.prop.c_str()) != nullptr;
-                    if (o.op == "addprop" && !has) {
-                        // A row written before the log named the type of
-                        // a property added to an object that was there
-                        // (sec 30.18) says `BadType`: nothing can be made
-                        // of it. Most were a module's cache -- Part's
-                        // shape cache -- and nothing of the document's.
-                        if (o.ptype.find("::") == std::string::npos)
-                            untyped.emplace(here(o.cid), o.prop);
-                        else
-                            addLoggedProperty(*c, o.ptype, o.prop, o.meta);
-                    }
-                    else if (o.op == "delprop" && has) {
-                        c->removeDynamicProperty(o.prop.c_str());
-                    }
+                    values.emplace_back(&o, std::move(v));
                 }
-                // 3. The values, read through the names, and their
-                // strings out of the copy's table (sec 30.16).
+
+                // The row, as a transaction of its author's. Only the
+                // transaction is: what the commit records beside it -- a
+                // snapshot -- is this process's.
+                replay->_clearMyRedos();
                 {
-                    RestoreNames through(names);
-                    // An element name says which object made it by its
-                    // id: the copy's, mapped like the ops'.
-                    StringHasher::ImportTags tags(ids);
-                    RestoreStrings strings(fork.history->hasher(), replay->getStringHasher());
-                    RestoreBatch batch;
-                    for (const auto& kv : values) {
-                        const LogOp& o = *kv.first;
+                    ActorScope as(authors[t.session]);
+                    replay->d->activeUndoTransaction = new Transaction(0);
+                }
+                Transaction* txn = replay->d->activeUndoTransaction;
+                txn->Name = t.name;
+                txn->Origin = t.origin;
+                if (t.kind != "user" && t.kind != "implicit")
+                    txn->LogKind = t.kind == "merge" ? std::string("user") : t.kind;
+                txn->Implicit = t.kind == "implicit";
+                if (t.inverts) {
+                    auto it = seqs.find(t.inverts);
+                    LogRowId id;
+                    if (it != seqs.end())
+                        txn->Inverts = it->second;
+                    else if (theirs.rowId(t.inverts, id))
+                        txn->Inverts = store.findRow(id);
+                }
+                replay->mUndoMap[txn->getID()] = txn;
+                try {
+                    auto here = [&](long cid) {
+                        auto it = ids.find(cid);
+                        return it == ids.end() ? cid : it->second;
+                    };
+                    auto container = [&](const LogOp& o) -> PropertyContainer* {
+                        LogOp mapped;
+                        mapped.ckind = o.ckind;
+                        mapped.cid = here(o.cid);
+                        return opContainer(*replay, mapped);
+                    };
+                    // 1. What it made, under ids of this file, and under new
+                    // names where its own are taken (sec 30.4 P4).
+                    for (const auto& o : ops) {
+                        if (o.op != "create" || o.ckind != "obj")
+                            continue;
+                        Base::Type type = Base::Type::getTypeIfDerivedFrom(
+                            o.ctype.c_str(), DocumentObject::getClassTypeId(), true);
+                        auto obj = static_cast<DocumentObject*>(type.createInstance());
+                        if (!obj)
+                            throw Base::RuntimeError("cannot create " + o.ctype);
+                        replay->addObject(obj, o.cname.c_str(), false);
+                        ids[o.cid] = obj->getID();
+                        const std::string name = obj->getNameInDocument();
+                        if (name != o.cname) {
+                            names[o.cname] = name;
+                            renamed[o.cname] = name;
+                        }
+                        else {
+                            names.erase(o.cname);
+                        }
+                    }
+                    // 2. Dynamic properties.
+                    for (const auto& o : ops) {
+                        if (o.op != "addprop" && o.op != "delprop")
+                            continue;
                         auto c = container(o);
                         if (!c) {
                             if (o.ckind == "view")
                                 continue;   // no Gui
-                            throw Base::RuntimeError("no object for the value of " + o.prop);
+                            throw Base::RuntimeError("no object for property " + o.prop);
                         }
-                        Property* prop = c->getPropertyByName(o.prop.c_str());
-                        if (!prop) {
-                            if (untyped.count({here(o.cid), o.prop}))
-                                continue;
-                            // A property of the object's type the copy's
-                            // build had and this one has not.
-                            throw Base::RuntimeError("no property " + o.prop);
+                        const bool has = c->getPropertyByName(o.prop.c_str()) != nullptr;
+                        if (o.op == "addprop" && !has) {
+                            // A row written before the log named the type of
+                            // a property added to an object that was there
+                            // (sec 30.18) says `BadType`: nothing can be made
+                            // of it. Most were a module's cache -- Part's
+                            // shape cache -- and nothing of the document's.
+                            if (o.ptype.find("::") == std::string::npos)
+                                untyped.emplace(here(o.cid), o.prop);
+                            else
+                                addLoggedProperty(*c, o.ptype, o.prop, o.meta);
                         }
-                        restoreValue(*prop, kv.second);
+                        else if (o.op == "delprop" && has) {
+                            c->removeDynamicProperty(o.prop.c_str());
+                        }
                     }
-                    batch.finish();
+                    // 3. The values, read through the names, and their
+                    // strings out of the copy's table (sec 30.16).
+                    {
+                        RestoreNames through(names);
+                        // An element name says which object made it by its
+                        // id: the copy's, mapped like the ops'.
+                        StringHasher::ImportTags tags(ids);
+                        RestoreStrings strings(fork.history->hasher(), replay->getStringHasher());
+                        RestoreBatch batch;
+                        for (const auto& kv : values) {
+                            const LogOp& o = *kv.first;
+                            auto c = container(o);
+                            if (!c) {
+                                if (o.ckind == "view")
+                                    continue;   // no Gui
+                                throw Base::RuntimeError("no object for the value of " + o.prop);
+                            }
+                            Property* prop = c->getPropertyByName(o.prop.c_str());
+                            if (!prop) {
+                                if (untyped.count({here(o.cid), o.prop}))
+                                    continue;
+                                // A property of the object's type the copy's
+                                // build had and this one has not.
+                                throw Base::RuntimeError("no property " + o.prop);
+                            }
+                            restoreValue(*prop, kv.second);
+                        }
+                        batch.finish();
+                    }
+                    // 4. Derived values are left out (F2): their owners touched.
+                    for (const auto& o : ops) {
+                        if (o.op != "set" || !o.derived || o.ckind != "obj" || removed.count(o.cid))
+                            continue;
+                        if (auto obj = replay->getObjectByID(here(o.cid)))
+                            obj->touch();
+                    }
+                    // 5. What it removed.
+                    for (const auto& o : ops) {
+                        if (o.op != "remove" || o.ckind != "obj")
+                            continue;
+                        if (auto obj = replay->getObjectByID(here(o.cid)))
+                            replay->removeObject(obj->getNameInDocument());
+                    }
                 }
-                // 4. Derived values are left out (F2): their owners touched.
-                for (const auto& o : ops) {
-                    if (o.op != "set" || !o.derived || o.ckind != "obj" || removed.count(o.cid))
-                        continue;
-                    if (auto obj = replay->getObjectByID(here(o.cid)))
-                        obj->touch();
+                catch (...) {
+                    replay->_abortTransaction();
+                    for (const auto& kv : renamed)
+                        names.erase(kv.first);
+                    for (const auto& o : ops) {
+                        if (o.op == "create" && o.ckind == "obj")
+                            ids.erase(o.cid);
+                    }
+                    throw;
                 }
-                // 5. What it removed.
-                for (const auto& o : ops) {
-                    if (o.op != "remove" || o.ckind != "obj")
-                        continue;
-                    if (auto obj = replay->getObjectByID(here(o.cid)))
-                        replay->removeObject(obj->getNameInDocument());
-                }
-            }
-            catch (...) {
-                replay->_abortTransaction();
-                for (const auto& kv : renamed)
-                    names.erase(kv.first);
-                for (const auto& o : ops) {
-                    if (o.op == "create" && o.ckind == "obj")
-                        ids.erase(o.cid);
-                }
-                throw;
-            }
 
-            if (txn->isEmpty()) {
-                // Nothing of it changes anything here.
-                replay->mUndoMap.erase(txn->getID());
-                delete txn;
-                replay->d->activeUndoTransaction = nullptr;
-                ++result.skipped;
+                if (txn->isEmpty()) {
+                    // Nothing of it changes anything here.
+                    replay->mUndoMap.erase(txn->getID());
+                    delete txn;
+                    replay->d->activeUndoTransaction = nullptr;
+                    ++result.skipped;
+                    versionsAt(t.seq);
+                    continue;
+                }
+                nlohmann::json j;
+                j["imported"] = {{"file", fork.file}, {"seq", t.seq}};
+                if (!renamed.empty())
+                    j["renamed"] = renamed;
+                txn->LogScript = j.dump();
+                TransactionLog::Stamp stamp;
+                stamp.session = session;
+                stamp.ordinal = t.ordinal;
+                stamp.time = t.time;
+                rlog->setStamp(&stamp);
+                try {
+                    replay->_commitTransaction(false);
+                }
+                catch (...) {
+                    rlog->setStamp(nullptr);
+                    throw;
+                }
+                rlog->setStamp(nullptr);
+                if (stamp.seq) {
+                    seqs[t.seq] = stamp.seq;
+                    ++result.rows;
+                    for (const auto& kv : renamed)
+                        result.renamed[kv.first] = kv.second;
+                }
+                else {
+                    ++result.skipped;
+                }
                 versionsAt(t.seq);
                 continue;
             }
-            nlohmann::json j;
-            j["imported"] = {{"file", fork.file}, {"seq", t.seq}};
-            if (!renamed.empty())
-                j["renamed"] = renamed;
-            txn->LogScript = j.dump();
-            TransactionLog::Stamp stamp;
-            stamp.session = session;
-            stamp.ordinal = t.ordinal;
-            stamp.time = t.time;
-            rlog->setStamp(&stamp);
-            try {
-                replay->_commitTransaction(false);
+            catch (Base::Exception& e) {
+                why = e.what();
             }
-            catch (...) {
-                rlog->setStamp(nullptr);
-                throw;
+            catch (std::exception& e) {
+                why = e.what();
             }
-            rlog->setStamp(nullptr);
-            if (stamp.seq) {
-                seqs[t.seq] = stamp.seq;
-                ++result.rows;
-                for (const auto& kv : renamed)
-                    result.renamed[kv.first] = kv.second;
-            }
-            else {
-                ++result.skipped;
-            }
-            versionsAt(t.seq);
-            continue;
+            // F8: the import ends here, the rows before it kept.
+            result.stoppedAt = t.seq;
+            result.reason = "row " + std::to_string(t.seq) + " (" + t.name + "): " + why;
+            FC_WARN("import of " << path << " stopped at " << result.reason);
+            return false;
         }
-        catch (Base::Exception& e) {
-            why = e.what();
-        }
-        catch (std::exception& e) {
-            why = e.what();
-        }
-        // F8: the import ends here, the rows before it kept.
-        result.stoppedAt = t.seq;
-        result.reason = "row " + std::to_string(t.seq) + " (" + t.name + "): " + why;
-        FC_WARN("import of " << path << " stopped at " << result.reason);
-        break;
-    }
+        return true;
+    };
 
-    // The import's record, and the maps a second import continues from.
-    {
-        nlohmann::json j;
-        nlohmann::json m;
-        m["file"] = fork.file;
-        m["branch"] = from.name;
-        m["base"] = result.base;
-        m["rows"] = result.rows;
-        if (result.stoppedAt) {
-            m["stopped_at"] = result.stoppedAt;
-            m["reason"] = result.reason;
-        }
-        if (!result.renamed.empty())
-            m["renamed"] = result.renamed;
-        if (result.versions)
-            m["versions"] = result.versions;
-        j["import"] = std::move(m);
-        result.seq = rlog->record("import", "Import " + fork.file, j.dump());
-
-        nlohmann::json keep;
-        keep["file"] = fork.file;
-        keep["path"] = FileHistory::canonicalPath(path);
-        keep["branch"] = from.name;
-        auto list = nlohmann::json::array();
-        for (const auto& kv : ids)
-            list.push_back({kv.first, kv.second});
-        keep["ids"] = std::move(list);
-        keep["names"] = names;
-        rlog->flush();
-        store.setMeta(importKey(mine.id), keep.dump());
-    }
-    if (scratch) {
-        // The tip left as a version, so the branch opens without a replay.
+    bool whole = replayRows(rows);
+    std::string state = kept.is_object() ? kept.value("state", std::string()) : std::string();
+    if (whole && gap) {
+        // The file as found, read as a document of the copy's history.
+        Document* asFound = fork.core->documentAt(found);
+        const bool opened = !asFound;
         try {
-            replay->_leaveBranch();
+            if (opened)
+                asFound = Document::openFileVersion(fork.history, found.num, false);
+            whole = replay->_importStateRow(*asFound, fork.file, ids, names, result);
         }
-        catch (Base::Exception& e) {
-            FC_WARN("import of " << path << ": " << e.what());
+        catch (...) {
+            if (opened && asFound)
+                app.closeDocument(asFound->getName());
+            if (scratch)
+                app.closeDocument(replay->getName());
+            if (active && app.getActiveDocument() != active)
+                app.setActiveDocument(active);
+            throw;
         }
-        app.closeDocument(replay->getName());
+        if (opened)
+            app.closeDocument(asFound->getName());
         if (active && app.getActiveDocument() != active)
             app.setActiveDocument(active);
+        if (whole) {
+            state = found.docxml_hash;
+            whole = replayRows(tailRows);
+        }
     }
-    signalBranchesChanged(*this);
+
+    nlohmann::json j;
+    nlohmann::json m;
+    m["file"] = fork.file;
+    m["branch"] = result.from;
+    m["base"] = result.base;
+    m["rows"] = result.rows;
+    if (gap)
+        m["state"] = state;
+    if (result.stoppedAt) {
+        m["stopped_at"] = result.stoppedAt;
+        m["reason"] = result.reason;
+    }
+    if (!result.renamed.empty())
+        m["renamed"] = result.renamed;
+    if (result.versions)
+        m["versions"] = result.versions;
+    j["import"] = std::move(m);
+    nlohmann::json keep;
+    keep["file"] = fork.file;
+    keep["path"] = FileHistory::canonicalPath(path);
+    keep["branch"] = result.from;
+    if (gap)
+        keep["state"] = state;
+    auto list = nlohmann::json::array();
+    for (const auto& kv : ids)
+        list.push_back({kv.first, kv.second});
+    keep["ids"] = std::move(list);
+    keep["names"] = names;
+    _finishImport(replay, scratch, mine.id, fork.file, j.dump(), keep.dump(), result);
     return result;
 }
 

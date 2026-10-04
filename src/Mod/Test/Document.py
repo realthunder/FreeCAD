@@ -6019,3 +6019,95 @@ class TransactionBranchCases(unittest.TestCase):
         self.assertTrue(doc.Mine.Shape.isValid())
         self.assertFalse([o.Name for o in doc.Objects if "Invalid" in o.State])
         self.assertFalse([o.Name for o in doc.Objects if "Touched" in o.State])
+
+    def testAFileEditedWhereThereIsNoLogIsImported(self):
+        # Sec 30.19 G6 (S.g): a copy whose history is there but whose file
+        # is not its tip -- edited by something that knows no log, which
+        # left the history as it found it. It comes as what the history
+        # holds, then one row for the edit, the file as found.
+        import re
+        import shutil
+        import zipfile
+
+        doc = self.track(FreeCAD.newDocument("GapOurs"))
+        doc.UndoMode = 1
+        doc.openTransaction("create")
+        obj = doc.addObject("App::FeatureTest", "Obj")
+        obj.Integer = 1
+        doc.commitTransaction()
+        path = os.path.join(self.dir, "gap-ours.FCStd")
+        copy = os.path.join(self.dir, "gap-theirs.FCStd")
+        doc.saveAs(path)
+        shutil.copyfile(path, copy)
+
+        # The copy goes on with its history: one row.
+        fork = self.track(FreeCAD.openDocument(copy))
+        fork.UndoMode = 1
+        fork.openTransaction("theirs")
+        fork.Obj.Float = 2.5
+        fork.commitTransaction()
+        fork.save()
+        FreeCAD.closeDocument(fork.Name)
+        FreeCAD.setActiveDocument(doc.Name)
+
+        # And is then edited where there is no log: its Document.xml says
+        # another value and another date, its history what it was.
+        import ArchiveMembers
+
+        edited = copy + ".edited"
+        changed = []
+        with zipfile.ZipFile(edited, "w", zipfile.ZIP_DEFLATED) as target:
+            for item, data in ArchiveMembers.members(copy):
+                if item.filename == "Document.xml":
+                    data, n = re.subn(
+                        rb'(<Property name="Integer" type="App::PropertyInteger"[^>]*>\s*'
+                        rb'<Integer value=")1"',
+                        rb'\g<1>9"',
+                        data,
+                    )
+                    changed.append(n)
+                    data, n = re.subn(
+                        rb'(name="LastModifiedDate".*?<String value=")[^"]*',
+                        rb"\g<1>1999-01-01T00:00:00Z",
+                        data,
+                        count=1,
+                        flags=re.S,
+                    )
+                    changed.append(n)
+                target.writestr(item, data)
+        self.assertEqual(changed, [1, 1])
+        os.replace(edited, copy)
+
+        offered = {b["name"]: b for b in doc.getTransactionForkBranches(copy)}
+        current = [b for b in offered.values() if b["current"]]
+        self.assertEqual(len(current), 1)
+        # What its history holds past the row both have, and the file as found.
+        self.assertGreater(current[0]["base"], 0)
+        self.assertEqual(current[0]["ahead"], 2)
+        self.assertTrue([b for b in offered.values() if b["closed"]])
+
+        res = doc.importTransactionFork(copy)
+        self.assertEqual(res["stopped_at"], 0, res)
+        self.assertEqual(res["rows"], 2, res)
+        self.assertEqual(res["branch"], "gap-theirs")
+        came = [
+            t
+            for t in doc.getTransactionLog()
+            if t["branch"] == res["branch"] and doc.getTransactionOps(t["seq"])
+        ]
+        self.assertEqual([t["name"] for t in came], ["theirs", "As found: gap-theirs"])
+        self.assertEqual({t["author_kind"] for t in came}, {"fork"})
+        self.assertEqual(
+            [o["prop"] for o in doc.getTransactionOps(came[1]["seq"]) if o["op"] == "set"],
+            ["Integer"],
+        )
+
+        merged = doc.mergeTransactionBranch(res["branch"])
+        self.assertEqual(merged["unresolved"], [])
+        self.assertEqual(doc.Obj.Float, 2.5)
+        self.assertEqual(doc.Obj.Integer, 9)
+
+        # The same file again: nothing.
+        again = doc.importTransactionFork(copy)
+        self.assertEqual(again["rows"], 0, again)
+        self.assertEqual(again["seq"], 0)

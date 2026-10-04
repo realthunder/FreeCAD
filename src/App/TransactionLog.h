@@ -225,6 +225,19 @@ public:
      * leaves the branch the file reopens on as the store has it.
      */
     Embedded embedForFile(const std::string& saveDate, const std::string& saveId);
+    /** A save that writes the file without its history (sec 30.19 G2): an
+     * id is made for it and recorded as an embedding save's is (G1), at the
+     * row the document is at. Returns what the file's `Version` is to say:
+     * the last version's number and the id.
+     */
+    std::string noteSave();
+    /** The save `saveId` names, as this store recorded it (sec 30.19 G1):
+     * the version number it became and the row its state is at. False when
+     * the store holds no such save -- the file is not of this history, or
+     * was saved before saves were recorded.
+     */
+    static bool savedAt(TransactionStore& store, const std::string& saveId, int64_t& version,
+                        int64_t& seq);
 
     /** Continue from an embedded copy (sec 16.4): the live store is
      * replaced by `path`'s content, the counters follow the copy's, and

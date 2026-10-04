@@ -245,6 +245,20 @@ public:
     static std::shared_ptr<FileHistory> find(const std::string& path);
     /// The canonical form of `path` the registry keys by.
     static std::string canonicalPath(const std::string& path);
+    /// What a file says of the save it is from, with nothing of a history
+    /// read (docs/TransactionLog.md sec 30.19).
+    struct Saved
+    {
+        /// Its `Version`: the number the save became, and the save's id.
+        int64_t version = 0;
+        std::string saveId;
+        std::string modifiedBy;   ///< its `LastModifiedBy`
+        std::string hash;         ///< of its Document.xml, as the log hashes
+        bool history = false;     ///< it carries a history
+    };
+    /// Read them from the file at `path`; false, with `reason` set, when it
+    /// is no document archive.
+    static bool savedAs(const std::string& path, Saved& saved, std::string* reason = nullptr);
     /// The parts of a name `parseName` reads.
     struct NameParts
     {

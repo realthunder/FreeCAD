@@ -5275,3 +5275,185 @@ TEST_F(TransactionLogTest, aForkImportTakesTheBranchAskedForAndTheFilesItNames)
     Base::FileInfo(path).deleteFile();
     Base::FileInfo(fork).deleteFile();
 }
+
+TEST_F(TransactionLogTest, aFileWithNoHistoryIsImportedAsOneRow)
+{
+    // Sec 30.19 (S.g): a copy handed out without the history says which
+    // save it is (G1, G2); edited where there is no log and brought back,
+    // it comes as one row -- the difference from the state at that save --
+    // on a branch from that save's row.
+    App::DocumentParams::setTransactionLog(2);   // embedded
+    edit(doc(), "create", [&]() {
+        make("Obj")->Integer.setValue(1);
+        make("Gone");
+    });
+    const std::string tmp = Base::FileInfo::getTempPath();
+    const std::string path = tmp + "txnlog-state-ours.FCStd";
+    const std::string fork = tmp + "txnlog-state-theirs.FCStd";
+    const std::string strange = tmp + "txnlog-state-stranger.FCStd";
+    for (const auto& file : {path, fork, strange})
+        Base::FileInfo(file).deleteFile();
+    ASSERT_TRUE(doc()->saveAs(path.c_str()));
+    edit(doc(), "ours", [&]() { featureOf(doc(), "Obj")->String.setValue("ours"); });
+    log().flush();
+    const int64_t atCopy = log().head();
+    ASSERT_TRUE(doc()->saveCopy(fork.c_str(), false));
+
+    // G1: the file's own save is known by its id, and G2: so is the copy's,
+    // at the row the copy's state is -- which is not the file's save.
+    auto& store = log().store();
+    App::FileHistory::Saved own;
+    App::FileHistory::Saved saved;
+    ASSERT_TRUE(App::FileHistory::savedAs(path, own));
+    ASSERT_TRUE(App::FileHistory::savedAs(fork, saved));
+    EXPECT_TRUE(own.history);
+    EXPECT_FALSE(saved.history);
+    ASSERT_FALSE(own.saveId.empty());
+    ASSERT_FALSE(saved.saveId.empty());
+    EXPECT_NE(own.saveId, saved.saveId);
+    int64_t version = 0;
+    int64_t seq = 0;
+    ASSERT_TRUE(App::TransactionLog::savedAt(store, own.saveId, version, seq));
+    EXPECT_EQ(version, own.version);
+    EXPECT_LT(seq, atCopy);
+    ASSERT_TRUE(App::TransactionLog::savedAt(store, saved.saveId, version, seq));
+    EXPECT_EQ(seq, atCopy);
+    // The live document says what it said: the stamp was the copy's alone.
+    auto mark = dynamic_cast<App::PropertyString*>(doc()->getPropertyByName("Version"));
+    ASSERT_TRUE(mark);
+    EXPECT_NE(std::string(mark->getValue()).find(own.saveId), std::string::npos);
+
+    // This file goes on: an object under a name the copy will use too.
+    edit(doc(), "ours later", [&]() { make("New")->Integer.setValue(100); });
+
+    // The copy is edited where there is no log, and saved.
+    auto elsewhere = [&](const std::function<void(App::Document*)>& change) {
+        App::DocumentParams::setTransactionLog(0);
+        App::Document* other = App::GetApplication().openDocument(fork.c_str());
+        ASSERT_TRUE(other);
+        EXPECT_FALSE(other->getTransactionLog());
+        const std::string name = other->getName();
+        change(other);
+        ASSERT_TRUE(other->save());
+        App::GetApplication().closeDocument(name.c_str());
+        App::DocumentParams::setTransactionLog(2);
+        App::GetApplication().setActiveDocument(doc());
+    };
+    elsewhere([&](App::Document* other) {
+        featureOf(other, "Obj")->Integer.setValue(9);
+        auto made = static_cast<App::FeatureTest*>(other->addObject("App::FeatureTest", "New"));
+        made->Integer.setValue(7);
+        featureOf(other, "Obj")->Link.setValue(made);
+        other->removeObject("Gone");
+        // What knows no log does not carry the log's own properties on.
+        other->removeDynamicProperty("History");
+        other->removeDynamicProperty("Branch");
+    });
+
+    // What it offers: itself, one thing to bring, from the copy's row.
+    auto offered = doc()->forkBranches(fork);
+    ASSERT_EQ(offered.size(), 1u);
+    EXPECT_TRUE(offered[0].current);
+    EXPECT_EQ(offered[0].base, atCopy);
+    EXPECT_EQ(offered[0].ahead, 1u);
+
+    log().flush();
+    const int64_t headBefore = log().head();
+    const size_t docsBefore = App::GetApplication().getDocuments().size();
+    const auto result = doc()->importFork(fork);
+    EXPECT_EQ(result.rows, 1u) << result.reason;
+    EXPECT_EQ(result.stoppedAt, 0) << result.reason;
+    EXPECT_EQ(result.base, atCopy);
+    EXPECT_EQ(result.branch, "txnlog-state-theirs");
+    EXPECT_FALSE(result.extended);
+    EXPECT_EQ(log().head(), headBefore);
+    EXPECT_EQ(App::GetApplication().getDocuments().size(), docsBefore);
+    EXPECT_EQ(App::GetApplication().getActiveDocument(), doc());
+    ASSERT_EQ(result.renamed.size(), 1u);
+    const std::string theirNew = result.renamed.begin()->second;
+    EXPECT_EQ(result.renamed.begin()->first, "New");
+    EXPECT_NE(theirNew, "New");
+
+    // One row on a branch from the copy's row, its author the file.
+    App::LogBranch branch;
+    ASSERT_TRUE(store.findBranch(result.branch, branch));
+    EXPECT_EQ(branch.fromSeq, atCopy);
+    std::map<int64_t, App::LogSession> sessions;
+    for (const auto& s : store.sessions())
+        sessions[s.id] = s;
+    std::map<int64_t, App::LogUser> users;
+    for (const auto& u : store.users())
+        users[u.id] = u;
+    int rows = 0;
+    for (const auto& t : store.chain(branch.head, atCopy + 1)) {
+        if (store.ops(t.seq).empty())
+            continue;
+        ++rows;
+        const App::LogUser& author = users[sessions[t.session].user];
+        EXPECT_EQ(author.kind, "fork");
+        EXPECT_NE(author.name.find("(txnlog-state-theirs)"), std::string::npos) << author.name;
+        std::set<std::string> ops;
+        for (const auto& o : store.ops(t.seq)) {
+            ops.insert(o.op);
+            // Which file it is, and what it carries of a log, is not what
+            // the document is: none of that is in the row.
+            EXPECT_NE(o.ckind, "doc") << o.op << " " << o.prop;
+        }
+        EXPECT_TRUE(ops.count("create"));
+        EXPECT_TRUE(ops.count("remove"));
+        EXPECT_TRUE(ops.count("set"));
+    }
+    EXPECT_EQ(rows, 1);
+
+    // The merge is any branch's: what both did, with nothing in conflict.
+    const auto merged = doc()->mergeBranch(result.branch);
+    EXPECT_GT(merged.seq, 0);
+    EXPECT_TRUE(merged.unresolved.empty());
+    EXPECT_EQ(featureOf(doc(), "Obj")->Integer.getValue(), 9);
+    EXPECT_STREQ(featureOf(doc(), "Obj")->String.getValue(), "ours");
+    ASSERT_TRUE(featureOf(doc(), "New"));
+    EXPECT_EQ(featureOf(doc(), "New")->Integer.getValue(), 100);
+    ASSERT_TRUE(featureOf(doc(), theirNew.c_str()));
+    EXPECT_EQ(featureOf(doc(), theirNew.c_str())->Integer.getValue(), 7);
+    EXPECT_EQ(featureOf(doc(), "Obj")->Link.getValue(), featureOf(doc(), theirNew.c_str()));
+    EXPECT_FALSE(doc()->getObject("Gone"));
+    EXPECT_TRUE(doc()->getPropertyByName("History"));
+    EXPECT_TRUE(doc()->getPropertyByName("Branch"));
+
+    // G5: the same file again is nothing, and is offered as nothing.
+    const auto none = doc()->importFork(fork);
+    EXPECT_EQ(none.rows, 0u);
+    EXPECT_EQ(none.seq, 0);
+    offered = doc()->forkBranches(fork);
+    ASSERT_EQ(offered.size(), 1u);
+    EXPECT_EQ(offered[0].ahead, 0u);
+
+    // Changed again: one more row on the same branch, the object that came
+    // still the one it was.
+    elsewhere([&](App::Document* other) { featureOf(other, "New")->Integer.setValue(8); });
+    const auto again = doc()->importFork(fork);
+    EXPECT_TRUE(again.extended);
+    EXPECT_EQ(again.branch, result.branch);
+    EXPECT_EQ(again.rows, 1u) << again.reason;
+    EXPECT_TRUE(again.renamed.empty());
+    const auto more = doc()->mergeBranch(result.branch);
+    EXPECT_TRUE(more.unresolved.empty());
+    EXPECT_EQ(featureOf(doc(), theirNew.c_str())->Integer.getValue(), 8);
+    EXPECT_EQ(featureOf(doc(), "New")->Integer.getValue(), 100);
+    EXPECT_EQ(featureOf(doc(), "Obj")->Integer.getValue(), 9);
+
+    // A file with no history that names no save of this one's is refused,
+    // and so is a branch asked of a file that has none.
+    App::DocumentParams::setTransactionLog(0);
+    App::Document* stranger = App::GetApplication().newDocument("txnlogStranger", "stranger");
+    stranger->addObject("App::FeatureTest", "X");
+    ASSERT_TRUE(stranger->saveAs(strange.c_str()));
+    App::GetApplication().closeDocument("txnlogStranger");
+    App::DocumentParams::setTransactionLog(2);
+    App::GetApplication().setActiveDocument(doc());
+    EXPECT_THROW(doc()->importFork(strange), Base::Exception);
+    EXPECT_THROW(doc()->importFork(fork, "main"), Base::Exception);
+
+    for (const auto& file : {path, fork, strange})
+        Base::FileInfo(file).deleteFile();
+}

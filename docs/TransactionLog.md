@@ -13182,3 +13182,131 @@ its file as one.
 | H5 | Who may send one | **Anyone who may write** (30.6 U4, U6): a request is rows in the log. A view-only client may not. |
 | H6 | When a sent file is read | **When the owner asks**, never on arrival: the file is kept as it came, listed as a request with its sender and its size, and imported -- replayed, its objects made -- only by the owner's click. With the sandbox's rules for a document from elsewhere applied to that replay (docs/Sandbox.md), whatever they then are. |
 | H7 | The sender, in the log | **The import's record names who sent it** (30.6), and the rows keep the authors the file gives them. |
+
+### 30.21 S.g as built: a copy with no history, and one whose file is not its history's tip (2026-10-05)
+
+**G1-G8 (user, 2026-10-05): as proposed.**
+
+**The save, by its id (G1).** `TransactionLogCore::embed` writes `meta`
+`save:<save id>` = the version number the save becomes and the row its
+state is at -- the head of the saving document's branch -- before the
+copy is taken, so the copy carries it and a history adopted from the file
+knows the save it came from. `TransactionLog::savedAt(store, id, version,
+seq)` reads it. A save to the log only (27.28) writes none: it reuses the
+file's save id, and the file's document is not rewritten.
+
+**A copy without history says which state it is (G2).** `embedHistory`,
+when the save leaves the history out (`saveCopy(file, false)`), sets
+`Version` to the last version's number and a save id of its own
+(`TransactionLog::noteSave`, recorded as G1 at the row the document is
+at) -- for the copy only: the live document's `Version` is put back once
+the file is written, with its `History`. A document that never had a
+`Version` gets the property, as an embedding save gives it.
+
+**What a file says** is read with nothing of a history:
+`FileHistory::savedAs(path, saved)` -- its `Version`, its
+`LastModifiedBy`, the hash of its `Document.xml`, whether it carries a
+history.
+
+**The import.** `importFork` is the one entry; what the file is decides.
+
+- **No history** (`_importState`): the save its `Version` names must be
+  one of this store's, and its row still there -- else refused, saying
+  which. The file is opened as a document with no view (or the one open
+  is used) and closed again. The replay's document is the one of 30.15,
+  at the save's row on a branch named after the file. One row follows.
+  A branch asked for by name is refused: the file has none.
+- **A history that is there, with a file that is not its tip (G6).**
+  `closeAdopted` now records which branch was the file's
+  (`meta` `closed_branch`). When the branch the file reopens on shares no
+  row with this file and there is such a record, the import is three
+  things in order: the closed branch's rows past the row both hold, by
+  S.f; one row for the file as found -- the first version of the branch
+  the file reopens on, read as a version document of the copy's history;
+  and that branch's own rows, by S.f, which is what the copy has done
+  since it was opened where there is a log.
+- The row replay of 30.15 is the same code for both runs of it
+  (`replayRows`); the replay's document and the import's end are
+  `_importReplay` and `_finishImport`, shared with the file that has no
+  history.
+
+**The one row (G3, G7, G8)**, `_importStateRow` over
+`_applyForeignState`: the replay's document made what the file's is.
+
+- *Objects*: one of the file's is the one here with its id -- through the
+  map, for what an earlier import brought -- when its type and its name
+  say so too. Ruled as id and type; the name is added because an
+  object's name never changes, and a FreeCAD that knows no log hands a
+  deleted object's id out again. Any other is the file's own: a new id,
+  the name it had unless taken (P4). What the file no longer has is
+  removed.
+- *Dynamic properties* follow, then *every value that differs*, derived
+  ones with them, compared as captured; the files a value names are
+  copied over first. Values are read through `RestoreNames`,
+  `StringHasher::ImportTags` and `RestoreStrings` from the file's
+  document's own table, as an imported row's are.
+- *The document's own properties* come too, but for what says which file
+  it is, when it was saved and what it carries of a log: `Label`, `Uid`,
+  and what a restore keeps (24.5) -- `History`, `Version`, `Branch` among
+  it. Neither their values nor their absence: a file from a FreeCAD that
+  knows no log has no `History` property, and the first build took that
+  for the file having removed it, a `delprop` in the row that a merge
+  would then have carried into this file. Found reading the code, shown
+  by the test before it was fixed.
+- *View providers* where both documents have them.
+- A failure rolls the whole row back: `stopped_at` is -1, a state having
+  no row, and the reason says what.
+
+**Its author (G4)**: a user of kind `fork` named `<LastModifiedBy>
+(<file>)`, `(<file>)` when the file names nobody; a session of its own
+per import. The row is `As found: <file>`, marked `imported` like any
+row that came, with `state` in the mark.
+
+**The same file again (G5).** The branch's maps keep `state`, the hash of
+the file's `Document.xml` (for G6, of the version the file as found was
+recorded as). The branch that holds a state for this file is the one
+continued, whatever has moved on it: the same hash and nothing else new
+is nothing done; another is one more row, the difference from the
+branch's head. A state that could not come keeps the hash it had, so it
+is asked for again.
+
+**`forkBranches`** offers a file with no history as one entry under no
+name -- `base` the save's row, 0 when this store holds no such save,
+`ahead` 1 until the state is here -- and, for G6, counts on the branch
+the file reopens on what the closed branch, the file as found and the
+branch itself have to bring. The panel needed nothing: it brings what is
+offered.
+
+**Tests.** Gtest `aFileWithNoHistoryIsImportedAsOneRow`: a file saved
+with its history, changed, and a copy saved without -- the file's own
+save and the copy's are both known by id, the copy's at the row the copy
+was made, the live document's `Version` its own still. This file adds an
+object; the copy, opened with the log off, changes a value, adds an
+object of the same name linked from the first, removes one, and is saved.
+Offered as one thing from the copy's row; imported as one row with a
+create, a remove and sets, its author `fork` and named after the file,
+this document unmoved; merged with nothing conflicting, the copy's object
+under a new name and the link naming it. Again: nothing, and offered as
+nothing. Changed again: one more row on the same branch, the object that
+came still that object. A file with no `Version`, and a branch asked of
+a file with none, are refused. Python
+`testAFileEditedWhereThereIsNoLogIsImported`: a copy that goes on one
+row with its history, then has its `Document.xml` rewritten -- another
+value, another date -- with the history left as it was; offered as two
+things past the row both hold; imported as `theirs` and `As found:
+gap-theirs`, the second holding the one value; merged; again, nothing.
+The Gui check has five more (34): a copy without history, edited with
+the log off, through "Merge from file...".
+
+**Left.** The file's own objects are told apart by id, type and name; a
+file whose objects were all made again elsewhere under the same names
+and types would be read as the same objects changed. A file with no
+`Version` -- never saved with its history, and not a copy made here --
+has no base and is refused: comparing it against the head would be a
+guess at where it came from.
+
+**Gates**, frozen and unfrozen each: Python 3006 OK (52 skipped frozen, 53
+unfrozen; 6 expected failures; +1), ctest 875/875 (+1), and the GUI
+checks RC 15, BC 27, VC 18, PC 28, FC 16, VW 14, MC 28, the two-document
+check 24, the tree check 19, the author check 36 and the import check 34
+(+5).

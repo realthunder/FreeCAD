@@ -597,8 +597,10 @@ The branches of the copy of this document's file at `path`
 take them: 'name', 'current' (the branch the copy's file reopens on, which
 an import takes when none is named), 'closed', 'base' (the row of this
 file's log the branch parts from, 0 when the two share no history) and
-'ahead' (the operations it has made since). Raises when the file carries
-no history, or is this document's own.</UserDocu>
+'ahead' (the operations it has made since). A file that carries no history
+offers one thing, itself, under an empty name (sec 30.19): 'base' the row of
+the save its Version names, 0 when this log holds no such save. Raises when
+the file cannot be read, or is this document's own.</UserDocu>
       </Documentation>
     </Methode>
     <Methode Name="importTransactionFork">
@@ -615,9 +617,14 @@ file, and a second import of the same copy continues it. Nothing is merged:
 that is mergeTransactionBranch(). The dict has 'branch', 'from', 'base',
 'rows', 'skipped', 'versions' (the copy's named versions that came as
 versions of the branch), 'extended', 'stopped_at' and 'reason' (a row that could
-not be applied ends the import, the rows before it kept), 'renamed' and
-'seq' (the import's record). Raises when the file carries no history,
-shares none with this one, or has no such branch.</UserDocu>
+not be applied ends the import, the rows before it kept; -1 when it is the
+file as found that could not come), 'renamed' and 'seq' (the import's
+record). A file that carries no history comes as one row, the difference
+between the file and the state at the save its Version names (sec 30.19);
+one whose history is there but is not its tip comes as what the history
+holds, that one row, then what it has done since. Raises when the file
+shares no history with this one, names no save of this log, or has no such
+branch.</UserDocu>
       </Documentation>
     </Methode>
     <Methode Name="resolveTransactionLog">

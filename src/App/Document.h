@@ -636,8 +636,9 @@ public:
         size_t ahead {0};
     };
     /** The branches of the copy of this file at `path` (docs/TransactionLog.md
-     * sec 30.13, 30.14 F6): what importFork() offers. Throws when the file
-     * carries no history, or is this document's own.
+     * sec 30.13, 30.14 F6): what importFork() offers. A file that carries no
+     * history offers one thing, itself, under no name. Throws when the file
+     * cannot be read, or is this document's own.
      */
     std::vector<ForkBranch> forkBranches(const std::string& path);
     /// What importFork() did.
@@ -655,7 +656,8 @@ public:
         /// The branch is an earlier import's, continued (F7).
         bool extended {false};
         /// The copy's row the import stopped at, 0 when it took them all,
-        /// and why (F8). The rows before it are in.
+        /// and why (F8). The rows before it are in. -1 when what could not
+        /// come is the file as found, which is a state and no row.
         int64_t stoppedAt {0};
         std::string reason;
         /// The copy's new objects whose names this file had given to others
@@ -677,8 +679,18 @@ public:
      * copy's branch when that is not its file's -- and a second import of
      * the same copy continues it. A row that cannot be applied ends the
      * import, the rows before it kept. Nothing is merged: that is
-     * mergeBranch(). Throws when the file carries no history, shares none
-     * with this one, or the branch is not there.
+     * mergeBranch().
+     *
+     * A file that carries no history comes as one row (sec 30.19): the
+     * difference between the file as it is and the state at the save its
+     * `Version` names, on a branch from that save's row; brought again,
+     * changed, as one more row on that branch. A file whose history is
+     * there but is not its tip -- edited where there is no log -- comes as
+     * the branch that was the file's, then that one row, then what it has
+     * done since.
+     *
+     * Throws when the file shares no history with this one, names no save
+     * of this file's, or the branch is not there.
      */
     ImportResult importFork(const std::string& path, const std::string& branch = std::string());
 
@@ -1414,6 +1426,31 @@ protected:
     /// The log's head was moved (sec 30.4 P1, a fast-forward): the
     /// document follows from the state at row `from`, with nothing recorded.
     void _followHead(int64_t from);
+    /// The document an import's rows are replayed in (docs/TransactionLog.md
+    /// sec 30.15): the one holding branch `mine`, or that branch opened; with
+    /// no branch yet, a version document moved to row `base` and put on a
+    /// new branch named `stem`, which `mine` becomes. `scratch` says it was
+    /// opened for the import, and is the import's to close.
+    Document* _importReplay(int64_t base, const std::string& stem, LogBranch& mine, bool& scratch);
+    /// The end of an import: its record on the branch, the maps kept with the
+    /// branch (`keep`), the replay's document left as a version and closed.
+    void _finishImport(Document* replay, bool scratch, int64_t branch, const std::string& file,
+                       const std::string& record, const std::string& keep, ImportResult& result);
+    /// Make this document what `from`, a document of another copy of the
+    /// file, is (sec 30.19), recorded into the open transaction; the maps
+    /// are added to. Throws when something of it cannot come.
+    void _applyForeignState(Document& from, std::map<long, long>& ids,
+                            std::map<std::string, std::string>& names,
+                            std::map<std::string, std::string>& renamed);
+    /// _applyForeignState() as one row of this document's log, the file its
+    /// author. False, the row rolled back and `result` saying why, when it
+    /// could not come.
+    bool _importStateRow(Document& from, const std::string& file, std::map<long, long>& ids,
+                         std::map<std::string, std::string>& names, ImportResult& result);
+    /// importFork() of a file with no history (sec 30.19): one row against
+    /// the save its `Version` names.
+    ImportResult _importState(const std::string& path, const std::string& file,
+                              const std::string& saveId, const std::string& hash);
     /// Sec 26: refuse a branch operation in the middle of something else;
     /// an implicit transaction is committed first.
     void _checkBranchable(const char* what);
