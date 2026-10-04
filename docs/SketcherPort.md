@@ -5102,7 +5102,8 @@ with continuous mode switched off: `fe7c1d18be`, declined.
   and by `Std_ViewFitAll` alike. Upstream's tests do it at the start of
   every case, which is how it showed: the first on-view boxes read
   micrometres. Why was not looked into; what a fit should do with
-  nothing to fit is a choice.
+  nothing to fit is a choice. Looked into and fixed in session 126:
+  see "Fit All in a sketch" below.
 - *One hang, not seen again.* The first run of
   `TestConstraintCommandsGui` stopped in its last case; the case passes
   alone, and the module ran through three times on the fixed build. The
@@ -5197,6 +5198,84 @@ label's other users, outside the Sketcher, were not looked at.
 the 908 of before and the two new entries. The Python suite was not
 run: the change is in the sketch's edit scene, which `FreeCADCmd` does
 not load.
+
+### Fit All in a sketch (session 126)
+
+Two commits, `81d67adc66` and `804a03a4b3`. The empty sketch was one
+symptom of two; the other had not been noticed.
+
+**What a fit framed.** The viewer's scene box is the scene's own box
+plus the box of the editing root, with everything under a
+`SoSkipBoundingGroup` left out -- which is how the sketch's axes, ten
+million long, stay out of it. A probe over the edit root's children, in
+an empty sketch, found a box on seven of them:
+
+| child | box |
+|---|---|
+| the axes | left out, as intended |
+| the origin point (`PointSet`, index 0) | a point at the origin |
+| edit markers, edit curve, two hint line sets | a point at the origin each: a coordinate node with nothing set holds one point, (0, 0, 0) |
+| the cursor's coordinate text | a point where the text stands |
+| the highlight copies, when the origin is selected | the origin again, three layers higher |
+
+The cursor text is the one that moves. Its translation follows the
+pointer while a tool runs; when the tool ends the string is emptied and
+the translation is left, and the glyph companion `SoTextImage` reports a
+point wherever it stands, text or none. So a fit framed where a tool's
+pointer had last been:
+
+| one line, (20,10) to (30,15) | height | centre |
+|---|---|---|
+| fit, no tool yet | 33.5 | (15, 7.5) |
+| line tool, pointer to (180,90), Escape, fit | 201 | (90, 45) |
+
+**Why 0.028.** In an empty sketch all of the above is one point, the
+origin. `getSceneBoundBox` widens a dimension shorter than 1e-7 by a
+hundredth each way, and the fit went to that cube: 0.02 across, 0.028
+on the diagonal. The widening is the fork's own (`d264981821`, 2022,
+for issue #403: a lone Draft point could not be seen) and upstream took
+it; framing a lone point is intended and stays.
+
+**What was done.**
+
+- `81d67adc66`, the sketch: tool feedback -- edit curve, edit markers,
+  the hints, the cursor text -- and the two roots that draw a highlight
+  each sit in a `SoSkipBoundingGroup`. Drawn and picked as before, in
+  the same order; out of the box a fit frames. The highlight roots hold
+  copies of points and curves that are counted where they are, and with
+  them out an empty sketch's box is exactly one point, whatever
+  `ZHeight` the layers are spaced by.
+- `804a03a4b3`, the viewer: a scene that holds nothing but one point of
+  what is being edited is nothing to fit. `getSceneBoundBox` answers
+  false and `viewAll` leaves the camera, as in an empty document. The
+  box is still handed back for the callers that want a centre.
+
+A viewer-side test with a tolerance was considered and dropped: the
+sketch's layers are spaced by a preference, and a tolerance wide enough
+for every setting of it would swallow a sketch a few micrometres across.
+Leaving the origin out of the box always, as upstream's tip does (its
+origin marker is in a skip group), was not taken either: it changes the
+fit of every sketch, and an empty sketch beside a model would be framed
+without its origin.
+
+**The choices in this, mine and open to a ruling.** An empty sketch:
+the camera stays. A sketch with geometry: framed with its origin, as
+before. An empty sketch beside a model: the model and the origin, as
+before. A tool's rubber band in mid-draw no longer counts toward a fit.
+
+**Test.** `tests/gui/sketch-fit-all.py`, 11 checks; 4 failed before
+(the empty sketch by the call, by the command and with its origin
+selected; the fit after a tool), 7 are controls: geometry with origin,
+the model with the empty sketch, a lone vertex object still framed.
+
+**Not checked.** A browser client's own framing: no fit code was found
+on the client under the names looked for, and the served view's
+`MirrorViewer::getSceneBoundBox` applies a plain bounding box action
+with no exclusion asked -- whether the axes reach its box was not run.
+
+**Verified** on the tip: full build; ctest 911 of 911, the 910 of
+before and the new test. The Python suite was not run: both changes
+are in Gui libraries `FreeCADCmd` does not load.
 
 ## 8. Phases
 
