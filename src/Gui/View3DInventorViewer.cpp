@@ -7603,7 +7603,10 @@ bool View3DInventorViewer::getSceneBoundBox(Base::BoundBox3d &box) const {
         }
     }
 
-    if (pcEditingRoot) { 
+    // what the scene holds apart from what is being edited
+    const bool sceneValid = box.IsValid();
+
+    if (pcEditingRoot) {
         action.apply(pcEditingRoot);
         auto bbox = action.getBoundingBox();
         if(isValidBBox(bbox)) {
@@ -7615,9 +7618,23 @@ bool View3DInventorViewer::getSceneBoundBox(Base::BoundBox3d &box) const {
 
     bool res = box.IsValid() ? true : false;
 
+    const double minLength = 1e-7;
+
+    // Nothing to frame: the scene is empty and what is being edited comes
+    // to a single point -- a sketch with no geometry is its origin, and a
+    // fit went to the hundredth the point is widened by below. The box is
+    // still handed back, for whoever wants a centre; only the answer says
+    // a fit has nothing to do, as in an empty document. A point in the
+    // scene itself is another matter and is framed: that is what the
+    // widening is for.
+    if (res && !sceneValid
+            && box.LengthX() < minLength
+            && box.LengthY() < minLength
+            && box.LengthZ() < minLength)
+        res = false;
+
     // Coin3D camera seems stuck if zoomed to close because the boundbox is too
     // small. So, we limit the boundbox size
-    const double minLength = 1e-7;
     const double margin = 0.01;
     if (std::fabs(box.MinX - box.MaxX) < minLength) {
         box.MinX -= margin;
@@ -7642,12 +7659,13 @@ SoGroup *View3DInventorViewer::getAuxSceneGraph() const
 
 bool View3DInventorViewer::getSceneBoundBox(SbBox3f &box) const {
     Base::BoundBox3d fcbox;
-    getSceneBoundBox(fcbox);
+    // a box may come back with the answer that there is nothing to fit
+    const bool res = getSceneBoundBox(fcbox);
     if(!fcbox.IsValid())
         return false;
     box.setBounds(fcbox.MinX,fcbox.MinY,fcbox.MinZ,
                   fcbox.MaxX,fcbox.MaxY,fcbox.MaxZ);
-    return true;
+    return res;
 }
 
 void View3DInventorViewer::animatedViewAll(const SbBox3f &box, int steps, int ms)

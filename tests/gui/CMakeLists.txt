@@ -1099,3 +1099,11 @@ set_tests_properties(GuiSketchLineAngleLabelsGL_tests_run
                      GuiSketchDistanceLabelExtensionGL_tests_run
                      PROPERTIES ENVIRONMENT
                      "FC_BUILD=${CMAKE_BINARY_DIR};GT_RENDER_CACHE=0")
+
+# Fit All in a sketch. An empty sketch gives it nothing to frame: the fit
+# went to the origin point, a hundred and fifty times closer than a new
+# document's view. And what a tool left behind -- the position its cursor
+# text last had -- is not part of what a fit frames.
+fc_add_gui_test(GuiSketchFitAll_tests_run
+                sketch-fit-all.py
+                --timeout 200)
