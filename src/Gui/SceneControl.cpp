@@ -1008,12 +1008,19 @@ QJsonObject undoRedoOp(const QJsonObject &req, const std::string &boundDoc, bool
                           QStringLiteral("grouped transactions in other documents "
                                          "need the desktop user's answer"));
 
+    // The steps are this connection's user's own (docs/TransactionLog.md
+    // sec 30.10): the counts above, the steps taken and the stacks told
+    // back, all under the actor the request runs as.
     if (redo)
         gdoc->redo(steps);
     else
         gdoc->undo(steps);
     if (SceneServeSource *source = SceneServeSource::sourceFor(doc))
         source->clearClientSelections();
+    // Refused: someone else has since written what the step left (sec
+    // 30.4 P2), and the reason names what and by which row.
+    if (!doc->undoRefusal().empty())
+        return errorReply(id, "Refused", QString::fromStdString(doc->undoRefusal()));
 
     QJsonObject reply;
     reply[QLatin1String("id")] = id;

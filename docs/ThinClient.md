@@ -1860,6 +1860,14 @@ the two refusals that touch nothing, the undo answered with the stacks and the c
 told its selection is empty while the length is back and the room empty on the GUI
 thread, the redo forward again, and an undo deeper than the stack refused.
 
+**Amended 2026-10-04 (docs/TransactionLog.md sec 30.10).** With the transaction log on,
+which it is by default, the stack a client's `undo` works on is its own: the steps its
+user made, the desktop's being the desktop user's. `undos` and `redos` in the reply are
+that user's, `NothingToUndo` counts them, and an undo of a step someone else has since
+written over is answered `{"ok": false, "code": "Refused"}` with what changed and by
+which row. The test reads that form: the client makes the step it undoes, and the
+desktop's own step stays on the desktop's stack throughout.
+
 **Built 2026-09-11 (item 3).** The External and CarbonCopy pick from a browser. Both
 tools work by the view's OWN selection: the unified selection root picks the other object
 under the pointer, preselects it through the tool's gate and, on the release, selects it
@@ -2038,7 +2046,10 @@ session, or commands that never say active; a transcript per session.
 (136 sites) is global nesting state. Per client: per-session undo, Onshape's model, which
 means transactions tagged by session and *selective* undo -- an operational-transform
 problem on the document, not bookkeeping. With H, one of the two items that are hard
-rather than wide.
+rather than wide. **Built 2026-10-04** over the transaction log, which is what tags a
+transaction by its author and reads a value back for a selective undo:
+docs/TransactionLog.md sec 30.9 (authors) and 30.10 (each author's own stack). The open
+transaction and the edit slot are still one per document.
 
 **H. The data -- whole-value write-back.** `SketchObject::Geometry` and `Constraints` are
 written as whole arrays, so two solvers on one sketch lose updates; GeoIds are positional,

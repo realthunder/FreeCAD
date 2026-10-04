@@ -1074,6 +1074,16 @@ public:
     std::vector<std::string> getAvailableRedoNames() const;
     /// Will REDO one step, returns False if no redo was done (Redos == 0).
     bool redo(int id=0) ;
+    /** Whether the next undo (or redo) of whoever acts goes through the log
+     * (docs/TransactionLog.md sec 30.10): someone has written since the
+     * step, so it is taken back as a transaction of its own, with a
+     * recompute of what it leaves to one. A caller holding a
+     * TransactionGuard lets go of it first: the guard defers the touches a
+     * recompute works from.
+     */
+    bool stepNeedsLog(bool undo) const;
+    /// Why the last undo() or redo() was refused, empty when it was not.
+    const std::string& undoRefusal() const;
     /// returns true if the document is in an Transaction phase, e.g. currently performing a redo/undo or rollback,
     /// or replaying transaction log rows (a branch switch, a crash recovery)
     bool isPerformingTransaction() const;
@@ -1283,6 +1293,17 @@ protected:
     /// @return 0 if succeeded, 1 if failed, -1 if aborted by user.
     int _recomputeFeature(DocumentObject* Feat);
     void _clearRedos();
+    /// Sec 30.10: the redo steps of whoever acts, which a new step of
+    /// theirs ends; every one when the log is off.
+    void _clearMyRedos();
+    /// The newest undo (or redo) step of whoever acts, null for none.
+    Transaction* _myStep(bool undo) const;
+    /// Whether `step` can be applied as it is: the document is in the state
+    /// the step left.
+    bool _atState(const Transaction* step) const;
+    /// Take `step` back through the log as a transaction of its own; false
+    /// when refused. It leaves a cold step on the other stack.
+    bool _revertStep(bool undo, Transaction* step);
     /// What a cold step reverts (docs/TransactionLog.md sec 24.3), read
     /// from the log and checked against the document before anything moves.
     struct ColdRevert;

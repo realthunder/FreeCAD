@@ -159,6 +159,9 @@ Transaction* Transaction::coldCopy(const Transaction& t)
     stub->Implicit = t.Implicit;
     stub->Origin = t.Origin;
     stub->LogSeq = t.LogSeq;
+    stub->Author = t.Author;   // the step's, not whoever trims the window
+    stub->StateBefore = t.StateBefore;
+    stub->StateAfter = t.StateAfter;
     stub->Cold = true;
     return stub;
 }

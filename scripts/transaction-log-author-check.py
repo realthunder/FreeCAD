@@ -82,6 +82,16 @@ def set_length(ws, doc, value, rid):
     return off(talk)
 
 
+def step(ws, doc, op, rid):
+    """A client's undo or redo: its own steps (sec 30.10)."""
+
+    def talk():
+        raw = ws.op(json.dumps({"id": rid, "op": op, "doc": doc}, separators=(",", ":")))
+        return json.loads(raw.decode("utf-8")) if raw else None
+
+    return off(talk)
+
+
 def rows(doc, kind=None):
     return [t for t in doc.getTransactionLog() if kind is None or t["kind"] == kind]
 
@@ -189,6 +199,41 @@ def run():
         recomputes = [t["author"] for t in rows(doc, "recompute")]
         check("the recompute an edit ran is its author's %r" % (recomputes,),
               "alice@example.com" in recomputes and "bob" in recomputes)
+
+        # Undo is each author's own (S.c). Alice's edit of the length has
+        # bob's on top of it: refused, saying what changed (P2).
+        reply = step(alice, doc.Name, "undo", 21)
+        check("alice's undo over bob's write is refused %r" % (reply,),
+              bool(reply) and reply.get("ok") is False and reply.get("code") == "Refused"
+              and "changed since" in reply.get("message", "")
+              and doc.Box.Length.Value == 22.0)
+        # Bob's is not the last thing written -- the host's edit is -- and
+        # is undone all the same; the stacks told back are his.
+        reply = step(bob, doc.Name, "undo", 22)
+        check("bob undoes his own past the host's edit %r" % (reply,),
+              bool(reply) and reply.get("ok") is True and reply.get("undos") == []
+              and reply.get("redos") == ["Edit property"]
+              and doc.Box.Length.Value == 21.0 and doc.Box.Width.Value == 5.0
+              and abs(doc.Box.Shape.Volume - 21.0 * 5 * 10) < 1e-6)
+        reply = step(alice, doc.Name, "undo", 23)
+        check("alice undoes hers now %r" % (reply,),
+              bool(reply) and reply.get("ok") is True and reply.get("undos") == []
+              and reply.get("redos") == ["Edit property"] and doc.Box.Length.Value == 10.0)
+        check("the desktop's steps are the desktop's %r" % (doc.UndoNames,),
+              doc.UndoNames == ["host edit", "host box"] and doc.RedoNames == [])
+        undone = [(t["kind"], t["author"]) for t in rows(doc) if t["kind"] in ("undo", "redo")]
+        check("the undo rows are the undoers' %r" % (undone,),
+              undone == [("undo", "bob"), ("undo", "alice@example.com")])
+        reply = step(alice, doc.Name, "redo", 24)
+        check("alice redoes %r" % (reply,), bool(reply) and reply.get("ok") is True
+              and doc.Box.Length.Value == 21.0)
+        reply = step(bob, doc.Name, "redo", 25)
+        check("bob redoes on what she put back %r" % (reply,),
+              bool(reply) and reply.get("ok") is True and doc.Box.Length.Value == 22.0
+              and abs(doc.Box.Shape.Volume - 22.0 * 5 * 10) < 1e-6)
+        reply = step(carol, doc.Name, "undo", 26)
+        check("carol may not undo %r" % (reply,),
+              bool(reply) and reply.get("ok") is False and reply.get("code") == "ViewOnly")
 
         # A view-only connection writes nothing.
         count = len(rows(doc))

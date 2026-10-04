@@ -1,11 +1,13 @@
 """Undo and redo are two control ops on the served document.
 
-docs/ThinClient.md 8.11 order item 2, the undo half. A served document is
-one session with N views and one undo stack, so a client's undo is the
-desktop's Ctrl+Z: Gui::Document::undo, the room's selection cleared as
-it is there, and -- because a client's view-mode selection is its own
-instance (item 1) -- every client's instance cleared too, and each told
-through its selection push.
+docs/ThinClient.md 8.11 order item 2, the undo half, as
+docs/TransactionLog.md sec 30.10 leaves it. A served document is one
+session with N views, and each author undoes its own steps: a client's
+undo takes the client's newest step, not the desktop's. It is still
+Gui::Document::undo, the room's selection cleared as it is there, and --
+because a client's view-mode selection is its own instance (item 1) --
+every client's instance cleared too, and each told through its selection
+push.
 
 What is asserted, over a real socket against a headless serve:
 
@@ -13,10 +15,13 @@ What is asserted, over a real socket against a headless serve:
     baseline: it holds a selection to lose);
   - `steps` below one is refused (BadRequest), a redo with nothing to
     redo is refused (NothingToRedo), neither touching the document;
-  - `undo` answers ok with the stacks after it, by transaction name:
-    the undone step now under redos, nothing under undos;
+  - the client's own edit is a step of its own, and the desktop's step
+    is not on the client's stack: `undo` answers ok with the client's
+    stacks after it, by transaction name -- its step now under redos,
+    nothing under undos;
   - the client is told its selection is empty, and on the GUI thread
-    the box's Length is back to what it was and the room is empty;
+    the box's Length is back to what it was, the room is empty and the
+    desktop's own stack is as it was;
   - `redo` answers ok with the step back under undos, and the Length is
     forward again;
   - an undo deeper than the stack is refused (NothingToUndo).
@@ -98,6 +103,7 @@ class Client(threading.Thread):
         self.nothing_redo = None
         self.undo_reply = None
         self.told_clear = None
+        self.edit_reply = None
         self.redo_reply = None
         self.too_many = None
 
@@ -117,6 +123,12 @@ class Client(threading.Thread):
             return
         ws.next_binary(0.5)
         ws.send(2, camera_frame())
+        ws.drain(0.5)
+
+        # The step under test is this client's own (sec 30.10).
+        self.edit_reply = ws.op('{"id":1,"op":"setProperty","doc":"%s","obj":"%s",'
+                                '"target":"object","name":"Length","value":20.0}'
+                                % (DOC, OBJ))
         ws.drain(0.5)
 
         # The baseline: a selection of this client's own to lose.
@@ -189,13 +201,13 @@ def build():
         # implicit step of its own (docs/TransactionLog.md sec 24.13); it is
         # not what is under test.
         doc.clearUndos()
-        # The one step on the stack, recomputed inside the transaction as
-        # a command's would be, so the shape travels with the length.
-        doc.openTransaction("Stretch")
-        box.Length = 20
+        # The desktop's one step, recomputed inside the transaction as a
+        # command's would be. It is the desktop's: no client undoes it.
+        doc.openTransaction("Widen")
+        box.Width = 12
         doc.recompute()
         doc.commitTransaction()
-        check("the transaction is on the stack", list(doc.UndoNames) == ["Stretch"],
+        check("the transaction is on the stack", list(doc.UndoNames) == ["Widen"],
               list(doc.UndoNames))
 
         port = free_port()
@@ -256,22 +268,24 @@ def verify():
         check("a redo with nothing to redo is refused", nothing.get("ok") is False
               and nothing.get("code") == "NothingToRedo", nothing)
 
+        edit = reply_of(client.edit_reply)
+        check("the client's edit is answered ok", edit.get("ok") is True, edit)
         undo = reply_of(client.undo_reply)
-        check("the undo is answered ok with the stacks after it",
+        check("the undo is answered ok with the client's stacks after it",
               undo.get("ok") is True and undo.get("undos") == []
-              and undo.get("redos") == ["Stretch"], undo)
+              and undo.get("redos") == ["Edit property"], undo)
         check("the client is told its selection is empty",
               client.told_clear is not None and items_of(client.told_clear) == [],
               items_of(client.told_clear) if client.told_clear else None)
         undone = state["samples"].get("undone", {})
         check("the length is back after the undo", undone.get("length") == 10.0, undone)
         check("the room is empty after the undo", undone.get("room") == 0, undone)
-        check("the document's stacks agree with the reply",
-              undone.get("undos") == [] and undone.get("redos") == ["Stretch"], undone)
+        check("the desktop's stacks are the desktop's own",
+              undone.get("undos") == ["Widen"] and undone.get("redos") == [], undone)
 
         redo = reply_of(client.redo_reply)
         check("the redo is answered ok with the step back under undos",
-              redo.get("ok") is True and redo.get("undos") == ["Stretch"]
+              redo.get("ok") is True and redo.get("undos") == ["Edit property"]
               and redo.get("redos") == [], redo)
         redone = state["samples"].get("redone", {})
         check("the length is forward again after the redo",

@@ -58,6 +58,7 @@ recompute path. Also, it enables more complicated dependencies beyond trees.
 #include "PreCompiled.h"
 
 #ifndef _PreComp_
+# include <optional>
 # include <bitset>
 # include <set>
 # include <sstream>
@@ -104,6 +105,7 @@ recompute path. Also, it enables more complicated dependencies beyond trees.
 #include <Base/UnitsApi.h>
 
 #include "Document.h"
+#include "Actor.h"
 #include "ElementNamingUtils.h"
 #include "private/DocumentP.h"
 #include "Application.h"
@@ -773,6 +775,7 @@ bool Document::_prepareRevert(int64_t seq, const std::string& name, ColdRevert& 
             FC_LOG("cold " << name << ": " << views << " view op(s) not reverted");
     }
     if (!why.str().empty()) {
+        d->undoRefusal = why.str();
         if (revert.quiet)
             FC_LOG("Cannot revert '" << name << "' of " << getName() << " from the log:"
                    << why.str());
@@ -961,7 +964,7 @@ bool Document::undoLogged(int64_t seq)
     if (!_prepareRevert(seq, name, revert))
         return false;
 
-    _clearRedos();
+    _clearMyRedos();
     d->activeUndoTransaction = new Transaction(0);
     d->activeUndoTransaction->Name = "Undo " + name;
     d->activeUndoTransaction->LogKind = "undo";
@@ -972,29 +975,174 @@ bool Document::undoLogged(int64_t seq)
     return true;
 }
 
+namespace
+{
+
+bool isDesktop(const Actor* actor)
+{
+    return !actor || actor->kind == Actor::Local;
+}
+
+/// Sec 30.10 item 1: one user, whichever login -- by kind and name; no
+/// actor is the desktop user.
+bool sameUser(const Actor* a, const Actor* b)
+{
+    if (isDesktop(a) || isDesktop(b))
+        return isDesktop(a) && isDesktop(b);
+    return a->kind == b->kind && a->name == b->name;
+}
+
+}  // namespace
+
+Transaction* Document::_myStep(bool undo) const
+{
+    const auto& stack = undo ? mUndoTransactions : mRedoTransactions;
+    // With no log there are no authors: one stack, its back (item 7).
+    if (!d->transactionLog)
+        return stack.empty() ? nullptr : stack.back();
+    const auto actor = ActorScope::current();
+    for (auto it = stack.rbegin(); it != stack.rend(); ++it) {
+        if (sameUser((*it)->Author.get(), actor.get()))
+            return *it;
+    }
+    return nullptr;
+}
+
+bool Document::_atState(const Transaction* step) const
+{
+    return !d->transactionLog || step->StateAfter == d->stateToken;
+}
+
+bool Document::stepNeedsLog(bool undo) const
+{
+    if (!d->iUndoMode)
+        return false;
+    const Transaction* step = _myStep(undo);
+    // An open transaction is committed first. The actor's own is then the
+    // step, where the document stands; another's is a write past the
+    // actor's newest.
+    if (d->activeUndoTransaction) {
+        if (!d->transactionLog)
+            return false;
+        if (undo && sameUser(d->activeUndoTransaction->Author.get(),
+                             ActorScope::current().get()))
+            return false;
+        return step != nullptr;
+    }
+    return step && !_atState(step);
+}
+
+const std::string& Document::undoRefusal() const
+{
+    return d->undoRefusal;
+}
+
+bool Document::_revertStep(bool undo, Transaction* step)
+{
+    // docs/TransactionLog.md sec 30.10 item 3: someone has written since
+    // the step, so its copies are of a state the document is no longer in.
+    // It is taken back as a selective undo is (sec 24.4) -- the values read
+    // from the log, refused when what the step left has changed since --
+    // in a transaction of its own, so the recompute of what the revert
+    // leaves to one is in the same row.
+    auto log = getTransactionLog();
+    auto& from = undo ? mUndoTransactions : mRedoTransactions;
+    auto& fromMap = undo ? mUndoMap : mRedoMap;
+    auto& to = undo ? mRedoTransactions : mUndoTransactions;
+    auto& toMap = undo ? mRedoMap : mUndoMap;
+    if (!log || isPerformingTransaction() || d->committing) {
+        d->undoRefusal = "a transaction is being applied";
+        return false;
+    }
+    log->resolvePending();
+    ColdRevert revert;
+    revert.selective = true;
+    if (!_prepareRevert(step->LogSeq, step->Name, revert))
+        return false;
+
+    auto inverse = new Transaction(step->getID());
+    inverse->Name = step->Name;
+    d->activeUndoTransaction = inverse;
+    _applyRevert(revert);
+    if (!revert.touched.empty()) {
+        if (Transaction::isApplying())
+            FC_WARN((undo ? "undo" : "redo") << " of '" << step->Name << "' in " << getName()
+                    << " left objects to recompute");
+        else
+            recompute();
+    }
+    inverse->StateBefore = d->stateToken;
+    d->stateToken = ++d->stateCounter;
+    inverse->StateAfter = d->stateToken;
+    logInverse(*step, undo ? "undo" : "redo", &revert);
+    // What waited on the row: the recompute's record (sec 27.59).
+    auto after = std::move(inverse->AfterLogRow);
+    for (auto& write : after)
+        write(*log);
+    d->activeUndoTransaction = nullptr;
+
+    // The step it leaves is cold: what the revert made and removed is not
+    // what the copies of any step name, so nothing is applied from copies
+    // across it.
+    Transaction* stub = Transaction::coldCopy(*inverse);
+    _deleteTransaction(inverse);
+    toMap[stub->getID()] = stub;
+    to.push_back(stub);
+    fromMap.erase(step->getID());
+    from.remove(step);
+    _deleteTransaction(step);
+
+    if (undo)
+        signalUndo(*this);
+    else
+        signalRedo(*this);
+    if (!Transaction::isApplying()) {
+        if (undo)
+            GetApplication().signalUndo();
+        else
+            GetApplication().signalRedo();
+    }
+    return true;
+}
+
 bool Document::undo(int id)
 {
     OperationScope scope;   // sec 27.38
     if (d->iUndoMode) {
+        d->undoRefusal.clear();
         if(id) {
             auto it = mUndoMap.find(id);
             if(it == mUndoMap.end())
                 return false;
             if(it->second != d->activeUndoTransaction) {
-                TransactionGuard guard(TransactionGuard::Undo);
-                while(!mUndoTransactions.empty() && mUndoTransactions.back()!=it->second) {
+                // The actor's steps down to that one (sec 30.10): another's
+                // on the way are not in its stack.
+                std::optional<TransactionGuard> guard;
+                while (true) {
+                    Transaction* top = _myStep(true);
+                    if (!top || top == it->second)
+                        break;
+                    // One guard for the run, let go of around a step that
+                    // goes through the log: it recomputes, and a guard's
+                    // deferred touches would starve that.
+                    if (!_atState(top))
+                        guard.reset();
+                    else if (!guard)
+                        guard.emplace(TransactionGuard::Undo);
                     if (!undo(0))
-                        return false;   // a cold step refused (sec 24.3)
+                        return false;   // a step refused (sec 24.3, 30.10)
                 }
             }
         }
 
         if (d->activeUndoTransaction)
             _commitTransaction(true);
-        if (mUndoTransactions.empty())
+        Transaction* step = _myStep(true);
+        if (!step)
             return false;
+        if (!_atState(step))
+            return _revertStep(true, step);
 
-        Transaction* step = mUndoTransactions.back();
         ColdRevert cold;
         if (step->Cold && !_prepareRevert(step->LogSeq, step->Name, cold))
             return false;
@@ -1007,6 +1155,11 @@ bool Document::undo(int id)
         // redo
         d->activeUndoTransaction = new Transaction(step->getID());
         d->activeUndoTransaction->Name = step->Name;
+        // Back in the state the step was made in; the redo step is applied
+        // from there.
+        d->activeUndoTransaction->StateBefore = step->StateAfter;
+        d->activeUndoTransaction->StateAfter = step->StateBefore;
+        d->stateToken = step->StateBefore ? step->StateBefore : ++d->stateCounter;
 
         Base::FlagToggler<bool> flag(d->undoing);
         // applying the undo
@@ -1024,8 +1177,9 @@ bool Document::undo(int id)
         d->activeUndoTransaction = nullptr;
 
         mUndoMap.erase(step->getID());
+        // The actor's newest, which another's steps may lie above.
+        mUndoTransactions.remove(step);
         delete step;
-        mUndoTransactions.pop_back();
         return true;
     }
 
@@ -1036,26 +1190,34 @@ bool Document::redo(int id)
 {
     OperationScope scope;   // sec 27.38
     if (d->iUndoMode) {
+        d->undoRefusal.clear();
         if(id) {
             auto it = mRedoMap.find(id);
             if(it == mRedoMap.end())
                 return false;
-            {
-                TransactionGuard guard(TransactionGuard::Redo);
-                while(mRedoTransactions.size() && mRedoTransactions.back()!=it->second) {
-                    if (!redo(0))
-                        return false;   // a cold step refused (sec 24.3)
-                }
+            std::optional<TransactionGuard> guard;
+            while (true) {
+                Transaction* top = _myStep(false);
+                if (!top || top == it->second)
+                    break;
+                if (!_atState(top))
+                    guard.reset();
+                else if (!guard)
+                    guard.emplace(TransactionGuard::Redo);
+                if (!redo(0))
+                    return false;   // a step refused (sec 24.3, 30.10)
             }
         }
 
         if (d->activeUndoTransaction)
             _commitTransaction(true);
 
-        if (mRedoTransactions.empty())
+        Transaction* step = _myStep(false);
+        if (!step)
             return false;
+        if (!_atState(step))
+            return _revertStep(false, step);
 
-        Transaction* step = mRedoTransactions.back();
         ColdRevert cold;
         if (step->Cold && !_prepareRevert(step->LogSeq, step->Name, cold))
             return false;
@@ -1068,6 +1230,9 @@ bool Document::redo(int id)
         // undo
         d->activeUndoTransaction = new Transaction(step->getID());
         d->activeUndoTransaction->Name = step->Name;
+        d->activeUndoTransaction->StateBefore = step->StateAfter;
+        d->activeUndoTransaction->StateAfter = step->StateBefore;
+        d->stateToken = step->StateBefore ? step->StateBefore : ++d->stateCounter;
 
         // do the redo
         Base::FlagToggler<bool> flag(d->undoing);
@@ -1084,8 +1249,8 @@ bool Document::redo(int id)
         d->activeUndoTransaction = nullptr;
 
         mRedoMap.erase(step->getID());
+        mRedoTransactions.remove(step);
         delete step;
-        mRedoTransactions.pop_back();
         if (getTransactionLog())
             _trimHotWindow(mUndoTransactions, mUndoMap);
         return true;
@@ -1195,21 +1360,44 @@ bool Document::isReplaying() const
     return d->replaying || d->checkingOut;
 }
 
+namespace
+{
+
+/// Sec 30.10 item 2: the steps of `stack` that are the actor's, newest
+/// first -- every one when the log is off, which keeps no authors. An open
+/// transaction is the newest undo step of whoever opened it.
+std::vector<const Transaction*> stepsOf(const std::list<Transaction*>& stack,
+                                        const Transaction* open, bool authors)
+{
+    std::vector<const Transaction*> mine;
+    const auto actor = ActorScope::current();
+    auto take = [&](const Transaction* step) {
+        if (!authors || sameUser(step->Author.get(), actor.get()))
+            mine.push_back(step);
+    };
+    if (open)
+        take(open);
+    for (auto it = stack.rbegin(); it != stack.rend(); ++it)
+        take(*it);
+    return mine;
+}
+
+}  // namespace
+
 std::vector<std::string> Document::getAvailableUndoNames() const
 {
     std::vector<std::string> vList;
-    if (d->activeUndoTransaction)
-        vList.push_back(d->activeUndoTransaction->Name);
-    for (std::list<Transaction*>::const_reverse_iterator It=mUndoTransactions.rbegin();It!=mUndoTransactions.rend();++It)
-        vList.push_back((**It).Name);
+    for (auto step : stepsOf(mUndoTransactions, d->activeUndoTransaction,
+                             d->transactionLog != nullptr))
+        vList.push_back(step->Name);
     return vList;
 }
 
 std::vector<std::string> Document::getAvailableRedoNames() const
 {
     std::vector<std::string> vList;
-    for (std::list<Transaction*>::const_reverse_iterator It=mRedoTransactions.rbegin();It!=mRedoTransactions.rend();++It)
-        vList.push_back((**It).Name);
+    for (auto step : stepsOf(mRedoTransactions, nullptr, d->transactionLog != nullptr))
+        vList.push_back(step->Name);
     return vList;
 }
 
@@ -1244,7 +1432,7 @@ int Document::_openTransaction(const char* name, int id, bool implicit)
             THROWM(Base::RuntimeError, "invalid transaction id")
         if (d->activeUndoTransaction)
             _commitTransaction(true);
-        _clearRedos();
+        _clearMyRedos();
 
         d->activeUndoTransaction = new Transaction(id);
         if (!name)
@@ -1425,6 +1613,30 @@ void Document::_clearRedos()
     }
 }
 
+void Document::_clearMyRedos()
+{
+    if (!d->transactionLog) {
+        _clearRedos();
+        return;
+    }
+    if(isPerformingTransaction() || d->committing) {
+        FC_ERR("Cannot clear redo while transacting");
+        return;
+    }
+    // Sec 30.10 item 5: a new step ends what its author could redo, and
+    // nobody else's. Newest first, as _clearRedos() goes.
+    const auto actor = ActorScope::current();
+    for (auto it = mRedoTransactions.end(); it != mRedoTransactions.begin();) {
+        --it;
+        Transaction* step = *it;
+        if (!sameUser(step->Author.get(), actor.get()))
+            continue;
+        mRedoMap.erase(step->getID());
+        it = mRedoTransactions.erase(it);
+        _deleteTransaction(step);
+    }
+}
+
 void Document::commitTransaction() {
     OperationScope scope;   // sec 27.38
     if(isPerformingTransaction() || d->committing) {
@@ -1484,6 +1696,12 @@ void Document::_commitTransaction(bool notify)
                        - d->lastVersionTime >= secs)
                 snapshotDue = true;
         }
+        // The state it was made in and the one it leaves (sec 30.10): a
+        // new one, unless it changed nothing.
+        d->activeUndoTransaction->StateBefore = d->stateToken;
+        if (!d->activeUndoTransaction->isEmpty())
+            d->stateToken = ++d->stateCounter;
+        d->activeUndoTransaction->StateAfter = d->stateToken;
         if (d->iUndoMode) {
             mUndoTransactions.push_back(d->activeUndoTransaction);
         }
@@ -1557,24 +1775,17 @@ int Document::getBookedTransactionID() const
 }
 
 int Document::getTransactionID(bool undo, unsigned pos) const {
-    if(undo) {
-        if(d->activeUndoTransaction) {
-            if(pos == 0)
-                return d->activeUndoTransaction->getID();
-            --pos;
-        }
-        if(pos>=mUndoTransactions.size())
-            return 0;
-        auto rit = mUndoTransactions.rbegin();
-        for(;pos;++rit,--pos)
-            continue;
-        return (*rit)->getID();
+    // The open transaction is the document's one, whoever opened it: the
+    // application asks for it here to close it, from wherever that happens.
+    if (undo && d->activeUndoTransaction) {
+        if (pos == 0)
+            return d->activeUndoTransaction->getID();
+        --pos;
     }
-    if(pos>=mRedoTransactions.size())
-        return 0;
-    auto rit = mRedoTransactions.rbegin();
-    for(;pos;++rit,--pos){}
-    return (*rit)->getID();
+    // Then the actor's own steps (sec 30.10), the pos-th from the newest.
+    const auto steps = stepsOf(undo ? mUndoTransactions : mRedoTransactions, nullptr,
+                               d->transactionLog != nullptr);
+    return pos < steps.size() ? steps[pos]->getID() : 0;
 }
 
 bool Document::isTransactionEmpty() const
@@ -1655,41 +1866,31 @@ void Document::clearUndos()
 
 int Document::getAvailableUndos(int id) const
 {
+    // The actor's own steps (sec 30.10): how many, or how many down to
+    // and with the one of `id` -- 0 when that one is not theirs.
+    const auto steps = stepsOf(mUndoTransactions, d->activeUndoTransaction,
+                               d->transactionLog != nullptr);
     if(id) {
-        auto it = mUndoMap.find(id);
-        if(it == mUndoMap.end())
-            return 0;
-        int i = 0;
-        if(d->activeUndoTransaction) {
-            ++i;
-            if(d->activeUndoTransaction->getID()==id)
-                return i;
+        for (size_t i = 0; i < steps.size(); ++i) {
+            if (steps[i]->getID() == id)
+                return static_cast<int>(i + 1);
         }
-        auto rit = mUndoTransactions.rbegin();
-        for(;rit!=mUndoTransactions.rend()&&*rit!=it->second;++rit)
-            ++i;
-        assert(rit!=mUndoTransactions.rend());
-        return i+1;
+        return 0;
     }
-    if (d->activeUndoTransaction)
-        return static_cast<int>(mUndoTransactions.size() + 1);
-    else
-        return static_cast<int>(mUndoTransactions.size());
+    return static_cast<int>(steps.size());
 }
 
 int Document::getAvailableRedos(int id) const
 {
+    const auto steps = stepsOf(mRedoTransactions, nullptr, d->transactionLog != nullptr);
     if(id) {
-        auto it = mRedoMap.find(id);
-        if(it == mRedoMap.end())
-            return 0;
-        int i = 0;
-        for(auto rit=mRedoTransactions.rbegin();*rit!=it->second;++rit)
-            ++i;
-        assert(i<(int)mRedoTransactions.size());
-        return i+1;
+        for (size_t i = 0; i < steps.size(); ++i) {
+            if (steps[i]->getID() == id)
+                return static_cast<int>(i + 1);
+        }
+        return 0;
     }
-    return static_cast<int>(mRedoTransactions.size());
+    return static_cast<int>(steps.size());
 }
 
 void Document::setUndoMode(int iMode)
@@ -5740,47 +5941,97 @@ size_t Document::_replayLog(int64_t after, int64_t& last, int64_t head, bool* wh
 void Document::_rebuildUndoFromLog(int64_t after)
 {
     // The stacks the crashed session had, from its rows (sec 25.2): a step
-    // pushes and clears redo; an `undo` row naming the top moves it to redo,
-    // a `redo` row naming the redo top moves it back -- each under the row
-    // that did it, which is what a cold undo or redo reverts. A selective
-    // undo (an `undo` naming a row further down) is a step of its own.
+    // pushes and ends what its author could redo; an `undo` row naming its
+    // author's newest step moves that to redo, a `redo` row naming the
+    // author's newest redo step moves it back -- each under the row that did
+    // it, which is what a cold undo or redo reverts, and under the author of
+    // its row (sec 30.10). An undo asked of a row by its number (sec 24.4),
+    // named `Undo <name>`, is a step of its own.
     if (!d->iUndoMode)
         return;
     TransactionLog* log = getTransactionLog();
     auto& store = log->store();
+    // A row's author is its session's user; the desktop's is no actor.
+    std::map<int64_t, LogUser> users;
+    for (auto& u : store.users())
+        users[u.id] = u;
+    std::map<int64_t, std::shared_ptr<const Actor>> authors;
+    for (const auto& s : store.sessions()) {
+        Actor actor;
+        const LogUser& user = users[s.user];
+        if (!Actor::kindFromName(user.kind, actor.kind) || actor.kind == Actor::Local)
+            continue;
+        actor.name = user.name;
+        actor.access = s.access;
+        authors[s.id] = std::make_shared<const Actor>(std::move(actor));
+    }
     struct Step
     {
         int64_t seq;
         std::string name;
         bool implicit;
+        std::shared_ptr<const Actor> author;
+        int64_t before;
+        int64_t after;
     };
     std::vector<Step> undo;
     std::vector<Step> redo;
+    // The states as the rows went through them: a step applied where it
+    // left the document gives back the state it was made in, anything else
+    // makes a new one.
+    int64_t state = ++d->stateCounter;
+    auto newestOf = [](std::vector<Step>& stack, const Actor* author) {
+        for (auto it = stack.rbegin(); it != stack.rend(); ++it) {
+            if (sameUser(it->author.get(), author))
+                return std::prev(it.base());
+        }
+        return stack.end();
+    };
+    auto moved = [&](std::vector<Step>& from, std::vector<Step>& to, const LogTransaction& t,
+                     const std::shared_ptr<const Actor>& author) {
+        auto it = newestOf(from, author.get());
+        if (it == from.end() || it->seq != t.inverts || it->name != t.name)
+            return false;
+        Step s = *it;
+        from.erase(it);
+        const bool atState = s.after == state;
+        const int64_t madeIn = s.before;
+        s.seq = t.seq;
+        s.author = author;
+        s.before = atState ? s.after : state;
+        state = atState ? madeIn : ++d->stateCounter;
+        s.after = state;
+        to.push_back(std::move(s));
+        return true;
+    };
     for (const auto& t : store.chain(log->head(), after + 1)) {
-        if (t.kind == "undo" && !undo.empty() && undo.back().seq == t.inverts) {
-            Step s = undo.back();
-            undo.pop_back();
-            s.seq = t.seq;
-            redo.push_back(s);
+        auto found = authors.find(t.session);
+        const std::shared_ptr<const Actor> author =
+            found == authors.end() ? nullptr : found->second;
+        if (t.kind == "undo" && moved(undo, redo, t, author))
             continue;
-        }
-        if (t.kind == "redo" && !redo.empty() && redo.back().seq == t.inverts) {
-            Step s = redo.back();
-            redo.pop_back();
-            s.seq = t.seq;
-            undo.push_back(s);
+        if (t.kind == "redo" && moved(redo, undo, t, author))
             continue;
-        }
         if (store.ops(t.seq).empty())
-            continue;   // a record: save, snapshot, recompute, session
-        undo.push_back({t.seq, t.name, t.kind == "implicit"});
-        redo.clear();
+            continue;   // a record: save, snapshot, recompute, login
+        const int64_t before = state;
+        state = ++d->stateCounter;
+        undo.push_back({t.seq, t.name, t.kind == "implicit", author, before, state});
+        redo.erase(std::remove_if(redo.begin(), redo.end(),
+                                  [&](const Step& s) {
+                                      return sameUser(s.author.get(), author.get());
+                                  }),
+                   redo.end());
     }
+    d->stateToken = state;
     auto stub = [](const Step& s) {
         auto t = new Transaction(0);
         t->Name = s.name;
         t->Implicit = s.implicit;
         t->LogSeq = s.seq;
+        t->Author = s.author;
+        t->StateBefore = s.before;
+        t->StateAfter = s.after;
         t->Cold = true;
         return t;
     };
@@ -5817,7 +6068,7 @@ bool Document::restoreVersion(int64_t num)
     if (!log->store().getVersion(num, version))
         THROWM(Base::RuntimeError, "no such version");
 
-    _clearRedos();
+    _clearMyRedos();
     d->activeUndoTransaction = new Transaction(0);
     d->activeUndoTransaction->Name = "Restore version " + std::to_string(num)
         + (version.name.empty() ? "" : " " + version.name);
@@ -8360,7 +8611,7 @@ Document::MergeResult Document::mergeBranch(const std::string& branch,
             failedBefore.insert(obj->getNameInDocument());
     }
 
-    _clearRedos();
+    _clearMyRedos();
     d->activeUndoTransaction = new Transaction(0);
     d->activeUndoTransaction->Name = "Merge " + branch;
     d->activeUndoTransaction->LogKind = "merge";

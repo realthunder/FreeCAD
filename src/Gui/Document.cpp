@@ -25,6 +25,7 @@
 
 #ifndef _PreComp_
 # include <mutex>
+# include <optional>
 # include <QApplication>
 # include <QCheckBox>
 # include <QFileInfo>
@@ -4916,13 +4917,21 @@ void Document::undo(int iSteps)
     Gui::Selection().clearCompleteSelection();
 
     {
-        App::TransactionGuard guard(App::TransactionGuard::Undo);
+        // One guard for the run, let go of around a step that goes through
+        // the log (docs/TransactionLog.md sec 30.10): that one recomputes,
+        // and the guard defers the touches a recompute works from.
+        std::optional<App::TransactionGuard> guard(std::in_place, App::TransactionGuard::Undo);
 
         if(!checkTransactionID(true,iSteps))
             return;
 
         for (int i=0;i<iSteps;i++) {
-            getDocument()->undo();
+            if (getDocument()->stepNeedsLog(true))
+                guard.reset();
+            else if (!guard)
+                guard.emplace(App::TransactionGuard::Undo);
+            if (!getDocument()->undo())
+                break;   // nothing left, or refused: the document says why
         }
     }
 }
@@ -4935,13 +4944,18 @@ void Document::redo(int iSteps)
     Gui::Selection().clearCompleteSelection();
 
     {
-        App::TransactionGuard guard(App::TransactionGuard::Redo);
+        std::optional<App::TransactionGuard> guard(std::in_place, App::TransactionGuard::Redo);
 
         if(!checkTransactionID(false,iSteps))
             return;
 
         for (int i=0;i<iSteps;i++) {
-            getDocument()->redo();
+            if (getDocument()->stepNeedsLog(false))
+                guard.reset();
+            else if (!guard)
+                guard.emplace(App::TransactionGuard::Redo);
+            if (!getDocument()->redo())
+                break;   // nothing left, or refused: the document says why
         }
     }
 

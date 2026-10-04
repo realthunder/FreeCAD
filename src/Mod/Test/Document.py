@@ -5676,8 +5676,9 @@ class TransactionBranchCases(unittest.TestCase):
             ("mine again", "host", "local"),
         ]
         self.assertEqual(authors(doc), expected)
-        # A login is not a step.
-        self.assertEqual(doc.UndoNames, ["mine again", "hers", "mine"])
+        # A login is not a step, and the desktop's steps are its own (sec
+        # 30.10).
+        self.assertEqual(doc.UndoNames, ["mine again", "mine"])
         self.assertTrue(doc.transactionLogout("declared", "carol", login=8))
         self.assertFalse(doc.transactionLogout("declared", "carol", login=8))
         sessions = {s["name"]: s for s in doc.getTransactionSessions()}
@@ -5709,3 +5710,71 @@ class TransactionBranchCases(unittest.TestCase):
         hers = [s for s in doc.getTransactionSessions() if s["name"] == "alice@example.com"]
         self.assertEqual(len(hers), 2)
         self.assertEqual({s["user"] for s in hers}, {alice})
+
+    def testEachAuthorUndoesItsOwnSteps(self):
+        # Sec 30.3 S.c, 30.10: an author's undo takes its own newest step
+        # though another has written since. It then goes through the log,
+        # in one row that holds the recompute of what it changed, and the
+        # redo that follows it with nothing written between restores the
+        # shapes from that row.
+        import math
+
+        doc = self.track(FreeCAD.newDocument("Undoers"))
+        doc.UndoMode = 1
+        doc.openTransaction("create")
+        box = doc.addObject("Part::Box", "Box")
+        cyl = doc.addObject("Part::Cylinder", "Cyl")
+        doc.recompute()
+        doc.commitTransaction()
+
+        def act(name, kind, login, fn):
+            doc.pushTransactionActor(kind, name, login=login)
+            try:
+                return fn()
+            finally:
+                doc.popTransactionActor()
+
+        def edit(what, change):
+            doc.openTransaction(what)
+            change()
+            doc.recompute()
+            doc.commitTransaction()
+
+        act("alice", "verified", 1, lambda: edit("longer", lambda: setattr(box, "Length", 20)))
+        act("bob", "invited", 2, lambda: edit("wider", lambda: setattr(cyl, "Radius", 5)))
+        self.assertAlmostEqual(box.Shape.Volume, 2000.0)
+        self.assertEqual(doc.UndoNames, ["create"])
+        self.assertEqual(act("alice", "verified", 1, lambda: doc.UndoNames), ["longer"])
+        self.assertEqual(act("bob", "invited", 2, lambda: doc.UndoNames), ["wider"])
+
+        rows = len(doc.getTransactionLog())
+        act("alice", "verified", 1, doc.undo)
+        self.assertAlmostEqual(box.Length.Value, 10.0)
+        self.assertAlmostEqual(box.Shape.Volume, 1000.0)
+        self.assertNotIn("Touched", box.State)
+        self.assertAlmostEqual(cyl.Radius.Value, 5.0)
+        self.assertAlmostEqual(cyl.Shape.Volume, math.pi * 25 * 10, 4)
+        new = doc.getTransactionLog()[rows:]
+        self.assertEqual(
+            [(t["kind"], t["author"]) for t in new],
+            [("undo", "alice"), ("recompute", "alice")],
+        )
+        ops = doc.getTransactionOps(new[0]["seq"])
+        self.assertIn("Shape", [o["prop"] for o in ops if o["derived"]])
+        self.assertEqual(act("alice", "verified", 1, lambda: doc.RedoNames), ["longer"])
+        self.assertEqual(act("alice", "verified", 1, lambda: doc.UndoNames), [])
+        self.assertEqual(act("bob", "invited", 2, lambda: doc.RedoNames), [])
+
+        # Nothing written since her undo: the redo puts its row back as it
+        # was, shapes and all.
+        act("alice", "verified", 1, doc.redo)
+        self.assertAlmostEqual(box.Shape.Volume, 2000.0)
+        self.assertNotIn("Touched", box.State)
+
+        # His, with her undo and redo written since.
+        act("bob", "invited", 2, doc.undo)
+        self.assertAlmostEqual(cyl.Radius.Value, 2.0)
+        self.assertAlmostEqual(cyl.Shape.Volume, math.pi * 4 * 10, 4)
+        self.assertAlmostEqual(box.Shape.Volume, 2000.0)
+        self.assertEqual(act("bob", "invited", 2, lambda: doc.RedoNames), ["wider"])
+        self.assertEqual(doc.UndoNames, ["create"])

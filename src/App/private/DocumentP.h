@@ -168,6 +168,13 @@ struct DocumentP
     /// The log's last seq when the document was opened: undo reaches no
     /// further back on any branch (docs/TransactionLog.md sec 26.4).
     int64_t undoFloor {0};
+    /// The state the document's values are in, as its undo steps know it
+    /// (docs/TransactionLog.md sec 30.10): a new token for every change,
+    /// the old one back when a step is applied from its copies.
+    int64_t stateToken {1};
+    int64_t stateCounter {1};
+    /// Why the last undo or redo was refused, empty when it was not.
+    std::string undoRefusal;
     /// A saveCopy() without history: the copy embeds nothing, and the
     /// History property the live document had is put back afterwards.
     bool savingWithoutHistory {false};

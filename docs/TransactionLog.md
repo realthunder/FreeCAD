@@ -12325,3 +12325,146 @@ when they have all left.
 unfrozen; 6 expected failures; +1), ctest 868/868 (+3), the GUI checks RC
 15, BC 27, VC 18, PC 28, FC 16, VW 14, MC 28, the two-document check 24,
 the tree check 19 and the author check 21.
+
+### 30.10 S.c as built: each author undoes its own steps (2026-10-04)
+
+**What there was.** A document has one undo list and one redo list, each
+step a `Transaction`: hot, holding the copies to put back, or a cold stub
+naming its row (24.3). `undo()` took the back of the list, a new step
+cleared the redo list, and a client's `undo` took whatever was on top,
+whoever made it (30.2). Since S.b every step knows who opened it.
+
+**The rule.**
+
+1. **A step is its author's.** The two lists stay, one of each, in the
+   order the steps were made. An author's stack is the steps in them that
+   are its user's -- by kind and name, not by login, so they are there
+   again after a reconnect (U5); no actor is the desktop user.
+2. **Undo takes the actor's newest step**, wherever it is in the list,
+   and redo likewise. The names and the counts a caller reads are the
+   actor's (`getAvailableUndoNames`, `getAvailableUndos`, the redo pair).
+3. **From its copies only where the document stands as the step left
+   it.** Otherwise through the log, as a selective undo is (24.7): the
+   values read back by hash, refused -- saying what changed and by which
+   row -- when what the step left has changed since (P2).
+4. **The row is the undoer's**: kind `undo` / `redo`, `inverts` naming
+   the row taken back, as before.
+5. **A new step ends its author's redo steps only.** Another's stay, and
+   are judged by 3 when asked for.
+6. **Stubs made from rows** -- a switch, a recovery, the hot window --
+   take the author of their row.
+7. **With the log off** there are no authors: one stack, as before.
+
+**Where the document stands: a token, not a row.** Whether a step can be
+applied from its copies was first going to be read off the chain -- "its
+row is the last row with ops" -- and that is wrong one step later: after
+an undo the last row is the undo's, and the step below is still where the
+document stands. So the document keeps a token for the state its values
+are in (`DocumentP::stateToken`) and every step the two it lies between
+(`Transaction::StateBefore`, `StateAfter`):
+
+- a commit that changed something makes a new token; an empty one does
+  not;
+- a step applied from its copies gives the token of the state it was
+  made in back, and the step it leaves on the other stack has the two the
+  other way round;
+- a step taken through the log makes a new token;
+- a step is applied as it is exactly when its `StateAfter` is the
+  document's token (`Document::_atState`).
+
+No log is read to decide, and a hot undo waits for nothing, as before
+(27.63). With one author it gives what there was: every step is at state
+when its turn comes.
+
+**Through the log** (`Document::_revertStep`). A transaction of its own,
+not under the `undoing` flag: the revert applied (`_applyRevert`,
+selective, so derived values are left out and their owners touched),
+then a **recompute inside the same transaction** when the revert left
+any -- so the shapes it changes are derived ops of the one `undo` row,
+and no step of its own follows the undo, which would be its author's
+newest step and would end the redo it had just made (item 5). Logged as
+the hot path logs (`logInverse`), the recompute's record after the row
+(27.59).
+
+- **It leaves a cold step**, not the transaction it recorded. What a
+  revert removes and makes again are new instances, not the ones the
+  copies of older steps name; a cold step names a row and nothing else,
+  so nothing is ever applied from copies across a revert. Where the
+  document still stands as that row left it, the cold step is redone the
+  existing cold way, derived values from the row (24.3) -- measured in
+  the Python case: a redo straight after puts the shape back with no
+  recompute.
+- **Not under a `TransactionGuard`.** The guard defers every touch a
+  write makes until it ends, and a recompute works from those touches.
+  `Document::stepNeedsLog(undo)` says beforehand that the actor's next
+  step goes this way; `Gui::Document::undo` / `redo` and
+  `Document::undo(id)` keep their one guard for a run of steps and let go
+  of it only around such a step. Called under a guard all the same -- a
+  grouped undo reaching in from another document -- it leaves the
+  objects touched and says so.
+
+**The open transaction is the document's one.** An undo commits what is
+open first, as it did, whoever opened it; `getTransactionID(true, 0)` is
+the open transaction for everyone, because the application closes it
+through that -- found when a transaction opened under one actor and
+closed outside its scope was never committed. Another's open transaction
+is a write past the actor's newest step, and `stepNeedsLog` says so.
+
+**Refusals.** `Document::undoRefusal()` is why the last undo or redo did
+nothing, empty when it ran: the text 24.7 reports, of the form
+`<property> of id <n> was changed since, by row <seq>;`. A client's `undo` / `redo` op is
+answered `{"ok": false, "code": "Refused", "message": ...}` with it.
+
+**Stubs from rows** (`_rebuildUndoFromLog`). An author per session from
+the store's users; an `undo` row moves the newest step *of the row's
+author* to redo when it names it, and the same for `redo`; a new step
+ends its author's redo steps; the tokens go through the same moves, so
+the stub the document stands at is at state and the rest are not. One
+thing told apart by name: the panel's "undo this row" (24.7) also writes
+kind `undo` and stays a step of its own -- its row is named
+`Undo <name>`, a stack's undo carries the step's name.
+
+**What it does not do.**
+
+- **One edit slot** (8.11): an open transaction or edit session is
+  everyone's. Per client edit sessions are `docs/MultiViewEdit.md`.
+- **Grouped transactions across documents** are asked of the desktop
+  user, and a client's undo that would need the answer is refused as
+  before (`GroupedTransactions`).
+- **The stacks last as long as the document is open**, and are made
+  again from the rows after a switch or a recovery, authors with them.
+  U5 asked for the life of the server's process, which this covers while
+  the document is.
+
+**Tests.** Gtests `eachAuthorUndoesItsOwnSteps` (three authors; a step
+taken past another's through the log, the row the undoer's; redo past
+another's undo; a new step ending only its author's redo; the desktop's
+undo of a step both others have written over refused, nothing moved),
+`anUndoOverAnothersWriteIsRefused` (P2 with the row named; then the
+other's own undo, after which the first is undone and both redone from
+copies -- `stepNeedsLog` false at each) and
+`stepsRebuiltFromTheRowsKeepTheirAuthors` (a switch away and back with
+an undone step: names, authors and which stub is at state). The S.b case
+now undoes under a second login of the same user. Python
+`testEachAuthorUndoesItsOwnSteps`: two shapes, two authors -- the undo
+through the log is one `undo` row with the `Shape` among its derived ops
+and a recompute record after it, both the undoer's; the box is not left
+touched; the redo straight after restores the volume. The author Gui
+check has 8 more: over real sockets, an undo over another's write
+answered `Refused`, each client's undo and redo with the stacks told
+back its own, the desktop's steps the desktop's, and a view-only client
+refused.
+
+**What it changed that a test held.** `tests/gui/serve-undo-redo.py`
+(`docs/ThinClient.md` 8.11) had a client undo the desktop's step, which
+was the shared stack; that undo is now answered `NothingToUndo`. The
+test's client makes the step it undoes, and the desktop's own stays on
+the desktop's stack. The two S.b cases that read the desktop's undo
+names with a client's step among them read the desktop's alone.
+
+**Gates**, frozen and unfrozen each: Python 3002 OK (52 skipped frozen, 53
+unfrozen; 6 expected failures; +1), ctest 871/871 (+3) -- 870 at first,
+`GuiServeUndoRedo_tests_run` failing as above until its client undid its
+own step -- and the GUI checks RC 15, BC 27, VC 18, PC 28, FC 16, VW 14,
+MC 28, the two-document check 24, the tree check 19 and the author check
+29 (+8).

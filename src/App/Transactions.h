@@ -96,6 +96,14 @@ public:
     /// row written later -- at the event loop, by whoever closes it -- is
     /// still its author's.
     std::shared_ptr<const Actor> Author;
+    /** The state of the document's values this step was made in and the
+     * one it left (docs/TransactionLog.md sec 30.10): tokens of the
+     * document, a new one for every change. A step can be applied from its
+     * copies only while the document is in the state it left; an undo's
+     * redo step has the two the other way round. 0 is no known state.
+     */
+    int64_t StateBefore {0};
+    int64_t StateAfter {0};
     /** Log writes held until this transaction's own row is written
      * (docs/TransactionLog.md sec 27.59): a recompute run while it is open
      * comes after its writes, and its record must follow its row. Dropped

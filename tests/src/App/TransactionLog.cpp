@@ -4512,14 +4512,21 @@ TEST_F(TransactionLogTest, theAuthorOfARowIsItsSessionsUser)
     EXPECT_EQ(authorOf(log(), last.seq).id, his.id);
     EXPECT_EQ(authorOf(log(), rowNamed(log(), "his recompute")).id, his.id);
 
-    // An undo is a row of whoever undid.
+    // An undo is a row of whoever undid: the same user here, since a user
+    // undoes its own steps (sec 30.10), under the login it has now.
+    int64_t made = 0;
+    for (const auto& t : log().store().transactions()) {
+        if (t.name == "his recompute")
+            made = t.session;
+    }
     {
-        App::ActorScope scope(alice);
-        ASSERT_TRUE(doc()->undo());
+        App::ActorScope scope(actor(App::Actor::Invited, "bob", 10));
+        ASSERT_TRUE(doc()->undo()) << doc()->undoRefusal();
     }
     const auto undone = log().store().transactions().back();
     EXPECT_EQ(undone.kind, "undo");
-    EXPECT_EQ(authorOf(log(), undone.seq).id, hers.id);
+    EXPECT_EQ(authorOf(log(), undone.seq).id, his.id);
+    EXPECT_NE(undone.session, made);
 }
 
 // Sec 30.6 U2: a login is a row with no ops, written when a connection is
@@ -4626,4 +4633,219 @@ TEST_F(TransactionLogTest, aLoginDoesNotStandInAFastForwardsWay)
     EXPECT_TRUE(sawTheirs);
 
     App::GetApplication().closeDocument(otherName.c_str());
+}
+
+namespace
+{
+
+std::vector<std::string> undosOf(App::Document* doc, const App::Actor* who)
+{
+    if (!who)
+        return doc->getAvailableUndoNames();
+    App::ActorScope scope(*who);
+    return doc->getAvailableUndoNames();
+}
+
+std::vector<std::string> redosOf(App::Document* doc, const App::Actor* who)
+{
+    if (!who)
+        return doc->getAvailableRedoNames();
+    App::ActorScope scope(*who);
+    return doc->getAvailableRedoNames();
+}
+
+using Names = std::vector<std::string>;
+
+}  // namespace
+
+// Sec 30.3 S.c, 30.10: each author has the steps it made. An undo takes
+// the actor's newest step though another's lie above it -- through the log
+// then, as a row of the actor's -- and a new step ends only its author's
+// redo.
+TEST_F(TransactionLogTest, eachAuthorUndoesItsOwnSteps)
+{
+    edit(doc(), "create", [&]() {
+        make("A");
+        make("B");
+    });
+    const App::Actor alice = actor(App::Actor::Verified, "alice@example.com", 41);
+    const App::Actor bob = actor(App::Actor::Invited, "bob", 42);
+    {
+        App::ActorScope scope(alice);
+        edit(doc(), "hers", [&]() { featureOf(doc(), "A")->Integer.setValue(2); });
+    }
+    {
+        App::ActorScope scope(bob);
+        edit(doc(), "his", [&]() { featureOf(doc(), "B")->Integer.setValue(3); });
+    }
+    EXPECT_EQ(undosOf(doc(), nullptr), (Names {"create"}));
+    EXPECT_EQ(undosOf(doc(), &alice), (Names {"hers"}));
+    EXPECT_EQ(undosOf(doc(), &bob), (Names {"his"}));
+    EXPECT_EQ(doc()->getAvailableUndos(), 1);
+
+    // Hers is not the last thing written: through the log, and bob's stays.
+    const int64_t hers = rowNamed(log(), "hers");
+    {
+        App::ActorScope scope(alice);
+        EXPECT_TRUE(doc()->stepNeedsLog(true));
+        ASSERT_TRUE(doc()->undo()) << doc()->undoRefusal();
+    }
+    EXPECT_EQ(featureOf(doc(), "A")->Integer.getValue(), 4711);
+    EXPECT_EQ(featureOf(doc(), "B")->Integer.getValue(), 3);
+    auto last = log().store().transactions().back();
+    EXPECT_EQ(last.kind, "undo");
+    EXPECT_EQ(last.inverts, hers);
+    EXPECT_EQ(authorOf(log(), last.seq).name, "alice@example.com");
+    EXPECT_EQ(undosOf(doc(), &alice), (Names {}));
+    EXPECT_EQ(redosOf(doc(), &alice), (Names {"hers"}));
+    EXPECT_EQ(undosOf(doc(), &bob), (Names {"his"}));
+    EXPECT_EQ(redosOf(doc(), &bob), (Names {}));
+
+    // His, with her undo written since: through the log too.
+    {
+        App::ActorScope scope(bob);
+        ASSERT_TRUE(doc()->undo()) << doc()->undoRefusal();
+    }
+    EXPECT_EQ(featureOf(doc(), "B")->Integer.getValue(), 4711);
+    // And hers again, redone past his undo.
+    {
+        App::ActorScope scope(alice);
+        ASSERT_TRUE(doc()->redo()) << doc()->undoRefusal();
+    }
+    EXPECT_EQ(featureOf(doc(), "A")->Integer.getValue(), 2);
+    last = log().store().transactions().back();
+    EXPECT_EQ(last.kind, "redo");
+    EXPECT_EQ(authorOf(log(), last.seq).name, "alice@example.com");
+    EXPECT_EQ(undosOf(doc(), &alice), (Names {"hers"}));
+    EXPECT_EQ(redosOf(doc(), &bob), (Names {"his"}));
+
+    // A new step of hers ends her redo, not his.
+    {
+        App::ActorScope scope(alice);
+        ASSERT_TRUE(doc()->undo()) << doc()->undoRefusal();
+        EXPECT_EQ(doc()->getAvailableRedoNames(), (Names {"hers"}));
+        edit(doc(), "hers anew", [&]() { featureOf(doc(), "A")->Integer.setValue(9); });
+        EXPECT_EQ(doc()->getAvailableRedoNames(), (Names {}));
+        EXPECT_EQ(doc()->getAvailableUndoNames(), (Names {"hers anew"}));
+    }
+    EXPECT_EQ(redosOf(doc(), &bob), (Names {"his"}));
+    {
+        App::ActorScope scope(bob);
+        ASSERT_TRUE(doc()->redo()) << doc()->undoRefusal();
+    }
+    EXPECT_EQ(featureOf(doc(), "B")->Integer.getValue(), 3);
+    EXPECT_EQ(featureOf(doc(), "A")->Integer.getValue(), 9);
+
+    // The desktop's own step made both objects, and both have been written
+    // since: refused, saying so, and nothing moves (sec 30.4 P2).
+    const auto rows = log().store().transactions().size();
+    EXPECT_FALSE(doc()->undo());
+    EXPECT_NE(doc()->undoRefusal().find("changed since"), std::string::npos)
+        << doc()->undoRefusal();
+    EXPECT_EQ(log().store().transactions().size(), rows);
+    EXPECT_EQ(undosOf(doc(), nullptr), (Names {"create"}));
+    EXPECT_TRUE(featureOf(doc(), "A"));
+}
+
+// Sec 30.4 P2: an undo of a step someone else has since written over is
+// refused. Once that someone takes their own step back the document is in
+// the state the first step left, and it is undone from its copies.
+TEST_F(TransactionLogTest, anUndoOverAnothersWriteIsRefused)
+{
+    edit(doc(), "create", [&]() { make("A"); });
+    const App::Actor alice = actor(App::Actor::Verified, "alice@example.com", 51);
+    const App::Actor bob = actor(App::Actor::Invited, "bob", 52);
+    {
+        App::ActorScope scope(alice);
+        edit(doc(), "hers", [&]() { featureOf(doc(), "A")->Integer.setValue(2); });
+    }
+    {
+        App::ActorScope scope(bob);
+        edit(doc(), "his over hers", [&]() { featureOf(doc(), "A")->Integer.setValue(5); });
+    }
+    const int64_t his = rowNamed(log(), "his over hers");
+    {
+        App::ActorScope scope(alice);
+        EXPECT_FALSE(doc()->undo());
+        EXPECT_NE(doc()->undoRefusal().find("by row " + std::to_string(his)), std::string::npos)
+            << doc()->undoRefusal();
+        EXPECT_EQ(doc()->getAvailableUndoNames(), (Names {"hers"}));
+        EXPECT_EQ(doc()->getAvailableRedoNames(), (Names {}));
+    }
+    EXPECT_EQ(featureOf(doc(), "A")->Integer.getValue(), 5);
+    {
+        App::ActorScope scope(bob);
+        EXPECT_FALSE(doc()->stepNeedsLog(true));   // his is the last thing written
+        ASSERT_TRUE(doc()->undo());
+    }
+    EXPECT_EQ(featureOf(doc(), "A")->Integer.getValue(), 2);
+    {
+        App::ActorScope scope(alice);
+        EXPECT_FALSE(doc()->stepNeedsLog(true));   // the state hers left
+        ASSERT_TRUE(doc()->undo()) << doc()->undoRefusal();
+        EXPECT_TRUE(doc()->undoRefusal().empty());
+    }
+    EXPECT_EQ(featureOf(doc(), "A")->Integer.getValue(), 4711);
+    // And back up, each its own, from copies all the way.
+    {
+        App::ActorScope scope(alice);
+        EXPECT_FALSE(doc()->stepNeedsLog(false));
+        ASSERT_TRUE(doc()->redo());
+    }
+    {
+        App::ActorScope scope(bob);
+        EXPECT_FALSE(doc()->stepNeedsLog(false));
+        ASSERT_TRUE(doc()->redo());
+    }
+    EXPECT_EQ(featureOf(doc(), "A")->Integer.getValue(), 5);
+}
+
+// Sec 30.10 item 6: steps made again from the rows -- a switch away and
+// back here -- are their rows' authors', undone and redone ones too.
+TEST_F(TransactionLogTest, stepsRebuiltFromTheRowsKeepTheirAuthors)
+{
+    edit(doc(), "create", [&]() {
+        make("A");
+        make("B");
+    });
+    const App::Actor alice = actor(App::Actor::Verified, "alice@example.com", 61);
+    const App::Actor bob = actor(App::Actor::Invited, "bob", 62);
+    {
+        App::ActorScope scope(alice);
+        edit(doc(), "hers", [&]() { featureOf(doc(), "A")->Integer.setValue(2); });
+        edit(doc(), "hers too", [&]() { featureOf(doc(), "A")->Integer.setValue(3); });
+    }
+    {
+        App::ActorScope scope(bob);
+        edit(doc(), "his", [&]() { featureOf(doc(), "B")->Integer.setValue(7); });
+    }
+    {
+        App::ActorScope scope(alice);
+        ASSERT_TRUE(doc()->undo()) << doc()->undoRefusal();   // past his, through the log
+    }
+    doc()->createBranch("side");
+    ASSERT_TRUE(doc()->switchBranch("main"));
+
+    EXPECT_EQ(undosOf(doc(), nullptr), (Names {"create"}));
+    EXPECT_EQ(undosOf(doc(), &alice), (Names {"hers"}));
+    EXPECT_EQ(redosOf(doc(), &alice), (Names {"hers too"}));
+    EXPECT_EQ(undosOf(doc(), &bob), (Names {"his"}));
+    EXPECT_EQ(redosOf(doc(), &bob), (Names {}));
+    // The last thing written was her undo: its redo step is where the
+    // document stands, his step is not.
+    {
+        App::ActorScope scope(alice);
+        EXPECT_FALSE(doc()->stepNeedsLog(false));
+    }
+    {
+        App::ActorScope scope(bob);
+        EXPECT_TRUE(doc()->stepNeedsLog(true));
+        ASSERT_TRUE(doc()->undo()) << doc()->undoRefusal();
+    }
+    EXPECT_EQ(featureOf(doc(), "B")->Integer.getValue(), 4711);
+    {
+        App::ActorScope scope(alice);
+        ASSERT_TRUE(doc()->redo()) << doc()->undoRefusal();
+    }
+    EXPECT_EQ(featureOf(doc(), "A")->Integer.getValue(), 3);
 }
