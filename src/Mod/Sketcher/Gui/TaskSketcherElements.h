@@ -68,6 +68,8 @@ protected:
     void contextMenuEvent (QContextMenuEvent* event);
     void mousePressEvent(QMouseEvent *event) override;
     bool viewportEvent(QEvent *event) override;
+    /// Takes Home from the home view's shortcut while the list has the keyboard
+    bool event(QEvent *event) override;
 
 protected Q_SLOTS:
     void deleteSelectedItems();

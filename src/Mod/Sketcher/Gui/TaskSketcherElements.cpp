@@ -542,6 +542,23 @@ bool ElementView::viewportEvent(QEvent *event)
     return inherited::viewportEvent(event);
 }
 
+bool ElementView::event(QEvent *event)
+{
+    // Home is the shortcut of the home view, and a shortcut is tried before
+    // the widget with the keyboard sees the key -- unless that widget claims
+    // it. The list has the keyboard while the pointer is over it, and Down,
+    // Up and End are its keys there: so is Home.
+    if (event->type() == QEvent::ShortcutOverride) {
+        auto keyEvent = static_cast<QKeyEvent*>(event);
+        if (keyEvent->key() == Qt::Key_Home
+                && !(keyEvent->modifiers() & ~(Qt::ShiftModifier | Qt::KeypadModifier))) {
+            keyEvent->accept();
+            return true;
+        }
+    }
+    return inherited::event(event);
+}
+
 ElementView::~ElementView()
 {}
 

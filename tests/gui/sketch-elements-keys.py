@@ -17,8 +17,11 @@ The rows' flags are read from the list's selection now.
 
 Claims, with four lines in the list:
 
-  - Down, Up and End select the row they move to, alone (Home is the
-    application's shortcut for the home view and never reaches the list);
+  - Down, Up and End select the row they move to, alone;
+  - so does Home, which is the application's shortcut for the home view: a
+    shortcut is tried before the widget with the keyboard sees the key, and
+    the list claims this one while it has the keyboard -- that is, while the
+    pointer is over it. With the keyboard elsewhere Home is the view's;
   - Shift+Down and Shift+Up extend and shrink the selection;
   - an arrow key in a list that was only hovered, never pressed, selects
     the row it moves to;
@@ -194,6 +197,25 @@ def run():
         press(tree, row[2], Ctrl)
         key(tree, QtCore.Qt.Key_Down)
         check("and so does a plain arrow", selected() == ["Edge4"], selected())
+
+        homes = []
+        FreeCADGui.Command.get("Std_ViewHome").getAction()[0].triggered.connect(
+            lambda *args: homes.append(1))
+        key(tree, QtCore.Qt.Key_Home)
+        both("Home selects the first row, alone", [0])
+        check("and does not run the home view while the list has the keyboard",
+              homes == [], homes)
+        key(tree, QtCore.Qt.Key_End)
+        key(tree, QtCore.Qt.Key_Home, Shift)
+        both("Shift+Home extends the selection to the first row", [0, 1, 2, 3])
+        check("nor does that run the home view", homes == [], homes)
+        tree.clearFocus()
+        mw.setFocus()
+        settle(5)
+        QtTest.QTest.keyClick(mw, QtCore.Qt.Key_Home)
+        settle(10)
+        check("with the keyboard elsewhere Home is the home view's",
+              homes == [1] and rows() == [0, 1, 2, 3], (homes, rows()))
 
         FreeCADGui.Selection.clearSelection()
         FreeCADGui.ActiveDocument.resetEdit()
