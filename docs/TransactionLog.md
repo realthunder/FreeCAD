@@ -11393,3 +11393,121 @@ unfrozen), the GUI checks RC 15, BC 27, VC 18, PC 28, FC 16, VW 14, MC 28.
 
 Phase 6 is built: merge, its preview and picker. Concurrent writers (17.5,
 28.5) are next, in a section of their own.
+
+## 29. Concurrent writers (design, 2026-10-04)
+
+17.5 as ruled on 2026-09-22: every writer works on its own branch, its
+branch is merged into the shared head after each operation, trimmed away
+when the merge is clean and kept when it conflicts, and per-user undo is an
+inverse appended to the writer's branch and merged. Merge is built (28).
+This section is how the rest is built; where it and 17.5 disagree, this one
+wins.
+
+### 29.1 What exists (survey, 2026-10-04)
+
+- **The only writers there are: several documents of one file in one
+  process.** An editable instance (27.22-27.24) is a second
+  `App::Document` joined to the file's history, on a branch of its own
+  from its first change (`TransactionLog::ensureBranch`), one document
+  per branch (`holderOf`). They share the store, its worker, the blob
+  store, and the file's allocators -- object ids, names, geometry ids,
+  the string hasher (27.40) -- so nothing two of them make collides. All
+  of it runs on the main thread: "concurrent" here is interleaved, not
+  parallel.
+- **The clients of a shared session are not writers in this sense.**
+  `docs/ThinClient.md` 8.11 made a served document one session with N
+  views: one document, one undo stack, one edit slot. 8.12 lists what
+  would have to become per client, and `docs/MultiViewEdit.md` sec 10 has
+  each client's view and session ride a branch -- designed, deferred.
+- **Two processes on one file share nothing.** Each has the history in
+  its own transient directory; the sequence and version counters and
+  every allocator are in memory (27.41 Q6 delayed the store-side blocks).
+- **Merge** (28): three-way between two branches, in the document on the
+  receiving one; the case where the receiver changed nothing takes the
+  other whole through the rows, derived values included, with no
+  recompute.
+- **Selective undo** (24.7): any row of the current chain undone as a new
+  transaction, refused when an op since changed what it touched -- the
+  primitive 17.5's per-user undo names.
+- **Trim and delete** of a branch (26.8): the rows only it holds go.
+- **The boundary of an operation**: a transaction's commit, and the end of
+  the outermost invocation for an implicit one (9.1);
+  `signalCommitTransaction` fires at it.
+
+### 29.2 Proposed shape: pull, push, re-fork
+
+A **writer** is a document of a file on a branch that names a **target**,
+the shared head it writes to. After each of its operations:
+
+1. **Pull.** The target is merged into the writer's branch, in the
+   writer's document (28). Nothing new on the target: nothing happens.
+   Something new that does not conflict: it goes in, recomputed where both
+   changed inputs. A conflict: the writer is told, its branch stays as it
+   is and unpushed, and it keeps working there -- 17.5's "a conflict keeps
+   the branch" -- until the picker (28.7) resolves it.
+2. **Push.** With the pull clean, the writer's state is the target's with
+   the writer's operation on top, so the target takes it whole: one row
+   on the target, kind `merge`, its second parent the writer's head, its
+   ops the net change from the target's head to the writer's. Every value
+   is in the log already, derived ones included, so the row is written
+   straight into the store when no document holds the target; when one
+   does, it is that document's merge (28.6 Q1's case), so it shows there.
+3. **Re-fork.** The writer's branch now holds nothing the target does not.
+   Its rows go (26.8) and its head becomes the target's new head: 17.5's
+   auto-trim. The shared history reads as one line, a row per operation,
+   attributed to whoever made it.
+
+Pulling before pushing is what puts every conflict in the document of the
+writer who caused it, and what lets the target go without a document.
+
+- **Per-user undo.** A writer's undo stack holds the rows *it* pushed.
+  Undoing one is the selective undo of 24.7 on the writer's branch --
+  after a re-fork the target's rows are its history -- pushed like any
+  operation, and refused, saying what changed since, when someone else has
+  written what it touched.
+- **Other writers learn** that the target moved at their own next pull, or
+  sooner (Q3).
+- **Attribution.** The pushed row carries the writer's name; the session
+  row's user and host stay under the privacy preference (13.3).
+- **Not here:** a client's view state and edit session riding its branch
+  (`docs/MultiViewEdit.md` sec 10), and its amendment that such a branch
+  outlives its merges -- that is the shared session's design, deferred.
+
+### 29.3 Questions
+
+| | Question | Recommended |
+| --- | --- | --- |
+| Q1 | Which writers this is built for now | **The documents of one file in one process** -- what exists. The mechanism (pull, push, re-fork, per-user undo), a Python call to open a writer on a target, and the panel showing who pushed what. Clients of the shared session as writers need each client to have a document of its own (ThinClient 8.12, MultiViewEdit 10), and two processes need the store and its allocators shared; both later, on this mechanism. |
+| Q2 | The document that is on the target itself -- the file's own, on `main` | **It is the shared head**: it edits `main` directly, as today, and a writer's push is a merge in it, shown at once. Only the others are writers. The alternative is symmetric -- nobody edits the target, the file's own document becomes a writer too -- which is cleaner and changes every document that someone else writes to. |
+| Q3 | When a writer sees what another pushed | **When the target moves, if it is idle** -- no transaction open, nothing in edit -- else at its next operation. The documents of a file then follow each other live. The alternative is only at its own next operation: cheaper, and each document goes stale until it is touched. |
+| Q4 | A pull that conflicts | **The writer keeps its branch and is told** (17.5): the panel's status says how many operations are unpushed, and Merge... opens the picker on the target. Nothing is picked for the user. |
+
+### 29.4 Rulings (user, 2026-10-04)
+
+All four as recommended.
+
+| | Ruling |
+| --- | --- |
+| Q1 | **The documents of one file in one process**, now. Clients of the shared session and two processes come later, on this mechanism. |
+| Q2 | **The file's own document, on the target, is the shared head**: it edits the target directly, and a writer's push is a merge in it, shown at once. Only the others are writers. |
+| Q3 | **A writer pulls when the target moves, if it is idle** -- no transaction open, nothing in edit -- else at its next operation. |
+| Q4 | **A pull that conflicts keeps the writer's branch, and the writer is told.** Nothing is picked for it; the picker resolves it. |
+
+### 29.5 Build order
+
+Each step with the gates, frozen and unfrozen, and tests of its own.
+
+1. **W.a** The writer branch: a branch row names its target; a call that
+   opens a writer -- an editable document of the file on a new branch
+   made from the target's head. Python; gtests.
+2. **W.b** Push and re-fork: after a writer's operation the target takes
+   it -- a merge in the document that holds the target, or a row written
+   straight into the store when none does -- and the writer's branch is
+   re-forked at the target's new head.
+3. **W.c** Pull before push, and the conflict that keeps the branch: the
+   count of unpushed operations, the picker on the target.
+4. **W.d** The pull when the target moves and the writer is idle.
+5. **W.e** Per-user undo: a writer's stack is the rows it pushed, undone
+   selectively.
+6. **W.f** The panel -- who pushed a row, a writer's unpushed count -- and
+   a Gui check with two documents of one file.
