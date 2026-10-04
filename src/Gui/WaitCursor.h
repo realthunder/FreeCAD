@@ -76,8 +76,19 @@ public:
     FilterEventsFlags ignoreEvents() const;
     void setIgnoreEvents(FilterEventsFlags flags = AllEvents);
 
+    /** Whether this instance holds the input back. Every instance does from
+     * its construction, and the events are filtered for as long as any one
+     * does. An instance kept alive for its cursor after the work is done --
+     * the progress bar keeps one through its grace period -- gives the input
+     * back with setFiltering(false): unlike setIgnoreEvents(), which is one
+     * setting for all, that leaves another instance's claim alone.
+     */
+    bool isFiltering() const;
+    void setFiltering(bool on);
+
 private:
     FilterEventsFlags filter;
+    bool filtering {true};
 };
 
 /** Helper class for temporary restore wait cursor

@@ -317,6 +317,10 @@ void SequencerBar::startStep(bool blocking)
                 d->waitCursor = new Gui::WaitCursor;
             d->bar->enterControlEvents(true);
         }
+        // The wait cursor of a sequence that stopped within the grace period
+        // is still there, and has given the input back (resetData).
+        if (blocking && d->waitCursor)
+            d->waitCursor->setFiltering(true);
     }
     // From now on the aggregate poll owns the bar; it stops itself (and
     // clears aggregateDriven) once no sequence is left running.
@@ -522,6 +526,15 @@ void SequencerBar::resetData()
         QMetaObject::invokeMethod(d->bar, "armAggregateTeardown",
             Qt::QueuedConnection);
     }
+    // What is kept through the grace period is the indicator. The claim on
+    // the input ends with the sequence: the bar's own filter lets events
+    // pass once nothing runs, but the wait cursor swallowed every key and
+    // mouse button for as long as it lived -- 200 ms after any operation in
+    // which a key or a click went nowhere. It keeps its cursor and gives
+    // the input back; a blocking sequence starting within the period takes
+    // it again (startStep).
+    if (d->waitCursor && d->bar->thread() == QThread::currentThread())
+        d->waitCursor->setFiltering(false);
     SequencerBase::resetData();
 }
 

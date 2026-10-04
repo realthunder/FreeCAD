@@ -1050,3 +1050,10 @@ fc_add_gui_test(GuiSketchElementsKeys_tests_run
 fc_add_gui_test(GuiSketchExternalBothWays_tests_run
                 sketch-external-both-ways.py
                 --timeout 120)
+
+# Input is held while a blocking sequence runs and no longer: the progress
+# bar keeps its wait cursor through a 200 ms grace period after a sequence
+# stops, and that cursor swallowed every key and click in it.
+fc_add_gui_test(GuiSequencerInputAfterStop_tests_run
+                sequencer-input-after-stop.py
+                --timeout 120)

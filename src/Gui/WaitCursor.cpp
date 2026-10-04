@@ -121,8 +121,14 @@ bool WaitCursorP::isModalDialog(QObject* o) const
     return false;
 }
 
+// The instances that hold the input back, see WaitCursor::setFiltering()
+static std::atomic<int> WaitCursorFiltering = 0;
+
 bool WaitCursorP::eventFilter(QObject* o, QEvent* e)
 {
+    if (WaitCursorFiltering.load(std::memory_order_relaxed) <= 0)
+        return false;
+
     // Note: This might cause problems when we want to open a modal dialog at the lifetime
     // of a WaitCursor instance because the incoming events are still filtered.
     if (e->type() == QEvent::KeyPress ||
@@ -157,15 +163,33 @@ WaitCursor::WaitCursor()
 {
     if (WaitCursorInstances++ == 0)
         setWaitCursor();
+    ++WaitCursorFiltering;
     filter = WaitCursorP::getInstance()->ignoreEvents();
 }
 
 /** Restores the last cursor again. */
 WaitCursor::~WaitCursor()
 {
+    setFiltering(false);
     if (--WaitCursorInstances == 0)
         restoreCursor();
     WaitCursorP::getInstance()->setIgnoreEvents(filter);
+}
+
+bool WaitCursor::isFiltering() const
+{
+    return filtering;
+}
+
+void WaitCursor::setFiltering(bool on)
+{
+    if (on == filtering)
+        return;
+    filtering = on;
+    if (on)
+        ++WaitCursorFiltering;
+    else
+        --WaitCursorFiltering;
 }
 
 /**

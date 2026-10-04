@@ -43,11 +43,11 @@ def check(name, cond, detail=""):
 
 
 def settle(seconds=0.3):
-    # By the clock, not by a count of passes through the event loop: for
-    # some 20 to 50 ms after a sketch enters edit a key sent to the view
-    # reaches nobody, and a count went by faster than that on a warm start.
-    # The first Escape was then lost, and the test failed on every run but
-    # the first in a work directory, or one under load.
+    # By the clock, not by a count of passes through the event loop, which
+    # says nothing of how long it took. This test used to count, and on a
+    # warm start sent its first Escape within 200 ms of the recompute that
+    # entering edit runs -- where the progress bar's lingering wait cursor
+    # swallowed it (fixed since: tests/gui/sequencer-input-after-stop.py).
     end = time.monotonic() + seconds
     while time.monotonic() < end:
         QtWidgets.QApplication.processEvents()
