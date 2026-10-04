@@ -116,13 +116,16 @@ public:
         exec("CREATE TABLE IF NOT EXISTS txn(seq INTEGER PRIMARY KEY, parent INTEGER, id INTEGER,"
              " kind TEXT, origin TEXT, name TEXT, time REAL, script TEXT, session INTEGER,"
              " inverts INTEGER DEFAULT 0, branch INTEGER DEFAULT 1,"
-             " merge_from INTEGER DEFAULT 0)");
+             " merge_from INTEGER DEFAULT 0, ord INTEGER DEFAULT 0)");
         exec("CREATE TABLE IF NOT EXISTS environment(id INTEGER PRIMARY KEY, json TEXT UNIQUE)");
         // Sec 30.6: a session is one login of one user.
         exec("CREATE TABLE IF NOT EXISTS user(id INTEGER PRIMARY KEY, kind TEXT, name TEXT,"
              " UNIQUE(kind, name))");
         exec("CREATE TABLE IF NOT EXISTS session(id INTEGER PRIMARY KEY, env INTEGER,"
-             " user INTEGER, host TEXT, access TEXT, opened REAL, closed REAL)");
+             " user INTEGER, host TEXT, access TEXT, opened REAL, closed REAL,"
+             " uuid TEXT)");
+        // Sec 30.3 S.e: a row found by what it is known by across copies.
+        exec("CREATE INDEX IF NOT EXISTS txn_ord ON txn(session, ord)");
         exec("CREATE TABLE IF NOT EXISTS op(txn INTEGER, idx INTEGER, op TEXT, ckind TEXT,"
              " cid INTEGER, cname TEXT, ctype TEXT, prop TEXT, ptype TEXT, meta TEXT,"
              " vbefore TEXT, vafter TEXT, derived INTEGER, touched INTEGER, PRIMARY KEY(txn, idx))");
@@ -256,7 +259,7 @@ public:
             // A preset seq is honoured (the writer thread's caller numbers
             // ahead, TransactionLog); NULL takes the next rowid.
             auto ins = prepare("INSERT INTO txn(seq,parent,id,kind,origin,name,time,script,session,"
-                               "inverts,branch,merge_from) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)");
+                               "inverts,branch,merge_from,ord) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)");
             if (txn.seq > 0)
                 sqlite3_bind_int64(ins, 1, txn.seq);
             else
@@ -272,6 +275,7 @@ public:
             sqlite3_bind_int64(ins, 10, txn.inverts);
             sqlite3_bind_int64(ins, 11, txn.branch);
             sqlite3_bind_int64(ins, 12, txn.mergeFrom);
+            sqlite3_bind_int64(ins, 13, txn.ordinal);
             step(ins);
             txn.seq = sqlite3_last_insert_rowid(db);
             auto head = prepare("UPDATE branch SET head_seq=? WHERE id=?");
@@ -486,13 +490,14 @@ public:
         t.inverts = sqlite3_column_int64(s, 9);
         t.branch = sqlite3_column_int64(s, 10);
         t.mergeFrom = sqlite3_column_int64(s, 11);
+        t.ordinal = sqlite3_column_int64(s, 12);
         return t;
     }
 
     std::vector<LogTransaction> transactions(int64_t from, int limit) override
     {
         auto s = prepare("SELECT seq,parent,id,kind,origin,name,time,script,session,inverts,branch,"
-                         "merge_from FROM txn WHERE seq>=? ORDER BY seq LIMIT ?");
+                         "merge_from,ord FROM txn WHERE seq>=? ORDER BY seq LIMIT ?");
         sqlite3_bind_int64(s, 1, from);
         sqlite3_bind_int(s, 2, limit > 0 ? limit : -1);
         std::vector<LogTransaction> out;
@@ -512,7 +517,7 @@ public:
     {
         auto s = prepare(FC_TXN_CHAIN
                          "SELECT seq,parent,id,kind,origin,name,time,script,session,inverts,"
-                         "branch,merge_from FROM txn WHERE seq IN (SELECT seq FROM chain)"
+                         "branch,merge_from,ord FROM txn WHERE seq IN (SELECT seq FROM chain)"
                          " AND seq>=?2 ORDER BY seq");
         sqlite3_bind_int64(s, 1, head);
         sqlite3_bind_int64(s, 2, from);
@@ -534,7 +539,7 @@ public:
                          " (SELECT 0 AS k UNION ALL SELECT 1) e"
                          " WHERE CASE e.k WHEN 0 THEN t.parent ELSE t.merge_from END>0) "
                          "SELECT seq,parent,id,kind,origin,name,time,script,session,inverts,"
-                         "branch,merge_from FROM txn WHERE seq IN (SELECT seq FROM hist)"
+                         "branch,merge_from,ord FROM txn WHERE seq IN (SELECT seq FROM hist)"
                          " ORDER BY seq");
         sqlite3_bind_int64(s, 1, head);
         std::vector<LogTransaction> out;
@@ -946,7 +951,8 @@ public:
             sqlite3_bind_int64(s, 1, txn.seq);
             step(s);
             s = prepare("UPDATE txn SET parent=?, id=?, kind=?, origin=?, name=?, time=?,"
-                        " script=?, session=?, inverts=?, branch=?, merge_from=? WHERE seq=?");
+                        " script=?, session=?, inverts=?, branch=?, merge_from=?, ord=?"
+                        " WHERE seq=?");
             sqlite3_bind_int64(s, 1, txn.parent);
             sqlite3_bind_int(s, 2, txn.id);
             bindText(s, 3, txn.kind);
@@ -958,7 +964,8 @@ public:
             sqlite3_bind_int64(s, 9, txn.inverts);
             sqlite3_bind_int64(s, 10, txn.branch);
             sqlite3_bind_int64(s, 11, txn.mergeFrom);
-            sqlite3_bind_int64(s, 12, txn.seq);
+            sqlite3_bind_int64(s, 12, txn.ordinal);
+            sqlite3_bind_int64(s, 13, txn.seq);
             step(s);
             auto op = prepare("INSERT INTO op(txn,idx,op,ckind,cid,cname,ctype,prop,ptype,meta,"
                               "vbefore,vafter,derived,touched) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)");
@@ -1542,17 +1549,49 @@ public:
     }
 
     int64_t openSession(int64_t env, int64_t user, const std::string& host,
-                        const std::string& access, double opened) override
+                        const std::string& access, const std::string& uuid,
+                        double opened) override
     {
-        auto s = prepare("INSERT INTO session(env,user,host,access,opened,closed)"
-                         " VALUES(?,?,?,?,?,0)");
+        auto s = prepare("INSERT INTO session(env,user,host,access,opened,closed,uuid)"
+                         " VALUES(?,?,?,?,?,0,?)");
         sqlite3_bind_int64(s, 1, env);
         sqlite3_bind_int64(s, 2, user);
         bindText(s, 3, host);
         bindText(s, 4, access);
         sqlite3_bind_double(s, 5, opened);
+        bindText(s, 6, uuid);
         step(s);
         return sqlite3_last_insert_rowid(db);
+    }
+
+    bool rowId(int64_t seq, LogRowId& id) override
+    {
+        auto s = prepare("SELECT s.uuid, t.ord FROM txn t JOIN session s ON s.id=t.session"
+                         " WHERE t.seq=?");
+        sqlite3_bind_int64(s, 1, seq);
+        bool found = false;
+        if (sqlite3_step(s) == SQLITE_ROW) {
+            id.session = text(s, 0);
+            id.ordinal = sqlite3_column_int64(s, 1);
+            found = !id.session.empty() && id.ordinal > 0;
+        }
+        sqlite3_reset(s);
+        return found;
+    }
+
+    int64_t findRow(const LogRowId& id) override
+    {
+        if (id.session.empty() || id.ordinal <= 0)
+            return 0;
+        auto s = prepare("SELECT t.seq FROM txn t JOIN session s ON s.id=t.session"
+                         " WHERE s.uuid=? AND t.ord=? ORDER BY t.seq LIMIT 1");
+        bindText(s, 1, id.session);
+        sqlite3_bind_int64(s, 2, id.ordinal);
+        int64_t seq = 0;
+        if (sqlite3_step(s) == SQLITE_ROW)
+            seq = sqlite3_column_int64(s, 0);
+        sqlite3_reset(s);
+        return seq;
     }
 
     void closeSession(int64_t id, double closed) override
@@ -1565,7 +1604,8 @@ public:
 
     std::vector<LogSession> sessions() override
     {
-        auto s = prepare("SELECT id,env,user,host,access,opened,closed FROM session ORDER BY id");
+        auto s = prepare("SELECT id,env,user,host,access,opened,closed,uuid FROM session"
+                         " ORDER BY id");
         std::vector<LogSession> out;
         while (sqlite3_step(s) == SQLITE_ROW) {
             LogSession r;
@@ -1576,6 +1616,7 @@ public:
             r.access = text(s, 4);
             r.opened = sqlite3_column_double(s, 5);
             r.closed = sqlite3_column_double(s, 6);
+            r.uuid = text(s, 7);
             out.push_back(std::move(r));
         }
         sqlite3_reset(s);

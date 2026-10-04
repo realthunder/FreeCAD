@@ -54,6 +54,23 @@ struct LogTransaction
     /// A `merge` row's second parent (sec 28.2 item 1): the seq of the head
     /// merged in. 0 on any other row.
     int64_t mergeFrom {0};
+    /// Its place among the rows of its session, from 1 (sec 30.3 S.e). With
+    /// the session's uuid it is what the row is known by when its file has
+    /// been copied and each copy has numbered on: `seq` is a counter of one
+    /// store, and two copies give the same one to different rows.
+    int64_t ordinal {0};
+};
+
+/// What a row is known by across copies of its file (sec 30.3 S.e): the
+/// uuid of the session that made it and its ordinal there.
+struct LogRowId
+{
+    std::string session;
+    int64_t ordinal {0};
+    bool operator==(const LogRowId& other) const
+    {
+        return ordinal == other.ordinal && session == other.session;
+    }
 };
 
 /** A branch row (sec 17.1, 26): a named tip into the `parent` tree.
@@ -109,6 +126,9 @@ struct LogSession
     std::string access;
     double opened {0};
     double closed {0};
+    /// Its own, made when it is opened (sec 30.3 S.e): two copies of a file
+    /// open sessions with the same id, never with the same uuid.
+    std::string uuid;
 };
 
 /** One op of a transaction (table `op`).
@@ -349,7 +369,13 @@ public:
     virtual int64_t user(const std::string& kind, const std::string& name) = 0;
     virtual std::vector<LogUser> users() = 0;
     virtual int64_t openSession(int64_t env, int64_t user, const std::string& host,
-                                const std::string& access, double opened) = 0;
+                                const std::string& access, const std::string& uuid,
+                                double opened) = 0;
+    /// What row `seq` is known by across copies (sec 30.3 S.e); false when
+    /// there is no such row, or it was written before rows had one.
+    virtual bool rowId(int64_t seq, LogRowId& id) = 0;
+    /// The row known by `id` in this store, 0 for none.
+    virtual int64_t findRow(const LogRowId& id) = 0;
     virtual void closeSession(int64_t id, double closed) = 0;
     virtual std::vector<LogSession> sessions() = 0;
 

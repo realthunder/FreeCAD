@@ -728,6 +728,15 @@ public:
     int64_t sessionOf(const Actor* actor);
     /// Close the session of `actor`'s login; false when there is none.
     bool closeLogin(const Actor& actor);
+    /** Where this history and another part (docs/TransactionLog.md sec
+     * 30.3 S.e). Two files are one history when they hold a row in common,
+     * each row known by its session's uuid and its ordinal there; the base
+     * of a fork is the newest such row. `other` is the other file's store
+     * and `otherHead` the head of the chain to look along; returns the
+     * base's seq there and sets `ours` to its seq here, 0 and 0 when the
+     * two hold nothing in common.
+     */
+    int64_t forkBase(TransactionStore& other, int64_t otherHead, int64_t& ours);
 
     void run();
     void post(std::function<void()> job);
@@ -752,6 +761,9 @@ public:
     /// The sessions of the logins this process has seen, by login (sec
     /// 30.6); main thread.
     std::map<std::string, int64_t> _actorSessions;
+    /// The last ordinal given in each session of this process (sec 30.3
+    /// S.e); main thread.
+    std::map<int64_t, int64_t> _ordinals;
     std::unique_ptr<TransactionStore> _store;
     class FlushingStore;
     std::unique_ptr<FlushingStore> _reader;

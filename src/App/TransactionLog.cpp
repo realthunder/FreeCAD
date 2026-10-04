@@ -237,8 +237,11 @@ public:
     { return inner().user(kind, name); }
     std::vector<LogUser> users() override { return inner().users(); }
     int64_t openSession(int64_t env, int64_t user, const std::string& host,
-                        const std::string& access, double opened) override
-    { return inner().openSession(env, user, host, access, opened); }
+                        const std::string& access, const std::string& uuid,
+                        double opened) override
+    { return inner().openSession(env, user, host, access, uuid, opened); }
+    bool rowId(int64_t seq, LogRowId& id) override { return inner().rowId(seq, id); }
+    int64_t findRow(const LogRowId& id) override { return inner().findRow(id); }
     void closeSession(int64_t id, double closed) override { inner().closeSession(id, closed); }
     std::vector<LogSession> sessions() override { return inner().sessions(); }
     int64_t addVersion(LogVersion& version, const std::vector<LogManifestEntry>& manifest) override
@@ -406,8 +409,10 @@ void TransactionLogCore::openProcessSession()
     // anything, or with the queue drained.
     _environment = _store->environment(_envJson);
     _localUser = _store->user(Actor::kindName(Actor::Local), _localName);
-    _session = _store->openSession(_environment, _localUser, _host, std::string(), now());
+    _session = _store->openSession(_environment, _localUser, _host, std::string(),
+                                   Base::Uuid::createUuid(), now());
     _actorSessions.clear();
+    _ordinals.clear();
 }
 
 void TransactionLogCore::closeSessions()
@@ -449,9 +454,36 @@ int64_t TransactionLogCore::sessionOf(const Actor* actor)
     flush();
     const int64_t user = _store->user(Actor::kindName(actor->kind), actor->name);
     const int64_t session = _store->openSession(_environment, user, std::string(),
-                                                actor->access, now());
+                                                actor->access, Base::Uuid::createUuid(),
+                                                now());
     _actorSessions[key] = session;
     return session;
+}
+
+int64_t TransactionLogCore::forkBase(TransactionStore& other, int64_t otherHead, int64_t& ours)
+{
+    ours = 0;
+    flush();
+    // Newest first along the other's chain, a stretch of it at a time: a
+    // fork parts near its head, and the walk ends at the first row both
+    // hold.
+    const int64_t span = 256;
+    for (int64_t cur = otherHead; cur > 0;) {
+        const auto rows = other.chain(cur, std::max<int64_t>(1, cur - span + 1));
+        if (rows.empty())
+            break;
+        for (auto it = rows.rbegin(); it != rows.rend(); ++it) {
+            LogRowId id;
+            if (!other.rowId(it->seq, id))
+                continue;
+            if (const int64_t seq = _store->findRow(id)) {
+                ours = seq;
+                return it->seq;
+            }
+        }
+        cur = rows.front().parent;
+    }
+    return 0;
 }
 
 bool TransactionLogCore::closeLogin(const Actor& actor)
@@ -956,6 +988,7 @@ int64_t TransactionLogCore::recordFile(const std::string& path, const Transactio
     t.name = "restore";
     t.time = v.created;
     t.session = sessionOf(ActorScope::current().get());
+    t.ordinal = ++_ordinals[t.session];
     TransactionLog::Captures captures;
     for (const auto& e : entries)
         captures.emplace_back(e.first, Base::EntryCapture(e.second));
@@ -2748,6 +2781,10 @@ void TransactionLog::number(LogTransaction& t)
     // again keeps the one it was made under.
     if (!t.session)
         t.session = _c.sessionOf(ActorScope::current().get());
+    // Its place among its session's rows (sec 30.3 S.e); a record appended
+    // again keeps the one it has, since it is the same row.
+    if (!t.ordinal)
+        t.ordinal = ++_c._ordinals[t.session];
     // Every row, so a walk back from the head finds its parent in memory.
     remember(t, nullptr);
 }

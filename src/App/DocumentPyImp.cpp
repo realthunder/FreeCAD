@@ -911,8 +911,11 @@ PyObject* DocumentPy::getTransactionLog(PyObject *args)
         for (auto& u : log->store().users())
             users[u.id] = u;
         std::map<int64_t, int64_t> sessions;
-        for (const auto& s : log->store().sessions())
+        std::map<int64_t, std::string> uuids;
+        for (const auto& s : log->store().sessions()) {
             sessions[s.id] = s.user;
+            uuids[s.id] = s.uuid;
+        }
         for (auto& t : log->store().transactions(from, limit)) {
             Py::Dict d;
             d.setItem("seq", Py::Long(static_cast<long long>(t.seq)));
@@ -928,6 +931,9 @@ PyObject* DocumentPy::getTransactionLog(PyObject *args)
             d.setItem("branch", Py::String(branches[t.branch]));
             const LogUser& author = users[sessions[t.session]];
             d.setItem("session", Py::Long(static_cast<long long>(t.session)));
+            // What the row is known by across copies of the file (sec 30.3
+            // S.e): its session's uuid and its ordinal there.
+            d.setItem("uid", Py::String(uuids[t.session] + ":" + std::to_string(t.ordinal)));
             d.setItem("author", Py::String(author.name));
             d.setItem("author_kind", Py::String(author.kind));
             list.append(d);

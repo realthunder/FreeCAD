@@ -293,9 +293,11 @@ maxCount: to limit the number of links returned
 
 Transactions of this document's log (docs/TransactionLog.md), each a
 dict with seq, parent, id, kind, origin, name, time, script, inverts
-(the seq an undo or redo inverts, else 0), and who wrote it (sec 30.6):
+(the seq an undo or redo inverts, else 0), who wrote it (sec 30.6):
 session, author (the user's name) and author_kind ('local', 'verified',
-'invited' or 'declared'). Empty when
+'invited' or 'declared'), and uid, what the row is known by in every copy
+of the file: its session's uuid, a colon, and its ordinal in that
+session. Empty when
 the log is off (preference Document/TransactionLog).</UserDocu>
       </Documentation>
     </Methode>

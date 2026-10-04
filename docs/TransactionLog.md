@@ -12598,3 +12598,57 @@ run, `-j6`, `GuiServeClaimChildren_tests_run` failed after 9 s where it
 takes about 23; it passed in the unfrozen run of that pass, four times
 alone, and in a second pass of both, and what it wrote the first time
 was overwritten before it was read.
+
+### 30.12 S.e as built: what a row is known by across copies (2026-10-04)
+
+`seq` is a counter of one store. Copy the file and each copy numbers on
+from the same seq, for different rows; import a row into another store
+and it gets another seq. So a row has an identity that is neither:
+
+- **`session.uuid`**, made when the session is opened -- the process's
+  own and each login's. Two copies of a file open sessions with the same
+  id and never with the same uuid.
+- **`txn.ord`**, the row's place among the rows of its session, from 1
+  (`LogTransaction::ordinal`), given where the row is numbered
+  (`TransactionLog::number`, and the file-as-found record). The counters
+  are per session and of the process (`TransactionLogCore::_ordinals`),
+  begun again with each session.
+
+Together, `LogRowId`. `TransactionStore::rowId(seq)` reads a row's and
+`findRow(id)` finds the row known by one, by an index on `(session,
+ord)`. Changed in place, as the layout has been (27.55).
+
+**What keeps its identity.** A record a fast-forward takes off the chain
+and appends again past the rows taken (30.7) is the same row under a
+new seq, and keeps both. A row that a squash or a trim's bridge writes
+in place of several keeps the identity of the row it was written over,
+the newest of what it stands for -- so a copy that still has the rows
+apart finds the state they end in.
+
+**The base of a fork.** `TransactionLogCore::forkBase(other, otherHead,
+ours)`: along the other store's chain from its head, newest first, the
+first row this store holds too; its seq there is returned and its seq
+here set. Nothing in common, 0 and 0: the two are not one history. A
+fork parts near its head, so the walk is a stretch of the chain at a
+time and ends at the first row found.
+
+**Python.** `getTransactionLog()` rows carry `uid`: the session's uuid, a
+colon, the ordinal.
+
+**Tests.** Gtest `aRowIsKnownAcrossCopiesOfItsFile`: a file saved with
+its history and copied; both go on -- the original in its document, the
+copy opened from its archive with no document of it (27.13) and edited
+through a version document. Every row has an identity and no two the
+same; the row the copy made is not found here, and the row here under
+the same seq is another; the base is the same row from either side,
+under one seq in both since both numbered alike up to the copy; a
+document that shares nothing has no base. Python
+`testARowIsKnownAcrossCopiesOfItsFile`: the same through the files -- the
+original closed, the copy opened and edited; the rows there at the copy
+are the same `uid` under the same seq, the rows made since differ where
+their seqs meet.
+
+**Gates**, frozen and unfrozen each: Python 3003 OK (52 skipped frozen, 53
+unfrozen; 6 expected failures; +1), ctest 872/872 (+1), the GUI checks RC
+15, BC 27, VC 18, PC 28, FC 16, VW 14, MC 28, the two-document check 24,
+the tree check 19 and the author check 36.

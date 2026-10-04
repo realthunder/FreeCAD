@@ -5778,3 +5778,51 @@ class TransactionBranchCases(unittest.TestCase):
         self.assertAlmostEqual(box.Shape.Volume, 2000.0)
         self.assertEqual(act("bob", "invited", 2, lambda: doc.RedoNames), ["wider"])
         self.assertEqual(doc.UndoNames, ["create"])
+
+    def testARowIsKnownAcrossCopiesOfItsFile(self):
+        # Sec 30.3 S.e: a row's uid -- its session's uuid and its ordinal
+        # there -- is the same in every copy of the file, where its seq is
+        # only a counter of one store: two copies number on from the same
+        # seq for different rows.
+        import shutil
+
+        doc = self.track(FreeCAD.newDocument("Forked"))
+        doc.UndoMode = 1
+        doc.openTransaction("create")
+        obj = doc.addObject("App::FeatureTest", "Obj")
+        obj.Integer = 1
+        doc.commitTransaction()
+        path = os.path.join(self.dir, "forked.FCStd")
+        copy = os.path.join(self.dir, "forked-copy.FCStd")
+        doc.saveAs(path)
+        shutil.copyfile(path, copy)
+        doc.openTransaction("ours")
+        obj.Integer = 2
+        doc.commitTransaction()
+        doc.save()
+        ours = {t["seq"]: (t["uid"], t["name"]) for t in doc.getTransactionLog()}
+        self.assertEqual(len({uid for uid, _ in ours.values()}), len(ours))
+        for uid, _ in ours.values():
+            session, _, ordinal = uid.rpartition(":")
+            self.assertEqual(len(session), 36, uid)
+            self.assertGreater(int(ordinal), 0, uid)
+        FreeCAD.closeDocument(doc.Name)
+
+        fork = self.track(FreeCAD.openDocument(copy))
+        fork.UndoMode = 1
+        fork.openTransaction("theirs")
+        fork.Obj.Integer = 9
+        fork.commitTransaction()
+        theirs = {t["seq"]: (t["uid"], t["name"]) for t in fork.getTransactionLog()}
+        shared = [seq for seq in theirs if seq in ours and theirs[seq][0] == ours[seq][0]]
+        apart = [seq for seq in theirs if seq in ours and theirs[seq][0] != ours[seq][0]]
+        # What was there at the copy is the same row in both, under the same
+        # number; what each made since is not, though the numbers meet.
+        self.assertTrue(shared)
+        self.assertTrue(apart)
+        self.assertLess(max(shared), min(apart))
+        self.assertIn("create", [theirs[seq][1] for seq in shared])
+        made = {uid for uid, name in theirs.values() if name == "theirs"}
+        self.assertEqual(len(made), 1)
+        self.assertFalse(made & {uid for uid, _ in ours.values()})
+        self.assertNotIn("ours", [name for _, name in theirs.values()])

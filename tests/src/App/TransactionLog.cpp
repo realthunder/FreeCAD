@@ -4849,3 +4849,107 @@ TEST_F(TransactionLogTest, stepsRebuiltFromTheRowsKeepTheirAuthors)
     }
     EXPECT_EQ(featureOf(doc(), "A")->Integer.getValue(), 3);
 }
+
+// Sec 30.3 S.e: a row is known by its session's uuid and its ordinal there,
+// which a copy of the file keeps where `seq` does not: two copies number on
+// from the same seq for different rows. Two files are one history when they
+// hold a row in common, and the base of a fork is the newest such row.
+TEST_F(TransactionLogTest, aRowIsKnownAcrossCopiesOfItsFile)
+{
+    App::DocumentParams::setTransactionLog(2);   // embedded
+    edit(doc(), "create", [&]() { make("Obj")->Integer.setValue(1); });
+    edit(doc(), "two", [&]() { featureOf(doc(), "Obj")->Integer.setValue(2); });
+    const std::string path = Base::FileInfo::getTempPath() + "txnlog-fork-ours.FCStd";
+    const std::string fork = Base::FileInfo::getTempPath() + "txnlog-fork-theirs.FCStd";
+    Base::FileInfo(path).deleteFile();
+    Base::FileInfo(fork).deleteFile();
+    ASSERT_TRUE(doc()->saveAs(path.c_str()));
+    // Someone copies the file as it is now, and both go on.
+    ASSERT_TRUE(Base::FileInfo(path).copyTo(fork.c_str()));
+    log().flush();
+    const int64_t atCopy = log().lastSeq();
+    edit(doc(), "ours", [&]() { featureOf(doc(), "Obj")->Integer.setValue(3); });
+    edit(doc(), "ours too", [&]() { featureOf(doc(), "Obj")->Integer.setValue(4); });
+
+    // Every row has an identity, and no two the same.
+    auto& store = log().store();
+    std::set<std::pair<std::string, int64_t>> seen;
+    for (const auto& t : store.transactions()) {
+        App::LogRowId id;
+        ASSERT_TRUE(store.rowId(t.seq, id)) << t.seq;
+        EXPECT_EQ(id.ordinal, t.ordinal);
+        EXPECT_TRUE(seen.emplace(id.session, id.ordinal).second) << t.seq;
+        EXPECT_EQ(store.findRow(id), t.seq);
+    }
+
+    std::string reason;
+    auto theirs = App::FileHistory::openFile(fork, &reason);
+    ASSERT_TRUE(theirs) << reason;
+    App::Document* other = App::Document::openFileVersion(theirs, theirs->fileVersion(), false);
+    ASSERT_TRUE(other);
+    const std::string otherName = other->getName();
+    other->setUndoMode(1);
+    edit(other, "theirs", [&]() { featureOf(other, "Obj")->Integer.setValue(9); });
+    auto otherLog = other->getTransactionLog();
+    ASSERT_TRUE(otherLog);
+    auto& otherStore = otherLog->store();
+
+    // The rows each made after the copy share their numbers and nothing
+    // else.
+    int64_t theirRow = 0;
+    for (const auto& t : otherStore.transactions()) {
+        if (t.name == "theirs")
+            theirRow = t.seq;
+    }
+    ASSERT_GT(theirRow, atCopy);
+    App::LogRowId theirId;
+    ASSERT_TRUE(otherStore.rowId(theirRow, theirId));
+    EXPECT_EQ(store.findRow(theirId), 0) << "a row made in the copy is not one of ours";
+    App::LogRowId ourId;
+    if (store.rowId(theirRow, ourId))
+        EXPECT_FALSE(ourId == theirId) << "the same seq, another row";
+
+    // The base: the newest row both hold, which is where the copy was made.
+    int64_t ours = 0;
+    const int64_t base = App::TransactionLogCore::of(doc()->getFileHistory())
+                             .forkBase(otherStore, otherLog->head(), ours);
+    EXPECT_GT(base, 0);
+    EXPECT_EQ(ours, base) << "the rows before the copy keep their numbers in both";
+    EXPECT_LE(base, atCopy);
+    App::LogRowId a, b;
+    ASSERT_TRUE(store.rowId(ours, a));
+    ASSERT_TRUE(otherStore.rowId(base, b));
+    EXPECT_TRUE(a == b);
+    // Nothing either made since is at or below it, and "two" is.
+    for (const auto& t : store.transactions()) {
+        if (t.name == "ours" || t.name == "ours too")
+            EXPECT_GT(t.seq, ours);
+        if (t.name == "two")
+            EXPECT_LE(t.seq, ours);
+    }
+    EXPECT_GT(theirRow, base);
+    // The other way round finds the same row.
+    int64_t back = 0;
+    EXPECT_EQ(App::TransactionLogCore::of(other->getFileHistory())
+                  .forkBase(store, log().head(), back),
+              ours);
+    EXPECT_EQ(back, base);
+
+    // A history that shares nothing is not one history.
+    App::DocumentParams::setTransactionLog(1);
+    App::Document* stranger = App::GetApplication().newDocument("txnlogStranger", "stranger");
+    stranger->setUndoMode(1);
+    edit(stranger, "alone", [&]() { stranger->addObject("App::FeatureTest", "X"); });
+    auto strangerLog = stranger->getTransactionLog();
+    ASSERT_TRUE(strangerLog);
+    int64_t none = 7;
+    EXPECT_EQ(App::TransactionLogCore::of(doc()->getFileHistory())
+                  .forkBase(strangerLog->store(), strangerLog->head(), none),
+              0);
+    EXPECT_EQ(none, 0);
+
+    App::GetApplication().closeDocument("txnlogStranger");
+    App::GetApplication().closeDocument(otherName.c_str());
+    Base::FileInfo(path).deleteFile();
+    Base::FileInfo(fork).deleteFile();
+}
