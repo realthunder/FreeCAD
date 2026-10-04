@@ -469,7 +469,7 @@ void ExportOCAF2::setupObject(TDF_Label label,
         }
         for (auto& vv : v.second) {
             if (vv.first == App::DocumentObject::hiddenMarker()) {
-                aColorTool->SetVisibility(nodeLabel, Standard_False);
+                setInvisible(nodeLabel);
                 continue;
             }
             // Forced shown by the container although hidden on its own.
@@ -530,6 +530,43 @@ void ExportOCAF2::setupObject(TDF_Label label,
             aColorTool->SetColor(subLabel, color, colorType);
         }
     }
+}
+
+void ExportOCAF2::setInvisible(TDF_Label label)
+{
+    // Work around an OCCT bug: the STEP writer styles an invisible component
+    // from the component label's OWN colours only. With none, it takes a
+    // "default white" branch that calls setDefaultInstanceColor() with a
+    // null override item and dereferences it (STEPCAFControl_Writer.cxx,
+    // MakeSTEPStyles). Checking GetInstanceColor() is not enough: it falls
+    // back to the referred shape's colour, which the writer does not read
+    // for the instance -- that is how a hidden child of an App::Part with a
+    // whole-object colour (every GUI export) crashed. So give the instance
+    // a colour of its own: the one it shows anyway, else the default.
+    if (aShapeTool->IsComponent(label)) {
+        Quantity_ColorRGBA col;
+        if (!aColorTool->GetColor(label, XCAFDoc_ColorGen, col)
+            && !aColorTool->GetColor(label, XCAFDoc_ColorSurf, col)
+            && !aColorTool->GetColor(label, XCAFDoc_ColorCurv, col)) {
+            bool found = false;
+            TDF_Label ref;
+            if (aShapeTool->GetReferredShape(label, ref)) {
+                for (auto type : {XCAFDoc_ColorGen, XCAFDoc_ColorSurf, XCAFDoc_ColorCurv}) {
+                    if (aColorTool->GetColor(ref, type, col)) {
+                        aColorTool->SetColor(label, col, type);
+                        found = true;
+                    }
+                }
+            }
+            if (!found) {
+                aColorTool->SetColor(label,
+                                     Tools::convertColor(options.defaultColor),
+                                     XCAFDoc_ColorGen);
+                FC_WARN(Tools::labelName(label) << " set default color");
+            }
+        }
+    }
+    aColorTool->SetVisibility(label, Standard_False);
 }
 
 void ExportOCAF2::exportObjects(std::vector<App::DocumentObject*>& objs, const char* name)
@@ -764,28 +801,7 @@ TDF_Label ExportOCAF2::exportObject(App::DocumentObject* parentObj,
         }
 
         if (!vis) {
-            // Work around OCCT bug. If no color setting here, it will crash.
-            // The culprit is at STEPCAFControl_Writer::1093 as shown below
-            //
-            // surfColor = Styles.EncodeColor(Quantity_Color(1,1,1,OCC_COLOR_SPACE),DPDCs,ColRGBs);
-            // PSA = Styles.MakeColorPSA ( item, surfColor, curvColor, isComponent );
-            // if ( isComponent )
-            //     setDefaultInstanceColor( override, PSA);
-            //
-            // Can be fixed with following
-            // if ( !override.IsNull() && isComponent )
-            //     setDefaultInstanceColor( override, PSA);
-            //
-            auto childShape = aShapeTool->GetShape(childLabel);
-            Quantity_ColorRGBA col;
-            if (!aColorTool->GetInstanceColor(childShape, XCAFDoc_ColorGen, col)
-                && !aColorTool->GetInstanceColor(childShape, XCAFDoc_ColorSurf, col)
-                && !aColorTool->GetInstanceColor(childShape, XCAFDoc_ColorCurv, col)) {
-                auto& c = options.defaultColor;
-                aColorTool->SetColor(childLabel, Tools::convertColor(c), XCAFDoc_ColorGen);
-                FC_WARN(Tools::labelName(childLabel) << " set default color");
-            }
-            aColorTool->SetVisibility(childLabel, Standard_False);
+            setInvisible(childLabel);
         }
     }
 

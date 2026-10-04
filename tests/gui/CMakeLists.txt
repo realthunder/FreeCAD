@@ -1097,3 +1097,10 @@ fc_add_gui_test(GuiServeDatumMeasure_tests_run
 fc_add_gui_test(GuiSketchCopyClipboardCost_tests_run
                 sketch-copy-clipboard-cost.py
                 --timeout 240)
+
+# A hidden child of an App::Part exports to STEP, hidden and in its own
+# colour: OCCT's writer faulted on an invisible component without a colour
+# of its own (occ-issues local05), which ExportOCAF2's workaround missed.
+fc_add_gui_test(GuiExportHiddenComponent_tests_run
+                export-hidden-component.py
+                --timeout 180)
