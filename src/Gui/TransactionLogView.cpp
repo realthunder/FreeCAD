@@ -32,6 +32,7 @@
 # include <QDateTime>
 # include <QDialog>
 # include <QDialogButtonBox>
+# include <QFileInfo>
 # include <QFontDatabase>
 # include <QHBoxLayout>
 # include <QHeaderView>
@@ -66,6 +67,7 @@
 #include "TransactionLogView.h"
 #include "Application.h"
 #include "Document.h"
+#include "FileDialog.h"
 
 FC_LOG_LEVEL_INIT("Gui", true, true)
 
@@ -317,6 +319,11 @@ TransactionLogView::TransactionLogView(Gui::Document* pcDocument, QWidget* paren
     _mergeBranch->setToolTip(tr("Merge another branch into this one: what it changed and this "
                                 "one did not, as one undoable step (sec 28)"));
     branchBar->addWidget(_mergeBranch);
+    _importFile = new QPushButton(tr("Merge from file..."), this);
+    _importFile->setToolTip(tr("Bring another copy of this file in: what it has done since the "
+                               "two parted comes as a branch named after it, each row under "
+                               "its author, and is then merged like any branch (sec 30.13)"));
+    branchBar->addWidget(_importFile);
     _openBranch = new QPushButton(tr("Branch to document"), this);
     _openBranch->setToolTip(tr("Make a branch here and open it in another document of this "
                                "file; this one stays where it is, and either is merged into "
@@ -473,6 +480,7 @@ TransactionLogView::TransactionLogView(Gui::Document* pcDocument, QWidget* paren
     connect(_deleteBranch, &QPushButton::clicked, this, &TransactionLogView::onDeleteBranch);
     connect(_renameBranch, &QPushButton::clicked, this, &TransactionLogView::onRenameBranch);
     connect(_mergeBranch, &QPushButton::clicked, this, &TransactionLogView::onMergeBranch);
+    connect(_importFile, &QPushButton::clicked, this, &TransactionLogView::onImportFile);
     connect(_openBranch, &QPushButton::clicked, this, &TransactionLogView::onOpenBranch);
     connect(_allBranches, &QCheckBox::toggled, this, &TransactionLogView::applyVisibility);
     connect(_hideRecords, &QCheckBox::toggled, this, &TransactionLogView::applyVisibility);
@@ -1149,6 +1157,7 @@ void TransactionLogView::refreshBranches()
         _deleteBranch->setEnabled(false);
         _renameBranch->setEnabled(false);
         _mergeBranch->setEnabled(false);
+        _importFile->setEnabled(false);
         _openBranch->setEnabled(false);
         return;
     }
@@ -1172,6 +1181,7 @@ void TransactionLogView::refreshBranches()
     _newBranch->setEnabled(_doc != nullptr);
     _deleteBranch->setEnabled(_doc != nullptr && _branch->count() > 1);
     _mergeBranch->setEnabled(_doc != nullptr && _branch->count() > 1);
+    _importFile->setEnabled(_doc != nullptr && !l->detached());
     _openBranch->setEnabled(_doc != nullptr && !l->detached());
     _renameBranch->setEnabled(_doc != nullptr && _branch->currentIndex() >= 0);
 }
@@ -1452,6 +1462,79 @@ void TransactionLogView::mergeBranch(const QString& name)
     catch (Base::Exception& e) {
         FC_ERR("merge of branch " << name.toStdString() << ": " << e.what());
         _status->setText(tr("Branch not merged -- the report view says why"));
+    }
+}
+
+void TransactionLogView::onImportFile()
+{
+    if (!_doc)
+        return;
+    const QString path = FileDialog::getOpenFileName(
+        this, tr("Merge from file"), QString(),
+        QStringLiteral("%1 (*.FCStd)").arg(tr("FreeCAD document")));
+    if (!path.isEmpty())
+        importFile(path, QString());
+}
+
+void TransactionLogView::importFile(const QString& path, const QString& branch)
+{
+    auto l = log();
+    if (!l || !_doc)
+        return;
+    const QString file = QFileInfo(path).fileName();
+    try {
+        // F6: the branch asked for; else the one the copy's file reopens
+        // on, which the user confirms or changes when the copy has more
+        // than one with something to bring.
+        QString from = branch;
+        if (from.isEmpty()) {
+            QStringList names;
+            int current = 0;
+            bool shares = false;
+            for (const auto& b : _doc->forkBranches(path.toStdString())) {
+                shares = shares || b.base > 0;
+                if (!b.base || !b.ahead)
+                    continue;
+                if (b.current)
+                    current = names.size();
+                names << QString::fromStdString(b.name);
+            }
+            if (names.isEmpty()) {
+                _status->setText(shares ? tr("Nothing new in %1").arg(file)
+                                        : tr("%1 shares no history with this file").arg(file));
+                return;
+            }
+            from = names[current];
+            if (names.size() > 1) {
+                bool ok = false;
+                from = QInputDialog::getItem(this, tr("Merge from file"),
+                                             tr("The branch of %1 to bring in:").arg(file), names,
+                                             current, false, &ok);
+                if (!ok || from.isEmpty())
+                    return;
+            }
+        }
+        const auto result = _doc->importFork(path.toStdString(), from.toStdString());
+        refresh();
+        if (!result.rows && !result.stoppedAt) {
+            _status->setText(tr("Nothing new in %1").arg(file));
+            return;
+        }
+        const QString name = QString::fromStdString(result.branch);
+        if (result.stoppedAt)
+            Base::Console().Warning("Merge from %s: %s\n", file.toUtf8().constData(),
+                                    result.reason.c_str());
+        // The merge is the owner's to make (sec 30.3): the preview, then.
+        if (result.rows)
+            mergeBranch(name);
+        if (result.stoppedAt)
+            _status->setText(tr("%1: %2 rows came as branch %3, then one could not be applied "
+                                "-- the report view says why")
+                                 .arg(file).arg(result.rows).arg(name));
+    }
+    catch (Base::Exception& e) {
+        FC_ERR("merge from " << path.toStdString() << ": " << e.what());
+        _status->setText(tr("%1 not brought in -- the report view says why").arg(file));
     }
 }
 

@@ -91,6 +91,7 @@ private Q_SLOTS:
     void onDeleteBranch();
     void onRenameBranch();
     void onMergeBranch();
+    void onImportFile();
     void onOpenBranch();
     void applyVisibility();
     /// Lay the graph out over the rows shown (docs/TransactionLog.md sec 26).
@@ -103,6 +104,15 @@ public Q_SLOTS:
     /// (docs/TransactionLog.md sec 28): the preview in a dialog where each
     /// conflict gets a side, then the merge.
     void mergeBranch(const QString& name);
+    /** Bring another copy of this file in as a branch, then merge it
+     * (docs/TransactionLog.md sec 30.13, 30.14): the copy's rows since the
+     * two parted are imported as a branch named after it, and that branch
+     * is put to mergeBranch() -- the preview, a side for each conflict, the
+     * merge, or nothing. `branch` names the copy's branch; empty, the one
+     * its file reopens on, chosen from a list when it has more than one
+     * with something to bring.
+     */
+    void importFile(const QString& path, const QString& branch);
 
 protected:
     void showEvent(QShowEvent*) override;
@@ -146,6 +156,7 @@ private:
     QPushButton* _deleteBranch {nullptr};
     QPushButton* _renameBranch {nullptr};
     QPushButton* _mergeBranch {nullptr};
+    QPushButton* _importFile {nullptr};
     QPushButton* _openBranch {nullptr};
     QCheckBox* _allBranches {nullptr};
     QCheckBox* _hideRecords {nullptr};
