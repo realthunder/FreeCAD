@@ -1848,9 +1848,18 @@ bool PropertyLinkSub::referenceChanged() const {
     return !_mapped.empty();
 }
 
+/// A sub-object path read from a value of another copy of the file names
+/// its element in that copy's string table (docs/TransactionLog.md sec
+/// 30.16): taken into this file's, where a restore is reading one.
+static std::string importSubStrings(std::string sub)
+{
+    auto strings = RestoreStrings::current();
+    return strings ? strings->sub(sub) : sub;
+}
+
 std::string PropertyLinkBase::importSubName(Base::XMLReader &reader, const char *sub, bool &restoreLabel) {
     if(!reader.doNameMapping())
-        return sub;
+        return importSubStrings(sub);
     std::ostringstream str;
     for(const char *dot=strchr(sub,'.');dot;sub=dot+1,dot=strchr(sub,'.')) {
         size_t count = dot-sub;
@@ -1865,7 +1874,7 @@ std::string PropertyLinkBase::importSubName(Base::XMLReader &reader, const char 
         str << reader.getName(std::string(sub,count).c_str()) << tail;
     }
     str << sub;
-    return str.str();
+    return importSubStrings(str.str());
 }
 
 const char *PropertyLinkBase::exportSubName(std::string &output,
@@ -2171,6 +2180,19 @@ static void restoreShadowIDs(Base::XMLReader &reader, PropertyLinkBase::ShadowSu
     shadow.stored.clear();
     shadow.storedIds.clear();
     shadow.pending = false;
+    if (auto strings = RestoreStrings::current()) {
+        // A value of another copy of the file (sec 30.16): the name was
+        // taken into this table as it was read (importSubName), and the
+        // numbers written beside it are the other table's. What is held is
+        // what the name now names.
+        shadow.sids = strings->held(shadow.first);
+        if (reader.hasAttribute(ATTR_STORED)) {
+            shadow.stored = strings->element(reader.getAttribute(ATTR_STORED));
+            shadow.storedIds = strings->held(shadow.stored);
+            shadow.pending = !shadow.stored.empty();
+        }
+        return;
+    }
     if (reader.hasAttribute(ATTR_STORED)) {
         shadow.stored = reader.getAttribute(ATTR_STORED);
         shadow.pending = !shadow.stored.empty();

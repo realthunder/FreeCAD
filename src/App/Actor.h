@@ -47,6 +47,10 @@ namespace App
  * admitted connection of a user from the next: the log keeps a session row
  * per login and a user row per kind and name, so one person's logins are
  * one author.
+ *
+ * `Fork` is no connection: the desktop user of another copy of the file,
+ * whose rows were imported (sec 30.13 F4). Two people both called `host`
+ * are two people, so the name says which file's.
  */
 struct AppExport Actor
 {
@@ -55,7 +59,8 @@ struct AppExport Actor
         Local,
         Verified,
         Invited,
-        Declared
+        Declared,
+        Fork
     };
     Kind kind {Local};
     std::string name;
@@ -64,8 +69,8 @@ struct AppExport Actor
     /// One admitted connection; 0 for a user with no connection of its own.
     uint64_t login {0};
 
-    /// `local`, `verified`, `invited`, `declared`: the kind as the log
-    /// stores it.
+    /// `local`, `verified`, `invited`, `declared`, `fork`: the kind as the
+    /// log stores it.
     static const char* kindName(Kind kind);
     /// The kind of a stored name; false for a name that is none.
     static bool kindFromName(const std::string& name, Kind& kind);

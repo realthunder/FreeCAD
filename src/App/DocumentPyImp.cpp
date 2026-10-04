@@ -977,7 +977,8 @@ namespace
 bool actorFromPy(const char* kind, const char* name, const char* access, unsigned long long login,
                  Actor& actor)
 {
-    if (!Actor::kindFromName(kind, actor.kind) || actor.kind == Actor::Local) {
+    if (!Actor::kindFromName(kind, actor.kind) || actor.kind == Actor::Local
+            || actor.kind == Actor::Fork) {
         PyErr_SetString(PyExc_ValueError,
                         "kind must be 'verified', 'invited' or 'declared'");
         return false;
@@ -1474,6 +1475,57 @@ PyObject* DocumentPy::mergeTransactionBranch(PyObject *args)
             failed.append(Py::String(name));
         d.setItem("failed", failed);
         d.setItem("preview", mergePreviewToPy(result.preview));
+        return Py::new_reference_to(d);
+    } PY_CATCH;
+}
+
+PyObject* DocumentPy::getTransactionForkBranches(PyObject *args)
+{
+    char* path;
+    if (!PyArg_ParseTuple(args, "et", "utf-8", &path))
+        return nullptr;
+    const std::string file(path);
+    PyMem_Free(path);
+    PY_TRY {
+        Py::List list;
+        for (const auto& b : getDocumentPtr()->forkBranches(file)) {
+            Py::Dict d;
+            d.setItem("name", Py::String(b.name));
+            d.setItem("current", Py::Boolean(b.current));
+            d.setItem("closed", Py::Boolean(b.closed));
+            d.setItem("base", Py::Long(static_cast<long long>(b.base)));
+            d.setItem("ahead", Py::Long(static_cast<unsigned long long>(b.ahead)));
+            list.append(d);
+        }
+        return Py::new_reference_to(list);
+    } PY_CATCH;
+}
+
+PyObject* DocumentPy::importTransactionFork(PyObject *args)
+{
+    char* path;
+    const char* branch = "";
+    if (!PyArg_ParseTuple(args, "et|s", "utf-8", &path, &branch))
+        return nullptr;
+    const std::string file(path);
+    PyMem_Free(path);
+    PY_TRY {
+        const auto result = getDocumentPtr()->importFork(file, branch);
+        Py::Dict d;
+        d.setItem("branch", Py::String(result.branch));
+        d.setItem("from", Py::String(result.from));
+        d.setItem("base", Py::Long(static_cast<long long>(result.base)));
+        d.setItem("rows", Py::Long(static_cast<unsigned long long>(result.rows)));
+        d.setItem("skipped", Py::Long(static_cast<unsigned long long>(result.skipped)));
+        d.setItem("versions", Py::Long(static_cast<unsigned long long>(result.versions)));
+        d.setItem("extended", Py::Boolean(result.extended));
+        d.setItem("stopped_at", Py::Long(static_cast<long long>(result.stoppedAt)));
+        d.setItem("reason", Py::String(result.reason));
+        Py::Dict renamed;
+        for (const auto& kv : result.renamed)
+            renamed.setItem(Py::String(kv.first), Py::String(kv.second));
+        d.setItem("renamed", renamed);
+        d.setItem("seq", Py::Long(static_cast<long long>(result.seq)));
         return Py::new_reference_to(d);
     } PY_CATCH;
 }

@@ -5826,3 +5826,196 @@ class TransactionBranchCases(unittest.TestCase):
         self.assertEqual(len(made), 1)
         self.assertFalse(made & {uid for uid, _ in ours.values()})
         self.assertNotIn("ours", [name for _, name in theirs.values()])
+
+    def testAForkIsImportedAsABranch(self):
+        # Sec 30.13, 30.14 (S.f): another copy of the file, edited apart,
+        # comes in as a branch -- its rows under the authors and the
+        # identities they had, its derived values left out -- and the merge
+        # is the one any branch has.
+        import shutil
+
+        doc = self.track(FreeCAD.newDocument("ImportOurs"))
+        doc.UndoMode = 1
+        doc.openTransaction("create")
+        box = doc.addObject("Part::Box", "Box")
+        box.Length = 10
+        doc.recompute()
+        doc.commitTransaction()
+        path = os.path.join(self.dir, "import-ours.FCStd")
+        copy = os.path.join(self.dir, "import-theirs.FCStd")
+        doc.saveAs(path)
+        shutil.copyfile(path, copy)
+
+        fork = self.track(FreeCAD.openDocument(copy))
+        fork.UndoMode = 1
+        fork.openTransaction("theirs longer")
+        fork.Box.Length = 20
+        fork.recompute()
+        fork.commitTransaction()
+        fork.openTransaction("theirs cylinder")
+        cyl = fork.addObject("Part::Cylinder", "Cyl")
+        cyl.Height = 5
+        fork.recompute()
+        fork.commitTransaction()
+        theirs = {
+            t["name"]: t["uid"] for t in fork.getTransactionLog() if t["name"].startswith("theirs")
+        }
+        self.assertEqual(len(theirs), 2)
+        fork.save()
+        FreeCAD.closeDocument(fork.Name)
+        FreeCAD.setActiveDocument(doc.Name)
+
+        offered = [b for b in doc.getTransactionForkBranches(copy) if b["current"]]
+        self.assertEqual(len(offered), 1)
+        self.assertGreater(offered[0]["base"], 0)
+        self.assertEqual(offered[0]["ahead"], 2)
+
+        documents = len(FreeCAD.listDocuments())
+        res = doc.importTransactionFork(copy)
+        self.assertEqual(res["stopped_at"], 0, res)
+        self.assertEqual(res["branch"], "import-theirs")
+        self.assertEqual(res["rows"], 2, res)
+        self.assertFalse(res["extended"])
+        self.assertEqual(res["renamed"], {})
+        # Nothing here moved, and the document the rows ran in is closed.
+        self.assertEqual(len(FreeCAD.listDocuments()), documents)
+        self.assertEqual(doc.Box.Length.Value, 10)
+        self.assertIsNone(doc.getObject("Cyl"))
+        came = [t for t in doc.getTransactionLog() if t["branch"] == res["branch"]]
+        rows = {t["name"]: t for t in came if t["name"].startswith("theirs")}
+        self.assertEqual(sorted(rows), sorted(theirs))
+        for name, uid in theirs.items():
+            self.assertEqual(rows[name]["uid"], uid, name)
+            self.assertEqual(rows[name]["author_kind"], "fork", name)
+            self.assertIn("import-theirs", rows[name]["author"])
+        # Then the import's own record, and the tip left as a version.
+        self.assertEqual([t["kind"] for t in came if t["seq"] == res["seq"]], ["import"])
+
+        # This side has not moved: the merge takes the rows as they are, and
+        # what they left out -- the shapes -- is computed here.
+        merged = doc.mergeTransactionBranch(res["branch"])
+        self.assertEqual(merged["unresolved"], [])
+        self.assertEqual(doc.Box.Length.Value, 20)
+        self.assertIsNotNone(doc.getObject("Cyl"))
+        self.assertEqual(doc.Cyl.Height.Value, 5)
+        self.assertEqual(merged["failed"], [])
+        self.assertFalse([o.Name for o in doc.Objects if "Touched" in o.State])
+        self.assertAlmostEqual(doc.Box.Shape.Volume, 20 * 10 * 10, 6)
+        self.assertAlmostEqual(doc.Cyl.Shape.Volume, math.pi * 2 * 2 * 5, 6)
+        self.assertFalse([o.Name for o in doc.Objects if "Invalid" in o.State])
+
+        # Imported again with nothing new, nothing comes.
+        self.assertEqual(doc.importTransactionFork(copy)["rows"], 0)
+
+    def testAForkImportTakesItsStringsByContent(self):
+        # Sec 30.16 (S.f): what a copy's values name by number -- the
+        # strings of an element map nothing recomputes and of a reference's
+        # element, and in their text the ids of the objects that made them
+        # -- are the copy's. This file has other strings under those
+        # numbers once both have gone on, and gives the copy's new objects
+        # other ids. The strings come by content, the ids mapped.
+        import re
+        import shutil
+
+        doc = self.track(FreeCAD.newDocument("StringsOurs"))
+        doc.UndoMode = 1
+        doc.openTransaction("create")
+        doc.addObject("Part::Box", "Box")
+        doc.recompute()
+        doc.commitTransaction()
+        path = os.path.join(self.dir, "strings-ours.FCStd")
+        copy = os.path.join(self.dir, "strings-theirs.FCStd")
+        doc.saveAs(path)
+        shutil.copyfile(path, copy)
+
+        # This file goes on: an object and strings the copy never sees.
+        doc.openTransaction("ours")
+        mine = doc.addObject("Part::Fillet", "Mine")
+        mine.Base = doc.Box
+        mine.Edges = [(1, 1, 1), (5, 1, 1)]
+        doc.recompute()
+        doc.commitTransaction()
+
+        def expand(hasher, text):
+            def one(m):
+                sid = hasher.getID(int(m.group(1), 16))
+                return expand(hasher, sid.Data) if sid else "<missing>"
+
+            return re.sub(r"#([0-9a-f]+)", one, text)
+
+        def byElement(shape):
+            return {e: n for n, e in shape.ElementMap.items()}
+
+        def retag(text, tags):
+            # An element name with its object ids as another file has them.
+            def one(m):
+                tag = int(m.group(2), 16)
+                return ";:H%s%x" % (m.group(1), tags.get(tag, tag))
+
+            return re.sub(r";:H(-?)([0-9a-f]+)", one, text)
+
+        fork = self.track(FreeCAD.openDocument(copy))
+        fork.UndoMode = 1
+        fork.openTransaction("theirs chamfer")
+        chamfer = fork.addObject("Part::Chamfer", "Theirs")
+        chamfer.Base = fork.Box
+        chamfer.Edges = [(3, 1, 1), (7, 1, 1)]
+        fork.recompute()
+        fork.commitTransaction()
+        fork.openTransaction("theirs fillet")
+        fillet = fork.addObject("Part::Fillet", "Theirs2")
+        fillet.Base = chamfer
+        fillet.Edges = [(2, 0.2, 0.2), (9, 0.2, 0.2)]
+        fork.recompute()
+        fork.commitTransaction()
+        fork.openTransaction("theirs static")
+        static = fork.addObject("Part::Feature", "Static")
+        static.Shape = fillet.Shape
+        fork.commitTransaction()
+        fork.openTransaction("theirs ref")
+        ref = fork.addObject("App::FeaturePython", "Ref")
+        ref.addProperty("App::PropertyLinkSub", "Sub")
+        ref.Sub = (fillet, ("Face3",))
+        fork.recompute()
+        fork.commitTransaction()
+        theirIds = {o.Name: o.ID for o in fork.Objects}
+        rawStatic = byElement(fork.Static.Shape)
+        self.assertTrue(rawStatic)
+        self.assertTrue([n for n in rawStatic.values() if "#" in n])
+        saidStatic = {e: expand(fork.Hasher, n) for e, n in rawStatic.items()}
+        saidFace = expand(fork.Hasher, byElement(fork.Theirs2.Shape)["Face3"])
+        for text in list(saidStatic.values()) + [saidFace]:
+            self.assertNotIn("<missing>", text)
+        fork.save()
+        FreeCAD.closeDocument(fork.Name)
+        FreeCAD.setActiveDocument(doc.Name)
+
+        res = doc.importTransactionFork(copy)
+        self.assertEqual(res["stopped_at"], 0, res)
+        self.assertEqual(res["rows"], 4, res)
+        merged = doc.mergeTransactionBranch(res["branch"])
+        self.assertEqual(merged["unresolved"], [])
+        self.assertEqual(merged["failed"], [])
+
+        # The copy's objects have other ids here: this file made one since.
+        tags = {theirIds[n]: doc.getObject(n).ID for n in ("Theirs", "Theirs2", "Static", "Ref")}
+        self.assertTrue([a for a, b in tags.items() if a != b], tags)
+        # The shape nothing recomputes: every element named as the copy
+        # named it, said in this file's strings and this file's object ids.
+        hereStatic = byElement(doc.Static.Shape)
+        self.assertEqual(sorted(hereStatic), sorted(rawStatic))
+        self.assertEqual(
+            {e: expand(doc.Hasher, n) for e, n in hereStatic.items()},
+            {e: retag(n, tags) for e, n in saidStatic.items()},
+        )
+        self.assertTrue(doc.Static.Shape.Hasher.isSame(doc.Hasher))
+        # Which is what the recompute here names the same elements: the
+        # fillet's face reads as the copy's did, under the ids here.
+        self.assertEqual(
+            expand(doc.Hasher, byElement(doc.Theirs2.Shape)["Face3"]), retag(saidFace, tags)
+        )
+        # The reference resolves, and this file's own fillet is as it was.
+        self.assertEqual(doc.Ref.Sub, (doc.Theirs2, ["Face3"]))
+        self.assertTrue(doc.Mine.Shape.isValid())
+        self.assertFalse([o.Name for o in doc.Objects if "Invalid" in o.State])
+        self.assertFalse([o.Name for o in doc.Objects if "Touched" in o.State])

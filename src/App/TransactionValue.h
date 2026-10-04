@@ -23,12 +23,15 @@
 #ifndef APP_TRANSACTION_VALUE_H
 #define APP_TRANSACTION_VALUE_H
 
+#include <map>
 #include <memory>
 #include <string>
 #include <unordered_map>
 #include <vector>
 #include <FCGlobal.h>
 #include <fastsignals/signal.h>
+
+#include "StringHasher.h"
 
 namespace Base { class Persistence; }
 
@@ -156,6 +159,78 @@ public:
 private:
     std::unordered_map<const DocumentObject*, std::string> _names;
     CaptureNames* _outer;
+};
+
+/** The names the values restored on this thread are read through
+ * (docs/TransactionLog.md sec 30.13, 30.4 P4). A fork's new object whose
+ * name this file has given to another since arrives under a new one, and
+ * what names it follows: a link's target, an object in a sub-object path,
+ * an expression. While one of these lives, restoreValue() reads through
+ * it the way a paste reads through its reader's map. One at a time: an
+ * expression is told through ExpressionParser::ExpressionImporter, which
+ * does not nest.
+ */
+class AppExport RestoreNames
+{
+public:
+    explicit RestoreNames(std::map<std::string, std::string> names);
+    ~RestoreNames();
+    RestoreNames(const RestoreNames&) = delete;
+    RestoreNames& operator=(const RestoreNames&) = delete;
+    /// The innermost scope on this thread, or null.
+    static const RestoreNames* current();
+    /// What `name` is here: itself, unless the scope renames it.
+    const char* map(const char* name) const;
+    bool empty() const { return _names.empty(); }
+
+private:
+    struct Importing;
+    std::map<std::string, std::string> _names;
+    std::unique_ptr<Importing> _importing;
+    RestoreNames* _outer;
+};
+
+/** The string table the values restored on this thread name their strings
+ * in (docs/TransactionLog.md sec 30.13 F1, 30.16). A value of another copy
+ * of the file names string ids of that copy's table; in this file's the
+ * same numbers are other strings, or none. While one of these lives, a
+ * restore reads the ids of an element map, of a reference's shadow name
+ * and of an expression's element paths as `from`'s, and each string is
+ * taken into `to` by content (StringHasher::importID): what the property
+ * ends up holding names this file's table only.
+ */
+class AppExport RestoreStrings
+{
+public:
+    RestoreStrings(StringHasherRef from, StringHasherRef to);
+    ~RestoreStrings();
+    RestoreStrings(const RestoreStrings&) = delete;
+    RestoreStrings& operator=(const RestoreStrings&) = delete;
+    /// The innermost scope on this thread, or null.
+    static RestoreStrings* current();
+    const StringHasherRef& from() const { return _from; }
+    const StringHasherRef& to() const { return _to; }
+    /** The element part of a name, `;<mapped>.<indexed>`, with the ids of
+     * its mapped name taken into `to`. One that names a string `from` has
+     * not got falls to its indexed name alone: stale ids resolve nothing,
+     * or the wrong thing. An element with no mapped name is as it was.
+     */
+    std::string element(const char* element);
+    /// A sub-object path, its element part through element().
+    std::string sub(const std::string& sub);
+    /// The ids of `to` the text element() or sub() last returned as `text`
+    /// names, which whoever keeps the text holds.
+    QVector<StringIDRef> held(const std::string& text) const;
+    /// The id in `to` of `from`'s string `id`, 0 when it cannot be had.
+    long id(long id);
+
+private:
+    StringHasherRef _from;
+    StringHasherRef _to;
+    StringHasher::ImportMemo _memo;
+    std::map<std::string, QVector<StringIDRef>> _held;
+    std::vector<StringIDRef> _ids;
+    RestoreStrings* _outer;
 };
 
 /** The document a capture on this thread is for, or null outside one

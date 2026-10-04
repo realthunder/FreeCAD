@@ -12791,3 +12791,246 @@ unfrozen; 6 expected failures), ctest 872/872 -- the wire tests are one
 entry, still 26 cases -- and the GUI checks RC 15, BC 27, VC 18, PC 28,
 FC 16, VW 14, MC 28, the two-document check 24, the tree check 19 and
 the author check 36.
+
+### 30.15 S.f as built, the first step: a copy's rows replayed as a branch (2026-10-04)
+
+`Document::importFork(path, branch)`, Python `importTransactionFork(path,
+branch='')`; `Document::forkBranches(path)`, Python
+`getTransactionForkBranches(path)`, is what F6 chooses from. Nothing is
+merged by either: the merge is 28's, on the branch the import leaves.
+
+**The steps.**
+
+1. **The copy's history, without its document** (`FileHistory::openFile`,
+   27.13), and the branch asked for -- the one its file reopens on
+   (`metaBranch`) when none is named. A document of the copy open in this
+   process is the same history: its open transaction is committed and its
+   pending values resolved first.
+2. **The base** (`forkBase`, 30.12). None: refused, "shares no history".
+   No row after it that holds an operation: nothing is done, and nothing
+   is made.
+3. **The branch here.** A branch an earlier import made, when the base is
+   the last thing that moved on it -- which the base's identity finds, an
+   imported row being the copy's own (F3) -- is continued (F7). Else a new
+   one, named after the file, with `@<branch>` after it when the copy's
+   branch is not its file's, and `~2`, `~3` when that is taken. Its
+   `target` is the branch the base is on.
+4. **The document the rows run in.** For a new branch: the newest version
+   on the base's chain opened as a version document with no view, moved
+   along the log to the base (`_moveAlongLog`), its cursor put on the new
+   branch (`forkHere`). For a continued one: the document holding the
+   branch, or the branch opened (`openFileBranch`). A document opened for
+   the import leaves its tip as a version (`_leaveBranch`) and is closed.
+   The document asked does not move.
+5. **Each row of the copy with ops, oldest first**, as one transaction:
+   everything it needs read and checked before anything moves, then
+   - the objects it made, under the next ids of this file, and under the
+     names they had unless this file has given the name to another (P4);
+   - the dynamic properties it added and removed;
+   - its values, read from the copy's store and restored
+     (`restoreValue`), the files they name brought into this file's blob
+     store first;
+   - the owners of the derived values it wrote, touched: the values
+     themselves are left out (F2);
+   - the objects it removed.
+   The commit is the ordinary one, so the row's ops and values are this
+   file's: its ids, its names, its captures.
+6. **The import's record**, kind `import`, under whoever ran it: the file,
+   the copy's branch, the base, the rows, where it stopped and why, what
+   was renamed.
+
+**The maps (F1).** The copy's object id to the id here, the copy's name
+to the name here. An object both had at the base has one id and one name
+in both and is in neither map. They are kept in the store's meta under
+`import:<branch id>`, with the file and the copy's branch, and read back
+when the branch is continued -- an object the first import brought is
+still that object in the second.
+
+- *Ids* are mapped where an op names its container.
+- *Names* are mapped where a value is read: `App::RestoreNames`, a scope
+  `restoreValue` reads through as a paste reads through its reader's map
+  -- a link's target, an object in a sub-object path, and, through
+  `ExpressionParser::ExpressionImporter`, an expression.
+
+**Whose row it is (F3, F4).** `TransactionLog::Stamp`, set for the commit:
+the row is written under the session it was made in there and with the
+ordinal and the time it had. `TransactionLog::importSession` brings that
+session over by its uuid -- closed, with its times, its environment and
+its user -- once. The copy's desktop user is not this file's: it comes as
+a user of a fifth kind, `fork` (`Actor::Fork`), named `<name> (<file>)`,
+so an imported row is on nobody's undo stack here but its author's. Any
+other user of the copy is who they were. The transaction is opened under
+that author; what the commit records beside the row -- a snapshot -- is
+this process's own.
+
+The row's kind is kept, a `merge` of the copy's own becoming `user` since
+its second parent is not here; `inverts` is mapped to the row here, an
+imported one or one both hold. Its script is `{"imported": {"file",
+"seq"}}`, with `"renamed"` when P4 applied.
+
+**A row that cannot be applied (F8)** -- an object type this build lacks,
+a value that never reached the copy's log or is gone from it, a property
+the object has not got -- is rolled back whole (`_abortTransaction`), and
+the import ends there: `stopped_at` and `reason`, the rows before it
+kept, the record saying so. A second import begins at the same row.
+
+**Left out without stopping.** A dynamic property whose type has no name
+in the type system (`BadType`), and its value: Part hangs its shape cache
+on an object as one, and the log records it. A view provider's ops when
+there is no Gui. A row that changes nothing here.
+
+**The merge, and what the rows left out.** An imported row is marked by
+its script. Where a merge takes rows as they are -- the fast-forward of
+30.4 P1, and 28.6 Q1's move along the log -- and one of them is imported,
+the merge recomputes: `mergeBranch` after the document has arrived, with
+the objects that fail in `failed`. Where both sides moved, 28 recomputes
+already.
+
+**Seen on the way.** A Part primitive recomputes itself when a dimension
+is set outside a restore, so a box's new length arrives with its shape,
+written as a value of the row like any. A created object's values are
+every persisted property it has, its shape with them: not marked derived,
+so brought -- with the string ids of the copy's table in its element map.
+That is the next step.
+
+**Tests.** Gtest `aForkIsImportedAsABranch`: a file copied, both going
+on; the copy changes a value, makes an object under a name this file has
+also given since and links to it, and removes an object. The branches
+offered; three rows on a branch named after the file, each with the
+copy's identity and a `fork` author, the import's record this process's;
+this document unmoved and the replay's document gone; the merge with
+nothing conflicting -- the copy's object under its new name and id, the
+link naming it, both objects called `New` there. The copy goes on: a
+second import continues the branch, one row, the object's id kept. A
+third brings nothing. A file sharing nothing, and a branch the copy has
+not got, are refused. Python `testAForkIsImportedAsABranch`: Part, a box
+made longer and a cylinder added in the copy; imported, merged as a
+fast-forward, and every shape up to date with the volume it should have.
+
+### 30.16 S.f, the second step: strings by content, and the ids a name carries (2026-10-04)
+
+**What a value names by number.** A value of the copy's log is XML the
+copy captured, and three kinds of it say things by string id: an element
+map (a shape's), a reference's shadow name beside its `sids=` (a link, a
+sub-object list, an external link), and an expression's element paths
+(`<ExpressionIds>`, 27.78). The numbers are of the copy's table. The two
+tables are one up to the base and part after it: each side mints on from
+the same number, for other strings.
+
+**`App::RestoreStrings(from, to)`**, a scope on the thread like
+`RestoreNames`, set by the import round the values of a row: `from` the
+copy's table -- its file's table member, read when its history is opened,
+with the strings its store holds (`loadStrings`) -- and `to` this file's.
+While it lives:
+
+- **An element map** is read with `from` and taken into `to`
+  (`translateElementMap`, 27.78), where the geometry's table is `to`: in
+  `ComplexGeoData::Restore` and `RestoreDocFile`, the two places a map is
+  read. A geometry with a table of its own (`SaveHasher`) is left to it.
+- **A sub-object path** read through `PropertyLinkBase::importSubName` --
+  every `shadow=`, `shadowed=` and value a link restore reads goes
+  through it -- has the mapped name of its element taken in
+  (`StringHasher::importText`). `restoreShadowIDs` then holds what the
+  new text names instead of reading the numbers written beside it, and
+  takes `stored=` in the same way. A name that names a string the copy's
+  table has not got falls to its indexed name: a stale id resolves
+  nothing, or the wrong thing.
+- **An expression's ids** are taken in one by one, and its saved shadow
+  and stored names as a link's.
+
+Nothing else reads a string id from a value. What the row then captures
+at its commit names this file's table only.
+
+**The ids a name carries -- found by the probe, not planned.** An element
+name says which object made each step of it by a tag, `;:H<hex id>`:
+`Face1;:M;CHF;:H7db:7,F;:M;FLT;:H9a1:7,F` is a face a chamfer of object
+`0x7db` modified and a fillet of object `0x9a1` modified again. The tag
+is in the name's own text and in the text of every string it names. The
+copy's new objects come under new ids (30.15), so a name brought by
+content alone still said the copy's ids: a shape nothing recomputes kept
+them for good, and a reference into a recomputed shape no longer matched
+the name the recompute gave -- it was put right by the reference's own
+repair ("auto change element reference"), which is a search, not a
+lookup.
+
+`StringHasher::ImportTags(map)`, a scope the import sets with the object
+id map: `rewriteIds`, the one place `importText`, `importName` and
+`importID` rewrite a text, rewrites each `;:H<hex>` the map names as it
+goes, a child map's tag with them (`ElementMap::translate`). A name then
+comes as this file would have made it. That matters past tidiness: the
+string a recompute here mints for the same element is the one the import
+took in, found by content, not a second one.
+
+**Tests.** Python `testAForkImportTakesItsStringsByContent`: a box; this
+file adds a fillet, so its table and its ids go on; the copy adds a
+chamfer, a fillet of that, a `Part::Feature` holding a copy of the
+fillet's shape -- which nothing recomputes -- and a reference to a face of
+the fillet. Imported and merged: the static shape names every element as
+the copy named it, expanded through this file's table and with the copy's
+object ids mapped to the ones here, and the numbers are not the copy's;
+the fillet's face, recomputed here, reads the same way; the reference
+resolves; nothing is touched or invalid.
+
+### 30.17 S.f, the third step: versions, the panel, and what is left (2026-10-04)
+
+**The copy's named versions (F5).** A named version of the copy at a row
+past the base is taken again here when the replay has reached that row
+-- a snapshot of the replay's document, named as the copy named it, a
+version of the branch under this file's next number. Unnamed ones do not
+come. A version is the document as the import has it, so its derived
+values are the base's where the copy's were left out, and the objects
+they belong to are touched in it. `versions` in the result and in the
+import's record counts them.
+
+**The panel: "Merge from file..."**, beside "Merge..."
+(`TransactionLogView::importFile(path, branch)`, a slot, so a check can
+call it). A file is chosen; the copy's branches with something to bring
+are offered when there is more than one, the one its file reopens on
+first (F6); the import runs; and the branch it leaves is put to the merge
+dialog any branch gets -- the preview, a side for each conflict, the
+merge or nothing. The owner decides, which is 30.3's request, by hand
+until S.h shows it as one. The status line says when the file has nothing
+new, shares no history, or stopped at a row (F8), with the reason in the
+report view.
+
+The Author column needs nothing: the copy's desktop user reads
+`host (<file>)`.
+
+**View providers.** With the Gui up the replay's document has view
+providers though it has no view, so the copy's view ops are replayed and
+recorded like the rest, and 28.6 Q2 applies at the merge. Without a Gui
+they are left out.
+
+**The Gui check** (`scripts/transaction-log-import-check.py`, 29 checks,
+`IMPORTCHECK_OUT`): a box, red; the file copied; this file made lower and
+narrower; the copy made longer and narrower, blue, with a cylinder.
+Through the panel: the dialog names the branch after the file and shows
+the width as a conflict; merged with the copy's width picked -- its
+length, this file's height, the volume recomputed, the box blue since
+this file had not changed its colour, the cylinder in and computed, one
+undo step; the copy's three rows on its branch under `host (theirs)`, of
+kind `fork`, the import's record this user's; undone and redone. Brought
+again: no dialog, nothing written, "Nothing new". The copy goes on: the
+same branch continued, the cylinder that came made taller. A file that
+shares nothing: no dialog, and the panel says so.
+
+**Left.**
+
+- **A copy that has itself imported from this file.** Its rows name the
+  objects it took from here by the ids it gave them, and the import reads
+  every object the two had at the base as having one id in both. The
+  copy's own map (`import:<branch>` in its store) is what would turn them
+  back. Not built: an import after a round trip is right only for what
+  the copy made itself.
+- **A sketch's geometry ids** (27.40 item 4) come as the copy has them.
+  A geometry list is one value, so 28 offers it whole or not at all, and
+  two sides that both added geometry conflict rather than interleave.
+- **An expression naming an element** goes through `RestoreStrings` and
+  is not in a test.
+- **F1's short cut**, copying the rows where nothing collides, is not
+  built: every import replays.
+
+**Gates**, frozen and unfrozen each: Python 3005 OK (52 skipped frozen, 53
+unfrozen; 6 expected failures; +2), ctest 873/873 (+1), and the GUI
+checks RC 15, BC 27, VC 18, PC 28, FC 16, VW 14, MC 28, the two-document
+check 24, the tree check 19, the author check 36 and the import check 29.

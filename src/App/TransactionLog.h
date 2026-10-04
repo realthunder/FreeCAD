@@ -364,6 +364,32 @@ public:
     /// so (sec 30.6 U2). False when the log had no session of it.
     bool logout(const Actor& actor);
 
+    /** What the rows written while it is set are known by (sec 30.13 F3):
+     * an imported row is the fork's own, so it goes under the session it
+     * was made in there -- brought over by importSession() -- with the
+     * ordinal and the time it had. A second import of the same fork then
+     * finds what is already here, and a merge back finds its base.
+     */
+    struct Stamp
+    {
+        int64_t session {0};
+        int64_t ordinal {0};
+        double time {0};
+        /// Set to the row a commit wrote under it; 0 while none has.
+        int64_t seq {0};
+    };
+    /// Null ends it. The stamp is the caller's, and outlives the rows.
+    void setStamp(Stamp* stamp) { _stamp = stamp; }
+    /** The session here of a session of another copy of the file (sec
+     * 30.13 F3, F4): the one with its uuid, made if this store has none --
+     * closed, with the times it had, its environment and its user brought
+     * over. `file` names the copy: its desktop user is not this file's, and
+     * comes as a user of kind `fork` named `<name> (<file>)`; any other is
+     * who they were. Main thread.
+     */
+    int64_t importSession(const LogSession& session, const LogUser& user,
+                          const std::string& environment, const std::string& file);
+
     /// Serialise the live value behind every pending after ref. What a
     /// version snapshot does first; also what makes the log complete for
     /// a reader that wants the head state from the log alone.
@@ -553,6 +579,8 @@ private:
     int64_t _recentAt {0};   ///< TransactionLogCore::_rewrites when it was kept
     /// An embedded copy was just adopted: the next onRestore is its version.
     bool _adopted {false};
+    /// The identity the next rows take (setStamp), null for their own.
+    Stamp* _stamp {nullptr};
     /// A detached cursor's version (sec 27.5), and the id base its branch
     /// will start at.
     int64_t _at {0};

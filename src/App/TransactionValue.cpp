@@ -37,6 +37,8 @@
 #include "Document.h"
 #include "DocumentObject.h"
 #include "ElementMap.h"
+#include "ElementNamingUtils.h"
+#include "ExpressionParser.h"
 #include "FileBlobManager.h"
 #include "Property.h"
 #include "StringHasher.h"
@@ -201,6 +203,139 @@ private:
 };
 } // namespace App
 
+namespace {
+thread_local App::RestoreNames* restoreNames = nullptr;
+
+/// The reader a value is restored from: names go through the scope of
+/// RestoreNames, when there is one.
+class ValueReader: public Base::XMLReader
+{
+public:
+    ValueReader(const char* name, std::istream& in)
+        : Base::XMLReader(name, in)
+    {}
+    const char* getName(const char* name) const override
+    {
+        return restoreNames ? restoreNames->map(name) : name;
+    }
+    bool doNameMapping() const override
+    {
+        return restoreNames && !restoreNames->empty();
+    }
+};
+}
+
+/// What an expression parsed while the scope lives maps its names by.
+struct App::RestoreNames::Importing
+{
+    std::istringstream xml {"<?xml version='1.0' encoding='utf-8'?>\n<Value/>\n"};
+    ValueReader reader {"Names.xml", xml};
+    ExpressionParser::ExpressionImporter importer {reader};
+};
+
+App::RestoreNames::RestoreNames(std::map<std::string, std::string> names)
+    : _names(std::move(names))
+    , _outer(restoreNames)
+{
+    restoreNames = this;
+    if (!_names.empty() && !ExpressionParser::ExpressionImporter::reader())
+        _importing = std::make_unique<Importing>();
+}
+
+App::RestoreNames::~RestoreNames()
+{
+    _importing.reset();
+    restoreNames = _outer;
+}
+
+const App::RestoreNames* App::RestoreNames::current()
+{
+    return restoreNames;
+}
+
+const char* App::RestoreNames::map(const char* name) const
+{
+    auto it = _names.find(name);
+    return it == _names.end() ? name : it->second.c_str();
+}
+
+namespace {
+thread_local App::RestoreStrings* restoreStrings = nullptr;
+}
+
+App::RestoreStrings::RestoreStrings(StringHasherRef from, StringHasherRef to)
+    : _from(std::move(from))
+    , _to(std::move(to))
+    , _outer(restoreStrings)
+{
+    // Nothing to read through when the two are one table, or either is
+    // missing: current() then answers the scope outside.
+    if (_from && _to && _from != _to)
+        restoreStrings = this;
+}
+
+App::RestoreStrings::~RestoreStrings()
+{
+    if (restoreStrings == this)
+        restoreStrings = _outer;
+}
+
+App::RestoreStrings* App::RestoreStrings::current()
+{
+    return restoreStrings;
+}
+
+std::string App::RestoreStrings::element(const char* element)
+{
+    const char* mapped = element ? Data::isMappedElement(element) : nullptr;
+    if (!mapped)
+        return element ? std::string(element) : std::string();
+    // A mapped name has no dot: the last one starts the indexed name.
+    const char* dot = strrchr(mapped, '.');
+    QByteArray text(mapped, dot ? static_cast<int>(dot - mapped) : static_cast<int>(strlen(mapped)));
+    QByteArray res;
+    QVector<StringIDRef> sids;
+    if (!_to->importText(text, *_from, res, &sids, _memo))
+        return dot ? std::string(dot + 1) : std::string();
+    std::string out = Data::elementMapPrefix();
+    out.append(res.constData(), res.size());
+    if (dot)
+        out += dot;
+    _held[out] = std::move(sids);
+    return out;
+}
+
+std::string App::RestoreStrings::sub(const std::string& sub)
+{
+    const char* element = Data::findElementName(sub.c_str());
+    if (!element || !Data::isMappedElement(element))
+        return sub;
+    const std::string translated = this->element(element);
+    std::string out = sub.substr(0, element - sub.c_str()) + translated;
+    auto it = _held.find(translated);
+    if (it != _held.end())
+        _held[out] = it->second;
+    return out;
+}
+
+QVector<App::StringIDRef> App::RestoreStrings::held(const std::string& text) const
+{
+    auto it = _held.find(text);
+    return it == _held.end() ? QVector<StringIDRef>() : it->second;
+}
+
+long App::RestoreStrings::id(long id)
+{
+    StringIDRef theirs = _from->getID(id);
+    if (!theirs)
+        return 0;
+    StringIDRef here = _to->importID(theirs, &_memo);
+    if (!here)
+        return 0;
+    _ids.push_back(here);   // held until the scope ends
+    return here.value();
+}
+
 void App::restoreValue(Property& prop, const CapturedValue& value)
 {
     // The value's element maps read by the ids it wrote, not the ones some
@@ -211,7 +346,7 @@ void App::restoreValue(Property& prop, const CapturedValue& value)
     // from inside an open parent, so wrap it the way Document.xml does.
     std::istringstream xml("<?xml version='1.0' encoding='utf-8'?>\n<Value>\n"
                            + value.fragment + "</Value>\n");
-    Base::XMLReader reader("Value.xml", xml);
+    ValueReader reader("Value.xml", xml);
     reader.FileVersion = 1;   // what the capture writes under
     // Captured at the log's schema (CaptureConfig).
     reader.DocumentSchema = static_cast<int>(Document::getCurrentSchemaVersion());

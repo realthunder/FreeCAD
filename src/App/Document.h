@@ -622,6 +622,66 @@ public:
                             const std::map<std::string, std::string>& picks = {},
                             const std::string& fallback = std::string(), int64_t version = 0);
 
+    /// A branch of another copy of the file, as importFork() can take it.
+    struct ForkBranch
+    {
+        std::string name;
+        /// The branch the copy's file reopens on: the one an import takes
+        /// when none is named (sec 30.14 F6).
+        bool current {false};
+        bool closed {false};
+        /// The row here its history parts from this file's, 0 when the two
+        /// share none; and how many operations it has made since.
+        int64_t base {0};
+        size_t ahead {0};
+    };
+    /** The branches of the copy of this file at `path` (docs/TransactionLog.md
+     * sec 30.13, 30.14 F6): what importFork() offers. Throws when the file
+     * carries no history, or is this document's own.
+     */
+    std::vector<ForkBranch> forkBranches(const std::string& path);
+    /// What importFork() did.
+    struct ImportResult
+    {
+        std::string branch;   ///< the branch here the rows went to
+        std::string from;     ///< the copy's branch they came from
+        int64_t base {0};     ///< the row here both histories hold
+        size_t rows {0};      ///< rows brought over
+        /// Rows with nothing to bring: records, and rows whose every value
+        /// was derived.
+        size_t skipped {0};
+        /// The copy's named versions that came as versions of the branch (F5).
+        size_t versions {0};
+        /// The branch is an earlier import's, continued (F7).
+        bool extended {false};
+        /// The copy's row the import stopped at, 0 when it took them all,
+        /// and why (F8). The rows before it are in.
+        int64_t stoppedAt {0};
+        std::string reason;
+        /// The copy's new objects whose names this file had given to others
+        /// (sec 30.4 P4): its name, the one it came under.
+        std::map<std::string, std::string> renamed;
+        int64_t seq {0};      ///< the import's record, 0 when nothing came
+    };
+    /** Bring a branch of another copy of this file in as a branch here
+     * (docs/TransactionLog.md sec 30.13, 30.14): the copy's history is
+     * read without its document, the newest row both hold found, and its
+     * rows after that replayed -- in a document of their own at that row,
+     * this one staying where it is -- each committed as a row of this log
+     * under the author and the identity it had. Objects the copy made come
+     * under new ids, and under new names where theirs are taken; derived
+     * values are left out, and whoever merges the branch recomputes.
+     *
+     * `branch` names the copy's branch, the one its file reopens on when
+     * empty. The branch here is named after the file -- and after the
+     * copy's branch when that is not its file's -- and a second import of
+     * the same copy continues it. A row that cannot be applied ends the
+     * import, the rows before it kept. Nothing is merged: that is
+     * mergeBranch(). Throws when the file carries no history, shares none
+     * with this one, or the branch is not there.
+     */
+    ImportResult importFork(const std::string& path, const std::string& branch = std::string());
+
     /** Crash recovery (docs/TransactionLog.md sec 25): make this new, empty
      * document what the session that crashed with transient directory
      * `oldDir` had -- its newest version, the log's tail replayed over it --

@@ -28,6 +28,7 @@
 #include <bitset>
 #include <cstdint>
 #include <functional>
+#include <map>
 #include <memory>
 #include <unordered_map>
 #include <vector>
@@ -916,6 +917,31 @@ public:
      */
     bool importName(const Data::MappedName& name, const StringHasher& from,
                     Data::MappedName& out, QVector<StringIDRef>& sids, ImportMemo& memo);
+
+    /** The object ids an import by content rewrites (docs/TransactionLog.md
+     * sec 30.16). An element name says which object made each step of it by
+     * a tag, `;:H<hex id>`, in its own text and in the strings it names.
+     * Values of another copy of the file name that copy's objects, and the
+     * ones it made since the two parted have other ids here. While one of
+     * these lives on a thread, every text importText(), importName() and
+     * importID() take in has the tags the map names rewritten -- so a name
+     * comes as this file would have made it, and the same string is found,
+     * not made again, when the object is recomputed here.
+     */
+    class AppExport ImportTags
+    {
+    public:
+        explicit ImportTags(const std::map<long, long>& tags);
+        ~ImportTags();
+        ImportTags(const ImportTags&) = delete;
+        ImportTags& operator=(const ImportTags&) = delete;
+        /// What `tag` is here: itself, unless a scope on this thread maps it.
+        /// The sign, which an element name may give a tag, is kept.
+        static long map(long tag);
+
+    private:
+        const std::map<long, long>* _outer;
+    };
 
     class HashMap;
     friend class StringID;

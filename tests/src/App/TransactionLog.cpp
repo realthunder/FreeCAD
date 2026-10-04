@@ -4953,3 +4953,226 @@ TEST_F(TransactionLogTest, aRowIsKnownAcrossCopiesOfItsFile)
     Base::FileInfo(path).deleteFile();
     Base::FileInfo(fork).deleteFile();
 }
+
+TEST_F(TransactionLogTest, aForkIsImportedAsABranch)
+{
+    // Sec 30.13, 30.14 (S.f): the copy's rows after the newest row both
+    // files hold come in as a branch here, each under the author and the
+    // identity it had; what the copy made comes under ids of this file,
+    // and under a new name where its own is taken.
+    App::DocumentParams::setTransactionLog(2);   // embedded
+    edit(doc(), "create", [&]() {
+        make("Obj")->Integer.setValue(1);
+        make("Gone");
+    });
+    const std::string path = Base::FileInfo::getTempPath() + "txnlog-import-ours.FCStd";
+    const std::string fork = Base::FileInfo::getTempPath() + "txnlog-import-theirs.FCStd";
+    Base::FileInfo(path).deleteFile();
+    Base::FileInfo(fork).deleteFile();
+    ASSERT_TRUE(doc()->saveAs(path.c_str()));
+    ASSERT_TRUE(Base::FileInfo(path).copyTo(fork.c_str()));
+
+    // This file goes on: a value, and an object under a name the copy
+    // gives to one of its own.
+    edit(doc(), "ours", [&]() {
+        featureOf(doc(), "Obj")->String.setValue("ours");
+        make("New")->Integer.setValue(100);
+    });
+    const long ourNew = featureOf(doc(), "New")->getID();
+
+    // The copy goes on, elsewhere.
+    App::Document* other = App::GetApplication().openDocument(fork.c_str());
+    ASSERT_TRUE(other);
+    std::string otherName = other->getName();
+    other->setUndoMode(1);
+    edit(other, "theirs", [&]() { featureOf(other, "Obj")->Integer.setValue(9); });
+    edit(other, "theirs made", [&]() {
+        auto made = static_cast<App::FeatureTest*>(other->addObject("App::FeatureTest", "New"));
+        made->Integer.setValue(7);
+        featureOf(other, "Obj")->Link.setValue(made);
+    });
+    // A version the copy names on the way (F5).
+    const int64_t milestone = other->snapshotToLog();
+    ASSERT_GT(milestone, 0);
+    ASSERT_TRUE(other->getTransactionLog()->store().nameVersion(milestone, "milestone"));
+    edit(other, "theirs removed", [&]() { other->removeObject("Gone"); });
+    std::map<std::string, App::LogRowId> theirIds;
+    {
+        auto otherLog = other->getTransactionLog();
+        ASSERT_TRUE(otherLog);
+        auto& otherStore = otherLog->store();
+        for (const auto& t : otherStore.transactions()) {
+            if (t.name.rfind("theirs", 0) == 0)
+                ASSERT_TRUE(otherStore.rowId(t.seq, theirIds[t.name])) << t.name;
+        }
+    }
+    ASSERT_EQ(theirIds.size(), 3u);
+    ASSERT_TRUE(other->save());
+    App::GetApplication().closeDocument(otherName.c_str());
+    App::GetApplication().setActiveDocument(doc());
+
+    // What the copy offers: the branch its file reopens on, three
+    // operations past the row both hold.
+    const auto offered = doc()->forkBranches(fork);
+    ASSERT_FALSE(offered.empty());
+    int current = 0;
+    for (const auto& b : offered) {
+        if (!b.current)
+            continue;
+        ++current;
+        EXPECT_GT(b.base, 0);
+        EXPECT_EQ(b.ahead, 3u);
+    }
+    EXPECT_EQ(current, 1);
+
+    log().flush();
+    const int64_t headBefore = log().head();
+    const size_t docsBefore = App::GetApplication().getDocuments().size();
+    const auto result = doc()->importFork(fork);
+    EXPECT_EQ(result.rows, 3u);
+    EXPECT_FALSE(result.extended);
+    EXPECT_EQ(result.stoppedAt, 0) << result.reason;
+    EXPECT_EQ(result.branch, "txnlog-import-theirs");
+    EXPECT_GT(result.seq, 0);
+    // This document did not move, and the one the rows were replayed in
+    // is gone.
+    EXPECT_EQ(log().head(), headBefore);
+    EXPECT_EQ(App::GetApplication().getDocuments().size(), docsBefore);
+    EXPECT_EQ(App::GetApplication().getActiveDocument(), doc());
+    EXPECT_FALSE(featureOf(doc(), "Obj")->Link.getValue());
+    // P4: the copy's New is not this file's New.
+    ASSERT_EQ(result.renamed.size(), 1u);
+    const std::string theirNew = result.renamed.begin()->second;
+    EXPECT_EQ(result.renamed.begin()->first, "New");
+    EXPECT_NE(theirNew, "New");
+
+    auto& store = log().store();
+    App::LogBranch branch;
+    ASSERT_TRUE(store.findBranch(result.branch, branch));
+    EXPECT_EQ(branch.fromSeq, result.base);
+    std::map<int64_t, App::LogSession> sessions;
+    for (const auto& s : store.sessions())
+        sessions[s.id] = s;
+    std::map<int64_t, App::LogUser> users;
+    for (const auto& u : store.users())
+        users[u.id] = u;
+    std::vector<std::string> names;
+    long newId = 0;
+    int records = 0;
+    for (const auto& t : store.chain(branch.head, result.base + 1)) {
+        if (t.kind == "import") {
+            // The import's own record is this process's.
+            EXPECT_EQ(t.seq, result.seq);
+            EXPECT_EQ(users[sessions[t.session].user].kind, "local");
+            ++records;
+            continue;
+        }
+        if (store.ops(t.seq).empty())
+            continue;   // the tip left as a version
+        names.push_back(t.name);
+        // F3: the row is the copy's own; F4: so is its author.
+        App::LogRowId id;
+        ASSERT_TRUE(store.rowId(t.seq, id)) << t.name;
+        ASSERT_TRUE(theirIds.count(t.name)) << t.name;
+        EXPECT_TRUE(id == theirIds[t.name]) << t.name;
+        const App::LogUser& author = users[sessions[t.session].user];
+        EXPECT_EQ(author.kind, "fork") << t.name;
+        EXPECT_NE(author.name.find("txnlog-import-theirs"), std::string::npos) << author.name;
+        EXPECT_GT(sessions[t.session].closed, 0);
+        for (const auto& o : store.ops(t.seq)) {
+            if (o.op == "create") {
+                EXPECT_EQ(o.cname, theirNew);
+                newId = o.cid;
+            }
+        }
+    }
+    EXPECT_EQ(records, 1);
+    // F5: the version the copy named is a version of the branch, taken
+    // where the copy took it -- its New made, its Gone not yet removed.
+    EXPECT_EQ(result.versions, 1u);
+    {
+        int found = 0;
+        for (const auto& v : store.versions()) {
+            if (v.name != "milestone")
+                continue;
+            ++found;
+            EXPECT_EQ(v.branch, branch.id);
+            EXPECT_EQ(v.kind, "named");
+            int64_t made = 0;
+            int64_t removed = 0;
+            for (const auto& t : store.chain(branch.head, result.base + 1)) {
+                if (t.name == "theirs made")
+                    made = t.seq;
+                if (t.name == "theirs removed")
+                    removed = t.seq;
+            }
+            EXPECT_GE(v.seq, made);
+            EXPECT_LT(v.seq, removed);
+        }
+        EXPECT_EQ(found, 1);
+    }
+    ASSERT_EQ(names.size(), 3u);
+    EXPECT_EQ(names[0], "theirs");
+    EXPECT_EQ(names[1], "theirs made");
+    EXPECT_EQ(names[2], "theirs removed");
+    EXPECT_GT(newId, 0);
+    EXPECT_NE(newId, ourNew);
+
+    // The merge is 28's: both moved, nothing conflicts.
+    const auto merged = doc()->mergeBranch(result.branch);
+    EXPECT_GT(merged.seq, 0);
+    EXPECT_TRUE(merged.unresolved.empty());
+    EXPECT_EQ(featureOf(doc(), "Obj")->Integer.getValue(), 9);
+    EXPECT_STREQ(featureOf(doc(), "Obj")->String.getValue(), "ours");
+    ASSERT_TRUE(featureOf(doc(), "New"));
+    EXPECT_EQ(featureOf(doc(), "New")->Integer.getValue(), 100);
+    ASSERT_TRUE(featureOf(doc(), theirNew.c_str()));
+    EXPECT_EQ(featureOf(doc(), theirNew.c_str())->Integer.getValue(), 7);
+    EXPECT_EQ(featureOf(doc(), theirNew.c_str())->getID(), newId);
+    // The link the copy set names its own New, under the name it has here.
+    EXPECT_EQ(featureOf(doc(), "Obj")->Link.getValue(), featureOf(doc(), theirNew.c_str()));
+    EXPECT_FALSE(doc()->getObject("Gone"));
+
+    // F7: the copy goes on, and a second import continues the branch from
+    // the last row brought over.
+    other = App::GetApplication().openDocument(fork.c_str());
+    ASSERT_TRUE(other);
+    otherName = other->getName();
+    other->setUndoMode(1);
+    edit(other, "theirs again", [&]() { featureOf(other, "New")->Integer.setValue(8); });
+    ASSERT_TRUE(other->save());
+    App::GetApplication().closeDocument(otherName.c_str());
+    App::GetApplication().setActiveDocument(doc());
+    const auto again = doc()->importFork(fork);
+    EXPECT_TRUE(again.extended);
+    EXPECT_EQ(again.branch, result.branch);
+    EXPECT_EQ(again.rows, 1u) << again.reason;
+    EXPECT_EQ(again.stoppedAt, 0) << again.reason;
+    EXPECT_TRUE(again.renamed.empty());
+    const auto more = doc()->mergeBranch(result.branch);
+    EXPECT_TRUE(more.unresolved.empty());
+    // The copy's New, still: its id here was kept across the imports.
+    EXPECT_EQ(featureOf(doc(), theirNew.c_str())->Integer.getValue(), 8);
+    EXPECT_EQ(featureOf(doc(), "New")->Integer.getValue(), 100);
+    // And nothing new is nothing done.
+    const auto none = doc()->importFork(fork);
+    EXPECT_EQ(none.rows, 0u);
+    EXPECT_EQ(none.seq, 0);
+
+    // A file that shares nothing is refused.
+    App::DocumentParams::setTransactionLog(2);
+    App::Document* stranger = App::GetApplication().newDocument("txnlogStranger", "stranger");
+    stranger->setUndoMode(1);
+    edit(stranger, "alone", [&]() { stranger->addObject("App::FeatureTest", "X"); });
+    const std::string strange = Base::FileInfo::getTempPath() + "txnlog-import-stranger.FCStd";
+    Base::FileInfo(strange).deleteFile();
+    ASSERT_TRUE(stranger->saveAs(strange.c_str()));
+    App::GetApplication().closeDocument("txnlogStranger");
+    App::GetApplication().setActiveDocument(doc());
+    EXPECT_THROW(doc()->importFork(strange), Base::Exception);
+    EXPECT_THROW(doc()->importFork(fork, "no-such-branch"), Base::Exception);
+
+    Base::FileInfo(path).deleteFile();
+    Base::FileInfo(fork).deleteFile();
+    Base::FileInfo(strange).deleteFile();
+}

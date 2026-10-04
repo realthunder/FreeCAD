@@ -295,7 +295,8 @@ Transactions of this document's log (docs/TransactionLog.md), each a
 dict with seq, parent, id, kind, origin, name, time, script, inverts
 (the seq an undo or redo inverts, else 0), who wrote it (sec 30.6):
 session, author (the user's name) and author_kind ('local', 'verified',
-'invited' or 'declared'), and uid, what the row is known by in every copy
+'invited', 'declared', or 'fork' for the desktop user of another copy of
+the file whose rows were imported), and uid, what the row is known by in every copy
 of the file: its session's uuid, a colon, and its ordinal in that
 session. Empty when
 the log is off (preference Document/TransactionLog).</UserDocu>
@@ -586,6 +587,37 @@ conflict not picked. Returns {'seq', 'unresolved', 'failed', 'preview'}:
 a conflict with no side refuses the merge -- 'seq' is 0, nothing moved,
 and 'unresolved' lists them. 'failed' names the objects whose recompute
 failed on the merged state. The other branch is left as it is.</UserDocu>
+      </Documentation>
+    </Methode>
+    <Methode Name="getTransactionForkBranches">
+      <Documentation>
+        <UserDocu>getTransactionForkBranches(path) -> list of dict
+The branches of the copy of this document's file at `path`
+(docs/TransactionLog.md sec 30.13, 30.14), as importTransactionFork() can
+take them: 'name', 'current' (the branch the copy's file reopens on, which
+an import takes when none is named), 'closed', 'base' (the row of this
+file's log the branch parts from, 0 when the two share no history) and
+'ahead' (the operations it has made since). Raises when the file carries
+no history, or is this document's own.</UserDocu>
+      </Documentation>
+    </Methode>
+    <Methode Name="importTransactionFork">
+      <Documentation>
+        <UserDocu>importTransactionFork(path, branch='') -> dict
+Bring a branch of another copy of this document's file in as a branch of
+this file's log (docs/TransactionLog.md sec 30.13, 30.14). The copy's rows
+after the newest row both files hold are replayed in a document of their
+own, each committed here under the author and the identity it had; objects
+the copy made come under new ids, and under new names where theirs are
+taken; derived values are left out. `branch` names the copy's branch, the
+one its file reopens on when empty. The branch here is named after the
+file, and a second import of the same copy continues it. Nothing is merged:
+that is mergeTransactionBranch(). The dict has 'branch', 'from', 'base',
+'rows', 'skipped', 'versions' (the copy's named versions that came as
+versions of the branch), 'extended', 'stopped_at' and 'reason' (a row that could
+not be applied ends the import, the rows before it kept), 'renamed' and
+'seq' (the import's record). Raises when the file carries no history,
+shares none with this one, or has no such branch.</UserDocu>
       </Documentation>
     </Methode>
     <Methode Name="resolveTransactionLog">

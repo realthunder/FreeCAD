@@ -1342,6 +1342,29 @@ bool TransactionLog::logout(const Actor& actor)
     return _c.closeLogin(actor);
 }
 
+int64_t TransactionLog::importSession(const LogSession& session, const LogUser& user,
+                                      const std::string& environment, const std::string& file)
+{
+    flush();
+    auto& store = *_c._store;
+    if (!session.uuid.empty()) {
+        for (const auto& s : store.sessions()) {
+            if (s.uuid == session.uuid)
+                return s.id;
+        }
+    }
+    // The other copy's desktop user is its own (sec 30.13 F4).
+    const bool local = user.kind.empty() || user.kind == Actor::kindName(Actor::Local);
+    const std::string name = user.name.empty() ? std::string("host") : user.name;
+    const int64_t here = local ? store.user(Actor::kindName(Actor::Fork), name + " (" + file + ")")
+                               : store.user(user.kind, name);
+    const int64_t env = store.environment(environment);
+    const int64_t id = store.openSession(env, here, session.host, session.access, session.uuid,
+                                         session.opened);
+    store.closeSession(id, session.closed > 0 ? session.closed : session.opened);
+    return id;
+}
+
 int64_t TransactionLog::reappend(LogTransaction t)
 {
     // The record as it was made -- its kind, name, annotation, time and
@@ -2876,13 +2899,20 @@ int64_t TransactionLog::onCommit(const Transaction& txn, const char* kind, const
         // The author is the actor the transaction was opened under (sec
         // 30.3 S.b), whoever closes it.
         LogTransaction t;
-        t.session = _c.sessionOf(txn.Author.get());
+        // -- or the row's own, when it is another copy's (sec 30.13 F3).
+        if (_stamp) {
+            t.session = _stamp->session;
+            t.ordinal = _stamp->ordinal;
+        }
+        else {
+            t.session = _c.sessionOf(txn.Author.get());
+        }
         number(t);
         t.id = txn.getID();
         t.kind = kind;
         t.origin = origin;
         t.name = txn.Name;
-        t.time = now();
+        t.time = _stamp && _stamp->time > 0 ? _stamp->time : now();
         t.inverts = inverts;
         t.mergeFrom = txn.MergeFrom;
         t.script = txn.LogScript;
@@ -3161,6 +3191,8 @@ int64_t TransactionLog::onCommit(const Transaction& txn, const char* kind, const
             writeValues(tasks, ops);
             _c._store->append(t, ops);
         });
+        if (_stamp)
+            _stamp->seq = t.seq;
         return t.seq;
     }
     catch (Base::Exception& e) {

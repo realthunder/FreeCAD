@@ -37,6 +37,7 @@
 #include "ExpressionEvaluator.h"
 #include "InputStratum.h"
 #include "PropertyExpressionEngine.h"
+#include "TransactionValue.h"
 #include "PropertyUnits.h"
 #include "ExpressionParser.h"
 #include "ExpressionVisitors.h"
@@ -559,16 +560,27 @@ void PropertyExpressionEngine::Restore(Base::XMLReader &reader)
             reader.readElement("Ids");
             long index = reader.getAttributeAsInteger("index");
             long ref = reader.getAttributeAsInteger("ref");
+            // A value of another copy of the file names that copy's table
+            // (docs/TransactionLog.md sec 30.16): each id, and each name,
+            // is taken into this one.
+            auto strings = RestoreStrings::current();
             std::vector<long> ids;
             std::istringstream in(reader.getAttribute("sids"));
             in >> std::hex;
             long id;
             while (in >> id) {
+                if (id > 0 && strings)
+                    id = strings->id(id);
                 if (id > 0)
                     ids.push_back(id);
             }
             std::string shadow = reader.getAttribute("shadow", "");
             std::string stored = reader.getAttribute("stored", "");
+            if (strings) {
+                shadow = strings->sub(shadow);
+                if (!stored.empty())
+                    stored = strings->element(stored.c_str());
+            }
             if (index >= 0 && index < count && ref >= 0 && (!ids.empty() || !stored.empty()))
                 (*restoredExpressions)[index].ids.push_back(
                         {static_cast<int>(ref), std::move(ids), std::move(shadow), std::move(stored)});

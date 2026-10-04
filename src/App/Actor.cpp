@@ -48,6 +48,8 @@ const char* Actor::kindName(Kind kind)
             return "invited";
         case Declared:
             return "declared";
+        case Fork:
+            return "fork";
         default:
             return "local";
     }
@@ -55,7 +57,7 @@ const char* Actor::kindName(Kind kind)
 
 bool Actor::kindFromName(const std::string& name, Kind& kind)
 {
-    for (Kind k : {Local, Verified, Invited, Declared}) {
+    for (Kind k : {Local, Verified, Invited, Declared, Fork}) {
         if (name == kindName(k)) {
             kind = k;
             return true;

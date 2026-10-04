@@ -59,6 +59,7 @@
 #include "App/ComplexGeoData.h"
 #include "App/Document.h"
 #include "App/DocumentObject.h"
+#include "App/TransactionValue.h"
 
 FC_LOG_LEVEL_INIT("ElementMap", true, 2);// NOLINT
 
@@ -1636,6 +1637,8 @@ ElementMapPtr ElementMap::translate(App::StringHasher &to, const App::StringHash
             MappedChildElements child = c.second;
             if (child.elementMap)
                 child.elementMap = translateCached(child.elementMap, to, from, memo, failed);
+            // The object it is of, by the id it has here (ImportTags).
+            child.tag = App::StringHasher::ImportTags::map(child.tag);
             // A child's postfix names ids of the map it is in (hashChildMaps).
             ElementIDRefs sids;
             QByteArray postfix;
@@ -2196,6 +2199,16 @@ void ComplexGeoData::Save(Base::Writer &writer) const {
     writer.Stream() << writer.ind() << "</ElementMap2>\n" ;
 }
 
+/// The table a map being restored names its ids in: the geometry's own,
+/// 'own' -- or, for a value of another copy of the file
+/// (App::RestoreStrings, docs/TransactionLog.md sec 30.16), that copy's,
+/// from which the map is then taken into 'own' by content.
+static App::StringHasherRef restoreTable(const App::StringHasherRef &own)
+{
+    auto scope = App::RestoreStrings::current();
+    return scope && own && own == scope->to() ? scope->from() : own;
+}
+
 void ComplexGeoData::Restore(Base::XMLReader &reader) {
     resetElementMap();
 
@@ -2219,7 +2232,10 @@ void ComplexGeoData::Restore(Base::XMLReader &reader) {
 
     if (newtag) {
         resetElementMap(std::make_shared<ElementMap>());
-        _elementMap = _elementMap->restore(Hasher, reader.beginCharStream());
+        const App::StringHasherRef table = restoreTable(Hasher);
+        _elementMap = _elementMap->restore(table, reader.beginCharStream());
+        if (table != Hasher)
+            _elementMap = translateElementMap(_elementMap, table, Hasher);
         reader.endCharStream();
         reader.readEndElement("ElementMap2");
         return;
@@ -2336,7 +2352,10 @@ void ComplexGeoData::RestoreDocFile(Base::Reader &reader) {
             FC_WARN("Unknown element map format");
         else {
             resetElementMap(std::make_shared<ElementMap>());
-            _elementMap = _elementMap->restore(Hasher, reader);
+            const App::StringHasherRef table = restoreTable(Hasher);
+            _elementMap = _elementMap->restore(table, reader);
+            if (table != Hasher)
+                _elementMap = translateElementMap(_elementMap, table, Hasher);
             return;
         }
     }

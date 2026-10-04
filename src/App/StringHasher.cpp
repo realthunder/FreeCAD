@@ -28,6 +28,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <cctype>
 #include <deque>
 #include <sstream>
 #include <boost/io/ios_state.hpp>
@@ -50,6 +51,7 @@
 #include <App/StringHasherPy.h>
 #include <App/StringIDPy.h>
 #include <App/MappedElement.h>
+#include <App/ElementNamingUtils.h>
 #include <App/DocumentParams.h>
 
 FC_LOG_LEVEL_INIT("App",true,true)
@@ -695,12 +697,74 @@ bool StringHasher::importName(const Data::MappedName& name, const StringHasher& 
     return true;
 }
 
+namespace {
+thread_local const std::map<long, long>* importTags = nullptr;
+
+/// `text` with the tags of ImportTags rewritten: each `;:H<hex>` whose id
+/// the map names.
+QByteArray rewriteTags(const QByteArray& text)
+{
+    if (!importTags || importTags->empty())
+        return text;
+    static const QByteArray marker(Data::tagPostfix().c_str());
+    int pos = text.indexOf(marker);
+    if (pos < 0)
+        return text;
+    QByteArray res;
+    int last = 0;
+    while (pos >= 0) {
+        int digits = pos + marker.size();
+        if (digits < text.size() && text[digits] == '-')
+            ++digits;
+        int end = digits;
+        while (end < text.size() && std::isxdigit(static_cast<unsigned char>(text[end])))
+            ++end;
+        if (end > digits) {
+            bool ok = false;
+            const long tag = text.mid(digits, end - digits).toLong(&ok, 16);
+            auto it = ok ? importTags->find(tag) : importTags->end();
+            if (it != importTags->end()) {
+                res.append(text.constData() + last, digits - last);
+                res.append(QByteArray::number(static_cast<qlonglong>(it->second), 16));
+                last = end;
+            }
+        }
+        pos = text.indexOf(marker, end);
+    }
+    if (!last)
+        return text;
+    res.append(text.constData() + last, text.size() - last);
+    return res;
+}
+}  // namespace
+
+StringHasher::ImportTags::ImportTags(const std::map<long, long>& tags)
+    : _outer(importTags)
+{
+    importTags = &tags;
+}
+
+StringHasher::ImportTags::~ImportTags()
+{
+    importTags = _outer;
+}
+
+long StringHasher::ImportTags::map(long tag)
+{
+    if (!importTags)
+        return tag;
+    auto it = importTags->find(tag < 0 ? -tag : tag);
+    if (it == importTags->end())
+        return tag;
+    return tag < 0 ? -it->second : it->second;
+}
+
 bool StringHasher::rewriteIds(const QByteArray& text, const StringHasher& from, QByteArray& out,
                               QVector<StringIDRef>* sids, ImportMemo& memo, bool take)
 {
     int pos = text.indexOf('#');
     if (pos < 0) {
-        out = text;
+        out = rewriteTags(text);
         return true;
     }
     QByteArray res;
@@ -730,7 +794,7 @@ bool StringHasher::rewriteIds(const QByteArray& text, const StringHasher& from, 
         pos = text.indexOf('#', end);
     }
     res.append(text.constData() + last, text.size() - last);
-    out = std::move(res);
+    out = rewriteTags(res);
     return true;
 }
 
