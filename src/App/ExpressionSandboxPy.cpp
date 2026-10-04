@@ -316,61 +316,6 @@ PyObject* execFunc(PyObject*, PyObject* args)
 #endif
 }
 
-PyObject* proxyNewFunc(PyObject*, PyObject* args)
-{
-#ifdef FC_EXPR_IMAGE_HOST
-    if (PyTuple_GET_SIZE(args) < 2 || !PyUnicode_Check(PyTuple_GET_ITEM(args, 0))
-            || !PyUnicode_Check(PyTuple_GET_ITEM(args, 1))) {
-        PyErr_SetString(PyExc_TypeError, "proxyNew(module, class, *args)");
-        return nullptr;
-    }
-    const char* module = PyUnicode_AsUTF8(PyTuple_GET_ITEM(args, 0));
-    const char* cls = PyUnicode_AsUTF8(PyTuple_GET_ITEM(args, 1));
-    PyObject* rest = PyTuple_GetSlice(args, 2, PyTuple_GET_SIZE(args));
-    if (!rest)
-        return nullptr;
-    const App::DocumentObject* owner = nullptr;
-    if (PyTuple_GET_SIZE(rest) > 0
-            && PyObject_TypeCheck(PyTuple_GET_ITEM(rest, 0), &DocumentObjectPy::Type))
-        owner = static_cast<DocumentObjectPy*>(PyTuple_GET_ITEM(rest, 0))->getDocumentObjectPtr();
-    auto& host = ExpressionSandbox::ImageHost::instance();
-    ExpressionSandbox::ImageResult r = host.proxyNew(module, cls, rest, false, owner);
-    Py_DECREF(rest);
-    if (!r.ok) {
-        PyErr_Format(PyExc_RuntimeError, "%s: %s", r.excType.c_str(), r.message.c_str());
-        return nullptr;
-    }
-    PyObject* value = host.decodeResult(r);
-    if (!value && !PyErr_Occurred())
-        PyErr_SetString(PyExc_RuntimeError, "proxy_new returned an undecodable value");
-    return value;
-#else
-    (void)args;
-    PyErr_SetString(PyExc_RuntimeError, "this build has no sandbox host");
-    return nullptr;
-#endif
-}
-
-PyObject* proxyConstructFunc(PyObject*, PyObject* args, PyObject* kwargs)
-{
-#ifdef FC_EXPR_IMAGE_HOST
-    if (PyTuple_GET_SIZE(args) < 1 || !PyType_Check(PyTuple_GET_ITEM(args, 0))) {
-        PyErr_SetString(PyExc_TypeError, "proxyConstruct(cls, *args, **kwargs)");
-        return nullptr;
-    }
-    PyObject* rest = PyTuple_GetSlice(args, 1, PyTuple_GET_SIZE(args));
-    if (!rest)
-        return nullptr;
-    PyObject* value = ExpressionSandbox::constructGuestProxy(PyTuple_GET_ITEM(args, 0), rest, kwargs);
-    Py_DECREF(rest);
-    return value;
-#else
-    (void)args;
-    (void)kwargs;
-    Py_RETURN_NONE;
-#endif
-}
-
 PyObject* proxyInfoFunc(PyObject*, PyObject* args)
 {
     PyObject* obj = nullptr;
@@ -437,8 +382,9 @@ PyObject* pyodideLayoutFunc(PyObject*, PyObject*)
         wheels.setItem(w.first.c_str(), Py::String(w.second));
     d.setItem("wheels", wheels);
     // the bundled pure wheels by distribution name (the file name up to
-    // its first '-'): what the InitGui runner asks for a module's
-    // fcx_<module> (docs/Sandbox.md 7.9, G2b)
+    // its first '-'); the workbench wheels and the InitGui-in-guest
+    // runner that keyed on fcx_<module> were removed (docs/Sandbox.md
+    // 7.31), so what remains is fcx_image and fcx_widgets
     Py::Dict bundled;
     for (const auto& path : l.bundled) {
         std::string fn = path;
@@ -574,20 +520,6 @@ PyMethodDef Methods[] = {
     {"exec", execFunc, METH_VARARGS,
      "exec(source[, module]): run statements in the sandbox guest, as the session\n"
      "principal; with module the source becomes that module in the guest."},
-    {"proxyNew", proxyNewFunc, METH_VARARGS,
-     "proxyNew(module, class, *args) -> stand-in -- construct a"
-     " scripted object's Proxy IN THE SANDBOX GUEST (rung 2): the class's"
-     " `obj.Proxy = self` installs the returned stand-in, whose hooks"
-     " (execute, onChanged, ...) forward to the guest; a class that"
-     " does not install itself still returns its stand-in."},
-    {"proxyConstruct", reinterpret_cast<PyCFunction>(reinterpret_cast<void (*)()>(proxyConstructFunc)),
-     METH_VARARGS | METH_KEYWORDS,
-     "proxyConstruct(cls, *args, **kwargs) -> stand-in | None -- the"
-     " construction dispatch a scripted object class's __new__ calls:"
-     " with routing on and a document object as the first argument the"
-     " class is constructed in the sandbox guest and its stand-in is"
-     " returned (Python then skips the host __init__); None means"
-     " construct natively.  Raises when the guest cannot construct it."},
     {"proxyInfo", proxyInfoFunc, METH_VARARGS,
      "proxyInfo(proxy) -> {'id', 'module', 'class'} | None -- describe a"
      " guest Proxy stand-in; None for any other object."},
@@ -599,8 +531,7 @@ PyMethodDef Methods[] = {
     {"bootCount", bootCountFunc, METH_NOARGS,
      "bootCount() -> int -- how many guests have booted so far.  A reset"
      " kills every stand-in a guest registered, so host state derived"
-     " from one is stamped with this and remade when it moves on; the"
-     " host calls FreeCADGui._onGuestBoot() after each boot."},
+     " from one is stamped with this and remade when it moves on."},
     {"pyodideReleases", pyodideReleasesFunc, METH_NOARGS,
      "pyodideReleases() -> list of dicts -- the pyodide versions this build"
      " agrees to run, each with the sha256 of every runtime file, the ABI"

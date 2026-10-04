@@ -39,6 +39,7 @@
 #include <App/DocumentObject.h>
 #include <App/DocumentObserver.h>
 #include <App/Link.h>
+#include <App/LinkArray.h>
 #include <App/Part.h>
 #include <Base/Console.h>
 #include <Base/Exception.h>
@@ -48,6 +49,7 @@
 #include "ActiveObjectList.h"
 #include "Application.h"
 #include "CommandT.h"
+#include "Control.h"
 #include "Document.h"
 #include "MainWindow.h"
 #include "Selection.h"
@@ -1125,6 +1127,147 @@ public:
 };
 
 //===========================================================================
+// Std_LinkArray*
+//===========================================================================
+
+/// An App::LinkArray of the kind \a type, of the object selected if any, in
+/// the active container, then its panel
+static void makeLinkArray(App::Pattern::Type type)
+{
+    auto sels = Selection().getSelectionT("*", ResolveMode::NoResolve);
+    if (sels.size() > 1) {
+        QMessageBox::warning(getMainWindow(),
+                             QObject::tr("Wrong selection"),
+                             QObject::tr("Select one object to array, or none."));
+        return;
+    }
+    auto doc = App::GetApplication().getActiveDocument();
+    if (!doc || Control().activeDialog()) {
+        return;
+    }
+    App::DocumentObject* source = sels.empty() ? nullptr : sels.front().getSubObject();
+
+    App::DocumentObject* topParent = nullptr;
+    std::string parentSub;
+    auto container = getActiveContainer(&topParent, &parentSub);
+    if (container && source) {
+        auto inList = container->getInListEx(true);
+        inList.insert(container);
+        if (inList.count(source)) {
+            container = nullptr;
+        }
+    }
+    if (container) {
+        doc = container->getDocument();
+    }
+
+    Command::openCommand(QT_TRANSLATE_NOOP("Command", "Make link array"));
+    try {
+        std::string name = doc->getUniqueObjectName("LinkArray");
+        cmdAppDocument(doc, std::ostringstream() << "addObject('App::LinkArray', '" << name << "')");
+        auto array = doc->getObject(name.c_str());
+        if (!array) {
+            Command::abortCommand();
+            return;
+        }
+        cmdAppObjectArgs(array, "PatternType = '%s'", App::Pattern::TypeEnums[static_cast<int>(type)]);
+        if (source) {
+            cmdAppObjectArgs(array, "LinkedObject = %s", source->getFullName(true));
+        }
+        if (container) {
+            cmdAppObjectArgs(container, "addObject(%s)", array->getFullName(true));
+        }
+        doc->recompute();
+        Selection().clearSelection();
+        // The panel commits the transaction, or aborts it and the array with it
+        cmdGuiDocument(array, std::ostringstream() << "setEdit('" << name << "', 0)");
+    }
+    catch (Base::Exception& e) {
+        Command::abortCommand();
+        e.ReportException();
+    }
+}
+
+#define LINK_ARRAY_COMMAND(_kind, _pixmap, _text, _tip)                                            \
+    class StdCmdLinkArray##_kind: public Gui::Command                                              \
+    {                                                                                              \
+    public:                                                                                        \
+        StdCmdLinkArray##_kind()                                                                   \
+            : Command("Std_LinkArray" #_kind)                                                      \
+        {                                                                                          \
+            sGroup = "Link";                                                                       \
+            sMenuText = _text;                                                                     \
+            sToolTipText = _tip;                                                                   \
+            sWhatsThis = "Std_LinkArray" #_kind;                                                   \
+            sStatusTip = sToolTipText;                                                             \
+            eType = AlterDoc;                                                                      \
+            sPixmap = _pixmap;                                                                     \
+        }                                                                                          \
+        const char* className() const override                                                     \
+        {                                                                                          \
+            return "StdCmdLinkArray" #_kind;                                                       \
+        }                                                                                          \
+                                                                                                   \
+    protected:                                                                                     \
+        void activated(int) override                                                               \
+        {                                                                                          \
+            makeLinkArray(App::Pattern::Type::_kind);                                              \
+        }                                                                                          \
+        bool isActive() override                                                                   \
+        {                                                                                          \
+            return App::GetApplication().getActiveDocument() && !Control().activeDialog();         \
+        }                                                                                          \
+    };
+
+LINK_ARRAY_COMMAND(Linear,
+                   "LinkArray",
+                   QT_TR_NOOP("Linear link array"),
+                   QT_TR_NOOP("Link the selected object in a pattern along one or two directions"))
+LINK_ARRAY_COMMAND(Polar,
+                   "LinkArrayPolar",
+                   QT_TR_NOOP("Polar link array"),
+                   QT_TR_NOOP("Link the selected object in a pattern around an axis"))
+LINK_ARRAY_COMMAND(Circular,
+                   "LinkArrayCircular",
+                   QT_TR_NOOP("Circular link array"),
+                   QT_TR_NOOP("Link the selected object in concentric circles"))
+LINK_ARRAY_COMMAND(Path,
+                   "LinkArrayPath",
+                   QT_TR_NOOP("Path link array"),
+                   QT_TR_NOOP("Link the selected object along a path"))
+LINK_ARRAY_COMMAND(Point,
+                   "LinkArrayPoint",
+                   QT_TR_NOOP("Point link array"),
+                   QT_TR_NOOP("Link the selected object at the vertices of a shape"))
+
+class StdCmdLinkArrayActions: public GroupCommand
+{
+public:
+    StdCmdLinkArrayActions()
+        : GroupCommand("Std_LinkArrayActions")
+    {
+        sGroup = "Link";
+        sMenuText = QT_TR_NOOP("Link array");
+        sToolTipText = QT_TR_NOOP("Link an object many times, placed by a pattern");
+        sWhatsThis = "Std_LinkArrayActions";
+        sStatusTip = sToolTipText;
+        eType = AlterDoc;
+        bCanLog = false;
+
+        addCommand(new StdCmdLinkArrayLinear());
+        addCommand(new StdCmdLinkArrayPolar());
+        addCommand(new StdCmdLinkArrayCircular());
+        addCommand(new StdCmdLinkArrayPath());
+        addCommand(new StdCmdLinkArrayPoint());
+    }
+
+    const char* className() const override
+    {
+        return "StdCmdLinkArrayActions";
+    }
+};
+
+//===========================================================================
 // Instantiation
 //===========================================================================
 
@@ -1137,6 +1280,7 @@ void CreateLinkCommands()
     rcCmdMgr.addCommand(new StdCmdLinkActions());
     rcCmdMgr.addCommand(new StdCmdLinkMakeGroup());
     rcCmdMgr.addCommand(new StdCmdLinkSelectActions());
+    rcCmdMgr.addCommand(new StdCmdLinkArrayActions());
 
 }
 

@@ -187,6 +187,12 @@ public:
      * what this client's events and picks go through.
      */
     SoSeparator* editRoot = nullptr;
+    /// The session's on-view root (EditingRoot::onViewNode), hung after
+    /// editRoot for as long as it is: what getOnViewParameterRoot answers
+    /// in a session, so a label or marker made for this client is
+    /// published with the session's overlay rather than in the served
+    /// scene, and is picked here like the edit's own geometry.
+    SoSeparator* onViewRoot = nullptr;
 
     /// What the client's pointer and keyboard last said. Coin's events
     /// carry the modifier state on every event, and the button state is
@@ -285,6 +291,9 @@ public:
         root->addChild(scene);
         if (editRoot) {
             root->addChild(editRoot);
+        }
+        if (onViewRoot) {
+            root->addChild(onViewRoot);
         }
         return root;
     }
@@ -407,6 +416,10 @@ MirrorViewer::MirrorViewer(Document* doc, SoNode* scene,
 
 MirrorViewer::~MirrorViewer()
 {
+    // A panel's labels outlive this view when a closed document takes it
+    // first; their dimensions come out of the served graph now
+    releaseOnViewParameters();
+
     // Leaving the session below shows the edited object again here, and
     // a client going away is not told anything: its serving source would
     // look this mirror up while it is being destroyed.
@@ -496,6 +509,9 @@ void MirrorViewer::setCamera(const Camera& camera)
     }
     pimpl->state = camera;
     pimpl->stated = true;
+    if (typeChanged) {
+        signalCameraReplaced();
+    }
 }
 
 bool MirrorViewer::hasCamera() const
@@ -1183,6 +1199,9 @@ bool MirrorViewer::getSceneBoundBox(SbBox3f& box) const
         CoinPtr<SoGroup> both(new SoGroup, true);
         both->addChild(pimpl->scene);
         both->addChild(pimpl->editRoot);
+        if (pimpl->onViewRoot) {
+            both->addChild(pimpl->onViewRoot);
+        }
         action.apply(both);
     }
     else {
@@ -1345,19 +1364,46 @@ void MirrorViewer::hangEditingRoot(EditingRoot* root, bool hang)
     // with the session (SceneServeSource), not this graph -- nothing
     // publishes the event root. One session under N mirrors is N parents
     // of one node, one each.
+    //
+    // The session's on-view root goes with it, after it, for the same
+    // two reasons: the overlay is what the client sees of it, and this
+    // graph is what a replayed click on a label or a marker picks.
     if (!root || !pimpl->eventRoot) {
         return;
     }
+    SoSeparator* onView = root->onViewNode();
     if (hang) {
         root->hangUnder(pimpl->eventRoot);
         pimpl->editRoot = root->node();
+        if (pimpl->eventRoot->findChild(onView) < 0) {
+            pimpl->eventRoot->addChild(onView);
+        }
+        pimpl->onViewRoot = onView;
     }
     else {
         root->unhangFrom(pimpl->eventRoot);
         if (pimpl->editRoot == root->node()) {
             pimpl->editRoot = nullptr;
         }
+        const int index = pimpl->eventRoot->findChild(onView);
+        if (index >= 0) {
+            pimpl->eventRoot->removeChild(index);
+        }
+        if (pimpl->onViewRoot == onView) {
+            pimpl->onViewRoot = nullptr;
+        }
     }
+}
+
+SoGroup* MirrorViewer::getOnViewParameterRoot() const
+{
+    // In a session the session's, published with its overlay; outside
+    // one the served root, as before there were sessions (an on-view
+    // entry made with no edit running has no session to belong to).
+    if (pimpl->onViewRoot) {
+        return pimpl->onViewRoot;
+    }
+    return ViewerContext::getOnViewParameterRoot();
 }
 
 void MirrorViewer::addEventCallback(SoType eventtype, SoEventCallbackCB* cb, void* userdata)

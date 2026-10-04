@@ -25,6 +25,7 @@
 
 #pragma once
 
+#include <numbers>
 #include <vector>
 
 #include <Precision.hxx>

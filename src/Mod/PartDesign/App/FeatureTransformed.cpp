@@ -40,6 +40,7 @@
 #include <Base/Exception.h>
 #include <Base/Parameter.h>
 #include <Base/Reader.h>
+#include <Base/Sequencer.h>
 #include <Mod/Part/App/modelRefine.h>
 
 #include <Mod/Part/App/TopoShapeOpCode.h>
@@ -47,8 +48,7 @@
 #include "Body.h"
 #include "FeatureAddSub.h"
 #include "FeatureMirrored.h"
-#include "FeatureLinearPattern.h"
-#include "FeaturePolarPattern.h"
+#include "FeaturePattern.h"
 #include "FeatureSketchBased.h"
 
 FC_LOG_LEVEL_INIT("PartDesign",true,true)
@@ -87,6 +87,8 @@ Transformed::Transformed()
         "Hide the original base feature and leave only the transformed one(s).");
 
     ADD_PROPERTY_TYPE(_Version,(0),"Part Design",(App::PropertyType)(App::Prop_Hidden), 0);
+    ADD_PROPERTY_TYPE(SuppressedIndices,(std::vector<long>()),"Part Design",App::Prop_None,
+        "Indices of the instances left out; 0 is the original");
 
     //init Refine property
     Base::Reference<ParameterGrp> hGrp = App::GetApplication().GetUserParameter()
@@ -144,15 +146,23 @@ App::DocumentObject* Transformed::getSketchObject() const
     else if (!originals.empty() && originals.front()->isDerivedFrom<PartDesign::FeatureAddSub>()) {
         return nullptr;
     }
-    else if (this->isDerivedFrom<LinearPattern>()) {
-        // if Originals is empty then try the linear pattern's Direction property
-        const LinearPattern* pattern = static_cast<const LinearPattern*>(this);
-        return pattern->Direction.getValue();
-    }
-    else if (this->isDerivedFrom<PolarPattern>()) {
-        // if Originals is empty then try the polar pattern's Axis property
-        const PolarPattern* pattern = static_cast<const PolarPattern*>(this);
-        return pattern->Axis.getValue();
+    else if (auto pattern = Base::freecad_dynamic_cast<PatternFeature>(this)) {
+        // if Originals is empty then try the direction of a linear pattern,
+        // the axis of a polar or circular one
+        const char* name = nullptr;
+        switch (pattern->getPatternType()) {
+            case App::Pattern::Type::Linear:
+                name = "Direction";
+                break;
+            case App::Pattern::Type::Polar:
+            case App::Pattern::Type::Circular:
+                name = "Axis";
+                break;
+            default:
+                return nullptr;
+        }
+        auto link = dynamic_cast<App::PropertyLinkSub*>(App::Pattern::getProperty(*this, name));
+        return link ? link->getValue() : nullptr;
     }
     else if (this->isDerivedFrom<Mirrored>()) {
         // if Originals is empty then try the mirror pattern's MirrorPlane property
@@ -182,8 +192,58 @@ void Transformed::handleChangedPropertyType(Base::XMLReader &reader, const char 
     }
 }
 
+void Transformed::handleChangedPropertyName(Base::XMLReader &reader, const char * TypeName, const char *PropName)
+{
+    // Upstream's TransformMode (45bb606095; 9535371265 renamed its strings,
+    // but a file keeps the index only): 0 patterns the Originals, 1 the
+    // whole shape before it and ignores the Originals -- which upstream
+    // leaves in the file when the mode is switched. The fork's whole-shape
+    // pattern is no originals with SubTransform off; with it on (the
+    // default) no originals pattern only the previous feature.
+    if (strcmp(PropName, "TransformMode") == 0
+            && strcmp(TypeName, App::PropertyEnumeration::getClassTypeId().getName()) == 0) {
+        static const char *modes[] = {"Features", "Whole shape", nullptr};
+        App::PropertyEnumeration mode;
+        mode.setEnums(modes);
+        mode.Restore(reader);
+        restoredWholeShape = mode.getValue() == 1;
+        // The saved shape is right, but onDocumentRestored() changes what
+        // it is computed from, and a restore purges what that touches
+        if (restoredWholeShape && getDocument())
+            getDocument()->addRecomputeObject(this);
+        return;
+    }
+    PartDesign::FeatureAddSub::handleChangedPropertyName(reader, TypeName, PropName);
+}
+
+bool Transformed::isTransformationSuppressed(int index) const
+{
+    if (index < 0)
+        return false;
+    const auto& suppressed = SuppressedIndices.getValues();
+    return std::find(suppressed.begin(), suppressed.end(), static_cast<long>(index))
+        != suppressed.end();
+}
+
+void Transformed::setTransformationSuppressed(int index, bool suppressed)
+{
+    if (index < 0 || Transformed::isTransformationSuppressed(index) == suppressed)
+        return;
+    auto values = SuppressedIndices.getValues();
+    if (suppressed)
+        values.push_back(index);
+    else
+        values.erase(std::remove(values.begin(), values.end(), static_cast<long>(index)),
+                     values.end());
+    std::sort(values.begin(), values.end());
+    values.erase(std::unique(values.begin(), values.end()), values.end());
+    SuppressedIndices.setValues(values);
+}
+
 short Transformed::mustExecute() const
 {
+    if (SuppressedIndices.isTouched())
+        return 1;
     if (OriginalSubs.isTouched())
         return 1;
     return PartDesign::Feature::mustExecute();
@@ -246,6 +306,10 @@ App::DocumentObjectExecReturn *Transformed::execute()
 
     this->positionBySupport();
     bool hasOffset = !TransformOffset.getValue().isIdentity();
+    // The first instance is moved, by the offset or by the pattern itself,
+    // or left out: either way the original must not stay in the support,
+    // which the history rewrite below takes care of
+    bool moveFirst = hasOffset || isFirstInstanceTransformed() || isTransformationSuppressed(0);
 
     // Get the support
     TopoShape support;
@@ -253,8 +317,11 @@ App::DocumentObjectExecReturn *Transformed::execute()
     auto baseObj = getBaseObject(true);
     if (!canSkipFirst && !NewSolid.getValue() && baseObj)  {
         support = getBaseShape(true, false, false);
-        if (support.isNull())
-            return new App::DocumentObjectExecReturn("Cannot transform invalid support shape");
+        // Checked below: a rewritten history does not start from it, and
+        // the base may be empty for that very reason -- a pattern before
+        // this one that left out all its instances, the original included
+        bool baseIsNull = support.isNull();
+        bool rewritten = false;
 
         // This is the old behavior of the first instance of pattern. It's kept for
         // backward compatibility.
@@ -272,6 +339,7 @@ App::DocumentObjectExecReturn *Transformed::execute()
                 PartDesign::FeatureAddSub* feature = static_cast<PartDesign::FeatureAddSub*>(v.first);
                 if(!feature->Suppress.getValue()) {
                     support = feature->getBaseShape(true, false, false);
+                    rewritten = true;
                     if (baseObj)
                         this->Placement.setValue(baseObj->Placement.getValue());
                 }
@@ -279,7 +347,7 @@ App::DocumentObjectExecReturn *Transformed::execute()
             }
         } 
         else if (_Version.getValue() > 2
-                && hasOffset
+                && moveFirst
                 && OffsetBaseFeature.getValue()
                 && SubTransform.getValue())
         {
@@ -340,7 +408,10 @@ App::DocumentObjectExecReturn *Transformed::execute()
                                        : "because of its type"));
             } else {
                 if (auto feature = Base::freecad_dynamic_cast<FeatureAddSub>(firstObj)) {
-                    support = feature->getBaseShape(true, false, false);
+                    // A base without a solid, points or a path, is none, as
+                    // it was to the original itself
+                    support = feature->getBaseShape(true, false, true);
+                    rewritten = true;
                     if (baseObj)
                         this->Placement.setValue(baseObj->Placement.getValue());
                 }
@@ -348,15 +419,29 @@ App::DocumentObjectExecReturn *Transformed::execute()
         }
         else if (_Version.getValue() > 3 && OffsetBaseFeature.getValue() && !SubTransform.getValue()) {
             support = TopoShape();
+            rewritten = true;
         }
+        if (baseIsNull && !rewritten)
+            return new App::DocumentObjectExecReturn("Cannot transform invalid support shape");
     }
 
-    auto trsfInv = TopoShape::convert(this->Placement.getValue().toMatrix()).Inverted();
+    const auto placementInv = TopoShape::convert(this->Placement.getValue().toMatrix()).Inverted();
+    gp_Trsf offset;
     if (hasOffset)
-        trsfInv.Multiply(TopoShape::convert(TransformOffset.getValue().toMatrix()));
+        offset = TopoShape::convert(TransformOffset.getValue().toMatrix());
+    auto trsfInv = placementInv.Multiplied(offset);
 
-    // create an untransformed copy of the support shape
-    support.setTransform(Base::Matrix4D());
+    // The support in our frame. It is normally at our placement, which then
+    // leaves it untransformed; a rewritten history's support is an earlier
+    // feature's, at that feature's placement.
+    if (!support.isNull()) {
+        Base::Matrix4D mat = support.getTransform();
+        if (Base::Placement(mat).isSame(this->Placement.getValue(), Precision::Confusion()))
+            mat = Base::Matrix4D();
+        else
+            mat = this->Placement.getValue().inverse().toMatrix() * mat;
+        support.setTransform(mat);
+    }
     if(!support.Hasher)
         support.Hasher = getDocument()->getStringHasher();
 
@@ -374,7 +459,8 @@ App::DocumentObjectExecReturn *Transformed::execute()
         if(!obj) 
             continue;
 
-        int startIndex = canSkipFirst && body && body->isSibling(this, obj) ? 1 : 0;
+        int startIndex = canSkipFirst && !isFirstInstanceTransformed()
+            && body && body->isSibling(this, obj) ? 1 : 0;
 
         if (SubTransform.getValue() 
                 && obj->isDerivedFrom<PartDesign::FeatureAddSub>()) 
@@ -395,7 +481,13 @@ App::DocumentObjectExecReturn *Transformed::execute()
                 if (!shapeSet.insert(shape.getShape()).second)
                     continue;
                 shape.Tag = -shape.Tag;
-                auto trsf = feature->getLocation().Transformation().Multiplied(trsfInv);
+                // The add/sub shape is in the feature's own frame: out of it
+                // by the feature's placement, into ours by the inverse of
+                // ours (upstream 5d8162107a), then offset. The two orders
+                // agree only while the original and the support share a
+                // placement, which is why the reversed one went unnoticed.
+                auto trsf = offset.Multiplied(
+                    placementInv.Multiplied(feature->getLocation().Transformation()));
                 originalShapes.push_back(shape.makETransform(trsf));
                 originalSubs.push_back(feature->getFullName());
                 operations.push_back(v.second);
@@ -448,10 +540,17 @@ App::DocumentObjectExecReturn *Transformed::execute()
         }
     } catch (Base::Exception& e) {
         return new App::DocumentObjectExecReturn(e.what());
+    } catch (const Standard_Failure& e) {
+        // e.g. a gp_Dir of a zero vector from a degenerate reference
+        return new App::DocumentObjectExecReturn(e.GetMessageString());
     }
 
     if (transformations.empty() || originalShapes.empty()) {
         Shape.setValue(support);
+        // Nothing is added either: not the copies of before, which a path or
+        // point pattern whose reference is not picked yet showed, or one
+        // switched to such a kind
+        AddSubShape.setValue(TopoShape());
         return App::DocumentObject::StdReturn; // No transformations defined, exit silently
     }
 
@@ -582,6 +681,12 @@ App::DocumentObjectExecReturn *Transformed::execute()
             }
             std::vector<gp_Trsf>::const_iterator t = transformations.begin() + idx;
             for (; t != transformations.end(); ++t,++idx) {
+                // Nothing else lets the user's Esc in while a pattern is
+                // made (upstream eadd0bc191, 638f86a10f): every 500 ms the
+                // events are seen, and a confirmed abort throws
+                Base::Sequencer().checkAbort();
+                if (isTransformationSuppressed(idx))
+                    continue;
                 ss.str("");
                 if (idx)
                     ss << 'I' << idx;
@@ -590,7 +695,7 @@ App::DocumentObjectExecReturn *Transformed::execute()
                     return new App::DocumentObjectExecReturn("Transformed: Linked shape object is empty");
                 try {
                     shapeCopy = shapeCopy.makETransform(*t, ss.str().c_str());
-                    if (idx == 0 && canSkipFirst && (_Version.getValue()==0 || !hasOffset || !OffsetBaseFeature.getValue())) {
+                    if (idx == 0 && canSkipFirst && (_Version.getValue()==0 || !moveFirst || !OffsetBaseFeature.getValue())) {
                         // Skip first transformation in case we do not transform the
                         // first instance (i.e. original feature belongs to the same
                         // sibling group)
@@ -641,11 +746,14 @@ App::DocumentObjectExecReturn *Transformed::execute()
 
         std::vector<gp_Trsf>::const_iterator t = transformations.begin() + idx;
         for (; t != transformations.end(); ++t,++idx) {
+            Base::Sequencer().checkAbort();
+            if (isTransformationSuppressed(idx))
+                continue;
             auto shapeCopy = CopyShape.getValue()?shape.makECopy():shape;
             if (shapeCopy.isNull())
                 return new App::DocumentObjectExecReturn("Transformed: Linked shape object is empty");
 
-            if (idx == 0 && canSkipFirst && (_Version.getValue()==0 || !hasOffset)) {
+            if (idx == 0 && canSkipFirst && (_Version.getValue()==0 || !moveFirst)) {
                 // Skip first transformation in case we do not transform the
                 // first instance (i.e. original feature belongs to the same
                 // sibling group)
@@ -701,7 +809,7 @@ App::DocumentObjectExecReturn *Transformed::execute()
                     return new App::DocumentObjectExecReturn(
                             QT_TRANSLATE_NOOP("Exception", "Unknown operation type"));
                 }
-                result.makEBoolean(maker, {support, shapeCopy});
+                result.makEBoolean(maker, {support, shapeCopy}, nullptr, FuzzyTolerance.getValue());
                 this->fixShape(result);
 
                 // Do not call getSolid() as we need the compound to hide the
@@ -870,6 +978,12 @@ void Transformed::divideTools(const std::vector<TopoDS_Shape> &toolsIn, std::vec
 }
 
 void Transformed::onDocumentRestored() {
+    if (restoredWholeShape) {
+        restoredWholeShape = false;
+        OriginalSubs.setValues(std::vector<App::DocumentObject*>(), std::vector<std::string>());
+        Originals.setValues({});
+        SubTransform.setValue(false);
+    }
     if(OriginalSubs.getValues().empty() && Originals.getSize()) {
         std::vector<std::string> subs(Originals.getSize());
         OriginalSubs.setValues(Originals.getValues(),subs);

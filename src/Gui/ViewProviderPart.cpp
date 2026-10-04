@@ -106,7 +106,9 @@ void ViewProviderPart::updateData(const App::Property *prop) {
 void ViewProviderPart::setupContextMenu(QMenu* menu, QObject* receiver, const char* member)
 {
     auto func = new Gui::ActionFunction(menu);
-    QAction* act = menu->addAction(QObject::tr("Toggle active part"));
+    QAction* act = menu->addAction(QObject::tr("Active object"));
+    act->setCheckable(true);
+    act->setChecked(isActivePart());
     func->trigger(act, [this](){
         this->doubleClicked();
     });

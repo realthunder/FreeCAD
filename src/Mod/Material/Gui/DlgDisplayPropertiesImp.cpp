@@ -809,6 +809,10 @@ QString finishPresetLabel(uint8_t pattern)
             return DlgDisplayPropertiesImp::tr("Blasted");
         case App::SurfaceFinish::Turned:
             return DlgDisplayPropertiesImp::tr("Turned");
+        case App::SurfaceFinish::Thread:
+            return DlgDisplayPropertiesImp::tr("Thread");
+        case App::SurfaceFinish::ThreadLeft:
+            return DlgDisplayPropertiesImp::tr("Left-hand thread");
         default:
             return {};
     }

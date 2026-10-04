@@ -1094,6 +1094,20 @@ its text streamed to the client instead of painted. A widget with no window stil
 validates, formats and selects, which was verified before anything was designed around it.
 The client is told what to display and forwards keystrokes, and implements none of it.
 
+**Correction (2026-09-29): the dimension line did not reach a browser.** The render cache
+captures an `SoDatumLabel` through a companion graph (`getImageNode()`) that the Sketcher
+hangs by its constraints and `EditableDatumLabel` did not, so the on-view labels reached no
+client -- and drew nothing on a bgfx desktop either. The label hangs its companion now,
+under `ViewerContext::getOnViewParameterRoot()`: the served root on a mirror, an overlay
+feed of its own on the desktop. A label can also be clicked (`setPickable`), which on a
+mirror is a replayed pointer event through the scene with nothing new on the wire; a
+pattern's spacing labels use that (docs/PartDesignPort.md, 2026-09-29), and
+`tests/gui/serve-pattern-labels.py` drives it over a socket. A pattern's instance toggles
+(2026-10-02) take the same root and the same route with no box at all: each is an
+`SoImage` that paints its own glyph (`Gui::SoToggleMarker`), so the render cache's image
+companion carries it, and a replayed click picks it over the instance it sits in
+(`tests/gui/serve-pattern-markers.py`).
+
 Two things ARE the client's, and the line between them and the server is frequency -- the
 same line 8.2a draws for hover:
 
@@ -2121,6 +2135,369 @@ never ends at all:
 already have selected (`announcePeersTo`), since the pushes are change-driven
 and the peer who already picked has the least reason to pick again.
 
+### 8.11b The right-click menu (built 2026-10-03)
+
+Until this, a browser had no UI to edit an existing object: `window.fcviewerEdit`
+was a JavaScript call and nothing more. A right click on the scene now gets the
+desktop's 3D-view context menu -- the same entries, built by the same code.
+
+**Built on the host, sent as JSON, held per client** (`Gui::SceneContextMenu`,
+`src/Gui/SceneContextMenu.*`). The `contextMenu` op carries the click's world
+ray. The served source resolves it through the client's mirror, exactly as a
+pick (`SceneServeSource::pickSubObject`, the pick half of `pickAndSelect`, now
+shared). Inside the client's `ViewerScope`, the menu is assembled as
+`NavigationStyle::openPopupMenu` assembles it: the active workbench's "View"
+items through `MenuManager`, then the picked object's own submenu from
+`ViewProvider::setupContextMenu`, first. The object submenu is built without the
+tree, because a served document may be one the tree does not show.
+
+The reply describes every entry: text, icon (`img:` ids, fetched with
+`widgets.image`), check state, shortcut, `enabled`, `kind`, `allowed` and the
+reason when not. A command's `enabled` is that command's `isActive()` asked
+inside the client's view. The shared action's state is the desktop's answer,
+kept against the desktop's view.
+
+The real QMenu is held for that client until it picks an entry
+(`contextMenu.trigger`), closes the menu (`contextMenu.close`), right-clicks
+again, or disconnects. An entry runs as the desktop runs it: in the client's
+view, with the clicked object as the selection's context.
+
+The widget stream (Sandbox.md 7.18) was the alternative and is the wrong fit. It
+is a broadcast, its triggers run outside any client's view, and a popup that
+lives for seconds has no use for live diffs.
+
+**Who may run what** is the control channel's rule, judged when the menu is
+built and again on trigger (`SceneContextMenu::allowed`):
+
+| Connection | May run |
+|---|---|
+| Host | Everything, at the host's own modal risk |
+| Edit | Edit-mode entries, which go through the `edit` op's own path (`enterClientEdit`, factored out of it); "Finish editing"; commands on the browser allowlist |
+| View | Only the camera entries |
+
+For an Edit connection, an opaque entry -- arbitrary code, possibly modal on a
+process serving several browsers -- is sent marked refused with the reason, and
+drawn disabled.
+
+An edit-mode entry is recognised by its receiver: `setupContextMenu`'s receiver
+is the menu object, and a disconnect probe asks whether an action is connected
+to it. An entry built as a lambda that only enters its default edit mode
+(`addDefaultAction`, Part's primitives) says so with
+`ViewProviderDocumentObject::EditEntryProperty`, and is then run by its mode.
+
+The camera commands with a browser counterpart (fit all, the standard and
+axonometric views) are `kind: local`. They run on the browser's own camera
+(`fcviewerNaviAction`, actions 5 to 10 added for the six views) and never on
+the host.
+
+**A trap it found:** building a PartDesign Body's menu calls
+`Gui::Document::setActiveView`. Under a client's scope, that created and raised
+a 3D view on the serving desktop. Inside a `ViewerScope` it now creates and
+raises nothing, as `setEdit` already did not.
+
+**The browser** (`web/src/contextmenu.tsx`, `wasm/main.cpp` `openContextMenu`):
+- A right press and release that did not move past the 6 px slop opens the
+  menu; one that moved was a pan, as before.
+- Not on the NaviCube (it has its own menu), not on a page, and not while
+  editing (the panel is the way out, and the sketcher's own menu is a
+  different one).
+- The camera goes up ahead of the ask, so the mirror resolves the ray in this
+  framing.
+- Submenus are walked into in place, which works on a phone too.
+- A refused trigger shows its reason and leaves the menu open.
+
+**Verified:** `tests/gui/serve-context-menu.py`, 21 checks over the socket. Its
+readings include:
+- NoView before a camera;
+- the box's submenu first, by label;
+- `Transform` and the default "Edit" entry are allowed edit entries;
+- opaque entries are refused, on trigger too;
+- `Std_ViewFitAll` is local;
+- a miss gives no target;
+- the edit entry enters the edit in the client's view, with zero 3D views;
+- a used or replaced menu is Stale;
+- a Body's menu opens no 3D view.
+
+In a real headful Chrome (viewer-harness `context-menu*.png`):
+- a right click on a PD pattern opened the menu;
+- "Edit LinearPattern" in its submenu entered the edit, markers and labels
+  drawn;
+- a right drag panned and opened nothing;
+- Fit all and Front ran on the browser's camera, while Home and the rotations
+  are drawn disabled.
+
+**Not done** (in phase 1; all four done since, below):
+- touch long-press;
+- "Pick geometry";
+- the sketcher's in-edit menu, which `exec()`s itself;
+- a View-connection socket reading.
+
+**Phase 2 (2026-10-03).**
+
+*"Pick geometry".* As on the desktop, a click that hits anything gets a
+"Pick geometry" submenu after the object's own: everything the ray went
+through, front to back, grouped by element kind ("Other" last), each entry
+the object's label and its element. The list comes from
+`SceneServeSource::pickAllSubObjects`, a pick-all ray through the client's
+mirror resolved hit by hit as `pickObject` resolves one; the mirror has no
+`SoFCUnifiedSelection` view to ask `getPickedList` of. An entry is
+`kind: "pick"`, carrying `pick: {obj, sub}` named as a selection push names an
+item. Choosing one selects it in the client's selection, in its view, as its
+click would land; `extend` on the trigger adds it, as Ctrl does on the desktop.
+The server tells the client through the usual `selection` push. The viewer
+then takes it into its own selection (`fcviewer_select_named`) without sending
+it up again, since the viewer otherwise paints only what it picked itself. A
+pick needs the right to select: a View connection has its picks dropped, so
+its pick entries are refused.
+
+The desktop preselects the entry under its cursor. The browser paints the
+same thing by name (`fcviewer_hover_named`, the peer selection's name-to-draw
+resolution), since preselection is never routed (8.11a). That only worked once
+the scene's own hover was held while the menu is open
+(`fcviewer_hold_hover`). The viewer listens to the mouse on the whole document,
+so the box under the menu was preselected again over every entry's preview.
+A desktop popup has the mouse in the same way. The hold also stops the
+pointer moves an edit mode is sent.
+
+*Touch long-press.* The loupe (a 350 ms hold preselects under the finger)
+held still on its target for 500 ms more opens the menu there. Moving the
+loupe past the slop starts the wait again on the new target. Once the menu is
+up, the finger's lift commits nothing and its drag orbits nothing. A shorter
+hold commits its selection as before. Not in an edit, whose touches are the
+tool's.
+
+*The sketcher's menu.* `ViewProviderSketch::generateContextMenu` built a
+menu and `exec()`ed it on the desktop. It was also one null `qobject_cast`
+away from a crash under a view that is not a `View3DInventor`. It is split
+now: `setupEditContextMenu(MenuItem&)` fills the entries. A new virtual,
+`ViewProvider::editContextMenu(MenuItem*)`, lets an edit mode answer a served
+view's right click:
+- a filled menu;
+- an empty one when the click did what it does there (the sketcher ends its
+  running tool);
+- false for no answer of its own, in which case the view's menu applies.
+
+The `contextMenu` op asks the client's own edit first, in its view.
+"Leave sketch" is the edit's way out, run as "Finish editing" is, and so
+allowed. The rest of the sketcher's entries are judged by the command
+allowlist like any others: the create tools are allowed, and the constraint
+and transform commands are drawn refused for a non-host, since several open
+dialogs. The browser now asks on a right click while editing too.
+
+**Verified (phase 2):** `tests/gui/serve-context-menu.py`, now 41 checks.
+- The pick submenu follows the object's own, grouped by kind.
+- A ray down through the box lists Face6 and Face5, allowed, by name.
+- A pick replaces the client's selection (told), and an extended one joins it.
+- On a View connection the menu is built, nothing but the camera entries is
+  allowed, and a pick is refused (ViewOnly).
+- In a sketch's edit:
+  - the sketcher's menu comes up with its create tools allowed;
+  - "Leave sketch" is `finishEdit`, and taken, it leaves the edit;
+  - a right click with a line tool running ends the tool and returns no menu,
+    and the next one gives the menu again.
+
+In headful Chrome (viewer-harness `context-menu-pick-*.png`,
+`context-menu-touch-hold.png`), with a box over a cylinder seen from the top:
+- "Pick geometry > Face" listed both of the box's faces and both of the
+  cylinder's;
+- pointing at "Drum (Face3)" outlined the cylinder's top through the box, and
+  pointing at "Crate (Face6)" outlined the box's top;
+- choosing the drum's face selected it, in the selection colour, with
+  `fc:selection` naming it;
+- a CDP touch held 1.3 s opened the menu and its lift selected nothing, while a
+  0.6 s hold selected the face and opened no menu;
+- after the menu closed, the mouse preselected again.
+
+**Phase 3 (2026-10-04).** The two leftovers of phase 2. The policy question it
+also listed went to 8.11c.
+
+*A pick entry's preview on touch.* A finger has no pointer to hover with, so a
+tap that only selected gave no chance to see what would be selected. On touch
+(the press's `pointerType`), the first tap on a pick entry previews it and
+marks the entry armed, with "Tap to select" in place of a shortcut. A second
+tap on the same entry selects it. A tap on another pick entry moves the
+preview there. Going back, opening a submenu or closing the menu drops it.
+The mouse and the pen are unchanged: the entry under the pointer previews, and
+one click selects.
+
+*"Pick geometry" inside an edit.* The desktop reaches the pick menu in an edit
+through Std_PickGeometry's shortcut (G, G), since the sketcher's right click is
+its own menu. A browser has no keyboard to press it with, a phone least of
+all, so when an edit answers the right click (`editContextMenu`), "Pick
+geometry" heads its menu whenever the ray hit something.
+
+What the ray hits in a sketch's edit is the edit's own geometry, named as
+`ViewProviderSketch::getElementPicked` names it for a pick that is not the
+sketcher's own: "edge3", "vertex2", lower case, the geometry index. The
+viewer has no names for that geometry, since the edit draws it on the host.
+Such an entry carries `pick.edit: true`, and the host does both halves:
+- the preview is a new op, `contextMenu.hover {menu, item}` (item 0 for none).
+  It preselects the entry in the client's view, as `SelectionMenu::onHover`
+  does on the desktop, and the edit repaints. A menu that goes drops its
+  preview with it.
+- the trigger selects as for any pick, then republishes, because inside an
+  edit the selection is the scene (as `pickAndSelect` does). The viewer does
+  not take it into its own selection.
+
+The sketcher draws such a choice as its own selection, lower-case name and
+all. A reading of its `onSelectionChanged`, whose add tests "Edge" by case,
+said it would not. A build with that test made case-blind drew it no
+differently from one without, so the reading was wrong and nothing was
+changed there.
+
+The kind group read "edge" beside "Face". Groups are capitalised now, so a
+sketch's edges and a solid's share "Edge".
+
+*Left as it is:* the edit's own pointer preselection, the element under the
+mouse when the right button went down, stays lit under the menu until an entry
+is pointed at. The first hover replaces it and leaving that entry clears both.
+A `Selection().rmvPreselect()` when the menu is built, as
+`SelectionMenu::doPick` does before it shows, did not clear it, and was taken
+out again. A touch never meets this: inside an edit a touch is the tool's, and
+the long-press opens no menu there.
+
+**Verified (phase 3):** `tests/gui/serve-context-menu.py`, now 49 checks:
+- in the edit, a ray onto the sketch's line heads the menu with "Pick
+  geometry", listing it as `{obj: Sketch, sub: edge2, edit: true}`;
+- `contextMenu.hover` previews it and drops the preview, and refuses an entry
+  that is not a pick (UnknownItem);
+- choosing it selects it, the client is told, and the sketcher's next menu is
+  the one for a selected line.
+
+In headful Chrome (viewer-harness `sk-pick-*.png`, `touch-preview-*.png`,
+`serve_sketch_pick.py`; step.js gained `menutap`, a CDP touch tap on an entry):
+- in a sketch's edit, "Pick geometry > Edge > Sketch (edge3)" lit the line
+  while pointed at and let it go when the pointer left;
+- choosing it drew the line in the selection colour;
+- outside the edit, a first tap on "Crate (Face5)" outlined the bottom face
+  through the box, armed and "Tap to select";
+- a tap on "Crate (Face6)" moved the preview to the top face, and a second tap
+  selected it, with `fc:selection` naming it.
+
+### 8.11c Questions a command asks: ask, roll back, replay (design, 2026-10-03)
+
+**Recorded, not built.** It is built after the transaction log
+(`docs/TransactionLog.md` and `docs/MultiViewEdit.md` on the `Transaction`
+branch) is finished, because it stands on that log's writer branches. Until
+then the browser allowlist of 8.7 stays as it is: a non-host runs the
+sketcher's create tools and the pick tools, and nothing else.
+
+**The problem.** The phase-2 menu left one question open: may a non-host run
+more than the allowlist? The user's answer was to trust an editing connection
+fully, once a modal dialog from a remote client could no longer hold the
+host. A command asks its questions through a modal dialog: `exec()`,
+`QMessageBox::question`, `QInputDialog::get*`, a file chooser. These calls
+appear in 372 files under `src/`, in C++ and in Python, and each one expects
+the answer as a return value. On a serving process the dialog waits in a
+nested event loop on the GUI thread for somebody at the machine, and the
+browser that asked cannot see it.
+
+**Designs considered and dropped:**
+
+- *Refuse every modal raised for a client*, as Escape would refuse it. Safe,
+  but it makes every command that asks something useless from a browser. It
+  also retires M3 (docs/Sandbox.md), the widget layer's path for a client to
+  answer a mirrored `dialog:<n>` root, which is built and tested
+  (`SandboxPanelMirror.test_nested_messagebox`). A prototype of this guard
+  exists: a Qt application event filter that refuses a dialog shown while a
+  client's request is handled, and lists it in the reply as
+  `refusedDialogs`. It becomes step 2 below.
+- *Mirror the dialog and wait in the nested loop.* The process keeps serving,
+  because a nested loop still delivers events. But the op that asked gets no
+  reply until somebody answers, and the desktop is input-blocked all that
+  time. Nested loops also unwind last in, first out: client A's command
+  cannot return while client B's later dialog is still open.
+- *Park the command on a fiber, with the document held.* A separate stack per
+  invocation, switched out while its dialog waits, and a document-level write
+  hold so that nothing changes under the parked transaction. This was too
+  risky: parked C++ and Python stacks, with Python's thread state saved and
+  restored by hand. The hold also blocks every other writer to the document,
+  which is the opposite of what the transaction log's concurrent writers are
+  for (`TransactionLog.md` 17.5).
+
+**The design.** Nothing is ever parked. An invocation that needs an answer is
+rolled back, its question is shown non-modally, and once the answer arrives
+the invocation runs again from its start.
+
+1. **A command runs on a branch of its own (user, 2026-10-03).** When a writer
+   (a client, or the desktop) issues a command, it branches out from the head
+   for the length of that command. Nobody else touches the document state the
+   command sees. The branch merges automatically when the command is done, or
+   when it is aborted, which merges nothing. **This applies to editing as
+   well:** entering an edit branches out, and finishing or cancelling the edit
+   merges. This is `TransactionLog.md` 17.5's writer branch, scoped to one
+   invocation or one edit session. A merge conflict takes 17.5's conflict
+   path.
+2. **The first run answers provisionally.** When the command reaches a modal
+   call with no answer recorded for it, the call is answered as Escape would
+   answer it. The question is written down: the dialog's class, title, text,
+   buttons, and, for a form dialog, its widget state through the widget store.
+   Most code treats that refusal as "cancelled" and returns early.
+3. **The run is rolled back.** When the invocation returns with an
+   unanswered question, the branch is reset to its base. Nothing half-done is
+   merged, and nobody else waits on it.
+4. **The question goes to its owner, non-modally.**
+   - On the desktop, a non-modal dialog, with the application fully usable.
+     The user accepts losing modality on the desktop for this.
+   - For a client, the same dialog mirrored as a `dialog:<n>` root (M3),
+     drawn by the browser once W4 is built.
+5. **Answered, the command runs again.** The command re-runs on the same
+   branch, from the same base, with an answer tape. Each modal call that asks
+   a recorded question (matched by class, title, text and buttons) is
+   answered from the tape at once, and a form dialog gets its recorded widget
+   state applied before it is accepted. The branch makes the replay
+   deterministic: the document is exactly as the first run saw it, so the
+   same code asks the same question. A further question repeats steps 2 to 5,
+   so a wizard of N questions runs N+1 times; questions usually come before
+   the heavy work.
+6. **Done or aborted, the branch merges.** An abort covers a refused or
+   cancelled question, an explicit cancel, and a timeout. A question belongs
+   to its writer and holds nothing global: two clients can each have one
+   pending in the same document. A client that disconnects keeps its branch
+   with the question on it, the resumable session of `MultiViewEdit.md`
+   sec 10, until it comes back or the question times out.
+
+**Inside an edit session**, a question raised by input handling is not
+replayed. The sketcher's datum dialog on a mouse release is one example:
+replaying a gesture is not sensible. The edit's branch already isolates its
+state, so these few sites become explicit non-modal calls instead: the
+dialog's `open()`, with the rest of the work in its `finished` handler.
+
+**What does not replay, and falls back to the refusal guard:**
+- a command with side effects outside the document before its question (a
+  file written, the selection or the view changed), which declares itself
+  not replayable;
+- a form dialog whose widgets have no stable names, so that its state cannot
+  be recorded and applied again;
+- a modal raised outside any invocation (a timer, an observer, an idle
+  callback).
+
+A client gets the refusal, with a notice naming the dialog. On the desktop,
+the dialog stays modal as it is today.
+
+**On the wire.** A control op whose command is waiting on a question answers
+`{"pending": <question id>}`, and its final reply follows when the branch
+merges. The client's questions are pushed to it, so a client that reconnects
+finds them again. An answer is a `question.answer` op carrying the id, the
+result code and, for a form dialog, the widget state. A W4 browser draws the
+dialog from its `dialog:<n>` root and answers through the same op.
+
+**Then the allowlist retires.** An editing connection runs every command,
+context-menu entry and tool bar action. Only the host's preferences, and
+rearranging the host's widgets, stay host-only (docs/ShareAccess.md
+sec 2.2).
+
+**Build order, after the transaction log:**
+1. A branch per command and per edit session, with the auto-merge.
+2. The refusal guard, the question record and the rollback; the desktop's
+   non-modal question.
+3. The replay, with the answer tape.
+4. Routing a question to its client, with `pending`, `question.answer` and
+   the pushes.
+5. W4 in the browser: drawing `dialog:<n>` roots.
+6. The edit-mode sites made explicitly non-modal.
+7. Retiring the allowlist.
+
 ### 8.12 What per client would cost -- the multi-user roadmap
 
 Everything below is what 8.11 shares, listed from the view outward to the data, with what
@@ -2241,6 +2618,24 @@ sketch axes -- `serve-edit-browser.py` measured the 10 mm edit line at 20 pixels
 880 it had in view mode, where the old in-scene geometry, keyless, had framed nothing and left
 the camera alone. That test now counts the edit overlay's pixels before, during and after the
 session (the edited-edge colour set to magenta).
+
+**Built 2026-10-04: a session's on-view parameters ride the same overlay.** A mirror's
+`getOnViewParameterRoot()` was the served root, so the dimension lines of its on-view
+labels (`EditableDatumLabel`) and a pattern's instance markers (`PatternInstanceMarkers`)
+were published in the one scene every client shares: a viewer outside the session saw
+them, and a label following the pointer spoiled the shared scene's caches on every move,
+the cost the edit overlay had just removed. Each session's `EditingRoot` now owns an
+on-view node beside its editing root -- not under it, since a label is in world
+coordinates and the editing transform must not move it -- and a mirror in the session
+answers that node, hanging it after the editing root in its event graph so a replayed
+click still picks a label or a marker. The serving source watches and captures the
+session's publish group (editing root, then on-view node) into overlay 7, and publishes
+it when either has content: a pattern panel edits with nothing in the editing root.
+Outside a session a mirror still answers the served root. The desktop keeps its own
+on-view feed and never hangs the session's node, so a client's labels are not drawn
+there. A label remembers the group it hung under, since a mirror's answer now changes as
+it joins and leaves a session. `serve-pattern-markers.py` asserts the markers hang under
+the session's node (`EditingOnViewRoot`) during the edit and nothing is left after it.
 
 **Reading the list.** A is done; C, D and J have their seams built; B, E, F and I are
 wide but mechanical -- each is the move stages 1-5 made, a global becoming a row on a

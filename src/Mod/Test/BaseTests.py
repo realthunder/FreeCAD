@@ -30,6 +30,55 @@ import FreeCAD
 from FreeCAD import Base
 
 
+class ProgressTestCase(unittest.TestCase):
+    """FreeCAD.getProgress(): the snapshot of running progress sequences."""
+
+    OUTER = "getProgress test outer"
+    INNER = "getProgress test inner"
+
+    def find(self, text):
+        return [s for s in FreeCAD.getProgress()["sequences"] if s["text"] == text]
+
+    def testKeys(self):
+        snap = FreeCAD.getProgress()
+        for key in ("sequences", "progress", "total", "roots", "lead"):
+            self.assertIn(key, snap)
+        self.assertIsInstance(snap["sequences"], list)
+        self.assertEqual(self.find(self.OUTER), [])
+
+    def testNestedSequences(self):
+        outer = Base.ProgressIndicator()
+        inner = Base.ProgressIndicator()
+        outer.start(self.OUTER, 10)
+        try:
+            for _ in range(3):
+                outer.next()
+            inner.start(self.INNER, 4)
+            try:
+                inner.next()
+                found_outer = self.find(self.OUTER)
+                found_inner = self.find(self.INNER)
+                self.assertEqual(len(found_outer), 1)
+                self.assertEqual(len(found_inner), 1)
+                o, i = found_outer[0], found_inner[0]
+                self.assertEqual((o["progress"], o["total"]), (3, 10))
+                self.assertEqual((i["progress"], i["total"]), (1, 4))
+                self.assertEqual(i["depth"], o["depth"] + 1)
+                self.assertTrue(o["mainThread"])
+                # a nested sequence may be cut off by maxLevels
+                self.assertEqual(
+                    [s for s in FreeCAD.getProgress(o["depth"] + 1)["sequences"]
+                     if s["text"] == self.INNER],
+                    [],
+                )
+            finally:
+                inner.stop()
+        finally:
+            outer.stop()
+        self.assertEqual(self.find(self.OUTER), [])
+        self.assertEqual(self.find(self.INNER), [])
+
+
 class ConsoleTestCase(unittest.TestCase):
     def setUp(self):
         self.count = 0

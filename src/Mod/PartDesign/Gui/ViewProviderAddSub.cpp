@@ -76,6 +76,22 @@ ViewProviderAddSub::~ViewProviderAddSub()
 {
 }
 
+bool ViewProviderAddSub::onDelete(const std::vector<std::string> &subs)
+{
+    // A feature hides what it is made from -- a pad its sketch, a loft its
+    // sections, a pipe its spine -- so show those again when it goes. Each
+    // type used to do it for its Profile alone, and Loft and Pipe not at all.
+    // Features among the children are left to ViewProvider::onDelete(),
+    // which shows the previous one.
+    for (auto child : _claimChildren()) {
+        if (!child || child->isDerivedFrom<PartDesign::Feature>())
+            continue;
+        if (auto vp = Gui::Application::Instance->getViewProvider(child))
+            vp->show();
+    }
+    return ViewProvider::onDelete(subs);
+}
+
 void ViewProviderAddSub::attach(App::DocumentObject* obj) {
 
     ViewProvider::attach(obj);
@@ -94,7 +110,7 @@ PartGui::ViewProviderPartExt * ViewProviderAddSub::getAddSubView()
     }
 
     pAddSubView.reset(new PartGui::ViewProviderPart);
-    pAddSubView->setShapePropertyName("AddSubShape");
+    pAddSubView->setShapePropertyName(getPreviewShapeName());
     pAddSubView->forceUpdate();
     pAddSubView->MapFaceColor.setValue(false);    
     pAddSubView->MapLineColor.setValue(false);    
@@ -145,6 +161,11 @@ void ViewProviderAddSub::checkAddSubColor()
         else
             color = App::Color((uint32_t)PartGui::PartParams::getPreviewAddColor());
     }
+    applyPreviewColor(color);
+}
+
+void ViewProviderAddSub::applyPreviewColor(const App::Color &color)
+{
     // clamp transparency between 0.1 ~ 0.8
     float t = std::max(0.1f, std::min(0.8f, color.transparency()));
     if (!PartGui::PartParams::getPreviewWithTransparency()) {
@@ -177,24 +198,34 @@ void ViewProviderAddSub::updateData(const App::Property* p) {
         else if (p == &feat->AddSubType) {
             checkAddSubColor();
             signalChangeIcon();
-        } else if (p == &feat->BaseFeature) {
-            if (previewActive) {
-                setPreviewDisplayMode(false);
-                setPreviewDisplayMode(true);
-            }
-        }
+        } else if (p == &feat->BaseFeature)
+            refreshPreviewBase();
 
-        if (p == &feat->BaseFeature || p == &feat->Placement || p == &feat->AddSubShape) {
-            Base::Matrix4D matrix = feat->AddSubShape.getShape().getTransform();
-            auto base = Base::freecad_dynamic_cast<Part::Feature>(
-                    feat->BaseFeature.getValue());
-            if (base)
-                matrix *= base->Placement.getValue().inverse().toMatrix()
-                         * feat->Placement.getValue().toMatrix();
-            previewTransform->setMatrix(convert(matrix));
-        }
+        if (p == &feat->BaseFeature || p == &feat->Placement || p == &feat->AddSubShape)
+            updatePreviewTransform(feat->AddSubShape.getShape());
     }
     PartDesignGui::ViewProvider::updateData(p);
+}
+
+void ViewProviderAddSub::refreshPreviewBase()
+{
+    if (previewActive) {
+        setPreviewDisplayMode(false);
+        setPreviewDisplayMode(true);
+    }
+}
+
+void ViewProviderAddSub::updatePreviewTransform(const Part::TopoShape &shape)
+{
+    auto feat = Base::freecad_dynamic_cast<PartDesign::Feature>(getObject());
+    if (!feat)
+        return;
+    Base::Matrix4D matrix = shape.getTransform();
+    auto base = Base::freecad_dynamic_cast<Part::Feature>(feat->BaseFeature.getValue());
+    if (base)
+        matrix *= base->Placement.getValue().inverse().toMatrix()
+                 * feat->Placement.getValue().toMatrix();
+    previewTransform->setMatrix(convert(matrix));
 }
 
 bool ViewProviderAddSub::isPreviewMode() const
@@ -214,7 +245,7 @@ void ViewProviderAddSub::setPreviewDisplayMode(bool on) {
     if (on) {
         checkAddSubColor();
 
-        auto feat = Base::freecad_dynamic_cast<PartDesign::FeatureAddSub>(getObject());
+        auto feat = Base::freecad_dynamic_cast<PartDesign::Feature>(getObject());
         auto base = feat ? feat->BaseFeature.getValue() : nullptr;
         if (base) {
             baseFeature = App::DocumentObjectT(base);
@@ -330,8 +361,10 @@ void ViewProviderAddSub::reattach(App::DocumentObject *obj)
 QIcon ViewProviderAddSub::getIcon() const
 {
     auto feat = Base::freecad_dynamic_cast<PartDesign::FeatureAddSub>(getObject());
-    if (!sPixmap || !feat)
+    if (!sPixmap)
         return QIcon();
+    if (!feat)
+        return PartDesignGui::ViewProvider::getIcon();
     std::string name;
     static const char prefixNone[] = "PartDesign_";
     static const char prefixAdditive[] = "PartDesign_Additive";

@@ -67,11 +67,14 @@ set(Part_tests
     parttests/Geom2d_tests.py
     parttests/part_test_objects.py
     parttests/regression_tests.py
+    parttests/TestFaceMakerUnifiedPlanar.py
+    parttests/TestFaceMakerUnifiedNonPlanar.py
     parttests/ShapeListTest.py
     parttests/TopoShapeListTest.py
     parttests/ColorPerFaceTest.py
     parttests/ElementNameTest.py
     parttests/HLRProjectionTest.py
+    parttests/TestLinkArray.py
 )
 
 add_custom_target(PartScripts ALL SOURCES

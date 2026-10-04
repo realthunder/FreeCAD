@@ -24,8 +24,11 @@
 #ifndef PARTDESIGN_Hole_H
 #define PARTDESIGN_Hole_H
 
+#include <functional>
 #include <optional>
+#include <vector>
 #include <App/PropertyUnits.h>
+#include <Base/Vector3D.h>
 #include "json_fwd.hpp"
 #include "FeatureSketchBased.h"
 
@@ -50,12 +53,14 @@ public:
 
     App::PropertyBool           Threaded;
     App::PropertyBool           ModelThread;
+    App::PropertyBool           CosmeticThread;
     App::PropertyLength         ThreadPitch;
     App::PropertyEnumeration    ThreadType;
     App::PropertyEnumeration    ThreadSize;
     App::PropertyEnumeration    ThreadClass;
     App::PropertyEnumeration    ThreadFit;
     App::PropertyLength         Diameter;
+    App::PropertyLength         ThreadDiameter;
     App::PropertyEnumeration    ThreadDirection;
     App::PropertyEnumeration    HoleCutType;
     App::PropertyBool           HoleCutCustomValues;
@@ -73,6 +78,25 @@ public:
     App::PropertyAngle          TaperedAngle;
     App::PropertyBool           UseCustomThreadClearance;
     App::PropertyLength         CustomThreadClearance;
+    App::PropertyInteger        BaseProfileType;
+    /// Where the holes start: see ProfileBased::StartTypesEnums
+    App::PropertyEnumeration    StartType;
+    App::PropertyLength         StartOffset;
+    App::PropertyLinkSub        StartReference;
+
+    /// What of the profile a hole is centred on: bits of BaseProfileType
+    enum BaseProfileTypeOptions {
+        OnPoints    = 1 << 0,
+        OnCircles   = 1 << 1,
+        OnArcs      = 1 << 2,
+
+        OnPointsCirclesArcs = OnPoints | OnCircles | OnArcs,
+        OnCirclesArcs = OnCircles | OnArcs
+    };
+    /// The panel's and the preference's choice (0 circles and arcs, 1 all,
+    /// 2 points) as BaseProfileType bits, and back; -1 for anything else
+    static int baseProfileOption_idxToBitmask(int index);
+    static int baseProfileOption_bitmaskToIdx(int bitmask);
 
     /** @name methods override feature */
     //@{
@@ -94,7 +118,7 @@ public:
     };
     static const ThreadDescription threadDescription[][171];
 
-    static const double metricHoleDiameters[36][4];
+    static const double metricHoleDiameters[51][4];
 
     using UTSClearanceDefinition = struct {
         std::string designation;
@@ -102,55 +126,105 @@ public:
         double normal;
         double loose;
     };
-    static const UTSClearanceDefinition UTSHoleDiameters[22];
+    static const UTSClearanceDefinition UTSHoleDiameters[23];
 
     void onDocumentRestored() override;
 
     virtual void updateProps();
 
+    /** One bore the hole leaves threaded without modelling the thread
+     *
+     * What a view needs to draw the thread on it (a cosmetic thread), in
+     * the feature's own shape coordinates -- the frame execute() builds
+     * the hole in, i.e. with the feature's Placement taken off. The
+     * thread starts at `origin`, the hole's mouth on the profile, and
+     * runs `length` along `direction` into the material.
+     */
+    struct CosmeticThreadBore
+    {
+        Base::Vector3d origin;
+        Base::Vector3d direction;   ///< unit, from the mouth into the material
+        double radius = 0.0;        ///< the bore's radius at the mouth
+        double taper = 0.0;         ///< radians the wall leans off the axis, 0 = straight
+        double length = 0.0;        ///< how far the thread runs
+        double pitch = 0.0;         ///< the lead of a single-start thread
+        double height = 0.0;        ///< crest to root, the standard's working height
+        double profileAngle = 60.0; ///< degrees, included between the flanks
+        bool leftHand = false;
+    };
+    /// The threaded bores, one per hole the profile centres; empty unless
+    /// the hole is threaded with CosmeticThread on and ModelThread off.
+    std::vector<CosmeticThreadBore> getCosmeticThreads() const;
+    double getThreadPitch() const;
+    /// How far along the hole the holes start from the profile, as
+    /// StartType says; throws if the reference cannot be met
+    double getStartOffset() const;
+
+    /// Whether a screw standard's cut is a counterbore or a countersink;
+    /// the Hole panel draws its diagram by it
+    bool isDynamicCounterbore(const std::string &thread, const std::string &holeCutType);
+    bool isDynamicCountersink(const std::string &thread, const std::string &holeCutType);
+    /// The axis the holes are drilled along, before Reversed
+    Base::Vector3d guessNormalDirection(const TopoShape& profileshape) const;
+    /// Every point of the profile a hole is centred on, with the profile
+    /// element it comes from, in the order findHoles() drills them
+    void forEachHoleCenter(const TopoShape& profileshape,
+                           const std::function<void(const TopoShape&, const gp_Pnt&)>& fn) const;
+
 protected:
     void onChanged(const App::Property* prop) override;
+    void setupObject() override;
     static const App::PropertyAngle::Constraints floatAngle;
 
 private:
     static const char* DepthTypeEnums[];
     static const char* ThreadDepthTypeEnums[];
     static const char* ThreadTypeEnums[];
+    static const char* ClearanceNoneEnums[];
     static const char* ClearanceMetricEnums[];
     static const char* ClearanceUTSEnums[];
+    static const char* ClearanceOtherEnums[];
     static const char* DrillPointEnums[];
     static const char* ThreadDirectionEnums[];
 
     /* "None" thread profile */
     static const char* HoleCutType_None_Enums[];
-    static const char* ThreadSize_None_Enums[];
     static const char* ThreadClass_None_Enums[];
 
     /* ISO metric coarse profile */
     static std::vector<std::string> HoleCutType_ISOmetric_Enums;
-    static const char* ThreadSize_ISOmetric_Enums[];
     static const char* ThreadClass_ISOmetric_Enums[];
     static const double ThreadClass_ISOmetric_data[ThreadClass_ISOmetric_data_size][2];
 
     /* ISO metric fine profile */
     static std::vector<std::string> HoleCutType_ISOmetricfine_Enums;
-    static const char* ThreadSize_ISOmetricfine_Enums[];
     static const char* ThreadClass_ISOmetricfine_Enums[];
 
     /* UNC profile */
     static const char* HoleCutType_UNC_Enums[];
-    static const char* ThreadSize_UNC_Enums[];
     static const char* ThreadClass_UNC_Enums[];
 
     /* UNF profile */
     static const char* HoleCutType_UNF_Enums[];
-    static const char* ThreadSize_UNF_Enums[];
     static const char* ThreadClass_UNF_Enums[];
 
     /* UNEF profile */
     static const char* HoleCutType_UNEF_Enums[];
-    static const char* ThreadSize_UNEF_Enums[];
     static const char* ThreadClass_UNEF_Enums[];
+
+    /* NPT profile */
+    static const char* HoleCutType_NPT_Enums[];
+
+    /* BSP profile */
+    static const char* HoleCutType_BSP_Enums[];
+
+    /* BSW profile */
+    static const char* HoleCutType_BSW_Enums[];
+    static const char* ThreadClass_BSW_Enums[];
+
+    /* BSF profile */
+    static const char* HoleCutType_BSF_Enums[];
+    static const char* ThreadClass_BSF_Enums[];
 
     static const double ThreadRunout[ThreadRunout_size][2];
 
@@ -210,20 +284,37 @@ private:
     const CutDimensionSet& find_cutDimensionSet(const CutDimensionKey &k);
 
     void addCutType(const CutDimensionSet& dimensions);
-    bool isDynamicCounterbore(const std::string &thread, const std::string &holeCutType);
-    bool isDynamicCountersink(const std::string &thread, const std::string &holeCutType);
     void updateHoleCutParams();
+    void calculateAndSetCounterbore();
+    void calculateAndSetCountersink();
+    void updateCountersinkDepth();
     std::optional<double> determineDiameter() const;
     void updateDiameterParam();
     void updateThreadDepthParam();
     void readCutDefinitions();
 
+    double getCountersinkAngle() const;
     double getThreadClassClearance() const;
     double getThreadRunout(int mode = 1) const;
-    double getThreadPitch() const;
+    double getThreadProfileAngle();
+    void findClosestDesignation();
+    /// The pitch of the size ThreadDiameter was taken from, 0 if none:
+    /// with it, a type change keeps the pitch among sizes of a diameter
+    double threadPitch = 0.0;
+    bool changingThreadType = false;
     void rotateToNormal(const gp_Dir& helixAxis, const gp_Dir& normalAxis, TopoDS_Shape& helixShape) const;
     gp_Vec computePerpendicular(const gp_Vec&) const;
     TopoDS_Shape makeThread(const gp_Vec&, const gp_Vec&, double);
+    /** The start offset for a profile in the frame  invObjLoc takes the
+     * reference to, the holes going along  holeDirection
+     */
+    double startOffset(const TopoShape& profileshape, const gp_Dir& holeDirection,
+                       const TopLoc_Location& invObjLoc) const;
+    /** How far a through-all hole goes: from the profile along
+     * holeDirection to just past the far side of  base, both in one frame
+     */
+    double throughAllLength(const TopoShape& base, const TopoShape& profileshape,
+                            const gp_Dir& holeDirection) const;
     TopoShape findHoles(std::vector<TopoShape> &holes, const TopoShape& profileshape, const TopoDS_Shape& protohole) const;
 
     // helpers for nlohmann json

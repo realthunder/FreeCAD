@@ -23,6 +23,11 @@
 #ifndef TASKFEATUREPARAMETERS_H_NAHKE2YZ
 #define TASKFEATUREPARAMETERS_H_NAHKE2YZ
 
+#include <memory>
+#include <string>
+#include <utility>
+#include <vector>
+
 #include <QPointer>
 #include <QWidget>
 
@@ -36,6 +41,10 @@ class QCheckBox;
 class QComboBox;
 class QTimer;
 class QBoxLayout;
+
+namespace App {
+class Property;
+}
 
 namespace Gui {
 class PrefCheckBox;
@@ -55,7 +64,7 @@ public:
 
     TaskFeatureParameters(PartDesignGui::ViewProvider* vp, QWidget *parent, const QString& parname);
 
-    ~TaskFeatureParameters() override = default;
+    ~TaskFeatureParameters() override;
 
     /// save field history
     virtual void saveHistory();
@@ -76,6 +85,14 @@ public:
         return transactionID;
     }
 
+    /// Orders the panels' full recomputes of their feature; 0 for none
+    unsigned long getComputedSequence() const {
+        return computedSequence;
+    }
+    /// Whether the feature's inputs are what this panel's last full
+    /// recompute of it saw, so its Shape is already theirs
+    bool isInputComputed() const;
+
 protected Q_SLOTS:
     // TODO Add update view to all dialogs (2015-12-05, Fat-Zer)
     void onUpdateView(bool on);
@@ -91,6 +108,11 @@ protected:
     void timerEvent(QTimerEvent *);
 
     virtual void finishedRecomputeFeature() {}
+
+    /// Tell the user which modifier switches a gizmo drag between coarse and
+    /// fine steps (upstream 6df51cefd7).
+    void showDraggerHints();
+    void hideDraggerHints();
 
 private:
     /** Notifies when the object is about to be removed. */
@@ -113,6 +135,7 @@ protected:
     int transactionID = 0;
     int blinkTimerId = 0;
     bool blink = false;
+    bool draggerHintsShown = false;
 
     struct BlinkInfo {
         QPointer<QWidget> widget;
@@ -121,6 +144,13 @@ protected:
         void setText(const QString &text);
     };
     std::unordered_map<void*, BlinkInfo> blinkWidgets;
+
+private:
+    void saveComputedInput();
+
+    /// The feature's input values at the last full recompute, by name
+    std::vector<std::pair<std::string, std::unique_ptr<App::Property>>> computedInput;
+    unsigned long computedSequence = 0;
 };
 
 /// A common base for sketch based, dressup and other solid parameters dialogs

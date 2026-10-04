@@ -24,6 +24,7 @@
 #ifndef GUI_TASKVIEW_TaskTransformedParameters_H
 #define GUI_TASKVIEW_TaskTransformedParameters_H
 
+#include <Gui/PatternWidgets.h>
 #include <fastsignals/signal.h>
 
 #include <QComboBox>
@@ -63,62 +64,8 @@ namespace PartDesignGui {
 class TaskMultiTransformParameters;
 class TaskDlgTransformedParameters;
 
-/**
- * @brief The ComboLinks class is a helper class that binds to a combo box and
- * provides an interface to add links, retrieve links and select items by link
- * value
- */
-class ComboLinks
-{
-public:
-    /**
-     * @brief ComboLinks constructor.
-     * @param combo. It will be cleared as soon as it is bound. Don't add or
-     * remove items from the combo directly, otherwise internal tracking list
-     * will go out of sync, and crashes may result.
-     */
-    explicit ComboLinks(QComboBox &combo);
-    ComboLinks() {_combo = nullptr; doc = nullptr;}
-    void setCombo(QComboBox &combo) {assert(!_combo); this->_combo = &combo; _combo->clear();}
-
-    /**
-     * @brief addLink adds an item to the combo. Doesn't check for duplicates.
-     * @param lnk can be a link to NULL, which is usually used for special item "Select Reference"
-     * @param itemText
-     * @return
-     */
-    int addLink(const App::PropertyLinkSub &lnk, QString itemText);
-    int addLink(App::DocumentObject* linkObj, std::string linkSubname, QString itemText);
-    void clear();
-    App::PropertyLinkSub& getLink(int index) const;
-
-    /**
-     * @brief getCurrentLink
-     * @return the link corresponding to the selected item. May be null link,
-     * which is usually used to indicate a "Select reference..." special item.
-     * Otherwise, the link is automatically tested for validity (oif an object
-     * doesn't exist in the document, an exception will be thrown.)
-     */
-    App::PropertyLinkSub& getCurrentLink() const;
-
-    /**
-     * @brief setCurrentLink selects the item with the link that matches the
-     * argument. If there is no such link in the list, -1 is returned and
-     * selected item is not changed. Signals from combo are blocked in this
-     * function.
-     * @param lnk
-     * @return the index of an item that was selected, -1 if link is not in the list yet.
-     */
-    int setCurrentLink(const App::PropertyLinkSub &lnk);
-
-    QComboBox& combo() const {assert(_combo); return *_combo;}
-
-    ~ComboLinks() {_combo = nullptr; clear();}
-private:
-    QComboBox* _combo;
-    App::Document* doc;
-    std::vector<App::PropertyLinkSub*> linksInList;
-};
+/// Shared with the pattern editors of Gui
+using Gui::ComboLinks;
 
 /**
   The transformed subclasses will be used in two different modes:
@@ -149,6 +96,10 @@ public:
     App::DocumentObject* getSketchObject() const;
 
     void exitSelectionMode();
+    /// Whether a pick in the view is this panel's, a reference or a placement
+    bool isSelecting() const {
+        return selectionMode != none;
+    }
     void changeVisibility();
 
     virtual void apply() = 0;
@@ -184,6 +135,17 @@ public:
 
     QWidget *getProxyWidget() { return proxy; }
 
+    /** Put the on-view toggles of the instances where the top transformed
+     * object's instances are now (upstream e22e537c4b), or take them away
+     * when there is no view to show them in. The top panel holds them; a
+     * MultiTransform's sub-panel asks it.
+     */
+    void updateInstanceMarkers();
+
+    /// Put the on-view labels where the pattern is now, for a panel that
+    /// has them
+    virtual void updateLabels() {}
+
 public Q_SLOTS:
     void onToggledExpansion();
 
@@ -198,6 +160,8 @@ protected Q_SLOTS:
     void originalSelectionChanged();
     void onChangedOffset(const QVariant &, bool, bool);
     void onUpdateViewTimer();
+    /// A marker in the view was clicked
+    void onInstanceToggled(int index, bool suppress);
 
 protected:
     /**
@@ -226,6 +190,7 @@ protected:
     void slotDeletedObject(const Gui::ViewProviderDocumentObject& Obj) override;
     void slotUndoDocument(const Gui::Document& Doc) override;
     void slotRedoDocument(const Gui::Document& Doc) override;
+    void slotDeleteDocument(const Gui::Document& Doc) override;
     void changeEvent(QEvent *e) override = 0;
     void onSelectionChanged(const Gui::SelectionChanges& msg) override;
     virtual void updateUI() = 0;
@@ -236,6 +201,12 @@ protected:
 
     void refresh();
 
+public:
+    /// After an undo or a redo: a property the panel edits may be another
+    /// object now, of the same name
+    virtual void refreshAfterUndo();
+
+protected:
     void slotDiagnosis(QString msg);
 
 protected:
@@ -274,6 +245,15 @@ protected:
 
     bool blockUpdate;
     Gui::Dialog::Placement *transformOffsetPlacement = nullptr;
+
+    /// The on-view toggles of the instances, the top panel's
+    std::unique_ptr<Gui::PatternInstanceMarkers> instanceMarkers;
+
+private:
+    /// The markers and labels follow a recompute the panel did not ask for
+    void watchRecompute();
+    fastsignals::scoped_connection connRecomputedObject;
+    bool onViewRefreshPending = false;
 
     friend class TaskDlgTransformedParameters;
 };

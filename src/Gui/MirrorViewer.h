@@ -237,6 +237,9 @@ public:
     /** @name ViewerContext -- scene, camera and viewport */
     //@{
     SoNode* getSceneGraph() const override;
+    /// The session's EditingRoot::onViewNode() while this view is in
+    /// one, else the served root (ViewerContext's answer).
+    SoGroup* getOnViewParameterRoot() const override;
     SoRenderManager* getSoRenderManager() const override;
     SoEventManager* getSoEventManager() const override;
     const SbViewportRegion& getViewportRegion() const override;

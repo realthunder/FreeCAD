@@ -37,6 +37,7 @@ namespace Gui {
 class View3DInventorViewer;
 class ViewerContext;
 class SoFCCSysDragger;
+class GizmoContainer;
 
 /**
  * The base class for all view providers modifying the placement
@@ -66,6 +67,11 @@ public:
     static void updateTransform(const Base::Placement &from, SoTransform *to);
 
     static Base::Matrix4D getDragOffset(const ViewProviderDocumentObject *vp);
+
+    /// The gizmos of the task panel editing this object. Set by
+    /// GizmoContainer::create() and cleared by its destructor; setEditViewer()
+    /// hangs them on the editing root.
+    void setGizmoContainer(Gui::GizmoContainer* gizmoContainer);
 
 protected:
     bool setEdit(int ModNum) override;
@@ -97,6 +103,8 @@ private:
 
     App::DocumentObjectT _linkArray;
     int _linkArrayIndex = -1;
+
+    GizmoContainer* gizmoContainer = nullptr;
 };
 
 } // namespace Gui

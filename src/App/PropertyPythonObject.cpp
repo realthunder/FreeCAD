@@ -412,30 +412,6 @@ void PropertyPythonObject::Restore(Base::XMLReader &reader)
             const char* module = reader.getAttribute("module");
             const char* cls = reader.getAttribute("class");
             auto* owner = dynamic_cast<App::DocumentObject*>(getContainer());
-#ifdef FC_EXPR_IMAGE_HOST
-            if (owner && ExpressionSandbox::proxyRestoreRouted()) {
-                // The sandbox route (docs/Sandbox.md 7.6, sec 13): the
-                // document-chosen module name is imported in the GUEST,
-                // the instance allocated there, and the property holds
-                // the stand-in; loads() below forwards through it.  A
-                // module the guest cannot serve fails CLOSED -- never a
-                // native import of a name the file chose.  A view
-                // provider's Proxy (no document object as container)
-                // still restores natively: the Gui side is not in the
-                // guest yet (G2).
-                PyObject* standIn = ExpressionSandbox::restoreGuestProxy(module, cls, owner);
-                if (!standIn) {
-                    Base::Console().Error("PropertyPythonObject::Restore: sandbox routing is on"
-                                          " and the guest cannot serve Proxy %s.%s of %s;"
-                                          " the object is left without a Proxy\n",
-                                          module, cls, owner->getFullName().c_str());
-                    throw Py::Exception();
-                }
-                this->object = Py::asObject(standIn);
-                load_json = true;
-            }
-            else
-#endif
             if (!proxyModuleAllowed(*this, module, cls)) {
                 (void)owner;
                 this->object = Py::None();

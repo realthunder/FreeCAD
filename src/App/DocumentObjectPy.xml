@@ -486,6 +486,13 @@ return A List holding all parents (or requested parent if given) and correspondi
             </Documentation>
             <Parameter Name="NoTouch" Type="Boolean"/>
         </Attribute>
+        <Attribute Name="Frozen">
+            <Documentation>
+                <UserDocu>Freeze/unfreeze the object (Std_ToggleFreeze). A frozen object is not
+recomputed and keeps its result until unfrozen; unfreezing touches it.</UserDocu>
+            </Documentation>
+            <Parameter Name="Frozen" Type="Boolean"/>
+        </Attribute>
         <Attribute Name="ElementReferences" ReadOnly="true">
             <Documentation>
                 <UserDocu>A dictionary mapping object to its properties that reference some geometry element of this object</UserDocu>

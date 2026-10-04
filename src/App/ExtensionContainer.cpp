@@ -395,10 +395,15 @@ void ExtensionContainer::restoreExtensions(Base::XMLReader& reader) {
                 ext = static_cast<App::Extension*>(extension.createInstance());
                 //check if this really is a python extension!
                 if (!ext->isPythonExtension()) {
+                    // A C++ extension the class carries in the version that
+                    // saved the file and not in this one, as upstream's link
+                    // elements carry App::SuppressibleExtension. Nothing to do
+                    // about it here: the properties it had restore through
+                    // the object, which handles the ones it knows.
                     delete ext;
-                    std::stringstream str;
-                    str << "Extension is not a python addable version: '" << Type << "'" << std::ends;
-                    THROWM(Base::TypeError, str.str())
+                    Base::Console().Log("Skip extension %s (%s)\n", Name, Type);
+                    reader.readEndElement("Extension");
+                    continue;
                 }
 
                 ext->initExtension(this);
@@ -431,9 +436,14 @@ void ExtensionContainer::restoreExtensions(Base::XMLReader& reader) {
 
 bool ExtensionContainer::canSaveExtension(Extension *ext) const
 {
-    if (!ext)
-        return !_extensions.empty();
-    return true;
+    if (!ext) {
+        for (const auto& entry : _extensions) {
+            if (canSaveExtension(entry.second))
+                return true;
+        }
+        return false;
+    }
+    return ext->isExtensionSaved();
 }
 
 void ExtensionContainer::handleChangedPropertyName(Base::XMLReader &reader, const char * TypeName, const char *PropName)

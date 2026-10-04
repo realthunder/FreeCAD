@@ -92,6 +92,8 @@ void IndexedName::set(
     // NOLINTNEXTLINE cppcoreguidelines-pro-bounds-pointer-arithmetic
     if (std::any_of(name, name+suffixPosition, isInvalidChar)) {
         this->type = "";
+        // Nor an index: "#22" is a string id, not element 22 (upstream 275e534a5b)
+        this->index = 0;
         return;
     }
 

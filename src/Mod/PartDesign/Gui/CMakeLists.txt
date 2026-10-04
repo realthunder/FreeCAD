@@ -44,14 +44,14 @@ set(PartDesignGui_UIC_SRCS
     TaskFilletParameters.ui
     TaskDraftParameters.ui
     TaskThicknessParameters.ui
+    TaskDefeaturingParameters.ui
     TaskBooleanParameters.ui
     TaskHoleParameters.ui
     TaskRevolutionParameters.ui
     TaskTransformedMessages.ui
     TaskMirroredParameters.ui
-    TaskLinearPatternParameters.ui
+    TaskPatternParameters.ui
     TaskGenericPatternParameters.ui
-    TaskPolarPatternParameters.ui
     TaskScaledParameters.ui
     TaskMultiTransformParameters.ui
     TaskShapeBinder.ui
@@ -89,6 +89,8 @@ SET(PartDesignGuiViewProvider_SRCS
     ViewProviderDraft.h
     ViewProviderThickness.cpp
     ViewProviderThickness.h
+    ViewProviderDefeaturing.cpp
+    ViewProviderDefeaturing.h
     ViewProviderDressUp.cpp
     ViewProviderDressUp.h
     ViewProviderRevolution.cpp
@@ -99,12 +101,10 @@ SET(PartDesignGuiViewProvider_SRCS
     ViewProviderTransformed.h
     ViewProviderMirrored.cpp
     ViewProviderMirrored.h
-    ViewProviderLinearPattern.cpp
-    ViewProviderLinearPattern.h
     ViewProviderGenericPattern.cpp
     ViewProviderGenericPattern.h
-    ViewProviderPolarPattern.cpp
-    ViewProviderPolarPattern.h
+    ViewProviderPatterns.cpp
+    ViewProviderPatterns.h
     ViewProviderScaled.cpp
     ViewProviderScaled.h
     ViewProviderMultiTransform.cpp
@@ -175,6 +175,9 @@ SET(PartDesignGuiTaskDlgs_SRCS
     TaskThicknessParameters.ui
     TaskThicknessParameters.cpp
     TaskThicknessParameters.h
+    TaskDefeaturingParameters.ui
+    TaskDefeaturingParameters.cpp
+    TaskDefeaturingParameters.h
     TaskDressUpParameters.cpp
     TaskDressUpParameters.h
     TaskRevolutionParameters.ui
@@ -188,15 +191,12 @@ SET(PartDesignGuiTaskDlgs_SRCS
     TaskMirroredParameters.ui
     TaskMirroredParameters.cpp
     TaskMirroredParameters.h
-    TaskLinearPatternParameters.ui
-    TaskLinearPatternParameters.cpp
-    TaskLinearPatternParameters.h
+    TaskPatternParameters.ui
+    TaskPatternParameters.cpp
+    TaskPatternParameters.h
     TaskGenericPatternParameters.ui
     TaskGenericPatternParameters.cpp
     TaskGenericPatternParameters.h
-    TaskPolarPatternParameters.ui
-    TaskPolarPatternParameters.cpp
-    TaskPolarPatternParameters.h
     TaskScaledParameters.ui
     TaskScaledParameters.cpp
     TaskScaledParameters.h

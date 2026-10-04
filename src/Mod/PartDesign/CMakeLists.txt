@@ -36,28 +36,44 @@ set(PartDesign_TestScripts
     PartDesignTests/__init__.py
     PartDesignTests/TestDatum.py
     PartDesignTests/TestShapeBinder.py
+    PartDesignTests/TestVarSet.py
+    PartDesignTests/TestBaseFeature.py
+    PartDesignTests/TestBodyMaterial.py
     PartDesignTests/TestPad.py
+    PartDesignTests/TestExtrudeSides.py
     PartDesignTests/TestPocket.py
     PartDesignTests/TestHole.py
     PartDesignTests/TestRevolve.py
     PartDesignTests/TestLoft.py
     PartDesignTests/TestPipe.py
+    PartDesignTests/TestHelix.py
     PartDesignTests/TestPrimitive.py
     PartDesignTests/TestMirrored.py
     PartDesignTests/TestLinearPattern.py
     PartDesignTests/TestPolarPattern.py
+    PartDesignTests/TestCircularPattern.py
+    PartDesignTests/TestPathPattern.py
+    PartDesignTests/TestPointPattern.py
+    PartDesignTests/TestPatternKind.py
     PartDesignTests/TestMultiTransform.py
     PartDesignTests/TestBoolean.py
     PartDesignTests/TestFillet.py
     PartDesignTests/TestChamfer.py
     PartDesignTests/TestDraft.py
     PartDesignTests/TestThickness.py
+    PartDesignTests/TestDefeaturing.py
+    PartDesignTests/TestSuppressed.py
     PartDesignTests/TestInvoluteGear.py
+    PartDesignTests/TestTopologicalNamingProblem.py
+    PartDesignTests/TestNameEncoding.py
 )
 
 set(PartDesign_TestFixtures
     PartDesignTests/Fixtures/InvoluteGear_v0-20.FCStd
     PartDesignTests/Fixtures/InternalInvoluteGear_v0-20.FCStd
+    PartDesignTests/Fixtures/ModelFromV021.FCStd
+    PartDesignTests/Fixtures/FaceRefs_v1-1-4.FCStd
+    PartDesignTests/Fixtures/FaceRefs_fork_whole_names.FCStd
 )
 
 set(PartDesign_GearScripts

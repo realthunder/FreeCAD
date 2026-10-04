@@ -469,6 +469,19 @@ public:
 
     ~NodeSensor() { detach(); }
 
+    // This sensor exists only to hear dyingReference(), so the cache
+    // table entry of a node being deleted can be purged. It has no
+    // callback, and content changes need none: the caches notice those
+    // by node id on their next traversal. But an auditor sensor is
+    // notified of EVERY change to its node, and SoDataSensor::notify()
+    // schedules it unconditionally -- a delay-queue entry whose trigger
+    // then does nothing. A restore touches every shape node, so that is
+    // one pointless queue insert per node per rebuild, with no event loop
+    // to drain the queue in between (docs/DocumentLoad.md sec 17). Swallow
+    // the notification; dyingReference() is unaffected, SoBase::destroy()
+    // calls it on each auditing sensor directly, not through notify().
+    void notify(SoNotList *) override {}
+
     void attach(SoFCRenderCacheManagerP * master, const SoNode *node) {
       (void)master;
       if (this->node == node) return;
@@ -539,7 +552,10 @@ public:
           self->master->highlightcache.reset();
           self->master->renderer->clearHighlight();
         }
-        self->master->pathcachetable.erase(self->path);
+        // Not erased here: that destroys this sensor inside its own
+        // callback, and SoDataSensor::trigger() goes on writing to it
+        // afterwards -- heap corruption. purgeDeadSensors() erases it.
+        self->master->deadpathcaches.push_back(self->path);
         return;
       });
     }
@@ -572,7 +588,8 @@ public:
         auto self = static_cast<LatePickPathSensor*>(sensor);
         self->detach();
         self->master->latepickpaths.truncate(0);
-        self->master->latepicktable.erase(self->tmpPath);
+        // Erased later, as PathCacheSensor's
+        self->master->deadlatepicks.push_back(self->tmpPath);
       });
     }
 
@@ -599,6 +616,23 @@ public:
                      PathHasher<PathPtr>,
                      PathHasher<PathPtr>> latepicktable;
   mutable SoPathList latepickpaths;
+  // Entries whose sensor fired: erased by purgeDeadSensors(), outside the
+  // sensor's own callback
+  std::vector<PathPtr> deadpathcaches;
+  mutable std::vector<PathPtr> deadlatepicks;
+
+  void purgeDeadSensors() const {
+    auto self = const_cast<SoFCRenderCacheManagerP*>(this);
+    for (auto &path : self->deadpathcaches)
+      self->pathcachetable.erase(path);
+    self->deadpathcaches.clear();
+    if (!deadlatepicks.empty()) {
+      for (auto &path : deadlatepicks)
+        self->latepicktable.erase(path);
+      deadlatepicks.clear();
+      latepickpaths.truncate(0);
+    }
+  }
   bool obeysrules;
   RenderCachePtr highlightcache;
   CoinPtr<SoPath> highlightpath;
@@ -988,6 +1022,8 @@ SoFCRenderCacheManager::clear()
   PRIVATE(this)->publishdelta.clear();
   PRIVATE(this)->latepicktable.clear();
   PRIVATE(this)->latepickpaths.truncate(0);
+  PRIVATE(this)->deadlatepicks.clear();
+  PRIVATE(this)->deadpathcaches.clear();
 }
 
 bool
@@ -1064,7 +1100,9 @@ SoFCRenderCacheManagerP::pathCache(SoPath * path, bool ontop)
   if (this->nosectionontop != this->sectionNoOnTop()) {
     this->nosectionontop = this->sectionNoOnTop();
     this->pathcachetable.clear();
+    this->deadpathcaches.clear();
   }
+  this->purgeDeadSensors();
   auto it = this->pathcachetable.find(path);
   if (it != this->pathcachetable.end())
     return it->second.cache;
@@ -1785,8 +1823,22 @@ SoFCRenderCacheManager::capture(SoGLRenderAction * action, SoNode * root)
   // overlay roots (foreground superimposition, corner axis cross) that
   // are captured outside their own traversal and mirrored to the backend
   // through the overlay feed (setExternalOverlay()).
+  captureOverlay(action->getState(), root);
+}
+
+void
+SoFCRenderCacheManager::capture(SoNode * root, const SbViewportRegion & viewport)
+{
+  // The seed traverse() makes: complete, and GL-free.
+  SoCallbackAction seedaction(viewport);
+  captureOverlay(seedaction.getState(), root);
+}
+
+void
+SoFCRenderCacheManager::captureOverlay(SoState * state, SoNode * root)
+{
   // Real viewport for screen-space captures; see render().
-  PRIVATE(this)->lastvp = SoViewportRegionElement::get(action->getState());
+  PRIVATE(this)->lastvp = SoViewportRegionElement::get(state);
   PRIVATE(this)->lastvpset = true;
   PRIVATE(this)->action->setViewportRegion(PRIVATE(this)->lastvp);
 
@@ -1794,7 +1846,6 @@ SoFCRenderCacheManager::capture(SoGLRenderAction * action, SoNode * root)
     return;
   PRIVATE(this)->sceneid = root->getNodeId();
 
-  SoState * state = action->getState();
   RenderCachePtr cache = new SoFCRenderCache(state, root);
   cache->open(state);
   cache->resetActionStateStackDepth();
@@ -2083,6 +2134,7 @@ SoFCRenderCacheManagerP::preLatePickGroup(void *userdata,
     return SoCallbackAction::CONTINUE;
 
   const SoPath *path = action->getCurPath();
+  self->purgeDeadSensors();
   auto it = self->latepicktable.find(const_cast<SoPath*>(path));
   if (it != self->latepicktable.end())
     return SoCallbackAction::CONTINUE;
@@ -2108,6 +2160,7 @@ void SoFCRenderCacheManager::doLatePick(SoRayPickAction *action) const
 
 void SoFCRenderCacheManagerP::doLatePick(SoRayPickAction *action) const
 {
+  purgeDeadSensors();
   if (latepicktable.empty())
     return;
   if (latepickpaths.getLength() == 0) {

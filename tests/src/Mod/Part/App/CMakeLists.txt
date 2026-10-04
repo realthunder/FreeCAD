@@ -10,6 +10,7 @@ target_sources(
             # file-local. So Part.so exports neither symbol and the suite cannot
             # link. Re-enable this together with that source, never before.
             # ${CMAKE_CURRENT_SOURCE_DIR}/TopoShapeCache.cpp
+            ${CMAKE_CURRENT_SOURCE_DIR}/FaceMakerUnified.cpp
             ${CMAKE_CURRENT_SOURCE_DIR}/FeaturePartCommon.cpp
             ${CMAKE_CURRENT_SOURCE_DIR}/FeaturePartCut.cpp
             ${CMAKE_CURRENT_SOURCE_DIR}/FeaturePartFuse.cpp

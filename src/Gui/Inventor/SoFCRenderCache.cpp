@@ -1581,6 +1581,11 @@ SoFCRenderCache::addRenderMaterial(SoState * state, const SoNode * node)
     auto palette = std::make_shared<Render::FinishPalette>();
     const SbVec4f *entries = material->finishPalette.getValues(0);
     const int num = std::min(numpalette, Render::MaxFinishPalette);
+    // Where each entry lies, parallel to the palette -- or absent, and
+    // then every entry lies in its face's own frame
+    const int numextents = material->finishExtents.getNum();
+    const SbVec4f *extents = numextents
+        ? material->finishExtents.getValues(0) : nullptr;
     palette->entries.reserve(num);
     for (int i = 0; i < num; ++i) {
       Render::FinishPalette::Entry entry;
@@ -1590,6 +1595,10 @@ SoFCRenderCache::addRenderMaterial(SoState * state, const SoNode * node)
       entry.pitch = entries[i][1];
       entry.depth = entries[i][2];
       entry.angle = entries[i][3];
+      if (i < numextents) {
+        for (int k = 0; k < 4; ++k)
+          entry.extent[k] = extents[i][k];
+      }
       palette->entries.push_back(entry);
     }
     PRIVATE(this)->material.finishpalette = std::move(palette);

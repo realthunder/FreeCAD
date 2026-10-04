@@ -24,74 +24,27 @@
 #ifndef PARTDESIGN_FeaturePolarPattern_H
 #define PARTDESIGN_FeaturePolarPattern_H
 
-#include <App/PropertyStandard.h>
-#include <App/PropertyUnits.h>
-#include "FeatureTransformed.h"
-
+#include "FeaturePattern.h"
 
 namespace PartDesign
 {
-enum class PolarPatternMode {
-    angle,
-    offset
-};
 
-class PartDesignExport PolarPattern : public PartDesign::Transformed
+/** A pattern around an axis (upstream c334ac5062)
+ *
+ * PatternFeature preset to the polar kind: Occurrences rotations, the first
+ * one the identity. In "Extent" mode they are spread over Angle, evenly
+ * around a full turn; in "Spacing" mode they are Offset apart, or as
+ * Spacings and SpacingPattern say. A negative angle turns the other way.
+ *
+ * The axis is a straight edge, a circular edge (its center and normal), a
+ * datum line or a sketch axis. Reversed turns the other way.
+ */
+class PartDesignExport PolarPattern : public PartDesign::PatternFeature
 {
-    PROPERTY_HEADER_WITH_OVERRIDE(PartDesign::PolarPattern);
+    PROPERTY_HEADER_WITH_EXTENSIONS(PartDesign::PolarPattern);
 
 public:
     PolarPattern();
-
-    App::PropertyLinkSub     Axis;
-    App::PropertyBool        Reversed;
-    App::PropertyEnumeration Mode;
-    App::PropertyAngle       Angle;
-    App::PropertyAngle       Offset;
-    App::PropertyIntegerConstraint Occurrences;
-
-   /** @name methods override feature */
-    //@{
-    short mustExecute() const override;
-
-    /// returns the type name of the view provider
-    const char* getViewProviderName() const override {
-        return "PartDesignGui::ViewProviderPolarPattern";
-    }
-    //@}
-
-    /** Create transformations
-     * 
-      * Returns a list of (Occurrences - 1) transformations since the first, untransformed instance
-      * is not counted. Each transformation will rotate the shape it is applied to by the supplied angle.
-      * 
-      * Depending on Mode selection list will be constructed differently:
-      * 1. For "angle" mode each feature will be rotated by (Angle / (Occurrences - 1)) so 
-      * that the transformations will cover the total Angle. The only exception is Angle = 360 degrees in 
-      * which case the transformation angle will be (Angle / Occurrences) so that the last transformed shape 
-      * is not identical with the original shape. 
-      * 2. For "offset" mode each feature will be rotated using exact angle from Offset parameter. It can 
-      * potentially result in transformation that extends beyond full rotation or results in overlapping shapes.
-      * This situations are considered as potential user errors and should be solved by user.
-      * 
-      * If Axis contains a feature and an edge name, then the transformation axis will be
-      * the given edge, which must be linear.
-      * 
-      * If Reversed is true, the direction of rotation will be opposite.
-      */
-    std::list<gp_Trsf> getTransformations(const std::vector<Part::TopoShape> &) override;
-
-protected:
-    void handleChangedPropertyType(Base::XMLReader& reader, const char* TypeName, App::Property* prop) override;
-    void onChanged(const App::Property* prop) override;
-
-    static const App::PropertyIntegerConstraint::Constraints intOccurrences;
-    static const App::PropertyAngle::Constraints floatAngle;
-
-private:
-    static const char* ModeEnums[];
-
-    void setReadWriteStatusForMode(PolarPatternMode mode);
 };
 
 } //namespace PartDesign

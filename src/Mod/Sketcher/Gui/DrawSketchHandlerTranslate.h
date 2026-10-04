@@ -25,6 +25,7 @@
 
 #pragma once
 
+#include <numbers>
 #include <algorithm>
 #include <cmath>
 

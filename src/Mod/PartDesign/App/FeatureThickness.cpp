@@ -23,6 +23,9 @@
 
 #include "PreCompiled.h"
 #ifndef _PreComp_
+# include <cmath>
+# include <functional>
+# include <BRepOffset_Mode.hxx>
 # include <Precision.hxx>
 # include <TopoDS.hxx>
 #endif
@@ -37,6 +40,65 @@
 FC_LOG_LEVEL_INIT("PartDesign",true,true)
 
 using namespace PartDesign;
+using Part::TopoShape;
+
+namespace {
+
+void ensureValidWall(const TopoShape &wall, const char *message)
+{
+    if (wall.isNull() || !wall.isValid() || wall.countSubShapes(TopAbs_SOLID) != 1)
+        throw Base::CADKernelError(message);
+}
+
+/** A wall of the given total thickness centred on a solid's faces (upstream
+ * f4a9a68df2, 1f0127b4cc, 903ab41a37). OCCT's recto-verso offset mode made
+ * the one-sided skin here, the same as Skin: this makes a skin half as thick
+ * each way and fuses the two across the faces they share. With no face to
+ * open, the wall is the solid grown by half the thickness less the solid
+ * shrunk by as much.
+ */
+TopoShape makeRectoVersoThickness(const TopoShape &solid, const std::vector<TopoShape> &faces,
+                                  double thickness, double tol, bool intersection,
+                                  TopoShape::JoinType join,
+                                  const std::function<void(TopoShape &)> &fixShape)
+{
+    const double distance = std::fabs(thickness) / 2.0;
+    if (distance <= tol)
+        throw Base::CADKernelError("Recto-verso half-thickness must exceed the modeling tolerance");
+
+    // Signed offsets need a consistently oriented solid, which an imported
+    // one need not be; this keeps the element names
+    TopoShape oriented = solid;
+    oriented.fixSolidOrientation();
+
+    constexpr auto skin = static_cast<short>(BRepOffset_Skin);
+    TopoShape recto = oriented.makEThickSolid(faces, distance, tol, intersection, false, skin,
+                                              join, "RectoVersoRecto");
+    TopoShape verso = oriented.makEThickSolid(faces, -distance, tol, intersection, false, skin,
+                                              join, "RectoVersoVerso");
+    // As the feature fixes a skin: the fork's OCCT makes the inner
+    // Arc-joined skin of a cylinder opened at its top invalid (occt
+    // tests/occ-issues local01), and the fix may mend it. A solid grown
+    // with no face open comes back inside out.
+    for (auto wall : {&recto, &verso}) {
+        fixShape(*wall);
+        if (faces.empty())
+            wall->fixSolidOrientation();
+    }
+    ensureValidWall(recto, "Recto-verso positive-side wall is invalid");
+    ensureValidWall(verso, "Recto-verso negative-side wall is invalid");
+
+    TopoShape result(0, solid.Hasher);
+    if (faces.empty())
+        result.makECut({recto, verso}, "RectoVerso", tol);
+    else
+        result.makEFuse({recto, verso}, "RectoVerso", tol);
+    if (result.isNull() || !result.isValid() || result.countSubShapes(TopAbs_SOLID) != 1)
+        throw Base::CADKernelError("Recto-verso thickness produced an invalid solid");
+    return result;
+}
+
+} // namespace
 
 const char *PartDesign::Thickness::ModeEnums[] = {"Skin", "Pipe", "RectoVerso", nullptr};
 const char *PartDesign::Thickness::JoinEnums[] = {"Arc", "Intersection", nullptr};
@@ -76,6 +138,11 @@ App::DocumentObjectExecReturn *Thickness::execute()
     } catch (Base::Exception &e) {
         return new App::DocumentObjectExecReturn(e.what());
     }
+    // In the base's local frame, as Fillet does: making a thick solid of a
+    // rotated filleted body fails in global coordinates (upstream d8d85f05ff,
+    // issue 5829)
+    baseShape.setTransform(Base::Matrix4D());
+    this->positionByBaseFeature();
 
     std::map<int,std::vector<TopoShape> > closeFaces;
     const std::vector<std::string>& subStrings = Base.getSubValues(true);
@@ -118,6 +185,18 @@ App::DocumentObjectExecReturn *Thickness::execute()
             }
             TopoShape res(0,getDocument()->getStringHasher());
             try {
+                if (mode == BRepOffset_RectoVerso) {
+                    // Centred on the faces, so neither Reversed nor
+                    // MakeOffset has a side to take
+                    res = makeRectoVersoThickness(solid, *faces, thickness, tol, intersection,
+                            static_cast<Part::TopoShape::JoinType>(join),
+                            [this](TopoShape &s) { this->fixShape(s); });
+                    this->fixShape(res);
+                    shapes.push_back(res);
+                    if (it != closeFaces.end())
+                        ++it;
+                    continue;
+                }
                 res = solid.makEThickSolid(*faces, thickness, tol, intersection, false, mode,
                                            static_cast<Part::TopoShape::JoinType>(join));
                 this->fixShape(res);

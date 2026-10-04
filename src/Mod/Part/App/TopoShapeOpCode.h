@@ -90,6 +90,7 @@ public:
     static constexpr const char *Sewing = "SEW";
     static constexpr const char *Prism = "PSM";
     static constexpr const char *Draft = "DFT";
+    static constexpr const char *Defeaturing = "DEF";
     static constexpr const char *HalfSpace = "HSP";
     static constexpr const char *BSplineFace = "BSF";
     static constexpr const char *Split = "SPT";

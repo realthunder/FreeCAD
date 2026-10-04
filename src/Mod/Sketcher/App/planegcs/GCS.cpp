@@ -4536,18 +4536,28 @@ SolveStatus System::solve(SubSystem* subsysA, SubSystem* subsysB, bool isRedunda
     int xsizeB = subsysB->pSize();
     int csizeA = subsysA->cSize();
 
-    VEC_pD plistAB(xsizeA + xsizeB);
+    // A's parameters in A's order, then those only B has in B's order. Not a
+    // union of the two sorted by address: the order of the unknowns would
+    // follow the heap and the solution would round differently on every run
+    // (see SubSystem::initialize).
+    VEC_pD plistAB;
+    plistAB.reserve(xsizeA + xsizeB);
     {
         VEC_pD plistA, plistB;
         subsysA->getParamList(plistA);
         subsysB->getParamList(plistB);
 
-        std::sort(plistA.begin(), plistA.end());
-        std::sort(plistB.begin(), plistB.end());
-
-        VEC_pD::const_iterator it;
-        it = std::set_union(plistA.begin(), plistA.end(), plistB.begin(), plistB.end(), plistAB.begin());
-        plistAB.resize(it - plistAB.begin());
+        SET_pD inAB;
+        for (double* param : plistA) {
+            if (inAB.insert(param).second) {
+                plistAB.push_back(param);
+            }
+        }
+        for (double* param : plistB) {
+            if (inAB.insert(param).second) {
+                plistAB.push_back(param);
+            }
+        }
     }
     int xsize = plistAB.size();
 

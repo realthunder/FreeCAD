@@ -439,6 +439,11 @@ public:
     std::string ProgramVersion;
     /// Version of the file format
     int FileVersion {0};
+    /** Whether the document carries a string hasher: every document this
+     * fork writes does, and upstream's since 1.0. Objects exported for
+     * copy and paste do not, whoever wrote them.
+     */
+    bool HasStringHasher {false};
 
     /// sets simultaneously the global and local PartialRestore bits
     void setPartialRestore(bool on);

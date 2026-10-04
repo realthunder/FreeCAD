@@ -226,6 +226,12 @@ SET(Features_SRCS
     SubShapeBinderPython.cpp
     PartParams.h
     PartParams.cpp
+    LinkArrays.cpp
+    LinkArrays.h
+    PatternExtension.cpp
+    PatternExtension.h
+    PatternResolver.cpp
+    PatternResolver.h
     PrismExtension.cpp
     PrismExtension.h
 )
@@ -540,6 +546,8 @@ SET(Part_SRCS
     GeometryMigrationExtension.cpp
     Geometry.cpp
     Geometry.h
+    GizmoHelper.cpp
+    GizmoHelper.h
     Geometry2d.cpp
     Geometry2d.h
     ImportIges.cpp
@@ -575,8 +583,12 @@ SET(Part_SRCS
     FaceMaker.h
     FaceMakerCheese.cpp
     FaceMakerCheese.h
+    FaceMakerBuildFace.cpp
+    FaceMakerBuildFace.h
     FaceMakerBullseye.cpp
     FaceMakerBullseye.h
+    FaceMakerUnified.cpp
+    FaceMakerUnified.h
     WireJoiner.cpp
     WireJoiner.h
     HLRProjector.cpp

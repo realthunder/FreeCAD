@@ -297,6 +297,19 @@ public:
 
     // Auto generated code (Tools/params_utils.py:139)
     //@{
+    /// Accessor for parameter DefaultDatumLineColor
+    ///
+    /// Line and point color of a shape binder, darker than DefaultDatumColor
+    /// so that its outline shows against the model (upstream 5dbb4d7c7e)
+    static const unsigned long & getDefaultDatumLineColor();
+    static const unsigned long & defaultDefaultDatumLineColor();
+    static void removeDefaultDatumLineColor();
+    static void setDefaultDatumLineColor(const unsigned long &v);
+    static const char *docDefaultDatumLineColor();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
     /// Accessor for parameter RespectSystemDPI
     static const bool & getRespectSystemDPI();
     static const bool & defaultRespectSystemDPI();

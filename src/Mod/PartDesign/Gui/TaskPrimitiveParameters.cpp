@@ -31,12 +31,14 @@
 #include <App/Document.h>
 #include <App/Origin.h>
 #include <Base/Console.h>
+#include <Base/Converter.h>
 #include <Base/UnitsApi.h>
 #include <Gui/Application.h>
 #include <Gui/Command.h>
 #include <Gui/Document.h>
 #include <Gui/MainWindow.h>
 #include <Gui/ViewProviderCoordinateSystem.h>
+#include <Gui/Utilities.h>
 #include <Mod/PartDesign/App/Body.h>
 #include <Mod/PartDesign/App/FeaturePrimitive.h>
 
@@ -183,6 +185,89 @@ TaskBoxPrimitives::TaskBoxPrimitives(ViewProviderPrimitive* vp, QWidget* parent)
             this, &TaskBoxPrimitives::onWedgeZ2maxChanged);
     connect(ui->wedgeZ2min, qOverload<double>(&Gui::QuantitySpinBox::valueChanged),
             this, &TaskBoxPrimitives::onWedgeZ2minChanged);
+
+    setupGizmos();
+}
+
+void TaskBoxPrimitives::setupGizmos()
+{
+    if (!Gui::GizmoContainer::isEnabled()) {
+        return;
+    }
+    auto feat = vp ? dynamic_cast<PartDesign::FeaturePrimitive*>(vp->getObject()) : nullptr;
+    if (!feat) {
+        return;
+    }
+
+    switch (feat->getPrimitiveType()) {
+        case PartDesign::FeaturePrimitive::Box:
+            lengthGizmo = new Gui::LinearGizmo(ui->boxLength);
+            widthGizmo = new Gui::LinearGizmo(ui->boxWidth);
+            heightGizmo = new Gui::LinearGizmo(ui->boxHeight);
+
+            gizmoContainer = Gui::GizmoContainer::create({widthGizmo, heightGizmo, lengthGizmo}, vp);
+            break;
+        case PartDesign::FeaturePrimitive::Cylinder:
+            heightGizmo = new Gui::LinearGizmo(ui->cylinderHeight);
+            radiusGizmo = new Gui::LinearGizmo(ui->cylinderRadius);
+
+            gizmoContainer = Gui::GizmoContainer::create({heightGizmo, radiusGizmo}, vp);
+            break;
+        case PartDesign::FeaturePrimitive::Sphere:
+            radiusGizmo = new Gui::LinearGizmo(ui->sphereRadius);
+
+            gizmoContainer = Gui::GizmoContainer::create({radiusGizmo}, vp);
+            break;
+        default:
+            return;
+    }
+
+    setGizmoPositions();
+}
+
+void TaskBoxPrimitives::setGizmoPositions()
+{
+    if (!gizmoContainer) {
+        return;
+    }
+    auto feat = vp ? dynamic_cast<PartDesign::FeaturePrimitive*>(vp->getObject()) : nullptr;
+    if (!feat) {
+        return;
+    }
+
+    const Base::Placement& placement = feat->Placement.getValue();
+    SbVec3f pos = Base::convertTo<SbVec3f>(placement.getPosition());
+    SbRotation rot = Base::convertTo<SbRotation>(placement.getRotation());
+    auto getVec = [rot](SbVec3f vec) {
+        rot.multVec(vec, vec);
+
+        return vec;
+    };
+    switch (feat->getPrimitiveType()) {
+        case PartDesign::FeaturePrimitive::Box:
+            lengthGizmo->setDraggerPlacement(pos, getVec({1, 0, 0}));
+            widthGizmo->setDraggerPlacement(pos, getVec({0, 1, 0}));
+            heightGizmo->setDraggerPlacement(pos, getVec({0, 0, 1}));
+            break;
+        case PartDesign::FeaturePrimitive::Cylinder:
+            heightGizmo->setDraggerPlacement(pos, getVec({0, 0, 1}));
+            radiusGizmo->setDraggerPlacement(pos, getVec({1, 1, 0}));
+            break;
+        case PartDesign::FeaturePrimitive::Sphere:
+            radiusGizmo->setDraggerPlacement(pos, getVec({1, 1, 0}));
+            break;
+        default:
+            return;
+    }
+}
+
+void TaskBoxPrimitives::slotChangedObject(const Gui::ViewProviderDocumentObject& Obj,
+                                          const App::Property& Prop)
+{
+    if (vp && &Obj == vp && vp->getObject()
+        && &Prop == &static_cast<App::GeoFeature*>(vp->getObject())->Placement) {
+        setGizmoPositions();
+    }
 }
 
 /*
@@ -424,42 +509,56 @@ void TaskBoxPrimitives::refresh()
 
 
 void TaskBoxPrimitives::onBoxHeightChanged(double v) {
+    if (!vp) // the feature was deleted under the panel
+        return;
     PartDesign::Box* box = static_cast<PartDesign::Box*>(vp->getObject());
     box->Height.setValue(v);
     vp->getObject()->getDocument()->recomputeFeature(vp->getObject());
 }
 
 void TaskBoxPrimitives::onBoxWidthChanged(double v) {
+    if (!vp) // the feature was deleted under the panel
+        return;
     PartDesign::Box* box = static_cast<PartDesign::Box*>(vp->getObject());
     box->Width.setValue(v);
     vp->getObject()->getDocument()->recomputeFeature(vp->getObject());
 }
 
 void TaskBoxPrimitives::onBoxLengthChanged(double v) {
+    if (!vp) // the feature was deleted under the panel
+        return;
     PartDesign::Box* box = static_cast<PartDesign::Box*>(vp->getObject());
     box->Length.setValue(v);
     vp->getObject()->getDocument()->recomputeFeature(vp->getObject());
 }
 
 void TaskBoxPrimitives::onCylinderAngleChanged(double v) {
+    if (!vp) // the feature was deleted under the panel
+        return;
     PartDesign::Cylinder* cyl = static_cast<PartDesign::Cylinder*>(vp->getObject());
     cyl->Angle.setValue(v);
     vp->getObject()->getDocument()->recomputeFeature(vp->getObject());
 }
 
 void TaskBoxPrimitives::onCylinderHeightChanged(double v) {
+    if (!vp) // the feature was deleted under the panel
+        return;
     PartDesign::Cylinder* cyl = static_cast<PartDesign::Cylinder*>(vp->getObject());
     cyl->Height.setValue(v);
     vp->getObject()->getDocument()->recomputeFeature(vp->getObject());
 }
 
 void TaskBoxPrimitives::onCylinderRadiusChanged(double v) {
+    if (!vp) // the feature was deleted under the panel
+        return;
     PartDesign::Cylinder* cyl = static_cast<PartDesign::Cylinder*>(vp->getObject());
     cyl->Radius.setValue(v);
     vp->getObject()->getDocument()->recomputeFeature(vp->getObject());
 }
 
 void TaskBoxPrimitives::onCylinderXSkewChanged(double v) {
+    if (!vp) // the feature was deleted under the panel
+        return;
     PartDesign::Cylinder* cyl = static_cast<PartDesign::Cylinder*>(vp->getObject());
     // we must assure that if the user incremented from e.g. 85 degree with the
     // spin buttons, they do not end at 90.0 but at 89.9999 which is shown rounded to 90 degree
@@ -477,6 +576,8 @@ void TaskBoxPrimitives::onCylinderXSkewChanged(double v) {
 }
 
 void TaskBoxPrimitives::onCylinderYSkewChanged(double v) {
+    if (!vp) // the feature was deleted under the panel
+        return;
     PartDesign::Cylinder* cyl = static_cast<PartDesign::Cylinder*>(vp->getObject());
     // we must assure that if the user incremented from e.g. 85 degree with the
     // spin buttons, they do not end at 90.0 but at 89.9999 which is shown rounded to 90 degree
@@ -494,6 +595,8 @@ void TaskBoxPrimitives::onCylinderYSkewChanged(double v) {
 }
 
 void TaskBoxPrimitives::onSphereAngle1Changed(double v) {
+    if (!vp) // the feature was deleted under the panel
+        return;
     PartDesign::Sphere* sph = static_cast<PartDesign::Sphere*>(vp->getObject());
     ui->sphereAngle2->setMinimum(v); // Angle1 must geometrically be <= than Angle2
     sph->Angle1.setValue(v);
@@ -501,6 +604,8 @@ void TaskBoxPrimitives::onSphereAngle1Changed(double v) {
 }
 
 void TaskBoxPrimitives::onSphereAngle2Changed(double v) {
+    if (!vp) // the feature was deleted under the panel
+        return;
     PartDesign::Sphere* sph = static_cast<PartDesign::Sphere*>(vp->getObject());
     ui->sphereAngle1->setMaximum(v); // Angle1 must geometrically be <= than Angle2
     sph->Angle2.setValue(v);
@@ -508,18 +613,24 @@ void TaskBoxPrimitives::onSphereAngle2Changed(double v) {
 }
 
 void TaskBoxPrimitives::onSphereAngle3Changed(double v) {
+    if (!vp) // the feature was deleted under the panel
+        return;
     PartDesign::Sphere* sph = static_cast<PartDesign::Sphere*>(vp->getObject());
     sph->Angle3.setValue(v);
     vp->getObject()->getDocument()->recomputeFeature(vp->getObject());
 }
 
 void TaskBoxPrimitives::onSphereRadiusChanged(double  v) {
+    if (!vp) // the feature was deleted under the panel
+        return;
     PartDesign::Sphere* sph = static_cast<PartDesign::Sphere*>(vp->getObject());
     sph->Radius.setValue(v);
     vp->getObject()->getDocument()->recomputeFeature(vp->getObject());
 }
 
 void TaskBoxPrimitives::onConeAngleChanged(double v) {
+    if (!vp) // the feature was deleted under the panel
+        return;
 
     PartDesign::Cone* sph = static_cast<PartDesign::Cone*>(vp->getObject());
     sph->Angle.setValue(v);
@@ -527,12 +638,16 @@ void TaskBoxPrimitives::onConeAngleChanged(double v) {
 }
 
 void TaskBoxPrimitives::onConeHeightChanged(double v) {
+    if (!vp) // the feature was deleted under the panel
+        return;
     PartDesign::Cone* sph = static_cast<PartDesign::Cone*>(vp->getObject());
     sph->Height.setValue(v);
     vp->getObject()->getDocument()->recomputeFeature(vp->getObject());
 }
 
 void TaskBoxPrimitives::onConeRadius1Changed(double v) {
+    if (!vp) // the feature was deleted under the panel
+        return;
 
     PartDesign::Cone* sph = static_cast<PartDesign::Cone*>(vp->getObject());
     sph->Radius1.setValue(v);
@@ -540,6 +655,8 @@ void TaskBoxPrimitives::onConeRadius1Changed(double v) {
 }
 
 void TaskBoxPrimitives::onConeRadius2Changed(double v) {
+    if (!vp) // the feature was deleted under the panel
+        return;
 
     PartDesign::Cone* sph = static_cast<PartDesign::Cone*>(vp->getObject());
     sph->Radius2.setValue(v);
@@ -547,6 +664,8 @@ void TaskBoxPrimitives::onConeRadius2Changed(double v) {
 }
 
 void TaskBoxPrimitives::onEllipsoidAngle1Changed(double v) {
+    if (!vp) // the feature was deleted under the panel
+        return;
     PartDesign::Ellipsoid* sph = static_cast<PartDesign::Ellipsoid*>(vp->getObject());
     ui->ellipsoidAngle2->setMinimum(v); // Angle1 must geometrically be <= than Angle2
     sph->Angle1.setValue(v);
@@ -554,6 +673,8 @@ void TaskBoxPrimitives::onEllipsoidAngle1Changed(double v) {
 }
 
 void TaskBoxPrimitives::onEllipsoidAngle2Changed(double v) {
+    if (!vp) // the feature was deleted under the panel
+        return;
     PartDesign::Ellipsoid* sph = static_cast<PartDesign::Ellipsoid*>(vp->getObject());
     ui->ellipsoidAngle1->setMaximum(v); // Angle1 must geometrically be <= than Angle22
     sph->Angle2.setValue(v);
@@ -561,30 +682,40 @@ void TaskBoxPrimitives::onEllipsoidAngle2Changed(double v) {
 }
 
 void TaskBoxPrimitives::onEllipsoidAngle3Changed(double v) {
+    if (!vp) // the feature was deleted under the panel
+        return;
     PartDesign::Ellipsoid* sph = static_cast<PartDesign::Ellipsoid*>(vp->getObject());
     sph->Angle3.setValue(v);
     vp->getObject()->getDocument()->recomputeFeature(vp->getObject());
 }
 
 void TaskBoxPrimitives::onEllipsoidRadius1Changed(double v) {
+    if (!vp) // the feature was deleted under the panel
+        return;
     PartDesign::Ellipsoid* sph = static_cast<PartDesign::Ellipsoid*>(vp->getObject());
     sph->Radius1.setValue(v);
     vp->getObject()->getDocument()->recomputeFeature(vp->getObject());
 }
 
 void TaskBoxPrimitives::onEllipsoidRadius2Changed(double v) {
+    if (!vp) // the feature was deleted under the panel
+        return;
     PartDesign::Ellipsoid* sph = static_cast<PartDesign::Ellipsoid*>(vp->getObject());
     sph->Radius2.setValue(v);
     vp->getObject()->getDocument()->recomputeFeature(vp->getObject());
 }
 
 void TaskBoxPrimitives::onEllipsoidRadius3Changed(double v) {
+    if (!vp) // the feature was deleted under the panel
+        return;
     PartDesign::Ellipsoid* sph = static_cast<PartDesign::Ellipsoid*>(vp->getObject());
     sph->Radius3.setValue(v);
     vp->getObject()->getDocument()->recomputeFeature(vp->getObject());
 }
 
 void TaskBoxPrimitives::onTorusAngle1Changed(double v) {
+    if (!vp) // the feature was deleted under the panel
+        return;
     PartDesign::Torus* sph = static_cast<PartDesign::Torus*>(vp->getObject());
     ui->torusAngle2->setMinimum(v); // Angle1 must geometrically be <= than Angle2
     sph->Angle1.setValue(v);
@@ -592,6 +723,8 @@ void TaskBoxPrimitives::onTorusAngle1Changed(double v) {
 }
 
 void TaskBoxPrimitives::onTorusAngle2Changed(double v) {
+    if (!vp) // the feature was deleted under the panel
+        return;
     PartDesign::Torus* sph = static_cast<PartDesign::Torus*>(vp->getObject());
     ui->torusAngle1->setMaximum(v); // Angle1 must geometrically be <= than Angle2
     sph->Angle2.setValue(v);
@@ -599,12 +732,16 @@ void TaskBoxPrimitives::onTorusAngle2Changed(double v) {
 }
 
 void TaskBoxPrimitives::onTorusAngle3Changed(double v) {
+    if (!vp) // the feature was deleted under the panel
+        return;
     PartDesign::Torus* sph = static_cast<PartDesign::Torus*>(vp->getObject());
     sph->Angle3.setValue(v);
     vp->getObject()->getDocument()->recomputeFeature(vp->getObject());
 }
 
 void TaskBoxPrimitives::onTorusRadius1Changed(double v) {
+    if (!vp) // the feature was deleted under the panel
+        return;
     PartDesign::Torus* sph = static_cast<PartDesign::Torus*>(vp->getObject());
     // this is the outer radius that must not be smaller than the inner one
     // otherwise the geometry is impossible and we can even get a crash:
@@ -615,6 +752,8 @@ void TaskBoxPrimitives::onTorusRadius1Changed(double v) {
 }
 
 void TaskBoxPrimitives::onTorusRadius2Changed(double v) {
+    if (!vp) // the feature was deleted under the panel
+        return;
     PartDesign::Torus* sph = static_cast<PartDesign::Torus*>(vp->getObject());
     ui->torusRadius1->setMinimum(v);
     sph->Radius2.setValue(v);
@@ -622,18 +761,24 @@ void TaskBoxPrimitives::onTorusRadius2Changed(double v) {
 }
 
 void TaskBoxPrimitives::onPrismCircumradiusChanged(double v) {
+    if (!vp) // the feature was deleted under the panel
+        return;
     PartDesign::Prism* sph = static_cast<PartDesign::Prism*>(vp->getObject());
     sph->Circumradius.setValue(v);
     vp->getObject()->getDocument()->recomputeFeature(vp->getObject());
 }
 
 void TaskBoxPrimitives::onPrismHeightChanged(double v) {
+    if (!vp) // the feature was deleted under the panel
+        return;
     PartDesign::Prism* sph = static_cast<PartDesign::Prism*>(vp->getObject());
     sph->Height.setValue(v);
     vp->getObject()->getDocument()->recomputeFeature(vp->getObject());
 }
 
 void TaskBoxPrimitives::onPrismXSkewChanged(double v) {
+    if (!vp) // the feature was deleted under the panel
+        return;
     PartDesign::Prism* sph = static_cast<PartDesign::Prism*>(vp->getObject());
     // we must assure that if the user incremented from e.g. 85 degree with the
     // spin buttons, they do not end at 90.0 but at 89.9999 which is shown rounded to 90 degree
@@ -651,6 +796,8 @@ void TaskBoxPrimitives::onPrismXSkewChanged(double v) {
 }
 
 void TaskBoxPrimitives::onPrismYSkewChanged(double v) {
+    if (!vp) // the feature was deleted under the panel
+        return;
     PartDesign::Prism* sph = static_cast<PartDesign::Prism*>(vp->getObject());
     // we must assure that if the user incremented from e.g. 85 degree with the
     // spin buttons, they do not end at 90.0 but at 89.9999 which is shown rounded to 90 degree
@@ -668,6 +815,8 @@ void TaskBoxPrimitives::onPrismYSkewChanged(double v) {
 }
 
 void TaskBoxPrimitives::onPrismPolygonChanged(int v) {
+    if (!vp) // the feature was deleted under the panel
+        return;
     PartDesign::Prism* sph = static_cast<PartDesign::Prism*>(vp->getObject());
     sph->Polygon.setValue(v);
     vp->getObject()->getDocument()->recomputeFeature(vp->getObject());
@@ -675,6 +824,8 @@ void TaskBoxPrimitives::onPrismPolygonChanged(int v) {
 
 
 void TaskBoxPrimitives::onWedgeX2minChanged(double v) {
+    if (!vp) // the feature was deleted under the panel
+        return;
     PartDesign::Wedge* sph = static_cast<PartDesign::Wedge*>(vp->getObject());
     ui->wedgeX2max->setMinimum(v); // wedgeX2min must be <= than wedgeX2max
     sph->X2min.setValue(v);
@@ -682,6 +833,8 @@ void TaskBoxPrimitives::onWedgeX2minChanged(double v) {
 }
 
 void TaskBoxPrimitives::onWedgeX2maxChanged(double v) {
+    if (!vp) // the feature was deleted under the panel
+        return;
     PartDesign::Wedge* sph = static_cast<PartDesign::Wedge*>(vp->getObject());
     ui->wedgeX2min->setMaximum(v); // wedgeX2min must be <= than wedgeX2max
     sph->X2max.setValue(v);
@@ -689,6 +842,8 @@ void TaskBoxPrimitives::onWedgeX2maxChanged(double v) {
 }
 
 void TaskBoxPrimitives::onWedgeXminChanged(double v) {
+    if (!vp) // the feature was deleted under the panel
+        return;
     PartDesign::Wedge* sph = static_cast<PartDesign::Wedge*>(vp->getObject());
     ui->wedgeXmax->setMinimum(v);
     sph->Xmin.setValue(v);
@@ -696,6 +851,8 @@ void TaskBoxPrimitives::onWedgeXminChanged(double v) {
 }
 
 void TaskBoxPrimitives::onWedgeXmaxChanged(double v) {
+    if (!vp) // the feature was deleted under the panel
+        return;
     PartDesign::Wedge* sph = static_cast<PartDesign::Wedge*>(vp->getObject());
     ui->wedgeXmin->setMaximum(v); // must be < than wedgeXmax
     sph->Xmax.setValue(v);
@@ -703,6 +860,8 @@ void TaskBoxPrimitives::onWedgeXmaxChanged(double v) {
 }
 
 void TaskBoxPrimitives::onWedgeYminChanged(double v) {
+    if (!vp) // the feature was deleted under the panel
+        return;
     PartDesign::Wedge* sph = static_cast<PartDesign::Wedge*>(vp->getObject());
     ui->wedgeYmax->setMinimum(v); // must be > than wedgeYmin
     sph->Ymin.setValue(v);
@@ -710,6 +869,8 @@ void TaskBoxPrimitives::onWedgeYminChanged(double v) {
 }
 
 void TaskBoxPrimitives::onWedgeYmaxChanged(double v) {
+    if (!vp) // the feature was deleted under the panel
+        return;
     PartDesign::Wedge* sph = static_cast<PartDesign::Wedge*>(vp->getObject());
     ui->wedgeYmin->setMaximum(v); // must be < than wedgeYmax
     sph->Ymax.setValue(v);
@@ -717,6 +878,8 @@ void TaskBoxPrimitives::onWedgeYmaxChanged(double v) {
 }
 
 void TaskBoxPrimitives::onWedgeZ2minChanged(double v) {
+    if (!vp) // the feature was deleted under the panel
+        return;
     PartDesign::Wedge* sph = static_cast<PartDesign::Wedge*>(vp->getObject());
     ui->wedgeZ2max->setMinimum(v); // must be >= than wedgeZ2min
     sph->Z2min.setValue(v);
@@ -724,6 +887,8 @@ void TaskBoxPrimitives::onWedgeZ2minChanged(double v) {
 }
 
 void TaskBoxPrimitives::onWedgeZ2maxChanged(double v) {
+    if (!vp) // the feature was deleted under the panel
+        return;
     PartDesign::Wedge* sph = static_cast<PartDesign::Wedge*>(vp->getObject());
     ui->wedgeZ2min->setMaximum(v); // must be <= than wedgeZ2max
     sph->Z2max.setValue(v);
@@ -731,6 +896,8 @@ void TaskBoxPrimitives::onWedgeZ2maxChanged(double v) {
 }
 
 void TaskBoxPrimitives::onWedgeZminChanged(double v) {
+    if (!vp) // the feature was deleted under the panel
+        return;
     PartDesign::Wedge* sph = static_cast<PartDesign::Wedge*>(vp->getObject());
     ui->wedgeZmax->setMinimum(v); // must be > than wedgeZmin
     sph->Zmin.setValue(v);
@@ -738,6 +905,8 @@ void TaskBoxPrimitives::onWedgeZminChanged(double v) {
 }
 
 void TaskBoxPrimitives::onWedgeZmaxChanged(double v) {
+    if (!vp) // the feature was deleted under the panel
+        return;
     PartDesign::Wedge* sph = static_cast<PartDesign::Wedge*>(vp->getObject());
     ui->wedgeZmin->setMaximum(v); // must be < than wedgeZmax
     sph->Zmax.setValue(v);
@@ -784,12 +953,6 @@ bool TaskBoxPrimitives::setPrimitive(App::DocumentObject *obj)
                 break;
 
             case 3:  // cone
-                // the cone radii must not be equal
-                if (ui->coneRadius1->value().getValue() == ui->coneRadius2->value().getValue()) {
-                    QMessageBox::warning(Gui::getMainWindow(), tr("Cone radii are equal"),
-                        tr("The radii for cones must not be equal!"));
-                    return false;
-                }
                 cmd = QStringLiteral(
                     "%1.Radius1='%2'\n"
                     "%1.Radius2='%3'\n"

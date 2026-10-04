@@ -2,7 +2,7 @@
 opened, in either open mode.
 
 Found 2026-09-29 by progressive-load-diff.py on a user file
-(FC0.21.1_Lead_Screw_12.12.23, docs/DocumentLoad.md sec 16): two binders
+(FC0.21.1_Lead_Screw_12.12.23, docs/DocumentLoad.md sec 19): two binders
 saved with MapFaceColor true opened with it false eagerly and true
 progressively. ViewProviderSubShapeBinder::onChanged turns a Map*Color
 off when its colour is set -- meant for a user picking a colour -- and

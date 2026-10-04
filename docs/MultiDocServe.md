@@ -168,6 +168,19 @@ The consumers re-key from "is the server running" to "is *this* document served"
   its container**; a desktop view of the same document reads, but remote edits land on the
   serving container so the republish hook always fires.
 
+**The desktop view had the stream (found 2026-09-29).** The rule above held for edits and not
+for the picture. `BGFXRenderer::Private::publishScene` still published whenever the server was
+running, and a desktop view's renderer names no group, which resolves to `defaultGrp` -- under
+`Gui.serveDocument` (and Share document, which is the same call) the first served document's
+group. `beginPublish` gives a group to whoever publishes first, and the view drawing every frame
+beat the source's first publish, so a browser was fed the desktop's scene: navigation cube and
+all, and none of what its own edit hangs in the served graph. A pattern's on-view dimension
+and a sketch's edit geometry were drawn by nothing in the browser, while the clicks on them,
+which go through the mirror, worked. A renderer with no group now publishes on the
+`FC_BGFX_SERVE_SCENE` path only. The browser loses the desktop's navigation cube with it; a
+headless serve never had one. Since 2026-09-30 the source states the served view's own
+(HeadlessServe.md sec 3.5).
+
 ### 5.1 A connection sees one document, and what it links out to
 
 Added 2026-09-12. Keying the sources and the containers per document is

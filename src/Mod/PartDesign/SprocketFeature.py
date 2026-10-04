@@ -102,12 +102,12 @@ class Sprocket:
                            "ANSI 240":[3.000, 1.875, 1.738],
                            "Bicycle with Derailleur":[0.500, 0.3125, 0.11],
                            "Bicycle without Derailleur":[0.500, 0.3125, 0.084],
-                           "ISO 606 06B":[0.375, 5.72/25.4, 5.2/25.4],
-                           "ISO 606 08B":[0.500, 7.75/25.4, 7.0/25.4],
-                           "ISO 606 10B":[0.625, 9.65/25.4, 9.1/25.4],
-                           "ISO 606 12B":[0.750, 11.68/25.4, 11.1/25.4],
-                           "ISO 606 16B":[1.000, 17.02/25.4, 16.2/25.4],
-                           "ISO 606 20B":[1.250, 19.56/25.4, 18.5/25.4],
+                           "ISO 606 06B":[0.375, 6.35/25.4, 5.2/25.4],
+                           "ISO 606 08B":[0.500, 8.51/25.4, 7.0/25.4],
+                           "ISO 606 10B":[0.625, 10.16/25.4, 9.1/25.4],
+                           "ISO 606 12B":[0.750, 12.07/25.4, 11.1/25.4],
+                           "ISO 606 16B":[1.000, 15.88/25.4, 16.2/25.4],
+                           "ISO 606 20B":[1.250, 19.05/25.4, 18.5/25.4],
                            "ISO 606 24B":[1.500, 25.4/25.4, 24.1/25.4],
                            "Motorcycle 420":[0.500, 0.3125, 0.227],
                            "Motorcycle 425":[0.500, 0.3125, 0.284],
@@ -119,11 +119,11 @@ class Sprocket:
 
     def __init__(self,obj):
         self.Type = "Sprocket"
-        obj.addProperty("App::PropertyInteger","NumberOfTeeth","Sprocket","Number of gear teeth")
-        obj.addProperty("App::PropertyLength","Pitch","Sprocket","Chain Pitch")
-        obj.addProperty("App::PropertyLength","RollerDiameter","Sprocket","Roller Diameter")
-        obj.addProperty("App::PropertyEnumeration","SprocketReference","Sprocket","Sprocket Reference")
-        obj.addProperty("App::PropertyLength","Thickness","Sprocket","Thickness as stated in the reference specification")
+        obj.addProperty("App::PropertyInteger","NumberOfTeeth","Sprocket","Number of gear teeth", locked=True)
+        obj.addProperty("App::PropertyLength","Pitch","Sprocket","Chain Pitch", locked=True)
+        obj.addProperty("App::PropertyLength","RollerDiameter","Sprocket","Roller Diameter", locked=True)
+        obj.addProperty("App::PropertyEnumeration","SprocketReference","Sprocket","Sprocket Reference", locked=True)
+        obj.addProperty("App::PropertyLength","Thickness","Sprocket","Thickness as stated in the reference specification", locked=True)
 
         obj.SprocketReference = list(self.SprocketReferenceRollerTable)
 
@@ -193,7 +193,10 @@ class SprocketTaskPanel:
         QtCore.QObject.connect(self.form.Quantity_Pitch, QtCore.SIGNAL("valueChanged(double)"), self.pitchChanged)
         QtCore.QObject.connect(self.form.Quantity_RollerDiameter, QtCore.SIGNAL("valueChanged(double)"), self.rollerDiameterChanged)
         QtCore.QObject.connect(self.form.spinBox_NumberOfTeeth, QtCore.SIGNAL("valueChanged(int)"), self.numTeethChanged)
-        QtCore.QObject.connect(self.form.comboBox_SprocketReference, QtCore.SIGNAL("currentTextChanged(const QString)"), self.sprocketReferenceChanged)
+        # The combo lists the table's keys in its order, translated: go by
+        # the index, never by the text (upstream 0de4c053a6)
+        self.references = list(Sprocket.SprocketReferenceRollerTable)
+        QtCore.QObject.connect(self.form.comboBox_SprocketReference, QtCore.SIGNAL("currentIndexChanged(int)"), self.sprocketReferenceIndexChanged)
         QtCore.QObject.connect(self.form.Quantity_Thickness, QtCore.SIGNAL("valueChanged(double)"), self.thicknessChanged)
 
         self.update()
@@ -209,7 +212,9 @@ class SprocketTaskPanel:
         self.obj.NumberOfTeeth = self.form.spinBox_NumberOfTeeth.value()
         self.obj.Pitch = self.form.Quantity_Pitch.text()
         self.obj.RollerDiameter = self.form.Quantity_RollerDiameter.text()
-        self.obj.SprocketReference = self.form.comboBox_SprocketReference.currentText()
+        index = self.form.comboBox_SprocketReference.currentIndex()
+        if 0 <= index < len(self.references):
+            self.obj.SprocketReference = self.references[index]
         self.obj.Thickness = self.form.Quantity_Thickness.text()
 
     def transferFrom(self):
@@ -219,13 +224,19 @@ class SprocketTaskPanel:
         self.form.spinBox_NumberOfTeeth.setValue(self.obj.NumberOfTeeth)
         self.form.Quantity_Pitch.setText(self.obj.Pitch.UserString)
         self.form.Quantity_RollerDiameter.setText(self.obj.RollerDiameter.UserString)
-        self.form.comboBox_SprocketReference.setCurrentText(self.obj.SprocketReference)
+        if self.obj.SprocketReference in self.references:
+            self.form.comboBox_SprocketReference.setCurrentIndex(
+                self.references.index(self.obj.SprocketReference))
         self.form.Quantity_Thickness.setText(self.obj.Thickness.UserString)
 
     def pitchChanged(self, value):
         self.obj.Pitch = value
         self.obj.Proxy.execute(self.obj)
         FreeCAD.Gui.SendMsgToActiveView("ViewFit")
+
+    def sprocketReferenceIndexChanged(self, index):
+        if 0 <= index < len(self.references):
+            self.sprocketReferenceChanged(self.references[index])
 
     def sprocketReferenceChanged(self, size):
         self.obj.Pitch          = str(Sprocket.SprocketReferenceRollerTable[size][0]) + " in"
@@ -253,7 +264,7 @@ class SprocketTaskPanel:
         self.obj.Proxy.execute(self.obj)
 
     def getStandardButtons(self):
-        return int(QtGui.QDialogButtonBox.Ok) | int(QtGui.QDialogButtonBox.Cancel)| int(QtGui.QDialogButtonBox.Apply)
+        return QtGui.QDialogButtonBox.Ok | QtGui.QDialogButtonBox.Cancel | QtGui.QDialogButtonBox.Apply
 
     def clicked(self,button):
         if button == QtGui.QDialogButtonBox.Apply:

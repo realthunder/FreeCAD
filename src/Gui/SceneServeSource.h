@@ -25,6 +25,7 @@
 
 #include <cstdint>
 #include <memory>
+#include <vector>
 
 #include <QObject>
 #include <QTimer>
@@ -39,6 +40,7 @@ class SoFCRenderCacheManager;
 namespace App
 {
 class PropertyContainer;
+class SubObjectT;
 }
 
 namespace Render
@@ -220,6 +222,25 @@ public:
      * (docs/ThinClient.md sec 8.7). GUI thread only.
      */
     MirrorViewer *mirrorViewerFor(uint64_t client) const;
+
+    /*!
+     * What a world ray from \a client hits, as pickAndSelect resolves it --
+     * through the client's mirror when it has stated a camera -- without
+     * selecting anything: the object and the subname down to the element.
+     * False, with \a picked emptied, on a miss. What a browser's right
+     * click is about (SceneContextMenu). GUI thread only.
+     */
+    bool pickSubObject(const SbVec3f &origin, const SbVec3f &dir, uint64_t client,
+                       App::SubObjectT &picked);
+
+    /*!
+     * Everything a world ray from \a client hits through its mirror, front
+     * to back, each object and element once: what the desktop's "Pick
+     * geometry" lists (View3DInventorViewer::getPickedList). Empty for a
+     * client that has stated no camera. GUI thread only.
+     */
+    std::vector<App::SubObjectT> pickAllSubObjects(const SbVec3f &origin, const SbVec3f &dir,
+                                                   uint64_t client);
 
     /*!
      * The client's mirror, built on first contact, whether or not the

@@ -62,10 +62,13 @@
 #include "CylinderPy.h"
 #include "DatumFeature.h"
 #include "Datums.h"
+#include "LinkArrays.h"
 #include "EllipsePy.h"
 #include "FaceMaker.h"
+#include "FaceMakerBuildFace.h"
 #include "FaceMakerBullseye.h"
 #include "FaceMakerCheese.h"
+#include "FaceMakerUnified.h"
 #include "FeatureChamfer.h"
 #include "FeatureCompound.h"
 #include "PropertyDressUp.h"
@@ -131,6 +134,8 @@
 #include "TopoShapeWirePy.h"
 #include "ToroidPy.h"
 #include "OCCError.h"
+#include "PatternExtension.h"
+#include "PatternResolver.h"
 #include "PrismExtension.h"
 #include "PropertyGeometryList.h"
 #include "PropertyShapeStore.h"
@@ -206,6 +211,18 @@ PyObject* Part::PartExceptionOCCDimensionError;
 
 PyMOD_INIT_FUNC(Part)
 {
+    // Part::Feature carries a Materials::PropertyMaterial (ShapeMaterial),
+    // whose type is registered by the Materials module's init. Without it
+    // the property's type is bad: a headless session saved every shape's
+    // ShapeMaterial as type "BadType", and restore dropped it. Upstream
+    // imports it here too.
+    try {
+        Base::Interpreter().runString("import Materials");
+    }
+    catch (const Base::Exception& e) {
+        PyErr_SetString(PyExc_ImportError, e.what());
+        PyMOD_Return(nullptr);
+    }
     Base::Console().Log("Module: Part\n");
 
     // This is highly experimental and we should keep an eye on it
@@ -427,6 +444,8 @@ PyMOD_INIT_FUNC(Part)
     Part::FaceMakerExtrusion    ::init();
     Part::FaceMakerBullseye     ::init();
     Part::FaceMakerRing         ::init();
+    Part::FaceMakerBuildFace    ::init();
+    Part::FaceMakerUnified      ::init();
 
     Attacher::AttachEngine        ::init();
     Attacher::AttachEngine3D      ::init();
@@ -541,6 +560,7 @@ PyMOD_INIT_FUNC(Part)
     Part::GeomOffsetSurface       	::init();
     Part::GeomPlateSurface        	::init();
     Part::GeomTrimmedSurface      	::init();
+    Part::GeomSweptSurface          ::init();
     Part::GeomSurfaceOfRevolution 	::init();
     Part::GeomSurfaceOfExtrusion  	::init();
     Part::Datum                   	::init();
@@ -548,6 +568,20 @@ PyMOD_INIT_FUNC(Part)
     Part::DatumLine               	::init();
     Part::DatumPoint              	::init();
     Part::LocalCoordinateSystem   	::init();
+
+    // Upstream's pattern extensions and link arrays, over App::Pattern
+    Part::PatternExtension        	::init();
+    Part::LinearPatternExtension  	::init();
+    Part::PolarPatternExtension   	::init();
+    Part::CircularPatternExtension	::init();
+    Part::PathPatternExtension    	::init();
+    Part::PointPatternExtension   	::init();
+    Part::LinkArrayLinear         	::init();
+    Part::LinkArrayPolar          	::init();
+    Part::LinkArrayCircular       	::init();
+    Part::LinkArrayPath           	::init();
+    Part::LinkArrayPoint          	::init();
+    Part::PatternResolver::init();
 
     // Geometry2d types
     Part::Geometry2d              ::init();

@@ -89,6 +89,49 @@ class TestMirrored(unittest.TestCase):
         self.Doc.recompute()
         self.assertIn("Up-to-date", self.Mirrored.State)
 
+    def testPlaneWithoutSubname(self):
+        """A plane set in the property editor has no subname at all
+        (upstream 7d10f5ed73): it was refused as no plane."""
+        self.Body = self.Doc.addObject("PartDesign::Body", "Body")
+        self.Box = self.Body.newObject("PartDesign::AdditiveBox", "Box")
+        self.Box.Length = self.Box.Width = self.Box.Height = 10
+        self.Box.Placement.Base = FreeCAD.Vector(0, 5, 0)
+        xz = [f for f in self.Body.Origin.OriginFeatures if f.Role == "XZ_Plane"][0]
+        self.Doc.recompute()
+        mirrored = self.Body.newObject("PartDesign::Mirrored", "Mirrored")
+        mirrored.Originals = [self.Box]
+        mirrored.MirrorPlane = (xz, [])
+        self.Doc.recompute()
+        self.assertIn("Up-to-date", mirrored.State)
+        self.assertAlmostEqual(mirrored.Shape.BoundBox.YMin, -15)
+
+    def testMovedLCSPlane(self):
+        """A plane of a moved or turned coordinate system mirrors where the
+        plane is, not across its global counterpart."""
+        for placement, check in (
+                (FreeCAD.Placement(FreeCAD.Vector(0, 0, 20), FreeCAD.Rotation()),
+                 lambda box: self.assertAlmostEqual(box.ZMax, 40)),
+                (FreeCAD.Placement(FreeCAD.Vector(0, 0, 20),
+                                   FreeCAD.Rotation(FreeCAD.Vector(1, 0, 0), 90)),
+                 lambda box: self.assertAlmostEqual(box.YMin, -10))):
+            doc = FreeCAD.newDocument("PartDesignTestMirroredLCS")
+            try:
+                body = doc.addObject("PartDesign::Body", "Body")
+                box = body.newObject("PartDesign::AdditiveBox", "Box")
+                box.Length = box.Width = box.Height = 10
+                lcs = doc.addObject("App::LocalCoordinateSystem", "LCS")
+                lcs.Placement = placement
+                doc.recompute()
+                xy = [f for f in lcs.OriginFeatures if f.Role == "XY_Plane"][0]
+                mirrored = body.newObject("PartDesign::Mirrored", "Mirrored")
+                mirrored.Originals = [box]
+                mirrored.MirrorPlane = (xy, [""])
+                doc.recompute()
+                self.assertIn("Up-to-date", mirrored.State)
+                check(mirrored.Shape.BoundBox)
+            finally:
+                FreeCAD.closeDocument(doc.Name)
+
     def tearDown(self):
         #closing doc
         FreeCAD.closeDocument("PartDesignTestMirrored")

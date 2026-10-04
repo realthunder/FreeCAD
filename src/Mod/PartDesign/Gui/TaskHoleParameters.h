@@ -23,6 +23,8 @@
 #ifndef GUI_TASKVIEW_TaskHoleParameters_H
 #define GUI_TASKVIEW_TaskHoleParameters_H
 
+#include <Gui/Inventor/Draggers/Gizmo.h>
+
 #include "TaskSketchBasedParameters.h"
 #include "ViewProviderHole.h"
 
@@ -80,11 +82,13 @@ public:
     bool getUseCustomThreadClearance() const;
     double getCustomThreadClearance() const;
     bool getModelThread() const;
+    bool getCosmeticThread() const;
     long getThreadDepthType() const;
     double getThreadDepth() const;
+    int getBaseProfileType() const;
 
 private Q_SLOTS:
-    void threadedChanged();
+    void holeTypeChanged(int index);
     void threadTypeChanged(int index);
     void threadSizeChanged(int index);
     void threadClassChanged(int index);
@@ -110,6 +114,10 @@ private Q_SLOTS:
     void customThreadClearanceChanged(double value);
     void threadDepthTypeChanged(int index);
     void threadDepthChanged(double value);
+    void baseProfileTypeChanged(int index);
+    void startTypeChanged(int index);
+    void startOffsetChanged(double value);
+    void selectStartReference(bool checked);
 
 private:
     class Observer : public App::DocumentObserver {
@@ -120,20 +128,55 @@ private:
         TaskHoleParameters * owner;
         PartDesign::Hole * hole;
     };
+    /// The entries of the HoleType combo, which states Threaded,
+    /// ModelThread and CosmeticThread together
+    enum HoleTypeIndex : int
+    {
+        Clearance = 0,
+        TapDrill = 1,
+        Threaded = 2
+    };
+    /// The entries of the StartType combo, PartDesign::ProfileBased::StartTypesEnums
+    enum StartTypeIndex : int
+    {
+        ProfilePlane = 0,
+        Offset = 1,
+        Reference = 2
+    };
 
 protected:
     void changeEvent(QEvent *e) override;
     void changedObject(const App::Document&, const App::Property& Prop);
+    void finishedRecomputeFeature() override;
+    void _onSelectionChanged(const Gui::SelectionChanges& msg) override;
+    void onSelectionModeChanged(SelectionMode oldMode) override;
 
 private:
+    PartDesign::Hole* getHole() const;
+    /// The Hole, for a change: opens the edit's transaction first
+    PartDesign::Hole* editHole();
+    /// Shows, hides and enables the widgets as the properties say
+    void updateVisibility();
+    /// The HoleType combo and Model Thread box from the three properties
+    void updateHoleTypeCombo();
+    /// Only a modelled thread is slow enough to want Update view off
+    void updateViewBlocking();
+    void updateHoleCutLimits();
+    void setCutDiagram();
+    void updateStartReferenceName();
 
     using Connection = fastsignals::scoped_connection;
     Connection connectPropChanged;
 
     std::unique_ptr<Observer> observer;
-    bool isApplying;
     QWidget* proxy;
     std::unique_ptr<Ui_TaskHoleParameters> ui;
+
+    std::unique_ptr<Gui::GizmoContainer> gizmoContainer;
+    Gui::LinearGizmo* holeDepthGizmo = nullptr;
+    Gui::LinearGizmo* startOffsetGizmo = nullptr;
+    void setupGizmos(ViewProviderHole* vp);
+    void setGizmoPositions();
 };
 
 /// simulation dialog for the TaskView

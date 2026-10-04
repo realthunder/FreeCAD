@@ -23,6 +23,8 @@
 #ifndef GUI_TASKVIEW_TaskExtrudeParameters_H
 #define GUI_TASKVIEW_TaskExtrudeParameters_H
 
+#include <Gui/Inventor/Draggers/Gizmo.h>
+
 #include "TaskSketchBasedParameters.h"
 #include "ViewProviderSketchBased.h"
 
@@ -33,7 +35,9 @@ class Property;
 
 namespace Gui {
 namespace Fw {
+class QComboBox;
 class UiForm;
+class Widget;
 }
 }
 
@@ -72,42 +76,44 @@ public:
     void refresh() override;
 
     void fillDirectionCombo();
-    void applyParameters(QString facename);
+    void applyParameters();
 
     virtual bool isPocket() {
         return false;
     }
 
+    /// The types of a side, as the panel lists them: the first four Types of
+    /// Pad and Pocket, and ToFace for both UpToFace and UpToShape, which the
+    /// feature sets by the reference (one face, or more)
     enum class Modes {
         Dimension,
         ThroughAll,
         ToLast = ThroughAll,
         ToFirst,
         ToFace,
-        TwoDimensions
     };
 
 protected:
+    void onStartModeChanged(int);
+    void onStartOffsetChanged(double);
+    void onSideTypeChanged(int);
+    void onMode2Changed(int);
     void onLengthChanged(double);
     void onLength2Changed(double);
     void onOffsetChanged(double);
+    void onOffset2Changed(double);
     void onTaperChanged(double);
     void onTaper2Changed(double);
     void onInnerAngleChanged(double);
     void onInnerAngle2Changed(double);
     void onDirectionCBChanged(int);
     void onAlongSketchNormalChanged(bool);
-    void onDirectionToggled(bool);
     void onXDirectionEditChanged(double);
     void onYDirectionEditChanged(double);
     void onZDirectionEditChanged(double);
-    void onMidplaneChanged(bool);
     void onReversedChanged(bool);
-    void onButtonFace(const bool checked = true);
-    void onFaceName(const QString& text);
     void onUsePipeChanged(bool);
     void onCheckFaceLimitsChanged(bool);
-    void onSelectionModeChanged(SelectionMode);
 
 protected:
     void changeEvent(QEvent *e) override;
@@ -115,6 +121,8 @@ protected:
     void _onSelectionChanged(const Gui::SelectionChanges& msg) override;
 
     void setCheckboxes();
+    /// Show the start rows StartType asks for
+    void updateStartUI();
     void setupDialog(bool newObj, const char *historyPath);
     void readValuesFromHistory();
     App::PropertyLinkSub* propReferenceAxis;
@@ -128,31 +136,61 @@ protected:
     double getYDirection() const;
     double getZDirection() const;
     bool   getReversed() const;
-    bool   getMidplane() const;
     int    getMode() const;
-    QString getFaceName() const;
     void updateDirectionEdits();
     void setDirectionMode(int index);
+    /// Show the direction rows the direction combo's entry needs
+    void updateDirectionUI(int index);
     void addAxisToCombo(App::DocumentObject* linkObj, const std::string &linkSubname, const QString &itemText);
+
+    /// Set one side's Type for a mode of the panel's list
+    static void setSideMode(App::PropertyEnumeration &type,
+                            const App::PropertyLinkSubList &upToShape, int mode);
+    /// The mode of the panel's list for one side's Type
+    static int modeOf(const App::PropertyEnumeration &type);
 
     virtual void onModeChanged(int);
     virtual void translateTooltips();
-    virtual void translateModeList(int index);
-    virtual void translateFaceNamePlaceHolder();
+    /// Fill both sides' type lists
+    void translateModeList();
+    /// Fill one side's type list, in the order of Modes
+    virtual void fillModeList(Gui::Fw::QComboBox *combo);
+    /// The text of the up-to reference's pick button
+    virtual QString upToTitle() const;
+
+    LinkSubWidget *upToWidget = nullptr;
+    LinkSubWidget *upToWidget2 = nullptr;
+    /// The start reference: a face, a datum plane or a sketch
+    LinkSubWidget *startWidget = nullptr;
 
 private:
     void tryRecomputeFeature();
-    void translateFaceName();
     void connectSlots();
     bool hasProfileFace(PartDesign::ProfileBased*) const;
     void selectedReferenceAxis(const Gui::SelectionChanges& msg);
-    void clearFaceName();
+    LinkSubWidget *makeUpToWidget(Gui::Fw::Widget *holder, App::PropertyLinkSubList &prop,
+                                  SelectionMode mode);
+
+    std::unique_ptr<Gui::GizmoContainer> gizmoContainer;
+    Gui::LinearGizmo* lengthGizmo1 = nullptr;
+    Gui::LinearGizmo* lengthGizmo2 = nullptr;
+    /// Drags StartOffset from the plane it is measured from (upstream a01fad4f53)
+    Gui::LinearGizmo* startOffsetGizmo = nullptr;
+    Gui::RotationGizmo* taperAngleGizmo1 = nullptr;
+    Gui::RotationGizmo* taperAngleGizmo2 = nullptr;
+    void setupGizmos();
+    void setGizmoPositions();
 
 protected:
+    void finishedRecomputeFeature() override;
+
     QWidget* proxy;
     std::unique_ptr<Gui::Fw::UiForm> form;
     std::unique_ptr<Ui_TaskPadPocketParameters> ui;
     bool selectionFace;
+    /// Whether a side is measured by a length, which is what the
+    /// "along profile normal" box is about
+    bool lengthShown = true;
     std::vector<App::SubObjectT> axesInList;
 };
 

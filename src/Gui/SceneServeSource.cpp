@@ -54,13 +54,17 @@
 #include <vector>
 #endif
 
+#include <App/DocumentObserver.h>
 #include <App/Application.h>
 #include <Base/Tools.h>
 #include <App/Document.h>
 #include <App/DocumentObject.h>
+#include <App/PropertyStandard.h>
 #include <Base/Console.h>
 
 #include "SceneServeSource.h"
+#include "SandboxRemote.h"
+#include "SandboxServe.h"
 
 #include "Document.h"
 #include "Inventor/SoFCRenderCache.h"
@@ -72,8 +76,10 @@
 #include "Renderer/SceneServer.h"
 #include "RenderParams.h"
 #include "MirrorViewer.h"
+#include "NaviCube.h"
 #include "ViewerContext.h"
 #include "ObjectMetaFeed.h"
+#include "SceneContextMenu.h"
 #include "SceneControl.h"
 #include "Selection.h"
 #include "SoFCSelectionAction.h"
@@ -195,6 +201,47 @@ protected:
             changed();
     }
 };
+
+/// The served view's navigation cube setup, as a 3D view carries it in
+/// its own ShowNaviCube/NaviCubeX/NaviCubeY (View3DInventor.h): here
+/// dynamic, on the container that stands in for the view, and seeded from
+/// the same preferences a new view starts from. Not saved: a serve lasts
+/// as long as the process.
+void initNaviCubeProperties(App::PropertyContainer *props)
+{
+    auto hGrp = App::GetApplication().GetParameterGroupByPath(
+        "User parameter:BaseApp/Preferences/View");
+    if (auto show = Base::freecad_dynamic_cast<App::PropertyBool>(props->addDynamicProperty(
+            "App::PropertyBool", "ShowNaviCube", "Base",
+            "Show the navigation cube in the served view"))) {
+        show->setValue(hGrp->GetBool("ShowNaviCube", true));
+    }
+    static const App::PropertyFloatConstraint::Constraints range = {0.0, 1.0, 0.05};
+    float x, y;
+    NaviCube::cornerPosition(NaviCube::Corner(hGrp->GetInt("CornerNaviCube", 1)), x, y);
+    const struct {
+        const char *name;
+        float value;
+        const char *doc;
+    } axes[] = {
+        {"NaviCubeX", x,
+         "Horizontal position of the navigation cube in the served view:\n"
+         "0 at the left edge, 1 at the right, as a fraction of the room\n"
+         "each browser's view leaves it."},
+        {"NaviCubeY", y,
+         "Vertical position of the navigation cube in the served view:\n"
+         "0 at the top edge, 1 at the bottom, as a fraction of the room\n"
+         "each browser's view leaves it."},
+    };
+    for (const auto &axis : axes) {
+        if (auto prop = Base::freecad_dynamic_cast<App::PropertyFloatConstraint>(
+                props->addDynamicProperty("App::PropertyFloatConstraint", axis.name,
+                                          "Base", axis.doc))) {
+            prop->setConstraints(&range);
+            prop->setValue(axis.value);
+        }
+    }
+}
 
 /// A 4x4 from a JSON array of 16 numbers (GL layout, as the viewer
 /// builds it). False when absent or malformed.
@@ -329,6 +376,82 @@ public:
     /// its definition below.
     std::unique_ptr<SelectionMirror> selectionMirror;
 
+    /** The served view's navigation cube (docs/HeadlessServe.md sec 2).
+     *
+     * A viewer's cube reached a browser only while that viewer's renderer
+     * held the stream, and once the serve source alone publishes a served
+     * document there was none. The source states its own: a view-less
+     * NaviCube builds the same overlay graphs, placed by this source's
+     * ShowNaviCube/NaviCubeX/NaviCubeY -- the served view's setup, which
+     * a browser edits as "#.ActiveView.ShowNaviCube" as a desktop user
+     * edits a view's -- and each is captured without a context under the
+     * ids a viewer feeds (View3DInventorViewer::Private::OverlayNaviCube,
+     * OverlayNaviButtons), which are what the browser's local cube
+     * picking keys on. The browser turns it with its own camera.
+     */
+    std::unique_ptr<NaviCube> naviCube;
+    struct NaviFeed {
+        CoinPtr<SoSeparator> root;
+        std::unique_ptr<SoFCRenderCacheManager> manager;
+    };
+    NaviFeed naviCubeFeed;
+    NaviFeed naviButtonFeed;
+    static constexpr int OverlayNaviCube = 5;
+    static constexpr int OverlayNaviButtons = 6;
+
+    void dropNaviFeed(NaviFeed &feed, int id)
+    {
+        if (feed.manager)
+            feed.manager->setExternalOverlay(nullptr, id, Render::OverlayAnchor());
+        feed.manager.reset();
+        feed.root.reset();
+    }
+
+    void naviFeed(NaviFeed &feed, int id, SoSeparator *graph,
+                  const Render::OverlayAnchor &anchor, const SbViewportRegion &viewport)
+    {
+        if (!graph) {
+            dropNaviFeed(feed, id);
+            return;
+        }
+        // A rebuilt graph (the cube's preferences changed) is a new
+        // capture, as a viewer's feedNaviGraph has it.
+        if (feed.manager && feed.root != graph)
+            dropNaviFeed(feed, id);
+        if (!feed.manager) {
+            feed.root = graph;
+            feed.manager = std::make_unique<SoFCRenderCacheManager>();
+        }
+        feed.manager->setExternalOverlay(renderer.get(), id, anchor);
+        feed.manager->capture(graph, viewport);
+    }
+
+    /// State the cube as the served view's properties have it, or take
+    /// it away.
+    void feedNaviCube(const SbViewportRegion &viewport)
+    {
+        auto show = Base::freecad_dynamic_cast<App::PropertyBool>(
+            renderProps.getPropertyByName("ShowNaviCube"));
+        auto x = Base::freecad_dynamic_cast<App::PropertyFloat>(
+            renderProps.getPropertyByName("NaviCubeX"));
+        auto y = Base::freecad_dynamic_cast<App::PropertyFloat>(
+            renderProps.getPropertyByName("NaviCubeY"));
+        if (!naviCube || !show || !show->getValue()) {
+            dropNaviFeed(naviCubeFeed, OverlayNaviCube);
+            dropNaviFeed(naviButtonFeed, OverlayNaviButtons);
+            return;
+        }
+        if (x && y)
+            naviCube->setPosition(float(x->getValue()), float(y->getValue()));
+        // The cube first: it builds the shared data the buttons draw from.
+        Render::OverlayAnchor cubeAnchor;
+        SoSeparator *cube = naviCube->getOverlayCubeGraph(cubeAnchor);
+        naviFeed(naviCubeFeed, OverlayNaviCube, cube, cubeAnchor, viewport);
+        Render::OverlayAnchor buttonAnchor;
+        SoSeparator *buttons = naviCube->getOverlayButtonGraph(buttonAnchor);
+        naviFeed(naviButtonFeed, OverlayNaviButtons, buttons, buttonAnchor, viewport);
+    }
+
     /** The edit session's geometry, published as an overlay of its own
      * (docs/ThinClient.md 8.12 item J).
      *
@@ -341,6 +464,13 @@ public:
      * Under 8.11 every client with a view joins the one session, so all
      * of them draw it today; the tag is what keeps that a decision rather
      * than an accident once sessions fork.
+     *
+     * The capture is the session's publish group: the editing root and,
+     * beside it, the session's on-view root (EditingRoot::onViewNode),
+     * where a mirror in the session hangs its dimension lines and pattern
+     * markers. Those went into the served root, so a viewer outside the
+     * session saw them and a label following the pointer spoiled the
+     * shared scene's caches the way an in-scene edit root once did.
      */
     std::unique_ptr<SoFCRenderCacheManager> editCapture;
     /// The node the capture was built on: a new session's root is a
@@ -660,7 +790,7 @@ public:
             editSession = lastEditSession = 1;
         editSensor.detach();
         if (doc)
-            editSensor.attach(doc->editingRoot()->node());
+            editSensor.attach(doc->editingRoot()->publishNode());
     }
 
     void endEditSession()
@@ -689,12 +819,15 @@ public:
      * traverse).
      *
      * Content means more than the editing transform, the desktop's own
-     * gate (View3DInventorViewer::Private::updateOverlayCaptures).
+     * gate (View3DInventorViewer::Private::updateOverlayCaptures), or an
+     * on-view parameter: a pattern's panel edits with nothing in the
+     * editing root and its markers and spacing labels beside it.
      */
     void feedEditOverlay(const SbViewportRegion &viewport)
     {
         EditingRoot *edit = editSession && doc ? doc->editingRoot() : nullptr;
-        SoNode *node = edit && edit->hasContent() ? edit->node() : nullptr;
+        SoNode *node = edit && (edit->hasContent() || edit->hasOnViewContent())
+            ? edit->publishNode() : nullptr;
         if (editCapture && editCaptureRoot != node)
             dropEditOverlay();
         if (!node || !renderer)
@@ -811,6 +944,7 @@ public:
             json += ",\"sel\":[" + std::to_string(param.selStart) + ','
                 + std::to_string(param.selLength) + ']';
             json += param.focus ? ",\"focus\":true" : ",\"focus\":false";
+            json += ",\"pt\":" + floatJson(float(param.pointSize));
             json += param.set ? ",\"set\":true" : ",\"set\":false";
             json += ",\"kind\":";
             jsonQuoted(json, param.kind);
@@ -874,6 +1008,11 @@ public:
             streams->byClient.clear();
         }
         cyclesInput.reset();
+        // The cube's captures push into the renderer, which goes
+        // before them in member order.
+        dropNaviFeed(naviCubeFeed, OverlayNaviCube);
+        dropNaviFeed(naviButtonFeed, OverlayNaviButtons);
+        naviCube.reset();
         // The label feed remembers renderers by address; this one is
         // about to stop being one.
         if (renderer)
@@ -1219,6 +1358,39 @@ public:
         pickroot->addChild(root);
         return pickroot;
     }
+
+    /// What a world ray from \a mirror's client hits, and the object and
+    /// subname it resolves to (null when nothing of the document does).
+    /// Through the client's own viewport point when it has stated a camera,
+    /// so its pick radius in pixels applies; else picked as it arrives.
+    /// \a accept, when given, is offered the hits front to back.
+    ViewProviderDocumentObject *
+    pickObject(MirrorViewer *mirror, const SbVec3f &origin, const SbVec3f &dir,
+               const std::function<bool(const SoPickedPoint &)> &accept,
+               std::unique_ptr<SoPickedPoint> &picked, std::string &subname)
+    {
+        if (mirror && mirror->hasCamera()) {
+            picked.reset(mirror->pickRay(origin, dir, accept));
+        }
+        else {
+            SbViewportRegion viewport{short(kDefaultWidth), short(kDefaultHeight)};
+            SoRayPickAction rp(viewport);
+            rp.setRay(origin, dir);
+            auto pickroot = this->pickRoot();
+            rp.apply(pickroot);
+            if (SoPickedPoint *hit = rp.getPickedPoint())
+                picked = std::make_unique<SoPickedPoint>(*hit);
+        }
+        SoPickedPoint *pp = picked.get();
+        if (!pp || !doc)
+            return nullptr;
+        ViewProviderDocumentObject *vpd = doc->getViewProviderByPathFromHead(
+            static_cast<SoFullPath *>(pp->getPath()));
+        if (vpd && (!vpd->getObject() || !vpd->getObject()->isAttachedToDocument()
+                    || !vpd->getElementPicked(pp, subname)))
+            vpd = nullptr;
+        return vpd;
+    }
 };
 
 /*!
@@ -1538,7 +1710,10 @@ SceneServeSource::SceneServeSource(Document *doc)
     // editing one shows up, which without a frame loop takes an explicit
     // republish.
     initRenderProperties(&pimpl->renderProps);
+    initNaviCubeProperties(&pimpl->renderProps);
     pimpl->renderProps.changed = [this]() { schedulePublish(); };
+    pimpl->naviCube = std::make_unique<NaviCube>(nullptr);
+    pimpl->naviCube->setChangedCallback([this]() { schedulePublish(); });
     pimpl->root->setViewObject(&pimpl->renderProps);
     pimpl->root->setExternalRenderer(pimpl->renderer.get(),
                                      &pimpl->renderProps);
@@ -1748,10 +1923,25 @@ void SceneServeSource::installHandlers()
             }, Qt::QueuedConnection);
         }, docName);
 
+    // A sandbox guest in a viewer's page reaches back through its own
+    // socket (docs/Sandbox.md 7.20, C2). Every frame hops to the GUI
+    // thread -- a bridge op touches the document -- in the order the
+    // connection sent them, and runs against THIS document.
+    server.setBridgeHandler([self](Render::SceneBridgeRequest &&req) {
+        auto shared = std::make_shared<Render::SceneBridgeRequest>(std::move(req));
+        QMetaObject::invokeMethod(qApp, [self, shared]() {
+            Document *gdoc = self ? self->document() : nullptr;
+            SandboxRemote::handle(gdoc ? gdoc->getDocument() : nullptr, *shared);
+        }, Qt::QueuedConnection);
+    }, docName);
+
     // A viewer that leaves takes its served viewport and its mirror with
     // it -- the session is the expensive part, and nobody is looking.
     server.setClientClosedHandler([self, streams](uint64_t client) {
         QMetaObject::invokeMethod(qApp, [self, streams, client]() {
+            SandboxRemote::drop(client);
+            // and the right-click menu it had open
+            dropSceneContextMenu(client);
             auto gone = streams->take(client, -1);
             gone.clear();
             if (self) {
@@ -1804,6 +1994,55 @@ MirrorViewer *SceneServeSource::mirrorViewerFor(uint64_t client) const
 ViewerContext *SceneServeSource::viewerFor(uint64_t client) const
 {
     return mirrorViewerFor(client);
+}
+
+bool SceneServeSource::pickSubObject(const SbVec3f &origin, const SbVec3f &dir,
+                                     uint64_t client, App::SubObjectT &picked)
+{
+    picked = App::SubObjectT();
+    if (!isValid())
+        return false;
+    MirrorViewer *mirror = mirrorViewerFor(client);
+    // Picked in the client's view, as its click is
+    std::unique_ptr<ViewerScope> inView;
+    if (mirror)
+        inView = std::make_unique<ViewerScope>(mirror);
+    std::unique_ptr<SoPickedPoint> hit;
+    std::string subname;
+    ViewProviderDocumentObject *vpd =
+        pimpl->pickObject(mirror, origin, dir, {}, hit, subname);
+    if (!vpd)
+        return false;
+    picked = App::SubObjectT(vpd->getObject(), subname.c_str());
+    return true;
+}
+
+std::vector<App::SubObjectT>
+SceneServeSource::pickAllSubObjects(const SbVec3f &origin, const SbVec3f &dir,
+                                    uint64_t client)
+{
+    std::vector<App::SubObjectT> picks;
+    MirrorViewer *mirror = isValid() ? mirrorViewerFor(client) : nullptr;
+    if (!mirror || !mirror->hasCamera() || !pimpl->doc)
+        return picks;
+    ViewerScope inView(mirror);
+    // Every hit is offered and none accepted, so the pick walks them all,
+    // front to back; the pick radius takes in the edges and vertices
+    // around a face, as the desktop's does
+    std::set<std::pair<ViewProviderDocumentObject *, std::string>> seen;
+    std::string subname;
+    std::unique_ptr<SoPickedPoint> none(mirror->pickRay(
+        origin, dir, [&](const SoPickedPoint &hit) {
+            auto vpd = pimpl->doc->getViewProviderByPathFromHead(
+                static_cast<SoFullPath *>(hit.getPath()));
+            subname.clear();
+            if (vpd && vpd->getObject() && vpd->getObject()->isAttachedToDocument()
+                    && vpd->getElementPicked(&hit, subname)
+                    && seen.emplace(vpd, subname).second)
+                picks.emplace_back(vpd->getObject(), subname.c_str());
+            return false;
+        }));
+    return picks;
 }
 
 MirrorViewer *SceneServeSource::clientViewer(uint64_t client)
@@ -1925,52 +2164,30 @@ void SceneServeSource::pickAndSelect(const SbVec3f &origin, const SbVec3f &dir,
     if (mirror)
         inView = std::make_unique<ViewerScope>(mirror);
 
-    // The ray goes back through the client's own viewport point only
-    // when it has stated a camera; without one there is nothing to
-    // resolve it against and it is picked as it arrives.
-    if (mirror && mirror->hasCamera()) {
-        // With an element kind asked for, the hits are offered front to
-        // back until one resolves to that kind: the nearest is usually the
-        // face standing in front of the edge the client's filter is after.
-        // A filtered click that found nothing locally still arrives here,
-        // the served geometry being the real one and the client's a
-        // tessellation of it.
-        std::function<bool(const SoPickedPoint &)> accept;
-        if (kind != 0) {
-            accept = [this, kind](const SoPickedPoint &hit) {
-                std::string name;
-                ViewProviderDocumentObject *vp =
-                    pimpl->doc ? pimpl->doc->getViewProviderByPathFromHead(
-                                     static_cast<SoFullPath *>(hit.getPath()))
-                               : nullptr;
-                return vp && vp->getObject()
-                    && vp->getObject()->isAttachedToDocument()
-                    && vp->getElementPicked(&hit, name)
-                    && elementKindMatches(name, kind);
-            };
-        }
-        picked.reset(mirror->pickRay(origin, dir, accept));
+    // With an element kind asked for, the hits are offered front to back
+    // until one resolves to that kind: the nearest is usually the face
+    // standing in front of the edge the client's filter is after. A
+    // filtered click that found nothing locally still arrives here, the
+    // served geometry being the real one and the client's a tessellation
+    // of it.
+    std::function<bool(const SoPickedPoint &)> accept;
+    if (kind != 0) {
+        accept = [this, kind](const SoPickedPoint &hit) {
+            std::string name;
+            ViewProviderDocumentObject *vp =
+                pimpl->doc ? pimpl->doc->getViewProviderByPathFromHead(
+                                 static_cast<SoFullPath *>(hit.getPath()))
+                           : nullptr;
+            return vp && vp->getObject()
+                && vp->getObject()->isAttachedToDocument()
+                && vp->getElementPicked(&hit, name)
+                && elementKindMatches(name, kind);
+        };
     }
-    else {
-        SbViewportRegion viewport{short(kDefaultWidth), short(kDefaultHeight)};
-        SoRayPickAction rp(viewport);
-        rp.setRay(origin, dir);
-        auto pickroot = pimpl->pickRoot();
-        rp.apply(pickroot);
-        if (SoPickedPoint *hit = rp.getPickedPoint())
-            picked = std::make_unique<SoPickedPoint>(*hit);
-    }
-
-    SoPickedPoint *pp = picked.get();
-    ViewProviderDocumentObject *vpd = nullptr;
     std::string subname;
-    if (pp && pimpl->doc) {
-        vpd = pimpl->doc->getViewProviderByPathFromHead(
-            static_cast<SoFullPath *>(pp->getPath()));
-        if (vpd && (!vpd->getObject() || !vpd->getObject()->isAttachedToDocument()
-                    || !vpd->getElementPicked(pp, subname)))
-            vpd = nullptr;
-    }
+    ViewProviderDocumentObject *vpd =
+        pimpl->pickObject(mirror, origin, dir, accept, picked, subname);
+    SoPickedPoint *pp = picked.get();
     if (!vpd) {
         // A miss still clears, because a plain click on nothing is how a
         // selection is dropped -- and only a replace does: a toggle or an
@@ -2082,6 +2299,11 @@ SceneServeSource *SceneServeSource::serve(Document *doc, int port)
 {
     if (!doc)
         return nullptr;
+
+    // The browser console's guest files ride the same server
+    // (docs/Sandbox.md 7.20, C1); re-resolved on every serve, so a
+    // runtime installed since is picked up.
+    SandboxServe::install();
 
     auto &sources = servedDocuments();
     auto it = sources.find(doc);
@@ -2242,6 +2464,7 @@ bool SceneServeSource::publishNow()
     // drawing viewer's render path did for the feed.
     SbViewportRegion viewport{short(kDefaultWidth), short(kDefaultHeight)};
     manager->traverse(pimpl->root, viewport);
+    pimpl->feedNaviCube(viewport);
     pimpl->feedEditOverlay(viewport);
 
     // Each client's visibility answers per draw, and the draws may have

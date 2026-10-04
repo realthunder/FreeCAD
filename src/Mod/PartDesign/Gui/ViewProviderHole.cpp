@@ -66,18 +66,3 @@ void ViewProviderHole::setupContextMenu(QMenu* menu, QObject* receiver, const ch
 TaskDlgFeatureParameters* ViewProviderHole::getEditDialog() {
     return new TaskDlgHoleParameters(this);
 }
-
-bool ViewProviderHole::onDelete(const std::vector<std::string> &s)
-{
-    // get the Sketch
-    PartDesign::Hole* pcHole = static_cast<PartDesign::Hole*>(getObject());
-    Sketcher::SketchObject *pcSketch = nullptr;
-    if (pcHole->Profile.getValue())
-        pcSketch = static_cast<Sketcher::SketchObject*>(pcHole->Profile.getValue());
-
-    // if abort command deleted the object the sketch is visible again
-    if (pcSketch && Gui::Application::Instance->getViewProvider(pcSketch))
-        Gui::Application::Instance->getViewProvider(pcSketch)->show();
-
-    return inherited::onDelete(s);
-}

@@ -175,40 +175,6 @@ MODULE_FACADES = {
         "exceptions": [],
         "permission": "geom.call",
     },
-    # Draft's preference reader (docs/Sandbox.md sec 7.6): the guest's
-    # bundled fcx_draft wheel leaves draftutils/params.py out, and these
-    # two answer from the host's parameter store, by value.  The module
-    # facade goes into sys.modules before the wheel's draftutils package
-    # is imported, so `from draftutils import params` finds it.  Its
-    # permission is prefs.read -- read only, through Draft's own reader,
-    # ALLOW for every principal (user ruling 2026-09-04), so a document
-    # object's Wire.__init__ never prompts for its MakeFaceMode.
-    "draftutils.params": {
-        "callables": ["get_param", "get_param_arch", "get_param_view"],
-        "constants": [],
-        "exceptions": [],
-        # local no-ops: Draft's Initialize() starts the preference
-        # observer that refreshes the tray and grid on a change, and
-        # the native function is `if App.GuiUp:` -- 0 in the guest
-        # (docs/Sandbox.md 7.9, G2b; a change notification that
-        # crosses is a known gap, sec 13)
-        "stubs": ["_param_observer_start"],
-        "permission": "prefs.read",
-    },
-    # Draft's preference WRITER, the same module: a task panel stores
-    # what the user chose (task_orthoarray's LinearModeOn on toggle,
-    # DraftGui's ContinueMode, 83 call sites in Draft's GUI side).  A
-    # module facade carries one permission, so the writers are a facade
-    # of their own merged into the same guest module: prefs.write, DENY
-    # for a document (not promptable), ALLOW for the session and addons
-    # (G3a, docs/Sandbox.md 7.11).
-    "draftutils.params#write": {
-        "module": "draftutils.params",
-        "callables": ["set_param", "set_param_arch", "set_param_view"],
-        "constants": [],
-        "exceptions": [],
-        "permission": "prefs.write",
-    },
     # The guest's FreeCAD.ParamGet (a Python shim in the in-image
     # FreeCAD module, ImageDispatch.cpp) answers every Get* through
     # this host module (src/Ext/freecad/prefs.py), read only: BIM's

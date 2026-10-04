@@ -32,9 +32,13 @@
 # include <Inventor/nodes/SoPickStyle.h>
 # include <Inventor/nodes/SoSeparator.h>
 # include <Inventor/nodes/SoShapeHints.h>
+# include <Inventor/nodes/SoSwitch.h>
 # include <Inventor/nodes/SoTranslation.h>
+# include <Inventor/nodes/SoVertexProperty.h>
 # include <Inventor/SbColor.h>
 #endif
+
+#include <App/Document.h>
 
 #include "SoFCUnifiedSelection.h"
 #include "SoFCSelection.h"
@@ -48,6 +52,7 @@ PROPERTY_SOURCE(Gui::ViewProviderPlane, Gui::ViewProviderDatum)
 
 
 ViewProviderPlane::ViewProviderPlane()
+    : SelectionObserver(false)
 {
     sPixmap = "Std_Plane";
 }
@@ -56,21 +61,13 @@ ViewProviderPlane::~ViewProviderPlane() = default;
 
 void ViewProviderPlane::attach ( App::DocumentObject *obj ) {
     ViewProviderDatum::attach ( obj );
-    static const float size = ViewProviderCoordinateSystem::baseSize ();
-
-    static const SbVec3f verts[4] = {
-        SbVec3f(size,size,0),   SbVec3f(size,-size,0),
-        SbVec3f(-size,-size,0), SbVec3f(-size,size,0),
-    };
 
     // indexes used to create the edges
     static const int32_t lines[6] = { 0, 1, 2, 3, 0, -1 };
 
     SoSeparator *sep = getDatumRoot ();
 
-    auto pCoords = new SoCoordinate3 ();
-    pCoords->point.setNum (4);
-    pCoords->point.setValues ( 0, 4, verts );
+    pCoords = new SoCoordinate3 ();
     sep->addChild ( pCoords );
 
     auto pLines  = new SoIndexedLineSet ();
@@ -98,18 +95,84 @@ void ViewProviderPlane::attach ( App::DocumentObject *obj ) {
     faceSeparator->addChild(shapeHints);
 
     auto faceSet = new SoFaceSet();
-    auto vertexProperty = new SoVertexProperty();
-    vertexProperty->vertex.setValues(0, 4, verts);
-    faceSet->vertexProperty.setValue(vertexProperty);
+    pFaceVertices = new SoVertexProperty();
+    faceSet->vertexProperty.setValue(pFaceVertices);
     faceSeparator->addChild(faceSet);
 
-    auto textTranslation = new SoTranslation ();
-    textTranslation->translation.setValue ( SbVec3f ( -size * 49. / 50., size * 9./10., 0 ) );
-    sep->addChild ( textTranslation );
+    pTextTranslation = new SoTranslation ();
+    sep->addChild ( pTextTranslation );
 
     auto ps = new SoPickStyle();
     ps->style.setValue(SoPickStyle::BOUNDING_BOX);
     sep->addChild(ps);
 
-    sep->addChild ( getLabel () );
+    sep->addChild ( pLabelSwitch );
+
+    updateDatumSize();
+    attachSelection();
+}
+
+void ViewProviderPlane::updateDatumSize()
+{
+    if (!pCoords)
+        return;
+
+    SbVec3f verts[4];
+    if (!screenSize) {
+        const float size = ViewProviderCoordinateSystem::baseSize ();
+        verts[0] = SbVec3f(size, size, 0);
+        verts[1] = SbVec3f(size, -size, 0);
+        verts[2] = SbVec3f(-size, -size, 0);
+        verts[3] = SbVec3f(-size, size, 0);
+        pTextTranslation->translation.setValue(SbVec3f(-size * 49.f / 50.f, size * 9.f / 10.f, 0));
+        pLabel->justification = SoAsciiText::LEFT;
+    }
+    else {
+        // upstream's layout, in screen units (upstream b942275957)
+        const float size = screenPlaneSize();
+        const float offset = 8.0f;
+        if (!getRole().empty() && !isSelected && !isHovered) {
+            verts[0] = SbVec3f(size, size, 0);
+            verts[1] = SbVec3f(size, offset, 0);
+            verts[2] = SbVec3f(offset, offset, 0);
+            verts[3] = SbVec3f(offset, size, 0);
+        }
+        else {
+            verts[0] = SbVec3f(size, size, 0);
+            verts[1] = SbVec3f(size, -size, 0);
+            verts[2] = SbVec3f(-size, -size, 0);
+            verts[3] = SbVec3f(-size, size, 0);
+        }
+        pTextTranslation->translation.setValue(verts[0] / 2 - SbVec3f(2, 6, 0));
+        pLabel->justification = SoAsciiText::RIGHT;
+    }
+    pCoords->point.setNum(4);
+    pCoords->point.setValues(0, 4, verts);
+    pFaceVertices->vertex.setNum(4);
+    pFaceVertices->vertex.setValues(0, 4, verts);
+}
+
+void ViewProviderPlane::onSelectionChanged(const SelectionChanges& msg)
+{
+    if (!screenSize || getRole().empty())
+        return;
+
+    auto obj = getObject();
+    if (!obj || !obj->isAttachedToDocument())
+        return;
+
+    bool before = isSelected || isHovered;
+    if (msg.Type == SelectionChanges::ClrSelection) {
+        isSelected = false;
+    }
+    else if (msg.pDocName && msg.pObjectName
+            && strcmp(msg.pDocName, obj->getDocument()->getName()) == 0
+            && strcmp(msg.pObjectName, obj->getNameInDocument()) == 0) {
+        isSelected = Selection().isSelected(obj);
+    }
+    const auto &presel = Selection().getPreselection();
+    isHovered = presel.Object.getSubObject() == obj || presel.Object.getObject() == obj;
+
+    if (before != (isSelected || isHovered))
+        updateDatumSize();
 }

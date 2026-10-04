@@ -30,6 +30,7 @@
 #endif
 
 #include <App/Application.h>
+#include <App/ExpressionSecurityRuntime.h>
 #include <Base/Console.h>
 #include <Base/Exception.h>
 #include <Base/Interpreter.h>
@@ -370,6 +371,13 @@ namespace Gui {
 void MacroManager::run(MacroType eType, const char *sName)
 {
     Q_UNUSED(eType);
+
+    // Running a macro file is host.exec (F1, docs/Sandbox.md 7.29).  A
+    // guest reaches here by name -- Std_RecentMacros, the macro dialog,
+    // the editor -- and is stopped with the macro's path named.  Outside
+    // the try: a refusal is the caller's to see, not a warning line.
+    App::ExpressionSecurity::checkHostPath(App::ExpressionSecurity::Permission::HostExec,
+                                           sName ? sName : "");
 
     try {
         ParameterGrp::handle hGrp = App::GetApplication().GetUserParameter()

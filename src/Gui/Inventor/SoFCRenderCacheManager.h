@@ -31,6 +31,7 @@
 #include "../InventorBase.h"
 
 class SoSFImage;
+class SoState;
 class SoGLRenderAction;
 class SoGroup;
 class SoNode;
@@ -79,6 +80,12 @@ public:
   /// with setExternalOverlay(): the captured content is mirrored to the
   /// backend's overlay feed. \a action supplies the traversal state seed.
   void capture(SoGLRenderAction *action, SoNode *root);
+
+  /// capture() with no graphics context, seeded as traverse() is: an
+  /// overlay a publisher with no 3D view states (the served NaviCube).
+  /// Unlike traverse() it pushes no view configs -- an overlay feed has
+  /// no view, and pushing its empty one would overwrite the scene's.
+  void capture(SoNode *root, const SbViewportRegion &viewport);
 
   /// The same build, seeded without a graphics context: a publisher with
   /// no 3D view has no SoGLRenderAction to take a state from
@@ -258,6 +265,9 @@ public:
   const char *getRenderStatistics() const;
 
 private:
+  /// The body both capture()s share, from a seed state.
+  void captureOverlay(SoState *state, SoNode *root);
+
   friend class SoFCRenderCacheManagerP;
   SoFCRenderCacheManagerP * pimpl;
 };

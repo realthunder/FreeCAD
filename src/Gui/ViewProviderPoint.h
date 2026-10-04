@@ -39,6 +39,10 @@ public:
     ~ViewProviderPoint() override;
 
     void attach ( App::DocumentObject * ) override;
+
+protected:
+    /// upstream draws no label on a point
+    bool showLabelOnScreen() const override { return false; }
 };
 
 } //namespace Gui

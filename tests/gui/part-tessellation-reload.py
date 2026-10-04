@@ -1,7 +1,7 @@
 """A Part object keeps the tessellation settings its file was saved with
 when a view opens or closes, and the instancing gate still rebuilds.
 
-Found 2026-09-29 (docs/DocumentLoad.md sec 16) from pixel differences
+Found 2026-09-29 (docs/DocumentLoad.md sec 19) from pixel differences
 between an eager and a progressive open of a user file: the shape-
 instancing gate re-runs ViewProviderPartExt::reload() on every Part view
 provider whenever a view's renderer attaches or goes away, and reload()

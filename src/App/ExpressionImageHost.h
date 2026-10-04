@@ -196,18 +196,6 @@ public:
      * onChanged inside the bridge op, and that hook's proxyCall is a
      * round trip inside the round trip.
      */
-    ImageResult proxyNew(const std::string& module,
-                         const std::string& cls,
-                         PyObject* args,
-                         bool alloc,
-                         const App::DocumentObject* owner);
-    /// The same with keyword arguments (`kwargs` may be nullptr).
-    ImageResult proxyNew(const std::string& module,
-                         const std::string& cls,
-                         PyObject* args,
-                         PyObject* kwargs,
-                         bool alloc,
-                         const App::DocumentObject* owner);
     ImageResult proxyCall(uint64_t id,
                           const std::string& hook,
                           PyObject* args,
@@ -255,6 +243,13 @@ public:
 
     /// Drop every live handle (end of a recompute transaction).
     void clearHandles();
+
+    /** Prefetch sibling reads on this host's own table (HandleTable::
+     * setPrefetch, docs/Sandbox.md 7.20 C5).  Off, and meant to stay off:
+     * this guest is a few us away.  A test turns it on to run the guest's
+     * half of the prefetch in process.
+     */
+    void setPrefetch(bool on);
 
     /// Live handle count (tests: proxies release on image-side __del__).
     std::size_t handleCount() const;
@@ -324,8 +319,8 @@ public:
      * reset kills every stand-in the guest registered -- a command, a
      * workbench handler -- so state the host derived from a guest is
      * stamped with the boot it came from and remade when the count
-     * moves on.  The InitGui runner (docs/Sandbox.md 7.9, G2b) is the
-     * first user.
+     * moves on.  (Its first user was the InitGui-in-guest runner,
+     * removed with Proxy routing, docs/Sandbox.md 7.31.)
      */
     int bootCount() const;
 

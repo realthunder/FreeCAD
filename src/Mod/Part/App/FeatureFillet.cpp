@@ -49,6 +49,7 @@ App::DocumentObjectExecReturn *Fillet::execute()
     App::DocumentObject* link = Base.getValue();
     if (!link)
         return new App::DocumentObjectExecReturn("No object linked");
+    copyMaterial(link);
 
     try {
 #if defined(__GNUC__) && defined (FC_OS_LINUX)

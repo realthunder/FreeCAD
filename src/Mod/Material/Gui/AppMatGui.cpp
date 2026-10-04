@@ -161,7 +161,7 @@ private:
         }
         return Py::Boolean(MatGui::MaterialIcons::instance().renderToFile(
             MatGui::MaterialIcons::finishMaterial(value), finish,
-            QString::fromUtf8(path), {}, MatGui::IconShape::Cylinder));
+            QString::fromUtf8(path), {}, MatGui::MaterialIcons::finishShape(value)));
     }
 };
 

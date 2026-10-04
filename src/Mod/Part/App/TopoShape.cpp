@@ -2126,7 +2126,8 @@ TopoDS_Shape TopoShape::makeLongHelix(Standard_Real pitch, Standard_Real height,
 
 TopoDS_Shape TopoShape::makeSpiralHelix(Standard_Real radiusbottom, Standard_Real radiustop,
                                   Standard_Real height, Standard_Real nbturns,
-                                  Standard_Real breakperiod, Standard_Boolean leftHanded) const
+                                  Standard_Real breakperiod, Standard_Boolean leftHanded,
+                                  Standard_Real tolerance) const
 {
     // 1000 periods is an OCCT limit. The 3D curve gets truncated
     // if the 2D curve spans beyond this limit.
@@ -2174,7 +2175,9 @@ TopoDS_Shape TopoShape::makeSpiralHelix(Standard_Real radiusbottom, Standard_Rea
     }
 
     TopoDS_Wire wire = mkWire.Wire();
-    BRepLib::BuildCurves3d(wire, Precision::Confusion(), GeomAbs_Shape::GeomAbs_C1, 14, 10000);
+    if (tolerance <= 0.0)
+        tolerance = Precision::Confusion();
+    BRepLib::BuildCurves3d(wire, tolerance, GeomAbs_Shape::GeomAbs_C1, 14, 10000);
     return TopoDS_Shape(std::move(wire));
 }
 

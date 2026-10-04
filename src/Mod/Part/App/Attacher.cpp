@@ -250,6 +250,7 @@ void AttachEngine::setUp(const AttachEngine &another)
     this->attachParameter = another.attachParameter;
     this->surfU = another.surfU;
     this->surfV = another.surfV;
+    this->precision = another.precision;
     this->attachmentOffset = another.attachmentOffset;
 }
 
@@ -1268,7 +1269,7 @@ Base::Placement AttachEngine3D::_calculateAttachedPlacement(
         bool Reverse = false;
         try { face = TopoDS::Face(*(shapes[0])); } catch(...) {}
         if (face.IsNull()) {
-            if (!TopoShape(*shapes[0]).findPlane(plane))
+            if (!TopoShape(*shapes[0]).findPlane(plane, precision))
                 THROWM(Base::ValueError, "No planar face in AttachEngine3D::calculateAttachedPlacement()!")
         } else {
             BRepAdaptor_Surface adapt(face);
@@ -1278,7 +1279,7 @@ Base::Placement AttachEngine3D::_calculateAttachedPlacement(
             else {
                 TopLoc_Location loc;
                 Handle(Geom_Surface) surf = BRep_Tool::Surface(face, loc);
-                GeomLib_IsPlanarSurface check(surf);
+                GeomLib_IsPlanarSurface check(surf, precision);
                 if (check.IsPlanar())
                     plane = check.Plan();
                 else
@@ -1782,6 +1783,12 @@ AttachEnginePlane::AttachEnginePlane()
     AttachEngine3D attacher3D;
     this->modeRefTypes = attacher3D.modeRefTypes;
     this->EnableAllSupportedModes();
+    this->precision = planarPrecision();
+}
+
+double AttachEnginePlane::planarPrecision()
+{
+    return 2.0e-7;
 }
 
 AttachEnginePlane *AttachEnginePlane::copy() const

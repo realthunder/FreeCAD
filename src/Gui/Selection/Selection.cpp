@@ -31,6 +31,7 @@
 #endif
 
 #include <App/Application.h>
+#include <App/Datums.h>
 #include <App/Document.h>
 #include <App/DocumentObject.h>
 #include <App/DocumentObjectPy.h>
@@ -604,6 +605,17 @@ int SelectionSingleton::getAsPropertyLinkSubList(App::PropertyLinkSubList &prop)
     for (auto & selitem : sel) {
         App::DocumentObject* obj = selitem.getObject();
         const std::vector<std::string> &subnames = selitem.getSubNames();
+
+        // LCS datums have placements relative to their coordinate system
+        // (upstream cfd1cdfb36)
+        if (auto datum = Base::freecad_dynamic_cast<App::DatumElement>(obj)) {
+            auto lcs = datum->getLCS();
+            if (lcs && !lcs->isOrigin() && lcs->hasObject(datum)) {
+                objs.push_back(lcs);
+                subs.push_back(std::string(datum->getNameInDocument()) + ".");
+                continue;
+            }
+        }
 
         //whole object is selected
         if (subnames.empty()){
@@ -1708,7 +1720,34 @@ void SelectionSingleton::setVisible(VisibleState vis, const std::vector<App::Sub
         visible = 0;
     }
 
-    const auto &sels = _sels.size()?_sels:getSelectionT(nullptr, ResolveMode::NoResolve);
+    std::vector<App::SubObjectT> sels = _sels.size()?_sels:getSelectionT(nullptr, ResolveMode::NoResolve);
+    // A toggle of an element picked in the view may be meant for a container
+    // of the object it belongs to (a PartDesign feature's body): cut the path
+    // down to it. A tree selection names no element and is left alone.
+    if (visible < 0) {
+        for (auto &sel : sels) {
+            if (!sel.hasSubElement())
+                continue;
+            auto objs = sel.getSubObjectList();
+            auto vp = objs.empty() ? nullptr : Application::Instance->getViewProvider(objs.back());
+            auto target = vp ? vp->getPickedVisibilityTarget() : nullptr;
+            auto it = std::find(objs.begin(), objs.end(), target);
+            if (!target || it == objs.end())
+                continue;
+            // one dot-terminated segment of the subname per object below the top
+            std::string path = sel.getSubNameNoElement();
+            std::size_t keep = it - objs.begin(), pos = 0;
+            for (std::size_t i = 0; i < keep && pos != std::string::npos; ++i) {
+                pos = path.find('.', pos);
+                if (pos != std::string::npos)
+                    ++pos;
+            }
+            if (pos == std::string::npos)
+                continue;
+            sel = App::SubObjectT(sel.getDocumentName().c_str(), sel.getObjectName().c_str(),
+                                  path.substr(0, pos).c_str());
+        }
+    }
     for(auto &sel : sels) {
         App::DocumentObject *obj = sel.getObject();
         if(!obj) continue;

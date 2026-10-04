@@ -26,6 +26,7 @@
 
 #include <memory>
 #include <Gui/DocumentObserver.h>
+#include <Gui/Inventor/Draggers/Gizmo.h>
 #include <Gui/TaskView/TaskDialog.h>
 #include <Gui/TaskView/TaskView.h>
 #include <Mod/Part/Gui/TaskAttacher.h>
@@ -101,10 +102,22 @@ public Q_SLOTS:
 
 private:
     void refresh() override;
+    /// The attacher moves the primitive: its gizmos follow the Placement
+    /// (upstream listens to a TaskAttacher::placementUpdated signal).
+    void slotChangedObject(const Gui::ViewProviderDocumentObject& Obj,
+                           const App::Property& Prop) override;
 
 private:
     QWidget* proxy;
     std::unique_ptr<Ui_DlgPrimitives> ui;
+
+    std::unique_ptr<Gui::GizmoContainer> gizmoContainer;
+    Gui::LinearGizmo* lengthGizmo = nullptr;
+    Gui::LinearGizmo* heightGizmo = nullptr;
+    Gui::LinearGizmo* widthGizmo = nullptr;
+    Gui::LinearGizmo* radiusGizmo = nullptr;
+    void setupGizmos();
+    void setGizmoPositions();
 };
 
 class TaskPrimitiveParameters :  public TaskDlgFeatureParameters

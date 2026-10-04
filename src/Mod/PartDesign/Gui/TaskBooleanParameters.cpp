@@ -42,6 +42,7 @@
 #include <Gui/BitmapFactory.h>
 #include <Gui/Command.h>
 #include <Gui/MainWindow.h>
+#include <Gui/Tools.h>
 #include <Gui/WaitCursor.h>
 #include <Mod/PartDesign/App/FeatureBoolean.h>
 #include <Mod/PartDesign/App/ShapeBinder.h>
@@ -61,6 +62,7 @@ TaskBooleanParameters::TaskBooleanParameters(ViewProviderBoolean *BooleanView,QW
     : TaskBox(Gui::BitmapFactory().pixmap("PartDesign_Boolean"), tr("Boolean parameters"), true, parent)
     , ui(new Ui_TaskBooleanParameters)
     , BooleanView(BooleanView)
+    , booleanT(BooleanView->getObject())
 {
     // we need a separate container widget to add all controls to
     proxy = new QWidget(this);
@@ -80,7 +82,8 @@ TaskBooleanParameters::TaskBooleanParameters(ViewProviderBoolean *BooleanView,QW
             this, &TaskBooleanParameters::onNewSolidChanged);
 
     this->groupLayout()->addWidget(proxy);
-    
+    PartDesignGui::addTaskCheckBox(BooleanView, proxy);
+
     ui->listWidgetBodies->setMouseTracking(true); // needed for itemEntered() to work
 
     ui->listWidgetBodies->setDragDropMode(QListWidget::InternalMove);
@@ -101,7 +104,7 @@ TaskBooleanParameters::TaskBooleanParameters(ViewProviderBoolean *BooleanView,QW
 
     // Create context menu
     QAction* action = new QAction(tr("Remove"), this);
-    action->setShortcut(QKeySequence::Delete);
+    action->setShortcut(Gui::QtTools::deleteKeySequence());
 #if QT_VERSION >= QT_VERSION_CHECK(5, 10, 0)
     // display shortcut behind the context menu entry
     action->setShortcutVisibleInContextMenu(true);
@@ -125,8 +128,12 @@ void TaskBooleanParameters::onDeleteOnRemove(bool checked) {
 }
 
 void TaskBooleanParameters::populate() {
-    if (!BooleanView || !BooleanView->getObject())
+    // Compared, never dereferenced, until the object is known to be alive
+    auto obj = booleanT.getObject();
+    if (!obj || Application::Instance->getViewProvider(obj) != BooleanView) {
+        BooleanView = nullptr;
         return;
+    }
 
     ui->listWidgetBodies->clear();
     PartDesign::Boolean* pcBoolean = static_cast<PartDesign::Boolean*>(BooleanView->getObject());
@@ -153,7 +160,7 @@ bool TaskBooleanParameters::eventFilter(QObject *watched, QEvent *event) {
         case QEvent::KeyPress: {
             QKeyEvent * kevent = static_cast<QKeyEvent*>(event);
             if (kevent->modifiers() == Qt::NoModifier) {
-                if (kevent->key() == Qt::Key_Delete) {
+                if (kevent->matches(Gui::QtTools::deleteKeySequence())) {
                     kevent->accept();
                     if (event->type() == QEvent::KeyPress)
                         onButtonRemove();

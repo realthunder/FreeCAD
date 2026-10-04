@@ -108,6 +108,10 @@ recompute path. Also, it enables more complicated dependencies beyond trees.
 #include "DocumentObject.h"
 #include "DocumentParams.h"
 #include "ExpressionParser.h"
+#include "ExpressionSecurityRuntime.h"
+#ifdef FC_EXPR_IMAGE_HOST
+#include "ExpressionGuestProxy.h"
+#endif
 #include "GeoFeature.h"
 #include "InputStratum.h"
 #include "License.h"
@@ -773,6 +777,11 @@ void Document::onChanged(const Property* prop)
         // this directory should not exist
         if (!TransDirNew.exists()) {
             if (TransDirOld.exists()) {
+                // Windows refuses to rename a directory with a file open in
+                // it, and a restore holds one: the archive copy the blobs are
+                // served from. It opens again on its next read.
+                if (d->fileBlobs)
+                    d->fileBlobs->closeArchives();
                 if (!TransDirOld.renameFile(new_dir.c_str()))
                     Base::Console().Warning("Failed to rename '%s' to '%s'\n", old_dir.c_str(), new_dir.c_str());
                 else {
@@ -824,6 +833,16 @@ void Document::onBeforeChangeProperty(const TransactionalObject *Who, const Prop
         _checkTransaction(nullptr, What, __LINE__);
         if (d->activeUndoTransaction)
             d->activeUndoTransaction->addObjectChange(Who, What);
+    }
+}
+
+void Document::onBeforeChangeFreeze(const DocumentObject *Who)
+{
+    // As a property change is recorded, so that freezing is undone
+    if(!d->rollback) {
+        _checkTransaction(nullptr, nullptr, __LINE__);
+        if (d->activeUndoTransaction)
+            d->activeUndoTransaction->addObjectFreeze(Who, Who->isFreezed());
     }
 }
 
@@ -1022,6 +1041,10 @@ Document::~Document()
 
     // remove Transient directory
     try {
+        // Nothing deletes a file held open on Windows, and the archive copy
+        // the blobs are served from may be.
+        if (d->fileBlobs)
+            d->fileBlobs->closeArchives();
         Base::FileInfo TransDir(TransientDir.getValue());
         TransDir.deleteDirectoryRecursive();
     }
@@ -1188,6 +1211,7 @@ void Document::Restore(Base::XMLReader &reader)
     // still there.
     const bool hasInlineBlobs = reader.hasAttribute("Blobs");
     const bool hasStringHasher = reader.hasAttribute("StringHasher");
+    reader.HasStringHasher = hasStringHasher;
 
     // Content carried inside the XML comes first, so everything parsed from
     // here on finds what it refers to already in the store. The Uid is set
@@ -1653,9 +1677,11 @@ void Document::buildDefaults(Base::Writer &writer,
     // been shared at all.
     const std::size_t minInstances = 3;
 
+    // By the class the file names, which is the class the reader builds and
+    // looks the block up by (DocumentObject::getSaveType())
     std::map<std::string, std::size_t> counts;
     for (auto o : obj)
-        ++counts[o->getTypeId().getName()];
+        ++counts[o->getSaveType().getName()];
     for (const auto &v : counts) {
         if (v.second < minInstances)
             continue;
@@ -1903,7 +1929,7 @@ void Document::writeObjects(const std::vector<App::DocumentObject*>& obj,
             d->saveSeq->next();
         }
         writer.Stream() << writer.ind() << "<Object "
-        << "type=\"" << writer.typeName((*it)->getTypeId()) << "\" "
+        << "type=\"" << writer.typeName((*it)->getSaveType()) << "\" "
         << "name=\"" << (*it)->getExportName()       << "\" "
         << "id=\"" << (*it)->getID()       << "\" "
         << "revision=\"" << (*it)->getRevision() << "\" ";
@@ -1922,6 +1948,9 @@ void Document::writeObjects(const std::vector<App::DocumentObject*>& obj,
             if(desc)
                 writer.Stream() << "Error=\"" << Property::encodeAttribute(desc) << "\" ";
         }
+        // Upstream's attribute, so a freeze survives both ways
+        if ((*it)->isFreezed())
+            writer.Stream() << "Freeze=\"1\" ";
 
         if(writer.isSplitXML()) {
             std::string name((*it)->getNameInDocument());
@@ -1987,7 +2016,7 @@ void Document::writeObjects(const std::vector<App::DocumentObject*>& obj,
         // outlive this call.
         auto pointAtDefaults = [&](bool on) {
             for (auto o : obj) {
-                auto def = defaults.find(o->getTypeId().getName());
+                auto def = defaults.find(o->getSaveType().getName());
                 o->setSaveDefaults(
                         on && def != defaults.end() ? &def->second : nullptr);
             }
@@ -2220,7 +2249,11 @@ Document::readObjects(Base::XMLReader& reader)
     Base::SequencerLauncher seqRestore("Restoring document...",
                                        size_t(Cnt) * 2);
     for (int i=0 ;i<Cnt ;i++) {
-        seqRestore.next();
+        {
+            FC_TIME_INIT(tSeq);
+            seqRestore.next();
+            FC_DURATION_PLUS(d->restoreTiming.createSeq, tSeq);
+        }
         reader.readElement("Object");
         std::string type = reader.getAttribute("type");
         std::string name = reader.getAttribute("name");
@@ -2284,6 +2317,11 @@ Document::readObjects(Base::XMLReader& reader)
                     if(obj->isError() && reader.hasAttribute("Error"))
                         d->addRecomputeLog(reader.getAttribute("Error"),obj);
                 }
+                // Set before the properties are read, so their restore does
+                // not touch it either
+                if (reader.hasAttribute("Freeze")
+                        && reader.getAttributeAsInteger("Freeze") != 0)
+                    obj->setStatus(ObjectStatus::Freeze, true);
 
                 obj->_revision = rev;
             }
@@ -2473,6 +2511,12 @@ static std::string checkFileName(const char *file) {
 bool Document::saveAs(const char* _file)
 {
     std::string file = checkFileName(_file);
+    // Naming a host file to write is fs.write (F1, docs/Sandbox.md 7.29).
+    // save() writes the document's OWN file and stays the guest's to call
+    // (S1); saveAs chooses a path, so it is gated -- and a path the user
+    // picked in a dialog under this guest is blessed and passes.
+    // checkFileName may have appended .FCStd: gate what will be written.
+    ExpressionSecurity::checkHostPath(ExpressionSecurity::Permission::FsWrite, file);
     Base::FileInfo fi(file.c_str());
     if (this->FileName.getStrValue() != file) {
         this->FileName.setValue(file);
@@ -2486,6 +2530,8 @@ bool Document::saveAs(const char* _file)
 bool Document::saveCopy(const char* _file) const
 {
     std::string file = checkFileName(_file);
+    // a copy is a host file written by path, exactly as saveAs (7.29)
+    ExpressionSecurity::checkHostPath(ExpressionSecurity::Permission::FsWrite, file);
     if (this->FileName.getStrValue() != file) {
         bool result = saveToFile(file.c_str());
         return result;
@@ -3187,6 +3233,13 @@ void Document::restore (const char *filename,
     }
 
     restore(*_xmlReader, delaySignal, objNames);
+
+    // The index holds the file open, and on Windows an open file cannot be
+    // renamed or deleted -- not by the user, and not by the recovery dialog
+    // moving a recovered file into place. Keep it only while there is
+    // something parked to serve from it.
+    if (d->deferredFiles.empty())
+        d->archiveReader.reset();
 }
 
 bool Document::hasDeferredFile(const Base::Persistence *obj) const
@@ -3490,7 +3543,8 @@ void Document::restore(Base::XMLReader &reader,
             << d->files.size() << " files"
             << ", xml " << dXml.count()
             << " (create " << rt.create.count()
-            << " [addObject " << rt.createAdd.count() << "s]"
+            << " [addObject " << rt.createAdd.count() << "s, sequencer "
+            << rt.createSeq.count() << "s]"
             << ", data " << rt.data.count()
             << " [" << rt.props.count << " properties, "
             << rt.props.total.count() << "s of which value "
@@ -4357,6 +4411,20 @@ int Document::recompute(const std::vector<App::DocumentObject*> &objs, bool forc
                 auto obj = topoSortedObjects[idx];
                 if(!obj->isAttachedToDocument() || filter.find(obj)!=filter.end())
                     continue;
+                // A frozen object keeps its result, so the objects depending
+                // on it have nothing new to see: drop the touch an input or
+                // a dependency left, and do not pass it on. The touched
+                // properties stay, for when it is unfrozen.
+                if (obj->isFreezed()) {
+                    obj->StatusBits.reset(ObjectStatus::Enforce);
+                    if (obj->StatusBits.test(ObjectStatus::Touch)) {
+                        obj->StatusBits.reset(ObjectStatus::Touch);
+                        signalPurgeTouchedObject(*obj);
+                    }
+                    if (seq)
+                        seq->next(true);
+                    continue;
+                }
                 // ask the object if it should be recomputed
                 bool doRecompute = false;
                 if (obj->mustRecompute()) {
@@ -4664,6 +4732,14 @@ void Document::setErrorDescription(App::Property *Prop, const char *msg)
 int Document::_recomputeFeature(DocumentObject* Feat)
 {
     DocumentObjectExecReturn  *returnCode = DocumentObject::StdReturn;
+
+    // Also asked of an explicit recompute of the one object (Python's
+    // obj.recompute(), a task panel's), which upstream lets through. A
+    // frozen object keeps its result and its error, if it had one.
+    if (Feat->isFreezed()) {
+        FC_LOG("Skip recomputing frozen " << Feat->getFullName());
+        return Feat->isError() ? 1 : 0;
+    }
 
     // delete recompute log
     d->clearRecomputeLog(Feat);

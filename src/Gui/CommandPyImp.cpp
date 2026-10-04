@@ -141,7 +141,12 @@ PyObject* CommandPy::run(PyObject *args)
 
     Command* cmd = this->getCommandPtr();
     if (cmd) {
-        cmd->invoke(item);
+        // as in Application::sRunCommand: a throw from the command (a
+        // sandbox refusal, docs/Sandbox.md 7.29) becomes a Python error
+        // here instead of unwinding through the interpreter.
+        PY_TRY {
+            cmd->invoke(item);
+        } PY_CATCH;
         Py_Return;
     }
     else {

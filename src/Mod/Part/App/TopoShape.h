@@ -380,9 +380,11 @@ public:
     TopoDS_Shape makeLongHelix(Standard_Real pitch, Standard_Real height,
         Standard_Real radius, Standard_Real angle=0,
         Standard_Boolean left=Standard_False) const;
+    /// \a tolerance is the 3D curve approximation tolerance; 0 means
+    /// Precision::Confusion().
     TopoDS_Shape makeSpiralHelix(Standard_Real radiusbottom, Standard_Real radiustop,
         Standard_Real height, Standard_Real nbturns=1, Standard_Real breakperiod=1,
-        Standard_Boolean left=Standard_False) const;
+        Standard_Boolean left=Standard_False, Standard_Real tolerance=0.0) const;
     TopoDS_Shape makeThread(Standard_Real pitch, Standard_Real depth,
         Standard_Real height, Standard_Real radius) const;
     TopoDS_Shape makeLoft(const TopTools_ListOfShape& profiles, Standard_Boolean isSolid,
@@ -2320,6 +2322,33 @@ public:
            const gp_Dir &pullDirection, double angle, const gp_Pln &neutralPlane,
            bool retry=true, const char *op=nullptr) const {
         return TopoShape(0,Hasher).makEDraft(*this,faces,pullDirection,angle,neutralPlane,retry,op);
+    }
+
+    /* Remove faces and heal the gap they leave, e.g. take a hole, a fillet
+     * or a boss off a solid
+     *
+     * @param source: the source shape
+     * @param faces: the faces of the source shape to remove
+     * @param op: optional string to be encoded into topo naming for indicating
+     *            the operation
+     *
+     * @return The original content of this TopoShape is discarded and replaced
+     *         with the new shape. The function returns the TopoShape itself as
+     *         a self reference so that multiple operations can be carried out
+     *         for the same shape in the same line of code.
+     */
+    TopoShape &makEDefeaturing(const TopoShape &source, const std::vector<TopoShape> &faces,
+                               const char *op=nullptr);
+    /* Remove faces and heal the gap they leave
+     *
+     * @param faces: the faces of this shape to remove
+     * @param op: optional string to be encoded into topo naming for indicating
+     *            the operation
+     *
+     * @return Return the new shape. The TopoShape itself is not modified.
+     */
+    TopoShape makEDefeaturing(const std::vector<TopoShape> &faces, const char *op=nullptr) const {
+        return TopoShape(0,Hasher).makEDefeaturing(*this,faces,op);
     }
 
     /* Make a shell using this shape

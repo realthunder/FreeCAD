@@ -25,6 +25,8 @@
 #ifndef GUI_TASKVIEW_TaskSketchBasedParameters_H
 #define GUI_TASKVIEW_TaskSketchBasedParameters_H
 
+#include <functional>
+
 #include <QStandardItemModel>
 #include <QItemDelegate>
 #include <QGroupBox>
@@ -43,6 +45,7 @@ class QListWidget;
 
 namespace App {
 class Property;
+class PropertyLinkSub;
 }
 
 namespace Gui {
@@ -72,11 +75,28 @@ public:
         refSpine,
         refAuxSpine,
         refSection,
+        refUpTo,
+        refUpTo2,
+        refStart,
     };
 
     virtual void _onSelectionChanged(const Gui::SelectionChanges&) {}
 
-    const QString onSelectUpToFace(const Gui::SelectionChanges& msg);
+    /// Sets the pick as  prop, UpToFace if none; returns "Object:Face"
+    const QString onSelectUpToFace(const Gui::SelectionChanges& msg,
+                                   App::PropertyLinkSub* prop = nullptr);
+
+    /** A pick on the feature itself, traced back to the base's element and
+     * picked again as that. Returns false when the pick is not of the
+     * feature, true when it is (handled, or nothing to trace it to).
+     */
+    bool reselectBaseElement(const Gui::SelectionChanges& msg);
+
+    /** The pick filter of an up-to or start reference (LinkSubWidget::
+     * setPickFilter): a face of this feature is the base's face it came
+     * from, and a plane or datum is taken whole
+     */
+    bool filterUpToPick(const Gui::SelectionChanges& msg, App::SubObjectT &objT);
 
     void onSelectReference(QWidget *blinkWidget,
                            const AllowSelectionFlags &conf = ReferenceSelection::defaultFlags())
@@ -156,6 +176,15 @@ public:
                       const QModelIndex &index) const;
 };
 
+class LinkSubTable;
+
+/** A pick button, the linked objects and their elements, and a clear button
+ *
+ * Bound to a PropertyLinkSub, it shows one row: the object, then its
+ * elements. Bound to a PropertyLinkSubList, it shows a row per object, grows
+ * with the objects up to maxVisibleRows and scrolls after that. The object
+ * column stays in place when the elements scroll sideways.
+ */
 class LinkSubWidget: public QWidget
                    , public Gui::SelectionObserver
 {
@@ -165,10 +194,11 @@ public:
     LinkSubWidget(TaskSketchBasedParameters *parent,
                   const QString &title,
                   App::PropertyLinkSub &prop,
-                  bool singleElement=false,
-                  QPushButton *_button=nullptr,
-                  QListWidget *_listWidget=nullptr,
-                  QPushButton *_clearButton=nullptr);
+                  bool singleElement=false);
+
+    LinkSubWidget(TaskSketchBasedParameters *parent,
+                  const QString &title,
+                  App::PropertyLinkSubList &prop);
 
     void onSelectionChanged(const Gui::SelectionChanges& msg) override;
 
@@ -180,22 +210,47 @@ public:
     bool setLinks(const std::vector<App::SubObjectT> &objs);
     bool addLink(const App::SubObjectT &obj);
 
-    App::PropertyLinkSub *getProperty(App::DocumentObject **pObj = nullptr) const {
-        if (auto obj = linkProp.getObject()) {
-            if (pObj)
-                *pObj = obj;
-            return Base::freecad_dynamic_cast<App::PropertyLinkSub>(
-                    obj->getPropertyByName(linkProp.getPropertyName().c_str()));
-        }
-        return nullptr;
-    }
+    /// The bound property, a PropertyLinkSub or a PropertyLinkSubList
+    App::PropertyLinkBase *getProperty(App::DocumentObject **pObj = nullptr) const;
 
     void setSelectionConfig(const AllowSelectionFlags &conf);
     void setSelectionMode(TaskSketchBasedParameters::SelectionMode mode);
 
+    /// Whether a linked object that is not a PartDesign feature (a profile
+    /// sketch, say) is hidden once linked. On by default.
+    void setHideLinked(bool enable) { hideLinked = enable; }
+
+    /// Called on each pick before it is linked: may rewrite the reference,
+    /// or return false to drop the pick
+    using PickFilter = std::function<bool(const Gui::SelectionChanges&, App::SubObjectT&)>;
+    void setPickFilter(PickFilter filter) { pickFilter = std::move(filter); }
+
+    /// Enter selection mode, leaving the current selection alone
+    void startSelection();
+
+    /// The pick button's text
+    void setTitle(const QString &title);
+
+    static constexpr int maxVisibleRows = 4;
+
 protected:
+    /// One row per object: the object, and its elements (none: the whole object)
+    using LinkRows = std::vector<std::pair<App::DocumentObject*, std::vector<std::string>>>;
+
+    void init(const QString &title);
+    /// The rows as the table shows them
+    LinkRows getRows() const;
+    /// Write the rows to the property, recompute, and show them
+    bool setRows(LinkRows &&rows);
+    /// setRows() for picked rows: hides what setHideLinked() says to
+    bool setLinkRows(LinkRows &&rows);
+    /// Make the last element of the given object's row (or of the last row) current
+    void selectLast(App::DocumentObject *link);
+    void addRow(App::DocumentObject *link, const std::vector<std::string> &subs,
+                bool hasExpression);
+    void onItemEntered(const QModelIndex &index);
     bool eventFilter(QObject *, QEvent *) override;
-    void setListWidgetHeight(bool expand);
+    void updateHeight();
     void toggleShowOnTop(bool init=false);
     void disableShowOnTop();
 
@@ -203,15 +258,18 @@ protected:
     friend class LinkSubWidgetDelegate;
     TaskSketchBasedParameters *parentTask;
     TaskSketchBasedParameters::SelectionMode selectionMode;
-    QListWidget *listWidget;
-    QPushButton *button;
+    LinkSubTable *table = nullptr;
+    QPushButton *button = nullptr;
     QPushButton *clearButton = nullptr;
     fastsignals::scoped_connection conn;
-    App::SubObjectT lastReference;
+    std::vector<App::SubObjectT> lastReferences;
     App::DocumentObjectT linkProp;
     AllowSelectionFlags selectionConf;
+    PickFilter pickFilter;
     fastsignals::scoped_connection connModeChange;
     bool singleElement = false;
+    bool multiObject = false;
+    bool hideLinked = true;
     bool linkInited = false;
 };
 

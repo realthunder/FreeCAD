@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>sandbox latency -- C5</title>
+<style>
+  body { margin: 0; background: #14161a; color: #d6dae0 }
+  pre  { margin: 0 }
+</style>
+</head>
+<body>
+<!--
+  What a console statement costs over a LAN or a tunnel, and what the guest
+  costs the page in memory (docs/Sandbox.md 7.20, C5).  Serve a document with
+  the built bundle and open
+      http://<server>/web/latency-test.html?token=<token>&doc=<document>&reps=3
+  tests/gui/sandbox-latency-browser.py drives it headless behind
+  scripts/delay-proxy.js.
+-->
+<script type="module" src="./latencytest.js"></script>
+</body>
+</html>

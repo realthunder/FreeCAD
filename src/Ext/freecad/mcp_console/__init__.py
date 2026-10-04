@@ -9,6 +9,6 @@ Or toggle it from the Tools menu, which also remembers the state for the next
 start. See :mod:`freecad.mcp_console.server` for details.
 """
 
-from .server import start, stop, is_running, url
+from .server import start, stop, is_running, url, endpoint_dir
 
-__all__ = ["start", "stop", "is_running", "url"]
+__all__ = ["start", "stop", "is_running", "url", "endpoint_dir"]

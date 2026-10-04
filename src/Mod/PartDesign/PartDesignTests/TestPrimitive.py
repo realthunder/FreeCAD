@@ -88,6 +88,23 @@ class TestPrimitive(unittest.TestCase):
         self.Doc.recompute()
         self.assertAlmostEqual(self.Cone001.Shape.Volume, 1/3.0 * pi * 10 * (4**2 - 3**2))
 
+    def testConeEqualRadii(self):
+        # Equal radii make a cylinder (upstream 1eb0444bd5), through the
+        # cone's angle (990b9b27fe); both cones refused them before
+        import math
+        partCone = self.Doc.addObject('Part::Cone', 'PartCone')
+        self.Body = self.Doc.addObject('PartDesign::Body', 'Body')
+        cone = self.Body.newObject('PartDesign::AdditiveCone', 'Cone')
+        for c in (partCone, cone):
+            c.Radius1 = 3
+            c.Radius2 = 3
+            c.Height = 10
+            c.Angle = 180
+        self.Doc.recompute()
+        for c in (partCone, cone):
+            self.assertNotIn('Invalid', c.State)
+            self.assertAlmostEqual(c.Shape.Volume, math.pi * 3 * 3 * 10 / 2, places=6)
+
     def testPrimitiveEllipsoid(self):
         self.Body = self.Doc.addObject('PartDesign::Body','Body')
         self.Ellipsoid = self.Doc.addObject('PartDesign::AdditiveEllipsoid','Ellipsoid')
@@ -167,6 +184,63 @@ class TestPrimitive(unittest.TestCase):
         self.Body.addObject(self.Wedge001)
         self.Doc.recompute()
         self.assertAlmostEqual(self.Wedge001.Shape.Volume, 1/2.0 * (10*10 - 9*8) * 10)
+
+    def _placedBoxes(self, typeName, placement):
+        self.Body = self.Doc.addObject('PartDesign::Body','Body')
+        self.Box = self.Body.newObject('PartDesign::AdditiveBox','Box')
+        self.Box.MapMode = 'Deactivated'
+        self.Box.Placement = FreeCAD.Placement(FreeCAD.Vector(1, 2, 3),
+                                               FreeCAD.Rotation(FreeCAD.Vector(0, 0, 1), 20))
+        self.Box001 = self.Body.newObject('PartDesign::' + typeName,'Box001')
+        self.Box001.Length = self.Box001.Width = self.Box001.Height = 4
+        self.Box001.MapMode = 'Deactivated'
+        self.Box001.Placement = placement
+        self.Doc.recompute()
+
+    def testSubtractiveMissingBase(self):
+        # a cut that removes nothing leaves the base where it was
+        self._placedBoxes('SubtractiveBox', FreeCAD.Placement(FreeCAD.Vector(100, 100, 100),
+                                                              FreeCAD.Rotation()))
+        self.assertAlmostEqual(self.Box001.Shape.Volume, 1000)
+        self.assertTrue(self.Box001.Shape.BoundBox.isInside(self.Box.Shape.BoundBox.Center))
+        self.assertTrue(self.Box001.Placement.isSame(FreeCAD.Placement(
+            FreeCAD.Vector(100, 100, 100), FreeCAD.Rotation()), 1e-12))
+
+    def testSuppressKeepsPlacement(self):
+        placement = FreeCAD.Placement(FreeCAD.Vector(8, 8, 8),
+                                      FreeCAD.Rotation(FreeCAD.Vector(0, 0, 1), 30))
+        self._placedBoxes('AdditiveBox', placement)
+        volume = self.Box001.Shape.Volume
+        self.assertGreater(volume, 1000 + 1e-6)
+        self.Box001.Suppress = True
+        self.Doc.recompute()
+        self.assertTrue(self.Box001.Placement.isSame(placement, 1e-12))
+        self.assertAlmostEqual(self.Box001.Shape.Volume, 1000)
+        self.assertTrue(self.Box001.Shape.BoundBox.isInside(self.Box.Shape.BoundBox.Center))
+        self.Box001.Suppress = False
+        self.Doc.recompute()
+        self.assertTrue(self.Box001.Placement.isSame(placement, 1e-12))
+        self.assertAlmostEqual(self.Box001.Shape.Volume, volume)
+
+    def testFuzzyTolerance(self):
+        # Two boxes 2e-6 apart: the fuse leaves two solids, unless a fuzzy
+        # value closes the gap -- given, or determined from the size of the
+        # shapes (upstream 73f848a3d5)
+        results = {}
+        for fuzzy in (0.0, 1e-5, -1.0):
+            body = self.Doc.addObject('PartDesign::Body', 'FuzzyBody')
+            box = body.newObject('PartDesign::AdditiveBox', 'FuzzyBox')
+            box.Length = box.Width = box.Height = 10
+            other = body.newObject('PartDesign::AdditiveBox', 'FuzzyBox2')
+            other.Length = other.Width = other.Height = 10
+            other.Placement.Base = FreeCAD.Vector(10 + 2e-6, 0, 0)
+            other.FuzzyTolerance = fuzzy
+            self.Doc.recompute()
+            results[fuzzy] = ('Invalid' in other.State,
+                              len(other.Shape.Solids) if not other.Shape.isNull() else 0)
+        self.assertEqual(results[0.0], (False, 2), results)
+        self.assertEqual(results[1e-5], (False, 1), results)
+        self.assertEqual(results[-1.0], (False, 1), results)
 
     def tearDown(self):
         #closing doc

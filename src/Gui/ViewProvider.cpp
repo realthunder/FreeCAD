@@ -741,6 +741,12 @@ bool ViewProvider::mouseWheelEvent(int delta, const SbVec2s &cursorPos, const Vi
     return false;
 }
 
+bool ViewProvider::editContextMenu(MenuItem* menu)
+{
+    (void)menu;
+    return false;
+}
+
 void ViewProvider::setupContextMenu(QMenu* menu, QObject* receiver, const char* method)
 {
     auto vector = getExtensionsDerivedFromType<Gui::ViewProviderExtension>();

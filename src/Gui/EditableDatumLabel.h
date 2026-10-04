@@ -26,6 +26,7 @@
 
 #include <QObject>
 #include <QString>
+#include <fastsignals/signal.h>
 #include <Gui/QuantitySpinBox.h>
 
 #include "OnViewEntry.h"
@@ -33,7 +34,10 @@
 
 #include <FCGlobal.h>
 
+class SoEventCallback;
+class SoGroup;
 class SoNodeSensor;
+class SoPickStyle;
 class SoTransform;
 class QKeyEvent;
 
@@ -54,6 +58,15 @@ public:
         Forced
     };
 
+    /** The rendering order of a label's dimension (SoFCPathAnnotation::
+     * priority). Over the plain annotations and the priority -2 shape
+     * preview of a feature in edit: on a served view the label is in the
+     * scene with them, where the desktop draws it as an overlay over all
+     * of the frame. What else hangs from the on-view root and must stay
+     * over the labels takes a higher one.
+     */
+    static constexpr int OnViewPriority = 1;
+
     EditableDatumLabel(ViewerContext* view, const Base::Placement& plc, SbColor color, bool autoDistance = false, bool avoidMouseCursor = false);
     EditableDatumLabel(ViewerContext* view, const Base::Placement& plc, bool autoDistance = false, bool avoidMouseCursor = false);
 
@@ -63,7 +76,9 @@ public:
     void deactivate();
 
     void startEdit(double val, QObject* eventFilteringObj = nullptr, bool visibleToMouse = false);
-    void stopEdit();
+    /// End the edit, the label showing the value typed, or with \a writeChanges
+    /// false the value the edit started from
+    void stopEdit(bool writeChanges = true);
     bool isActive() const;
     bool isInEdit() const;
     double getValue() const;
@@ -85,6 +100,12 @@ public:
     void setLabelRecommendedDistance();
     void setLabelAutoDistanceReverse(bool val);
     void setSpinboxVisibleToMouse(bool val);
+    /** Whether a click on the label in the view emits clicked(), which also
+     * makes the label stop the pointer. Off by default: the sketcher's
+     * labels are not to be clicked. A served view's click reaches the label
+     * the same way, as a replayed event through the scene.
+     */
+    void setPickable(bool val);
 
     /** @name Finished editing, as distinct from set
      *
@@ -120,6 +141,9 @@ public:
     SbVec3f getAnchorPoint() const;
     /// The box's text exactly as a desktop user would read it.
     QString getText() const;
+    /// The point size the label draws its number in, which the box takes
+    /// (the client keeps its own minimum, as the desktop does)
+    double getFontPointSize() const;
     /// What selectNumber() left selected, so the client can show the same.
     void getSelection(int& start, int& length) const;
     /// Deliver a key to the box, the desktop's focus having done it there.
@@ -169,6 +193,11 @@ Q_SIGNALS:
     void parameterUnset();
     /// Ctrl+Enter: commit every visible parameter of this stage
     void finishEditingOnAllOVPs();
+    /// the label was clicked in the view, when pickable (upstream 6fa9125919)
+    void clicked(Gui::EditableDatumLabel* label);
+    /// the entry box lost the focus -- on the desktop only, a box that is
+    /// never shown never has it
+    void focusLost();
 
 protected:
     bool eventFilter(QObject* watched, QEvent* event) override;
@@ -181,9 +210,28 @@ private:
     SbVec3f getTextCenterPoint() const;
     /// Tell the view its on-view set moved, so a mirror can restate it.
     void notifyChanged();
+    /// Follow the view's camera, the node it has now
+    void attachCameraSensor();
+    /// Stop following it
+    void dropCameraSensor();
+    /** The view is going. While it is still itself (\a viewAlive) the
+     * label is taken out of it as deactivate() would; after, it only lets
+     * go of it: nothing of the view may be reached then.
+     */
+    void forgetViewer(bool viewAlive) override;
+    static void eventCallback(void* data, SoEventCallback* cb);
+    void handleEvent(SoEventCallback* cb);
 
 private:
+    /// Take root out of the group activate() hung it under.
+    void unhang();
+
     SoSeparator* root;
+    /// Where activate() hung root, held: the view's on-view root of the
+    /// moment, which on a mirror changes as the view joins and leaves an
+    /// edit session -- asking the view again on the way out would miss
+    /// the label it hung before.
+    SoGroup* hungUnder = nullptr;
     SoTransform* transform;
     ViewerContext* viewer;
     QuantitySpinBox* spinBox;
@@ -194,6 +242,10 @@ private:
     bool lockedAppearance;
 
     Function function;
+
+    SoEventCallback* clickCallback;
+    SoPickStyle* pickStyle;
+    fastsignals::scoped_connection connCameraReplaced;
 };
 
 }

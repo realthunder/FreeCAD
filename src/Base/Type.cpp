@@ -92,6 +92,15 @@ void Type::importModule(const char* TypeName)
 {
     // cut out the module name
     string Mod = getModuleName(TypeName);
+    // A name with no "Module::" prefix names no module -- "BadType" is what
+    // a property of an unregistered class saves.  Asking anyway is not free
+    // and is never remembered: importlib's find_spec("") walks every
+    // sys.path entry before answering None (4.4 ms each on a monitored
+    // Windows filesystem), then the import fails.  17058 such properties
+    // took a headless open of MiSTer.FCStd from 2.4 s to 80 s.
+    if (Mod.empty()) {
+        return;
+    }
     // ignore base modules
     if (Mod != "App" && Mod != "Gui" && Mod != "Base") {
         // remember already loaded modules

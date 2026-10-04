@@ -323,6 +323,31 @@ void DocumentObject::purgeTouched()
     }
 }
 
+void DocumentObject::freeze()
+{
+    if (isFreezed())
+        return;
+    if (_pDoc)
+        _pDoc->onBeforeChangeFreeze(this);
+    StatusBits.set(ObjectStatus::Freeze);
+    // Not a property change, so nothing else tells the Gui: this refreshes
+    // the tree icon and marks the document modified, the state being saved.
+    if (_pDoc)
+        _pDoc->signalTouchedObject(*this);
+}
+
+void DocumentObject::unfreeze(bool noRecompute)
+{
+    if (!isFreezed())
+        return;
+    if (_pDoc)
+        _pDoc->onBeforeChangeFreeze(this);
+    StatusBits.reset(ObjectStatus::Freeze);
+    // Whatever changed while frozen, in its inputs or upstream of it, was
+    // never acted on, so the next recompute must run it.
+    touch(noRecompute);
+}
+
 /**
  * @brief Enforces this document object to be recomputed.
  * This can be useful to recompute the feature without
@@ -341,6 +366,9 @@ void DocumentObject::enforceRecompute()
  */
 bool DocumentObject::mustRecompute() const
 {
+    if (StatusBits.test(ObjectStatus::Freeze))
+        return false;
+
     if (StatusBits.test(ObjectStatus::Enforce))
         return true;
 
@@ -468,6 +496,8 @@ const char* DocumentObject::getStatusString() const
         const char* text = getDocument()->getErrorDescription(this);
         return text ? text : "Error";
     }
+    else if (isFreezed())
+        return "Freezed"; // upstream's word, which scripts compare against
     else if (isTouched())
         return "Touched";
     else
@@ -1030,8 +1060,10 @@ void DocumentObject::onChanged(const Property* prop)
     // below is not the question "is this a change to the document".
     Document::checkUserEdit(getDocument(), this, prop);
 
-    // set object touched if it is an input property
+    // set object touched if it is an input property; a frozen object keeps
+    // the change (the property stays touched) but does not act on it
     if (!testStatus(ObjectStatus::NoTouch)
+            && !testStatus(ObjectStatus::Freeze)
             && !(prop->getType() & Prop_Output)
             && !prop->testStatus(Property::Output))
     {

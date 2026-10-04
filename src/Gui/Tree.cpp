@@ -260,6 +260,19 @@ private:
  */
 static unsigned long _TreeItemGeneration = 1;
 
+enum ItemStatus {
+    ItemStatusVisible = 1,
+    ItemStatusInvisible = 2,
+    ItemStatusError = 4,
+    ItemStatusTouched = 8,
+    ItemStatusHidden = 16,
+    ItemStatusExternal = 32,
+    ItemStatusShowOnTop = 64,
+    ItemStatusUnSelectable = 128,
+    ItemStatusSuppressed = 256,
+    ItemStatusFrozen = 512,
+};
+
 /** The link between the tree and a document object.
  * Every object in the document gets its associated DocumentObjectItem which controls
  * the visibility and the functions of the object.
@@ -368,6 +381,10 @@ private:
     std::vector<std::string> mySubs;
     typedef fastsignals::connection Connection;
     int previousStatus;
+    /// whether the last status test found the object suppressed
+    bool isSuppressedStatus() const {
+        return previousStatus != -1 && (previousStatus & ItemStatusSuppressed);
+    }
     int selected;
     bool populated;
     // The claimed children this item was last fully populated from, and the
@@ -433,7 +450,8 @@ public:
 
     void refreshIcons();
 
-    void checkDropEvent(QDropEvent *event, bool *replace = nullptr, int *reorder = nullptr);
+    void checkDropEvent(QDropEvent *event, bool *replace = nullptr, int *reorder = nullptr,
+                        QTreeWidgetItem **target = nullptr);
 
     void setReorderingItem(QTreeWidgetItem *item, bool before = true)
     {
@@ -700,6 +718,7 @@ public:
     QPixmap pxHidden;
     QPixmap pxError;
     QPixmap pxRecompute;
+    QPixmap pxFrozen;
     QPixmap pxExternal;
     QPixmap pxInvisibleOnTop;
     QPixmap pxVisibleOnTop;
@@ -1296,6 +1315,7 @@ void TreeWidget::Private::refreshIcons()
     pxHidden = BitmapFactory().pixmap("TreeHidden").scaled(32, 32, Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
     pxError = BitmapFactory().pixmap("TreeError").scaled(32, 32, Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
     pxRecompute = BitmapFactory().pixmap("TreeRecompute").scaled(32, 32, Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
+    pxFrozen = BitmapFactory().pixmap("Std_ToggleFreeze").scaled(32, 32, Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
     pxExternal = BitmapFactory().pixmap("TreeExternal").scaled(32, 32, Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
     pxInvisibleOnTop = BitmapFactory().pixmap("TreeItemInvisibleOnTop");
     pxVisibleOnTop = BitmapFactory().pixmap("TreeItemVisibleOnTop");
@@ -2581,12 +2601,22 @@ void TreeWidget::mouseMoveEvent(QMouseEvent *event) {
                 nullptr, event->buttons(), event->modifiers());
         bool replace = true;
         int reorder = 0;
-        pimpl->checkDropEvent(&de, &replace, &reorder);
+        QTreeWidgetItem *target = nullptr;
+        pimpl->checkDropEvent(&de, &replace, &reorder, &target);
+        Qt::DropAction action = de.dropAction();
+        // The target's own reading of the action, as in dragMoveEvent(): this
+        // is the path every tree drag takes, as startDrag() never starts Qt's
+        // (upstream 3082039b3a)
+        if (de.isAccepted() && target && target->type() == ObjectType) {
+            if (auto vp = static_cast<DocumentObjectItem*>(target)->object())
+                action = vp->getDropActionForTarget(action);
+        }
+        FC_LOG("drag action " << int(action) << (de.isAccepted() ? "" : " refused"));
         Qt::CursorShape cursor;
         if(!de.isAccepted()) {
             cursor = Qt::ForbiddenCursor;
         } else {
-            switch(de.dropAction()) {
+            switch(action) {
             case Qt::CopyAction:
                 cursor = Qt::DragCopyCursor;
                 break;
@@ -3098,10 +3128,18 @@ void TreeWidget::dragMoveEvent(QDragMoveEvent *event)
     if (!event->isAccepted())
         return;
 
-    pimpl->checkDropEvent(event);
+    QTreeWidgetItem *target = nullptr;
+    pimpl->checkDropEvent(event, nullptr, nullptr, &target);
+    // The cursor only: a SubShapeBinder adds what is dropped without Ctrl and
+    // replaces with it, the reverse of Move and Copy (upstream 3082039b3a)
+    if (event->isAccepted() && target && target->type() == ObjectType) {
+        if (auto vp = static_cast<DocumentObjectItem*>(target)->object())
+            event->setDropAction(vp->getDropActionForTarget(event->dropAction()));
+    }
 }
 
-void TreeWidget::Private::checkDropEvent(QDropEvent *event, bool *pReplace, int *pReorder)
+void TreeWidget::Private::checkDropEvent(QDropEvent *event, bool *pReplace, int *pReorder,
+                                         QTreeWidgetItem **pTarget)
 {
     checkActiveDocument = false;
 
@@ -3141,6 +3179,8 @@ void TreeWidget::Private::checkDropEvent(QDropEvent *event, bool *pReplace, int 
         if (targetItem)
             master->setCurrentItem(targetItem, 0, QItemSelectionModel::NoUpdate);
     }
+    if (pTarget)
+        *pTarget = targetItem;
 
     auto items = master->selectedItems();
 
@@ -5191,17 +5231,6 @@ TreeDockWidget::~TreeDockWidget()
 {
 }
 
-enum ItemStatus {
-    ItemStatusVisible = 1,
-    ItemStatusInvisible = 2,
-    ItemStatusError = 4,
-    ItemStatusTouched = 8,
-    ItemStatusHidden = 16,
-    ItemStatusExternal = 32,
-    ItemStatusShowOnTop = 64,
-    ItemStatusUnSelectable = 128,
-};
-
 QIcon TreeWidget::Private::getItemIcon(App::Document *doc, const ViewProviderDocumentObject *vp)
 {
     App::DocumentObject *obj = vp->getObject();
@@ -5213,6 +5242,8 @@ QIcon TreeWidget::Private::getItemIcon(App::Document *doc, const ViewProviderDoc
         currentStatus |= ItemStatusExternal;
     if (obj->isError())
         currentStatus |= ItemStatusError;
+    if (obj->isFreezed())
+        currentStatus |= ItemStatusFrozen;
     if (obj->isTouched() || obj->mustExecute()==1)
         currentStatus |= ItemStatusTouched;
 
@@ -7459,7 +7490,7 @@ void DocumentObjectItem::setHighlight(bool set, Gui::HighlightMode high) {
         f.setOverline(set);
         break;
     case HighlightMode::StrikeOut:
-        f.setStrikeOut(set);
+        f.setStrikeOut(set || isSuppressedStatus());
         break;
     case HighlightMode::Blue:
         highlight(QColor(200,200,255));
@@ -7482,7 +7513,8 @@ void DocumentObjectItem::setHighlight(bool set, Gui::HighlightMode high) {
         f.setItalic(false);
         f.setUnderline(false);
         f.setOverline(false);
-        f.setStrikeOut(false);
+        // a suppressed object stays struck out
+        f.setStrikeOut(isSuppressedStatus());
         highlight(QColor());
         break;
     }
@@ -7545,6 +7577,8 @@ void DocumentObjectItem::testItemStatus(bool resetStatus)
         currentStatus |= ItemStatusHidden;
     if (pObject->isError())
         currentStatus |= ItemStatusError;
+    if (pObject->isFreezed())
+        currentStatus |= ItemStatusFrozen;
     if (pObject->isTouched() || obj->mustExecute()==1)
         currentStatus |= ItemStatusTouched;
     if (visible)
@@ -7556,6 +7590,8 @@ void DocumentObjectItem::testItemStatus(bool resetStatus)
 
     if (!object()->Selectable.getValue())
         currentStatus |= ItemStatusUnSelectable;
+    if (object()->isSuppressed())
+        currentStatus |= ItemStatusSuppressed;
 
     TimingStop(testStatus2);
 
@@ -7563,6 +7599,15 @@ void DocumentObjectItem::testItemStatus(bool resetStatus)
         return;
 
     _Timing(1,testStatus3);
+
+    // A suppressed object's label is struck out (upstream f4be654473)
+    bool suppressed = (currentStatus & ItemStatusSuppressed) != 0;
+    if (suppressed != isSuppressedStatus()
+            || (resetStatus && font(0).strikeOut() != suppressed)) {
+        QFont f = font(0);
+        f.setStrikeOut(suppressed || highlightMode == HighlightMode::StrikeOut);
+        setFont(0, f);
+    }
 
     previousStatus = currentStatus;
 
@@ -7636,6 +7681,10 @@ QIcon TreeWidget::Private::getItemIcon(int currentStatus,
     auto &pimpl = TreeWidget::instance()->pimpl;
     if (currentStatus & ItemStatusError)
         px = pimpl->pxError;
+    // In the touched mark's corner: a frozen object may well have inputs
+    // changed since, but it is not waiting for a recompute
+    else if (currentStatus & ItemStatusFrozen)
+        px = pimpl->pxFrozen;
     else if (currentStatus & ItemStatusTouched)
         px = pimpl->pxRecompute;
 
@@ -7680,7 +7729,9 @@ QIcon TreeWidget::Private::getItemIcon(int currentStatus,
         } else {
             pixmap = (currentStatus & ItemStatusVisible) ? &pimpl->pxVisible : &pimpl->pxInvisible;
         }
-        icons.emplace_back(Gui::treeVisibilityIconTag(), *pixmap);
+        // No eye for what is not drawn (upstream 381cb92f0a)
+        if (vp->canToggleVisibility())
+            icons.emplace_back(Gui::treeVisibilityIconTag(), *pixmap);
 
         if (currentStatus & ItemStatusUnSelectable) {
             icons.emplace_back(Gui::treeUnselectableIconTag(), pimpl->pxUnselectable);

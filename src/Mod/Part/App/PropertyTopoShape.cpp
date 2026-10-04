@@ -281,28 +281,34 @@ const ParsedShape* parseBlob(App::FileBlobManager& manager,
         // each entry, and that file may name an earlier one still. The guard
         // is against a cycle a foreign writer could produce, not against the
         // depth a real project reaches.
-        FC_ERR("Geometry file " << blob->path() << " is nested past any depth a save writes");
+        FC_ERR("Geometry file " << blob->hash() << " is nested past any depth a save writes");
         return nullptr;
     }
 
     ParsedShape parsed;
-    Base::FileInfo file(blob->path());
     // Held for the length of the read: the tables the resolver hands back live
     // in the cache, and only a live handle keeps an entry from being swept.
     std::vector<App::FileBlobHandle> sources;
     try {
-        Base::ifstream in(file, std::ios::in | std::ios::binary);
-        if (!in) {
-            FC_ERR("Cannot read the geometry in " << blob->path());
+        // The bytes, not the file: restored content is served out of the
+        // document's archive copy and has no file until something needs one,
+        // and a parse is no reason to write thousands of them
+        // (docs/FileBlobsManager.md sec 14). Nothing below names the blob by
+        // path for the same reason.
+        std::string bytes;
+        if (!blob->read(bytes)) {
+            FC_ERR("Cannot read the geometry in " << blob->hash());
         }
-        else if (file.hasExtension("bin")) {
+        else if (blob->hasExtension("bin")) {
             // The binary format has no way to name another file, so nothing
             // written through it borrows anything.
+            std::istringstream in(std::move(bytes), std::ios::in | std::ios::binary);
             TopoShape shape;
             shape.importBinary(in);
             parsed.root = shape.getShape();
         }
         else {
+            std::istringstream in(std::move(bytes), std::ios::in | std::ios::binary);
             BRep_Builder builder;
             auto set = std::make_shared<ShapeRefSet>(builder);
             set->setResolver([&](const std::string& hash) -> const ShapeRefSet* {
@@ -323,7 +329,7 @@ const ParsedShape* parseBlob(App::FileBlobManager& manager,
         }
     }
     catch (const Standard_Failure& e) {
-        FC_ERR("Failed to read the geometry in " << blob->path() << ": " << e.GetMessageString());
+        FC_ERR("Failed to read the geometry in " << blob->hash() << ": " << e.GetMessageString());
         parsed = ParsedShape();
     }
     // Cached even when the parse failed: a file that cannot be read does not
@@ -437,7 +443,7 @@ void PropertyPartShape::makeBlob(Base::Writer& writer) const
         // and in this format. A copied object carries a handle on another
         // document's file, and PreferBinary can change between saves.
         if (_blob->owner() != &manager
-                || !Base::FileInfo(_blob->path()).hasExtension(ext)) {
+                || !_blob->hasExtension(ext)) {
             _blob.reset();
             _blobPlan.clear();
         }
@@ -642,7 +648,7 @@ void PropertyPartShape::serveFromBlob()
         return;
     auto owner = Base::freecad_dynamic_cast<App::DocumentObject>(getContainer());
 
-    FC_TRACE(getFullName() << " parsing " << blob->path());
+    FC_TRACE(getFullName() << " parsing " << blob->hash());
     const ParsedShape* parsed = parseBlob(blobManager(), blob);
     const TopoDS_Shape geometry = parsed ? parsed->root : TopoDS_Shape();
     // What the file says it borrows, taken from the file itself. Without this

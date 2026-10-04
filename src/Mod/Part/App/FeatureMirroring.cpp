@@ -43,6 +43,7 @@
 #include <App/OriginFeature.h>
 #include "FeatureMirroring.h"
 #include "DatumFeature.h"
+#include "TopoShapeOpCode.h"
 
 
 
@@ -136,6 +137,7 @@ App::DocumentObjectExecReturn *Mirroring::execute()
     App::DocumentObject* link = Source.getValue();
     if (!link)
         return new App::DocumentObjectExecReturn("No object linked");
+    copyMaterial(link);
 
     App::DocumentObject* refObject = MirrorPlane.getValue();
 
@@ -269,7 +271,19 @@ App::DocumentObjectExecReturn *Mirroring::execute()
         auto shape = Feature::getTopoShape(link);
         if (shape.isNull())
             throw Standard_Failure("Cannot mirror empty shape");
-        this->Shape.setValue(TopoShape(0,getDocument()->getStringHasher()).makEMirror(shape,ax2));
+        // Our Shape takes its Location from our own Placement
+        // (Feature::onChanged), not from the source, so mirror the source's
+        // geometry where its Location puts it and leave no Location on the
+        // result. makEMirror() would keep the source's Location, and the
+        // geometry beneath it is only right with that Location on top.
+        TopLoc_Location loc = shape.getShape().Location();
+        gp_Trsf mat;
+        mat.SetMirror(ax2);
+        mat.Multiply(loc.Transformation());
+        shape.setShape(shape.getShape().Located(TopLoc_Location()), false);
+        BRepBuilderAPI_Transform mkTrf(shape.getShape(), mat);
+        this->Shape.setValue(TopoShape(0,getDocument()->getStringHasher()).makEShape(
+                    mkTrf, shape, Part::OpCodes::Mirror));
 #endif
         return Part::Feature::execute();
     }

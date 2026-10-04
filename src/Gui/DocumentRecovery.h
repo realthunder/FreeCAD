@@ -24,11 +24,16 @@
 #ifndef GUI_DIALOG_DOCUMENTRECOVERY_H
 #define GUI_DIALOG_DOCUMENTRECOVERY_H
 
+#include <atomic>
+#include <functional>
 #include <QDialog>
 #include <QFileInfo>
 #include <QFileInfoList>
 #include <QList>
+#include <QPair>
 #include <QScopedPointer>
+
+class QTreeWidgetItem;
 
 
 namespace Gui { namespace Dialog {
@@ -43,7 +48,11 @@ class DocumentRecovery : public QDialog
     Q_OBJECT
 
 public:
-    explicit DocumentRecovery(const QList<QFileInfo>&, QWidget* parent = nullptr);
+    /// \a dirs are the directories of crashed sessions, found through their
+    /// lock files; \a lockless the recoverable ones no lock file leads to,
+    /// listed marked and unchecked
+    DocumentRecovery(const QList<QFileInfo>& dirs, const QList<QFileInfo>& lockless,
+                     QWidget* parent = nullptr);
     ~DocumentRecovery() override;
 
     void accept() override;
@@ -53,11 +62,17 @@ protected:
     void closeEvent(QCloseEvent*) override;
     void contextMenuEvent(QContextMenuEvent*) override;
     QString createProjectFile(const QString&);
-    void cleanup(QDir&, const QList<QFileInfo>&, const QString&);
 
 protected:
     void onButtonCleanupClicked();
     void onDeleteSection();
+
+private:
+    /// The items whose check box is ticked; recovery and cleanup act on these
+    QList<QTreeWidgetItem*> checkedItems() const;
+    void updateButtons();
+    /// Delete the transient directories of \a items, after asking
+    void removeItems(const QList<QTreeWidgetItem*>& items);
 
 private:
     static std::string doctools;
@@ -66,9 +81,18 @@ private:
     Q_DECLARE_PRIVATE(DocumentRecovery)
 };
 
+/// Stale transient directories, with the lock file (may be empty) to drop
+/// once all of them are gone
+using StaleDirGroup = QPair<QString, QFileInfoList>;
+
 class DocumentRecoveryFinder {
 public:
     bool checkForPreviousCrashes();
+
+    /// Whether \a dir holds anything the recovery dialog can offer. A transient
+    /// directory of a dead session without it holds only that session's
+    /// blobs, and is deleted.
+    static bool isRecoverable(const QFileInfo& dir);
 
 private:
     void checkDocumentDirs(QDir&, const QList<QFileInfo>&, const QString&);
@@ -76,26 +100,61 @@ private:
 
 private:
     QList<QFileInfo> restoreDocFiles;
+    /// Recoverable directories no lock file leads to
+    QList<QFileInfo> locklessDocFiles;
+    QList<StaleDirGroup> staleDirs;
 };
 
 class DocumentRecoveryHandler {
 public:
     void checkForPreviousCrashes(const std::function<void(QDir&, const QList<QFileInfo>&, const QString&)> & callableFunc) const;
+
+    /// Transient directories of dead processes that left no lock file to find
+    /// them by. Only the GUI makes one, so these are FreeCADCmd's, a Python
+    /// host's or a test's.
+    QFileInfoList findOrphansWithoutLock() const;
+
+    /// Remove the lock file \a lockFile of a dead instance, provided none of
+    /// \a dirs survives and nobody holds the lock.
+    static void removeStaleLock(const QString& lockFile, const QFileInfoList& dirs);
 };
 
 class DocumentRecoveryCleaner {
 public:
-    void clearDirectory(const QFileInfo& dir);
+    /// Delete the content of \a dir except the ignored entries. Returns false
+    /// if anything not ignored survives.
+    bool clearDirectory(const QFileInfo& dir);
+    /// clearDirectory(), then \a dir itself
+    bool removeDirectory(const QFileInfo& dir);
     void setIgnoreFiles(const QStringList&);
     void setIgnoreDirectories(const QFileInfoList&);
+    /// Count each deleted entry into \a removed and stop once \a cancel is
+    /// set. Both must outlive the calls.
+    void setProgress(std::atomic<int>* removed, const std::atomic<bool>* cancel);
+
+    /// Remove each of \a dirs -- only its content if \a keepRoots -- on a
+    /// worker thread, behind a modal progress dialog that can cancel it.
+    /// Returns the directories that were not removed completely.
+    QFileInfoList removeWithProgress(const QFileInfoList& dirs, bool keepRoots,
+                                     QWidget* parent) const;
+
+    /// Remove the directories of \a groups on a background thread with no
+    /// dialog, then each group's lock file if its directories are all gone.
+    /// Canceled when the application quits.
+    static void removeInBackground(const QList<StaleDirGroup>& groups);
 
 private:
-    void subtractFiles(QStringList&);
-    void subtractDirs(QFileInfoList&);
+    bool removeFile(const QFileInfo& fi);
+    bool canceled() const
+    {
+        return cancel && cancel->load(std::memory_order_relaxed);
+    }
 
 private:
     QStringList ignoreFiles;
     QFileInfoList ignoreDirs;
+    std::atomic<int>* removed = nullptr;
+    const std::atomic<bool>* cancel = nullptr;
 };
 
 } //namespace Dialog

@@ -964,9 +964,97 @@ class DocumentRecomputeCases(unittest.TestCase):
         res = self.Doc.recompute()
         self.assertEqual(res, 5)
 
+    def _counts(self):
+        return (self.L1.ExecCount, self.L2.ExecCount, self.L3.ExecCount)
+
+    def testFreeze(self):
+        """A frozen object is not recomputed and does not pass a change on (upstream
+        f633fa476a, Std_ToggleFreeze)"""
+        self.L1.Link = self.L2
+        self.L2.Link = self.L3
+        self.Doc.recompute()
+        base = self._counts()
+
+        self.L2.Frozen = True
+        self.assertTrue(self.L2.Frozen)
+        self.assertIn("Frozen", self.L2.State)
+        self.assertEqual(self.L2.getStatusString(), "Freezed")
+
+        # a change upstream of it reaches neither it nor what depends on it
+        self.L3.Integer = 1
+        self.Doc.recompute()
+        self.assertEqual(self._counts(), (base[0], base[1], base[2] + 1))
+        self.assertNotIn("Touched", self.L2.State)
+
+        # nor does a change of its own input, or an explicit recompute
+        self.L2.Integer = 2
+        self.assertNotIn("Touched", self.L2.State)
+        self.Doc.recompute()
+        self.L2.recompute()
+        self.assertEqual(self._counts(), (base[0], base[1], base[2] + 1))
+
+        # unfreezing catches it up, and what depends on it
+        self.L2.Frozen = False
+        self.assertNotIn("Frozen", self.L2.State)
+        self.assertIn("Touched", self.L2.State)
+        self.Doc.recompute()
+        self.assertEqual(self._counts(), (base[0] + 1, base[1] + 1, base[2] + 1))
+
+    def testFreezeSaveRestore(self):
+        """The freeze is saved as upstream's Object attribute Freeze="1" """
+        import os
+        import tempfile
+        import zipfile
+
+        self.L1.Link = self.L2
+        self.L2.Link = self.L3
+        self.Doc.recompute()
+        self.L2.Frozen = True
+        path = os.path.join(tempfile.gettempdir(), "FreezeTest.FCStd")
+        self.Doc.saveAs(path)
+        with zipfile.ZipFile(path) as zf:
+            xml = zf.read("Document.xml").decode("utf-8")
+        entries = [l for l in xml.splitlines() if "<Object " in l and 'Freeze="1"' in l]
+        self.assertEqual(len(entries), 1)
+        self.assertIn('name="Label_2"', entries[0])
+
+        FreeCAD.closeDocument(self.Doc.Name)
+        self.Doc = FreeCAD.openDocument(path)
+        L1, L2, L3 = (self.Doc.getObject(n) for n in ("Label_1", "Label_2", "Label_3"))
+        self.assertTrue(L2.Frozen)
+        self.assertFalse(L1.Frozen or L3.Frozen)
+        before = (L1.ExecCount, L2.ExecCount, L3.ExecCount)
+        L3.Integer = 7
+        self.Doc.recompute()
+        self.assertEqual((L1.ExecCount, L2.ExecCount, L3.ExecCount),
+                         (before[0], before[1], before[2] + 1))
+
+    def testFreezeUndoRedo(self):
+        """Freezing is undone and redone as a property change is (upstream's is not)"""
+        self.Doc.UndoMode = 1
+        integer = self.L2.Integer
+        self.Doc.openTransaction("freeze")
+        self.L2.Frozen = True
+        self.Doc.commitTransaction()
+        self.Doc.openTransaction("unfreeze and edit")
+        self.L2.Frozen = False
+        self.L2.Integer = integer + 5
+        self.Doc.commitTransaction()
+
+        self.Doc.undo()
+        self.assertTrue(self.L2.Frozen)
+        self.assertEqual(self.L2.Integer, integer)
+        self.Doc.undo()
+        self.assertFalse(self.L2.Frozen)
+        self.Doc.redo()
+        self.assertTrue(self.L2.Frozen)
+        self.Doc.redo()
+        self.assertFalse(self.L2.Frozen)
+        self.assertEqual(self.L2.Integer, integer + 5)
+
     def tearDown(self):
         # closing doc
-        FreeCAD.closeDocument("RecomputeTests")
+        FreeCAD.closeDocument(self.Doc.Name)
 
 
 class UndoRedoCases(unittest.TestCase):
@@ -1812,6 +1900,44 @@ class DocumentPropertyCases(unittest.TestCase):
     def tearDown(self):
         # closing doc
         FreeCAD.closeDocument("PropertyTests")
+
+
+class DocumentVarSetCases(unittest.TestCase):
+    """App::VarSet, a bag of variables (upstream 095e94183a, ec841ed6d4)"""
+
+    def setUp(self):
+        self.Doc = FreeCAD.newDocument("VarSetTests")
+
+    def testVarSetHoldsVariablesForExpressions(self):
+        varSet = self.Doc.addObject("App::VarSet", "VarSet")
+        self.assertEqual(varSet.TypeId, "App::VarSet")
+        varSet.addProperty("App::PropertyLength", "Width", "Variables")
+        varSet.Width = 12
+        feature = self.Doc.addObject("App::FeatureTest", "Feature")
+        feature.setExpression("Float", "VarSet.Width * 2")
+        self.Doc.recompute()
+        self.assertAlmostEqual(feature.Float, 24)
+        varSet.Width = 5
+        self.Doc.recompute()
+        self.assertAlmostEqual(feature.Float, 10)
+
+    def testVarSetGoesInAGroupAndSurvivesReload(self):
+        group = self.Doc.addObject("App::DocumentObjectGroup", "Group")
+        varSet = self.Doc.addObject("App::VarSet", "VarSet")
+        varSet.addProperty("App::PropertyInteger", "Count", "Variables")
+        varSet.Count = 3
+        group.addObject(varSet)
+        path = os.path.join(tempfile.gettempdir(), "VarSetTests.FCStd")
+        self.Doc.saveAs(path)
+        FreeCAD.closeDocument(self.Doc.Name)
+        self.Doc = FreeCAD.openDocument(path)
+        varSet = self.Doc.getObject("VarSet")
+        self.assertEqual(varSet.TypeId, "App::VarSet")
+        self.assertEqual(varSet.Count, 3)
+        self.assertIn(varSet, self.Doc.getObject("Group").Group)
+
+    def tearDown(self):
+        FreeCAD.closeDocument(self.Doc.Name)
 
 
 class DocumentExpressionCases(unittest.TestCase):

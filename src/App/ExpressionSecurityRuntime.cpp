@@ -69,6 +69,7 @@ static std::string permissionMessage(const std::string &principal,
         case PrincipalClass::Document: who = "this document"; break;
         case PrincipalClass::Session:  who = "this session";  break;
         case PrincipalClass::Addon:    who = "this addon";    break;
+        case PrincipalClass::Client:   who = "this client";   break;
         }
     }
     if (promptable)
@@ -105,6 +106,10 @@ struct ScopeEntry {
     /// a chain method's call: the object whose code runs as `owner`
     const App::DocumentObject *via = nullptr;
     std::string principal;  // empty for a document scope until first use
+    /// a remote client's scope: its connection, for the audit line
+    std::string client;
+    /// a view-only client: doc.write.self is refused before any grant
+    bool readOnly = false;
 };
 
 static thread_local std::vector<ScopeEntry> _ScopeStack;
@@ -145,6 +150,8 @@ static std::string scopeContext(const ScopeEntry &top)
     if (top.owner && top.owner->getNameInDocument())
         objName = top.owner->getNameInDocument();
     std::string context = docName.empty() ? objName : docName + ":" + objName;
+    if (!top.client.empty())
+        context += " client " + top.client + (top.readOnly ? " view-only" : "");
     if (top.via && top.via != top.owner && top.via->getNameInDocument()) {
         const App::Document *viaDoc = top.via->getDocument();
         context += std::string(" via ") + (viaDoc ? viaDoc->getName() : "") + "#"
@@ -157,6 +164,27 @@ Runtime::Scope::Scope(const char *principalId)
 {
     ScopeEntry entry;
     entry.principal = principalId ? principalId : "session";
+    _ScopeStack.push_back(std::move(entry));
+    pushed = true;
+}
+
+Runtime::Scope::Scope(const App::Document *doc)
+{
+    if (!doc)
+        return;
+    ScopeEntry entry;
+    entry.doc = doc;
+    _ScopeStack.push_back(std::move(entry));
+    pushed = true;
+}
+
+Runtime::Scope::Scope(const App::Document *doc, const RemoteClient &client)
+{
+    ScopeEntry entry;
+    entry.doc = doc;
+    entry.principal = client.principal;
+    entry.client = client.context.empty() ? std::string("?") : client.context;
+    entry.readOnly = client.readOnly;
     _ScopeStack.push_back(std::move(entry));
     pushed = true;
 }
@@ -423,6 +451,9 @@ Decision Runtime::resolve(const std::string &principal, Permission perm,
 {
     std::lock_guard<std::recursive_mutex> guard(mutex);
     ensureLoaded();
+    auto pclass = principalClass(principal);
+    if (pclass && !isGrantable(*pclass, perm))
+        return Decision::Deny;  // no grant of any kind reaches this cell
     auto chain = targetChain(perm, target);
     const char *permName = permissionName(perm);
     for (auto &t : chain) {
@@ -453,7 +484,6 @@ Decision Runtime::resolve(const std::string &principal, Permission perm,
     auto it = defaults.find(permName);
     if (it != defaults.end())
         return it->second;
-    auto pclass = principalClass(principal);
     if (!pclass)
         return Decision::Deny;
     return catalogDefault(*pclass, perm);
@@ -466,7 +496,12 @@ void Runtime::check(Permission perm, const std::string &target)
     if (!enforced())
         return;
     std::string principal = currentPrincipal();
-    Decision decision = resolve(principal, perm, target);
+    auto &top = _ScopeStack.back();
+    // a view-only connection's write: the door's decision, outranking
+    // every grant (RemoteClient::readOnly)
+    Decision decision = top.readOnly && perm == Permission::DocWriteSelf
+        ? Decision::Deny
+        : resolve(principal, perm, target);
     if (decision == Decision::Allow)
         return;
 
@@ -474,7 +509,6 @@ void Runtime::check(Permission perm, const std::string &target)
     bool promptable = decision == Decision::Prompt
         && pclass && isPromptable(*pclass, perm);
 
-    auto &top = _ScopeStack.back();
     std::string docName = top.doc ? top.doc->getName() : std::string();
     std::string objName;
     if (top.owner && top.owner->getNameInDocument())
@@ -559,6 +593,14 @@ void Runtime::grant(const std::string &principal, Permission perm,
         const std::string &displayLabel, const std::string &displayPath)
 {
     std::string t = target.empty() ? std::string("*") : target;
+    if (auto pclass = principalClass(principal)) {
+        if (!isGrantable(*pclass, perm))
+            throw Base::ValueError(std::string(permissionName(perm))
+                    + " cannot be granted to a remote client (docs/Sandbox.md 7.20)");
+    }
+    if (scope == "always" && principalClass(principal) && !isPersistablePrincipal(principal))
+        throw Base::ValueError("a grant for " + principal
+                + " lasts this run only: scope must be once or session");
     {
         std::lock_guard<std::recursive_mutex> guard(mutex);
         ensureLoaded();
@@ -745,6 +787,24 @@ void checkPermission(Permission perm, const std::string &target)
 void auditAllowed(Permission perm, const std::string &target, const std::string &context)
 {
     Runtime::instance().auditAllowed(perm, target, context);
+}
+
+void checkHostPath(Permission perm, const std::string &path)
+{
+    // Host code outside any evaluation is trusted (2.4): the user's own
+    // click on Std_RecentMacros, a startup script, an addon's install-time
+    // work.  check() would return here anyway; doing it first keeps the
+    // normalization (a stat per call) off the native path entirely.
+    if (!Runtime::scopeActive())
+        return;
+    const std::string target = normalizeHostPath(path);
+    // Consent is a capability, not a list (S1): a picker-driven command
+    // runs its modal INSIDE the guest's scope, so the path the user just
+    // chose there is theirs to hand back -- refusing it would refuse
+    // Std_Open from a guest.  A command with no picker blessed nothing.
+    if (!target.empty() && pathBlessed(target))
+        return;
+    checkPermission(perm, target.empty() ? std::string("*") : target);
 }
 
 // Ring-0 module roots: in-image in the final design, no permission attached

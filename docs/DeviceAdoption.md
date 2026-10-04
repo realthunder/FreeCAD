@@ -442,6 +442,14 @@ on any backend.
   are, which is why the report counts stale frames beside the times.
   `FC_BGFX_READBACK_SYNC=1` spins frames until the copy lands, which is the
   fully serialized form section 2 costed.
+- **Except for a capture, which is always serialized** (2026-09-27).
+  `renderOffscreen()` is read once, straight after its frame, and nothing
+  redraws it later, so a pipelined capture is the PREVIOUS request's frame.
+  Found by the material icons on Direct3D 11, the Windows default: each
+  icon came out wearing the one before it and the first was blank -- the
+  grab already rendered twice, for the feed's own one-frame lag, and the
+  composite's lag came on top. OpenGL, whose composite is the direct blit,
+  never showed it. `syncReadback` now spins whenever `captureWidth` is set.
 - **Colour only.** `blit` also transfers depth; this does not. At render cache 3
   Coin emits no per-frame geometry (section 8), so nothing is currently depth
   testing against the frame -- but that is a measured fact about one scene

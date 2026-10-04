@@ -30,9 +30,14 @@
    <item row="1" column="0" colspan="2">
     <widget class="QLabel" name="label">
      <property name="text">
-      <string>Press 'Start Recovery' to start the recovery process of the document listed below.
+      <string>Press 'Start Recovery' to recover the checked documents listed below, or 'Cleanup...' to delete their recovery data.
+
+Documents marked with a warning are listed last and not checked by default: their recovery data is older than their saved file, or no lock file claims it. Hover over one for details.
 
 The 'Status' column shows whether the document could be recovered.</string>
+     </property>
+     <property name="wordWrap">
+      <bool>true</bool>
      </property>
     </widget>
    </item>
@@ -69,6 +74,11 @@ The 'Status' column shows whether the document could be recovered.</string>
      <column>
       <property name="text">
        <string>Status</string>
+      </property>
+     </column>
+     <column>
+      <property name="text">
+       <string>Modified</string>
       </property>
      </column>
     </widget>

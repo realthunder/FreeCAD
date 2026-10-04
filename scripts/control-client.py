@@ -183,6 +183,9 @@ def main():
     ap.add_argument("--host", default="127.0.0.1")
     ap.add_argument("--port", type=int, default=8077)
     ap.add_argument("--doc", default="")
+    ap.add_argument("--token", default="",
+                    help="the door secret a gated backend wants "
+                         "(docs/MultiDocServe.md sec 4); rides the upgrade URL")
     ap.add_argument("--listen", type=float, default=0.0,
                     help="after the ops, print pushes for this many seconds")
     ap.add_argument("--timeout", type=float, default=10.0)
@@ -206,6 +209,10 @@ def main():
     path = "/scene?v=0&s=0"
     if args.doc:
         path += "&doc=" + args.doc
+    if args.token:
+        # without it a gated backend answers BadToken and closes, which
+        # left this tool unable to drive one at all
+        path += "&token=" + args.token
     ws = WebSocket(args.host, args.port, path, timeout=args.timeout)
 
     failures = 0

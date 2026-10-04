@@ -166,6 +166,10 @@ Render::SceneSnapshot makeScene()
     Render::SceneSnapshot::Overlay ov;
     ov.id = 9;
     ov.anchor.corner = 2;
+    ov.anchor.posX = 0.25f;
+    ov.anchor.posY = 0.75f;
+    ov.anchor.sizePixels = 132.0f;
+    ov.anchor.autoHideMs = 300.0f;
     ov.draws.push_back(makeDraw(0x3333, meshA, 0x808080ff));
     snap.overlays.push_back(std::move(ov));
 
@@ -363,6 +367,10 @@ void expectScene(const Render::SceneSnapshot& snap)
     ASSERT_EQ(snap.overlays.size(), 1u);
     EXPECT_EQ(snap.overlays[0].id, 9);
     EXPECT_EQ(snap.overlays[0].anchor.corner, 2);
+    EXPECT_EQ(snap.overlays[0].anchor.posX, 0.25f);
+    EXPECT_EQ(snap.overlays[0].anchor.posY, 0.75f);
+    EXPECT_EQ(snap.overlays[0].anchor.sizePixels, 132.0f);
+    EXPECT_EQ(snap.overlays[0].anchor.autoHideMs, 300.0f);
     ASSERT_EQ(snap.overlays[0].draws.size(), 1u);
     EXPECT_EQ(snap.overlays[0].draws[0].material.diffuse, 0x808080ffu);
     ASSERT_TRUE(snap.hatch);
@@ -371,6 +379,49 @@ void expectScene(const Render::SceneSnapshot& snap)
 }
 
 }  // namespace
+
+/// The NaviCube's per-view position: a rect placed by fraction lands in
+/// the same relative spot in viewports of any size, its corners are the
+/// corners the corner anchors give, and a viewport too small for it
+/// pins it to the margin instead of pushing it off the edge.
+TEST(OverlayAnchor, aPositionIsAFractionOfTheRoomLeft)
+{
+    Render::OverlayAnchor a;
+    a.corner = Render::OverlayAnchor::TopLeft;
+    a.sizePixels = 100.0f;
+    a.marginX = a.marginY = 5.0f;
+    int x, y, edge;
+
+    a.posX = 1.0f;
+    a.posY = 0.0f;
+    a.cornerRect(800, 600, x, y, edge);
+    EXPECT_EQ(edge, 100);
+    EXPECT_EQ(x, 800 - 100 - 5);
+    EXPECT_EQ(y, 5);
+
+    // The same position in a corner anchor's terms.
+    Render::OverlayAnchor c = a;
+    c.posX = c.posY = -1.0f;
+    c.corner = Render::OverlayAnchor::TopRight;
+    int cx, cy, cedge;
+    c.cornerRect(800, 600, cx, cy, cedge);
+    EXPECT_EQ(cx, x);
+    EXPECT_EQ(cy, y);
+    EXPECT_EQ(cedge, edge);
+
+    a.posX = 0.5f;
+    a.posY = 1.0f;
+    a.cornerRect(800, 600, x, y, edge);
+    EXPECT_EQ(x, 5 + (800 - 100 - 10) / 2);
+    EXPECT_EQ(y, 600 - 100 - 5);
+    a.cornerRect(1600, 400, x, y, edge);
+    EXPECT_EQ(x, 5 + (1600 - 100 - 10) / 2);
+    EXPECT_EQ(y, 400 - 100 - 5);
+
+    a.cornerRect(60, 60, x, y, edge);
+    EXPECT_EQ(x, 5);
+    EXPECT_EQ(y, 5);
+}
 
 /// A bundled capture has nowhere to put chunks and must come back
 /// whole, out of the payload alone.
@@ -544,6 +595,27 @@ TEST(SceneDump, thePerFaceTexturePaletteCrossesTheWire)
     // inheriting the one before it in the table.
     ASSERT_GT(loaded.scene.size(), 1u);
     EXPECT_FALSE(loaded.scene[1].material.texturepalette);
+}
+
+/// The rendering order of an on-top draw crosses the wire (v86). A
+/// browser that read every on-top draw as one order drew a pattern's
+/// instance toggles under the dimension line crossing them.
+TEST(SceneDump, theOnTopOrderCrossesTheWire)
+{
+    Render::SceneSnapshot snap = makeScene();
+    ASSERT_GT(snap.scene.size(), 1u);
+    snap.scene[0].material.ontop = true;
+    snap.scene[0].material.ontoplayer = 1001;
+    snap.scene[1].material.ontop = true;
+
+    std::vector<uint8_t> payload;
+    ASSERT_TRUE(Render::saveSceneSnapshot(payload, snap));
+    Render::SceneSnapshot loaded;
+    ASSERT_TRUE(
+        Render::loadSceneSnapshot(payload.data(), payload.size(), loaded));
+    ASSERT_GT(loaded.scene.size(), 1u);
+    EXPECT_EQ(loaded.scene[0].material.ontoplayer, 1001);
+    EXPECT_EQ(loaded.scene[1].material.ontoplayer, 0);
 }
 
 TEST(SceneDump, manifestRoundTrip)

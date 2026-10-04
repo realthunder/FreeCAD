@@ -35,6 +35,7 @@
 #include <TopoDS_Face.hxx>
 #include "PropertyTopoShape.h"
 
+class gp_Ax1;
 class gp_Dir;
 
 namespace Data
@@ -249,6 +250,12 @@ public:
     void fixShape(TopoShape &s) const;
 
 protected:
+    /** Take the material of the object this one is made from, unless this
+     * one has a material of its own (upstream 0804d80ebf)
+     */
+    void copyMaterial(Feature* feature);
+    void copyMaterial(App::DocumentObject* link);
+
     /// recompute only this object
     App::DocumentObjectExecReturn *recompute() override;
     /// recalculate the feature
@@ -363,6 +370,15 @@ struct cutFaces {
 PartExport
 std::vector<cutFaces> findAllFacesCutBy(const TopoShape& shape,
                                         const TopoShape& face, const gp_Dir& dir);
+
+/**
+ * Find all faces cut by the circle the centre of gravity of a given face runs
+ * on around an axis, for the "up to face" options of a revolution. distsq is
+ * the arc length from the face along the axis' turn, not a squared distance.
+ */
+PartExport
+std::vector<cutFaces> findAllFacesCutBy(const TopoShape& shape,
+                                        const TopoShape& face, const gp_Ax1& axis);
 
 /**
   * Check for intersection between the two shapes. Only solids are guaranteed to work properly

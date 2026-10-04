@@ -74,6 +74,10 @@ enum ObjectStatus {
     RecomputeExtension = 19, // mark the object to recompute its extensions
     TouchOnColorChange = 20, // inform view provider touch object on color change
     ObjEditing = 21, // indicate the object is current being edited
+    // Excluded from recomputation until unfrozen; saved as the Object entry's
+    // Freeze attribute. Upstream's bit is 21, which this fork already uses --
+    // status bits are never saved by number, so only the name has to match.
+    Freeze = 22,
 };
 
 /** Return object for feature execution
@@ -140,6 +144,17 @@ public:
         return getViewProviderName();
     }
 
+    /** The class a file names for this object, normally its own
+     *
+     * An object whose class stands for a choice it can change -- a pattern
+     * class for its kind -- is saved as the class of the choice it has now,
+     * which restores it as it is. The class must restore the object's
+     * properties as its own.
+     */
+    virtual Base::Type getSaveType() const {
+        return getTypeId();
+    }
+
     /// Constructor
     DocumentObject();
     ~DocumentObject() override;
@@ -184,6 +199,19 @@ public:
     bool isRestoring() const {return StatusBits.test(ObjectStatus::Restore);}
     /// returns true if this objects is currently removed from the document
     bool isRemoving() const {return StatusBits.test(ObjectStatus::Remove);}
+    /** Freeze this object (upstream f633fa476a, Std_ToggleFreeze)
+     *
+     * A frozen object is not recomputed, neither by a change of its own
+     * inputs nor by the objects it depends on, and it does not touch the
+     * objects depending on it: its result stays as it was. Its properties
+     * can still be changed by code; the property editor shows them read
+     * only and the Gui refuses to edit it.
+     */
+    void freeze();
+    /// Unfreeze this object, and touch it unless \a noRecompute
+    void unfreeze(bool noRecompute=false);
+    /// returns true if this object is frozen (upstream's spelling)
+    bool isFreezed() const {return StatusBits.test(ObjectStatus::Freeze);}
     /// return the status bits
     unsigned long getStatus() const {return StatusBits.to_ulong();}
     bool testStatus(ObjectStatus pos) const {return StatusBits.test(size_t(pos));}

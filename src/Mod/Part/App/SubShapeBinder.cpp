@@ -211,12 +211,15 @@ void SubShapeBinder::setupCopyOnChange() {
 void SubShapeBinder::clearCopiedObjects() {
     std::vector<App::DocumentObjectT> objs;
     objs.swap(_CopiedObjs);
+    // The link first: the copies live in another document, so removing
+    // them does not reset it, and setting it afterwards copied a link to a
+    // deleted object -- closing a document with such a binder crashed
+    _CopiedLink.setValue(0);
     for(auto &o : objs) {
         auto obj = o.getObject();
         if(obj)
             obj->getDocument()->removeObject(obj->getNameInDocument());
     }
-    _CopiedLink.setValue(0);
 }
 
 App::DocumentObject *SubShapeBinder::getSubObject(const char *subname, PyObject **pyObj,
@@ -416,6 +419,26 @@ void SubShapeBinder::update(SubShapeBinder::UpdateOption options) {
                     }
                     if(recomputeCopy && !copied->recomputeFeature(true))
                         copyerror = 2;
+                    // And back what the copy computed from them -- a B the
+                    // support makes 3 * A reads 900 here once A is 300 -- for
+                    // a ReadOnly+Output property only, which nobody sets
+                    // (upstream 2501296c95, 66e1c0154d)
+                    for(auto prop : props) {
+                        if(copyerror)
+                            break;
+                        if(!prop->testStatus(App::Property::Output)
+                                || !prop->testStatus(App::Property::ReadOnly)
+                                || !App::LinkBaseExtension::isCopyOnChangeProperty(this,*prop))
+                            continue;
+                        auto p = copied->getPropertyByName(prop->getName());
+                        if(p && p->getContainer()==copied
+                                && p->getTypeId()==prop->getTypeId()
+                                && !p->isSame(*prop))
+                        {
+                            std::unique_ptr<App::Property> pcopy(p->Copy());
+                            prop->Paste(*pcopy);
+                        }
+                    }
                 }
                 obj = copied;
                 _CopiedLink.setValue(copied,l.getSubValues(false));
@@ -1387,6 +1410,16 @@ SubShapeBinder::import(const App::SubObjectT &_feature,
             if ((!noSubElement || !resolved.hasSubElement())
                     && (!noSubObject || !resolved.hasSubObject()))
                 return App::SubObjectT(sobj, feature.getElementName());
+            // A datum element of a coordinate system in scope is referenced
+            // through the system, which carries its placement (upstream
+            // cfd1cdfb36). A binder of it would sit at the identity.
+            auto lcs = Base::freecad_dynamic_cast<App::LocalCoordinateSystem>(link);
+            if (lcs && !lcs->isOrigin() && !resolved.hasSubElement()) {
+                auto datum = Base::freecad_dynamic_cast<App::DatumElement>(
+                        lcs->getSubObject(linkSub.c_str()));
+                if (datum && lcs->hasObject(datum))
+                    return resolved;
+            }
             featName = "Binder";
         }
     }

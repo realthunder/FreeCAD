@@ -91,8 +91,10 @@ Ubuntu 24.04 ships no PySide6 at all; pip wheels for Python 3.12 start at PySide
 which cannot pair with the distro's Qt 6.4.2 (in-process SONAME collision). conda-forge
 is the one channel with a matched Qt6/PySide6/shiboken6 for py3.12. All our components
 are built inside the env with conda's compilers so there is exactly one ABI in the
-process — no mixed-toolchain loader mysteries. Our components are still full `-g`
-Debug builds; only the prebuilt deps (Qt, Python, boost, …) are release.
+process -- no mixed-toolchain loader mysteries. Our components are RelWithDebInfo
+builds with full `-g` (there is no Debug stack since 2026-10-03, see [Building the
+dependencies](#building-the-dependencies-conda-stack)); the prebuilt deps (Qt,
+Python, boost, ...) are conda's release packages.
 
 ### Python is pinned to 3.13 for this dev cycle
 
@@ -238,7 +240,7 @@ see [the guest toolchain](#the-pyodide-sandbox-guest-toolchain)) and
   python=3.12 "libboost-devel=1.90" eigen xerces-c zlib yaml-cpp rapidjson freeimage freetype \
   expat libgl-devel libglx-devel libopengl-devel libegl-devel xorg-libxmu xorg-libxi \
   fmt pybind11 numpy matplotlib-base \
-  pcl lark ply pyyaml
+  pcl lark ply pyyaml mcp
 printf 'qt6-main ==6.11.2\npyside6 ==6.11.2\nvtk-base ==9.6.2\nvtk-io-ffmpeg ==9.6.2\n' \
   > ~/works/sw/fcad/.conda/freecad/conda-meta/pinned
 printf 'libboost 1.90.*\nlibboost-devel 1.90.*\n' \
@@ -338,8 +340,8 @@ resolved per process, so a conda pivy would pull a second Coin into a
 process that already has ours. It is built from `~/works/sw/pivy`
 (`rt-0.6.10`) against the Coin install the stack uses -- the recipe is
 in [Building the dependencies](#building-the-dependencies-conda-stack),
-along with the warning about one pivy not being able to serve both the
-release and the debug stack.
+along with the warning about one pivy not being able to serve two
+stacks, should a second one ever be built.
 
 ### Packages from the realthunder channel
 
@@ -793,6 +795,22 @@ defaults ON in the repo anyway -- the user presets used to override it OFF, and
 that override is why the FEM suites sat out every local test run.) The separate
 `build/fem-eval` tree the FEM port used is retired.
 
+*** **`ply` is a runtime requirement of FEM, not an optional extra** (found
+2026-09-19, on the first Windows run with FEM in). `femtools/tokrules.py`
+imports `ply.lex` and `ply.yacc`, so without the package
+`test_pyimport_all_FEM_modules` errors with `ModuleNotFoundError: No module
+named 'ply'` and the whole Python suite reports FAILED over that one line. It
+is a dependency-free noarch package, so installing it moves nothing else in the
+prefix -- dry-run it anyway, the way every install into this env is:
+
+```sh
+conda install -p ~/works/sw/fcad/.conda/freecad --override-channels \
+  -c conda-forge ply
+```
+
+On the Windows box `conda-forge` is served by `https://prefix.dev/conda-forge`
+(see `.condarc`), since anaconda.org is unreachable from that network.
+
 Everything FEM needs lives in `.conda/freecad` itself -- there is **no separate
 dependency prefix**, and the presets pass no VTK/SMESH/MEDFile/HDF5 paths at
 all. That only works because the env now matches the stack these packages are
@@ -1176,6 +1194,23 @@ $RUN cmake -S . -B build/conda-relwithdebinfo-801 \
   -DBUILD_EXPR_PYODIDE_HOST=ON -DBUILD_EXPR_IMAGE_HOST=ON
 ```
 
+**The guest wheel can now be DOWNLOADED** (2026-09-19): it is published as
+`fcx-image` on PyPI, one file per ABI tag, so the cross build below is only
+needed to produce a *new* wheel, not to get a working sandbox. Fetch it with
+the platform named -- a plain `pip install` finds nothing -- and rename the
+PEP 783 spelling PyPI requires to the one the loader wants:
+
+```sh
+pip download --no-deps --only-binary=:all: \
+    --platform pyemscripten_2026_0_wasm32 \
+    --python-version 3.14 --implementation cp --abi cp314 fcx-image
+mv fcx_image-0.1.0-cp314-cp314-pyemscripten_2026_0_wasm32.whl \
+   fcx_image-0.1.0-cp314-cp314-pyodide_2026_0_wasm32.whl
+```
+
+See `docs/PyodideHost.md` sec 12.3 for why the two spellings differ. The rest
+of this section is the cross build that produces the wheel in the first place.
+
 **The guest wheel.** With the host built, `install_runtime()` still refuses:
 
     RuntimeUnsupported: no fcx_image wheel for pyodide ABI 2026_0 (have: none)
@@ -1218,7 +1253,7 @@ emcmake cmake -S src/App/PyodideHost/guest -B build/pyodide-guest -G Ninja \
   -DFREECAD_GENERATED_DIR=$PWD/build/conda-relwithdebinfo-801/src \
   -DBOOST_INCLUDE_DIR=$PWD/.conda/freecad/include
 cmake --build build/pyodide-guest
-# -> build/pyodide-guest/dist/fcx_image-0.1-cp314-cp314-pyodide_2026_0_wasm32.whl
+# -> build/pyodide-guest/dist/fcx_image-0.1.0-cp314-cp314-pyodide_2026_0_wasm32.whl
 ```
 
 *** **Do NOT run this through `.conda/run.sh`.** The guest is a cross build, and
@@ -1228,12 +1263,14 @@ for `cmake`/`ninja` and clear the flag variables, as above. (`emcmake` also fail
 with a bare `cmake executable not found on PATH` if you skip the `PATH` line.)
 
 Finally point the FreeCAD build at the wheel, which ships it under
-`<datadir>/Pyodide/wheels/` beside the `fcx_draft` and `fcx_bim` wheels the build
-makes itself, and bootstrap the per-user runtime (6.8 MB from GitHub):
+`<datadir>/Pyodide/wheels/` beside the `fcx_widgets` wheel the build makes
+itself, and bootstrap the per-user runtime (6.8 MB from GitHub).  (The
+workbench wheels `fcx_draft` and `fcx_bim` were removed 2026-09-18,
+docs/Sandbox.md 7.31: installed workbench code is not a sandbox target.)
 
 ```sh
 $RUN cmake -S . -B build/conda-relwithdebinfo-801 \
-  -DFREECAD_FCX_IMAGE_WHEEL=$PWD/build/pyodide-guest/dist/fcx_image-0.1-cp314-cp314-pyodide_2026_0_wasm32.whl
+  -DFREECAD_FCX_IMAGE_WHEEL=$PWD/build/pyodide-guest/dist/fcx_image-0.1.0-cp314-cp314-pyodide_2026_0_wasm32.whl
 $RUN cmake --build build/conda-relwithdebinfo-801
 $RUN build/conda-relwithdebinfo-801/bin/FreeCADCmd -c \
   "import freecad.pyodide as P; print(P.install_runtime(source='github'))"
@@ -1324,30 +1361,25 @@ or every sandbox case skips while the gate still reports `RESULT OK`.
 
 ### An optimized stack, for measuring anything
 
-The debug stack is unusable for performance work: a large STEP import runs ~6x slower,
-which turns a single experiment into an afternoon. Build the dependencies a second time
-as `RelWithDebInfo` (optimized, still symbolized for gdb and callgrind) into parallel
-prefixes, and configure FreeCAD with the `conda-relwithdebinfo-801` user preset
-(`build/conda-relwithdebinfo-801`):
+This section was written when a Debug stack was primary and the RelWithDebInfo one
+was built beside it for measurements; since 2026-10-03 RelWithDebInfo is the only
+stack (see [Building the dependencies](#building-the-dependencies-conda-stack), whose
+recipes now make it). Why it had to exist still holds for any future Debug build:
+a Debug stack is unusable for performance work -- a large STEP import runs ~6x
+slower, which turns a single experiment into an afternoon. RelWithDebInfo is
+optimized and still symbolized for gdb and callgrind:
 
 ```sh
 RUN=~/works/sw/fcad/.conda/run.sh
-
-# OCCT and Coin: same recipes as above, only the build type and prefixes differ
-#   -DCMAKE_BUILD_TYPE=RelWithDebInfo
-#   -DINSTALL_DIR=$HOME/works/sw/occt/install/conda-relwithdebinfo-801  (OCCT, LinkVibe-801)
-#   -DCMAKE_INSTALL_PREFIX=$HOME/works/sw/coin/install/conda-relwithdebinfo  (Coin)
-# then rebuild pivy against the release Coin (same recipe, new prefix).
-
 $RUN cmake --preset conda-relwithdebinfo-801
 $RUN cmake --build build/conda-relwithdebinfo-801 -j 14
 ```
 
-**Measure on the same OCCT the debug stack uses.** The streamed STEP transfer and
-parallel healing only exist on the 8.0.1 fork; against 7.7.2 they compile, but fall
-back to the one-shot path, so a timing taken there measures a different importer.
-`conda-relwithdebinfo-local` (OCCT 7.7.2, `build/conda-relwithdebinfo`) is kept only
-as the before-picture for that comparison.
+**Measure on OCCT 8.0.1.** The streamed STEP transfer and parallel healing only
+exist on the 8.0.1 fork; against 7.7.2 they compile, but fall back to the one-shot
+path, so a timing taken there measures a different importer. (The 7.7.2
+before-picture, `conda-relwithdebinfo-local` / `build/conda-relwithdebinfo`, was
+deleted on 2026-08-28.)
 
 **Build every dependency optimized, not just OCCT.** Leaving Coin in debug is the easy
 mistake, and a costly one: in a progressive-import profile ~77% of the instructions
@@ -1370,10 +1402,11 @@ $RUN cmake -B build/conda-relwithdebinfo-801 \
 from stock Coin's soname because the fork's ABI diverges; FreeCAD refuses to
 start on a fork ABI mismatch, see `coin_fork_abi()` in the coin repo.)
 
-**The optimized stack goes stale silently, and it fails one layer at a time.**
-The debug stack is rebuilt daily, so it stays honest; the optimized one is only
-touched when somebody measures something, which can be weeks apart. In between,
-the fork moves and its two dependency *installs* do not. Nothing warns you --
+**A stack nobody builds daily goes stale silently, and it fails one layer at a
+time.** (Written of the optimized stack while the Debug one was primary; it holds
+for whichever stack is the second one.) The daily stack stays honest; the other is
+only touched when somebody needs it, which can be weeks apart. In between, the
+fork moves and its two dependency *installs* do not. Nothing warns you --
 the tree simply fails to compile, and the error names a FreeCAD source file even
 though the fault is in a dependency install, which reads like a source bug and
 is not one.
@@ -1391,7 +1424,7 @@ three dated to the same early-August measurement:
 
 **A cached CMake variable survives `cmake --preset`.** The first one above is not
 fixed by reconfiguring: `BUILD_ENABLE_CXX_STD` is a cache entry, so a plain
-re-run of the preset keeps whatever it already had (the debug tree had `C++20`,
+re-run of the preset keeps whatever it already had (the then debug tree had `C++20`,
 the optimized tree still `C++17`). Pass it explicitly, and confirm in the
 generated ninja file rather than in the cache:
 
@@ -1540,9 +1573,34 @@ onto FreeCAD's Qt main thread (the `Web::AppServer` pattern) so document/OCCT/Co
 work is safe. The interpreter session is persistent (a REPL), captures
 stdout/stderr, returns the last expression's value, and reports exceptions as text.
 
-Runtime dependency: the `mcp` Python package in the active interpreter
-(`pip install mcp`, or `conda install mcp` from conda-forge; add to the feedstock
-host/run deps for distribution).
+**RULED 2026-09-21: it stays.** The open question was whether an agent-drivable
+port belongs in the dev environment at all, given that it is a live interpreter
+on a socket. The answer is yes, so the console is a standing part of this box's
+setup rather than an experiment on probation. It remains loopback-only and
+off unless `FC_MCP_PORT` or `MCPServerAutoStart` turns it on.
+
+Runtime dependency: the `mcp` Python package in the active interpreter. It is in
+every env create line in this document, and the configure summary prints an
+`mcp:` line -- the version, or `NOT FOUND` -- because an env rebuilt without it
+builds and runs fine and fails only when an agent connects. That is how it went
+missing on the Windows box for weeks (the env was recreated on 2026-09-07). Into
+an existing env, pulled with the channel held down (on Linux it was `mcp` 2.1.1,
+38 packages; on Windows 2026-09-25, 2.2.0 and 43, all new, none moved):
+
+```sh
+conda install -p ~/works/sw/fcad/.conda/freecad -c conda-forge \
+    --override-channels -y mcp
+```
+
+`--override-channels` is not decoration here. The env's records still name the
+dead `realthunder` channel, and the smesh section above warns that a plain solve
+into this env now *succeeds* and quietly installs a second OCCT beside the fork's
+local build. Restricting the solve to conda-forge kept this one purely additive:
+conda revision 13 is 38 `+` lines with no removals and no version arrows, the
+prefix still carries **no** `occt` record at all, and `qt6-main`, `pyside6`,
+`vtk` and `libboost` did not move. None of the 38 is pinned, so `mcp`,
+`pydantic`, `starlette` and `uvicorn` are what a later solve may bump. The
+feedstock already carries `mcp` in its run deps for distribution.
 
 **Both major versions of `mcp` are supported.** The high-level server class moved,
 and so did where the bind address goes, so `_make_server()` picks whichever is
@@ -1555,20 +1613,72 @@ installed:
 
 Both expose the same `tool(name=..., description=...)` decorator and default the
 endpoint to `/mcp`, so the rest of the module is version-agnostic. Verified on
-1.28.1 and 2.0.0: server constructed, served over Streamable HTTP, `initialize`
-answered 200.
+1.28.1 and 2.0.0 (server constructed, served over Streamable HTTP, `initialize`
+answered 200) and, 2026-09-19 on the installed **2.1.1**, end to end against the
+headless serve: `initialize` 200, `tools/list` returning all three tools
+(`run_python`, `search_api`, `get_log`), and `run_python` running
+`App.getHomePath()` on the live process's Qt main thread. On 2.x the
+`mcp.server.fastmcp` ImportError spells the class `mcp.server.mcpserver.MCPServer`;
+the shorter `from mcp.server import MCPServer` that `_make_server()` uses still
+resolves.
 
-Start it from FreeCAD's Python console (main thread):
+### Starting it and connecting
 
-```python
-from freecad import mcp_console
-mcp_console.start()          # -> http://127.0.0.1:8765/mcp
+Three ways to start it, the same server each time:
+
+- **`FC_MCP_PORT=<port>`** in FreeCAD's environment starts it at launch, for that
+  session only; `FC_MCP_PORT=0` keeps it off even when the Tools menu state says
+  on. The GUI reads it itself (`MainWindow::delayedStartup()`, through
+  `Std_MCPServer`); before 2026-09-25 only `scripts/renderer-serve.sh` honoured
+  it, by passing `scripts/mcp-console.py`, and a plain launch ignored it.
+- **Tools > MCP server**, remembered in `MCPServerAutoStart` for the next start.
+- `from freecad import mcp_console; mcp_console.start()` in the Python console.
+
+The port is where the server starts looking: if it is taken, the next free one
+is used. So **do not guess the URL** -- every running server writes
+`~/.freecad-mcp/<pid>.json` (`url`, `pid`, `home`, `gui`; `FC_MCP_ENDPOINT_DIR`
+overrides), removes it on stop or exit, and `scripts/mcp_run.py` reads them.
+That script needs only the standard library, so it runs under any Python:
+
+```sh
+python scripts/mcp_run.py --launch -- <FreeCAD executable> [args]   # start, wait, print pid + URL
+python scripts/mcp_run.py probe.py             # run a file in the newest live FreeCAD
+python scripts/mcp_run.py -c "App.Version()"   # or a snippet
+python scripts/mcp_run.py --pid 1234 probe.py  # a particular one, when several run
+python scripts/mcp_run.py --list               # the live servers; dead ones' files are dropped
+python scripts/mcp_run.py --log 50             # the console capture's last lines
 ```
 
-Point an MCP client (Claude Code, etc.) at that URL. The single tool is
+On Windows run it under `.conda\run.cmd python ...` so `--launch` hands FreeCAD
+the env (and so `python` is not the Microsoft Store stub). It prints the pid,
+URL and home path of the server it picked on stderr, returns 1 when the code
+raised inside FreeCAD and 2 when there is nothing to talk to. Stop a launched
+FreeCAD by its pid, or with
+`-c "from PySide6 import QtCore, QtWidgets; QtCore.QTimer.singleShot(500, QtWidgets.QApplication.quit)"`,
+which also removes its endpoint file; never `os._exit`, which leaves recovery
+state behind.
+
+An MCP client (Claude Code, etc.) can equally be pointed at the URL `--list`
+prints. The single tool is
 intentional: the whole FreeCAD API is already Python-reachable, so the tool's
 description teaches the agent the entry points (`App`, `Gui`, `App.ActiveDocument`,
 `dir()`/`help()`) rather than wrapping operations as extra tools.
+
+**Nothing printed after `start()` reaches the terminal.** `start()` attaches the
+console capture, and from that moment `print()` and `Console.PrintMessage` land in
+the ring buffer instead -- so a script that starts the console and prints the
+status line looks like it did nothing whatsoever: exit code 0 and an empty log.
+That is what made `scripts/mcp-console.py` look broken under `FreeCADCmd`, and it
+is not -- writing to a raw fd (`os.write`) instead of stdout shows every line.
+The same mechanism is why `/tmp/fc-serve-<port>.log` never says the console came
+up: read the port from `ss -tlnp`, from `mcp_console.url()`, or by calling the
+`get_log` tool, which hands the captured status line straight back.
+
+**One `mcp_console.log` path, every process.** The default is
+`<UserAppData>/mcp_console.log` and `start()` rotates it (`.1` ... `.5`) at
+session start, so a second FreeCAD rotates the log out from under a running
+first one. Pass `log=` when two consoles may be live, the way the port needs
+`port=`.
 
 Conformance is verified end-to-end (initialize / tools list+call with input &
 output schema, structured content, main-thread execution, and driving the live
@@ -1580,9 +1690,10 @@ address the Windows side sees, so a Windows client connects to the *Linux* proce
 everything looks normal — same tool, same API, plausible answers — until a path gives it
 away (`os.getcwd()` returning `/home/...`, or a screenshot that "saved" successfully and
 does not exist on disk). `Get-NetTCPConnection -LocalPort 8765` lists no owning Windows
-process in that case, which is the tell. Start the Windows console on its own port
-(`mcp_console.start(port=8766)`) whenever both stacks may be live, and verify with
-`App.getHomePath()` before trusting a session.
+process in that case, which is the tell. The endpoint files are the way round it:
+they live under each OS's own home, so `scripts/mcp_run.py` on Windows only ever
+finds Windows servers, at the port each one actually bound, and never tries a
+port on the chance that it is the right process.
 
 **Screenshots need an unlocked desktop.** `Gui.getMainWindow().grab()` renders the widget
 tree, so menus, toolbars, panels and the report view come out fine with the session
@@ -1751,8 +1862,14 @@ conda create -y -p .conda\freecad ^
   libboost-devel=1.90 eigen xerces-c zlib yaml-cpp rapidjson freeimage freetype expat ^
   fmt pybind11 numpy matplotlib-base ^
   tbb-devel "vtk-base==9.6.2" "vtk-io-ffmpeg==9.6.2" libmed hdf5 libxml2-devel lazy_loader ^
-  lark pyyaml
+  lark pyyaml mcp
 ```
+
+**`mcp` is there for the MCP debug console, and nothing fails without it until an
+agent tries to connect.** The env on this box was recreated on 2026-09-07 from a
+create line that did not have it, and every note written afterwards still said
+the console worked. The configure summary now prints an `mcp:` line -- a version,
+or `NOT FOUND` -- so look there after rebuilding an env.
 
 **`pyyaml` is there for the tests, and leaving it out costs 1343 of them
 silently.** `Mod/CAM`'s tool-bit serializers `import yaml` at module scope, so
@@ -2197,8 +2314,25 @@ inherits `conda-windows-release` and overrides:
 | `BUILD_BGFX=ON` | the renderer |
 | `FREECAD_USE_PCL=OFF` | same trim as the Linux local preset |
 | `BUILD_WEB=ON` | the env above installs a matched `qt6-webengine`, so Web/Help/AddonManager build; the version-skew dance later in this section is only for an env already pinned to an older Qt. It costs the Web module's targets and a `-DQTWEBENGINE` on every FreeCADGui TU, so decide before the cold build rather than after |
-| `BUILD_FEM/FREECAD_USE_EXTERNAL_SMESH=OFF` | Windows only -- both are **ON** on Linux now |
+| `BUILD_FEM=ON`, `FREECAD_USE_EXTERNAL_SMESH=OFF`, `BUILD_FEM_NETGEN=OFF` | 2026-09-19: FEM builds here against the **bundled** `src/3rdParty/salomesmesh`, so it needs no `smesh` package at all -- which is what makes it reachable on this box, the `realthunder` channel being unreachable from this network. MEDFile resolves straight out of `.conda/freecad`, and `ply` must be installed there too. `BUILD_FEM_NETGEN` must stay OFF: MSVC defaults it ON, but it adds `-DFCWithNetgen` and links `NETGENPlugin`, a target only the external smesh package supplies. Linux uses the external SMESH instead |
 | `ENABLE_DEVELOPER_TESTS=ON` | as on Linux since 2026-09-04; see "Running the C++ (GoogleTest) suites" |
+
+*** **On this box the preset is the authority on build flags, not your command
+line.** `tools\build-fcad.cmd` re-runs `cmake --preset win-relwithdebinfo-local`
+before every build, and `cmake --preset` passes each `cacheVariables` entry as
+`-D` on *every* invocation -- so a flag forced by hand onto a standing tree is
+silently reverted by the next build. Measured on a throwaway project
+(2026-09-19): `cmake --preset p` gives `FOO=ON`; `cmake -S . -B b -DFOO=OFF`
+gives `FOO=OFF`; `cmake --preset p` again gives `FOO=ON`. The other half of the
+rule holds and points the opposite way: with `FOO` *removed* from
+`cacheVariables`, a changed `option()` default does not reach the existing tree
+(`-DFOO=OFF`, then `cmake --preset p`, leaves `FOO=OFF`). One mechanism, two
+halves, and which one bites depends on whether anything re-runs the preset --
+here something always does. So **put the setting in `CMakeUserPresets.json`**,
+not on the command line. Getting this backwards cost two build cycles on
+2026-09-19, when `-DBUILD_FEM=ON` was reverted twice before the value moved into
+the preset, and the build in between silently contained no FEM at all. The file
+is gitignored (`.gitignore:51`), so what it holds stays per-box.
 
 **`OCCT_CMAKE_FALLBACK` must be OFF.** The repo's `conda` preset turns it ON, which
 skips `find_package(OpenCASCADE CONFIG)` in favour of a hand-rolled search. That
@@ -2373,7 +2507,6 @@ covered in the next section.
 |---|---|
 | `build-fcad.cmd [jobs]` | configure from the user preset, then build. **Jobs default to 6.** |
 | `run_cdb.ps1` | launch FreeCAD under `cdb` in one reused console |
-| `mcp_run.py <script.py>` | run Python inside the *running* FreeCAD over MCP |
 | `run-cycles.cmd` | `run.cmd` plus the two variables Cycles' GPU devices need |
 | `build-occt.cmd` / `build-coin.cmd` | the dependency recipes above, with the suffixes and prefixes filled in |
 | `build-libarea.cmd` / `build-pivy.cmd` | the two from-source packages. pivy builds on the env's own SWIG -- do not pin it |
@@ -2406,25 +2539,25 @@ line. `-Stop` first. And a process created by a debugger gets the NT debug heap
 unless `_NO_DEBUG_HEAP=1` is set, which makes OCCT crawl in `free()`; the script sets
 it, which is half of why it exists.
 
-**`mcp_run.py`** talks to the MCP console that the running FreeCAD brings up itself,
-from `DocumentParams MCPServerAutoStart`. Two things about the port: this build
-listens on **8791**, not the 8765 default, because on this mirrored-networking box
-the WSL2 FreeCAD answers 8765 *and* 8766 on the Windows `127.0.0.1` -- and
-`mcp_run.py`'s own default is 8766, so **`FCAD_MCP_URL` has to be set**. A probe
-against the wrong port hangs in retries rather than erroring, which reads exactly
-like the app having failed to start. If the port was already taken FreeCAD takes the
-next free one and says so, as a console warning and in the Tools -> MCP server
-tooltip, so read the port there rather than assuming it.
+**Driving the running FreeCAD** is `scripts/mcp_run.py`, in the repo since
+2026-09-25 -- see [the MCP debug console](#starting-it-and-connecting). The copy
+that used to live here in `..\tools`, with its port 8791 and `FCAD_MCP_URL`
+dance, went with the 2026-09-06 rebuild of this box, and nothing said so:
 
 ```bat
-set FCAD_MCP_URL=http://127.0.0.1:8791/mcp
-.conda\run.cmd python ..\tools\mcp_run.py probe.py
+.conda\run.cmd python scripts\mcp_run.py --launch -- build\win-relwithdebinfo-801\bin\FreeCAD.exe
+.conda\run.cmd python scripts\mcp_run.py probe.py
 ```
 
-Pass a **script file**, not `-c "code"`: nested through `cmd /c ".conda\run.cmd ..."`
-the quoting is stripped and the console gets a `SyntaxError` on an unterminated
-string. Confirm identity before believing any session -- `App.getHomePath()` must
-start with `D:/` for the Windows build, or you are driving the WSL one.
+Pass a **script file** rather than `-c "code"` when going through
+`cmd /c ".conda\run.cmd ..."`, which strips the quoting. `mcp_run.py` prints the
+home path of the server it picked; it can only pick one of this OS's, but read it.
+
+To press a task panel's OK from a script, click the `QDialogButtonBox` under
+`Gui::TaskView::TaskEditControl`: the first OK a widget search finds is usually a
+`DlgPropertyLink`'s inside the panel, and `Gui.Control.activeTaskDialog().accept()`
+does not reach the C++ dialog. The `-M <dir>` startup hook (an `InitGui.py` that
+`runpy`s a driver on a QTimer) is the fallback when the console cannot start.
 
 ### Cycles on Windows -- where OptiX and HIP can actually be tested
 
@@ -3247,9 +3380,10 @@ untouched, so the tree stays clean.
 **Configure and build.** cmake and ninja come from the conda env; the
 host `shaderc` the essl pack needs is already in the desktop build tree,
 so nothing extra is built for it. The `FCVIEWER_SHADERC` default in
-`src/Gui/Renderer/wasm/CMakeLists.txt` is a Linux `conda-debug` path, so
-it has to be given here, and so do the node paths, since neither is on
-PATH by default:
+`src/Gui/Renderer/wasm/CMakeLists.txt` is that tree's `shaderc.exe` on a
+Windows host (it named a Linux `conda-debug` tree until 2026-10-04; passing
+it as below is harmless). The node paths have to be given, since they
+are not on PATH by default:
 
     call D:\works\sw\emsdk\emsdk_env.bat
     emcmake .conda\freecad\Library\bin\cmake.exe ^
@@ -3284,7 +3418,20 @@ carries the page, the scene stream and the blobs:
 against it is enough -- plain `puppeteer` would download a second
 Chrome. `scripts/wasm-chrome.js` is the Linux harness and its "real"
 tier is WSLg-specific, so on Windows use its headless shape:
-`--enable-unsafe-swiftshader --use-angle=swiftshader`. Two things that
+`--enable-unsafe-swiftshader --use-angle=swiftshader`.
+
+**On Linux the same harnesses need a FOURTH knob, and only
+`docs/Testing.md` carries it**: `CHROME_LIBS`, a directory holding a
+`libasound.so.2` symlink to the conda env's copy, prepended to the
+browser's `LD_LIBRARY_PATH`. Chrome for Testing links that library, the
+system does not have it, and there is no sudo to install it -- so
+without the knob the browser never starts and it reads as a broken
+harness. The full set is `PUPPETEER_PATH`, `CHROME`, `CHROME_LIBS` and
+`NODE` (emsdk's, the only node here); see Testing.md, "Setting the
+browser tooling up again". All of it is installed on this box -- a `~`
+or a `*` the shell did not expand is what makes it look otherwise.
+
+Two things that
 cost time here, both about software rendering rather than about the
 viewer:
 
@@ -3379,7 +3526,7 @@ bgfx uses Metal). On Apple silicon use `clang_osx-arm64 clangxx_osx-arm64`.
   clang_osx-64 clangxx_osx-64 cmake ninja make swig pkg-config \
   qt6-main=6.11.1 pyside6=6.11.1 \
   python=3.12 libboost-devel eigen xerces-c zlib yaml-cpp rapidjson freeimage freetype \
-  expat fmt pybind11 numpy matplotlib-base lark
+  expat fmt pybind11 numpy matplotlib-base lark mcp
 printf 'qt6-main ==6.11.1\npyside6 ==6.11.1\npython ==3.12.*\n' \
   > ~/works/sw/fcad/.conda/freecad/conda-meta/pinned
 cd ~/works/sw/fcad/.conda/freecad
@@ -3685,6 +3832,7 @@ Linux at all.
 | `imgui-node-editor` `crude_json.cpp` | `<exception>` for `std::terminate` |
 | `src/Gui/Renderer/BGFXRendererP.h` | the `BX_PLATFORM_OSX` branch called `get_nswindow_from_nsview()`, **defined nowhere** -- it had never been compiled. bgfx's Metal backend sorts out NSView/NSWindow/CAMetalLayer itself, and Qt's `winId()` is an NSView*, so it is passed straight through |
 | `src/Gui/Renderer/CMakeLists.txt` | link `vg-renderer` before `example-common`: both vendor fontstash, and Apple's `ld` errors on the 32 duplicate symbols where GNU ld silently takes the first |
+| `src/App/ExpressionImage/FcxCbor.h` (2026-09-16) | the same class, one step further out: **libstdc++ ships `std::char_traits<unsigned char>` as an extension and libc++ does not**, and nlohmann's CBOR reader instantiates `char_traits` for whatever the iterator's value type is -- so every `json::from_cbor` over the sandbox's `std::vector<unsigned char>` buffers (25 sites) failed on macOS only. The header decodes through `const char*`, which is defined everywhere |
 
 The OCCT patch joins the fork-local list at the top of this document.
 
@@ -3716,6 +3864,80 @@ $RUN cmake --build build/mac-relwithdebinfo-801 -j 4 \
 Use `-- -k 0` on a first build after a change of toolchain: ninja then collects
 every error in one pass instead of stopping at the first, which on a
 2500-target dependency is the difference between one cycle and ten.
+
+### The sandbox on macOS (2026-09-16)
+
+Brought up for `docs/Sandbox.md` 7.20 C6, the Python console in Safari. Nothing
+here is macOS-specific except where it says so; it is the Linux recipe of "the
+pyodide sandbox guest toolchain" above, run on this box, with what it actually
+needed. Every package exists for osx-64.
+
+```sh
+# 1. the host: v8-embed is what BUILD_EXPR_PYODIDE_HOST detects, and cogapp is
+#    a configure-time requirement the env did not have
+~/miniforge3/bin/conda install -y -p ~/works/sw/fcad/.conda/freecad \
+    -c realthunder -c conda-forge v8-embed
+.conda/freecad/bin/python3.12 -m pip install cogapp
+# detection does not reach a tree that exists: force both flags
+.conda/run.sh cmake -S . -B build/mac-relwithdebinfo-801 \
+    -DBUILD_EXPR_PYODIDE_HOST=ON -DBUILD_EXPR_IMAGE_HOST=ON
+
+# 2. the guest toolchain, exactly as the Linux section has it
+git clone --depth 1 https://github.com/emscripten-core/emsdk.git ~/works/sw/emsdk-5.0.3
+cd ~/works/sw/emsdk-5.0.3
+EMSDK_PYTHON=~/miniforge3/envs/v8build/bin/python ./emsdk install 5.0.3
+EMSDK_PYTHON=~/miniforge3/envs/v8build/bin/python ./emsdk activate 5.0.3
+~/miniforge3/bin/conda create -y -n v8build python=3.14
+~/miniforge3/envs/v8build/bin/python -m pip install 'pyodide-build==0.39.0'
+~/miniforge3/envs/v8build/bin/pyodide xbuildenv install 314.0.6 \
+    --path ~/works/sw/pyodide/xbuildenv
+```
+
+**node comes with emsdk here too** (`~/works/sw/emsdk-5.0.3/node/24.19.0_64bit/bin`),
+and it is the only node on the box: the web bundle's `npm ci` and `npm run build`
+in `src/Gui/Renderer/web` want it on PATH.
+
+```sh
+# 3. the guest wheel (NOT through .conda/run.sh -- a cross build must not see
+#    the env's host tuning), then ship it and bootstrap the runtime
+source src/App/PyodideHost/guest/emsdk-env.sh
+export PATH="$PATH:$PWD/.conda/freecad/bin"
+unset CFLAGS CXXFLAGS LDFLAGS CPPFLAGS
+emcmake cmake -S src/App/PyodideHost/guest -B build/pyodide-guest -G Ninja \
+  -DFREECAD_GENERATED_DIR=$PWD/build/mac-relwithdebinfo-801/src \
+  -DBOOST_INCLUDE_DIR=$PWD/.conda/freecad/include
+cmake --build build/pyodide-guest          # 38 steps, ~15 min at -j 1 here
+
+# 4. the wheels FreeCAD ships, and the per-user runtime
+python3 scripts/sandbox-fetch-wheels.py build/sandbox-wheels   # ipywidgets, traitlets
+.conda/run.sh cmake -S . -B build/mac-relwithdebinfo-801 \
+  -DFREECAD_FCX_IMAGE_WHEEL=$PWD/build/pyodide-guest/dist/fcx_image-0.1-cp314-cp314-pyodide_2026_0_wasm32.whl \
+  -DFREECAD_BUNDLED_WHEELS="$PWD/build/sandbox-wheels/ipywidgets-8.1.9-py3-none-any.whl;$PWD/build/sandbox-wheels/traitlets-5.14.3-py3-none-any.whl"
+.conda/run.sh cmake --build build/mac-relwithdebinfo-801 -j 4
+.conda/run.sh build/mac-relwithdebinfo-801/bin/FreeCADCmd -c \
+  "import freecad.pyodide as P; print(P.install_runtime(source='github'))"
+```
+
+Two things this box says that the Linux one does not:
+
+- **`libv8.dylib` was built for macOS 13.5** and every link against it warns
+  "built for newer macOS version (13.5) than being linked (11.3)". It loads and
+  runs on 12.7.6 anyway -- the whole sandbox, guest included, works.
+- **Three sandbox tests failed here on the first run and are now fixed**
+  (2026-09-16): they compare a NATIVE result against the same computation ROUTED
+  through the wasm guest, the host half being macOS's libm and the guest half
+  musl's, and this box was the first to run them at all. Two were the
+  comparison -- the corpus gate zipped two SORTED vertex lists, where one last
+  bit in X reorders two vertices and pairs unrelated points, so a Draft array
+  2 ULPs out reported 458 units -- and the third, the flange, demanded a
+  byte-identical BRep where the bolt circle's cos/sin differ in the last bit
+  (0.5 ULPs, the volume identical to the bit). See the commit; **ctest is
+  635/635 here**. **Without the bundled wheels of step 4 there are eight**: five
+  more report `ModuleNotFoundError: No module named 'ipywidgets'`, and under the
+  default 5 s budget they report a TIMEOUT instead, which is the misleading face
+  of the same gap on a 4-core box.
+- The **pivy wheel** (`FREECAD_PIVY_WHEEL`) is not built here; nothing the
+  browser console needs wants it.
 
 ## Regenerating the bundled material icons
 

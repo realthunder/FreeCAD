@@ -86,6 +86,8 @@ short MultiCommon::mustExecute() const
 
 App::DocumentObjectExecReturn *MultiCommon::execute()
 {
+    if (Shapes.getSize() > 0)
+        copyMaterial(Shapes.getValues().front());
 #ifdef FC_NO_ELEMENT_MAP
     std::vector<TopoDS_Shape> s;
     std::vector<App::DocumentObject*> obj = Shapes.getValues();

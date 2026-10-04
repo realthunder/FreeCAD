@@ -42,6 +42,13 @@ using namespace PartDesign;
 
 PROPERTY_SOURCE(PartDesign::FeatureAddSub, PartDesign::Feature)
 
+const App::PropertyFloatConstraint::Constraints FeatureAddSub::fuzzyToleranceRange = {-1.0, 1.0, 0.0001};
+const char *FeatureAddSub::fuzzyToleranceDoc =
+    "Fuzzy tolerance of the boolean operation:\n"
+    "If value > 0: use the value\n"
+    "If value = 0: leave default value\n"
+    "If value < 0: determine value";
+
 FeatureAddSub::FeatureAddSub()
 {
     ADD_PROPERTY(AddSubShape,(TopoDS_Shape()));
@@ -50,6 +57,9 @@ FeatureAddSub::FeatureAddSub()
     Base::Reference<ParameterGrp> hGrp = App::GetApplication().GetUserParameter()
         .GetGroup("BaseApp")->GetGroup("Preferences")->GetGroup("Mod/PartDesign");
     this->Refine.setValue(hGrp->GetBool("RefineModel", false));
+
+    ADD_PROPERTY_TYPE(FuzzyTolerance, (0.0), "Part Design", App::Prop_None, fuzzyToleranceDoc);
+    FuzzyTolerance.setConstraints(&fuzzyToleranceRange);
 
     static const char* TypeEnums[]= {"Additive","Subtractive","Intersecting",NULL};
     ADD_PROPERTY_TYPE(AddSubType,((long)0),"Part Design",
@@ -78,6 +88,28 @@ void FeatureAddSub::initAddSubType(Type t)
         AddSubType.setValue((long)0);
         break;
     }
+}
+
+void FeatureAddSub::handleChangedPropertyName(Base::XMLReader &reader, const char *TypeName,
+                                              const char *PropName)
+{
+    // Upstream's Operation is the fork's AddSubType: Union, Subtraction and
+    // Common for Additive, Subtractive and Intersecting. Its list is the
+    // class's own ({"Union"} or {"Subtraction", "Common"}), saved with it.
+    if (strcmp(PropName, "Operation") == 0
+            && strcmp(TypeName, App::PropertyEnumeration::getClassTypeId().getName()) == 0) {
+        App::PropertyEnumeration operation;
+        operation.Restore(reader);
+        const char *value = operation.isValid() ? operation.getValueAsString() : nullptr;
+        if (value && strcmp(value, "Common") == 0)
+            AddSubType.setValue("Intersecting");
+        else if (value && strcmp(value, "Subtraction") == 0)
+            AddSubType.setValue("Subtractive");
+        else if (value && strcmp(value, "Union") == 0)
+            AddSubType.setValue("Additive");
+        return;
+    }
+    PartDesign::Feature::handleChangedPropertyName(reader, TypeName, PropName);
 }
 
 void FeatureAddSub::onChanged(const App::Property *prop)
@@ -123,7 +155,7 @@ Part::TopoShape FeatureAddSub::makeBoolean(const Part::TopoShape &base,
             default:
                 maker = Part::OpCodes::Fuse;
             }
-            result.makEBoolean(maker, {base,tool});
+            result.makEBoolean(maker, {base,tool}, nullptr, FuzzyTolerance.getValue());
         } catch(Standard_Failure &e) {
             FC_THROWM(Base::CADKernelError,
                       QT_TRANSLATE_NOOP("Exception", "Boolean operation with base feature failed: ") <<
@@ -176,22 +208,6 @@ const std::string &FeatureAddSub::addsubElementPrefix()
                            + "AddSub"
                            + Data::elementMapPrefix());
     return res;
-}
-
-void FeatureAddSub::setPauseRecompute(bool enable)
-{
-    if (enable == pauseRecompute)
-        return;
-    pauseRecompute = enable;
-    if (enable)
-        pausedRevision = this->getRevision();
-    else if (pausedRevision != this->getRevision())
-        touch();
-}
-
-bool FeatureAddSub::isRecomputePaused() const
-{
-    return pauseRecompute;
 }
 
 namespace App {

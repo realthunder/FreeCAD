@@ -475,8 +475,23 @@ void InterpreterSingleton::runInteractiveString(const char* sCmd)
     Py_DECREF(presult);
 }
 
+/// The host-code chokepoint's guard; see InterpreterSingleton::setFileGuard.
+static InterpreterSingleton::FileGuard _FileGuard;  // NOLINT
+
+void InterpreterSingleton::setFileGuard(FileGuard guard)
+{
+    _FileGuard = std::move(guard);
+}
+
 void InterpreterSingleton::runFile(const char* pxFileName, bool local)
 {
+    // Whatever command led here, running a host file under a sandbox
+    // principal is host.exec (docs/Sandbox.md 7.29).  The guard throws
+    // when the principal does not hold it, and does nothing at all when
+    // no principal is active.
+    if (_FileGuard && pxFileName) {
+        _FileGuard(pxFileName);
+    }
 #ifdef FC_OS_WIN32
     FileInfo fi(pxFileName);
     FILE* fp = _wfopen(fi.toStdWString().c_str(), L"r");

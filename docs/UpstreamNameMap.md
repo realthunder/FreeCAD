@@ -56,6 +56,63 @@ The free functions around the constants -- `hasMissingElement`,
 `findElementName`, `hasMappedElementName` -- carry the same names and
 signatures on both sides and need no translation at all.
 
+### Except how an indexed name is hashed (2026-10-02)
+
+The strings are the same; the string *table* was not. A name with a trailing
+index -- `#f:3;:G;XTR;...`, the third side face of a prism -- is hashed by
+upstream as text plus index: all side faces share one ID and a reference
+reads `#19:3`. This fork did that only with `HashIndexedName` on, and turned
+it off by default in 2023 (`c35efd8a8b`), so here the same name got an ID of
+its own (`#2c4`). A reference saved by one side then names an ID the other
+never generates. It went unnoticed because the reference survives a plain
+recompute through the geometry search, as long as the element's geometry is
+unchanged -- and that search had silently stopped finding curved faces
+(`6a098953cd`, `GeomElementarySurface::isSame`). Measured on five bodies with
+six references, after lengthening the pads: an upstream 1.1.4 file kept 1 of
+6 here, and a fork file opened with indexing on kept 1 of 6. Neither global
+setting serves both.
+
+So the encoding belongs to the document. `StringHasher` saves it as
+`indexed="0|1"` on `<StringHasher>` (upstream ignores the attribute), and a
+table saved before then gets the encoding its entries show: an `Indexed` or
+`PrefixIDIndex` entry is the indexing encoding's, a postfixed entry holding
+text that `getID()` would have split (an `IndexedName`, or `#hex:N`) is the
+other's, and a table with neither -- where both encodings reproduce every
+stored name -- takes the preference. `HashIndexedName` now only chooses the
+encoding of new documents, and defaults to on, upstream's. Existing fork
+documents keep theirs. Python: `doc.Hasher.IndexedNames`. Tests:
+`Toponaming_tests_run` (`StringHasherTest.Save`, `Restore`,
+`restoreWithoutModeTakesTheTableOne`, `indexedNamesSplitTheTrailingIndex`)
+and `PartDesignTests/TestNameEncoding.py`, on a 1.1.4 fixture and a fork one.
+
+Not done: converting a document from one encoding to the other. It is
+possible -- switch `IndexedNames`, recompute with no edit so the geometry
+search re-points every reference, save -- but only for a model whose
+recompute reproduces its saved geometry, so it is not automatic.
+
+**Across documents of different encodings (2026-10-03).** Tested: a body
+with binders on a pad's top and side faces in another document, sketches
+on the binders padded, the pad lengthened and widened so both faces move,
+all four (binder document, pad document) pairs, with and without a save and
+reopen between. The geometry came out right in all eight, but the pair
+"binder document indexes, pad document does not" renamed the binder's face
+at every recompute (`#2f:16` -> `#2f`) and, reopened, named string ids its
+table had not kept. Not an encoding mismatch as such: a binder's name of a
+face from another document is built on a string id of its own document,
+`#22;:X;BND...`, and an indexing hasher asks `IndexedName` whether that text
+ends in an element index. `IndexedName` rejected `#22` but kept the 22 it
+had already read, and `StringHasher::getID` returned it: an index on the
+first hashing, none on the next, which finds the entry. Any name on a
+`#hex` prefix ending in a digit could do it in an indexing document; the
+mixed pair is just where a whole-name prefix meets one. Upstream fixed it
+on 2026-09-10 (`275e534a5b`, a rejected name keeps no index), ported here
+with gtests (`IndexedNameTest.constructionInvalidCharDropsIndex`,
+`StringHasherTest.indexedNamesLeaveAStringIdWhole`) and a Python one
+(`TestNameEncodingAcrossDocuments`, a binder per face, the names compared
+across a recompute, a reload and a recompute after it). Upstream's half in
+Part's `Fillet`/`Chamfer` was for code that read that index on purpose;
+the fork's features resolve their edges another way and have no such code.
+
 ## 2. The method map
 
 `makEXxx` -> `makeElementXxx`, mechanically, over 34 names. Measured

@@ -350,7 +350,34 @@ const uint32_t kMagic = 0x46435344;  // 'FCSD'
 //     own visibility, the host does, per draw with its node keys, and
 //     tells it the objectKeys hidden and shown (docs/CoinRetirement.md
 //     5.23). A v80/v81 chain is read and dropped.
-const uint32_t kVersion = 82;
+//
+// 83-86 were 78-81 on PartDesignPort until SketcherPort was merged into
+// it (2026-10-04), whose 78-82 kept their numbers; a snapshot written by
+// PartDesignPort before the merge is misread past 77.
+// 83: a finish palette entry carries its extent (FinishPalette::Entry::
+//     extent) after the angle: the axis a screw thread is laid about
+//     and the band of it the thread covers. An older snapshot has none,
+//     which reads as the face's own frame, face-wide -- all a finish
+//     could state before. The material chunk carries the palette, so
+//     kChunkVersion moves with it.
+// 84: an overlay anchor may place its rect by position rather than by
+//     corner (OverlayAnchor::posX/posY) and size it in pixels
+//     (sizePixels), after the session: the NaviCube's per-view
+//     position, stated as fractions so a browser of any size places it.
+//     An older snapshot has neither, which reads as the corner placement
+//     it always had.
+// 85: an overlay anchor may ask to be drawn only while hovered
+//     (OverlayAnchor::autoHideMs), after sizePixels: the served
+//     NaviCube's auto-hide preferences, which the browser applies to its
+//     own pointer. An older snapshot has none, which reads as always
+//     drawn.
+// 86: a material carries ontoplayer after perfacepbr: which rendering
+//     order an on-top draw is in (an SoFCPathAnnotation's priority).
+//     An older snapshot has none, which reads as a plain annotation,
+//     all of them drawn in one -- the pattern instance toggles under the
+//     dimension lines crossing them. The material chunk carries it, so
+//     kChunkVersion moves with it.
+const uint32_t kVersion = 86;
 
 /// Layout revision of the out-of-band chunks (mesh, material, shader,
 /// group manifest). Written as the first field of each chunk, so it is
@@ -405,7 +432,12 @@ const uint32_t kVersion = 82;
 /// 20: a material chunk's autozoom entries carry their pixel scale (v79).
 /// 21: a group chunk's draws carry the per-view-shown flag (v80). The bytes
 ///     moved, so an older cached chunk would be misread.
-const uint32_t kChunkVersion = 21;
+/// 22: a material chunk's finish palette entries carry their extent
+///     (v83). The bytes moved.
+/// 23: a material chunk carries ontoplayer (v86) after perfacepbr.
+///     Appended, so nothing moved -- but an older cached chunk would
+///     answer "plain annotation" forever.
+const uint32_t kChunkVersion = 23;
 
 /// Bytes per vertex of MeshData::materials, whose layout Renderer.h
 /// documents. Named here because the stride is what a reader of an
@@ -454,6 +486,7 @@ static_assert(sizeof(BloomConfig) == 16, "BloomConfig changed: stream the new fi
 static_assert(offsetof(PBRConfig, envPreset) == 32, "PBRConfig changed: stream the new field, then update this");
 static_assert(offsetof(LightConfig, groundColor) == 172,"LightConfig changed: stream the new field, then update this");
 static_assert(offsetof(RenderDebugConfig, coverage) == 7, "RenderDebugConfig changed: stream the new field, then update this");
+static_assert(sizeof(OverlayAnchor) == 68, "OverlayAnchor changed: stream the new field, then update this");
 
 //////////////////////////////////////////////////////////////////////
 // Little-endian raw stream helpers. Every scalar goes through num()
@@ -1743,6 +1776,8 @@ void writeMaterial(Writer &w, const Material &m, const RefWriter &refs)
         w.f(entry.pitch);
         w.f(entry.depth);
         w.f(entry.angle);
+        for (int k = 0; k < 4; ++k)   // v83
+            w.f(entry.extent[k]);
     }
     // The projection frames the finish is laid out in (v51). The draw's
     // own frame first -- which is what a reader takes when the palette
@@ -1849,6 +1884,8 @@ void writeMaterial(Writer &w, const Material &m, const RefWriter &refs)
     w.b(m.perfacematerial);
     // v48: that stream's alpha slots carry the PBR factor pair.
     w.b(m.perfacepbr);
+    // v86: the rendering order of an on-top draw.
+    w.i32(m.ontoplayer);
 }
 
 void readMaterial(Reader &r, Material &m, const RefReader &refs,
@@ -1909,6 +1946,10 @@ void readMaterial(Reader &r, Material &m, const RefReader &refs,
                 entry.pitch = r.f();
                 entry.depth = r.f();
                 entry.angle = r.f();
+                if (version >= 83) {
+                    for (int k = 0; k < 4; ++k)
+                        entry.extent[k] = r.f();
+                }
                 if (i < uint32_t(MaxFinishPalette))
                     palette->entries.push_back(entry);
             }
@@ -2078,6 +2119,9 @@ void readMaterial(Reader &r, Material &m, const RefReader &refs,
     // v48: the stream's PBR reading. Absent means the Phong one.
     if (version >= 48)
         m.perfacepbr = r.b();
+    // v86: the on-top rendering order. Absent means a plain annotation.
+    if (version >= 86)
+        m.ontoplayer = int16_t(r.i32());
 }
 
 //////////////////////////////////////////////////////////////////////
@@ -3621,6 +3665,10 @@ static bool saveSnapshotFp(FILE *fp, const SceneSnapshot &snap)
         w.b(a.sceneCamera); // v6
         w.i32(a.subView);   // v69
         w.u32(a.session);   // v81
+        w.f(a.posX);        // v84
+        w.f(a.posY);
+        w.f(a.sizePixels);
+        w.f(a.autoHideMs);  // v85
         writeFeed(ov.draws, 0, true);
     }
 
@@ -4117,6 +4165,13 @@ static bool loadSnapshotFp(FILE *fp, SceneSnapshot &snap)
             a.sceneCamera = version >= 6 ? r.b() : false;
             a.subView = version >= 69 ? r.i32() : 0;
             a.session = version >= 81 ? r.u32() : 0;
+            if (version >= 84) {
+                a.posX = r.f();
+                a.posY = r.f();
+                a.sizePixels = r.f();
+            }
+            if (version >= 85)
+                a.autoHideMs = r.f();
             snap.overlays.push_back(std::move(ov));
             readFeed(snap.overlays.back().draws, GroupTarget::Overlay,
                      snap.overlays.size() - 1);

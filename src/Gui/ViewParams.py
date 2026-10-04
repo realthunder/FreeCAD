@@ -602,6 +602,23 @@ Params = [
     ParamHex('AxisXColor', 0xCC333300),
     ParamHex('AxisYColor', 0x33CC3300),
     ParamHex('AxisZColor', 0x3333CC00),
+    ParamBool('DatumScreenSize', True, title='Constant datum size on screen', doc=
+        "Draw origins, coordinate systems and datum elements at a constant size on\n"
+        "screen, the way upstream FreeCAD does. When off, an origin is sized to the\n"
+        "objects of its body or part."),
+    ParamFloat('DatumScale', 100.0, title='Datum scale',
+        doc="Size in percent of origins, coordinate systems and datum elements drawn\n"
+            "at a constant size on screen.",
+        proxy=ParamSpinBox(1.0, 1000.0, 10.0, 0)),
+    ParamFloat('DatumPlaneSize', 62.0, title='Datum plane size',
+        doc="On-screen size of a datum plane, before the datum scale.",
+        proxy=ParamSpinBox(1.0, 1000.0, 1.0, 0)),
+    ParamFloat('DatumLineSize', 70.0, title='Datum line size',
+        doc="On-screen length of a datum axis, before the datum scale.",
+        proxy=ParamSpinBox(1.0, 1000.0, 1.0, 0)),
+    ParamFloat('DatumTemporaryScaleFactor', 2.0, title='Datum temporary scale',
+        doc="How much datum planes grow while a reference is picked from them.",
+        proxy=ParamSpinBox(1.0, 10.0, 0.5, 1)),
 ]
 
 def declare_begin():

@@ -56,9 +56,19 @@ public:
       */
     std::list<gp_Trsf> getTransformations(const std::vector<Part::TopoShape> &) override;
 
+    /** An instance is left out by its own index, or when any sub-feature
+      * leaves out one of the instances it is the product of (upstream
+      * cdb4624675)
+      */
+    bool isTransformationSuppressed(int index) const override;
+
 protected:
     void positionBySupport() override;
     void onChanged(const App::Property *) override;
+
+private:
+    /// Per instance of the last getTransformations(): left out by a sub-feature
+    std::vector<bool> generatedSuppression;
 };
 
 } //namespace PartDesign

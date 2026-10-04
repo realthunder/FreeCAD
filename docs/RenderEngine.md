@@ -313,6 +313,12 @@ order:
 12. **Debug** — `RenderDebug_ViewMode` buffer visualization
     (`docs/RenderDebug.md` §2).
 13. **On-top / highlight** — on-top materials, selection/preselection.
+    An on-top draw under an `SoFCPathAnnotation` priority carries its
+    rendering order (`Material::ontoplayer`, wire v86) and draws after
+    every other on-top fill and line, an order at a time, fills and
+    lines together -- GL's late delayed paths. The overlay feeds keep
+    the same order inside a feed. On-view labels (priority 1) and a
+    pattern's instance toggles (2) are what needs it.
 14. **Overlays** — up to 9 overlay feeds (NaviCube, axis cross, HUD
     text, rubberband...) via `Renderer::setOverlay`.
 15. **Present** — standalone tier only: copy to the default backbuffer.
@@ -538,9 +544,10 @@ budget, against the 224 vec4 an ES3/WebGL2 device has to guarantee:
 | `u_viewLight` + `u_viewLightColor` + `u_viewLightAtt` | 24 |
 | `u_localLight` + `u_localLightColor` | 16 |
 | `u_envSH`, `u_finishParams`, matrices, scalars | 32 |
-| **total** | **184** |
+| `u_finishExtent` (a finish palette entry's axis and band) | 8 |
+| **total** | **192** |
 
-So 16 Coin lights would fit (208, 16 spare) and 32 would not (256).
+So 16 Coin lights would fit (216, 8 spare) and 32 would not (264).
 Note what that table says about where the room actually is: the effect
 lights cost 80 vec4 against the Coin lights' 24, and the single
 largest consumer in the shader is a shadow atlas sized for at most
@@ -1326,6 +1333,40 @@ uniform-selected branch that costs nothing on a scene that states none.
   direction-less sheen rather than as geometry. This is why the finish
   is stated in physical units and not as a normalised amplitude. In the
   Phong path the same quantity travels through the shininess slot.
+- **A screw thread is a finish too** (`Thread`, `ThreadLeft`; 2026-09-26,
+  `docs/PartDesignPort.md` "Thread texture"), and the one deep enough
+  to need more than a tilted normal: its relief is over half the pitch
+  with flanks at sixty degrees. `fcFinishThread` lays the helix about
+  the bore's axis (phase = distance along the axis in pitches, less the
+  turn about it, the turn taken off the normal, which on a surface of
+  revolution points at the axis -- so no point on the axis is needed),
+  across it the truncated V of the standards (ISO's P/4 crest and P/8
+  root flats for a 5/8 H working height, the included angle in the
+  finish's angle slot), box-filters the flank slope over the footprint
+  (exact for a piecewise linear profile: the difference of the profile
+  across the footprint over its width), marches the view ray a dozen
+  steps down the groove so a flank facing away hides behind the one in
+  front of it (parallax, the axis carried into view space by the
+  surface's own object/view Jacobian, which holds for instanced draws
+  too), and darkens the roots in the indirect-light occlusion. Past the
+  footprint it goes the way every finish goes: the mean square flank
+  slope into the roughness, and the mean occlusion.
+- **Where a pattern lies, when the frame cannot say**: a finish palette
+  entry may carry an extent beside it (`FinishPalette::Entry::extent`,
+  `u_finishExtent`, SceneDump v83): the axis, octahedrally encoded, and
+  the band of `dot(p, axis)` the pattern covers. All zero for everything
+  an appearance authors. A thread needs it twice over -- a tapped hole's
+  thread stops at the thread depth, part way down one face (and runs
+  out over the last pitch and a half there), and the axis must survive
+  a frame palette that sixteen holes overflow. A thread with no extent
+  takes its face's radial frame, and on a face with none draws nothing.
+- **A finish the object implies, beneath the appearance**
+  (`ViewProviderGeometryObject::getImpliedFinishes`): what a feature
+  knows about a face nobody painted -- the bore of a hole tapped without
+  a modelled thread is threaded. Merged into the per-face palette under
+  the appearance (a face finished on its own keeps its own), never
+  stored, re-derived with the render material. PartDesign states it for
+  every feature whose history holds such a hole.
 
 ### Per-face textures (an image on one face)
 

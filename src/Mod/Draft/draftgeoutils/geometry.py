@@ -591,15 +591,17 @@ def calculatePlacement(shape):
 
 def mirror(point, edge):
     """Find mirror point relative to an edge."""
-    normPoint = point.add(findDistance(point, edge, False))
+    dist = findDistance(point, edge, False)
 
-    if normPoint:
-        normPoint_point = App.Vector.sub(point, normPoint)
-        normPoint_refl = normPoint_point.negative()
-        refl = App.Vector.add(normPoint, normPoint_refl)
-        return refl
-    else:
-        return None
+    if dist is None:
+        # the point lies on the edge, and a point on the mirror line is
+        # its own mirror
+        return point
+
+    normPoint = point.add(dist)
+    normPoint_point = App.Vector.sub(point, normPoint)
+    normPoint_refl = normPoint_point.negative()
+    return App.Vector.add(normPoint, normPoint_refl)
 
 
 def mirror_matrix(mtx, pos, nor):

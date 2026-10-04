@@ -24,6 +24,7 @@
 
 #pragma once
 
+#include <numbers>
 #include <Gui/Notifications.h>
 #include <Gui/SelectionFilter.h>
 #include <Gui/Command.h>

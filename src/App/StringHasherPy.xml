@@ -71,6 +71,14 @@ Return the storage sizes as a tuple of the following entires
             </Documentation>
             <Parameter Name="Threshold" Type="Int"/>
         </Attribute>
+        <Attribute Name="IndexedNames">
+            <Documentation>
+                <UserDocu>Whether a mapped name's trailing index is hashed apart from its text,
+as upstream FreeCAD does. Saved with the document; a document saved before
+it was gets the mode its string table was written in.</UserDocu>
+            </Documentation>
+            <Parameter Name="IndexedNames" Type="Boolean"/>
+        </Attribute>
         <Attribute Name="Table" ReadOnly="true">
             <Documentation>
                 <UserDocu>Return the entire string table as Int->String dictionary</UserDocu>

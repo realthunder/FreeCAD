@@ -120,6 +120,8 @@ void Part::FaceMaker::Build()
     this->NotDone();
     this->myShapesToReturn = this->myInputFaces;
     this->myGenerated.Clear();
+    this->myPreSplitHistory.Nullify();
+    this->myPreSplitCompound = TopoDS_Compound();
 
     this->Build_Essence();//adds stuff to myShapesToReturn
 
@@ -184,6 +186,33 @@ void Part::FaceMaker::postBuild() {
     this->myTopoShape.setShape(this->myShape);
     this->myTopoShape.Hasher = this->MyHasher;
     this->myTopoShape.mapSubElement(this->mySourceShapes);
+
+    // A maker that split the edges (FaceMakerBuildFace) names its faces
+    // through the splitter's history, chained after any split before it, or
+    // the loop below names them from edges with no history to the sources
+    // (upstream 6780065c48)
+    std::vector<TopoShape> preSplitSources;
+    if (!myPreSplitHistory.IsNull()) {
+        MapperHistory mapper(myPreSplitHistory);
+        TopoShape preSplitShape(myTopoShape.Tag);
+        preSplitShape.makESHAPE(myPreSplitCompound, mapper, mySourceShapes);
+        preSplitSources.push_back(std::move(preSplitShape));
+    }
+    const auto &splitterSources = preSplitSources.empty() ? mySourceShapes : preSplitSources;
+    // Only when it split something: a splitter that left every edge as it
+    // was (non-destructive, the same TShapes) has nothing to trace, and
+    // naming through it anyway adds entries and string hashes the faces of
+    // an ordinary profile never had -- 38 map entries for a pad of 30, and
+    // new hasher ids in the names of saved files' faces
+    if (mySplitter.IsDone() && mySplitter.HasModified()) {
+        MapperMaker mapper(mySplitter);
+        TopoShape splitInputShape(myTopoShape.Tag);
+        splitInputShape.makESHAPE(mySplitter.Shape(), mapper, splitterSources);
+        myTopoShape.mapSubElement(splitInputShape);
+    }
+    else if (!preSplitSources.empty()) {
+        myTopoShape.mapSubElement(preSplitSources);
+    }
     int i = 0;
     const char *op = this->MyOp;
     if(!op) op = Part::OpCodes::Face;

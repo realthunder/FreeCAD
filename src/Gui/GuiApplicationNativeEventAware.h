@@ -24,6 +24,7 @@
 #define GUIAPPLICATIONNATIVEEVENTAWARE_H
 
 #include <QApplication>
+#include <FCGlobal.h>
 #include <vector>
 
 
@@ -34,7 +35,7 @@ namespace Gui
 #if defined(_USE_3DCONNEXION_SDK) || defined(SPNAV_FOUND)
     class GuiNativeEvent;
 #endif // Spacemice
-    class GUIApplicationNativeEventAware : public QApplication
+    class GuiExport GUIApplicationNativeEventAware : public QApplication
     {
         Q_OBJECT
     public:

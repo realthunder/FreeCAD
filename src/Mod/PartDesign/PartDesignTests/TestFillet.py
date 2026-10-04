@@ -56,6 +56,71 @@ class TestFillet(unittest.TestCase):
         self.Doc.recompute()
         self.assertNotAlmostEqual(self.Fillet.Shape.Volume, 4/3 * pi * 5**3, places=3)
 
+    def _createBoxWithFillet(self):
+        body = self.Doc.addObject('PartDesign::Body','Body')
+        box = body.newObject('PartDesign::AdditiveBox','Box')
+        box.Length = box.Width = box.Height = 10.0
+        self.Doc.recompute()
+        fillet = body.newObject('PartDesign::Fillet','Fillet')
+        fillet.Base = (box, ['Edge1'])
+        fillet.Radius = 1.0
+        self.Doc.recompute()
+        self.assertTrue(fillet.isValid())
+        return body, box, fillet
+
+    def _findEdgeWithMatchCount(self, source, target, count):
+        for index in range(1, len(source.Edges) + 1):
+            name = 'Edge%d' % index
+            matches = target.searchSubShape(source.getElement(name), needName=True)
+            if len(matches) == count:
+                return name, matches[0][0] if matches else None
+        self.skipTest('Test model did not contain a suitable edge')
+
+    def _removeUnderFollowup(self, count):
+        body, box, fillet = self._createBoxWithFillet()
+        oldEdge, newEdge = self._findEdgeWithMatchCount(fillet.Shape, box.Shape, count)
+        followup = body.newObject('PartDesign::Fillet','FollowupFillet')
+        followup.Base = (fillet, [oldEdge])
+        followup.Radius = 0.25
+        self.Doc.recompute()
+        self.assertTrue(followup.isValid())
+        body.removeObject(fillet)
+        self.Doc.removeObject(fillet.Name)
+        return box, followup, newEdge
+
+    def testRemovingPreviousFeatureRelinksUniqueEdge(self):
+        # (upstream 26c895c30d)
+        box, followup, newEdge = self._removeUnderFollowup(1)
+        self.assertEqual(followup.Base[0].Name, box.Name)
+        self.assertEqual(list(followup.Base[1]), [newEdge])
+        self.Doc.recompute()
+        self.assertTrue(followup.isValid())
+        self.assertLess(followup.Shape.Volume, 1000)
+
+    def testRemovingPreviousFeatureKeepsUnmatchedEdgeBroken(self):
+        # an edge the removed feature made has no counterpart: the fillet
+        # reports it rather than rounding some other edge
+        box, followup, _ = self._removeUnderFollowup(0)
+        self.Doc.recompute()
+        self.assertFalse(followup.isValid())
+
+    def testSolidReferenceIsAllItsEdges(self):
+        # (upstream f87d968447) a solid in Base stands for all its edges,
+        # as a face does for its own; it was skipped as an invalid shape
+        body = self.Doc.addObject('PartDesign::Body', 'SolidRefBody')
+        box = body.newObject('PartDesign::AdditiveBox', 'SolidRefBox')
+        self.Doc.recompute()
+        fillet = body.newObject('PartDesign::Fillet', 'SolidRefFillet')
+        fillet.Base = (box, ['Solid1'])
+        fillet.Radius = 1
+        self.Doc.recompute()
+        self.assertTrue(fillet.isValid())
+        byRef = fillet.Shape.Volume
+        fillet.Base = (box, ['Edge1'])
+        fillet.UseAllEdges = True
+        self.Doc.recompute()
+        self.assertAlmostEqual(byRef, fillet.Shape.Volume, places=6)
+
     def tearDown(self):
         #closing doc
         FreeCAD.closeDocument("PartDesignTestFillet")

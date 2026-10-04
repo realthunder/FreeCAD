@@ -118,6 +118,7 @@ private:
                      const char* name = nullptr,
                      bool force = false);
     void setName(TDF_Label label, App::DocumentObject* obj, const char* name = nullptr);
+    void setInvisible(TDF_Label label);
     TDF_Label findComponent(const char* subname, TDF_Label label, TDF_LabelSequence& labels);
 
 private:

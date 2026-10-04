@@ -1873,6 +1873,8 @@ std::string SceneTranslator::Finish::key() const
     k.precision(6);
     k << ":fin" << int(pattern) << '/' << pitch << '/' << depth << '/' << angle << '/'
       << int(frame.kind);
+    if (extent[2] < extent[3])
+        k << "/ext" << extent[0] << ',' << extent[1] << ',' << extent[2] << ',' << extent[3];
     if (frame.kind != SurfaceFrame::Unframed) {
         for (int i = 0; i < 3; ++i)
             k << '/' << frame.origin[i] << ',' << frame.axis[i] << ',' << frame.xdir[i];
@@ -1890,19 +1892,24 @@ SceneTranslator::Finish SceneTranslator::resolveFinish(uint8_t pattern,
                                                        float pitch,
                                                        float depth,
                                                        float angleDeg,
-                                                       const SurfaceFrame &frame)
+                                                       const SurfaceFrame &frame,
+                                                       const float *extent)
 {
     Finish f;
     // The bgfx path's gate (BGFXViewSubmit's setFinish): a pattern this
     // build knows, with a positive pitch and depth. A pattern a later
     // build wrote shades as none here as it does there.
-    if (pattern == 0 || pattern > 5 || pitch <= 0.0f || depth <= 0.0f)
+    if (pattern == 0 || pattern > 7 || pitch <= 0.0f || depth <= 0.0f)
         return f;
     f.pattern = pattern;
     f.pitch = pitch;
     f.depth = depth;
     f.angle = angleDeg * kPi / 180.0f;
     f.frame = frame;
+    if (extent) {
+        for (int i = 0; i < 4; ++i)
+            f.extent[i] = extent[i];
+    }
     return f;
 }
 
@@ -1951,7 +1958,10 @@ void SceneTranslator::applyFinish(ccl::ShaderGraph *graph, const Finish &fin, Su
     if (!fin.any())
         return;
     using Out = ccl::ShaderOutput *;
-    enum Pattern : uint8_t { Knurl = 1, KnurlStraight = 2, Brushed = 3, Blasted = 4, Turned = 5 };
+    enum Pattern : uint8_t {
+        Knurl = 1, KnurlStraight = 2, Brushed = 3, Blasted = 4, Turned = 5,
+        Thread = 6, ThreadLeft = 7
+    };
 
     const GraphOps ops{graph};
     // A table sampled at a coordinate: float texels, cubic so the
@@ -2062,7 +2072,75 @@ void SceneTranslator::applyFinish(ccl::ShaderGraph *graph, const Finish &fin, Su
     const SurfaceFrame &frame = fin.frame;
     Out H = nullptr;
 
-    if (frame.kind == SurfaceFrame::Planar || frame.kind == SurfaceFrame::Radial) {
+    if (fin.pattern == Thread || fin.pattern == ThreadLeft) {
+        // fcFinishThread as a height: the helix about the bore's axis
+        // and the truncated V across it, the arithmetic of the raster
+        // shader without its footprint filter (a path tracer
+        // supersamples) or its parallax march (the Bump node's slopes
+        // are what a march would have found the flanks by).
+        float axis[3];
+        const bool banded = fin.extent[2] < fin.extent[3];
+        if (banded) {
+            // The octahedral axis (fcFinishDecodeAxis)
+            float v[3] = {fin.extent[0], fin.extent[1],
+                          1.0f - std::fabs(fin.extent[0]) - std::fabs(fin.extent[1])};
+            const float t = std::max(-v[2], 0.0f);
+            v[0] += v[0] >= 0.0f ? -t : t;
+            v[1] += v[1] >= 0.0f ? -t : t;
+            const float l = std::sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2]);
+            for (int i = 0; i < 3; ++i)
+                axis[i] = v[i] / l;
+        }
+        else if (frame.kind == SurfaceFrame::Radial) {
+            float fx[3];
+            float fy[3];
+            canonicalFrame(frame, axis, fx, fy);
+        }
+        else
+            return;   // no axis to cut a thread about
+        // The frame round the axis, fixed by the axis alone as the
+        // shader fixes it, and the turn off the normal: its component
+        // along the axis drops out of both dot products.
+        const float ref[3] = {std::fabs(axis[2]) < 0.9f ? 0.0f : 1.0f, 0.0f,
+                              std::fabs(axis[2]) < 0.9f ? 1.0f : 0.0f};
+        float xd[3] = {axis[1] * ref[2] - axis[2] * ref[1],
+                       axis[2] * ref[0] - axis[0] * ref[2],
+                       axis[0] * ref[1] - axis[1] * ref[0]};
+        const float xl = std::sqrt(xd[0] * xd[0] + xd[1] * xd[1] + xd[2] * xd[2]);
+        for (float &c : xd)
+            c /= xl;
+        const float yd[3] = {axis[1] * xd[2] - axis[2] * xd[1],
+                             axis[2] * xd[0] - axis[0] * xd[2],
+                             axis[0] * xd[1] - axis[1] * xd[0]};
+        Out N = coords->output("Normal");
+        Out theta = ops.math(ccl::NODE_MATH_ARCTAN2, ops.dot(N, yd), ops.dot(N, xd));
+        Out z = ops.dot(P, axis);
+        const float hand = fin.pattern == ThreadLeft ? -1.0f : 1.0f;
+        Out ph = ops.madd(theta, -hand / kTwoPi, ops.mul(z, 1.0f / pitch));
+        Out y = ops.math(ccl::NODE_MATH_ABSOLUTE,
+                         ops.add(ops.math(ccl::NODE_MATH_FRACTION, ph, nullptr), -0.5f), nullptr);
+        const float half = fin.angle > 1.0e-3f ? 0.5f * fin.angle : 0.52359878f;
+        const float f = std::clamp(depth * std::tan(half) / pitch, 1.0e-3f, 0.5f);
+        const float rootHalf = (1.0f - 2.0f * f) / 6.0f;
+        // -clamp((rootHalf + f - y) / f, 0, 1) * depth
+        Out u = ops.mul(ops.add(ops.mul(y, -1.0f), rootHalf + f), 1.0f / f);
+        u = ops.math(ccl::NODE_MATH_MINIMUM,
+                     ops.math(ccl::NODE_MATH_MAXIMUM, u, nullptr, 0.0f, 0.0f), nullptr, 0.0f, 1.0f);
+        H = ops.mul(u, -depth);
+        if (banded) {
+            // The runout at either end of the band, and nothing past it
+            const float run = 1.5f * pitch;
+            auto ramp = [&](Out x) {
+                return ops.math(ccl::NODE_MATH_MINIMUM,
+                                ops.math(ccl::NODE_MATH_MAXIMUM, x, nullptr, 0.0f, 0.0f),
+                                nullptr, 0.0f, 1.0f);
+            };
+            Out a0 = ramp(ops.mul(ops.add(z, -fin.extent[2]), 1.0f / run));
+            Out a1 = ramp(ops.mul(ops.add(ops.mul(z, -1.0f), fin.extent[3]), 1.0f / run));
+            H = ops.math(ccl::NODE_MATH_MULTIPLY, H, ops.math(ccl::NODE_MATH_MULTIPLY, a0, a1));
+        }
+    }
+    else if (frame.kind == SurfaceFrame::Planar || frame.kind == SurfaceFrame::Radial) {
         float axis[3];
         float xdir[3];
         float ydir[3];
@@ -2769,7 +2847,8 @@ bool SceneTranslator::translateDraw(const DrawCall &draw,
                         const auto &entries = m.finishpalette->entries;
                         fin = fi < entries.size()
                             ? resolveFinish(entries[fi].pattern, entries[fi].pitch,
-                                            entries[fi].depth, entries[fi].angle, frame)
+                                            entries[fi].depth, entries[fi].angle, frame,
+                                            entries[fi].extent)
                             : Finish();
                     }
                     else {

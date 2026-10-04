@@ -93,9 +93,11 @@ struct Layout
     /// (wheelDir, then <datadir>/Pyodide itself for a dev tree).
     std::vector<std::pair<std::string, std::string>> wheels;
     /// Bundled pure-Python wheels (`*-py3-none-any.whl` in the same two
-    /// places): FreeCAD's own workbench code packed for the guest
-    /// (fcx_draft, ...), loaded at boot after fcx_image and before the
-    /// user's package set.  Sorted by file name.
+    /// places): FreeCAD's own pure Python packed for the guest
+    /// (fcx_widgets, the browser tier's widget layer), loaded at boot
+    /// after fcx_image and before the user's package set.  Sorted by
+    /// file name.  The workbench wheels were removed 2026-09-18
+    /// (docs/Sandbox.md 7.31).
     std::vector<std::string> bundled;
     /// Bundled COMPILED wheels (`*-cp3xx-cp3xx-pyodide_<abi>_wasm32.whl`
     /// other than fcx_image, in the same two places): ABI tag -> path;

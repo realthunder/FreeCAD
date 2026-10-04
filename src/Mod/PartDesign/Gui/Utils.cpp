@@ -92,7 +92,7 @@ using namespace Attacher;
 
 namespace PartDesignGui {
 
-bool setEdit(App::DocumentObject *obj, App::DocumentObject *container, const char *key) {
+bool setEdit(App::DocumentObject *obj, App::DocumentObject *container, const char *key, int mode) {
     if(!obj || !obj->getNameInDocument()) {
         FC_ERR("invalid object");
         return false;
@@ -117,6 +117,8 @@ bool setEdit(App::DocumentObject *obj, App::DocumentObject *container, const cha
     auto active = activeView->getActiveObject<App::DocumentObject*>(key,&parent,&subname);
     if(container && active!=container) {
         parent = obj;
+        // the path is the active object's, not obj's (upstream 4a80af74f4)
+        subname.clear();
     }
     else {
         subname += obj->getNameInDocument();
@@ -125,7 +127,7 @@ bool setEdit(App::DocumentObject *obj, App::DocumentObject *container, const cha
 
     Gui::cmdGuiDocument(parent, std::ostringstream() << "setEdit("
                                                      << Gui::Command::getObjectCmd(parent)
-                                                     << ", 0, '" << subname << "')");
+                                                     << ", " << mode << ", '" << subname << "')");
     return true;
 }
 
@@ -144,7 +146,7 @@ PartDesign::Body *getBody(bool messageIfNot, bool autoActivate, bool assertModer
     Gui::MDIView *activeView = Gui::Application::Instance->activeView();
 
     if (activeView) {
-        if (assertModern && PartDesignGui::assureModernWorkflow ( activeView->getAppDocument() ) ) {
+        if (assertModern) {
             activeBody = activeView->getActiveObject<PartDesign::Body*>(PDBODYKEY,topParent,subname);
             auto doc = activeView->getAppDocument();
 
@@ -298,7 +300,12 @@ PartDesign::Body *getBodyFor(const App::DocumentObject* obj, bool messageIfNot,
 App::Part* getActivePart(App::DocumentObject **topParent, std::string *subname) {
     Gui::MDIView *activeView = Gui::Application::Instance->activeView();
     if ( activeView ) {
-        return activeView->getActiveObject<App::Part*> (PARTKEY,topParent,subname);
+        auto part = activeView->getActiveObject<App::Part*> (PARTKEY,topParent,subname);
+        // An active assembly takes new bodies the way an active part does
+        // (upstream 62cbaf7336)
+        if (!part)
+            part = activeView->getActiveObject<App::Part*> (ASSEMBLYKEY,topParent,subname);
+        return part;
     } else {
         return nullptr;
     }
@@ -540,26 +547,26 @@ bool isFeatureMovable(App::DocumentObject* const feat)
         if (sk && !isFeatureMovable(sk))
             return false;
 
-        if (auto prop = static_cast<App::PropertyLinkList*>(prim->getPropertyByName("Sections"))) {
+        if (auto prop = dynamic_cast<App::PropertyLinkSubList*>(prim->getPropertyByName("Sections"))) {
             if (std::any_of(prop->getValues().begin(), prop->getValues().end(), [](App::DocumentObject* obj){
                 return !isFeatureMovable(obj);
             }))
                 return false;
         }
 
-        if (auto prop = static_cast<App::PropertyLinkSub*>(prim->getPropertyByName("ReferenceAxis"))) {
+        if (auto prop = dynamic_cast<App::PropertyLinkSub*>(prim->getPropertyByName("ReferenceAxis"))) {
             App::DocumentObject* axis = prop->getValue();
             if (axis && !isFeatureMovable(axis))
                 return false;
         }
 
-        if (auto prop = static_cast<App::PropertyLinkSub*>(prim->getPropertyByName("Spine"))) {
+        if (auto prop = dynamic_cast<App::PropertyLinkSub*>(prim->getPropertyByName("Spine"))) {
             App::DocumentObject* spine = prop->getValue();
             if (spine && !isFeatureMovable(spine))
                 return false;
         }
 
-        if (auto prop = static_cast<App::PropertyLinkSub*>(prim->getPropertyByName("AuxillerySpine"))) {
+        if (auto prop = dynamic_cast<App::PropertyLinkSub*>(prim->getPropertyByName("AuxiliarySpine"))) {
             App::DocumentObject* auxSpine = prop->getValue();
             if (auxSpine && !isFeatureMovable(auxSpine))
                 return false;
@@ -591,24 +598,24 @@ std::vector<App::DocumentObject*> collectMovableDependencies(std::vector<App::Do
             if (sk) {
                 unique_objs.insert(static_cast<App::DocumentObject*>(sk));
             }
-            if (auto prop = static_cast<App::PropertyLinkList*>(prim->getPropertyByName("Sections"))) {
+            if (auto prop = dynamic_cast<App::PropertyLinkSubList*>(prim->getPropertyByName("Sections"))) {
                 for (App::DocumentObject* obj : prop->getValues()) {
                     unique_objs.insert(obj);
                 }
             }
-            if (auto prop = static_cast<App::PropertyLinkSub*>(prim->getPropertyByName("ReferenceAxis"))) {
+            if (auto prop = dynamic_cast<App::PropertyLinkSub*>(prim->getPropertyByName("ReferenceAxis"))) {
                 App::DocumentObject* axis = prop->getValue();
                 if (axis && !axis->isDerivedFrom<App::OriginFeature>()){
                     unique_objs.insert(axis);
                 }
             }
-            if (auto prop = static_cast<App::PropertyLinkSub*>(prim->getPropertyByName("Spine"))) {
+            if (auto prop = dynamic_cast<App::PropertyLinkSub*>(prim->getPropertyByName("Spine"))) {
                 App::DocumentObject* axis = prop->getValue();
                 if (axis && !axis->isDerivedFrom<App::OriginFeature>()){
                     unique_objs.insert(axis);
                 }
             }
-            if (auto prop = static_cast<App::PropertyLinkSub*>(prim->getPropertyByName("AuxillerySpine"))) {
+            if (auto prop = dynamic_cast<App::PropertyLinkSub*>(prim->getPropertyByName("AuxiliarySpine"))) {
                 App::DocumentObject* axis = prop->getValue();
                 if (axis && !axis->isDerivedFrom<App::OriginFeature>()){
                     unique_objs.insert(axis);
@@ -639,7 +646,7 @@ void relinkToOrigin(App::DocumentObject* feat, PartDesign::Body* targetbody)
     }
     else if (feat->isDerivedFrom<PartDesign::ProfileBased>()) {
         auto prim = static_cast<PartDesign::ProfileBased*>(feat);
-        if (auto prop = static_cast<App::PropertyLinkSub*>(prim->getPropertyByName("ReferenceAxis"))) {
+        if (auto prop = dynamic_cast<App::PropertyLinkSub*>(prim->getPropertyByName("ReferenceAxis"))) {
             App::DocumentObject* axis = prop->getValue();
             if (axis && axis->isDerivedFrom<App::OriginFeature>()){
                 auto originfeat = static_cast<App::OriginFeature*>(axis);
@@ -876,7 +883,7 @@ public:
                         auto vp = Base::freecad_dynamic_cast<ViewProviderAddSub>(
                                 Gui::Application::Instance->getViewProvider(editObj));
                         if (vp) {
-                            auto feat = Base::freecad_dynamic_cast<PartDesign::FeatureAddSub>(editObj);
+                            auto feat = Base::freecad_dynamic_cast<PartDesign::Feature>(editObj);
                             if (feat)
                                 feat->setPauseRecompute(true);
                             editPreview = true;
@@ -1012,9 +1019,28 @@ public:
         auto vp = Base::freecad_dynamic_cast<ViewProviderAddSub>(
                 Gui::Application::Instance->getViewProvider(editObj));
         if (vp) {
-            auto feat = Base::freecad_dynamic_cast<PartDesign::FeatureAddSub>(editObj);
-            if (feat)
+            auto feat = Base::freecad_dynamic_cast<PartDesign::Feature>(editObj);
+            if (feat) {
+                const bool wasPaused = feat->isRecomputePaused();
                 feat->setPauseRecompute(false);
+                // The preview paused the feature's own recompute, and
+                // un-pausing only touches it. The panel's OK recomputes
+                // after this and its Cancel has already rolled the change
+                // back -- both run inside TaskView's accept/reject, which
+                // marks the dialog. Any other way out of the edit (Esc in
+                // a view, a served client leaving it, a script's
+                // resetEdit) closed the dialog without either and keeps
+                // the change, as upstream does, where nothing is paused:
+                // so the feature is made now rather than left touched
+                // with its pre-edit shape on screen.
+                auto dlg = Gui::Control().activeDialog();
+                const bool viaDialog =
+                    dlg && dlg->property("taskview_accept_or_reject").isValid();
+                if (wasPaused && !viaDialog && feat->isTouched()) {
+                    Gui::WaitCursor cursor;
+                    feat->recomputeFeature(true);
+                }
+            }
             vp->setPreviewDisplayMode(false);
             if (hideEditObject)
                 vp->Visibility.setValue(false);
@@ -1580,7 +1606,7 @@ void MonitorProxy::onPreview(bool checked)
     if (vp) {
         _MonitorInstance->editPreview = checked;
         vp->setPreviewDisplayMode(checked);
-        auto feat = Base::freecad_dynamic_cast<PartDesign::FeatureAddSub>(editObj);
+        auto feat = Base::freecad_dynamic_cast<PartDesign::Feature>(editObj);
         if (feat)
             feat->setPauseRecompute(checked);
         if (!checked) {

@@ -59,6 +59,9 @@ Params = [
     ParamInt("EditRecomputeWait", 300),
     ParamBool("AdjustCameraForNewFeature", True),
     ParamHex("DefaultDatumColor", 0xFFD70066, proxy=ParamColor()),
+    ParamHex("DefaultDatumLineColor", 0xFA9600FF, proxy=ParamColor(),
+       doc="Line and point color of a shape binder, darker than DefaultDatumColor\n"
+           "so that its outline shows against the model (upstream 5dbb4d7c7e)"),
     ParamBool("RespectSystemDPI", False, on_change=True),
     ParamBool("ShapeInstancing", True, on_change=True,
        doc="Share the tessellation of repeated sub-shapes (same TopoDS_TShape)\n"

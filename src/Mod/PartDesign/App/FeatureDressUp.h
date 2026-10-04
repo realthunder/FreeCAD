@@ -69,6 +69,9 @@ public:
     void setPauseRecompute(bool) override {
     }
 
+    void onBaseFeatureRerouted(App::DocumentObject* oldBase,
+                               App::DocumentObject* newBase) override;
+
 protected:
     void onChanged(const App::Property* prop) override;
 };

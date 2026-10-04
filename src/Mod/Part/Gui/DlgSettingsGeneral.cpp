@@ -52,6 +52,13 @@ DlgSettingsGeneral::DlgSettingsGeneral(QWidget* parent)
 {
     ui->setupUi(this);
 
+    ui->fineSnapModifier->addItem(tr("Shift"), static_cast<int>(Qt::ShiftModifier));
+    ui->fineSnapModifier->addItem(tr("Ctrl"), static_cast<int>(Qt::ControlModifier));
+
+    //: Part/PartDesign settings: drag behavior mode when not holding the snap modifier key
+    ui->defaultCoarseDragBehavior->addItem(tr("Coarse"), 0);
+    ui->defaultCoarseDragBehavior->addItem(tr("Fine"), 1);
+
     QObject::connect(ui->btnAuxGroup, &QPushButton::pressed, [this]() {
         bool checked = ui->checkBoxAuxGroup->isChecked();
         const char *typeName = "PartDesign::AuxGroup";
@@ -125,11 +132,19 @@ void DlgSettingsGeneral::saveSettings()
     ui->checkObjectNaming->onSave();
     ui->comboBoxCommandOverride->onSave();
     ui->comboBoxWrapFeature->onSave();
+    ui->comboDefaultProfileTypeForHole->onSave();
     ui->checkAutoGroupSolids->onSave();
     ui->checkBoxAuxGroup->onSave();
     ui->checkSplitEllipsoid->onSave();
     ui->checkBoxValidateShape->onSave();
     ui->checkBoxFixShape->onSave();
+    ui->enableGizmos->onSave();
+    ui->delayedGizmoUpdate->onSave();
+    ui->enableCoarseSnap->onSave();
+    ui->fineSnapModifier->onSave();
+    ui->defaultCoarseDragBehavior->onSave();
+    ui->coarseLinearSnapMultiplier->onSave();
+    ui->coarseRotationSnapMultiplier->onSave();
 }
 
 void DlgSettingsGeneral::loadSettings()
@@ -142,11 +157,19 @@ void DlgSettingsGeneral::loadSettings()
     ui->checkObjectNaming->onRestore();
     ui->comboBoxCommandOverride->onRestore();
     ui->comboBoxWrapFeature->onRestore();
+    ui->comboDefaultProfileTypeForHole->onRestore();
     ui->checkAutoGroupSolids->onRestore();
     ui->checkBoxAuxGroup->onRestore();
     ui->checkSplitEllipsoid->onRestore();
     ui->checkBoxValidateShape->onRestore();
     ui->checkBoxFixShape->onRestore();
+    ui->enableGizmos->onRestore();
+    ui->delayedGizmoUpdate->onRestore();
+    ui->enableCoarseSnap->onRestore();
+    ui->fineSnapModifier->onRestore();
+    ui->defaultCoarseDragBehavior->onRestore();
+    ui->coarseLinearSnapMultiplier->onRestore();
+    ui->coarseRotationSnapMultiplier->onRestore();
 }
 
 /**

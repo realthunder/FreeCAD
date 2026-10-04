@@ -54,6 +54,21 @@ endif()
 fc_add_gui_test(GuiServeSelectionEcho_tests_run serve-selection-echo.py
                 --timeout 180)
 
+# The sandbox guest's files served next to the scene, for a guest booted in
+# the viewer's page (docs/Sandbox.md 7.20, C1): boot.json behind the door,
+# the runtime and the wheels ahead of it and byte for byte, nothing else.
+# The browser leg (sandbox-console-browser.py) is not registered: it needs
+# node, puppeteer-core and a Chrome (docs/Testing.md).
+fc_add_gui_test(GuiSandboxConsoleServe_tests_run sandbox-console-serve.py
+                --timeout 180)
+
+# A guest in a viewer's page reaches the served document over the socket
+# (docs/Sandbox.md 7.20, C2): bridge frames through the per-connection
+# endpoint, under the document's principal, with no browser -- the browser
+# leg (sandbox-bridge-browser.py) is not registered, for the reason above.
+fc_add_gui_test(GuiSandboxBridgeServe_tests_run sandbox-bridge-serve.py
+                --timeout 180)
+
 # A desktop selection still reaches the panels that observe it
 # (docs/ThinClient.md sec 8.4). Gui::Selection() resolves to the current
 # instance now, and observers were pinned to the room; on the desktop no
@@ -112,6 +127,31 @@ fc_add_gui_test(GuiServeExternalPick_tests_run serve-external-pick.py
 # which is the claim the design rests on, the box being the same
 # QuantitySpinBox the desktop uses with nothing to paint it on.
 fc_add_gui_test(GuiServeOnViewParams_tests_run serve-onview-params.py
+                --timeout 200)
+
+# A pattern's on-view spacing labels over the wire (upstream 6fa9125919 on
+# the fork's label): a click replayed through the scene opens the label's
+# box, key frames type into it, and Enter sets the pattern.
+fc_add_gui_test(GuiServePatternLabels_tests_run serve-pattern-labels.py
+                --timeout 200)
+
+# A pattern's instance toggles over the wire (upstream e22e537c4b on the
+# fork's marker node): a click replayed through the scene, picked over the
+# instance the marker sits in, leaves the instance out and brings it back.
+fc_add_gui_test(GuiServePatternMarkers_tests_run serve-pattern-markers.py
+                --timeout 200)
+
+# Leaving a PartDesign feature's edit by a bare resetEdit (Esc in a view, a
+# served client leaving it) keeps the change and shows it: preview-on-edit
+# paused the feature's recompute, and only the panel's OK made it again.
+fc_add_gui_test(GuiPdLeaveEditRecompute_tests_run pd-leave-edit-recompute.py
+                --timeout 200)
+
+# A browser's right click (docs/ThinClient.md sec 8.11b): the desktop's 3D
+# view context menu built for what the ray hits, its entries judged for the
+# connection, an edit entry entered in the client's view with no 3D view
+# opened -- a PartDesign Body's menu included, whose building asks for one.
+fc_add_gui_test(GuiServeContextMenu_tests_run serve-context-menu.py
                 --timeout 200)
 
 # The expression editor on a live desktop (docs/ExpressionEditor.md): its
@@ -599,6 +639,33 @@ fc_add_gui_test(GuiSketchConstraintHints_tests_run
                 sketch-constraint-hints.py
                 --timeout 240)
 
+# The PartDesign Gui defects of docs/PartDesignPort.md sec 7, as the user
+# meets them: a tree move that reversed the features, the crash closing
+# the document after it, a deleted Loft or Pipe leaving its sketches
+# hidden, a double click ignoring the user edit mode, a body Transparency
+# switching its Tip's colour mapping off, a nearly planar face refused for
+# a sketch.
+fc_add_gui_test(GuiPartDesignDefects_tests_run
+                pd-gui-defects.py
+                --timeout 300)
+
+# The small PartDesign fixes of docs/PartDesignPort.md sec 8 only the Gui
+# shows: a MultiTransform's new transformation in its own body, a feature
+# kept in a body when dragged, a body's own datum lines as references, the
+# Sprocket panel under a translation, the shaft wizard's constraint combo.
+fc_add_gui_test(GuiPartDesignPortFixes_tests_run
+                pd-port-fixes.py
+                --timeout 300)
+
+# The PartDesign candidates of docs/PartDesignPort.md sec 8 taken
+# 2026-10-01: Placement in the context menu, the checked active body, the
+# binder watcher and outline, the Tip of a body shown with nothing
+# visible, several table references deleted at once, New Sketch's
+# attacher, the Pad direction rows, no legacy workflow prompt.
+fc_add_gui_test(GuiPartDesignPortCandidates_tests_run
+                pd-port-candidates.py
+                --timeout 300)
+
 # A dimension's drawing follows its constraint under the bgfx renderer: the
 # label's companion shapes feed the capture, and nothing told it they had
 # changed, so a changed value kept its old number at the old place.
@@ -680,7 +747,7 @@ fc_add_gui_test(GuiReopenVisualBuilds_tests_run
 # eagerly again (the noise floor); then edits, deletes, moves, undo, hides,
 # a recompute and a revert made while the drain still runs, against the
 # same after an eager open, and closes during the drain
-# (docs/DocumentLoad.md sec 16).
+# (docs/DocumentLoad.md sec 19).
 fc_add_gui_test(GuiProgressiveLoadDiff_tests_run
                 progressive-load-diff.py
                 --timeout 1500)
@@ -688,7 +755,7 @@ fc_add_gui_test(GuiProgressiveLoadDiff_tests_run
 # An automatic datum plane comes back from a file at its saved size in
 # either open mode, and the origin sized over it with it: it sized itself
 # only during the load, before the features after it had a visual
-# (docs/DocumentLoad.md sec 16).
+# (docs/DocumentLoad.md sec 19).
 fc_add_gui_test(GuiDatumSizeAfterOpen_tests_run
                 datum-size-after-open.py
                 --timeout 240)
@@ -703,9 +770,17 @@ fc_add_gui_test(GuiPartTessellationReload_tests_run
                 part-tessellation-reload.py
                 --timeout 240)
 
+# A Part object re-meshes when only its AngularDeflection changes: OCCT
+# keeps a resident mesh whose linear deflection still fits and does not
+# record the angle, so an angle-only edit (property or preference) drew
+# the old mesh until the build learned to clear it.
+fc_add_gui_test(GuiPartAngleOnlyRemesh_tests_run
+                part-angle-only-remesh.py
+                --timeout 240)
+
 # A SubShapeBinder keeps its saved Map*Color settings when opened: reading
 # ShapeColor from the file after MapFaceColor switched the mapping off, as
-# a colour picked by the user does (docs/DocumentLoad.md sec 16).
+# a colour picked by the user does (docs/DocumentLoad.md sec 19).
 fc_add_gui_test(GuiBinderMapColorRestore_tests_run
                 binder-map-color-restore.py
                 --timeout 240)
@@ -713,7 +788,7 @@ fc_add_gui_test(GuiBinderMapColorRestore_tests_run
 # An instanced Part object draws a uniform face colour list at the
 # transparency the list says: the uniform branch took the colour's alpha,
 # an opacity, for the transparency, so an opaque list drew invisible
-# (docs/DocumentLoad.md sec 16).
+# (docs/DocumentLoad.md sec 19).
 fc_add_gui_test(GuiInstancedFaceTransparency_tests_run
                 instanced-face-transparency.py
                 --timeout 240)
@@ -721,7 +796,7 @@ fc_add_gui_test(GuiInstancedFaceTransparency_tests_run
 # A shape tessellates the same whatever mesh it already carries: every
 # tessellation parameter came from a bounding box that read the resident
 # mesh, so a coarse rung changed the exact mesh built after it
-# (docs/DocumentLoad.md sec 16).
+# (docs/DocumentLoad.md sec 19).
 fc_add_gui_test(GuiMeshingBoundsHistory_tests_run
                 meshing-bounds-history.py
                 --timeout 240)
@@ -1115,3 +1190,10 @@ fc_add_gui_test(GuiSketchFitAll_tests_run
 fc_add_gui_test(GuiViewAnimationBackgroundTimer_tests_run
                 view-animation-background-timer.py
                 --timeout 120)
+
+# A hidden child of an App::Part exports to STEP, hidden and in its own
+# colour: OCCT's writer faulted on an invisible component without a colour
+# of its own (occ-issues local05), which ExportOCAF2's workaround missed.
+fc_add_gui_test(GuiExportHiddenComponent_tests_run
+                export-hidden-component.py
+                --timeout 180)

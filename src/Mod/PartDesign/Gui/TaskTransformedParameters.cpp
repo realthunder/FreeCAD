@@ -34,6 +34,10 @@
 # include <TopoDS_Face.hxx>
 # include <TopoDS.hxx>
 # include <BRepAdaptor_Surface.hxx>
+# include <BRepBndLib.hxx>
+# include <Bnd_Box.hxx>
+# include <TopLoc_Location.hxx>
+# include <QTimer>
 #endif
 
 #include <boost/algorithm/string/predicate.hpp>
@@ -72,6 +76,46 @@
 
 namespace sp = std::placeholders;
 
+namespace {
+
+/// The originals of  pattern in its own frame, as execute() takes them:
+/// what its transformations move. Located, not copied -- only where they
+/// are is wanted, and Scaled's centre of mass.
+std::vector<Part::TopoShape> originalsInFrame(const PartDesign::Transformed* pattern)
+{
+    std::vector<Part::TopoShape> shapes;
+    const gp_Trsf placementInv =
+        Part::TopoShape::convert(pattern->Placement.getValue().toMatrix()).Inverted();
+    const gp_Trsf offset = Part::TopoShape::convert(pattern->TransformOffset.getValue().toMatrix());
+    std::set<App::DocumentObject*> seen;
+    for (auto obj : pattern->OriginalSubs.getValues()) {
+        if (!obj || !seen.insert(obj).second)
+            continue;
+        auto addsub = Base::freecad_dynamic_cast<PartDesign::FeatureAddSub>(obj);
+        if (addsub && pattern->SubTransform.getValue()) {
+            if (addsub->Suppress.getValue())
+                continue;
+            std::vector<std::pair<Part::TopoShape, PartDesign::FeatureAddSub::Type>> addsubshapes;
+            addsub->getAddSubShape(addsubshapes);
+            const gp_Trsf trsf = offset.Multiplied(
+                placementInv.Multiplied(addsub->getLocation().Transformation()));
+            for (auto& v : addsubshapes) {
+                if (!v.first.isNull())
+                    shapes.emplace_back(v.first.getShape().Moved(TopLoc_Location(trsf)));
+            }
+            continue;
+        }
+        if (auto feature = Base::freecad_dynamic_cast<Part::Feature>(obj)) {
+            const TopoDS_Shape& shape = feature->Shape.getShape().getShape();
+            if (!shape.IsNull())
+                shapes.emplace_back(shape.Moved(TopLoc_Location(placementInv.Multiplied(offset))));
+        }
+    }
+    return shapes;
+}
+
+} // namespace
+
 FC_LOG_LEVEL_INIT("PartDesign",true,true)
 
 using namespace PartDesignGui;
@@ -97,6 +141,7 @@ TaskTransformedParameters::TaskTransformedParameters(ViewProviderTransformed *Tr
         Gui::ViewParams::setShowSelectionOnTop(true);
     // remember initial transaction ID
     App::GetApplication().getActiveTransaction(&transactionID);
+    watchRecompute();
 }
 
 TaskTransformedParameters::TaskTransformedParameters(TaskMultiTransformParameters *parentTask)
@@ -108,6 +153,29 @@ TaskTransformedParameters::TaskTransformedParameters(TaskMultiTransformParameter
       blockUpdate(false)
 {
     selectionMode = none;
+    watchRecompute();
+}
+
+void TaskTransformedParameters::watchRecompute()
+{
+    // An original edited elsewhere -- in the property view, the console, or
+    // in another document the originals come from -- moves the instances
+    // and what the labels measure, and only a recompute says so. Every
+    // recompute, of the document or of one feature, tells of each object.
+    connRecomputedObject = App::GetApplication().signalRecomputedObject.connect(
+        [this](const App::Document&, const App::DocumentObject&) {
+            // Once, after the recompute: the view providers have the new
+            // shapes then
+            if (onViewRefreshPending)
+                return;
+            onViewRefreshPending = true;
+            QTimer::singleShot(0, this, [this]() {
+                onViewRefreshPending = false;
+                if (!insideMultiTransform)
+                    updateInstanceMarkers();
+                updateLabels();
+            });
+        });
 }
 
 TaskTransformedParameters::~TaskTransformedParameters()
@@ -128,13 +196,29 @@ void TaskTransformedParameters::slotDeletedObject(const Gui::ViewProviderDocumen
 void TaskTransformedParameters::slotUndoDocument(const Gui::Document& Doc)
 {
     if (TransformedView && TransformedView->getDocument() == &Doc)
-        refresh();
+        refreshAfterUndo();
 }
 
 void TaskTransformedParameters::slotRedoDocument(const Gui::Document& Doc)
 {
     if (TransformedView && TransformedView->getDocument() == &Doc)
-        refresh();
+        refreshAfterUndo();
+}
+
+void TaskTransformedParameters::slotDeleteDocument(const Gui::Document& Doc)
+{
+    // The view providers go with the document, telling nobody, and the
+    // panel is deleted after them: its destructor must not reach the feature
+    if (TransformedView && TransformedView->getDocument() == &Doc)
+        TransformedView = nullptr;
+}
+
+void TaskTransformedParameters::refreshAfterUndo()
+{
+    refresh();
+    // The edit's transaction went with the undo, and an editor sets its
+    // property before it asks for one: what follows is still the edit's
+    setupTransaction();
 }
 
 bool TaskTransformedParameters::isViewUpdated() const
@@ -223,6 +307,15 @@ void TaskTransformedParameters::setupBaseUI() {
     updateViewTimer->setSingleShot(true);
     Base::connect(updateViewTimer, &QTimer::timeout,
             this, &TaskTransformedParameters::onUpdateViewTimer);
+
+    instanceMarkers = std::make_unique<Gui::PatternInstanceMarkers>();
+    connect(instanceMarkers.get(), &Gui::PatternInstanceMarkers::toggleRequested,
+            this, &TaskTransformedParameters::onInstanceToggled);
+    // Once the edit has started: the panel is built while it starts, before
+    // the view it runs in is recorded
+    QTimer::singleShot(0, this, [this]() {
+        updateInstanceMarkers();
+    });
     
     // remembers the initial transaction ID
     App::GetApplication().getActiveTransaction(&transactionID);
@@ -443,6 +536,7 @@ void TaskTransformedParameters::refresh()
 
     }
     updateUI();
+    updateInstanceMarkers();
 }
 
 void TaskTransformedParameters::onSelectionChanged(const Gui::SelectionChanges& msg)
@@ -527,6 +621,75 @@ void TaskTransformedParameters::fillPlanesCombo(ComboLinks &combolinks,
 void TaskTransformedParameters::recomputeFeature() {
     Gui::WaitCursor cursor;
     getTopTransformedView()->recomputeFeature();
+    // After it: a rewritten history moves the pattern to its base's placement
+    updateInstanceMarkers();
+}
+
+void TaskTransformedParameters::updateInstanceMarkers()
+{
+    if (insideMultiTransform) {
+        if (parentTask)
+            static_cast<TaskTransformedParameters*>(parentTask)->updateInstanceMarkers();
+        return;
+    }
+    if (!instanceMarkers)
+        return;
+    auto vp = getTopTransformedView();
+    PartDesign::Transformed* pattern = getTopTransformedObject();
+    Gui::ViewerContext* view = vp ? vp->getEditViewer() : nullptr;
+    if (!pattern || !view) {
+        instanceMarkers->clear();
+        return;
+    }
+
+    // Each at the middle of the originals, moved as the instance is
+    std::vector<Part::TopoShape> originals = originalsInFrame(pattern);
+    Bnd_Box box;
+    for (const auto& shape : originals)
+        BRepBndLib::Add(shape.getShape(), box);
+    std::list<gp_Trsf> transformations;
+    if (!box.IsVoid()) {
+        try {
+            transformations = pattern->getTransformations(originals);
+        }
+        catch (const Base::Exception&) {
+        }
+        catch (const Standard_Failure&) {
+        }
+    }
+    // One instance is none left out
+    if (transformations.size() < 2) {
+        instanceMarkers->clear();
+        return;
+    }
+    double xmin, ymin, zmin, xmax, ymax, zmax;
+    box.Get(xmin, ymin, zmin, xmax, ymax, zmax);
+    const gp_Pnt center((xmin + xmax) / 2.0, (ymin + ymax) / 2.0, (zmin + zmax) / 2.0);
+    const Base::Matrix4D& toWorld = vp->getDocument()->getEditingTransform();
+
+    std::vector<Gui::PatternInstanceMarkers::Instance> instances;
+    instances.reserve(transformations.size());
+    int index = 0;
+    for (const gp_Trsf& trsf : transformations) {
+        gp_Pnt p = center.Transformed(trsf);
+        Gui::PatternInstanceMarkers::Instance instance;
+        instance.index = index;
+        instance.center = toWorld * Base::Vector3d(p.X(), p.Y(), p.Z());
+        instance.suppressed = pattern->isTransformationSuppressed(index);
+        instances.push_back(instance);
+        ++index;
+    }
+    instanceMarkers->show(view, instances);
+}
+
+void TaskTransformedParameters::onInstanceToggled(int index, bool suppress)
+{
+    PartDesign::Transformed* pattern = getTopTransformedObject();
+    if (!pattern || pattern->isTransformationSuppressed(index) == suppress)
+        return;
+    setupTransaction();
+    pattern->setTransformationSuppressed(index, suppress);
+    recomputeFeature();
 }
 
 PartDesignGui::ViewProviderTransformed *TaskTransformedParameters::getTopTransformedView(bool silent) const {
@@ -698,6 +861,8 @@ TaskDlgTransformedParameters::TaskDlgTransformedParameters(
 bool TaskDlgTransformedParameters::accept()
 {
     parameter->exitSelectionMode();
+    // the values are set already; this records them in the Python console
+    parameter->apply();
 
     // Continue (usually in virtual method accept())
     return TaskDlgFeatureParameters::accept ();
@@ -730,76 +895,3 @@ void TaskDlgTransformedParameters::onToggledTaskParameters()
 }
 
 #include "moc_TaskTransformedParameters.cpp"
-
-
-ComboLinks::ComboLinks(QComboBox &combo)
-    : doc(nullptr)
-{
-    this->_combo = &combo;
-    _combo->clear();
-}
-
-int ComboLinks::addLink(const App::PropertyLinkSub &lnk, QString itemText)
-{
-    if(!_combo)
-        return 0;
-    _combo->addItem(itemText);
-    this->linksInList.push_back(new App::PropertyLinkSub());
-    App::PropertyLinkSub &newitem = *(linksInList[linksInList.size()-1]);
-    newitem.Paste(lnk);
-    if (newitem.getValue() && !this->doc)
-        this->doc = newitem.getValue()->getDocument();
-    return linksInList.size()-1;
-}
-
-int ComboLinks::addLink(App::DocumentObject *linkObj, std::string linkSubname, QString itemText)
-{
-    if(!_combo)
-        return 0;
-    _combo->addItem(itemText);
-    this->linksInList.push_back(new App::PropertyLinkSub());
-    App::PropertyLinkSub &newitem = *(linksInList[linksInList.size()-1]);
-    newitem.setValue(linkObj,std::vector<std::string>(1,linkSubname));
-    if (newitem.getValue() && !this->doc)
-        this->doc = newitem.getValue()->getDocument();
-    return linksInList.size()-1;
-}
-
-void ComboLinks::clear()
-{
-    for(size_t i = 0  ;  i < this->linksInList.size()  ;  i++){
-        delete linksInList[i];
-    }
-    if(this->_combo)
-        _combo->clear();
-}
-
-App::PropertyLinkSub &ComboLinks::getLink(int index) const
-{
-    if (index < 0 || index > static_cast<int>(linksInList.size())-1)
-        THROWM(Base::IndexError, "ComboLinks::getLink:Index out of range")
-    if (linksInList[index]->getValue() && doc && !(doc->isIn(linksInList[index]->getValue())))
-        THROWM(Base::ValueError, "Linked object is not in the document; it may have been deleted")
-    return *(linksInList[index]);
-}
-
-App::PropertyLinkSub &ComboLinks::getCurrentLink() const
-{
-    assert(_combo);
-    return getLink(_combo->currentIndex());
-}
-
-int ComboLinks::setCurrentLink(const App::PropertyLinkSub &lnk)
-{
-    for(size_t i = 0  ;  i < linksInList.size()  ;  i++) {
-        App::PropertyLinkSub &it = *(linksInList[i]);
-        if(lnk.getValue() == it.getValue() && lnk.getSubValues() == it.getSubValues()){
-            bool wasBlocked = _combo->signalsBlocked();
-            _combo->blockSignals(true);
-            _combo->setCurrentIndex(i);
-            _combo->blockSignals(wasBlocked);
-            return i;
-        }
-    }
-    return -1;
-}

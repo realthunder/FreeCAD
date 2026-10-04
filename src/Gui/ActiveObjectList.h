@@ -85,6 +85,7 @@ namespace Gui
         mutable std::map<std::string, ObjectInfo> _ObjectMap;
         Document *_Doc;
         fastsignals::scoped_connection connChangedChildren;
+        fastsignals::scoped_connection connDeleteDocument;
         QTimer timer;
     };
 

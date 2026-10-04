@@ -23,6 +23,8 @@
 #ifndef GUI_TASKVIEW_TaskHelixParameters_H
 #define GUI_TASKVIEW_TaskHelixParameters_H
 
+#include <Gui/Inventor/Draggers/Gizmo.h>
+
 #include "TaskSketchBasedParameters.h"
 #include "ViewProviderHelix.h"
 
@@ -86,6 +88,7 @@ protected:
     void _onSelectionChanged(const Gui::SelectionChanges& msg) override;
     void changeEvent(QEvent *e) override;
     void getReferenceAxis(App::DocumentObject *&obj, std::vector<std::string> &sub) const;
+    void finishedRecomputeFeature() override;
 
     //mirrors of helixes's properties
     App::PropertyLength*      propPitch;
@@ -113,6 +116,11 @@ private:
 private:
     QWidget* proxy;
     std::unique_ptr<Ui_TaskHelixParameters> ui;
+
+    std::unique_ptr<Gui::GizmoContainer> gizmoContainer;
+    Gui::LinearGizmo* heightGizmo = nullptr;
+    void setupGizmos(ViewProviderHelix* vp);
+    void setGizmoPositions();
 
     /**
      * @brief axesInList is the list of links corresponding to axis combo; must

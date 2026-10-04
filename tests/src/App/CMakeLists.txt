@@ -110,6 +110,7 @@ add_test(NAME RestoreDrain_tests_run COMMAND RestoreDrain_tests_run)
 add_executable(Toponaming_tests_run
     ${CMAKE_CURRENT_SOURCE_DIR}/ComplexGeoData.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/ElementMap.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/ElementNamingUtils.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/IndexedName.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/MappedElement.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/MappedName.cpp

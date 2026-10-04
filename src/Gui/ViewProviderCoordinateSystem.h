@@ -70,6 +70,12 @@ public:
     bool isTemporaryVisibility ();
     /// Reset the visibility
     void resetTemporaryVisibility ();
+    /// Enlarge the datum elements while they may be picked, in constant
+    /// screen size (upstream b942275957)
+    void setTemporaryScale (double factor);
+    void resetTemporarySize ();
+    /// Show or hide the plane labels, which constant screen size hides
+    void setPlaneLabelVisibility (bool visible);
     ///@}
 
     bool canDragObjects() const override {

@@ -43,7 +43,9 @@
 #include <Gui/Document.h>
 #include <Gui/DocumentObserver.h>
 #include <Gui/Selection.h>
+#include <Gui/ViewParams.h>
 #include <Gui/ViewProviderCoordinateSystem.h>
+#include <Gui/ViewProviderPlane.h>
 #include <Mod/Part/App/AttachExtension.h>
 #include <Mod/Part/App/DatumFeature.h>
 #include <Mod/Part/App/SubShapeBinder.h>
@@ -311,6 +313,21 @@ TaskAttacher::TaskAttacher(Gui::ViewProviderDocumentObject *ViewProvider, QWidge
     connectUndo = App::GetApplication().signalUndo.connect([this]() {refresh();});
     connectRedo = App::GetApplication().signalRedo.connect([this]() {refresh();});
 
+    // Planes grow and show their labels while a reference may be picked
+    // from them, in constant screen size (upstream b942275957)
+    if (!isBase) {
+        auto doc = ViewProvider->getObject()->getDocument();
+        for (auto plane : doc->getObjectsOfType(App::Plane::getClassTypeId())) {
+            auto vp = Base::freecad_dynamic_cast<Gui::ViewProviderPlane>(
+                    Gui::Application::Instance->getViewProvider(plane));
+            if (!vp)
+                continue;
+            vp->setTemporaryScale(Gui::ViewParams::getDatumTemporaryScaleFactor());
+            vp->setLabelVisibility(true);
+            scaledPlanes.emplace_back(plane);
+        }
+    }
+
     updateTimer.setSingleShot(true);
     QObject::connect(&updateTimer, &QTimer::timeout, [this]() {updatePreview();});
     styleTimer.setSingleShot(true);
@@ -338,6 +355,15 @@ TaskAttacher::~TaskAttacher()
             Gui::Application::Instance->getViewProvider(originFeat.getObject()));
     if (originVp)
         originVp->resetTemporaryVisibility();
+
+    for (auto &planeT : scaledPlanes) {
+        auto vp = Base::freecad_dynamic_cast<Gui::ViewProviderPlane>(
+                Gui::Application::Instance->getViewProvider(planeT.getObject()));
+        if (vp) {
+            vp->resetTemporarySize();
+            vp->setLabelVisibility(false);
+        }
+    }
 
     Gui::Selection().selStackPush();
     Gui::Selection().clearSelection();
@@ -572,6 +598,17 @@ void TaskAttacher::onSelectionChanged(const Gui::SelectionChanges& msg)
             }
             selObj = sel.getSubObject();
             auto selElement = sel.getOldElementName();
+
+            // A datum element of a coordinate system is referenced through
+            // the system: the element's own placement is relative to it
+            // (upstream cfd1cdfb36)
+            if (auto datum = Base::freecad_dynamic_cast<App::DatumElement>(selObj)) {
+                auto lcs = datum->getLCS();
+                if (lcs && !lcs->isOrigin() && lcs->hasObject(datum)) {
+                    selObj = lcs;
+                    selElement = std::string(datum->getNameInDocument()) + ".";
+                }
+            }
 
             // eliminate duplicate selections
             for (size_t r = 0; r < refs.size(); r++) {

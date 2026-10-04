@@ -36,6 +36,8 @@
 #include <CXX/Extensions.hxx>
 #include <memory>
 
+#include <FCGlobal.h>
+
 
 QT_BEGIN_NAMESPACE
 class QLayout;
@@ -128,7 +130,7 @@ public:
      *
      * @see https://github.com/FreeCAD/FreeCAD/issues/8708
      */
-    static std::unique_ptr<UiLoader> newInstance(QObject *parent=nullptr);
+    static GuiExport std::unique_ptr<UiLoader> newInstance(QObject *parent=nullptr);
 
     ~UiLoader() override;
 

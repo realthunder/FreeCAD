@@ -478,6 +478,92 @@ class RegressionTests(unittest.TestCase):
         box = Part.makeBox(1, 1, 1)
         self.assertTrue(box.optimalBoundingBox(True, False).isValid())
 
+    def test_shape_material_saves_under_its_type(self):
+        """
+        A Part::Feature's ShapeMaterial is a Materials::PropertyMaterial, a type
+        the Materials module registers. Part's init imports Materials, as
+        upstream's does; before it did, a headless session saved every
+        ShapeMaterial as type "BadType" -- the material was lost on restore, and
+        each such property cost a sys.path walk while the file was read
+        (docs/FileBlobsManager.md sec 14.6).
+        """
+        import os
+        import shutil
+        import tempfile
+        import zipfile
+        import FreeCAD
+
+        doc = FreeCAD.newDocument("ShapeMaterialType")
+        path = os.path.join(tempfile.mkdtemp(), "shape_material_type.FCStd")
+        try:
+            obj = doc.addObject("Part::Feature", "Box")
+            obj.Shape = Part.makeBox(1, 1, 1)
+            self.assertEqual(obj.getTypeIdOfProperty("ShapeMaterial"),
+                             "Materials::PropertyMaterial")
+            doc.saveAs(path)
+            with zipfile.ZipFile(path) as archive:
+                xml = archive.read("Document.xml").decode("utf-8")
+            self.assertIn('<Property name="ShapeMaterial" type="Materials::PropertyMaterial"',
+                          xml)
+            self.assertNotIn('type="BadType"', xml)
+        finally:
+            FreeCAD.closeDocument(doc.Name)
+            shutil.rmtree(os.path.dirname(path), ignore_errors=True)
+
+    def test_mirror_of_a_placed_shape(self):
+        """
+        Shape.mirror() puts a placed shape's placement on once (upstream
+        9eed3a8d77, issue 20834): the mirror of a box placed by its Placement
+        is the mirror of the same box made in place. Part::Mirroring, whose
+        Shape takes its Location from its own Placement, must agree.
+        """
+        import FreeCAD
+
+        def assertSameBox(a, b, msg):
+            for attr in ("XMin", "YMin", "ZMin", "XMax", "YMax", "ZMax"):
+                self.assertAlmostEqual(getattr(a, attr), getattr(b, attr), places=5,
+                                       msg="%s: %s" % (msg, attr))
+
+        base, normal = Vector(3, 4, 5), Vector(1, 2, 3)
+        for placement in (FreeCAD.Placement(Vector(0, 30, 0), FreeCAD.Rotation()),
+                          FreeCAD.Placement(Vector(0, 30, 0),
+                                            FreeCAD.Rotation(Vector(0, 0, 1), 30))):
+            placed = Part.makeBox(10, 20, 30)
+            placed.Placement = placement
+            # the same box, its placement copied into the geometry
+            direct = Part.makeBox(10, 20, 30)
+            direct.transformShape(placement.toMatrix(), True)
+            self.assertTrue(direct.Placement.isIdentity())
+            assertSameBox(placed.BoundBox, direct.BoundBox, "the boxes")
+
+            expected = direct.mirror(base, normal)
+            assertSameBox(placed.mirror(base, normal).BoundBox, expected.BoundBox,
+                          "Shape.mirror")
+
+            doc = FreeCAD.newDocument("MirrorPlaced")
+            try:
+                box = doc.addObject("Part::Box", "Box")
+                box.Length, box.Width, box.Height = 10, 20, 30
+                box.Placement = placement
+                mirror = doc.addObject("Part::Mirroring", "Mirror")
+                mirror.Source = box
+                mirror.Base = base
+                mirror.Normal = normal
+                link = doc.addObject("App::Link", "Link")
+                link.LinkedObject = box
+                link.Placement = placement
+                linkMirror = doc.addObject("Part::Mirroring", "LinkMirror")
+                linkMirror.Source = link
+                linkMirror.Base = base
+                linkMirror.Normal = normal
+                doc.recompute()
+                assertSameBox(mirror.Shape.BoundBox, expected.BoundBox, "Part::Mirroring")
+                assertSameBox(linkMirror.Shape.BoundBox, expected.BoundBox,
+                              "Part::Mirroring of a link")
+                self.assertAlmostEqual(mirror.Shape.Volume, 6000, places=5)
+            finally:
+                FreeCAD.closeDocument(doc.Name)
+
     def test_read_brep_with_a_long_fixed_notation_real(self):
         """An unbounded edge's range written as a 101-digit integer part.
 

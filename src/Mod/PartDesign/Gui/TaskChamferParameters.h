@@ -27,6 +27,8 @@
 #include <QStandardItemModel>
 #include <QItemDelegate>
 
+#include <Gui/Inventor/Draggers/Gizmo.h>
+
 #include "TaskDressUpParameters.h"
 #include "ViewProviderChamfer.h"
 #include <Gui/ExpressionBinding.h>
@@ -93,11 +95,19 @@ protected:
     double getAngle() const;
     bool getFlipDirection() const;
     void onNewItem(QTreeWidgetItem *item);
+    void finishedRecomputeFeature() override;
     
 private:
     void setUpUI(PartDesign::Chamfer* pcChamfer);
 
     std::unique_ptr<Ui_TaskChamferParameters> ui;
+
+    std::unique_ptr<Gui::GizmoContainer> gizmoContainer;
+    Gui::LinearGizmo* distanceGizmo = nullptr;
+    Gui::LinearGizmo* secondDistanceGizmo = nullptr;
+    Gui::RotationGizmo* angleGizmo = nullptr;
+    void setupGizmos(ViewProviderDressUp* vp);
+    void setGizmoPositions();
 };
 
 /// simulation dialog for the TaskView

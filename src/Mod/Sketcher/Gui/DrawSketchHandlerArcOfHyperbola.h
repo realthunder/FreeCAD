@@ -25,6 +25,7 @@
 
 #pragma once
 
+#include <numbers>
 #include <Gui/Notifications.h>
 #include <Gui/Command.h>
 #include <Gui/CommandT.h>

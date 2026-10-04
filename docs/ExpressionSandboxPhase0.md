@@ -441,6 +441,11 @@ snapshot (zygote) is required, exactly as ES sec 8 anticipated.
 
 ### 6.1 Permission catalog v1 (FROZEN)
 
+(v1 stays as written.  Catalog v2 adds a fourth column, the remote
+`client:` principal of the browser console, with its own not-grantable
+cells: docs/Sandbox.md 7.20, C3.  grants.json keeps schema version 1 --
+a v1 reader skips the client grants it cannot classify.)
+
 The ES sec 3.2 catalog is adopted as-is:
 
   permission       document   session   addon

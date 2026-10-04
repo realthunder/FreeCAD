@@ -36,17 +36,15 @@
 #include <Gui/Selection.h>
 #include <Gui/Command.h>
 #include <Mod/PartDesign/App/Body.h>
-#include <Mod/PartDesign/App/FeatureLinearPattern.h>
+#include <Mod/PartDesign/App/FeaturePattern.h>
 #include <Mod/PartDesign/App/FeatureMirrored.h>
 #include <Mod/PartDesign/App/FeatureMultiTransform.h>
-#include <Mod/PartDesign/App/FeaturePolarPattern.h>
 #include <Mod/PartDesign/App/FeatureScaled.h>
 
 #include "ui_TaskMultiTransformParameters.h"
 #include "TaskMultiTransformParameters.h"
 #include "TaskMirroredParameters.h"
-#include "TaskLinearPatternParameters.h"
-#include "TaskPolarPatternParameters.h"
+#include "TaskPatternParameters.h"
 #include "TaskScaledParameters.h"
 #include "Utils.h"
 
@@ -90,6 +88,18 @@ TaskMultiTransformParameters::TaskMultiTransformParameters(ViewProviderTransform
     action = new QAction(tr("Add polar pattern"), ui->listTransformFeatures);
     Base::connect(action, &QAction::triggered,
                     this, &TaskMultiTransformParameters::onTransformAddPolarPattern);
+    ui->listTransformFeatures->addAction(action);
+    action = new QAction(tr("Add circular pattern"), ui->listTransformFeatures);
+    Base::connect(action, &QAction::triggered,
+                    this, &TaskMultiTransformParameters::onTransformAddCircularPattern);
+    ui->listTransformFeatures->addAction(action);
+    action = new QAction(tr("Add path pattern"), ui->listTransformFeatures);
+    Base::connect(action, &QAction::triggered,
+                    this, &TaskMultiTransformParameters::onTransformAddPathPattern);
+    ui->listTransformFeatures->addAction(action);
+    action = new QAction(tr("Add point pattern"), ui->listTransformFeatures);
+    Base::connect(action, &QAction::triggered,
+                    this, &TaskMultiTransformParameters::onTransformAddPointPattern);
     ui->listTransformFeatures->addAction(action);
     action = new QAction(tr("Add scaled transformation"), ui->listTransformFeatures);
     Base::connect(action, &QAction::triggered,
@@ -146,6 +156,49 @@ void TaskMultiTransformParameters::slotDeletedObject(const Gui::ViewProviderDocu
     TaskTransformedParameters::slotDeletedObject(Obj);
 }
 
+void TaskMultiTransformParameters::slotDeleteDocument(const Gui::Document& Doc)
+{
+    // The sub-task reaches its feature through this one
+    if (TransformedView && TransformedView->getDocument() == &Doc)
+        this->subFeature = nullptr;
+    TaskTransformedParameters::slotDeleteDocument(Doc);
+}
+
+void TaskMultiTransformParameters::refreshAfterUndo()
+{
+    TaskTransformedParameters::refreshAfterUndo();
+    // The sub-task observes no document of its own
+    if (subTask)
+        subTask->refreshAfterUndo();
+}
+
+void TaskMultiTransformParameters::onSelectionChanged(const Gui::SelectionChanges& msg)
+{
+    // A reference the sub-task is picking is no original of ours. Both panels
+    // observe the same selection and this one was attached first, so the
+    // sub-task is still in its selection mode when the pick arrives here.
+    if (subTask && subTask->isSelecting())
+        return;
+    TaskTransformedParameters::onSelectionChanged(msg);
+}
+
+void TaskMultiTransformParameters::refreshTransformItem(App::DocumentObject* feature)
+{
+    if (editHint || !feature)
+        return;
+    auto pcMultiTransform = static_cast<PartDesign::MultiTransform*>(TransformedView->getObject());
+    const auto& transformFeatures = pcMultiTransform->Transformations.getValues();
+    auto it = std::find(transformFeatures.begin(), transformFeatures.end(), feature);
+    if (it == transformFeatures.end())
+        return;
+    auto item = ui->listTransformFeatures->item(static_cast<int>(it - transformFeatures.begin()));
+    if (!item)
+        return;
+    if (auto vp = Application::Instance->getViewProvider(feature))
+        item->setIcon(vp->getIcon());
+    item->setText(QString::fromUtf8(feature->Label.getValue()));
+}
+
 void TaskMultiTransformParameters::closeSubTask()
 {
     if (subTask) {
@@ -196,10 +249,8 @@ void TaskMultiTransformParameters::onTransformEdit()
     subFeature = static_cast<PartDesign::Transformed*>(transformFeatures[row]);
     if (transformFeatures[row]->is<PartDesign::Mirrored>())
         subTask = new TaskMirroredParameters(this, ui->verticalLayout);
-    else if (transformFeatures[row]->is<PartDesign::LinearPattern>())
-        subTask = new TaskLinearPatternParameters(this, ui->verticalLayout);
-    else if (transformFeatures[row]->is<PartDesign::PolarPattern>())
-        subTask = new TaskPolarPatternParameters(this, ui->verticalLayout);
+    else if (transformFeatures[row]->isDerivedFrom<PartDesign::PatternFeature>())
+        subTask = new TaskPatternParameters(this, ui->verticalLayout);
     else if (transformFeatures[row]->is<PartDesign::Scaled>())
         subTask = new TaskScaledParameters(this, ui->verticalLayout);
     else
@@ -219,19 +270,26 @@ void TaskMultiTransformParameters::onTransformActivated(const QModelIndex& index
     onTransformEdit();
 }
 
+PartDesign::Body* TaskMultiTransformParameters::getTransformBody() const
+{
+    // A new transformation goes to the MultiTransform's own body, whichever
+    // body is active, or none (upstream 3604e57d6d)
+    return PartDesign::Body::findBodyOf(getTopTransformedObject());
+}
+
 void TaskMultiTransformParameters::onTransformAddMirrored()
 {
     closeSubTask();
     std::string newFeatName = TransformedView->getObject()->getDocument()->getUniqueObjectName("Mirrored");
-    auto pcActiveBody = PartDesignGui::getBody(false);
-    if (!pcActiveBody)
+    auto pcBody = getTransformBody();
+    if (!pcBody)
         return;
 
     if (isEnabledTransaction())
         setupTransaction();
 
-    FCMD_OBJ_CMD(pcActiveBody, "newObject('PartDesign::Mirrored','"<<newFeatName<<"')");
-    auto Feat = pcActiveBody->getDocument()->getObject(newFeatName.c_str());
+    FCMD_OBJ_CMD(pcBody, "newObject('PartDesign::Mirrored','"<<newFeatName<<"')");
+    auto Feat = pcBody->getDocument()->getObject(newFeatName.c_str());
     if (!Feat)
         return;
     //Gui::Command::updateActive();
@@ -239,7 +297,7 @@ void TaskMultiTransformParameters::onTransformAddMirrored()
     if (sketch)
         FCMD_OBJ_CMD(Feat, "MirrorPlane = ("<<Gui::Command::getObjectCmd(sketch)<<",['V_Axis'])");
     else {
-        App::Origin* orig = pcActiveBody->getOrigin();
+        App::Origin* orig = pcBody->getOrigin();
         FCMD_OBJ_CMD(Feat, "MirrorPlane = ("<<Gui::Command::getObjectCmd(orig->getXY())<<",[''])");
     }
     finishAdd(newFeatName);
@@ -250,16 +308,17 @@ void TaskMultiTransformParameters::onTransformAddLinearPattern()
     // See CmdPartDesignLinearPattern
     //
     closeSubTask();
-    std::string newFeatName = TransformedView->getObject()->getDocument()->getUniqueObjectName("LinearPattern");
-    auto pcActiveBody = PartDesignGui::getBody(false);
-    if (!pcActiveBody)
+    // Named generically: a pattern may change its kind, not its name
+    std::string newFeatName = TransformedView->getObject()->getDocument()->getUniqueObjectName("Pattern");
+    auto pcBody = getTransformBody();
+    if (!pcBody)
         return;
 
     if (isEnabledTransaction())
         setupTransaction();
 
-    FCMD_OBJ_CMD(pcActiveBody, "newObject('PartDesign::LinearPattern','"<<newFeatName<<"')");
-    auto Feat = pcActiveBody->getDocument()->getObject(newFeatName.c_str());
+    FCMD_OBJ_CMD(pcBody, "newObject('PartDesign::LinearPattern','"<<newFeatName<<"')");
+    auto Feat = pcBody->getDocument()->getObject(newFeatName.c_str());
     if (!Feat)
         return;
     //Gui::Command::updateActive();
@@ -270,7 +329,7 @@ void TaskMultiTransformParameters::onTransformAddLinearPattern()
     else {
         // set Direction value before filling up the combo box to avoid creating an empty item
         // inside updateUI()
-        PartDesign::Body* body = static_cast<PartDesign::Body*>(Part::BodyBase::findBodyOf(getObject()));
+        PartDesign::Body* body = getTransformBody();
         if (body) {
             FCMD_OBJ_CMD(Feat, "Direction = ("<<Gui::Command::getObjectCmd(body->getOrigin()->getX())<<",[''])");
         }
@@ -285,29 +344,85 @@ void TaskMultiTransformParameters::onTransformAddLinearPattern()
 void TaskMultiTransformParameters::onTransformAddPolarPattern()
 {
     closeSubTask();
-    std::string newFeatName = TransformedView->getObject()->getDocument()->getUniqueObjectName("PolarPattern");
-    auto pcActiveBody = PartDesignGui::getBody(false);
-    if (!pcActiveBody)
+    std::string newFeatName = TransformedView->getObject()->getDocument()->getUniqueObjectName("Pattern");
+    auto pcBody = getTransformBody();
+    if (!pcBody)
         return;
 
     if (isEnabledTransaction())
         setupTransaction();
 
-    FCMD_OBJ_CMD(pcActiveBody, "newObject('PartDesign::PolarPattern','"<<newFeatName<<"')");
-    auto Feat = pcActiveBody->getDocument()->getObject(newFeatName.c_str());
+    FCMD_OBJ_CMD(pcBody, "newObject('PartDesign::PolarPattern','"<<newFeatName<<"')");
+    auto Feat = pcBody->getDocument()->getObject(newFeatName.c_str());
     if (!Feat)
         return;
     //Gui::Command::updateActive();
+    setDefaultAxis(Feat, pcBody);
+    FCMD_OBJ_CMD(Feat, "Angle = 360");
+    FCMD_OBJ_CMD(Feat, "Occurrences = 2");
+
+    finishAdd(newFeatName);
+}
+
+void TaskMultiTransformParameters::setDefaultAxis(App::DocumentObject* Feat,
+                                                  PartDesign::Body* body)
+{
     App::DocumentObject* sketch = getSketchObject();
     if (sketch)
         FCMD_OBJ_CMD(Feat, "Axis = ("<<Gui::Command::getObjectCmd(sketch)<<",['N_Axis'])");
     else {
         FCMD_OBJ_CMD(Feat, "Axis = ("
-                << Gui::Command::getObjectCmd(pcActiveBody->getOrigin()->getZ())<<",[''])");
+                << Gui::Command::getObjectCmd(body->getOrigin()->getZ())<<",[''])");
     }
-    FCMD_OBJ_CMD(Feat, "Angle = 360");
-    FCMD_OBJ_CMD(Feat, "Occurrences = 2");
+}
 
+App::DocumentObject* TaskMultiTransformParameters::newTransformFeature(const char* type,
+                                                                       const char* name,
+                                                                       std::string& newFeatName)
+{
+    closeSubTask();
+    newFeatName = TransformedView->getObject()->getDocument()->getUniqueObjectName(name);
+    auto pcBody = getTransformBody();
+    if (!pcBody)
+        return nullptr;
+
+    if (isEnabledTransaction())
+        setupTransaction();
+
+    FCMD_OBJ_CMD(pcBody, "newObject('PartDesign::"<<type<<"','"<<newFeatName<<"')");
+    return pcBody->getDocument()->getObject(newFeatName.c_str());
+}
+
+void TaskMultiTransformParameters::onTransformAddCircularPattern()
+{
+    // The axis as a polar pattern's, the rings as the feature's defaults
+    std::string newFeatName;
+    auto Feat = newTransformFeature("CircularPattern", "Pattern", newFeatName);
+    if (!Feat)
+        return;
+    setDefaultAxis(Feat, PartDesign::Body::findBodyOf(Feat));
+    finishAdd(newFeatName);
+}
+
+void TaskMultiTransformParameters::onTransformAddPathPattern()
+{
+    // The path is picked in the sub-panel; until then the pattern is the
+    // original alone
+    std::string newFeatName;
+    if (!newTransformFeature("PathPattern", "Pattern", newFeatName))
+        return;
+    finishAdd(newFeatName);
+}
+
+void TaskMultiTransformParameters::onTransformAddPointPattern()
+{
+    // The points are picked in the sub-panel. With no base of its own inside
+    // a MultiTransform, the copies keep the points' layout relative to the
+    // first point, where the original stays, so that the pattern composes
+    // with the other transformations as theirs do
+    std::string newFeatName;
+    if (!newTransformFeature("PointPattern", "Pattern", newFeatName))
+        return;
     finishAdd(newFeatName);
 }
 
@@ -315,15 +430,15 @@ void TaskMultiTransformParameters::onTransformAddScaled()
 {
     closeSubTask();
     std::string newFeatName = TransformedView->getObject()->getDocument()->getUniqueObjectName("Scaled");
-    auto pcActiveBody = PartDesignGui::getBody(false);
-    if (!pcActiveBody)
+    auto pcBody = getTransformBody();
+    if (!pcBody)
         return;
 
     if (isEnabledTransaction())
         setupTransaction();
 
-    FCMD_OBJ_CMD(pcActiveBody, "newObject('PartDesign::Scaled','"<<newFeatName<<"')");
-    auto Feat = pcActiveBody->getDocument()->getObject(newFeatName.c_str());
+    FCMD_OBJ_CMD(pcBody, "newObject('PartDesign::Scaled','"<<newFeatName<<"')");
+    auto Feat = pcBody->getDocument()->getObject(newFeatName.c_str());
     if (!Feat)
         return;
     //Gui::Command::updateActive();
@@ -432,6 +547,10 @@ void TaskMultiTransformParameters::onMoveDown()
 
 void TaskMultiTransformParameters::onSubTaskButtonOK()
 {
+    // Only on OK: closeSubTask() also runs from the destructor, after a
+    // Cancel has undone what the sub-task would record.
+    if (subTask)
+        subTask->apply();
     closeSubTask();
 }
 
@@ -451,6 +570,15 @@ const std::vector<App::DocumentObject*> TaskMultiTransformParameters::getTransfo
 
 void TaskMultiTransformParameters::apply()
 {
+    std::stringstream str;
+    str << Gui::Command::getObjectCmd(getObject()) << ".Transformations = [";
+    for (auto it : getTransformFeatures()) {
+        if (it) {
+            str << Gui::Command::getObjectCmd(it) << ",";
+        }
+    }
+    str << "]";
+    Gui::Command::runCommand(Gui::Command::Doc,str.str().c_str());
 }
 
 TaskMultiTransformParameters::~TaskMultiTransformParameters()
@@ -483,25 +611,6 @@ TaskDlgMultiTransformParameters::TaskDlgMultiTransformParameters(ViewProviderMul
     : TaskDlgTransformedParameters(MultiTransformView, new TaskMultiTransformParameters(MultiTransformView))
 {
     parameter->setEnabledTransaction(false);
-}
-//==== calls from the TaskView ===============================================================
-
-bool TaskDlgMultiTransformParameters::accept()
-{
-    // Set up transformations
-    TaskMultiTransformParameters* mtParameter = static_cast<TaskMultiTransformParameters*>(parameter);
-    std::vector<App::DocumentObject*> transformFeatures = mtParameter->getTransformFeatures();
-    std::stringstream str;
-    str << Gui::Command::getObjectCmd(vp->getObject()) << ".Transformations = [";
-    for (auto it : transformFeatures) {
-        if (it) {
-            str << Gui::Command::getObjectCmd(it) << ",";
-        }
-    }
-    str << "]";
-    Gui::Command::runCommand(Gui::Command::Doc,str.str().c_str());
-
-    return TaskDlgFeatureParameters::accept ();
 }
 
 // FIXME: It seems all roll back is finely handled by abortCommand() in parent classes. On the other

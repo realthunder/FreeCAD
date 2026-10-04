@@ -32,7 +32,9 @@
 #include <Gui/Command.h>
 #include <Gui/Fw/FwQtView.h>
 #include <Gui/Fw/FwWidgets.h>
+#include <Gui/QuantitySpinBox.h>
 #include <Gui/Widgets.h>
+#include <Mod/Part/App/GizmoHelper.h>
 #include <Mod/PartDesign/App/FeatureExtrude.h>
 #include <Mod/PartDesign/App/FeatureExtrusion.h>
 
@@ -59,26 +61,67 @@ TaskExtrudeParameters::TaskExtrudeParameters(ViewProviderSketchBased *SketchBase
     ui->setupUi(form.get());
     proxy = Gui::FwQt::realize(form.get(), this);
 
-    QWidget* lineFaceName = Gui::FwQt::widgetOf(ui->lineFaceName);
-    addBlinkWidget(lineFaceName);
-
-    lineFaceName->installEventFilter(this);
-    lineFaceName->setMouseTracking(true);
-
     Gui::FwQt::widgetOf(ui->directionCB)->installEventFilter(this);
 
     this->initUI(proxy);
     if (vp && vp->getObject()) {
         hookPropertyBool(vp->getObject(), "Linearize",
                          Gui::FwQt::widgetOf(ui->checkBoxLinearize), "Linearize");
+        // The up-to references, one per side: a face, faces, or shapes
+        auto extrude = static_cast<PartDesign::FeatureExtrude*>(vp->getObject());
+        upToWidget = makeUpToWidget(ui->upToShapeHolder, extrude->UpToShape,
+                                    SelectionMode::refUpTo);
+        upToWidget2 = makeUpToWidget(ui->upToShapeHolder2, extrude->UpToShape2,
+                                     SelectionMode::refUpTo2);
+        // Where it starts, with StartType Reference (upstream bcc3e296fa):
+        // one face, a datum plane or a sketch, picked like the up-to faces
+        if (QWidget *holder = Gui::FwQt::widgetOf(ui->startReferenceHolder)) {
+            startWidget = new LinkSubWidget(this, tr("Reference"), extrude->StartReference,
+                                            /*singleElement*/true);
+            startWidget->setSelectionMode(SelectionMode::refStart);
+            startWidget->setHideLinked(false);
+            startWidget->setSelectionConfig(AllowSelection::FACE
+                                            | AllowSelection::OTHERBODY
+                                            | AllowSelection::WHOLE);
+            startWidget->setPickFilter(
+                [this](const Gui::SelectionChanges &msg, App::SubObjectT &objT) {
+                    return filterUpToPick(msg, objT);
+                });
+            auto layout = new QHBoxLayout(holder);
+            layout->setContentsMargins(0, 0, 0, 0);
+            layout->addWidget(startWidget);
+        }
     }
 
-    Gui::ButtonGroup* group = new Gui::ButtonGroup(this);
-    group->addButton(qobject_cast<QAbstractButton*>(Gui::FwQt::widgetOf(ui->checkBoxMidplane)));
-    group->addButton(qobject_cast<QAbstractButton*>(Gui::FwQt::widgetOf(ui->checkBoxReversed)));
-    group->setExclusive(true);
-
     this->groupLayout()->addWidget(proxy);
+}
+
+LinkSubWidget *TaskExtrudeParameters::makeUpToWidget(Gui::Fw::Widget *holder,
+                                                     App::PropertyLinkSubList &prop,
+                                                     SelectionMode mode)
+{
+    QWidget *holderWidget = Gui::FwQt::widgetOf(holder);
+    if (!holderWidget)
+        return nullptr;
+    auto widget = new LinkSubWidget(this, tr("Face"), prop);
+    widget->setSelectionMode(mode);
+    // what the extrusion goes up to stays in sight
+    widget->setHideLinked(false);
+    AllowSelectionFlags flags = AllowSelection::FACE
+                                | AllowSelection::OTHERBODY
+                                | AllowSelection::WIRE
+                                | AllowSelection::CIRCLE
+                                | AllowSelection::WHOLE;
+    if (vp->getObject()->isDerivedFrom(PartDesign::Extrusion::getClassTypeId()))
+        flags |= AllowSelection::POINT | AllowSelection::EDGE;
+    widget->setSelectionConfig(flags);
+    widget->setPickFilter([this](const Gui::SelectionChanges &msg, App::SubObjectT &objT) {
+        return filterUpToPick(msg, objT);
+    });
+    auto layout = new QHBoxLayout(holderWidget);
+    layout->setContentsMargins(0, 0, 0, 0);
+    layout->addWidget(widget);
+    return widget;
 }
 
 TaskExtrudeParameters::~TaskExtrudeParameters() = default;
@@ -107,7 +150,9 @@ void TaskExtrudeParameters::setupDialog(bool newObj, const char *historyPath)
     // Bind input fields to properties
     ui->lengthEdit->bind(extrude->Length);
     ui->lengthEdit2->bind(extrude->Length2);
+    ui->startOffsetEdit->bind(extrude->StartOffset);
     ui->offsetEdit->bind(extrude->Offset);
+    ui->offsetEdit2->bind(extrude->Offset2);
     ui->taperAngleEdit->bind(extrude->TaperAngle);
     ui->taperAngleEdit2->bind(extrude->TaperAngle2);
     ui->innerTaperEdit->bind(extrude->TaperInnerAngle);
@@ -118,8 +163,11 @@ void TaskExtrudeParameters::setupDialog(bool newObj, const char *historyPath)
 
     this->propReferenceAxis = &(extrude->ReferenceAxis);
 
-    translateModeList(extrude->Type.getValue());
-    translateFaceNamePlaceHolder();
+    translateModeList();
+    for (auto widget : {upToWidget, upToWidget2}) {
+        if (widget)
+            widget->setTitle(upToTitle());
+    }
     translateTooltips();
 
     refresh();
@@ -138,6 +186,9 @@ void TaskExtrudeParameters::setupDialog(bool newObj, const char *historyPath)
     field = "Offset";
     ui->offsetEdit->setEntryName(field);
     ui->offsetEdit->setParamGrpPath(path+field);
+    field = "Offset2";
+    ui->offsetEdit2->setEntryName(field);
+    ui->offsetEdit2->setParamGrpPath(path+field);
     field = "TaperAngle";
     ui->taperAngleEdit->setEntryName(field);
     ui->taperAngleEdit->setParamGrpPath(path+field);
@@ -155,6 +206,129 @@ void TaskExtrudeParameters::setupDialog(bool newObj, const char *historyPath)
 
     connectSlots();
     ui->lengthEdit->selectAll();
+
+    setupGizmos();
+}
+
+void TaskExtrudeParameters::setupGizmos()
+{
+    if (GizmoContainer::isEnabled() == false) {
+        return;
+    }
+
+    // A gizmo drives a Qt spin box, and this form's fields are Fw models: hand
+    // it the widget the model is realized as, the route the panel already
+    // takes for its other Qt-only calls. The widget's own sync carries a drag
+    // to the model and the property. No widget, no gizmos.
+    auto spinBoxOf = [](Gui::Fw::QuantitySpinBox* model) {
+        return qobject_cast<Gui::QuantitySpinBox*>(Gui::FwQt::widgetOf(model));
+    };
+    auto length1 = spinBoxOf(ui->lengthEdit);
+    auto length2 = spinBoxOf(ui->lengthEdit2);
+    auto taper1 = spinBoxOf(ui->taperAngleEdit);
+    auto taper2 = spinBoxOf(ui->taperAngleEdit2);
+    auto startOffset = spinBoxOf(ui->startOffsetEdit);
+    if (!length1 || !length2 || !taper1 || !taper2 || !startOffset) {
+        return;
+    }
+
+    const auto toggleReversed = [this] {
+        if (ui->checkBoxReversed->isEnabled()) {
+            ui->checkBoxReversed->setChecked(!ui->checkBoxReversed->isChecked());
+        }
+    };
+
+    lengthGizmo1 = new Gui::LinearGizmo(length1);
+    lengthGizmo1->setClickCallback(toggleReversed);
+    lengthGizmo2 = new Gui::LinearGizmo(length2);
+    lengthGizmo2->setClickCallback(toggleReversed);
+    startOffsetGizmo = new Gui::LinearGizmo(startOffset);
+    startOffsetGizmo->setDraggerStyle(Gui::LinearDraggerStyle::Sphere);
+    taperAngleGizmo1 = new Gui::RotationGizmo(taper1);
+    taperAngleGizmo2 = new Gui::RotationGizmo(taper2);
+
+    gizmoContainer = GizmoContainer::create(
+        {lengthGizmo1, lengthGizmo2, startOffsetGizmo, taperAngleGizmo1, taperAngleGizmo2},
+        vp
+    );
+
+    setGizmoPositions();
+    showDraggerHints();
+}
+
+void TaskExtrudeParameters::setGizmoPositions()
+{
+    if (!gizmoContainer) {
+        return;
+    }
+
+    auto extrude = vp ? dynamic_cast<PartDesign::FeatureExtrude*>(vp->getObject()) : nullptr;
+    if (!extrude || extrude->isError()) {
+        gizmoContainer->visible = false;
+        return;
+    }
+    gizmoContainer->visible = true;
+
+    PartDesign::TopoShape shape = extrude->getProfileShape();
+    Base::Vector3d center = getMidPointFromProfile(shape);
+    std::string sideType(extrude->SideType.getValueAsString());
+    const bool twoSides = sideType == "Two sides";
+    const bool symmetric = sideType == "Symmetric";
+    const bool length1 = strcmp(extrude->Type.getValueAsString(), "Length") == 0;
+    const bool length2 = twoSides && strcmp(extrude->Type2.getValueAsString(), "Length") == 0;
+    double dir = extrude->Reversed.getValue() && !symmetric ? -1 : 1;
+
+    Base::Vector3d direction = extrude->Direction.getValue() * dir;
+    // The lengths are measured from the start, wherever StartType puts it,
+    // and the start offset from the plane it is added to: the profile's,
+    // or the reference's
+    const bool hasStart = strcmp(extrude->StartType.getValueAsString(), "Profile plane") != 0;
+    try {
+        const Base::Vector3d startDir = direction.Normalized();
+        const double start = extrude->getStartOffset();
+        startOffsetGizmo->Gizmo::setDraggerPlacement(
+            center + startDir * (start - extrude->StartOffset.getValue()), direction);
+        center += startDir * start;
+    }
+    catch (const Base::Exception&) {
+        // an unreachable reference: the feature is in error and says so
+    }
+    startOffsetGizmo->setVisibility(hasStart);
+
+    lengthGizmo1->Gizmo::setDraggerPlacement(center, direction);
+    lengthGizmo1->setVisibility(length1);
+    taperAngleGizmo1->placeOverLinearGizmo(lengthGizmo1);
+    taperAngleGizmo1->setVisibility(length1);
+    lengthGizmo2->Gizmo::setDraggerPlacement(center, -direction);
+    lengthGizmo2->setVisibility(length2);
+    taperAngleGizmo2->placeOverLinearGizmo(lengthGizmo2);
+    taperAngleGizmo2->setVisibility(length2);
+
+    Base::Vector3d padDir = extrude->Direction.getValue().Normalized();
+    Base::Vector3d sketchDir = extrude->getProfileNormal().Normalized();
+
+    double lengthFactor = padDir.Dot(sketchDir);
+    double multFactor = symmetric ? 0.5 : 1.0;
+
+    // Important note: This code assumes that nothing other than alongSketchNormal
+    // and symmetric option influence the multFactor. If some custom gizmos changes
+    // it then that also should be handled properly here
+    if (extrude->AlongSketchNormal.getValue()) {
+        lengthGizmo1->setMultFactor(multFactor / lengthFactor);
+        lengthGizmo2->setMultFactor(multFactor / lengthFactor);
+    }
+    else {
+        lengthGizmo1->setMultFactor(multFactor);
+        lengthGizmo2->setMultFactor(multFactor);
+    }
+
+    gizmoContainer->calculateScaleAndOrientation();
+}
+
+void TaskExtrudeParameters::finishedRecomputeFeature()
+{
+    TaskSketchBasedParameters::finishedRecomputeFeature();
+    setGizmoPositions();
 }
 
 void TaskExtrudeParameters::refresh()
@@ -174,9 +348,11 @@ void TaskExtrudeParameters::refresh()
     double ys = extrude->Direction.getValue().y;
     double zs = extrude->Direction.getValue().z;
     Base::Quantity off = extrude->Offset.getQuantityValue();
-    bool midplane = extrude->Midplane.getValue();
+    Base::Quantity off2 = extrude->Offset2.getQuantityValue();
     bool reversed = extrude->Reversed.getValue();
-    int index = extrude->Type.getValue(); // must extract value here, clear() kills it!
+    int sideType = extrude->SideType.getValue();
+    int index = modeOf(extrude->Type); // must extract value here, clear() kills it!
+    int index2 = modeOf(extrude->Type2);
     double angle = extrude->TaperAngle.getValue();
     double angle2 = extrude->TaperAngleRev.getValue();
     double innerAngle = extrude->TaperInnerAngle.getValue();
@@ -191,6 +367,8 @@ void TaskExtrudeParameters::refresh()
     // Fill data into dialog elements
     ui->lengthEdit->setValue(l);
     ui->lengthEdit2->setValue(l2);
+    ui->startMode->setCurrentIndex(extrude->StartType.getValue());
+    ui->startOffsetEdit->setValue(extrude->StartOffset.getQuantityValue());
     ui->XDirectionEdit->setEnabled(useCustom);
     ui->YDirectionEdit->setEnabled(useCustom);
     ui->ZDirectionEdit->setEnabled(useCustom);
@@ -198,41 +376,31 @@ void TaskExtrudeParameters::refresh()
     ui->YDirectionEdit->setValue(ys);
     ui->ZDirectionEdit->setValue(zs);
     ui->offsetEdit->setValue(off);
+    ui->offsetEdit2->setValue(off2);
     ui->taperAngleEdit->setValue(angle);
     ui->taperAngleEdit2->setValue(angle2);
     ui->innerTaperEdit->setValue(innerAngle);
     ui->innerTaperEdit2->setValue(innerAngle2);
 
-    ui->checkBoxMidplane->setChecked(midplane);
     // According to bug #0000521 the reversed option
     // shouldn't be de-activated if the pad has a support face
     ui->checkBoxReversed->setChecked(reversed);
 
     ui->checkBoxUsePipe->setChecked(extrude->UsePipeForDraft.getValue());
 
-    // Set object labels
-    App::DocumentObject* obj = extrude->UpToFace.getValue();
-    std::vector<std::string> subStrings = extrude->UpToFace.getSubValues(false);
-    if (obj && (subStrings.empty() || subStrings.front().empty())) {
-        ui->lineFaceName->setText(QString::fromUtf8(obj->Label.getValue()));
-        ui->lineFaceName->setProperty("FeatureName", QByteArray(obj->getNameInDocument()));
-        ui->lineFaceName->setProperty("FaceName", QVariant());
-    }
-    else if (obj) {
-        ui->lineFaceName->setText(QStringLiteral("%1:%2")
-                                  .arg(QString::fromUtf8(obj->Label.getValue()))
-                                  .arg(QString::fromUtf8(subStrings.front().c_str())));
-        ui->lineFaceName->setProperty("FeatureName", QByteArray(obj->getNameInDocument()));
-        ui->lineFaceName->setProperty("FaceName", QByteArray(subStrings.front().c_str()));
+    // Lost in a merge (bcaa82d71a): the box started unchecked, and accepting
+    // the panel wrote that back, so a pad in a custom direction measured
+    // along the sketch normal went over to measuring along the direction
+    ui->checkBoxAlongDirection->setChecked(extrude->AlongSketchNormal.getValue());
 
-    }
-    else {
-        ui->lineFaceName->clear();
-        ui->lineFaceName->setProperty("FeatureName", QVariant());
-        ui->lineFaceName->setProperty("FaceName", QVariant());
+    for (auto widget : {upToWidget, upToWidget2, startWidget}) {
+        if (widget)
+            widget->refresh();
     }
 
+    ui->sideTypeCB->setCurrentIndex(sideType);
     ui->changeMode->setCurrentIndex(index);
+    ui->changeMode2->setCurrentIndex(index2);
 
     ui->checkFaceLimits->setChecked(extrude->CheckUpToFaceLimits.getValue());
 
@@ -242,6 +410,7 @@ void TaskExtrudeParameters::refresh()
         child->blockSignals(false);
 
     setCheckboxes();
+    updateStartUI();
     TaskSketchBasedParameters::refresh();
 }
 
@@ -253,6 +422,8 @@ void TaskExtrudeParameters::readValuesFromHistory()
     ui->lengthEdit2->selectNumber();
     ui->offsetEdit->setToLastUsedValue();
     ui->offsetEdit->selectNumber();
+    ui->offsetEdit2->setToLastUsedValue();
+    ui->offsetEdit2->selectNumber();
     ui->taperAngleEdit->setToLastUsedValue();
     ui->taperAngleEdit->selectNumber();
     ui->taperAngleEdit2->setToLastUsedValue();
@@ -273,6 +444,16 @@ void TaskExtrudeParameters::connectSlots()
         this, &TaskExtrudeParameters::onLength2Changed);
     Base::connect(ui->offsetEdit, qOverload<double>(&Gui::Fw::QuantitySpinBox::valueChanged),
         this, &TaskExtrudeParameters::onOffsetChanged);
+    Base::connect(ui->offsetEdit2, qOverload<double>(&Gui::Fw::QuantitySpinBox::valueChanged),
+        this, &TaskExtrudeParameters::onOffset2Changed);
+    Base::connect(ui->startMode, qOverload<int>(&Gui::Fw::QComboBox::currentIndexChanged),
+        this, &TaskExtrudeParameters::onStartModeChanged);
+    Base::connect(ui->startOffsetEdit, qOverload<double>(&Gui::Fw::QuantitySpinBox::valueChanged),
+        this, &TaskExtrudeParameters::onStartOffsetChanged);
+    Base::connect(ui->sideTypeCB, qOverload<int>(&Gui::Fw::QComboBox::currentIndexChanged),
+        this, &TaskExtrudeParameters::onSideTypeChanged);
+    Base::connect(ui->changeMode2, qOverload<int>(&Gui::Fw::QComboBox::currentIndexChanged),
+        this, &TaskExtrudeParameters::onMode2Changed);
     Base::connect(ui->taperAngleEdit, qOverload<double>(&Gui::Fw::QuantitySpinBox::valueChanged),
         this, &TaskExtrudeParameters::onTaperChanged);
     Base::connect(ui->taperAngleEdit2, qOverload<double>(&Gui::Fw::QuantitySpinBox::valueChanged),
@@ -292,16 +473,12 @@ void TaskExtrudeParameters::connectSlots()
         });
     Base::connect(ui->checkBoxAlongDirection, &Gui::Fw::QCheckBox::toggled,
         this, &TaskExtrudeParameters::onAlongSketchNormalChanged);
-    Base::connect(ui->groupBoxDirection, &Gui::Fw::QGroupBox::toggled,
-        this, &TaskExtrudeParameters::onDirectionToggled);
     Base::connect(ui->XDirectionEdit, qOverload<double>(&Gui::Fw::DoubleSpinBox::valueChanged),
         this, &TaskExtrudeParameters::onXDirectionEditChanged);
     Base::connect(ui->YDirectionEdit, qOverload<double>(&Gui::Fw::DoubleSpinBox::valueChanged),
         this, &TaskExtrudeParameters::onYDirectionEditChanged);
     Base::connect(ui->ZDirectionEdit, qOverload<double>(&Gui::Fw::DoubleSpinBox::valueChanged),
         this, &TaskExtrudeParameters::onZDirectionEditChanged);
-    Base::connect(ui->checkBoxMidplane, &Gui::Fw::QCheckBox::toggled,
-        this, &TaskExtrudeParameters::onMidplaneChanged);
     Base::connect(ui->checkBoxReversed, &Gui::Fw::QCheckBox::toggled,
         this, &TaskExtrudeParameters::onReversedChanged);
     Base::connect(ui->checkBoxUsePipe, &Gui::Fw::QCheckBox::toggled,
@@ -310,10 +487,6 @@ void TaskExtrudeParameters::connectSlots()
         this, &TaskExtrudeParameters::onCheckFaceLimitsChanged);
     Base::connect(ui->changeMode, qOverload<int>(&Gui::Fw::QComboBox::currentIndexChanged),
         this, &TaskExtrudeParameters::onModeChanged);
-    Base::connect(ui->buttonFace, &Gui::Fw::QPushButton::toggled,
-        this, &TaskExtrudeParameters::onButtonFace);
-    Base::connect(ui->lineFaceName, &Gui::Fw::QLineEdit::textEdited,
-        this, &TaskExtrudeParameters::onFaceName);
     Base::connect(static_cast<Gui::Fw::QAbstractButton*>(ui->autoInnerTaperAngle),
                   &Gui::Fw::QAbstractButton::toggled, [this](bool checked) {
         PartDesign::FeatureExtrude* extrude = static_cast<PartDesign::FeatureExtrude*>(vp->getObject());
@@ -324,81 +497,113 @@ void TaskExtrudeParameters::connectSlots()
     });
 }
 
-void TaskExtrudeParameters::onButtonFace(const bool pressed)
-{
-    if (!vp || !pressed) {
-        exitSelectionMode();
-        return;
-    }
-
-    AllowSelectionFlags flags = AllowSelection::FACE
-                                | AllowSelection::OTHERBODY
-                                | AllowSelection::WIRE
-                                | AllowSelection::CIRCLE;
-    if (vp->getObject()->isDerivedFrom(PartDesign::Extrusion::getClassTypeId())) {
-        flags |= AllowSelection::POINT | AllowSelection::EDGE;
-    }
-    TaskSketchBasedParameters::onSelectReference(Gui::FwQt::widgetOf(ui->buttonFace), flags);
-}
-
-void TaskExtrudeParameters::onSelectionModeChanged(SelectionMode)
-{
-    if (getSelectionMode() == SelectionMode::refAdd) {
-        ui->buttonFace->setChecked(true);
-    } else {
-        ui->buttonFace->setChecked(false);
-    }
-}
-
 void TaskExtrudeParameters::_onSelectionChanged(const Gui::SelectionChanges& msg)
 {
+    // The up-to references pick through their own widgets
     if (msg.Type == Gui::SelectionChanges::AddSelection) {
         // if we have an edge selection for the pad direction
         if (getSelectionMode() == SelectionMode::refAxis) {
             selectedReferenceAxis(msg);
-        }
-        else if (getSelectionMode() == SelectionMode::refAdd) {
-            QString refText = onSelectUpToFace(msg);
-            if (refText.length() > 0) {
-                QSignalBlocker guard(ui->lineFaceName);
-                ui->lineFaceName->setText(refText);
-                QStringList list(refText.split(QLatin1Char(':')));
-                ui->lineFaceName->setProperty("FeatureName", list[0].toUtf8());
-                ui->lineFaceName->setProperty("FaceName", list.size()>1 ? list[1].toUtf8() : QByteArray());
-                // Turn off reference selection mode
-                onButtonFace(false);
-            } else {
-                clearFaceName();
-            }
-        }
-    } else if (msg.Type == Gui::SelectionChanges::ClrSelection) {
-        if (getSelectionMode() == SelectionMode::refAdd) {
-            clearFaceName();
         }
     }
 }
 
 bool TaskExtrudeParameters::eventFilter(QObject *o, QEvent *ev)
 {
-    switch(ev->type()) {
-    case QEvent::Leave:
+    (void)o;
+    if (ev->type() == QEvent::Leave)
         Gui::Selection().rmvPreselect();
-        break;
-    case QEvent::Enter:
-        if (vp && o == Gui::FwQt::widgetOf(ui->lineFaceName)) {
-            auto extrude = static_cast<PartDesign::FeatureExtrude*>(vp->getObject());
-            auto obj = extrude->UpToFace.getValue();
-            if (obj) {
-                const auto &subs = extrude->UpToFace.getSubValues(true);
-                PartDesignGui::highlightObjectOnTop(
-                        App::SubObjectT(obj, subs.size()?subs[0].c_str():""));
-            }
-        }
-        break;
-    default:
-        break;
-    }
     return false;
+}
+
+void TaskExtrudeParameters::setSideMode(App::PropertyEnumeration &type,
+                                        const App::PropertyLinkSubList &upToShape,
+                                        int mode)
+{
+    if (mode != static_cast<int>(Modes::ToFace)) {
+        // the modes before it are the Types of the same index
+        type.setValue(static_cast<long>(mode));
+        return;
+    }
+    bool several = upToShape.getSize() && !PartDesign::FeatureExtrude::isSingleUpToFace(upToShape);
+    type.setValue(several ? "UpToShape" : "UpToFace");
+}
+
+int TaskExtrudeParameters::modeOf(const App::PropertyEnumeration &type)
+{
+    const char *name = type.getValueAsString();
+    if (strcmp(name, "UpToFace") == 0 || strcmp(name, "UpToShape") == 0)
+        return static_cast<int>(Modes::ToFace);
+    // Only an unrestored file has it: the feature makes it two sides
+    if (strcmp(name, "TwoLengths") == 0)
+        return static_cast<int>(Modes::Dimension);
+    return type.getValue();
+}
+
+void TaskExtrudeParameters::updateStartUI()
+{
+    const int type = ui->startMode->currentIndex();
+    ui->labelStartOffset->setVisible(type != 0);
+    ui->startOffsetEdit->setVisible(type != 0);
+    ui->startReferenceHolder->setVisible(type == 2);
+    // Leave the start pick once there is no reference to pick
+    if (type != 2 && getSelectionMode() == SelectionMode::refStart)
+        exitSelectionMode();
+}
+
+void TaskExtrudeParameters::onStartModeChanged(int index)
+{
+    setupTransaction();
+    PartDesign::FeatureExtrude* extrude = static_cast<PartDesign::FeatureExtrude*>(vp->getObject());
+    extrude->StartType.setValue(static_cast<long>(index));
+    updateStartUI();
+    // nothing to start at yet: pick it first
+    if (index == 2 && !extrude->StartReference.getValue()) {
+        if (startWidget)
+            startWidget->startSelection();
+        return;
+    }
+    recomputeFeature();
+}
+
+void TaskExtrudeParameters::onStartOffsetChanged(double len)
+{
+    setupTransaction();
+    PartDesign::FeatureExtrude* extrude = static_cast<PartDesign::FeatureExtrude*>(vp->getObject());
+    extrude->StartOffset.setValue(len);
+    recomputeFeature();
+}
+
+void TaskExtrudeParameters::onSideTypeChanged(int index)
+{
+    setupTransaction();
+    PartDesign::FeatureExtrude* extrude = static_cast<PartDesign::FeatureExtrude*>(vp->getObject());
+    extrude->SideType.setValue(static_cast<long>(index));
+    setCheckboxes();
+    recomputeFeature();
+}
+
+void TaskExtrudeParameters::onMode2Changed(int index)
+{
+    setupTransaction();
+    PartDesign::FeatureExtrude* extrude = static_cast<PartDesign::FeatureExtrude*>(vp->getObject());
+    setSideMode(extrude->Type2, extrude->UpToShape2, index);
+    setCheckboxes();
+    // nothing to go up to yet: pick it first
+    if (static_cast<Modes>(index) == Modes::ToFace && !extrude->UpToShape2.getSize()) {
+        if (upToWidget2)
+            upToWidget2->startSelection();
+        return;
+    }
+    recomputeFeature();
+}
+
+void TaskExtrudeParameters::onOffset2Changed(double len)
+{
+    setupTransaction();
+    PartDesign::FeatureExtrude* extrude = static_cast<PartDesign::FeatureExtrude*>(vp->getObject());
+    extrude->Offset2.setValue(len);
+    recomputeFeature();
 }
 
 void TaskExtrudeParameters::selectedReferenceAxis(const Gui::SelectionChanges& msg)
@@ -412,14 +617,6 @@ void TaskExtrudeParameters::selectedReferenceAxis(const Gui::SelectionChanges& m
         exitSelectionMode();
         recomputeFeature();
     }
-}
-
-void TaskExtrudeParameters::clearFaceName()
-{
-    QSignalBlocker block(ui->lineFaceName);
-    ui->lineFaceName->clear();
-    ui->lineFaceName->setProperty("FeatureName", QVariant());
-    ui->lineFaceName->setProperty("FaceName", QVariant());
 }
 
 void TaskExtrudeParameters::onLengthChanged(double len)
@@ -548,10 +745,7 @@ void TaskExtrudeParameters::fillDirectionCombo()
     if (hasCustom)
         ui->directionCB->setCurrentIndex(DirectionModes::Custom);
 
-    ui->checkBoxAlongDirection->setEnabled(ui->directionCB->currentIndex() != 0);
-    ui->XDirectionEdit->setEnabled(hasCustom);
-    ui->YDirectionEdit->setEnabled(hasCustom);
-    ui->ZDirectionEdit->setEnabled(hasCustom);
+    updateDirectionUI(ui->directionCB->currentIndex());
 
     blockUpdate = oldVal_blockUpdate;
 }
@@ -567,109 +761,105 @@ void TaskExtrudeParameters::setCheckboxes()
     if (!vp)
         return;
 
-    auto mode = static_cast<Modes>(getMode());
+    PartDesign::FeatureExtrude* extrude = static_cast<PartDesign::FeatureExtrude*>(vp->getObject());
+    std::string sideType(extrude->SideType.getValueAsString());
+    bool twoSides = sideType == "Two sides";
+    bool symmetric = sideType == "Symmetric";
 
     // disable/hide everything unless we are sure we don't need it
     // exception: the direction parameters are in any case visible
-    bool isLengthEditVisible = false;
-    bool isLengthEdit2Visible = false;
-    bool isOffsetEditVisible = false;
-    bool isOffsetEditEnabled = true;
-    bool isMidplaneEnabled = false;
-    bool isMidplaneVisible = false;
-    bool isReversedEnabled = false;
-    bool isFaceEditVisible = false;
-    bool isTaperEditVisible = false;
-    bool isTaperEdit2Visible = false;
+    struct SideUi {
+        bool length = false;
+        bool offset = false;
+        bool upTo = false;
+        bool taper = false;
+    };
+    auto sideUi = [this](Modes mode) {
+        SideUi side;
+        switch (mode) {
+        case Modes::Dimension:
+            side.length = true;
+            side.taper = true;
+            break;
+        case Modes::ThroughAll:
+            // Through all (Pocket): no offset, it has no meaning through all,
+            // and a disabled field only said so (upstream 6d238a93e1); a
+            // taper does (d52260b2f4). To last (Pad): an offset.
+            if (isPocket())
+                side.taper = true;
+            else
+                side.offset = true;
+            break;
+        case Modes::ToFirst:
+            side.offset = true;
+            break;
+        case Modes::ToFace:
+            side.offset = true;
+            side.upTo = true;
+            break;
+        }
+        return side;
+    };
+    auto mode = static_cast<Modes>(getMode());
+    SideUi side1 = sideUi(mode);
+    SideUi side2;
+    if (twoSides)
+        side2 = sideUi(static_cast<Modes>(ui->changeMode2->currentIndex()));
 
     if (mode == Modes::Dimension) {
-        isLengthEditVisible = true;
         ui->lengthEdit->selectNumber();
         QMetaObject::invokeMethod(ui->lengthEdit, "setFocus", Qt::QueuedConnection);
-        isTaperEditVisible = true;
-        isMidplaneVisible = true;
-        isMidplaneEnabled = true;
-        // Reverse only makes sense if Midplane is not true
-        isReversedEnabled = !ui->checkBoxMidplane->isChecked();
-    }
-    else if (mode == Modes::ThroughAll && isPocket()) {
-        isOffsetEditVisible = true;
-        isOffsetEditEnabled = false; // offset may have some meaning for through all but it doesn't work
-        isMidplaneEnabled = true;
-        isMidplaneVisible = true;
-        isReversedEnabled = !ui->checkBoxMidplane->isChecked();
-    }
-    else if (mode == Modes::ToLast && !isPocket()) {
-        isOffsetEditVisible = true;
-        isReversedEnabled = true;
-    }
-    else if (mode == Modes::ToFirst) {
-        isOffsetEditVisible = true;
-        isReversedEnabled = true;
-    }
-    else if (mode == Modes::ToFace) {
-        isOffsetEditVisible = true;
-        isReversedEnabled = true;
-        isFaceEditVisible = true;
-        QMetaObject::invokeMethod(ui->lineFaceName, "setFocus", Qt::QueuedConnection);
-        // Go into reference selection mode if no face has been selected yet
-        if (ui->lineFaceName->property("FeatureName").isNull())
-            ui->buttonFace->setChecked(true);
-    }
-    else if (mode == Modes::TwoDimensions) {
-        isLengthEditVisible = true;
-        isLengthEdit2Visible = true;
-        isTaperEditVisible = true;
-        isTaperEdit2Visible = true;
-        isReversedEnabled = true;
     }
 
-    ui->lengthEdit->setVisible(isLengthEditVisible);
-    ui->lengthEdit->setEnabled(isLengthEditVisible);
-    ui->labelLength->setVisible(isLengthEditVisible);
-    ui->checkBoxAlongDirection->setVisible(isLengthEditVisible);
+    ui->lengthEdit->setVisible(side1.length);
+    ui->lengthEdit->setEnabled(side1.length);
+    ui->labelLength->setVisible(side1.length);
+    lengthShown = side1.length || side2.length;
+    updateDirectionUI(ui->directionCB->currentIndex());
 
-    ui->lengthEdit2->setVisible(isLengthEdit2Visible);
-    ui->lengthEdit2->setEnabled(isLengthEdit2Visible);
-    ui->labelLength2->setVisible(isLengthEdit2Visible);
+    ui->offsetEdit->setVisible(side1.offset);
+    ui->offsetEdit->setEnabled(side1.offset);
+    ui->labelOffset->setVisible(side1.offset);
+    ui->upToShapeHolder->setVisible(side1.upTo);
 
-    ui->offsetEdit->setVisible(isOffsetEditVisible);
-    ui->offsetEdit->setEnabled(isOffsetEditVisible && isOffsetEditEnabled);
-    ui->labelOffset->setVisible(isOffsetEditVisible);
+    ui->groupBoxSide2->setVisible(twoSides);
+    ui->lengthEdit2->setVisible(side2.length);
+    ui->lengthEdit2->setEnabled(side2.length);
+    ui->labelLength2->setVisible(side2.length);
+    ui->offsetEdit2->setVisible(side2.offset);
+    ui->offsetEdit2->setEnabled(side2.offset);
+    ui->labelOffset2->setVisible(side2.offset);
+    ui->upToShapeHolder2->setVisible(side2.upTo);
 
-    ui->taperAngleEdit->setVisible(isTaperEditVisible);
-    ui->taperAngleEdit->setEnabled(isTaperEditVisible);
-    ui->labelTaperAngle->setVisible(isTaperEditVisible);
+    ui->taperAngleEdit->setVisible(side1.taper);
+    ui->taperAngleEdit->setEnabled(side1.taper);
+    ui->labelTaperAngle->setVisible(side1.taper);
 
-    ui->taperAngleEdit2->setVisible(isTaperEdit2Visible);
-    ui->taperAngleEdit2->setEnabled(isTaperEdit2Visible);
-    ui->labelTaperAngle2->setVisible(isTaperEdit2Visible);
-
-    PartDesign::FeatureExtrude* extrude = static_cast<PartDesign::FeatureExtrude*>(vp->getObject());
+    ui->taperAngleEdit2->setVisible(side2.taper);
+    ui->taperAngleEdit2->setEnabled(side2.taper);
+    ui->labelTaperAngle2->setVisible(side2.taper);
 
     if (extrude->AutoTaperInnerAngle.getValue()) {
         ui->innerTaperEdit->setEnabled( false );
         ui->innerTaperEdit2->setEnabled( false );
     } else {
-        ui->innerTaperEdit->setEnabled( isTaperEditVisible );
-        ui->innerTaperEdit2->setEnabled( isTaperEdit2Visible );
+        ui->innerTaperEdit->setEnabled( side1.taper );
+        ui->innerTaperEdit2->setEnabled( side2.taper );
     }
 
-    ui->innerTaperEdit->setVisible( isTaperEditVisible );
-    ui->innerTaperEdit2->setVisible( isTaperEdit2Visible );
-    ui->labelInnerTaperAngle->setVisible( isTaperEditVisible );
-    ui->labelInnerTaperAngle2->setVisible( isTaperEdit2Visible );
+    ui->innerTaperEdit->setVisible( side1.taper );
+    ui->innerTaperEdit2->setVisible( side2.taper );
+    ui->labelInnerTaperAngle->setVisible( side1.taper );
+    ui->labelInnerTaperAngle2->setVisible( side2.taper );
 
-    ui->checkBoxMidplane->setEnabled(isMidplaneEnabled);
-    ui->checkBoxMidplane->setVisible(isMidplaneVisible);
+    // Symmetric goes both ways; the checkbox would say nothing
+    ui->checkBoxReversed->setEnabled(!symmetric);
+    ui->checkFaceLimits->setVisible(side1.offset || side2.offset);
 
-    ui->checkBoxReversed->setEnabled(isReversedEnabled);
-
-    ui->buttonFace->setVisible(isFaceEditVisible);
-    ui->lineFaceName->setVisible(isFaceEditVisible);
-    if (!isFaceEditVisible) {
-        onButtonFace(false);
-    }
+    // Leave a side's up-to picking once that side is not up to a face
+    if ((getSelectionMode() == SelectionMode::refUpTo && !side1.upTo)
+            || (getSelectionMode() == SelectionMode::refUpTo2 && !side2.upTo))
+        exitSelectionMode();
 }
 
 void TaskExtrudeParameters::onDirectionCBChanged(int num)
@@ -725,14 +915,6 @@ void TaskExtrudeParameters::onAlongSketchNormalChanged(bool on)
     recomputeFeature();
 }
 
-void TaskExtrudeParameters::onDirectionToggled(bool on)
-{
-    if (on)
-        ui->groupBoxDirection->show();
-    else
-        ui->groupBoxDirection->hide();
-}
-
 void TaskExtrudeParameters::onXDirectionEditChanged(double len)
 {
     setupTransaction();
@@ -779,43 +961,24 @@ void TaskExtrudeParameters::updateDirectionEdits()
 void TaskExtrudeParameters::setDirectionMode(int index)
 {
     PartDesign::FeatureExtrude* extrude = static_cast<PartDesign::FeatureExtrude*>(vp->getObject());
-    // disable AlongSketchNormal when the direction is already normal
-    if (index == DirectionModes::Normal)
-        ui->checkBoxAlongDirection->setEnabled(false);
-    else
-        ui->checkBoxAlongDirection->setEnabled(true);
-
     setupTransaction();
-    // if custom direction is used, show it
-    if (index == DirectionModes::Custom) {
-        ui->groupBoxDirection->setChecked(true);
-        extrude->UseCustomVector.setValue(true);
-    }
-    else {
-        extrude->UseCustomVector.setValue(false);
-    }
-
-    // if we don't use custom direction, only allow to show its direction
-    if (index != DirectionModes::Custom) {
-        ui->XDirectionEdit->setEnabled(false);
-        ui->YDirectionEdit->setEnabled(false);
-        ui->ZDirectionEdit->setEnabled(false);
-    }
-    else {
-        ui->XDirectionEdit->setEnabled(true);
-        ui->YDirectionEdit->setEnabled(true);
-        ui->ZDirectionEdit->setEnabled(true);
-    }
-
+    extrude->UseCustomVector.setValue(index == DirectionModes::Custom);
+    updateDirectionUI(index);
 }
 
-void TaskExtrudeParameters::onMidplaneChanged(bool on)
+void TaskExtrudeParameters::updateDirectionUI(int index)
 {
-    setupTransaction();
-    PartDesign::FeatureExtrude* extrude = static_cast<PartDesign::FeatureExtrude*>(vp->getObject());
-    extrude->Midplane.setValue(on);
-    ui->checkBoxReversed->setEnabled(!on);
-    recomputeFeature();
+    // The profile normal needs nothing more; a reference shows its vector,
+    // read only; a custom direction is typed in (upstream 873fa449ce)
+    bool normal = index == DirectionModes::Normal;
+    bool custom = index == DirectionModes::Custom;
+    ui->groupBoxDirection->setVisible(!normal);
+    ui->XDirectionEdit->setEnabled(custom);
+    ui->YDirectionEdit->setEnabled(custom);
+    ui->ZDirectionEdit->setEnabled(custom);
+    // Measuring along the normal is the same thing when the direction is it
+    ui->checkBoxAlongDirection->setVisible(!normal && lengthShown);
+    ui->checkBoxAlongDirection->setEnabled(!normal);
 }
 
 void TaskExtrudeParameters::onUsePipeChanged(bool on)
@@ -839,7 +1002,6 @@ void TaskExtrudeParameters::onReversedChanged(bool on)
     setupTransaction();
     PartDesign::FeatureExtrude* extrude = static_cast<PartDesign::FeatureExtrude*>(vp->getObject());
     extrude->Reversed.setValue(on);
-    ui->checkBoxMidplane->setEnabled(!on);
     // update the direction
     updateDirectionEdits();
     recomputeFeature();
@@ -866,58 +1028,6 @@ void TaskExtrudeParameters::getReferenceAxis(App::DocumentObject*& obj, std::vec
         if (objT.getSubName().size()) {
             sub.resize(1);
             sub[0] = objT.getSubName();
-        }
-    }
-}
-
-void TaskExtrudeParameters::onFaceName(const QString& text)
-{
-    if (text.isEmpty()) {
-        // if user cleared the text field then also clear the properties
-        ui->lineFaceName->setProperty("FeatureName", QVariant());
-        ui->lineFaceName->setProperty("FaceName", QVariant());
-    }
-    else {
-        // expect that the label of an object is used
-        QStringList parts = text.split(QChar::fromLatin1(':'));
-        QString label = parts[0];
-        QVariant name = objectNameByLabel(label, ui->lineFaceName->property("FeatureName"));
-        if (name.isValid()) {
-            parts[0] = name.toString();
-            QString uptoface = parts.join(QStringLiteral(":"));
-            ui->lineFaceName->setProperty("FeatureName", name);
-            ui->lineFaceName->setProperty("FaceName", setUpToFace(uptoface));
-        }
-        else {
-            ui->lineFaceName->setProperty("FeatureName", QVariant());
-            ui->lineFaceName->setProperty("FaceName", QVariant());
-        }
-    }
-}
-
-void TaskExtrudeParameters::translateFaceNamePlaceHolder()
-{
-    ui->lineFaceName->setPlaceholderText(tr("No face selected"));
-}
-
-void TaskExtrudeParameters::translateFaceName()
-{
-    QVariant featureName = ui->lineFaceName->property("FeatureName");
-    if (featureName.isValid()) {
-        QStringList parts = ui->lineFaceName->text().split(QChar::fromLatin1(':'));
-        QByteArray upToFace = ui->lineFaceName->property("FaceName").toByteArray();
-        int faceId = -1;
-        bool ok = false;
-        if (upToFace.indexOf("Face") == 0) {
-            faceId = upToFace.remove(0,4).toInt(&ok);
-        }
-
-        if (ok) {
-            ui->lineFaceName->setText(QStringLiteral("%1:%2%3")
-                                      .arg(parts[0], tr("Face")).arg(faceId));
-        }
-        else {
-            ui->lineFaceName->setText(parts[0]);
         }
     }
 }
@@ -965,25 +1075,9 @@ bool TaskExtrudeParameters::getReversed() const
     return ui->checkBoxReversed->isChecked();
 }
 
-bool TaskExtrudeParameters::getMidplane() const
-{
-    return ui->checkBoxMidplane->isChecked();
-}
-
 int TaskExtrudeParameters::getMode() const
 {
     return ui->changeMode->currentIndex();
-}
-
-QString TaskExtrudeParameters::getFaceName() const
-{
-    QVariant featureName = ui->lineFaceName->property("FeatureName");
-    if (featureName.isValid()) {
-        QString faceName = ui->lineFaceName->property("FaceName").toString();
-        return getFaceReference(featureName.toString(), faceName);
-    }
-
-    return QStringLiteral("None");
 }
 
 void TaskExtrudeParameters::changeEvent(QEvent *e)
@@ -993,6 +1087,7 @@ void TaskExtrudeParameters::changeEvent(QEvent *e)
         QSignalBlocker length(ui->lengthEdit);
         QSignalBlocker length2(ui->lengthEdit2);
         QSignalBlocker offset(ui->offsetEdit);
+        QSignalBlocker offset2(ui->offsetEdit2);
         QSignalBlocker taper(ui->taperAngleEdit);
         QSignalBlocker taper2(ui->taperAngleEdit2);
         QSignalBlocker innerTaper(ui->innerTaperEdit);
@@ -1001,10 +1096,10 @@ void TaskExtrudeParameters::changeEvent(QEvent *e)
         QSignalBlocker ydir(ui->YDirectionEdit);
         QSignalBlocker zdir(ui->ZDirectionEdit);
         QSignalBlocker dir(ui->directionCB);
-        QSignalBlocker face(ui->lineFaceName);
+        QSignalBlocker startMode(ui->startMode);
+        QSignalBlocker sideType(ui->sideTypeCB);
         QSignalBlocker mode(ui->changeMode);
-
-        addBlinkWidget(Gui::FwQt::widgetOf(ui->lineFaceName));
+        QSignalBlocker mode2(ui->changeMode2);
 
         // Save all items
         QStringList items;
@@ -1022,10 +1117,13 @@ void TaskExtrudeParameters::changeEvent(QEvent *e)
         ui->directionCB->setCurrentIndex(index);
 
         // Translate mode items
-        translateModeList(ui->changeMode->currentIndex());
-
-        translateFaceName();
-        translateFaceNamePlaceHolder();
+        translateModeList();
+        for (auto widget : {upToWidget, upToWidget2}) {
+            if (widget)
+                widget->setTitle(upToTitle());
+        }
+        if (startWidget)
+            startWidget->setTitle(tr("Reference"));
         translateTooltips();
 
         axesInList.clear();
@@ -1039,6 +1137,7 @@ void TaskExtrudeParameters::saveHistory()
     ui->lengthEdit->pushToHistory();
     ui->lengthEdit2->pushToHistory();
     ui->offsetEdit->pushToHistory();
+    ui->offsetEdit2->pushToHistory();
     ui->taperAngleEdit->pushToHistory();
     ui->taperAngleEdit2->pushToHistory();
     ui->innerTaperEdit->pushToHistory();
@@ -1047,14 +1146,16 @@ void TaskExtrudeParameters::saveHistory()
     TaskSketchBasedParameters::saveHistory();
 }
 
-void TaskExtrudeParameters::applyParameters(QString facename)
+void TaskExtrudeParameters::applyParameters()
 {
     if (!vp)
         return;
     auto obj = vp->getObject();
+    auto extrude = static_cast<PartDesign::FeatureExtrude*>(obj);
 
     ui->lengthEdit->apply();
     ui->lengthEdit2->apply();
+    ui->startOffsetEdit->apply();
     ui->taperAngleEdit->apply();
     ui->taperAngleEdit2->apply();
     ui->innerTaperEdit->apply();
@@ -1064,11 +1165,20 @@ void TaskExtrudeParameters::applyParameters(QString facename)
         << getXDirection() << ", " << getYDirection() << ", " << getZDirection() << ")");
     FCMD_OBJ_CMD(obj, "ReferenceAxis = " << getReferenceAxis());
     FCMD_OBJ_CMD(obj, "AlongSketchNormal = " << (getAlongSketchNormal() ? 1 : 0));
-    FCMD_OBJ_CMD(obj, "Type = " << getMode());
-    FCMD_OBJ_CMD(obj, "UpToFace = " << facename.toUtf8().data());
+    FCMD_OBJ_CMD(obj, "SideType = '" << extrude->SideType.getValueAsString() << "'");
+    // The reference first: setting it sets Type between UpToFace and UpToShape
+    FCMD_OBJ_CMD(obj, "UpToShape = " << buildLinkSubListPythonStr(
+                extrude->UpToShape.getValues(), extrude->UpToShape.getSubValues()));
+    FCMD_OBJ_CMD(obj, "UpToShape2 = " << buildLinkSubListPythonStr(
+                extrude->UpToShape2.getValues(), extrude->UpToShape2.getSubValues()));
+    FCMD_OBJ_CMD(obj, "Type = '" << extrude->Type.getValueAsString() << "'");
+    FCMD_OBJ_CMD(obj, "Type2 = '" << extrude->Type2.getValueAsString() << "'");
     FCMD_OBJ_CMD(obj, "Reversed = " << (getReversed() ? 1 : 0));
-    FCMD_OBJ_CMD(obj, "Midplane = " << (getMidplane() ? 1 : 0));
     FCMD_OBJ_CMD(obj, "Offset = " << getOffset());
+    FCMD_OBJ_CMD(obj, "Offset2 = " << ui->offsetEdit2->value().getValue());
+    FCMD_OBJ_CMD(obj, "StartType = '" << extrude->StartType.getValueAsString() << "'");
+    FCMD_OBJ_CMD(obj, "StartReference = " << buildLinkSingleSubPythonStr(
+                extrude->StartReference.getValue(), extrude->StartReference.getSubValues()));
 }
 
 void TaskExtrudeParameters::onModeChanged(int)
@@ -1076,9 +1186,23 @@ void TaskExtrudeParameters::onModeChanged(int)
     // implement in sub-class
 }
 
-void TaskExtrudeParameters::translateModeList(int)
+void TaskExtrudeParameters::translateModeList()
+{
+    PartDesign::FeatureExtrude* extrude = static_cast<PartDesign::FeatureExtrude*>(vp->getObject());
+    fillModeList(ui->changeMode);
+    ui->changeMode->setCurrentIndex(modeOf(extrude->Type));
+    fillModeList(ui->changeMode2);
+    ui->changeMode2->setCurrentIndex(modeOf(extrude->Type2));
+}
+
+void TaskExtrudeParameters::fillModeList(Gui::Fw::QComboBox *)
 {
     // implement in sub-class
+}
+
+QString TaskExtrudeParameters::upToTitle() const
+{
+    return tr("Face");
 }
 
 void TaskExtrudeParameters::translateTooltips()

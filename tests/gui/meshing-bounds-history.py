@@ -1,7 +1,7 @@
 """A shape tessellates the same whatever mesh it already carries.
 
 Found 2026-09-30 by progressive-load-diff.py on a user file (error.FCStd
-of mail/2022-10-11_w_52240, docs/DocumentLoad.md sec 16): a compound of
+of mail/2022-10-11_w_52240, docs/DocumentLoad.md sec 19): a compound of
 92 B-spline edges refined to 86569 points in a process's first open and
 86662 in its later ones. Every tessellation parameter -- the display
 deflection, the exact deflection a coarse-first build hands the refine,

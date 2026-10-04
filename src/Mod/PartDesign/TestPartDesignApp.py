@@ -26,22 +26,32 @@
 
 # datum tools
 from PartDesignTests.TestDatum import TestDatumPoint, TestDatumLine, TestDatumPlane
+from PartDesignTests.TestDatum import TestCoordinateSystemInBody
 from PartDesignTests.TestShapeBinder import TestShapeBinder
 from PartDesignTests.TestShapeBinder import TestSubShapeBinder
+from PartDesignTests.TestVarSet import TestVarSet
+from PartDesignTests.TestBaseFeature import TestBaseFeature
+from PartDesignTests.TestBodyMaterial import TestBodyMaterial
 
 # additive/subtractive features & primitives
 from PartDesignTests.TestPad import TestPad
+from PartDesignTests.TestExtrudeSides import TestExtrudeSides
 from PartDesignTests.TestPocket import TestPocket
 from PartDesignTests.TestHole import TestHole
 from PartDesignTests.TestRevolve import TestRevolve
 from PartDesignTests.TestPipe import TestPipe
 from PartDesignTests.TestLoft import TestLoft
+from PartDesignTests.TestHelix import TestHelix
 from PartDesignTests.TestPrimitive import TestPrimitive
 
 # transformations and boolean
 from PartDesignTests.TestMirrored import TestMirrored
 from PartDesignTests.TestLinearPattern import TestLinearPattern
 from PartDesignTests.TestPolarPattern import TestPolarPattern
+from PartDesignTests.TestCircularPattern import TestCircularPattern
+from PartDesignTests.TestPathPattern import TestPathPattern
+from PartDesignTests.TestPointPattern import TestPointPattern
+from PartDesignTests.TestPatternKind import TestPatternKind
 from PartDesignTests.TestMultiTransform import TestMultiTransform
 from PartDesignTests.TestBoolean import TestBoolean
 
@@ -50,6 +60,12 @@ from PartDesignTests.TestFillet import TestFillet
 from PartDesignTests.TestChamfer import TestChamfer
 from PartDesignTests.TestDraft import TestDraft
 from PartDesignTests.TestThickness import TestThickness
+from PartDesignTests.TestDefeaturing import TestDefeaturing
+from PartDesignTests.TestSuppressed import TestSuppressed
 
 # extras
 from PartDesignTests.TestInvoluteGear import TestInvoluteGear
+
+# element names (upstream's, 83ea7e4355 and after)
+from PartDesignTests.TestTopologicalNamingProblem import TestTopologicalNamingProblem
+from PartDesignTests.TestNameEncoding import TestNameEncoding, TestNameEncodingAcrossDocuments

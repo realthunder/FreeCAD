@@ -386,6 +386,8 @@ public: //members
     bool mapReverse = false;
     double attachParameter = 0.0;
     double surfU = 0.0, surfV = 0.0;
+    /// How far from its plane a face may stray and still count as flat
+    double precision = 1.0e-7;
     Base::Placement attachmentOffset;
 
     /**
@@ -458,6 +460,10 @@ public:
             const std::vector<App::DocumentObject*> &objs,
             const std::vector<std::string> &subs,
             const Base::Placement &origPlacement) const override;
+    /// The flatness a plane or a sketch accepts of the face it sits on --
+    /// looser than OCCT's 1e-7, which refused B-spline faces a STEP export
+    /// left nearly planar (upstream eebb7f7829, issue 21242)
+    static double planarPrecision();
 };
 
 //attacher specialized for datum lines

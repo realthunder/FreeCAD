@@ -815,6 +815,14 @@ void SoDatumLabel::computeBBox(SoAction * action, SbBox3f &box, SbVec3f &center)
     SoState *state = action->getState();
     float scale = getScaleFactor(state);
 
+    // The number's box is the image's, which GLRender or a capture makes.
+    // On a mirror no GL pass ever runs, so make it here if nothing has yet:
+    // without it the box is a one-pixel stand-in.
+    if (!this->glimagevalid) {
+        drawImage();
+        this->glimagevalid = true;
+    }
+
     DatumLabelBox datumBox(scale, this);
     datumBox.computeBBox(box, center);
 }
@@ -1811,6 +1819,10 @@ void SoDatumLabel::notify(SoNotList * l)
         && f != &this->linePattern && f != &this->image) {
         this->leaderShape->touch();
         this->imageShape->touch();
+        // and the anchor that places the number by them
+        if (this->imageAnchor) {
+            this->imageAnchor->touch();
+        }
     }
     inherited::notify(l);
 }

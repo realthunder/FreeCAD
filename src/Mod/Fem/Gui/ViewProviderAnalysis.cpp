@@ -100,6 +100,7 @@ PROPERTY_SOURCE(FemGui::ViewProviderFemAnalysis, Gui::ViewProviderDocumentObject
 ViewProviderFemAnalysis::ViewProviderFemAnalysis()
 {
     sPixmap = "FEM_Analysis";
+    setToggleVisibility(ToggleVisibilityMode::NoToggleVisibility);
 }
 
 ViewProviderFemAnalysis::~ViewProviderFemAnalysis() = default;

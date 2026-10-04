@@ -72,6 +72,7 @@ include_directories(
 set(FreeCADApp_LIBS
     FreeCADBase
     ${Boost_LIBRARIES}
+    ${ZLIB_LIBRARIES}
     fmt::fmt
 )
 
@@ -475,9 +476,13 @@ SET(Document_CPP_SRCS
     MergeDocuments.cpp
     ShaderObject.cpp
     TextDocument.cpp
+    VarSet.cpp
     ExpressionLibrary.cpp
     Link.cpp
+    LinkArray.cpp
     LinkParams.cpp
+    Pattern.cpp
+    PatternExtension.cpp
     LinkBaseExtensionPyImp.cpp
     ExpressionPyImp.cpp
     SavedView.cpp
@@ -544,8 +549,12 @@ SET(Document_HPP_SRCS
     MergeDocuments.h
     ShaderObject.h
     TextDocument.h
+    VarSet.h
     ExpressionLibrary.h
     Link.h
+    LinkArray.h
+    Pattern.h
+    PatternExtension.h
     SavedView.h
 )
 SET(Document_SRCS
@@ -687,6 +696,13 @@ set_target_properties(ExpressionCore PROPERTIES
     AUTORCC OFF
 )
 target_link_libraries(ExpressionCore ${FreeCADApp_LIBS})
+# These objects end up inside FreeCADApp, but CMake defines <target>_EXPORTS
+# only for the shared library target itself. Without it src/FCGlobal.h resolves
+# AppExport and DataExport to __declspec(dllimport) in these TUs, and every
+# static member defined here -- the TYPESYSTEM_SOURCE class ids,
+# CellAddress::MAX_ROWS -- fails on MSVC with C2491. Harmless elsewhere: on
+# non-Windows both branches of that macro expand to nothing.
+target_compile_definitions(ExpressionCore PRIVATE FreeCADApp_EXPORTS)
 
 add_library(FreeCADApp SHARED ${FreeCADApp_SRCS} $<TARGET_OBJECTS:ExpressionCore>)
 target_link_libraries(FreeCADApp ${FreeCADApp_LIBS})

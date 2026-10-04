@@ -10,6 +10,7 @@
 #include "App/ExpressionSecurityRuntime.h"
 #include "App/ObjectIdentifier.h"
 #include "App/PropertyStandard.h"
+#include "Base/Interpreter.h"
 #include "InitApplication.h"
 
 // Enforcement runtime tests (expression sandbox phase 1 step 3b). The
@@ -62,6 +63,120 @@ TEST_F(ExpressionSecurityRuntimeTest, noScopeNoCheck)
     EXPECT_NO_THROW(checkPermission(Permission::Gui));
 }
 
+// ---- the host file and code chokepoints (F1, docs/Sandbox.md 7.29) ----
+
+TEST_F(ExpressionSecurityRuntimeTest, hostPathNormalization)
+{
+    // One spelling per file, so an answer is keyed to the FILE and not
+    // to whichever spelling reached the primitive.
+    EXPECT_EQ(normalizeHostPath("/tmp/fcx-f1/./a.FCStd"), normalizeHostPath("/tmp/fcx-f1/a.FCStd"));
+    EXPECT_EQ(normalizeHostPath("/tmp/fcx-f1/x/../a.FCStd"),
+              normalizeHostPath("/tmp/fcx-f1/a.FCStd"));
+    // a trailing separator would make one directory two targets
+    EXPECT_EQ(normalizeHostPath("/tmp/fcx-f1/"), normalizeHostPath("/tmp/fcx-f1"));
+    EXPECT_TRUE(normalizeHostPath("").empty());
+    // a file being SAVED to is named before it exists, and must still
+    // normalize the way a later read of it will
+    EXPECT_EQ(normalizeHostPath("/tmp/fcx-f1-absent/./b.FCStd"),
+              normalizeHostPath("/tmp/fcx-f1-absent/b.FCStd"));
+}
+
+TEST_F(ExpressionSecurityRuntimeTest, blessedPathsAreKeyedToTheFile)
+{
+    clearBlessedPaths();
+    EXPECT_FALSE(pathBlessed("/tmp/fcx-f1/picked.FCStd"));
+    blessPath("/tmp/fcx-f1/./picked.FCStd");
+    EXPECT_TRUE(pathBlessed("/tmp/fcx-f1/picked.FCStd"));
+    EXPECT_TRUE(pathBlessed("/tmp/fcx-f1/x/../picked.FCStd"));
+    EXPECT_FALSE(pathBlessed("/tmp/fcx-f1/other.FCStd"));
+    blessPath("");  // blesses nothing
+    EXPECT_FALSE(pathBlessed(""));
+    clearBlessedPaths();
+    EXPECT_FALSE(pathBlessed("/tmp/fcx-f1/picked.FCStd"));
+}
+
+TEST_F(ExpressionSecurityRuntimeTest, hostFileChokepointsUnderADocumentScope)
+{
+    clearBlessedPaths();
+    const std::string path = "/tmp/fcx-f1-doc/secret.FCStd";
+    // host code outside any evaluation reaches every file, as it always did
+    ASSERT_FALSE(Runtime::scopeActive());
+    EXPECT_NO_THROW(checkHostPath(Permission::FsRead, path));
+    EXPECT_NO_THROW(checkHostPath(Permission::FsWrite, path));
+    EXPECT_NO_THROW(checkHostPath(Permission::HostExec, path));
+
+    Runtime::Scope scope(_obj);
+    // a document's own code reaches no host file, and the catalog does
+    // not offer to lift it: DENY, not promptable
+    EXPECT_THROW(checkHostPath(Permission::FsWrite, path), PermissionNeededException);
+    EXPECT_THROW(checkHostPath(Permission::HostExec, path), PermissionNeededException);
+    try {
+        checkHostPath(Permission::FsRead, path);
+        FAIL() << "a document principal read a host file";
+    }
+    catch (const PermissionNeededException &e) {
+        EXPECT_FALSE(e.isPromptable());
+        // the refusal names the file, normalized
+        EXPECT_EQ(e.getTarget(), normalizeHostPath(path));
+    }
+}
+
+TEST_F(ExpressionSecurityRuntimeTest, aBlessedPathPassesTheChokepoint)
+{
+    clearBlessedPaths();
+    const std::string picked = "/tmp/fcx-f1-doc/picked.FCStd";
+    blessPath(picked);
+    {
+        Runtime::Scope scope(_obj);
+        // consent stays a capability (S1): the file the user chose in a
+        // picker that ran inside this guest passes with no grant at all,
+        // while a path the guest made up does not
+        EXPECT_NO_THROW(checkHostPath(Permission::FsWrite, picked));
+        EXPECT_NO_THROW(checkHostPath(Permission::FsRead, "/tmp/fcx-f1-doc/./picked.FCStd"));
+        EXPECT_THROW(checkHostPath(Permission::FsWrite, "/tmp/fcx-f1-doc/madeup.FCStd"),
+                     PermissionNeededException);
+    }
+    clearBlessedPaths();
+}
+
+TEST_F(ExpressionSecurityRuntimeTest, saveAsIsGatedAtThePrimitive)
+{
+    clearBlessedPaths();
+    const std::string path = std::string(std::tmpnam(nullptr)) + "-f1.FCStd";
+    {
+        Runtime::Scope scope(_obj);
+        EXPECT_THROW(_doc->saveAs(path.c_str()), PermissionNeededException);
+    }
+    // refused before anything was written
+    std::ifstream written(path.c_str());
+    EXPECT_FALSE(written.good());
+}
+
+TEST_F(ExpressionSecurityRuntimeTest, theInterpreterFileGuardRefusesHostCode)
+{
+    // Base cannot see this runtime, so App hands runFile a guard.  It is
+    // installed here rather than leaned on from the application's own
+    // startup, so what the case proves is the seam itself.
+    Base::InterpreterSingleton::setFileGuard(
+        [](const char *f) { checkHostPath(Permission::HostExec, f ? f : ""); });
+    const std::string script = std::string(std::tmpnam(nullptr)) + "-f1.py";
+    {
+        std::ofstream out(script.c_str());
+        out << "raise SystemExit\n";
+    }
+    {
+        Runtime::Scope scope(_obj);
+        EXPECT_THROW(Base::Interpreter().runFile(script.c_str(), true), PermissionNeededException);
+    }
+    // Put back a guard that checks the same thing, rather than clearing
+    // it: Application::init installs one, and leaving this suite with
+    // none would quietly un-gate runFile for every later case in this
+    // binary.
+    Base::InterpreterSingleton::setFileGuard(
+        [](const char *f) { checkHostPath(Permission::HostExec, f ? f : ""); });
+    std::remove(script.c_str());
+}
+
 TEST_F(ExpressionSecurityRuntimeTest, documentScopeCatalogDefaults)
 {
     Runtime::Scope scope(_obj);
@@ -90,6 +205,76 @@ TEST_F(ExpressionSecurityRuntimeTest, documentScopeCatalogDefaults)
         EXPECT_EQ(e.getPermission(), Permission::DocForeign);
         EXPECT_EQ(e.getTarget(), "OtherDoc");
     }
+}
+
+TEST_F(ExpressionSecurityRuntimeTest, clientScope)
+{
+    // a remote client on a served document (docs/Sandbox.md 7.20, C3)
+    RemoteClient client;
+    client.principal = clientPrincipalId("", 0, 900001);
+    client.context = "#900001 'rt-client'";
+    {
+        // the client form pushes whatever is active, as a chain call does
+        Runtime::Scope outer("session");
+        Runtime::Scope scope(_doc, client);
+        EXPECT_EQ(Runtime::instance().currentPrincipal(), "client:conn:900001");
+        EXPECT_NO_THROW(checkPermission(Permission::DocReadSelf));
+        EXPECT_NO_THROW(checkPermission(Permission::DocWriteSelf));
+        EXPECT_NO_THROW(checkPermission(Permission::AppQuery));
+        try {
+            checkPermission(Permission::AppWrite);
+            FAIL() << "expected PermissionNeededException";
+        }
+        catch (PermissionNeededException &e) {
+            EXPECT_FALSE(e.isPromptable());
+            EXPECT_EQ(e.getPrincipal(), "client:conn:900001");
+            EXPECT_NE(std::string(e.what()).find("this client"), std::string::npos) << e.what();
+        }
+        try {
+            checkPermission(Permission::HostImport, "rt_client_module");
+            FAIL() << "expected PermissionNeededException";
+        }
+        catch (PermissionNeededException &e) {
+            EXPECT_TRUE(e.isPromptable());
+        }
+    }
+    Runtime::instance().clearPending(client.principal, Permission::HostImport, "*");
+
+    // a view-only connection: doc.write.self refused, not promptable,
+    // even with a grant in hand
+    RemoteClient viewer = client;
+    viewer.readOnly = true;
+    Runtime::instance().grant(viewer.principal, Permission::DocWriteSelf, "*", true, "session");
+    {
+        Runtime::Scope scope(_doc, viewer);
+        EXPECT_NO_THROW(checkPermission(Permission::DocReadSelf));
+        try {
+            checkPermission(Permission::DocWriteSelf);
+            FAIL() << "expected PermissionNeededException";
+        }
+        catch (PermissionNeededException &e) {
+            EXPECT_FALSE(e.isPromptable());
+        }
+    }
+    Runtime::instance().revoke(viewer.principal, Permission::DocWriteSelf, "*");
+
+    // gui and unsafe.getattr are not grantable to a client at all, and a
+    // run-local client id is never persisted
+    EXPECT_THROW(Runtime::instance().grant(client.principal, Permission::Gui, "*", true, "once"),
+                 Base::ValueError);
+    EXPECT_THROW(Runtime::instance().grant(client.principal, Permission::HostImport, "m", true,
+                                           "always"),
+                 Base::ValueError);
+    EXPECT_EQ(Runtime::instance().resolve(client.principal, Permission::UnsafeGetattr, "*"),
+              Decision::Deny);
+
+    // a null document still pushes: an empty stack would be host code
+    {
+        Runtime::Scope scope(static_cast<const App::Document *>(nullptr), client);
+        EXPECT_TRUE(Runtime::scopeActive());
+        EXPECT_THROW(checkPermission(Permission::Gui), PermissionNeededException);
+    }
+    EXPECT_FALSE(Runtime::scopeActive());
 }
 
 TEST_F(ExpressionSecurityRuntimeTest, promptRecordsPendingAndGrantClears)

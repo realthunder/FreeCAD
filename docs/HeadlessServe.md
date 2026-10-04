@@ -93,7 +93,7 @@ found both; `SceneServeSource::Private::SelectionMirror` is the observer now, an
 
 Plus the overlays — axis cross, navigation cube — which are viewer furniture captured through
 `setExternalOverlay()`. A headless source has no business producing them; the viewer draws its
-own.
+own. **The navigation cube is the exception, since 2026-09-30** -- see sec 3.5.
 
 ## 3. The shape of the fix
 
@@ -175,6 +175,54 @@ first publish: an `SoOrthographicCamera` fitted to the scene bounding box (the c
 has `getBoundingBox()`), at a fixed isometric-ish orientation, with a default 1280×720
 viewport. Every joining viewer already re-frames with its own `fitAll`, so this only has to be
 sane, not correct. Making it settable over the control channel is a follow-up.
+
+### 3.5 The served view's navigation cube
+
+Added 2026-09-30. "The viewer draws its own" was never built: a browser only ever had the cube
+a desktop view's renderer happened to publish, and when the serve source became the only
+publisher of a served document (MultiDocServe.md sec 5) it had none. The browser's cube
+picking, hover tint and rotate buttons all key on the overlay ids a viewer feeds (5 and 6)
+and on the graph `NaviCube` builds, so the source states that same graph rather than the
+viewer learning to draw a second one:
+
+- The cube is configured per view. A 3D view carries `ShowNaviCube` (it always did) and
+  `NaviCubeX`/`NaviCubeY`: each 0..1, the fraction of the room the view leaves the cube, x
+  from the left and y from the top, so 0 and 1 are the corners and a resize keeps the cube
+  where it was. The `CornerNaviCube` preference only seeds a new view; a drag writes the
+  dragged view's properties and nothing else (it used to write the `OffsetX`/`OffsetY`
+  preferences, moving every view's cube). The docked overlay panels and the share pill keep
+  clear of the active view's cube.
+- The served view has the same three, dynamic, on the source's render-property container --
+  `#.ActiveView.NaviCubeX` in the browser's omni box, `setProperty` with target `view3d` on
+  the wire -- seeded from the same preferences and not saved.
+- The anchor carries the position, not pixels: `OverlayAnchor::posX`/`posY` and a
+  `sizePixels` edge (scene dump v84), and `OverlayAnchor::cornerRect` is the one placement
+  the backend's frame, the browser's frame and picks, and the desktop cube's own GL draw and
+  hit test all make from it. A browser scales a pixel-sized rect by its device pixel ratio.
+- `NaviCube(nullptr)` is a cube with no viewer: its shared data (`NaviCubeShared`, a separate
+  headless instance) keeps its textures as images only, and its graphs are captured by
+  `SoFCRenderCacheManager::capture(root, viewport)`, a context-free capture that, unlike
+  `traverse()`, pushes no view configs -- an overlay manager's would overwrite the scene's.
+- It turns by each browser's own camera, and the browser does what a viewer does with its own
+  pointer and camera (`wasm/main.cpp`, `NaviLocal`):
+  - **Place.** A press in the middle quarter of the cube that moves drags it, mouse or one
+    finger, as on the desktop. The place is that browser's view setup: kept in localStorage,
+    not written to the served view every other browser shares, and dropped when the served
+    position itself changes, since that statement is newer.
+  - **Auto-hide.** The served cube and its buttons are always stated; the anchor carries the
+    host's AutoHideCube/AutoHideButton and AutoHideTimeout as `OverlayAnchor::autoHideMs`
+    (dump v85), and the browser feeds them only while its pointer is over the cube and for
+    that long after. A touch screen has no hover and always shows them.
+  - **Upright labels.** A label draw whose u axis points left and v axis down under the
+    browser's camera -- the desktop's test for negating its texture coordinates -- is turned
+    half a turn about its face normal through the model matrix. Every face shape is
+    symmetric, so only the text visibly changes.
+  - **Menu.** The icon under the cube opens a DOM menu at the click (`fc:navimenu`,
+    `NaviCubeMenu` in `web/src/menu.tsx`): Isometric, Dimetric, Trimetric (Camera.cpp's
+    orientations in the browser's orbit), Fit all, and Reset cube position. No
+    orthographic/perspective (the browser camera is perspective only), and none of the
+    appearance settings, which are the host's preferences. Taps try the buttons before the
+    cube, as the desktop's `pickFace` does, because the icon sits against the cube's corner.
 
 ## 4. Staging
 
@@ -303,6 +351,15 @@ anyone remembering to add it. Normalized away first: `cacheId`, `textureId` and 
 group compared as a multiset). Excluded by design, and reportable with `--camera` /
 `--overlays`: the camera, the viewport, `autozoomScale` — which is camera state, being
 `getWorldToScreenScale` over the view volume — and the overlays, which are viewer furniture.
+
+**A change in one process, and one draw's arrays** (2026-09-29). `FC_BGFX_DUMP_SCENE` with a
+`%d` in the path writes every scene that settles, numbered from 0, rather than the first one
+only -- how "what did entering this edit mode add to the publish" is answered: diff the dumps
+either side of it. In a GUI process with a desktop view, two renderers dump (the view and the
+serve source); the view's carries overlays and the source's does not. And `fcscenediff --mesh
+<objectKey> A.fcsd` prints one object's draws raw -- positions, screen offsets, indices, the
+texture and the autozoom entries -- which is what a digest can only say differ. `--mesh 0` is
+the keyless draws: an on-view label, an edit mode's dimensions.
 
 ⚠️ **Capture both dumps with `FC_BGFX_DUMP_SCENE_SETTLE`** (`dumprun.sh` defaults it to 10
 quiet frames). A document does not arrive all at once, and a dump taken a fixed number of

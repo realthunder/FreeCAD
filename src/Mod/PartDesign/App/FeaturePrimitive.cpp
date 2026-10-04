@@ -92,7 +92,9 @@ App::DocumentObjectExecReturn* FeaturePrimitive::execute(const TopoDS_Shape& pri
         if (isRecomputePaused())
             return App::DocumentObject::StdReturn;
          
-        Shape.setValue(makeBoolean(base, primitiveShape));
+        // A cut that removes nothing hands back the base, still moved into
+        // this frame above.
+        Shape.setValue(wrapLocated(makeBoolean(base, primitiveShape)));
     }
     catch (Standard_Failure& e) {
 
@@ -118,6 +120,10 @@ void FeaturePrimitive::onChanged(const App::Property* prop)
 
 void FeaturePrimitive::handleChangedPropertyName(Base::XMLReader &reader, const char* TypeName, const char* PropName)
 {
+    if (strcmp(PropName, "Operation") == 0) {
+        FeatureAddSub::handleChangedPropertyName(reader, TypeName, PropName);
+        return;
+    }
     extHandleChangedPropertyName(reader, TypeName, PropName); // AttachExtension
 }
 
@@ -323,11 +329,17 @@ App::DocumentObjectExecReturn* Cone::execute()
         return new App::DocumentObjectExecReturn(QT_TRANSLATE_NOOP("Exception", "Radius of cone cannot be negative"));
     if (Radius2.getValue() < 0.0)
         return new App::DocumentObjectExecReturn(QT_TRANSLATE_NOOP("Exception", "Radius of cone cannot be negative"));
-    if (Radius1.getValue() == Radius2.getValue())
-        return new App::DocumentObjectExecReturn(QT_TRANSLATE_NOOP("Exception", "The radii for cones must not be equal"));
     if (Height.getValue() < Precision::Confusion())
         return new App::DocumentObjectExecReturn(QT_TRANSLATE_NOOP("Exception", "Height of cone too small"));
     try {
+        if (std::abs(Radius1.getValue() - Radius2.getValue()) < Precision::Confusion()) {
+            // Equal radii make a cylinder, which BRepPrimAPI_MakeCone refuses
+            // (upstream 1eb0444bd5), through the angle (upstream 990b9b27fe)
+            BRepPrimAPI_MakeCylinder mkCylr(Radius1.getValue(),
+                                            Height.getValue(),
+                                            Base::toRadians<double>(Angle.getValue()));
+            return FeaturePrimitive::execute(mkCylr.Shape());
+        }
         // Build a cone
         BRepPrimAPI_MakeCone mkCone(Radius1.getValue(),
                                     Radius2.getValue(),

@@ -16,6 +16,8 @@
 // counter drops the ones a later keystroke made stale.
 import { For, Show, createEffect, createMemo, createSignal, on, onCleanup, untrack } from 'solid-js';
 import type { JSX } from 'solid-js';
+import { PickList, moveInList } from './widgets/picker.tsx';
+import type { PickRow } from './widgets/picker.tsx';
 import {
   commandChildren,
   getContainerProperties,
@@ -76,10 +78,7 @@ const LIMIT = 60;
 /// How long the list must stand still before its rows' detail is asked for
 const SETTLE_MS = 120;
 
-interface Row {
-  key: string;
-  title: string;
-  desc?: string;
+interface Row extends PickRow {
   /// What the text becomes when the row is picked
   complete?: string;
   kind: 'mode' | 'command' | 'param' | 'object' | 'property' | 'member';
@@ -441,19 +440,13 @@ export function OmniBox(props: {
 
   const onKey = (e: KeyboardEvent) => {
     const rows = listed().rows;
+    const to = moveInList(e, rows.length, hi());
+    if (to !== null) { e.preventDefault(); setHi(to); return; }
     switch (e.key) {
       case 'Escape':
         e.preventDefault();
         if (panel()) setPanel(null);
         else close();
-        break;
-      case 'ArrowDown':
-        e.preventDefault();
-        if (rows.length) setHi(Math.min(hi() + 1, rows.length - 1));
-        break;
-      case 'ArrowUp':
-        e.preventDefault();
-        if (rows.length) setHi(Math.max(hi() - 1, 0));
         break;
       case 'Tab': {
         e.preventDefault();
@@ -649,37 +642,28 @@ export function OmniBox(props: {
           />
           <button class="fc-close" onClick={close} aria-label="Close">x</button>
         </div>
-        <div class="fc-omni-list" role="listbox">
-          <For each={listed().rows}>
-            {(row, i) => (
-              <div
-                class="fc-omni-row"
-                role="option"
-                aria-selected={hi() === i()}
-                classList={{ 'fc-omni-hi': hi() === i(),
-                             'fc-omni-inactive': inactive(row) || refused(row) }}
-                title={row.desc ?? ''}
-                onPointerEnter={() => setHi(i())}
-                onClick={() => pick(row, true)}
-              >
-                <div class="fc-omni-main">
-                  <span class="fc-omni-title">{row.title}</span>
-                  <Show when={row.desc}><span class="fc-omni-desc">{row.desc}</span></Show>
-                </div>
-                <Show when={row.kind === 'param'}>
-                  <span class="fc-omni-right">{detail()[row.key]?.value ?? ''}</span>
-                </Show>
-                <Show when={row.kind === 'command' && row.group}>
-                  <button class="fc-omni-arrow" title="Show the group's menu"
-                          onClick={(e) => { e.stopPropagation(); openChildren(row); }}>
-                    {'\u25B8'}
-                  </button>
-                </Show>
-              </div>
-            )}
-          </For>
-          <Show when={note()}><div class="fc-note">{note()}</div></Show>
-        </div>
+        <PickList
+          rows={() => listed().rows.map((r) => ({ ...r, inactive: inactive(r) || refused(r) }))}
+          hi={hi}
+          onHi={setHi}
+          onPick={(row) => pick(row, true)}
+          limit={LIMIT}
+          note={note}
+          class="fc-omni-list"
+          right={(row) => (
+            <>
+              <Show when={row.kind === 'param'}>
+                <span class="fc-omni-right">{detail()[row.key]?.value ?? ''}</span>
+              </Show>
+              <Show when={row.kind === 'command' && row.group}>
+                <button class="fc-omni-arrow" title="Show the group's menu"
+                        onClick={(e) => { e.stopPropagation(); openChildren(row); }}>
+                  {'\u25B8'}
+                </button>
+              </Show>
+            </>
+          )}
+        />
         <Show when={panel()}>
           {(pn) => <div class="fc-omni-panel">{renderPanel(pn())}</div>}
         </Show>

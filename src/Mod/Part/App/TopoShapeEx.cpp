@@ -42,6 +42,7 @@
 # include <BRepAdaptor_Surface.hxx>
 # include <BRepAlgoAPI_Common.hxx>
 # include <BRepAlgoAPI_Cut.hxx>
+# include <BRepAlgoAPI_Defeaturing.hxx>
 # include <BRepAlgoAPI_Fuse.hxx>
 # include <BRepAlgoAPI_Section.hxx>
 # include <BRepBndLib.hxx>
@@ -2343,12 +2344,31 @@ TopoShape &TopoShape::makEPrismUntil(const TopoShape &_base,
         
     TopoShape _uptoface(__uptoface);
     TopoShape uptoface(_uptoface);
-    if (uptoface.shapeType(true) != TopAbs_FACE) {
-        FC_THROWM(Base::CADKernelError,"Invalid face");
+    // Up to a face, or up to several faces or a shape (PartDesign's
+    // UpToShape, upstream 309dd6e30d): only a face has limits to check
+    if (uptoface.isNull()) {
+        FC_THROWM(Base::CADKernelError,"Invalid up to shape");
     }
+    const bool isFace = uptoface.shapeType(true) == TopAbs_FACE;
 
     if(!op) {
         op = Part::OpCodes::Prism;
+    }
+
+    // An up to face that is concave seen from the profile, as the inside of a
+    // pipe or a ring, is taken as it is and reached from the profile alone.
+    // Without its limits it is the whole surface, which the extrusion also
+    // meets behind the profile; and with the base given to BRepFeat_MakePrism
+    // the prism ran a fixed length whatever the face. Either way a pocket from
+    // inside a pipe up to its outer wall cut nothing, and a pad up to the
+    // inside of a ring went through it (upstream issue 16690, 8b9f5bdc4f and
+    // 594010d9f0). The base is still used below for Mode.
+    Base::Vector3d cog;
+    bool concave = isFace && profile.getCenterOfGravity(cog)
+        && Part::Tools::isConcave(TopoDS::Face(uptoface.getShape()),
+                                  gp_Pnt(cog.x, cog.y, cog.z), direction);
+    if (concave) {
+        checkLimits = Standard_False;
     }
 
     TopoShape base(_base);
@@ -2357,10 +2377,14 @@ TopoShape &TopoShape::makEPrismUntil(const TopoShape &_base,
         Mode = PrismMode::None;
         base = profile;
     }
+    else if (concave) {
+        base = profile;
+    }
+    const TopoShape initialBase(base);
 
     BRepFeat_MakePrism PrismMaker;
 
-    if (checkLimits
+    if (checkLimits && isFace
             && !BRep_Tool::NaturalRestriction(TopoDS::Face(uptoface.getShape()))
             && uptoface.hasSubShape(TopAbs_WIRE))
     {
@@ -2469,8 +2493,7 @@ TopoShape &TopoShape::makEPrismUntil(const TopoShape &_base,
             uptoface = _uptoface;
             return true;
         }
-        if ((!_base.isNull() && base.isSame(_base))
-                || (_base.isNull() && base.isSame(profile))) {
+        if (base.isSame(initialBase)) {
             // It is unclear under exactly what condition extrude up to face
             // can fail. Either the support face or the up to face must be part
             // of the base, or maybe some thing else.
@@ -2603,9 +2626,10 @@ TopoShape &TopoShape::makEMirror(const TopoShape &shape, const gp_Ax2 &ax2, cons
 
     gp_Trsf mat;
     mat.SetMirror(ax2);
-    TopLoc_Location loc = shape.getShape().Location();
-    gp_Trsf placement = loc.Transformation();
-    mat = placement * mat;
+    // No premultiplying the shape's Location: BRepBuilderAPI_Transform keeps
+    // it on the result and mirrors the geometry beneath it to suit, so the
+    // premultiply put a placed shape's placement on twice (upstream
+    // 9eed3a8d77). Part::Mirroring, which drops the Location, has its own.
     BRepBuilderAPI_Transform mkTrf(shape.getShape(), mat);
     return makEShape(mkTrf,shape,op);
 }
@@ -3467,7 +3491,7 @@ TopoShape &TopoShape::makEFace(const std::vector<TopoShape> &shapes,
                                const gp_Pln *pln,
                                int minElementNames)
 {
-    if(!maker || !maker[0]) maker = "Part::FaceMakerBullseye";
+    if(!maker || !maker[0]) maker = "Part::FaceMakerUnified";
     std::unique_ptr<FaceMaker> mkFace = FaceMaker::ConstructFromType(maker);
     mkFace->MyHasher = Hasher;
     mkFace->MyOp = op;
@@ -3798,8 +3822,20 @@ TopoShape &TopoShape::makEBoolean(const char *maker,
         }
     }
 
-    if (tol > 0.0 &&  _shapes.empty())
-        _shapes = shapes;
+    if (tol < 0.0) {
+        // A negative tolerance asks for one from the size of the inputs:
+        // BooleanFuzzy (10 by default) times their diagonal times
+        // Precision::Confusion(), as upstream's setAutoFuzzy (PR 17119)
+        Bnd_Box bounds;
+        for (const auto &shape : shapes) {
+            if (!shape.isNull())
+                BRepBndLib::Add(shape.getShape(), bounds);
+        }
+        double factor = App::GetApplication().GetParameterGroupByPath(
+                "User parameter:BaseApp/Preferences/Mod/Part/Boolean")->GetFloat("BooleanFuzzy", 10.0);
+        tol = bounds.IsVoid() ? 0.0
+            : factor * std::sqrt(bounds.SquareExtent()) * Precision::Confusion();
+    }
 
     const auto &inputs = _shapes.size()?_shapes:shapes;
     if(inputs.empty())
@@ -3882,18 +3918,18 @@ TopoShape &TopoShape::makEBoolean(const char *maker,
 
     TopTools_ListOfShape shapeArguments,shapeTools;
 
+    // The tools are not copied under a fuzzy value any more (upstream
+    // cf8ad66373): the copy kept a fuzzy boolean from changing its inputs
+    // (dev.opencascade.org node/1056), which the non-destructive mode set
+    // below does, and it hid OCCT bugs in tools sharing a vertex with the
+    // argument (occ-issues local02, local04), fixed in the OCCT fork.
     int i=-1;
     for(const auto &shape : inputs) {
         if(shape.isNull())
             HANDLE_NULL_INPUT;
         if(++i == 0)
             shapeArguments.Append(shape.getShape());
-        else if (tol > 0.0) {
-            auto & s = _shapes[i];
-            // workaround for http://dev.opencascade.org/index.php?q=node/1056#comment-520
-            s.setShape(BRepBuilderAPI_Copy(s.getShape()).Shape(), false);
-            shapeTools.Append(s.getShape());
-        } else
+        else
             shapeTools.Append(shape.getShape());
     }
 
@@ -5108,6 +5144,28 @@ TopoShape &TopoShape::makEFillet(const TopoShape &shape,
     return makEShape(mkFillet,shape,op);
 }
 
+namespace {
+// The face a chamfer on edge of shape is measured from; the last of its faces
+// when flip. Throws for what BRepFilletAPI_MakeChamfer would take down the
+// process with: a degenerated edge, or an edge no face bounds.
+TopoDS_Face chamferFace(const TopoShape &shape, const TopoDS_Shape &edge, bool flip)
+{
+    if (BRep_Tool::Degenerated(TopoDS::Edge(edge)))
+        FC_THROWM(Base::CADKernelError, "chamfer edge is degenerated");
+    TopoDS_Shape face;
+    if (flip) {
+        auto faces = shape.findAncestorsShapes(edge, TopAbs_FACE);
+        if (!faces.empty())
+            face = faces.back();
+    }
+    else
+        face = shape.findAncestorShape(edge, TopAbs_FACE);
+    if (face.IsNull())
+        FC_THROWM(Base::CADKernelError, "chamfer edge has no adjacent face");
+    return TopoDS::Face(face);
+}
+} // anonymous namespace
+
 TopoShape &TopoShape::makEChamfer(const TopoShape &shape, const std::vector<TopoShape> &edges,
         double size, double size2, const char *op, bool flipDirection, bool asAngle)
 {
@@ -5126,15 +5184,11 @@ TopoShape &TopoShape::makEChamfer(const TopoShape &shape, const std::vector<Topo
         if(!shape.findShape(edge))
             FC_THROWM(Base::CADKernelError,"edge does not belong to the shape");
         //Add edge to fillet algorithm
-        TopoDS_Shape face;
-        if(flipDirection)
-            face = shape.findAncestorsShapes(edge,TopAbs_FACE).back();
-        else
-            face = shape.findAncestorShape(edge,TopAbs_FACE);
+        TopoDS_Face face = chamferFace(shape, edge, flipDirection);
         if(asAngle)
-            mkChamfer.AddDA(size, size2, TopoDS::Edge(edge), TopoDS::Face(face));
+            mkChamfer.AddDA(size, size2, TopoDS::Edge(edge), face);
         else
-            mkChamfer.Add(size, size2, TopoDS::Edge(edge), TopoDS::Face(face));
+            mkChamfer.Add(size, size2, TopoDS::Edge(edge), face);
     }
     return makEShape(mkChamfer,shape,op);
 }
@@ -5164,17 +5218,13 @@ TopoShape &TopoShape::makEChamfer(const TopoShape &shape,
         if(!shape.findShape(edge))
             FC_THROWM(Base::CADKernelError,"edge does not belong to the shape");
         //Add edge to fillet algorithm
-        TopoDS_Shape face;
-        if(info.flip)
-            face = shape.findAncestorsShapes(edge,TopAbs_FACE).back();
-        else
-            face = shape.findAncestorShape(edge,TopAbs_FACE);
+        TopoDS_Face face = chamferFace(shape, edge, info.flip);
         if(info.angle > 0.0)
-            mkChamfer.AddDA(info.size, Base::toRadians(info.angle), TopoDS::Edge(edge), TopoDS::Face(face));
+            mkChamfer.AddDA(info.size, Base::toRadians(info.angle), TopoDS::Edge(edge), face);
         else if (info.size2 > 0.0)
-            mkChamfer.Add(info.size, info.size2, TopoDS::Edge(edge), TopoDS::Face(face));
+            mkChamfer.Add(info.size, info.size2, TopoDS::Edge(edge), face);
         else
-            mkChamfer.Add(info.size, info.size, TopoDS::Edge(edge), TopoDS::Face(face));
+            mkChamfer.Add(info.size, info.size, TopoDS::Edge(edge), face);
     }
     return makEShape(mkChamfer,shape,op);
 }
@@ -5202,10 +5252,7 @@ TopoShape &TopoShape::makEGeneralFuse(const std::vector<TopoShape> &_shapes,
     for(auto &shape : shapes) {
         if(shape.isNull())
             HANDLE_NULL_INPUT;
-        if (tol > 0.0) {
-            // workaround for http://dev.opencascade.org/index.php?q=node/1056#comment-520
-            shape = shape.makECopy();
-        }
+        // Not copied under a fuzzy value: see makEBoolean
         GFAArguments.Append(shape.getShape());
     }
     mkGFA.SetArguments(GFAArguments);
@@ -5407,6 +5454,39 @@ TopoShape &TopoShape::makEDraft(const TopoShape &shape, const std::vector<TopoSh
     return makEShape(mkDraft,shape,op);
 }
 
+TopoShape &TopoShape::makEDefeaturing(const TopoShape &shape,
+                                      const std::vector<TopoShape> &faces,
+                                      const char *op)
+{
+    if(!op) op = Part::OpCodes::Defeaturing;
+
+    if(shape.isNull())
+        HANDLE_NULL_SHAPE;
+    if(faces.empty())
+        FC_THROWM(Base::CADKernelError, "No face to remove");
+
+    BRepAlgoAPI_Defeaturing mkDefeaturing;
+    mkDefeaturing.SetRunParallel(true);
+    mkDefeaturing.SetToFillHistory(true);
+    mkDefeaturing.SetShape(shape.getShape());
+    for(const auto &face : faces) {
+        if(face.isNull() || face.getShape().ShapeType() != TopAbs_FACE)
+            FC_THROWM(Base::CADKernelError, "Defeaturing takes faces only");
+        if(!shape.findShape(face.getShape()))
+            FC_THROWM(Base::CADKernelError, "Defeaturing face does not belong to the shape");
+        mkDefeaturing.AddFaceToRemove(face.getShape());
+    }
+    mkDefeaturing.Build();
+    if(!mkDefeaturing.IsDone()) {
+        Standard_SStream ss;
+        mkDefeaturing.DumpErrors(ss);
+        FC_THROWM(Base::CADKernelError, "Defeaturing failed: " << ss.str());
+    }
+    if(mkDefeaturing.Shape().IsNull())
+        HANDLE_NULL_SHAPE;
+    return makEShape(mkDefeaturing,shape,op);
+}
+
 // deprecated, see Part::Feature::getRelatedElements()
 #if 0
 const std::vector<Data::MappedElement> &
@@ -5572,7 +5652,7 @@ bool TopoShape::findPlane(gp_Pln &pln, double tol, double atol) const {
             } else {
                 TopLoc_Location loc;
                 Handle(Geom_Surface) surf = BRep_Tool::Surface(face, loc);
-                GeomLib_IsPlanarSurface check(surf);
+                GeomLib_IsPlanarSurface check(surf, tol);
                 if (check.IsPlanar())
                     plane = check.Plan();
                 else

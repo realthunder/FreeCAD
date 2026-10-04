@@ -9081,7 +9081,7 @@ void ViewProviderSketch::finishRestoring()
     // automatic; anything else was set by hand, and following the preference
     // would drop it on the next save -- so the file keeps its colours.
     if (automatic && !ShapeColor.testStatus(App::Property::Transient)) {
-        auto near = [this](const App::Color &color, long transparency) {
+        auto closeTo = [this](const App::Color &color, long transparency) {
             const App::Color &c = ShapeColor.getValue();
             return std::abs(c.r - color.r) < 1.5f / 255 && std::abs(c.g - color.g) < 1.5f / 255
                 && std::abs(c.b - color.b) < 1.5f / 255
@@ -9090,8 +9090,8 @@ void ViewProviderSketch::finishRestoring()
         App::Color preferred;
         long preferredTransparency;
         faceColorFromPreference(preferred, preferredTransparency);
-        if (!near(App::Color(0x54 / 255.f, 0xab / 255.f, 1.f), 50)
-                && !near(preferred, preferredTransparency))
+        if (!closeTo(App::Color(0x54 / 255.f, 0xab / 255.f, 1.f), 50)
+                && !closeTo(preferred, preferredTransparency))
             automatic = false;
     }
     AutoColor.setValue(automatic);
@@ -10754,9 +10754,42 @@ void ViewProviderSketch::setConstraintSelectability(bool enabled /* = true */)
 
 void ViewProviderSketch::generateContextMenu()
 {
+    // The desktop's right release only: a served view's right click comes
+    // through editContextMenu, and nothing there clears the flag
     if (blockContextMenu)
         return;
 
+    Gui::MenuItem menu;
+    setupEditContextMenu(menu);
+    // A view that is not a desktop window has no widget to hang it on
+    auto view = qobject_cast<Gui::View3DInventor*>(this->getActiveView());
+    QMenu contextMenu(view ? view->getViewer()->getGLWidget() : nullptr);
+    Gui::MenuManager::getInstance()->setupContextMenu(&menu, contextMenu);
+    contextMenu.exec(QCursor::pos());
+}
+
+bool ViewProviderSketch::editContextMenu(Gui::MenuItem* menu)
+{
+    // What mouseButtonPressed does with a right button released
+    switch (_Mode) {
+        case STATUS_SKETCH_UseHandler:
+            // make the handler quit
+            if (edit && edit->sketchHandler)
+                edit->sketchHandler->quit();
+            return true;
+        case STATUS_NONE:
+        case STATUS_SELECT_Point:
+        case STATUS_SELECT_Edge:
+            if (menu)
+                setupEditContextMenu(*menu);
+            return true;
+        default:
+            return false;
+    }
+}
+
+void ViewProviderSketch::setupEditContextMenu(Gui::MenuItem& menu)
+{
     int selectedExternalEdges = 0;
     int selectedEdges = 0;
     int selectedLines = 0;
@@ -10780,7 +10813,6 @@ void ViewProviderSketch::generateContextMenu()
         }
     }
 
-    Gui::MenuItem menu;
     menu.setCommand("Sketcher context");
 
     std::vector<Gui::SelectionObject> selection =
@@ -11027,12 +11059,8 @@ void ViewProviderSketch::generateContextMenu()
              << "Separator"
              << "Sketcher_LeaveSketch";
     }
-    // create context menu
+    // the workbench's own entries
     Gui::Application::Instance->setupContextMenu("Sketch", &menu);
-    QMenu contextMenu(
-        qobject_cast<Gui::View3DInventor*>(this->getActiveView())->getViewer()->getGLWidget());
-    Gui::MenuManager::getInstance()->setupContextMenu(&menu, contextMenu);
-    contextMenu.exec(QCursor::pos());
 }
 
 // ---------------------------------------------------------

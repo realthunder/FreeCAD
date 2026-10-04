@@ -59,6 +59,14 @@ public:
     App::PropertyBool OffsetBaseFeature;
     App::PropertyBool HideBaseFeature;
     App::PropertyInteger _Version;
+    /// Instances left out, by their index in getTransformations() (upstream
+    /// cdb4624675, its name); 0 is the original
+    App::PropertyIntegerList SuppressedIndices;
+
+    /// Whether the instance at  index of getTransformations() is left out
+    virtual bool isTransformationSuppressed(int index) const;
+    /// Leave out the instance at  index, or bring it back
+    virtual void setTransformationSuppressed(int index, bool suppressed);
 
     /**
      * Returns the BaseFeature property's object(if any) otherwise return first original,
@@ -76,6 +84,16 @@ public:
     // Note: Only the Scaled feature requires the originals
     virtual std::list<gp_Trsf> getTransformations(const std::vector<Part::TopoShape> &/*originals*/) {
         return std::list<gp_Trsf>(); // Default method
+    }
+
+    /** Whether the first transformation moves the originals as well
+     *
+     * Normally it is the identity, the originals where they are. When it is
+     * not, the history is rewritten as for TransformOffset: the support is
+     * the originals' base, so that they are not left in place as well.
+     */
+    virtual bool isFirstInstanceTransformed() const {
+        return false;
     }
 
    /** @name methods override feature */
@@ -106,6 +124,7 @@ public:
 
 protected:
     void handleChangedPropertyType(Base::XMLReader &reader, const char * TypeName, App::Property * prop) override;
+    void handleChangedPropertyName(Base::XMLReader &reader, const char * TypeName, const char *PropName) override;
     virtual void positionBySupport();
     TopoShape refineShapeIfActive(const TopoShape&) const;
     void divideTools(const std::vector<TopoDS_Shape> &toolsIn, std::vector<TopoDS_Shape> &individualsOut,
@@ -116,6 +135,11 @@ protected:
 
 protected:
     rejectedMap rejected;
+
+private:
+    // An upstream file's TransformMode said "Whole shape"; see
+    // handleChangedPropertyName()
+    bool restoredWholeShape = false;
 };
 
 } //namespace PartDesign

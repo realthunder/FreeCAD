@@ -19,6 +19,7 @@
 #*                                                                         *
 #***************************************************************************
 
+import math
 import unittest
 
 import FreeCAD
@@ -51,6 +52,218 @@ class TestLoft(unittest.TestCase):
         self.AdditiveLoft.Sections = [self.LoftSketch]
         self.Doc.recompute()
         self.assertAlmostEqual(self.AdditiveLoft.Shape.Volume, 1)
+
+    @staticmethod
+    def _addRectangle(sketch, xMin, yMin, xMax, yMax):
+        sketch.addGeometry(
+            [
+                Part.LineSegment(Base.Vector(xMin, yMax, 0), Base.Vector(xMax, yMax, 0)),
+                Part.LineSegment(Base.Vector(xMax, yMax, 0), Base.Vector(xMax, yMin, 0)),
+                Part.LineSegment(Base.Vector(xMax, yMin, 0), Base.Vector(xMin, yMin, 0)),
+                Part.LineSegment(Base.Vector(xMin, yMin, 0), Base.Vector(xMin, yMax, 0)),
+            ],
+            False,
+        )
+
+    @staticmethod
+    def _addCapsule(sketch, radius, centerDistance):
+        sketch.addGeometry(
+            [
+                Part.ArcOfCircle(
+                    Part.Circle(Base.Vector(0, 0, 0), Base.Vector(0, 0, 1), radius),
+                    math.pi / 2,
+                    3 * math.pi / 2,
+                ),
+                Part.ArcOfCircle(
+                    Part.Circle(Base.Vector(centerDistance, 0, 0), Base.Vector(0, 0, 1), radius),
+                    -math.pi / 2,
+                    math.pi / 2,
+                ),
+                Part.LineSegment(Base.Vector(0, radius, 0), Base.Vector(centerDistance, radius, 0)),
+                Part.LineSegment(
+                    Base.Vector(0, -radius, 0), Base.Vector(centerDistance, -radius, 0)
+                ),
+            ],
+            False,
+        )
+
+    def _makeIssue6130RectangleLoft(self, name, reverseTopWires):
+        body = self.Doc.addObject("PartDesign::Body", f"{name}Body")
+        bottom = body.newObject("Sketcher::SketchObject", f"{name}Bottom")
+        self._addRectangle(bottom, -25.078129, -25.156250, 26.171875, 23.281252)
+        self._addRectangle(bottom, -18.984377, -18.750000, 20.703131, 17.031252)
+
+        top = body.newObject("Sketcher::SketchObject", f"{name}Top")
+        top.Placement.Base.z = 60
+        topWires = [
+            (-31.484377, -30.781250, 36.171883, 29.531252),
+            (-28.515621, -27.656250, 32.421879, 26.406252),
+        ]
+        if reverseTopWires:
+            topWires.reverse()
+        for wire in topWires:
+            self._addRectangle(top, *wire)
+
+        loft = body.newObject("PartDesign::AdditiveLoft", f"{name}Loft")
+        loft.Profile = bottom
+        loft.Sections = [top]
+        return loft
+
+    def _makeIssue6130CircleLoft(self, name, reverseTopWires):
+        body = self.Doc.addObject("PartDesign::Body", f"{name}Body")
+        bottom = body.newObject("Sketcher::SketchObject", f"{name}Bottom")
+        bottom.addGeometry(
+            Part.Circle(Base.Vector(0, 0, 0), Base.Vector(0, 0, 1), 47.132468), False
+        )
+        bottom.addGeometry(
+            Part.Circle(Base.Vector(0, 0.385132, 0), Base.Vector(0, 0, 1), 41.109848),
+            False,
+        )
+
+        top = body.newObject("Sketcher::SketchObject", f"{name}Top")
+        top.Placement.Base.z = 50
+        topRadii = [67.753235, 58.631832]
+        if reverseTopWires:
+            topRadii.reverse()
+        for radius in topRadii:
+            top.addGeometry(Part.Circle(Base.Vector(0, 0, 0), Base.Vector(0, 0, 1), radius), False)
+
+        loft = body.newObject("PartDesign::AdditiveLoft", f"{name}Loft")
+        loft.Profile = bottom
+        loft.Sections = [top]
+        return loft
+
+    def _makeIssue6130SubtractiveCircleLoft(self, name, reverseTopWires):
+        body = self.Doc.addObject("PartDesign::Body", f"{name}Body")
+        padSketch = body.newObject("Sketcher::SketchObject", f"{name}PadSketch")
+        self._addRectangle(padSketch, -90, -90, 90, 90)
+        pad = body.newObject("PartDesign::Pad", f"{name}Pad")
+        pad.Profile = padSketch
+        pad.Length = 60
+        self.Doc.recompute()
+
+        bottom = body.newObject("Sketcher::SketchObject", f"{name}Bottom")
+        bottom.addGeometry(
+            Part.Circle(Base.Vector(0, 0, 0), Base.Vector(0, 0, 1), 47.132468), False
+        )
+        bottom.addGeometry(
+            Part.Circle(Base.Vector(0, 0.385132, 0), Base.Vector(0, 0, 1), 41.109848),
+            False,
+        )
+
+        top = body.newObject("Sketcher::SketchObject", f"{name}Top")
+        top.Placement.Base.z = 50
+        topRadii = [67.753235, 58.631832]
+        if reverseTopWires:
+            topRadii.reverse()
+        for radius in topRadii:
+            top.addGeometry(Part.Circle(Base.Vector(0, 0, 0), Base.Vector(0, 0, 1), radius), False)
+
+        loft = body.newObject("PartDesign::SubtractiveLoft", f"{name}Loft")
+        loft.Profile = bottom
+        loft.Sections = [top]
+        return loft
+
+    def _makeCapsuleLoft(self, name, reverseTopWires, subtractive):
+        body = self.Doc.addObject("PartDesign::Body", f"{name}Body")
+        if subtractive:
+            padSketch = body.newObject("Sketcher::SketchObject", f"{name}PadSketch")
+            self._addRectangle(padSketch, -100, -100, 100, 100)
+            pad = body.newObject("PartDesign::Pad", f"{name}Pad")
+            pad.Profile = padSketch
+            pad.Length = 30
+            self.Doc.recompute()
+
+        bottom = body.newObject("Sketcher::SketchObject", f"{name}Bottom")
+        self._addCapsule(bottom, 10, 20)
+        self._addCapsule(bottom, 9, 20)
+
+        top = body.newObject("Sketcher::SketchObject", f"{name}Top")
+        top.Placement.Base.z = 20
+        topCapsules = [(22, 40), (20, 40)]
+        if reverseTopWires:
+            topCapsules.reverse()
+        for radius, centerDistance in topCapsules:
+            self._addCapsule(top, radius, centerDistance)
+
+        featureType = "PartDesign::SubtractiveLoft" if subtractive else "PartDesign::AdditiveLoft"
+        loft = body.newObject(featureType, f"{name}Loft")
+        loft.Profile = bottom
+        loft.Sections = [top]
+        return loft
+
+    def _makeNestedIslandLoft(self, name, permuteTopWires):
+        body = self.Doc.addObject("PartDesign::Body", f"{name}Body")
+        bottom = body.newObject("Sketcher::SketchObject", f"{name}Bottom")
+        for radius in (30, 20, 8):
+            bottom.addGeometry(
+                Part.Circle(Base.Vector(0, 0, 0), Base.Vector(0, 0, 1), radius), False
+            )
+
+        top = body.newObject("Sketcher::SketchObject", f"{name}Top")
+        top.Placement.Base.z = 40
+        topRadii = (10, 36, 24) if permuteTopWires else (36, 24, 10)
+        for radius in topRadii:
+            top.addGeometry(Part.Circle(Base.Vector(0, 0, 0), Base.Vector(0, 0, 1), radius), False)
+
+        loft = body.newObject("PartDesign::AdditiveLoft", f"{name}Loft")
+        loft.Profile = bottom
+        loft.Sections = [top]
+        return loft
+
+    def testIssue6130NestedRectanglesIgnoreCreationOrder(self):
+        """Nested rectangle pairing must not depend on sketch geometry order."""
+        reversedOrder = self._makeIssue6130RectangleLoft("Reversed", True)
+        consistentOrder = self._makeIssue6130RectangleLoft("Consistent", False)
+        self.Doc.recompute()
+
+        reversedOrder.Shape.check(True)  # raises when the shape is broken
+        self.assertAlmostEqual(reversedOrder.Shape.Volume, consistentOrder.Shape.Volume)
+
+    def testIssue6130NestedCirclesIgnoreCreationOrder(self):
+        """Nested circle pairing must not depend on sketch geometry order."""
+        reversedOrder = self._makeIssue6130CircleLoft("Reversed", True)
+        consistentOrder = self._makeIssue6130CircleLoft("Consistent", False)
+        self.Doc.recompute()
+
+        reversedOrder.Shape.check(True)  # raises when the shape is broken
+        self.assertAlmostEqual(reversedOrder.Shape.Volume, consistentOrder.Shape.Volume)
+
+    def testIssue6130SubtractiveLoftIgnoresCreationOrder(self):
+        """Nested wire pairing must also be stable for subtractive lofts."""
+        reversedOrder = self._makeIssue6130SubtractiveCircleLoft("ReversedCut", True)
+        consistentOrder = self._makeIssue6130SubtractiveCircleLoft("ConsistentCut", False)
+        self.Doc.recompute()
+
+        reversedOrder.Shape.check(True)  # raises when the shape is broken
+        self.assertAlmostEqual(reversedOrder.Shape.Volume, consistentOrder.Shape.Volume)
+
+    def testCapsuleAdditiveLoftIgnoresCreationOrder(self):
+        """Capsule wire pairing must not depend on sketch geometry order."""
+        reversedOrder = self._makeCapsuleLoft("ReversedCapsuleAdd", True, False)
+        consistentOrder = self._makeCapsuleLoft("ConsistentCapsuleAdd", False, False)
+        self.Doc.recompute()
+
+        reversedOrder.Shape.check(True)  # raises when the shape is broken
+        self.assertAlmostEqual(reversedOrder.Shape.Volume, consistentOrder.Shape.Volume)
+
+    def testCapsuleSubtractiveLoftIgnoresCreationOrder(self):
+        """Capsule wire pairing must also be stable for subtractive lofts."""
+        reversedOrder = self._makeCapsuleLoft("ReversedCapsuleCut", True, True)
+        consistentOrder = self._makeCapsuleLoft("ConsistentCapsuleCut", False, True)
+        self.Doc.recompute()
+
+        reversedOrder.Shape.check(True)  # raises when the shape is broken
+        self.assertAlmostEqual(reversedOrder.Shape.Volume, consistentOrder.Shape.Volume)
+
+    def testNestedIslandLoftIgnoresCreationOrder(self):
+        """Pair outer, hole, and island wires by nesting depth."""
+        permutedOrder = self._makeNestedIslandLoft("Permuted", True)
+        consistentOrder = self._makeNestedIslandLoft("Consistent", False)
+        self.Doc.recompute()
+
+        permutedOrder.Shape.check(True)  # raises when the shape is broken
+        self.assertAlmostEqual(permutedOrder.Shape.Volume, consistentOrder.Shape.Volume)
 
     def testSimpleSubtractiveLoftCase(self):
         self.Body = self.Doc.addObject('PartDesign::Body','Body')
@@ -140,6 +353,218 @@ class TestLoft(unittest.TestCase):
         self.Doc.recompute()
 
         self.assertGreater(loft.Shape.Volume, 80000.0) # 85105.5788704151
+
+    def testClosedWithOneSection(self):
+        """Closing needs three profiles (upstream 0c59bfc718): with one
+        section it closed back to the profile, a solid of no volume."""
+        body = self.Doc.addObject("PartDesign::Body", "Body")
+        xy = [f for f in body.Origin.OriginFeatures if f.Role == "XY_Plane"][0]
+        profile = body.newObject("Sketcher::SketchObject", "Profile")
+        profile.Support = (xy, [""])
+        profile.MapMode = "FlatFace"
+        TestSketcherApp.CreateRectangleSketch(profile, (0, 0), (10, 10))
+        section = body.newObject("Sketcher::SketchObject", "Section")
+        section.Support = (xy, [""])
+        section.MapMode = "FlatFace"
+        section.AttachmentOffset = FreeCAD.Placement(FreeCAD.Vector(0, 0, 10), FreeCAD.Rotation())
+        TestSketcherApp.CreateRectangleSketch(section, (2, 2), (6, 6))
+        self.Doc.recompute()
+        loft = body.newObject("PartDesign::AdditiveLoft", "Loft")
+        loft.Profile = profile
+        loft.Sections = [section]
+        self.Doc.recompute()
+        volume = loft.Shape.Volume
+        self.assertGreater(volume, 0)
+        loft.Closed = True
+        self.Doc.recompute()
+        self.assertIn("Up-to-date", loft.State)
+        self.assertAlmostEqual(loft.Shape.Volume, volume)
+
+    def testTwoFacesAdditiveLoftCase(self):
+        """Test issue #19183: Loft tool "Loft between faces no longer works"""
+        body = self.Doc.addObject("PartDesign::Body", "Body")
+
+        sketch1 = body.newObject("Sketcher::SketchObject", "Sketch")
+
+        sketch1.addGeometry(
+            Part.LineSegment(
+                Base.Vector(-2.060394, -1.332045, 0),
+                Base.Vector(-19.922129, -27.589359, 0),
+            ),
+            False,
+        )
+        sketch1.addGeometry(
+            Part.LineSegment(
+                Base.Vector(1.940183, -1.501086, 0),
+                Base.Vector(16.928263, -28.265512, 0),
+            ),
+            False,
+        )
+        sketch1.addGeometry(
+            Part.ArcOfCircle(
+                Part.Circle(
+                    Base.Vector(0.418837, -1.275699, 0), Base.Vector(0, 0, 1), 32.879378
+                ),
+                -1.751723,
+                -1.454683,
+            ),
+            False,
+        )
+        sketch1.addGeometry(
+            Part.ArcOfCircle(
+                Part.Circle(
+                    Base.Vector(-9.385396, -30.124937, 0),
+                    Base.Vector(0, 0, 1),
+                    8.359959,
+                ),
+                2.847554,
+                4.831818,
+            ),
+            False,
+        )
+        sketch1.addGeometry(
+            Part.ArcOfCircle(
+                Part.Circle(
+                    Base.Vector(3.236143, -29.279745, 0),
+                    Base.Vector(0, 0, 1),
+                    11.449505,
+                ),
+                -1.076432,
+                0.044306,
+            ),
+            False,
+        )
+        sketch1.addConstraint(Sketcher.Constraint("Coincident", 0, 1, 1, 1))
+        sketch1.addConstraint(Sketcher.Constraint("Coincident", 0, 1, 2, 3))
+        sketch1.addConstraint(Sketcher.Constraint("Coincident", 0, 1, -1, 1))
+        sketch1.addConstraint(Sketcher.Constraint("Tangent", 0, 2, 3, 1))
+        sketch1.addConstraint(Sketcher.Constraint("Tangent", 1, 2, 4, 2))
+        sketch1.addConstraint(Sketcher.Constraint("Tangent", 2, 1, 3, 2))
+        sketch1.addConstraint(Sketcher.Constraint("Tangent", 2, 2, 4, 1))
+        sketch1.addConstraint(Sketcher.Constraint("Symmetric", 0, 2, 1, 2, -2))
+        sketch1.addConstraint(Sketcher.Constraint("Symmetric", 2, 1, 2, 2, -2))
+        sketch1.delConstraint(8)
+        sketch1.addConstraint(Sketcher.Constraint("Radius", 2, 39.936694))
+        sketch1.setDatum(8, Units.Quantity("40.000000 mm"))
+        sketch1.addConstraint(Sketcher.Constraint("DistanceX", 2, 1, 2, 2, 16.771341))
+        sketch1.setDatum(9, Units.Quantity("10.000000 mm"))
+        sketch1.addConstraint(Sketcher.Constraint("Distance", 0, 30.965710))
+        sketch1.setDatum(10, Units.Quantity("30.000000 mm"))
+
+        sketch2 = body.newObject("Sketcher::SketchObject", "Sketch001")
+        sketch2.addGeometry(
+            Part.LineSegment(
+                Base.Vector(-2.060394, -1.332045, 0),
+                Base.Vector(-19.922129, -27.589359, 0),
+            ),
+            False,
+        )
+        sketch2.addGeometry(
+            Part.LineSegment(
+                Base.Vector(1.940183, -1.501086, 0),
+                Base.Vector(16.928263, -28.265512, 0),
+            ),
+            False,
+        )
+        sketch2.addGeometry(
+            Part.ArcOfCircle(
+                Part.Circle(
+                    Base.Vector(0.418837, -1.275699, 0), Base.Vector(0, 0, 1), 32.879378
+                ),
+                -1.751723,
+                -1.454683,
+            ),
+            False,
+        )
+        sketch2.addGeometry(
+            Part.ArcOfCircle(
+                Part.Circle(
+                    Base.Vector(-9.385396, -30.124937, 0),
+                    Base.Vector(0, 0, 1),
+                    8.359959,
+                ),
+                2.847554,
+                4.831818,
+            ),
+            False,
+        )
+        sketch2.addGeometry(
+            Part.ArcOfCircle(
+                Part.Circle(
+                    Base.Vector(3.236143, -29.279745, 0),
+                    Base.Vector(0, 0, 1),
+                    11.449505,
+                ),
+                -1.076432,
+                0.044306,
+            ),
+            False,
+        )
+        sketch2.addConstraint(Sketcher.Constraint("Coincident", 0, 1, 1, 1))
+        sketch2.addConstraint(Sketcher.Constraint("Coincident", 0, 1, 2, 3))
+        sketch2.addConstraint(Sketcher.Constraint("Coincident", 0, 1, -1, 1))
+        sketch2.addConstraint(Sketcher.Constraint("Tangent", 0, 2, 3, 1))
+        sketch2.addConstraint(Sketcher.Constraint("Tangent", 1, 2, 4, 2))
+        sketch2.addConstraint(Sketcher.Constraint("Tangent", 2, 1, 3, 2))
+        sketch2.addConstraint(Sketcher.Constraint("Tangent", 2, 2, 4, 1))
+        sketch2.addConstraint(Sketcher.Constraint("Symmetric", 0, 2, 1, 2, -2))
+        sketch2.addConstraint(Sketcher.Constraint("Symmetric", 2, 1, 2, 2, -2))
+        sketch2.delConstraint(8)
+        sketch2.addConstraint(Sketcher.Constraint("Radius", 2, 39.936694))
+        sketch2.setDatum(8, Units.Quantity("30.000000 mm"))
+        sketch2.addConstraint(Sketcher.Constraint("Radius", 3, 1.020288))
+        sketch2.setDatum(9, Units.Quantity("3.600000 mm"))
+        sketch2.addConstraint(Sketcher.Constraint("DistanceX", 2, 1, 2, 2, 10.926759))
+        sketch2.setDatum(10, Units.Quantity("10.000000 mm"))
+        self.Doc.recompute()
+
+        pad1 = body.newObject("PartDesign::Pad", "Pad")
+
+        pad1.Profile = sketch1
+        pad1.Length = 10.000000
+        pad1.TaperAngle = 0.000000
+        pad1.Reversed = 1
+        self.Doc.recompute()
+        sketch1.Visibility = False
+
+        pad2 = body.newObject("PartDesign::Pad", "Pad001")
+
+        pad2.Profile = sketch2
+        pad2.Length = 10.000000
+        pad2.TaperAngle = 0.000000
+        self.Doc.recompute()
+        sketch2.Visibility = False
+        pad1.Visibility = False
+        pad2.Visibility = True
+        body.Tip = pad2
+        self.assertGreater(pad2.Shape.Volume, 8715.0)  # 8720.024151557787 pre-Loft
+
+        loft = body.newObject("PartDesign::AdditiveLoft", "AdditiveLoft")
+        # Upstream names the profile "Face7"; the fork numbers this pad's
+        # faces differently, so the face is found by what it is: the 10 mm
+        # high flank at y = -39.9, the one Face10 is lofted to
+        pad1 = self.Doc.getObject("Pad001")
+        flank = [
+            i
+            for i, f in enumerate(pad1.Shape.Faces, 1)
+            if abs(f.Area - 100.262265) < 1e-3 and abs(f.CenterOfMass.y + 39.8954) < 1e-3
+        ]
+        self.assertEqual(len(flank), 1)
+        loft.Profile = (pad1, ["Face%d" % flank[0]])
+        loft.Sections = [
+            (
+                self.Doc.getObject("Pad001"),
+                [
+                    "Face10",
+                ],
+            )
+        ]
+        loft.Closed = False
+
+        self.Doc.recompute()
+        body.Tip = loft
+        self.assertGreater(body.Shape.Volume, 9220.0)  # 9221.776241582389 post-Loft
+        self.Doc.recompute()
 
     def tearDown(self):
         #closing doc

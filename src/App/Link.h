@@ -671,6 +671,11 @@ public:
     /// Check if the linked object is a copy on change
     bool isLinkMutated() const;
 
+    /// Whether an upstream file restored this link as a suppressed element
+    bool wasRestoredSuppressed() const {
+        return restoredSuppressed;
+    }
+
 protected:
     void _handleChangedPropertyName(Base::XMLReader &reader,
             const char * TypeName, const char *PropName);
@@ -708,6 +713,7 @@ protected:
     mutable std::unordered_map<std::string,int> myLabelCache; // for label based subname lookup
     mutable bool enableLabelCache{false};
     bool hasOldSubElement{false};
+    bool restoredSuppressed{false};
 
     std::vector<fastsignals::scoped_connection> copyOnChangeConns;
     std::vector<fastsignals::scoped_connection> copyOnChangeSrcConns;

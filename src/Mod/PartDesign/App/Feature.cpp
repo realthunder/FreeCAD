@@ -110,6 +110,19 @@ TopoShape Feature::getSolid(const TopoShape& shape, bool force)
     return shape;
 }
 
+void Feature::handleChangedPropertyName(Base::XMLReader &reader, const char *TypeName,
+                                        const char *PropName)
+{
+    // An upstream file names Suppress after its SuppressibleExtension; a
+    // feature suppressed there loaded unsuppressed here
+    if (strcmp(PropName, "Suppressed") == 0
+            && strcmp(TypeName, App::PropertyBool::getClassTypeId().getName()) == 0) {
+        Suppress.Restore(reader);
+        return;
+    }
+    Part::Feature::handleChangedPropertyName(reader, TypeName, PropName);
+}
+
 void Feature::onChanged(const App::Property *prop)
 {
     if (!this->isRestoring() 
@@ -125,6 +138,14 @@ void Feature::onChanged(const App::Property *prop)
                         feat->Visibility.setValue(false);
                 }
                 body->signalSiblingVisibilityChanged(siblings);
+            }
+        }
+        else if (prop == &ShapeMaterial) {
+            // A body is one solid of one material: its features share it
+            // (upstream 0804d80ebf)
+            if (auto body = Body::findBodyOf(this)) {
+                if (body->ShapeMaterial.getValue().getUUID() != ShapeMaterial.getValue().getUUID())
+                    body->ShapeMaterial.setValue(ShapeMaterial.getValue());
             }
         }
     }
@@ -198,13 +219,11 @@ TopoShape Feature::getBaseShape(bool silent, bool force, bool checkSolid) const 
         return result;
 
     if(BaseObject != BaseFeature.getValue()) {
+        // A feature with no body is legal: files from 0.15 and before made
+        // them, and a dress-up of a plain Part object is one (upstream
+        // a76adf48a9). Only the shape binder rule needs a body to ask.
         auto body = getFeatureBody();
-        if (!body) {
-            if(silent)
-                return result;
-            THROWM(Base::RuntimeError, "Missing container body")
-        }
-        if (body->BaseFeature.getValue() != BaseObject
+        if ((!body || body->BaseFeature.getValue() != BaseObject)
                 && (BaseObject->isDerivedFrom<PartDesign::ShapeBinder>()
                     || BaseObject->isDerivedFrom<Part::SubShapeBinder>()))
         {
@@ -271,6 +290,15 @@ gp_Pln Feature::makePlnFromPlane(const App::DocumentObject* obj)
 {
     if (!obj || !obj->getNameInDocument())
         THROWM(Base::ValueError, "Feature: Null object")
+    // A plane of a coordinate system: its own Placement is relative to the
+    // LCS, so a plane of a moved or turned LCS read as the global one --
+    // an up-to-face or a neutral plane landed at the origin (upstream
+    // 194ec0820c). getBasePoint()/getDirection() carry the LCS.
+    if (auto datum = dynamic_cast<const App::DatumElement*>(obj)) {
+        Base::Vector3d pos = datum->getBasePoint();
+        Base::Vector3d normal = datum->getDirection();
+        return gp_Pln(gp_Pnt(pos.x, pos.y, pos.z), gp_Dir(normal.x, normal.y, normal.z));
+    }
     auto propPlacement = Base::freecad_dynamic_cast<App::PropertyPlacement>(obj->getPropertyByName("Placement"));
     if (!propPlacement)
         THROWM(Base::ValueError, "Feature: no placement found")
@@ -348,6 +376,11 @@ bool Feature::isElementGenerated(const TopoShape &shape, const Data::MappedName 
 
 App::DocumentObjectExecReturn *Feature::recompute(void)
 {
+    // a feature added to a body of a material takes it, unless it has its
+    // own (upstream 0804d80ebf)
+    if (auto body = getFeatureBody())
+        copyMaterial(body);
+
     SuppressedShape.setValue(TopoShape());
 
     if(!Suppress.getValue())
@@ -369,13 +402,95 @@ App::DocumentObjectExecReturn *Feature::recompute(void)
     if(!failed)
         updateSuppressedShape();
     else
-        Shape.setValue(getBaseShape(true));
+        Shape.setValue(getPlacedBaseShape());
     return  App::DocumentObject::StdReturn;
+}
+
+void Feature::onBaseFeatureRerouted(App::DocumentObject*, App::DocumentObject*)
+{
+}
+
+void Feature::setPauseRecompute(bool enable)
+{
+    if (enable == pauseRecompute)
+        return;
+    pauseRecompute = enable;
+    if (enable)
+        pausedRevision = this->getRevision();
+    else if (pausedRevision != this->getRevision())
+        touch();
+}
+
+bool Feature::isRecomputePaused() const
+{
+    return pauseRecompute;
+}
+
+bool Feature::relinkToMatchingSubElements(App::PropertyLinkSub& link,
+                                          App::DocumentObject* oldBase,
+                                          App::DocumentObject* newBase)
+{
+    if (!oldBase || !newBase || link.getValue() != oldBase)
+        return false;
+    auto oldFeature = Base::freecad_dynamic_cast<Part::Feature>(oldBase);
+    auto newFeature = Base::freecad_dynamic_cast<Part::Feature>(newBase);
+    if (!oldFeature || !newFeature)
+        return false;
+    const TopoShape& oldShape = oldFeature->Shape.getShape();
+    const TopoShape& newShape = newFeature->Shape.getShape();
+    if (oldShape.isNull() || newShape.isNull())
+        return false;
+
+    // The mapped names belong to the old base's element map, so look each
+    // element up there and find its geometry in the new base.
+    const auto& shadows = link.getShadowSubs();
+    if (shadows.size() != link.getSubValues().size())
+        return false;
+    std::vector<std::string> subs;
+    for (const auto& shadow : shadows) {
+        const auto& ref = shadow.first.empty() ? shadow.second : shadow.first;
+        if (ref.empty()) {
+            subs.emplace_back();
+            continue;
+        }
+        TopoShape sub = oldShape.getSubTopoShape(ref.c_str(), /*silent*/true);
+        if (sub.isNull())
+            return false;
+        std::vector<std::string> names;
+        auto found = newShape.searchSubShape(sub, &names);
+        if (found.size() != 1 || names.size() != 1)
+            return false;
+        subs.push_back(std::move(names.front()));
+    }
+    link.setValue(newBase, std::move(subs));
+    return true;
+}
+
+TopoShape Feature::wrapLocated(const TopoShape& shape) const
+{
+    if (shape.isNull() || shape.getShape().Location().IsIdentity())
+        return shape;
+    TopoShape res(0, getDocument()->getStringHasher());
+    res.makECompound({shape});
+    return res;
+}
+
+TopoShape Feature::getPlacedBaseShape() const
+{
+    // Setting the base shape as it is would hand this feature the base's
+    // Placement, and a suppressed primitive would come back misplaced.
+    TopoShape shape = getBaseShape(true);
+    if (shape.isNull())
+        return shape;
+    shape.move(getLocation().Inverted());
+    shape = wrapLocated(shape);
+    shape.setPlacement(Placement.getValue());
+    return shape;
 }
 
 void Feature::updateSuppressedShape()
 {
-    auto baseShape = getBaseShape(true);
+    auto baseShape = getPlacedBaseShape();
     TopoShape res(getID());
     TopoShape shape = Shape.getShape();
     shape.setPlacement(Base::Placement());

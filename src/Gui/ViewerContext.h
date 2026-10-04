@@ -44,6 +44,8 @@
 #include <Inventor/SoType.h>
 #include <Inventor/nodes/SoEventCallback.h>
 
+#include <fastsignals/signal.h>
+
 #include "Inventor/SoFCVisibilityElement.h"
 #include "Inventor/SoFCRenderCacheManager.h"
 
@@ -154,6 +156,31 @@ public:
     {
         return transform;
     }
+    /** Where the session's views that have no on-view root of their own
+     * hang their on-view parameters (a mirror's getOnViewParameterRoot()
+     * while it is in the session): dimension lines and pattern markers,
+     * in WORLD coordinates, so not under the editing transform.
+     *
+     * It is the session's, like node(), and for the same reason: the
+     * serving source publishes both as the session's overlay, tagged with
+     * it (docs/ThinClient.md 8.12 item J), where a mirror's labels used to
+     * go into the served root every client shares -- seen by viewers
+     * outside the session, and a moving label spoiling the shared scene's
+     * caches on every drag. The desktop's views keep a root of their own
+     * (View3DInventorViewer's on-view feed), so nothing here is drawn
+     * twice there.
+     */
+    SoSeparator* onViewNode() const
+    {
+        return onView;
+    }
+    /// node() then onViewNode(): what the serving source captures.
+    SoGroup* publishNode() const
+    {
+        return publish;
+    }
+    /// Whether a view has hung an on-view parameter in onViewNode().
+    bool hasOnViewContent() const;
     /// The document whose session this is, or null for a private root.
     Gui::Document* document() const
     {
@@ -277,6 +304,8 @@ public:
 private:
     SoSeparator* root {nullptr};
     SoTransform* transform {nullptr};
+    SoSeparator* onView {nullptr};
+    SoGroup* publish {nullptr};
     Gui::Document* doc {nullptr};
     std::map<SoGroup*, int> parents;
     std::vector<ViewerContext*> viewList;
@@ -694,7 +723,31 @@ public:
      */
     virtual void onViewParametersChanged()
     {}
+    /** An entry made for this view, and gone: it is told when the view goes
+     * (OnViewEntry::forgetViewer), whether or not it is on screen. Not
+     * virtual, unlike the set above -- the view's going is what it is for.
+     */
+    void trackOnViewEntry(OnViewEntry* entry);
+    void untrackOnViewEntry(OnViewEntry* entry);
+    /** Where an on-view parameter's dimension hangs, in world coordinates.
+     *
+     * It has to reach whatever draws the view. A mirror's scene graph is
+     * the served root, which the publish traversal walks to the client. The
+     * desktop's is not drawn by an external backend during an edit -- only
+     * the selection root and the overlay feeds are -- so it answers a root
+     * of its own, fed as one (Blender's overlay engine, in effect: labels
+     * and dimensions are the viewport's, drawn over the scene, never the
+     * renderer's).
+     */
+    virtual SoGroup* getOnViewParameterRoot() const;
     //@}
+
+    /** The camera NODE was replaced, as a change of projection does: what
+     * watches the fields of the old one hears nothing more (upstream's
+     * View3DInventorViewer::cameraChanged, 6fa9125919, on the view-less base
+     * so that a mirror says it too).
+     */
+    fastsignals::signal<void()> signalCameraReplaced;
 
     /** The context an event callback node was installed by.
      *
@@ -777,9 +830,22 @@ protected:
     void bindEditingRoot(EditingRoot* root);
     void unbindEditingRoot();
 
+    /** Tell the on-view entries made for this view that it is going.
+     *
+     * A panel that holds entries can outlive the view they were made for: a
+     * closed document takes its views first and the dialog is deleted
+     * after. Taking a label's dimension out of the view reaches
+     * getOnViewParameterRoot(), so an implementation calls this from its
+     * OWN destructor, while it is still itself; the base destructor only
+     * makes the entries forget it.
+     */
+    void releaseOnViewParameters();
+
 private:
     /// This view's private root, built on first need.
     std::unique_ptr<EditingRoot> ownEditRoot;
+    /// Every entry made for this view and not yet gone (trackOnViewEntry)
+    std::vector<OnViewEntry*> onViewEntries;
 };
 
 /** Make \a context the current view for this scope's dynamic extent.

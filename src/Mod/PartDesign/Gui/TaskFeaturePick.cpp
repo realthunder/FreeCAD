@@ -37,6 +37,7 @@
 #include <Gui/Application.h>
 #include <Gui/BitmapFactory.h>
 #include <Gui/Control.h>
+#include <Gui/ViewParams.h>
 #include <Gui/ViewProviderCoordinateSystem.h>
 #include <Mod/PartDesign/App/Body.h>
 #include <Mod/PartDesign/App/ShapeBinder.h>
@@ -153,6 +154,9 @@ TaskFeaturePick::TaskFeaturePick(std::vector<App::DocumentObject*>& objects,
         if (vpo) {
             vpo->setTemporaryVisibility( originVisStatus[origin][axisBit],
                     originVisStatus[origin][planeBit]);
+            // larger and labelled while picked (upstream b942275957)
+            vpo->setTemporaryScale(Gui::ViewParams::getDatumTemporaryScaleFactor());
+            vpo->setPlaneLabelVisibility(true);
             origins.push_back(vpo);
         }
     }
@@ -166,8 +170,11 @@ TaskFeaturePick::TaskFeaturePick(std::vector<App::DocumentObject*>& objects,
 
 TaskFeaturePick::~TaskFeaturePick()
 {
-    for(Gui::ViewProviderCoordinateSystem* vpo : origins)
+    for(Gui::ViewProviderCoordinateSystem* vpo : origins) {
         vpo->resetTemporaryVisibility();
+        vpo->resetTemporarySize();
+        vpo->setPlaneLabelVisibility(false);
+    }
 }
 
 void TaskFeaturePick::updateList()

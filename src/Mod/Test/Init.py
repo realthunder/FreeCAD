@@ -28,6 +28,8 @@ FreeCAD.__unit_test__ += [
     "BaseTests",
     "UnitTests",
     "Document",
+    "TestIntPairList",
+    "TestLinkArray",
     "FileBlobs",
     "InputProperty",
     "ShapeStorage",

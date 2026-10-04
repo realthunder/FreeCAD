@@ -173,6 +173,7 @@ DatumValueEditor::DatumValueEditor(ViewerContext* viewer, const Base::Placement&
     parser->setMaximum(INT_MAX);
 
     if (viewer) {
+        viewer->trackOnViewEntry(this);
         viewer->addOnViewParameter(this);
     }
 }
@@ -180,9 +181,7 @@ DatumValueEditor::DatumValueEditor(ViewerContext* viewer, const Base::Placement&
 DatumValueEditor::~DatumValueEditor()
 {
     close();
-    if (viewer) {
-        viewer->removeOnViewParameter(this);
-    }
+    forgetViewer(true);
     if (target.label) {
         target.label->unref();
     }
@@ -264,6 +263,17 @@ void DatumValueEditor::edit(const Target& next)
     if (frame->parentWidget() && !cameraSensor && viewer && viewer->getCamera()) {
         cameraSensor = new SoNodeSensor(&DatumValueEditor::labelMoved, this);
         cameraSensor->attach(viewer->getCamera());
+        // A change of projection replaces the camera node, and the sensor
+        // would be left on one nobody moves any more
+        connCameraReplaced = viewer->signalCameraReplaced.connect([this]() {
+            if (cameraSensor && viewer) {
+                cameraSensor->detach();
+                if (SoCamera* camera = viewer->getCamera()) {
+                    cameraSensor->attach(camera);
+                }
+            }
+            place();
+        });
     }
 
     open = true;
@@ -302,6 +312,7 @@ void DatumValueEditor::close()
         delete labelSensor;
         labelSensor = nullptr;
     }
+    connCameraReplaced.disconnect();
     if (cameraSensor) {
         cameraSensor->detach();
         delete cameraSensor;
@@ -542,7 +553,7 @@ SbVec3f DatumValueEditor::awayPoint() const
 
 void DatumValueEditor::place()
 {
-    if (!open || !viewer || !frame->parentWidget()) {
+    if (!open || !viewer || !frame || !frame->parentWidget()) {
         // Nowhere to put it: a client places its own (8.7), from the two
         // world points describe() gives it.
         notifyChanged();
@@ -603,7 +614,7 @@ void DatumValueEditor::setKeysTo(Field field)
 bool DatumValueEditor::hasFocus() const
 {
     QWidget* focus = QApplication::focusWidget();
-    return frame->parentWidget() && focus && frame->isAncestorOf(focus);
+    return frame && frame->parentWidget() && focus && frame->isAncestorOf(focus);
 }
 
 bool DatumValueEditor::isCompleting() const
@@ -756,6 +767,31 @@ bool DatumValueEditor::act(const Action& action)
         return true;
     }
     return false;
+}
+
+void DatumValueEditor::forgetViewer(bool viewAlive)
+{
+    if (!viewer) {
+        return;
+    }
+    if (viewAlive) {
+        close();
+        viewer->removeOnViewParameter(this);
+    }
+    else {
+        // Nothing of the view may be reached: not its camera, which the
+        // sensor is on, and not its widgets or its virtuals, which close()
+        // would touch
+        connCameraReplaced.disconnect();
+        if (cameraSensor) {
+            cameraSensor->detach();
+            delete cameraSensor;
+            cameraSensor = nullptr;
+        }
+        open = false;
+    }
+    viewer->untrackOnViewEntry(this);
+    viewer = nullptr;
 }
 
 void DatumValueEditor::notifyChanged()

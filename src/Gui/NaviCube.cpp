@@ -216,11 +216,17 @@ public:
         deinit();
     }
 
-    static std::shared_ptr<NaviCubeShared> instance() {
-        static std::weak_ptr<NaviCubeShared> _instance;
+    /// The cube data every viewer shares; with headless, the one a
+    /// publisher with no 3D view shares, whose textures are only images
+    /// (it has no context to upload them to, and a viewer's instance
+    /// must not be initialized without one).
+    static std::shared_ptr<NaviCubeShared> instance(bool headless = false) {
+        static std::weak_ptr<NaviCubeShared> _instances[2];
+        auto &_instance = _instances[headless ? 1 : 0];
         auto res = _instance.lock();
         if (!res) {
             res = std::make_shared<NaviCubeShared>();
+            res->m_Headless = headless;
             _instance = res;
         }
         return res;
@@ -256,6 +262,7 @@ public:
     QFont getAxisLabelFont();
     void saveAxisLabelFont(const QFont &);
 
+	GLuint addTexture(const QImage &image);
 	GLuint createCubeFaceTex(const char* text, int shape);
 	GLuint createButtonTex(int button, bool stroke = true);
 	GLuint createMenuTex(bool);
@@ -274,6 +281,10 @@ public:
 	int m_OverSample = 1;
 
     QOpenGLContext *m_Context = nullptr;
+    /// Whether the cube data is built (initNaviCube). A viewer's instance
+    /// is built under a context (m_Context), a headless one without.
+    bool m_Ready = false;
+    bool m_Headless = false;
 
 	QColor m_TextColor;
 	QColor m_HiliteColor;
@@ -367,6 +378,7 @@ private:
 	void buildCoinCube();
 	void buildCoinButtons();
 	void fillCornerAnchor(Render::OverlayAnchor &anchor) const;
+	void fillPlacement(Render::OverlayAnchor &anchor) const;
 
 	bool mousePressed(short x, short y);
 	bool mouseReleased(short x, short y);
@@ -384,14 +396,24 @@ private:
 	void handleMenu();
 
 public:
+	/// A viewer's redraw, or with none (a served cube) m_Changed.
+	void redraw();
+
+	/// Null for a served cube (NaviCube(nullptr)).
 	Gui::View3DInventorViewer* m_View3DInventorViewer;
+	std::function<void()> m_Changed;
     std::shared_ptr<NaviCubeShared> m_Shared;
     ParameterGrp::handle m_hGrp;
 
+	/// The cube's centre in viewport pixels, y up (glViewport's frame):
+	/// derived from m_RelX/m_RelY by handleResize(), and moved directly
+	/// by a drag in progress.
 	int m_CubeWidgetPosX = 0;
 	int m_CubeWidgetPosY = 0;
-	int m_CubeWidgetOffsetX = 0;
-	int m_CubeWidgetOffsetY = 0;
+	/// The position the view stated (NaviCube::setPosition): x from the
+	/// left, y from the top, each a fraction of the room left to the cube.
+	float m_RelX = 1.0f;
+	float m_RelY = 0.0f;
 	int m_PrevWidth = 0;
 	int m_PrevHeight = 0;
 	int m_HiliteId = 0;
@@ -399,7 +421,6 @@ public:
 	bool m_Dragging = false;
 	bool m_MightDrag = false;
     bool m_Hit = false;
-    NaviCube::Corner m_Corner = NaviCube::TopRightCorner;
 
 	int &m_CubeWidgetSize = NaviCubeShared::m_CubeWidgetSize;
     QTimer timer;
@@ -451,18 +472,51 @@ SoSeparator *NaviCube::getOverlayButtonGraph(Render::OverlayAnchor &anchor) {
 	return m_NaviCubeImplementation->getOverlayButtonGraph(anchor);
 }
 
+void NaviCube::cornerPosition(Corner c, float &x, float &y) {
+    x = (c == TopRightCorner || c == BottomRightCorner) ? 1.0f : 0.0f;
+    y = (c == BottomLeftCorner || c == BottomRightCorner) ? 1.0f : 0.0f;
+}
+
 void NaviCube::setCorner(Corner c) {
-    if (m_NaviCubeImplementation->m_Corner != c) {
-        m_NaviCubeImplementation->m_Corner = c;
-        m_NaviCubeImplementation->m_PrevWidth = 0;
-        m_NaviCubeImplementation->m_PrevHeight = 0;
-	    m_NaviCubeImplementation->m_View3DInventorViewer->getSoRenderManager()->scheduleRedraw();
+    float x, y;
+    cornerPosition(c, x, y);
+    setPosition(x, y);
+}
+
+NaviCube::Corner NaviCube::getCorner() const {
+    const bool right = m_NaviCubeImplementation->m_RelX >= 0.5f;
+    const bool bottom = m_NaviCubeImplementation->m_RelY >= 0.5f;
+    if (bottom)
+        return right ? BottomRightCorner : BottomLeftCorner;
+    return right ? TopRightCorner : TopLeftCorner;
+}
+
+void NaviCube::setPosition(float x, float y) {
+    auto impl = m_NaviCubeImplementation;
+    x = std::clamp(x, 0.0f, 1.0f);
+    y = std::clamp(y, 0.0f, 1.0f);
+    if (impl->m_RelX != x || impl->m_RelY != y) {
+        impl->m_RelX = x;
+        impl->m_RelY = y;
+        // Forces handleResize() to place the cube again.
+        impl->m_PrevWidth = 0;
+        impl->m_PrevHeight = 0;
+        impl->redraw();
     }
+}
+
+void NaviCube::setChangedCallback(std::function<void()> cb) {
+    m_NaviCubeImplementation->m_Changed = std::move(cb);
+}
+
+void NaviCube::getPosition(float &x, float &y) const {
+    x = m_NaviCubeImplementation->m_RelX;
+    y = m_NaviCubeImplementation->m_RelY;
 }
 
 NaviCubeImplementation::NaviCubeImplementation(Gui::View3DInventorViewer* viewer)
 	: m_View3DInventorViewer(viewer)
-    , m_Shared(NaviCubeShared::instance())
+    , m_Shared(NaviCubeShared::instance(!viewer))
     , m_hGrp(m_Shared->m_hGrp)
 {
     m_hGrp->Attach(this);
@@ -470,18 +524,28 @@ NaviCubeImplementation::NaviCubeImplementation(Gui::View3DInventorViewer* viewer
     timer.setSingleShot(true);
     QObject::connect(&timer, &QTimer::timeout, [this](){
         m_Shared->getParams();
-	    m_View3DInventorViewer->getSoRenderManager()->scheduleRedraw();
+        redraw();
     });
 
     autoHideTimer.setSingleShot(true);
     QObject::connect(&autoHideTimer, &QTimer::timeout, [this](){
-	    m_View3DInventorViewer->getSoRenderManager()->scheduleRedraw();
+        redraw();
     });
 }
 
 NaviCubeImplementation::~NaviCubeImplementation() {
 	m_hGrp->Detach(this);
-    m_Shared->deinit(QOpenGLContext::currentContext());
+    // A headless instance's data holds no GL object: it goes with the
+    // last cube that shares it.
+    if (m_View3DInventorViewer)
+        m_Shared->deinit(QOpenGLContext::currentContext());
+}
+
+void NaviCubeImplementation::redraw() {
+    if (m_View3DInventorViewer)
+        m_View3DInventorViewer->getSoRenderManager()->scheduleRedraw();
+    else if (m_Changed)
+        m_Changed();
 }
 
 void NaviCubeShared::getParams()
@@ -511,6 +575,7 @@ void NaviCubeShared::deinit(QOpenGLContext *ctx)
         return;
 
     m_Context = nullptr;
+    m_Ready = false;
 
     m_glTextures.clear();
 	m_IndexArray.clear();
@@ -553,6 +618,25 @@ auto convertWeights = [](int weight) -> QFont::Weight {
         return QFont::ExtraLight;
     return QFont::Thin;
 };
+
+GLuint NaviCubeShared::addTexture(const QImage &image) {
+    // Bottom-up RGBA copy for the Coin overlay twins (SoTexture2 images).
+    QImage copy = image.mirrored().convertToFormat(QImage::Format_RGBA8888);
+    if (m_Headless) {
+        // No context to upload to: the id only names the image.
+        GLuint id = GLuint(m_TexQImages.size() + 1);
+        m_TexQImages[id] = std::move(copy);
+        return id;
+    }
+    auto texture = new QOpenGLTexture(image.mirrored());
+    m_glTextures.emplace_back(texture);
+    texture->setMaximumAnisotropy(4.0);
+	texture->setMinificationFilter(QOpenGLTexture::LinearMipMapLinear);
+    texture->setMagnificationFilter(QOpenGLTexture::Linear);
+	texture->generateMipMaps();
+    m_TexQImages[texture->textureId()] = std::move(copy);
+    return texture->textureId();
+}
 
 GLuint NaviCubeShared::createCubeFaceTex(const char* text, int shape) {
 	int texSize = m_CubeWidgetSize * m_OverSample;
@@ -607,16 +691,7 @@ GLuint NaviCubeShared::createCubeFaceTex(const char* text, int shape) {
 	}
 
 	paint.end();
-    auto texture = new QOpenGLTexture(image.mirrored());
-    m_glTextures.emplace_back(texture);
-    texture->setMaximumAnisotropy(4.0);
-	texture->setMinificationFilter(QOpenGLTexture::LinearMipMapLinear);
-    texture->setMagnificationFilter(QOpenGLTexture::Linear);
-	texture->generateMipMaps();
-    // Bottom-up RGBA copy for the Coin overlay twins (SoTexture2 images).
-    m_TexQImages[texture->textureId()] =
-        image.mirrored().convertToFormat(QImage::Format_RGBA8888);
-    return texture->textureId();
+    return addTexture(image);
 }
 
 void NaviCubeShared::createAxisLabels()
@@ -745,16 +820,7 @@ GLuint NaviCubeShared::createButtonTex(int button, bool stroke) {
 	painter.end();
 	//image.save(str(enum2str(button))+str(".png"));
 
-    auto texture = new QOpenGLTexture(image.mirrored());
-    m_glTextures.emplace_back(texture);
-    texture->setMaximumAnisotropy(4.0);
-	texture->setMinificationFilter(QOpenGLTexture::LinearMipMapLinear);
-    texture->setMagnificationFilter(QOpenGLTexture::Linear);
-	texture->generateMipMaps();
-    // Bottom-up RGBA copy for the Coin overlay twins (SoTexture2 images).
-    m_TexQImages[texture->textureId()] =
-        image.mirrored().convertToFormat(QImage::Format_RGBA8888);
-    return texture->textureId();
+    return addTexture(image);
 }
 
 GLuint NaviCubeShared::createMenuTex(bool forPicking) {
@@ -821,16 +887,7 @@ GLuint NaviCubeShared::createMenuTex(bool forPicking) {
 		painter.fillPath(path5, QColor(64, 64, 64));
 	}
 	painter.end();
-    auto texture = new QOpenGLTexture(image.mirrored());
-    m_glTextures.emplace_back(texture);
-    texture->setMaximumAnisotropy(4.0);
-	texture->setMinificationFilter(QOpenGLTexture::LinearMipMapLinear);
-    texture->setMagnificationFilter(QOpenGLTexture::Linear);
-	texture->generateMipMaps();
-    // Bottom-up RGBA copy for the Coin overlay twins (SoTexture2 images).
-    m_TexQImages[texture->textureId()] =
-        image.mirrored().convertToFormat(QImage::Format_RGBA8888);
-    return texture->textureId();
+    return addTexture(image);
 }
 
 void NaviCubeShared::addFace(const Vector3f& x, const Vector3f& z, int frontTex, int pickTex, int pickId, bool text) {
@@ -946,12 +1003,15 @@ void NaviCubeShared::addFace(const Vector3f& x, const Vector3f& z, int frontTex,
 }
 
 bool NaviCubeShared::initNaviCube() {
-    if (m_Context)
+    if (m_Ready)
         return false;
 
-    m_Context = QOpenGLContext::currentContext();
-    if (!m_Context)
-        return false;
+    if (!m_Headless) {
+        m_Context = QOpenGLContext::currentContext();
+        if (!m_Context)
+            return false;
+    }
+    m_Ready = true;
 
     Vector3f x(1, 0, 0);
     Vector3f y(0, 1, 0);
@@ -1140,43 +1200,21 @@ void NaviCubeImplementation::drawNaviCube() {
 }
 
 void NaviCubeImplementation::handleResize() {
+	if (!m_View3DInventorViewer)
+		return;
 	SbVec2s view = m_View3DInventorViewer->getSoRenderManager()->getSize();
 	if ((m_PrevWidth != view[0]) || (m_PrevHeight != view[1])) {
-		if ((m_PrevWidth <= 0) || (m_PrevHeight <= 0)) {
-		    // initial position
-			m_CubeWidgetOffsetX = m_hGrp->GetInt("OffsetX", 0);
-			m_CubeWidgetOffsetY = m_hGrp->GetInt("OffsetY", 0);
-        }
-        switch (m_Corner) {
-        case NaviCube::TopLeftCorner:
-            m_CubeWidgetPosX = m_CubeWidgetSize*1.1 / 2 + m_CubeWidgetOffsetX;
-            m_CubeWidgetPosY = view[1] - m_CubeWidgetSize*1.1 / 2 - m_CubeWidgetOffsetY;
-            break;
-        case NaviCube::TopRightCorner:
-            m_CubeWidgetPosX = view[0] - m_CubeWidgetSize*1.1 / 2 - m_CubeWidgetOffsetX;
-            m_CubeWidgetPosY = view[1] - m_CubeWidgetSize*1.1 / 2 - m_CubeWidgetOffsetY;
-            break;
-        case NaviCube::BottomLeftCorner:
-            m_CubeWidgetPosX = m_CubeWidgetSize*1.1 / 2 + m_CubeWidgetOffsetX;
-            m_CubeWidgetPosY = m_CubeWidgetSize*1.1 / 2 + m_CubeWidgetOffsetY;
-            break;
-        case NaviCube::BottomRightCorner:
-            m_CubeWidgetPosX = view[0] - m_CubeWidgetSize*1.1 / 2 - m_CubeWidgetOffsetX;
-            m_CubeWidgetPosY = m_CubeWidgetSize*1.1 / 2 + m_CubeWidgetOffsetY;
-            break;
-        }
+		// The same placement the backend and the browser make from the
+		// overlay anchor (OverlayAnchor::cornerRect), so the GL cube, the
+		// fed one and the pick zone cannot drift apart.
+		Render::OverlayAnchor anchor;
+		fillPlacement(anchor);
+		int x, y, edge;
+		anchor.cornerRect(view[0], view[1], x, y, edge);
+		m_CubeWidgetPosX = x + m_CubeWidgetSize / 2;
+		m_CubeWidgetPosY = view[1] - (y + m_CubeWidgetSize / 2);
 		m_PrevWidth = view[0];
 		m_PrevHeight = view[1];
-
-        if (m_CubeWidgetPosX < 0)
-            m_CubeWidgetPosX = 0;
-        else if (m_CubeWidgetPosX > m_PrevWidth)
-            m_CubeWidgetPosX = m_PrevWidth;
-        if (m_CubeWidgetPosY < 0)
-            m_CubeWidgetPosY = 0;
-        else if (m_CubeWidgetPosY > m_PrevHeight)
-            m_CubeWidgetPosY = m_PrevHeight;
-
 		m_View3DInventorViewer->getSoRenderManager()->scheduleRedraw();
 	}
 }
@@ -1211,28 +1249,26 @@ void syncQColor(SoMaterial *mat, const QColor &c)
 // strokes here).
 } // namespace
 
+void NaviCube::fillPlacement(Render::OverlayAnchor &anchor, float x, float y, int size)
+{
+	// Any corner but FullViewport: posX/posY decide where it goes.
+	anchor.corner = Render::OverlayAnchor::TopLeft;
+	anchor.posX = std::clamp(x, 0.0f, 1.0f);
+	anchor.posY = std::clamp(y, 0.0f, 1.0f);
+	anchor.sizePixels = float(size);
+	// 5% of the cube size kept clear of the viewport edges, the gap the
+	// cube has always had in its corner.
+	anchor.marginX = anchor.marginY = float(0.05 * size);
+}
+
+void NaviCubeImplementation::fillPlacement(Render::OverlayAnchor &anchor) const
+{
+	NaviCube::fillPlacement(anchor, m_RelX, m_RelY, m_CubeWidgetSize);
+}
+
 void NaviCubeImplementation::fillCornerAnchor(Render::OverlayAnchor &anchor) const
 {
-	switch (m_Corner) {
-	case NaviCube::TopLeftCorner:
-		anchor.corner = Render::OverlayAnchor::TopLeft; break;
-	case NaviCube::TopRightCorner:
-		anchor.corner = Render::OverlayAnchor::TopRight; break;
-	case NaviCube::BottomLeftCorner:
-		anchor.corner = Render::OverlayAnchor::BottomLeft; break;
-	default:
-		anchor.corner = Render::OverlayAnchor::BottomRight; break;
-	}
-	const SbViewportRegion vp =
-		m_View3DInventorViewer->getSoRenderManager()->getViewportRegion();
-	SbVec2s sz = vp.getViewportSizePixels();
-	int minDim = std::min(sz[0], sz[1]);
-	anchor.sizeFraction =
-		minDim > 0 ? float(m_CubeWidgetSize) / float(minDim) : 0.25f;
-	// Same placement as the GL viewport (handleResize): 5% of the cube
-	// size plus the user offsets, inward from the anchoring corner.
-	anchor.marginX = float(0.05 * m_CubeWidgetSize + m_CubeWidgetOffsetX);
-	anchor.marginY = float(0.05 * m_CubeWidgetSize + m_CubeWidgetOffsetY);
+	fillPlacement(anchor);
 	anchor.nearPlane = 0.1f;
 	anchor.farPlane = 10.0f;
 	anchor.cameraDistance = 5.0f;
@@ -1475,10 +1511,12 @@ void NaviCubeImplementation::buildCoinButtons()
 SoSeparator *NaviCubeImplementation::getOverlayCubeGraph(Render::OverlayAnchor &anchor)
 {
 	auto shared = m_Shared.get();
-	shared->initNaviCube(); // no-op once ready; needs a current GL context
-	if (!shared->m_Context)
+	shared->initNaviCube(); // no-op once ready; a viewer's needs a current GL context
+	if (!shared->m_Ready)
 		return nullptr;
-	if (!m_Hit && NaviCubeShared::m_AutoHideCube)
+	// Auto-hide follows the hover of a viewer's mouse; a served cube has
+	// none to follow and is always stated.
+	if (m_View3DInventorViewer && !m_Hit && NaviCubeShared::m_AutoHideCube)
 		return nullptr;
 	if (m_CoinGeneration != shared->m_TexGeneration) {
 		m_CoinCubeRoot.reset();
@@ -1493,7 +1531,10 @@ SoSeparator *NaviCubeImplementation::getOverlayCubeGraph(Render::OverlayAnchor &
 
 	handleResize();
 
-	SoCamera *cam = m_View3DInventorViewer->getSoRenderManager()->getCamera();
+	// A served cube turns by each browser's own camera; the labels'
+	// readability flip is left at the front view's.
+	SoCamera *cam = m_View3DInventorViewer
+		? m_View3DInventorViewer->getSoRenderManager()->getCamera() : nullptr;
 	SbRotation orient = cam ? cam->orientation.getValue()
 	                        : SbRotation::identity();
 
@@ -1537,16 +1578,20 @@ SoSeparator *NaviCubeImplementation::getOverlayCubeGraph(Render::OverlayAnchor &
 	anchor.fovDeg =
 		float(2.0 * atan(tan(M_PI / 8.0) * 1.2) * 180.0 / M_PI);
 	anchor.orientFromScene = true;
+	// A served cube is always stated; the browser hides it on its own
+	// pointer's hover when the preference says so.
+	if (!m_View3DInventorViewer && NaviCubeShared::m_AutoHideCube)
+		anchor.autoHideMs = float(std::max(0, NaviCubeShared::m_AutoHideTimeout));
 	return m_CoinCubeRoot;
 }
 
 SoSeparator *NaviCubeImplementation::getOverlayButtonGraph(Render::OverlayAnchor &anchor)
 {
 	auto shared = m_Shared.get();
-	if (!shared->m_Context)
+	if (!shared->m_Ready)
 		return nullptr;
-	if (!m_Hit && (NaviCubeShared::m_AutoHideButton
-	               || NaviCubeShared::m_AutoHideCube))
+	if (m_View3DInventorViewer && !m_Hit
+	    && (NaviCubeShared::m_AutoHideButton || NaviCubeShared::m_AutoHideCube))
 		return nullptr;
 	if (!m_CoinButtonRoot)
 		buildCoinButtons();
@@ -1565,6 +1610,9 @@ SoSeparator *NaviCubeImplementation::getOverlayButtonGraph(Render::OverlayAnchor
 	anchor.fovDeg = 0.0f;
 	anchor.orthoHeight = 2.0f;
 	anchor.orientFromScene = false;
+	if (!m_View3DInventorViewer
+	    && (NaviCubeShared::m_AutoHideButton || NaviCubeShared::m_AutoHideCube))
+		anchor.autoHideMs = float(std::max(0, NaviCubeShared::m_AutoHideTimeout));
 	return m_CoinButtonRoot;
 }
 
@@ -2061,27 +2109,21 @@ bool NaviCubeImplementation::mouseReleased(short x, short y) {
 	setHilite(0);
 	m_MouseDown = false;
 	if (m_Dragging) {
-        switch (m_Corner) {
-        case NaviCube::TopLeftCorner:
-            m_CubeWidgetOffsetX = m_CubeWidgetPosX - m_CubeWidgetSize*1.1 / 2;
-            m_CubeWidgetOffsetY = m_PrevWidth - m_CubeWidgetSize*1.1 / 2 - m_CubeWidgetPosY;
-            break;
-        case NaviCube::TopRightCorner:
-            m_CubeWidgetOffsetX = m_PrevWidth - m_CubeWidgetSize*1.1 / 2 - m_CubeWidgetPosX;
-            m_CubeWidgetOffsetY = m_PrevHeight - m_CubeWidgetSize*1.1 / 2 - m_CubeWidgetPosY;
-            break;
-        case NaviCube::BottomLeftCorner:
-            m_CubeWidgetOffsetX = m_CubeWidgetPosX - m_CubeWidgetSize*1.1 / 2;
-            m_CubeWidgetOffsetY = m_CubeWidgetPosY - m_CubeWidgetSize*1.1 / 2;
-            break;
-        case NaviCube::BottomRightCorner:
-            m_CubeWidgetOffsetX = m_PrevWidth - m_CubeWidgetSize*1.1 / 2 - m_CubeWidgetPosX;
-            m_CubeWidgetOffsetY = m_CubeWidgetPosY - m_CubeWidgetSize*1.1 / 2;
-            break;
-        }
-        Base::StateLocker guard(m_Shared->m_Saving);
-        m_hGrp->SetInt("OffsetX", m_CubeWidgetOffsetX);
-        m_hGrp->SetInt("OffsetY", m_CubeWidgetOffsetY);
+		// Back from the dropped centre to the fraction of the room it
+		// sits at (the inverse of handleResize), and through the viewer,
+		// which states it on its view: this view's cube moves, no other.
+		// Whole pixels, as cornerRect() takes the anchor's margin.
+		const float margin = float(int(0.05 * m_CubeWidgetSize));
+		const float roomX = m_PrevWidth - m_CubeWidgetSize - 2 * margin;
+		const float roomY = m_PrevHeight - m_CubeWidgetSize - 2 * margin;
+		const float left = m_CubeWidgetPosX - m_CubeWidgetSize / 2 - margin;
+		const float top = m_PrevHeight - m_CubeWidgetPosY - m_CubeWidgetSize / 2 - margin;
+		float relX = roomX > 0 ? left / roomX : m_RelX;
+		float relY = roomY > 0 ? top / roomY : m_RelY;
+		// Re-placed from the fraction, not left where the mouse let go.
+		m_PrevWidth = m_PrevHeight = 0;
+		m_View3DInventorViewer->setNaviCubePosition(std::clamp(relX, 0.0f, 1.0f),
+		                                            std::clamp(relY, 0.0f, 1.0f));
     } else {
         // get the current view
         SbMatrix ViewRotMatrix;
@@ -2467,7 +2509,7 @@ bool NaviCubeImplementation::mouseMoved(short x, short y) {
 			SbVec2s view = m_View3DInventorViewer->getSoRenderManager()->getSize();
 			int width = view[0];
 			int height = view[1];
-			int len = m_CubeWidgetSize / 2;
+			int len = m_CubeWidgetSize / 2 + int(0.05 * m_CubeWidgetSize);
 			m_CubeWidgetPosX = std::min(std::max(static_cast<int>(x), len), width - len);
 			m_CubeWidgetPosY = std::min(std::max(static_cast<int>(y), len), height - len);
             redraw = true;

@@ -221,6 +221,10 @@ void BGFXRenderer::Private::maybeDumpScene(const void *viewMatrix,
     static const bool dumpSel = getenv("FC_BGFX_DUMP_SCENE_SEL") != nullptr;
     static const char *dumpSettle = getenv("FC_BGFX_DUMP_SCENE_SETTLE");
     static const int settleFrames = dumpSettle ? atoi(dumpSettle) : 0;
+    // A path with a %d in it dumps every scene that settles, numbered
+    // from 0, rather than the first one only: how a change in what is
+    // published -- an edit mode entered, a label shown -- is diffed
+    static const bool dumpEach = dumpPath && std::strstr(dumpPath, "%d");
 
     // What re-arms the wait is the scene's *content* changing, not
     // the dirty flag: the per-frame config push (SoFCRenderer's ~20
@@ -232,6 +236,8 @@ void BGFXRenderer::Private::maybeDumpScene(const void *viewMatrix,
     if (print != dumpFingerprint) {
         dumpFingerprint = print;
         dumpQuietFrames = 0;
+        if (dumpEach)
+            sceneDumped = false;
     }
     else
         ++dumpQuietFrames;
@@ -245,13 +251,20 @@ void BGFXRenderer::Private::maybeDumpScene(const void *viewMatrix,
         Render::SceneSnapshot snap;
         makeSnapshot(snap, viewMatrix, projMatrix, width, height,
                      clearColor);
+        std::string path = dumpPath;
+        if (dumpEach) {
+            static int dumpIndex = 0;
+            char name[1024];
+            std::snprintf(name, sizeof(name), dumpPath, dumpIndex++);
+            path = name;
+        }
         // The SNAPSHOT's count, not the feed's: since 5.16 the two
         // differ by whatever the view's style resolution removed, and
         // the number worth reading is what actually goes on the wire.
         fprintf(stderr,
-                "bgfx: scene snapshot (%zu of %zu draws) -> %s: %s\n",
-                snap.scene.size(), scene.size(), dumpPath,
-                Render::saveSceneSnapshot(dumpPath, snap)
+                "bgfx: scene snapshot (%zu of %zu draws, %zu overlays) -> %s: %s\n",
+                snap.scene.size(), scene.size(), snap.overlays.size(), path.c_str(),
+                Render::saveSceneSnapshot(path.c_str(), snap)
                     ? "ok" : "FAILED");
     }
 }
@@ -286,9 +299,18 @@ void BGFXRenderer::Private::publishScene(const void *viewMatrix,
     }
     // The environment variable is one way to start the server, not
     // the definition of serving: Gui.serveDocument(doc, port) starts
-    // it directly (docs/HeadlessServe.md §4, stage 2d). What decides
-    // whether to publish is whether anything is listening.
-    if (server.running()) {
+    // it directly (docs/HeadlessServe.md sec 4, stage 2d). But a document
+    // served that way is published by its serve source, into its own
+    // group, and a viewer's renderer names no group: it would publish
+    // into the default one, which is the first served document's, and
+    // the first to publish keeps the stream. A desktop view of that
+    // document then fed its browsers, and what a browser's own edit
+    // hangs in the served graph -- an on-view label, a sketch's edit
+    // geometry -- was drawn by nothing (docs/MultiDocServe.md sec 5:
+    // the publisher that owns the document's stream owns its
+    // container). So a viewer publishes on the variable's path alone.
+    const bool mayPublish = !publishGroup.empty() || (servePort && *servePort);
+    if (mayPublish && server.running()) {
         // Publish whenever there is anything to show, not just a non-empty
         // main scene: while editing the only object (e.g. a Sketcher sketch
         // with no other geometry) the whole edit graph lives in the editing

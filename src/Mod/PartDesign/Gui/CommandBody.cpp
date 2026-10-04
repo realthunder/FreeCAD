@@ -35,12 +35,14 @@
 #include <App/Document.h>
 #include <App/Origin.h>
 #include <App/Part.h>
+#include <App/PropertyStandard.h>
 #include <Base/Console.h>
 #include <Gui/CommandT.h>
 #include <Gui/Control.h>
 #include <Gui/Document.h>
 #include <Gui/Application.h>
 #include <Gui/MainWindow.h>
+#include <Gui/ViewProvider.h>
 #include <Gui/View3DInventor.h>
 #include <Gui/View3DInventorViewer.h>
 #include <Mod/Sketcher/App/SketchObject.h>
@@ -100,9 +102,6 @@ CmdPartDesignBody::CmdPartDesignBody()
 void CmdPartDesignBody::activated(int iMsg)
 {
     Q_UNUSED(iMsg);
-    // if user decides for old-style workflow then abort the command
-    if (PartDesignGui::assureLegacyWorkflow(getDocument()))
-        return;
 
     auto activeDoc = App::GetApplication().getActiveDocument();
     if(!activeDoc)
@@ -262,6 +261,11 @@ void CmdPartDesignBody::activated(int iMsg)
     auto body = Base::freecad_dynamic_cast<PartDesign::Body>(doc->getObject(bodyName.c_str()));
     if (Part::PartParams::getUseBaseObjectName() && labelSource.getObjectName().size())
         Gui::cmdAppObjectArgs(body, "Label = %s.Label", labelSource.getObjectPython());
+    // The base feature is placed in the body's coordinates, so the body goes
+    // into its Part first
+    if (actPart) {
+        Gui::cmdAppObjectArgs(actPart, "addObject(%s)", getObjectCmd(body));
+    }
     if (baseFeature) {
         if (baseFeature->isDerivedFrom(Part::Part2DObject::getClassTypeId())) {
             Gui::cmdAppObjectArgs(body, "Group = [%s]", getObjectCmd(baseFeature));
@@ -269,10 +273,6 @@ void CmdPartDesignBody::activated(int iMsg)
         else {
             Gui::cmdAppObjectArgs(body, "BaseFeature = %s", getObjectCmd(baseFeature));
         }
-    }
-
-    if (actPart) {
-        Gui::cmdAppObjectArgs(actPart, "addObject(%s)", getObjectCmd(body));
     }
 
     addModule(Gui,"PartDesignGui"); // import the Gui module only once a session
@@ -297,6 +297,22 @@ void CmdPartDesignBody::activated(int iMsg)
                 if (it->isDerivedFrom<PartDesign::FeatureBase>()) {
                     PartDesign::FeatureBase* base = static_cast<PartDesign::FeatureBase*>(it);
                     if (base && base->BaseFeature.getValue() == baseFeature) {
+                        // The base stands in for the object it hides, so it
+                        // looks the same (upstream aea8919598)
+                        copyVisual(base, "ShapeColor", baseFeature);
+                        copyVisual(base, "LineColor", baseFeature);
+                        copyVisual(base, "PointColor", baseFeature);
+                        copyVisual(base, "Transparency", baseFeature);
+                        copyVisual(base, "DisplayMode", baseFeature);
+                        // Per-face colours too: the base's faces are the
+                        // object's, in its order. Only when there are
+                        // some, as setting them re-derives the rest.
+                        auto vp = Gui::Application::Instance->getViewProvider(baseFeature);
+                        auto colors = vp ? Base::freecad_dynamic_cast<App::PropertyColorList>(
+                                               vp->getPropertyByName("DiffuseColor"))
+                                         : nullptr;
+                        if (colors && colors->getSize() > 1)
+                            copyVisual(base, "DiffuseColor", baseFeature);
                         Gui::Application::Instance->hideViewProvider(baseFeature);
                         break;
                     }
@@ -384,7 +400,7 @@ void CmdPartDesignBody::activated(int iMsg)
 
 bool CmdPartDesignBody::isActive()
 {
-    return hasActiveDocument() && !PartDesignGui::isLegacyWorkflow ( getDocument () );
+    return hasActiveDocument();
 }
 
 //===========================================================================
@@ -919,7 +935,7 @@ void CmdPartDesignMoveFeature::activated(int iMsg)
 
 bool CmdPartDesignMoveFeature::isActive()
 {
-    return hasActiveDocument () && !PartDesignGui::isLegacyWorkflow ( getDocument () );
+    return hasActiveDocument();
 }
 
 DEF_STD_CMD_A(CmdPartDesignMoveFeatureInTree)
@@ -940,6 +956,14 @@ void CmdPartDesignMoveFeatureInTree::activated(int iMsg)
 {
     Q_UNUSED(iMsg);
     std::vector<App::DocumentObject*> features = getSelection().getObjectsOfType(Part::Feature::getClassTypeId());
+    // coordinate systems and lone datum elements move too (upstream 443b71d96e)
+    for (auto type : {App::LocalCoordinateSystem::getClassTypeId(),
+                      App::DatumElement::getClassTypeId()}) {
+        for (auto obj : getSelection().getObjectsOfType(type)) {
+            if (PartDesign::Body::isAllowed(obj))
+                features.push_back(obj);
+        }
+    }
     if (features.empty())
         return;
 
@@ -995,7 +1019,20 @@ void CmdPartDesignMoveFeatureInTree::activated(int iMsg)
 
     openCommand(QT_TRANSLATE_NOOP("Command", "Move an object inside tree"));
 
-    App::DocumentObject* lastObject = nullptr;
+    // Keep the moved features in the order the body has them, whatever the
+    // order they were selected in, and insert each after the one before it.
+    // Inserting every one after the target reversed them (upstream
+    // 1c8ca27f28 fixed that for selection order only).
+    std::map<App::DocumentObject*, std::size_t> position;
+    for (std::size_t i = 0; i < model.size(); ++i) {
+        position.emplace(model[i], i);
+    }
+    std::stable_sort(features.begin(), features.end(),
+                     [&position](App::DocumentObject* a, App::DocumentObject* b) {
+                         return position[a] < position[b];
+                     });
+
+    App::DocumentObject* lastObject = target;
     for ( auto feat: features ) {
         if ( feat == target ) continue;
 
@@ -1003,10 +1040,9 @@ void CmdPartDesignMoveFeatureInTree::activated(int iMsg)
         // TODO: if tip was moved the new position of tip is quite undetermined (2015-08-07, Fat-Zer)
         // TODO: warn the user if we are moving an object to some place before the object's link (2015-08-07, Fat-Zer)
         FCMD_OBJ_CMD(body,"removeObject(" << getObjectCmd(feat) << ")");
-        FCMD_OBJ_CMD(body,"insertObject(" << getObjectCmd(feat) << ","<< getObjectCmd(target) << ", True)");
+        FCMD_OBJ_CMD(body,"insertObject(" << getObjectCmd(feat) << ","<< getObjectCmd(lastObject) << ", True)");
 
-        if (!lastObject)
-            lastObject = feat;
+        lastObject = feat;
     }
 
     // Dependency order check.
@@ -1052,7 +1088,7 @@ void CmdPartDesignMoveFeatureInTree::activated(int iMsg)
     // If the selected objects have been moved after the current tip then ask the
     // user if they want the last object to be the new tip.
     // Only do this for features that can hold a tip (not for e.g. datums)
-    if ( lastObject && body->Tip.getValue() == target
+    if ( lastObject && lastObject != target && body->Tip.getValue() == target
         && lastObject->isDerivedFrom(PartDesign::Feature::getClassTypeId()) ) {
         QMessageBox msgBox(Gui::getMainWindow());
         msgBox.setIcon(QMessageBox::Question);
@@ -1071,7 +1107,7 @@ void CmdPartDesignMoveFeatureInTree::activated(int iMsg)
 
 bool CmdPartDesignMoveFeatureInTree::isActive()
 {
-    return hasActiveDocument () && !PartDesignGui::isLegacyWorkflow ( getDocument () );
+    return hasActiveDocument();
 }
 
 

@@ -28,8 +28,7 @@ C++ object of the host widget layer (docs/Sandbox.md 7.12, H0: the
 store behind `FreeCADGui.FormWidgets`), renders the same .ui through
 uic with the C++ Qt view, binds each named child to its object, and
 what the user does in the Qt widgets reaches the guest as state and
-Qt-named signals.  Then Draft's real task_orthoarray.py, exec'd
-unmodified in the guest, constructs, shows and reads its form.
+Qt-named signals.
 
 Needs the GUI: run it through scripts/sandbox-gui-gate.py under Xvfb.
 Skips headless, on a build without the sandbox host, when the image
@@ -361,65 +360,6 @@ class SandboxFormsTest(unittest.TestCase):
         self.assertFalse(Gui.Control.activeDialog())
         self.assertFalse(FW.info(forms[0])["bound"])
 
-    def test_draft_orthoarray_panel(self):
-        """Draft's task_orthoarray.py, unmodified, in the guest."""
-        import FreeCADGui as Gui
-        from PySide import QtWidgets
-        from freecad import widgets
-
-        path = os.path.join(FreeCAD.getResourceDir(), "Mod", "Draft", "drafttaskpanels",
-                            "task_orthoarray.py")
-        if not os.path.exists(path):
-            path = os.path.join(FreeCAD.getHomePath(), "Mod", "Draft", "drafttaskpanels",
-                                "task_orthoarray.py")
-        self.assertTrue(os.path.exists(path), path)
-        with open(path, encoding="utf-8") as f:
-            source = f.read()
-        S = self.S
-        FW = Gui.FormWidgets
-        S.exec(source, "fcx_task_orthoarray")
-        S.resetStats()
-        FW.resetStats()
-        t0 = time.perf_counter()
-        S.exec("import fcx_task_orthoarray as m, FreeCADGui, types\n"
-               "panel = m.TaskPanelOrthoArray()\n"
-               "panel.source_command = types.SimpleNamespace(completed=lambda: None)\n"
-               "FreeCADGui.Control.showDialog(panel)\n", "fcx_orthoprobe")
-        sys.stderr.write("SandboxForms: TaskPanelOrthoArray() + show %.3f s, ops %s, store %s\n"
-                         % (time.perf_counter() - t0, sorted(S.stats()["ops"].items()),
-                            sorted(FW.stats().items())))
-        self.assertTrue(Gui.Control.activeDialog())
-        self.assertEqual(widgets.manager().models, {})
-        w = self.dialog().getDialogContent()[0]
-        self.assertEqual(w.windowTitle(), "Orthogonal Array")
-        # the panel's __init__ wrote its defaults into the form
-        n_x = w.findChild(QtWidgets.QSpinBox, "spinbox_n_X")
-        self.assertEqual(n_x.value(), self.guest("fcx_orthoprobe.panel.n_x", "fcx_orthoprobe"))
-        x_x = w.findChild(QtWidgets.QLineEdit, "input_X_x")
-        self.assertEqual(x_x.property("rawValue"),
-                         self.guest("fcx_orthoprobe.panel.v_x.x", "fcx_orthoprobe"))
-        # the panel reads its form back through Qt's accessors
-        n_x.setValue(5)
-        w.findChild(QtWidgets.QLineEdit, "input_Y_y").setProperty("rawValue", 250.0)
-        self.assertEqual(self.guest("fcx_orthoprobe.panel.get_numbers()", "fcx_orthoprobe")[0], 5)
-        v_x, v_y, v_z = self.guest("fcx_orthoprobe.panel.get_intervals()", "fcx_orthoprobe")
-        self.assertEqual(v_y.y, 250.0)
-        self.assertEqual(v_x.x, self.guest("fcx_orthoprobe.panel.v_x.x", "fcx_orthoprobe"))
-        # its checkbox callbacks run in the guest on a host click
-        fuse = w.findChild(QtWidgets.QCheckBox, "checkbox_fuse")
-        was = self.guest("fcx_orthoprobe.panel.fuse", "fcx_orthoprobe")
-        self.assertEqual(fuse.isChecked(), was)
-        fuse.click()
-        self.assertEqual(self.guest("fcx_orthoprobe.panel.fuse", "fcx_orthoprobe"), not was)
-        self.assertEqual(fuse.isChecked(), not was)
-        # cancel from the host: reject -> finish() -> the command's
-        # completed(), which natively closes the dialog itself (reject
-        # answers None, so the dialog is not auto-closed: the same
-        # False as TaskDialogPython reads natively)
-        self.assertFalse(FW.reject())
-        self.assertTrue(Gui.Control.activeDialog())
-        Gui.Control.closeDialog()
-        self.assertFalse(Gui.Control.activeDialog())
 
     def test_document_principal_is_refused(self):
         with self.assertRaises(Exception) as cm:

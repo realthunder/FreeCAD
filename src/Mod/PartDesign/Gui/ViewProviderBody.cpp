@@ -31,6 +31,7 @@
 # include <QMessageBox>
 #endif
 
+#include <App/Document.h>
 #include <App/Part.h>
 #include <App/Origin.h>
 #include <App/DocumentObserver.h>
@@ -144,7 +145,14 @@ void ViewProviderBody::setupContextMenu(QMenu* menu, QObject* receiver, const ch
         return;
 
     Gui::ActionFunction* func = new Gui::ActionFunction(menu);
-    QAction* act = menu->addAction(tr("Toggle active body"));
+    QAction* act = menu->addAction(tr("Active body"));
+    act->setCheckable(true);
+    auto activeDoc = Gui::Application::Instance->activeDocument();
+    if (!activeDoc)
+        activeDoc = getDocument();
+    auto activeView = activeDoc->setActiveView(this);
+    act->setChecked(activeView
+                    && activeView->getActiveObject<App::DocumentObject*>(PDBODYKEY) == getObject());
     func->trigger(act, [this]() {
         this->doubleClicked();
     });
@@ -531,10 +539,57 @@ void ViewProviderBody::updateData(const App::Property* prop)
     }
 
     PartGui::ViewProviderPart::updateData(prop);
+
+    // As a feature does (ViewProvider::updateData): the Tip's threads,
+    // re-derived only where there are some to state or to take away
+    if (prop == &body->Shape) {
+        auto tip = Base::freecad_dynamic_cast<PartDesign::Feature>(body->Tip.getValue());
+        const bool threads = PartDesignGui::ViewProvider::hasCosmeticThreads(tip);
+        if (threads || impliedThreads) {
+            impliedThreads = threads;
+            updateRenderMaterial();
+        }
+    }
+}
+
+void ViewProviderBody::getImpliedFinishes(std::vector<ImpliedFinish> &finishes) const
+{
+    auto body = Base::freecad_dynamic_cast<PartDesign::Body>(getObject());
+    if (!body)
+        return;
+    auto tip = Base::freecad_dynamic_cast<PartDesign::Feature>(body->Tip.getValue());
+    if (!tip)
+        return;
+    TopoDS_Shape shape;
+    try {
+        shape = getShape().getShape();
+    }
+    catch (const Base::Exception &) {
+        return;
+    }
+    // The body's shape is the Tip's with the Tip's own placement baked
+    // in (Body::execute), i.e. in the body's coordinates already
+    PartDesignGui::ViewProvider::cosmeticThreadFinishes(tip, Base::Placement(), shape, finishes);
+}
+
+void ViewProviderBody::checkColorUpdate()
+{
+    // The body maps its colours from the Tip's shape, so what a remap
+    // writes into them came from the Tip: an echo, never a setting of the
+    // body's to give back. Given back it overwrote the Tip with its own
+    // old colours -- and, while a Transparency was on its way down, with
+    // the old transparency, so the body's Transparency did not stick.
+    Base::StateLocker guard(followingChange);
+    inherited::checkColorUpdate();
 }
 
 void ViewProviderBody::copyColorsfromTip(App::DocumentObject* tip)
 {
+    // Taking the new Tip's colours changes the body's ShapeColor with them,
+    // which is not to be handed back to the Tip as a colour of the body's:
+    // that switched the Tip's MapFaceColor off whenever the two differed in
+    // transparency, and the new feature showed the default colour.
+    Base::StateLocker guard(followingChange);
     // update DiffuseColor
     Gui::ViewProvider* vptip = Gui::Application::Instance->getViewProvider(tip);
     if (vptip && vptip->isDerivedFrom(PartGui::ViewProviderPartExt::getClassTypeId())) {
@@ -543,7 +598,38 @@ void ViewProviderBody::copyColorsfromTip(App::DocumentObject* tip)
     }
 }
 
+void ViewProviderBody::show()
+{
+    inherited::show();
+
+    // A Through body draws its features, so with every one of them hidden
+    // showing the body showed nothing: show the Tip (upstream 089d344343).
+    // Not while a document loads, which restores what the user saved.
+    auto body = Base::freecad_dynamic_cast<PartDesign::Body>(getObject());
+    if (!body || DisplayModeBody.getValue() != 0 || isRestoring()
+            || body->getDocument()->testStatus(App::Document::Restoring))
+        return;
+    auto tip = body->Tip.getValue();
+    if (!tip || tip->Visibility.getValue())
+        return;
+    for (auto feature : body->Group.getValues()) {
+        if (!feature || !feature->Visibility.getValue())
+            continue;
+        auto vp = Gui::Application::Instance->getViewProvider(feature);
+        if (vp && vp->isDerivedFrom(PartDesignGui::ViewProvider::getClassTypeId()))
+            return;
+    }
+    tip->Visibility.setValue(true);
+}
+
 void ViewProviderBody::onChanged(const App::Property* prop) {
+
+    // Hold the colour updates until the whole change is through. Forwarding
+    // a Transparency first switches the Tip's MapTransparency off, and on its
+    // own that ended the update at once: the body remapped from the Tip's
+    // old colours -- its MapTransparency is on -- and its Transparency went
+    // back to the old value before it was handed to the Tip.
+    Gui::ColorUpdater colorUpdater;
 
     if (prop == &DisplayModeBody) {
         auto body = Base::freecad_dynamic_cast<PartDesign::Body>(getObject());
@@ -582,6 +668,13 @@ void ViewProviderBody::onChanged(const App::Property* prop) {
     else
         unifyVisualProperty(prop);
 
+    // The body's own Transparency handling writes its ShapeAppearance, and
+    // from there its ShapeColor, whose alpha is the transparency. Those are
+    // echoes, not settings: forwarded to the Tip, that ShapeColor looked
+    // like a colour set on the body and switched the Tip's MapFaceColor off,
+    // so every later feature showed the default colour. The Tip has the
+    // Transparency already (above), and applies it to its own faces.
+    Base::StateLocker guard(followingChange, prop == &Transparency || followingChange);
     PartGui::ViewProviderPartExt::onChanged(prop);
 }
 
@@ -589,6 +682,12 @@ void ViewProviderBody::onChanged(const App::Property* prop) {
 void ViewProviderBody::unifyVisualProperty(const App::Property* prop) {
 
     if (!pcObject || isRestoring()) {
+        return;
+    }
+
+    // Following a change of its own (see onChanged) or of the Tip's
+    // (copyColorsfromTip): nothing the user set on the body.
+    if (followingChange) {
         return;
     }
 
@@ -738,6 +837,8 @@ bool ViewProviderBody::canDragAndDropObject(App::DocumentObject * obj) const
 
     auto type = obj->getTypeId();
     if (type.isDerivedFrom(Part::Datum::getClassTypeId())   ||
+        type.isDerivedFrom(App::DatumElement::getClassTypeId()) ||
+        type.isDerivedFrom(App::LocalCoordinateSystem::getClassTypeId()) ||
         type.isDerivedFrom(Part::Part2DObject::getClassTypeId()) ||
         type.isDerivedFrom(PartDesign::ShapeBinder::getClassTypeId()) ||
         type.isDerivedFrom(Part::SubShapeBinder::getClassTypeId()))
@@ -763,7 +864,14 @@ bool ViewProviderBody::canDragObject(App::DocumentObject *obj) const
     // position 1 stores full object path to the dropping target.
     // position 0 (default) stores the dragging source, which points to this object.
     auto target = Gui::Selection().getContext(1).getSubObject();
-    if (PartDesign::Body::findBodyOf(target) == body)
+    auto targetBody = PartDesign::Body::findBodyOf(target);
+    if (targetBody == body)
+        return false;
+
+    // A PartDesign feature lives in a body: it may move to another one, not
+    // out to the document or a Part (upstream 288255f074)
+    if (obj->isDerivedFrom<PartDesign::Feature>() && !targetBody
+            && !(target && target->isDerivedFrom<PartDesign::Body>()))
         return false;
 
     if (body->BaseFeature.getValue() == obj)
@@ -786,6 +894,8 @@ std::string ViewProviderBody::dropObjectEx(App::DocumentObject *obj,
 
     auto type = obj->getTypeId();
     if (type.isDerivedFrom(Part::Datum::getClassTypeId())   ||
+        type.isDerivedFrom(App::DatumElement::getClassTypeId()) ||
+        type.isDerivedFrom(App::LocalCoordinateSystem::getClassTypeId()) ||
         type.isDerivedFrom(Part::Part2DObject::getClassTypeId()) ||
         type.isDerivedFrom(PartDesign::ShapeBinder::getClassTypeId()) ||
         type.isDerivedFrom(Part::SubShapeBinder::getClassTypeId()))

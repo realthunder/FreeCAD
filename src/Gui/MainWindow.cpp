@@ -2398,10 +2398,19 @@ void MainWindow::delayedStartup()
 
     // Bring the MCP debug console server back up if it was left enabled. Routed
     // through the command so the Tools menu action, the remembered parameter and
-    // the server itself cannot drift apart.
-    if (App::DocumentParams::getMCPServerAutoStart()) {
-        if (Command* cmd = Application::Instance->commandManager().getCommandByName("Std_MCPServer"))
-            cmd->invoke(1);
+    // the server itself cannot drift apart. FC_MCP_PORT overrides for this
+    // session: a port starts it there without being remembered, 0 keeps it off.
+    if (Command* cmd = Application::Instance->commandManager().getCommandByName("Std_MCPServer")) {
+        if (qEnvironmentVariableIsEmpty("FC_MCP_PORT")) {
+            if (App::DocumentParams::getMCPServerAutoStart())
+                cmd->invoke(1);
+        }
+        else if (qEnvironmentVariableIntValue("FC_MCP_PORT") > 0) {
+            cmd->invoke(2);
+        }
+        else if (Action* action = cmd->getAction()) {
+            action->setChecked(false, true);
+        }
     }
 }
 
@@ -2452,6 +2461,14 @@ void MainWindow::updateActions(bool delay)
 
 void MainWindow::_updateActions()
 {
+    // Not while a document restores. testActive() asks every command, and on
+    // a 17800-object document one pass took ~765 ms; each new object re-arms
+    // this timer, so a load's progress pumps ran it about once a second --
+    // 14 s of MiSTer's 18 s object creation pass. Nothing a command could do
+    // is allowed mid-restore anyway (Document::checkUserEdit). The timer is
+    // left running, so the pass happens on the first tick after the restore.
+    if (App::GetApplication().isRestoring())
+        return;
     if (isVisible() && d->actionUpdateDelay <= 0) {
         FC_LOG("update actions");
         d->activityTimer->stop();

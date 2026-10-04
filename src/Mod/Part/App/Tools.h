@@ -235,6 +235,16 @@ public:
      * \return TopLoc_Location
      */
     static TopLoc_Location fromPlacement(const Base::Placement&);
+    /*!
+     * \brief isConcave
+     * \param face
+     * \param pointOfView
+     * \param direction
+     * \return true if the face, where it is first met looking from pointOfView
+     * along direction, bends back towards the viewer. False for a plane, and
+     * when the face is not met at all.
+     */
+    static bool isConcave(const TopoDS_Face& face, const gp_Pnt& pointOfView, const gp_Dir& direction);
 };
 
 } //namespace Part

@@ -71,7 +71,9 @@ class SandboxProxyImportTest(unittest.TestCase):
         if not FreeCAD.GuiUp:
             self.skipTest("needs the GUI")
         grp = FreeCAD.ParamGet(PARAMS)
-        self._routing = grp.GetBool("Evaluate", False)
+        # the default is ON since 2026-09-16: reading False from an
+        # unset key would write False back and pin routing off
+        self._routing = grp.GetBool("Evaluate", True)
         grp.SetBool("Evaluate", False)
         # a module under the user's Mod directory (a registered root) and
         # one in a temporary directory outside every root, both on sys.path

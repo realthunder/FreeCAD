@@ -25,8 +25,10 @@
 #define PARTGUI_ViewProvider_H
 
 #include <map>
+#include <vector>
 #include <QPixmap>
 
+#include <Base/Placement.h>
 #include <Mod/Part/Gui/ViewProvider.h>
 #include "ViewProviderBody.h"
 #include <Gui/ViewProviderPythonFeature.h>
@@ -54,6 +56,7 @@ public:
     ~ViewProvider() override;
 
     bool doubleClicked() override;
+    App::DocumentObject *getPickedVisibilityTarget() const override;
     void updateData(const App::Property*) override;
     void onChanged(const App::Property* prop) override;
 
@@ -76,6 +79,8 @@ public:
     PyObject* getPyObject() override;
 
     void getExtraIcons(std::vector<std::pair<QByteArray, QPixmap> > &) const override;
+    /// A suppressed feature's tree label is struck out (upstream f4be654473)
+    bool isSuppressed() const override;
     bool iconMouseEvent(QMouseEvent *, const QByteArray &tag) override;
     QString getToolTip(const QByteArray &tag) const override;
 
@@ -96,6 +101,32 @@ public:
     virtual std::vector<App::DocumentObject*> _claimChildren(void) const {return {};}
 
     bool getDetailPath(const char *subname, SoFullPath *path, bool append, SoDetail *&det) const override;
+
+    /// The cosmetic threads of the holes before this feature, on the
+    /// faces of its shape that are still their bores
+    void getImpliedFinishes(std::vector<ImpliedFinish> &finishes) const override;
+
+    /** The cosmetic threads that reach the shape of \a last, as finishes
+     *  of the faces of \a shape that are still their bores
+     *
+     * Every Hole of \a last's body up to and including \a last that
+     * threads its bores without modelling the thread, and every copy of
+     * one a pattern in that range makes. A bore is found by what it IS
+     * rather than by name -- a cylinder (or, tapered, a cone) on the
+     * hole's axis at the hole's radius -- so a bore a later feature cut
+     * in two, or a pocket moved, is still threaded, and nothing is
+     * threaded that is not on that axis.
+     *
+     * \a toLocal takes the body's coordinates to \a shape's own (the
+     * frame it is tessellated in, its location stripped).
+     */
+    static void cosmeticThreadFinishes(const PartDesign::Feature *last,
+                                       const Base::Placement &toLocal,
+                                       const TopoDS_Shape &shape,
+                                       std::vector<ImpliedFinish> &finishes);
+    /// Whether any cosmetic thread reaches \a last at all: the cheap
+    /// question asked before the faces are
+    static bool hasCosmeticThreads(const PartDesign::Feature *last);
 
 protected:
     void setupContextMenu(QMenu* menu, QObject* receiver, const char* member) override;
@@ -123,6 +154,9 @@ protected:
     std::unique_ptr<PartGui::ViewProviderPart> pSuppressedView;
 
     bool autoCorrectingLink = false;
+    /// Whether the render material last stated a thread, so a shape
+    /// that lost its last one still gets the palette cleared
+    bool impliedThreads = false;
 };
 
 using ViewProviderPython = Gui::ViewProviderPythonFeatureT<ViewProvider>;

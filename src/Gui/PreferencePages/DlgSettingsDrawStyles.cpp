@@ -223,6 +223,95 @@ DlgSettingsDrawStyles::DlgSettingsDrawStyles(QWidget* parent)
 
 
     // Auto generated code (Tools/params_utils.py:473)
+    groupDatums = new QGroupBox(this);
+    layout->addWidget(groupDatums);
+    auto layoutHorizDatums = new QHBoxLayout(groupDatums);
+    auto layoutDatums = new QVBoxLayout();
+    layoutHorizDatums->addLayout(layoutDatums);
+    layoutHorizDatums->addStretch();
+
+    // Auto generated code (Tools/params_utils.py:486)
+    layoutRow = new QHBoxLayout();
+
+    // Auto generated code (Tools/params_utils.py:492)
+    layoutDatums->addLayout(layoutRow);
+    DatumScreenSize = new Gui::PrefCheckBox(this);
+    layoutRow->addWidget(DatumScreenSize);
+    DatumScreenSize->setChecked(Gui::ViewParams::defaultDatumScreenSize());
+    DatumScreenSize->setEntryName("DatumScreenSize");
+    DatumScreenSize->setParamGrpPath("View");
+
+    // Auto generated code (Tools/params_utils.py:486)
+    layoutRow = new QHBoxLayout();
+
+    // Auto generated code (Tools/params_utils.py:492)
+    layoutDatums->addLayout(layoutRow);
+    labelDatumScale = new QLabel(this);
+    layoutRow->addWidget(labelDatumScale);
+    DatumScale = new Gui::PrefDoubleSpinBox(this);
+    layoutRow->addWidget(DatumScale);
+    DatumScale->setValue(Gui::ViewParams::defaultDatumScale());
+    DatumScale->setEntryName("DatumScale");
+    DatumScale->setParamGrpPath("View");
+    // Auto generated code (Tools/params_utils.py:1345)
+    DatumScale->setMinimum(1.0);
+    DatumScale->setMaximum(1000.0);
+    DatumScale->setSingleStep(10.0);
+
+    // Auto generated code (Tools/params_utils.py:486)
+    layoutRow = new QHBoxLayout();
+
+    // Auto generated code (Tools/params_utils.py:492)
+    layoutDatums->addLayout(layoutRow);
+    labelDatumPlaneSize = new QLabel(this);
+    layoutRow->addWidget(labelDatumPlaneSize);
+    DatumPlaneSize = new Gui::PrefDoubleSpinBox(this);
+    layoutRow->addWidget(DatumPlaneSize);
+    DatumPlaneSize->setValue(Gui::ViewParams::defaultDatumPlaneSize());
+    DatumPlaneSize->setEntryName("DatumPlaneSize");
+    DatumPlaneSize->setParamGrpPath("View");
+    // Auto generated code (Tools/params_utils.py:1345)
+    DatumPlaneSize->setMinimum(1.0);
+    DatumPlaneSize->setMaximum(1000.0);
+    DatumPlaneSize->setSingleStep(1.0);
+
+    // Auto generated code (Tools/params_utils.py:486)
+    layoutRow = new QHBoxLayout();
+
+    // Auto generated code (Tools/params_utils.py:492)
+    layoutDatums->addLayout(layoutRow);
+    labelDatumLineSize = new QLabel(this);
+    layoutRow->addWidget(labelDatumLineSize);
+    DatumLineSize = new Gui::PrefDoubleSpinBox(this);
+    layoutRow->addWidget(DatumLineSize);
+    DatumLineSize->setValue(Gui::ViewParams::defaultDatumLineSize());
+    DatumLineSize->setEntryName("DatumLineSize");
+    DatumLineSize->setParamGrpPath("View");
+    // Auto generated code (Tools/params_utils.py:1345)
+    DatumLineSize->setMinimum(1.0);
+    DatumLineSize->setMaximum(1000.0);
+    DatumLineSize->setSingleStep(1.0);
+
+    // Auto generated code (Tools/params_utils.py:486)
+    layoutRow = new QHBoxLayout();
+
+    // Auto generated code (Tools/params_utils.py:492)
+    layoutDatums->addLayout(layoutRow);
+    labelDatumTemporaryScaleFactor = new QLabel(this);
+    layoutRow->addWidget(labelDatumTemporaryScaleFactor);
+    DatumTemporaryScaleFactor = new Gui::PrefDoubleSpinBox(this);
+    layoutRow->addWidget(DatumTemporaryScaleFactor);
+    DatumTemporaryScaleFactor->setValue(Gui::ViewParams::defaultDatumTemporaryScaleFactor());
+    DatumTemporaryScaleFactor->setEntryName("DatumTemporaryScaleFactor");
+    DatumTemporaryScaleFactor->setParamGrpPath("View");
+    // Auto generated code (Tools/params_utils.py:1345)
+    DatumTemporaryScaleFactor->setMinimum(1.0);
+    DatumTemporaryScaleFactor->setMaximum(10.0);
+    DatumTemporaryScaleFactor->setSingleStep(0.5);
+    DatumTemporaryScaleFactor->setDecimals(1);
+
+
+    // Auto generated code (Tools/params_utils.py:473)
     groupHiddenLines = new QGroupBox(this);
     layout->addWidget(groupHiddenLines);
     auto layoutHorizHiddenLines = new QHBoxLayout(groupHiddenLines);
@@ -747,6 +836,11 @@ void DlgSettingsDrawStyles::saveSettings()
     SelectionLinePatternScale->onSave();
     SelectionHiddenLineWidth->onSave();
     OutlineThicken->onSave();
+    DatumScreenSize->onSave();
+    DatumScale->onSave();
+    DatumPlaneSize->onSave();
+    DatumLineSize->onSave();
+    DatumTemporaryScaleFactor->onSave();
     HiddenLineSync->onSave();
     HiddenLineFaceColor->onSave();
     HiddenLineOverrideFaceColor->onSave();
@@ -802,6 +896,11 @@ void DlgSettingsDrawStyles::loadSettings()
     SelectionLinePatternScale->onRestore();
     SelectionHiddenLineWidth->onRestore();
     OutlineThicken->onRestore();
+    DatumScreenSize->onRestore();
+    DatumScale->onRestore();
+    DatumPlaneSize->onRestore();
+    DatumLineSize->onRestore();
+    DatumTemporaryScaleFactor->onRestore();
     HiddenLineSync->onRestore();
     HiddenLineFaceColor->onRestore();
     HiddenLineOverrideFaceColor->onRestore();
@@ -897,6 +996,21 @@ void DlgSettingsDrawStyles::retranslateUi()
     OutlineThicken->setToolTip(QApplication::translate("ViewParams", Gui::ViewParams::docOutlineThicken()));
     labelOutlineThicken->setText(QObject::tr("Outline width multiplier"));
     labelOutlineThicken->setToolTip(OutlineThicken->toolTip());
+    groupDatums->setTitle(QObject::tr("Datums"));
+    DatumScreenSize->setToolTip(QApplication::translate("ViewParams", Gui::ViewParams::docDatumScreenSize()));
+    DatumScreenSize->setText(QObject::tr("Constant datum size on screen"));
+    DatumScale->setToolTip(QApplication::translate("ViewParams", Gui::ViewParams::docDatumScale()));
+    labelDatumScale->setText(QObject::tr("Datum scale"));
+    labelDatumScale->setToolTip(DatumScale->toolTip());
+    DatumPlaneSize->setToolTip(QApplication::translate("ViewParams", Gui::ViewParams::docDatumPlaneSize()));
+    labelDatumPlaneSize->setText(QObject::tr("Datum plane size"));
+    labelDatumPlaneSize->setToolTip(DatumPlaneSize->toolTip());
+    DatumLineSize->setToolTip(QApplication::translate("ViewParams", Gui::ViewParams::docDatumLineSize()));
+    labelDatumLineSize->setText(QObject::tr("Datum line size"));
+    labelDatumLineSize->setToolTip(DatumLineSize->toolTip());
+    DatumTemporaryScaleFactor->setToolTip(QApplication::translate("ViewParams", Gui::ViewParams::docDatumTemporaryScaleFactor()));
+    labelDatumTemporaryScaleFactor->setText(QObject::tr("Datum temporary scale"));
+    labelDatumTemporaryScaleFactor->setToolTip(DatumTemporaryScaleFactor->toolTip());
     groupHiddenLines->setTitle(QObject::tr("Hidden Lines"));
     HiddenLineSync->setToolTip(QApplication::translate("ViewParams", Gui::ViewParams::docHiddenLineSync()));
     labelHiddenLineSync->setText(QObject::tr("Synchronize"));
@@ -1022,7 +1136,7 @@ void DlgSettingsDrawStyles::changeEvent(QEvent *e)
 // Auto generated code (Tools/params_utils.py:735)
 #include "moc_DlgSettingsDrawStyles.cpp"
 
-// Auto generated code (Gui/PreferencePages/DlgSettingsDrawStyles.py:133)
+// Auto generated code (Gui/PreferencePages/DlgSettingsDrawStyles.py:141)
 bool DlgSettingsDrawStyles::Active;
 //[[[end]]]
 
@@ -1080,7 +1194,7 @@ import DlgSettingsDrawStyles
 DlgSettingsDrawStyles.define_end()
 ]]]*/
 
-// Auto generated code (Gui/PreferencePages/DlgSettingsDrawStyles.py:139)
+// Auto generated code (Gui/PreferencePages/DlgSettingsDrawStyles.py:147)
 void DlgSettingsDrawStyles::onParamChanged(const char *sReason)
 {
     if (!Active)

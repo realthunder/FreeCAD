@@ -28,6 +28,7 @@
 #include <Gui/TaskView/TaskView.h>
 
 #include <fastsignals/signal.h>
+#include <App/DocumentObserver.h>
 #include "ViewProviderBoolean.h"
 #include "TaskFeatureParameters.h"
 
@@ -86,6 +87,9 @@ private:
     QWidget* proxy;
     std::unique_ptr<Ui_TaskBooleanParameters> ui;
     ViewProviderBoolean *BooleanView;
+    /// The Boolean itself: an undo can delete it, and its view provider,
+    /// while this panel still listens for undo
+    App::DocumentObjectT booleanT;
     fastsignals::scoped_connection undoConn;
     fastsignals::scoped_connection redoConn;
     bool selecting = false;

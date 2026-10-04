@@ -58,6 +58,8 @@ struct AppExport SurfaceFinish
         Brushed,        /**< linear brushed lay */
         Blasted,        /**< isotropic bead or shot blasted */
         Turned,         /**< concentric turning marks */
+        Thread,         /**< right-hand screw thread, see below */
+        ThreadLeft,     /**< left-hand screw thread */
         PatternCount
     };
 
@@ -72,7 +74,22 @@ struct AppExport SurfaceFinish
     uint8_t pattern {None};
     float pitch {0.0F};   /**< mm, feature spacing */
     float depth {0.0F};   /**< mm, peak to valley */
-    float angle {0.0F};   /**< degrees, lay direction in the pattern frame */
+    /** degrees, lay direction in the pattern frame
+     *
+     * A thread has no lay to state -- the helix IS its lay, fixed by the
+     * pitch and the axis -- so for Thread and ThreadLeft this slot holds
+     * the thread's included profile angle instead: 60 for ISO and
+     * Unified, 55 for Whitworth and BSP, 0 meaning 60. Pitch is the
+     * lead of a single-start thread, depth the thread's height from
+     * crest to root.
+     */
+    float angle {0.0F};
+
+    /// Whether the pattern is one of the two screw threads
+    static bool isThread(uint8_t pattern)
+    {
+        return pattern == Thread || pattern == ThreadLeft;
+    }
 
     bool isSet() const { return pattern != None; }
 

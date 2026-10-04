@@ -46,10 +46,45 @@ class TestShapeBinder(unittest.TestCase):
         self.assertIn('Box', self.ShapeBinder.OutList[0].Label)
         self.assertIn('Body001', self.ShapeBinder.InList[0].Label)
 
+    def testPointReference(self):
+        # A datum point binds as a vertex where it is (upstream c5fbbb3830);
+        # the binder was empty
+        body = self.Doc.addObject('PartDesign::Body', 'PointBody')
+        point = [o for o in body.Origin.OriginFeatures if o.TypeId == 'App::Point'][0]
+        binder = body.newObject('PartDesign::ShapeBinder', 'PointBinder')
+        binder.Support = [(point, '')]
+        self.Doc.recompute()
+        self.assertFalse(binder.Shape.isNull())
+        self.assertEqual(len(binder.Shape.Vertexes), 1)
+        self.assertAlmostEqual(binder.Shape.Vertexes[0].Point.Length, 0)
+
     def tearDown(self):
         #closing doc
         FreeCAD.closeDocument("PartDesignTestShapeBinder")
         #print ("omit closing document for debugging")
+
+
+class _Triple:
+    """A feature whose B is computed, 3 * A; its shape is a box B long.
+    At module level, so that a binder's copy of it restores its proxy."""
+
+    def __init__(self, obj):
+        obj.Proxy = self
+        obj.addProperty("App::PropertyLength", "A")
+        obj.addProperty("App::PropertyLength", "B")
+        obj.A = 200
+        obj.setPropertyStatus("A", ["CopyOnChange"])
+        obj.setPropertyStatus("B", ["CopyOnChange", "ReadOnly", "Output"])
+
+    def execute(self, obj):
+        obj.B = 3 * obj.A.Value
+        obj.Shape = Part.makeBox(obj.B.Value, 10, 10)
+
+    def dumps(self):
+        return None
+
+    def loads(self, state):
+        return None
 
 
 class TestSubShapeBinder(unittest.TestCase):
@@ -58,6 +93,50 @@ class TestSubShapeBinder(unittest.TestCase):
 
     def tearDown(self):
         FreeCAD.closeDocument("PartDesignTestSubShapeBinder")
+
+    def testCopyOnChangeCloses(self):
+        """A binder that made a copy on change is closed with its document;
+        it crashed, clearing its link to the copy after deleting the copy."""
+        body = self.Doc.addObject("PartDesign::Body", "Body")
+        box = body.newObject("PartDesign::AdditiveBox", "Box")
+        box.addProperty("App::PropertyLength", "A")
+        box.A = 20
+        box.setExpression("Length", "A")
+        box.setPropertyStatus("A", "CopyOnChange")
+        self.Doc.recompute()
+        binder = self.Doc.addObject("PartDesign::SubShapeBinder", "Binder")
+        binder.Support = [(box, "")]
+        binder.BindCopyOnChange = "Enabled"
+        self.Doc.recompute()
+        binder.A = 30
+        self.Doc.recompute()
+        self.assertAlmostEqual(binder.Shape.BoundBox.XLength, 30)
+        self.assertAlmostEqual(box.Shape.BoundBox.XLength, 20)
+        # and the copy is let go when the binder follows its support again
+        box.A = 25
+        self.Doc.recompute()
+        self.assertAlmostEqual(box.Shape.BoundBox.XLength, 25)
+        # tearDown closes the document
+
+    def testCopyOnChangeComputedComesBack(self):
+        """A computed copy-on-change property -- ReadOnly and Output -- reads
+        what the binder's copy computed, not the support's value (upstream
+        2501296c95, 66e1c0154d)."""
+        feat = self.Doc.addObject("Part::FeaturePython", "Triple")
+        _Triple(feat)
+        self.Doc.recompute()
+        binder = self.Doc.addObject("PartDesign::SubShapeBinder", "Binder")
+        binder.Support = [(feat, "")]
+        binder.BindCopyOnChange = "Enabled"
+        self.Doc.recompute()
+        self.assertAlmostEqual(binder.B.Value, 600)
+        binder.A = 300
+        self.Doc.recompute()
+        self.assertEqual(binder.BindCopyOnChange, "Mutated")
+        self.assertAlmostEqual(binder.Shape.BoundBox.XLength, 900)
+        self.assertAlmostEqual(binder.B.Value, 900)
+        self.assertAlmostEqual(feat.B.Value, 600)
+        self.assertNotIn("Touched", binder.State)
 
     def testOffsetBinder(self):
         # See PR 7445

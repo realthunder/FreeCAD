@@ -68,8 +68,11 @@
 #include "Application.h"
 #include "Document.h"
 #include "MainWindow.h"
+#include "NaviCube.h"
 #include "Renderer/SceneServer.h"
 #include "SceneServeSource.h"
+#include "View3DInventor.h"
+#include "View3DInventorViewer.h"
 
 using namespace Gui;
 
@@ -495,12 +498,13 @@ protected:
     }
 
 private:
-    /// Keep out of the NaviCube's corner: it lives at the corner named
-    /// by the View group's CornerNaviCube (0 top-left, 1 top-right,
-    /// 2 bottom-left, 3 bottom-right — the NaviCube::Corner order), so
-    /// the pill takes the other side. Read on every reposition rather
-    /// than cached, so moving the cube in preferences moves the pill
-    /// on the next roster tick without a handler of its own. The pill
+    /// Keep out of the NaviCube's corner: the active 3D view's cube, or
+    /// with none active the corner named by the View group's
+    /// CornerNaviCube (0 top-left, 1 top-right, 2 bottom-left,
+    /// 3 bottom-right -- the NaviCube::Corner order), so the pill takes
+    /// the other side. Read on every reposition rather than cached, so
+    /// moving the cube moves the pill on the next roster tick without a
+    /// handler of its own. The pill
     /// stays along the top whatever the cube does: a status badge
     /// belongs there, and a cube in a bottom corner leaves both top
     /// corners free anyway.
@@ -509,9 +513,14 @@ private:
         QWidget *parent = parentWidget();
         if (!parent)
             return;
-        const long corner = App::GetApplication()
+        long corner = App::GetApplication()
             .GetParameterGroupByPath("User parameter:BaseApp/Preferences/View")
             ->GetInt("CornerNaviCube", 1);
+        if (auto view = qobject_cast<View3DInventor *>(
+                getMainWindow() ? getMainWindow()->activeWindow() : nullptr)) {
+            if (auto cube = view->getViewer()->getNaviCube())
+                corner = long(cube->getCorner());
+        }
         const bool cubeOnRight = corner == 1 || corner == 3;
         move(cubeOnRight ? 12 : parent->width() - width() - 12, 10);
         raise();

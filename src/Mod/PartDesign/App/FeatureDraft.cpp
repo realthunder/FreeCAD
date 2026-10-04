@@ -47,6 +47,7 @@
 #include <Base/Console.h>
 #include <Base/Exception.h>
 #include <Base/Tools.h>
+#include <Mod/Part/App/Part2DObject.h>
 #include <Mod/Part/App/TopoShape.h>
 
 #include "FeatureDraft.h"
@@ -61,7 +62,7 @@ FC_LOG_LEVEL_INIT("PartDesign", true,true)
 
 PROPERTY_SOURCE(PartDesign::Draft, PartDesign::DressUp)
 
-const App::PropertyAngle::Constraints Draft::floatAngle = { 0.0, 90.0 - Base::toDegrees<double>(Precision::Angular()), 0.1 };
+const App::PropertyAngle::Constraints Draft::floatAngle = { -90.0,90.0 - Base::toDegrees<double>(Precision::Angular()), 0.1 };
 
 Draft::Draft()
 {
@@ -123,9 +124,13 @@ App::DocumentObjectExecReturn *Draft::execute()
     App::DocumentObject* refDirection = PullDirection.getValue();
     if (refDirection) {
         if (refDirection->isDerivedFrom<PartDesign::Line>()) {
-                    PartDesign::Line* line = static_cast<PartDesign::Line*>(refDirection);
-                    Base::Vector3d d = line->getDirection();
-                    pullDirection = gp_Dir(d.x, d.y, d.z);
+            PartDesign::Line* line = static_cast<PartDesign::Line*>(refDirection);
+            Base::Vector3d d = line->getDirection();
+            pullDirection = gp_Dir(d.x, d.y, d.z);
+        } else if (refDirection->isDerivedFrom<App::Line>()) {
+            App::Line* line = static_cast<App::Line*>(refDirection);
+            Base::Vector3d d = line->getDirection();
+            pullDirection = gp_Dir(d.x, d.y, d.z);
         } else if (refDirection->isDerivedFrom<Part::Feature>()) {
             std::vector<std::string> subStrings = PullDirection.getSubValues(true);
             if (subStrings.empty() || subStrings[0].empty())
@@ -213,7 +218,12 @@ App::DocumentObjectExecReturn *Draft::execute()
             Base::Vector3d b = plane->getBasePoint();
             Base::Vector3d n = plane->getNormal();
             neutralPlane = gp_Pln(gp_Pnt(b.x, b.y, b.z), gp_Dir(n.x, n.y, n.z));
-        } else if (refPlane->isDerivedFrom<App::Plane>()) {
+        } else if (refPlane->isDerivedFrom<App::Plane>()
+                   || (refPlane->isDerivedFrom<Part::Part2DObject>()
+                       && (NeutralPlane.getSubValues().empty()
+                           || NeutralPlane.getSubValues().front().empty()))) {
+            // a whole sketch is its plane (upstream 51f4ad7432); an edge of
+            // it goes the way of any shape's below
             neutralPlane = Feature::makePlnFromPlane(refPlane);
         } else if (refPlane->isDerivedFrom<Part::Feature>()) {
             std::vector<std::string> subStrings = NeutralPlane.getSubValues(true);
@@ -269,6 +279,8 @@ App::DocumentObjectExecReturn *Draft::execute()
     bool reversed = Reversed.getValue();
     if (reversed)
         angle *= -1.0;
+
+    computeProps = {pullDirection, neutralPlane};
 
     this->positionByBaseFeature();
     try {

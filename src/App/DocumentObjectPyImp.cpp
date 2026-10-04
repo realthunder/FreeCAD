@@ -247,6 +247,9 @@ Py::List DocumentObjectPy::getState() const
     if (object->testStatus(App::ObjImporting)){
         list.append(Py::String("Importing"));
     }
+    if (object->isFreezed()) {
+        list.append(Py::String("Frozen"));
+    }
     if (uptodate) {
         list.append(Py::String("Up-to-date"));
     }
@@ -1121,6 +1124,17 @@ Py::Boolean DocumentObjectPy::getNoTouch() const {
 
 void DocumentObjectPy::setNoTouch(Py::Boolean value) {
     getDocumentObjectPtr()->setStatus(ObjectStatus::NoTouch,value.isTrue());
+}
+
+Py::Boolean DocumentObjectPy::getFrozen() const {
+    return {getDocumentObjectPtr()->isFreezed()};
+}
+
+void DocumentObjectPy::setFrozen(Py::Boolean value) {
+    if (value.isTrue())
+        getDocumentObjectPtr()->freeze();
+    else
+        getDocumentObjectPtr()->unfreeze();
 }
 
 Py::Dict DocumentObjectPy::getElementReferences() const {

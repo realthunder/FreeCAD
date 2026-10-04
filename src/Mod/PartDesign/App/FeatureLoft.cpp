@@ -36,12 +36,14 @@
 # include <Precision.hxx>
 #endif
 
+#include <algorithm>
 #include <boost/core/ignore_unused.hpp>
 
 #include <App/Document.h>
 #include <App/DocumentObserver.h>
 #include <Base/Exception.h>
 #include <Base/Reader.h>
+#include <Mod/Part/App/FaceMakerCheese.h>
 #include <Mod/Part/App/PartParams.h>
 #include <Mod/Part/App/TopoShapeOpCode.h>
 
@@ -49,6 +51,58 @@
 
 
 using namespace PartDesign;
+
+namespace
+{
+
+// Order a section's closed wires outermost first, so that every section
+// offers its wires in the same order and the loft does not join an outer
+// wire of one section to an inner one of the next (upstream fceab772d2,
+// issue 6130). Wires at the same depth keep their order: that does not
+// decide which wires correspond.
+void sortWiresByNesting(std::vector<Part::TopoShape>& wires)
+{
+    if (wires.size() < 2)
+        return;
+
+    struct WireInfo
+    {
+        Part::TopoShape wire;
+        std::size_t depth {0};
+    };
+
+    std::vector<WireInfo> infos;
+    infos.reserve(wires.size());
+    for (const auto& wire : wires) {
+        if (!wire.isClosed())
+            return;
+        infos.push_back({wire, 0});
+    }
+
+    try {
+        for (std::size_t outer = 0; outer < infos.size(); ++outer) {
+            const auto outerWire = TopoDS::Wire(infos[outer].wire.getShape());
+            for (std::size_t inner = 0; inner < infos.size(); ++inner) {
+                if (outer != inner
+                        && Part::FaceMakerCheese::isInside(
+                            outerWire, TopoDS::Wire(infos[inner].wire.getShape())))
+                    ++infos[inner].depth;
+            }
+        }
+    }
+    catch (const Standard_Failure&) {
+        // Non-planar wires are still valid loft input: keep their order and
+        // let the loft report any real failure
+        return;
+    }
+
+    std::stable_sort(infos.begin(), infos.end(),
+                     [](const WireInfo& a, const WireInfo& b) { return a.depth < b.depth; });
+    for (std::size_t i = 0; i < infos.size(); ++i)
+        wires[i] = std::move(infos[i].wire);
+}
+
+} // anonymous namespace
 
 PROPERTY_SOURCE(PartDesign::Loft, PartDesign::ProfileBased)
 
@@ -92,6 +146,10 @@ Loft::getSectionShape(const char *name,
                       const std::vector<std::string> &subs,
                       size_t expected_size)
 {
+    // An unset Profile or section; the messages below name the object
+    if (!obj)
+        FC_THROWM(Base::ValueError, "No " << name << " specified");
+
     std::vector<TopoShape> shapes;
     if (subs.empty() || std::find(subs.begin(), subs.end(), std::string()) != subs.end()) {
         shapes.push_back(Part::Feature::getTopoShape(obj));
@@ -117,6 +175,7 @@ Loft::getSectionShape(const char *name,
     if (!wires.empty()) {
         if (expected_size && expected_size != wires.size())
             FC_THROWM(Base::CADKernelError, msg);
+        sortWiresByNesting(wires);
         return wires;
     }
     auto vertices = compound.getSubTopoShapes(TopAbs_VERTEX);
@@ -155,7 +214,12 @@ App::DocumentObjectExecReturn *Loft::execute(void)
         auto multisections = Sections.getSubListValues();
         if(multisections.empty())
             return new App::DocumentObjectExecReturn(QT_TRANSLATE_NOOP("Exception", "Loft: At least one section is needed"));
-        
+
+        // Closing needs three profiles. With the profile and one section,
+        // makELoft() closed it back to the first -- A-B-A, a solid of no
+        // volume reported as fine (upstream 0c59bfc718).
+        bool closed = Closed.getValue() && multisections.size() >= 2;
+
         std::vector<std::vector<TopoShape>> wiresections;
         wiresections.reserve(wires.size());
         for(auto& wire : wires)
@@ -175,7 +239,7 @@ App::DocumentObjectExecReturn *Loft::execute(void)
                 for(auto& wire : wires)
                     wire.move(invObjLoc);
                 shapes.push_back(TopoShape(0, hasher).makELoft(
-                            wires, true, Ruled.getValue(), Closed.getValue(), MaxDegree.getValue()));
+                            wires, true, Ruled.getValue(), closed, MaxDegree.getValue()));
             }
         } else {
             //build all shells
@@ -184,7 +248,7 @@ App::DocumentObjectExecReturn *Loft::execute(void)
                 for(auto& wire : wires)
                     wire.move(invObjLoc);
                 shells.push_back(TopoShape(0, hasher).makELoft(
-                            wires, false, Ruled.getValue(), Closed.getValue(), MaxDegree.getValue()));
+                            wires, false, Ruled.getValue(), closed, MaxDegree.getValue()));
             }
 
             //build the top and bottom face, sew the shell and build the final solid
@@ -202,7 +266,25 @@ App::DocumentObjectExecReturn *Loft::execute(void)
                 std::vector<TopoShape> backwires;
                 for(auto& wires : wiresections)
                     backwires.push_back(wires.back());
-                back = TopoShape(0,hasher).makEFace(backwires);
+                // Bullseye wants coplanar wires, which the last section of a
+                // loft between curved faces does not have: fall back to the
+                // other face makers in turn (upstream 9a5d934eab)
+                const char *faceMakers[] = {
+                    "Part::FaceMakerBullseye",
+                    "Part::FaceMakerCheese",
+                    "Part::FaceMakerSimple",
+                    "Part::FaceMakerUnified",
+                };
+                for (std::size_t i = 0; i < std::size(faceMakers); ++i) {
+                    try {
+                        back = TopoShape(0,hasher).makEFace(backwires, nullptr, faceMakers[i]);
+                        break;
+                    }
+                    catch (...) {
+                        if (i + 1 == std::size(faceMakers))
+                            throw;
+                    }
+                }
             }
             
             if (!front.isNull() || !back.isNull()) {

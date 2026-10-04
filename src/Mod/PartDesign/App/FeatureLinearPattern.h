@@ -24,68 +24,29 @@
 #ifndef PARTDESIGN_FeatureLinearPattern_H
 #define PARTDESIGN_FeatureLinearPattern_H
 
-#include <App/PropertyUnits.h>
-#include "FeatureTransformed.h"
+#include "FeaturePattern.h"
 
 namespace PartDesign
 {
-enum class LinearPatternMode {
-    length,
-    offset
-};
 
-class PartDesignExport LinearPattern : public PartDesign::Transformed
+/** A pattern along one or two directions (upstream c334ac5062)
+ *
+ * PatternFeature preset to the linear kind: Occurrences x Occurrences2
+ * translations, a grid over the two directions, the first one the identity
+ * for the untransformed original. Per direction, Mode decides the steps --
+ * "Extent" spreads the occurrences over Length, "Spacing" puts them Offset
+ * apart, or as Spacings and SpacingPattern say.
+ *
+ * A direction is a straight edge, the normal of a planar face, a datum line
+ * or plane, a sketch axis, or a sketch as a whole for its normal. A second
+ * direction with more than one occurrence needs a reference of its own.
+ */
+class PartDesignExport LinearPattern : public PartDesign::PatternFeature
 {
-    PROPERTY_HEADER_WITH_OVERRIDE(PartDesign::LinearPattern);
+    PROPERTY_HEADER_WITH_EXTENSIONS(PartDesign::LinearPattern);
 
 public:
     LinearPattern();
-
-    App::PropertyLinkSub     Direction;
-    App::PropertyBool        Reversed;
-    App::PropertyEnumeration Mode;
-    App::PropertyLength      Length;
-    App::PropertyLength      Offset;
-    App::PropertyIntegerConstraint Occurrences;
-
-   /** @name methods override feature */
-    //@{
-    short mustExecute() const override;
-
-    /// returns the type name of the view provider
-    const char* getViewProviderName() const override {
-        return "PartDesignGui::ViewProviderLinearPattern";
-    }
-    //@}
-
-    /** Create transformations
-      * Returns a list of (Occurrences - 1) transformations since the first, untransformed instance
-      * is not counted. 
-      * 
-      * Depending on Mode selection list will be constructed differently:
-      * 1. For "Overall Length" each transformation will move the shape it is applied to by the distance
-      *    (Length / (Occurrences - 1)) so that the transformations will cover the total Length.
-      * 2. For "Spacing" each transformation will move the shape by the distance explicitly given in 
-      *    the Offset parameter.
-      * 
-      * If Direction contains a feature and a face name, then the transformation direction will be
-      *   the normal of the given face, which must be planar. If it contains an edge name, then the
-      *   transformation direction will be parallel to the given edge, which must be linear
-      * 
-      * If Reversed is true, the direction of transformation will be opposite
-      */
-    std::list<gp_Trsf> getTransformations(const std::vector<Part::TopoShape> &) override;
-
-protected:
-    void handleChangedPropertyType(Base::XMLReader& reader, const char* TypeName, App::Property* prop) override;
-    void onChanged(const App::Property* prop) override;
-
-    static const App::PropertyIntegerConstraint::Constraints intOccurrences;
-
-private:
-    static const char* ModeEnums[];
-
-    void setReadWriteStatusForMode(LinearPatternMode mode);
 };
 
 } //namespace PartDesign

@@ -1600,6 +1600,20 @@ node and with it the projection frames, and the once-only
 in the same session shaded triplanarly in both engines (fixed:
 the flag resets with the node).
 
+**Screw threads (2026-09-26).** `Thread` and `ThreadLeft` build their
+height in-graph from math nodes rather than a baked table: the helix
+phase `z / pitch - hand * theta / 2 pi` about the axis (the palette
+entry's extent when it states one, else the face's radial frame, else
+no thread), `theta` off the object-space normal in a frame fixed by the
+axis alone -- as `fcFinishThread` has it -- and the truncated V across
+it, times the runout ramps at the band's ends. The raster shader's
+footprint filter and parallax march are left out: the path tracer
+supersamples the one, and the Bump node's slopes stand where the march
+found flanks. What bump mapping cannot give is the flanks occluding
+each other, so a Cycles thread reads shallower than the raster's at a
+grazing view; true displacement would, at the cost of subdividing the
+bore.
+
 
 ### 6.7 Per-face palettes (phase 6 item 15, phase A, built 2026-08-29)
 

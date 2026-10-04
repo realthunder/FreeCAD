@@ -25,13 +25,18 @@
 #ifndef PARTGUI_ViewProviderBoolean_H
 #define PARTGUI_ViewProviderBoolean_H
 
-#include "ViewProvider.h"
+#include "ViewProviderAddSub.h"
 #include <Gui/ViewProviderGeoFeatureGroupExtension.h>
 
 
 namespace PartDesignGui {
 
-class PartDesignGuiExport ViewProviderBoolean : public ViewProvider,
+/** A Boolean previews as the add/sub features do: while it is edited the
+ *  boolean waits, and the base feature is drawn with the tools over it in
+ *  the colour of the operation (Fuse additive, Cut subtractive, Common
+ *  intersecting).
+ */
+class PartDesignGuiExport ViewProviderBoolean : public ViewProviderAddSub,
                                                 public Gui::ViewProviderGeoFeatureGroupExtension
 {
     PROPERTY_HEADER_WITH_EXTENSIONS(PartDesignGui::ViewProviderBoolean);
@@ -48,12 +53,19 @@ public:
     void setupContextMenu(QMenu*, QObject*, const char*) override;
 
     void attach(App::DocumentObject*) override;
+    const char* getDefaultDisplayMode() const override;
     void onChanged(const App::Property* prop) override;
+    void updateData(const App::Property*) override;
+    void checkAddSubColor() override;
 
     void extensionModeSwitchChange() override;
+    /// The tools the Boolean owns: a reference is drawn where it is, not
+    /// in the Boolean's frame
+    std::vector<App::DocumentObject*> claimChildren3D() const override;
 
 protected:
     TaskDlgFeatureParameters *getEditDialog() override;
+    const char *getPreviewShapeName() const override { return "ToolShape"; }
     
     static const char* DisplayEnum[];
 

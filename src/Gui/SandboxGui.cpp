@@ -157,8 +157,7 @@ class GuestWorkbench(FreeCADGui.Workbench):
         the report view with the guest's traceback, not the modal
         "Workbench failure" a native handler's raise ends in: a guest
         workbench comes up with what it registered before the raise
-        (docs/Sandbox.md 7.9, G2b -- the InitGui runner's InitGui.py
-        failures are logged the same way natively)."""
+        (docs/Sandbox.md 7.9, G2b)."""
         try:
             getattr(self._standin, name)()
         except Exception as exc:
@@ -1624,8 +1623,27 @@ Reply runCommandByName(const json& a)
     if (!a.is_array() || a.empty() || !a[0].is_string())
         return replyErr("ProtocolError", "gui.cmd.run: [name, index]");
     int idx = a.size() > 1 && a[1].is_number() ? a[1].get<int>() : 0;
-    Application::Instance->commandManager().runCommandByName(
-        a[0].get_ref<const std::string&>().c_str(), idx);
+    // A host command that THROWS has to come back as a reply: the plain
+    // return below says ok(true), so a refusal that does not propagate
+    // tells the guest the command ran.  Nothing made a Std command throw
+    // here until the file and code chokepoints did (F1, docs/Sandbox.md
+    // 7.29).  What wedged the guest was not this path: Command::_invoke
+    // caught the throw and asked in a modal before it ever reached here
+    // (7.30).  Note a modal is not itself a fault -- Std_Open's picker
+    // runs in a nested loop under this same op by design.
+    try {
+        Application::Instance->commandManager().runCommandByName(
+            a[0].get_ref<const std::string&>().c_str(), idx);
+    }
+    catch (const App::ExpressionSecurity::PermissionNeededException& e) {
+        return replyErr("PermissionError", e.what());
+    }
+    catch (const Base::Exception& e) {
+        return replyErr("RuntimeError", e.what());
+    }
+    catch (const std::exception& e) {
+        return replyErr("RuntimeError", e.what());
+    }
     return replyOk(true);
 }
 
@@ -1963,7 +1981,7 @@ Reply dialogColor(const json& a)
 
 Reply guiOp(HandleTable& table, const Reply& requestCbor)
 {
-    const json req = json::from_cbor(requestCbor);
+    const json req = FcxWire::fromCbor(requestCbor);
     const std::string op = req.value("op", "");
     if (!Application::Instance)
         return replyErr("RuntimeError", "no GUI application");
@@ -2086,35 +2104,14 @@ void Gui::SandboxGui::registerOps()
         return guestCommands().count(name.toStdString()) > 0;
     });
     // A fresh guest has none of the stand-ins the previous one
-    // registered: the InitGui runner (FreeCADGuiInit.py, docs/Sandbox.md
-    // 7.9 G2b) re-runs the InitGui.py's it ran in the guest.  Queued on
-    // the event loop rather than run from the listener, so it never
-    // nests in the evaluation that booted the guest.
-    App::ExpressionSandbox::ImageHost::instance().addBootListener([](int boot) {
+    // registered, so what the old guest left behind is dropped here.
+    // (The InitGui-in-guest runner that used to re-run its InitGui.py's
+    // was removed with Proxy routing, docs/Sandbox.md 7.31.)
+    App::ExpressionSandbox::ImageHost::instance().addBootListener([](int) {
         // the previous guest's selection observers point at nothing now
         dropSelectionObservers();
         dropTimers();
         dropManipulators();
-        QTimer::singleShot(0, [boot]() {
-            if (!Application::Instance)
-                return;
-            Base::PyGILStateLocker lock;
-            PyObject* mod = PyImport_ImportModule("FreeCADGui");
-            PyObject* fn = mod ? PyObject_GetAttrString(mod, "_onGuestBoot") : nullptr;
-            Py_XDECREF(mod);
-            if (!fn) {
-                PyErr_Clear();
-                return;
-            }
-            PyObject* r = PyObject_CallFunction(fn, "i", boot);
-            Py_DECREF(fn);
-            if (!r) {
-                Base::PyException e;
-                Base::Console().Error("sandbox: FreeCADGui._onGuestBoot(%d) failed: %s\n",
-                                      boot, e.what());
-            }
-            Py_XDECREF(r);
-        });
     });
 }
 

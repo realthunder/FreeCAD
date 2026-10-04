@@ -68,6 +68,7 @@
 #include <App/Document.h>
 #include <App/DocumentObjectPy.h>
 #include <App/DocumentParams.h>
+#include <App/ExpressionSecurityRuntime.h>
 #include <Base/Console.h>
 #include <Base/Interpreter.h>
 #include <Base/Exception.h>
@@ -108,6 +109,7 @@
 #include "LinkViewPy.h"
 #include "InputHintPy.h"
 #include "LiveViewInteraction.h"
+#include "DlgDocumentPermissions.h"
 #include "MainWindow.h"
 #include "Macro.h"
 #include "MDIViewWithCamera.h"
@@ -155,6 +157,7 @@
 #include "ViewProviderInventorObject.h"
 #include "ViewProviderLine.h"
 #include "ViewProviderLink.h"
+#include "ViewProviderLinkArray.h"
 #include "ViewProviderLinkPy.h"
 #include "ViewProviderMaterialObject.h"
 #include "ViewProviderMeasureDistance.h"
@@ -168,6 +171,7 @@
 #include "ViewProviderPart.h"
 #include "ViewProviderFeaturePython.h"
 #include "ViewProviderTextDocument.h"
+#include "ViewProviderVarSet.h"
 #include "ViewProviderSavedView.h"
 #include "ViewProviderSavedViewPy.h"
 
@@ -754,6 +758,14 @@ Application::~Application()
 
 void Application::open(const char* FileName, const char* Module)
 {
+    // Reading a host file by path is fs.read (F1, docs/Sandbox.md 7.29).
+    // Every Std file command, drag-and-drop, Std_RecentFiles and
+    // Gui.open land here; an FCStd goes on to the loader's own gate,
+    // while a Module import (importIFC.insert and friends) reads the
+    // file itself, so this is the only place that sees it.
+    App::ExpressionSecurity::checkHostPath(App::ExpressionSecurity::Permission::FsRead,
+                                           FileName ? FileName : "");
+
     WaitCursor wc;
     wc.setIgnoreEvents(WaitCursor::NoEvents);
     Base::FileInfo File(FileName);
@@ -825,6 +837,10 @@ void Application::open(const char* FileName, const char* Module)
 
 void Application::importFrom(const char* FileName, const char* DocName, const char* Module)
 {
+    // an import reads a host file: fs.read (F1, docs/Sandbox.md 7.29)
+    App::ExpressionSecurity::checkHostPath(App::ExpressionSecurity::Permission::FsRead,
+                                           FileName ? FileName : "");
+
     WaitCursor wc;
     wc.setIgnoreEvents(WaitCursor::NoEvents);
     Base::FileInfo File(FileName);
@@ -951,6 +967,10 @@ void Application::importFrom(const char* FileName, const char* DocName, const ch
 
 void Application::exportTo(const char* FileName, const char* DocName, const char* Module)
 {
+    // an export writes a host file: fs.write (F1, docs/Sandbox.md 7.29)
+    App::ExpressionSecurity::checkHostPath(App::ExpressionSecurity::Permission::FsWrite,
+                                           FileName ? FileName : "");
+
     WaitCursor wc;
     wc.setIgnoreEvents(WaitCursor::NoEvents);
     Base::FileInfo File(FileName);
@@ -2505,10 +2525,12 @@ void Application::initTypes()
     Gui::ViewProviderMaterialObject             ::init();
     Gui::ViewProviderMaterialObjectPython       ::init();
     Gui::ViewProviderTextDocument               ::init();
+    Gui::ViewProviderVarSet                     ::init();
     Gui::ViewProviderLinkObserver               ::init();
     Gui::LinkView                               ::init();
     Gui::ViewProviderLink                       ::init();
     Gui::ViewProviderLinkPython                 ::init();
+    Gui::ViewProviderLinkArray                  ::init();
     // ViewProviderShaderBinding derives ViewProviderLink -- init after it
     Gui::ViewProviderShaderProgram              ::init();
     Gui::ViewProviderShaderProgramPython        ::init();

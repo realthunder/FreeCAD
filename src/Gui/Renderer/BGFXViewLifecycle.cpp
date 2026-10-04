@@ -1138,6 +1138,10 @@ void BGFXView::init(bool keepShared)
     // must match the shader's FC_FINISH_PALETTE).
     ensureUniform(u_finishParams, "u_finishParams", bgfx::UniformType::Vec4,
                   Render::MaxFinishPalette);
+    // Where each of those entries lies, when the face's frame cannot
+    // say: a screw thread's axis and the band of it the thread covers.
+    ensureUniform(u_finishExtent, "u_finishExtent", bgfx::UniformType::Vec4,
+                  Render::MaxFinishPalette);
     // The projection frames that finish is laid out in: three vec4 per
     // frame, entry 0 the draw's own. Kind 0 is the unframed frame --
     // the triplanar projection that predates these -- so a zero upload
@@ -2142,9 +2146,15 @@ void BGFXView::noteReadbackFrame(uint32_t frameNum)
             slot.queuedFrame = frameNum;
 }
 
-uint32_t BGFXView::syncReadback(uint32_t frameNum)
+uint32_t BGFXView::syncReadback(uint32_t frameNum, bool capture)
 {
-    if (!readbackSync())
+    // A capture cannot trail. The screen redraws the previous image and
+    // catches up a frame later; renderOffscreen() is read once, right
+    // after this frame, so a pipelined capture IS the previous frame.
+    // On Direct3D 11 -- the Windows default, where the composite is
+    // always the readback -- every material icon came out one request
+    // late, the first blank, even through the grab's own second render.
+    if (!capture && !readbackSync())
         return frameNum;
     uint32_t want = 0;
     for (const auto &slot : readbackSlots)

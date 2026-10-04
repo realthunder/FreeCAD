@@ -23,13 +23,15 @@
 #ifndef GUI_TASKVIEW_TaskRevolutionParameters_H
 #define GUI_TASKVIEW_TaskRevolutionParameters_H
 
-#include <Mod/PartDesign/App/FeatureRevolution.h>
-#include <Mod/PartDesign/App/FeatureGroove.h>
+#include <Mod/PartDesign/App/FeatureRevolved.h>
+#include <Gui/Inventor/Draggers/Gizmo.h>
+
 #include "TaskSketchBasedParameters.h"
 #include "ViewProviderRevolution.h"
 
 
 class Ui_TaskRevolutionParameters;
+class QComboBox;
 
 namespace App {
 class Property;
@@ -40,6 +42,8 @@ class ViewProvider;
 }
 
 namespace PartDesignGui {
+
+class LinkSubWidget;
 
 class TaskRevolutionParameters : public TaskSketchBasedParameters
 {
@@ -65,50 +69,56 @@ private Q_SLOTS:
     void onAngleChanged(double);
     void onAngle2Changed(double);
     void onAxisChanged(int);
-    void onMidplane(bool);
     void onReversed(bool);
+    void onProjectAxisChanged(bool);
     void onModeChanged(int);
-    void onButtonFace(const bool pressed = true);
-    void onFaceName(const QString& text);
+    void onMode2Changed(int);
+    void onSideTypeChanged(int);
+    void onStartModeChanged(int);
+    void onStartOffsetChanged(double);
 
 protected:
     void onSelectionModeChanged(SelectionMode) override;
     void _onSelectionChanged(const Gui::SelectionChanges& msg) override;
     void changeEvent(QEvent *e) override;
-    bool updateView() const;
     void getReferenceAxis(App::DocumentObject *&obj, std::vector<std::string> &sub) const;
-    double getAngle() const;
-    bool getMidplane() const;
-    bool getReversed() const;
-    QString getFaceName() const;
     void onAxisButton(bool checked);
-    void setCheckboxes(PartDesign::Revolution::RevolMethod mode);
 
     bool eventFilter(QObject *o, QEvent *ev) override;
 
     void refresh() override;
-
-    //mirrors of revolution's or groove's properties
-    //should have been done by inheriting revolution and groove from common class...
-    App::PropertyAngle* propAngle;
-    App::PropertyAngle* propAngle2;
-    App::PropertyBool* propReversed;
-    App::PropertyBool* propMidPlane;
-    App::PropertyLinkSub* propReferenceAxis;
-    App::PropertyLinkSub* propUpToFace;
+    void finishedRecomputeFeature() override;
 
 private:
+    PartDesign::Revolved* getRevolved() const;
     void connectSignals();
     void updateUI();
-    void translateModeList(int index);
-    // TODO: This is common with extrude. Maybe send to superclass.
-    void translateFaceName();
-    void clearFaceName();
+    /// Show the rows the side type and the types use, and pick an up-to
+    /// face that is wanted and missing
+    void setCheckboxes();
+    void updateStartUI();
+    /// One side's type list: the Type values but TwoAngles, which is two sides
+    void translateModeList(QComboBox *combo, int index);
+    LinkSubWidget *makeUpToWidget(QWidget *holder, App::PropertyLinkSub &prop,
+                                  SelectionMode mode);
 
 private:
     std::unique_ptr<Ui_TaskRevolutionParameters> ui;
     QWidget *proxy;
     bool isGroove;
+
+    /// The up-to faces, one per side, and the start reference
+    LinkSubWidget *upToWidget = nullptr;
+    LinkSubWidget *upToWidget2 = nullptr;
+    LinkSubWidget *startWidget = nullptr;
+
+    double defaultGizmoMultFactor = 1.0;
+    std::unique_ptr<Gui::GizmoContainer> gizmoContainer;
+    Gui::RadialGizmo* rotationGizmo = nullptr;
+    Gui::RadialGizmo* rotationGizmo2 = nullptr;
+    Gui::RotationGizmo* startOffsetGizmo = nullptr;
+    void setupGizmos(ViewProvider* vp);
+    void setGizmoPositions();
 
     /**
      * @brief axesInList is the list of links corresponding to axis combo; must

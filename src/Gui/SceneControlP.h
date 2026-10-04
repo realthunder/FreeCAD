@@ -27,6 +27,7 @@
 // docs/ThinClient.md sec 4.2 and the request plumbing around it. Not
 // installed, not exported.
 
+#include <cstdint>
 #include <string>
 
 #include <QJsonArray>
@@ -42,6 +43,8 @@ class PropertyContainer;
 
 namespace Gui {
 class Command;
+class Document;
+class ViewProvider;
 
 namespace SceneControlDetail {
 
@@ -81,6 +84,14 @@ bool isBrowserSafeCommand(const QString &name);
 /// owning Action's. Empty when \a group is no group, or the member is a
 /// separator or out of range.
 QString groupMemberCommand(Command *group, int index);
+
+/// Enter \a vp's edit mode in \a client's view, under the room rules the
+/// edit op applies: refused without the client's mirror on a served
+/// document, the room's selection cleared, setEdit under the client's
+/// ViewerScope. The reply is the op's error, or {"id", "ok": true}. A
+/// browser context menu's edit entry runs here too (SceneContextMenu.cpp).
+QJsonObject enterClientEdit(const QJsonValue &id, Document *gdoc, ViewProvider *vp,
+                            int mode, const QString &subname, uint64_t client);
 
 QJsonObject errorReply(const QJsonValue &id, const char *code, const QString &message = QString());
 

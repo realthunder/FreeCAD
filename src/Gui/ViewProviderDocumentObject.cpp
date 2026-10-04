@@ -445,6 +445,7 @@ void ViewProviderDocumentObject::addDefaultAction(QMenu* menu, const QString& te
 {
     QAction* act = menu->addAction(text);
     act->setData(QVariant((int)ViewProvider::Default));
+    act->setProperty(EditEntryProperty, true);
     auto func = new Gui::ActionFunction(menu);
     func->trigger(act, [this](){
         this->startDefaultEditMode();

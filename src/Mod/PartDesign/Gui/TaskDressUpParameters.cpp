@@ -148,7 +148,7 @@ void TaskDressUpParameters::setup(QLabel *label, QTreeWidget *widget, QCheckBox 
     if(!deleteAction) {
         // Create context menu
         deleteAction = new QAction(tr("Remove"), this);
-        deleteAction->setShortcut(QKeySequence::Delete);
+        deleteAction->setShortcut(Gui::QtTools::deleteKeySequence());
 #if QT_VERSION >= QT_VERSION_CHECK(5, 10, 0)
         // display shortcut behind the context menu entry
         deleteAction->setShortcutVisibleInContextMenu(true);

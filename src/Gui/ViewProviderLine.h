@@ -27,6 +27,9 @@
 
 #include "ViewProviderDatum.h"
 
+class SoCoordinate3;
+class SoTranslation;
+
 namespace Gui
 {
 
@@ -38,6 +41,13 @@ public:
     ~ViewProviderLine() override;
 
     void attach ( App::DocumentObject * ) override;
+
+protected:
+    void updateDatumSize() override;
+
+private:
+    SoCoordinate3 *pCoords = nullptr;
+    SoTranslation *pTextTranslation = nullptr;
 };
 
 } //namespace Gui

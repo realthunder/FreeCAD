@@ -29,6 +29,7 @@
 #include <Mod/Part/App/Part2DObject.h>
 #include "FeatureAddSub.h"
 
+class gp_Ax1;
 class gp_Dir;
 class gp_Lin;
 class TopoDS_Face;
@@ -59,6 +60,8 @@ public:
     App::PropertyBool    Midplane;
     /// Face to extrude up to
     App::PropertyLinkSub UpToFace;
+    /// Faces or shapes to extrude up to (upstream 309dd6e30d)
+    App::PropertyLinkSubList UpToShape;
     /// Force claim linked profile as children
     App::PropertyBool    ClaimChildren;
 
@@ -147,8 +150,38 @@ public:
     // calculate the through all length
     double getThroughAllLength() const;
 
+    void onBaseFeatureRerouted(App::DocumentObject* oldBase,
+                               App::DocumentObject* newBase) override;
+
+    /// The start of a feature that can begin off its profile's plane:
+    /// "Profile plane", "Offset" (along the feature) or "Reference" (a face,
+    /// plane or sketch, plus the offset); upstream f394f1b669
+    static const char* StartTypesEnums[];
+
 protected:
     void remapSupportShape(const TopoDS_Shape&);
+
+    /** How far along  direction the profile moves to start at  reference,
+     * plus  offset. A planar reference is met where the line through the
+     * profile's centre crosses its plane, anywhere; any other face must be
+     * cut by that line, ahead or behind.  invObjLoc takes the reference
+     * into the frame the profile is in.
+     */
+    double getStartReferenceOffset(const TopoShape& profileShape,
+                                   const App::PropertyLinkSub& reference,
+                                   const gp_Dir& direction,
+                                   double offset,
+                                   const TopLoc_Location& invObjLoc) const;
+    /** The shape of a start reference, in the frame  invObjLoc takes it
+     * into: a datum plane or a sketch is its placement's plane, anything
+     * else the face (or the object's faces) it names
+     */
+    static TopoShape getStartReferenceShape(const App::PropertyLinkSub& reference,
+                                            const TopLoc_Location& invObjLoc);
+    /// The profile moved  offset along  direction
+    static TopoShape moveProfileToStart(const TopoShape& profileShape,
+                                        const gp_Dir& direction,
+                                        double offset);
 
     bool shouldApplyPlacement() override;
 
@@ -156,13 +189,33 @@ protected:
     static void getUpToFaceFromLinkSub(TopoShape& upToFace,
                                        const App::PropertyLinkSub& refFace);
 
+    /** The faces of a LinkSubList to extrude up to, one or a compound of
+     * them; a whole object gives all its faces. Returns the face count.
+     */
+    static int getUpToShapeFromLinkSubList(TopoShape& upToShape,
+                                           const App::PropertyLinkSubList& refShape);
+
     /// Find a valid face to extrude up to
     static void getUpToFace(TopoShape& upToFace,
                             const TopoShape& support,
-                            const TopoShape& supportface,
                             const TopoShape& sketchshape,
                             const std::string& method,
                             gp_Dir& dir);
+
+    /// Find a valid face to revolve up to (upstream 80664a0d30)
+    static void getUpToFace(TopoShape& upToFace,
+                            const TopoShape& support,
+                            const TopoShape& sketchshape,
+                            const std::string& method,
+                            const gp_Ax1& axis);
+
+    /** Two sides combined as upstream does (a346c266e7): their union less
+     * what they share, so that a side running back into the other cancels
+     * it. One side is returned as it is.
+     */
+    static TopoShape xorSides(const std::vector<TopoShape>& sides,
+                              App::StringHasherRef hasher,
+                              const char* op);
 
     /// Add an offset to the face
     static void addOffsetToFace(TopoShape& upToFace,

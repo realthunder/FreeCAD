@@ -22,8 +22,12 @@
 #include <algorithm>
 #include <chrono>
 #include <cstdio>
+#include <chrono>
 #include <cstdint>
+#include <cstdlib>
 #include <cstring>
+#include <filesystem>
+#include <fstream>
 #include <memory>
 #include <functional>
 #include <limits>
@@ -409,6 +413,19 @@ protected:
     static void SetUpTestSuite()
     {
         auto& server = Render::SceneStreamServer::instance();
+        // A bundle directory before the first request: serveViewerFile
+        // reads FC_BGFX_VIEWER_BUILD once, into a function static.
+        const auto stamp = std::chrono::steady_clock::now().time_since_epoch().count();
+        bundle = std::filesystem::temp_directory_path()
+            / ("fcx-wire-bundle-" + std::to_string(stamp));
+        std::filesystem::create_directories(bundle / "web");
+        std::ofstream(bundle / "web" / "coi.html") << "<!doctype html><title>x</title>";
+        std::ofstream(bundle / "web" / "coi.js") << "export const x = 1;\n";
+#ifdef _WIN32
+        _putenv_s("FC_BGFX_VIEWER_BUILD", bundle.string().c_str());
+#else
+        ::setenv("FC_BGFX_VIEWER_BUILD", bundle.string().c_str(), 1);
+#endif
         // The environment must not gate this run: FC_SERVE_TOKEN in the
         // user's shell would turn every open-door case into a 403.
         server.setToken({});
@@ -423,16 +440,24 @@ protected:
         session = server.sessionId();
     }
 
+    static void TearDownTestSuite()
+    {
+        std::error_code ec;
+        std::filesystem::remove_all(bundle, ec);
+    }
+
     static int port;
     static std::vector<uint8_t> payload;
     static uint64_t version;
     static uint64_t session;
+    static std::filesystem::path bundle;
 };
 
 int SceneServerWire::port = 0;
 std::vector<uint8_t> SceneServerWire::payload;
 uint64_t SceneServerWire::version = 0;
 uint64_t SceneServerWire::session = 0;
+std::filesystem::path SceneServerWire::bundle;
 
 }  // namespace
 
@@ -460,6 +485,29 @@ TEST_F(SceneServerWire, httpSceneRoute)
     r = httpRequest(port, http::verb::get, "/nothing-here");
     ASSERT_TRUE(r.ok);
     EXPECT_EQ(r.status, 404u);
+}
+
+/// A served page is cross-origin isolated, which is what gives it a
+/// SharedArrayBuffer -- how the Python console runs its guest in a worker
+/// where there is no JSPI (docs/Sandbox.md 7.20 C6, Safari).  Its
+/// subresources are this same origin and carry nothing of their own.
+TEST_F(SceneServerWire, servedPageIsCrossOriginIsolated)
+{
+    HttpReply r = httpRequest(port, http::verb::get, "/web/coi.html");
+    ASSERT_TRUE(r.ok);
+    ASSERT_EQ(r.status, 200u);
+    EXPECT_EQ(r.res["Cross-Origin-Opener-Policy"], "same-origin");
+    EXPECT_EQ(r.res["Cross-Origin-Embedder-Policy"], "require-corp");
+
+    // A dedicated worker's own script must assert the embedder policy or
+    // the worker does not load on an isolated page -- which is how the
+    // console's guest is loaded.
+    r = httpRequest(port, http::verb::get, "/web/coi.js");
+    ASSERT_TRUE(r.ok);
+    ASSERT_EQ(r.status, 200u);
+    EXPECT_EQ(r.res["Cross-Origin-Embedder-Policy"], "require-corp");
+    EXPECT_EQ(r.res["Cross-Origin-Opener-Policy"], "")
+        << "the opener policy is the document's alone";
 }
 
 TEST_F(SceneServerWire, httpBlobRoutes)

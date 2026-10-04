@@ -56,23 +56,18 @@ namespace
 // against
 const char* const Marker = "ShaderGraphOf";
 
-std::string readText(const std::string& path)
-{
-    Base::ifstream in(Base::FileInfo(path), std::ios::in | std::ios::binary);
-    if (!in) {
-        return {};
-    }
-    std::ostringstream buffer;
-    buffer << in.rdbuf();
-    return buffer.str();
-}
-
 // The graph text a manifest names, out of the store; empty while any of
 // it is not there
 std::string graphText(App::FileBlobManager& manager, const App::MaterialXDocument& manifest)
 {
     auto blob = manager.find(manifest.documentHash());
-    return blob ? readText(blob->path()) : std::string();
+    std::string text;
+    if (blob) {
+        // The bytes, so a graph restored into the archive copy is not written
+        // out to a file just to be read back.
+        blob->read(text);
+    }
+    return text;
 }
 
 bool targets(const App::ShaderBinding* binding, const App::DocumentObject* owner)

@@ -46,6 +46,25 @@
 #include "MainWindow.h"
 #include "ProgressDialog.h"
 #include "WaitCursor.h"
+#include "RenderTiming.h"
+
+namespace {
+
+/// qApp->processEvents(), charged to RenderTiming::loadPumps(): the paints and
+/// timers a blocking sequence lets through belong to the cost of the operation
+/// that runs it, and a load that pumps is otherwise indistinguishable from a
+/// load that works.
+void pumpEvents()
+{
+    QElapsedTimer timer;
+    timer.start();
+    qApp->processEvents();
+    auto& stats = Gui::RenderTiming::loadPumps();
+    stats.pumpSec += double(timer.nsecsElapsed()) / 1e9;
+    ++stats.pumps;
+}
+
+}  // namespace
 
 
 using namespace Gui;
@@ -418,7 +437,7 @@ void SequencerBar::setValue(int step)
                 if (d->bar->isVisible())
                     showRemainingTime();
                 d->bar->resetObserveEventFilter();
-                qApp->processEvents();
+                pumpEvents();
             }
         }
         return;
@@ -438,7 +457,7 @@ void SequencerBar::setValue(int step)
             }
             else {
                 d->bar->setValueEx(d->bar->value()+1);
-                qApp->processEvents();
+                pumpEvents();
             }
         }
     }
@@ -458,7 +477,7 @@ void SequencerBar::setValue(int step)
                 if (d->bar->isVisible())
                     showRemainingTime();
                 d->bar->resetObserveEventFilter();
-                qApp->processEvents();
+                pumpEvents();
             }
         }
     }

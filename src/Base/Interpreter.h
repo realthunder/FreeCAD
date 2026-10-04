@@ -42,6 +42,7 @@
 #endif
 
 #include <CXX/Extensions.hxx>
+#include <functional>
 #include <list>
 #include <string>
 #include "Exception.h"
@@ -290,6 +291,22 @@ public:
     void runInteractiveString(const char* psCmd);
     /// Run file (script) on the python interpreter
     void runFile(const char* pxFileName, bool local);
+    /** A guard the application installs in front of runFile (the host code
+     * chokepoint, docs/Sandbox.md 7.29).  Every host Python FILE this
+     * interpreter is asked to run passes through it first, and a guard that
+     * throws refuses the run.  Base cannot see App's permission runtime, so
+     * App installs one that checks host.exec under whatever sandbox
+     * principal is on the scope stack; with no guard installed -- and with
+     * no principal active, which is the case for the user's own click and
+     * for every startup script -- runFile behaves exactly as it always did.
+     *
+     * runString is deliberately NOT guarded: host C++ composes Python and
+     * runs it there (Std_Delete, every doCommand), so gating it would refuse
+     * everything.  Caller-chosen content arrives as a file, and this is that
+     * seam.
+     */
+    using FileGuard = std::function<void(const char* pxFileName)>;
+    static void setFileGuard(FileGuard guard);
     /// Run a statement with arguments on the python interpreter
     void runStringArg(const char* psCom, ...);
     /// runs a python object method with no return value and no arguments

@@ -140,7 +140,9 @@ void TaskMirroredParameters::updateUI()
 
 void TaskMirroredParameters::onSelectionChanged(const Gui::SelectionChanges& msg)
 {
-    if (selectionMode!=none && msg.Type == Gui::SelectionChanges::AddSelection) {
+    // Only when picking the mirror plane: in placement mode the selection
+    // belongs to the placement dialog (upstream 1b799ad355)
+    if (selectionMode == reference && msg.Type == Gui::SelectionChanges::AddSelection) {
 
         std::vector<std::string> mirrorPlanes;
         App::DocumentObject* selObj;
@@ -149,7 +151,7 @@ void TaskMirroredParameters::onSelectionChanged(const Gui::SelectionChanges& msg
         if (!selObj)
                 return;
         
-        if ( selectionMode == reference || selObj->isDerivedFrom ( App::Plane::getClassTypeId () ) ) {
+        {
             setupTransaction();
             pcMirrored->MirrorPlane.setValue(selObj, mirrorPlanes);
             recomputeFeature();
@@ -211,6 +213,12 @@ void TaskMirroredParameters::getMirrorPlane(App::DocumentObject*& obj, std::vect
 
 void TaskMirroredParameters::apply()
 {
+    std::vector<std::string> mirrorPlanes;
+    App::DocumentObject* obj;
+    getMirrorPlane(obj, mirrorPlanes);
+    std::string mirrorPlane = buildLinkSingleSubPythonStr(obj, mirrorPlanes);
+
+    FCMD_OBJ_CMD(getObject(),"MirrorPlane = " << mirrorPlane);
 }
 
 TaskMirroredParameters::~TaskMirroredParameters()
@@ -248,20 +256,6 @@ void TaskMirroredParameters::changeEvent(QEvent *e)
 TaskDlgMirroredParameters::TaskDlgMirroredParameters(ViewProviderMirrored *MirroredView)
     : TaskDlgTransformedParameters(MirroredView, new TaskMirroredParameters(MirroredView))
 {
-}
-//==== calls from the TaskView ===============================================================
-
-bool TaskDlgMirroredParameters::accept()
-{
-    TaskMirroredParameters* mirrorParameter = static_cast<TaskMirroredParameters*>(parameter);
-    std::vector<std::string> mirrorPlanes;
-    App::DocumentObject* obj;
-    mirrorParameter->getMirrorPlane(obj, mirrorPlanes);
-    std::string mirrorPlane = buildLinkSingleSubPythonStr(obj, mirrorPlanes);
-
-    FCMD_OBJ_CMD(vp->getObject(),"MirrorPlane = " << mirrorPlane);
-
-    return TaskDlgTransformedParameters::accept();
 }
 
 #include "moc_TaskMirroredParameters.cpp"

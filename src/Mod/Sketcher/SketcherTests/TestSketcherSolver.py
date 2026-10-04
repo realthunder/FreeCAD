@@ -1193,6 +1193,59 @@ class TestSketcherSolver(unittest.TestCase):
         # TODO: can we get the solver's messages somehow to improve the message?
         self.assertTrue(status == 0, msg=msg or "solver didn't converge")
 
+    def testSameSketchSolvesToTheSameBits(self):
+        # The solver ordered its unknowns by the addresses of the parameters,
+        # separate heap blocks, and seeded a coincident pair's shared unknown
+        # from whichever of the two sat higher in the heap. The same sketch
+        # then solved to a different last bit on every run -- 23 different
+        # results in 24 solves of this one -- and that flipped a boolean in
+        # PartDesign's TestLoft.testTwoFacesAdditiveLoftCase from run to run.
+        # A drag (temporary constraints, the two-subsystem solve) likewise.
+        def build(name):
+            sk = self.Doc.addObject("Sketcher::SketchObject", name)
+            V = App.Vector
+
+            def arc(c, r, a, b):
+                return Part.ArcOfCircle(Part.Circle(c, V(0, 0, 1), r), a, b)
+
+            for g in (
+                Part.LineSegment(V(-2.060394, -1.332045, 0), V(-19.922129, -27.589359, 0)),
+                Part.LineSegment(V(1.940183, -1.501086, 0), V(16.928263, -28.265512, 0)),
+                arc(V(0.418837, -1.275699, 0), 32.879378, -1.751723, -1.454683),
+                arc(V(-9.385396, -30.124937, 0), 8.359959, 2.847554, 4.831818),
+                arc(V(3.236143, -29.279745, 0), 11.449505, -1.076432, 0.044306),
+            ):
+                sk.addGeometry(g)
+            C = Sketcher.Constraint
+            for c in (
+                C("Coincident", 0, 1, 1, 1),
+                C("Coincident", 0, 1, 2, 3),
+                C("Coincident", 0, 1, -1, 1),
+                C("Tangent", 0, 2, 3, 1),
+                C("Tangent", 1, 2, 4, 2),
+                C("Tangent", 2, 1, 3, 2),
+                C("Tangent", 2, 2, 4, 1),
+                C("Symmetric", 0, 2, 1, 2, -2),
+                C("Radius", 2, 30.0),
+                C("Radius", 3, 3.6),
+                C("DistanceX", 2, 1, 2, 2, 10.0),
+            ):
+                sk.addConstraint(c)
+            self.Doc.recompute()
+            for k in range(3):
+                sk.movePoint(1, 2, V(17 + 0.3 * k, -28 - 0.2 * k, 0))
+            self.Doc.recompute()
+            return [
+                repr(x)
+                for g in sk.Geometry
+                for p in (g.StartPoint, g.EndPoint)
+                for x in (p.x, p.y)
+            ]
+
+        first = build("Same0")
+        for i in range(1, 4):
+            self.assertEqual(build("Same%d" % i), first)
+
     def assertVectorAlmostEqual(self, actual, expected, msg=None):
         for axis in ("x", "y", "z"):
             self.assertAlmostEqual(

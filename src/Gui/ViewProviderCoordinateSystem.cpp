@@ -159,6 +159,29 @@ void ViewProviderCoordinateSystem::resetTemporaryVisibility() {
     tempVisMap.clear ();
 }
 
+void ViewProviderCoordinateSystem::setTemporaryScale(double factor)
+{
+    for (auto obj : static_cast<App::LocalCoordinateSystem*>(getObject())->OriginFeatures.getValues()) {
+        if (auto vp = Base::freecad_dynamic_cast<ViewProviderDatum>(
+                    Gui::Application::Instance->getViewProvider(obj)))
+            vp->setTemporaryScale(factor);
+    }
+}
+
+void ViewProviderCoordinateSystem::resetTemporarySize()
+{
+    setTemporaryScale(1.0);
+}
+
+void ViewProviderCoordinateSystem::setPlaneLabelVisibility(bool visible)
+{
+    for (auto obj : static_cast<App::LocalCoordinateSystem*>(getObject())->OriginFeatures.getValues()) {
+        if (auto vp = Base::freecad_dynamic_cast<ViewProviderPlane>(
+                    Gui::Application::Instance->getViewProvider(obj)))
+            vp->setLabelVisibility(visible);
+    }
+}
+
 double ViewProviderCoordinateSystem::defaultSize()
 {
     return 0.25 * ViewParams::getNewDocumentCameraScale();

@@ -80,6 +80,7 @@ namespace Gui {
     }
 class View3DInventorViewer;
 class ViewerContext;
+class MenuItem;
 class ViewProviderPy;
 class ObjectItem;
 class MDIView;
@@ -107,6 +108,11 @@ class GuiExport ViewProvider : public App::TransactionalObject
     PROPERTY_HEADER_WITH_OVERRIDE(Gui::ViewProvider);
 
 public:
+    enum class ToggleVisibilityMode : bool {
+        CanToggleVisibility = true,
+        NoToggleVisibility = false
+    };
+
     /// constructor.
     ViewProvider();
 
@@ -295,6 +301,15 @@ public:
     /// deliver the icon shown in the tree view
     virtual QIcon getIcon() const;
 
+    /** Whether the tree offers to toggle the object's visibility
+     *
+     * Not for an object that is not drawn, such as a VarSet or a
+     * spreadsheet: the tree shows no eye for it (upstream 381cb92f0a).
+     */
+    bool canToggleVisibility() const {
+        return toggleVisibilityMode == ToggleVisibilityMode::CanToggleVisibility;
+    }
+
     /** Deliver extra icons shown in the tree view
      *
      * @param icons: return the new icons together with optional string tag.
@@ -389,6 +404,11 @@ public:
      */
     virtual std::string dropObjectEx(App::DocumentObject *obj, App::DocumentObject *owner,
             const char *subname, const std::vector<std::string> &elements);
+    /// The drop action the cursor shows over this view provider, for one
+    /// whose drop reads the modifiers its own way; the drop is unchanged
+    virtual Qt::DropAction getDropActionForTarget(Qt::DropAction action) const {
+        return action;
+    }
     /** Replace an object claimed by the view provider by drag and drop
      *
      * @param oldObj: object to be replaced
@@ -433,6 +453,8 @@ public:
 
     /** Tell the tree view if this object should appear there */
     virtual bool showInTree() const { return true; }
+    /** Tell the tree view the object is suppressed: its label is struck out */
+    virtual bool isSuppressed() const { return false; }
     /** Tell the tree view to remove children items from the tree root*/
     virtual bool canRemoveChildrenFromRoot() const {return true;}
 
@@ -482,6 +504,12 @@ public:
     virtual void show();
     /// checks whether the view provider is visible or not
     virtual bool isShow() const;
+    /** The object a visibility toggle acts on when this one is picked in
+     * the 3D view, or null for this object itself. A PartDesign feature
+     * names its body: from the view, Space toggles what is seen there.
+     * A selection from the tree (no element picked) is not redirected.
+     */
+    virtual App::DocumentObject *getPickedVisibilityTarget() const { return nullptr; }
     void setVisible(bool);
     bool isVisible() const;
     void setLinkVisible(bool);
@@ -613,6 +641,15 @@ public:
      * sequence answers false, which is the default.
      */
     virtual bool isGestureInProgress() const { return false; }
+    /** What a right click does in this edit mode, for a view that cannot
+     * pop up a menu of its own -- a served one, whose menu is drawn by a
+     * browser (docs/ThinClient.md sec 8.11b). True when the edit mode has
+     * an answer: \a menu filled with the menu its own right click shows,
+     * or left empty when the click did what it does there (ending a tool).
+     * False, the default, when the edit mode has none and the view's
+     * menu applies. Called inside the clicking client's view.
+     */
+    virtual bool editContextMenu(MenuItem* menu);
     /// set up the context-menu with the supported edit modes
     virtual void setupContextMenu(QMenu*, QObject*, const char*);
     /** Called by tree on mouse event in a specific icon
@@ -715,6 +752,8 @@ protected:
     /// Turn on mode switch
     virtual void setModeSwitch();
 
+    void setToggleVisibility(ToggleVisibilityMode mode) { toggleVisibilityMode = mode; }
+
     /// Internal use to customize bounding box retrieval
     virtual Base::BoundBox3d _getBoundingBox(const char *subname=0,
             const Base::Matrix4D *mat=0, bool transform=true,
@@ -735,6 +774,10 @@ protected:
     std::bitset<32> StatusBits;
     /// Whether the tree item collapses when this provider is deactivated
     bool autoCollapseOnDeactivation{true};
+    /// Whether the tree offers to toggle the visibility
+    ToggleVisibilityMode toggleVisibilityMode{ToggleVisibilityMode::CanToggleVisibility};
+
+    friend class ViewProviderPy;
 
 protected:
     CoinPtr<SoGroup> pcChildGroup;

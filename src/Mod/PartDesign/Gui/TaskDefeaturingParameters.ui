@@ -1,0 +1,77 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>PartDesignGui::TaskDefeaturingParameters</class>
+ <widget class="QWidget" name="PartDesignGui::TaskDefeaturingParameters">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>321</width>
+    <height>240</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string notr="true">Form</string>
+  </property>
+  <layout class="QVBoxLayout" name="verticalLayout">
+   <item>
+    <widget class="QLabel" name="message">
+     <property name="text">
+      <string/>
+     </property>
+    </widget>
+   </item>
+   <item>
+    <layout class="QHBoxLayout" name="horizontalLayout">
+     <item>
+      <widget class="QCheckBox" name="buttonRefAdd">
+       <property name="toolTip">
+        <string>In toggle mode, you can select geometry either
+in the list below, or in the 3D view to toggle
+its state.
+
+In normal mode, you can only add new geometry
+by selection. Existing geometry references can
+be removed using the Delete key.</string>
+       </property>
+       <property name="text">
+        <string>Face selection toggle mode</string>
+       </property>
+       <property name="checkable">
+        <bool>true</bool>
+       </property>
+      </widget>
+     </item>
+    </layout>
+   </item>
+   <item>
+    <widget class="QTreeWidget" name="treeWidgetReferences">
+     <property name="toolTip">
+      <string>The faces to remove. The solid is healed where they were:
+pick the faces of a hole, a fillet or a boss to take it off.</string>
+     </property>
+     <property name="minimumSize">
+      <size>
+       <width>0</width>
+       <height>150</height>
+      </size>
+     </property>
+     <attribute name="headerVisible">
+      <bool>false</bool>
+     </attribute>
+     <column>
+      <property name="text">
+       <string notr="true">1</string>
+      </property>
+     </column>
+    </widget>
+   </item>
+  </layout>
+ </widget>
+ <tabstops>
+  <tabstop>buttonRefAdd</tabstop>
+  <tabstop>treeWidgetReferences</tabstop>
+ </tabstops>
+ <resources/>
+ <connections/>
+</ui>

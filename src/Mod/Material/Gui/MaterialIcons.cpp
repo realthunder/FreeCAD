@@ -41,6 +41,8 @@
 #include <Inventor/nodes/SoTransform.h>
 #include <Inventor/nodes/SoDirectionalLight.h>
 #include <Inventor/nodes/SoMaterial.h>
+#include <Inventor/nodes/SoNormal.h>
+#include <Inventor/nodes/SoNormalBinding.h>
 #include <Inventor/nodes/SoOrthographicCamera.h>
 #include <Inventor/nodes/SoSeparator.h>
 #include <Inventor/nodes/SoSphere.h>
@@ -104,6 +106,31 @@ const char* DigestKey = "FreeCAD.Appearance";
 constexpr float CylinderRadius = 1.0F;
 constexpr float CylinderHeight = 1.1F;
 
+/// How far below the horizon the billet and the bolt are looked at:
+/// the cosine and sine of 35 degrees (IconScene::setShape).
+constexpr float ViewCos = 0.819F;
+constexpr float ViewSin = 0.574F;
+
+/** The bolt a screw thread is shown on
+ *
+ * On the billet the thread's lead angle is pitch / (2 pi r) about a
+ * unit radius, a few degrees, and at 32 px the two hands came out as
+ * the same stacked grooves -- which is also what Turned looks like.
+ * A slim shank puts the same slant into a few turns of a small radius,
+ * and a hex head says "fastener" before the thread is read at all.
+ * The head is left plain: the finish is the shank's.
+ */
+constexpr float BoltShankRadius = 0.40F;
+constexpr float BoltShankLength = 1.90F;
+constexpr float BoltHeadRadius = 0.80F;   ///< centre to corner
+constexpr float BoltHeadHeight = 0.42F;
+constexpr float BoltHeadApothem = BoltHeadRadius * 0.8660254F;
+/// The head's top face, placed so the bolt's projection is centred:
+/// its top edge is the far flat of the head, its bottom the near side
+/// of the shank's end.
+constexpr float BoltTop = 0.5F * (BoltHeadHeight + BoltShankLength)
+    - 0.5F * ViewSin * (BoltHeadApothem - BoltShankRadius) / ViewCos;
+
 /// SoFCRenderMaterial::framePalette kinds, matching fc_finish.sh's
 /// FC_FRAME_PLANAR and FC_FRAME_RADIAL.
 constexpr float FramePlanar = 1.0F;
@@ -133,6 +160,10 @@ constexpr float FrameRadial = 2.0F;
  */
 constexpr float SphereFrame = 2.10F;
 constexpr float CylinderFrame = 2.15F;
+/// Computed, not measured: the bolt's projected height plus 4 per cent.
+constexpr float BoltFrame = 1.04F
+    * (ViewCos * (BoltHeadHeight + BoltShankLength)
+       + ViewSin * (BoltHeadApothem + BoltShankRadius));
 // The checkerboard behind the sphere (IconScene::buildBackdrop): how
 // far behind the sphere's centre it sits along the line of sight, and
 // how many cells across the frame. It fills the frame exactly, so the
@@ -202,7 +233,8 @@ public:
     enum class Shape
     {
         Sphere,
-        Cylinder
+        Cylinder,
+        Bolt
     };
 
     IconScene()
@@ -236,6 +268,7 @@ public:
         _shapes->ref();
         _shapes->addChild(buildSphere());
         _shapes->addChild(buildCylinder());
+        _shapes->addChild(buildBolt());
         _shapes->whichChild = 0;
 
         auto* root = dynamic_cast<SoSeparator*>(getSceneGraph());
@@ -277,7 +310,7 @@ public:
     /// to be seen from above its rim or its top face is an edge.
     void setShape(Shape shape)
     {
-        _shapes->whichChild = shape == Shape::Sphere ? 0 : 1;
+        _shapes->whichChild = int(shape);
         setAnimationEnabled(false);
         lighting(shape);
         if (shape == Shape::Sphere) {
@@ -296,9 +329,14 @@ public:
             // far down that lands the camera's up pointing BELOW the
             // horizon. The billet came out upside down, top face at the
             // bottom of the frame.
-            aim(SbVec3f(0, -0.819F, -0.574F), SbVec3f(0, 0, 1));
+            //
+            // The bolt stands the same way and is seen the same way:
+            // the head's top face is what makes it a bolt.
+            aim(SbVec3f(0, -ViewCos, -ViewSin), SbVec3f(0, 0, 1));
         }
-        place(shape == Shape::Sphere ? SphereFrame : CylinderFrame);
+        place(shape == Shape::Sphere     ? SphereFrame
+                  : shape == Shape::Bolt ? BoltFrame
+                                         : CylinderFrame);
     }
 
     void apply(const App::MaterialAppearance& mat, const App::SurfaceFinish& finish,
@@ -401,7 +439,8 @@ public:
         for (auto* render : _render) {
             render->metallic.setValue(mat.pbr ? mat.getMetallic() : -1.0F);
             render->roughness.setValue(mat.pbr ? mat.getRoughness() : -1.0F);
-            render->finish.setValue(finish.pattern);
+            const bool bare = std::find(_bare.begin(), _bare.end(), render) != _bare.end();
+            render->finish.setValue(bare ? uint8_t(App::SurfaceFinish::None) : finish.pattern);
             render->finishPitch.setValue(finish.pitch);
             render->finishDepth.setValue(finish.depth);
             render->finishAngle.setValue(finish.angle);
@@ -700,6 +739,93 @@ private:
         return root;
     }
 
+    /// A hex bolt, built about Y and stood up like the billet. Only the
+    /// shank's wall states a frame and wears the finish; the head is
+    /// the same metal, bare.
+    SoNode* buildBolt()
+    {
+        auto* root = new SoSeparator;
+        auto* upright = new SoTransform;
+        upright->rotation.setValue(SbVec3f(1, 0, 0), float(M_PI) * 0.5F);
+        root->addChild(upright);
+
+        // The shank, moved along its own axis only. A frame is read in
+        // the shape's own coordinates, and a shift ALONG the axis leaves
+        // the axis where the frame says it is whichever side of the
+        // translation those coordinates are taken on -- it only moves
+        // where the helix starts.
+        auto* shank = new SoSeparator;
+        auto* down = new SoTransform;
+        down->translation.setValue(
+            0, BoltTop - BoltHeadHeight - 0.5F * BoltShankLength, 0);
+        shank->addChild(down);
+        auto* wall = new SoCylinder;
+        wall->radius = BoltShankRadius;
+        wall->height = BoltShankLength;
+        // No end cap: the camera looks down on the head and never sees
+        // the shank's end face.
+        wall->parts = SoCylinder::SIDES;
+        setFrame(branch(shank, wall),
+                 SbVec3f(0, 0, 0), FrameRadial,
+                 SbVec3f(0, 1, 0), BoltShankRadius,
+                 SbVec3f(1, 0, 0));
+        root->addChild(shank);
+
+        // The head: a hexagonal prism with a corner either side and a
+        // flat facing the camera (which looks from -Z here), so three
+        // flanks show, the way a bolt is drawn. Faceted, so the normals
+        // are stated per face rather than left to a crease angle.
+        const float y0 = BoltTop - BoltHeadHeight;
+        const float y1 = BoltTop;
+        std::vector<SbVec3f> points;
+        for (float y : {y0, y1}) {
+            for (int k = 0; k < 6; ++k) {
+                const float a = float(M_PI) * float(k) / 3.0F;
+                points.emplace_back(BoltHeadRadius * std::cos(a), y,
+                                    BoltHeadRadius * std::sin(a));
+            }
+        }
+        std::vector<int32_t> indices;
+        std::vector<SbVec3f> normals;
+        // Counter-clockwise seen from outside. Seen from +Y the corners
+        // run clockwise with k, so the top goes down the list and the
+        // bottom up it.
+        for (int k = 5; k >= 0; --k) {
+            indices.push_back(6 + k);
+        }
+        indices.push_back(SO_END_FACE_INDEX);
+        normals.emplace_back(0, 1, 0);
+        for (int k = 0; k < 6; ++k) {
+            indices.push_back(k);
+        }
+        indices.push_back(SO_END_FACE_INDEX);
+        normals.emplace_back(0, -1, 0);
+        for (int k = 0; k < 6; ++k) {
+            const int n = (k + 1) % 6;
+            for (int i : {k, 6 + k, 6 + n, n}) {
+                indices.push_back(i);
+            }
+            indices.push_back(SO_END_FACE_INDEX);
+            const float a = float(M_PI) * (float(k) + 0.5F) / 3.0F;
+            normals.emplace_back(std::cos(a), 0, std::sin(a));
+        }
+        auto* head = new SoSeparator;
+        auto* coords = new SoCoordinate3;
+        coords->point.setValues(0, int(points.size()), points.data());
+        head->addChild(coords);
+        auto* normal = new SoNormal;
+        normal->vector.setValues(0, int(normals.size()), normals.data());
+        head->addChild(normal);
+        auto* binding = new SoNormalBinding;
+        binding->value = SoNormalBinding::PER_FACE;
+        head->addChild(binding);
+        auto* faces = new SoIndexedFaceSet;
+        faces->coordIndex.setValues(0, int(indices.size()), indices.data());
+        _bare.push_back(branch(head, faces));
+        root->addChild(head);
+        return root;
+    }
+
     static void setFrame(Gui::SoFCRenderMaterial* render, const SbVec3f& origin,
                          float kind, const SbVec3f& axis, float radius,
                          const SbVec3f& xdir)
@@ -771,8 +897,11 @@ private:
     App::PropertyEnumeration* _envPreset {nullptr};
     App::PropertyFloat* _exposure {nullptr};
     /// Every appearance node in the scene: one for the sphere, one per
-    /// face of the cylinder. They differ only in the frame they state.
+    /// face of the cylinder, one each for the bolt's shank and head.
+    /// They differ only in the frame they state.
     std::vector<Gui::SoFCRenderMaterial*> _render;
+    /// The ones among them that never wear the finish: the bolt's head.
+    std::vector<Gui::SoFCRenderMaterial*> _bare;
     /// The checkerboard behind the sphere, shown only for a material it
     /// can be seen through.
     SoSwitch* _backdrop {nullptr};
@@ -992,6 +1121,10 @@ float MaterialIcons::finishRoughness(uint8_t pattern)
         case App::SurfaceFinish::Turned:
             actual = {0.200F, 0.008F, true};
             break;
+        case App::SurfaceFinish::Thread:
+        case App::SurfaceFinish::ThreadLeft:
+            actual = {1.000F, 0.540F, true};   // M6, crest to root
+            break;
         case App::SurfaceFinish::Brushed:
             actual = {0.040F, 0.004F, false};
             break;
@@ -1050,11 +1183,27 @@ App::SurfaceFinish MaterialIcons::defaultFinish(uint8_t pattern)
             finish.pitch = 0.240F;
             finish.depth = 0.052F;
             break;
+        case App::SurfaceFinish::Thread:
+        case App::SurfaceFinish::ThreadLeft:
+            // Shown on the bolt's shank (finishShape), and coarse enough
+            // there for the HAND to show, which is the one thing telling
+            // Thread from ThreadLeft. The lead angle is pitch / (2 pi r):
+            // 8 degrees on the 0.4 shank, five turns along it. Measured
+            // at 32 px, 0.3 was nearly level rings and 0.44 four turns.
+            // Depth keeps M6's working height, 0.541 of the pitch.
+            finish.pitch = 0.360F;
+            finish.depth = 0.195F;
+            break;
         default:
             return {};
     }
     finish.normalize();
     return finish;
+}
+
+IconShape MaterialIcons::finishShape(uint8_t pattern)
+{
+    return App::SurfaceFinish::isThread(pattern) ? IconShape::Bolt : IconShape::Cylinder;
 }
 
 QIcon MaterialIcons::finishIcon(const App::SurfaceFinish& finish)
@@ -1077,7 +1226,7 @@ QIcon MaterialIcons::finishIcon(const App::SurfaceFinish& finish)
     if (_failed) {
         return {};
     }
-    return build(key, neutral, finish, {}, IconShape::Cylinder);
+    return build(key, neutral, finish, {}, finishShape(finish.pattern));
 }
 
 QString MaterialIcons::resourceName(const QString& materialName)
@@ -1252,7 +1401,8 @@ QImage MaterialIcons::render(const App::MaterialAppearance& material,
             _scene = std::make_unique<IconScene>();
         }
         _scene->setShape(shape == IconShape::Cylinder ? IconScene::Shape::Cylinder
-                                                       : IconScene::Shape::Sphere);
+                         : shape == IconShape::Bolt   ? IconScene::Shape::Bolt
+                                                      : IconScene::Shape::Sphere);
         _scene->apply(material, finish, props);
         QImage img = _scene->grab(sizes().front());
         if (img.isNull()) {

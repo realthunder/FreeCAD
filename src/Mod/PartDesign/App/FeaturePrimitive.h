@@ -63,7 +63,7 @@ public:
 
     virtual bool isElementGenerated(const TopoShape &shape, const Data::MappedName &name) const override;
 
-    virtual void setPauseRecompute(bool) {}
+    void setPauseRecompute(bool) override {}
 
 protected:
     void handleChangedPropertyName(Base::XMLReader &reader, const char* TypeName, const char* PropName) override;

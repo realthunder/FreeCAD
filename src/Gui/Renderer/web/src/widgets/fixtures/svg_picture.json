@@ -1,0 +1,408 @@
+{
+ "case": "svg_picture",
+ "frames": [
+  {
+   "client": 7,
+   "frame": {
+    "id": "panel",
+    "layout": {
+     "class": "QVBoxLayout",
+     "items": [],
+     "name": ""
+    },
+    "method": "open",
+    "model": "QWidgetModel",
+    "op": "widgets",
+    "qtClass": "QWidget",
+    "state": {
+     "q_actions": [],
+     "q_enabled": true,
+     "q_focus": false,
+     "q_font": {},
+     "q_maximumHeight": 16777215,
+     "q_maximumWidth": 16777215,
+     "q_minimumHeight": 0,
+     "q_minimumWidth": 0,
+     "q_objectName": "panel",
+     "q_prefEntry": "",
+     "q_prefPath": "",
+     "q_statusTip": "",
+     "q_styleSheet": "",
+     "q_toolTip": "",
+     "q_visible": true,
+     "q_watchEvents": [],
+     "q_whatsThis": "",
+     "q_windowIcon": "",
+     "q_windowTitle": ""
+    }
+   }
+  },
+  {
+   "client": 7,
+   "frame": {
+    "id": "panel",
+    "layout": {
+     "class": "QVBoxLayout",
+     "items": [],
+     "name": ""
+    },
+    "method": "open",
+    "model": "QWidgetModel",
+    "op": "widgets",
+    "qtClass": "QWidget",
+    "state": {
+     "q_actions": [],
+     "q_enabled": true,
+     "q_focus": false,
+     "q_font": {},
+     "q_maximumHeight": 16777215,
+     "q_maximumWidth": 16777215,
+     "q_minimumHeight": 0,
+     "q_minimumWidth": 0,
+     "q_objectName": "panel",
+     "q_prefEntry": "",
+     "q_prefPath": "",
+     "q_statusTip": "",
+     "q_styleSheet": "",
+     "q_toolTip": "",
+     "q_visible": true,
+     "q_watchEvents": [],
+     "q_whatsThis": "",
+     "q_windowIcon": "",
+     "q_windowTitle": ""
+    }
+   }
+  },
+  {
+   "client": 7,
+   "frame": {
+    "id": "pw:238",
+    "method": "open",
+    "model": "QLabelModel",
+    "op": "widgets",
+    "parent": "IPY_MODEL_pw:237",
+    "qtClass": "QSvgWidget",
+    "state": {
+     "q_actions": [],
+     "q_alignment": 0,
+     "q_enabled": true,
+     "q_focus": false,
+     "q_font": {},
+     "q_maximumHeight": 64,
+     "q_maximumWidth": 64,
+     "q_minimumHeight": 64,
+     "q_minimumWidth": 64,
+     "q_objectName": "svgLeaf",
+     "q_openExternalLinks": false,
+     "q_pixmap": "img:57f5c03ed271a6996b724f6c26546c57e8667400",
+     "q_prefEntry": "",
+     "q_prefPath": "",
+     "q_statusTip": "",
+     "q_styleSheet": "",
+     "q_text": "",
+     "q_toolTip": "",
+     "q_visible": true,
+     "q_watchEvents": [],
+     "q_whatsThis": "",
+     "q_windowIcon": "",
+     "q_windowTitle": "Picture",
+     "q_wordWrap": false
+    }
+   }
+  },
+  {
+   "client": 7,
+   "frame": {
+    "id": "pw:237",
+    "layout": {
+     "class": "QVBoxLayout",
+     "items": [
+      {
+       "widget": "IPY_MODEL_pw:238"
+      }
+     ],
+     "margins": [
+      4,
+      4,
+      4,
+      4
+     ],
+     "name": "",
+     "spacing": 0
+    },
+    "method": "open",
+    "model": "QGroupBoxModel",
+    "op": "widgets",
+    "parent": "IPY_MODEL_panel:6",
+    "qtClass": "Gui::TaskView::TaskBox",
+    "state": {
+     "q_actions": [],
+     "q_checkable": true,
+     "q_checked": true,
+     "q_enabled": true,
+     "q_flat": false,
+     "q_focus": false,
+     "q_font": {},
+     "q_maximumHeight": 16777215,
+     "q_maximumWidth": 16777215,
+     "q_minimumHeight": 0,
+     "q_minimumWidth": 0,
+     "q_objectName": "",
+     "q_prefEntry": "",
+     "q_prefPath": "",
+     "q_statusTip": "",
+     "q_styleSheet": "",
+     "q_title": "Picture",
+     "q_toolTip": "",
+     "q_visible": true,
+     "q_watchEvents": [],
+     "q_whatsThis": "",
+     "q_windowIcon": "",
+     "q_windowTitle": ""
+    }
+   }
+  },
+  {
+   "client": 7,
+   "frame": {
+    "id": "pw:240",
+    "method": "open",
+    "model": "QPushButtonModel",
+    "op": "widgets",
+    "parent": "IPY_MODEL_pw:239",
+    "qtClass": "QPushButton",
+    "state": {
+     "q_actions": [],
+     "q_autoExclusive": false,
+     "q_checkable": false,
+     "q_checked": false,
+     "q_default": true,
+     "q_enabled": true,
+     "q_flat": false,
+     "q_focus": false,
+     "q_font": {},
+     "q_icon": "img:eb9b7542fdc9525b927ca30fca4d1b046fb6476f",
+     "q_maximumHeight": 16777215,
+     "q_maximumWidth": 16777215,
+     "q_menu": null,
+     "q_minimumHeight": 0,
+     "q_minimumWidth": 0,
+     "q_objectName": "",
+     "q_prefEntry": "",
+     "q_prefPath": "",
+     "q_standardButton": 1024,
+     "q_statusTip": "",
+     "q_styleSheet": "",
+     "q_text": "OK",
+     "q_toolTip": "",
+     "q_visible": true,
+     "q_watchEvents": [],
+     "q_whatsThis": "",
+     "q_windowIcon": "",
+     "q_windowTitle": ""
+    }
+   }
+  },
+  {
+   "client": 7,
+   "frame": {
+    "id": "pw:241",
+    "method": "open",
+    "model": "QPushButtonModel",
+    "op": "widgets",
+    "parent": "IPY_MODEL_pw:239",
+    "qtClass": "QPushButton",
+    "state": {
+     "q_actions": [],
+     "q_autoExclusive": false,
+     "q_checkable": false,
+     "q_checked": false,
+     "q_default": false,
+     "q_enabled": true,
+     "q_flat": false,
+     "q_focus": false,
+     "q_font": {},
+     "q_icon": "img:4c8c80a069ca30e985687bbc5d8366fba0843bce",
+     "q_maximumHeight": 16777215,
+     "q_maximumWidth": 16777215,
+     "q_menu": null,
+     "q_minimumHeight": 0,
+     "q_minimumWidth": 0,
+     "q_objectName": "",
+     "q_prefEntry": "",
+     "q_prefPath": "",
+     "q_standardButton": 4194304,
+     "q_statusTip": "",
+     "q_styleSheet": "",
+     "q_text": "Cancel",
+     "q_toolTip": "",
+     "q_visible": true,
+     "q_watchEvents": [],
+     "q_whatsThis": "",
+     "q_windowIcon": "",
+     "q_windowTitle": ""
+    }
+   }
+  },
+  {
+   "client": 7,
+   "frame": {
+    "id": "pw:239",
+    "layout": {
+     "class": "QHBoxLayout",
+     "items": [
+      {
+       "widget": "IPY_MODEL_pw:240"
+      },
+      {
+       "widget": "IPY_MODEL_pw:241"
+      }
+     ],
+     "name": ""
+    },
+    "method": "open",
+    "model": "QDialogButtonBoxModel",
+    "op": "widgets",
+    "parent": "IPY_MODEL_panel:6",
+    "qtClass": "QDialogButtonBox",
+    "state": {
+     "q_actions": [],
+     "q_centerButtons": true,
+     "q_enabled": true,
+     "q_focus": false,
+     "q_font": {},
+     "q_maximumHeight": 16777215,
+     "q_maximumWidth": 16777215,
+     "q_minimumHeight": 0,
+     "q_minimumWidth": 0,
+     "q_objectName": "",
+     "q_orientation": 1,
+     "q_prefEntry": "",
+     "q_prefPath": "",
+     "q_standardButtons": 4195328,
+     "q_statusTip": "",
+     "q_styleSheet": "",
+     "q_toolTip": "",
+     "q_visible": true,
+     "q_watchEvents": [],
+     "q_whatsThis": "",
+     "q_windowIcon": "",
+     "q_windowTitle": ""
+    }
+   }
+  },
+  {
+   "client": 7,
+   "frame": {
+    "id": "panel:6",
+    "layout": {
+     "class": "QVBoxLayout",
+     "items": [
+      {
+       "widget": "IPY_MODEL_pw:237"
+      },
+      {
+       "widget": "IPY_MODEL_pw:239"
+      }
+     ],
+     "name": ""
+    },
+    "method": "open",
+    "model": "QDialogModel",
+    "op": "widgets",
+    "parent": "IPY_MODEL_panel",
+    "qtClass": "Gui::TaskView::TaskDialog",
+    "state": {
+     "q_actions": [],
+     "q_enabled": true,
+     "q_focus": false,
+     "q_font": {},
+     "q_height": 0,
+     "q_maximumHeight": 16777215,
+     "q_maximumWidth": 16777215,
+     "q_minimumHeight": 0,
+     "q_minimumWidth": 0,
+     "q_modal": false,
+     "q_objectName": "",
+     "q_prefEntry": "",
+     "q_prefPath": "",
+     "q_result": 0,
+     "q_statusTip": "",
+     "q_styleSheet": "",
+     "q_toolTip": "",
+     "q_visible": true,
+     "q_watchEvents": [],
+     "q_whatsThis": "",
+     "q_width": 0,
+     "q_windowIcon": "",
+     "q_windowTitle": "Picture"
+    }
+   }
+  },
+  {
+   "client": 7,
+   "frame": {
+    "content": {
+     "layoutSpec": {
+      "class": "QVBoxLayout",
+      "items": [
+       {
+        "widget": "IPY_MODEL_panel:6"
+       }
+      ],
+      "name": ""
+     }
+    },
+    "id": "panel",
+    "method": "update",
+    "op": "widgets"
+   }
+  },
+  {
+   "client": 7,
+   "frame": {
+    "content": {
+     "q_pixmap": "img:c43eb422a533098451cf2ee29aa7eef0081c3437"
+    },
+    "id": "pw:238",
+    "method": "update",
+    "op": "widgets"
+   }
+  },
+  {
+   "client": 7,
+   "frame": {
+    "content": {},
+    "id": "panel:6",
+    "method": "close",
+    "op": "widgets"
+   }
+  },
+  {
+   "client": 7,
+   "frame": {
+    "content": {
+     "layoutSpec": {
+      "class": "QVBoxLayout",
+      "items": [],
+      "name": ""
+     }
+    },
+    "id": "panel",
+    "method": "update",
+    "op": "widgets"
+   }
+  }
+ ],
+ "subscribeReplies": [
+  {
+   "dialogs": [],
+   "id": 1,
+   "locale": "C",
+   "ok": true,
+   "panel": null,
+   "subscribed": true,
+   "theme": ""
+  }
+ ]
+}

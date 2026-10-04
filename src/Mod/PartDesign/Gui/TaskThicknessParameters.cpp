@@ -25,6 +25,8 @@
 
 #ifndef _PreComp_
 # include <QAction>
+# include <QListView>
+# include <QStandardItemModel>
 #endif
 
 #include <Base/Interpreter.h>
@@ -33,6 +35,8 @@
 #include <Base/Tools.h>
 #include <Gui/Selection.h>
 #include <Gui/Command.h>
+#include <BRepOffset_Mode.hxx>
+#include <Mod/Part/App/GizmoHelper.h>
 #include <Mod/PartDesign/App/FeatureThickness.h>
 
 #include "ui_TaskThicknessParameters.h"
@@ -50,6 +54,12 @@ TaskThicknessParameters::TaskThicknessParameters(ViewProviderDressUp *DressUpVie
     // we need a separate container widget to add all controls to
     proxy = new QWidget(this);
     ui->setupUi(proxy);
+    // Pipe makes the same skin as Skin (OCCT does not implement it); hidden,
+    // with the indices still those of BRepOffset_Mode (upstream 903ab41a37)
+    if (auto modeView = qobject_cast<QListView*>(ui->modeComboBox->view()))
+        modeView->setRowHidden(BRepOffset_Pipe, true);
+    if (auto modeModel = qobject_cast<QStandardItemModel*>(ui->modeComboBox->model()))
+        modeModel->item(BRepOffset_Pipe)->setEnabled(false);
     this->groupLayout()->addWidget(proxy);
 
     PartDesign::Thickness* pcThickness = static_cast<PartDesign::Thickness*>(DressUpView->getObject());
@@ -74,6 +84,7 @@ TaskThicknessParameters::TaskThicknessParameters(ViewProviderDressUp *DressUpVie
 
     int mode = pcThickness->Mode.getValue();
     ui->modeComboBox->setCurrentIndex(mode);
+    updateModeControls(mode);
 
     int join = pcThickness->Join.getValue();
     ui->joinComboBox->setCurrentIndex(join);
@@ -94,6 +105,63 @@ TaskThicknessParameters::TaskThicknessParameters(ViewProviderDressUp *DressUpVie
     connect(ui->checkIntersection, &QCheckBox::toggled,
         this, &TaskThicknessParameters::onIntersectionChanged);
 
+    setupGizmos(DressUpView);
+}
+
+void TaskThicknessParameters::setupGizmos(ViewProviderDressUp* vp)
+{
+    if (!GizmoContainer::isEnabled()) {
+        return;
+    }
+
+    linearGizmo = new Gui::LinearGizmo(ui->Value);
+
+    gizmoContainer = GizmoContainer::create({linearGizmo}, vp);
+
+    setGizmoPositions();
+    showDraggerHints();
+}
+
+void TaskThicknessParameters::setGizmoPositions()
+{
+    if (!gizmoContainer) {
+        return;
+    }
+
+    auto DressUpView = getDressUpView();
+    auto thickness =
+        DressUpView ? dynamic_cast<PartDesign::Thickness*>(DressUpView->getObject()) : nullptr;
+    // Upstream reads the base without this check; a failed recompute can
+    // leave a reference the edge lookup throws on.
+    if (!thickness || thickness->isError()) {
+        gizmoContainer->visible = false;
+        return;
+    }
+    if (thickness->Mode.getValue() == BRepOffset_RectoVerso) {
+        gizmoContainer->visible = false;
+        return;
+    }
+    auto baseShape = thickness->getBaseShape(true);
+    auto shapes = thickness->getContinuousEdges(baseShape);
+    auto faces = thickness->getFaces(baseShape);
+
+    if (shapes.size() == 0 || faces.size() == 0) {
+        gizmoContainer->visible = false;
+        return;
+    }
+    gizmoContainer->visible = true;
+
+    Part::TopoShape edge = shapes[0];
+    DraggerPlacementProps props = getDraggerPlacementFromEdgeAndFace(edge, faces[0]);
+    props.dir *= thickness->Reversed.getValue() ? 1 : -1;
+
+    linearGizmo->Gizmo::setDraggerPlacement(props.position, props.dir);
+}
+
+void TaskThicknessParameters::finishedRecomputeFeature()
+{
+    TaskDressUpParameters::finishedRecomputeFeature();
+    setGizmoPositions();
 }
 
 void TaskThicknessParameters::refresh()
@@ -122,6 +190,7 @@ void TaskThicknessParameters::refresh()
         QSignalBlocker blocker(ui->modeComboBox);
         ui->modeComboBox->setCurrentIndex(mode);
     }
+    updateModeControls(mode);
 
     int join = pcThickness->Join.getValue();
     {
@@ -167,6 +236,20 @@ void TaskThicknessParameters::onModeChanged(int mode)
     setupTransaction();
     pcThickness->Mode.setValue(mode);
     recompute();
+    updateModeControls(mode);
+}
+
+void TaskThicknessParameters::updateModeControls(int mode)
+{
+    // Recto verso is centred on the faces: no side to reverse to, and no
+    // offset of the solid to make (upstream f4a9a68df2, 903ab41a37)
+    const bool isRectoVerso = mode == BRepOffset_RectoVerso;
+    ui->checkReverse->setEnabled(!isRectoVerso);
+    ui->checkReverse->setToolTip(isRectoVerso
+            ? tr("Recto verso applies the thickness equally to both sides") : QString());
+    ui->checkMakeOffset->setEnabled(!isRectoVerso);
+    ui->Value->setToolTip(isRectoVerso
+            ? tr("Total wall thickness; half is applied to each side") : QString());
 }
 
 double TaskThicknessParameters::getValue() const
@@ -250,6 +333,7 @@ void TaskThicknessParameters::changeEvent(QEvent *e)
             PartDesign::Thickness* pcThickness = static_cast<PartDesign::Thickness*>(DressUpView->getObject());
             ui->checkMakeOffset->setToolTip(QApplication::translate("PartDesign", pcThickness->MakeOffset.getDocumentation()));
         }
+        updateModeControls(ui->modeComboBox->currentIndex());
     }
 }
 

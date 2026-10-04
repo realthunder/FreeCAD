@@ -46,6 +46,8 @@ using namespace App;
 //**************************************************************************
 // Python stuff
 
+static PyObject *getProgressPy(PyObject *self, PyObject *args);
+
 // Application methods structure
 PyMethodDef Application::Methods[] = {
     {"ParamGet",       (PyCFunction) Application::sGetParam, METH_VARARGS,
@@ -186,6 +188,18 @@ PyMethodDef Application::Methods[] = {
      "trigger a RuntimeError exception."},
     {"silenceSequencer", (PyCFunction) Application::sSilenceSequencer, METH_VARARGS,
      "silenceSequencer(enable = True : Bool) -- suppress progress sequencer output"},
+    {"getProgress", (PyCFunction) getProgressPy, METH_VARARGS,
+     "getProgress(maxLevels=5) -> dict\n\n"
+     "Snapshot of every running progress sequence, on every thread\n"
+     "(Base::SequencerManager::snapshot). Keys:\n"
+     "  sequences -- list of dicts with text, progress, total (0 means unknown),\n"
+     "               depth (0 is a root), mainThread and blocking; each root is\n"
+     "               followed by its nested sequences, at most maxLevels deep\n"
+     "  progress, total -- the consolidated numbers the progress bar shows\n"
+     "               (total 0 means indeterminate)\n"
+     "  roots   -- number of root sequences running in parallel\n"
+     "  lead    -- index into sequences of the root the bar names, or None\n"
+     "An empty 'sequences' list means nothing is running."},
    {nullptr, nullptr, 0, nullptr} /* Sentinel */
 };
 
@@ -1029,6 +1043,45 @@ PyObject *Application::sSilenceSequencer(PyObject * /*self*/, PyObject *args)
         emptySequencer = nullptr;
     }
     Py_Return;
+}
+
+// File-local rather than an Application::s* member: a declaration in
+// Application.h would rebuild nearly everything for one binding.
+static PyObject *getProgressPy(PyObject * /*self*/, PyObject *args)
+{
+    int maxLevels = 5;
+    if (!PyArg_ParseTuple(args, "|i", &maxLevels))
+        return nullptr;
+    PY_TRY {
+        // Poll, not push: the same snapshot the progress bar reads, so a
+        // script can log what a long load or import is nested inside.
+        const auto snap = Base::SequencerManager::snapshot(
+                static_cast<size_t>(maxLevels < 1 ? 1 : maxLevels));
+        auto count = [](size_t value) {
+            return Py::asObject(PyLong_FromSize_t(value));
+        };
+        Py::List sequences;
+        for (const auto &info : snap.sequences) {
+            Py::Dict entry;
+            entry.setItem("text", Py::String(info.text));
+            entry.setItem("progress", count(info.progress));
+            entry.setItem("total", count(info.total));
+            entry.setItem("depth", count(info.depth));
+            entry.setItem("mainThread", Py::Boolean(info.mainThread));
+            entry.setItem("blocking", Py::Boolean(info.blocking));
+            sequences.append(entry);
+        }
+        Py::Dict result;
+        result.setItem("sequences", sequences);
+        result.setItem("progress", count(snap.progress));
+        result.setItem("total", count(snap.total));
+        result.setItem("roots", count(snap.roots));
+        if (snap.lead < snap.sequences.size())
+            result.setItem("lead", count(snap.lead));
+        else
+            result.setItem("lead", Py::None());
+        return Py::new_reference_to(result);
+    } PY_CATCH
 }
 
 PyObject *Application::sDumpSWIG(PyObject * /*self*/, PyObject *args)

@@ -558,6 +558,13 @@ void applyFinishDefaults(App::SurfaceFinish &finish)
             pitch = 0.25f;  // lathe feed marks
             depthratio = 0.12f;
             break;
+        case App::SurfaceFinish::Thread:
+        case App::SurfaceFinish::ThreadLeft:
+            pitch = 1.0f;   // M6 coarse
+            // An ISO internal thread's working height, 5/8 of the
+            // fundamental triangle's 0.866 pitch
+            depthratio = 0.541f;
+            break;
         default:
             // None, or a pattern only a later build knows: nothing to
             // default, and the backend draws neither
@@ -995,21 +1002,62 @@ void ViewProviderGeometryObject::updateRenderMaterial()
     // SoFCFinishElement); entry 0 is what the scalars above repeat, so a
     // consumer that ignores the palette keeps the per-object look.
     std::vector<SbVec4f> palette;
+    // Beside each palette entry, where it lies when the face's own frame
+    // cannot say (ImpliedFinish::extent); all zero for everything the
+    // appearance authors, and written only when some entry states one.
+    std::vector<SbVec4f> extents;
     std::vector<int32_t> finishIndices;
+    // What the object's own data implies beneath the appearance -- a
+    // tapped bore's thread -- asked for before the per-face list is
+    // built, because it makes one where the appearance alone would not.
+    std::vector<ImpliedFinish> implied;
+    getImpliedFinishes(implied);
     // Asked of the storage before the whole field is built: resolving it
     // materialises one record per face, and a list where no face states a
     // finish of its own has nothing here to do
-    if (ShapeAppearance.variesInFinish()) {
-        const std::vector<App::SurfaceFinish> finishes = ShapeAppearance.getFinishes();
+    const bool authoredVaries = ShapeAppearance.variesInFinish();
+    if (authoredVaries || !implied.empty()) {
+        std::vector<App::SurfaceFinish> finishes;
+        if (authoredVaries)
+            finishes = ShapeAppearance.getFinishes();
+        std::vector<SbVec4f> faceExtents(finishes.size(),
+                                         SbVec4f(0.0f, 0.0f, 0.0f, 0.0f));
+        const App::SurfaceFinish &base = ShapeAppearance.getBase().finish;
+        for (const ImpliedFinish &entry : implied) {
+            if (entry.face < 0 || !entry.finish.isSet())
+                continue;
+            const auto face = std::size_t(entry.face);
+            if (face >= finishes.size()) {
+                // Past the authored list every face wears the base
+                finishes.resize(face + 1, base);
+                faceExtents.resize(face + 1, SbVec4f(0.0f, 0.0f, 0.0f, 0.0f));
+            }
+            // A face the appearance finishes on its OWN keeps it; one that
+            // merely wears the object's finish is the one the implied
+            // finish is more specific than.
+            if (finishes[face].isSet() && finishes[face] != base)
+                continue;
+            finishes[face] = entry.finish;
+            faceExtents[face].setValue(entry.extent);
+        }
+
+        // Entry 0 is the object's own finish, the one the scalars above
+        // repeat: it is what a face past the end of the index array
+        // reads, and what an overflowing face falls back to, so it must
+        // not be whichever face happened to come first.
+        palette.emplace_back(float(finish.pattern), finish.pitch,
+                             finish.depth, finish.angle);
+        extents.emplace_back(0.0f, 0.0f, 0.0f, 0.0f);
         finishIndices.reserve(finishes.size());
-        for (const App::SurfaceFinish &entry : finishes) {
-            App::SurfaceFinish face = entry;
+        for (std::size_t i = 0; i < finishes.size(); ++i) {
+            App::SurfaceFinish face = finishes[i];
             applyFinishDefaults(face);
             const SbVec4f value(float(face.pattern), face.pitch, face.depth,
                                 face.angle);
+            const SbVec4f &extent = faceExtents[i];
             int idx = -1;
             for (std::size_t k = 0; k < palette.size() && idx < 0; ++k) {
-                if (palette[k] == value)
+                if (palette[k] == value && extents[k] == extent)
                     idx = int(k);
             }
             if (idx < 0) {
@@ -1021,6 +1069,7 @@ void ViewProviderGeometryObject::updateRenderMaterial()
                     idx = 0;
                 else {
                     palette.push_back(value);
+                    extents.push_back(extent);
                     idx = int(palette.size()) - 1;
                 }
             }
@@ -1029,8 +1078,13 @@ void ViewProviderGeometryObject::updateRenderMaterial()
     }
     if (palette.size() < 2) {
         palette.clear();
+        extents.clear();
         finishIndices.clear();
     }
+    if (std::all_of(extents.begin(), extents.end(), [](const SbVec4f &e) {
+            return e == SbVec4f(0.0f, 0.0f, 0.0f, 0.0f);
+        }))
+        extents.clear();
 
     // The images the appearance puts on individual faces, as a palette
     // of texture nodes plus one layer index per face.
@@ -1212,6 +1266,7 @@ void ViewProviderGeometryObject::updateRenderMaterial()
             field.setValues(0, num, values.data());
     };
     syncPalette(pcRenderMaterial->finishPalette, palette);
+    syncPalette(pcRenderMaterial->finishExtents, extents);
     syncIndices(pcRenderMaterial->finishIndices, finishIndices);
     syncIndices(pcRenderMaterial->faceTextureIndices, faceTextureIndices);
     if (pcRenderMaterial->faceTextureScale.getValue() != faceTexScale)
@@ -1549,6 +1604,36 @@ void ViewProviderGeometryObject::refreshAppearanceMirrors()
 bool ViewProviderGeometryObject::getFaceWeights(std::vector<double> & /*weights*/) const
 {
     return false;
+}
+
+void ViewProviderGeometryObject::getImpliedFinishes(
+        std::vector<ImpliedFinish> & /*finishes*/) const
+{
+}
+
+void ViewProviderGeometryObject::ImpliedFinish::setExtent(
+        double dx, double dy, double dz, double zmin, double zmax)
+{
+    // Octahedral: the unit sphere folded onto the square |u| + |v| <= 1,
+    // two floats for a direction with no pole to lose precision at
+    // (fc_finish.sh's fcFinishDecodeAxis is the inverse).
+    const double l1 = std::fabs(dx) + std::fabs(dy) + std::fabs(dz);
+    if (!(l1 > 0.0) || !(zmin < zmax)) {
+        extent[0] = extent[1] = extent[2] = extent[3] = 0.0F;
+        return;
+    }
+    double u = dx / l1;
+    double v = dy / l1;
+    if (dz < 0.0) {
+        const double fu = (1.0 - std::fabs(v)) * (u >= 0.0 ? 1.0 : -1.0);
+        const double fv = (1.0 - std::fabs(u)) * (v >= 0.0 ? 1.0 : -1.0);
+        u = fu;
+        v = fv;
+    }
+    extent[0] = float(u);
+    extent[1] = float(v);
+    extent[2] = float(zmin);
+    extent[3] = float(zmax);
 }
 
 void ViewProviderGeometryObject::deriveAppearanceBase()

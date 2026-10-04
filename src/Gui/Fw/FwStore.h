@@ -194,6 +194,14 @@ Q_SIGNALS:
     /// that writer skips the message.
     void message(const QString& id, const QString& method, const QVariantMap& content,
                  quint64 origin);
+    /// The same, for ONE client: what the host made of that client's
+    /// own write (docs/Sandbox.md 7.22).  `message` carries the
+    /// writer's origin and every stream skips its writer, so a value
+    /// the widget corrected -- a clamp, a re-parse, a slot writing the
+    /// field back -- reaches every other client and never the one that
+    /// asked for it.  Only the keys that diverged, only to `client`.
+    void messageTo(quint64 client, const QString& id, const QString& method,
+                   const QVariantMap& content);
 
 private:
     Store();

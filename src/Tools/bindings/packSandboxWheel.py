@@ -3,17 +3,18 @@
 """Pack a pure-Python wheel for the expression sandbox's pyodide guest
 (docs/Sandbox.md sec 5.6).
 
-A workbench's App side -- the Python that runs in an object's execute()
-and never touches Qt -- goes into the guest UNMODIFIED as a wheel that
-boots with the guest (a "bundled" wheel under <datadir>/Pyodide/wheels).
-This script builds such a wheel from source files listed by CMake, plus
-whatever they import that the host has and the guest does not: the
-vendored lazy_loader, freecad.deprecation, and the guest shims under
-src/App/ExpressionImage/shims (PySide's three names, the resource
-modules).
+Pure Python that runs inside the guest goes in as a wheel that boots
+with it (a "bundled" wheel under <datadir>/Pyodide/wheels).  This
+script builds such a wheel from source files listed by CMake, plus
+whatever they import that the host has and the guest does not.
 
-    packSandboxWheel.py --name fcx_draft --version 0.22.0 --out-dir DIR
-        --root src/Mod/Draft [--exclude REL ...] [--add SRC=DEST ...]
+The one caller is fcx_widgets (src/App/CMakeLists.txt): the widget
+layer the browser tier uses.  Workbench wheels (fcx_draft, fcx_bim)
+were removed in 7.31 -- installed workbench code is not a sandbox
+target and no longer runs in the guest.
+
+    packSandboxWheel.py --name fcx_widgets --version 0.22.0 --out-dir DIR
+        --root src/Ext [--exclude REL ...] [--add SRC=DEST ...]
         REL ...
 
   REL       a file relative to --root, stored under the same path
@@ -63,7 +64,7 @@ def walk(src, dest, data=False):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--name", required=True, help="distribution name, e.g. fcx_draft")
+    ap.add_argument("--name", required=True, help="distribution name, e.g. fcx_widgets")
     ap.add_argument("--version", required=True)
     ap.add_argument("--out-dir", required=True)
     ap.add_argument("--root", required=True, help="the directory the REL files are relative to")

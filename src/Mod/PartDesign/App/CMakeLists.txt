@@ -56,12 +56,20 @@ SET(FeaturesTransformed_SRCS
     FeatureTransformed.cpp
     FeatureMirrored.h
     FeatureMirrored.cpp
+    FeaturePattern.h
+    FeaturePattern.cpp
     FeatureLinearPattern.h
     FeatureLinearPattern.cpp
     FeatureGenericPattern.h
     FeatureGenericPattern.cpp
     FeaturePolarPattern.h
     FeaturePolarPattern.cpp
+    FeatureCircularPattern.h
+    FeatureCircularPattern.cpp
+    FeaturePathPattern.h
+    FeaturePathPattern.cpp
+    FeaturePointPattern.h
+    FeaturePointPattern.cpp
     FeatureScaled.h
     FeatureScaled.cpp
     FeatureMultiTransform.h
@@ -80,6 +88,8 @@ SET(FeaturesDressUp_SRCS
     FeatureDraft.h
     FeatureThickness.cpp
     FeatureThickness.h
+    FeatureDefeaturing.cpp
+    FeatureDefeaturing.h
 )
 SOURCE_GROUP("DressUpFeatures" FILES ${FeaturesDressUp_SRCS})
 
@@ -94,6 +104,8 @@ SET(FeaturesSketchBased_SRCS
     FeatureExtrusion.h
     FeaturePocket.cpp
     FeaturePocket.h
+    FeatureRevolved.cpp
+    FeatureRevolved.h
     FeatureRevolution.cpp
     FeatureRevolution.h
     FeatureGroove.cpp

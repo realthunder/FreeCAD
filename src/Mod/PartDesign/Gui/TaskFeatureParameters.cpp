@@ -27,9 +27,12 @@
 #include <QCheckBox>
 #endif
 
+#include <App/PropertyGeo.h>
+#include <App/PropertyLinks.h>
 #include <Base/Tools.h>
 #include <Gui/Application.h>
 #include <Gui/CommandT.h>
+#include <Gui/Inventor/Draggers/Gizmo.h>
 #include <Gui/MainWindow.h>
 #include <Gui/BitmapFactory.h>
 #include <Gui/PrefWidgets.h>
@@ -66,6 +69,46 @@ TaskFeatureParameters::TaskFeatureParameters(PartDesignGui::ViewProvider *vp, QW
     Gui::Document* doc = vp->getDocument();
     this->attachDocument(doc);
     App::GetApplication().getActiveTransaction(&transactionID);
+}
+
+TaskFeatureParameters::~TaskFeatureParameters()
+{
+    hideDraggerHints();
+}
+
+void TaskFeatureParameters::showDraggerHints()
+{
+    if (!Gui::GizmoContainer::isEnabled() || !Gui::GizmoContainer::isCoarseSnapEnabled()) {
+        return;
+    }
+
+    const Gui::InputHint::UserInput key = Gui::GizmoContainer::getFineSnapKey();
+    const bool coarseByDefault = Gui::GizmoContainer::isCoarseByDefault();
+
+    QString message;
+    if (coarseByDefault) {
+        message = tr("%1 fine dragging");
+    }
+    else {
+        message = tr("%1 coarse dragging");
+    }
+
+    Gui::getMainWindow()->showHints({{
+        .message = message,
+        .sequences = {{key}},
+    }});
+    draggerHintsShown = true;
+}
+
+void TaskFeatureParameters::hideDraggerHints()
+{
+    // Only the hints this panel put up: another tool may own the bar.
+    if (draggerHintsShown) {
+        draggerHintsShown = false;
+        if (auto mw = Gui::getMainWindow()) {
+            mw->hideHints();
+        }
+    }
 }
 
 void TaskFeatureParameters::slotDeletedObject(const Gui::ViewProviderDocumentObject& Obj)
@@ -185,7 +228,7 @@ void TaskFeatureParameters::recomputeFeature(bool delay)
 
     if (delay && updateViewTimer) {
         int interval = PartGui::PartParams::getEditRecomputeWait();
-        auto feat = Base::freecad_dynamic_cast<PartDesign::FeatureAddSub>(vp->getObject());
+        auto feat = Base::freecad_dynamic_cast<PartDesign::Feature>(vp->getObject());
         if (feat && feat->isRecomputePaused())
             interval /= 3;
         updateViewTimer->start(interval);
@@ -194,8 +237,79 @@ void TaskFeatureParameters::recomputeFeature(bool delay)
         setupTransaction();
         App::DocumentObject* obj = vp->getObject ();
         obj->getDocument()->recomputeFeature ( obj );
+        saveComputedInput();
         finishedRecomputeFeature();
     }
+}
+
+static bool isComputedInput(const App::Property *prop)
+{
+    // Outputs are what a recompute writes; a shape is never a panel's input
+    // and costs the most to copy
+    return !(prop->getType() & App::Prop_Output)
+        && !prop->testStatus(App::Property::Output)
+        && !prop->isDerivedFrom(App::PropertyComplexGeoData::getClassTypeId());
+}
+
+static bool isSameInput(const App::Property &prop, const App::Property &saved)
+{
+    // PropertyLinkBase::isSame() takes one side's element names old style
+    // and the other's new, so a link to a mapped element never equals its
+    // own copy: compare both styles of both
+    auto link = Base::freecad_dynamic_cast<const App::PropertyLinkBase>(&prop);
+    if (!link)
+        return prop.isSame(saved);
+    auto savedLink = Base::freecad_dynamic_cast<const App::PropertyLinkBase>(&saved);
+    if (!savedLink || link->getScope() != savedLink->getScope())
+        return false;
+    for (bool newStyle : {false, true}) {
+        std::vector<App::DocumentObject*> objs, savedObjs;
+        std::vector<std::string> subs, savedSubs;
+        link->getLinks(objs, true, &subs, newStyle);
+        savedLink->getLinks(savedObjs, true, &savedSubs, newStyle);
+        if (objs != savedObjs || subs != savedSubs)
+            return false;
+    }
+    return true;
+}
+
+void TaskFeatureParameters::saveComputedInput()
+{
+    static unsigned long sequence;
+    computedInput.clear();
+    computedSequence = 0;
+    auto obj = vp ? vp->getObject() : nullptr;
+    auto feat = Base::freecad_dynamic_cast<PartDesign::Feature>(obj);
+    // A paused feature (the edit preview) made only its AddSubShape
+    if (!obj || !obj->isValid() || (feat && feat->isRecomputePaused()))
+        return;
+    std::vector<App::Property*> props;
+    obj->getPropertyList(props);
+    for (auto prop : props) {
+        if (isComputedInput(prop))
+            computedInput.emplace_back(prop->getName(), prop->Copy());
+    }
+    computedSequence = ++sequence;
+}
+
+bool TaskFeatureParameters::isInputComputed() const
+{
+    auto obj = vp ? vp->getObject() : nullptr;
+    if (!obj || !computedSequence)
+        return false;
+    std::vector<App::Property*> props;
+    obj->getPropertyList(props);
+    std::size_t count = 0;
+    for (auto prop : props) {
+        if (!isComputedInput(prop))
+            continue;
+        if (count >= computedInput.size()
+                || computedInput[count].first != prop->getName()
+                || !isSameInput(*prop, *computedInput[count].second))
+            return false;
+        ++count;
+    }
+    return count == computedInput.size();
 }
 
 void TaskFeatureParameters::onNewSolidChanged()
@@ -344,6 +458,24 @@ bool TaskDlgFeatureParameters::accept() {
         }
 
         Gui::cmdGuiDocument(feature, "resetEdit()");
+
+        // The panel's own recompute leaves the feature touched, so the
+        // document's would make it all over again (upstream c1c9cb63e0) -- a
+        // dress-up every time, a Pad without the edit preview. When nothing
+        // changed since the panel's last full recompute, only the objects
+        // that use the feature are left to make. Not the whole document's
+        // purgeTouched(), which upstream does: those need recomputing.
+        TaskFeatureParameters *last = nullptr;
+        for (QWidget *wgt : Content) {
+            auto param = qobject_cast<TaskFeatureParameters*>(wgt);
+            if (param && (!last || param->getComputedSequence() > last->getComputedSequence()))
+                last = param;
+        }
+        if (feature->isTouched() && last && last->isInputComputed()) {
+            feature->purgeTouched();
+            for (auto obj : feature->getInList())
+                obj->enforceRecompute();
+        }
         Gui::cmdAppDocument(feature, "recompute()");
 
         if (!feature->isValid()) {

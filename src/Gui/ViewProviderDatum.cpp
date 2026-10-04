@@ -32,8 +32,10 @@
 # include <Inventor/nodes/SoLightModel.h>
 # include <Inventor/nodes/SoScale.h>
 # include <Inventor/nodes/SoSeparator.h>
+# include <Inventor/nodes/SoSwitch.h>
 #endif
 
+#include <App/Application.h>
 #include <App/Document.h>
 #include <App/OriginFeature.h>
 #include <App/Origin.h>
@@ -41,11 +43,32 @@
 #include "ViewProviderDatum.h"
 #include "SoFCSelection.h"
 #include "SoFCUnifiedSelection.h"
+#include "ViewParams.h"
 #include "ViewProviderCoordinateSystem.h"
 #include "BitmapFactory.h"
+#include "Inventor/SoAutoZoomTranslation.h"
 
 
 using namespace Gui;
+
+namespace {
+
+// ViewParams' group; ParamHandlers takes the path below the user root
+const char *DatumParamPath = "BaseApp/Preferences/View";
+
+// One screen unit, the unit upstream lays datums out in, as a scale factor of
+// SoAutoZoomTranslation, under which a unit is scaleFactor/50 of the view
+// height. 0.05 makes a unit a thousandth of the view height: a pixel of a
+// view 1000 pixels high. Upstream's SoShapeScale counts real pixels; the
+// fork's autozoom, which every render path and the browser viewer implement,
+// scales with the view instead, so a datum keeps its share of the view as
+// the window is resized.
+constexpr float ScreenUnit = 0.05f;
+
+// Label height in screen units (upstream's plane label font)
+constexpr float ScreenFontSize = 10.0f;
+
+} // namespace
 
 PROPERTY_SOURCE(Gui::ViewProviderDatum, Gui::ViewProviderGeometryObject)
 
@@ -65,10 +88,22 @@ ViewProviderDatum::ViewProviderDatum () {
     pOriginFeatureRoot->ref ();
     pOriginFeatureRoot->renderCaching = SoSeparator::OFF;
 
+    // Create the node for a constant size on screen
+    pZoom = new SoAutoZoomTranslation();
+    pZoom->ref();
+
+    pFont = new SoFont();
+    pFont->ref();
+
     // Create the Label node
     pLabel = new SoAsciiText();
     pLabel->ref();
     pLabel->width.setValue(-1);
+
+    pLabelSwitch = new SoSwitch();
+    pLabelSwitch->ref();
+    pLabelSwitch->addChild(pLabel);
+    pLabelSwitch->whichChild = SO_SWITCH_ALL;
 
     ShadowStyle.setValue(3);
 
@@ -79,9 +114,109 @@ ViewProviderDatum::ViewProviderDatum () {
 
 ViewProviderDatum::~ViewProviderDatum () {
     pScale->unref ();
+    pZoom->unref ();
+    pFont->unref ();
     pOriginFeatureRoot->unref ();
+    pLabelSwitch->unref ();
     pLabel->unref ();
     pHighlight->unref();
+}
+
+bool ViewProviderDatum::isScreenSize()
+{
+    return ViewParams::getDatumScreenSize();
+}
+
+float ViewProviderDatum::screenPlaneSize()
+{
+    return static_cast<float>(ViewParams::getDatumPlaneSize() * ViewParams::getDatumScale() / 100.0);
+}
+
+float ViewProviderDatum::screenLineSize()
+{
+    return static_cast<float>(ViewParams::getDatumLineSize() * ViewParams::getDatumScale() / 100.0);
+}
+
+std::string ViewProviderDatum::getRole() const
+{
+    // The Role of an App::DatumElement may not be set yet when attaching:
+    // the name tells as well, the way upstream reads it
+    const char* name = pcObject ? pcObject->getNameInDocument() : nullptr;
+    if (!name)
+        return {};
+    for (auto roles : {App::LocalCoordinateSystem::AxisRoles, App::LocalCoordinateSystem::PlaneRoles}) {
+        for (int i = 0; i < 3; ++i) {
+            if (strncmp(name, roles[i], strlen(roles[i])) == 0)
+                return roles[i];
+        }
+    }
+    auto point = App::LocalCoordinateSystem::PointRoles[0];
+    if (strncmp(name, point, strlen(point)) == 0)
+        return point;
+    return {};
+}
+
+std::string ViewProviderDatum::screenLabel() const
+{
+    auto role = getRole();
+    if (role.size() > 6 && role.compare(role.size() - 6, 6, "_Plane") == 0)
+        return role.substr(0, role.size() - 6);
+    if (role.size() > 5 && role.compare(role.size() - 5, 5, "_Axis") == 0)
+        return role.substr(0, role.size() - 5);
+    return getObject()->Label.getValue();
+}
+
+void ViewProviderDatum::applySizeModel()
+{
+    screenSize = isScreenSize();
+
+    SoNode* wanted = screenSize ? static_cast<SoNode*>(pZoom) : static_cast<SoNode*>(pScale);
+    SoNode* other = screenSize ? static_cast<SoNode*>(pScale) : static_cast<SoNode*>(pZoom);
+    int index = pHighlight->findChild(other);
+    if (index >= 0)
+        pHighlight->replaceChild(index, wanted);
+
+    float lcsSize = static_cast<float>(
+            ViewParams::getHandle()->GetFloat("LocalCoordinateSystemSize", 1.0));
+    pZoom->scaleFactor = static_cast<float>(ScreenUnit * lcsSize * temporaryScale);
+
+    float fontRatio = 10.0f;
+    if (pcObject && pcObject->is<App::Line>())
+        // keep font size on axes equal to font size on planes
+        fontRatio *= ViewProviderCoordinateSystem::axesScaling;
+    pFont->size = screenSize ? ScreenFontSize
+                             : ViewProviderCoordinateSystem::baseSize() / fontRatio;
+}
+
+void ViewProviderDatum::updateLabel()
+{
+    if (!pcObject)
+        return;
+    std::string text = screenSize ? screenLabel() : std::string(pcObject->Label.getValue());
+    pLabel->string.setValue(SbString(text.c_str()));
+    bool show = !screenSize || labelForced || showLabelOnScreen();
+    pLabelSwitch->whichChild = show ? SO_SWITCH_ALL : SO_SWITCH_NONE;
+}
+
+void ViewProviderDatum::updateDatumSize()
+{
+}
+
+void ViewProviderDatum::setTemporaryScale(double factor)
+{
+    temporaryScale = factor;
+    applySizeModel();
+}
+
+void ViewProviderDatum::resetTemporarySize()
+{
+    setTemporaryScale(1.0);
+}
+
+void ViewProviderDatum::setLabelVisibility(bool visible)
+{
+    labelForced = visible;
+    updateLabel();
 }
 
 // Separator node that alters OpenGL depth function. Coin3d's SoDepthBuffer
@@ -149,17 +284,13 @@ void ViewProviderDatum::attach(App::DocumentObject* pcObject)
     lightmodel->model = SoLightModel::BASE_COLOR;
     sep->addChild(lightmodel);
 
-    // Scale feature to the given size
+    // Scale feature to the given size, or keep it constant on screen: the
+    // size model swaps pZoom in for pScale (applySizeModel)
     pScale->scaleFactor = SbVec3f (sz, sz, sz);
     // sep->addChild (pScale);
     pHighlight->addChild (pScale);
 
-    // Setup font size
-    auto font = new SoFont ();
-    float fontRatio = 10.0f;
     if ( pcObject->is<App::Line>() ) {
-        // keep font size on axes equal to font size on planes
-        fontRatio *= ViewProviderCoordinateSystem::axesScaling;
         const char* axisName = pcObject->getNameInDocument();
         auto axisRoles = App::Origin::AxisRoles;
         if ( strncmp(axisName, axisRoles[0], strlen(axisRoles[0]) ) == 0 ) {
@@ -173,7 +304,6 @@ void ViewProviderDatum::attach(App::DocumentObject* pcObject)
             ShapeColor.setValue ( 0x0000FFFF );
         }
     }
-    font->size.setValue ( defaultSz / fontRatio );
 
     // Adding font node under SoFCSelection node is crucial for its bounding
     // box rendering to work. Because SoGetBoundingBoxAction is applied on the
@@ -181,7 +311,7 @@ void ViewProviderDatum::attach(App::DocumentObject* pcObject)
     // report incorrect bounds.
     //
     // sep->addChild ( font );
-    pHighlight->addChild (font);
+    pHighlight->addChild (pFont);
 
     // Create the selection node
     auto highlight = pHighlight;
@@ -219,15 +349,26 @@ void ViewProviderDatum::attach(App::DocumentObject* pcObject)
 
     sep->addChild ( highlight );
 
-    // Setup the object label as it's text
-    pLabel->string.setValue ( SbString ( pcObject->Label.getValue () ) );
+    applySizeModel();
+    updateLabel();
 
     addDisplayMaskMode ( sep, "Base" );
+
+    // A subclass lays its geometry out at the end of its attach(); these
+    // redo it when the size parameters change
+    handlers.addDelayedHandler(DatumParamPath,
+            {"DatumScreenSize", "DatumScale", "DatumPlaneSize", "DatumLineSize",
+             "LocalCoordinateSystemSize"},
+            [this](ParameterGrp::handle) {
+                applySizeModel();
+                updateDatumSize();
+                updateLabel();
+            });
 }
 
 void ViewProviderDatum::updateData ( const App::Property* prop ) {
     if (prop == &getObject()->Label) {
-        pLabel->string.setValue ( SbString ( getObject()->Label.getValue () ) );
+        updateLabel();
     }
     ViewProviderGeometryObject::updateData(prop);
 }

@@ -69,6 +69,8 @@ public:
 
     bool doubleClicked() override;
     void setupContextMenu(QMenu* menu, QObject* receiver, const char* member) override;
+    /// Shows the Tip too when no feature of the body is visible
+    void show() override;
 
     std::vector< std::string > getDisplayModes() const override;
     void setDisplayMode(const char* ModeName) override;
@@ -78,6 +80,8 @@ public:
 
     /// Update the children's highlighting when triggered
     void updateData(const App::Property* prop) override;
+    /// Remap the colours from the Tip without handing them back to it
+    void checkColorUpdate() override;
     ///unify children visuals
     void onChanged(const App::Property* prop) override;
 
@@ -114,6 +118,10 @@ public:
 
     std::map<std::string,App::Color> getElementColors(const char *element) const;
 
+    /// The Tip's cosmetic threads, for when the body draws the Tip's
+    /// shape itself (ViewProvider::cosmeticThreadFinishes)
+    void getImpliedFinishes(std::vector<ImpliedFinish> &finishes) const override;
+
 protected:
     /// Copy over all visual properties to the child features
     void unifyVisualProperty(const App::Property* prop);
@@ -133,6 +141,9 @@ private:
 private:
     static const char* BodyModeEnum[];
     bool checkingSiblings = false;
+    bool followingChange = false;
+    /// Whether the render material last stated a thread
+    bool impliedThreads = false;
 };
 
 

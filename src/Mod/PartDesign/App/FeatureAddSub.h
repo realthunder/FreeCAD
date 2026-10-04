@@ -53,22 +53,26 @@ public:
     Part::PropertyPartShape   AddSubShape;
     App::PropertyBool         Refine;
     App::PropertyEnumeration  AddSubType;
+    /// The fuzzy value of the boolean with the base: > 0 that value, 0 none,
+    /// < 0 one from the size of the shapes (upstream 73f848a3d5)
+    App::PropertyFloatConstraint FuzzyTolerance;
+
+    static const App::PropertyFloatConstraint::Constraints fuzzyToleranceRange;
+    static const char *fuzzyToleranceDoc;
 
     static const std::string &addsubElementPrefix();
-
-    virtual void setPauseRecompute(bool enable);
-    bool isRecomputePaused() const;
 
     Part::TopoShape makeBoolean(const Part::TopoShape &base,
                                 const Part::TopoShape &tool);
 
 protected:
     void initAddSubType(Type t);
+    /// Reads upstream's Operation (4a71de647d) into AddSubType
+    void handleChangedPropertyName(Base::XMLReader &reader, const char *TypeName,
+                                   const char *PropName) override;
 
 private:
     Type addSubType{Additive};
-    bool pauseRecompute{false};
-    int pausedRevision{0};
 };
 
 using FeatureAddSubPython = App::FeaturePythonT<FeatureAddSub>;

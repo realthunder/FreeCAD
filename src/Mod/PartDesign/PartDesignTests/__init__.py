@@ -1,6 +1,7 @@
 from . import TestBoolean
 from . import TestChamfer
 from . import TestDatum
+from . import TestDefeaturing
 from . import TestDraft
 from . import TestFillet
 from . import TestHole
@@ -16,4 +17,5 @@ from . import TestPolarPattern
 from . import TestPrimitive
 from . import TestRevolve
 from . import TestShapeBinder
+from . import TestSuppressed
 from . import TestThickness

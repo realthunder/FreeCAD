@@ -86,7 +86,7 @@ class _InvoluteGear:
     def _ensure_properties(self, obj, is_restore):
         def ensure_property(type_, name, doc, default):
             if not hasattr(obj, name):
-                obj.addProperty(type_, name, "Gear", doc)
+                obj.addProperty(type_, name, "Gear", doc, locked=True)
                 if callable(default):
                     setattr(obj, name, default())
                 else:
@@ -258,7 +258,7 @@ class _InvoluteGearTaskPanel:
         self.form.doubleSpinBox_ProfileShift.setValue(self.obj.ProfileShiftCoefficient)
 
     def getStandardButtons(self):
-        return int(QtGui.QDialogButtonBox.Ok) | int(QtGui.QDialogButtonBox.Cancel)| int(QtGui.QDialogButtonBox.Apply)
+        return QtGui.QDialogButtonBox.Ok | QtGui.QDialogButtonBox.Cancel | QtGui.QDialogButtonBox.Apply
 
     def clicked(self,button):
         if button == QtGui.QDialogButtonBox.Apply:

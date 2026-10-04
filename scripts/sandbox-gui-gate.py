@@ -19,13 +19,13 @@ The result goes to $SANDBOX_GUI_GATE_RESULT (default: sandbox-gui-gate.txt
 in the user data directory) and the last line is `RESULT OK` or `RESULT
 FAILED`; judge by that file, not by the exit code (the GUI's exit is not
 clean on every box).  $SANDBOX_GUI_GATE_MODULES selects the modules
-(comma-separated, default SandboxGui,SandboxWidgets,SandboxForms,SandboxNative,
-SandboxPanels,SandboxDraftGui,SandboxSelection,SandboxSessionDoc,SandboxProxyImport,
-ViewProviderHooks,ViewProviderChain,SandboxCorpusGui,SandboxInitGui,SandboxToolBarMirror,
-SandboxPanelMirror; SandboxInitGui after the others: it takes the native Draft and BIM
-workbenches out of the session, and the two mirror gates run last and
-need no guest).  SandboxMirrorBench is a measurement (docs/Sandbox.md
-8.4), not in the default list: name it alone to run it.
+(comma-separated, default SandboxGui,SandboxWidgets,SandboxForms,
+SandboxNative,SandboxPanels,SandboxSelection,SandboxSessionDoc,
+SandboxHostFiles,SandboxProxyImport,ViewProviderHooks,
+ViewProviderChain,SandboxToolBarMirror,SandboxPanelMirror; the two
+mirror gates run last and need no guest).  SandboxMirrorBench is a
+measurement (docs/Sandbox.md 8.4), not in the default list: name it
+alone to run it.
 """
 
 import faulthandler
@@ -72,9 +72,10 @@ class _EagerResult(unittest.TextTestResult):
 
 def main():
     default_modules = ("SandboxGui,SandboxWidgets,SandboxForms,SandboxNative,SandboxPanels,"
-                       "SandboxDraftGui,SandboxSelection,SandboxSessionDoc,SandboxProxyImport,"
+                       "SandboxSelection,SandboxSessionDoc,SandboxHostFiles,"
+                       "SandboxProxyImport,"
                        "ViewProviderHooks,ViewProviderChain,"
-                       "SandboxCorpusGui,SandboxInitGui,SandboxToolBarMirror,"
+                       "SandboxToolBarMirror,"
                        "SandboxPanelMirror")
     modules = os.environ.get("SANDBOX_GUI_GATE_MODULES", default_modules).split(",")
     out = os.environ.get("SANDBOX_GUI_GATE_RESULT") or os.path.join(

@@ -39,6 +39,7 @@
 #include <Gui/Command.h>
 #include <Gui/Control.h>
 #include <Gui/Document.h>
+#include <Gui/ViewParams.h>
 
 #include <Mod/Part/Gui/PartParams.h>
 #include <Mod/PartDesign/App/ShapeBinder.h>
@@ -78,11 +79,15 @@ ViewProviderShapeBinder::ViewProviderShapeBinder()
     MapPointColor.setValue(false);
     MapTransparency.setValue(false);
 
+    // The outline in a darker color and at the usual width, or it hardly
+    // shows against the model (upstream 5dbb4d7c7e)
+    App::Color lineCol((uint32_t)PartGui::PartParams::getDefaultDatumLineColor());
+
     ShapeColor.setValue(col);
-    LineColor.setValue(col);
-    PointColor.setValue(col);
+    LineColor.setValue(lineCol);
+    PointColor.setValue(lineCol);
     Transparency.setValue(60);
-    LineWidth.setValue(1);
+    LineWidth.setValue(Gui::ViewParams::getDefaultShapeLineWidth());
 }
 
 ViewProviderShapeBinder::~ViewProviderShapeBinder() = default;

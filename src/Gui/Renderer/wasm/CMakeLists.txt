@@ -127,11 +127,17 @@ target_link_libraries(fcviewer PRIVATE vg-renderer bgfx bimg bx)
 
 # The shaders compile at build time from source (no committed .bin
 # files). An Emscripten build cannot build the host shaderc tool itself,
-# so it uses one from a native build tree — the conda-debug desktop
-# build by default; point FCVIEWER_SHADERC elsewhere if that build does
-# not exist.
-set(FCVIEWER_SHADERC
-    "${FC_SRC}/../build/conda-debug/src/3rdParty/bgfx/cmake/bgfx/shaderc"
+# so it uses one from a native build tree -- the standard desktop build
+# of the host (docs/DevEnvironment.md) by default; point FCVIEWER_SHADERC
+# elsewhere if that build does not exist.
+if(CMAKE_HOST_WIN32)
+    set(_fcviewer_host_shaderc
+        "${FC_SRC}/../build/win-relwithdebinfo-801/src/3rdParty/bgfx/cmake/bgfx/shaderc.exe")
+else()
+    set(_fcviewer_host_shaderc
+        "${FC_SRC}/../build/conda-relwithdebinfo-801/src/3rdParty/bgfx/cmake/bgfx/shaderc")
+endif()
+set(FCVIEWER_SHADERC "${_fcviewer_host_shaderc}"
     CACHE FILEPATH "Host shaderc binary for essl shader compilation")
 if(NOT EXISTS ${FCVIEWER_SHADERC})
     message(FATAL_ERROR

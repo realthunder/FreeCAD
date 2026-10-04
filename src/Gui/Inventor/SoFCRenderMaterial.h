@@ -106,6 +106,19 @@ public:
      */
     SoMFVec4f finishPalette;
     SoMFInt32 finishIndices;
+    /** Where each palette entry above lies, when the face's own frame
+     *  cannot say (empty = every entry lies in its face's frame)
+     *
+     * Parallel to finishPalette, entry for entry: (axis u, axis v, zmin,
+     * zmax) -- the axis the pattern is laid about, octahedrally encoded,
+     * and the band along it the pattern covers, in the object-space
+     * coordinate dot(p, axis). All zero states nothing. What a screw
+     * thread needs that a knurl does not: a tapped bore's thread stops
+     * at the thread depth, part way down a single face, and it is laid
+     * about the BORE's axis, which it cannot afford to lose to a frame
+     * palette that sixteen holes overflow (Render::FinishPalette::Entry).
+     */
+    SoMFVec4f finishExtents;
     /** The projection frames the finish above is laid out in
      *
      * Where the finish says what was done to the surface, the frame says

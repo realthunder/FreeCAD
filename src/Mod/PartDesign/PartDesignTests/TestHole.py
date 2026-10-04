@@ -19,10 +19,12 @@
 #   Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  *
 #   USA                                                                   *
 #**************************************************************************
+import math
 from math import pi
 import unittest
 
 import FreeCAD
+import Part
 import TestSketcherApp
 
 App = FreeCAD
@@ -115,6 +117,663 @@ class TestHole(unittest.TestCase):
         self.Hole.Tapered = 0
         self.Doc.recompute()
         self.assertAlmostEqual(self.Hole.Shape.Volume, 10**3 - pi * 3**2 * 10 - 24.7400421)
+
+    def testCountersinkDepthFollowsDiameterAndAngle(self):
+        # A countersink is made from its diameter and angle; its depth is the
+        # cone's down to the apex, (D/2)/tan(A/2) (upstream ff17eb611a)
+        import math
+        self.Hole.Diameter = 6
+        self.Hole.ThreadType = 0
+        self.Hole.HoleCutType = "Countersink"
+        self.Hole.HoleCutDiameter = 9
+        self.Hole.HoleCutCountersinkAngle = 90
+        self.assertAlmostEqual(self.Hole.HoleCutDepth.Value, 4.5)
+        self.Hole.HoleCutCountersinkAngle = 60
+        self.assertAlmostEqual(self.Hole.HoleCutDepth.Value, 4.5 / math.tan(math.radians(30)))
+        self.Hole.HoleCutDiameter = 12
+        self.assertAlmostEqual(self.Hole.HoleCutDepth.Value, 6 / math.tan(math.radians(30)))
+        # a counterdrill's depth is its own
+        self.Hole.HoleCutType = "Counterdrill"
+        self.Hole.HoleCutDepth = 1.5
+        self.Hole.HoleCutDiameter = 10
+        self.assertAlmostEqual(self.Hole.HoleCutDepth.Value, 1.5)
+        # and the countersink's depth is not in its shape
+        self.Hole.HoleCutType = "Countersink"
+        self.Hole.HoleCutDiameter = 9
+        self.Hole.HoleCutCountersinkAngle = 90
+        self.Hole.Depth = 10
+        self.Hole.DepthType = 0
+        self.Hole.DrillPoint = 0
+        self.Hole.Tapered = 0
+        self.Doc.recompute()
+        self.assertAlmostEqual(self.Hole.Shape.Volume, 10**3 - pi * 3**2 * 10 - 24.7400421)
+
+    def _holeOnSecondBox(self, refine):
+        """A plain hole through a second, unrefined box that overlaps the
+        first, so that refining merges faces the hole leaves split
+        (upstream fe7bff5a9a)"""
+        self.Box2 = self.Doc.addObject("PartDesign::AdditiveBox", "Box")
+        self.Box2.Length = 10
+        self.Box2.Width = 10
+        self.Box2.Height = 10
+        self.Box2.AttachmentOffset = App.Placement(App.Vector(1, 0, 0), App.Rotation())
+        self.Box2.MapReversed = False
+        self.Box2.AttachmentSupport = self.Doc.getObject("XY_Plane")
+        self.Box2.MapPathParameter = 0.0
+        self.Box2.MapMode = "FlatFace"
+        # Unrefined, or the second box would merge into the first
+        self.Box2.Refine = False
+        self.Body.addObject(self.Box2)
+        self.Doc.recompute()
+
+        # Move the hole on top of the body
+        self.Body.removeObject(self.Hole)
+        self.Body.insertObject(self.Hole, self.Box2, True)
+        self.Body.Tip = self.Hole
+        self.Hole.Diameter = 6
+        self.Hole.Depth = 10
+        self.Hole.ThreadType = 0
+        self.Hole.HoleCutType = 0
+        self.Hole.DepthType = 0
+        self.Hole.DrillPoint = 0
+        self.Hole.Tapered = 0
+        self.Hole.Visibility = True
+        self.Hole.Refine = refine
+        self.Doc.recompute()
+
+    def testNoRefineHole(self):
+        self._holeOnSecondBox(False)
+        self.assertEqual(len(self.Hole.Shape.Faces), 15)
+
+    def testRefineHole(self):
+        self._holeOnSecondBox(True)
+        self.assertEqual(len(self.Hole.Shape.Faces), 7)
+
+    def testProfileWithoutCircle(self):
+        """Nothing to drill is an error on the hole (upstream 7a672a3207); it
+        emptied the body without a word."""
+        self.Body = self.Doc.addObject("PartDesign::Body", "Body")
+        box = self.Body.newObject("PartDesign::AdditiveBox", "Box")
+        box.Length = box.Width = 20
+        self.Doc.recompute()
+        sketch = self.Body.newObject("Sketcher::SketchObject", "Square")
+        sketch.Support = (box, ["Face6"])
+        sketch.MapMode = "FlatFace"
+        TestSketcherApp.CreateRectangleSketch(sketch, (5, 5), (4, 4))
+        self.Doc.recompute()
+        hole = self.Body.newObject("PartDesign::Hole", "Hole")
+        hole.Profile = sketch
+        self.Doc.recompute()
+        self.assertIn("Invalid", hole.State)
+        self.assertAlmostEqual(box.Shape.Volume, 4000)
+
+    def testBaseProfileType(self):
+        """Holes on a sketch's points as well as its circles and arcs
+        (upstream 774ec2cc93): BaseProfileType's bits choose, a new hole
+        takes the preference (all three by default), and one restored
+        without the property keeps circles and arcs."""
+        import Part
+        self.Body = self.Doc.addObject("PartDesign::Body", "Body")
+        box = self.Body.newObject("PartDesign::AdditiveBox", "Box")
+        box.Length = box.Width = 40
+        box.Height = 10
+        self.Doc.recompute()
+        sketch = self.Body.newObject("Sketcher::SketchObject", "Points")
+        sketch.MapMode = "Deactivated"
+        sketch.Placement = App.Placement(App.Vector(0, 0, 10), App.Rotation())
+        sketch.addGeometry(Part.Circle(App.Vector(10, 10, 0), App.Vector(0, 0, 1), 1))
+        sketch.addGeometry(Part.Point(App.Vector(30, 30, 0)))
+        self.Doc.recompute()
+        hole = self.Body.newObject("PartDesign::Hole", "Hole")
+        # as PartDesign_Hole writes it
+        hole.Profile = (sketch, [""])
+        hole.Diameter = 6
+        hole.DepthType = "Dimension"
+        hole.Depth = 5
+        hole.DrillPoint = "Flat"
+        self.assertEqual(hole.BaseProfileType, 7)
+        one = pi * 9 * 5
+        for bits, holes, at_point in ((7, 2, True), (6, 1, False), (1, 1, True)):
+            hole.BaseProfileType = bits
+            self.Doc.recompute()
+            self.assertNotIn("Invalid", hole.State, bits)
+            removed = box.Shape.cut(hole.Shape)
+            self.assertAlmostEqual(removed.Volume, holes * one, places=4, msg=bits)
+            near_point = [s for s in removed.Solids
+                          if (s.CenterOfMass - App.Vector(30, 30, 7.5)).Length < 1e-6]
+            self.assertEqual(bool(near_point), at_point, bits)
+
+    def testProfileCylindricalFace(self):
+        """A hole on the face of an existing hole is drilled along its axis
+        (upstream 7481a5d8dd, af83b6883e); it went radially, the normal at
+        the middle of the face, and Reversed changed nothing."""
+        self.Body = self.Doc.addObject("PartDesign::Body", "Body")
+        box = self.Body.newObject("PartDesign::AdditiveBox", "Box")
+        box.Length = box.Width = box.Height = 40
+        for placement in (App.Placement(App.Vector(20, 20, 0), App.Rotation()),
+                          App.Placement(App.Vector(0, 10, 20),
+                                        App.Rotation(App.Vector(0, 1, 0), 90))):
+            cyl = self.Body.newObject("PartDesign::SubtractiveCylinder", "Cylinder")
+            cyl.Radius = 3
+            cyl.Height = 40
+            cyl.Placement = placement
+            self.Doc.recompute()
+            face = [i for i, f in enumerate(cyl.Shape.Faces, 1)
+                    if f.Surface.TypeId == "Part::GeomCylinder"][0]
+            hole = self.Body.newObject("PartDesign::Hole", "Hole")
+            hole.Profile = (cyl, ["Face%d" % face])
+            hole.Diameter = 8
+            hole.DepthType = "Dimension"
+            hole.Depth = 10
+            hole.DrillPoint = "Flat"
+            axis = cyl.Shape.Faces[face - 1].Surface.Axis
+            for reversed in (False, True):
+                hole.Reversed = reversed
+                self.Doc.recompute()
+                self.assertNotIn("Invalid", hole.State)
+                removed = cyl.Shape.cut(hole.Shape)
+                # a ring D8 over D6, 10 deep along the axis, at one end
+                self.assertAlmostEqual(removed.Volume, pi * (16 - 9) * 10, places=4,
+                                       msg="%s reversed %s" % (placement, reversed))
+                bb = removed.BoundBox
+                extent = abs(axis.x) * bb.XLength + abs(axis.y) * bb.YLength \
+                    + abs(axis.z) * bb.ZLength
+                self.assertAlmostEqual(extent, 10, places=4)
+            self.Body.removeObject(hole)
+            self.Doc.removeObject(hole.Name)
+
+    def testPipeAndWhitworthThreads(self):
+        """NPT and BSP pipe threads (tapered), BSW and BSF (upstream
+        acf04c7f1e, 588f4c3b00, 003e239daf, edb565046d, ce91285e4d): each
+        builds a modelled thread, and the countersink takes the standard's
+        angle."""
+        self.Body = self.Doc.addObject("PartDesign::Body", "Body")
+        box = self.Body.newObject("PartDesign::AdditiveBox", "Box")
+        box.Length = box.Width = box.Height = 60
+        self.Doc.recompute()
+        sketch = self.Body.newObject("Sketcher::SketchObject", "Center")
+        sketch.MapMode = "Deactivated"
+        sketch.Placement = App.Placement(App.Vector(0, 0, 60), App.Rotation())
+        TestSketcherApp.CreateCircleSketch(sketch, (30, 30), 1)
+        self.Doc.recompute()
+        # BSP 1 1/2 is past the size the list and the table disagreed on:
+        # it took the 1 3/4 row, whose core hole is 51.0. A new hole each
+        # time: the countersink angle is proposed for a new countersink only.
+        for thread_type, size, countersink, core in (
+                ("NPT", "1/2", 90, None), ("BSP", "1/2", 90, None),
+                ("BSP", "1 1/2", None, 45.5), ("BSW", "1/2", 100, None),
+                ("BSF", "1/2", 100, None)):
+            hole = self.Body.newObject("PartDesign::Hole", "Hole")
+            hole.Profile = sketch
+            hole.ThreadType = thread_type
+            hole.ThreadSize = size
+            hole.Threaded = True
+            hole.ModelThread = True
+            hole.HoleCutType = "Countersink" if countersink else "None"
+            hole.DepthType = "Dimension"
+            hole.Depth = 20
+            self.Doc.recompute()
+            self.assertNotIn("Invalid", hole.State, (thread_type, size))
+            self.assertTrue(hole.Shape.isValid(), (thread_type, size))
+            self.assertGreater(box.Shape.Volume - hole.Shape.Volume, 0, (thread_type, size))
+            if countersink:
+                self.assertAlmostEqual(hole.HoleCutCountersinkAngle.Value, countersink,
+                                       msg=thread_type)
+            if core:
+                self.assertAlmostEqual(hole.Diameter.Value, core, msg=size)
+            self.Body.removeObject(hole)
+            self.Doc.removeObject(hole.Name)
+
+    def testTyreValveThreads(self):
+        """ISO 4570 tyre valve threads (upstream 551c15b48f): a modelled
+        thread with a rounded crest, and a tap drill of diameter - pitch,
+        as the table has no core holes."""
+        self.Body = self.Doc.addObject("PartDesign::Body", "Body")
+        box = self.Body.newObject("PartDesign::AdditiveBox", "Box")
+        box.Length = box.Width = box.Height = 30
+        self.Doc.recompute()
+        sketch = self.Body.newObject("Sketcher::SketchObject", "Center")
+        sketch.MapMode = "Deactivated"
+        sketch.Placement = App.Placement(App.Vector(0, 0, 30), App.Rotation())
+        TestSketcherApp.CreateCircleSketch(sketch, (15, 15), 1)
+        self.Doc.recompute()
+        hole = self.Body.newObject("PartDesign::Hole", "Hole")
+        hole.Profile = sketch
+        hole.ThreadType = "ISOTyre"
+        hole.ThreadSize = "8v1"  # Schrader external
+        hole.Threaded = True
+        hole.DepthType = "Dimension"
+        hole.Depth = 10
+        self.Doc.recompute()
+        self.assertAlmostEqual(hole.Diameter.Value, 7.798 - 0.794, places=6)
+        hole.ModelThread = True
+        self.Doc.recompute()
+        self.assertNotIn("Invalid", hole.State)
+        self.assertTrue(hole.Shape.isValid())
+        self.assertGreater(box.Shape.Volume - hole.Shape.Volume, 0)
+
+    def testClearanceNames(self):
+        """Each type names its fits after its standard (upstream 70007a28c1):
+        ISO 273's fine, medium and coarse, ASME's close, normal and loose.
+        The pipe and Whitworth types kept the previous type's names. The
+        index, which files store, means the same fit as before."""
+        expected = {
+            "ISOMetricProfile": ["Medium", "Fine", "Coarse"],
+            "UNC": ["Normal", "Close", "Loose"],
+            "BSW": ["Normal", "Close", "Wide"],
+            "BSP": ["Medium", "Fine", "Coarse"],
+            "NPT": ["Normal", "Close", "Loose"],
+            "BSF": ["Normal", "Close", "Wide"],
+            "ISOTyre": ["Normal", "Close", "Wide"],
+            "None": ["-", "-", "-"],
+        }
+        for thread_type, names in expected.items():
+            self.Hole.ThreadType = thread_type
+            self.assertEqual(self.Hole.getEnumerationsOfProperty("ThreadFit"), names,
+                             thread_type)
+        # ISO 273 for M8: fine 8.4, medium 9, coarse 10
+        self.Hole.ThreadType = "ISOMetricProfile"
+        self.Hole.ThreadSize = "M8"
+        self.Hole.Threaded = False
+        for index, diameter in ((0, 9.0), (1, 8.4), (2, 10.0)):
+            self.Hole.ThreadFit = index
+            self.Doc.recompute()
+            self.assertAlmostEqual(self.Hole.Diameter.Value, diameter,
+                                   msg=self.Hole.ThreadFit)
+
+    def testCutBeyondStandard(self):
+        """A counterbore or countersink for a size its standard has no entry
+        for is estimated from the diameter (upstream 07e7918baf); it was the
+        hole's diameter + 0.1, 0.1 deep -- nothing to see."""
+        self.Body = self.Doc.addObject("PartDesign::Body", "Body")
+        box = self.Body.newObject("PartDesign::AdditiveBox", "Box")
+        box.Length = box.Width = 200
+        box.Height = 100
+        sketch = self.Body.newObject("Sketcher::SketchObject", "Center")
+        sketch.MapMode = "Deactivated"
+        sketch.Placement = App.Placement(App.Vector(0, 0, 100), App.Rotation())
+        TestSketcherApp.CreateCircleSketch(sketch, (100, 100), 5)
+        self.Doc.recompute()
+        # A countersink's depth is its cone's, (D/2)/tan(90/2) (upstream
+        # 3aabb826aa dropped the estimate 0.62 * 74)
+        for cut, diameter, depth in (("Counterbore", 1.5 * 74 + 1, 74),
+                                     ("Countersink", 2.24 * 74, 2.24 * 74 / 2)):
+            hole = self.Body.newObject("PartDesign::Hole", "Hole")
+            hole.Profile = sketch
+            hole.ThreadType = "ISOMetricProfile"
+            hole.ThreadSize = "M68"  # ISO 4762 and ISO 10642 stop short of it
+            hole.HoleCutType = cut
+            hole.DepthType = "ThroughAll"
+            self.Doc.recompute()
+            self.assertNotIn("Invalid", hole.State, cut)
+            self.assertAlmostEqual(hole.HoleCutDiameter.Value, diameter, msg=cut)
+            self.assertAlmostEqual(hole.HoleCutDepth.Value, depth, msg=cut)
+            self.Body.removeObject(hole)
+            self.Doc.removeObject(hole.Name)
+
+    def testClosestDesignation(self):
+        """Changing the thread type keeps the size nearest the diameter
+        (upstream dc53d3dba2); it went back to the smallest one."""
+        self.Hole.ThreadType = "ISOMetricProfile"
+        self.Hole.ThreadSize = "M6"
+        self.Hole.Threaded = True
+        self.Doc.recompute()
+        for thread_type, size in (("UNC", "1/4"), ("ISOMetricFineProfile", "M6x0.75"),
+                                  ("BSW", "1/4"), ("ISOMetricProfile", "M6")):
+            self.Hole.ThreadType = thread_type
+            self.Doc.recompute()
+            self.assertEqual(self.Hole.ThreadSize, size, thread_type)
+        # Among the fine M10s, the pitch nearest the coarse one's 1.5
+        # (upstream 601c0f9b09, 0dc6cbd16f)
+        self.Hole.ThreadSize = "M10"
+        self.Doc.recompute()
+        self.Hole.ThreadType = "ISOMetricFineProfile"
+        self.Doc.recompute()
+        self.assertEqual(self.Hole.ThreadSize, "M10x1.25")
+
+    def testStartOffset(self):
+        """The holes start off the profile (upstream f394f1b669): by an
+        offset into the material, or at a reference face plus the offset."""
+        self.Hole.Diameter = 6
+        self.Hole.Depth = 5
+        self.Hole.DepthType = 0
+        self.Hole.DrillPoint = 0
+        self.assertIn("ReadOnly", self.Hole.getEditorMode("StartOffset"))
+        self.Hole.StartType = "Offset"
+        self.assertNotIn("ReadOnly", self.Hole.getEditorMode("StartOffset"))
+        self.Hole.StartOffset = 2
+        self.Doc.recompute()
+        self.assertAlmostEqual(self.Hole.Shape.Volume, 10**3 - pi * 3**2 * 5)
+        self.assertAlmostEqual(self.Hole.AddSubShape.BoundBox.ZMin, 2)
+        self.assertAlmostEqual(self.Hole.AddSubShape.BoundBox.ZMax, 7)
+
+        reference = self.Doc.addObject("Part::Feature", "StartReference")
+        reference.Shape = Part.makePlane(20, 20, App.Vector(-10, -10, 1))
+        self.Hole.StartType = "Reference"
+        self.Hole.StartReference = (reference, ["Face1"])
+        self.Doc.recompute()
+        self.assertAlmostEqual(self.Hole.Shape.Volume, 10**3 - pi * 3**2 * 5)
+        self.assertAlmostEqual(self.Hole.AddSubShape.BoundBox.ZMin, 3)
+        self.assertAlmostEqual(self.Hole.AddSubShape.BoundBox.ZMax, 8)
+
+    def testStartReferenceOffsetForPointProfile(self):
+        """A reference plane is met from the centre of a profile of points
+        too (upstream f394f1b669)."""
+        self.HoleSketch.deleteAllGeometry()
+        for point in ((2, 2), (8, 2), (2, 8), (8, 8)):
+            self.HoleSketch.addGeometry(Part.Point(App.Vector(*point)), False)
+
+        self.Hole.BaseProfileType = 1
+        self.Hole.Diameter = 2
+        self.Hole.Depth = 5
+        self.Hole.DepthType = 0
+        self.Hole.DrillPoint = 0
+
+        reference = self.Doc.addObject("Part::Feature", "StartReference")
+        reference.Shape = Part.makePlane(20, 20, App.Vector(-5, -5, 20))
+        self.Hole.StartType = "Reference"
+        self.Hole.StartReference = (reference, ["Face1"])
+        self.Hole.StartOffset = 2
+        self.Doc.recompute()
+
+        self.assertAlmostEqual(self.Hole.AddSubShape.BoundBox.ZMin, 22)
+        self.assertAlmostEqual(self.Hole.AddSubShape.BoundBox.ZMax, 27)
+
+    def testStartReferenceSketchAndMiss(self):
+        """A sketch is its plane as a start reference; a curved face the
+        hole's line does not cross is an error, not a hole at the profile."""
+        self.Hole.Diameter = 2
+        self.Hole.Depth = 3
+        self.Hole.DepthType = 0
+        self.Hole.DrillPoint = 0
+        sketch = self.Body.newObject("Sketcher::SketchObject", "StartSketch")
+        sketch.MapMode = "Deactivated"
+        sketch.Placement = App.Placement(App.Vector(0, 0, 4), App.Rotation())
+        self.Doc.recompute()
+        self.Hole.StartType = "Reference"
+        self.Hole.StartReference = (sketch, [""])
+        self.Doc.recompute()
+        self.assertNotIn("Invalid", self.Hole.State)
+        self.assertAlmostEqual(self.Hole.AddSubShape.BoundBox.ZMin, 4)
+        self.assertAlmostEqual(self.Hole.AddSubShape.BoundBox.ZMax, 7)
+
+        far = self.Doc.addObject("Part::Feature", "Far")
+        far.Shape = Part.makeCylinder(1, 5, App.Vector(50, 50, 0)).Faces[0]
+        self.Hole.StartReference = (far, ["Face1"])
+        self.Doc.recompute()
+        self.assertIn("Invalid", self.Hole.State)
+
+    def testCosmeticThread(self):
+        """The thread drawn on the bore without modelling it (upstream
+        180c39709a): on by default, read only until the hole is threaded,
+        exclusive with ModelThread in the stored values the way upstream
+        keeps them, and never a change of geometry."""
+        hole = self.Hole
+        self.assertTrue(hole.CosmeticThread)
+        hole.ThreadType = "ISOMetricProfile"
+        hole.ThreadSize = "M6"
+        hole.Threaded = True
+        hole.DepthType = "Dimension"
+        hole.Depth = 8
+        self.Doc.recompute()
+        self.assertNotIn("ReadOnly", hole.getEditorMode("CosmeticThread"))
+        drawn = hole.Shape.Volume
+
+        hole.ModelThread = True
+        self.assertFalse(hole.CosmeticThread)
+        hole.CosmeticThread = True
+        self.assertFalse(hole.ModelThread)
+
+        hole.CosmeticThread = False
+        self.Doc.recompute()
+        self.assertAlmostEqual(hole.Shape.Volume, drawn)
+
+        # Unthreading leaves the choice where it was, for the next time
+        hole.CosmeticThread = True
+        hole.Threaded = False
+        self.assertTrue(hole.CosmeticThread)
+        self.assertIn("ReadOnly", hole.getEditorMode("CosmeticThread"))
+
+    def testThreadEnums(self):
+        """Test thread enums for correct order (upstream 0fdb02c6eb; the BSP
+        list is the table's, which the list the BSP pick brought did not
+        match)."""
+        # Due to the savefile use of indexes and not strings
+        # The correct mapping needs to be ensured to not break savefiles
+        # The order of the arrays and elements is critical
+        thread_types = {
+            'ISOMetricProfile': [
+                "M1",   "M1.1", "M1.2", "M1.4", "M1.6",
+                "M1.8", "M2",   "M2.2", "M2.5", "M3",
+                "M3.5", "M4",   "M4.5", "M5",   "M6",
+                "M7",   "M8",   "M9",   "M10",  "M11",
+                "M12",  "M14",  "M16",  "M18",  "M20",
+                "M22",  "M24",  "M27",  "M30",  "M33",
+                "M36",  "M39",  "M42",  "M45",  "M48",
+                "M52",  "M56",  "M60",  "M64",  "M68",
+            ],
+            'ISOMetricFineProfile': [
+                "M1x0.2",      "M1.1x0.2",    "M1.2x0.2",    "M1.4x0.2",
+                "M1.6x0.2",    "M1.8x0.2",    "M2x0.25",     "M2.2x0.25",
+                "M2.5x0.35",   "M3x0.35",     "M3.5x0.35",
+                "M4x0.5",      "M4.5x0.5",    "M5x0.5",      "M5.5x0.5",
+                "M6x0.75",     "M7x0.75",     "M8x0.75",     "M8x1.0",
+                "M9x0.75",     "M9x1.0",      "M10x0.75",    "M10x1.0",
+                "M10x1.25",    "M11x0.75",    "M11x1.0",     "M12x1.0",
+                "M12x1.25",    "M12x1.5",     "M14x1.0",     "M14x1.25",
+                "M14x1.5",     "M15x1.0",     "M15x1.5",     "M16x1.0",
+                "M16x1.5",     "M17x1.0",     "M17x1.5",     "M18x1.0",
+                "M18x1.5",     "M18x2.0",     "M20x1.0",     "M20x1.5",
+                "M20x2.0",     "M22x1.0",     "M22x1.5",     "M22x2.0",
+                "M24x1.0",     "M24x1.5",     "M24x2.0",     "M25x1.0",
+                "M25x1.5",     "M25x2.0",     "M27x1.0",     "M27x1.5",
+                "M27x2.0",     "M28x1.0",     "M28x1.5",     "M28x2.0",
+                "M30x1.0",     "M30x1.5",     "M30x2.0",     "M30x3.0",
+                "M32x1.5",     "M32x2.0",     "M33x1.5",     "M33x2.0",
+                "M33x3.0",     "M35x1.5",     "M35x2.0",     "M36x1.5",
+                "M36x2.0",     "M36x3.0",     "M39x1.5",     "M39x2.0",
+                "M39x3.0",     "M40x1.5",     "M40x2.0",     "M40x3.0",
+                "M42x1.5",     "M42x2.0",     "M42x3.0",     "M42x4.0",
+                "M45x1.5",     "M45x2.0",     "M45x3.0",     "M45x4.0",
+                "M48x1.5",     "M48x2.0",     "M48x3.0",     "M48x4.0",
+                "M50x1.5",     "M50x2.0",     "M50x3.0",     "M52x1.5",
+                "M52x2.0",     "M52x3.0",     "M52x4.0",     "M55x1.5",
+                "M55x2.0",     "M55x3.0",     "M55x4.0",     "M56x1.5",
+                "M56x2.0",     "M56x3.0",     "M56x4.0",     "M58x1.5",
+                "M58x2.0",     "M58x3.0",     "M58x4.0",     "M60x1.5",
+                "M60x2.0",     "M60x3.0",     "M60x4.0",     "M62x1.5",
+                "M62x2.0",     "M62x3.0",     "M62x4.0",     "M64x1.5",
+                "M64x2.0",     "M64x3.0",     "M64x4.0",     "M65x1.5",
+                "M65x2.0",     "M65x3.0",     "M65x4.0",     "M68x1.5",
+                "M68x2.0",     "M68x3.0",     "M68x4.0",     "M70x1.5",
+                "M70x2.0",     "M70x3.0",     "M70x4.0",     "M70x6.0",
+                "M72x1.5",     "M72x2.0",     "M72x3.0",     "M72x4.0",
+                "M72x6.0",     "M75x1.5",     "M75x2.0",     "M75x3.0",
+                "M75x4.0",     "M75x6.0",     "M76x1.5",     "M76x2.0",
+                "M76x3.0",     "M76x4.0",     "M76x6.0",     "M80x1.5",
+                "M80x2.0",     "M80x3.0",     "M80x4.0",     "M80x6.0",
+                "M85x2.0",     "M85x3.0",     "M85x4.0",     "M85x6.0",
+                "M90x2.0",     "M90x3.0",     "M90x4.0",     "M90x6.0",
+                "M95x2.0",     "M95x3.0",     "M95x4.0",     "M95x6.0",
+                "M100x2.0",    "M100x3.0",    "M100x4.0",    "M100x6.0",
+            ],
+            'UNC': [
+                "#1", "#2", "#3", "#4", "#5", "#6",
+                "#8",  "#10", "#12",
+                "1/4", "5/16", "3/8", "7/16", "1/2", "9/16",
+                "5/8", "3/4", "7/8", "1", "1 1/8", "1 1/4",
+                "1 3/8", "1 1/2", "1 3/4", "2", "2 1/4",
+                "2 1/2", "2 3/4", "3", "3 1/4", "3 1/2",
+                "3 3/4", "4",
+            ],
+            'UNF': [
+                "#0", "#1", "#2", "#3", "#4", "#5", "#6",
+                "#8", "#10", "#12",
+                "1/4", "5/16", "3/8", "7/16", "1/2", "9/16",
+                "5/8", "3/4", "7/8", "1", "1 1/8", "1 3/16", "1 1/4",
+                "1 3/8", "1 1/2",
+            ],
+            'UNEF': [
+                "#12", "1/4", "5/16", "3/8", "7/16", "1/2",
+                "9/16", "5/8", "11/16", "3/4", "13/16", "7/8",
+                "15/16", "1", "1 1/16", "1 1/8", "1 1/4",
+                "1 5/16", "1 3/8", "1 7/16", "1 1/2", "1 9/16",
+                "1 5/8", "1 11/16",
+            ],
+            'NPT': [
+                "1/16", "1/8", "1/4", "3/8", "1/2", "3/4",
+                "1", "1 1/4", "1 1/2",
+                "2", "2 1/2",
+                "3", "3 1/2",
+                "4", "5", "6", "8", "10", "12",
+            ],
+            'BSP': [
+                "1/16", "1/8", "1/4", "3/8", "1/2", "5/8", "3/4", "7/8",
+                "1", "1 1/8", "1 1/4", "1 1/2", "1 3/4",
+                "2", "2 1/4", "2 1/2", "2 3/4",
+                "3", "3 1/2", "4", "4 1/2",
+                "5", "5 1/2", "6",
+            ],
+            'BSW': [
+                "1/8", "3/16", "1/4", "5/16", "3/8", "7/16",
+                "1/2", "9/16", "5/8", "11/16", "3/4", "7/8",
+                "1", "1 1/8", "1 1/4", "1 1/2", "1 3/4",
+                "2", "2 1/4", "2 1/2", "2 3/4",
+                "3", "3 1/4", "3 1/2", "3 3/4",
+                "4", "4 1/2", "5", "5 1/2", "6",
+            ],
+            'BSF': [
+                "3/16", "7/32", "1/4", "9/32", "5/16", "3/8", "7/16",
+                "1/2", "9/16", "5/8", "11/16", "3/4", "7/8",
+                "1", "1 1/8", "1 1/4", "1 3/8", "1 1/2", "1 5/8", "1 3/4",
+                "2", "2 1/4", "2 1/2", "2 3/4",
+                "3", "3 1/4", "3 1/2", "3 3/4",
+                "4", "4 1/4",
+            ],
+            'ISOTyre': [
+                "5v1", "5v2", "6v1", "8v1", "9v1", "10v2",
+                "12v1", "13v1", "8v2", "10v1", "11v1", "13v2",
+                "15v1", "16v1", "17v1", "17v2", "17v3", "19v1", "20v1",
+            ],
+        }
+        allowed_types = self.Hole.getEnumerationsOfProperty("ThreadType")
+        for type_index, thread_type in enumerate(thread_types.keys(), 1):
+            if thread_type not in allowed_types:
+                self._helperNotFoundMessage(thread_type, allowed_types)
+            # Set by number like the saved files
+            self.Hole.ThreadType = type_index
+            self._helperNotCorrectMessage(self.Hole.ThreadType, thread_type)
+
+            allowed_sizes = self.Hole.getEnumerationsOfProperty("ThreadSize")
+            for size_index, designation in enumerate(thread_types[thread_type]):
+                if designation not in allowed_sizes:
+                    self._helperNotFoundMessage(designation, allowed_sizes)
+                # Set by number like the saved files
+                self.Hole.ThreadSize = size_index
+                self._helperNotCorrectMessage(self.Hole.ThreadSize, designation)
+
+    def _helperNotCorrectMessage(self, value, comparison):
+        self.assertEqual(
+            value, comparison,
+            f"{comparison} is not in the correct position\n\n"
+            "it will break compatibility with older saves"
+        )
+
+    def _helperNotFoundMessage(self, prop, allowed_props):
+        raise AssertionError(
+            "\n"
+            f"{prop} is not in {allowed_props}\n\n"
+            "Verify that the tested enums names are updated \n\n"
+        )
+
+    def testTaperedModelThread(self):
+        # A modelled thread follows the taper of a tapered hole (upstream
+        # df22f8060d, with the profile of 80d4185c09): its root is narrower
+        # deeper down. It was a straight thread in a tapered bore
+        body = self.Doc.addObject('PartDesign::Body', 'TaperBody')
+        box = body.newObject('PartDesign::AdditiveBox', 'TaperBox')
+        box.Length = box.Width = 60
+        box.Height = 40
+        box.Placement.Base = FreeCAD.Vector(-30, -30, -40)
+        sketch = body.newObject('Sketcher::SketchObject', 'TaperSketch')
+        sketch.AttachmentSupport = (self.Doc.XY_Plane, [''])
+        sketch.MapMode = 'FlatFace'
+        sketch.addGeometry(Part.Circle(FreeCAD.Vector(), FreeCAD.Vector(0, 0, 1), 5), False)
+        self.Doc.recompute()
+        hole = body.newObject('PartDesign::Hole', 'TaperHole')
+        hole.Profile = sketch
+        hole.Threaded = True
+        hole.ThreadType = 'NPT'
+        hole.ThreadSize = '1'
+        hole.ModelThread = True
+        hole.Tapered = True
+        hole.DepthType = 'Dimension'
+        hole.Depth = 25
+        hole.ThreadDepthType = 'Hole Depth'
+        self.Doc.recompute()
+        self.assertNotIn('Invalid', hole.State)
+        self.assertTrue(hole.Shape.isValid())
+
+        def root(z):
+            wires = hole.Shape.slice(FreeCAD.Vector(0, 0, 1), z)
+            inner = min(wires, key=lambda w: w.BoundBox.DiagonalLength)
+            return max(FreeCAD.Vector(p.x, p.y, 0).Length
+                       for e in inner.Edges for p in e.discretize(60))
+
+        drop = (root(-3) - root(-20)) / 17
+        taper = math.tan(math.radians(90 - hole.TaperedAngle.Value))
+        self.assertAlmostEqual(drop, taper, delta=taper * 0.2)
+
+    def testThroughAllThreadAndTaperStopPastTheMaterial(self):
+        # Through all used to mean twice the diagonal of everything: a
+        # modelled thread that long is hundreds of turns of helix past the
+        # material, and a taper that long has its radius cross zero, which
+        # failed with "Could not revolve sketch". Both now stop just past
+        # the far face; the plain bore stays long, so a pattern that copies
+        # the hole into thicker material still gets a hole through
+        body = self.Doc.addObject('PartDesign::Body', 'PlateBody')
+        box = body.newObject('PartDesign::AdditiveBox', 'Plate')
+        box.Length = box.Width = 60
+        box.Height = 20
+        sketch = body.newObject('Sketcher::SketchObject', 'PlateSketch')
+        sketch.Placement.Base = FreeCAD.Vector(0, 0, 20)
+        sketch.addGeometry(Part.Circle(FreeCAD.Vector(30, 30, 0), FreeCAD.Vector(0, 0, 1), 3))
+        self.Doc.recompute()
+        hole = body.newObject('PartDesign::Hole', 'PlateHole')
+        hole.Profile = sketch
+        hole.ThreadType = 'ISOMetricProfile'
+        hole.ThreadSize = 'M6'
+        hole.DepthType = 'ThroughAll'
+        self.Doc.recompute()
+        self.assertTrue(hole.Shape.isValid())
+        self.assertLess(hole.AddSubShape.BoundBox.ZMin, -100)
+
+        def holedBottom():
+            return [len(f.Wires) for f in hole.Shape.Faces
+                    if f.BoundBox.ZMax < 1e-6 and f.Area > 3000]
+
+        hole.Threaded = True
+        hole.ModelThread = True
+        hole.ThreadDepthType = 'Hole Depth'
+        self.Doc.recompute()
+        self.assertNotIn('Invalid', hole.State)
+        self.assertTrue(hole.Shape.isValid())
+        self.assertEqual(holedBottom(), [2])
+        # The thread ends a hair past the 20 mm of material
+        self.assertGreater(hole.ThreadDepth.Value, 20)
+        self.assertLess(hole.ThreadDepth.Value, 21)
+        # and the bore below it is still the long one
+        self.assertLess(hole.AddSubShape.BoundBox.ZMin, -100)
+
+        hole.Threaded = False
+        hole.Tapered = True
+        hole.TaperedAngle = 89
+        self.Doc.recompute()
+        self.assertNotIn('Invalid', hole.State)
+        self.assertTrue(hole.Shape.isValid())
+        self.assertEqual(holedBottom(), [2])
+        # the drill point's tip a little past that
+        self.assertGreater(hole.AddSubShape.BoundBox.ZMin, -10)
 
     def tearDown(self):
         #closing doc

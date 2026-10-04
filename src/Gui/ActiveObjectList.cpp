@@ -23,6 +23,7 @@
 
 #include "PreCompiled.h"
 
+#include <App/Application.h>
 #include <App/Document.h>
 #include <Gui/Application.h>
 #include <Gui/Document.h>
@@ -45,6 +46,24 @@ ActiveObjectList::ActiveObjectList(Document *doc)
             if (_ObjectMap.size())
                 timer.start(10);
         });
+    // Forget everything when the document goes. Its objects are freed before
+    // the view owning this list is (a view is deleted later, from the event
+    // loop), and closing the document changes children on the way -- which
+    // started the timer above, whose check then read the freed body: an
+    // access violation after moving features in a body and closing it.
+    // The Gui::Document goes before the view as well, so the App document is
+    // taken now, and both connections are dropped once it is gone.
+    if (_Doc) {
+        connDeleteDocument = App::GetApplication().signalDeleteDocument.connect(
+            [this, appDoc = _Doc->getDocument()](const App::Document &doc) {
+                if (&doc == appDoc) {
+                    _ObjectMap.clear();
+                    timer.stop();
+                    connChangedChildren.disconnect();
+                    connDeleteDocument.disconnect();
+                }
+            });
+    }
     timer.setSingleShot(true);
     QObject::connect(&timer, &QTimer::timeout, [this]() {
         for (auto it = _ObjectMap.begin(); it!=_ObjectMap.end();) {

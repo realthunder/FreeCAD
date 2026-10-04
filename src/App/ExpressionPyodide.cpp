@@ -294,8 +294,10 @@ Layout layout()
         for (const auto& fn : names) {
             if (fn.size() < 5 || fn.compare(fn.size() - 4, 4, ".whl") != 0)
                 continue;
-            // a pure-Python wheel is bundled workbench code, one per
-            // distribution name (the first place scanned wins)
+            // a pure-Python wheel is bundled guest code, one per
+            // distribution name (the first place scanned wins):
+            // fcx_widgets, since the workbench wheels were removed
+            // 2026-09-18 (docs/Sandbox.md 7.31)
             static const std::string pureTag = "-py3-none-any.whl";
             if (fn.size() > pureTag.size()
                     && fn.compare(fn.size() - pureTag.size(), pureTag.size(), pureTag) == 0) {

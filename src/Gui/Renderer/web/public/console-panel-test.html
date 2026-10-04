@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>python console -- C4</title>
+<link rel="stylesheet" href="./inspector.css">
+<style> body { margin: 0; background: #0e1013; min-height: 100vh } </style>
+</head>
+<body>
+<!--
+  The Python console panel with no WASM viewer behind it
+  (docs/Sandbox.md 7.20, C4).  Serve a document with the built bundle
+  (FC_BGFX_VIEWER_BUILD=build/wasm, the web bundle in build/wasm/web) and
+  open
+      http://<server>/web/console-panel-test.html?token=<token>&doc=<document>
+  to use the panel by hand; add &drive=1 (and &doc2=<another served
+  document>) for the scripted run tests/gui/sandbox-console-panel-browser.py
+  makes headless.
+-->
+<script type="module" src="./consolepaneltest.js"></script>
+</body>
+</html>

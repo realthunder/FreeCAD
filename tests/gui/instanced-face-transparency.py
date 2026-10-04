@@ -2,7 +2,7 @@
 transparency the list says.
 
 Found 2026-09-30 by progressive-load-diff.py on a user file
-(FC0.21.1_Lead_Screw_12.12.23, docs/DocumentLoad.md sec 16): a Lattice
+(FC0.21.1_Lead_Screw_12.12.23, docs/DocumentLoad.md sec 19): a Lattice
 Populate -- a compound of repeated solids, which the render cache builds
 instanced -- opened progressively with its faces fully transparent while
 its DiffuseColor and Transparency said opaque. The uniform branch of

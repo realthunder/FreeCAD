@@ -45,6 +45,7 @@
 #include <Base/Unit.h>
 #include <Base/Tools.h>
 
+#include <Gui/ExpressionCompleter.h>
 #include <Gui/SceneControl.h>
 #include <Gui/Renderer/SceneServer.h>
 
@@ -447,11 +448,45 @@ QJsonObject sheetSet(const QJsonObject& req, const std::string& boundDoc)
 
 }  // namespace
 
+/// Completion for a cell's content (docs/Sandbox.md 7.25, 7.26): the
+/// same shape as widgets.complete, on a completer built for the request
+/// with the sheet as its owner -- the desktop's SheetTableView does the
+/// same for its own cell editor.  NOT mutating: a view-only client may
+/// complete, and still may not write.
+QJsonObject sheetComplete(const QJsonObject& req, const std::string& boundDoc)
+{
+    QJsonObject error;
+    Sheet* sheet = resolveSheet(req, boundDoc, error);
+    if (!sheet)
+        return error;
+    const QString text = req.value(QLatin1String("text")).toString();
+    int pos = req.value(QLatin1String("pos")).toInt(text.size());
+    if (pos < 0 || pos > text.size())
+        pos = text.size();
+    int start = 0;
+    int end = 0;
+    QStringList details;
+    Gui::ExpressionCompleter completer(sheet);
+    // A cell's expression leads with '=', which the desktop's cell
+    // editor hands its completer as the lead char too.
+    completer.setLeadChar('=');
+    const QStringList found = completer.completionsFor(text, pos, start, end, &details);
+    QJsonObject reply;
+    reply[QLatin1String("id")] = req.value(QLatin1String("id"));
+    reply[QLatin1String("ok")] = true;
+    reply[QLatin1String("items")] = QJsonArray::fromStringList(found);
+    reply[QLatin1String("details")] = QJsonArray::fromStringList(details);
+    reply[QLatin1String("start")] = start;
+    reply[QLatin1String("end")] = end;
+    return reply;
+}
+
 void SpreadsheetGui::installSheetControlOps()
 {
     Gui::registerSceneControlOp(QLatin1String("sheet.list"), false, sheetList);
     Gui::registerSceneControlOp(QLatin1String("sheet.get"), false, sheetGet);
     Gui::registerSceneControlOp(QLatin1String("sheet.set"), true, sheetSet);
+    Gui::registerSceneControlOp(QLatin1String("sheet.complete"), false, sheetComplete);
 
     // A feed holds the sheet by raw pointer (and a SheetModel subscribed
     // to its signals), so it has to go when the sheet does -- otherwise

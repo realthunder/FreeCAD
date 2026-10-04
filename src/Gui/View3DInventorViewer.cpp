@@ -147,6 +147,7 @@
 #include "GLPainter.h"
 #include "MainWindow.h"
 #include "NaviCube.h"
+#include "OverlayManager.h"
 #include "NavigationStyle.h"
 #include "Selection.h"
 #include "SoAxisCrossKit.h"
@@ -640,6 +641,9 @@ struct View3DInventorViewer::Private
         // preselection): past OverlayEditing, so it draws over the
         // whole edit graph, constraint icons and datum labels included.
         OverlayEditHighlight = 10,
+        // The on-view parameters' root (getOnViewParameterRoot): last, so
+        // a tool's dimension and its box are over the highlight too.
+        OverlayOnView = 11,
     };
     /// The ids above are per VIEWER. A unified-canvas cell offsets them
     /// by its sub-view id times this stride, because the backend's
@@ -676,10 +680,15 @@ struct View3DInventorViewer::Private
     // the aux root (a sibling of the render-cache-captured selectionRoot), so
     // it never reaches the main scene feed. Mirrors editingCapture.
     OverlayCapture dimensionCapture;
+    // On-view parameters' labels (EditableDatumLabel), the same way: their
+    // root is in the aux graph too.
+    OverlayCapture onViewCapture;
     // Whether the editing overlay is currently fed to (and thus drawn by) the
     // external backend. When true, renderScene() suppresses the raw-GL datum
     // draw so it is not doubled with the backend's.
     bool editingBackendFed = false;
+    // The same for the on-view labels' overlay
+    bool onViewBackendFed = false;
     // fps overlay state: the string renderScene() wants displayed (empty
     // when the readout is off) and the nodes/values last fed.
     std::string fpsText;
@@ -1393,6 +1402,20 @@ void View3DInventorViewer::Private::updateOverlayCaptures(SoGLRenderAction *glra
     else {
         dropCapture(dimensionCapture, OverlayDimensions);
     }
+
+    // On-view parameters' labels, as the dimensions
+    if (owner->onViewRoot && owner->onViewRoot->getNumChildren() > 0) {
+        if (!onViewCapture.manager)
+            initCapture(onViewCapture, owner->onViewRoot);
+        Render::OverlayAnchor onViewAnchor;
+        onViewAnchor.sceneCamera = true;
+        feedOverlay(onViewCapture, OverlayOnView, onViewAnchor);
+        onViewBackendFed = true;
+    }
+    else {
+        dropCapture(onViewCapture, OverlayOnView);
+        onViewBackendFed = false;
+    }
 }
 
 void View3DInventorViewer::Private::clearOverlayCaptures()
@@ -1401,7 +1424,7 @@ void View3DInventorViewer::Private::clearOverlayCaptures()
                          &graphicsItemsCapture, &fpsTextCapture,
                          &naviCubeCapture, &naviButtonCapture,
                          &editingCapture, &dimensionCapture,
-                         &debugLabelCapture}) {
+                         &onViewCapture, &debugLabelCapture}) {
         if (capture->manager) {
             capture->manager->setExternalOverlay(
                 nullptr, 0, Render::OverlayAnchor());
@@ -1773,6 +1796,14 @@ void View3DInventorViewer::init()
     dimensionRoot->addChild(new SoSwitch()); //first one will be for the 3d dimensions.
     dimensionRoot->addChild(new SoSwitch()); //second one for the delta dimensions.
 
+    // On-view parameters' labels: world space, in no feed of the scene's, so
+    // fed as an overlay of their own. Not under dimensionRoot, whose switch
+    // the measurement commands turn off.
+    onViewRoot = new SoSeparator;
+    onViewRoot->setName("OnViewRoot");
+    onViewRoot->renderCaching = SoSeparator::OFF;
+    inventorSelection->getAuxRoot()->addChild(onViewRoot);
+
     pcClipPlane = nullptr;
 
     // The editing root is the session's (Gui::Document's); where it hangs is
@@ -1865,6 +1896,10 @@ View3DInventorViewer::~View3DInventorViewer()
 
     // to prevent following OpenGL error message: "Texture is not valid in the current context. Texture has not been destroyed"
     aboutToDestroyGLContext();
+
+    // A panel's on-view labels outlive this view when a closed document
+    // takes it first: out of its graph now, while this is still itself
+    releaseOnViewParameters();
 
     // It can happen that a document has several MDI views and when the about to be
     // closed 3D view is in edit mode the corresponding view provider must be restored
@@ -2048,6 +2083,13 @@ void View3DInventorViewer::onViewPropertyChanged(const App::Property &prop)
     if (&prop == &_pimpl->view->ShowNaviCube) {
         naviCubeEnabled  = _pimpl->view->ShowNaviCube.getValue();
         this->getSoRenderManager()->scheduleRedraw();
+        // The docked panels keep clear of the active view's cube.
+        OverlayManager::instance()->refresh();
+    } else if (&prop == &_pimpl->view->NaviCubeX || &prop == &_pimpl->view->NaviCubeY) {
+        if (naviCube)
+            naviCube->setPosition(float(_pimpl->view->NaviCubeX.getValue()),
+                                  float(_pimpl->view->NaviCubeY.getValue()));
+        OverlayManager::instance()->refresh();
     } else if(!_applyingOverride) {
         if (boost::starts_with(prop.getName(),"HiddenLine_")
              && overrideMode == "Hidden Line")
@@ -3516,8 +3558,21 @@ bool View3DInventorViewer::isEnabledNaviCube() const
 
 void View3DInventorViewer::setNaviCubeCorner(int cc)
 {
-    if (naviCube) {
-        naviCube->setCorner(static_cast<NaviCube::Corner>(cc));
+    float x, y;
+    NaviCube::cornerPosition(static_cast<NaviCube::Corner>(cc), x, y);
+    setNaviCubePosition(x, y);
+}
+
+void View3DInventorViewer::setNaviCubePosition(float x, float y)
+{
+    if (naviCube)
+        naviCube->setPosition(x, y);
+    // The view's properties are the position's storage, as ShowNaviCube
+    // is the switch's: a restore, a macro or the property editor lands
+    // back here through onViewPropertyChanged.
+    if (_pimpl->view) {
+        _pimpl->view->NaviCubeX.setValue(x);
+        _pimpl->view->NaviCubeY.setValue(y);
     }
 }
 
@@ -4729,11 +4784,11 @@ void View3DInventorViewer::renderToFramebuffer(QtGLFramebufferObject* fbo)
     // while creating a new render action has it set to GL_LEQUAL. So, in order to get
     // the exact same result set it explicitly to GL_LESS.
     glDepthFunc(GL_LESS);
-    SoDatumLabel::SuppressGLRender =
-        externalRendered && _pimpl->editingBackendFed;
+    SoFCEditingRoot::SuppressGLRender = externalRendered && _pimpl->editingBackendFed;
+    SoDatumLabel::SuppressGLRender = SoFCEditingRoot::SuppressGLRender
+        || (externalRendered && _pimpl->onViewBackendFed);
     SoFCRenderCacheManager::SuppressImageGLRender =
         SoDatumLabel::SuppressGLRender;
-    SoFCEditingRoot::SuppressGLRender = SoDatumLabel::SuppressGLRender;
     gl.apply(this->getSoRenderManager()->getSceneGraph());
     SoDatumLabel::SuppressGLRender = false;
     SoFCRenderCacheManager::SuppressImageGLRender = false;
@@ -4796,6 +4851,13 @@ void View3DInventorViewer::actualRedraw()
     const double ms = double(frameTimer.nsecsElapsed()) / 1e6;
     if (ms >= 1.0)
         _pimpl->noteFrameCost(ms);
+    // A frame drawn while a document restores is paid for by the load: its
+    // progress reporting pumps the event loop, and the pump paints.
+    if (App::GetApplication().isRestoring()) {
+        auto& stats = RenderTiming::loadPumps();
+        stats.frameSec += ms / 1000.0;
+        ++stats.frames;
+    }
 
     RenderTiming::frameDone();
 }
@@ -6636,11 +6698,13 @@ void View3DInventorViewer::renderScene()
     // When the backend already draws the editing overlay (datums, constraint
     // icons), suppress the raw-GL datum and screen-space image draws during
     // this Coin pass so they are not doubled.
-    SoDatumLabel::SuppressGLRender =
+    // The on-view labels' overlay likewise.
+    SoFCEditingRoot::SuppressGLRender =
         externalRendered && _pimpl->editingBackendFed && !parallelgl;
+    SoDatumLabel::SuppressGLRender = SoFCEditingRoot::SuppressGLRender
+        || (externalRendered && _pimpl->onViewBackendFed && !parallelgl);
     SoFCRenderCacheManager::SuppressImageGLRender =
         SoDatumLabel::SuppressGLRender;
-    SoFCEditingRoot::SuppressGLRender = SoDatumLabel::SuppressGLRender;
     // * The sharp one. At render-cache mode 3 the geometry has already
     // gone to the backend above, so this traversal should be compositing
     // overlays and nothing else. If it is a large share of the frame it
@@ -7495,6 +7559,7 @@ void View3DInventorViewer::setCameraType(SoType type)
     // The camera node itself was just replaced, so the fill light's rotation
     // has to be slaved to the new one.
     syncLightRotation();
+    signalCameraReplaced();
 }
 
 void View3DInventorViewer::syncLightRotation()
@@ -7655,6 +7720,11 @@ bool View3DInventorViewer::getSceneBoundBox(Base::BoundBox3d &box) const {
 SoGroup *View3DInventorViewer::getAuxSceneGraph() const
 {
     return inventorSelection->getAuxRoot();
+}
+
+SoGroup* View3DInventorViewer::getOnViewParameterRoot() const
+{
+    return onViewRoot;
 }
 
 bool View3DInventorViewer::getSceneBoundBox(SbBox3f &box) const {

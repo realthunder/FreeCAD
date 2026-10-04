@@ -67,7 +67,7 @@ short Face::mustExecute() const
 
 void Face::setupObject()
 {
-    this->FaceMakerClass.setValue("Part::FaceMakerBullseye");
+    this->FaceMakerClass.setValue("Part::FaceMakerUnified");
     Feature::setupObject();
 }
 

@@ -34,6 +34,18 @@ def main():
     ap.add_argument("--abi", default="cp314")
     ap.add_argument("--platform", default="pyodide_2026_0_wasm32")
     ap.add_argument("--summary", default="")
+    # Publishing metadata.  All optional, and all omitted when not given:
+    # this script also wraps the pivy guest wheel, which is a different
+    # project under a different licence, so nothing here is defaulted.
+    # PyPI metadata cannot be edited after an upload, only yanked, which
+    # is why these exist at all.
+    ap.add_argument("--license", default="", help="SPDX expression, e.g. LGPL-2.1-or-later")
+    ap.add_argument("--requires-python", default="", help="e.g. ==3.14.*")
+    ap.add_argument("--homepage", default="")
+    ap.add_argument("--description-file", default="",
+                    help="markdown file to carry as the long description")
+    ap.add_argument("--classifier", action="append", default=[],
+                    help="a trove classifier; repeatable")
     ap.add_argument("files", nargs="+")
     args = ap.parse_args()
 
@@ -57,12 +69,27 @@ def main():
         else:
             entries.append((os.path.basename(f), open(f, "rb").read()))
 
-    metadata = (
-        "Metadata-Version: 2.1\n"
-        f"Name: {args.name}\n"
-        f"Version: {args.version}\n"
-        f"Summary: {args.summary}\n"
-    ).encode()
+    headers = [
+        "Metadata-Version: 2.1",
+        f"Name: {args.name}",
+        f"Version: {args.version}",
+        f"Summary: {args.summary}",
+    ]
+    if args.homepage:
+        headers.append(f"Home-page: {args.homepage}")
+    if args.license:
+        headers.append(f"License: {args.license}")
+    if args.requires_python:
+        headers.append(f"Requires-Python: {args.requires_python}")
+    for item in args.classifier:
+        headers.append(f"Classifier: {item}")
+    body = ""
+    if args.description_file:
+        with open(args.description_file, encoding="utf-8") as handle:
+            body = handle.read()
+        headers.append("Description-Content-Type: text/markdown")
+    # RFC822 shape: the headers, a blank line, then the long description.
+    metadata = ("\n".join(headers) + "\n" + ("\n" + body if body else "")).encode()
     wheel = (
         "Wheel-Version: 1.0\n"
         "Generator: make_wheel.py\n"

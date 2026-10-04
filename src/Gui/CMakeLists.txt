@@ -475,9 +475,18 @@ SET(Fw_SRCS
 )
 SOURCE_GROUP("Fw" FILES ${Fw_SRCS})
 # the sandbox host seam (docs/Sandbox.md 7.9): the gui.* bridge ops live in
-# SandboxGui.cpp alone, so the host macro is scoped to it
+# SandboxGui.cpp alone, so the host macro is scoped to it.  The permissions
+# panel joins them for 7.28: the padlock's tally of what runs in this
+# process, and the modal that asks for it, are both behind this macro --
+# without it here they compile to nothing and the padlock under-reports.
 if(BUILD_EXPR_IMAGE_HOST)
-    set_source_files_properties(SandboxGui.cpp PROPERTIES COMPILE_DEFINITIONS FC_EXPR_IMAGE_HOST)
+    set_source_files_properties(SandboxGui.cpp SandboxRemote.cpp DlgDocumentPermissions.cpp
+                                PROPERTIES COMPILE_DEFINITIONS FC_EXPR_IMAGE_HOST)
+endif()
+# the browser console's file mount (docs/Sandbox.md 7.20): only a pyodide
+# host has the runtime a page's guest boots from
+if(BUILD_EXPR_IMAGE_HOST AND BUILD_EXPR_PYODIDE_HOST)
+    set_source_files_properties(SandboxServe.cpp PROPERTIES COMPILE_DEFINITIONS FC_EXPR_PYODIDE_HOST)
 endif()
 
 # The style parameter evaluator (upstream's theme parameter model)
@@ -961,6 +970,7 @@ SET(View3D_CPP_SRCS
     MirrorViewer.cpp
     OmniControl.cpp
     SceneControl.cpp
+    SceneContextMenu.cpp
     SceneWidgets.cpp
     View3DInventorRiftViewer.cpp
     View3DSettings.cpp
@@ -996,6 +1006,7 @@ SET(View3D_SRCS
     MirrorViewer.h
     OmniControl.h
     SceneControl.h
+    SceneContextMenu.h
     SceneWidgets.h
     SceneControlP.h
     View3DInventorRiftViewer.h
@@ -1069,7 +1080,10 @@ SET(Viewprovider_CPP_SRCS
     ViewProviderMaterialObject.cpp
     ViewProviderShaderObject.cpp
     ViewProviderTextDocument.cpp
+    ViewProviderVarSet.cpp
     ViewProviderLink.cpp
+    ViewProviderLinkArray.cpp
+    TaskLinkArray.cpp
     LinkViewPyImp.cpp
     ViewProviderLinkPyImp.cpp
     ViewProviderSavedViewPyImp.cpp
@@ -1114,7 +1128,10 @@ SET(Viewprovider_SRCS
     ViewProviderMaterialObject.h
     ViewProviderShaderObject.h
     ViewProviderTextDocument.h
+    ViewProviderVarSet.h
     ViewProviderLink.h
+    ViewProviderLinkArray.h
+    TaskLinkArray.h
     AxisOrigin.h
     ViewProviderSavedView.h
 )
@@ -1149,6 +1166,8 @@ SET(Inventor_CPP_SRCS
     Inventor/SoFCShapeInfo.cpp
     Inventor/So3DAnnotation.cpp
     Inventor/SoToggleSwitch.cpp
+    Inventor/SoToggleMarker.cpp
+    Inventor/Draggers/Gizmo.cpp
     Inventor/Draggers/SoLinearDragger.cpp
     Inventor/Draggers/SoLinearDraggerGeometry.cpp
     Inventor/Draggers/SoPlanarDragger.cpp
@@ -1167,6 +1186,8 @@ SET(Inventor_CPP_SRCS
     SoFCSelection.cpp
     ObjectMetaFeed.cpp
     SceneServeSource.cpp
+    SandboxRemote.cpp
+    SandboxServe.cpp
     ShareDocument.cpp
     SoFCUnifiedSelection.cpp
     SoFCSelectionContext.cpp
@@ -1215,6 +1236,9 @@ SET(Inventor_SRCS
     Inventor/SoFCShapeInfo.h
     Inventor/So3DAnnotation.h
     Inventor/SoToggleSwitch.h
+    Inventor/SoToggleMarker.h
+    Inventor/Draggers/Gizmo.h
+    Inventor/Draggers/GizmoStyleParameters.h
     Inventor/Draggers/SoLinearDragger.h
     Inventor/Draggers/SoLinearDraggerGeometry.h
     Inventor/Draggers/SoPlanarDragger.h
@@ -1233,6 +1257,8 @@ SET(Inventor_SRCS
     SoFCSelection.h
     ObjectMetaFeed.h
     SceneServeSource.h
+    SandboxRemote.h
+    SandboxServe.h
     ShareDocument.h
     SoFCUnifiedSelection.h
     SoFCSelectionContext.h
@@ -1254,7 +1280,10 @@ SOURCE_GROUP("View3D\\Inventor" FILES ${Inventor_SRCS})
 
 # The widget sources
 SET(Widget_CPP_SRCS
+    ElideCheckBox.cpp
+    ElideLabel.cpp
     FileDialog.cpp
+    FontScaledSVG.cpp
     InputHintPy.cpp
     InputHintWidget.cpp
     MainWindow.cpp
@@ -1265,6 +1294,7 @@ SET(Widget_CPP_SRCS
     InputField.cpp
     ProgressBar.cpp
     ProgressDialog.cpp
+    PatternWidgets.cpp
     QuantitySpinBox.cpp
     SpinBox.cpp
     Splashscreen.cpp
@@ -1276,7 +1306,10 @@ SET(Widget_CPP_SRCS
 )
 
 SET(Widget_HPP_SRCS
+    ElideCheckBox.h
+    ElideLabel.h
     FileDialog.h
+    FontScaledSVG.h
     InputHint.h
     InputHintPy.h
     InputHintWidget.h
@@ -1288,6 +1321,7 @@ SET(Widget_HPP_SRCS
     InputField.h
     ProgressBar.h
     ProgressDialog.h
+    PatternWidgets.h
     QuantitySpinBox.h
     QuantitySpinBox_p.h
     SpinBox.h

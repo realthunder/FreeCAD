@@ -27,6 +27,8 @@
 #include <QStandardItemModel>
 #include <QItemDelegate>
 
+#include <Gui/Inventor/Draggers/Gizmo.h>
+
 #include "TaskDressUpParameters.h"
 #include "ViewProviderFillet.h"
 
@@ -74,6 +76,7 @@ protected:
     void refresh() override;
     void onNewItem(QTreeWidgetItem *item) override;
     void onRefDeleted() override;
+    void finishedRecomputeFeature() override;
 
     void removeSegments();
     void clearSegments();
@@ -87,6 +90,12 @@ protected:
 
 private:
     std::unique_ptr<Ui_TaskFilletParameters> ui;
+
+    std::unique_ptr<Gui::GizmoContainer> gizmoContainer;
+    Gui::LinearGizmo* radiusGizmo = nullptr;
+    Gui::LinearGizmo* radiusGizmo2 = nullptr;
+    void setupGizmos(ViewProviderDressUp* vp);
+    void setGizmoPositions();
 };
 
 /// simulation dialog for the TaskView

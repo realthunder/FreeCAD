@@ -45,15 +45,13 @@ TaskPocketParameters::TaskPocketParameters(ViewProviderPocket *PocketView,QWidge
 
 TaskPocketParameters::~TaskPocketParameters() = default;
 
-void TaskPocketParameters::translateModeList(int index)
+void TaskPocketParameters::fillModeList(Gui::Fw::QComboBox *combo)
 {
-    ui->changeMode->clear();
-    ui->changeMode->addItem(tr("Dimension"));
-    ui->changeMode->addItem(tr("Through all"));
-    ui->changeMode->addItem(tr("To first"));
-    ui->changeMode->addItem(tr("Up to face"));
-    ui->changeMode->addItem(tr("Two dimensions"));
-    ui->changeMode->setCurrentIndex(index);
+    combo->clear();
+    combo->addItem(tr("Dimension"));
+    combo->addItem(tr("Through all"));
+    combo->addItem(tr("To first"));
+    combo->addItem(tr("Up to face"));
 }
 
 void TaskPocketParameters::translateTooltips()
@@ -89,20 +87,19 @@ void TaskPocketParameters::onModeChanged(int index)
             // Also note: Because of the code at the beginning of Pocket::execute() which is used
             // to detect broken legacy parts, we must set the length to zero here!
             oldLength = pcPocket->Length.getValue();
-            pcPocket->Type.setValue("UpToFace");
+            setSideMode(pcPocket->Type, pcPocket->UpToShape, index);
             QSignalBlocker blocker(ui->lengthEdit);
             pcPocket->Length.setValue(0.0);
             ui->lengthEdit->setValue(0.0);
-            if (!pcPocket->UpToFace.getValue()) {
+            // nothing to go up to yet: pick it first
+            if (!pcPocket->UpToShape.getSize()) {
                 setCheckboxes();
+                if (upToWidget)
+                    upToWidget->startSelection();
                 return;
             }
             break;
         }
-        case Modes::TwoDimensions:
-            oldLength = pcPocket->Length.getValue();
-            pcPocket->Type.setValue("TwoLengths");
-            break;
     }
 
     setCheckboxes();
@@ -111,11 +108,7 @@ void TaskPocketParameters::onModeChanged(int index)
 
 void TaskPocketParameters::apply()
 {
-    QString facename = QStringLiteral("None");
-    if (static_cast<Modes>(getMode()) == Modes::ToFace) {
-        facename = getFaceName();
-    }
-    applyParameters(facename);
+    applyParameters();
 }
 
 //**************************************************************************

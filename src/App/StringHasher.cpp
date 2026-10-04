@@ -87,6 +87,9 @@ class StringHasher::HashMap: public HashMapBase
 public:
     bool SaveAll = false;
     int Threshold = 0;
+    bool IndexedNames = false;
+    /// Restored without a mode: inferIndexedNames() decides once the table is in
+    bool InferIndexed = false;
 };
 
 ///////////////////////////////////////////////////////////
@@ -165,7 +168,9 @@ TYPESYSTEM_SOURCE(App::StringHasher, Base::Persistence)
 
 StringHasher::StringHasher()
     :_hashes(new HashMap)
-{}
+{
+    _hashes->IndexedNames = DocumentParams::getHashIndexedName();
+}
 
 StringHasher::~StringHasher() {
     clear();
@@ -238,6 +243,54 @@ int StringHasher::getThreshold() const {
     return _hashes->Threshold;
 }
 
+void StringHasher::setIndexedNames(bool enable) {
+    _hashes->IndexedNames = enable;
+    _hashes->InferIndexed = false;
+}
+
+bool StringHasher::getIndexedNames() const {
+    return _hashes->IndexedNames;
+}
+
+void StringHasher::inferIndexedNames()
+{
+    _hashes->InferIndexed = false;
+    // Evidence either way. A hasher indexing names stores an indexed one as
+    // its text plus index (Indexed, PrefixIDIndex); one that does not stores
+    // the whole name, so text that getID() would have split is the other
+    // mode's mark. Element names are the postfixed entries.
+    std::size_t indexed = 0;
+    std::size_t whole = 0;
+    for (const auto& v : _hashes->right) {
+        const StringID& sid = *v.second;
+        if (!sid.isPostfixed() || sid.isPrefixID()) {
+            continue;
+        }
+        if (sid.isIndexed() || sid.isPrefixIDIndex()) {
+            ++indexed;
+        }
+        else if (Data::IndexedName(sid._data)) {
+            ++whole;
+        }
+        else {
+            auto prefix = StringID::fromString(sid._data);
+            if (prefix.id > 0 && prefix.index != 0) {
+                ++whole;
+            }
+        }
+    }
+    if (!indexed && !whole) {
+        // No name either mode would write differently: the new-document mode
+        // reproduces every stored one
+        return;
+    }
+    if (indexed && whole) {
+        FC_WARN("String table holds names of both encodings (" << indexed << " indexed, "
+                << whole << " whole); keeping the majority's");
+    }
+    _hashes->IndexedNames = indexed >= whole;
+}
+
 long StringHasher::lastID() const
 {
     if (_hashes->right.empty()) {
@@ -301,7 +354,7 @@ StringIDRef StringHasher::getID(const Data::MappedName& name, const QVector<Stri
     tempID._postfix = name.postfixBytes();
 
     Data::IndexedName indexed;
-    if (DocumentParams::getHashIndexedName() && tempID._postfix.size()) {
+    if (_hashes->IndexedNames && tempID._postfix.size()) {
         // Only check for IndexedName if there is postfix, because of the way
         // we restore the StringID. See StringHasher::saveStream/restoreStreamNew()
         indexed = Data::IndexedName(name.dataBytes());
@@ -403,7 +456,7 @@ StringIDRef StringHasher::getID(const Data::MappedName& name, const QVector<Stri
         // StringHasher::saveStream/restoreStreamNew()
         StringID::IndexID res = StringID::fromString(newStringID._data);
         if (res.id > 0) {
-            if (DocumentParams::getHashIndexedName() || res.index == 0) {
+            if (_hashes->IndexedNames || res.index == 0) {
                 if (res.index != 0) {
                     indexed.setIndex(res.index);
                     newStringID._data.resize(newStringID._data.lastIndexOf(':')+1);
@@ -478,7 +531,8 @@ void StringHasher::Save(Base::Writer& writer) const
 
     writer.Stream() << writer.ind()
         << "<StringHasher saveall=\"" << _hashes->SaveAll
-        << "\" threshold=\"" << _hashes->Threshold << "\"";
+        << "\" threshold=\"" << _hashes->Threshold
+        << "\" indexed=\"" << _hashes->IndexedNames << "\"";
 
     if(!count) {
         writer.Stream() << " count=\"0\"></StringHasher>\n";
@@ -502,7 +556,9 @@ void StringHasher::Save(Base::Writer& writer) const
 
 void StringHasher::SaveDocFile (Base::Writer &writer) const {
     std::size_t count = _hashes->SaveAll ? this->size() : this->count();
-    writer.Stream() << count << '\n';
+    // saveStream() writes the new format, which RestoreDocFile() recognizes
+    // by this marker; without it the entries went to the legacy parser
+    writer.Stream() << "StringTableStart v1 " << count << '\n';
     saveStream(writer.Stream());
 }
 
@@ -739,6 +795,9 @@ void StringHasher::restoreStreamNew(std::istream &stream, std::size_t count)
 
         last = insert(sid);
     }
+    if (_hashes->InferIndexed) {
+        inferIndexedNames();
+    }
 }
 
 StringID* StringHasher::insert(const StringIDRef& sid)
@@ -773,6 +832,9 @@ void StringHasher::restoreStream(std::istream &stream, std::size_t count) {
         }
         insert(sid);
     }
+    if (_hashes->InferIndexed) {
+        inferIndexedNames();
+    }
 }
 
 void StringHasher::clear() {
@@ -791,8 +853,9 @@ size_t StringHasher::size() const
 size_t StringHasher::count() const
 {
     size_t count = 0;
+    // What saveStream() writes when not saving all (upstream a1ce983035)
     for(auto &v : _hashes->right)  {
-        if(v.second->getRefCount()>1) {
+        if(v.second->isMarked() || v.second->isPersistent()) {
             ++count;
         }
     }
@@ -805,6 +868,16 @@ void StringHasher::Restore(Base::XMLReader& reader)
     reader.readElement("StringHasher");
     _hashes->SaveAll = reader.getAttributeAsInteger("saveall")?true:false;
     _hashes->Threshold = reader.getAttributeAsInteger("threshold");
+    if (reader.hasAttribute("indexed")) {
+        _hashes->IndexedNames = reader.getAttributeAsInteger("indexed") != 0;
+        _hashes->InferIndexed = false;
+    }
+    else {
+        // Saved before the mode was: the table, restored below or from its
+        // own file, shows which one it was written in
+        _hashes->IndexedNames = DocumentParams::getHashIndexedName();
+        _hashes->InferIndexed = true;
+    }
 
     bool newTag = false;
     if (reader.getAttributeAsInteger("new","0") > 0) {

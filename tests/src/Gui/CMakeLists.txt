@@ -131,6 +131,25 @@ if(TARGET FreeCADGui)
     add_test(NAME RenderProperties_tests_run
              COMMAND RenderProperties_tests_run)
 
+    # A native fault inside an event handler ends the process, on the
+    # record: GUIApplication's SEH guard, which only MSVC builds have.
+    # A death test with a real GUIApplication and an offscreen platform.
+    if(MSVC)
+        add_executable(NotifyFault_tests_run
+                       ${CMAKE_CURRENT_SOURCE_DIR}/NotifyFault.cpp)
+        target_include_directories(NotifyFault_tests_run PRIVATE
+            ${CMAKE_SOURCE_DIR}
+            ${CMAKE_SOURCE_DIR}/src
+            ${CMAKE_BINARY_DIR}/src
+            ${Python3_INCLUDE_DIRS}
+            ${XercesC_INCLUDE_DIRS}
+            ${COIN3D_INCLUDE_DIRS}
+            ${Boost_INCLUDE_DIRS})
+        target_link_libraries(NotifyFault_tests_run
+                              gtest_main FreeCADGui FreeCADApp FreeCADBase)
+        add_test(NAME NotifyFault_tests_run COMMAND NotifyFault_tests_run)
+    endif()
+
     # The selection instance stack (docs/ThinClient.md section 8.4). What
     # it asserts -- which instance Gui::Selection() resolves to, and that
     # an observer stays pinned to the room -- is settled entirely inside
@@ -230,6 +249,10 @@ if(TARGET FreeCADGui)
     target_link_libraries(OnViewParameter_tests_run
                           gtest_main FreeCADGui FreeCADApp FreeCADBase
                           ${QtCore_LIBRARIES} ${QtWidgets_LIBRARIES})
+    # A font for a label's number: the offscreen platform finds none on
+    # Windows, and a label without a glyph has nothing to click
+    target_compile_definitions(OnViewParameter_tests_run PRIVATE
+        FC_TEST_FONT="${CMAKE_SOURCE_DIR}/src/Mod/TechDraw/Gui/Resources/fonts/osifont-lgpl3fe.ttf")
     add_test(NAME OnViewParameter_tests_run
              COMMAND OnViewParameter_tests_run)
 
@@ -335,16 +358,25 @@ if(TARGET FreeCADRenderer)
     # reasoning as above, and then some: the whole claim of the mode is
     # that the process needs no GPU and no display, which only a test
     # that links nothing graphical can make.
-    # UNIX only: it speaks to the server over BSD sockets, and proves no
-    # driver got mapped by enumerating the loaded images -- through
-    # /proc/self/maps on Linux and dyld on macOS. Windows has neither;
-    # porting it needs Winsock and EnumProcessModules.
-    if(UNIX)
-        add_executable(PublishOnly_tests_run
-                       ${CMAKE_CURRENT_SOURCE_DIR}/PublishOnly.cpp)
-        target_link_libraries(PublishOnly_tests_run gtest_main FreeCADRenderer)
-        add_test(NAME PublishOnly_tests_run COMMAND PublishOnly_tests_run)
+    # Built on every platform. It used to be if(UNIX), on the grounds
+    # that it speaks BSD sockets and enumerates loaded images; the
+    # second half was the real constraint and the first was self-
+    # inflicted -- SceneServerWire below tests the same server over
+    # Boost.Beast and builds everywhere, so this one does too. Image
+    # enumeration is /proc/self/maps on Linux, dyld on macOS and
+    # EnumProcessModules on Windows, hence psapi; a platform that
+    # reports nothing skips the assertion rather than passing it.
+    add_executable(PublishOnly_tests_run
+                   ${CMAKE_CURRENT_SOURCE_DIR}/PublishOnly.cpp)
+    target_include_directories(PublishOnly_tests_run PRIVATE
+        ${Boost_INCLUDE_DIRS})
+    target_link_libraries(PublishOnly_tests_run gtest_main FreeCADRenderer)
+    if(WIN32)
+        target_link_libraries(PublishOnly_tests_run ws2_32 mswsock psapi)
+    elseif(UNIX)
+        target_link_libraries(PublishOnly_tests_run pthread)
     endif()
+    add_test(NAME PublishOnly_tests_run COMMAND PublishOnly_tests_run)
 
     # The scene server over a real socket (docs/SceneServerPort.md
     # stage 0): the oracle every stage of the port is judged by. The

@@ -724,3 +724,365 @@ Two further notes on what the built form does *not* exercise:
   referrer's name with it rather than reimplementing the spelling, which is
   what guarantees step 3's shape files keep the names `PropertyPartShape`
   already gives them instead of being renamed wholesale on the first save.
+
+## 14. Restored content is served from a copy of the archive (2026-09-14)
+
+### 14.1 What was wrong
+
+A restore gave every blob entry a file of its own in the transient directory.
+On Linux that walk is free (2.37 s for MiSTer, `docs/SharedShapeStorage.md`
+sec 12.3). On a company-managed Windows laptop whose filesystem is monitored
+it was the whole open: `MiSTer.FCStd` (17800 objects, 5401 `blobs/` entries,
+87.3 MB inflated) took **409 s** headless, of which 407 s was `readFiles()`.
+Each entry cost a staging-file create, a read back to hash it, a rename and two
+permission changes -- about 61 ms of filesystem round trips.
+
+`be256877c1` hashed the entry in memory and wrote it once, straight to its
+place, which took the open to 54 s. It could not take it further: all 5401
+entries are distinct content, so every one still needed a file create, and a
+file create is exactly what this filesystem charges for.
+
+### 14.2 Measured before building
+
+The same 5401 entries, in FreeCAD's real transient root on the laptop
+(`getUserCachePath()`), one pass each (`archbench.py`):
+
+| backing | create | read all, random order |
+| --- | --- | --- |
+| copy the `.FCStd` as it is, inflate on read | 0.05 s | 0.26 s |
+| repack as a stored (uncompressed) zip | 0.97 s | 0.07 s |
+| raw pack file, own index | 0.33 s | 0.06 s |
+| one file per entry (what the store did) | 23.23 s | 11.98 s |
+
+Copying the archive unchanged wins outright: nothing to write but one
+sequential file, and inflating costs about 0.05 ms an entry, which a BRep parse
+dwarfs. The stored and raw variants read faster but pay for it on every open,
+and add a second format for nothing.
+
+### 14.3 The design
+
+- **`restoreFromArchive()`** copies the document archive into the store
+  directory (`blobs/<uuid>.FCStd`), indexes its central directory itself --
+  zip64 included, which zipios cannot read -- and inflates and hashes every
+  `blobs/` entry through one handle. Identity is still what the archive holds,
+  never what an entry name claims. Each blob is created **archived**: an
+  archive and an entry index, no path.
+- **A copy, not the original**, because the next save replaces the file the
+  document was opened from while its content is still referred to.
+- **`FileBlob::read()`** returns the bytes from the file or from the copy.
+  `parseBlob()` parses from them, and `writeBlobs()` writes an archived blob's
+  entry from them, so neither opening nor saving a document gives any blob a
+  file.
+- **`FileBlob::path()` writes the file on first call** (`materialize()`), for
+  the consumers that really need one: a `PropertyFileIncluded` value handed to
+  Python, a MaterialX document, a material card. `hasExtension()` answers
+  without writing one. Code that repairs stale paths (`relocate()`,
+  `relocatedPath()`, the included-file `Save()` and `ensureBlob()`) skips
+  archived blobs, which have no path to go stale.
+- **The copy lives as long as a blob refers to it** (`shared_ptr` from each
+  blob) and deletes itself after the last one goes.
+- **One handle, closed around directory moves.** Windows refuses to rename or
+  remove a directory with a file open in it, so the handle is closed after the
+  ingest, and `closeArchives()` runs before the Uid rename in
+  `Document::onChanged()` and before `~Document` removes the transient
+  directory. The next read opens it again.
+- **Switch:** `ArchiveBlobStore` (Preferences/Document, on). It needs a
+  random-access reader (`ArchiveRandomAccess`) and a `blobs/Content.xml` in the
+  archive; without either, or when the copy fails, the entries are read one
+  file each as before.
+
+### 14.4 The ingest must happen when the entries used to arrive
+
+The first build did the copy in `beginRestore()`, before `Document.xml` is
+parsed. Every blob was then already in the store when its referrer restored,
+and `PropertyPartShape::Restore()` ends by asking for its shape (the element
+map version check) -- which a blob that is present answers with a parse. That
+undid the lazy load `ensureRestored()` exists for: MiSTer's XML data phase went
+from 0.6 s to 3.9 s, with 92 "slow property restore" lines instead of 3.
+
+So `beginRestore()` only notes the archive, and the copy is made when the
+archive handler is offered `blobs/Content.xml`. `ZipFileReader::readFiles()`
+drains unregistered entries before registered ones, and the index is written
+ahead of the content, so that is the moment the content always arrived. Once
+the copy serves, the name predicate refuses the remaining blob entries, and a
+random-access reader does not even open them.
+
+### 14.5 Measured
+
+MiSTer, headless (`FreeCADCmd`), `build/win-relwithdebinfo-801`, the laptop
+above. "Parse" is touching every `Shape` after the open, which is the lazy
+parse paid in full.
+
+| store | open | of which files | parse all shapes | files in store |
+| --- | --- | --- | --- | --- |
+| a file per entry, staged (before `be256877c1`) | 409 s | 407 s | -- | 5399 |
+| a file per entry, in-memory hash (`ArchiveBlobStore` off) | 40.4 s | 36.5 s | 36.2 s | 5399 |
+| archive copy, ingest in `beginRestore()` (sec 14.4) | 6.1 s | 0.3 s | 21.4 s | 1 |
+| **archive copy, ingest at the index entry (as built)** | **2.4 s** | **0.29 s** | **22.9 s** | **1** |
+
+As built, the open is 2.4 s: 1.9 s of XML, of which create is 1.33 s and
+property data 0.56 s -- back to what it was before the store was touched,
+with the same 3 slow-restore lines -- and 0.29 s for the file phase, which is
+the copy (0.05 s) and inflating and hashing all 5400 entries (0.24 s). The
+3.7 s the premature ingest added to the open is gone from it, and reappears
+in the parse, where it belongs.
+
+In the GUI, with the settings the 2026-09-13/14 runs used (`scripts/render-bench.py`,
+`bgfx - OpenGL`, 1280x720, no vsync, settle 900 s / quiet 5 s):
+
+| store | load | settle | frame | scene |
+| --- | --- | --- | --- | --- |
+| a file per entry, staged (2026-09-14) | 504.7 s | 9.1 s | 252.8 ms | 45867 draws, 18.16 M prims |
+| archive copy (as built) | **97.3 s** | 8.7 s | 220.3 ms | 45867 draws, 18.16 M prims |
+
+The same scene, drawn as fast, and 407 s -- the file phase -- off the load.
+What is left of the 97 s is not the store: the headless open plus a parse of
+every shape is 25 s, so the other ~70 s is the GUI side building 17058
+visuals, and that is the next thing to chase for this document.
+
+Chased in DocumentLoad.md sec 16: every restored visual was built twice, and
+the main window re-tested every command about once a second while the objects
+were created. With both fixed the same bench loads in 75.4 s.
+
+(The 54 s of sec 14.1 and the 40.4 s here are the same code on different
+runs; this box's file-create cost varies run to run.) The parse is faster out
+of the copy too: one open handle, where the files cost an open each.
+
+`FileBlobs` covers it in `BlobArchiveStoreCases`: no file per blob on reopen,
+`path()` writing only the one asked for, binary and leading-whitespace content,
+a save over the original, save-as moving the copy with the directory, close
+removing the directory, the last referrer taking the copy with it, a copy
+across documents, the switch off, and a shape parsed out of the copy.
+
+### 14.6 The open regressed to 60-80 s, and it was not the store (2026-09-25)
+
+By 2026-09-25 the same headless open took 59-81 s, on PartDesignPort and on
+Transaction alike, while the parse after it had fallen to 2.6-2.9 s -- which
+read as every shape being parsed inside the open. It was not. With the `App`
+log tag at `Log`, the restore line put it all in one place:
+
+    xml 80.17 (create 1.81, data 78.35 [76759 properties, 78.27s of which value 0.95s]),
+    files 0.29
+
+78 s of the data phase was outside every property's own `Restore()`, and the
+log carried 17058 lines of `no module for BadType: Empty module name`.
+
+- Every `ShapeMaterial` in `MiSTer.FCStd` is saved as `type="BadType"`.
+  `Part::Feature` carries a `Materials::PropertyMaterial`, whose type is
+  registered by the Materials module's init; upstream's Part init imports
+  Materials, the port of the property (`edfc973134`) did not, so a headless
+  session had the property with no type and saved it under the bad type's
+  name. (That also loses the material -- restore reads it as a type change.)
+- `PropertyContainer::Restore()` asks `Base::Type::importModule()` for the
+  saved type's module whenever the property's own type is bad (`1cca3f0bbd`).
+  "BadType" has no `Module::` prefix, so the module asked for is `""`.
+- `Type::moduleAllowed()` (`96d9b285bf`) asks `importlib.util.find_spec("")`,
+  which walks all 48 `sys.path` entries before answering `None` -- **4.4 ms
+  each** on this filesystem -- and the import that follows fails. A failure
+  is not remembered, so all 17058 properties paid it: 78 s.
+
+`96d9b285bf` was written on the sandbox branch on 2026-09-05 and reached
+LinkVibe with the RemoteEdit merge `d044120df8` on 2026-09-19, after sec 14.5
+was measured. Before it the empty import failed at once, which is why 14.5
+never saw it.
+
+Fixed on both sides: Part's init imports Materials, as upstream's does, so the
+property has its type and saves under it; and `importModule()` returns at
+once for a name with no module prefix, so files already saved with
+`BadType` do not pay for it either (`TypeImport.unprefixedNameImportsNothing`).
+
+| MiSTer headless, `win-relwithdebinfo-801` | open | of which data | parse all shapes |
+| --- | --- | --- | --- |
+| before (PartDesignPort `4452b27176`) | 80.7 s | 78.35 s | 2.7 s |
+| fixed, the file as it is (`BadType`) | 2.76 s | 0.41 s | 2.85 s |
+| fixed, re-saved (`Materials::PropertyMaterial`) | 2.83 s | 0.44 s | 2.82 s |
+
+Restoring 17058 real `PropertyMaterial` values through `MaterialManager`
+costs 0.03 s over dropping them. Still open, and not measured here: a type
+with a real prefix whose module is missing -- a document from an addon that
+is not installed -- still pays two `sys.path` walks per object (8.6 ms per
+`importModule("Nope::X")`), since a failed import is not remembered.
+
+## 15. A pack store: no file per blob (design, 2026-09-24)
+
+Status: **design, not built.** Asked for by the user on 2026-09-24 after a
+recovery cleanup froze the GUI for about two minutes. To be coordinated with
+the `Transaction` branch (`docs/TransactionLog.md`, developed by the `oplab`
+session), which adds far more referrers to this store than everything else
+put together.
+
+### 15.1 What is wrong
+
+Section 14 took the file-per-blob cost out of **opening** a document. It is
+still paid everywhere else a blob is made, and on the company-managed Windows
+laptop every file is a round trip to the filesystem monitor. Measured there
+in `getUserCachePath()`: create+write+close+chmod about 11.8 ms, open about
+1.4 ms (sec 14.2), and delete about 9 ms -- 25460 files in 939 leftover
+transient directories took 233 s to remove on 2026-09-24.
+
+Where loose blob files still come from:
+
+- **Save.** `PropertyPartShape::storeBlob()` writes every shape whose blob is
+  not current to a file of its own (`uniquePath("shape.brp")`, then
+  `adoptFile()`). The first save of an imported model is therefore one file
+  per shape, and the files stay for the rest of the session. One leftover
+  directory held 16474 `.brp` files (122 MB): a saved MiSTer import.
+- **Included files made in the session**: imports, materials, MaterialX
+  manifests, TechDraw templates -- every `insertFile()` / `adoptFile()` /
+  `adoptBytes()` call site.
+- **The transaction log, as built -- fewer than its design implies.**
+  (Corrected 2026-09-24 from the `oplab` session's reply; the first draft of
+  this bullet read sec 23.1's "large as a file" literally.) That branch was
+  never built: every entity is inline in `log.db` (`entity.data`, zstd or a
+  reverse-delta patch), unsaved shape geometry included, and `enc=file`
+  entities (TransactionLog.md sec 23.16) only reference blobs that already
+  exist here, holding a `FileBlobHandle` on each. The files the log does cause:
+  (a) the snapshot cadence runs the save's `collectFileBlobs` ->
+  `storeBlob`, one file per changed shape, like a save (off by default while
+  the log is staging); (b) a cold undo whose shape blob the log keeps only as
+  a delta decodes it and calls `adoptBytes()`, one file per re-adopted blob
+  (TransactionLog.md sec 24.3); (c) the embedded copy of `log.db`
+  (`Document::embedHistory` -> `adoptFile(copy, "db")`); (d) the checkout
+  writes every entry under `history/checkout/`, copying held blobs by
+  `blob->path()`. A pack store removes (a) and (b) outright; (d) should stream
+  by `read()` instead of `path()`.
+
+What the loose files then cost, besides the creates:
+
+- **Deleting them.** Blob files are read-only (`writeNewFile()` and
+  `adoptFile()` set `ReadOnly`). `Base::FileInfo::deleteDirectoryRecursive()`
+  clears the flag first, but the recovery dialog's "Cleanup..."
+  (`DocumentRecoveryCleaner::clearDirectory()`) does not, so on Windows every
+  delete fails. It ran 16474 failing deletes on the GUI thread -- the freeze --
+  and then removed the lock file anyway, turning the directory into a
+  permanent orphan: the startup scan only finds directories through a lock
+  file.
+- **Orphans nobody lists.** Only the GUI creates the instance lock
+  (`Gui::Application::runApplication`), so a `FreeCADCmd` or test process that
+  dies leaves transient directories no scan will ever find. 868 of the 938
+  orphans found on 2026-09-24 were empty directories of that kind.
+
+The recovery bugs are fixed separately; they are bugs whatever the store
+does. (Fixed 2026-09-24, `80070f4b21`: the cleaner clears read-only first,
+a lock stays until its directories are gone, deletes run off the GUI
+thread, and lockless orphans are found by PID liveness and start time.)
+This section is about the store.
+
+### 15.2 The design
+
+A blob stops being a file. It becomes an entry in an index -- **hash to
+(segment, offset, length, encoding)** -- and its bytes live in one of a few
+large files.
+
+- **Segments.** Append-only files in the store directory,
+  `blobs/seg-NNNN.pack`, rolled over at a size limit (start at 256 MB). One
+  handle is open for appending; the others are opened for reading on demand
+  and closed around directory moves, exactly as the archive copy is (sec
+  14.3). A blob is written once, at the end of the current segment, and never
+  rewritten in place.
+- **The index in SQLite.** The `Transaction` branch already puts a SQLite
+  database in the transient directory (`history/log.db`, WAL,
+  `synchronous=NORMAL`). The blob index is a SQLite database of the same form
+  -- `blobs/index.db`, not a table in `log.db`, is the lean (15.5) -- keyed by
+  hash, with segment, offset, length, encoding (`raw`, `zstd`) and extension.
+  Small blobs, under a threshold to be measured (sec 15.4), are stored inline
+  in the row and never touch a segment.
+- **The archive copy is a segment.** Section 14's `blobs/<uuid>.FCStd` already
+  is one: a single file whose entries are found through its own index. It
+  becomes a read-only segment whose entries happen to be deflated zip members,
+  so restore, save and the log all use one mechanism.
+- **Save.** `storeBlob()` serialises the shape into memory, hashes it and
+  appends it (deduplicated by hash, as now). `writeBlobs()` streams each entry
+  from its segment into the zip, the way it already streams an archived blob.
+  No file per shape.
+- **Real files only on demand.** `FileBlob::path()` keeps `materialize()`: a
+  consumer that needs a path -- Python, MaterialX, a material card, an
+  external editor -- gets a file written under `blobs/materialized/`. They are
+  few, and they go with the document through `deleteDirectoryRecursive()`,
+  which handles read-only.
+- **Lifetime.** `FileBlobHandle` refcounting stays as it is. When a blob's
+  last referrer goes, its index row is dropped and its range becomes dead space
+  in its segment.
+- **Compaction.** A segment whose dead fraction passes a threshold (start at
+  50%) is rewritten: live ranges copied to the current segment, their index
+  rows updated in one SQLite transaction, then the old segment deleted. It runs
+  on a worker thread, never the GUI's. The log's collector
+  (`docs/TransactionLog.md` sec 23.5) marks dead entities and feeds the same
+  pass.
+- **Crashes and orphans.** A transient directory becomes a few segments, an
+  index and a handful of materialized files, so a leftover costs a few deletes
+  instead of tens of thousands. The index database is also where session-mode
+  crash recovery (`docs/TransactionLog.md` sec 13.3) finds the blobs of the
+  log's tail.
+- **Browser and mobile.** Segment files and SQLite both work on OPFS (SQLite
+  has an official WASM build with OPFS persistence), so nothing here closes off
+  the WASM tier.
+
+### 15.3 What it changes for the transaction log
+
+Less than the first draft of this section said (see 15.1): the log keeps its
+own entities inline in `log.db` and only references blobs this store already
+holds. What it uses of the store is `FileBlobHandle` and its refcount,
+`FileBlob::read()` (through `readBytes`), `adoptBytes()`, and -- for the
+checkout -- `path()`. **If those keep their meaning over segments, the log needs
+no change.** That is the API contract (15.6). The store then removes the log's
+two per-blob file costs, the snapshot's `storeBlob` and cold undo's
+`adoptBytes()`, without the log noticing.
+
+### 15.4 To measure before building (phase 0)
+
+On the laptop, in `getUserCachePath()`, with MiSTer's 5401 blobs and the
+16474-shape import, as sec 14.2 measured with `archbench.py`:
+
+| backing | create | read all, random order | delete the store |
+| --- | --- | --- | --- |
+| a file per blob (today) | | | |
+| everything inline in SQLite | | | |
+| SQLite index plus segment files | | | |
+
+Also: the inline threshold for SQLite rows (page churn under WAL), the
+segment roll size, and the cost of a compaction pass over a 1 GB segment.
+Linux and macOS rows too: the design must not make the case that is free there
+slower.
+
+### 15.5 Open questions
+
+Input from the `oplab` session (the `Transaction` branch), 2026-09-24. The
+rulings are the user's.
+
+- **Where the blob index lives.** First draft: possibly a table in the log's
+  `log.db`. `oplab` argues against, concretely: the log *replaces* its
+  database at runtime (`TransactionLog::adoptStore` swaps in an embedded copy
+  on open, TransactionLog.md sec 16.4; `embed()` copies with `VACUUM INTO` and
+  then drops unnamed versions and the cache tier), so an index inside it would
+  travel into every embedded copy and be lost on adopt unless both paths learn
+  to strip and merge it. The log's connection is owned by its writer thread,
+  while save and restore make blobs on the main thread, and `ATTACH` gives no
+  atomic commit across two databases in WAL mode. Their lean: **its own
+  `blobs/index.db`** with the same schema conventions, the log referring to
+  blobs by hash as it does now. Atomicity across the two is not needed: the log
+  only records blobs that already exist, and the collector and refcounts
+  tolerate either order.
+- **Encoding in the segment.** Independent of the log, which already zstds and
+  delta-encodes its own entities inside SQLite. Measured deltas for shape blobs
+  are 5-9% of full on parameter edits and 41-47% on topology changes
+  (TransactionLog.md sec 23.16). With raw ranges in the segments the log keeps
+  its blob deltas in `log.db` as now; a per-row encoding column (`raw`, `zstd`)
+  in the index covers both choices.
+- **A copy of the saved archive as the new read-only segment**, making save and
+  restore symmetric at one file copy per save. No objection from the log:
+  version manifests name blobs by hash plus archive entry name, so where the
+  bytes live does not matter to it.
+
+### 15.6 The API contract to keep
+
+What code outside the store relies on, and must mean the same over segments:
+
+- `FileBlobHandle` as the reference and its count as the lifetime.
+- `FileBlob::read()` returns the bytes wherever they live -- the log's cold
+  undo and restore-to-version (TransactionLog.md sec 24, being built now)
+  read through it.
+- `adoptBytes()` stores bytes and deduplicates by hash -- cold undo re-adopts
+  decoded blobs through it.
+- `path()` materializes a real file on demand. Callers that only want the bytes
+  should move to `read()`; the log's checkout (`history/checkout/`) is one.

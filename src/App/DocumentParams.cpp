@@ -58,6 +58,7 @@ public:
         signalParamChanged("PreferBinary");
         signalParamChanged("InlineListSize");
         signalParamChanged("ArchiveRandomAccess");
+        signalParamChanged("ArchiveBlobStore");
         signalParamChanged("DeferShapeLoad");
         signalParamChanged("SaveMaterialCards");
         signalParamChanged("DedupShapePCurves");
@@ -103,6 +104,7 @@ public:
     bool PreferBinary;
     long InlineListSize;
     bool ArchiveRandomAccess;
+    bool ArchiveBlobStore;
     bool DeferShapeLoad;
     bool SaveMaterialCards;
     bool DedupShapePCurves;
@@ -163,6 +165,8 @@ public:
         funcs["InlineListSize"] = &DocumentParamsP::updateInlineListSize;
         ArchiveRandomAccess = this->handle->GetBool("ArchiveRandomAccess", true);
         funcs["ArchiveRandomAccess"] = &DocumentParamsP::updateArchiveRandomAccess;
+        ArchiveBlobStore = this->handle->GetBool("ArchiveBlobStore", true);
+        funcs["ArchiveBlobStore"] = &DocumentParamsP::updateArchiveBlobStore;
         DeferShapeLoad = this->handle->GetBool("DeferShapeLoad", true);
         funcs["DeferShapeLoad"] = &DocumentParamsP::updateDeferShapeLoad;
         SaveMaterialCards = this->handle->GetBool("SaveMaterialCards", true);
@@ -215,7 +219,7 @@ public:
         funcs["TransactionOnRecompute"] = &DocumentParamsP::updateTransactionOnRecompute;
         RelativeStringID = this->handle->GetBool("RelativeStringID", true);
         funcs["RelativeStringID"] = &DocumentParamsP::updateRelativeStringID;
-        HashIndexedName = this->handle->GetBool("HashIndexedName", false);
+        HashIndexedName = this->handle->GetBool("HashIndexedName", true);
         funcs["HashIndexedName"] = &DocumentParamsP::updateHashIndexedName;
         EnableMaterialEdit = this->handle->GetBool("EnableMaterialEdit", true);
         funcs["EnableMaterialEdit"] = &DocumentParamsP::updateEnableMaterialEdit;
@@ -287,6 +291,10 @@ public:
     // Auto generated code (Tools/params_utils.py:314)
     static void updateArchiveRandomAccess(DocumentParamsP *self) {
         self->ArchiveRandomAccess = self->handle->GetBool("ArchiveRandomAccess", true);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateArchiveBlobStore(DocumentParamsP *self) {
+        self->ArchiveBlobStore = self->handle->GetBool("ArchiveBlobStore", true);
     }
     // Auto generated code (Tools/params_utils.py:314)
     static void updateDeferShapeLoad(DocumentParamsP *self) {
@@ -394,7 +402,7 @@ public:
     }
     // Auto generated code (Tools/params_utils.py:314)
     static void updateHashIndexedName(DocumentParamsP *self) {
-        self->HashIndexedName = self->handle->GetBool("HashIndexedName", false);
+        self->HashIndexedName = self->handle->GetBool("HashIndexedName", true);
     }
     // Auto generated code (Tools/params_utils.py:314)
     static void updateEnableMaterialEdit(DocumentParamsP *self) {
@@ -458,6 +466,14 @@ static const App::ParamRegistry::Registrar _DocumentParamsRegistrar({
 "archive order, nothing pays for inflating entries nobody reads,\n"
 "and an entry can be reopened after the restore. Turn off to\n"
 "fall back to the forward-only walk."),
+    App::ParamInfo("App", "DocumentParams", "User parameter:BaseApp/Preferences/Document", "ArchiveBlobStore", "ArchiveBlobStore", App::ParamInfo::Bool, true)
+        .setTitle("Archive Blob Store")
+        .setDoc("Serve the included files of a document archive out of one copy\n"
+"of the archive in the transient directory, and give each its own\n"
+"file only when something asks for a path. Requires\n"
+"ArchiveRandomAccess. Turn off to write every included file out\n"
+"during the restore, which on a monitored filesystem costs a file\n"
+"create per entry."),
     App::ParamInfo("App", "DocumentParams", "User parameter:BaseApp/Preferences/Document", "DeferShapeLoad", "DeferShapeLoad", App::ParamInfo::Bool, true)
         .setTitle("Defer Shape Load")
         .setDoc("Park shape archive entries during restore and read each one on\n"
@@ -576,10 +592,12 @@ static const App::ParamRegistry::Registrar _DocumentParamsRegistrar({
         .setTitle("Transaction On Recompute"),
     App::ParamInfo("App", "DocumentParams", "User parameter:BaseApp/Preferences/Document", "RelativeStringID", "RelativeStringID", App::ParamInfo::Bool, true)
         .setTitle("Relative String ID"),
-    App::ParamInfo("App", "DocumentParams", "User parameter:BaseApp/Preferences/Document", "HashIndexedName", "HashIndexedName", App::ParamInfo::Bool, false)
+    App::ParamInfo("App", "DocumentParams", "User parameter:BaseApp/Preferences/Document", "HashIndexedName", "HashIndexedName", App::ParamInfo::Bool, true)
         .setTitle("Hash Indexed Name")
-        .setDoc("Enable special encoding of indexes name in toponaming. Disabled by\n"
-"default for backward compatibility"),
+        .setDoc("Encode a mapped name's trailing index apart from its text, as upstream\n"
+"FreeCAD does. Sets the mode of new documents only: a document keeps the\n"
+"mode it was saved in, and one saved before the mode was stored gets the\n"
+"one its string table was written in."),
     App::ParamInfo("App", "DocumentParams", "User parameter:BaseApp/Preferences/Document", "EnableMaterialEdit", "EnableMaterialEdit", App::ParamInfo::Bool, true)
         .setTitle("Enable Material Edit"),
     App::ParamInfo("App", "DocumentParams", "User parameter:BaseApp/Preferences/Document", "MCPServerAutoStart", "MCPServerAutoStart", App::ParamInfo::Bool, false)
@@ -946,6 +964,39 @@ void DocumentParams::setArchiveRandomAccess(const bool &v) {
 // Auto generated code (Tools/params_utils.py:431)
 void DocumentParams::removeArchiveRandomAccess() {
     instance()->handle->RemoveBool("ArchiveRandomAccess");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *DocumentParams::docArchiveBlobStore() {
+    return QT_TRANSLATE_NOOP("DocumentParams",
+"Serve the included files of a document archive out of one copy\n"
+"of the archive in the transient directory, and give each its own\n"
+"file only when something asks for a path. Requires\n"
+"ArchiveRandomAccess. Turn off to write every included file out\n"
+"during the restore, which on a monitored filesystem costs a file\n"
+"create per entry.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const bool & DocumentParams::getArchiveBlobStore() {
+    return instance()->ArchiveBlobStore;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const bool & DocumentParams::defaultArchiveBlobStore() {
+    const static bool def = true;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void DocumentParams::setArchiveBlobStore(const bool &v) {
+    instance()->handle->SetBool("ArchiveBlobStore",v);
+    instance()->ArchiveBlobStore = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void DocumentParams::removeArchiveBlobStore() {
+    instance()->handle->RemoveBool("ArchiveBlobStore");
 }
 
 // Auto generated code (Tools/params_utils.py:397)
@@ -1719,8 +1770,10 @@ void DocumentParams::removeRelativeStringID() {
 // Auto generated code (Tools/params_utils.py:397)
 const char *DocumentParams::docHashIndexedName() {
     return QT_TRANSLATE_NOOP("DocumentParams",
-"Enable special encoding of indexes name in toponaming. Disabled by\n"
-"default for backward compatibility");
+"Encode a mapped name's trailing index apart from its text, as upstream\n"
+"FreeCAD does. Sets the mode of new documents only: a document keeps the\n"
+"mode it was saved in, and one saved before the mode was stored gets the\n"
+"one its string table was written in.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -1730,7 +1783,7 @@ const bool & DocumentParams::getHashIndexedName() {
 
 // Auto generated code (Tools/params_utils.py:413)
 const bool & DocumentParams::defaultHashIndexedName() {
-    const static bool def = false;
+    const static bool def = true;
     return def;
 }
 

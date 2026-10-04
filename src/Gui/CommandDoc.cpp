@@ -67,6 +67,7 @@
 #include "MergeDocuments.h"
 #include "NavigationStyle.h"
 #include "Placement.h"
+#include "Tools.h"
 #include "Transform.h"
 #include "View3DInventor.h"
 #include "View3DInventorViewer.h"
@@ -1435,7 +1436,7 @@ StdCmdDelete::StdCmdDelete()
   sWhatsThis    = "Std_Delete";
   sStatusTip    = QT_TR_NOOP("Deletes the selected objects");
   sPixmap       = "edit-delete";
-  sAccel        = keySequenceToAccel(QKeySequence::Delete);
+  sAccel        = keySequenceToAccel(QtTools::deleteKeySequence());
   eType         = ForEdit;
 }
 
@@ -1696,7 +1697,13 @@ void StdCmdPlacement::activated(int iMsg)
 
 bool StdCmdPlacement::isActive()
 {
-    return Gui::Selection().countObjectsOfType(App::GeoFeature::getClassTypeId()) >= 1;
+    // A frozen object would move without touching what depends on it
+    // (upstream 1eb8496aae refuses it the same way)
+    auto sels = Gui::Selection().getObjectsOfType(App::GeoFeature::getClassTypeId());
+    return !sels.empty()
+        && std::none_of(sels.begin(), sels.end(), [](App::DocumentObject *obj) {
+               return obj->isFreezed();
+           });
 }
 
 //===========================================================================

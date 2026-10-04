@@ -117,6 +117,14 @@ ParamGroup = (
         'OutlineThicken',
     )]),
 
+    ('Datums', [_ViewParams[name] for name in (
+        'DatumScreenSize',
+        'DatumScale',
+        'DatumPlaneSize',
+        'DatumLineSize',
+        'DatumTemporaryScaleFactor',
+    )]),
+
     HiddenLineParams[:2],
     ShadowParams[:2],
 )

@@ -145,6 +145,12 @@ public:
     /// QObject instead of the bag -- the bag IS the object's state.
     QVariant property(const char* name) const;
     QVariant property(const QString& name) const;
+    /// Whether `written` -- a value as a writer sent it, before any
+    /// coercion -- differs from what the widget holds under `name`
+    /// now (docs/Sandbox.md 7.22): what a streamed client asked for
+    /// against what the host made of it.  False for a key the bag
+    /// does not declare, which no writer can change.
+    bool valueDiffers(const QString& name, const QVariant& written) const;
     /// Write one property as native code does: touched, signalled.
     /// True when `name` is a bag key; a key this class does not have is
     /// kept as a dynamic property (Qt's `setProperty` on an unknown name

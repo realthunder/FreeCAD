@@ -41,6 +41,8 @@
 
 #include <QApplication>
 #include <QEvent>
+#include <QFont>
+#include <QFontDatabase>
 #include <QKeyEvent>
 #include <QObject>
 #include <QString>
@@ -48,14 +50,21 @@
 #include <Inventor/SoDB.h>
 #include <Inventor/SoInteraction.h>
 #include <Inventor/events/SoKeyboardEvent.h>
+#include <Inventor/nodes/SoCube.h>
 #include <Inventor/nodes/SoEventCallback.h>
 #include <Inventor/nodes/SoSeparator.h>
 
 #include <App/Application.h>
 #include <Base/Placement.h>
 
+#include <Gui/DatumValueEditor.h>
 #include <Gui/EditableDatumLabel.h>
+#include <Gui/Inventor/SoAutoZoomTranslation.h>
+#include <Gui/Inventor/SoToggleMarker.h>
 #include <Gui/MirrorViewer.h>
+#include <Gui/PatternWidgets.h>
+#include <Gui/SoDatumLabel.h>
+#include <Gui/SoFCUnifiedSelection.h>
 #include <Gui/ViewerContext.h>
 
 namespace
@@ -100,6 +109,19 @@ protected:
             SoDB::init();
             SoInteraction::init();
         }
+        // The label's own nodes: without a type no action reaches them, and
+        // a click is an action like any other
+        if (Gui::SoDatumLabel::getClassTypeId() == SoType::badType()) {
+            Gui::SoDatumLabel::initClass();
+            Gui::SoAutoZoomTranslation::initClass();
+        }
+        if (Gui::SoToggleMarker::getClassTypeId() == SoType::badType()) {
+            Gui::SoToggleMarker::initClass();
+        }
+        // What the markers hang from, to be drawn over the labels
+        if (Gui::SoFCPathAnnotation::getClassTypeId() == SoType::badType()) {
+            Gui::SoFCPathAnnotation::initClass();
+        }
         App::Application::Config()["ExeName"] = "OnViewParameter_tests_run";
         int argc = 1;
         static std::array<char, 32> exename {"OnViewParameter_tests_run"};
@@ -113,6 +135,17 @@ protected:
         static std::array<char, 32> qexe {"OnViewParameter_tests_run"};
         static std::array<char*, 2> qargv {qexe.data(), nullptr};
         app = new QApplication(qargc, qargv.data());
+
+        // Some platform has no font at all (offscreen on Windows), and a
+        // label's number is drawn in one; any family it asks for falls
+        // back to the application's
+        if (QFontDatabase::families().isEmpty()) {
+            int id = QFontDatabase::addApplicationFont(QStringLiteral(FC_TEST_FONT));
+            auto families = QFontDatabase::applicationFontFamilies(id);
+            if (!families.isEmpty()) {
+                QApplication::setFont(QFont(families.front()));
+            }
+        }
     }
 
     static void TearDownTestSuite()
@@ -344,6 +377,150 @@ TEST_F(OnViewParameterTest, aStaleIndexFromAClientIsRefused)
     EXPECT_FALSE(mirror->focusOnViewParameter(-1));
 }
 
+TEST_F(OnViewParameterTest, aClientIndexNamesTheBoxItWasGivenFor)
+{
+    // A label shown and not in edit, as a pattern's gaps are until one is
+    // clicked, is in the view's set but not in the feed. The client names a
+    // box by the index the feed gives it -- its place in the whole set --
+    // so it must land on the box it was given for, and the label not in
+    // the feed cannot be named at all.
+    auto shown = std::make_unique<Gui::EditableDatumLabel>(
+        mirror.get(), Base::Placement(), SbColor(1, 1, 1), false, false);
+    shown->activate();
+    addLabel();
+    addLabel();   // opened last, so it has the keys
+
+    const auto before = mirror->onViewParameters();
+    ASSERT_EQ(before.size(), 2U);
+    EXPECT_FALSE(before[0].focus);
+    EXPECT_EQ(before[0].index, 1) << "the label not in the feed still holds its place";
+    EXPECT_TRUE(mirror->focusOnViewParameter(before[0].index));
+    EXPECT_TRUE(mirror->onViewParameters()[0].focus);
+    EXPECT_FALSE(mirror->onViewParameters()[1].focus);
+    EXPECT_FALSE(mirror->focusOnViewParameter(0)) << "the label not in the feed";
+    EXPECT_FALSE(mirror->focusOnViewParameter(3));
+    shown.reset();
+}
+
+namespace
+{
+
+Gui::MirrorViewer::Input pointer(Gui::MirrorViewer::Input::Kind kind, int x, int y)
+{
+    Gui::MirrorViewer::Input input;
+    input.kind = kind;
+    input.x = x;
+    input.y = y;
+    input.code = 1;
+    input.time = 1.0;
+    return input;
+}
+
+}  // namespace
+
+TEST_F(OnViewParameterTest, aClickReachesAPickableLabelThroughTheMirror)
+{
+    // A pattern's label is clicked to be edited, and on a served view the
+    // click is a replayed event through the scene -- so the label's own
+    // callback has to hear it there, and pick its number without a GL pass
+    // ever having sized it.
+    auto label = std::make_unique<Gui::EditableDatumLabel>(
+        mirror.get(), Base::Placement(), SbColor(1, 1, 1), false, false);
+    label->setLabelType(Gui::SoDatumLabel::DISTANCE,
+                        Gui::EditableDatumLabel::Function::Dimensioning);
+    label->activate();
+    label->setPoints(Base::Vector3d(0, 0, 0), Base::Vector3d(10, 0, 0));
+    label->label->string = "10 mm";
+    int clicks = 0;
+    QObject::connect(label.get(), &Gui::EditableDatumLabel::clicked,
+                     [&clicks](Gui::EditableDatumLabel*) { ++clicks; });
+
+    // The number sits on the midpoint, (5,0,0): 5 / (60 tan 22.5deg) of
+    // the half height right of the centre of an 800x600 canvas
+    const int x = 400 + int(5.0 / (60.0 * 0.41421356) * 300.0 + 0.5);
+    const int y = 300;
+    using Kind = Gui::MirrorViewer::Input::Kind;
+
+    // Not pickable, not clicked: the sketcher's labels are left alone
+    mirror->handleInput(pointer(Kind::Press, x, y));
+    mirror->handleInput(pointer(Kind::Release, x, y));
+    EXPECT_EQ(clicks, 0);
+
+    label->setPickable(true);
+    mirror->handleInput(pointer(Kind::Press, x, y));
+    mirror->handleInput(pointer(Kind::Release, x, y));
+    EXPECT_EQ(clicks, 1);
+
+    // And a click beside it is not one on it
+    mirror->handleInput(pointer(Kind::Press, x, y + 150));
+    mirror->handleInput(pointer(Kind::Release, x, y + 150));
+    EXPECT_EQ(clicks, 1);
+}
+
+TEST_F(OnViewParameterTest, theWholeNumberIsPickable)
+{
+    // The number's pick quad was a bowtie: its top was not pickable and its
+    // centre lay on an edge, so a browser's click on the middle of a drawn
+    // label went through it
+    auto label = std::make_unique<Gui::EditableDatumLabel>(
+        mirror.get(), Base::Placement(), SbColor(1, 1, 1), false, false);
+    label->setLabelType(Gui::SoDatumLabel::DISTANCE,
+                        Gui::EditableDatumLabel::Function::Dimensioning);
+    label->activate();
+    label->setPoints(Base::Vector3d(0, 0, 0), Base::Vector3d(10, 0, 0));
+    label->label->string = "10 mm";
+    label->setPickable(true);
+    int clicks = 0;
+    QObject::connect(label.get(), &Gui::EditableDatumLabel::clicked,
+                     [&clicks](Gui::EditableDatumLabel*) { ++clicks; });
+
+    const int x = 400 + int(5.0 / (60.0 * 0.41421356) * 300.0 + 0.5);
+    using Kind = Gui::MirrorViewer::Input::Kind;
+    int expected = 0;
+    for (int dy : {-5, 5}) {
+        mirror->handleInput(pointer(Kind::Press, x, 300 + dy));
+        mirror->handleInput(pointer(Kind::Release, x, 300 + dy));
+        EXPECT_EQ(clicks, ++expected) << "a click " << dy << " px off the centre row";
+    }
+}
+
+TEST_F(OnViewParameterTest, aLabelOutlivesItsView)
+{
+    // A closed document takes its view first and the panel holding the
+    // labels after: the view takes their dimensions out of its graph as it
+    // goes, and a label is not to reach it afterwards
+    addLabel();
+    ASSERT_GT(scene->getNumChildren(), 0);
+    mirror.reset();
+    EXPECT_EQ(scene->getNumChildren(), 0);
+    labels.clear();
+}
+
+TEST_F(OnViewParameterTest, aValueEditorOutlivesItsView)
+{
+    // The editor of a value the scene draws -- a sketch dimension's -- is an
+    // entry of the view too, and a client's view goes when the client does:
+    // the editor is told, closes, and does not reach the view afterwards
+    auto editor = std::make_unique<Gui::DatumValueEditor>(mirror.get(), Base::Placement());
+    Gui::DatumValueEditor::Target target;
+    target.point = SbVec3f(1, 2, 0);
+    target.value = 10.0;
+    editor->edit(target);
+    ASSERT_TRUE(editor->isOpen());
+    ASSERT_EQ(mirror->onViewParameters().size(), 1U);
+    mirror.reset();
+    EXPECT_FALSE(editor->isOpen()) << "the editor was not told its view went";
+    editor.reset();
+}
+
+TEST_F(OnViewParameterTest, theBoxTakesTheLabelsSize)
+{
+    Gui::EditableDatumLabel* label = addLabel();
+    ASSERT_EQ(mirror->onViewParameters().size(), 1U);
+    EXPECT_EQ(mirror->onViewParameters()[0].pointSize, label->getFontPointSize());
+    EXPECT_GT(mirror->onViewParameters()[0].pointSize, 0.0);
+}
+
 TEST_F(OnViewParameterTest, theViewIsToldWheneverTheSetMoves)
 {
     const int quiet = changes;
@@ -365,6 +542,162 @@ TEST_F(OnViewParameterTest, aBoxThatGoesAwayTakesTheFocusWithIt)
     EXPECT_TRUE(mirror->onViewParameters().empty());
     // And a key arriving after it must not be routed to freed memory.
     EXPECT_NO_FATAL_FAILURE(mirror->handleInput(keyPress('7', '7')));
+}
+
+// ----------------------------------------------------------------------------
+// A pattern's instance toggles (Gui::PatternInstanceMarkers): scene nodes, so
+// that a served view has them as it has the labels
+
+/// Where a world point on the z = 0 plane lands on the 800x600 canvas
+int canvasX(double x)
+{
+    return 400 + int(x / (60.0 * 0.41421356) * 300.0 + 0.5);
+}
+
+std::vector<Gui::PatternInstanceMarkers::Instance> twoInstances()
+{
+    std::vector<Gui::PatternInstanceMarkers::Instance> instances(2);
+    instances[0].index = 0;
+    instances[1].index = 1;
+    instances[1].center = Base::Vector3d(10, 0, 0);
+    instances[1].suppressed = true;
+    return instances;
+}
+
+TEST_F(OnViewParameterTest, aMarkerPaintsWhatAClickDoes)
+{
+    // The glyph is the image a capture takes, so it is there before any GL
+    // pass, and it changes with the state it shows
+    auto marker = new Gui::SoToggleMarker;
+    marker->ref();
+    SbVec2s size;
+    int nc = 0;
+    const unsigned char* bytes = marker->image.getValue(size, nc);
+    ASSERT_NE(bytes, nullptr);
+    EXPECT_EQ(size[0], 22);
+    EXPECT_EQ(nc, 4);
+    std::vector<unsigned char> in(bytes, bytes + size[0] * size[1] * nc);
+
+    marker->active = FALSE;
+    bytes = marker->image.getValue(size, nc);
+    std::vector<unsigned char> out(bytes, bytes + size[0] * size[1] * nc);
+    EXPECT_NE(in, out);
+
+    marker->markerSize = 48;
+    marker->image.getValue(size, nc);
+    EXPECT_EQ(size[0], 48);
+    marker->unref();
+}
+
+TEST_F(OnViewParameterTest, aClickOnAMarkerAsksToToggleItsInstance)
+{
+    Gui::PatternInstanceMarkers markers;
+    std::vector<std::pair<int, bool>> asked;
+    QObject::connect(&markers, &Gui::PatternInstanceMarkers::toggleRequested,
+                     [&asked](int index, bool suppress) { asked.emplace_back(index, suppress); });
+    markers.show(mirror.get(), twoInstances());
+    ASSERT_NE(markers.getMarker(1), nullptr);
+    EXPECT_TRUE(markers.getMarker(0)->active.getValue());
+    EXPECT_FALSE(markers.getMarker(1)->active.getValue());
+
+    using Kind = Gui::MirrorViewer::Input::Kind;
+    // The one left out is brought back, the one in is left out
+    mirror->handleInput(pointer(Kind::Press, canvasX(10), 300));
+    mirror->handleInput(pointer(Kind::Release, canvasX(10), 300));
+    mirror->handleInput(pointer(Kind::Press, canvasX(0), 300));
+    mirror->handleInput(pointer(Kind::Release, canvasX(0), 300));
+    ASSERT_EQ(asked.size(), 2U);
+    EXPECT_EQ(asked[0], std::make_pair(1, false));
+    EXPECT_EQ(asked[1], std::make_pair(0, true));
+
+    // Beside one is no click, nor a press on one released on another
+    mirror->handleInput(pointer(Kind::Press, canvasX(5), 300));
+    mirror->handleInput(pointer(Kind::Release, canvasX(5), 300));
+    mirror->handleInput(pointer(Kind::Press, canvasX(0), 300));
+    mirror->handleInput(pointer(Kind::Release, canvasX(10), 300));
+    EXPECT_EQ(asked.size(), 2U);
+
+    // The panel shows them again as the pattern has them now
+    auto instances = twoInstances();
+    instances[1].suppressed = false;
+    markers.show(mirror.get(), instances);
+    EXPECT_TRUE(markers.getMarker(1)->active.getValue());
+}
+
+TEST_F(OnViewParameterTest, aMarkerIsCentredOnItsPoint)
+{
+    // An SoImage hangs off its point to the upper right unless told
+    // otherwise, and was clicked there and not where the instance is
+    Gui::PatternInstanceMarkers markers;
+    int clicks = 0;
+    QObject::connect(&markers, &Gui::PatternInstanceMarkers::toggleRequested,
+                     [&clicks](int, bool) { ++clicks; });
+    markers.show(mirror.get(), twoInstances());
+
+    using Kind = Gui::MirrorViewer::Input::Kind;
+    int expected = 0;
+    for (int dx : {-8, 8}) {
+        for (int dy : {-8, 8}) {
+            mirror->handleInput(pointer(Kind::Press, canvasX(0) + dx, 300 + dy));
+            mirror->handleInput(pointer(Kind::Release, canvasX(0) + dx, 300 + dy));
+            EXPECT_EQ(clicks, ++expected) << "a click at " << dx << "," << dy;
+        }
+    }
+}
+
+TEST_F(OnViewParameterTest, aMarkerIsPickedThroughTheInstanceAroundIt)
+{
+    // A marker sits at the middle of its instance, inside the solid: the
+    // solid's face is nearer, and must not take the click
+    auto cube = new SoCube;
+    cube->width = 4;
+    cube->height = 4;
+    cube->depth = 4;
+    scene->addChild(cube);
+
+    Gui::PatternInstanceMarkers markers;
+    int clicks = 0;
+    QObject::connect(&markers, &Gui::PatternInstanceMarkers::toggleRequested,
+                     [&clicks](int, bool) { ++clicks; });
+    markers.show(mirror.get(), twoInstances());
+
+    using Kind = Gui::MirrorViewer::Input::Kind;
+    mirror->handleInput(pointer(Kind::Press, canvasX(0), 300));
+    mirror->handleInput(pointer(Kind::Release, canvasX(0), 300));
+    EXPECT_EQ(clicks, 1);
+}
+
+TEST_F(OnViewParameterTest, theMarkerUnderThePointerIsHighlighted)
+{
+    Gui::PatternInstanceMarkers markers;
+    markers.show(mirror.get(), twoInstances());
+    using Kind = Gui::MirrorViewer::Input::Kind;
+    mirror->handleInput(pointer(Kind::Move, canvasX(10), 300));
+    EXPECT_FALSE(markers.getMarker(0)->highlighted.getValue());
+    EXPECT_TRUE(markers.getMarker(1)->highlighted.getValue());
+    mirror->handleInput(pointer(Kind::Move, canvasX(5), 300));
+    EXPECT_FALSE(markers.getMarker(1)->highlighted.getValue());
+}
+
+TEST_F(OnViewParameterTest, theMarkersGoWhenCleared)
+{
+    Gui::PatternInstanceMarkers markers;
+    const int before = scene->getNumChildren();
+    markers.show(mirror.get(), twoInstances());
+    EXPECT_EQ(scene->getNumChildren(), before + 1);
+    // One instance is nothing to leave out
+    markers.show(mirror.get(), {});
+    EXPECT_EQ(scene->getNumChildren(), before);
+    EXPECT_EQ(markers.getMarker(0), nullptr);
+}
+
+TEST_F(OnViewParameterTest, theMarkersOutliveTheirView)
+{
+    // A document closed under an open panel takes the view first
+    auto markers = std::make_unique<Gui::PatternInstanceMarkers>();
+    markers->show(mirror.get(), twoInstances());
+    mirror.reset();
+    EXPECT_NO_FATAL_FAILURE(markers.reset());
 }
 
 }  // namespace

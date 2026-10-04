@@ -118,6 +118,13 @@ QVariant Widget::property(const QString& name) const
     return _dynamic.value(name);
 }
 
+bool Widget::valueDiffers(const QString& name, const QVariant& written) const
+{
+    if (!has(name))
+        return false;
+    return coerce(name, written) != property(name);
+}
+
 bool Widget::setProperty(const char* name, const QVariant& value)
 {
     return setProperty(QString::fromUtf8(name), value);

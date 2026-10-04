@@ -1195,6 +1195,20 @@ DocumentObjectExecReturn* Sheet::execute()
         boost::topological_sort(graph, std::front_inserter(make_order));
         // Recompute cells
         FC_LOG("recomputing " << getFullName());
+        // ONE dependency rebuild for the whole pass, not one per cell.
+        // A quantity-valued cell's write calls Cell::setComputedUnit, whose
+        // own AtomicPropertyChange invokes PropertySheet::hasSetValue() --
+        // and that walks EVERY cell of the sheet (getDepObjects on each
+        // expression, plus the element-reference visitor) before calling
+        // updateDeps.  Per cell that is O(n), so a sheet of unit-valued cells
+        // that reference anything recomputed in O(n^2): measured 692 us/cell
+        // at 250 cells, 1394 at 500, 2818 at 1000, 5681 at 2000.  Holding one
+        // guard across the pass makes the inner ones no-ops (tryInvoke fires
+        // only at signalCounter == 1) and leaves exactly one rebuild at the
+        // end -- which is what hasSetValue does anyway, rebuilding wholesale
+        // from `data`.  markChange is false so a pass that writes nothing
+        // still costs nothing.
+        PropertySheet::AtomicPropertyChange signaller(cells, false);
         for (auto& pos : make_order) {
             const auto& addr = VertexIndexList[pos];
             FC_TRACE(addr.toString());

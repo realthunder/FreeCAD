@@ -48,6 +48,9 @@
         <file>icons/PartDesign_Pocket.svg</file>
         <file>icons/PartDesign_Point.svg</file>
         <file>icons/PartDesign_PolarPattern.svg</file>
+        <file>icons/PartDesign_CircularPattern.svg</file>
+        <file>icons/PartDesign_PathPattern.svg</file>
+        <file>icons/PartDesign_PointPattern.svg</file>
         <file>icons/PartDesign_Revolution.svg</file>
         <file>icons/PartDesign_Scaled.svg</file>
         <file>icons/PartDesign_Split.svg</file>
@@ -86,6 +89,7 @@
         <file>icons/PartDesign_IntersectingRevolution.svg</file>
         <file>icons/PartDesign_IntersectingHole.svg</file>
         <file>icons/PartDesign_Thickness.svg</file>
+        <file>icons/PartDesign_Defeaturing.svg</file>
         <file>icons/PartDesign_Overlay.svg</file>
         <file>icons/PartDesign_Suppressed.svg</file>
         <file>icons/PartDesignWorkbench.svg</file>
@@ -97,5 +101,19 @@
         <file>icons/PartDesign_GroupSketch.svg</file>
         <file>icons/PartDesign_GroupDatum.svg</file>
         <file>icons/PartDesign_GroupMisc.svg</file>
+    </qresource>
+    <qresource>
+        <file>images/hole_counterbore_angled.svg</file>
+        <file>images/hole_counterbore_angled_included.svg</file>
+        <file>images/hole_counterbore_flat.svg</file>
+        <file>images/hole_counterdrill_angled.svg</file>
+        <file>images/hole_counterdrill_angled_included.svg</file>
+        <file>images/hole_counterdrill_flat.svg</file>
+        <file>images/hole_countersink_angled.svg</file>
+        <file>images/hole_countersink_angled_included.svg</file>
+        <file>images/hole_countersink_flat.svg</file>
+        <file>images/hole_none_angled.svg</file>
+        <file>images/hole_none_angled_included.svg</file>
+        <file>images/hole_none_flat.svg</file>
     </qresource>
 </RCC>

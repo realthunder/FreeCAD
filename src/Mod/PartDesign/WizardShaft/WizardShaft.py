@@ -35,7 +35,9 @@ class TaskWizardShaft:
     Gui = FreeCADGui
 
     def __init__(self, doc):
-        mw = QtGui.QApplication.activeWindow()
+        # Not QApplication.activeWindow(): None while FreeCAD is not the
+        # active application
+        mw = FreeCADGui.getMainWindow()
         #cw = mw.centralWidget() # This is a qmdiarea widget
         cw = mw.findChild(QtGui.QMdiArea)
         self.doc = doc
@@ -155,7 +157,7 @@ class TaskWizardShaft:
             self.updateButton(row,  col,  flag)
 
     def getStandardButtons(self):
-        return int(QtGui.QDialogButtonBox.Ok)
+        return QtGui.QDialogButtonBox.Ok
 
     def accept(self):
         if self.table:

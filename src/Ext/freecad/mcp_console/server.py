@@ -30,13 +30,17 @@ Usage from the FreeCAD Python console (main thread)::
 
 The Tools menu carries a checkable "MCP Server" action driving the same two
 calls, and remembers the state in ``App::DocumentParams::MCPServerAutoStart`` so
-the server comes back up on the next start.
+the server comes back up on the next start. ``FC_MCP_PORT=<port>`` in the
+environment starts it for that session only, and ``FC_MCP_PORT=0`` keeps it
+off; a running server records its endpoint under :func:`endpoint_dir`, where
+``scripts/mcp_run.py`` finds it.
 """
 
 import ast
 import collections
 import contextlib
 import io
+import json
 import logging
 import os
 import sys
@@ -45,7 +49,7 @@ import time
 import traceback
 from typing import Optional, TypedDict
 
-__all__ = ["start", "stop", "is_running", "url", "log_path", "get_log"]
+__all__ = ["start", "stop", "is_running", "url", "log_path", "get_log", "endpoint_dir"]
 
 
 class RunResult(TypedDict):
@@ -596,6 +600,16 @@ def _preserved_logging():
             logging.getLogger(name).setLevel(logging.WARNING)
 
 
+def _python_executable() -> str:
+    """The interpreter of this environment. Inside FreeCAD sys.executable is
+    FreeCAD itself, which is no use in an install command."""
+    for name in (("python.exe",) if os.name == "nt" else ("bin/python3", "bin/python")):
+        path = os.path.join(sys.prefix, name)
+        if os.path.exists(path):
+            return path
+    return "python"
+
+
 def _make_server(host: str, port: int):
     """Return ``(server, serve)`` for whichever major version of ``mcp`` is present.
 
@@ -628,14 +642,62 @@ def _make_server(host: str, port: int):
         from mcp.server import MCPServer  # mcp 2.x
     except ImportError as exc:
         raise ImportError(
-            "freecad.mcp_console needs the 'mcp' package: neither "
-            "mcp.server.fastmcp.FastMCP (1.x) nor mcp.server.MCPServer (2.x) "
-            "could be imported"
+            "freecad.mcp_console needs the 'mcp' package, which this Python (%s) "
+            "does not have. Install it into the environment FreeCAD runs from:\n"
+            "    conda install -p \"%s\" -c conda-forge mcp\n"
+            "or  \"%s\" -m pip install mcp"
+            % (sys.version.split()[0], sys.prefix, _python_executable())
         ) from exc
 
     server = MCPServer("FreeCAD Debug Console")
     return server, (lambda: server.run(transport="streamable-http",
                                        host=host, port=port))
+
+
+# --- endpoint files ----------------------------------------------------------
+# The configured port is where start() begins looking, not where it lands, and
+# on a Windows box with WSL mirrored networking another OS can answer the same
+# port on 127.0.0.1. So a running server records where it actually is: one file
+# per process under the user's home, which is per OS and per user -- the scope a
+# client shares with it. scripts/mcp_run.py reads them.
+_endpoint_file = None
+
+
+def endpoint_dir() -> str:
+    """Where running servers record their endpoints (FC_MCP_ENDPOINT_DIR overrides)."""
+    return (os.environ.get("FC_MCP_ENDPOINT_DIR")
+            or os.path.join(os.path.expanduser("~"), ".freecad-mcp"))
+
+
+def _write_endpoint():
+    global _endpoint_file
+    info = {"url": url(), "pid": os.getpid(), "started": time.time()}
+    try:
+        import FreeCAD
+        info["home"] = FreeCAD.getHomePath()
+        info["gui"] = bool(FreeCAD.GuiUp)
+    except Exception:
+        pass
+    try:
+        directory = endpoint_dir()
+        os.makedirs(directory, exist_ok=True)
+        path = os.path.join(directory, "%d.json" % os.getpid())
+        with open(path + ".tmp", "w") as f:
+            json.dump(info, f)
+        os.replace(path + ".tmp", path)
+        _endpoint_file = path
+    except OSError:
+        _endpoint_file = None  # discovery is a convenience; the URL is still printed
+
+
+def _remove_endpoint():
+    global _endpoint_file
+    if _endpoint_file:
+        try:
+            os.remove(_endpoint_file)
+        except OSError:
+            pass
+        _endpoint_file = None
 
 
 def _default_log_path() -> str:
@@ -847,6 +909,7 @@ def _atexit_cleanup():
         stop(timeout=1.0)
     except Exception:
         pass
+    _remove_endpoint()
     _detach_log_observer()
 
 
@@ -931,6 +994,7 @@ def start(host: str = _DEFAULT_HOST, port: int = _DEFAULT_PORT,
     _server_thread = threading.Thread(target=_serve_forever, name="mcp-console",
                                       daemon=True)
     _server_thread.start()
+    _write_endpoint()
     msg = "MCP console running at " + url()
     if port != requested:
         msg += " (port %d was taken)" % requested
@@ -968,6 +1032,7 @@ def stop(timeout: float = 5.0) -> str:
     _uvicorn = None
     _mcp = None
     _executor = None
+    _remove_endpoint()
     # uvicorn closes the sockets it was handed, so this is belt and braces -- but
     # the port has to be free for the next start(), and closing twice is a no-op.
     _release_socket()

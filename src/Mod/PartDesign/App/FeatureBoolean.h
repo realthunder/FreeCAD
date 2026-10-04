@@ -48,7 +48,19 @@ public:
     App::PropertyEnumeration    Type;
 
     App::PropertyBool Refine;
-    App::PropertyBool UsePlacement;
+    /// As FeatureAddSub::FuzzyTolerance (upstream 73f848a3d5)
+    App::PropertyFloatConstraint FuzzyTolerance;
+    /// The tool shapes, in the frame of the base shape, as the edit preview
+    /// draws them. Not saved; kept current by execute(), paused or not.
+    Part::PropertyPartShape ToolShape;
+    /** The Boolean owns every tool, and a tool's shape is taken in the
+     *  Boolean's frame as it is (upstream 9c7a761589's name). On for a
+     *  Boolean restored from a file that does not say, off for a new one,
+     *  which owns only its SubShapeBinders -- what the Boolean command makes
+     *  -- and takes any other tool as a reference: it stays where it is,
+     *  in its Part, and its shape is brought into the body from where it is.
+     */
+    App::PropertyBool UseLegacyBodyPlacement;
 
    /** @name methods override feature */
     //@{
@@ -64,8 +76,29 @@ public:
 
     void onNewSolidChanged() override;
     void unsetupObject() override;
+    void setPauseRecompute(bool enable) override;
+
+    /** @name tools as references (see UseLegacyBodyPlacement) */
+    //@{
+    std::vector<App::DocumentObject*> addObjects(std::vector<App::DocumentObject*> objects) override;
+    std::vector<App::DocumentObject*> setObjects(std::vector<App::DocumentObject*> objects) override;
+    /// Whether the Boolean owns \a obj, not only whether it is a tool
+    bool hasObject(const App::DocumentObject* obj, bool recursive = false) const override;
+    //@}
 
 protected:
+    /** The operands in the order the boolean takes them: the base first,
+     *  then the tools. \a hasBase says whether the base is the base
+     *  feature's shape rather than a tool standing in for it.
+     */
+    App::DocumentObjectExecReturn *collectOperands(std::vector<TopoShape> &shapes,
+                                                   bool &hasBase) const;
+    void updateToolShape(const std::vector<TopoShape> &shapes, bool hasBase);
+    /// A tool's shape in the body's frame
+    TopoShape getToolShape(const App::DocumentObject *tool) const;
+    /// Whether the Boolean owns \a tool rather than referring to it
+    bool ownsTool(const App::DocumentObject *tool) const;
+
     void handleChangedPropertyName(Base::XMLReader &reader, const char * TypeName, const char *PropName) override;
 
 

@@ -23,19 +23,25 @@
 
 #include "PreCompiled.h"
 #ifndef _PreComp_
+# include <algorithm>
 # include <QApplication>
 # include <QKeyEvent>
 # include <QLineEdit>
+# include <Inventor/SoPath.h>
+# include <Inventor/SoPickedPoint.h>
+# include <Inventor/events/SoMouseButtonEvent.h>
 # include <Inventor/sensors/SoNodeSensor.h>
-# include <Inventor/nodes/SoAnnotation.h>
+# include <Inventor/nodes/SoEventCallback.h>
 # include <Inventor/nodes/SoGroup.h>
 # include <Inventor/nodes/SoOrthographicCamera.h>
+# include <Inventor/nodes/SoPickStyle.h>
 # include <Inventor/nodes/SoTransform.h>
 #endif // _PreComp_
 
 #include <Gui/Application.h>
 #include <Gui/View3DInventor.h>
 #include <Gui/View3DInventorViewer.h>
+#include <Gui/SoFCUnifiedSelection.h>
 #include <Gui/ViewerContext.h>
 
 #include "EditableDatumLabel.h"
@@ -93,16 +99,30 @@ EditableDatumLabel::EditableDatumLabel(ViewerContext* view,
 {
     initColors();
     if (viewer) {
+        viewer->trackOnViewEntry(this);
         viewer->addOnViewParameter(this);
     }
     // NOLINTBEGIN
-    root = new SoAnnotation;
+    auto annotation = new SoFCPathAnnotation;
+    annotation->priority = OnViewPriority;
+    root = annotation;
     root->ref();
     root->renderCaching = SoSeparator::OFF;
 
     transform = new SoTransform();
     transform->ref();
     root->addChild(transform);
+
+    // A click on the label, once it is pickable. Inside the annotation, so
+    // the pick style reaches the label alone.
+    clickCallback = new SoEventCallback;
+    clickCallback->ref();
+    clickCallback->addEventCallback(SoMouseButtonEvent::getClassTypeId(), eventCallback, this);
+    root->addChild(clickCallback);
+    pickStyle = new SoPickStyle;
+    pickStyle->ref();
+    pickStyle->style = SoPickStyle::UNPICKABLE;
+    root->addChild(pickStyle);
 
     label = new SoDatumLabel();
     label->ref();
@@ -132,11 +152,11 @@ EditableDatumLabel::EditableDatumLabel(ViewerContext* view,
 
 EditableDatumLabel::~EditableDatumLabel()
 {
-    deactivate();
-    if (viewer) {
-        viewer->removeOnViewParameter(this);
-    }
+    forgetViewer(true);
     transform->unref();
+    clickCallback->removeEventCallback(SoMouseButtonEvent::getClassTypeId(), eventCallback, this);
+    clickCallback->unref();
+    pickStyle->unref();
     root->unref();
     label->unref();
     if (anchorLabel) {
@@ -150,13 +170,12 @@ void EditableDatumLabel::activate()
         return;
     }
 
-    // The served root a mirror answers with is a group but not always a
-    // separator, and this is the node the publish traversal walks -- which
-    // is how the dimension line reaches a browser at all.
-    if (SoNode* scene = viewer->getSceneGraph()) {
-        if (scene->isOfType(SoGroup::getClassTypeId())) {
-            static_cast<SoGroup*>(scene)->addChild(root);
-        }
+    // Where the view draws it from: on a mirror the served root, which is
+    // how the dimension line reaches a browser at all
+    if (SoGroup* parent = viewer->getOnViewParameterRoot()) {
+        parent->addChild(root);
+        hungUnder = parent;
+        hungUnder->ref();
     }
 
     //track camera movements to update spinbox position.
@@ -169,15 +188,33 @@ void EditableDatumLabel::activate()
             info->label->setLabelRecommendedDistance();
         }
     }, info);
-    if (SoCamera* camera = viewer->getCamera()) {
-        cameraSensor->attach(camera);
-    }
+    attachCameraSensor();
+    // A change of projection replaces the camera node, and the sensor would
+    // be left on one nobody moves any more
+    connCameraReplaced = viewer->signalCameraReplaced.connect([this]() {
+        attachCameraSensor();
+        if (autoDistance) {
+            setLabelRecommendedDistance();
+        }
+        positionSpinbox();
+    });
     notifyChanged();
 }
 
-void EditableDatumLabel::deactivate()
+void EditableDatumLabel::attachCameraSensor()
 {
-    stopEdit();
+    if (!cameraSensor) {
+        return;
+    }
+    cameraSensor->detach();
+    if (SoCamera* camera = viewer->getCamera()) {
+        cameraSensor->attach(camera);
+    }
+}
+
+void EditableDatumLabel::dropCameraSensor()
+{
+    connCameraReplaced.disconnect();
 
     if (cameraSensor) {
         auto data = static_cast<NodeData*>(cameraSensor->getData());
@@ -186,20 +223,53 @@ void EditableDatumLabel::deactivate()
         delete cameraSensor;
         cameraSensor = nullptr;
     }
+}
 
+void EditableDatumLabel::forgetViewer(bool viewAlive)
+{
+    if (!viewer) {
+        deactivate();
+        return;
+    }
+    if (viewAlive) {
+        deactivate();
+        viewer->removeOnViewParameter(this);
+    }
+    else {
+        // The camera node goes with the view
+        dropCameraSensor();
+    }
+    viewer->untrackOnViewEntry(this);
+    viewer = nullptr;
+}
+
+void EditableDatumLabel::deactivate()
+{
+    stopEdit();
+    dropCameraSensor();
+
+    unhang();
     if (viewer) {
-        if (SoNode* scene = viewer->getSceneGraph()) {
-            if (scene->isOfType(SoGroup::getClassTypeId())) {
-                static_cast<SoGroup*>(scene)->removeChild(root);
-            }
-        }
         notifyChanged();
     }
 }
 
+void EditableDatumLabel::unhang()
+{
+    if (!hungUnder) {
+        return;
+    }
+    const int index = hungUnder->findChild(root);
+    if (index >= 0) {
+        hungUnder->removeChild(index);
+    }
+    hungUnder->unref();
+    hungUnder = nullptr;
+}
+
 void EditableDatumLabel::startEdit(double val, QObject* eventFilteringObj, bool visibleToMouse)
 {
-    if (isInEdit()) {
+    if (isInEdit() || !viewer) {
         return;
     }
 
@@ -243,6 +313,12 @@ void EditableDatumLabel::startEdit(double val, QObject* eventFilteringObj, bool 
         setSpinboxVisibleToMouse(visibleToMouse);
     }
 
+    // The number's size where the label draws it, so the box sits over the
+    // number it replaces -- never smaller than the application's own text
+    QFont font = spinBox->font();
+    font.setPointSizeF(std::max<qreal>(getFontPointSize(), QApplication::font().pointSizeF()));
+    spinBox->setFont(font);
+
     if (mdi) {
         spinBox->show();
     }
@@ -255,11 +331,12 @@ void EditableDatumLabel::startEdit(double val, QObject* eventFilteringObj, bool 
             this, &EditableDatumLabel::handleSpinBoxValueChanged);
 }
 
-void EditableDatumLabel::stopEdit()
+void EditableDatumLabel::stopEdit(bool writeChanges)
 {
     if (spinBox) {
-        // write the spinbox value in the label.
-        Base::Quantity quantity = spinBox->value();
+        // write the spinbox value in the label, or the one it started from
+        Base::Quantity quantity = writeChanges ? spinBox->value()
+                                               : Base::Quantity(editStartValue, spinBox->unit());
 
         double factor{};
         std::string unitStr;
@@ -409,7 +486,14 @@ bool EditableDatumLabel::syncValueFromSpinBox(bool emitParameterUnset)
 
     // An emptied box is not a zero: the parameter goes back to being unset,
     // so the tool takes its value from the pointer again.
-    if (!spinBox->hasValidInput()) {
+    if (spinBox->hasValidInput()) {
+        // With keyboard tracking off the box holds what was typed back until
+        // Enter or the focus leaving, and Enter is taken here before the box
+        // has seen it: take it now. Not for an emptied box, which has
+        // nothing to take.
+        QMetaObject::invokeMethod(spinBox, "handlePendingEmit", Qt::DirectConnection);
+    }
+    else {
         if (emitParameterUnset) {
             resetLockedState();
             Q_EMIT parameterUnset();
@@ -487,6 +571,10 @@ bool EditableDatumLabel::eventFilter(QObject* watched, QEvent* event)
             this->resetLockedState();
             return false;
         }
+    }
+    else if (event->type() == QEvent::FocusOut && watched == spinBox) {
+        // Left to the box as well: it is only told about
+        Q_EMIT focusLost();
     }
 
     return QObject::eventFilter(watched, event);
@@ -611,6 +699,9 @@ void EditableDatumLabel::setLabelRange(double val)
 void EditableDatumLabel::setLabelRecommendedDistance()
 {
     // Takes the 3d view size, and set the label distance to a % of that, such that the distance does not depend on the zoom level.
+    if (!viewer) {
+        return;
+    }
     float width = -1.;
     float length = -1.;
     viewer->getDimensions(width, length);
@@ -632,6 +723,39 @@ void EditableDatumLabel::setSpinboxVisibleToMouse(bool val)
     spinBox->setAttribute(Qt::WA_TransparentForMouseEvents, !val);
 }
 
+void EditableDatumLabel::setPickable(bool val)
+{
+    pickStyle->style = val ? SoPickStyle::SHAPE_ON_TOP : SoPickStyle::UNPICKABLE;
+}
+
+void EditableDatumLabel::eventCallback(void* data, SoEventCallback* cb)
+{
+    static_cast<EditableDatumLabel*>(data)->handleEvent(cb);
+}
+
+void EditableDatumLabel::handleEvent(SoEventCallback* cb)
+{
+    // Before asking for the pick: every label of a set sits in the scene
+    // with a callback of its own
+    if (pickStyle->style.getValue() == SoPickStyle::UNPICKABLE) {
+        return;
+    }
+    const auto* event = static_cast<const SoMouseButtonEvent*>(cb->getEvent());
+    if (event->getButton() != SoMouseButtonEvent::BUTTON1) {
+        return;
+    }
+    const SoPickedPoint* picked = cb->getPickedPoint();
+    if (!picked || !picked->getPath()->containsNode(root)) {
+        return;
+    }
+    // The press too, so that nothing behind the label takes it for a
+    // selection; the release is the click
+    cb->setHandled();
+    if (event->getState() == SoButtonEvent::UP) {
+        Q_EMIT clicked(this);
+    }
+}
+
 EditableDatumLabel::Function EditableDatumLabel::getFunction()
 {
     return function;
@@ -640,6 +764,14 @@ EditableDatumLabel::Function EditableDatumLabel::getFunction()
 SbVec3f EditableDatumLabel::getAnchorPoint() const
 {
     return getTextCenterPoint();
+}
+
+double EditableDatumLabel::getFontPointSize() const
+{
+    // SoDatumLabel::drawImage takes its size field as a point size. A box
+    // standing at another label's number (setAnchorLabel) takes that one's:
+    // its own label stays empty.
+    return (anchorLabel ? anchorLabel : label)->size.getValue();
 }
 
 void EditableDatumLabel::setAnchorLabel(SoDatumLabel* other)
@@ -711,6 +843,7 @@ void EditableDatumLabel::describe(State& state) const
     state.text = getText().toStdString();
     getSelection(state.selStart, state.selLength);
     state.set = isSet;
+    state.pointSize = getFontPointSize();
 }
 
 void EditableDatumLabel::takeKeys()

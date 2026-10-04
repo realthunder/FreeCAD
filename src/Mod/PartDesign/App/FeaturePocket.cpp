@@ -34,7 +34,7 @@ using namespace PartDesign;
 
 /* TRANSLATOR PartDesign::Pocket */
 
-const char* Pocket::TypeEnums[]= {"Length", "ThroughAll", "UpToFirst", "UpToFace", "TwoLengths", nullptr};
+const char* Pocket::TypeEnums[]= {"Length", "ThroughAll", "UpToFirst", "UpToFace", "TwoLengths", "UpToShape", nullptr};
 
 PROPERTY_SOURCE(PartDesign::Pocket, PartDesign::FeatureExtrude)
 
@@ -45,6 +45,7 @@ Pocket::Pocket()
     Type.setEnums(TypeEnums);
     ADD_PROPERTY_TYPE(_Version,(0),"Part Design",(App::PropertyType)(App::Prop_Hidden), 0);
     initProperties("Pocket");
+    Type2.setEnums(TypeEnums);
 }
 
 App::DocumentObjectExecReturn *Pocket::execute()

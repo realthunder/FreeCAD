@@ -41,6 +41,8 @@
 
 #include <cstdint>
 #include <string>
+#include <utility>
+#include <vector>
 
 #include <nlohmann/json.hpp>
 
@@ -50,6 +52,7 @@ typedef struct _object PyObject;
 
 namespace App
 {
+class Document;
 class DocumentObject;
 
 namespace ExpressionSandbox
@@ -65,38 +68,6 @@ AppExport bool isGuestProxy(PyObject* obj);
 
 /// The stand-in's guest proxy id; 0 when `obj` is not a stand-in.
 AppExport uint64_t guestProxyId(PyObject* obj);
-
-/** The Restore route (docs/Sandbox.md 7.6 mechanism item 2): allocate
- * an instance of the guest's `module`.`cls` WITHOUT running __init__
- * (`proxy_new alloc` = `cls.__new__(cls)`, what PyType_GenericAlloc is
- * to a native restore) and return its stand-in, ready for `loads`.
- * The guest imports the module; nothing is imported on the host.  New
- * reference; nullptr with a Python error set -- the guest's own
- * exception when it is a builtin (ModuleNotFoundError, AttributeError),
- * else a RuntimeError naming it, or the image being unavailable -- and
- * the caller fails closed.  `owner` is the object being restored; its
- * document is the principal.  Caller holds the GIL.
- */
-AppExport PyObject* restoreGuestProxy(const std::string& module,
-                                      const std::string& cls,
-                                      const App::DocumentObject* owner);
-
-/** The construction dispatch (docs/Sandbox.md 7.6 G1d): a scripted
- * object class's host `__new__` calls this with the class and the
- * constructor arguments.  With routing on (the Evaluate preference)
- * and at least one argument, the class is constructed IN THE GUEST
- * (`proxy_new`: `cls(*args, **kwargs)` there; a document object first
- * argument is the owner its `obj.Proxy = self` installs the stand-in
- * on, None -- Draft's `Array(None)`, installed later by
- * addObject(attach=True) -- constructs with no owner) and the stand-in
- * is returned -- not an instance of `cls`, so Python skips the host
- * `__init__`.  None (new reference) when the construction is native:
- * routing off, or a bare `cls.__new__(cls)` (copy, pickle, a native
- * alloc).  nullptr with a Python error when the guest cannot construct
- * it (the module is not served, the class raised) -- fail closed, the
- * same as the Restore route.  Caller holds the GIL.
- */
-AppExport PyObject* constructGuestProxy(PyObject* cls, PyObject* args, PyObject* kwargs);
 
 /** A forwarder bound to guest proxy `id`'s callable attribute `name`
  * (FcxWire::TagGuestMethod): calling it is a proxy_call, the object

@@ -7,7 +7,7 @@
     <x>0</x>
     <y>0</y>
     <width>256</width>
-    <height>198</height>
+    <height>360</height>
    </rect>
   </property>
   <property name="windowTitle">
@@ -15,28 +15,208 @@
   </property>
   <layout class="QVBoxLayout" name="verticalLayout">
    <item>
-    <layout class="QHBoxLayout" name="horizontalLayoutMode">
-     <item>
+    <layout class="QGridLayout" name="gridLayout">
+     <item row="0" column="0">
+      <widget class="QLabel" name="labelStart">
+       <property name="text">
+        <string>Start</string>
+       </property>
+      </widget>
+     </item>
+     <item row="0" column="1">
+      <widget class="QComboBox" name="startMode">
+       <property name="toolTip">
+        <string>Where the revolution starts: at the profile, turned from it by an
+offset angle, or at a reference face, plane or sketch plus the offset</string>
+       </property>
+       <item>
+        <property name="text">
+         <string>Profile plane</string>
+        </property>
+       </item>
+       <item>
+        <property name="text">
+         <string>Offset</string>
+        </property>
+       </item>
+       <item>
+        <property name="text">
+         <string>Reference</string>
+        </property>
+       </item>
+      </widget>
+     </item>
+     <item row="1" column="0" colspan="2">
+      <widget class="QWidget" name="startReferenceHolder"/>
+     </item>
+     <item row="2" column="0">
+      <widget class="QLabel" name="labelStartOffset">
+       <property name="text">
+        <string>Start offset</string>
+       </property>
+      </widget>
+     </item>
+     <item row="2" column="1">
+      <widget class="Gui::QuantitySpinBox" name="startOffsetEdit" native="true">
+       <property name="toolTip">
+        <string>Angle the profile turns about the axis from the profile plane or the start reference</string>
+       </property>
+       <property name="keyboardTracking" stdset="0">
+        <bool>false</bool>
+       </property>
+       <property name="unit" stdset="0">
+        <string notr="true">deg</string>
+       </property>
+       <property name="minimum" stdset="0">
+        <double>-360.000000000000000</double>
+       </property>
+       <property name="maximum" stdset="0">
+        <double>360.000000000000000</double>
+       </property>
+       <property name="singleStep" stdset="0">
+        <double>10.000000000000000</double>
+       </property>
+      </widget>
+     </item>
+     <item row="3" column="0">
+      <widget class="QLabel" name="labelSideType">
+       <property name="text">
+        <string>Mode</string>
+       </property>
+      </widget>
+     </item>
+     <item row="3" column="1">
+      <widget class="QComboBox" name="sideTypeCB">
+       <property name="toolTip">
+        <string>Revolve to one side of the profile, to each side by its own type,
+or symmetrically to both</string>
+       </property>
+       <item>
+        <property name="text">
+         <string>One side</string>
+        </property>
+       </item>
+       <item>
+        <property name="text">
+         <string>Two sides</string>
+        </property>
+       </item>
+       <item>
+        <property name="text">
+         <string>Symmetric</string>
+        </property>
+       </item>
+      </widget>
+     </item>
+     <item row="4" column="0">
       <widget class="QLabel" name="textLabelMode">
        <property name="text">
         <string>Type</string>
        </property>
       </widget>
      </item>
-     <item>
+     <item row="4" column="1">
       <widget class="QComboBox" name="changeMode">
        <item>
         <property name="text">
-         <string>Dimension</string>
+         <string>Angle</string>
         </property>
        </item>
       </widget>
      </item>
-    </layout>
-   </item>
-   <item>
-    <layout class="QHBoxLayout" name="horizontalLayout">
-     <item>
+     <item row="5" column="0" colspan="2">
+      <widget class="QWidget" name="upToFaceHolder"/>
+     </item>
+     <item row="6" column="0">
+      <widget class="QLabel" name="labelAngle">
+       <property name="text">
+        <string>Angle</string>
+       </property>
+      </widget>
+     </item>
+     <item row="6" column="1">
+      <widget class="Gui::QuantitySpinBox" name="revolveAngle" native="true">
+       <property name="keyboardTracking" stdset="0">
+        <bool>false</bool>
+       </property>
+       <property name="unit" stdset="0">
+        <string notr="true">deg</string>
+       </property>
+       <property name="minimum" stdset="0">
+        <double>-360.000000000000000</double>
+       </property>
+       <property name="maximum" stdset="0">
+        <double>360.000000000000000</double>
+       </property>
+       <property name="singleStep" stdset="0">
+        <double>10.000000000000000</double>
+       </property>
+       <property name="value" stdset="0">
+        <double>360.000000000000000</double>
+       </property>
+      </widget>
+     </item>
+     <item row="7" column="0" colspan="2">
+      <widget class="QGroupBox" name="groupBoxSide2">
+       <property name="title">
+        <string>Side 2</string>
+       </property>
+       <layout class="QGridLayout" name="gridLayoutSide2">
+        <item row="0" column="0">
+         <widget class="QLabel" name="labelType2">
+          <property name="text">
+           <string>Type</string>
+          </property>
+         </widget>
+        </item>
+        <item row="0" column="1">
+         <widget class="QComboBox" name="changeMode2">
+          <item>
+           <property name="text">
+            <string>Angle</string>
+           </property>
+          </item>
+         </widget>
+        </item>
+        <item row="1" column="0" colspan="2">
+         <widget class="QWidget" name="upToFaceHolder2"/>
+        </item>
+        <item row="2" column="0">
+         <widget class="QLabel" name="labelAngle2">
+          <property name="text">
+           <string>Angle</string>
+          </property>
+         </widget>
+        </item>
+        <item row="2" column="1">
+         <widget class="Gui::QuantitySpinBox" name="revolveAngle2" native="true">
+          <property name="toolTip">
+           <string>A negative angle turns back into side 1</string>
+          </property>
+          <property name="keyboardTracking" stdset="0">
+           <bool>false</bool>
+          </property>
+          <property name="unit" stdset="0">
+           <string notr="true">deg</string>
+          </property>
+          <property name="minimum" stdset="0">
+           <double>-360.000000000000000</double>
+          </property>
+          <property name="maximum" stdset="0">
+           <double>360.000000000000000</double>
+          </property>
+          <property name="singleStep" stdset="0">
+           <double>10.000000000000000</double>
+          </property>
+          <property name="value" stdset="0">
+           <double>60.000000000000000</double>
+          </property>
+         </widget>
+        </item>
+       </layout>
+      </widget>
+     </item>
+     <item row="8" column="0">
       <widget class="QPushButton" name="buttonAxis">
        <property name="maximumSize">
         <size>
@@ -52,7 +232,7 @@
        </property>
       </widget>
      </item>
-     <item>
+     <item row="8" column="1">
       <widget class="QComboBox" name="axis">
        <property name="sizePolicy">
         <sizepolicy hsizetype="Minimum" vsizetype="Fixed">
@@ -66,143 +246,26 @@
          <height>0</height>
         </size>
        </property>
-       <item>
-        <property name="text">
-         <string>Base X axis</string>
-        </property>
-       </item>
-       <item>
-        <property name="text">
-         <string>Base Y axis</string>
-        </property>
-       </item>
-       <item>
-        <property name="text">
-         <string>Base Z axis</string>
-        </property>
-       </item>
-       <item>
-        <property name="text">
-         <string>Horizontal sketch axis</string>
-        </property>
-       </item>
-       <item>
-        <property name="text">
-         <string>Vertical sketch axis</string>
-        </property>
-       </item>
-       <item>
-        <property name="text">
-         <string>Select reference...</string>
-        </property>
-       </item>
       </widget>
      </item>
     </layout>
    </item>
    <item>
-    <layout class="QHBoxLayout" name="horizontalLayout_3">
-     <item>
-      <widget class="QLabel" name="labelAngle">
-       <property name="text">
-        <string>Angle:</string>
-       </property>
-      </widget>
-     </item>
-     <item>
-      <widget class="Gui::QuantitySpinBox" name="revolveAngle" native="true">
-       <property name="keyboardTracking" stdset="0">
-        <bool>false</bool>
-       </property>
-       <property name="unit" stdset="0">
-        <string notr="true">deg</string>
-       </property>
-       <property name="minimum" stdset="0">
-        <double>0.000000000000000</double>
-       </property>
-       <property name="maximum" stdset="0">
-        <double>360.000000000000000</double>
-       </property>
-       <property name="singleStep" stdset="0">
-        <double>10.000000000000000</double>
-       </property>
-       <property name="value" stdset="0">
-        <double>360.000000000000000</double>
-       </property>
-      </widget>
-     </item>
-    </layout>
+    <widget class="QCheckBox" name="checkBoxProjectAxis">
+     <property name="toolTip">
+      <string>Projects the selected axis onto the profile plane if the profile is planar. When unchecked, uses the axis in its original position and direction.</string>
+     </property>
+     <property name="text">
+      <string>Project selected axis to profile plane</string>
+     </property>
+    </widget>
    </item>
    <item>
-    <layout class="QHBoxLayout" name="horizontalLayout_2">
-     <item>
-      <widget class="QCheckBox" name="checkBoxReversed">
-       <property name="text">
-        <string>Reversed</string>
-       </property>
-      </widget>
-     </item>
-     <item>
-      <widget class="QCheckBox" name="checkBoxMidplane">
-       <property name="enabled">
-        <bool>true</bool>
-       </property>
-       <property name="text">
-        <string>Symmetric to plane</string>
-       </property>
-      </widget>
-     </item>
-    </layout>
-   </item>
-   <item>
-    <layout class="QHBoxLayout" name="horizontalLayout_4">
-     <item>
-      <widget class="QLabel" name="labelAngle2">
-       <property name="text">
-        <string>2nd angle</string>
-       </property>
-      </widget>
-     </item>
-     <item>
-      <widget class="Gui::QuantitySpinBox" name="revolveAngle2" native="true">
-       <property name="keyboardTracking" stdset="0">
-        <bool>false</bool>
-       </property>
-       <property name="unit" stdset="0">
-        <string notr="true">deg</string>
-       </property>
-       <property name="minimum" stdset="0">
-        <double>0.000000000000000</double>
-       </property>
-       <property name="maximum" stdset="0">
-        <double>360.000000000000000</double>
-       </property>
-       <property name="singleStep" stdset="0">
-        <double>10.000000000000000</double>
-       </property>
-       <property name="value" stdset="0">
-        <double>60.000000000000000</double>
-       </property>
-      </widget>
-     </item>
-    </layout>
-   </item>
-   <item>
-    <layout class="QGridLayout" name="gridLayout_5">
-     <item row="0" column="0">
-      <widget class="QPushButton" name="buttonFace">
-       <property name="text">
-        <string>Face</string>
-       </property>
-       <property name="checkable">
-        <bool>true</bool>
-       </property>
-      </widget>
-     </item>
-     <item row="0" column="1">
-      <widget class="QLineEdit" name="lineFaceName"/>
-     </item>
-    </layout>
+    <widget class="QCheckBox" name="checkBoxReversed">
+     <property name="text">
+      <string>Reversed</string>
+     </property>
+    </widget>
    </item>
    <item>
     <spacer name="verticalSpacer">
@@ -227,9 +290,14 @@
   </customwidget>
  </customwidgets>
  <tabstops>
-  <tabstop>axis</tabstop>
+  <tabstop>startMode</tabstop>
+  <tabstop>sideTypeCB</tabstop>
+  <tabstop>changeMode</tabstop>
   <tabstop>revolveAngle</tabstop>
-  <tabstop>checkBoxMidplane</tabstop>
+  <tabstop>changeMode2</tabstop>
+  <tabstop>revolveAngle2</tabstop>
+  <tabstop>axis</tabstop>
+  <tabstop>checkBoxProjectAxis</tabstop>
   <tabstop>checkBoxReversed</tabstop>
  </tabstops>
  <resources/>

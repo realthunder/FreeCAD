@@ -31,6 +31,7 @@ class Ui_TaskMultiTransformParameters;
 class QModelIndex;
 
 namespace PartDesign {
+class Body;
 class Transformed;
 }
 
@@ -63,6 +64,10 @@ public:
 
     void apply() override;
 
+    /// Show the icon and the label \a feature has now in the list, after
+    /// its kind changed
+    void refreshTransformItem(App::DocumentObject* feature);
+
 public Q_SLOTS:
     /// User finished editing a subFeature
     void onSubTaskButtonOK() override;
@@ -74,6 +79,9 @@ private Q_SLOTS:
     void onTransformAddMirrored();
     void onTransformAddLinearPattern();
     void onTransformAddPolarPattern();
+    void onTransformAddCircularPattern();
+    void onTransformAddPathPattern();
+    void onTransformAddPointPattern();
     void onTransformAddScaled();
     void onMoveUp();
     void onMoveDown();
@@ -82,15 +90,26 @@ private Q_SLOTS:
     void onUpdateView(bool) override;
     /** Notifies when the object is about to be removed. */
     void slotDeletedObject(const Gui::ViewProviderDocumentObject& Obj) override;
+    void slotDeleteDocument(const Gui::Document& Doc) override;
+    void refreshAfterUndo() override;
 
 protected:
     void changeEvent(QEvent *e) override;
+    void onSelectionChanged(const Gui::SelectionChanges& msg) override;
 
 private:
     void updateUI() override;
     void closeSubTask();
     void moveTransformFeature(const int increment);
     void finishAdd(std::string &newFeatName);
+    /// Create a transformation of the PartDesign type in the active body,
+    /// named \a name, after closing the sub-task
+    App::DocumentObject* newTransformFeature(const char* type,
+                                             const char* name,
+                                             std::string& newFeatName);
+    /// The sketch's normal, else the body's Z axis
+    void setDefaultAxis(App::DocumentObject* Feat, PartDesign::Body* body);
+    PartDesign::Body* getTransformBody() const;
 
 private:
     std::unique_ptr<Ui_TaskMultiTransformParameters> ui;
@@ -109,12 +128,6 @@ class TaskDlgMultiTransformParameters : public TaskDlgTransformedParameters
 public:
     explicit TaskDlgMultiTransformParameters(ViewProviderMultiTransform *MultiTransformView);
     ~TaskDlgMultiTransformParameters() override = default;
-
-public:
-    /// is called by the framework if the dialog is accepted (Ok)
-    bool accept() override;
-    /// is called by the framework if the dialog is rejected (Cancel)
-    // virtual bool reject();
 };
 
 } //namespace PartDesignGui

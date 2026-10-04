@@ -1284,12 +1284,12 @@ void mcpServerUpdateToolTip(Action *action, bool running)
  * the 'mcp' package is missing, and stop() declines when the installed mcp
  * gives it no way to shut uvicorn down.
  */
-bool mcpServerSetRunning(bool run)
+bool mcpServerSetRunning(bool run, int port)
 {
     try {
         std::string call = McpConsoleModule;
         if (run)
-            call += ".start(port=" + std::to_string(App::DocumentParams::getMCPServerPort()) + ")";
+            call += ".start(port=" + std::to_string(port) + ")";
         else
             call += ".stop()";
 
@@ -1340,12 +1340,20 @@ Action * StdCmdMCPServer::createAction()
 
 void StdCmdMCPServer::activated(int iMsg)
 {
-    bool running = mcpServerSetRunning(iMsg != 0);
+    // 2 is a start for this session only, from the port FC_MCP_PORT names -- a
+    // script or an agent launching FreeCAD, see MainWindow::delayedStartup().
+    // It is neither remembered nor allowed to overwrite what the user chose.
+    const bool session = iMsg == 2;
+    int port = App::DocumentParams::getMCPServerPort();
+    if (session)
+        port = qEnvironmentVariableIntValue("FC_MCP_PORT");
+    bool running = mcpServerSetRunning(iMsg != 0, port);
 
     // Remembered so the next start brings the server back up by itself
-    App::DocumentParams::setMCPServerAutoStart(running);
+    if (!session)
+        App::DocumentParams::setMCPServerAutoStart(running);
 
-    if (_pcAction && running != (iMsg != 0))
+    if (_pcAction)
         _pcAction->setChecked(running, true);
 
     // The endpoint only exists once the server is up, and it changes if the

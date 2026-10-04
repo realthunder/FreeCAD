@@ -92,6 +92,13 @@ def hooks(tag=None, hook=None):
 class FeaturePythonChainCases(unittest.TestCase):
     def setUp(self):
         del CALLS[:]
+        # These cases record their hooks on the HOST: a Proxy restored into
+        # the guest calls nothing here.  Routing is ON by default since
+        # 2026-09-16, so native has to be asked for.
+        params = FreeCAD.ParamGet(SANDBOX)
+        self._hadRouting = "Evaluate" in params.GetBools()
+        self._priorRouting = params.GetBool("Evaluate", True)
+        params.SetBool("Evaluate", False)
         self.doc = FreeCAD.newDocument("ProxyChain")
         self.tempdirs = []
 
@@ -99,6 +106,11 @@ class FeaturePythonChainCases(unittest.TestCase):
         for name in list(FreeCAD.listDocuments()):
             FreeCAD.closeDocument(name)
         del CALLS[:]
+        params = FreeCAD.ParamGet(SANDBOX)
+        if self._hadRouting:
+            params.SetBool("Evaluate", self._priorRouting)
+        else:
+            params.RemBool("Evaluate")
 
     def tempfile(self, name):
         directory = tempfile.mkdtemp()
@@ -729,11 +741,21 @@ def requireGuest(case):
 def routeEvaluations(case):
     """Every evaluation of the case crosses into the guest.
 
-    The preference is PERSISTED, so it is removed again rather than set back
-    to False, exactly as the gtests leave it.
+    The preference is PERSISTED, so the PRIOR value goes back: removing the
+    key has meant ON since the default flipped on 2026-09-16.
     """
+    params = FreeCAD.ParamGet(SANDBOX)
+    had = "Evaluate" in params.GetBools()
+    prior = params.GetBool("Evaluate", True)
+
+    def restore():
+        if had:
+            params.SetBool("Evaluate", prior)
+        else:
+            params.RemBool("Evaluate")
+
     FreeCAD.ExpressionSandbox.setRouting(True)
-    case.addCleanup(lambda: FreeCAD.ParamGet(SANDBOX).RemBool("Evaluate"))
+    case.addCleanup(restore)
 
 
 class RoutedSheetChainCases(SheetChainCases):
@@ -881,8 +903,13 @@ class RoutedChainCases(unittest.TestCase):
         routed = build()
 
         # the native twin runs with enforcement off, as the corpus rig does:
-        # natively `import Part` is host.import, PROMPT for a document
-        FreeCAD.ParamGet(SANDBOX).RemBool("Evaluate")
+        # natively `import Part` is host.import, PROMPT for a document.
+        # Routing is ON by default since 2026-09-16, so native has to be
+        # written -- and put back afterwards, exactly as Enforce is.
+        routing = FreeCAD.ParamGet(SANDBOX)
+        hadRouting = "Evaluate" in routing.GetBools()
+        oldRouting = routing.GetBool("Evaluate", True)
+        routing.SetBool("Evaluate", False)
         params = FreeCAD.ParamGet(SECURITY)
         hadEnforce = "Enforce" in params.GetBools()
         oldEnforce = params.GetBool("Enforce", True)
@@ -894,6 +921,10 @@ class RoutedChainCases(unittest.TestCase):
                 params.SetBool("Enforce", oldEnforce)
             else:
                 params.RemBool("Enforce")
+            if hadRouting:
+                routing.SetBool("Evaluate", oldRouting)
+            else:
+                routing.RemBool("Evaluate")
 
         self.assertEqual(len(routed.Faces), 10)
         self.assertAlmostEqual(routed.Volume, native.Volume, places=6)

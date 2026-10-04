@@ -643,6 +643,8 @@ public:
     //@}
     
     SoGroup * getAuxSceneGraph() const;
+    /// A root of the aux graph's, fed to an external backend as an overlay
+    SoGroup* getOnViewParameterRoot() const override;
 
     /**
      * Set the camera's orientation. If isAnimationEnabled() returns
@@ -729,6 +731,9 @@ public:
     void setEnabledNaviCube(bool on);
     bool isEnabledNaviCube() const;
     void setNaviCubeCorner(int);
+    /// Place this viewer's cube (NaviCube::setPosition) and state it on
+    /// its view's NaviCubeX/NaviCubeY, when it has a view.
+    void setNaviCubePosition(float x, float y);
     NaviCube* getNaviCube() const;
     void setEnabledVBO(bool on);
     bool isEnabledVBO() const;
@@ -1083,6 +1088,8 @@ private:
     QImage glImage;
     bool shading;
     SoSwitch *dimensionRoot;
+    /// On-view parameters' dimensions, in the aux graph beside dimensionRoot
+    SoSeparator *onViewRoot = nullptr;
 
     // small axis cross in the corner
     bool axiscrossEnabled;

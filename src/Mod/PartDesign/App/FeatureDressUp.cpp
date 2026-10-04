@@ -74,8 +74,11 @@ short DressUp::mustExecute() const
 
 void DressUp::positionByBaseFeature()
 {
-    Part::Feature *base = static_cast<Part::Feature*>(BaseFeature.getValue());
-    if (base && base->isDerivedFrom<Part::Feature>())
+    // The object the shape comes from: BaseFeature in a body, Base's object
+    // for a dress-up outside one, whose BaseFeature is null -- its result was
+    // left at the origin (upstream 5a47138994, for Thickness).
+    Part::Feature *base = getBaseObject(/* silent = */ true);
+    if (base)
         this->Placement.setValue(base->Placement.getValue());
 }
 
@@ -141,9 +144,12 @@ std::vector<TopoShape> DressUp::getContinuousEdges(const TopoShape &shape) {
 
         if (subshape.ShapeType() == TopAbs_EDGE)
             addEdge(subshape, ref);
-        else if(subshape.ShapeType() == TopAbs_FACE || subshape.ShapeType() == TopAbs_WIRE) {
+        // A solid stands for all its edges (upstream f87d968447), as a face
+        // or a wire does for its own; a skipped one names its reference
+        else if(subshape.ShapeType() == TopAbs_FACE || subshape.ShapeType() == TopAbs_WIRE
+                || subshape.ShapeType() == TopAbs_SOLID) {
             for(TopExp_Explorer exp(subshape,TopAbs_EDGE);exp.More();exp.Next())
-                addEdge(exp.Current(), std::string());
+                addEdge(exp.Current(), ref);
         } else
             FC_WARN(getFullName() << ": skip invalid shape '"
                     << ref << "' with type " << TopoShape::shapeName(subshape.ShapeType()));
@@ -216,6 +222,14 @@ void DressUp::onChanged(const App::Property* prop)
 
     Feature::onChanged(prop);
 
+}
+
+void DressUp::onBaseFeatureRerouted(App::DocumentObject* oldBase, App::DocumentObject* newBase)
+{
+    // Relinked before BaseFeature moves; onChanged() then finds Base already
+    // on the new base. Left alone, it would carry the removed feature's
+    // element names over, and they resolve to nothing there.
+    relinkToMatchingSubElements(Base, oldBase, newBase);
 }
 
 void DressUp::getAddSubShape(std::vector<std::pair<Part::TopoShape, Type> > &addsubshapes)

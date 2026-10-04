@@ -345,7 +345,7 @@ void Workbench::createLinkMenu(MenuItem *item) {
 
     auto linkMenu = new MenuItem;
     linkMenu->setCommand("Link actions");
-    *linkMenu << "Std_LinkMakeGroup" << "Std_LinkMake";
+    *linkMenu << "Std_LinkMakeGroup" << "Std_LinkMake" << "Std_LinkArrayActions";
 
     auto &rMgr = Application::Instance->commandManager();
     const char *cmds[] = {"Std_LinkMakeRelative",nullptr,"Std_LinkUnlink","Std_LinkReplace",
@@ -623,6 +623,7 @@ void StdWorkbench::setupContextMenu(const char* recipient, MenuItem* item) const
         *item << visu << sel << edit << "Separator"
               << "Std_RenderSettings"
               << "Std_GroupRandomColor"
+              << "Std_ToggleFreeze"
               << "Std_SendToPythonConsole"
               << "Separator";
     };
@@ -652,13 +653,15 @@ void StdWorkbench::setupContextMenu(const char* recipient, MenuItem* item) const
 
         if (Gui::Selection().hasSelection()) {
             setupCommon("Std_TreeSelection");
-            *item << "Std_TransformManip";
+            *item << "Std_TransformManip" << "Std_Placement";
         }
     }
     else if (strcmp(recipient,"Tree") == 0)
     {
-        if (Gui::Selection().hasSelection())
+        if (Gui::Selection().hasSelection()) {
+            *item << "Std_Placement";
             setupCommon(nullptr);
+        }
     }
 }
 
@@ -790,6 +793,7 @@ MenuItem* StdWorkbench::setupMenuBar() const
           << "Std_MeasureDistance"
           << "Separator"
           << "Std_TextDocument"
+          << "Std_VarSet"
           << "Separator"
           << "Std_MCPServer"
           << "Separator"
@@ -884,7 +888,7 @@ ToolBarItem* StdWorkbench::setupToolBars() const
     // Structure
     auto structure = new ToolBarItem( root );
     structure->setCommand("Structure");
-    *structure << "Std_PartActions" << "Std_Group" << "Std_LinkActions" << "Std_DatumActions";
+    *structure << "Std_PartActions" << "Std_Group" << "Std_VarSet" << "Std_LinkActions" << "Std_LinkArrayActions" << "Std_DatumActions";
 
     // Help
     auto help = new ToolBarItem( root );

@@ -88,7 +88,9 @@ class WS:
     """One client connection: the upgrade, masked frames out, unmasked
     frames in."""
 
-    def __init__(self, port, path="/scene"):
+    def __init__(self, port, path="/scene", headers=""):
+        """`headers`: extra request header lines, each ending in CRLF --
+        what a front door in front of the server would add."""
         last = None
         for _ in range(200):
             try:
@@ -112,7 +114,7 @@ class WS:
         self.sock.sendall((
             "GET %s HTTP/1.1\r\nHost: 127.0.0.1:%d\r\nUpgrade: websocket\r\n"
             "Connection: Upgrade\r\nSec-WebSocket-Key: %s\r\n"
-            "Sec-WebSocket-Version: 13\r\n\r\n" % (path, port, key)).encode())
+            "Sec-WebSocket-Version: 13\r\n%s\r\n" % (path, port, key, headers)).encode())
         # Text frames the server sent that were nobody's answer: the
         # document listing, a view-only flip, the edges of an edit
         # session, the on-view parameters. op() used to drop them on the

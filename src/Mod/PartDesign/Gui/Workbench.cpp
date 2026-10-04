@@ -54,6 +54,14 @@ namespace sp = std::placeholders;
     qApp->translate("Gui::TaskView::TaskWatcherCommands", "Face tools");
     qApp->translate("Gui::TaskView::TaskWatcherCommands", "Sketch tools");
     qApp->translate("Gui::TaskView::TaskWatcherCommands", "Create Geometry");
+    qApp->translate("Gui::TaskView::TaskWatcherCommands", "Modeling tools");
+    // every watcher title below, as upstream 6c0a141ac7 added Start Part
+    qApp->translate("Gui::TaskView::TaskWatcherCommands", "Vertex tools");
+    qApp->translate("Gui::TaskView::TaskWatcherCommands", "Edge tools");
+    qApp->translate("Gui::TaskView::TaskWatcherCommands", "Start Body");
+    qApp->translate("Gui::TaskView::TaskWatcherCommands", "Start Boolean");
+    qApp->translate("Gui::TaskView::TaskWatcherCommands", "Start Part");
+    qApp->translate("Gui::TaskView::TaskWatcherCommands", "Transformation tools");
     //
     qApp->translate("Workbench", "Measure");
     qApp->translate("Workbench", "Refresh");
@@ -173,14 +181,7 @@ void Workbench::setupContextMenu(const char* recipient, Gui::MenuItem* item) con
         App::DocumentObject *feature = selection.front().pObject;
         PartDesign::Body *body = nullptr;
 
-        // if PD workflow is not new-style then add a command to the context-menu
-        bool assertModern = true;
-        if (feature && !isModernWorkflow(feature->getDocument())) {
-            assertModern = false;
-            *item << "PartDesign_Migrate";
-        }
-
-        body = PartDesignGui::getBodyFor (feature, false, false, assertModern);
+        body = PartDesignGui::getBodyFor (feature, false, false, true);
 
         if (strcmp(recipient, "Tree") == 0) {
 
@@ -275,6 +276,7 @@ void Workbench::activated()
         "PartDesign_Chamfer",
         "PartDesign_Draft",
         "PartDesign_Thickness",
+        "PartDesign_Defeaturing",
         "PartDesign_Extrusion",
         "PartDesign_Point",
         "PartDesign_Line",
@@ -377,6 +379,7 @@ void Workbench::activated()
         "PartDesign_Chamfer",
         "PartDesign_Draft",
         "PartDesign_Thickness",
+        "PartDesign_Defeaturing",
         "PartDesign_Extrusion",
         nullptr};
     Watcher.push_back(new Gui::TaskView::TaskWatcherCommands(
@@ -408,10 +411,37 @@ void Workbench::activated()
         "Part_Box"
     ));
 
+    // A binder is a profile, a section or a path (upstream ab60695ef9)
+    const char* Binder[] = {
+        "PartDesign_Pad",
+        "PartDesign_Pocket",
+        "PartDesign_Revolution",
+        "PartDesign_Groove",
+        "PartDesign_AdditiveLoft",
+        "PartDesign_SubtractiveLoft",
+        "PartDesign_AdditivePipe",
+        "PartDesign_SubtractivePipe",
+        nullptr};
+    Watcher.push_back(new Gui::TaskView::TaskWatcherCommands(
+        "SELECT PartDesign::ShapeBinder COUNT 1",
+        Binder,
+        "Modeling tools",
+        "PartDesign_Body"
+    ));
+    Watcher.push_back(new Gui::TaskView::TaskWatcherCommands(
+        "SELECT PartDesign::SubShapeBinder COUNT 1",
+        Binder,
+        "Modeling tools",
+        "PartDesign_Body"
+    ));
+
     const char* Transformed[] = {
         "PartDesign_Mirrored",
         "PartDesign_LinearPattern",
         "PartDesign_PolarPattern",
+        "PartDesign_CircularPattern",
+        "PartDesign_PathPattern",
+        "PartDesign_PointPattern",
         "PartDesign_GenericPattern",
         "PartDesign_Scaled",
         "PartDesign_MultiTransform",
@@ -432,6 +462,7 @@ void Workbench::activated()
 
     const char* Offset[] = {
         "PartDesign_Thickness",
+        "PartDesign_Defeaturing",
         0};
     Watcher.push_back(new Gui::TaskView::TaskWatcherCommands(
         "SELECT PartDesign::Feature COUNT 1",
@@ -529,8 +560,7 @@ Gui::MenuItem* Workbench::setupMenuBar() const
     Gui::MenuItem* transformations = new Gui::MenuItem;
     transformations->setCommand("Apply a pattern");
     *transformations << "PartDesign_Mirrored" 
-                     << "PartDesign_LinearPattern"
-                     << "PartDesign_PolarPattern"
+                     << "PartDesign_CompPattern"
                      << "PartDesign_GenericPattern"
                      << "PartDesign_MultiTransform";
 //                     << "PartDesign_Scaled"
@@ -542,7 +572,8 @@ Gui::MenuItem* Workbench::setupMenuBar() const
     *dressups << "PartDesign_Fillet"
               << "PartDesign_Chamfer"
               << "PartDesign_Draft"
-              << "PartDesign_Thickness";
+              << "PartDesign_Thickness"
+              << "PartDesign_Defeaturing";
 
     *part << "PartDesign_Body"
           << "Separator"
@@ -561,6 +592,9 @@ Gui::MenuItem* Workbench::setupMenuBar() const
           << transformations
           << "Separator"
           << dressups
+          << "Separator"
+          << "Materials_InspectAppearance"
+          << "Materials_InspectMaterial"
           << "Separator"
           << "PartDesign_Boolean"
           << "PartDesign_Split"
@@ -651,8 +685,7 @@ Gui::ToolBarItem* Workbench::setupToolBars() const
     part = new Gui::ToolBarItem(root);
     part->setCommand("Part Design Extra");
     *part << "PartDesign_Mirrored"
-          << "PartDesign_LinearPattern"
-          << "PartDesign_PolarPattern"
+          << "PartDesign_CompPattern"
           << "PartDesign_GenericPattern"
           << "PartDesign_Scaled"
           << "PartDesign_MultiTransform"
@@ -661,6 +694,7 @@ Gui::ToolBarItem* Workbench::setupToolBars() const
           << "PartDesign_Chamfer"
           << "PartDesign_Draft"
           << "PartDesign_Thickness"
+          << "PartDesign_Defeaturing"
           << "Separator"
           << "PartDesign_Boolean"
           << "PartDesign_Split"

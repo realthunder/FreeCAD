@@ -28,6 +28,7 @@
 #include <Base/Tools.h>
 #include <App/Document.h>
 #include <App/Origin.h>
+#include <App/VarSet.h>
 
 
 #include "Body.h"
@@ -222,6 +223,11 @@ bool Body::isAllowed(const App::DocumentObject *obj)
 {
     if (!obj)
         return false;
+    // a datum element of a coordinate system stays with it
+    if (auto datum = Base::freecad_dynamic_cast<App::DatumElement>(obj)) {
+        if (datum->getLCS())
+            return false;
+    }
     return isAllowed(obj->getTypeId());
 }
 
@@ -233,7 +239,14 @@ bool Body::isAllowed(const Base::Type &type)
             type.isDerivedFrom(Part::Part2DObject::getClassTypeId()) ||
             type.isDerivedFrom(PartDesign::ShapeBinder::getClassTypeId()) ||
             type.isDerivedFrom(Part::SubShapeBinder::getClassTypeId()) ||
-            type.isDerivedFrom(PartDesign::AuxGroup::getClassTypeId()));
+            type.isDerivedFrom(PartDesign::AuxGroup::getClassTypeId()) ||
+            // a coordinate system and a lone datum element, as upstream
+            // takes them; an origin belongs to its own container
+            type.isDerivedFrom(App::DatumElement::getClassTypeId()) ||
+            (type.isDerivedFrom(App::LocalCoordinateSystem::getClassTypeId())
+                && !type.isDerivedFrom(App::Origin::getClassTypeId())) ||
+            // the parameters of the body (upstream ec841ed6d4)
+            type.isDerivedFrom(App::VarSet::getClassTypeId()));
 }
 
 
@@ -490,6 +503,9 @@ std::vector<App::DocumentObject*> Body::removeObject(App::DocumentObject* featur
             next->NewSolid.setValue(true);
         }
         else {
+            // Before the reroute, while the removed feature's shape still
+            // answers for the element names that pointed into it.
+            next->onBaseFeatureRerouted(feature, siblingBase);
             next->BaseFeature.setValue(siblingBase);
         }
     }
@@ -612,8 +628,18 @@ void Body::onChanged (const App::Property* prop) {
                 }
             }
 
-            if (bf && (bf->BaseFeature.getValue() != BaseFeature.getValue()))
-                bf->BaseFeature.setValue(BaseFeature.getValue());
+            if (bf && (bf->BaseFeature.getValue() != BaseFeature.getValue())) {
+                auto base = BaseFeature.getValue();
+                bf->BaseFeature.setValue(base);
+                // The recompute keeps the base's geometry but gives it the
+                // FeatureBase's placement, so place that where the base is:
+                // left at identity, a base away from the origin jumped to the
+                // body's origin, and moved with the body's placement.
+                if (base) {
+                    bf->Placement.setValue(globalPlacement().inverse()
+                                           * App::GeoFeature::getGlobalPlacement(base));
+                }
+            }
         }
         else if( prop == &Group ) {
             //if the FeatureBase was deleted we set the BaseFeature link to nullptr
@@ -623,6 +649,17 @@ void Body::onChanged (const App::Property* prop) {
                  && Group.getValues().front()!=BaseFeature.getValue())))
             {
                 BaseFeature.setValue(nullptr);
+            }
+        }
+        else if (prop == &ShapeMaterial) {
+            // A body is one solid of one material (upstream 0804d80ebf). Its
+            // features only: a sketch or a datum has no use for it, and
+            // setting it touches them (upstream takes every Part::Feature)
+            for (auto obj : Group.getValues()) {
+                auto feature = dynamic_cast<PartDesign::Feature*>(obj);
+                if (feature && feature->ShapeMaterial.getValue().getUUID()
+                        != ShapeMaterial.getValue().getUUID())
+                    feature->ShapeMaterial.setValue(ShapeMaterial.getValue());
             }
         }
         else if( prop == &SingleSolid ) {

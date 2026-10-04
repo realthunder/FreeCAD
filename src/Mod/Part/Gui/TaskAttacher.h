@@ -182,6 +182,8 @@ private:
     Connection connectRedo;
     App::DocumentObjectT originFeat;
     App::SubObjectT editObjT;
+    /// The planes enlarged and labelled while the editor is open
+    std::vector<App::DocumentObjectT> scaledPlanes;
 
     QColor errColor;
     bool errColorSet = false;

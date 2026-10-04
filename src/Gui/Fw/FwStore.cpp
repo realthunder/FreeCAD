@@ -332,9 +332,33 @@ bool Store::applyUpdate(const QString& id, const QVariantMap& state, quint64 ori
     Widget* w = object(id);
     if (!w)
         return false;
-    OriginScope scope(origin);
-    ++_stats.updated;
-    applyState(w, state, false, Source::Client);
+    {
+        OriginScope scope(origin);
+        ++_stats.updated;
+        applyState(w, state, false, Source::Client);
+    }
+    // What the host made of it (docs/Sandbox.md 7.22).  The scope is
+    // closed first, so nothing below is stamped with the writer: the
+    // diverged keys go back to the writer alone, which the fan-out
+    // cannot do for it.  The comparison is on the value the widget
+    // holds NOW, after every write the client's write provoked.
+    if (origin == 0)
+        return true;
+    QVariantMap corrected;
+    for (auto it = state.constBegin(); it != state.constEnd(); ++it) {
+        if (!it.key().startsWith(kPrefix))
+            continue;
+        const QString name = it.key().mid(kPrefix.size());
+        const QVariant now = refsOf(*this, w->property(name));
+        // the wire forms first, which is what settles a property
+        // whose value is an object (a ref either way); then the
+        // declared type, so an int that arrived as a JSON double is
+        // not reported as a correction of itself
+        if (now != it.value() && w->valueDiffers(name, it.value()))
+            corrected.insert(it.key(), now);
+    }
+    if (!corrected.isEmpty())
+        Q_EMIT messageTo(origin, id, QStringLiteral("update"), corrected);
     return true;
 }
 

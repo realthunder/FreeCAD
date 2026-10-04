@@ -104,7 +104,9 @@ first, as Metallic does.
             <Documentation>
                 <UserDocu>
 The surface finish pattern by name: "" (none), "knurl", "knurl-straight",
-"brushed", "blasted" or "turned". An unrecognised name reads back as "".
+"brushed", "blasted", "turned", "thread" or "thread-left". An unrecognised
+name reads back as "". For the two threads FinishAngle is the included
+profile angle (0 = 60), not a lay.
 
 A finish states what was done to the surface, not how it shades, so it
 survives every conversion between the Phong and PBR readings. Size it

@@ -130,7 +130,7 @@ export function ToolbarStrip(props: {
     setObjs(reconcile({}));
     try {
       if (held) {
-        await sendOp('widgets.unsubscribe');
+        await sendOp('widgets.unsubscribe', { toolbars: true });
         held = false;
       }
       const r = await sendOp('widgets.subscribe', { toolbars: true });
@@ -166,7 +166,7 @@ export function ToolbarStrip(props: {
     setObjs(reconcile({}));
     if (held && !untrack(props.viewOnly)) {
       held = false;
-      sendOp('widgets.unsubscribe').catch(() => { /* the connection is gone */ });
+      sendOp('widgets.unsubscribe', { toolbars: true }).catch(() => { /* the connection is gone */ });
     }
   };
 

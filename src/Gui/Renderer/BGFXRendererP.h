@@ -5363,6 +5363,7 @@ public:
         fn(s_texBump, LifeProgram);
         fn(u_bumpParams, LifeProgram);
         fn(u_finishParams, LifeProgram);
+        fn(u_finishExtent, LifeProgram);
         fn(u_frameParams, LifeProgram);
         fn(s_texEmissive, LifeProgram);
         fn(s_texOcclusion, LifeProgram);
@@ -6574,11 +6575,13 @@ public:
     /// staging buffer while bgfx still owes it a write.
     bool readbackInFlight() const;
     /// Spin frames until every copy in flight has landed, and return
-    /// the frame reached. Benchmark-only
-    /// (FC_BGFX_READBACK_SYNC): it converts the pipelined route into
-    /// the fully serialized one docs/DeviceAdoption.md section 2
-    /// measured, at the cost of the frames it spins.
-    uint32_t syncReadback(uint32_t frameNum);
+    /// the frame reached. On screen only under FC_BGFX_READBACK_SYNC,
+    /// a benchmark switch: it converts the pipelined route into the
+    /// fully serialized one docs/DeviceAdoption.md section 2 measured,
+    /// at the cost of the frames it spins. Always when \a capture: a
+    /// capture is read once, right after this frame, and a pipelined
+    /// one hands back the frame before it.
+    uint32_t syncReadback(uint32_t frameNum, bool capture);
     /// Upload whatever has landed and draw it into the caller's bound
     /// framebuffer. Same destination rect convention as blit().
     void blitReadback(uint32_t frameNum, int dstX, int dstY, int dstH);
@@ -7619,6 +7622,12 @@ public:
     /// draw uploads its whole palette, everything else uploads entry 0
     /// alone (which is all an unbound or zero index attribute reads).
     bgfx::UniformHandle u_finishParams = BGFX_INVALID_HANDLE;
+    /// Where each entry of u_finishParams lies when its face's frame
+    /// cannot say (FinishPalette::Entry::extent): the axis,
+    /// octahedrally encoded, and the band of dot(p, axis) the pattern
+    /// covers. Parallel to u_finishParams, uploaded with it; all zero
+    /// is the face's own frame, face-wide.
+    bgfx::UniformHandle u_finishExtent = BGFX_INVALID_HANDLE;
     /// The projection frames of the finish above (Material::frame and
     /// Material::framepalette), THREE vec4 per entry: (origin, kind),
     /// (axis, radius), (xdir, spare). Entry 0 is the draw's own frame,

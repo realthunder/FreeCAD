@@ -23,6 +23,7 @@
 
 #include "PreCompiled.h"
 #ifndef _PreComp_
+# include <set>
 #endif
 
 #include <App/DocumentObject.h>
@@ -187,6 +188,56 @@ public:
 };
 
 //===========================================================================
+// Std_ToggleFreeze (upstream f633fa476a)
+//===========================================================================
+
+DEF_STD_CMD_A(StdCmdToggleFreeze)
+
+StdCmdToggleFreeze::StdCmdToggleFreeze()
+  :Command("Std_ToggleFreeze")
+{
+    sGroup        = "File";
+    sMenuText     = QT_TR_NOOP("Toggle freeze");
+    sToolTipText  = QT_TR_NOOP("Toggles the freeze state of the selected objects.\n"
+                               "A frozen object is not recomputed when its inputs or\n"
+                               "the objects it depends on change, and keeps its result\n"
+                               "until it is unfrozen.");
+    sWhatsThis    = "Std_ToggleFreeze";
+    sStatusTip    = sToolTipText;
+    sPixmap       = "Std_ToggleFreeze";
+    eType         = AlterDoc;
+}
+
+void StdCmdToggleFreeze::activated(int iMsg)
+{
+    Q_UNUSED(iMsg);
+    // Each object once, however many of its elements are selected; and one
+    // direction for all of them -- freeze if any is not frozen -- where
+    // upstream flips each, which leaves a mixed selection still mixed.
+    std::vector<App::DocumentObject*> objs;
+    std::set<App::DocumentObject*> seen;
+    bool freeze = false;
+    // Resolved: a feature picked in its body comes as Body.Feature
+    for (const auto &sel : Selection().getCompleteSelection()) {
+        if (!sel.pObject || !sel.pObject->isAttachedToDocument()
+                || !seen.insert(sel.pObject).second)
+            continue;
+        objs.push_back(sel.pObject);
+        if (!sel.pObject->isFreezed())
+            freeze = true;
+    }
+    // Undoable: the document records a freeze in the command's transaction
+    // as it does a property change (upstream's transaction here is empty)
+    for (auto obj : objs)
+        cmdAppObjectArgs(obj, "Frozen = %s", freeze ? "True" : "False");
+}
+
+bool StdCmdToggleFreeze::isActive()
+{
+    return Selection().size() != 0;
+}
+
+//===========================================================================
 // Std_SendToPythonConsole
 //===========================================================================
 
@@ -329,6 +380,7 @@ void CreateFeatCommands()
     CommandManager &rcCmdMgr = Application::Instance->commandManager();
 
     rcCmdMgr.addCommand(new StdCmdGroupRandomColor());
+    rcCmdMgr.addCommand(new StdCmdToggleFreeze());
     rcCmdMgr.addCommand(new StdCmdSendToPythonConsole());
     rcCmdMgr.addCommand(new StdCmdRenameActiveObject());
 }

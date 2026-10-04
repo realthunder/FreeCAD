@@ -8,9 +8,12 @@
 
 #include <gtest/gtest.h>
 
+#include <map>
+
 #include <FCGlobal.h>
 
 #include <Inventor/SbViewportRegion.h>
+#include <Inventor/nodes/SoAnnotation.h>
 #include <Inventor/nodes/SoCoordinate3.h>
 #include <Inventor/nodes/SoIndexedFaceSet.h>
 #include <Inventor/nodes/SoMaterial.h>
@@ -19,6 +22,7 @@
 
 #include <App/Application.h>
 #include <Gui/SoFCDB.h>
+#include <Gui/SoFCUnifiedSelection.h>
 #include <Gui/Inventor/SoFCVertexCache.h>
 #include <Gui/Inventor/SoFCRenderCache.h>
 #include <Gui/Inventor/SoFCRenderCacheManager.h>
@@ -587,6 +591,60 @@ TEST_F(RenderCacheMaterial, LayerPastTheCapReadsAsUntextured)
     EXPECT_EQ(m->facetextureindices[0], 1);
     EXPECT_EQ(m->facetextureindices[1], 0);
     EXPECT_EQ(m->facetextureindices[2], 0);
+}
+
+// The rendering order of an on-top draw reaches the backend: a plain
+// annotation is the one order every other on-top draw shares, and a
+// priority is an order of its own, a higher priority a later one -- the
+// way GL draws its late delayed paths. A pattern's instance toggles
+// stay over the dimension crossing them by it.
+TEST_F(RenderCacheMaterial, BridgeCarriesTheOnTopOrder)
+{
+    auto scene = new SoSeparator;
+    scene->ref();
+    // One triangle under each, apart so that no two share a cache
+    auto add = [scene](SoGroup* group, float x) {
+        auto coords = new SoCoordinate3;
+        const SbVec3f pts[3] = {{x, 0, 0}, {x + 1, 0, 0}, {x, 1, 0}};
+        coords->point.setValues(0, 3, pts);
+        group->addChild(coords);
+        auto face = new SoIndexedFaceSet;
+        const int32_t idx[4] = {0, 1, 2, -1};
+        face->coordIndex.setValues(0, 4, idx);
+        group->addChild(face);
+        scene->addChild(group);
+    };
+    add(new SoSeparator, 0);
+    add(new SoAnnotation, 2);
+    auto late = new Gui::SoFCPathAnnotation;
+    late->priority = 5;
+    add(late, 4);
+    auto early = new Gui::SoFCPathAnnotation;
+    early->priority = 1;
+    add(early, 6);
+
+    manager.traverse(scene, SbViewportRegion(256, 256));
+    SoFCRenderCache* cache = manager.getSceneCache();
+    ASSERT_NE(cache, nullptr);
+    auto draws = Gui::RendererBridge::translate(cache->getVertexCaches(true),
+                                                Gui::RendererBridge::SectionOnTop {});
+    // By where the triangle is
+    std::map<int, const Render::Material*> byX;
+    for (const auto& d : draws) {
+        if (d.material.type == Render::Material::Triangle && d.mesh
+            && d.mesh->numVertices > 0) {
+            byX[int(d.mesh->positions[0] + 0.5F)] = &d.material;
+        }
+    }
+    ASSERT_EQ(byX.size(), 4U);
+    EXPECT_FALSE(byX[0]->ontop);
+    EXPECT_TRUE(byX[2]->ontop);
+    EXPECT_EQ(byX[2]->ontoplayer, 0);
+    EXPECT_TRUE(byX[4]->ontop);
+    EXPECT_TRUE(byX[6]->ontop);
+    EXPECT_GT(byX[6]->ontoplayer, 0);
+    EXPECT_GT(byX[4]->ontoplayer, byX[6]->ontoplayer);
+    scene->unref();
 }
 
 }  // namespace

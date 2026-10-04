@@ -49,14 +49,13 @@
 #include "ViewProviderGroove.h"
 #include "ViewProviderHelix.h"
 #include "ViewProviderHole.h"
-#include "ViewProviderLinearPattern.h"
 #include "ViewProviderLoft.h"
 #include "ViewProviderMirrored.h"
 #include "ViewProviderMultiTransform.h"
 #include "ViewProviderPad.h"
 #include "ViewProviderPipe.h"
 #include "ViewProviderPocket.h"
-#include "ViewProviderPolarPattern.h"
+#include "ViewProviderPatterns.h"
 #include "ViewProviderPrimitive.h"
 #include "ViewProviderRevolution.h"
 #include "ViewProviderScaled.h"
@@ -64,6 +63,7 @@
 #include "ViewProviderSolid.h"
 #include "ViewProviderSplit.h"
 #include "ViewProviderThickness.h"
+#include "ViewProviderDefeaturing.h"
 #include "ViewProviderWrap.h"
 
 // use a different name to CreateCommand()
@@ -141,11 +141,16 @@ PyMOD_INIT_FUNC(PartDesignGui)
     PartDesignGui::ViewProviderFillet        ::init();
     PartDesignGui::ViewProviderDraft         ::init();
     PartDesignGui::ViewProviderThickness     ::init();
+    PartDesignGui::ViewProviderDefeaturing   ::init();
     PartDesignGui::ViewProviderTransformed   ::init();
     PartDesignGui::ViewProviderMirrored      ::init();
+    PartDesignGui::ViewProviderPattern       ::init();
     PartDesignGui::ViewProviderLinearPattern ::init();
     PartDesignGui::ViewProviderGenericPattern ::init();
     PartDesignGui::ViewProviderPolarPattern  ::init();
+    PartDesignGui::ViewProviderCircularPattern::init();
+    PartDesignGui::ViewProviderPathPattern   ::init();
+    PartDesignGui::ViewProviderPointPattern  ::init();
     PartDesignGui::ViewProviderScaled        ::init();
     PartDesignGui::ViewProviderMultiTransform::init();
     PartDesignGui::ViewProviderDatum         ::init();

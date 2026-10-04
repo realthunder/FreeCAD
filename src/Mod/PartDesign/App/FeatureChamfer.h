@@ -64,12 +64,22 @@ public:
     void updateProperties();
 
 protected:
+    void Restore(Base::XMLReader &reader) override;
+    void onDocumentRestored() override;
     void handleChangedPropertyType(Base::XMLReader &reader, const char * TypeName, App::Property * prop) override;
     static const App::PropertyQuantityConstraint::Constraints floatSize;
     static const App::PropertyAngle::Constraints floatAngle;
 
 private:
+    void migrateSelectedFaceRule(const Part::TopoShape &baseShape,
+                                 const std::vector<Part::TopoShape> &edges);
+
     std::vector<int> edgeIndices;
+    /// ChamferInfo was read from the file being restored
+    bool chamferInfoRestored = false;
+    /// written by upstream before 1.0, whose rule for selected faces the
+    /// next recompute states in ChamferInfo
+    bool migrateFaceRule = false;
 };
 
 } //namespace Part

@@ -49,6 +49,10 @@
 class QLabel;
 class QTreeWidget;
 
+namespace App {
+class Document;
+}
+
 namespace Gui {
 namespace Dialog {
 
@@ -60,6 +64,7 @@ public:
 
     /// Show the (single, modeless) dialog, creating it on first use.
     static void showDialog();
+
 
     void refresh();
 
@@ -108,6 +113,12 @@ public:
     ~SandboxIndicator() override;
 
     void updateState();
+
+protected:
+    /// The tooltip names what runs outside the sandbox in the active
+    /// document, which changes with every document opened -- so it is
+    /// recomputed when it is about to show, not on a signal.
+    bool event(QEvent *e) override;
 
 private:
     void toggleRouting();

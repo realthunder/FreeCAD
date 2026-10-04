@@ -63,6 +63,13 @@ Params = [
             'archive order, nothing pays for inflating entries nobody reads,\n'
             'and an entry can be reopened after the restore. Turn off to\n'
             'fall back to the forward-only walk.'),
+    ParamBool('ArchiveBlobStore', True,
+        doc='Serve the included files of a document archive out of one copy\n'
+            'of the archive in the transient directory, and give each its own\n'
+            'file only when something asks for a path. Requires\n'
+            'ArchiveRandomAccess. Turn off to write every included file out\n'
+            'during the restore, which on a monitored filesystem costs a file\n'
+            'create per entry.'),
     ParamBool('DeferShapeLoad', True,
         doc='Park shape archive entries during restore and read each one on\n'
             'first real use instead of before the document opens, so the\n'
@@ -155,9 +162,11 @@ Params = [
     ParamBool('DuplicateLabels', False),
     ParamBool('TransactionOnRecompute', False),
     ParamBool('RelativeStringID', True),
-    ParamBool('HashIndexedName', False,
-        doc='Enable special encoding of indexes name in toponaming. Disabled by\n'
-            'default for backward compatibility'),
+    ParamBool('HashIndexedName', True,
+        doc='Encode a mapped name\'s trailing index apart from its text, as upstream\n'
+            'FreeCAD does. Sets the mode of new documents only: a document keeps the\n'
+            'mode it was saved in, and one saved before the mode was stored gets the\n'
+            'one its string table was written in.'),
     ParamBool('EnableMaterialEdit', True),
     ParamBool('MCPServerAutoStart', False,
         doc='Start the MCP debug console server (freecad.mcp_console) when the\n'

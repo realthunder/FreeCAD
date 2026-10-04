@@ -275,6 +275,9 @@ public:
     //@{
     virtual void extensionSave(Base::Writer&) const {}
     virtual void extensionRestore(Base::XMLReader&) {}
+    /// Whether the file records the extension: not one whose whole state is
+    /// the properties of the object, and which the class brings with it
+    virtual bool isExtensionSaved() const {return true;}
     //@}
 
     /** @name TypeHandling */

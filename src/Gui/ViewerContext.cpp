@@ -49,6 +49,7 @@
 
 #include "Document.h"
 #include "InventorBase.h"
+#include "OnViewEntry.h"
 #include "Selection.h"
 #include "ViewProvider.h"
 #include "ViewProviderLink.h"
@@ -116,6 +117,17 @@ EditingRoot::EditingRoot(Gui::Document* document)
     transform->ref();
     transform->setName("EditingTransform");
     root->addChild(transform);
+    onView = new SoSeparator;
+    onView->ref();
+    onView->setName("EditingOnViewRoot");
+    // Labels move with the camera and the pointer; a cache here would be
+    // rebuilt on every frame that matters
+    onView->renderCaching = SoSeparator::OFF;
+    publish = new SoGroup;
+    publish->ref();
+    publish->setName("EditingPublishRoot");
+    publish->addChild(root);
+    publish->addChild(onView);
 }
 
 EditingRoot::~EditingRoot()
@@ -128,6 +140,8 @@ EditingRoot::~EditingRoot()
     if (restore) {
         FC_ERR("editing root destroyed while still holding an edit's geometry");
     }
+    publish->unref();
+    onView->unref();
     transform->unref();
     root->unref();
 }
@@ -135,6 +149,11 @@ EditingRoot::~EditingRoot()
 bool EditingRoot::hasContent() const
 {
     return root->getNumChildren() > 1;
+}
+
+bool EditingRoot::hasOnViewContent() const
+{
+    return onView->getNumChildren() > 0;
 }
 
 void EditingRoot::hangUnder(SoGroup* parent, int index)
@@ -394,12 +413,47 @@ ViewerContext::~ViewerContext()
     if (editRoot && editRoot != ownEditRoot.get()) {
         editRoot->detachView(this);
     }
+    // Whatever the implementation did not release: forgotten, not taken
+    // out, which would reach a virtual
+    for (OnViewEntry* entry : std::vector<OnViewEntry*>(onViewEntries)) {
+        entry->forgetViewer(false);
+    }
+}
+
+void ViewerContext::releaseOnViewParameters()
+{
+    for (OnViewEntry* entry : std::vector<OnViewEntry*>(onViewEntries)) {
+        entry->forgetViewer(true);
+    }
+}
+
+void ViewerContext::trackOnViewEntry(OnViewEntry* entry)
+{
+    if (entry && std::find(onViewEntries.begin(), onViewEntries.end(), entry)
+            == onViewEntries.end()) {
+        onViewEntries.push_back(entry);
+    }
+}
+
+void ViewerContext::untrackOnViewEntry(OnViewEntry* entry)
+{
+    onViewEntries.erase(std::remove(onViewEntries.begin(), onViewEntries.end(), entry),
+                        onViewEntries.end());
 }
 
 SoCamera* ViewerContext::getCamera() const
 {
     SoRenderManager* manager = getSoRenderManager();
     return manager ? manager->getCamera() : nullptr;
+}
+
+SoGroup* ViewerContext::getOnViewParameterRoot() const
+{
+    // The served root a mirror answers with is a group but not always a
+    // separator, and it is the node the publish traversal walks
+    SoNode* scene = getSceneGraph();
+    return scene && scene->isOfType(SoGroup::getClassTypeId()) ? static_cast<SoGroup*>(scene)
+                                                                : nullptr;
 }
 
 SoNode* ViewerContext::getPickRoot() const

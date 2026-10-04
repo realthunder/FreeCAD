@@ -49,6 +49,16 @@ public:
     virtual void bind(const App::Property & prop);
     bool isBound() const;
     void unbind();
+
+    /** The path this is bound to, for a caller that is not the widget.
+     *
+     * The widget stream answers completion for a mirrored field
+     * (docs/Sandbox.md 7.23), and a mirrored panel's MODEL carries the
+     * binding only as a string read off the real widget -- the widget
+     * is what is actually bound, so the object to complete against can
+     * only be had from here.
+     */
+    const App::ObjectIdentifier & boundPath() const { return getPath(); }
     virtual bool apply(const std::string &propName);
     virtual bool apply();
 

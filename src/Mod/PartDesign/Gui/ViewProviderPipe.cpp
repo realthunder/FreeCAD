@@ -69,7 +69,7 @@ std::vector<App::DocumentObject*> ViewProviderPipe::_claimChildren() const
             temp.push_back(spine);
     }
 
-    App::DocumentObject* auxspine = pcPipe->AuxillerySpine.getValue();
+    App::DocumentObject* auxspine = pcPipe->AuxiliarySpine.getValue();
     if (auxspine && !auxspine->isDerivedFrom(PartDesign::Feature::getClassTypeId())) {
         if (std::find(temp.begin(), temp.end(), auxspine) == temp.end())
             temp.push_back(auxspine);
