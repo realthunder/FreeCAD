@@ -1083,3 +1083,19 @@ fc_add_gui_test(GuiSketchDistanceFixedVertex_tests_run
 fc_add_gui_test(GuiSketchDistanceLabelExtension_tests_run
                 sketch-distance-label-extension.py
                 --timeout 200)
+
+# The two label tests above again, on the classic GL path (render cache
+# mode 0), where a dimension draws itself in SoDatumLabel::GLRender
+# rather than through the capture. The axes' transparent material stayed
+# in the state past the axes, and a label under it drew its pick box and
+# nothing else: no leaders, no number.
+fc_add_gui_test(GuiSketchLineAngleLabelsGL_tests_run
+                sketch-line-angle-labels.py
+                --timeout 200)
+fc_add_gui_test(GuiSketchDistanceLabelExtensionGL_tests_run
+                sketch-distance-label-extension.py
+                --timeout 200)
+set_tests_properties(GuiSketchLineAngleLabelsGL_tests_run
+                     GuiSketchDistanceLabelExtensionGL_tests_run
+                     PROPERTIES ENVIRONMENT
+                     "FC_BUILD=${CMAKE_BINARY_DIR};GT_RENDER_CACHE=0")

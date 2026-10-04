@@ -9794,19 +9794,29 @@ void ViewProviderSketch::createEditInventorNodes(void)
     edit->RootCrossDrawStyle->setName("RootCrossDrawStyle");
     crossRoot->addChild(edit->RootCrossDrawStyle);
 
+    // The axes' material stays with the axes (upstream's RootCrossVisible).
+    // It carries their transparency, and crossRoot is a group: hung on it
+    // directly the material reached everything the edit root draws after.
+    // A dimension has no material of its own, and with a transparent one
+    // in the state Coin draws the label's pick box as sorted triangles and
+    // never calls its GLRender -- no leaders, no number.
+    auto visibleAxes = new SoSeparator;
+    visibleAxes->setName("RootCrossVisible");
+    crossRoot->addChild(visibleAxes);
+
     edit->RootCrossMaterials = new SoMaterial;
     edit->RootCrossMaterials->setName("RootCrossMaterials");
     edit->RootCrossMaterials->diffuseColor.set1Value(0,CrossColorH);
     edit->RootCrossMaterials->diffuseColor.set1Value(1,CrossColorV);
-    crossRoot->addChild(edit->RootCrossMaterials);
+    visibleAxes->addChild(edit->RootCrossMaterials);
 
     edit->RootCrossCoordinate = new SoCoordinate3;
     edit->RootCrossCoordinate->setName("RootCrossCoordinate");
-    crossRoot->addChild(edit->RootCrossCoordinate);
+    visibleAxes->addChild(edit->RootCrossCoordinate);
 
     edit->RootCrossSet = new SoLineSet;
     edit->RootCrossSet->setName("RootCrossLineSet");
-    crossRoot->addChild(edit->RootCrossSet);
+    visibleAxes->addChild(edit->RootCrossSet);
 
     // stuff for the EditCurves +++++++++++++++++++++++++++++++++++++++
     SoSeparator* editCurvesRoot = new SoSeparator;
