@@ -84,6 +84,9 @@ public:
     /// the kind the log records ("undo") and the row it inverts.
     std::string LogKind;
     int64_t Inverts {0};
+    /// For a merge (sec 28.2 item 1): the head merged in, the row's second
+    /// parent.
+    int64_t MergeFrom {0};
     /// The row's script (sec 27.63): an undo's, a redo's or a restore's
     /// record of the touched state it changed.
     std::string LogScript;

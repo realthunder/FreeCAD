@@ -916,6 +916,7 @@ PyObject* DocumentPy::getTransactionLog(PyObject *args)
             d.setItem("time", Py::Float(t.time));
             d.setItem("script", Py::String(t.script));
             d.setItem("inverts", Py::Long(static_cast<long long>(t.inverts)));
+            d.setItem("merge_from", Py::Long(static_cast<long long>(t.mergeFrom)));
             d.setItem("branch", Py::String(branches[t.branch]));
             list.append(d);
         }
@@ -1222,6 +1223,90 @@ PyObject* DocumentPy::squashTransactionVersions(PyObject *args)
     PY_TRY {
         return Py::new_reference_to(Py::Long(
             static_cast<unsigned long long>(getDocumentPtr()->squashVersions(from, to))));
+    } PY_CATCH;
+}
+
+namespace {
+
+Py::Dict mergeChangeToPy(const App::Document::MergeChange& c)
+{
+    Py::Dict d;
+    d.setItem("kind", Py::String(c.kind));
+    d.setItem("op", Py::String(c.op));
+    d.setItem("key", Py::String(c.key));
+    d.setItem("ckind", Py::String(c.ckind));
+    d.setItem("cid", Py::Long(c.cid));
+    d.setItem("object", Py::String(c.object));
+    d.setItem("prop", Py::String(c.prop));
+    d.setItem("type", Py::String(c.ptype));
+    d.setItem("base", Py::String(c.base));
+    d.setItem("ours", Py::String(c.ours));
+    d.setItem("theirs", Py::String(c.theirs));
+    d.setItem("note", Py::String(c.note));
+    return d;
+}
+
+Py::Dict mergePreviewToPy(const App::Document::MergePreview& p)
+{
+    Py::Dict d;
+    d.setItem("branch", Py::String(p.branch));
+    d.setItem("ours", Py::Long(static_cast<long long>(p.ours)));
+    d.setItem("theirs", Py::Long(static_cast<long long>(p.theirs)));
+    d.setItem("base", Py::Long(static_cast<long long>(p.base)));
+    d.setItem("fast_forward", Py::Boolean(p.fastForward));
+    d.setItem("conflicts", Py::Long(static_cast<unsigned long long>(p.conflicts)));
+    Py::List changes;
+    for (const auto& c : p.changes)
+        changes.append(mergeChangeToPy(c));
+    d.setItem("changes", changes);
+    return d;
+}
+
+} // namespace
+
+PyObject* DocumentPy::previewTransactionMerge(PyObject *args)
+{
+    const char* branch;
+    long long version = 0;
+    if (!PyArg_ParseTuple(args, "s|L", &branch, &version))
+        return nullptr;
+    PY_TRY {
+        return Py::new_reference_to(
+            mergePreviewToPy(getDocumentPtr()->previewMerge(branch, version)));
+    } PY_CATCH;
+}
+
+PyObject* DocumentPy::mergeTransactionBranch(PyObject *args)
+{
+    const char* branch;
+    PyObject* pyPicks = nullptr;
+    const char* fallback = "";
+    long long version = 0;
+    if (!PyArg_ParseTuple(args, "s|O!sL", &branch, &PyDict_Type, &pyPicks, &fallback, &version))
+        return nullptr;
+    PY_TRY {
+        std::map<std::string, std::string> picks;
+        if (pyPicks) {
+            Py::Dict dict(pyPicks);
+            for (auto it = dict.begin(); it != dict.end(); ++it) {
+                const auto item = *it;
+                picks[Py::String(item.first).as_std_string("utf-8")]
+                    = Py::String(item.second).as_std_string("utf-8");
+            }
+        }
+        const auto result = getDocumentPtr()->mergeBranch(branch, picks, fallback, version);
+        Py::Dict d;
+        d.setItem("seq", Py::Long(static_cast<long long>(result.seq)));
+        Py::List unresolved;
+        for (const auto& c : result.unresolved)
+            unresolved.append(mergeChangeToPy(c));
+        d.setItem("unresolved", unresolved);
+        Py::List failed;
+        for (const auto& name : result.failed)
+            failed.append(Py::String(name));
+        d.setItem("failed", failed);
+        d.setItem("preview", mergePreviewToPy(result.preview));
+        return Py::new_reference_to(d);
     } PY_CATCH;
 }
 

@@ -5282,3 +5282,191 @@ class TransactionBranchCases(unittest.TestCase):
         self.assertFalse(found.startswith("?"), found)
         self.assertEqual(saved(A)["shadow"], ";%s.%s" % (nameOf(B, found), found))
         self.assertEqual(stored(A), expand(B.Hasher, nameOf(B, found)))
+
+    def kindsOf(self, preview):
+        return {c["key"]: c["kind"] + " " + c["op"] for c in preview["changes"]}
+
+    def testMergeRecomputesWhatBothSidesChanged(self):
+        # Sec 28.2 item 4: derived values are not merged. Each side changed
+        # another input of one box; the merge takes theirs' input and
+        # recomputes inside its own step.
+        doc = self.track(FreeCAD.newDocument("MergeBoth"))
+        doc.UndoMode = 1
+        doc.openTransaction("create")
+        box = doc.addObject("Part::Box", "Box")
+        doc.recompute()
+        doc.commitTransaction()
+        self.assertAlmostEqual(box.Shape.Volume, 1000.0)
+        doc.createTransactionBranch("side")
+        doc.openTransaction("longer")
+        box.Length = 20
+        doc.recompute()
+        doc.commitTransaction()
+        doc.switchTransactionBranch("main")
+        box = doc.getObject("Box")
+        doc.openTransaction("lower")
+        box.Height = 5
+        doc.recompute()
+        doc.commitTransaction()
+        self.assertAlmostEqual(box.Shape.Volume, 500.0)
+
+        preview = doc.previewTransactionMerge("side")
+        kinds = self.kindsOf(preview)
+        self.assertFalse(preview["fast_forward"])
+        self.assertEqual(preview["conflicts"], 0)
+        self.assertEqual(kinds["Box.Length"], "take set")
+        self.assertEqual(kinds["Box.Shape"], "derived set")
+        self.assertNotIn("Box.Height", kinds)
+
+        undos = doc.UndoCount
+        result = doc.mergeTransactionBranch("side")
+        self.assertGreater(result["seq"], 0)
+        self.assertEqual(result["failed"], [])
+        self.assertAlmostEqual(box.Length.Value, 20.0)
+        self.assertAlmostEqual(box.Height.Value, 5.0)
+        self.assertAlmostEqual(box.Shape.Volume, 20 * 10 * 5)
+        self.assertNotIn("Touched", box.State)
+        self.assertEqual(doc.UndoCount, undos + 1)
+        row = [t for t in doc.getTransactionLog() if t["seq"] == result["seq"]][0]
+        self.assertEqual(row["kind"], "merge")
+        side = self.branches(doc)["side"]
+        self.assertEqual(row["merge_from"], side["head"])
+        doc.undo()
+        self.assertAlmostEqual(box.Length.Value, 10.0)
+        self.assertAlmostEqual(box.Shape.Volume, 500.0)
+        doc.redo()
+        self.assertAlmostEqual(box.Shape.Volume, 1000.0)
+
+    def testMergeTakesTheShapeWhenOursIsUnchanged(self):
+        # Sec 28.6 Q1: ours has changed nothing since the base, so theirs is
+        # taken whole -- its shape from the log, nothing recomputed.
+        doc = self.track(FreeCAD.newDocument("MergeWhole"))
+        doc.UndoMode = 1
+        doc.openTransaction("create")
+        box = doc.addObject("Part::Box", "Box")
+        doc.recompute()
+        doc.commitTransaction()
+        doc.createTransactionBranch("side")
+        doc.openTransaction("longer")
+        box.Length = 20
+        cyl = doc.addObject("Part::Cylinder", "Cyl")
+        doc.recompute()
+        doc.commitTransaction()
+        cylVolume = cyl.Shape.Volume
+        doc.switchTransactionBranch("main")
+        box = doc.getObject("Box")
+        self.assertAlmostEqual(box.Shape.Volume, 1000.0)
+
+        preview = doc.previewTransactionMerge("side")
+        self.assertTrue(preview["fast_forward"])
+        self.assertEqual(self.kindsOf(preview)["Box.Shape"], "take set")
+        recomputed = []
+
+        class Seen:
+            def slotRecomputedObject(self, obj):
+                recomputed.append(obj.Name)
+
+        seen = Seen()
+        FreeCAD.addDocumentObserver(seen)
+        try:
+            result = doc.mergeTransactionBranch("side")
+        finally:
+            FreeCAD.removeDocumentObserver(seen)
+        self.assertGreater(result["seq"], 0)
+        self.assertEqual(recomputed, [])
+        self.assertAlmostEqual(box.Shape.Volume, 2000.0)
+        self.assertAlmostEqual(doc.getObject("Cyl").Shape.Volume, cylVolume)
+        self.assertNotIn("Touched", box.State)
+        doc.undo()
+        self.assertAlmostEqual(box.Shape.Volume, 1000.0)
+        self.assertIsNone(doc.getObject("Cyl"))
+
+    def testMergeABranchMadeFromTheFileAsFound(self):
+        # Sec 28.2 item 2: a file opened without a history starts one at the
+        # file as found, version 1, which no row precedes. A branch made
+        # from it and `main` share that state, and nothing else.
+        self.param.SetInt("TransactionLog", 1)
+        doc = self.track(FreeCAD.newDocument("MergeFound"))
+        obj = doc.addObject("App::FeatureTest", "Obj")
+        obj.Integer = 1
+        path = os.path.join(self.dir, "found.FCStd")
+        doc.saveAs(path)
+        FreeCAD.closeDocument(doc.Name)
+        doc = self.track(FreeCAD.openDocument(path))
+        doc.UndoMode = 1
+        first = doc.getTransactionVersions()[0]
+        self.assertEqual(first["seq"], 0)
+        doc.openTransaction("main edit")
+        doc.Obj.String = "main"
+        doc.commitTransaction()
+        doc.createTransactionBranch("side", first["num"])
+        self.assertEqual(doc.Obj.String, "4711")
+        doc.openTransaction("side edit")
+        doc.Obj.Integer = 2
+        doc.commitTransaction()
+        doc.switchTransactionBranch("main")
+        preview = doc.previewTransactionMerge("side")
+        self.assertEqual(preview["base"], 0)
+        self.assertEqual(self.kindsOf(preview), {"Obj.Integer": "take set"})
+        self.assertGreater(doc.mergeTransactionBranch("side")["seq"], 0)
+        self.assertEqual(doc.Obj.Integer, 2)
+        self.assertEqual(doc.Obj.String, "main")
+
+    def testMergeABranchOpenInAnotherDocument(self):
+        # Sec 28.2 item 8: theirs may be open in another document of the
+        # file. What it has done is in rows before they are read, and a
+        # transaction left open there refuses the merge.
+        doc, path = self.saved()
+        first = doc.getTransactionVersions()[0]["num"]
+        other = self.track(doc.openTransactionVersion(first, False))
+        other.UndoMode = 1
+        other.openTransaction("on main")
+        other.getObject("Obj").String = "main"
+        other.commitTransaction()
+        names = {b["id"]: b["name"] for b in doc.getTransactionBranches()}
+        self.assertEqual(names[other.getTransactionCursor()["branch"]], "main")
+
+        other.openTransaction("still open")
+        other.getObject("Obj").Float = 2.5
+        with self.assertRaises(RuntimeError):
+            doc.mergeTransactionBranch("main")
+        other.commitTransaction()
+
+        result = doc.mergeTransactionBranch("main")
+        self.assertGreater(result["seq"], 0)
+        self.assertEqual(doc.Obj.String, "main")
+        self.assertAlmostEqual(doc.Obj.Float, 2.5)
+        self.assertEqual(doc.Obj.Integer, 2)
+        # Theirs is left as it is, and can take ours in turn.
+        self.assertEqual(other.getObject("Obj").Integer, 1)
+        self.assertGreater(other.mergeTransactionBranch("side")["seq"], 0)
+        self.assertEqual(other.getObject("Obj").Integer, 2)
+        self.assertEqual(other.getObject("Obj").String, "main")
+
+    def testMergeSuffixesALabelOursHas(self):
+        # Sec 28.2 item 5, 27.41 Q4 (a): labels are document scope, so two
+        # branches can give one label to two objects; the incoming one is
+        # suffixed.
+        doc = self.track(FreeCAD.newDocument("MergeLabels"))
+        doc.UndoMode = 1
+        doc.openTransaction("create")
+        doc.addObject("App::FeatureTest", "Obj")
+        doc.commitTransaction()
+        doc.createTransactionBranch("side")
+        doc.openTransaction("side")
+        theirs = doc.addObject("App::FeatureTest", "Theirs")
+        theirs.Label = "Bracket"
+        doc.commitTransaction()
+        doc.switchTransactionBranch("main")
+        doc.openTransaction("main")
+        ours = doc.addObject("App::FeatureTest", "Ours")
+        ours.Label = "Bracket"
+        doc.commitTransaction()
+        result = doc.mergeTransactionBranch("side")
+        self.assertGreater(result["seq"], 0)
+        self.assertEqual(ours.Label, "Bracket")
+        label = doc.getObject("Theirs").Label
+        self.assertNotEqual(label, "Bracket")
+        self.assertTrue(label.startswith("Bracket"))
+        row = [t for t in doc.getTransactionLog() if t["seq"] == result["seq"]][0]
+        self.assertIn('"relabelled":["Theirs"]', row["script"])

@@ -3698,3 +3698,377 @@ TEST_F(TransactionLogTest, restoreBatchForgetsARemovedProperty)
     auto engine = static_cast<App::PropertyExpressionEngine*>(kept);
     EXPECT_EQ(engine->getExpressions().size(), 1u);
 }
+
+// Sec 28.2 item 1: a merge row has a second parent, and a row's history is
+// what both edges reach; one branch's chain still follows `parent` alone.
+TEST_F(TransactionLogTest, aRowsHistoryFollowsBothParents)
+{
+    const std::string path = Base::FileInfo::getTempFileName("txnlog-history") + ".db";
+    {
+        auto store = App::TransactionStore::openSQLite(path);
+        auto row = [&](int64_t parent, int64_t branch, int64_t mergeFrom = 0) {
+            App::LogTransaction t;
+            t.parent = parent;
+            t.branch = branch;
+            t.kind = mergeFrom ? "merge" : "user";
+            t.mergeFrom = mergeFrom;
+            std::vector<App::LogOp> ops(1);
+            ops[0].op = "set";
+            ops[0].ckind = "obj";
+            ops[0].cid = 7;
+            ops[0].prop = "A";
+            ops[0].vafter = "x";
+            return store->append(t, ops);
+        };
+        auto seqs = [](const std::vector<App::LogTransaction>& rows) {
+            std::vector<int64_t> out;
+            for (const auto& t : rows)
+                out.push_back(t.seq);
+            return out;
+        };
+        const int64_t a1 = row(0, 1);
+        App::LogBranch side;
+        side.name = "side";
+        side.fromSeq = a1;
+        side.head = a1;
+        const int64_t sideId = store->addBranch(side);
+        const int64_t s2 = row(a1, sideId);
+        const int64_t m3 = row(a1, 1);
+        const int64_t s4 = row(s2, sideId);
+        const int64_t merge = row(m3, 1, s4);   // side into main
+        const int64_t s6 = row(s4, sideId);
+        const int64_t back = row(s6, sideId, merge);   // main back into side
+
+        EXPECT_EQ(seqs(store->chain(merge)), (std::vector<int64_t> {a1, m3, merge}));
+        EXPECT_EQ(seqs(store->history(merge)), (std::vector<int64_t> {a1, s2, m3, s4, merge}));
+        EXPECT_EQ(seqs(store->history(s6)), (std::vector<int64_t> {a1, s2, s4, s6}));
+        EXPECT_EQ(seqs(store->history(back)),
+                  (std::vector<int64_t> {a1, s2, m3, s4, merge, s6, back}));
+        EXPECT_TRUE(store->history(0).empty());
+        for (const auto& t : store->transactions()) {
+            EXPECT_EQ(t.mergeFrom, t.seq == merge ? s4 : (t.seq == back ? merge : 0)) << t.seq;
+        }
+        // A rewritten row keeps what it is given.
+        App::LogTransaction t = store->chain(merge).back();
+        std::vector<App::LogOp> none;
+        store->replaceTransactions(t, none, {});
+        EXPECT_EQ(store->chain(merge).back().mergeFrom, s4);
+    }
+    Base::FileInfo(path).deleteFile();
+}
+
+// Sec 28.2 item 3: what theirs changed and ours left alone goes in, as one
+// transaction with theirs' head as its second parent; the next merge starts
+// where this one ended, and a merge back takes only what the other side did
+// besides.
+TEST_F(TransactionLogTest, mergeTakesWhatOursLeftAlone)
+{
+    doc()->openTransaction("create");
+    auto a = make("A");
+    a->Integer.setValue(1);
+    a->String.setValue("a");
+    auto b = make("B");
+    b->Integer.setValue(1);
+    doc()->commitTransaction();
+    const int64_t fork = log().head();
+
+    doc()->createBranch("side");
+    doc()->openTransaction("side edit");
+    a->Integer.setValue(2);
+    auto c = make("C");
+    c->String.setValue("side");
+    c->addDynamicProperty("App::PropertyInteger", "Extra", "Group", "doc");
+    static_cast<App::PropertyInteger*>(c->getPropertyByName("Extra"))->setValue(7);
+    doc()->commitTransaction();
+    const long cId = c->getID();
+
+    ASSERT_TRUE(doc()->switchBranch("main"));
+    // Side's head once left: the switch put a snapshot record on it.
+    log().flush();
+    App::LogBranch sideRow;
+    ASSERT_TRUE(log().store().findBranch("side", sideRow));
+    const int64_t sideHead = sideRow.head;
+    doc()->openTransaction("main edit");
+    a->String.setValue("main");
+    b->Integer.setValue(5);
+    doc()->commitTransaction();
+    EXPECT_FALSE(doc()->getObject("C"));
+
+    auto preview = doc()->previewMerge("side");
+    EXPECT_EQ(preview.base, fork);
+    EXPECT_EQ(preview.theirs, sideHead);
+    EXPECT_FALSE(preview.fastForward);
+    EXPECT_EQ(preview.conflicts, 0u);
+    std::map<std::string, std::string> kinds;
+    for (const auto& ch : preview.changes)
+        kinds[ch.key] = ch.kind + " " + ch.op;
+    EXPECT_EQ(kinds["A.Integer"], "take set");
+    EXPECT_EQ(kinds["C"], "take create");
+    EXPECT_EQ(kinds.count("C.String"), 0u);   // goes in with its object
+    EXPECT_EQ(kinds.count("A.String"), 0u);   // theirs did not change it
+    EXPECT_EQ(a->Integer.getValue(), 1);      // a preview moves nothing
+
+    const size_t undos = doc()->getAvailableUndoNames().size();
+    auto result = doc()->mergeBranch("side");
+    ASSERT_GT(result.seq, 0);
+    EXPECT_TRUE(result.unresolved.empty());
+    EXPECT_EQ(a->Integer.getValue(), 2);
+    EXPECT_STREQ(a->String.getValue(), "main");
+    EXPECT_EQ(b->Integer.getValue(), 5);
+    auto merged = dynamic_cast<App::FeatureTest*>(doc()->getObject("C"));
+    ASSERT_TRUE(merged);
+    EXPECT_EQ(merged->getID(), cId);
+    EXPECT_STREQ(merged->String.getValue(), "side");
+    auto extra = dynamic_cast<App::PropertyInteger*>(merged->getPropertyByName("Extra"));
+    ASSERT_TRUE(extra);
+    EXPECT_EQ(extra->getValue(), 7);
+    EXPECT_STREQ(extra->getGroup(), "Group");
+    EXPECT_EQ(doc()->getAvailableUndoNames().size(), undos + 1);   // one step
+    log().flush();
+    App::LogTransaction row;
+    for (const auto& t : log().store().chain(log().head())) {
+        if (t.seq == result.seq)
+            row = t;
+    }
+    EXPECT_EQ(row.kind, "merge");
+    EXPECT_EQ(row.mergeFrom, sideHead);
+    EXPECT_EQ(row.branch, 1);
+    EXPECT_NE(row.script.find("\"merge\""), std::string::npos);
+
+    // Undone and redone like any step.
+    ASSERT_TRUE(doc()->undo());
+    EXPECT_EQ(a->Integer.getValue(), 1);
+    EXPECT_STREQ(a->String.getValue(), "main");
+    EXPECT_FALSE(doc()->getObject("C"));
+    ASSERT_TRUE(doc()->redo());
+    EXPECT_EQ(a->Integer.getValue(), 2);
+    ASSERT_TRUE(doc()->getObject("C"));
+    EXPECT_EQ(doc()->getObject("C")->getID(), cId);
+
+    // Merged already: nothing to do, no row.
+    auto again = doc()->mergeBranch("side");
+    EXPECT_EQ(again.seq, 0);
+    EXPECT_TRUE(again.preview.changes.empty());
+
+    // The merge back: main's own edits, and nothing of what side gave it.
+    ASSERT_TRUE(doc()->switchBranch("side"));
+    a = dynamic_cast<App::FeatureTest*>(doc()->getObject("A"));
+    b = dynamic_cast<App::FeatureTest*>(doc()->getObject("B"));
+    EXPECT_STREQ(a->String.getValue(), "a");
+    doc()->openTransaction("side again");
+    a->Float.setValue(2.5);
+    doc()->commitTransaction();
+    auto backPreview = doc()->previewMerge("main");
+    EXPECT_EQ(backPreview.base, sideHead);   // what main's merge took
+    EXPECT_EQ(backPreview.conflicts, 0u);
+    kinds.clear();
+    for (const auto& ch : backPreview.changes)
+        kinds[ch.key] = ch.kind + " " + ch.op;
+    EXPECT_EQ(kinds["A.String"], "take set");
+    EXPECT_EQ(kinds["B.Integer"], "take set");
+    EXPECT_EQ(kinds.count("C"), 0u);
+    EXPECT_EQ(kinds.count("A.Integer"), 0u);
+    auto back = doc()->mergeBranch("main");
+    ASSERT_GT(back.seq, 0);
+    EXPECT_STREQ(a->String.getValue(), "main");
+    EXPECT_EQ(b->Integer.getValue(), 5);
+    EXPECT_EQ(a->Integer.getValue(), 2);
+    EXPECT_DOUBLE_EQ(a->Float.getValue(), 2.5);
+
+    // And main takes side's one more edit, from where it last merged.
+    ASSERT_TRUE(doc()->switchBranch("main"));
+    a = dynamic_cast<App::FeatureTest*>(doc()->getObject("A"));
+    auto third = doc()->previewMerge("side");
+    EXPECT_EQ(third.conflicts, 0u);
+    ASSERT_GT(doc()->mergeBranch("side").seq, 0);
+    EXPECT_DOUBLE_EQ(a->Float.getValue(), 2.5);
+    EXPECT_STREQ(a->String.getValue(), "main");
+}
+
+// Sec 28.2 item 3, 28.6 Q3: a property both changed, differently, is a
+// conflict, and a conflict with no side refuses the merge with nothing
+// moved; so are an object one side removed and the other changed or uses.
+TEST_F(TransactionLogTest, mergeConflictsRefuseUntilPicked)
+{
+    doc()->openTransaction("create");
+    auto a = make("A");
+    a->Integer.setValue(1);
+    a->String.setValue("a");
+    auto gone = make("Gone");       // side removes it, main changes it
+    auto used = make("Used");       // side removes it, main links to it
+    auto back = make("Back");       // main removes it, side changes it
+    back->String.setValue("base");
+    back->Integer.setValue(1);
+    doc()->commitTransaction();
+    const long backId = back->getID();
+
+    doc()->createBranch("side");
+    doc()->openTransaction("side edit");
+    a->Integer.setValue(2);
+    a->String.setValue("both");
+    doc()->removeObject("Gone");
+    doc()->removeObject("Used");
+    back->Integer.setValue(9);
+    doc()->commitTransaction();
+
+    ASSERT_TRUE(doc()->switchBranch("main"));
+    a = dynamic_cast<App::FeatureTest*>(doc()->getObject("A"));
+    gone = dynamic_cast<App::FeatureTest*>(doc()->getObject("Gone"));
+    used = dynamic_cast<App::FeatureTest*>(doc()->getObject("Used"));
+    ASSERT_TRUE(a && gone && used);
+    doc()->openTransaction("main edit");
+    a->Integer.setValue(3);
+    a->String.setValue("both");
+    gone->Integer.setValue(8);
+    auto user = make("User");
+    user->Link.setValue(used);
+    doc()->removeObject("Back");
+    doc()->commitTransaction();
+    const int64_t headBefore = log().head();
+
+    auto preview = doc()->previewMerge("side");
+    std::map<std::string, App::Document::MergeChange> byKey;
+    for (const auto& ch : preview.changes)
+        byKey[ch.key] = ch;
+    EXPECT_EQ(byKey["A.Integer"].kind, "conflict");
+    EXPECT_NE(byKey["A.Integer"].ours, byKey["A.Integer"].theirs);
+    EXPECT_NE(byKey["A.Integer"].base, byKey["A.Integer"].ours);
+    EXPECT_EQ(byKey["A.String"].kind, "same");
+    EXPECT_EQ(byKey["Gone"].kind, "conflict");
+    EXPECT_EQ(byKey["Gone"].op, "remove");
+    EXPECT_EQ(byKey["Used"].kind, "conflict");
+    EXPECT_NE(byKey["Used"].note.find("User"), std::string::npos);
+    EXPECT_EQ(byKey["Back"].kind, "conflict");
+    EXPECT_EQ(byKey["Back"].op, "revive");
+    EXPECT_EQ(preview.conflicts, 4u);
+
+    // No side: refused, nothing moved, no row.
+    auto refused = doc()->mergeBranch("side");
+    EXPECT_EQ(refused.seq, 0);
+    EXPECT_EQ(refused.unresolved.size(), 4u);
+    EXPECT_EQ(a->Integer.getValue(), 3);
+    EXPECT_TRUE(doc()->getObject("Gone"));
+    EXPECT_FALSE(doc()->getObject("Back"));
+    EXPECT_EQ(log().head(), headBefore);
+    EXPECT_THROW(doc()->mergeBranch("side", {{"A.Integer", "mine"}}), Base::Exception);
+    EXPECT_THROW(doc()->mergeBranch("nowhere"), Base::Exception);
+    EXPECT_THROW(doc()->mergeBranch("main"), Base::Exception);
+
+    // Sides picked, the rest by the fallback.
+    auto result = doc()->mergeBranch("side", {{"A.Integer", "theirs"}, {"Back", "theirs"}},
+                                     "ours");
+    ASSERT_GT(result.seq, 0);
+    EXPECT_TRUE(result.unresolved.empty());
+    EXPECT_EQ(a->Integer.getValue(), 2);
+    EXPECT_TRUE(doc()->getObject("Gone"));    // ours kept
+    EXPECT_TRUE(doc()->getObject("Used"));
+    EXPECT_EQ(user->Link.getValue(), used);
+    auto revived = dynamic_cast<App::FeatureTest*>(doc()->getObject("Back"));
+    ASSERT_TRUE(revived);                     // back under its id, as theirs has it
+    EXPECT_EQ(revived->getID(), backId);
+    EXPECT_EQ(revived->Integer.getValue(), 9);
+    EXPECT_STREQ(revived->String.getValue(), "base");
+    log().flush();
+    std::string script;
+    for (const auto& t : log().store().chain(log().head())) {
+        if (t.seq == result.seq)
+            script = t.script;
+    }
+    EXPECT_NE(script.find("\"sides\""), std::string::npos);
+    EXPECT_NE(script.find("\"theirs\""), std::string::npos);
+
+    // One step back to where ours was.
+    ASSERT_TRUE(doc()->undo());
+    EXPECT_EQ(a->Integer.getValue(), 3);
+    EXPECT_FALSE(doc()->getObject("Back"));
+    ASSERT_TRUE(doc()->redo());
+    EXPECT_EQ(a->Integer.getValue(), 2);
+
+    // The conflicts kept as ours are not asked again.
+    auto again = doc()->previewMerge("side");
+    EXPECT_TRUE(again.changes.empty());
+}
+
+// Sec 28.6 Q3: every conflict kept as ours writes nothing of theirs, but a
+// record with the second parent, so the base moves.
+TEST_F(TransactionLogTest, mergeKeepingOursIsARecord)
+{
+    doc()->openTransaction("create");
+    auto a = make("A");
+    a->Integer.setValue(1);
+    doc()->commitTransaction();
+    doc()->createBranch("side");
+    doc()->openTransaction("side edit");
+    a->Integer.setValue(2);
+    doc()->commitTransaction();
+    ASSERT_TRUE(doc()->switchBranch("main"));
+    a = dynamic_cast<App::FeatureTest*>(doc()->getObject("A"));
+    doc()->openTransaction("main edit");
+    a->Integer.setValue(3);
+    doc()->commitTransaction();
+    const size_t undos = doc()->getAvailableUndoNames().size();
+
+    auto result = doc()->mergeBranch("side", {}, "ours");
+    ASSERT_GT(result.seq, 0);
+    EXPECT_EQ(a->Integer.getValue(), 3);
+    EXPECT_EQ(doc()->getAvailableUndoNames().size(), undos);   // nothing to undo
+    log().flush();
+    EXPECT_TRUE(log().store().ops(result.seq).empty());
+    App::LogBranch side;
+    ASSERT_TRUE(log().store().findBranch("side", side));
+    EXPECT_EQ(log().store().chain(log().head()).back().mergeFrom, side.head);
+    EXPECT_TRUE(doc()->previewMerge("side").changes.empty());
+}
+
+// Sec 28.6 Q1: ours unchanged since the base takes theirs whole -- derived
+// values with it, no recompute -- and one that did change recomputes.
+TEST_F(TransactionLogTest, mergeFastForwardsWhenOursIsUnchanged)
+{
+    doc()->openTransaction("create");
+    auto a = make("A");
+    a->Integer.setValue(1);
+    doc()->commitTransaction();
+    doc()->recompute();
+    const long execBase = a->ExecCount.getValue();
+
+    doc()->createBranch("side");
+    doc()->openTransaction("side edit");
+    a->Integer.setValue(2);
+    auto c = make("C");
+    doc()->commitTransaction();
+    doc()->recompute();
+    doc()->recompute();
+    const long execSide = a->ExecCount.getValue();
+    ASSERT_GT(execSide, execBase);
+    const long cExec = c->ExecCount.getValue();
+
+    ASSERT_TRUE(doc()->switchBranch("main"));
+    a = dynamic_cast<App::FeatureTest*>(doc()->getObject("A"));
+    EXPECT_EQ(a->ExecCount.getValue(), execBase);
+    auto preview = doc()->previewMerge("side");
+    EXPECT_TRUE(preview.fastForward);
+    EXPECT_EQ(preview.conflicts, 0u);
+    for (const auto& ch : preview.changes)
+        EXPECT_NE(ch.kind, "derived") << ch.key;
+
+    auto result = doc()->mergeBranch("side");
+    ASSERT_GT(result.seq, 0);
+    EXPECT_EQ(a->Integer.getValue(), 2);
+    // Theirs' own count, not one more: nothing was recomputed.
+    EXPECT_EQ(a->ExecCount.getValue(), execSide);
+    auto merged = dynamic_cast<App::FeatureTest*>(doc()->getObject("C"));
+    ASSERT_TRUE(merged);
+    EXPECT_EQ(merged->ExecCount.getValue(), cExec);
+    EXPECT_FALSE(a->isTouched());
+    log().flush();
+    for (const auto& t : log().store().chain(log().head())) {
+        if (t.seq == result.seq) {
+            EXPECT_EQ(t.kind, "merge");
+            EXPECT_NE(t.script.find("\"fast_forward\":true"), std::string::npos);
+        }
+    }
+    ASSERT_TRUE(doc()->undo());
+    EXPECT_EQ(a->Integer.getValue(), 1);
+    EXPECT_EQ(a->ExecCount.getValue(), execBase);
+    EXPECT_FALSE(doc()->getObject("C"));
+}

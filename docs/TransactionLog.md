@@ -11076,18 +11076,21 @@ Theirs is only read.
    at that row, when there is one, is named (`merged into <branch>`) so it
    survives eviction as 17.3 wanted. A row's **history** is what its
    `parent` and `merge_from` edges reach.
-2. **The base** is the newest row of theirs' chain that ours' history
-   holds. For a first merge that is the fork; after `side` was merged into
-   `main`, the next merge of `side` starts where the last one ended, and
-   only what `side` did since is looked at. Refused, saying so, when theirs'
-   chain does not reach a row of ours' history in stored rows.
+2. **The base** is the newest row both histories hold (corrected while
+   building, 28.7: as first written it was the newest row of theirs'
+   *chain* that ours' history holds, which is not symmetric and gives a
+   merge back false conflicts). For a first merge that is the fork; after
+   `side` was merged into `main`, the next merge of `side` starts where the
+   last one ended, and a merge of `main` back into `side` starts at the row
+   of `side` that `main` took. Refused, saying so, when the two share no
+   history in stored rows.
 3. **Three-way, by content hash, no version read.**
-   - *Theirs' change* is `netOps` over theirs' chain after the base: per
-     property a before (its value at the base) and an after (at theirs'
-     head).
-   - *Ours' state* of that property is the after of the newest op on it on
-     ours' chain since the two chains meet (`lastOpOn`); no such op, or one
-     that left it at theirs' before, means ours has not changed it.
+   - *Each side's change* is the net change from the base to its head,
+     through the rows between them -- those taken back from the base to
+     where the two chains meet, then those done up to the head (corrected
+     with item 2: the base need not be on the side's own chain). Per
+     property that is a before (its value at the base) and an after (at
+     the head).
    - Then, per property theirs changed: ours unchanged -> **take** theirs'
      after; ours at theirs' after already -> **nothing**; otherwise
      **conflict**.
@@ -11114,7 +11117,9 @@ Theirs is only read.
    hot or cold, replayed, squashed and streamed like any row. Its
    annotation (the `script` field, JSON, as `branch` and `switch` records
    use it) names theirs, the base, the counts, and every conflict with the
-   side taken. A merge with nothing to take writes no row.
+   side taken. A merge that finds no change of theirs writes no row; one
+   that kept ours in every conflict writes a record -- the same row with
+   no ops -- so the base moves and nothing is asked twice (28.7).
 7. **Theirs is left as it is**: open, at its head, mergeable again -- the
    base moves (item 2). Merging `main` back into `side` afterwards finds
    the merge row's ops already there on `side` ("changed identically") and

@@ -516,6 +516,75 @@ public:
      */
     size_t squashVersions(int64_t from, int64_t to);
 
+    /// One change the other branch made, as a merge sees it
+    /// (docs/TransactionLog.md sec 28.2 item 3).
+    struct MergeChange
+    {
+        /** `take`: ours has not changed it, theirs goes in. `same`: both
+         * left it the same. `conflict`: both changed it, differently -- a
+         * side must be picked. `view`: a conflict on a view-provider
+         * property, which keeps ours unless picked otherwise (sec 28.6 Q2).
+         * `derived`: a value theirs' recompute wrote, not merged; its owner
+         * is recomputed.
+         */
+        std::string kind;
+        /// `set`, `addprop`, `delprop`, `create`, `remove`, or `revive`: an
+        /// object ours removed and theirs changed.
+        std::string op;
+        /// What a pick names it by: `<object>.<property>`, `.<property>` for
+        /// the document's own, `view:<object>.<property>`, `<object>`.
+        std::string key;
+        std::string ckind;    ///< `doc`, `obj` or `view`
+        long cid {0};
+        std::string object;   ///< the object's name
+        std::string prop;
+        std::string ptype;
+        /// The value at the base, ours and theirs, as entity refs; empty
+        /// where the property is not there.
+        std::string base, ours, theirs;
+        std::string note;     ///< why, where the kind alone does not say
+    };
+    /// What merging a branch would do (sec 28.2 item 9).
+    struct MergePreview
+    {
+        std::string branch;
+        int64_t ours {0};     ///< this document's head
+        int64_t theirs {0};   ///< the row merged in
+        int64_t base {-1};    ///< the newest row both histories hold
+        /// Ours has changed nothing since the base: theirs is taken whole,
+        /// derived values included, with no recompute (sec 28.6 Q1).
+        bool fastForward {false};
+        std::vector<MergeChange> changes;
+        size_t conflicts {0};
+    };
+    /// What a merge did.
+    struct MergeResult
+    {
+        int64_t seq {0};      ///< the merge row, 0 when none was written
+        /// The conflicts nobody picked a side for: the merge was refused
+        /// and nothing moved (sec 28.6 Q3).
+        std::vector<MergeChange> unresolved;
+        std::vector<std::string> failed;   ///< objects whose recompute failed
+        MergePreview preview;
+    };
+    /** What merging branch `branch` into the one this document is on would
+     * do (docs/TransactionLog.md sec 28): the base, and every change the
+     * other branch made since. Read only. With `version`, the branch up to
+     * that version of it. Throws when there is no such branch, or the two
+     * share no history in the log's rows.
+     */
+    MergePreview previewMerge(const std::string& branch, int64_t version = 0);
+    /** Merge branch `branch` into the one this document is on (sec 28):
+     * one transaction of kind `merge`, undone like any, whose second parent
+     * is the head merged in. `picks` names a side, `ours` or `theirs`, per
+     * conflict key; `fallback` is the side of every conflict not picked.
+     * A conflict with no side refuses the merge: nothing moves, and the
+     * result lists them. The other branch is left as it is.
+     */
+    MergeResult mergeBranch(const std::string& branch,
+                            const std::map<std::string, std::string>& picks = {},
+                            const std::string& fallback = std::string(), int64_t version = 0);
+
     /** Crash recovery (docs/TransactionLog.md sec 25): make this new, empty
      * document what the session that crashed with transient directory
      * `oldDir` had -- its newest version, the log's tail replayed over it --

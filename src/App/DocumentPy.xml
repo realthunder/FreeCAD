@@ -488,6 +488,35 @@ like any; unnamed versions between go. Raises when `from` is not behind
 the rows folded.</UserDocu>
       </Documentation>
     </Methode>
+    <Methode Name="previewTransactionMerge">
+      <Documentation>
+        <UserDocu>previewTransactionMerge(branch, version=0) -> dict
+
+What merging `branch` into the branch this document is on would do
+(docs/TransactionLog.md sec 28), read only: {'branch', 'ours', 'theirs',
+'base', 'fast_forward', 'conflicts', 'changes'}. `base` is the newest log
+row both histories hold. Each change is {'kind', 'op', 'key', 'ckind',
+'cid', 'object', 'prop', 'type', 'base', 'ours', 'theirs', 'note'}; kind
+is 'take' (ours has not changed it), 'same', 'conflict' (a side must be
+picked, by `key`), 'view' (a view-provider conflict, ours kept unless
+picked) or 'derived' (not merged, recomputed). With `version`, the branch
+is merged up to that version of it. Raises when there is no such branch
+or the two share no history in the log.</UserDocu>
+      </Documentation>
+    </Methode>
+    <Methode Name="mergeTransactionBranch">
+      <Documentation>
+        <UserDocu>mergeTransactionBranch(branch, picks={}, fallback='', version=0) -> dict
+
+Merge `branch` into the branch this document is on (docs/TransactionLog.md
+sec 28): one transaction of kind 'merge', undone like any. `picks` maps a
+conflict's key to 'ours' or 'theirs'; `fallback` is the side of every
+conflict not picked. Returns {'seq', 'unresolved', 'failed', 'preview'}:
+a conflict with no side refuses the merge -- 'seq' is 0, nothing moved,
+and 'unresolved' lists them. 'failed' names the objects whose recompute
+failed on the merged state. The other branch is left as it is.</UserDocu>
+      </Documentation>
+    </Methode>
     <Methode Name="resolveTransactionLog">
       <Documentation>
         <UserDocu>resolveTransactionLog() -> int

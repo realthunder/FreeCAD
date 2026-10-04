@@ -115,7 +115,8 @@ public:
         exec("CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY, value TEXT)");
         exec("CREATE TABLE IF NOT EXISTS txn(seq INTEGER PRIMARY KEY, parent INTEGER, id INTEGER,"
              " kind TEXT, origin TEXT, name TEXT, time REAL, script TEXT, session INTEGER,"
-             " inverts INTEGER DEFAULT 0, branch INTEGER DEFAULT 1)");
+             " inverts INTEGER DEFAULT 0, branch INTEGER DEFAULT 1,"
+             " merge_from INTEGER DEFAULT 0)");
         exec("CREATE TABLE IF NOT EXISTS environment(id INTEGER PRIMARY KEY, json TEXT UNIQUE)");
         exec("CREATE TABLE IF NOT EXISTS session(id INTEGER PRIMARY KEY, env INTEGER, user TEXT,"
              " host TEXT, opened REAL, closed REAL)");
@@ -251,7 +252,7 @@ public:
             // A preset seq is honoured (the writer thread's caller numbers
             // ahead, TransactionLog); NULL takes the next rowid.
             auto ins = prepare("INSERT INTO txn(seq,parent,id,kind,origin,name,time,script,session,"
-                               "inverts,branch) VALUES(?,?,?,?,?,?,?,?,?,?,?)");
+                               "inverts,branch,merge_from) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)");
             if (txn.seq > 0)
                 sqlite3_bind_int64(ins, 1, txn.seq);
             else
@@ -266,6 +267,7 @@ public:
             sqlite3_bind_int64(ins, 9, txn.session);
             sqlite3_bind_int64(ins, 10, txn.inverts);
             sqlite3_bind_int64(ins, 11, txn.branch);
+            sqlite3_bind_int64(ins, 12, txn.mergeFrom);
             step(ins);
             txn.seq = sqlite3_last_insert_rowid(db);
             auto head = prepare("UPDATE branch SET head_seq=? WHERE id=?");
@@ -479,13 +481,14 @@ public:
         t.session = sqlite3_column_int64(s, 8);
         t.inverts = sqlite3_column_int64(s, 9);
         t.branch = sqlite3_column_int64(s, 10);
+        t.mergeFrom = sqlite3_column_int64(s, 11);
         return t;
     }
 
     std::vector<LogTransaction> transactions(int64_t from, int limit) override
     {
-        auto s = prepare("SELECT seq,parent,id,kind,origin,name,time,script,session,inverts,branch"
-                         " FROM txn WHERE seq>=? ORDER BY seq LIMIT ?");
+        auto s = prepare("SELECT seq,parent,id,kind,origin,name,time,script,session,inverts,branch,"
+                         "merge_from FROM txn WHERE seq>=? ORDER BY seq LIMIT ?");
         sqlite3_bind_int64(s, 1, from);
         sqlite3_bind_int(s, 2, limit > 0 ? limit : -1);
         std::vector<LogTransaction> out;
@@ -505,10 +508,31 @@ public:
     {
         auto s = prepare(FC_TXN_CHAIN
                          "SELECT seq,parent,id,kind,origin,name,time,script,session,inverts,"
-                         "branch FROM txn WHERE seq IN (SELECT seq FROM chain) AND seq>=?2"
-                         " ORDER BY seq");
+                         "branch,merge_from FROM txn WHERE seq IN (SELECT seq FROM chain)"
+                         " AND seq>=?2 ORDER BY seq");
         sqlite3_bind_int64(s, 1, head);
         sqlite3_bind_int64(s, 2, from);
+        std::vector<LogTransaction> out;
+        while (sqlite3_step(s) == SQLITE_ROW)
+            out.push_back(readTransaction(s));
+        sqlite3_reset(s);
+        return out;
+    }
+
+    std::vector<LogTransaction> history(int64_t head) override
+    {
+        // Both edges of each row reached, one recursive term: `e.k` picks
+        // the edge. UNION, not UNION ALL -- a merge and the branch it took
+        // reach the fork twice.
+        auto s = prepare("WITH RECURSIVE hist(seq) AS (SELECT ?1 UNION"
+                         " SELECT CASE e.k WHEN 0 THEN t.parent ELSE t.merge_from END"
+                         " FROM txn t JOIN hist h ON t.seq=h.seq,"
+                         " (SELECT 0 AS k UNION ALL SELECT 1) e"
+                         " WHERE CASE e.k WHEN 0 THEN t.parent ELSE t.merge_from END>0) "
+                         "SELECT seq,parent,id,kind,origin,name,time,script,session,inverts,"
+                         "branch,merge_from FROM txn WHERE seq IN (SELECT seq FROM hist)"
+                         " ORDER BY seq");
+        sqlite3_bind_int64(s, 1, head);
         std::vector<LogTransaction> out;
         while (sqlite3_step(s) == SQLITE_ROW)
             out.push_back(readTransaction(s));
@@ -918,7 +942,7 @@ public:
             sqlite3_bind_int64(s, 1, txn.seq);
             step(s);
             s = prepare("UPDATE txn SET parent=?, id=?, kind=?, origin=?, name=?, time=?,"
-                        " script=?, session=?, inverts=?, branch=? WHERE seq=?");
+                        " script=?, session=?, inverts=?, branch=?, merge_from=? WHERE seq=?");
             sqlite3_bind_int64(s, 1, txn.parent);
             sqlite3_bind_int(s, 2, txn.id);
             bindText(s, 3, txn.kind);
@@ -929,7 +953,8 @@ public:
             sqlite3_bind_int64(s, 8, txn.session);
             sqlite3_bind_int64(s, 9, txn.inverts);
             sqlite3_bind_int64(s, 10, txn.branch);
-            sqlite3_bind_int64(s, 11, txn.seq);
+            sqlite3_bind_int64(s, 11, txn.mergeFrom);
+            sqlite3_bind_int64(s, 12, txn.seq);
             step(s);
             auto op = prepare("INSERT INTO op(txn,idx,op,ckind,cid,cname,ctype,prop,ptype,meta,"
                               "vbefore,vafter,derived,touched) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)");

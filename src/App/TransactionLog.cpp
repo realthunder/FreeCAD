@@ -184,6 +184,7 @@ public:
     bool getOp(int64_t txn, int idx, LogOp& op) override { return inner().getOp(txn, idx, op); }
     std::vector<LogTransaction> chain(int64_t head, int64_t from) override
     { return inner().chain(head, from); }
+    std::vector<LogTransaction> history(int64_t head) override { return inner().history(head); }
     bool lastOpOn(const std::string& ckind, long cid, const std::string& prop, int64_t after,
                   int64_t head, LogOp& op) override
     { return inner().lastOpOn(ckind, cid, prop, after, head, op); }
@@ -1173,10 +1174,11 @@ int64_t TransactionLog::recordRecovery(const std::string& script)
 }
 
 int64_t TransactionLog::record(const char* kind, const std::string& name,
-                               const std::string& script)
+                               const std::string& script, int64_t mergeFrom)
 {
     LogTransaction t;
     number(t);
+    t.mergeFrom = mergeFrom;
     t.kind = kind;
     t.name = name;
     t.time = now();
@@ -2664,6 +2666,7 @@ int64_t TransactionLog::onCommit(const Transaction& txn, const char* kind, const
         t.time = now();
         t.session = _c._session;
         t.inverts = inverts;
+        t.mergeFrom = txn.MergeFrom;
         t.script = txn.LogScript;
 
         std::vector<LogOp> ops;

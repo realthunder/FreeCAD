@@ -6646,6 +6646,40 @@ struct LogFold
 
 } // namespace
 
+namespace {
+
+/// Whether `t`, an open's record on `chain`, made the document other than
+/// the rows before it add up to: see _moveAlongLog().
+bool openRecordJumps(TransactionStore& store, const std::vector<LogVersion>& versions,
+                     const LogTransaction& t, const std::vector<LogTransaction>& chain)
+{
+    if (t.kind != "restore")
+        return false;
+    std::set<int64_t> on {0};
+    for (const auto& c : chain)
+        on.insert(c.seq);
+    const LogVersion* at = nullptr;
+    const LogVersion* before = nullptr;
+    for (const auto& v : versions) {
+        if (v.seq == t.parent) {
+            if (!at || v.num > at->num)
+                at = &v;
+        }
+        else if (v.seq < t.parent && on.count(v.seq) && (!before || v.seq > before->seq)) {
+            before = &v;
+        }
+    }
+    if (!at || !before || at->docxml_hash.empty() || at->docxml_hash != before->docxml_hash)
+        return true;
+    for (const auto& c : chain) {
+        if (c.seq > before->seq && c.seq <= t.parent && !store.ops(c.seq).empty())
+            return true;
+    }
+    return false;
+}
+
+} // namespace
+
 bool Document::_moveAlongLog(int64_t fromHead, int64_t toSeq, bool views)
 {
     // docs/TransactionLog.md sec 27.25 item 1, 27.34. From the state at row
@@ -6711,29 +6745,7 @@ bool Document::_moveAlongLog(int64_t fromHead, int64_t toSeq, bool views)
     // the same Document.xml bytes and no row with ops lies between the two.
     const auto versions = store.versions();
     auto jumps = [&](const LogTransaction& t, const std::vector<LogTransaction>& chain) {
-        if (t.kind != "restore")
-            return false;
-        std::set<int64_t> on {0};
-        for (const auto& c : chain)
-            on.insert(c.seq);
-        const LogVersion* at = nullptr;
-        const LogVersion* before = nullptr;
-        for (const auto& v : versions) {
-            if (v.seq == t.parent) {
-                if (!at || v.num > at->num)
-                    at = &v;
-            }
-            else if (v.seq < t.parent && on.count(v.seq) && (!before || v.seq > before->seq)) {
-                before = &v;
-            }
-        }
-        if (!at || !before || at->docxml_hash.empty() || at->docxml_hash != before->docxml_hash)
-            return true;
-        for (const auto& c : chain) {
-            if (c.seq > before->seq && c.seq <= t.parent && !store.ops(c.seq).empty())
-                return true;
-        }
-        return false;
+        return openRecordJumps(store, versions, t, chain);
     };
 
     LogFold fold;
@@ -7064,13 +7076,12 @@ struct Shared
     std::set<int64_t> forks;
 };
 
-/** The net change of the rows `path` (oldest first), as the ops of one row
- * (docs/TransactionLog.md sec 16.7, squash): an object born in them and
- * there at the end is a create with a set per property; every other property
- * its net set, addprop or delprop; an object there at the start and gone at
- * the end a remove after its sets.
+/** The net change of a run of rows (docs/TransactionLog.md sec 16.7, squash;
+ * sec 28.2 item 3, one side of a merge): where every object and property
+ * the rows touched stood before the first and stands after the last. Rows
+ * are added oldest first.
  */
-std::vector<LogOp> netOps(TransactionStore& store, const std::vector<LogTransaction>& path)
+struct NetChange
 {
     using Key = std::tuple<std::string, long, std::string>;   // ckind, cid, prop
     struct Obj
@@ -7094,7 +7105,8 @@ std::vector<LogOp> netOps(TransactionStore& store, const std::vector<LogTransact
     std::vector<long> objectOrder;
     std::map<Key, Val> values;
     std::vector<Key> valueOrder;
-    auto object = [&](long cid, bool born) -> Obj& {
+    Obj& object(long cid, bool born)
+    {
         auto it = objects.find(cid);
         if (it == objects.end()) {
             objectOrder.push_back(cid);
@@ -7102,9 +7114,11 @@ std::vector<LogOp> netOps(TransactionStore& store, const std::vector<LogTransact
             it->second.born = born;
         }
         return it->second;
-    };
-    for (const auto& t : path) {
-        for (const auto& o : store.ops(t.seq)) {
+    }
+
+    void add(const std::vector<LogOp>& rowOps)
+    {
+        for (const auto& o : rowOps) {
             if (o.op == "create" || o.op == "remove") {
                 Obj& obj = object(o.cid, o.op == "create");
                 obj.alive = o.op == "create";
@@ -7131,9 +7145,11 @@ std::vector<LogOp> netOps(TransactionStore& store, const std::vector<LogTransact
                 v.atEnd = true;
             }
             else if (o.op == "delprop" || o.vafter.empty()) {
-                // Removed, or a remove's set: gone with its object.
+                // Removed, or a remove's set: gone with its object. Or a
+                // derived value the log did not keep (sec 10).
                 v.atEnd = false;
                 v.after.clear();
+                v.derived = o.op == "set" && o.derived;
             }
             else {
                 v.atEnd = true;
@@ -7142,103 +7158,136 @@ std::vector<LogOp> netOps(TransactionStore& store, const std::vector<LogTransact
             }
         }
     }
-    auto opOf = [](const std::string& op, const Key& key, const Val& v) {
-        LogOp o;
-        o.op = op;
-        o.ckind = std::get<0>(key);
-        o.cid = std::get<1>(key);
-        o.prop = std::get<2>(key);
-        o.ptype = v.ptype;
-        return o;
-    };
-    std::vector<LogOp> ops;
-    // Each object's values in their order, looked up once per object: a
-    // trim's span (sec 27.71) is hundreds of rows and objects.
-    std::map<long, std::vector<const Key*>> ofObject;
-    for (const auto& key : valueOrder) {
-        if (std::get<0>(key) == "obj")
-            ofObject[std::get<1>(key)].push_back(&key);
-    }
-    // Objects born in the span and there at its end: the create, then a
-    // set per property, a dynamic one's metadata before it.
-    for (long cid : objectOrder) {
-        const Obj& obj = objects[cid];
-        if (!obj.born || !obj.alive)
-            continue;
-        LogOp c;
-        c.op = "create";
-        c.ckind = "obj";
-        c.cid = cid;
-        c.cname = obj.cname;
-        c.ctype = obj.ctype;
-        ops.push_back(c);
-        for (const Key* k : ofObject[cid]) {
-            const Key& key = *k;
-            const Val& v = values[key];
-            if (!v.atEnd)
+
+    /** As the ops of one row: an object born in the rows and there at the
+     * end is a create with a set per property; every other property its net
+     * set, addprop or delprop; an object there at the start and gone at the
+     * end a remove after its sets.
+     */
+    std::vector<LogOp> ops()
+    {
+        auto opOf = [](const std::string& op, const Key& key, const Val& v) {
+            LogOp o;
+            o.op = op;
+            o.ckind = std::get<0>(key);
+            o.cid = std::get<1>(key);
+            o.prop = std::get<2>(key);
+            o.ptype = v.ptype;
+            return o;
+        };
+        std::vector<LogOp> ops;
+        // Each object's values in their order, looked up once per object: a
+        // trim's span (sec 27.71) is hundreds of rows and objects.
+        std::map<long, std::vector<const Key*>> ofObject;
+        for (const auto& key : valueOrder) {
+            if (std::get<0>(key) == "obj")
+                ofObject[std::get<1>(key)].push_back(&key);
+        }
+        // Objects born in the span and there at its end: the create, then a
+        // set per property, a dynamic one's metadata before it.
+        for (long cid : objectOrder) {
+            const Obj& obj = objects[cid];
+            if (!obj.born || !obj.alive)
                 continue;
-            if (!v.meta.empty()) {
+            LogOp c;
+            c.op = "create";
+            c.ckind = "obj";
+            c.cid = cid;
+            c.cname = obj.cname;
+            c.ctype = obj.ctype;
+            ops.push_back(c);
+            for (const Key* k : ofObject[cid]) {
+                const Key& key = *k;
+                const Val& v = values[key];
+                if (!v.atEnd)
+                    continue;
+                if (!v.meta.empty()) {
+                    auto a = opOf("addprop", key, v);
+                    a.meta = v.meta;
+                    ops.push_back(a);
+                }
+                auto s = opOf("set", key, v);
+                s.vafter = v.after;
+                s.derived = v.derived;
+                ops.push_back(s);
+            }
+        }
+        // Everything else: the net change of each property.
+        for (const auto& key : valueOrder) {
+            const Val& v = values[key];
+            const std::string& ckind = std::get<0>(key);
+            const long cid = std::get<1>(key);
+            const bool owned = ckind == "obj" || ckind == "view";
+            const Obj* owner = owned && objects.count(cid) ? &objects[cid] : nullptr;
+            if (owner && owner->born && (!owner->alive || ckind == "obj"))
+                continue;   // never there at either end, or written with its create
+            const bool ownerGone = owner && !owner->born && !owner->alive && ckind == "obj";
+            if (v.atStart && v.atEnd) {
+                if (v.before == v.after)
+                    continue;
+                auto s = opOf("set", key, v);
+                s.vbefore = v.before;
+                s.vafter = v.after;
+                s.derived = v.derived;
+                ops.push_back(s);
+            }
+            else if (!v.atStart && v.atEnd) {
                 auto a = opOf("addprop", key, v);
                 a.meta = v.meta;
                 ops.push_back(a);
+                auto s = opOf("set", key, v);
+                s.vafter = v.after;
+                s.derived = v.derived;
+                ops.push_back(s);
             }
-            auto s = opOf("set", key, v);
-            s.vafter = v.after;
-            s.derived = v.derived;
-            ops.push_back(s);
+            else if (v.atStart && !v.atEnd) {
+                // A removed object's value rides on a set, before the remove; a
+                // dynamic property removed from a living one is a delprop.
+                auto o = opOf(ownerGone ? "set" : "delprop", key, v);
+                o.vbefore = v.before;
+                o.meta = v.meta;
+                ops.push_back(o);
+            }
         }
-    }
-    // Everything else: the net change of each property.
-    for (const auto& key : valueOrder) {
-        const Val& v = values[key];
-        const std::string& ckind = std::get<0>(key);
-        const long cid = std::get<1>(key);
-        const bool owned = ckind == "obj" || ckind == "view";
-        const Obj* owner = owned && objects.count(cid) ? &objects[cid] : nullptr;
-        if (owner && owner->born && (!owner->alive || ckind == "obj"))
-            continue;   // never there at either end, or written with its create
-        const bool ownerGone = owner && !owner->born && !owner->alive && ckind == "obj";
-        if (v.atStart && v.atEnd) {
-            if (v.before == v.after)
+        // Objects there at the start and gone at the end, after their sets.
+        for (long cid : objectOrder) {
+            const Obj& obj = objects[cid];
+            if (obj.born || obj.alive)
                 continue;
-            auto s = opOf("set", key, v);
-            s.vbefore = v.before;
-            s.vafter = v.after;
-            s.derived = v.derived;
-            ops.push_back(s);
+            LogOp r;
+            r.op = "remove";
+            r.ckind = "obj";
+            r.cid = cid;
+            r.cname = obj.cname;
+            r.ctype = obj.ctype;
+            ops.push_back(r);
         }
-        else if (!v.atStart && v.atEnd) {
-            auto a = opOf("addprop", key, v);
-            a.meta = v.meta;
-            ops.push_back(a);
-            auto s = opOf("set", key, v);
-            s.vafter = v.after;
-            s.derived = v.derived;
-            ops.push_back(s);
-        }
-        else if (v.atStart && !v.atEnd) {
-            // A removed object's value rides on a set, before the remove; a
-            // dynamic property removed from a living one is a delprop.
-            auto o = opOf(ownerGone ? "set" : "delprop", key, v);
-            o.vbefore = v.before;
-            o.meta = v.meta;
-            ops.push_back(o);
-        }
+        return ops;
     }
-    // Objects there at the start and gone at the end, after their sets.
-    for (long cid : objectOrder) {
-        const Obj& obj = objects[cid];
-        if (obj.born || obj.alive)
-            continue;
-        LogOp r;
-        r.op = "remove";
-        r.ckind = "obj";
-        r.cid = cid;
-        r.cname = obj.cname;
-        r.ctype = obj.ctype;
-        ops.push_back(r);
+};
+
+/// The net change of the rows `path` (oldest first), as the ops of one row.
+std::vector<LogOp> netOps(TransactionStore& store, const std::vector<LogTransaction>& path)
+{
+    NetChange net;
+    for (const auto& t : path)
+        net.add(store.ops(t.seq));
+    return net.ops();
+}
+
+/// The second parent a row standing for `rows` keeps (sec 28.2 item 1): the
+/// newest merge among them. A row has one; an older merge of another branch
+/// folded with it is forgotten, and that branch's next merge starts from an
+/// older base -- it finds what ours already has, and asks again only where
+/// ours was kept in a conflict.
+int64_t newestMergeFrom(const std::vector<LogTransaction>& rows)
+{
+    int64_t from = 0;
+    for (const auto& t : rows) {
+        if (t.mergeFrom)
+            from = t.mergeFrom;
     }
-    return ops;
+    return from;
 }
 
 Shared sharedWith(TransactionStore& store, int64_t except)
@@ -7370,6 +7419,7 @@ size_t Document::trimBranch(const std::string& name, int64_t version, bool bridg
         t.kind = "squash";
         t.origin.clear();
         t.inverts = 0;
+        t.mergeFrom = newestMergeFrom(span);
         t.name = "Trim " + name + " to version " + std::to_string(keep.num);
         std::ostringstream bridgeScript;
         bridgeScript << "{\"trim\":" << jsonString(name) << ",\"from\":" << from
@@ -7522,6 +7572,7 @@ size_t Document::squashVersions(int64_t from, int64_t to)
     t.kind = "squash";
     t.origin.clear();
     t.inverts = 0;
+    t.mergeFrom = newestMergeFrom(path);
     t.name = "Squash of versions " + std::to_string(from) + " to " + std::to_string(to);
     std::ostringstream script;
     script << "{\"from\":" << from << ",\"to\":" << to << ",\"rows\":" << path.size()
@@ -7548,6 +7599,784 @@ size_t Document::squashVersions(int64_t from, int64_t to)
     refreshVersionNames();
     signalBranchesChanged(*this);
     return path.size();
+}
+
+namespace {
+
+/// A row's ops taken back -- newest first, each reversed -- so that a run
+/// of rows crossed backward folds into a NetChange like one crossed forward.
+std::vector<LogOp> invertedOps(const std::vector<LogOp>& ops)
+{
+    std::vector<LogOp> out;
+    for (auto it = ops.rbegin(); it != ops.rend(); ++it) {
+        LogOp o = *it;
+        if (o.op == "create") {
+            o.op = "remove";
+        }
+        else if (o.op == "remove") {
+            o.op = "create";
+        }
+        else if (o.op == "addprop") {
+            o.op = "delprop";
+        }
+        else if (o.op == "delprop") {
+            // Back with the value it went with: the property, then its set.
+            LogOp add = o;
+            add.op = "addprop";
+            add.vbefore.clear();
+            out.push_back(std::move(add));
+            o.op = "set";
+            o.vafter = o.vbefore;
+            o.vbefore.clear();
+        }
+        else {
+            std::swap(o.vbefore, o.vafter);
+        }
+        out.push_back(std::move(o));
+    }
+    return out;
+}
+
+/// What the document was where `chain`, one that hangs off no row, starts:
+/// the Document.xml hash of the version taken there on its oldest row's
+/// branch -- the file as found -- or of the version that branch was made
+/// from; empty for a document that started empty. Two chains that both
+/// start at no row share a state only when these agree: the closed branches
+/// of sec 16.6 start from another file than the `main` that replaced them.
+std::string zeroStateOf(TransactionStore& store, const std::vector<LogVersion>& versions,
+                        const std::vector<LogTransaction>& chain)
+{
+    if (chain.empty() || chain.front().parent != 0)
+        return {};
+    const int64_t branch = chain.front().branch;
+    auto stateOf = [](const LogVersion& v) {
+        return v.docxml_hash.empty() ? "v" + std::to_string(v.num) : v.docxml_hash;
+    };
+    const LogVersion* at = nullptr;
+    for (const auto& v : versions) {
+        if (v.seq == 0 && v.branch == branch && (!at || v.num > at->num))
+            at = &v;
+    }
+    if (at)
+        return stateOf(*at);
+    LogBranch b;
+    if (!store.getBranch(branch, b))
+        return "branch " + std::to_string(branch);   // gone: nothing says
+    LogVersion from;
+    if (b.fromVersion && store.getVersion(b.fromVersion, from) && from.seq == 0)
+        return stateOf(from);
+    return {};
+}
+
+/// The rows between two points of the log: where the chains ending at
+/// `from` and `to` meet, the rows of `from`'s after that (to be taken back)
+/// and of `to`'s (to be done), each oldest first.
+struct LogPath
+{
+    int64_t meet {-1};
+    std::vector<LogTransaction> fromChain;
+    std::vector<LogTransaction> toChain;
+    std::vector<const LogTransaction*> back;
+    std::vector<const LogTransaction*> forward;
+};
+
+bool pathBetween(TransactionStore& store, const std::vector<LogVersion>& versions, int64_t from,
+                 int64_t to, LogPath& path, std::string& why)
+{
+    path.fromChain = store.chain(from);
+    path.toChain = store.chain(to);
+    std::set<int64_t> onFrom {0};
+    for (const auto& t : path.fromChain)
+        onFrom.insert(t.seq);
+    if (onFrom.count(to)) {
+        path.meet = to;
+    }
+    else {
+        for (auto it = path.toChain.rbegin(); it != path.toChain.rend(); ++it) {
+            if (onFrom.count(it->parent)) {
+                path.meet = it->parent;
+                break;
+            }
+        }
+    }
+    if (path.meet < 0) {
+        why = "rows " + std::to_string(from) + " and " + std::to_string(to)
+            + " share no history in the log's rows";
+        return false;
+    }
+    const int64_t meet = path.meet;
+    auto tail = [meet](const std::vector<LogTransaction>& chain, int64_t end,
+                       std::vector<const LogTransaction*>& rows) {
+        for (const auto& t : chain) {
+            if (t.seq > meet)
+                rows.push_back(&t);
+        }
+        if (rows.empty())
+            return end == meet || end == 0;
+        return rows.front()->parent == meet && rows.back()->seq == end;
+    };
+    if (!tail(path.fromChain, from, path.back)
+            || (to != meet && !tail(path.toChain, to, path.forward))) {
+        why = "the rows between " + std::to_string(from) + " and " + std::to_string(to)
+            + " are not all in the log";
+        return false;
+    }
+    if (meet == 0 && !path.fromChain.empty() && !path.toChain.empty()
+            && zeroStateOf(store, versions, path.fromChain)
+                   != zeroStateOf(store, versions, path.toChain)) {
+        why = "rows " + std::to_string(from) + " and " + std::to_string(to)
+            + " start from different files";
+        return false;
+    }
+    return true;
+}
+
+/// The net change from the state at row `from` to the state at row `to`
+/// (docs/TransactionLog.md sec 28.2 item 3), through the rows between them.
+/// False, with `why`, when the log's rows do not say.
+bool diffRows(TransactionStore& store, const std::vector<LogVersion>& versions, int64_t from,
+              int64_t to, NetChange& net, std::string& why)
+{
+    LogPath path;
+    if (!pathBetween(store, versions, from, to, path, why))
+        return false;
+    auto jumped = [&](const LogTransaction& t) {
+        why = "row " + std::to_string(t.seq) + " opened a file that is not its history's";
+        return false;
+    };
+    for (auto it = path.back.rbegin(); it != path.back.rend(); ++it) {
+        const auto ops = store.ops((*it)->seq);
+        if (ops.empty()) {
+            if (path.meet < (*it)->parent && openRecordJumps(store, versions, **it, path.fromChain))
+                return jumped(**it);
+            continue;
+        }
+        net.add(invertedOps(ops));
+    }
+    for (const LogTransaction* t : path.forward) {
+        const auto ops = store.ops(t->seq);
+        if (ops.empty()) {
+            // The open that starts a chain is the state the chain starts
+            // from, which pathBetween() matched.
+            const bool start = t->parent == 0 && path.meet == 0;
+            if (!start && openRecordJumps(store, versions, *t, path.toChain))
+                return jumped(*t);
+            continue;
+        }
+        net.add(ops);
+    }
+    return true;
+}
+
+/// The base of a merge (sec 28.2 item 2): the newest row both histories
+/// hold -- a row's ancestors all come before it, so the newest one in
+/// common is an ancestor of no other. 0 when the two share no row but start
+/// from one state at no row; -1 when they share nothing.
+int64_t mergeBaseOf(TransactionStore& store, const std::vector<LogVersion>& versions,
+                    int64_t ours, int64_t theirs)
+{
+    std::set<int64_t> mine;
+    for (const auto& t : store.history(ours))
+        mine.insert(t.seq);
+    int64_t base = -1;
+    for (const auto& t : store.history(theirs)) {
+        if (mine.count(t.seq))
+            base = std::max(base, t.seq);
+    }
+    if (base > 0)
+        return base;
+    const auto a = store.chain(ours);
+    const auto b = store.chain(theirs);
+    auto fromZero = [](const std::vector<LogTransaction>& chain, int64_t head) {
+        return chain.empty() ? head == 0 : chain.front().parent == 0;
+    };
+    if (!fromZero(a, ours) || !fromZero(b, theirs))
+        return -1;
+    if (!a.empty() && !b.empty()
+            && zeroStateOf(store, versions, a) != zeroStateOf(store, versions, b))
+        return -1;
+    return 0;
+}
+
+bool netChanged(const NetChange::Val& v)
+{
+    return v.atStart != v.atEnd || v.before != v.after;
+}
+
+/// A merge worked out (sec 28.2): what each side did since the base, and
+/// theirs' changes classified against ours.
+struct MergePlan
+{
+    Document::MergePreview preview;
+    NetChange theirs;
+    NetChange ours;
+    std::string oursName;
+};
+
+void planMerge(Document& doc, const std::string& name, int64_t version, MergePlan& plan)
+{
+    TransactionLog* log = doc.getTransactionLog();
+    if (!log)
+        THROWM(Base::RuntimeError, "the document has no transaction log");
+    if (log->detached())
+        THROWM(Base::RuntimeError, "the document is a version with no branch of its own yet");
+    auto& store = log->store();
+    LogBranch theirs;
+    if (!store.findBranch(name, theirs))
+        THROWM(Base::ValueError, "no branch '" + name + "'");
+    if (theirs.id == log->branch())
+        THROWM(Base::ValueError, "branch '" + name + "' is the one the document is on");
+    // Theirs open in another document of the file (sec 17.1, 28.2 item 8):
+    // what it has done is in rows before they are read.
+    if (Document* holder = log->holderOf(theirs.id)) {
+        if (holder != &doc) {
+            holder->commitImplicitTransaction();
+            if (holder->hasPendingTransaction())
+                THROWM(Base::RuntimeError, "branch '" + name + "' has a transaction open in "
+                                               + holder->Label.getStrValue());
+            if (auto other = holder->getTransactionLog())
+                other->resolvePending();
+        }
+    }
+    log->resolvePending();
+    store.getBranch(theirs.id, theirs);
+    LogBranch mine;
+    store.getBranch(log->branch(), mine);
+    plan.oursName = mine.name;
+
+    auto& pv = plan.preview;
+    pv.branch = name;
+    pv.ours = log->head();
+    pv.theirs = theirs.head;
+    if (version > 0) {
+        LogVersion v;
+        if (!store.getVersion(version, v) || !chainPoints(store, theirs.head).count(v.seq))
+            THROWM(Base::ValueError, "version " + std::to_string(version) + " is not on branch '"
+                                         + name + "'");
+        pv.theirs = v.seq;
+    }
+    // Already ours: merged before, or ours was made from it.
+    bool held = pv.theirs == pv.ours;
+    for (const auto& t : store.history(pv.ours))
+        held = held || t.seq == pv.theirs;
+    if (held) {
+        pv.base = pv.theirs;
+        return;
+    }
+    const auto versions = store.versions();
+    pv.base = mergeBaseOf(store, versions, pv.ours, pv.theirs);
+    if (pv.base < 0)
+        THROWM(Base::ValueError, "branches '" + mine.name + "' and '" + name
+                                     + "' share no history in the log");
+    std::string why;
+    if (!diffRows(store, versions, pv.base, pv.theirs, plan.theirs, why)
+            || !diffRows(store, versions, pv.base, pv.ours, plan.ours, why))
+        THROWM(Base::ValueError, "cannot merge branch '" + name + "': " + why);
+
+    // What ours changed: view state and what its own recomputes wrote are
+    // not changes a merge weighs (sec 28.6 Q1, Q2).
+    std::set<long> oursChanged;
+    bool changed = false;
+    for (const auto& kv : plan.ours.objects) {
+        if (kv.second.born == kv.second.alive) {   // created, or removed
+            changed = true;
+            if (kv.second.alive)
+                oursChanged.insert(kv.first);
+        }
+    }
+    for (const auto& kv : plan.ours.values) {
+        const std::string& ckind = std::get<0>(kv.first);
+        if (ckind == "view" || kv.second.derived || !netChanged(kv.second))
+            continue;
+        if (ckind == "doc" && keptOnRestore(std::get<2>(kv.first).c_str()))
+            continue;
+        changed = true;
+        if (ckind == "obj")
+            oursChanged.insert(std::get<1>(kv.first));
+    }
+    pv.fastForward = !changed;
+
+    auto nameOf = [&](long cid) -> std::string {
+        if (auto obj = doc.getObjectByID(cid))
+            return obj->getNameInDocument();
+        for (const NetChange* net : {&plan.theirs, &plan.ours}) {
+            auto it = net->objects.find(cid);
+            if (it != net->objects.end() && !it->second.cname.empty())
+                return it->second.cname;
+        }
+        return "#" + std::to_string(cid);
+    };
+    auto add = [&](Document::MergeChange c) {
+        if (c.kind == "conflict")
+            ++pv.conflicts;
+        pv.changes.push_back(std::move(c));
+    };
+
+    std::set<long> created;
+    for (long cid : plan.theirs.objectOrder) {
+        const NetChange::Obj& o = plan.theirs.objects[cid];
+        DocumentObject* live = doc.getObjectByID(cid);
+        Document::MergeChange c;
+        c.ckind = "obj";
+        c.cid = cid;
+        c.object = live ? live->getNameInDocument() : o.cname;
+        c.key = c.object;
+        c.ptype = o.ctype;
+        if (o.born && o.alive) {
+            if (live)
+                continue;   // ours has it: its values go by the property rule
+            created.insert(cid);
+            c.kind = "take";
+            c.op = "create";
+            add(std::move(c));
+        }
+        else if (!o.born && !o.alive) {
+            c.op = "remove";
+            c.kind = "take";
+            if (!live) {
+                c.kind = "same";
+            }
+            else if (oursChanged.count(cid)) {
+                c.kind = "conflict";
+                c.note = "changed here, removed there";
+            }
+            else {
+                // What ours made or changed that still uses it.
+                for (auto dep : live->getInList()) {
+                    auto t = plan.theirs.objects.find(dep->getID());
+                    if (t != plan.theirs.objects.end() && !t->second.alive)
+                        continue;
+                    if (oursChanged.count(dep->getID())) {
+                        c.kind = "conflict";
+                        c.note = std::string("removed there, used here by ")
+                               + dep->getNameInDocument();
+                        break;
+                    }
+                }
+            }
+            add(std::move(c));
+        }
+    }
+
+    std::set<long> revived;
+    for (const auto& key : plan.theirs.valueOrder) {
+        const NetChange::Val& v = plan.theirs.values[key];
+        const std::string& ckind = std::get<0>(key);
+        const long cid = std::get<1>(key);
+        const std::string& prop = std::get<2>(key);
+        if (!v.derived && !netChanged(v))
+            continue;
+        if (ckind == "doc" && keptOnRestore(prop.c_str()))
+            continue;
+        Document::MergeChange c;
+        c.ckind = ckind;
+        c.cid = cid;
+        c.prop = prop;
+        c.ptype = v.ptype;
+        c.base = v.atStart ? v.before : std::string();
+        c.theirs = v.atEnd ? v.after : std::string();
+        c.ours = c.base;
+        c.op = v.atStart && v.atEnd ? "set" : (v.atEnd ? "addprop" : "delprop");
+        if (ckind == "doc") {
+            c.key = "." + prop;
+        }
+        else {
+            if (created.count(cid))
+                continue;   // goes in with its object
+            auto t = plan.theirs.objects.find(cid);
+            if (t != plan.theirs.objects.end() && !t->second.alive)
+                continue;   // gone with its object
+            c.object = nameOf(cid);
+            c.key = (ckind == "view" ? "view:" : "") + c.object + "." + prop;
+            if (!doc.getObjectByID(cid)) {
+                // Not ours any more. One ours removed and theirs changed is
+                // a conflict on the object; what theirs' recompute or its
+                // view did to it is not a change to bring it back for.
+                auto o = plan.ours.objects.find(cid);
+                if (v.derived || ckind == "view" || o == plan.ours.objects.end()
+                        || o->second.born || o->second.alive || !revived.insert(cid).second)
+                    continue;
+                Document::MergeChange r;
+                r.kind = "conflict";
+                r.op = "revive";
+                r.ckind = "obj";
+                r.cid = cid;
+                r.object = c.object;
+                r.key = c.object;
+                r.ptype = o->second.ctype;
+                r.note = "removed here, changed there";
+                add(std::move(r));
+                continue;
+            }
+        }
+        if (v.derived) {
+            c.kind = pv.fastForward ? "take" : "derived";
+            add(std::move(c));
+            continue;
+        }
+        auto o = plan.ours.values.find(key);
+        if (o == plan.ours.values.end() || o->second.derived || !netChanged(o->second)) {
+            c.kind = "take";
+        }
+        else {
+            c.ours = o->second.atEnd ? o->second.after : std::string();
+            if (o->second.atEnd == v.atEnd && o->second.after == v.after)
+                c.kind = "same";
+            else
+                c.kind = ckind == "view" ? "view" : "conflict";
+        }
+        add(std::move(c));
+    }
+}
+
+} // namespace
+
+Document::MergePreview Document::previewMerge(const std::string& branch, int64_t version)
+{
+    // docs/TransactionLog.md sec 28.2 item 9: read only, but for an implicit
+    // transaction, which is committed so the rows say what the document is.
+    if (d->activeUndoTransaction)
+        commitImplicitTransaction();
+    MergePlan plan;
+    planMerge(*this, branch, version, plan);
+    return plan.preview;
+}
+
+Document::MergeResult Document::mergeBranch(const std::string& branch,
+                                            const std::map<std::string, std::string>& picks,
+                                            const std::string& fallback, int64_t version)
+{
+    OperationScope scope;   // sec 27.38
+    // docs/TransactionLog.md sec 28: theirs' changes since the base, less
+    // what ours changed too, as one transaction on ours.
+    checkNotFrozen("merge a branch");
+    MergeResult result;
+    TransactionLog* log = getTransactionLog();
+    if (!log)
+        return result;
+    _checkBranchable("merge a branch");
+    auto sideOk = [](const std::string& side) { return side == "ours" || side == "theirs"; };
+    if (!fallback.empty() && !sideOk(fallback))
+        THROWM(Base::ValueError, "a side is 'ours' or 'theirs', not '" + fallback + "'");
+    for (const auto& kv : picks) {
+        if (!sideOk(kv.second))
+            THROWM(Base::ValueError, "a side is 'ours' or 'theirs', not '" + kv.second + "'");
+    }
+
+    MergePlan plan;
+    planMerge(*this, branch, version, plan);
+    result.preview = plan.preview;
+    const MergePreview& pv = plan.preview;
+    if (pv.changes.empty())
+        return result;
+
+    // A side for every conflict, or nothing moves (sec 28.6 Q3). A view
+    // conflict keeps ours unless picked (Q2).
+    std::map<std::string, std::string> side;
+    for (const auto& c : pv.changes) {
+        if (c.kind != "conflict" && c.kind != "view")
+            continue;
+        auto it = picks.find(c.key);
+        const std::string s = it != picks.end() ? it->second
+                            : c.kind == "view" ? std::string("ours") : fallback;
+        if (s.empty())
+            result.unresolved.push_back(c);
+        else
+            side[c.key] = s;
+    }
+    if (!result.unresolved.empty())
+        return result;
+
+    // What goes in: objects to make and to remove, dynamic properties to
+    // add and to drop, values, and the owners of the derived values left to
+    // the recompute.
+    using Key = NetChange::Key;
+    struct Made
+    {
+        long cid;
+        std::string name;
+        std::string type;
+    };
+    std::vector<Made> creates;
+    std::vector<long> removes;
+    std::map<Key, std::pair<std::string, std::string>> addprops;   // ptype, meta
+    std::vector<Key> delprops;
+    std::map<Key, std::string> sets;
+    std::set<long> touch;
+    auto take = [&](const Key& key, const NetChange::Val& v) {
+        if (v.derived) {
+            if (std::get<0>(key) == "obj")
+                touch.insert(std::get<1>(key));
+            return;
+        }
+        if (!v.atEnd) {
+            if (v.atStart)
+                delprops.push_back(key);
+            return;
+        }
+        if (!v.meta.empty())
+            addprops[key] = {v.ptype, v.meta};
+        if (!v.after.empty())
+            sets[key] = v.after;
+    };
+    for (const auto& c : pv.changes) {
+        if (c.kind == "derived") {
+            touch.insert(c.cid);
+            continue;
+        }
+        const bool conflict = c.kind == "conflict" || c.kind == "view";
+        if (c.kind != "take" && !(conflict && side[c.key] == "theirs"))
+            continue;
+        if (c.op == "create") {
+            const NetChange::Obj& o = plan.theirs.objects[c.cid];
+            creates.push_back({c.cid, o.cname, o.ctype});
+            for (const auto& key : plan.theirs.valueOrder) {
+                if (std::get<0>(key) != "doc" && std::get<1>(key) == c.cid)
+                    take(key, plan.theirs.values[key]);
+            }
+        }
+        else if (c.op == "remove") {
+            removes.push_back(c.cid);
+        }
+        else if (c.op == "revive") {
+            // Back as ours' removal recorded it -- each value's before is
+            // its value at the base -- with what theirs did to it on top.
+            const NetChange::Obj& o = plan.ours.objects[c.cid];
+            creates.push_back({c.cid, o.cname, o.ctype});
+            for (const auto& key : plan.ours.valueOrder) {
+                if (std::get<0>(key) == "doc" || std::get<1>(key) != c.cid)
+                    continue;
+                const NetChange::Val& mine = plan.ours.values[key];
+                if (!mine.atStart || plan.theirs.values.count(key))
+                    continue;
+                NetChange::Val was;
+                was.atEnd = true;
+                was.after = mine.before;
+                was.ptype = mine.ptype;
+                was.meta = mine.meta;
+                was.derived = mine.derived;
+                take(key, was);
+            }
+            for (const auto& key : plan.theirs.valueOrder) {
+                if (std::get<0>(key) == "doc" || std::get<1>(key) != c.cid)
+                    continue;
+                NetChange::Val v = plan.theirs.values[key];
+                auto mine = plan.ours.values.find(key);
+                if (v.meta.empty() && mine != plan.ours.values.end())
+                    v.meta = mine->second.meta;
+                take(key, v);
+            }
+        }
+        else {
+            take(Key {c.ckind, c.cid, c.prop}, plan.theirs.values[Key {c.ckind, c.cid, c.prop}]);
+        }
+    }
+
+    // Every value there, before anything moves.
+    std::map<Key, CapturedValue> want;
+    for (const auto& kv : sets) {
+        CapturedValue v;
+        if (!log->readValue(kv.second, v))
+            THROWM(Base::RuntimeError, "cannot merge branch '" + branch + "': the value of "
+                                           + std::get<2>(kv.first) + " is not in the log");
+        want.emplace(kv.first, std::move(v));
+    }
+
+    std::set<std::string> failedBefore;
+    std::map<long, TouchedState> before;
+    for (auto obj : getObjects()) {
+        before.emplace(obj->getID(), touchedStateOf(*obj));
+        if (obj->isError())
+            failedBefore.insert(obj->getNameInDocument());
+    }
+
+    _clearRedos();
+    d->activeUndoTransaction = new Transaction(0);
+    d->activeUndoTransaction->Name = "Merge " + branch;
+    d->activeUndoTransaction->LogKind = "merge";
+    d->activeUndoTransaction->MergeFrom = pv.theirs;
+    mUndoMap[d->activeUndoTransaction->getID()] = d->activeUndoTransaction;
+
+    // Ours unchanged since the base: the document moved to theirs' state
+    // through the rows, derived values and touched state with it, and no
+    // recompute (sec 28.6 Q1). View state is left to the rule below.
+    const bool moved = pv.fastForward && _moveAlongLog(pv.ours, pv.theirs, false);
+
+    std::vector<std::string> relabelled;
+    auto guarded = [&](const char* what, const std::string& name, const std::function<void()>& fn) {
+        try {
+            fn();
+        }
+        catch (Base::Exception& e) {
+            FC_ERR("merge of " << branch << ", " << what << " " << name << ": " << e.what());
+        }
+        catch (std::exception& e) {
+            FC_ERR("merge of " << branch << ", " << what << " " << name << ": " << e.what());
+        }
+    };
+    auto container = [&](const Key& key) -> PropertyContainer* {
+        LogOp o;
+        o.ckind = std::get<0>(key);
+        o.cid = std::get<1>(key);
+        return opContainer(*this, o);
+    };
+    auto skipped = [&](const Key& key) { return moved && std::get<0>(key) != "view"; };
+    if (!moved) {
+        for (const auto& made : creates) {
+            if (getObjectByID(made.cid))
+                continue;
+            guarded("create", made.name, [&]() {
+                if (getObject(made.name.c_str()))
+                    throw Base::RuntimeError("name taken by another object");
+                Base::Type type = Base::Type::getTypeIfDerivedFrom(
+                    made.type.c_str(), DocumentObject::getClassTypeId(), true);
+                auto obj = type.isBad() ? nullptr
+                                        : static_cast<DocumentObject*>(type.createInstance());
+                if (!obj)
+                    throw Base::RuntimeError("cannot create " + made.type);
+                obj->_Id = made.cid;
+                addObject(obj, made.name.c_str(), false);
+            });
+        }
+    }
+    for (const auto& kv : addprops) {
+        if (skipped(kv.first))
+            continue;
+        guarded("add property", std::get<2>(kv.first), [&]() {
+            auto c = container(kv.first);
+            if (!c || c->getPropertyByName(std::get<2>(kv.first).c_str()))
+                return;
+            addLoggedProperty(*c, kv.second.first, std::get<2>(kv.first), kv.second.second);
+        });
+    }
+    for (const auto& key : delprops) {
+        if (skipped(key))
+            continue;
+        guarded("remove property", std::get<2>(key), [&]() {
+            auto c = container(key);
+            if (c && c->getPropertyByName(std::get<2>(key).c_str()))
+                c->removeDynamicProperty(std::get<2>(key).c_str());
+        });
+    }
+    {
+        CaptureConfig config(*this);
+        RestoreBatch batch;
+        for (auto& kv : want) {
+            if (skipped(kv.first))
+                continue;
+            guarded("value of", std::get<2>(kv.first), [&]() {
+                auto c = container(kv.first);
+                if (!c)
+                    return;   // a view with no Gui
+                Property* prop = c->getPropertyByName(std::get<2>(kv.first).c_str());
+                if (!prop)
+                    throw Base::RuntimeError("no such property");
+                log->restoreBlobsOf(sets[kv.first]);
+                restoreValue(*prop, kv.second);
+                // A label a live object of ours has comes in suffixed, by
+                // the property's own rule (sec 27.41 Q4 (a)).
+                auto obj = Base::freecad_dynamic_cast<DocumentObject>(c);
+                if (obj && prop == &obj->Label
+                        && captureValue(config, *prop).fragment != kv.second.fragment)
+                    relabelled.emplace_back(obj->getNameInDocument());
+            });
+        }
+        batch.finish();
+    }
+    if (!moved) {
+        for (long cid : removes) {
+            if (auto obj = getObjectByID(cid)) {
+                const std::string name = obj->getNameInDocument();
+                guarded("remove", name, [&]() { removeObject(name.c_str()); });
+            }
+        }
+        // Derived values are not merged (sec 17.3): the merged definition
+        // is recomputed, inside the merge's own step (sec 24.1). Not when
+        // nothing of theirs went in: ours is what it was.
+        if (!d->activeUndoTransaction->isEmpty()) {
+            for (long cid : touch) {
+                if (auto obj = getObjectByID(cid))
+                    obj->touch();
+            }
+            guarded("recompute", getName(), [&]() { recompute(); });
+        }
+    }
+    for (auto obj : getObjects()) {
+        if (obj->isError() && !failedBefore.count(obj->getNameInDocument()))
+            result.failed.emplace_back(obj->getNameInDocument());
+    }
+
+    // The row's annotation: what was merged and how each conflict went,
+    // and the touched state the merge left (sec 27.63), which is what an
+    // undo of it puts back.
+    std::map<long, TouchedState> after;
+    for (auto obj : getObjects()) {
+        auto state = touchedStateOf(*obj);
+        auto it = before.find(obj->getID());
+        if (it == before.end() || !(it->second == state)
+                || d->activeUndoTransaction->hasObject(obj))
+            after.emplace(obj->getID(), std::move(state));
+    }
+    nlohmann::json j;
+    const std::string touchedJson = touchedRecord(before, after);
+    if (!touchedJson.empty())
+        j = nlohmann::json::parse(touchedJson, nullptr, false);
+    if (!j.is_object())
+        j = nlohmann::json::object();
+    nlohmann::json m;
+    m["branch"] = branch;
+    m["from"] = pv.theirs;
+    m["base"] = pv.base;
+    m["fast_forward"] = moved;
+    std::map<std::string, int> counts;
+    auto conflicts = nlohmann::json::array();
+    for (const auto& c : pv.changes) {
+        ++counts[c.kind];
+        if (c.kind == "conflict" || c.kind == "view")
+            conflicts.push_back({{"key", c.key}, {"kind", c.kind}, {"side", side[c.key]}});
+    }
+    for (const auto& kv : counts)
+        m[kv.first] = kv.second;
+    if (!conflicts.empty())
+        m["sides"] = std::move(conflicts);
+    if (!relabelled.empty())
+        m["relabelled"] = relabelled;
+    if (!result.failed.empty())
+        m["failed"] = result.failed;
+    j["merge"] = std::move(m);
+    const std::string script = j.dump();
+
+    const std::string name = d->activeUndoTransaction->Name;
+    const int64_t headBefore = log->head();
+    if (d->activeUndoTransaction->isEmpty()) {
+        // Nothing of theirs to write -- ours has it all, or kept its own in
+        // every conflict: a record, so the base moves and nothing is asked
+        // twice.
+        mUndoMap.erase(d->activeUndoTransaction->getID());
+        delete d->activeUndoTransaction;
+        d->activeUndoTransaction = nullptr;
+        result.seq = log->record("merge", name, script, pv.theirs);
+    }
+    else {
+        d->activeUndoTransaction->LogScript = script;
+        _commitTransaction(false);
+        for (const auto& t : log->store().chain(log->head(), headBefore + 1)) {
+            if (t.kind == "merge" && t.mergeFrom == pv.theirs)
+                result.seq = t.seq;
+        }
+    }
+    // The version at the head merged in is what was merged (sec 17.3): it
+    // is named, so it outlives eviction.
+    const LogVersion* at = nullptr;
+    const auto versions = log->store().versions();
+    for (const auto& v : versions) {
+        if (v.seq == pv.theirs && (!at || v.num > at->num))
+            at = &v;
+    }
+    if (at && at->kind != "named")
+        log->store().nameVersion(at->num, "merged into " + plan.oursName);
+    signalBranchesChanged(*this);
+    return result;
 }
 
 void Document::noteVersionTaken()

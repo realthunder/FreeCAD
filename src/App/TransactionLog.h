@@ -269,8 +269,10 @@ public:
     /// Append the `recover` record (sec 25.2), `script` its JSON.
     int64_t recordRecovery(const std::string& script);
     /// Append a record with no ops on the current branch: `kind`, `name`,
-    /// `script` its JSON. Returns its seq.
-    int64_t record(const char* kind, const std::string& name, const std::string& script);
+    /// `script` its JSON; `mergeFrom` a merge's second parent (sec 28.2).
+    /// Returns its seq.
+    int64_t record(const char* kind, const std::string& name, const std::string& script,
+                   int64_t mergeFrom = 0);
 
     /// Put the log on branch `id` (sec 26): the next row follows its head.
     /// Kept in `meta` so a recovery continues on it. False if no such branch.

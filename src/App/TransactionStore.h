@@ -51,6 +51,9 @@ struct LogTransaction
     int64_t inverts {0};
     /// The branch it was made on (sec 26), `main` being 1.
     int64_t branch {1};
+    /// A `merge` row's second parent (sec 28.2 item 1): the seq of the head
+    /// merged in. 0 on any other row.
+    int64_t mergeFrom {0};
 };
 
 /** A branch row (sec 17.1, 26): a named tip into the `parent` tree.
@@ -252,6 +255,10 @@ public:
     /// first, those with seq >= from (sec 26): one branch's history. A
     /// chain ends where a row's parent is 0 or no longer stored.
     virtual std::vector<LogTransaction> chain(int64_t head, int64_t from = 0) = 0;
+    /// Every stored row the `parent` and `mergeFrom` edges reach from
+    /// `head`, itself included, oldest first (sec 28.2 item 1): a row's
+    /// history, where chain() is one branch's.
+    virtual std::vector<LogTransaction> history(int64_t head) = 0;
     /// The newest op on property `prop` of container (`ckind`, `cid`) in a
     /// transaction after `after` on the chain ending at `head` (0: in any
     /// transaction); false when there is none (sec 24.4).
