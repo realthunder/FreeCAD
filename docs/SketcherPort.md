@@ -4769,11 +4769,14 @@ A reference of both kinds read from a file does not say which piece is the
 cut -- upstream's has no flag, an old fork file has every piece flagged --
 and its first rebuild gives the pieces their ids by position, as before.
 
-Not done: a reference MISSING its element in a sketch from before version
-2, with an edge taken by intersection, comes back as the cut alone (its
-geometry is all flagged, and there is no reference to hold "both").
-Whole-object adds (`addExternal` with no element) report failure when every
-element was already referred to the other way, though each was made both.
+Not done, as written at the time: a reference MISSING its element in a
+sketch from before version 2, with an edge taken by intersection, comes
+back as the cut alone (its geometry is all flagged, and there is no
+reference to hold "both"). Whole-object adds (`addExternal` with no
+element) report failure when every element was already referred to the
+other way, though each was made both. Both were taken up in session 124,
+"The leftovers of session 123" below: the first is fixed, the second was
+read wrong and is not a defect.
 
 Tests: `SketcherTests/TestSketchExternalTypes.py`, 17 cases -- the kinds,
 a deleted reference, an element missing and back, undo, save and load, and
@@ -4839,6 +4842,90 @@ after.
 this test). `FreeCADCmd -t 0` not run again: the change is in Gui. Not
 tested: a command's own wait cursor around a sequence (Python cannot make
 one); that it still holds the input is from the code.
+
+### The leftovers of session 123 (session 124)
+
+The user, at the end of session 123: "Next session chase the leftover
+issues". Four were listed. Two are closed here, one of them by finding it
+was never there; a third defect turned up on the way; two wait for a
+ruling.
+
+**A reference missing its element, in a sketch from before version 2.**
+Measured first, on a forged file: the far edge of a loose box taken both
+ways, a point constrained to its line and another to its cut, the box's
+shape taken away, the document saved and rewritten as the fork wrote it
+before version 2 (no `ExternalTypes`, every piece flagged, `_Version` 1).
+With the shape given back the reference returned as the cut alone, as
+noted -- and the line was deleted, and the constraint on it with it, which
+was not.
+
+Whether such a reference is an edge cannot be told when the file is read:
+it is not among the links, and a key with a mapped name carries no element
+type. It can when the rebuild finds the element again. So
+`migrateExternalTypes` remembers the missing references of a sketch below
+version 2 whose every piece is flagged (`legacyCutExternalRefs`), and the
+put-back in `rebuildExternalGeometry` makes one of them that turns out to
+be an edge a reference of both kinds, its pieces taking their ids by
+position as for any such reference read from a file. A face stays the cut.
+
+**Its limit, measured.** What is remembered is the session's. Open such a
+file, save it with the reference still missing, open it again: the file
+states the kinds now, the missing reference is all flagged like any cut,
+and it comes back as the cut alone, the line and its constraint lost as
+before. Nothing in the file can say otherwise today; a flag on the
+geometry could. Put to the user, since it is one more bit in the format.
+
+**A missing reference was put back once for each of its geometries.**
+Found by the same probe, in a file with nothing old about it: the put-back
+walks the geometries flagged missing, not the references, so the edge
+taken both ways -- two geometries -- returned as two identical links, the
+kinds `[2, 2]`, and "Duplicated external reference" warned at every
+rebuild after. By the code any reference with more than one geometry does
+the same, a face's projection for one, and did before the kinds were a
+property (the loop is older); measured with the edge only. One reference
+is put back now, however many geometries are missing it.
+
+**Whole-object adds: not a defect.** Session 123 read the branch of
+`addExternal` that expands an object into its faces or edges and concluded
+that it reports failure when every element was already referred to the
+other way. Run, the branch is never entered: its guard is
+`!SubName && !SubName[0]`, false for every name that is not null. Since
+`8b9ad46fa4` (2024-08) a reference without an element is one reference to
+the object itself -- "deliberately disables geometry topo name tracking",
+its message says -- and that is what an add makes. Taken the other way as
+well it is of both kinds; a third time it is refused. Pinned by a test.
+The branch is left as it is. (Upstream's is live, by its code: there a
+whole object becomes one reference for each face.)
+
+**Upstream's delete and the kinds.** Fetched again (`e68e9f3ff3`,
+2026-10-03): unchanged. `ExternalTypes` is written where a reference is
+added and read by the rebuild; the delete rewrites the links alone. Two
+searches of upstream's issues for the property's name find nothing. Still
+read and not run -- running it takes an upstream build.
+
+**A real upstream file.** There is no upstream build on this box.
+conda-forge has `freecad` 1.1.0, 1.1.3 and 2026.09.16; an environment of
+its own for 1.1.3 is 304 packages, an 848 MB download. Asked before
+fetching it.
+
+**Home in the Elements list.** It is the shortcut of the home view
+(`Std_ViewHome`) and a shortcut is tried before the list sees the key. The
+list has the keyboard while the pointer is over it and no longer: it takes
+the focus when a row is entered and gives it up when the pointer leaves
+the panel. Down, Up and End are the list's on those terms already; Home
+would be too, by the list accepting the `ShortcutOverride` for it, and
+would then not be the view's key while the pointer rests on the list.
+Asked before building.
+
+Tests: `SketcherTests/TestSketchExternalTypes.py`, four more cases (21) --
+a missing reference comes back once; the old file's missing edge; the old
+file's missing face stays a cut; a whole object is one reference. On the
+tree before, two fail (both on the doubled link, the first thing they
+check); the other two pin what already held.
+
+**Verified** on the tree with all of it: full build, `FreeCADCmd -t 0`
+2917 OK (2913 before, plus the four), ctest 902/902. The two fixes are two
+commits; the first was not built on its own.
 
 ## 8. Phases
 
