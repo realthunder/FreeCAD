@@ -175,7 +175,7 @@ private:
                     Part::ImportStepParts(pcDoc, Utf8Name.c_str());
                     pcDoc->recompute();
                 }
-                _PY_CATCH_OCC(return Py::None());
+                _PY_CATCH_OCC(throw Py::Exception());
             }
             else if (file.hasExtension({"igs", "iges"})) {
                 try {
@@ -189,7 +189,7 @@ private:
                     Part::ImportIgesParts(pcDoc, Utf8Name.c_str());
                     pcDoc->recompute();
                 }
-                _PY_CATCH_OCC(return Py::None());
+                _PY_CATCH_OCC(throw Py::Exception());
             }
             else if (file.hasExtension({"glb", "gltf"})) {
                 Import::ReaderGltf reader(file);
@@ -245,7 +245,7 @@ private:
                 return list;  // NOLINT
             }
         }
-        _PY_CATCH_OCC(return Py::None());
+        _PY_CATCH_OCC(throw Py::Exception());
 
         return Py::None();
     }
@@ -431,7 +431,7 @@ private:
             if (doRecompute)
                 pcDoc->recompute();
         }
-        _PY_CATCH_OCC(return Py::None());
+        _PY_CATCH_OCC(throw Py::Exception());
         return Py::None();
     }
 
@@ -518,6 +518,11 @@ private:
         }
         try {
             ImpExpDxfWrite writer(filePath);
+            // The writer only notes a file it cannot open; without this the
+            // call wrote nothing and said nothing
+            if (writer.Failed()) {
+                throw Py::Exception(PyExc_IOError, "cannot open for writing: " + filePath);
+            }
             writer.setOptionSource(defaultOptions);
             writer.setOptions();
             if (versionOverride) {
@@ -536,7 +541,7 @@ private:
             }
             writer.endRun();
             return Py::None();
-        } _PY_CATCH_OCC(return Py::None());
+        } _PY_CATCH_OCC(throw Py::Exception());
     }
 
     Py::Object writeDXFObject(const Py::Tuple& args, const Py::Dict &kwds)
