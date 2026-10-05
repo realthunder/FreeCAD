@@ -45,6 +45,7 @@
 #include <Inventor/SoDB.h>
 #include <Inventor/SoInteraction.h>
 #include <Inventor/SoPickedPoint.h>
+#include <Inventor/actions/SoGetMatrixAction.h>
 #include <Inventor/actions/SoHandleEventAction.h>
 #include <Inventor/SoRenderManager.h>
 #include <Inventor/events/SoKeyboardEvent.h>
@@ -68,6 +69,7 @@
 #include <Gui/SoFCDB.h>
 #include <Gui/SoFCUnifiedSelection.h>
 #include <Gui/ViewProvider.h>
+#include <Gui/ViewVisibility.h>
 #include <Gui/ViewerContext.h>
 
 namespace
@@ -1324,6 +1326,182 @@ TEST_F(SharedEditingRootTest, theRootListsTheViewsOfTheSession)
     EXPECT_EQ(root->views()[0], mirror.get());
     mirror->resetEditingViewProvider();
     EXPECT_TRUE(root->views().empty());
+}
+
+/// A session node -- a PartDesign feature's preview -- hangs in the root
+/// beside the edit's own geometry, and the setup and reset that manage
+/// that geometry neither drop it nor take it for the edit's.
+TEST_F(SharedEditingRootTest, aSessionNodeIsNotTheEditsGeometry)
+{
+    mirror->setEditingViewProvider(vp.get(), 0, root.get());
+    auto* preview = new SoSeparator;
+    preview->ref();
+    root->addSessionNode(preview, Base::Matrix4D());
+    EXPECT_TRUE(root->hasSessionNode(preview));
+    EXPECT_TRUE(root->hasContent());
+    EXPECT_FALSE(root->hasEditGeometry());
+    ASSERT_EQ(root->node()->getNumChildren(), 2);
+    SoNode* holder = root->node()->getChild(1);
+    // Added twice it is there once
+    root->addSessionNode(preview, Base::Matrix4D());
+    EXPECT_EQ(root->node()->getNumChildren(), 2);
+
+    auto* extra = new SoSeparator;
+    mirror->setupEditingRoot(extra);
+    EXPECT_TRUE(root->hasEditGeometry());
+    ASSERT_EQ(root->node()->getNumChildren(), 3);
+    EXPECT_EQ(root->node()->getChild(1), holder);
+    EXPECT_EQ(root->node()->getChild(2), extra);
+    // A second setup replaces the edit's node, not the session's
+    auto* again = new SoSeparator;
+    mirror->setupEditingRoot(again);
+    ASSERT_EQ(root->node()->getNumChildren(), 3);
+    EXPECT_EQ(root->node()->getChild(1), holder);
+    EXPECT_EQ(root->node()->getChild(2), again);
+
+    mirror->resetEditingRoot();
+    EXPECT_FALSE(root->hasEditGeometry());
+    ASSERT_EQ(root->node()->getNumChildren(), 2);
+    EXPECT_EQ(root->node()->getChild(1), holder);
+
+    root->removeSessionNode(preview);
+    EXPECT_FALSE(root->hasSessionNode(preview));
+    EXPECT_EQ(root->node()->getNumChildren(), 1);
+    root->removeSessionNode(preview);
+    EXPECT_EQ(root->node()->getNumChildren(), 1);
+    preview->unref();
+}
+
+/// An edit mode that moves its view provider's children into the root
+/// gets exactly those back: the session node was never the provider's.
+TEST_F(SharedEditingRootTest, movedChildrenComeBackWithoutTheSessionNode)
+{
+    mirror->setEditingViewProvider(vp.get(), 0, root.get());
+    auto* preview = new SoSeparator;
+    preview->ref();
+    root->addSessionNode(preview, Base::Matrix4D());
+    SoNode* holder = root->node()->getChild(1);
+    const int own = vp->getRoot()->getNumChildren();
+    ASSERT_GT(own, 1);
+
+    mirror->setupEditingRoot();
+    EXPECT_EQ(vp->getRoot()->getNumChildren(), 0);
+    // The provider's transform stays behind: the editing transform
+    // stands in for it
+    EXPECT_EQ(root->node()->getNumChildren(), 2 + own - 1);
+    EXPECT_EQ(root->node()->getChild(1), holder);
+
+    mirror->resetEditingRoot();
+    EXPECT_EQ(vp->getRoot()->getNumChildren(), own);
+    EXPECT_EQ(vp->getRoot()->findChild(holder), -1);
+    ASSERT_EQ(root->node()->getNumChildren(), 2);
+    EXPECT_EQ(root->node()->getChild(1), holder);
+
+    root->removeSessionNode(preview);
+    preview->unref();
+}
+
+/// A session node is placed in WORLD coordinates. It hangs under the
+/// editing transform like everything else in the root, and that
+/// transform changes under it -- a gizmo hands setup its own, the edited
+/// object moves -- so the node's frame is read back through the graph,
+/// as a traversal composes it.
+TEST_F(SharedEditingRootTest, aSessionNodeKeepsItsWorldFrame)
+{
+    auto* preview = new SoSeparator;
+    preview->ref();
+    auto frameOf = [&]() {
+        auto* path = new SoPath(root->node());
+        path->ref();
+        path->append(root->node()->getChild(1));
+        path->append(preview);
+        SoGetMatrixAction action {SbViewportRegion(100, 100)};
+        action.apply(path);
+        const SbMatrix mat = action.getMatrix();
+        path->unref();
+        return mat;
+    };
+    auto expectFrame = [&](const Base::Matrix4D& world, const char* when) {
+        // Coin's matrices are the transpose of Base's
+        const SbMatrix mat = frameOf();
+        for (int row = 0; row < 4; ++row) {
+            for (int col = 0; col < 4; ++col) {
+                EXPECT_NEAR(mat[col][row], world[row][col], 1e-4)
+                    << when << ", element " << row << ',' << col;
+            }
+        }
+    };
+
+    Base::Matrix4D world;
+    world.rotZ(0.3);
+    world.move(10.0, -2.0, 4.0);
+    root->addSessionNode(preview, world);
+    expectFrame(world, "as added");
+
+    Base::Matrix4D edit;
+    edit.rotZ(1.1);
+    edit.move(3.0, 4.0, 5.0);
+    root->setTransform(edit);
+    expectFrame(world, "after the editing transform changed");
+
+    // Through a view, which is how a gizmo sets it
+    mirror->setEditingViewProvider(vp.get(), 0, root.get());
+    Base::Matrix4D gizmo;
+    gizmo.move(-7.0, 0.5, 0.0);
+    mirror->setupEditingRoot(new SoSeparator, &gizmo);
+    expectFrame(world, "after a setup with a transform of its own");
+
+    Base::Matrix4D moved;
+    moved.move(1.0, 2.0, 3.0);
+    EXPECT_TRUE(root->setSessionNodeTransform(preview, moved));
+    expectFrame(moved, "after the node moved");
+
+    root->removeSessionNode(preview);
+    EXPECT_FALSE(root->setSessionNodeTransform(preview, moved));
+    preview->unref();
+}
+
+/// The session's end takes what only a session holds, so that neither a
+/// preview nor a swap of its views' visibility reaches the next one. It
+/// ends when the initiator leaves, not when a joiner does.
+TEST_F(SharedEditingRootTest, theSessionsEndTakesItsNodesAndSwaps)
+{
+    mirror->setEditingViewProvider(vp.get(), 0, root.get());
+    other->joinEditing(vp.get(), root.get());
+    auto* preview = new SoSeparator;
+    preview->ref();
+    root->addSessionNode(preview, Base::Matrix4D());
+
+    other->leaveEditing();
+    EXPECT_TRUE(root->hasSessionNode(preview));
+    mirror->resetEditingViewProvider();
+    EXPECT_FALSE(root->hasSessionNode(preview));
+    EXPECT_EQ(root->node()->getNumChildren(), 1);
+    preview->unref();
+
+    // With no view to refuse them the swaps are kept, for the views that
+    // attach later -- and dropped by the end all the same
+    std::vector<Gui::VisibilityEntry> entries(1);
+    entries[0].doc = "Doc";
+    entries[0].obj = "Obj";
+    EXPECT_TRUE(root->setVisibilitySwaps(std::move(entries)));
+    EXPECT_EQ(root->visibilitySwaps().size(), 1U);
+    root->endSession();
+    EXPECT_TRUE(root->visibilitySwaps().empty());
+}
+
+/// A view with no visibility table of its own -- these mirrors are built
+/// on no render-cache manager, which is render-cache modes 0-2 on the
+/// desktop -- refuses the swaps, and then none is in force: the caller
+/// falls back to document Visibility.
+TEST_F(SharedEditingRootTest, swapsAreRefusedByAViewWithNoTable)
+{
+    mirror->setEditingViewProvider(vp.get(), 0, root.get());
+    std::vector<Gui::VisibilityEntry> entries(1);
+    entries[0].doc = "Doc";
+    entries[0].obj = "Obj";
+    EXPECT_FALSE(root->setVisibilitySwaps(std::move(entries)));
+    EXPECT_TRUE(root->visibilitySwaps().empty());
 }
 
 TEST_F(MirrorViewerTest, theModifiersAreThisClientsOwn)

@@ -24,6 +24,7 @@
 #define GUI_VIEWERCONTEXT_H
 
 #include <FCGlobal.h>
+#include <Base/Matrix.h>
 #include <Inventor/nodes/SoSeparator.h>
 
 #include <memory>
@@ -187,7 +188,15 @@ public:
         return doc;
     }
     /// Whether an edit has hung anything here: more than the transform.
+    /// A session node (addSessionNode) counts -- it is drawn, captured
+    /// and published like the rest.
     bool hasContent() const;
+    /// Whether the EDIT MODE's own geometry is here -- a node handed to
+    /// setup, or the view provider's moved children -- as opposed to a
+    /// session node beside it. What "pick the edited object under this
+    /// root" has to ask: a feature whose preview hangs here still has its
+    /// own geometry in the document's graph.
+    bool hasEditGeometry() const;
     void setTransform(const Base::Matrix4D& mat);
     /** Hang an edit mode's geometry here.
      *
@@ -279,10 +288,10 @@ public:
      * the views of the session that geometry is hidden: the ONE occurrence
      * being edited, \a subname under \a parent (Gui::Document::getInEdit),
      * as a path entry of each view's own visibility table, TRANSIENT
-     * (ViewerContext::setEditHide) -- never written into a view's map, and
-     * gone when the edit ends. A view joining later hides it on attach and
-     * shows it again on detach; a view outside the session -- another
-     * document's showing the object through a link -- keeps it.
+     * (ViewerContext::setEditVisibilities) -- never written into a view's
+     * map, and gone when the edit ends. A view joining later hides it on
+     * attach and shows it again on detach; a view outside the session --
+     * another document's showing the object through a link -- keeps it.
      */
     //@{
     /** Hide the edited occurrence in every view of the session.
@@ -301,7 +310,87 @@ public:
     }
     //@}
 
+    /** @name What else the edit swaps in its views
+     *
+     * An edit that shows something OTHER than the document's state while
+     * it runs -- a PartDesign feature's preview draws the feature's base
+     * with the tool over it, where the document shows the feature -- used
+     * to write Visibility, which is document state: every view changed,
+     * and every served client's. These are the same swaps as entries of
+     * each session view's own visibility table, transient like the hide
+     * above and after it in the table: path entries, a hide or a show
+     * each. A view joining later takes them on attach and drops them on
+     * detach; they end with the session (endSession) at the latest.
+     */
+    //@{
+    /** Replace the session's swaps, in every view of the session.
+     *
+     * False, and none in force anywhere, when some view cannot take them
+     * (render-cache modes 0-2, which have no per-view table): the caller
+     * falls back to document Visibility.
+     */
+    bool setVisibilitySwaps(std::vector<VisibilityEntry>&& entries);
+    /// Drop them. Idempotent.
+    void clearVisibilitySwaps();
+    const std::vector<VisibilityEntry>& visibilitySwaps() const
+    {
+        return swaps;
+    }
+    //@}
+
+    /** @name What an edit shows beside its own geometry
+     *
+     * A node of the session's that is neither the edit mode's own graph
+     * (setup with a node) nor the view provider's moved children: a
+     * PartDesign feature's preview, the tinted tool shape. Hung here it
+     * is drawn by the views of the session and by no other, where it used
+     * to be a child of the base feature's switch -- in the one scene every
+     * view and every served client draws.
+     *
+     * \a world is the node's own frame in WORLD coordinates. The editing
+     * transform does not apply to it and may change under it -- a gizmo
+     * hands setup a transform of its own, the edited object moves -- and
+     * the node stays where it was put. setup() and reset() leave these
+     * alone; they go with removeSessionNode, or with the session.
+     */
+    //@{
+    void addSessionNode(SoNode* node, const Base::Matrix4D& world);
+    /// Move a node added by addSessionNode; false when it is not here.
+    bool setSessionNodeTransform(SoNode* node, const Base::Matrix4D& world);
+    /// Take it out. Idempotent.
+    void removeSessionNode(SoNode* node);
+    bool hasSessionNode(SoNode* node) const;
+    //@}
+
+    /** The session is over: drop what only a session holds.
+     *
+     * The session nodes and the visibility swaps, and the edited
+     * occurrence's hide. Called by the initiating view as it leaves
+     * (ViewerContext::resetEditingViewProvider), while the joiners are
+     * still attached, so every view of the session is told. Whoever added
+     * a node or a swap usually takes it back first; this is what keeps one
+     * that did not from reaching the next session.
+     */
+    void endSession();
+
 private:
+    /// The session's transient entries, as each view takes them: the
+    /// edited occurrence's hide, then the swaps.
+    std::vector<VisibilityEntry> transientEntries() const;
+    /// Hand every view of the session the entries; false when one of them
+    /// cannot take them.
+    bool applyVisibility();
+    /// Each session node's holder transform from its world frame and the
+    /// editing transform above it.
+    void placeSessionNodes();
+
+    struct SessionNode
+    {
+        SoNode* node {nullptr};
+        SoSeparator* holder {nullptr};
+        SoTransform* place {nullptr};
+        Base::Matrix4D world;
+    };
     SoSeparator* root {nullptr};
     SoTransform* transform {nullptr};
     SoSeparator* onView {nullptr};
@@ -315,6 +404,12 @@ private:
     ViewerContext* holder {nullptr};
     unsigned held {0};
     std::unique_ptr<VisibilityEntry> editHide;
+    std::vector<VisibilityEntry> swaps;
+    /// Children 1..N of the root, after the transform and ahead of the
+    /// edit's own geometry.
+    std::vector<SessionNode> sessionNodes;
+    /// What setTransform last set: the transform the session nodes undo.
+    Base::Matrix4D editMatrix;
 };
 
 /** What an edit mode is allowed to ask of the view it is running in.
@@ -572,15 +667,17 @@ public:
      * moves the children instead (setupEditingRoot with no node).
      */
     bool hideEditedObject();
-    /** Hide \a hide's occurrence in this view, or with null show it again.
+    /** Replace what the edit session hides and shows in this view.
      *
-     * An edit session's own, transient entry of the view's visibility
-     * table (EditingRoot::hideEdited), ahead of the view's persisted map
-     * and never written into it. False when the view has no per-view
-     * table to put it in -- no render-cache manager, modes 0-2 -- which is
-     * what the base answers.
+     * The session's own, transient entries of the view's visibility
+     * table -- the edited occurrence's hide (EditingRoot::hideEdited) and
+     * the edit's swaps (EditingRoot::setVisibilitySwaps) -- ahead of the
+     * view's persisted map and never written into it; empty takes them
+     * all back. False when the view has no per-view table to put them in
+     * -- no render-cache manager, modes 0-2 -- which is what the base
+     * answers.
      */
-    virtual bool setEditHide(const VisibilityEntry* hide);
+    virtual bool setEditVisibilities(const std::vector<VisibilityEntry>& entries);
     void setEditingTransform(const Base::Matrix4D& mat);
     /** The root this view shows the edit through.
      *
@@ -814,8 +911,10 @@ protected:
      * The session's root while one runs here, else this view's own
      * private one; pcEditingRoot and pcEditingTransform are that root's
      * nodes, cached raw so the implementations read them as they always
-     * did. Idle, the root has one child, the transform, which is why every
-     * test for "is anything being edited" reads getNumChildren() > 1.
+     * did. Idle, the root has one child, the transform, which is why a
+     * test for "is anything hung here" reads getNumChildren() > 1; one
+     * for "is the edited object's geometry here" asks
+     * EditingRoot::hasEditGeometry, since a session node is not.
      */
     EditingRoot* editRoot {nullptr};
     SoSeparator* pcEditingRoot {nullptr};
