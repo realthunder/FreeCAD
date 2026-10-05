@@ -517,12 +517,9 @@ private:
             defaultOptions = optionSource;
         }
         try {
+            // Throws Base::FileException, an IOError here, for a file it
+            // cannot open
             ImpExpDxfWrite writer(filePath);
-            // The writer only notes a file it cannot open; without this the
-            // call wrote nothing and said nothing
-            if (writer.Failed()) {
-                throw Py::Exception(PyExc_IOError, "cannot open for writing: " + filePath);
-            }
             writer.setOptionSource(defaultOptions);
             writer.setOptions();
             if (versionOverride) {

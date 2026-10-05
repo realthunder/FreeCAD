@@ -4,7 +4,9 @@
 #include "src/App/InitApplication.h"
 
 #include <Base/Exception.h>
+#include <Base/FileInfo.h>
 #include <Base/Interpreter.h>
+#include <Mod/Import/App/dxf/ImpExpDxf.h>
 
 // What a failing call of the Import module raises. Its functions caught a
 // C++ failure with _PY_CATCH_OCC(return Py::None()): the error was set and
@@ -71,8 +73,25 @@ TEST_F(ImportErrorsTest, writeDXFShapeOfNoShapeIsTypeError)
     expectRaises("Import.writeDXFShape([123], os.path.join(_ie_tmp, 'y.dxf'))", "TypeError");
 }
 
-// The writer only noted the file it could not open: nothing was written and
-// nothing said.
+// The DXF writer only noted the file it could not open: nothing was written
+// and nothing said -- through Draft's DXF export (Import.writeDXFObject) and
+// TechDraw's writeDXFPage/writeDXFView alike, which all build this writer.
+TEST_F(ImportErrorsTest, dxfWriterThrowsOnAFileItCannotOpen)
+{
+    auto dir = Base::FileInfo::getTempPath() + "fc_import_errors_no_such_dir";
+    Base::FileInfo(dir).deleteDirectoryRecursive();
+    EXPECT_THROW(Import::ImpExpDxfWrite writer(dir + "/x.dxf"), Base::FileException);
+
+    auto file = Base::FileInfo::getTempFileName("fc_import_errors", nullptr) + ".dxf";
+    EXPECT_NO_THROW({
+        Import::ImpExpDxfWrite writer(file);
+        writer.init();
+        writer.endRun();
+    });
+    EXPECT_TRUE(Base::FileInfo(file).exists());
+    Base::FileInfo(file).deleteFile();
+}
+
 TEST_F(ImportErrorsTest, writeDXFShapeToNoDirectoryIsIOError)
 {
     expectRaises("Import.writeDXFShape([Part.makeBox(1, 1, 1)],"
