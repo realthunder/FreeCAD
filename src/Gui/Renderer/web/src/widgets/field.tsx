@@ -19,6 +19,7 @@ import { Portal } from 'solid-js/web';
 
 import type { PanelClient } from './client.ts';
 import { inputModeFor } from './complete.ts';
+import { formatNumber } from './images.ts';
 import type { ExpressionPreview } from './complete.ts';
 import { CompleteButton, CompletionList, createCompletion } from './completion.tsx';
 import type { WidgetModel } from './protocol.ts';
@@ -34,14 +35,18 @@ const NUMERIC = new Set([
   'QDoubleSpinBoxModel', 'DoubleSpinBoxModel',
 ]);
 
-function str(model: WidgetModel, key: string): string {
-  const value = model.state[key];
-  return typeof value === 'string' ? value : '';
-}
-
 export function Field(props: {
   w: WidgetModel;
   title: string | undefined;
+  /// The card's frame counter. Read by every state access below, because
+  /// the store patches a model IN PLACE: without it the field shows what
+  /// the host held when the panel was built and never what it holds now --
+  /// the origin echo of a corrected write included, which is the one thing
+  /// the host's own C++ was added for (docs/Sandbox.md 7.22).
+  rev: Accessor<number>;
+  /// The host's locale as a BCP-47 tag, or null for `C`. Only used where
+  /// the host sends a NUMBER and no text (W3).
+  locale: string | null;
   disabled: Accessor<boolean>;
   viewOnly: Accessor<boolean>;
   client: () => PanelClient | null;
@@ -55,8 +60,29 @@ export function Field(props: {
 }): JSX.Element {
   const w = props.w;
   const numeric = NUMERIC.has(w.model);
-  const bound = () => str(w, 'binding') !== '';
-  const hasExpression = () => str(w, 'expression') !== '';
+  const get = (key: string): string => {
+    props.rev();
+    const value = w.state[key];
+    return typeof value === 'string' ? value : '';
+  };
+  /// What the field shows.
+  ///
+  /// A quantity field carries the string Qt already formatted, units and
+  /// all, and that is shown exactly as it came -- the host's decimals and
+  /// unit are not the client's to second-guess. A plain spin box carries
+  /// only a NUMBER (`value`, with `decimals` and a `suffix`), so the
+  /// formatting is the page's to do, in the host's locale (W3).
+  const shown = () => {
+    props.rev();
+    const text = get('text');
+    if (text !== '') return text;
+    const value = w.state.value ?? w.state.rawValue;
+    if (typeof value !== 'number') return String(value ?? '');
+    const decimals = typeof w.state.decimals === 'number' ? w.state.decimals : 2;
+    return formatNumber(value, decimals, props.locale) + get('suffix');
+  };
+  const bound = () => get('binding') !== '';
+  const hasExpression = () => get('expression') !== '';
 
   return (
     <div class="fc-panel-fieldwrap">
@@ -64,7 +90,7 @@ export function Field(props: {
         class="fc-panel-field"
         title={props.title}
         disabled={props.disabled()}
-        value={str(w, 'text') || String(w.state.rawValue ?? '')}
+        value={shown()}
         inputmode={inputModeFor('', numeric)}
         spellcheck={false}
         autocomplete="off"
@@ -77,9 +103,9 @@ export function Field(props: {
         <button
           class={hasExpression() ? 'fc-panel-fx fc-panel-fx-on' : 'fc-panel-fx'}
           title={hasExpression()
-            ? `Bound to an expression: ${str(w, 'expression')}`
+            ? `Bound to an expression: ${get('expression')}`
             : 'Enter an expression'}
-          onClick={() => props.onExpression(w.id, str(w, 'binding'), str(w, 'expression'))}
+          onClick={() => props.onExpression(w.id, get('binding'), get('expression'))}
         >
           fx
         </button>

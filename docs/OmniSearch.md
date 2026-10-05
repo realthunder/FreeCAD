@@ -470,6 +470,16 @@ when the named view is the served one.
   sent.
 - No icons, no `<<label>>` rows: the label is the object row's
   description, and `<<Label>>` still resolves when typed.
+- **The box opens in OBJECT mode**, its line already holding `/ `, where
+  the desktop opens on the chooser with a bare `/` (changed 2026-09-21, on
+  the user's call, after a handset found the reason). `parseInput` reads a
+  lone `/` as the chooser, so typing a name straight into it -- the
+  obvious thing to do, and on a phone the only thing, there being no
+  keyboard shortcut to reach any other mode -- reads as `/Box`: a chooser
+  query that matches no mode row and lists nothing at all, with no hint
+  that a space was wanted. The chooser is still one backspace away. The
+  cost is the object mode's single `omni.objects` fetch (162 bytes, 13 ms
+  measured) at opening rather than one keystroke later.
 - ~~Building the web layer on the Windows box needs WSL and a
   wasm-rollup swap, and the page can only be exercised on the Linux
   box.~~ **Superseded 2026-09-12**: emsdk is installed on the Windows

@@ -20,6 +20,9 @@
 
 #include "PreCompiled.h"
 
+#include <QDir>
+#include <QFile>
+#include <QFileInfo>
 #include <QJsonDocument>
 #include <QJsonArray>
 #include <QJsonObject>
@@ -28,6 +31,7 @@
 
 #include <optional>
 
+#include <App/Application.h>
 #include <App/DocumentObject.h>
 #include <App/ExpressionParser.h>
 #include <App/ExpressionSecurityRuntime.h>
@@ -345,6 +349,65 @@ bool isToolBarModel(const QString& id)
         || id.startsWith(QLatin1String("toolbar:")) || id.startsWith(QLatin1String("widget:"))
         || id.startsWith(QLatin1String("action:"));
 }
+
+/// The most one upload may carry.  A panel's file chooser names a font,
+/// a hatch pattern, a symbol: kilobytes.  The cap is here rather than
+/// left to the socket's 64 MB because this one writes to disk.
+constexpr int kMaxUploadBytes = 16 * 1024 * 1024;
+
+/// The name a client asked for, reduced to a plain file name.
+///
+/// A client's string is never treated as a path: `QFileInfo::fileName`
+/// drops every directory part, so `../../.ssh/config` arrives as
+/// `config`, and what is left is filtered to a conservative set.  A
+/// leading dot goes too -- a name of dots alone would name the
+/// directory itself.  Empty is refused by the caller.
+QString sanitizedUploadName(const QString& given)
+{
+    const QString base = QFileInfo(given.trimmed()).fileName();
+    QString out;
+    out.reserve(base.size());
+    for (const QChar c : base) {
+        if (c.isLetterOrNumber() || c == QLatin1Char('.') || c == QLatin1Char('-')
+            || c == QLatin1Char('_') || c == QLatin1Char(' '))
+            out.append(c);
+        else
+            out.append(QLatin1Char('_'));
+    }
+    while (out.startsWith(QLatin1Char('.')))
+        out.remove(0, 1);
+    return out.trimmed().left(120);
+}
+
+/// Where an uploaded file lands: one directory under the host's temp
+/// path, made on first use.
+///
+/// The CLIENT never names it.  A path a browser could choose would be a
+/// write anywhere the serving user can write, which is the other half
+/// of the ruling that keeps the host's file system off the browser's
+/// screen (docs/Sandbox.md 7.22, 2026-09-22).
+QString uploadDir()
+{
+    const QString dir = QString::fromStdString(App::Application::getTempPath())
+        + QStringLiteral("BrowserUploads");
+    return QDir().mkpath(dir) ? dir : QString();
+}
+
+/// A path in \a dir nothing holds yet: the same name uploaded twice must
+/// not overwrite the first, which a panel may still be pointing at.
+QString uniqueUploadPath(const QString& dir, const QString& base)
+{
+    const QDir at(dir);
+    const QFileInfo info(base);
+    const QString stem = info.baseName();
+    const QString suffix = info.completeSuffix();
+    QString name = base;
+    for (int n = 1; at.exists(name) && n < 10000; ++n) {
+        name = suffix.isEmpty() ? QStringLiteral("%1-%2").arg(stem).arg(n)
+                                : QStringLiteral("%1-%2.%3").arg(stem).arg(n).arg(suffix);
+    }
+    return at.filePath(name);
+}
 }  // namespace
 
 void Gui::installSceneWidgetOps()
@@ -602,6 +665,66 @@ void Gui::installSceneWidgetOps()
             return sceneControlError(id, "BadExpression", QString::fromUtf8(e.what()));
         }
         return okReply(id);
+    });
+    // A file the BROWSER picked, written to the host (docs/Sandbox.md
+    // 7.22, W5).
+    //
+    // The ruling of 2026-09-22: "Never expose host file system to
+    // browser.  But implement browser side file chooser to upload file
+    // to host."  So the traffic goes ONE way.  There is no op that
+    // lists a directory, none that reads a host file, and none that
+    // takes a path from the client: the client sends a NAME and bytes,
+    // and the host alone decides where they land (`uploadDir`).  The
+    // answer is the path it wrote, which the client then hands to a
+    // mirrored `Gui::FileChooser` as a pick.
+    //
+    // Mutating, so a view-only connection is refused before the handler
+    // runs -- and EDIT rather than host, deliberately: this is an
+    // ordinary editor filling in a panel's field under the shared
+    // session (8.11), and the bytes reach a directory of the host's
+    // choosing rather than anywhere the serving user can write.
+    registerSceneControlOp(QStringLiteral("widgets.upload"), true,
+                           [](const QJsonObject& req, const std::string&) {
+        const QJsonValue id = req.value(QLatin1String("id"));
+        const QString base = sanitizedUploadName(req.value(QLatin1String("name")).toString());
+        if (base.isEmpty())
+            return sceneControlError(id, "BadRequest", QStringLiteral("name required"));
+        const QString encoded = req.value(QLatin1String("data")).toString();
+        // Checked before decoding: base64 is 4 bytes per 3, so this
+        // bounds the allocation the decode would make.
+        if (encoded.size() / 4 * 3 > kMaxUploadBytes)
+            return sceneControlError(id, "TooLarge", QStringLiteral("%1 bytes at most")
+                                                         .arg(kMaxUploadBytes));
+        const auto decoded = QByteArray::fromBase64Encoding(
+            encoded.toLatin1(),
+            QByteArray::Base64Encoding | QByteArray::AbortOnBase64DecodingErrors);
+        if (!decoded)
+            return sceneControlError(id, "BadRequest", QStringLiteral("data is not base64"));
+        const QByteArray bytes = *decoded;
+        if (bytes.size() > kMaxUploadBytes)
+            return sceneControlError(id, "TooLarge", QStringLiteral("%1 bytes at most")
+                                                         .arg(kMaxUploadBytes));
+        const QString dir = uploadDir();
+        if (dir.isEmpty())
+            return sceneControlError(id, "UploadFailed",
+                                     QStringLiteral("no upload directory"));
+        const QString path = uniqueUploadPath(dir, base);
+        QFile file(path);
+        if (!file.open(QIODevice::WriteOnly))
+            return sceneControlError(id, "UploadFailed", file.errorString());
+        const bool whole = file.write(bytes) == bytes.size();
+        file.close();
+        if (!whole) {
+            // a half-written file is worse than none: a panel would
+            // happily load it
+            file.remove();
+            return sceneControlError(id, "UploadFailed", QStringLiteral("short write"));
+        }
+        QJsonObject reply = okReply(id);
+        reply[QLatin1String("path")] = path;
+        reply[QLatin1String("name")] = base;
+        reply[QLatin1String("size")] = double(bytes.size());
+        return reply;
     });
 }
 

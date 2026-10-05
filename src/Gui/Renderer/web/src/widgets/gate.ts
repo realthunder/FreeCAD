@@ -23,14 +23,19 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { CHECK_ON, WidgetStore, itemClickOp, itemEditOp, itemExpandOp, layoutRefs, refId,
-         selectionWrite } from './protocol.ts';
+import { CHECK_ON, CHOOSER_DIRECTORY, CHOOSER_FILE, WidgetStore, acceptFromFilter,
+         cssColor, dialogClickOp, dialogRejectOp, fileSelectedOp, isDarkColor,
+         isDialogRoot, isPanelMirrorId, itemClickOp, itemEditOp, itemExpandOp,
+         layoutRefs, refId, selectionWrite } from './protocol.ts';
 import type { Frame } from './protocol.ts';
 import { isKnownLayoutClass, planLayout } from './layout.ts';
 import type { LayoutPlan } from './layout.ts';
 import { filterSet, inputModeFor, setFromGuest, splice, stillApplies, triggerFor, wordAt }
   from './complete.ts';
 import type { CompletionSet } from './complete.ts';
+import { IconCache, dataUrl, formatNumber, iconKey, iconKind, imageKey, localeTag,
+         mouseArgs, parseLocaleNumber, pictureAt, qtButton, qtModifiers,
+         wheelArgs } from './images.ts';
 
 interface Fixture {
   case: string;
@@ -167,10 +172,99 @@ function main(): void {
   check('sketcher_constraints', 'cells carry text', texts.length > 0, String(texts.slice(0, 3)));
 
   checkItems();
+  checkDialogs();
   checkCompletion();
+  checkImages();
+  checkFileChooser();
 
   console.log(failures === 0 ? '\nALL GREEN' : `\n${failures} FAILURE(S)`);
   process.exit(failures === 0 ? 0 : 1);
+}
+
+/// Dialog roots (docs/Sandbox.md 7.22, W4). Until W4 not one check here
+/// looked at a dialog: the six fixtures were replayed for their frames and
+/// their layouts, and `nested_messagebox` -- the whole point of which is
+/// the dialog -- was gated no differently from a form panel.
+///
+/// The corpus case is a panel slot's QMessageBox: it arrives as a
+/// `dialog:<n>` root BESIDE the task panel's own root, is answered, and
+/// goes. Everything asserted below is the host's, not this client's, so a
+/// change on either side that breaks the contract fails here.
+function checkDialogs(): void {
+  const t = 'dialogs';
+  const fixture = JSON.parse(
+    readFileSync(join(fixtureDir, 'nested_messagebox.json'), 'utf-8'),
+  ) as Fixture;
+  const upto = (n: number): WidgetStore => {
+    const store = new WidgetStore();
+    for (const { frame } of fixture.frames.slice(0, n)) store.apply(frame);
+    return store;
+  };
+  /// QMessageBox::StandardButton, the two the corpus was built with.
+  const YES = 0x4000;
+  const NO = 0x10000;
+
+  const closeAt = fixture.frames.findIndex(
+    (f) => f.frame.method === 'close' && isDialogRoot(f.frame.id));
+  check(t, 'the corpus closes a dialog root', closeAt > 0, `frame ${closeAt}`);
+
+  // while the box is on screen and the host's slot is blocked in exec()
+  const up = upto(closeAt);
+  const roots = up.ids().filter(isDialogRoot);
+  check(t, 'a dialog root is in the store', roots.length === 1, String(roots));
+  const box = up.get(roots[0]);
+  check(t, 'the root is a QDialogModel', box?.model === 'QDialogModel', String(box?.model));
+  check(t, 'the root keeps its real class', box?.qtClass === 'QMessageBox',
+        String(box?.qtClass));
+  check(t, 'the root says it is modal', box?.state.modal === true, String(box?.state.modal));
+  check(t, 'the root carries its title', box?.state.windowTitle === 'Really',
+        String(box?.state.windowTitle));
+  check(t, 'the root hangs off the list, not the panel root',
+        box?.parent === 'panel', String(box?.parent));
+
+  // the list container's layout is the show order the layer stacks by
+  const order = planLayout(up.get('panel')?.layout).items
+    .map((it) => it.id).filter((id): id is string => !!id);
+  check(t, 'the list holds both roots in show order',
+        order.length === 2 && order[0].startsWith('panel:') && isDialogRoot(order[1]),
+        String(order));
+
+  // Qt's own message box parts, which M1's `qt_` rule skips as machinery
+  // and M3 un-skips as content -- so their absence here would be silent
+  const models = up.ids().map((id) => up.get(id)).filter((m): m is NonNullable<typeof m> => !!m);
+  const labels = models.filter((m) => m.model === 'QLabelModel');
+  check(t, "the box's text arrived", labels.some((m) => m.state.text === 'Proceed?'),
+        String(labels.map((m) => m.state.text)));
+  check(t, 'the box icon arrived as a picture',
+        labels.filter((m) => String(m.state.pixmap ?? '').startsWith('img:')).length === 1);
+
+  const flags = models
+    .filter((m) => m.model === 'QPushButtonModel')
+    .map((m) => m.state.standardButton)
+    .filter((f): f is number => typeof f === 'number' && f !== 0);
+  check(t, 'the buttons carry their standard flags',
+        flags.includes(YES) && flags.includes(NO), String(flags));
+
+  // the answer: the flag, through the ROOT. The host turns it into
+  // done(button), which is the exec code the blocked slot returns.
+  check(t, 'an answer names the button flag',
+        JSON.stringify(dialogClickOp(YES)) === '{"event":"clicked","args":[16384]}',
+        JSON.stringify(dialogClickOp(YES)));
+  check(t, 'Escape rejects', JSON.stringify(dialogRejectOp()) === '{"event":"reject"}');
+
+  // and what the close leaves behind
+  const after = upto(closeAt + 1);
+  check(t, 'the dialog root goes when the box closes',
+        after.ids().filter(isDialogRoot).length === 0);
+  check(t, 'the panel root outlives the dialog',
+        after.ids().some((id) => id.startsWith('panel:')));
+  // M3 sends ONE close, for the root, and leaves the subtree silent, so the
+  // box's inner widgets stay in the store. Nothing draws them (the card
+  // renders `panel:<n>` and `dialog:<n>` roots only), but they are still
+  // held -- recorded here so that a host that starts pruning, or a client
+  // that starts leaking them onto the screen, shows up as a change.
+  check(t, 'the closed box leaves its subtree in the store (M3, by design)',
+        after.ids().some((id) => id.startsWith('pw:')));
 }
 
 /// The item views (docs/Sandbox.md 7.22, W2). The recorded corpus carries
@@ -211,6 +305,29 @@ function checkItems(): void {
         rows()[0].cells[0].text === 'one' && rows()[0].cells[0].icon === 'img:x',
         JSON.stringify(rows()[0].cells[0]));
 
+  // Cell colours (W5, paying off W2's debt). The host packs a QColor as
+  // four floats 0..1 -- `colorList` in FwQtView.cpp -- and the view left
+  // them undrawn rather than guess that. These pin the packing, so a host
+  // that ever changed it fails here instead of painting a panel's red
+  // warning in some other colour.
+  custom({ item: 'set', id: 3, col: 0, cell: { fg: [1, 0, 0, 1], bg: [1, 0.878, 0.51, 1] } });
+  const painted = rows().find((r) => r.id === 3)?.cells[0];
+  check(t, 'a colour survives the store as the host packed it',
+        JSON.stringify(painted?.fg) === JSON.stringify([1, 0, 0, 1]),
+        JSON.stringify(painted));
+  check(t, 'four floats become a CSS colour',
+        cssColor([1, 0, 0, 1]) === 'rgba(255, 0, 0, 1)', String(cssColor([1, 0, 0, 1])));
+  check(t, 'a half alpha is an alpha, not a channel',
+        cssColor([0, 0, 0, 0.5]) === 'rgba(0, 0, 0, 0.5)', String(cssColor([0, 0, 0, 0.5])));
+  check(t, 'three floats are a colour too (Qt sends alpha, but the type says may)',
+        cssColor([0, 0.5, 1]) === 'rgba(0, 128, 255, 1)', String(cssColor([0, 0.5, 1])));
+  check(t, 'no colour is no colour, not black',
+        cssColor(undefined) === undefined && cssColor([]) === undefined);
+  // The contrast rule: a light wash with no foreground beside it must not
+  // leave the card's pale text on it.
+  check(t, 'a yellow wash asks for dark text', !isDarkColor([1, 0.878, 0.51, 1]));
+  check(t, 'a navy wash asks for pale text', isDarkColor([0.05, 0.08, 0.3, 1]));
+
   check(t, 'a remove takes its children with it',
         custom({ item: 'remove', id: 1 }) && rows().length === 1 && rows()[0].id === 3,
         `${rows().length} left`);
@@ -224,6 +341,19 @@ function checkItems(): void {
         custom({ item: 'sort', id: 0, col: 0, order: 1 })
         && (rows()[0].cells[0].text ?? '') === 'two',
         rows().map((r) => r.cells[0]?.text).join(','));
+
+  // Whose frame is it? Both mirrors push down the one `widgets` lane, and
+  // a panel client that applies the tool bar's frames builds a store it
+  // can never draw. The rule is the host's own (`PanelMirror::owns`), so
+  // these pin the spellings on both sides of it.
+  check(t, 'the list container is the panel mirror\'s', isPanelMirrorId('panel'));
+  check(t, 'a panel root is', isPanelMirrorId('panel:2'));
+  check(t, 'a dialog root is', isPanelMirrorId('dialog:1'));
+  check(t, 'a mirrored widget is', isPanelMirrorId('pw:37'));
+  check(t, 'a tool bar widget is NOT', !isPanelMirrorId('widget:File#0'));
+  check(t, 'a tool bar action is NOT', !isPanelMirrorId('action:Std_New#1'));
+  check(t, 'a name that merely starts like one is not a root',
+        !isPanelMirrorId('panels') && !isPanelMirrorId('dialogue:1'));
 
   check(t, 'an unknown item op is refused', !custom({ item: 'wat' }));
   check(t, 'a set on a row that is gone is refused',
@@ -354,6 +484,206 @@ function checkCompletion(): void {
   check(c, 'a start past the caret is clamped',
         setFromGuest('ab', 1, [], 9).start === 1,
         String(setFromGuest('ab', 1, [], 9).start));
+}
+
+/// Pictures, icons, theme and locale (docs/Sandbox.md 7.22, W3).
+///
+/// The fixture half is the one the sizing ruled: `svg_picture` carries a
+/// QSvgWidget's grab and two button icons, and the rule is that the host is
+/// asked ONCE per distinct id however many widgets name it. The rest are
+/// decisions about formatting and about the pointer, which no fixture can
+/// hold: the host replays the mouse into a real widget, so the argument
+/// ORDER and Qt's own numbering are what make the difference between a
+/// click landing and nothing happening.
+/// The file chooser (docs/Sandbox.md 7.22, W4b).
+///
+/// There is NO fixture: not one panel in the corpus carries a
+/// `Gui::FileChooser`, so the model is constructed against the same store
+/// the host's own frames drive -- the way `checkItems` constructs the
+/// trees Sketcher never sends. What is asserted is the host's contract:
+/// the bag keys `Fw::FileChooser` declares (Gui/Fw/FwWidgets.cpp), and
+/// the request name `View::onRequest` answers to.
+function checkFileChooser(): void {
+  const t = 'file chooser';
+  const store = new WidgetStore();
+  store.apply({
+    method: 'open', id: 'pw:9', model: 'FileChooserModel', qtClass: 'Gui::FileChooser',
+    parent: 'IPY_MODEL_panel:1',
+    state: {
+      q_objectName: 'fontFile', q_fileName: '/home/u/a.ttf', q_mode: CHOOSER_FILE,
+      q_acceptMode: 0, q_buttonText: '', q_filter: 'Fonts (*.ttf *.otf);;All files (*)',
+    },
+  } as Frame);
+  const chooser = store.get('pw:9');
+  check(t, 'a chooser is a leaf of its own class',
+        chooser?.model === 'FileChooserModel' && chooser?.qtClass === 'Gui::FileChooser',
+        `${chooser?.model} / ${chooser?.qtClass}`);
+  check(t, 'the path crosses as data', chooser?.state.fileName === '/home/u/a.ttf',
+        String(chooser?.state.fileName));
+  check(t, 'the filter crosses', String(chooser?.state.filter ?? '').startsWith('Fonts'),
+        String(chooser?.state.filter));
+
+  // The host's own write reaches the field: a slot that corrects or
+  // completes the path is the origin echo of every other leaf.
+  store.apply({ method: 'update', id: 'pw:9', content: { q_fileName: '/tmp/up/b.ttf' } } as Frame);
+  check(t, "the host's own change reaches the field",
+        store.get('pw:9')?.state.fileName === '/tmp/up/b.ttf',
+        String(store.get('pw:9')?.state.fileName));
+
+  // The write path, and the whole reason it is not a property write: a
+  // panel's slot is connected to fileNameSelected, which a `q_fileName`
+  // update does not fire.
+  check(t, 'a pick is a request, not a value write',
+        JSON.stringify(fileSelectedOp('/tmp/up/b.ttf'))
+          === '{"event":"fileSelected","args":["/tmp/up/b.ttf"]}',
+        JSON.stringify(fileSelectedOp('/tmp/up/b.ttf')));
+
+  // A directory chooser names a folder ON THE HOST, which no browser
+  // picker can answer and which may not be browsed either.
+  store.apply({ method: 'update', id: 'pw:9', content: { q_mode: CHOOSER_DIRECTORY } } as Frame);
+  check(t, 'a directory chooser is recognized',
+        store.get('pw:9')?.state.mode === CHOOSER_DIRECTORY,
+        String(store.get('pw:9')?.state.mode));
+
+  // Qt's name filter as the picker's `accept`.
+  check(t, "a Qt filter becomes the web's extensions",
+        acceptFromFilter('Fonts (*.ttf *.otf);;All files (*)') === '.ttf,.otf',
+        acceptFromFilter('Fonts (*.ttf *.otf);;All files (*)'));
+  check(t, 'an all-files filter accepts everything, not nothing',
+        acceptFromFilter('All files (*)') === '',
+        `"${acceptFromFilter('All files (*)')}"`);
+  check(t, 'no filter accepts everything', acceptFromFilter('') === '');
+  check(t, 'an extension is offered once',
+        acceptFromFilter('A (*.svg);;B (*.SVG)') === '.svg',
+        acceptFromFilter('A (*.svg);;B (*.SVG)'));
+  check(t, 'a compound suffix survives',
+        acceptFromFilter('Meshes (*.stl *.obj *.step)') === '.stl,.obj,.step',
+        acceptFromFilter('Meshes (*.stl *.obj *.step)'));
+}
+
+function checkImages(): void {
+  const t = 'images';
+
+  check(t, 'an img: id is fetched by content', iconKind('img:abc') === 'image');
+  check(t, 'a bare name is fetched by theme', iconKind('Std_ViewFitAll') === 'name');
+  check(t, 'an empty value names no picture', iconKind('') === 'none');
+  check(t, 'a missing value names no picture', iconKind(undefined) === 'none');
+
+  check(t, 'an svg reply is percent-encoded, not base64',
+        (dataUrl({ format: 'svg', data: '<svg fill="#f00"/>' }) ?? '')
+          .startsWith('data:image/svg+xml;charset=utf-8,%3Csvg'),
+        String(dataUrl({ format: 'svg', data: '<svg fill="#f00"/>' })).slice(0, 48));
+  check(t, 'a png reply is a base64 data url',
+        dataUrl({ format: 'png', data: 'AAA' }) === 'data:image/png;base64,AAA');
+  check(t, 'an empty reply resolves to nothing', dataUrl({ format: 'png', data: '' }) === null);
+
+  // The C locale is not English: it means unformatted, and formatting it
+  // as English would put thousands separators into numbers the host
+  // prints without them.
+  check(t, 'the C locale is no locale', localeTag('C') === null);
+  check(t, 'a Qt locale becomes a web tag', localeTag('en_US') === 'en-US');
+  check(t, 'an encoding suffix is dropped', localeTag('de_DE.UTF-8') === 'de-DE',
+        String(localeTag('de_DE.UTF-8')));
+  check(t, 'no locale is no locale', localeTag('') === null);
+
+  check(t, 'no locale formats plainly', formatNumber(10, 2, null) === '10.00',
+        formatNumber(10, 2, null));
+  check(t, 'a locale groups and decimates its own way',
+        formatNumber(1234.567, 2, 'de-DE') === '1.234,57',
+        formatNumber(1234.567, 2, 'de-DE'));
+
+  // The round trip is the point: what the field SHOWS has to parse back,
+  // or a write sends the host a text where it wanted a number.
+  for (const locale of [null, 'en-US', 'de-DE']) {
+    const shown = formatNumber(1234.5, 2, locale);
+    check(t, `what ${locale ?? 'C'} shows parses back`,
+          Math.abs(parseLocaleNumber(shown, locale) - 1234.5) < 1e-9,
+          `${shown} -> ${parseLocaleNumber(shown, locale)}`);
+  }
+  check(t, 'a suffix does not stop it parsing',
+        parseLocaleNumber('10.00 mm', null) === 10, String(parseLocaleNumber('10.00 mm', null)));
+  check(t, 'an empty field is not a zero', Number.isNaN(parseLocaleNumber('', null)));
+
+  // Qt's buttons are bit values and the DOM's are an index; the modifiers
+  // are Qt's own bits. Both are replayed into a real widget, so a wrong
+  // number is a click that lands as the wrong button.
+  check(t, 'the DOM left button is Qt left', qtButton(0) === 1);
+  check(t, 'the DOM middle button is Qt middle', qtButton(1) === 4, String(qtButton(1)));
+  check(t, 'the DOM right button is Qt right', qtButton(2) === 2, String(qtButton(2)));
+  check(t, 'the modifiers are Qt bits',
+        qtModifiers({ shiftKey: true, ctrlKey: true }) === 0x06000000,
+        qtModifiers({ shiftKey: true, ctrlKey: true }).toString(16));
+
+  const mouse = mouseArgs('press', 12.4, 7.6, 2, 2, { altKey: true });
+  check(t, 'a mouse arg list is [type, x, y, button, buttons, mods]',
+        JSON.stringify(mouse) === JSON.stringify(['press', 12, 8, 2, 2, 0x08000000]),
+        JSON.stringify(mouse));
+  // A DOM wheel delta is positive downward and Qt's is positive upward.
+  const wheel = wheelArgs(1, 2, 0, 100, 0, {});
+  check(t, 'a wheel notch is flipped and quantized',
+        JSON.stringify(wheel) === JSON.stringify([1, 2, 0, -120, 0, 0]),
+        JSON.stringify(wheel));
+
+  const at = pictureAt({ left: 10, top: 20, width: 32, height: 32 },
+                       { width: 64, height: 64 }, 26, 36);
+  check(t, 'a pointer maps into the picture own pixels',
+        at.x === 32 && at.y === 32, JSON.stringify(at));
+
+  // The ruled fixture check. Every picture the wire named, in order, then
+  // resolved through one cache: the host must be asked once per DISTINCT
+  // id, however many widgets carry it and however often it is re-sent.
+  const fixture = JSON.parse(
+    readFileSync(join(fixtureDir, 'svg_picture.json'), 'utf-8'),
+  ) as Fixture;
+  const named: string[] = [];
+  for (const { frame } of fixture.frames) {
+    for (const bag of [frame.state, frame.content]) {
+      if (!bag) continue;
+      for (const key of ['q_icon', 'q_pixmap', 'q_windowIcon']) {
+        const value = (bag as Record<string, unknown>)[key];
+        if (iconKind(value) !== 'none') named.push(value as string);
+      }
+    }
+  }
+  const distinct = new Set(named);
+  check(t, 'the fixture carries a picture and its buttons icons',
+        distinct.size >= 3, `${named.length} named, ${distinct.size} distinct`);
+
+  const cache = new IconCache();
+  const reply = () => Promise.resolve({ format: 'png', data: 'AAA' });
+  // TWICE, because that is what the card does: every repaint resolves
+  // every picture on it again, and the fixture happens to name each of its
+  // ids once, so a single pass would prove nothing about the cache.
+  for (const pass of [0, 1]) {
+    void pass;
+    for (const name of named) void cache.resolve(imageKey(name), reply);
+  }
+  check(t, 'the image op is asked once per distinct id',
+        cache.asked === distinct.size, `asked ${cache.asked} for ${distinct.size} ids`);
+  // A repaint that changed something sends a NEW id, and that one is
+  // fetched: the cache must not be a "fetched once, never again" rule.
+  const grown = cache.asked;
+  void cache.resolve(imageKey('img:something-new'), reply);
+  check(t, 'a changed picture is a new id and a new fetch',
+        cache.asked === grown + 1, `asked ${cache.asked}`);
+  // Asking for one already in hand adds nothing, whoever asks.
+  void cache.resolve(imageKey([...distinct][0]), reply);
+  check(t, 'a second widget naming the same id adds no fetch',
+        cache.asked === grown + 1, `asked ${cache.asked}`);
+
+  // A NAMED icon is not content-addressed: the same name is different
+  // bytes under another icon theme, and a PNG is rasterized at the size it
+  // was asked for. Both belong in the key, or a theme change would serve
+  // the old icons for as long as the page stayed up.
+  const themed = new IconCache();
+  void themed.resolve(iconKey('', 'Std_ViewFitAll', 16), reply);
+  void themed.resolve(iconKey('', 'Std_ViewFitAll', 16), reply);
+  check(t, 'a named icon is fetched once per theme and size',
+        themed.asked === 1, `asked ${themed.asked}`);
+  void themed.resolve(iconKey('dark', 'Std_ViewFitAll', 16), reply);
+  check(t, 'another theme is other bytes', themed.asked === 2, `asked ${themed.asked}`);
+  void themed.resolve(iconKey('dark', 'Std_ViewFitAll', 24), reply);
+  check(t, 'another size is another fetch', themed.asked === 3, `asked ${themed.asked}`);
 }
 
 main();
