@@ -2296,6 +2296,11 @@ public:
      * @param retry: whether to keep going by skipping faces that failed to create draft
      * @param op: optional string to be encoded into topo naming for indicating
      *            the operation
+     * @param cell: use the cell draft (Part::CellDraft, a draft that can change
+     *              topology) instead of BRepOffsetAPI_DraftAngle. It drafts all
+     *              faces or fails; retry has no effect.
+     * @param stopAtBody: cell draft only: a drafted face does not grow the
+     *                    body past a plane that bounds the whole body
      *
      * @return The original content of this TopoShape is discarded and replaced
      *         with the new shape. The function returns the TopoShape itself as
@@ -2304,7 +2309,7 @@ public:
      */
     TopoShape &makEDraft(const TopoShape &source, const std::vector<TopoShape> &faces, 
            const gp_Dir &pullDirection, double angle, const gp_Pln &neutralPlane,
-           bool retry=true, const char *op=nullptr);
+           bool retry=true, const char *op=nullptr, bool cell=false, bool stopAtBody=true);
     /* Make draft shape
      *
      * @param source: the source shape
@@ -2315,13 +2320,16 @@ public:
      * @param retry: whether to keep going by skipping faces that failed to create draft
      * @param op: optional string to be encoded into topo naming for indicating
      *            the operation
+     * @param cell: use the cell draft, see above
+     * @param stopAtBody: cell draft only, see above
      *
      * @return Return the new shape. The TopoShape itself is not modified.
      */
     TopoShape makEDraft(const std::vector<TopoShape> &faces, 
            const gp_Dir &pullDirection, double angle, const gp_Pln &neutralPlane,
-           bool retry=true, const char *op=nullptr) const {
-        return TopoShape(0,Hasher).makEDraft(*this,faces,pullDirection,angle,neutralPlane,retry,op);
+           bool retry=true, const char *op=nullptr, bool cell=false, bool stopAtBody=true) const {
+        return TopoShape(0,Hasher).makEDraft(*this,faces,pullDirection,angle,neutralPlane,
+                                             retry,op,cell,stopAtBody);
     }
 
     /* Remove faces and heal the gap they leave, e.g. take a hole, a fillet

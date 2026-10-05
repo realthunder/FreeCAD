@@ -220,6 +220,7 @@
 #include "ShapeAnalysis_FreeBoundsFix.h"
 #include "Geometry.h"
 #include "FaceMakerBullseye.h"
+#include "CellDraft.h"
 #include "PartParams.h"
 
 FC_LOG_LEVEL_INIT("TopoShape",true,2);
@@ -5417,12 +5418,35 @@ TopoShape &TopoShape::makEShape(BRepPrimAPI_MakeHalfSpace &mkShape,
 
 TopoShape &TopoShape::makEDraft(const TopoShape &shape, const std::vector<TopoShape> &_faces,
         const gp_Dir &pullDirection, double angle, const gp_Pln &neutralPlane,
-        bool retry, const char *op)
+        bool retry, const char *op, bool cell, bool stopAtBody)
 {
     if(!op) op = Part::OpCodes::Draft;
 
     if(shape.isNull())
         HANDLE_NULL_SHAPE;
+
+    if (cell) {
+        if (_faces.empty())
+            FC_THROWM(Base::CADKernelError,"no faces to draft");
+        CellDraft mkDraft(shape.getShape());
+        mkDraft.SetStopAtBody(stopAtBody);
+        for (const auto &face : _faces)
+            mkDraft.Add(TopoDS::Face(face.getShape()), pullDirection, angle, neutralPlane);
+        mkDraft.Build();
+        if (!mkDraft.IsDone()) {
+            std::ostringstream msg;
+            msg << "Cell draft: " << CellDraft::ErrorName(mkDraft.Error());
+            int idx = mkDraft.ErrorFace().IsNull() ? 0 : shape.findShape(mkDraft.ErrorFace());
+            if (idx > 0)
+                msg << " on Face" << idx;
+            idx = mkDraft.ErrorNeighbour().IsNull() ? 0 : shape.findShape(mkDraft.ErrorNeighbour());
+            if (idx > 0)
+                msg << " (neighbour Face" << idx << ")";
+            msg << ": " << mkDraft.ErrorMessage();
+            FC_THROWM(Base::CADKernelError, msg.str());
+        }
+        return makEShape(mkDraft,shape,op);
+    }
 
     std::vector<TopoShape> faces(_faces);
     bool done = true;

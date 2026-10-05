@@ -589,6 +589,8 @@ SET(Part_SRCS
     FaceMakerBullseye.h
     FaceMakerUnified.cpp
     FaceMakerUnified.h
+    CellDraft.cpp
+    CellDraft.h
     WireJoiner.cpp
     WireJoiner.h
     HLRProjector.cpp
