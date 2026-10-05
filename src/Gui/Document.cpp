@@ -4842,8 +4842,12 @@ MDIView* Document::getActiveView() const
         // hidden page has view but not in the list. By right, the view will
         // self delete, but not the case for TechDraw, especially during
         // document restore.
+        //
+        // A container (Gui::ViewArea) is made after the view it holds, so
+        // it is the one found here, and it answers with the view in its
+        // active cell: the caller is after a view to work in.
         if(windows.contains(*rit) || (*rit)->isDerivedFrom(View3DInventor::getClassTypeId()))
-            return *rit;
+            return (*rit)->activeSubView();
     }
     return nullptr;
 }

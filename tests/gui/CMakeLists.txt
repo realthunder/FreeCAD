@@ -168,6 +168,13 @@ fc_add_gui_test(GuiServePdPreview_tests_run serve-pd-preview.py
 fc_add_gui_test(GuiEditPerView_tests_run edit-per-view.py
                 --timeout 300)
 
+# An edit started after the main window is activated again, or with
+# another document's view the active one, is bound to the 3D view: the
+# split-view container (Gui::ViewArea) was handed out as the active view
+# in both cases, and setEdit found no viewer in it.
+fc_add_gui_test(GuiEditAfterReactivation_tests_run edit-after-reactivation.py
+                --timeout 180)
+
 # The same on a served document: a session that is one view's is told to
 # that view's client only, the desktop window stays out of a client's, and
 # no other connection can end it or replace it.
@@ -191,6 +198,12 @@ fc_add_gui_test(GuiServeTempoVis_tests_run serve-tempovis.py
 # Link to the body keeps the tip.
 fc_add_gui_test(GuiPdEditShownPerView_tests_run pd-edit-shown-per-view.py
                 --timeout 300)
+
+# The origin a PartDesign panel shows for picking (Revolution's axes, a
+# primitive's planes) is an entry of the edit's views, on the body being
+# edited: no Visibility is written, and a Link to the body shows none.
+fc_add_gui_test(GuiPdOriginInEdit_tests_run pd-origin-in-edit.py
+                --timeout 240)
 
 # A browser's right click (docs/ThinClient.md sec 8.11b): the desktop's 3D
 # view context menu built for what the ray hits, its entries judged for the

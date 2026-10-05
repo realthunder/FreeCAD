@@ -267,6 +267,22 @@ traverseInPath(SoAction * const action,
   }
 }
 
+// The child a view's own show of this object traverses: defaultChild, as
+// any visibility override does -- or the first mode where the object
+// opts out of overrides (an origin sets defaultChild to NONE, so that a
+// body shown through a Link or drawn on top does not bring its datums
+// along). A view's entry names the object itself, which is not an
+// override it inherits: left at NONE, an origin could not be shown in one
+// view at all.
+static int
+perViewShownChild(const SoFCSwitch *node)
+{
+  const int idx = node->defaultChild.getValue();
+  if (idx == SO_SWITCH_NONE && node->getNumChildren() > 0)
+    return 0;
+  return idx;
+}
+
 void
 SoFCSwitch::doAction(SoAction *action)
 {
@@ -292,7 +308,7 @@ SoFCSwitch::doAction(SoAction *action)
     forced = Gui::SoFCSelectionRoot::isSwitchShown(action, this, capture);
   if ((perview > 0 || (forced && !capture))
       && this->whichChild.getValue() == SO_SWITCH_NONE) {
-    const int idx = this->defaultChild.getValue();
+    const int idx = perview > 0 ? perViewShownChild(this) : this->defaultChild.getValue();
     if (idx >= 0 && idx < this->getNumChildren()) {
       traverseHead(action, idx);
       traverseChild(action, idx);
@@ -333,10 +349,11 @@ SoFCSwitch::doAction(SoAction *action)
   // A hidden object some view shows on its own: the scene capture --
   // shared by every view -- carries it anyway, tagged, and each view
   // admits it or not when it draws.
+  const bool shownByView = !_PerViewShown.empty() && _PerViewShown.count(this);
   if (this->whichChild.getValue() == SO_SWITCH_NONE
-      && (forced || (!_PerViewShown.empty() && _PerViewShown.count(this)))
+      && (forced || shownByView)
       && capture) {
-    const int idx = this->defaultChild.getValue();
+    const int idx = shownByView ? perViewShownChild(this) : this->defaultChild.getValue();
     if (idx >= 0 && idx < this->getNumChildren()) {
       const uint16_t prev = SoFCCapturedModeElement::get(state);
       SoFCCapturedModeElement::set(state, Render::perViewShownModeId());

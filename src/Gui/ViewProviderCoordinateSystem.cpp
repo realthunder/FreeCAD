@@ -33,7 +33,9 @@
 #endif
 
 #include <App/Document.h>
+#include <App/DocumentObserver.h>
 #include <App/Origin.h>
+#include <App/OriginGroupExtension.h>
 #include "Base/Console.h"
 #include <Base/Vector3D.h>
 
@@ -110,8 +112,86 @@ void ViewProviderCoordinateSystem::setDisplayMode(const char* ModeName)
     ViewProviderDocumentObject::setDisplayMode(ModeName);
 }
 
+namespace {
+/// Who holds the origin's entries in an edit's views
+/// (Gui::Document::setEditVisibility).
+const char *TemporaryVisibilityOwner = "Origin.Temporary";
+
+/// The origin as the edit under way reaches it: under the occurrence of
+/// its container that the edit goes through. An object with no subname
+/// when it does not go through one -- an origin shown for an edit of
+/// something else -- which is the origin wherever it is drawn.
+App::SubObjectT originInEdit(Gui::Document *gdoc, App::DocumentObject *origin)
+{
+    ViewProviderDocumentObject *parentVp = nullptr;
+    std::string subname;
+    gdoc->getInEdit(&parentVp, &subname);
+    if (parentVp && parentVp->getObject()) {
+        App::SubObjectT objT(parentVp->getObject(), subname.c_str());
+        for (; !objT.getObjectName().empty(); objT = objT.getParent()) {
+            auto sobj = objT.getSubObject();
+            auto linked = sobj ? sobj->getLinkedObject(true) : nullptr;
+            auto group = linked
+                ? linked->getExtensionByType<App::OriginGroupExtension>(true) : nullptr;
+            if (group && group->Origin.getValue() == origin)
+                return objT.getChild(origin);
+        }
+    }
+    return App::SubObjectT(origin, "");
+}
+}
+
+bool ViewProviderCoordinateSystem::setTemporaryVisibilityInEdit(bool axis, bool plane)
+{
+    auto origin = static_cast<App::Origin*>(getObject());
+    auto gdoc = Application::Instance->editDocument();
+    if (!origin || !gdoc || !gdoc->canSetEditVisibility())
+        return false;
+
+    const App::SubObjectT originT = originInEdit(gdoc, origin);
+    const bool rooted = !originT.getSubName().empty();
+    std::vector<App::SubObjectT> entries;
+    auto entry = [&](App::DocumentObject *obj, bool visible) {
+        if (!obj)
+            return true;
+        App::SubObjectT objT = obj == origin ? originT
+            : (rooted ? originT.getChild(obj) : App::SubObjectT(obj, ""));
+        if (!gdoc->setEditVisibility(TemporaryVisibilityOwner, objT.getObject(),
+                                     objT.getSubName().c_str(), visible ? 1 : 0))
+            return false;
+        entries.push_back(std::move(objT));
+        return true;
+    };
+    bool done = true;
+    try {
+        for (auto obj : origin->axes())
+            done = done && entry(obj, axis);
+        for (auto obj : origin->planes())
+            done = done && entry(obj, plane);
+    } catch (const Base::Exception &ex) {
+        Base::Console().Error ("%s\n", ex.what() );
+    }
+    done = done && entry(origin, true);
+    if (!done) {
+        // All or nothing: Visibility is written instead
+        for (const auto &objT : entries)
+            gdoc->setEditVisibility(TemporaryVisibilityOwner, objT.getObject(),
+                                    objT.getSubName().c_str(), -1);
+        return false;
+    }
+    tempEditEntries = std::move(entries);
+    tempEditDocument = gdoc->getDocument()->getName();
+    return true;
+}
+
 void ViewProviderCoordinateSystem::setTemporaryVisibility(bool axis, bool plane) {
     auto origin = static_cast<App::Origin*>( getObject() );
+
+    // In the views of the edit, where they can take it; not once
+    // Visibility has been written for this origin, which then stays the
+    // one way until it is reset.
+    if (tempVisMap.empty() && setTemporaryVisibilityInEdit(axis, plane))
+        return;
 
     bool saveState = tempVisMap.empty();
 
@@ -152,6 +232,21 @@ void ViewProviderCoordinateSystem::setTemporaryVisibility(bool axis, bool plane)
 }
 
 void ViewProviderCoordinateSystem::resetTemporaryVisibility() {
+    if (!tempEditEntries.empty()) {
+        // Taken back by name: the edit may have ended already, and taken
+        // the entries with it.
+        Gui::Document *gdoc = nullptr;
+        if (auto doc = App::GetApplication().getDocument(tempEditDocument.c_str()))
+            gdoc = Application::Instance->getDocument(doc);
+        for (const auto &objT : tempEditEntries) {
+            auto obj = objT.getObject();
+            if (gdoc && obj)
+                gdoc->setEditVisibility(TemporaryVisibilityOwner, obj,
+                                        objT.getSubName().c_str(), -1);
+        }
+        tempEditEntries.clear();
+        tempEditDocument.clear();
+    }
     for(const auto &pair : tempVisMap) {
         if (auto vp = Gui::Application::Instance->getViewProvider(pair.first))
             vp->setVisible(pair.second);
@@ -193,7 +288,7 @@ double ViewProviderCoordinateSystem::baseSize()
 }
 
 bool ViewProviderCoordinateSystem::isTemporaryVisibility() {
-    return !tempVisMap.empty();
+    return !tempVisMap.empty() || !tempEditEntries.empty();
 }
 
 void ViewProviderCoordinateSystem::updateData(const App::Property *prop) {
