@@ -75,6 +75,7 @@ public:
      */
     App::PropertyLinkSub _NeutralEdge;
     App::PropertyInteger _NeutralSense;
+    App::PropertyEnumeration Method;
 
     /** @name methods override feature */
     //@{
@@ -100,6 +101,7 @@ public:
     }
 
 private:
+    Part::TopoShape refineBase(const Part::TopoShape &baseShape) const;
     void handleChangedPropertyType(Base::XMLReader &reader, const char * TypeName, App::Property * prop) override;
     static const App::PropertyAngle::Constraints floatAngle;
 

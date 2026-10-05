@@ -19,9 +19,11 @@
 #*                                                                         *
 #***************************************************************************
 
+import math
 import unittest
 
 import FreeCAD
+import Part
 
 App = FreeCAD
 
@@ -231,6 +233,75 @@ class TestDraft(unittest.TestCase):
             self.assertEqual(restored._NeutralSense, sense)
         finally:
             FreeCAD.closeDocument(doc.Name)
+
+    def makeDraftOn(self, shape, face, neutral, method):
+        """A Draft of the faces picked by <face> about the face picked by
+        <neutral>, on a Part::Feature holding <shape> as the body's base."""
+        base = self.Doc.addObject("Part::Feature", "Base")
+        base.Shape = shape
+        body = self.Doc.addObject("PartDesign::Body", "Body")
+        body.BaseFeature = base
+        self.Doc.recompute()
+        faces = ["Face%d" % i for i, f in enumerate(shape.Faces, 1) if face(f)]
+        neutrals = ["Face%d" % i for i, f in enumerate(shape.Faces, 1) if neutral(f)]
+        self.assertEqual(len(neutrals), 1)
+        draft = body.newObject("PartDesign::Draft", "Draft")
+        draft.Base = (base, faces)
+        draft.NeutralPlane = (base, neutrals)
+        draft.Angle = 5
+        draft.Method = method
+        self.Doc.recompute()
+        return draft
+
+    @staticmethod
+    def planeAt(axis, value, xmin=None, xmax=None):
+        def pick(f):
+            if f.Surface.__class__.__name__ != "Plane":
+                return False
+            b = f.BoundBox
+            if abs(getattr(b, axis + "Min") - value) > 1e-9:
+                return False
+            if abs(getattr(b, axis + "Max") - value) > 1e-9:
+                return False
+            return xmin is None or (b.XMin > xmin - 1e-9 and b.XMax < xmax + 1e-9)
+        return pick
+
+    def testDraftSplitWallPiece(self):
+        # Two 10x10x5 boxes side by side, not refined: their front wall y=0
+        # is two coplanar pieces. One piece drafted about the floor: the
+        # classic draft cannot keep the other piece, the new one refines the
+        # base first and drafts the whole merged wall.
+        V = App.Vector
+        shape = Part.makeBox(10, 10, 5).fuse(Part.makeBox(10, 10, 5, V(10, 0, 0)))
+        volume = 1000 - 20 * 5 * 5 * math.tan(math.radians(5)) / 2
+        for method in ("Auto", "New"):
+            draft = self.makeDraftOn(shape, self.planeAt("Y", 0, 10, 20),
+                                     self.planeAt("Z", 0, 0, 10), method)
+            self.assertNotIn("Invalid", draft.State, method)
+            self.assertTrue(draft.Shape.isValid(), method)
+            self.assertAlmostEqual(draft.Shape.Volume, volume, 6, method)
+            self.assertEqual(len(draft.Shape.Faces), 6, method)
+
+    def testDraftSplitFloorCorner(self):
+        # A prism whose front wall y=0 (x in [10,20]) meets a slanted wall
+        # at (10,0), floor and top split along x=10 from that corner. The
+        # wall drafted about the end x=20: its corner slides along the
+        # slanted wall, past the split, which only the refined base allows.
+        V = App.Vector
+        prism = Part.Face(Part.makePolygon([V(0, -5, 0), V(10, 0, 0), V(10, 10, 0),
+                                            V(0, 10, 0), V(0, -5, 0)])).extrude(V(0, 0, 5))
+        shape = prism.fuse(Part.makeBox(10, 10, 5, V(10, 0, 0)))
+        # The drafted wall y = -(20 - x) tan(5 deg) meets the slanted wall
+        # y = (x - 10) / 2; the solid is that outline extruded 5.
+        t = math.tan(math.radians(5))
+        x = (5 - 20 * t) / (0.5 - t)
+        pts = [(0, -5), (x, (x - 10) / 2), (20, 0), (20, 10), (0, 10)]
+        area = abs(sum(pts[i][0] * pts[i - 1][1] - pts[i - 1][0] * pts[i][1]
+                       for i in range(len(pts)))) / 2
+        draft = self.makeDraftOn(shape, self.planeAt("Y", 0), self.planeAt("X", 20), "Auto")
+        self.assertNotIn("Invalid", draft.State)
+        self.assertTrue(draft.Shape.isValid())
+        self.assertAlmostEqual(draft.Shape.Volume, 5 * area, 6)
 
     def tearDown(self):
         #closing doc

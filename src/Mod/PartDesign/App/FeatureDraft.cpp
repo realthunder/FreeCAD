@@ -25,7 +25,16 @@
 #include "PreCompiled.h"
 #ifndef _PreComp_
 # include <BRepOffsetAPI_DraftAngle.hxx>
+# include <BRepBndLib.hxx>
+# include <BRepGProp.hxx>
 # include <BRepBuilderAPI_MakeEdge.hxx>
+# include <BRepBuilderAPI_MakeVertex.hxx>
+# include <BRepClass3d_SolidExplorer.hxx>
+# include <BRepExtrema_DistShapeShape.hxx>
+# include <BRep_Tool.hxx>
+# include <Bnd_Box.hxx>
+# include <GProp_GProps.hxx>
+# include <Standard_Version.hxx>
 # include <TopTools_IndexedMapOfShape.hxx>
 # include <TopExp.hxx>
 # include <TopoDS.hxx>
@@ -64,6 +73,9 @@ FC_LOG_LEVEL_INIT("PartDesign", true,true)
 
 PROPERTY_SOURCE(PartDesign::Draft, PartDesign::DressUp)
 
+const char *DraftMethodEnums[] = {"Auto", "Classic", "New", nullptr};
+enum DraftMethod { MethodAuto, MethodClassic, MethodNew };
+
 const App::PropertyAngle::Constraints Draft::floatAngle = { -90.0,90.0 - Base::toDegrees<double>(Precision::Angular()), 0.1 };
 
 Draft::Draft()
@@ -79,6 +91,13 @@ Draft::Draft()
     ADD_PROPERTY_TYPE(_NeutralSense,(0),"Draft",
             (App::PropertyType)(App::Prop_Hidden|App::Prop_Output),
             "The side of that edge the guessed plane faces");
+    ADD_PROPERTY_TYPE(Method,(long(MethodAuto)),"Draft",App::Prop_None,
+            "Auto: the classic draft, and the new one if that fails.\n"
+            "Classic: draft the base shape as it is.\n"
+            "New: refine the base shape first, unless its feature refines\n"
+            "already, then draft. A selected face merged by the refine\n"
+            "drafts the whole merged face.");
+    Method.setEnums(DraftMethodEnums);
 }
 
 namespace
@@ -268,9 +287,86 @@ short Draft::mustExecute() const
         Angle.isTouched() ||
         NeutralPlane.isTouched() ||
         PullDirection.isTouched() ||
-        Reversed.isTouched())
+        Reversed.isTouched() ||
+        Method.isTouched())
         return 1;
     return DressUp::mustExecute();
+}
+
+TopoShape Draft::refineBase(const TopoShape &baseShape) const
+{
+    // A feature that refines its result has nothing left to merge. Draft
+    // inherits a Refine property it does not apply.
+    auto base = getBaseObject(true);
+    if (base && !base->isDerivedFrom<Draft>()) {
+        auto refine = Base::freecad_dynamic_cast<App::PropertyBool>(
+                base->getPropertyByName("Refine"));
+        if (refine && refine->getValue())
+            return TopoShape();
+    }
+    TopoShape refined(0, getDocument()->getStringHasher());
+    refined.makERefine(baseShape, nullptr, false);
+    if (refined.isNull()
+            || refined.countSubShapes(TopAbs_FACE) == baseShape.countSubShapes(TopAbs_FACE))
+        return TopoShape();
+
+    // Merging faces must not move material. A refine can hand back a valid
+    // solid that does: #334's Draft002 input comes out 2000 of 47000 short.
+    GProp_GProps before, after;
+    BRepGProp::VolumeProperties(baseShape.getShape(), before);
+    BRepGProp::VolumeProperties(refined.getShape(), after);
+    double scale = std::max(std::fabs(before.Mass()), Precision::Confusion());
+    if (std::fabs(after.Mass() - before.Mass()) > 1e-6 * scale) {
+        FC_WARN(getFullName() << ": refine changed the base volume from "
+                << before.Mass() << " to " << after.Mass() << ", not used");
+        return TopoShape();
+    }
+    return refined;
+}
+
+// The faces of <refined> the given faces of the shape it was refined from
+// went into: the one holding a point inside each. Two selected pieces of one
+// merged face give that face once.
+static std::vector<TopoShape> facesAfterRefine(const std::vector<TopoShape> &faces,
+                                               const TopoShape &refined)
+{
+    auto refinedFaces = refined.getSubTopoShapes(TopAbs_FACE);
+    std::vector<Bnd_Box> boxes(refinedFaces.size());
+    for (size_t i = 0; i < refinedFaces.size(); ++i) {
+        BRepBndLib::Add(refinedFaces[i].getShape(), boxes[i]);
+        boxes[i].Enlarge(Precision::Confusion());
+    }
+
+    std::vector<TopoShape> res;
+    std::vector<bool> taken(refinedFaces.size(), false);
+    for (const auto &face : faces) {
+        gp_Pnt pnt;
+        if (!BRepClass3d_SolidExplorer::FindAPointInTheFace(TopoDS::Face(face.getShape()), pnt))
+            FC_THROWM(Base::CADKernelError, "Failed to find a point inside a drafted face");
+        TopoDS_Vertex vertex = BRepBuilderAPI_MakeVertex(pnt);
+        double tol = BRep_Tool::Tolerance(TopoDS::Face(face.getShape())) + Precision::Confusion();
+        int best = -1;
+        double bestDist = tol;
+        for (size_t i = 0; i < refinedFaces.size(); ++i) {
+            if (boxes[i].IsOut(pnt))
+                continue;
+            BRepExtrema_DistShapeShape dist(vertex, refinedFaces[i].getShape());
+            if (!dist.IsDone())
+                continue;
+            double faceTol = tol + BRep_Tool::Tolerance(TopoDS::Face(refinedFaces[i].getShape()));
+            if (dist.Value() <= faceTol && (best < 0 || dist.Value() < bestDist)) {
+                best = static_cast<int>(i);
+                bestDist = dist.Value();
+            }
+        }
+        if (best < 0)
+            FC_THROWM(Base::CADKernelError, "Failed to find a drafted face in the refined shape");
+        if (!taken[best]) {
+            taken[best] = true;
+            res.push_back(refinedFaces[best]);
+        }
+    }
+    return res;
 }
 
 App::DocumentObjectExecReturn *Draft::execute()
@@ -412,30 +508,90 @@ App::DocumentObjectExecReturn *Draft::execute()
     computeProps = {pullDirection, neutralPlane};
 
     this->positionByBaseFeature();
-    try {
-        // Note:
-        // LocOpe_SplitDrafts can split a face with a wire and apply draft to both parts
-        //       Not clear though whether the face must have free boundaries
-        // LocOpe_DPrism can create a stand-alone draft prism. The sketch can only have a single
-        //       wire, though.
-        // BRepFeat_MakeDPrism requires a support for the operation but will probably support multiple
-        //       wires in the sketch
+
+    // Note:
+    // LocOpe_SplitDrafts can split a face with a wire and apply draft to both parts
+    //       Not clear though whether the face must have free boundaries
+    // LocOpe_DPrism can create a stand-alone draft prism. The sketch can only have a single
+    //       wire, though.
+    // BRepFeat_MakeDPrism requires a support for the operation but will probably support multiple
+    //       wires in the sketch
+    auto makeDraft = [&](const TopoShape &base, const std::vector<TopoShape> &draftFaces,
+                         std::string &error) {
         TopoShape shape(0,getDocument()->getStringHasher());
         try {
-            shape.makEDraft(baseShape,faces,pullDirection,angle,neutralPlane);
-        }catch(Standard_Failure &e) {
-            std::ostringstream ss;
-            ss << "Failed to create draft: " << e.GetMessageString();
-            return new App::DocumentObjectExecReturn(ss.str().c_str());
+            shape.makEDraft(base,draftFaces,pullDirection,angle,neutralPlane);
+            if (shape.isNull()) {
+                error = "Resulting shape is null";
+                return TopoShape();
+            }
+            shape = getSolid(shape);
+            if (shape.isNull())
+                error = "Resulting shape is not a solid";
+            return shape;
+        } catch (Standard_Failure &e) {
+            const char *msg = e.GetMessageString();
+            if (!msg || !*msg) {
+#if OCC_VERSION_HEX >= 0x080000
+                msg = e.ExceptionType();
+#else
+                msg = e.DynamicType()->Name();
+#endif
+            }
+            error = std::string("Failed to create draft: ") + msg;
+        } catch (Base::Exception &e) {
+            error = std::string("Failed to create draft: ") + e.what();
         }
-        if (shape.isNull())
-            return new App::DocumentObjectExecReturn("Resulting shape is null");
+        return TopoShape();
+    };
 
-        this->Shape.setValue(getSolid(shape));
-        return App::DocumentObject::StdReturn;
+    long method = Method.getValue();
+    std::string error;
+    TopoShape result;
+    if (method != MethodNew) {
+        result = makeDraft(baseShape, faces, error);
+        if (!result.isNull() || method == MethodClassic) {
+            if (result.isNull())
+                return new App::DocumentObjectExecReturn(error.c_str());
+            this->Shape.setValue(result);
+            return App::DocumentObject::StdReturn;
+        }
     }
-    catch (Standard_Failure& e) {
 
-        return new App::DocumentObjectExecReturn(e.GetMessageString());
+    // The new draft: the classic draft refuses a face split in coplanar
+    // pieces, and a face beside such a split, where the drafted piece's
+    // corner leaves its neighbour's plane. Refined, the pieces are one face.
+    TopoShape refined;
+    try {
+        refined = refineBase(baseShape);
+        if (!refined.isNull())
+            faces = facesAfterRefine(faces, refined);
+    } catch (Standard_Failure &e) {
+        FC_LOG(getFullName() << ": refine failed: " << e.GetMessageString());
+        refined = TopoShape();
+    } catch (Base::Exception &e) {
+        FC_LOG(getFullName() << ": refine failed: " << e.what());
+        refined = TopoShape();
     }
+
+    if (refined.isNull()) {
+        // Nothing to merge: the draft is the classic one, and Auto has its
+        // answer already.
+        if (method == MethodAuto)
+            return new App::DocumentObjectExecReturn(error.c_str());
+        result = makeDraft(baseShape, faces, error);
+    } else {
+        std::string refinedError;
+        result = makeDraft(refined, faces, refinedError);
+        if (result.isNull()) {
+            if (error.empty())
+                error = refinedError;
+            else
+                error += "\nOn the refined base shape: " + refinedError;
+        }
+    }
+    if (result.isNull())
+        return new App::DocumentObjectExecReturn(error.c_str());
+    this->Shape.setValue(result);
+    return App::DocumentObject::StdReturn;
 }
