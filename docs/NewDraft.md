@@ -1,8 +1,11 @@
 # The new draft -- a draft that can change topology
 
-Status: design, with a Python prototype (section 5) that the measurements
-below come from; the open questions settled 2026-10-05 (section 9). Not
-implemented yet; it goes into FreeCAD's Part (section 6).
+Status: phase 1 implemented 2026-10-05 -- `Part::CellDraft`
+(`src/Mod/Part/App/CellDraft.*`) behind PartDesign's `Method = New` and
+Auto's fallback, with `StopAtBody`; section 10 says what the port changed
+and measured. The design below came with a Python prototype (section 5)
+that the earlier measurements come from; the open questions settled
+2026-10-05 (section 9).
 
 Related: `PartDesign::Draft::Method` (fcad `2ed87066ea`), the fork's draft
 fixes and suite (`occt/tests/fork/draft/README.md`), the draft pictures
@@ -249,17 +252,26 @@ and then 16 times larger before it counts as open (section 4.4).
 - **Seeds**: for each piece of `F` (the fuse splits `F` where `P'` and
   the extended neighbours cross it), the cell beside it on the side where
   `P'` lies -- outside `S` where `P'` leans out, inside where it leans in.
-  For a plane, the side is the sign of `P'`'s distance at the piece; a
+  For a plane, the side is the sign of `P'`'s distance at a point of the
+  piece, and which of the piece's two cells is outside comes from the
+  piece's orientation in each (not from a point inside the cell); a
   piece lying in `P'` itself (on the hinge line) seeds nothing.
 - **Fill**: from a cell in `K`, cross any face to the cell beyond, except
   a piece of `P'`, of `F` (the old face), or of a neighbour's surface --
   its own face or its extension. Those are `K`'s boundary.
 - **Leak**: a cell of `K` that touches `B`'s boundary, in the largest box
   of section 4.2, means the region is not closed: the drafted face does
-  not meet some neighbour. That is the second error class -- #474's ramp,
-  where the lifted ledge no longer meets the helical ramp beside it. The
-  neighbour the leak passed is reported (the last neighbour surface the
-  fill ran along).
+  not meet some neighbour. So does a seed, or a cell the fill crosses
+  into, that does not lie between `P` and `P'`: a closed `K` is bounded
+  by `P'`, `F` and the neighbours, so a face crossed into a cell outside
+  the wedge is a gap in that boundary. The prototype skipped such a cell
+  silently, and the port did at first: on #474's ramp at 11 deg the cell
+  beside the ledge wrapped round under `P` past the ramp's (too short)
+  extension, was skipped, and a valid, boolean-clean solid came out with
+  1.4 of the 24.9 the draft adds (section 10). It is a leak now, tried
+  again in a larger box, then the second error class. The neighbour the
+  leak passed is reported (the last neighbour surface the fill ran
+  along).
 
 Two properties make the rules exact rather than heuristic:
 
@@ -328,7 +340,7 @@ Each refusal names the face (and the neighbour, where there is one):
 | `TurnsOver` | the face would turn by 90 deg or more: its new outward normal points against the old one (an undercut face drafted past the pull direction -- #631's walls at 60 deg turn 108 to 113 deg) |
 | `UnsupportedSurface` | phase 1: the drafted face is not a plane |
 | `TangentNeighbour` | phase 1: a neighbour is tangent to the face |
-| `NoClosure` | the swept region leaks to the box: the face does not meet that neighbour (#474's ramp) |
+| `NoClosure` | the swept region leaks to the box, or out of the wedge: the face does not meet that neighbour |
 | `FaceVanishes` | the drafted face is not in the result (its neighbours meet across it) |
 | `SplitsSolid` | the chosen cells are not one piece across faces: the draft cuts the solid in two (#309's 2 thick plate, its bottom tilted through it) |
 | `NotASolid` / `Boolean` | the fuse failed, or the result fails `BRepCheck` or the boolean check (self-intersection) -- every result is checked both ways before it is returned |
@@ -586,10 +598,11 @@ already does (`OCC_VERSION_HEX`).
 - `tests/fork/draft` (through PartDesign): the refused cases of section
   5.1 again with `Method = New`, expecting the closed-form volumes there
   (with the stop of section 4.9: `notch_ledge_a60` 1927.8312,
-  `notch_bevel_ledge_a{5,20,45}` 1660.2207, 1685.2363, 1719.4444); a #474
-  ramp case expecting `NoClosure`; a face that vanishes, expecting
-  `FaceVanishes`; an L-shaped face; two adjacent walls of a boss in both
-  orders (the same solid).
+  `notch_bevel_ledge_a{5,20,45}` 1660.2207, 1685.2363, 1719.4444); the
+  #474 ramp (`NoClosure` in the prototype, which could not extend the
+  B-spline ramp; extended, it closes: section 10); a face that vanishes,
+  expecting `FaceVanishes`; an L-shaped face; two adjacent walls of a
+  boss in both orders (the same solid).
 - FreeCAD `TestDraft`: Auto on a slot wall that breaks through (element
   names of the grown and cut faces stable over a recompute).
 - The draft sweep with the cell draft, as in 5.2 and 5.3: where the
@@ -625,3 +638,140 @@ already does (`OCC_VERSION_HEX`).
 4. In FreeCAD's Part, not in OCCT (section 6).
 5. The self-intersection check after a classic draft: measure first
    (step 3), then decide.
+
+## 10. The implementation (2026-10-05/06)
+
+Steps 1 and 2 of section 8: `Part::CellDraft` (`src/Mod/Part/App/
+CellDraft.h/.cpp`), `TopoShape::makEDraft(..., cell, stopAtBody)`, and
+PartDesign's Draft with `Method = New` on it, Auto falling back to it, and
+`StopAtBody`. The refine-then-classic of 2026-10-05 is gone. An error
+reads `Cell draft: <Error> on Face<n> (neighbour Face<m>): <why>`, the
+faces named in the base shape.
+
+### 10.1 What the port changed
+
+- **Seeds and leaks are strict** (section 4.4 as amended). The prototype
+  seeded from cells whose interior point lay between `P` and `P'`, and
+  skipped any other cell silently. On #474's ramp at 11 deg the cell
+  beside the ledge wrapped round under `P`, past the ramp's extension,
+  and was skipped: valid, boolean-clean, and 1.4 of the 24.9 the draft
+  adds. Now the seed is the cell on `P'`'s side of each piece of `F` by
+  the piece's orientation in it, and a seed or a crossed-into cell
+  outside the wedge is a leak (larger box, then `NoClosure`).
+- **B-spline and other neighbours are extended** (`GeomLib::
+  ExtendSurfByLength`, not in the prototype). #474's ramp closes once
+  extended: the ledge drafts at every angle to the exact wedge under it,
+  `128 tan(a)` (an 8 x 4 face hinged at its end), where the prototype said
+  `NoClosure`. The suite's case is valid now. No `NoClosure` example is
+  left in the suite; the sweep has one (10.2).
+- **Neighbours are extended locally** (section 4.2): a planar neighbour's
+  plane as a rectangle over its own face, grown by how far the neighbour
+  must reach across its edge with `F` to meet `P'` (computed at the
+  edge's ends, plus the face's largest move), and the whole box when the
+  neighbour runs nearly parallel to `P'`. Every tool is clipped to the
+  local box `B` (a common with it), so the solid is split only there; its
+  pieces outside `B` are kept whole. A rectangle's dangling part ends up
+  as an internal face of a cell and is ignored.
+- **Tool solids of revolution are made in the neighbour's own frame**
+  (the same seam, turning the same way). Made in a frame of their own,
+  #876's cone corners and one #334 draft lost cells or came out
+  self-intersecting; turning the seam away from the neighbour's made it
+  worse. Measured, not derived.
+- **A fuzzy retry.** Cells that make no valid solid are fused again with
+  a fuzzy value of 1e-6. #876's cone corners are tangent to the walls
+  either side, so the extensions touch along lines, and the exact fuse
+  can leave a sliver unsplit there (#876's face 4 about face 6 at 5 deg).
+- **The merge.** `ShapeUpgrade_UnifySameDomain` with `KeepShape` on every
+  edge between pieces of different origin, and on every vertex but one
+  where two pieces of one input edge meet. A piece that lies on a face of
+  the solid and on a tool (a neighbour's extension over a coplanar face, a
+  cap) belongs to the solid's face; on a neighbour's extension and a cap,
+  to the neighbour; a cap on a neighbour's plane or another cap's is
+  dropped. Without that the split floor of `split_floor_corner` came back
+  in 18 pieces. The merge can break a curved face it merges (#876's
+  cones: self-intersecting wires); the solid is then merged in its planar
+  pieces only, and failing that kept as chosen -- valid, its faces in
+  more pieces than needed (#876: 70 faces where the prototype's
+  `removeSplitter` made 54).
+- **The input is copied first.** The fuse runs non-destructive, but the
+  merge edited edges the result shares with the input: #334's Draft input
+  grew by 10k characters of BRep a draft, a PartDesign base shape changed
+  under its owner, and each draft took longer than the last (6.7 s to
+  8 s over six). `CellDraft` works on a `BRepBuilderAPI_Copy` (no mesh)
+  whose history heads the operation's: the input is byte-identical after,
+  and the same draft takes 1.65 s, flat.
+- `TurnsOver` reports `FindRotation`'s own turn (#631: 168 to 173 deg),
+  where the prototype took the other root (108 to 113). Both refuse.
+- **The box and the extensions are bounded by the solid.** A neighbour
+  nearly parallel to `P'` meets it far away, and a face turned by 80 deg
+  moves its far edge far: #474's ledge (face 3 about face 7) put both at
+  830 to 1670 on a part 30 across, and the fuse in a box that size ran
+  52 s and gave cells of negative volume. A neighbour's reach, the box's
+  margin and a B-spline's extension are each at most the solid's
+  diagonal (the stop cuts growth past the body off anyway; without it a
+  leak still tries the larger boxes): the same draft takes 1.8 s, the
+  classic draft's volume.
+- **The checks run per face**, so that the fuzzy retry sees a result
+  that fails the boolean check, and every step of the merge's fallback
+  is checked both ways, not by BRepCheck alone. The boolean check names
+  what it found (self-intersection, an edge off its face).
+
+### 10.2 Measured
+
+The tests: the suite cases of section 5.1 with `Method = New`, the stop
+both ways, closed form (`occt/tests/fork/draft`, `new_*` cases); the
+L-shaped face (`1500 -+ 625 tan(a)`, the classic draft's to 1e-12), two
+boss walls in either order (the classic draft's), the vanishing face
+(`FaceVanishes`; drafted the other way, `386.6083`, closed form);
+`TestDraft` +3 (a wall breaking through under Auto, its names stable over
+a recompute; the stop both ways; `FaceVanishes`).
+
+The sweep of section 5.2 (clean inputs, 500: Auto's refusals and Auto's
+valid results), through PartDesign with `Method = New` and the stop on,
+against the prototype `celldraft6.py`:
+
+| C++ against the prototype | Count |
+|--------|------:|
+| valid, the same volume (1e-7) | 406 |
+| valid where the prototype could not extend a B-spline neighbour | 3 |
+| valid where the prototype's result was invalid (#474 Fillet003 by the ramp, the open defect of 5.3) | 2 |
+| the same refusal: `TangentNeighbour` 57, `TurnsOver` 28, `SplitsSolid` 3 | 88 |
+| `NoClosure` where the prototype was valid | 1 |
+
+The last is #876's face 44 (a cavity's roof under a 2 thick lid) about
+face 36 at 5 deg: the roof's far edge rises 2.03, through the lid by a
+0.03 sliver along a cone corner tangent to the wall beside it, and the
+fuse leaves the sliver unsplit at the tangent contact, exact or fuzzy. A
+refusal, not a wrong body.
+
+The classic draft's valid results (1222, the set of section 5.3), the
+same way:
+
+| C++ against the classic draft | Count |
+|--------|------:|
+| valid, the classic draft's volume (to the 4 decimals recorded) | 1105 |
+| valid, another volume -- the prototype's own (split walls drafted whole, 4.3; the stop, 4.9; classic results that self-intersect, 2.2) | 36 |
+| valid, another volume, the classic result self-intersecting (#474 Fillet003 face 3 about 7 at 60 deg; the prototype could not extend the ramp) | 1 |
+| valid, 0.0172 under a clean classic result (9e-6 relative; #474 Fillet002 face 10 about 8 at 5 deg, its growing neighbour the B-spline ramp, extended by `ExtendSurfByLength`'s own continuation, not the helicoid's) | 1 |
+| refused: `TangentNeighbour` 57 (phase 2) | 57 |
+| refused: `NotASolid`, the boolean check finds two collinear edges overlapping (#474's ramp parts; the solid of chosen cells has them already, before any merge) | 19 |
+| refused: `FaceVanishes` (#474 Fillet003, face 11 at 15 deg and face 22 at 5; the prototype's were valid at the classic volume: open) | 3 |
+
+Against the prototype on the same cases: the same volume in 1109, valid
+where it was not in 32 (17 by extending a B-spline neighbour, 12 of its
+invalid results by the ramp, 2 it refused as turning over -- the other
+root of `FindRotation` -- and 1 `SplitsSolid`), and it valid where the C++ refuses in 11
+(9 `NotASolid`, 2 `FaceVanishes`, all on #474's ramp parts). Under Auto
+none of these is seen: the classic draft succeeds first. A refusal on
+those parts can be slow, every retry and fallback checked (#474 Fillet002
+face 10 about 11 at 60 deg: 94 s for two recomputes).
+
+A PartDesign Draft on a base with a placement recomputes in the global
+frame the first time and in the base's own after (the suite's README,
+#474): the sweep recomputes each draft twice and measures the second.
+
+Time, the same draft repeated (#334's Draft input, 187 faces): 1.65 s,
+of which the boolean check of the whole result is 0.84, the merge 0.25,
+the fuse 0.17; the classic draft takes 0.16. Restricting the boolean
+check to the drafted region (section 2.2's "drafted faces against the
+rest") is the next saving.
