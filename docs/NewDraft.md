@@ -1,7 +1,8 @@
 # The new draft -- a draft that can change topology
 
 Status: design, with a Python prototype (section 5) that the measurements
-below come from. Nothing in OCCT or FreeCAD implements it yet.
+below come from; the open questions settled 2026-10-05 (section 9). Not
+implemented yet; it goes into FreeCAD's Part (section 6).
 
 Related: `PartDesign::Draft::Method` (fcad `2ed87066ea`), the fork's draft
 fixes and suite (`occt/tests/fork/draft/README.md`), the draft pictures
@@ -99,7 +100,7 @@ how often this happens among the classic draft's valid results.
 Auto takes the classic result as it is, so it hands these on. Catching
 them would take a self-intersection check after every classic draft --
 of the drafted faces against the rest, not the whole solid -- and then
-the cell draft. Its cost is not measured yet (section 9).
+the cell draft. Decided: measure its cost first (section 8, step 3).
 
 ## 3. Approaches considered
 
@@ -164,9 +165,8 @@ is consumed, as a boolean would consume it.
 
 `P'` comes from the same computation as the classic draft:
 `Draft_Modification`'s private `NewSurface(S, Oris, Direction, Angle,
-NeutralPlane)` and its static `FindRotation`. They move into an internal
-helper both use; `Draft_Modification`'s exported members stay, as thin
-wrappers (no ABI change). Failures here are the first error class:
+NeutralPlane)` and its static `FindRotation`, which FreeCAD copies for the
+plane (section 6). Failures here are the first error class:
 
 - `F` parallel to the neutral plane (no hinge line);
 - the angle too steep: `|sin(angle)|` not below the pull direction's
@@ -333,9 +333,40 @@ Each refusal names the face (and the neighbour, where there is one):
 | `SplitsSolid` | the chosen cells are not one piece across faces: the draft cuts the solid in two (#309's 2 thick plate, its bottom tilted through it) |
 | `NotASolid` / `Boolean` | the fuse failed, or the result fails `BRepCheck` or the boolean check (self-intersection) -- every result is checked both ways before it is returned |
 
-`FaceVanishes` is a refusal by default: the user asked to draft a face,
-and a result without it is more surprising than an error. It could become
-an option.
+`FaceVanishes` is a refusal (decided 2026-10-05): the user asked to draft
+a face, and a result without it is more surprising than an error.
+
+### 4.9 A drafted face stops at the body
+
+Decided 2026-10-05: a drafted face does not grow the body past its own
+extent. Where the face leans out, its neighbours grow to meet it, but not
+beyond a face of the body that bounds the whole solid: `notch_ledge_a60`'s
+ledge rises 8.66 at its front over a notch 5 deep, and instead of a fin
+standing 3.66 over the block's top, the ledge stops at the top's plane
+and the top closes over the notch's front.
+
+The rule: on the added side the fill of section 4.4 is also stopped by
+the plane of a face of the second ring -- a face beside one of `F`'s
+neighbours, not `F` or a neighbour itself -- if the whole body lies on
+that plane's inner side (a face of the body's convex envelope). The
+plane goes into the fuse like a neighbour's. A plane that the body
+crosses (a pocket's wall, a step) does not stop it: it would cut
+material that is the body's own.
+
+Measured on the suite (prototype): `notch_ledge_a60` 1927.8312 --
+1750 plus the notch's front filled to the top for `y < 5 - 5/tan 60` and
+the wedge under the ledge behind that, closed form. The bevelled notch
+changes too, and that is the rule working as decided: the bevel bounds
+the body, so the ledge's front rises only to the bevel's plane, which
+reaches the notch's front edge at its own height --
+`notch_bevel_ledge_a5` 1660.2207 against 1660.9361 unstopped, the
+difference exactly the part of the wedge over the bevel's plane (the
+ledge meets it 0.327 behind the front). Every other suite case is
+unchanged. The sweep's count is in section 5.5.
+
+Curved faces of the second ring do not stop the fill in the prototype; a
+cylinder or cone bounding the body would be a supporting surface the same
+way, to be added with phase 2.
 
 ## 5. Prototype and measurements
 
@@ -363,7 +394,9 @@ time, a case that took over 120 s killed and recorded.
 | `slot_wall_a30` | valid, 7437.8564 | likewise at 2/tan 30 |
 | `split_floor_corner_a5` | valid, 1151.5110 | the corner slides along the slanted wall to (7.879, -1.0605): 1125 + 5 x 5.3025 |
 
-Every check is closed form and agrees to the printed digits.
+Every check is closed form and agrees to the printed digits. These are
+without the stop of section 4.9, which changes `notch_ledge_a60` and the
+bevelled notch (given there).
 
 ### 5.2 The sweep
 
@@ -479,111 +512,107 @@ draft's valid results (every sixth, 226) it gives the same volume in 215,
 refuses 4 (tangent neighbours), and differs in 7 -- and in all 7 the
 classic result is self-intersecting and the cell draft's clean.
 
-## 6. API
+### 5.5 The stop of section 4.9 on the sweep
 
-### 6.1 OCCT (TKOffset)
+`celldraft6.py`, the same clean-input cases as 5.2 and 5.3:
 
-A new class, so no existing class changes layout:
+- Auto's refusals and Auto's valid results (500): 489 the same as
+  without the stop. Two change by design: #334's first and
+  Draft_base inputs, a face at 60 deg whose fin over the body's top goes
+  (2162 less, each). Seven change by under 0.004 or only in how many
+  pieces a face is left in (#273, #876: the cap's plane splits a face the
+  prototype's merge does not put back). Two more #474 Fillet003 cases by
+  the helical ramp turn invalid -- the open defect of 5.3.
+- The classic draft's valid results (1222): 1209 the same. Ten change by
+  design -- there the classic draft grows the body past a face that
+  bounds it, and the stopped draft does not (#309's face 2 at 60 deg:
+  classic 296819.7, a fin many times the part; stopped 61696.7; #631's
+  walls at 15 deg, 2405 less each). One more #474 ramp case turns invalid.
 
-```
-class BRepOffsetAPI_DraftRebuild : public BRepBuilderAPI_MakeShape
-{
-public:
-  BRepOffsetAPI_DraftRebuild(const TopoDS_Shape& S);
-  // as BRepOffsetAPI_DraftAngle::Add; false (and Error()) when the face
-  // cannot be drafted at all (section 4.1)
-  bool Add(const TopoDS_Face& F, const gp_Dir& Direction, double Angle,
-           const gp_Pln& NeutralPlane);
-  void Build(const Message_ProgressRange& = Message_ProgressRange()) override;
-  DraftRebuild_Error Error() const;           // section 4.8
-  const TopoDS_Shape& ProblematicShape() const;  // the face
-  const TopoDS_Shape& ProblematicNeighbour() const;
-  // history: from the fuse, the cell choice and the merges
-  const TopTools_ListOfShape& Modified(const TopoDS_Shape&) override;
-  const TopTools_ListOfShape& Generated(const TopoDS_Shape&) override;
-  bool IsDeleted(const TopoDS_Shape&) override;
-};
-```
+Under Auto these ten keep the classic result, fin and all: the classic
+draft succeeds, so the cell draft never runs. Only `Method = New` stops
+them. Holding Auto's classic results to the same rule would need a test
+like section 2.2's self-intersection check (does the result leave the
+body's convex envelope?) -- to be measured with it in step 3.
 
-`F`'s new face is `Modified(F)`; a neighbour grown or cut is `Modified`
-of the neighbour; a face swallowed is `IsDeleted`; the new edges (the
-corner edge of `notch_bevel_ledge`) are `Generated` from the faces they
-lie between. FreeCAD's element map needs nothing more (`makEShape` reads
-exactly these).
+## 6. Where it lives: FreeCAD's Part
 
-### 6.2 FreeCAD
+Decided 2026-10-05: in FreeCAD, not in OCCT. Everything the cell draft
+needs is OCCT's public API, unchanged since long before 7.7 --
+`BOPAlgo_Builder` and its history, `BRepTools_History`,
+`ShapeUpgrade_UnifySameDomain`, `BRepPrimAPI`, `Geom` -- so FreeCAD's own
+code runs on every OCCT FreeCAD builds against: the released packages
+(the fork's frozen 7.7.2), the fork's 8.0.1, stock OCCT, distributions'
+packages, the WASM build. In the fork's OCCT it would exist only where
+8.0.1 ships (7.7.2 is frozen, `docs/Backport772.md`) and would need a
+`dlsym` bridge. The 7.7/8.0 type differences are handled as FreeCAD
+already does (`OCC_VERSION_HEX`).
 
-FreeCAD reaches fork-only OCCT features through `dlsym` (the fillet plate
-fallback, `AppPartPy.cpp`), so a FreeCAD package still runs on an OCCT
-without them. The same here: TKOffset exports
-
-```
-extern "C" BRepBuilderAPI_MakeShape* BRepOffsetAPI_DraftRebuild_New(const TopoDS_Shape*);
-extern "C" bool BRepOffsetAPI_DraftRebuild_Add(BRepBuilderAPI_MakeShape*, const TopoDS_Face*,
-                                               const gp_Dir*, double, const gp_Pln*);
-extern "C" int  BRepOffsetAPI_DraftRebuild_Error(const BRepBuilderAPI_MakeShape*,
-                                                 TopoDS_Shape* theFace, TopoDS_Shape* theNeighbour);
-```
-
-and FreeCAD drives the object through `BRepBuilderAPI_MakeShape`'s virtual
-members (`Build`, `IsDone`, `Shape`, `Modified`, ...) -- which needs no
-symbol of the new class -- and deletes it through its virtual destructor.
-Without the symbols, New reports that this OCCT has no new draft.
-
-`TopoShape::makEDraft` gains the method; `PartDesign::Draft`:
-
-- **New**: the cell draft. The refine-then-classic of today goes away: the
-  cell draft drafts coplanar pieces as one face itself (section 4.3) and
-  does not refine the rest of the body.
-- **Auto**: Classic; if it fails, the cell draft.
-- Errors: the classic draft's refusal is reported with its status and the
-  face, edge or vertex it names, as an element name of the base
-  (`Draft_EdgeRecomputation` on `Edge12`, ...); the cell draft's with its
-  error and face/neighbour names. Auto reports both when both fail.
+- `FindRotation` / `NewSurface` (section 4.1) are private in OCCT's
+  `Draft_Modification`; FreeCAD carries its own copy of the plane case
+  (some forty lines), the classic draft untouched.
+- `src/Mod/Part/App/CellDraft.h/.cpp`: `Part::CellDraft`, a
+  `BRepBuilderAPI_MakeShape` (constructor with the shape; `Add(face,
+  direction, angle, neutral plane)`; `Build`; `Error()` with the face and
+  neighbour of section 4.8) whose `Modified` / `Generated` / `IsDeleted`
+  read one `BRepTools_History` -- the fuse's, the cell choice's and the
+  merges', merged. `F`'s new face is `Modified(F)`; a neighbour grown or
+  cut is `Modified` of the neighbour; a face swallowed `IsDeleted`; a new
+  edge (the corner of `notch_bevel_ledge`) `Generated` from the faces it
+  lies between.
+- `TopoShape::makEDraft` gains the method and runs `CellDraft` through
+  `makEShape`, so the element map comes from that history as for every
+  other operation.
+- `PartDesign::Draft`:
+  - **New**: the cell draft. The refine-then-classic of today goes away:
+    the cell draft drafts coplanar pieces as one face itself (section 4.3)
+    and does not refine the rest of the body.
+  - **Auto**: Classic; if it fails, the cell draft (decided: no refine +
+    classic in between).
+  - Errors: the classic draft's refusal reported with its status and the
+    face, edge or vertex it names, as an element name of the base
+    (`Draft_EdgeRecomputation` on `Edge12`, ...); the cell draft's with
+    its error and face/neighbour names. Auto reports both when both fail.
 
 ## 7. Tests
 
-- `tests/fork/draft` (OCCT suite, through PartDesign): the refused cases
-  of section 5.1 again with `Method = New`, expecting the closed-form
-  volumes there; a #474 ramp case expecting `NoClosure`; a face that
-  vanishes, expecting `FaceVanishes`; an L-shaped face; two adjacent walls
-  of a boss in both orders (the same solid).
+- `tests/fork/draft` (through PartDesign): the refused cases of section
+  5.1 again with `Method = New`, expecting the closed-form volumes there
+  (with the stop of section 4.9: `notch_ledge_a60` 1927.8312,
+  `notch_bevel_ledge_a{5,20,45}` 1660.2207, 1685.2363, 1719.4444); a #474
+  ramp case expecting `NoClosure`; a face that vanishes, expecting
+  `FaceVanishes`; an L-shaped face; two adjacent walls of a boss in both
+  orders (the same solid).
 - FreeCAD `TestDraft`: Auto on a slot wall that breaks through (element
   names of the grown and cut faces stable over a recompute).
 - The draft sweep with the cell draft, as in 5.2 and 5.3: where the
   classic draft's result is valid and boolean-clean, the cell draft's
   volume is the same (1e-9 relative), but for one piece of a split wall
-  (section 4.3); every refused case is either valid and boolean-clean or
-  refused with an error from 4.8; the sweep's cases run in the time the
-  classic draft takes, within a factor to be set from the measurements.
+  (section 4.3) and a face stopped at the body (section 4.9); every
+  refused case is either valid and boolean-clean or refused with an error
+  from 4.8.
 
 ## 8. Steps
 
-1. Factor `NewSurface` / `FindRotation` (no behaviour change: the draft
-   suite and sweep identical).
-2. `BRepOffsetAPI_DraftRebuild`, phase 1 (single planar faces, sequential
-   faces, all errors of 4.8), the local fuse of 4.2, history, the suite
-   cases.
-3. FreeCAD: `Method = New` / Auto on it, error reporting for both drafts,
-   `TestDraft`.
+1. `Part::CellDraft`, phase 1 (single planar faces, sequential faces, the
+   stop of 4.9, all errors of 4.8), the local fuse of 4.2, history;
+   `TopoShape::makEDraft`'s method; the suite cases.
+2. `PartDesign::Draft`: `Method = New` / Auto on it, error reporting for
+   both drafts, `TestDraft`.
+3. Measure the self-intersection check after a classic draft (section
+   2.2), and an envelope check for a classic result grown past the body
+   (section 5.5): their cost on the sweep, and how many classic results
+   they turn over to the cell draft. Decide from that whether Auto runs
+   them.
 4. Phase 2 of the algorithm: tangent chains and turned cylinders.
-5. Performance beyond the local fuse of section 4.2, if the sweep shows
-   the need.
+5. Performance beyond the local fuse, if the sweep shows the need.
 
-## 9. Open questions
+## 9. Decisions (2026-10-05)
 
-1. `FaceVanishes`: refuse (proposed) or allow?
-2. Faces that grow past the body: `notch_ledge_a60`'s fin is the true
-   local-operation result (the ledge's free sides extend to meet it). Keep
-   that (proposed), or stop a drafted face at the body's other faces?
-3. Auto's fallback: the cell draft only (proposed), or keep refine +
-   classic before it? The two give the same volume where both work; the
-   refine changes faces elsewhere in the body.
-4. OCCT class + `dlsym` (proposed), or the algorithm in FreeCAD's Part
-   (`TopoShape`), which would need no ABI care but keeps the kernel's
-   draft as it is?
-5. Auto and the classic draft's self-intersecting "valid" results (section
-   2.2): add a self-intersection check of the drafted faces after a
-   classic draft, falling back to the cell draft when it fails? It caught
-   14 of 1222 valid classic drafts in the sample, and 7 of 226 on #334's
-   repaired inputs; its cost is to be measured first.
+1. A drafted face that would vanish: refused (`FaceVanishes`).
+2. A drafted face stops at the body's faces; it does not grow past the
+   body (section 4.9).
+3. Auto's fallback is the cell draft only; no refine + classic before it.
+4. In FreeCAD's Part, not in OCCT (section 6).
+5. The self-intersection check after a classic draft: measure first
+   (step 3), then decide.
