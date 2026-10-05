@@ -2517,7 +2517,9 @@ Base::Vector3d Hole::guessNormalDirection(const TopoShape& profileshape) const
     if (profileshape.hasSubShape(TopAbs_FACE)) {
         BRepAdaptor_Surface sf(TopoDS::Face(profileshape.getSubShape(TopAbs_FACE, 1)));
         if (sf.GetType() == GeomAbs_Cylinder) {
-            const gp_Dir& dir = sf.Cylinder().Axis().Direction();
+            // By value: Cylinder() hands back a temporary, and a reference
+            // into it is dead by the next line (zero under gcc)
+            const gp_Dir dir = sf.Cylinder().Axis().Direction();
             return Base::Vector3d(dir.X(), dir.Y(), dir.Z());
         }
     }
