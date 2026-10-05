@@ -14433,3 +14433,28 @@ copy's edit is written to this file's next object and its removal
 removes the one after; without the check of what was left out this
 file's value is taken back; without the view rule both colours are the
 default.
+
+### 30.36 The graph pane: a row's band to the pane's edge (user, 2026-10-05)
+
+The graph is a pane of its own beside the list (26), its one column as
+wide as its lanes and labels and the pane as wide as the splitter makes
+it. A tree view paints a row's band over its columns and no further, so
+the band stopped where the column did -- short of the list the row goes
+on in, with a strip of plain background between a node and its row.
+
+`GraphView`, the pane's view: `drawRow` goes on from the end of the
+column to the viewport's edge with the style's own row panel
+(`PE_PanelItemViewRow`), so a style sheet's alternate colour is the one
+used, and a selected row's highlight runs on with it. Which rows are the
+alternate ones is by place in the view, as the view counts them: with
+records hidden, or another branch's rows, the model's row number is not
+it -- the first version went by the number and was a row out of step
+above every hidden row.
+
+**The Gui check** (`scripts/transaction-log-branch-check.py`, +3, 30),
+with main's rows hidden above: the pane wider than its column; for every
+row shown, the colour at the end of the column is the colour at the
+pane's edge; and it is the list's for that row, two colours in all.
+All thirteen Gui checks run again: RC 15, BC 30, VC 18, PC 28, FC 16,
+VW 14, MC 28, the two-document check 24, the tree check 19, the author
+check 36, the import check 49, the request check 28, the share check 47.

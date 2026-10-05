@@ -276,6 +276,43 @@ private:
     const TransactionLogView::GraphLayout& _layout;
 };
 
+/** The graph's pane. Its one column is as wide as its lanes and labels
+ * and the pane is whatever the splitter gives it, so a row's band stopped
+ * where the column did, short of the list it belongs to. The band runs on
+ * to the pane's edge: the eye follows a row from its node into the list.
+ */
+class GraphView: public QTreeView
+{
+public:
+    using QTreeView::QTreeView;
+
+protected:
+    void drawRow(QPainter* painter, const QStyleOptionViewItem& option,
+                 const QModelIndex& index) const override
+    {
+        QTreeView::drawRow(painter, option, index);
+        const int from = header()->length() - header()->offset();
+        const int width = viewport()->width() - from;
+        if (width <= 0)
+            return;
+        // By the style, as the column's own is: a style sheet's alternate
+        // colour and its selection are what the rest of the row has.
+        QStyleOptionViewItem opt = option;
+        opt.rect = QRect(from, option.rect.y(), width, option.rect.height());
+        // Every other row as the view counts them, which is by place: a
+        // row hidden above -- a record -- is not counted, so the model's
+        // row number is not it. The rows are one height.
+        const int height = option.rect.height();
+        const int place = height > 0 ? (option.rect.y() + verticalOffset()) / height
+                                     : index.row();
+        opt.features.setFlag(QStyleOptionViewItem::Alternate,
+                             alternatingRowColors() && (place & 1));
+        opt.state.setFlag(QStyle::State_Selected,
+                          selectionModel() && selectionModel()->isSelected(index));
+        style()->drawPrimitive(QStyle::PE_PanelItemViewRow, &opt, painter, this);
+    }
+};
+
 } // namespace
 
 TransactionLogView::TransactionLogView(Gui::Document* pcDocument, QWidget* parent)
@@ -383,7 +420,7 @@ TransactionLogView::TransactionLogView(Gui::Document* pcDocument, QWidget* paren
     // splitter sizes it or folds it away.
     auto txnSplitter = new QSplitter(Qt::Horizontal, _tabs);
     _tabs->addTab(txnSplitter, tr("Transactions"));
-    _graphView = new QTreeView(txnSplitter);
+    _graphView = new GraphView(txnSplitter);
     _transactions = new QTreeWidget(txnSplitter);
     _transactions->setColumnCount(TxnColumns);
     _transactions->setHeaderLabels({tr("Graph"), tr("Seq"), tr("Kind"), tr("Origin"), tr("Name"),

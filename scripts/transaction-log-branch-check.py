@@ -145,6 +145,35 @@ def run():
                 g.verticalScrollBar().setValue(0)
                 settle()
                 check("list follows the graph pane", bar.value() == 0)
+                # A row's band runs on to the pane's edge, in step with the
+                # list's -- with rows hidden above, so not by row number.
+                if isinstance(dock.parentWidget(), QtWidgets.QDockWidget):
+                    dock.parentWidget().resize(700, 520)
+                g.parentWidget().setSizes([320, 380])
+                tree.clearSelection()
+                tree.setCurrentItem(None)
+                settle()
+                edge = g.header().length() - g.header().offset()
+                wide = g.viewport().width()
+                pane = g.viewport().grab().toImage()
+                rows = tree.viewport().grab().toImage()
+                seen = []
+                index = g.indexAt(QtCore.QPoint(2, 2))
+                while index.isValid():
+                    rect = g.visualRect(index)
+                    if rect.bottom() >= g.viewport().height():
+                        break
+                    y = rect.top() + 1
+                    seen.append((pane.pixel(edge - 2, y), pane.pixel(wide - 3, y),
+                                 rows.pixel(1, y)))
+                    index = g.indexBelow(index)
+                check("graph pane: wider than its column (%d/%d), %d rows"
+                      % (edge, wide, len(seen)), wide > edge + 20 and len(seen) >= 4)
+                check("graph pane: a row's band reaches the pane's edge",
+                      all(a == b for a, b, c in seen))
+                check("graph pane: the bands are the list's (%d colours)"
+                      % len({b for a, b, c in seen}),
+                      all(b == c for a, b, c in seen) and len({b for a, b, c in seen}) == 2)
             shown = [tree.topLevelItem(i) for i in range(tree.topLevelItemCount())]
             scol = column(tree, "Seq")
             visible = [i.text(scol) for i in shown if not i.isHidden()]
