@@ -1512,6 +1512,17 @@ std::vector<std::string> DocumentObject::getMergeUnit(const char*) const
     return {};
 }
 
+bool DocumentObject::isMergedByElement(const Property* prop) const
+{
+    if (!prop)
+        return false;
+    if (prop->isDerivedFrom(PropertyLinkList::getClassTypeId())) {
+        auto group = getExtensionByType<GroupExtension>(true);
+        return group && prop == &group->Group;
+    }
+    return true;
+}
+
 void DocumentObject::onUndoRedoFinished()
 {
 

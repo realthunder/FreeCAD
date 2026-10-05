@@ -547,7 +547,11 @@ public:
          * `derived`: a value theirs' recompute wrote, not merged; its owner
          * is recomputed. `unit`: a property that is one thing with others
          * of its object (DocumentObject::getMergeUnit, sec 31.5) and goes
-         * by the side picked for the conflict whose `key` it has.
+         * by the side picked for the conflict whose `key` it has. `merge`:
+         * both changed it, and it holds many things each known by something
+         * of its own (Property::splitSaved, sec 31.8): what goes in is
+         * `merged`, ours with what theirs did to the things ours left
+         * alone, and nothing is asked.
          */
         std::string kind;
         /// `set`, `addprop`, `delprop`, `create`, `remove`, `revive`: an
@@ -567,6 +571,21 @@ public:
         std::string base, ours, theirs;
         bool derived {false};   ///< a value theirs' recompute wrote
         std::string note;     ///< why, where the kind alone does not say
+        /// Of a `merge`: the merged value, as an entity ref, and what
+        /// became of each thing theirs changed.
+        std::string merged;
+        struct Element
+        {
+            std::string key;      ///< what the thing is known by: `B2`, `Length`, `Pad001`
+            /// `added`, `changed` or `removed`, by theirs.
+            std::string change;
+            /// Whose it is in the merge. `theirs` where ours left it
+            /// alone. Where ours changed it too, and differently, the one
+            /// that wrote it last (user ruling, sec 31.8) -- `byTime`.
+            std::string side;
+            bool byTime {false};
+        };
+        std::vector<Element> elements;
     };
     /// What merging a branch would do (sec 28.2 item 9).
     struct MergePreview

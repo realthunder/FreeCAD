@@ -5442,6 +5442,233 @@ class TransactionBranchCases(unittest.TestCase):
         self.assertAlmostEqual(doc.Box.Shape.Volume, 2000.0)
         self.assertIsNotNone(doc.getObject("Cyl"))
 
+    def testAGroupIsMergedByItsMembers(self):
+        # Sec 31.8: a group two branches each put an object in was one value
+        # against the other. It is the objects in it: ours, then what theirs
+        # added, less what theirs took out; nothing is asked.
+        doc = self.track(FreeCAD.newDocument("MergeGroup"))
+        doc.UndoMode = 1
+        doc.openTransaction("create")
+        group = doc.addObject("App::DocumentObjectGroup", "Group")
+        group.addObject(doc.addObject("Part::Box", "Box"))
+        group.addObject(doc.addObject("Part::Sphere", "Ball"))
+        doc.recompute()
+        doc.commitTransaction()
+        doc.saveAs(os.path.join(self.dir, "merge-group.FCStd"))
+        doc.createTransactionBranch("side")
+        doc.switchTransactionBranch("side")
+        doc.openTransaction("theirs")
+        doc.Group.addObject(doc.addObject("Part::Cone", "Cone"))
+        doc.Group.removeObject(doc.Ball)
+        doc.recompute()
+        doc.commitTransaction()
+        doc.switchTransactionBranch("main")
+        doc.openTransaction("ours")
+        doc.Group.addObject(doc.addObject("Part::Cylinder", "Cyl"))
+        doc.recompute()
+        doc.commitTransaction()
+
+        def members():
+            return [o.Name for o in doc.Group.Group]
+
+        self.assertEqual(members(), ["Box", "Ball", "Cyl"])
+        preview = doc.previewTransactionMerge("side")
+        self.assertEqual(preview["conflicts"], 0)
+        change = [c for c in preview["changes"] if c["key"] == "Group.Group"][0]
+        self.assertEqual(change["kind"], "merge")
+        self.assertEqual(
+            sorted((e["element"], e["change"], e["side"], e["by_time"]) for e in change["elements"]),
+            [("Ball", "removed", "theirs", False), ("Cone", "added", "theirs", False)],
+        )
+        result = doc.mergeTransactionBranch("side")
+        self.assertEqual(result["unresolved"], [])
+        self.assertEqual(members(), ["Box", "Cyl", "Cone"])
+        self.assertIsNotNone(doc.getObject("Ball"), "out of the group, not out of the document")
+        self.assertFalse([o.Name for o in doc.Objects if "Invalid" in o.State])
+        doc.undo()
+        self.assertEqual(members(), ["Box", "Ball", "Cyl"])
+        self.assertIsNone(doc.getObject("Cone"))
+        doc.redo()
+        self.assertEqual(members(), ["Box", "Cyl", "Cone"])
+
+        # A list whose order means something is one value still: nothing
+        # says a section the other branch added belongs at the end.
+        doc.openTransaction("lists")
+        feature = doc.addObject("App::FeaturePython", "Py")
+        feature.addProperty("App::PropertyLinkList", "Sections")
+        feature.Sections = [doc.Box]
+        doc.commitTransaction()
+        doc.createTransactionBranch("order")
+        doc.switchTransactionBranch("order")
+        doc.openTransaction("theirs")
+        doc.Py.Sections = [doc.Box, doc.Cone]
+        doc.commitTransaction()
+        doc.switchTransactionBranch("main")
+        doc.openTransaction("ours")
+        doc.Py.Sections = [doc.Box, doc.Cyl]
+        doc.commitTransaction()
+        self.assertEqual(self.kindsOf(doc.previewTransactionMerge("order"))["Py.Sections"], "conflict set")
+
+    def testExpressionsAreMergedByTheirPaths(self):
+        # Sec 31.8: an object's expressions are known by what each is bound
+        # to. One each side alone bound, changed or let go is that side's;
+        # one both changed is the one's that changed it last (user ruling:
+        # nothing is asked), and the merge's row says which those were.
+        import json
+        import time
+
+        doc = self.track(FreeCAD.newDocument("MergeExpressions"))
+        doc.UndoMode = 1
+        doc.openTransaction("create")
+        box = doc.addObject("Part::Box", "Box")
+        box.setExpression("Length", "2 * 3")
+        box.setExpression("Placement.Base.x", "1 + 1")
+        doc.recompute()
+        doc.commitTransaction()
+        doc.saveAs(os.path.join(self.dir, "merge-expressions.FCStd"))
+
+        def edit(name, **bound):
+            time.sleep(0.05)
+            doc.openTransaction(name)
+            for prop, text in bound.items():
+                doc.Box.setExpression(prop.replace("_", "."), text)
+            doc.recompute()
+            doc.commitTransaction()
+
+        doc.createTransactionBranch("side")
+        doc.switchTransactionBranch("side")
+        edit("theirs first", Length="2 * 4")
+        doc.switchTransactionBranch("main")
+        edit("ours", Length="2 * 5", Width="3 + 1")   # the length: ours is the later
+        doc.switchTransactionBranch("side")
+        # the width: theirs is the later; the height and the placement: theirs alone
+        edit("theirs again", Width="3 + 2", Height="9 + 1", Placement_Base_x=None)
+        doc.switchTransactionBranch("main")
+
+        preview = doc.previewTransactionMerge("side")
+        self.assertEqual(preview["conflicts"], 0)
+        change = [c for c in preview["changes"] if c["key"] == "Box.ExpressionEngine"][0]
+        self.assertEqual(change["kind"], "merge")
+        self.assertEqual(
+            sorted((e["element"], e["change"], e["side"], e["by_time"]) for e in change["elements"]),
+            [
+                ("Height", "added", "theirs", False),
+                ("Length", "changed", "ours", True),
+                ("Placement.Base.x", "removed", "theirs", False),
+                ("Width", "added", "theirs", True),
+            ],
+        )
+        # What an expression writes is no value to pick a side for: the
+        # length and the width, each bound on both branches, are recomputed.
+        kinds = self.kindsOf(preview)
+        self.assertEqual((kinds["Box.Length"], kinds["Box.Width"]), ("derived set", "derived set"))
+        result = doc.mergeTransactionBranch("side")
+        self.assertEqual(result["unresolved"], [])
+        self.assertEqual(
+            sorted(doc.Box.ExpressionEngine),
+            [("Height", "9 + 1"), ("Length", "2 * 5"), ("Width", "3 + 2")],
+        )
+        self.assertEqual(
+            (doc.Box.Length.Value, doc.Box.Width.Value, doc.Box.Height.Value), (10, 5, 10)
+        )
+        self.assertFalse([o.Name for o in doc.Objects if "Invalid" in o.State])
+        row = [t for t in doc.getTransactionLog() if t["seq"] == result["seq"]][0]
+        later = json.loads(row["script"])["merge"]["later"]
+        self.assertEqual(
+            sorted((e["key"], e["element"], e["side"]) for e in later),
+            [
+                ("Box.ExpressionEngine", "Length", "ours"),
+                ("Box.ExpressionEngine", "Width", "theirs"),
+            ],
+        )
+        doc.undo()
+        self.assertEqual(
+            sorted(doc.Box.ExpressionEngine),
+            [(".Placement.Base.x", "1 + 1"), ("Length", "2 * 5"), ("Width", "3 + 1")],
+        )
+
+        # A value one side set by hand and the other bound is a question
+        # still: somebody set something.
+        doc.createTransactionBranch("bound")
+        doc.switchTransactionBranch("bound")
+        edit("theirs binds", Height="4 + 4")
+        doc.switchTransactionBranch("main")
+        doc.openTransaction("ours sets")
+        doc.Box.Height = 3
+        doc.recompute()
+        doc.commitTransaction()
+        kinds = self.kindsOf(doc.previewTransactionMerge("bound"))
+        self.assertEqual(kinds["Box.Height"], "conflict set")
+        self.assertEqual(kinds["Box.ExpressionEngine"], "take set")
+
+    def testASheetIsMergedByItsCells(self):
+        # Sec 31.8: a sheet's cells are known by their address. A cell each
+        # side set is in the merge; one both set is the later's; an alias
+        # comes with its cell.
+        import time
+
+        doc = self.track(FreeCAD.newDocument("MergeCells"))
+        doc.UndoMode = 1
+        doc.openTransaction("create")
+        sheet = doc.addObject("Spreadsheet::Sheet", "Sheet")
+        sheet.set("A1", "1")
+        sheet.set("A2", "5")
+        doc.recompute()
+        doc.commitTransaction()
+        doc.saveAs(os.path.join(self.dir, "merge-cells.FCStd"))
+
+        def cells():
+            return {c: doc.Sheet.getContents(c) for c in doc.Sheet.getUsedCells()}
+
+        doc.createTransactionBranch("side")
+        doc.switchTransactionBranch("side")
+        doc.openTransaction("theirs")
+        doc.Sheet.set("A1", "10")
+        doc.Sheet.set("B1", "=A2 + 2")
+        doc.Sheet.setAlias("B1", "width")
+        doc.recompute()
+        doc.commitTransaction()
+        time.sleep(0.05)
+        doc.switchTransactionBranch("main")
+        doc.openTransaction("ours")
+        doc.Sheet.set("A1", "20")   # after theirs' 10: ours is the later
+        doc.Sheet.set("C1", "3")
+        doc.recompute()
+        doc.commitTransaction()
+
+        preview = doc.previewTransactionMerge("side")
+        self.assertEqual(preview["conflicts"], 0)
+        change = [c for c in preview["changes"] if c["key"] == "Sheet.cells"][0]
+        self.assertEqual(change["kind"], "merge")
+        self.assertEqual(
+            sorted((e["element"], e["change"], e["side"], e["by_time"]) for e in change["elements"]),
+            [("A1", "changed", "ours", True), ("B1", "added", "theirs", False)],
+        )
+        result = doc.mergeTransactionBranch("side")
+        self.assertEqual(result["unresolved"], [])
+        self.assertEqual(cells(), {"A1": "20", "A2": "5", "B1": "=A2 + 2", "C1": "3"})
+        self.assertEqual(doc.Sheet.width, 7)
+        self.assertFalse([o.Name for o in doc.Objects if "Invalid" in o.State])
+        doc.undo()
+        self.assertEqual(cells(), {"A1": "20", "A2": "5", "C1": "3"})
+        self.assertFalse(hasattr(doc.Sheet, "width"))
+        doc.redo()
+        self.assertEqual(doc.Sheet.width, 7)
+
+        # Merged cells are one cell saying what others are part of: such a
+        # sheet is one value, as it was.
+        doc.createTransactionBranch("spans")
+        doc.switchTransactionBranch("spans")
+        doc.openTransaction("theirs")
+        doc.Sheet.mergeCells("D1:E2")
+        doc.Sheet.set("D1", "4")
+        doc.commitTransaction()
+        doc.switchTransactionBranch("main")
+        doc.openTransaction("ours")
+        doc.Sheet.set("F1", "6")
+        doc.commitTransaction()
+        self.assertEqual(self.kindsOf(doc.previewTransactionMerge("spans"))["Sheet.cells"], "conflict set")
+
     def testMergeABranchMadeFromTheFileAsFound(self):
         # Sec 28.2 item 2: a file opened without a history starts one at the
         # file as found, version 1, which no row precedes. A branch made

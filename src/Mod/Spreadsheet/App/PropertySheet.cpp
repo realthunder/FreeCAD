@@ -23,6 +23,8 @@
 #include "PreCompiled.h"
 #ifndef _PreComp_
 #include <algorithm>
+#include <set>
+#include <sstream>
 
 #include <boost/range/adaptor/map.hpp>
 #include <boost/range/algorithm/copy.hpp>
@@ -449,6 +451,53 @@ void PropertySheet::Save(Base::Writer& writer) const
 
     writer.decInd();
     writer.Stream() << writer.ind() << "</Cells>\n";
+}
+
+bool PropertySheet::splitSaved(const std::string& fragment, SavedElements& elements) const
+{
+    // Save(): `<Cells Count="n">`, a `<Cell ... address="A1" .../>` each.
+    // Not taken apart: cells that name another document, which carry what
+    // they name beside them (`xlink`); a cell whose content is written as
+    // an element of its own, with lines in it (`cdata`); and merged cells,
+    // where one cell says what others are part of.
+    const std::size_t head = fragment.find("<Cells ");
+    if (head == std::string::npos) {
+        return false;
+    }
+    const std::size_t headEnd = fragment.find('>', head);
+    if (headEnd == std::string::npos
+        || fragment.substr(head, headEnd - head).find("xlink=") != std::string::npos
+        || fragment.find(" cdata=\"") != std::string::npos
+        || fragment.find(" rowSpan=\"") != std::string::npos) {
+        return false;
+    }
+    return savedTags(fragment, "Cell", "address", elements);
+}
+
+bool PropertySheet::joinSaved(const SavedElements& elements, std::string& fragment) const
+{
+    // An alias is one cell's: two cells that each took the same one on
+    // their own branch are not a sheet.
+    SavedElements aliases;
+    std::set<std::string> seen;
+    for (const auto& e : elements) {
+        aliases.clear();
+        if (e.second.find(" alias=\"") == std::string::npos) {
+            continue;
+        }
+        if (!savedTags(e.second, "Cell", "alias", aliases) || aliases.empty()
+            || !seen.insert(aliases.front().first).second) {
+            return false;
+        }
+    }
+    std::ostringstream out;
+    out << "<Cells Count=\"" << elements.size() << "\">\n";
+    for (const auto& e : elements) {
+        out << e.second << '\n';
+    }
+    out << "</Cells>\n";
+    fragment = out.str();
+    return true;
 }
 
 void PropertySheet::Restore(Base::XMLReader& reader)

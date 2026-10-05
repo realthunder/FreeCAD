@@ -591,6 +591,30 @@ void PropertyLists::Save (Base::Writer &writer) const
     }
 }
 
+bool Property::savedTags(const std::string &fragment, const char *tag, const char *key,
+                         SavedElements &elements)
+{
+    const std::string open = std::string("<") + tag + " ";
+    const std::string attr = std::string(" ") + key + "=\"";
+    for (std::size_t at = fragment.find(open); at != std::string::npos;
+         at = fragment.find(open, at)) {
+        const std::size_t end = fragment.find("/>", at);
+        if (end == std::string::npos)
+            return false;
+        const std::string text = fragment.substr(at, end + 2 - at);
+        const std::size_t name = text.find(attr);
+        if (name == std::string::npos)
+            return false;
+        const std::size_t from = name + attr.size();
+        const std::size_t to = text.find('"', from);
+        if (to == std::string::npos)
+            return false;
+        elements.emplace_back(text.substr(from, to - from), text);
+        at = end + 2;
+    }
+    return true;
+}
+
 void PropertyLists::Restore(Base::XMLReader &reader)
 {
     reader.readElement(xmlName());

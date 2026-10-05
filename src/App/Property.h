@@ -38,6 +38,8 @@
 #include <fastsignals/signal.h>
 #include <bitset>
 #include <string>
+#include <utility>
+#include <vector>
 #include <FCGlobal.h>
 
 // WARNING! define this to static thread_local if FreeCAD ever decides to use
@@ -255,6 +257,41 @@ public:
      * external references without any problem.
      */
     virtual void afterRestore() {}
+
+    /** A saved value of this property as the things it is made of
+     * (docs/TransactionLog.md sec 31.8): for a property that holds many
+     * things each known by something of its own -- a sheet's cells by
+     * their address, an object's expressions by their path, a list of
+     * links by the object -- so that two branches that each changed
+     * another of them need not be one value against the other.
+     *
+     * `fragment` is what Save() wrote. Each item is one thing: what it is
+     * known by, and its saved text, which is all that is compared -- two
+     * items of one key are the same thing when their text is. False for a
+     * property that is one value, which is every property unless it says
+     * otherwise, and for a value it cannot take apart (one that names
+     * other documents, say).
+     */
+    using SavedElements = std::vector<std::pair<std::string, std::string>>;
+    virtual bool splitSaved(const std::string &fragment, SavedElements &elements) const
+    {
+        (void)fragment;
+        (void)elements;
+        return false;
+    }
+    /// The saved value those things make, in that order.
+    virtual bool joinSaved(const SavedElements &elements, std::string &fragment) const
+    {
+        (void)elements;
+        (void)fragment;
+        return false;
+    }
+    /// For splitSaved(): the elements `<tag .../>` of a saved value, each
+    /// with the value of its attribute `key`, as written. Attribute values
+    /// are written encoded, so there is no `"` or `>` inside one. False for
+    /// a tag with no such attribute or no end.
+    static bool savedTags(const std::string &fragment, const char *tag, const char *key,
+                          SavedElements &elements);
 
     /** Called before calling DocumentObject::onDocumentRestored()
      *

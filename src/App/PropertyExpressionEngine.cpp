@@ -22,6 +22,10 @@
 
 #include "PreCompiled.h"
 
+#include <cctype>
+#include <cstring>
+#include <sstream>
+
 #include <App/Application.h>
 #include <boost/graph/graph_traits.hpp>
 
@@ -687,6 +691,157 @@ ObjectIdentifier PropertyExpressionEngine::canonicalPath(const ObjectIdentifier 
 size_t PropertyExpressionEngine::numExpressions() const
 {
     return expressions.size();
+}
+
+namespace {
+
+/// One string of a saved stream as Base::OutputStream writes text: the
+/// number of line ends inside it, a colon, the text, a line end. From `at`,
+/// which is left after it; `raw` is all of that, as written.
+bool savedString(const std::string &s, std::size_t &at, std::string &text, std::string &raw)
+{
+    const std::size_t from = at;
+    while (at < s.size() && std::isspace(static_cast<unsigned char>(s[at])))
+        ++at;
+    std::size_t lines = 0;
+    const std::size_t digits = at;
+    while (at < s.size() && std::isdigit(static_cast<unsigned char>(s[at])))
+        lines = lines * 10 + (s[at++] - '0');
+    if (at == digits || at >= s.size() || s[at] != ':')
+        return false;
+    const std::size_t begin = ++at;
+    for (std::size_t i = 0; i <= lines; ++i) {
+        at = s.find('\n', at);
+        if (at == std::string::npos)
+            return false;
+        ++at;
+    }
+    text = s.substr(begin, at - 1 - begin);
+    raw = s.substr(from, at - from);
+    return true;
+}
+
+/// The separator between an expression as saved and the ids its element
+/// paths hold, in the text of one element: a line no saved string is.
+const char *const savedIdsMark = "\n<!ids>\n";
+
+} // namespace
+
+bool PropertyExpressionEngine::splitSaved(const std::string &fragment,
+                                         SavedElements &elements) const
+{
+    // Save(): `<ExpressionEngine count="n">`, then the expressions -- an
+    // `<Expression path=".." expression=".."/>` each, which is how the
+    // transaction log's values are written, or (`cdata`, a file's form) one
+    // stream of strings, path, expression and comment each -- and the ids
+    // their element paths hold, `<Ids index="i" .../>`, by the place of the
+    // expression. One that names another document carries what it names
+    // beside it (`xlink`), and is not taken apart.
+    const std::size_t head = fragment.find("<ExpressionEngine ");
+    if (head == std::string::npos)
+        return false;
+    const std::size_t headEnd = fragment.find('>', head);
+    if (headEnd == std::string::npos)
+        return false;
+    const std::string attrs = fragment.substr(head, headEnd - head);
+    if (attrs.find("xlink=") != std::string::npos)
+        return false;
+    if (attrs.find("count=\"0\"") != std::string::npos)
+        return true;
+    const bool asStream = attrs.find("cdata=\"1\"") != std::string::npos;
+    if (!asStream && !savedTags(fragment, "Expression", "path", elements))
+        return false;
+    const std::string open = "<![CDATA[";
+    const std::size_t from = asStream ? fragment.find(open, headEnd) : std::string::npos;
+    const std::size_t to = asStream ? fragment.find("]]>", headEnd) : std::string::npos;
+    if (asStream && (from == std::string::npos || to == std::string::npos
+                    || fragment.find(open, from + 1) != std::string::npos))
+        return false;   // a stream written in pieces: it held a `]]>`
+    const std::string stream =
+        asStream ? fragment.substr(from + open.size(), to - from - open.size()) : std::string();
+    std::size_t at = 0;
+    while (asStream) {
+        std::size_t probe = at;
+        while (probe < stream.size() && std::isspace(static_cast<unsigned char>(stream[probe])))
+            ++probe;
+        if (probe >= stream.size())
+            break;
+        std::string path, text, raw, all;
+        for (int i = 0; i < 3; ++i) {
+            if (!savedString(stream, at, text, raw))
+                return false;
+            if (i == 0)
+                path = text;
+            // As written but for what came before the first digit.
+            all += raw.substr(raw.find_first_not_of(" \t\r\n"));
+        }
+        elements.emplace_back(path, all);
+    }
+    // The ids, each to its expression.
+    SavedElements ids;
+    if (!savedTags(fragment, "Ids", "index", ids))
+        return false;
+    for (const auto &id : ids) {
+        const std::size_t index = std::strtoul(id.first.c_str(), nullptr, 10);
+        if (index >= elements.size())
+            return false;
+        std::string text = id.second;
+        const std::string attr = " index=\"" + id.first + "\"";
+        const std::size_t where = text.find(attr);
+        if (where == std::string::npos)
+            return false;
+        text.erase(where, attr.size());
+        std::string &element = elements[index].second;
+        if (element.find(savedIdsMark) == std::string::npos)
+            element += savedIdsMark;
+        element += text + "\n";
+    }
+    return true;
+}
+
+bool PropertyExpressionEngine::joinSaved(const SavedElements &elements,
+                                        std::string &fragment) const
+{
+    if (elements.empty()) {
+        fragment = "<ExpressionEngine count=\"0\"></ExpressionEngine>\n";
+        return true;
+    }
+    // As the elements are: every one a tag, or every one of the stream.
+    std::size_t tags = 0;
+    for (const auto &e : elements)
+        tags += e.second.compare(0, 12, "<Expression ") == 0 ? 1 : 0;
+    if (tags != 0 && tags != elements.size())
+        return false;
+    const bool asStream = tags == 0;
+    std::ostringstream out, ids;
+    std::size_t idCount = 0;
+    out << "<ExpressionEngine count=\"" << elements.size() << "\"";
+    if (asStream)
+        out << " cdata=\"1\">\n<Expressions><![CDATA[\n";
+    else
+        out << ">\n";
+    for (std::size_t i = 0; i < elements.size(); ++i) {
+        const std::string &text = elements[i].second;
+        const std::size_t mark = text.find(savedIdsMark);
+        out << text.substr(0, mark) << '\n';
+        if (mark == std::string::npos)
+            continue;
+        std::istringstream lines(text.substr(mark + std::strlen(savedIdsMark)));
+        for (std::string line; std::getline(lines, line);) {
+            if (line.compare(0, 5, "<Ids ") != 0)
+                continue;
+            ids << "<Ids index=\"" << i << "\"" << line.substr(4) << '\n';
+            ++idCount;
+        }
+    }
+    if (asStream)
+        out << "]]>\n</Expressions>\n";
+    if (idCount)
+        out << "<ExpressionIds count=\"" << idCount << "\">\n" << ids.str()
+            << "</ExpressionIds>\n";
+    out << "</ExpressionEngine>\n";
+    fragment = out.str();
+    return true;
 }
 
 void PropertyExpressionEngine::releaseBeforeRestore()

@@ -15050,3 +15050,142 @@ recomputed, what changed touched".
 The unfrozen ctest run failed once in
 `ExpressionImageBudgetTest.runawayBytecodeLoopIsStopped`, a guest stopped
 by the clock: 5.0 s there, 2.4 s and passing three times alone.
+
+### 31.8 Phase 8, the first step: a value merged by what it holds (user, 2026-10-05)
+
+**Ruled (user):**
+
+- Of 31.3: "do 1 first, consider the rest later" -- P1, the order. The
+  simple rules first: a group's members, an object's expressions, a
+  sheet's cells. The sketch, and P2 to P6 with it, later and not ruled.
+- Asked what becomes of one cell, or one expression, both branches
+  changed: **"pick the last writer."** Nothing is asked.
+
+**What a property says.** `Property::splitSaved(fragment, elements)`
+takes a value as `Save()` wrote it apart into the things it holds, each
+with what it is known by and its saved text; `joinSaved` puts such a list
+back together. A property that does neither is one value, as every
+property was. Three do:
+
+| property | a thing is | known by | not taken apart |
+| --- | --- | --- | --- |
+| `PropertyLinkList` | a link | the object's name | an object linked twice, an empty place |
+| `PropertyExpressionEngine` | an expression, its comment, the ids its element paths hold | the path it is bound to | one that names another document |
+| `PropertySheet` | a cell, with its style and alias | its address | cells that name another document; a cell with lines in it; merged cells |
+
+The text is all that is compared: two things of one key are the same
+when their text is. App reads no cell and no expression.
+
+**What an object says.** `DocumentObject::isMergedByElement(prop)`. A
+merge puts what theirs added after what ours has, and for a list of
+links that is right only where the order means nothing: a group's
+`Group` says so, and no other list of links does until its object does.
+A loft's sections, each branch having added one, are still one value
+against the other. Cells and expressions have no order to get wrong.
+
+**In the plan** (`mergeByElement`, from `planMerge`), where 28 found a
+conflict -- one property of one object, there at the base and on both
+sides, changed by both, ending differently: the three values are taken
+apart, and the things weighed as 28 weighs properties.
+
+- What one side alone added, changed or removed is that side's.
+- The same on both is the same.
+- **What both changed, and differently, is the one's that wrote it
+  last**: the time of the newest row of each side since the base that
+  changed that thing -- found by taking each such row's value before and
+  after apart. A removal is a change. The same time, or none known, and
+  ours stays. A row another copy of the file made keeps the time that
+  copy gave it (30.13), so there it is that machine's clock which says
+  who was last.
+- Ours' order, then what theirs added.
+
+The change is then of kind **`merge`**, not a conflict: `merged` is the
+value that goes in, stored in the log as any value is, and `elements`
+says of each thing theirs touched what was done to it, whose it is, and
+whether the clock decided. Anything that cannot be taken apart, or put
+together -- two cells with one alias -- leaves the conflict it was.
+
+**In the merge** a `merge` change is written like one taken, and its
+object is among those 31.7 marks. The merge's row says, under
+`merge.later`, each thing the clock decided and for whom: nobody was
+asked, so it is where to look afterwards.
+
+**The dialog** lists such a property with the changes that go in, as
+"both", the note under the pointer saying what of theirs is in it and
+what the clock decided.
+
+**A unit** (31.5) is not touched by this: none of a sketch's four
+properties is taken apart, and a property of a unit that is, one day,
+goes by its unit.
+
+**A value an expression writes.** Found by the first run of the
+expressions' test: two branches that each bound another expression to
+the box's length conflicted on the *length* as well, 8 against 10 -- and
+whichever was picked, the expression in the merge writes it again. The
+log has such a value as one somebody set: the engine writes it ahead of
+the object's own recompute, and "derived" is what is written while an
+object recomputes. So in the plan, a conflict on a property that is
+bound on ours, on theirs, and in the engine the merge leaves -- the
+merged one, theirs' where theirs' is taken, else ours' as it is -- is not
+asked: nobody set anything. It is `derived`, "written by its
+expression", and recomputed. Where one side set the value by hand and
+the other bound it, the question stays.
+
+**Tests.** Python, each through preview, merge, undo and redo:
+
+- `testAGroupIsMergedByItsMembers`: ours puts a cylinder in the group,
+  theirs a cone and takes the ball out. No conflict; `Group.Group` is a
+  `merge` that says the ball removed and the cone added, theirs'; the
+  group is the box, the cylinder, the cone; the ball is out of the group
+  and still in the document. And a list of links of a Python feature,
+  each branch having set it, is the conflict it was.
+- `testExpressionsAreMergedByTheirPaths`: the length bound by theirs,
+  then by ours; the width bound by ours, then by theirs; the height by
+  theirs alone, and theirs lets go of one on the placement. The merge
+  has ours' length and theirs' width, each by the clock, the height, and
+  no placement; the length and the width themselves are `derived`; the
+  row's `merge.later` names the two the clock decided; the box is 10 by
+  5 by 10. And a height ours set by hand and theirs bound is a conflict
+  still.
+- `testASheetIsMergedByItsCells`: theirs sets A1 and a new B1 with an
+  alias, ours sets A1 after and a new C1. A1 is ours by the clock, B1
+  and C1 are both there, the alias is the sheet's and computes. And a
+  sheet with merged cells is the conflict it was.
+
+The Gui merge check (+2, 33): a sheet both branches set a cell of is one
+row in the dialog, `merge set`, "both", nothing to pick, its note naming
+theirs' cell; merged, the sheet has each side's.
+
+**Left.**
+
+- **The sketch**, and with it P2 to P6 of 31.3: not ruled.
+- **A value an expression writes is logged as one somebody set.** The
+  plan reads round it; the row does not say it. Marking it at the write
+  would make it a value the log may let go of, and a switch would then
+  mark its object to recompute -- to be weighed, not done here.
+- **A value set by hand here and bound there** is asked, as it was,
+  and the answer does nothing where theirs' expression goes in: the
+  expression writes the value again. The two are one thing -- a property
+  and what binds it -- and want a rule of their own. Older than this
+  step; seen while reading it.
+- **A member theirs removed with its object**, where the object is kept
+  by a pick (28: "changed here, removed there"), is out of the group all
+  the same: the group was merged before anybody picked.
+- **A body.** Two branches that each added a feature to one body merge
+  their `Group` now, and still conflict on `Tip`; and each feature
+  stands on the one that was the tip when its branch left. That is a
+  unit with a rule of its own -- which feature comes after which -- and
+  is neither a list nor this step.
+- A sheet with merged cells, a cell with lines in it, or a cell or an
+  expression that names another document, is one value still.
+- A sheet's column widths and row heights are maps of the same kind and
+  could be taken apart the same way; nobody has asked.
+- Time is the row's, to the clock of the machine that made it. Two
+  machines whose clocks disagree by more than the edits are apart decide
+  wrongly, and say in the row for whom.
+
+**Gates**, frozen and unfrozen each: Python 3020 OK (52 skipped frozen,
+53 unfrozen; 6 expected failures; +3), ctest 881/881, and the GUI checks
+RC 15, BC 30, VC 18, PC 28, FC 16, VW 14, MC 33 (+2), the two-document
+check 24, the tree check 19, the author check 36, the import check 49,
+the request check 31 and the share check 47.

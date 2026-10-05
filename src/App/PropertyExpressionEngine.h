@@ -213,6 +213,10 @@ public:
     /// one, and what another still holds of the state being left reads as
     /// a cycle that neither state has (docs/TransactionLog.md sec 31.6).
     void releaseBeforeRestore();
+    /// By the path an expression is bound to (docs/TransactionLog.md sec
+    /// 31.8).
+    bool splitSaved(const std::string &fragment, SavedElements &elements) const override;
+    bool joinSaved(const SavedElements &elements, std::string &fragment) const override;
     void onContainerRestored() override;
     /// An external target restored after this document (its file loaded
     /// later): the element paths into it register now (sec 27.82).

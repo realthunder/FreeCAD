@@ -86,6 +86,10 @@ public:
 
     void Restore(Base::XMLReader& reader) override;
 
+    /// By the cell's address (docs/TransactionLog.md sec 31.8).
+    bool splitSaved(const std::string& fragment, SavedElements& elements) const override;
+    bool joinSaved(const SavedElements& elements, std::string& fragment) const override;
+
     void getLinksTo(std::vector<App::ObjectIdentifier> &identifiers,
                     App::DocumentObject *obj,
                     const char *subname=nullptr,

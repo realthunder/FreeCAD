@@ -827,6 +827,9 @@ public:
 
     void Save(Base::Writer &writer) const override;
     void Restore(Base::XMLReader &reader) override;
+    /// By the object linked (docs/TransactionLog.md sec 31.8).
+    bool splitSaved(const std::string &fragment, SavedElements &elements) const override;
+    bool joinSaved(const SavedElements &elements, std::string &fragment) const override;
 
     Property *Copy() const override;
     void Paste(const Property &from) override;

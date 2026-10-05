@@ -8245,6 +8245,154 @@ void independentOurs(Document& doc, TransactionLog& log, MergePlan& plan)
     }
 }
 
+/** A property both sides changed, merged by the things it holds
+ * (docs/TransactionLog.md sec 31.8). `c` is the conflict: its base, ours
+ * and theirs. Each value is taken apart by the property (splitSaved), and
+ * the things are weighed as sec 28 weighs properties: what one side alone
+ * added, changed or removed is that side's. What both changed, and
+ * differently, is the one's that wrote it last -- a ruling: nothing is
+ * asked -- by the time of the newest row of each side since the base that
+ * changed that thing; the same time, or none known, and ours stays. Ours'
+ * order, then what theirs added. True with `c` made a `merge`; false, and
+ * `c` is the conflict it was, for a property that is one value.
+ */
+bool mergeByElement(Document& doc, TransactionLog& log, const Document::MergePreview& pv,
+                    Document::MergeChange& c)
+{
+    DocumentObject* obj = doc.getObjectByID(c.cid);
+    Property* prop = obj ? obj->getPropertyByName(c.prop.c_str()) : nullptr;
+    if (!prop || c.base.empty() || c.ours.empty() || c.theirs.empty()
+            || !obj->isMergedByElement(prop))
+        return false;
+    using Elements = Property::SavedElements;
+    auto split = [&](const std::string& hash, Elements& out) {
+        CapturedValue v;
+        return !hash.empty() && log.readValue(hash, v) && v.attachments.empty()
+            && prop->splitSaved(v.fragment, out);
+    };
+    Elements base, ours, theirs;
+    if (!split(c.base, base) || !split(c.ours, ours) || !split(c.theirs, theirs))
+        return false;
+    auto byKey = [](const Elements& list) {
+        std::map<std::string, std::string> out;
+        for (const auto& e : list)
+            out[e.first] = e.second;
+        return out;
+    };
+    const auto atBase = byKey(base);
+    const auto atOurs = byKey(ours);
+    const auto atTheirs = byKey(theirs);
+    if (atBase.size() != base.size() || atOurs.size() != ours.size()
+            || atTheirs.size() != theirs.size())
+        return false;   // a key twice: not things known one by one
+
+    // When each side last wrote each thing: the rows since the base that
+    // set the property, each one's value before against its value after.
+    auto& store = log.store();
+    auto writtenBy = [&](int64_t head) {
+        std::map<std::string, double> at;
+        for (const auto& t : store.chain(head, pv.base + 1)) {
+            for (const auto& op : store.ops(t.seq)) {
+                if (op.op != "set" || op.ckind != "obj" || op.cid != c.cid || op.prop != c.prop
+                        || op.derived)
+                    continue;
+                Elements before, after;
+                if (!split(op.vbefore, before) || !split(op.vafter, after))
+                    continue;
+                const auto was = byKey(before);
+                const auto is = byKey(after);
+                for (const auto& e : is) {
+                    auto it = was.find(e.first);
+                    if (it == was.end() || it->second != e.second)
+                        at[e.first] = std::max(at[e.first], t.time);
+                }
+                for (const auto& e : was) {
+                    if (!is.count(e.first))
+                        at[e.first] = std::max(at[e.first], t.time);
+                }
+            }
+        }
+        return at;
+    };
+    std::map<std::string, double> oursAt, theirsAt;
+    bool timed = false;
+    auto theirsLast = [&](const std::string& key) {
+        if (!timed) {
+            oursAt = writtenBy(pv.ours);
+            theirsAt = writtenBy(pv.theirs);
+            timed = true;
+        }
+        auto o = oursAt.find(key);
+        auto t = theirsAt.find(key);
+        return t != theirsAt.end() && (o == oursAt.end() || t->second > o->second);
+    };
+
+    Elements out;
+    std::vector<Document::MergeChange::Element> notes;
+    auto note = [&](const std::string& key, const char* change, bool theirsWins, bool byTime) {
+        notes.push_back({key, change, theirsWins ? "theirs" : "ours", byTime});
+    };
+    for (const auto& e : ours) {
+        const std::string& key = e.first;
+        auto b = atBase.find(key);
+        auto t = atTheirs.find(key);
+        const bool inBase = b != atBase.end();
+        const bool inTheirs = t != atTheirs.end();
+        const bool oursChanged = !inBase || b->second != e.second;
+        const bool theirsChanged = inBase != inTheirs || (inTheirs && t->second != b->second);
+        if (!theirsChanged || (inTheirs && t->second == e.second)) {
+            out.push_back(e);   // ours', or the same of both
+            continue;
+        }
+        const char* change = inTheirs ? (inBase ? "changed" : "added") : "removed";
+        const bool theirsWins = !oursChanged || theirsLast(key);
+        note(key, change, theirsWins, oursChanged);
+        if (!theirsWins)
+            out.push_back(e);
+        else if (inTheirs)
+            out.emplace_back(key, t->second);
+    }
+    for (const auto& e : theirs) {
+        const std::string& key = e.first;
+        if (atOurs.count(key))
+            continue;
+        auto b = atBase.find(key);
+        if (b == atBase.end()) {
+            note(key, "added", true, false);
+            out.push_back(e);
+        }
+        else if (b->second != e.second) {
+            // Ours removed what theirs changed.
+            const bool theirsWins = theirsLast(key);
+            note(key, "changed", theirsWins, true);
+            if (theirsWins)
+                out.push_back(e);
+        }
+    }
+    CapturedValue merged;
+    merged.ok = true;
+    if (!prop->joinSaved(out, merged.fragment))
+        return false;
+    log.flush();
+    c.merged = TransactionLogCore::of(doc.getFileHistory()).putValue(merged, "durable");
+    if (c.merged.empty())
+        return false;
+    c.kind = "merge";
+    c.elements = std::move(notes);
+    std::string taken, decided;
+    for (const auto& n : c.elements) {
+        std::string& to = n.byTime ? decided : taken;
+        to += (to.empty() ? "" : ", ") + n.key
+            + (n.byTime ? " -> " + n.side : n.change == "removed" ? " (removed)" : "");
+    }
+    c.note = "merged by what it holds";
+    if (!taken.empty())
+        c.note += "; theirs: " + taken;
+    if (!decided.empty())
+        c.note += "; changed by both, the later kept: " + decided;
+    return true;
+}
+
 void planMerge(Document& doc, const std::string& name, int64_t version, MergePlan& plan)
 {
     TransactionLog* log = doc.getTransactionLog();
@@ -8510,8 +8658,100 @@ void planMerge(Document& doc, const std::string& name, int64_t version, MergePla
                 c.kind = "same";
             else
                 c.kind = ckind == "view" ? "view" : "conflict";
+            // Sec 31.8: a property that holds many things is merged by
+            // them where both sides had it and have it still.
+            if (c.kind == "conflict" && ckind == "obj" && !plan.independent && v.atStart
+                    && v.atEnd && o->second.atStart && o->second.atEnd)
+                mergeByElement(doc, *log, pv, c);
         }
         add(std::move(c));
+    }
+
+    // Sec 31.8: a value an expression writes is not a value to pick a side
+    // for. The log has it as one somebody set -- the engine writes it ahead
+    // of the object's own recompute -- so two branches that each bound
+    // another expression to one property conflict on the value too; and
+    // whichever side is picked, the expression in effect after the merge
+    // writes it again. Where the property is bound on ours, on theirs and
+    // in the merge, nobody set anything: it is recomputed, as what a
+    // recompute wrote is. Where one side set it by hand, the question
+    // stays.
+    {
+        auto namesOf = [](const PropertyExpressionEngine& engine, const std::string& fragment,
+                          std::set<std::string>& names) {
+            Property::SavedElements paths;
+            if (!engine.splitSaved(fragment, paths))
+                return false;
+            for (const auto& e : paths) {
+                // `Length`, `Placement.Base.x`, `.Placement.Base.x`
+                const std::size_t from = e.first.compare(0, 1, ".") == 0 ? 1 : 0;
+                names.insert(e.first.substr(from, e.first.find_first_of(".[", from) - from));
+            }
+            return true;
+        };
+        std::map<long, std::set<std::string>> bound;
+        std::set<long> known;
+        auto boundOf = [&](long cid) -> const std::set<std::string>& {
+            auto& names = bound[cid];
+            if (!known.insert(cid).second)
+                return names;
+            DocumentObject* obj = doc.getObjectByID(cid);
+            if (!obj)
+                return names;
+            const CapturedValue now = captureValue(CaptureConfig(doc), obj->ExpressionEngine);
+            if (!now.ok)
+                return names;
+            // Ours' engine as it is; theirs' where theirs ends -- its own,
+            // or the base's, which is ours' before whatever ours did; and
+            // the one the merge leaves: merged, theirs' where taken, else
+            // ours'. One still in conflict says nothing yet.
+            std::string theirs = now.fragment;
+            std::string after = now.fragment;
+            auto read = [&](const std::string& hash, std::string& fragment) {
+                CapturedValue v;
+                if (hash.empty() || !log->readValue(hash, v))
+                    return false;
+                fragment = v.fragment;
+                return true;
+            };
+            bool listed = false;
+            for (const auto& c : pv.changes) {
+                if (c.ckind != "obj" || c.cid != cid || c.prop != "ExpressionEngine")
+                    continue;
+                listed = true;
+                if (c.kind == "conflict" || !read(c.theirs, theirs))
+                    return names;
+                if (c.kind == "take")
+                    after = theirs;
+                else if (c.kind == "merge" && !read(c.merged, after))
+                    return names;
+            }
+            if (!listed) {
+                auto mine = plan.ours.values.find(NetChange::Key {"obj", cid, "ExpressionEngine"});
+                if (mine != plan.ours.values.end() && netChanged(mine->second)
+                        && !read(mine->second.before, theirs))
+                    return names;
+            }
+            std::set<std::string> here, there, then;
+            if (!namesOf(obj->ExpressionEngine, now.fragment, here)
+                    || !namesOf(obj->ExpressionEngine, theirs, there)
+                    || !namesOf(obj->ExpressionEngine, after, then))
+                return names;
+            for (const auto& name : then) {
+                if (here.count(name) && there.count(name))
+                    names.insert(name);
+            }
+            return names;
+        };
+        for (auto& c : pv.changes) {
+            if (c.kind != "conflict" || c.ckind != "obj" || c.op != "set"
+                    || c.prop == "ExpressionEngine" || !boundOf(c.cid).count(c.prop))
+                continue;
+            c.kind = "derived";
+            c.derived = true;
+            c.note = "written by its expression";
+            --pv.conflicts;
+        }
     }
 
     // Sec 31.5: what an object says is one thing in several properties
@@ -8714,7 +8954,7 @@ Document::MergeResult Document::mergeBranch(const std::string& branch,
             if (c.ckind != "obj")
                 continue;
             const bool conflict = c.kind == "conflict" || c.kind == "unit";
-            if (all || c.kind == "take" || c.kind == "derived"
+            if (all || c.kind == "take" || c.kind == "derived" || c.kind == "merge"
                     || (conflict && side[c.key] == "theirs"))
                 ids.insert(c.cid);
         }
@@ -8868,6 +9108,16 @@ Document::MergeResult Document::mergeBranch(const std::string& branch,
     for (const auto& c : pv.changes) {
         if (c.kind == "derived") {
             touch.insert(c.cid);
+            continue;
+        }
+        if (c.kind == "merge") {
+            // Merged by what it holds (sec 31.8): the merged value goes in.
+            NetChange::Val v;
+            v.atStart = true;
+            v.atEnd = true;
+            v.after = c.merged;
+            v.ptype = c.ptype;
+            take(Key {c.ckind, c.cid, c.prop}, v);
             continue;
         }
         // A unit's properties (sec 31.5) go by the side picked for the unit.
@@ -9119,6 +9369,17 @@ Document::MergeResult Document::mergeBranch(const std::string& branch,
         m[kv.first] = kv.second;
     if (!conflicts.empty())
         m["sides"] = std::move(conflicts);
+    // What nobody was asked about (sec 31.8): each thing both sides had
+    // changed, and whose it is in the merge -- the one that wrote it last.
+    auto decided = nlohmann::json::array();
+    for (const auto& c : pv.changes) {
+        for (const auto& e : c.elements) {
+            if (e.byTime)
+                decided.push_back({{"key", c.key}, {"element", e.key}, {"side", e.side}});
+        }
+    }
+    if (!decided.empty())
+        m["later"] = std::move(decided);
     if (!relabelled.empty())
         m["relabelled"] = relabelled;
     if (!result.failed.empty())

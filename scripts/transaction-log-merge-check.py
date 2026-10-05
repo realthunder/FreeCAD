@@ -331,6 +331,74 @@ def run():
               and not [o.Name for o in sdoc.Objects if "Invalid" in o.State])
         App.closeDocument(sdoc.Name)
         settle()
+
+        # Sec 31.8: a sheet whose cells both branches set, each another, is
+        # merged by its cells -- shown as that, with nothing to pick.
+        cdoc = App.newDocument("MergeCells")
+        cdoc.UndoMode = 1
+        cdoc.openTransaction("base")
+        sheet = cdoc.addObject("Spreadsheet::Sheet", "Sheet")
+        sheet.set("A1", "1")
+        cdoc.recompute()
+        cdoc.commitTransaction()
+        settle()
+        cdoc.saveAs(os.path.join(tempfile.mkdtemp(prefix="mergecells-"), "cells.FCStd"))
+        cdoc.createTransactionBranch("side")
+        cdoc.switchTransactionBranch("side")
+        cdoc.openTransaction("theirs")
+        cdoc.Sheet.set("B1", "2")
+        cdoc.recompute()
+        cdoc.commitTransaction()
+        settle()
+        cdoc.switchTransactionBranch("main")
+        cdoc.openTransaction("ours")
+        cdoc.Sheet.set("C1", "3")
+        cdoc.recompute()
+        cdoc.commitTransaction()
+        settle()
+        App.setActiveDocument(cdoc.Name)
+        settle()
+        cdock, _ = panel()
+
+        def driveCells(seen):
+            dialog = QtWidgets.QApplication.activeModalWidget()
+            if dialog is None or dialog.objectName() != "TransactionMergeDialog":
+                seen["found"] = False
+                if dialog is not None:
+                    dialog.reject()
+                return
+            seen["found"] = True
+            tree = dialog.findChild(QtWidgets.QTreeWidget)
+            takes = column(tree, "Takes")
+            rows = []
+            for i in range(tree.topLevelItemCount()):
+                item = tree.topLevelItem(i)
+                rows.append((item.text(0), item.text(2), item.text(takes),
+                             tree.itemWidget(item, takes) is not None, item.toolTip(takes)))
+            seen["rows"] = rows
+            for b in dialog.findChildren(QtWidgets.QPushButton):
+                if b.objectName() == "merge":
+                    seen["enabled"] = b.isEnabled()
+                    b.click()
+                    return
+            dialog.reject()
+
+        seen = {}
+        QtCore.QTimer.singleShot(300, lambda: driveCells(seen))
+        QtCore.QMetaObject.invokeMethod(cdock, "mergeBranch", QtCore.Qt.DirectConnection,
+                                        QtCore.Q_ARG(str, "side"))
+        settle()
+        shown = [r for r in (seen.get("rows") or []) if r[1] == "cells"]
+        check("cells: merged by what they hold, nothing to pick (%r)" % shown,
+              seen.get("found") is True and seen.get("enabled") is True
+              and [r[:4] for r in shown] == [("merge set", "cells", "both", False)]
+              and "B1" in shown[0][4])
+        got = {c: cdoc.Sheet.getContents(c) for c in cdoc.Sheet.getUsedCells()}
+        check("cells: each side's cell in the sheet (%r)" % got,
+              got == {"A1": "1", "B1": "2", "C1": "3"}
+              and not [o.Name for o in cdoc.Objects if "Invalid" in o.State])
+        App.closeDocument(cdoc.Name)
+        settle()
     except Exception:
         lines.append("FAIL exception\n" + traceback.format_exc())
     finally:

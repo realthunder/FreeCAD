@@ -1379,8 +1379,8 @@ public:
 
         // Conflicts first, then what goes in, then what does not.
         auto rank = [](const std::string& kind) {
-            return kind == "conflict" ? 0 : kind == "take" ? 1 : kind == "view" ? 2
-                 : kind == "derived" ? 3 : 4;
+            return kind == "conflict" ? 0 : kind == "merge" ? 1 : kind == "take" ? 1
+                 : kind == "view" ? 2 : kind == "derived" ? 3 : 4;
         };
         std::vector<const App::Document::MergeChange*> order;
         for (const auto& c : preview.changes)
@@ -1423,6 +1423,12 @@ public:
             }
             else if (c->kind == "take") {
                 item->setText(Takes, QStringLiteral("theirs"));
+            }
+            else if (c->kind == "merge") {
+                // Merged by what it holds (sec 31.8): nothing to pick, and
+                // the note says what of theirs goes in.
+                item->setText(Takes, QObject::tr("both"));
+                item->setToolTip(Takes, QString::fromStdString(c->note));
             }
             else if (c->kind == "unit") {
                 // One thing with the conflict above it (sec 31.5): it goes

@@ -1379,6 +1379,17 @@ Py::Dict mergeChangeToPy(const App::Document::MergeChange& c)
     d.setItem("theirs", Py::String(c.theirs));
     d.setItem("note", Py::String(c.note));
     d.setItem("derived", Py::Boolean(c.derived));
+    d.setItem("merged", Py::String(c.merged));
+    Py::List elements;
+    for (const auto& e : c.elements) {
+        Py::Dict item;
+        item.setItem("element", Py::String(e.key));
+        item.setItem("change", Py::String(e.change));
+        item.setItem("side", Py::String(e.side));
+        item.setItem("by_time", Py::Boolean(e.byTime));
+        elements.append(item);
+    }
+    d.setItem("elements", elements);
     return d;
 }
 

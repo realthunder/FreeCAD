@@ -512,6 +512,17 @@ public:
      */
     virtual std::vector<std::string> getMergeUnit(const char* prop) const;
 
+    /** Whether `prop` of this object is merged by the things it holds
+     * (Property::splitSaved, docs/TransactionLog.md sec 31.8) where two
+     * branches both changed it. A property that takes its values apart by
+     * something of their own -- cells, expressions -- always may. A list
+     * of links may only where the object says its order means nothing: a
+     * merge puts what the other branch added at the end, and a loft's
+     * sections are not a group's members. A group's `Group` is such a
+     * list.
+     */
+    virtual bool isMergedByElement(const Property* prop) const;
+
     /* Return true to bypass duplicate label checking */
     virtual bool allowDuplicateLabel() const {return false;}
 

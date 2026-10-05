@@ -1364,6 +1364,33 @@ void PropertyLinkList::Save(Base::Writer &writer) const
     writer.Stream() << writer.ind() << "</LinkList>\n";
 }
 
+bool PropertyLinkList::splitSaved(const std::string &fragment, SavedElements &elements) const
+{
+    // Save(): `<LinkList count="n">`, a `<Link value="name"/>` each. An
+    // object linked twice, or a place with nothing in it, is a list that is
+    // not a set of objects: one value.
+    if (fragment.find("<LinkList ") == std::string::npos
+            || !savedTags(fragment, "Link", "value", elements))
+        return false;
+    std::set<std::string> seen;
+    for (const auto &e : elements) {
+        if (e.first.empty() || !seen.insert(e.first).second)
+            return false;
+    }
+    return true;
+}
+
+bool PropertyLinkList::joinSaved(const SavedElements &elements, std::string &fragment) const
+{
+    std::ostringstream out;
+    out << "<LinkList count=\"" << elements.size() << "\">\n";
+    for (const auto &e : elements)
+        out << e.second << '\n';
+    out << "</LinkList>\n";
+    fragment = out.str();
+    return true;
+}
+
 void PropertyLinkList::Restore(Base::XMLReader &reader)
 {
     declareUnchangedPrefix(-1);
