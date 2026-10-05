@@ -1905,6 +1905,19 @@ public:
         step(s);
     }
 
+    std::vector<std::pair<std::string, std::string>>
+    metaWithPrefix(const std::string& prefix) override
+    {
+        auto s = prepare("SELECT key, value FROM meta WHERE substr(key,1,?)=? ORDER BY key");
+        sqlite3_bind_int64(s, 1, static_cast<sqlite3_int64>(prefix.size()));
+        bindText(s, 2, prefix);
+        std::vector<std::pair<std::string, std::string>> out;
+        while (sqlite3_step(s) == SQLITE_ROW)
+            out.emplace_back(text(s, 0), text(s, 1));
+        sqlite3_reset(s);
+        return out;
+    }
+
 private:
     void exec(const char* sql)
     {

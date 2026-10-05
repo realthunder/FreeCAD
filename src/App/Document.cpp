@@ -6994,6 +6994,22 @@ bool openRecordJumps(TransactionStore& store, const std::vector<LogVersion>& ver
             before = &v;
         }
     }
+    // The save says so itself (sec 30.21 G1, 30.25). A file continues its
+    // history only when it is from the save that wrote both -- the guard of
+    // 16.4 -- and that save recorded the version it becomes and the row its
+    // state is at. The copy a file carries never holds its own save's
+    // version, so there is nothing before to compare with: the open's
+    // version being that one, at that row, is what says the file as found is
+    // what the rows add up to.
+    if (at && t.parent > 0) {
+        for (const auto& save : store.metaWithPrefix("save:")) {
+            std::istringstream in(save.second);
+            int64_t version = 0, seq = 0;
+            in >> version >> seq;
+            if (version == at->num && seq == t.parent)
+                return false;
+        }
+    }
     if (!at || !before || at->docxml_hash.empty() || at->docxml_hash != before->docxml_hash)
         return true;
     for (const auto& c : chain) {

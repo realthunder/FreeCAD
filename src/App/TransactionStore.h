@@ -429,6 +429,9 @@ public:
 
     virtual std::string getMeta(const std::string& key) = 0;
     virtual void setMeta(const std::string& key, const std::string& value) = 0;
+    /// Every meta entry whose key starts with `prefix`, as (key, value).
+    virtual std::vector<std::pair<std::string, std::string>>
+    metaWithPrefix(const std::string& prefix) = 0;
 
     /// A consistent, compacted copy of the whole store at `path` (SQLite's
     /// VACUUM INTO); the file must not exist. What the embedded mode ships.

@@ -289,6 +289,9 @@ public:
     std::string getMeta(const std::string& key) override { return inner().getMeta(key); }
     void setMeta(const std::string& key, const std::string& value) override
     { inner().setMeta(key, value); }
+    std::vector<std::pair<std::string, std::string>>
+    metaWithPrefix(const std::string& prefix) override
+    { return inner().metaWithPrefix(prefix); }
 
 private:
     TransactionStore& inner()

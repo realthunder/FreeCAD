@@ -6300,3 +6300,86 @@ class TransactionBranchCases(unittest.TestCase):
         doc.createTransactionBranch("after")
         doc.switchTransactionBranch("main")
         self.assertEqual(doc.getTransactionRequests(False), [])
+
+    def testABranchFromBeforeAReopenIsMerged(self):
+        # Sec 30.25: the copy a file carries never holds its own save's
+        # version, so an open's record had nothing to be compared with and
+        # was taken for a jump -- and a merge whose base lies before the
+        # open was refused, "opened a file that is not its history's". The
+        # save's own record (sec 30.21 G1) says the file is what the rows add
+        # up to.
+        import shutil
+
+        class Made:
+            def __init__(self):
+                self.names = []
+
+            def slotCreatedDocument(self, doc):
+                self.names.append(doc.Name)
+
+        doc = self.track(FreeCAD.newDocument("ReopenOurs"))
+        doc.UndoMode = 1
+        doc.openTransaction("create")
+        doc.addObject("Part::Box", "Box")
+        doc.recompute()
+        doc.commitTransaction()
+        path = os.path.join(self.dir, "reopen-ours.FCStd")
+        copy = os.path.join(self.dir, "reopen-theirs.FCStd")
+        doc.saveAs(path)
+        first = doc.getTransactionVersions()[-1]["num"]
+        doc.nameTransactionVersion(first, "first")
+        shutil.copyfile(path, copy)
+        # This file goes on, and is saved and closed: twice, so the open
+        # that follows is of a save the copy never saw.
+        doc.openTransaction("ours taller")
+        doc.Box.Height = 12
+        doc.recompute()
+        doc.commitTransaction()
+        doc.save()
+        FreeCAD.closeDocument(doc.Name)
+
+        fork = self.track(FreeCAD.openDocument(copy))
+        fork.UndoMode = 1
+        fork.openTransaction("theirs longer")
+        fork.Box.Length = 20
+        fork.addObject("Part::Cylinder", "Cyl")
+        fork.recompute()
+        fork.commitTransaction()
+        fork.save()
+        FreeCAD.closeDocument(fork.Name)
+
+        doc = self.track(FreeCAD.openDocument(path))
+        doc.UndoMode = 1
+        doc.openTransaction("ours wider")
+        doc.Box.Width = 15
+        doc.recompute()
+        doc.commitTransaction()
+        opened = [t["seq"] for t in doc.getTransactionLog() if t["kind"] == "restore"]
+        self.assertEqual(len(opened), 1)
+        offered = [b for b in doc.getTransactionForkBranches(copy) if b["current"]]
+        self.assertEqual(len(offered), 1)
+        # The copy left before the open, and before the edit saved with it.
+        self.assertLess(offered[0]["base"], opened[0] - 1)
+
+        res = doc.importTransactionFork(copy)
+        self.assertEqual(res["stopped_at"], 0, res)
+        merged = doc.mergeTransactionBranch(res["branch"])
+        self.assertEqual(merged["unresolved"], [])
+        self.assertEqual(merged["failed"], [])
+        self.assertEqual(doc.Box.Length.Value, 20)
+        self.assertEqual(doc.Box.Width.Value, 15)
+        self.assertEqual(doc.Box.Height.Value, 12)
+        self.assertIsNotNone(doc.getObject("Cyl"))
+        self.assertAlmostEqual(doc.Box.Shape.Volume, 20 * 15 * 12, 6)
+
+        # Back across the open by the rows too: no version is read whole.
+        made = Made()
+        FreeCAD.addDocumentObserver(made)
+        try:
+            doc.restoreTransactionVersion(first)
+            self.assertEqual(made.names, [])
+        finally:
+            FreeCAD.removeDocumentObserver(made)
+        self.assertEqual(doc.Box.Height.Value, 10)
+        self.assertEqual(doc.Box.Length.Value, 10)
+        self.assertIsNone(doc.getObject("Cyl"))
