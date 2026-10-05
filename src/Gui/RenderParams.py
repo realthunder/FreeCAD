@@ -1175,13 +1175,25 @@ Params = [
         "The classic inspection shading -- pair it with Cavity for edge\n"
         "definition. Overrides physically based shading while on."),
     ParamInt('MatcapPreset',  0, title='Matcap',
-        proxy=ParamComboBox(items=['Studio', 'Clay', 'Metal', 'Pearl']),
+        proxy=ParamComboBox(items=['Studio', 'Clay', 'Metal', 'Pearl',
+                                   'Zebra']),
         doc="Which matcap to shade with. The presets are computed in the\n"
         "shader rather than sampled from images, so they cost no assets\n"
         "and stay sharp at any resolution. Studio = soft key light with a\n"
         "rim; Clay = matte, no highlight, the most neutral read of form;\n"
         "Metal = banded sweep with a hard edge, exaggerates curvature;\n"
-        "Pearl = warm/cool dual tone, shows shallow undulation."),
+        "Pearl = warm/cool dual tone, shows shallow undulation;\n"
+        "Zebra = black and white stripes, the surface as a mirror in a\n"
+        "room of parallel light strips: the stripes step where two faces\n"
+        "meet at an angle, meet with a kink where they are tangent, and\n"
+        "run through where the curvature is continuous as well."),
+    ParamInt('MatcapStripes',  12, title='Zebra stripes',
+        doc="Zebra matcap only: how many dark/light stripe pairs the\n"
+        "mirrored room has between its two poles. More stripes show a\n"
+        "smaller change of direction, until they are finer than the\n"
+        "view can draw -- zoom in rather than raise it without end. The\n"
+        "stripes are as true as the view mesh: lower the object's\n"
+        "Deviation before reading a fine pattern."),
     ParamFloat('MatcapTint',  1.0, title='Matcap object tint',
         doc="How much each object's own color tints the matcap, 0 to 1.\n"
         "One multiplies the matcap by the object color, so the matcap\n"

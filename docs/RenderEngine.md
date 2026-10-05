@@ -357,7 +357,7 @@ which is what makes form comparable between parts anywhere in the
 scene. Screen-space AO still multiplies in, because occlusion is not a
 light and contact darkening is a cue worth keeping.
 
-The presets (`Render_MatcapPreset`: studio, clay, metal, pearl) are
+The presets (`Render_MatcapPreset`: studio, clay, metal, pearl, zebra) are
 computed analytically in `fc_matcap.sh` rather than sampled from matcap
 images. That is what lets the feature ship with no image assets to
 commit, install or fetch — the browser tier gets it with no bundle
@@ -368,6 +368,41 @@ assembly's color coding.
 Pair it with cavity: matcap gives every same-facing surface the same
 value, which is exactly when curvature darkening has to supply the
 edges.
+
+**Zebra** is the surface-continuity view of other CAD systems: the
+surface shaded as a mirror in a room of parallel light strips, black
+and white. A stripe is a line of equal reflection, so what the stripes
+do at an edge says how the two faces meet there:
+
+| The stripes | The faces |
+| --- | --- |
+| step sideways at the edge | meet at an angle: a crease (position continuous only) |
+| meet, but turn a corner | are tangent, the curvature jumps (a plain fillet onto a flat face) |
+| run straight through | are curvature continuous as well |
+| are torn or wavy inside one face | that face undulates |
+
+`Render_MatcapStripes` is the number of dark/light pairs between the
+room's two poles (12 by default, a slider beside the preset in the
+shading options). The mirrored ray is taken along the view axis, as
+every preset takes it, so the pattern is a function of the normal
+alone: it does not swim with the position on screen, the same in an
+orthographic and a perspective view -- and **a flat face is one tone**,
+where a system that mirrors a room of finite size stripes a flat face
+too. The edge of a stripe is one pixel wide by the phase's own screen
+derivative, and stripes finer than the pixel grid go to grey instead of
+to moire.
+
+Two limits to keep in mind when reading it. The stripes are as true as
+the VIEW MESH, whose normals are the surface's at the vertices and
+interpolated between them: a coarse `Deviation` bends a stripe where
+the surface does not, so lower it before judging a fine pattern. And a
+draw with a generated (MaterialX) material does not take a matcap at
+all, zebra included -- it is shaded as the document it carries says.
+
+`tests/gui/matcap-zebra.py` holds it: the number of stripes across a
+sphere doubles from 8 to 16, pixel pairs to either side of a tangent
+seam carry the same tone, and about half of those across a creased seam
+do not.
 
 Fill-bound effect passes (AO, volumetrics, bloom, reflection…) can run
 below main resolution via the `Render_EffectResolution` view property
@@ -2341,7 +2376,7 @@ Legend: **Y** honoured, **-** not read, **n/a** meaningless here.
 | Setting | Classic | Realistic | Matcap | Cycles |
 | --- | :-: | :-: | :-: | :-: |
 | `PBR` (the facade over ShadingType) | Y | Y | Y | **-** |
-| `Matcap`, `MatcapPreset`, `MatcapTint` | - | - | Y | - |
+| `Matcap`, `MatcapPreset`, `MatcapTint`, `MatcapStripes` | - | - | Y | - |
 
 `Render_PBR` says which branch the RASTER shades with. The path tracer
 is physically based by definition -- that is the whole reason to reach

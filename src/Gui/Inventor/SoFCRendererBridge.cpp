@@ -1790,6 +1790,9 @@ RendererBridge::translateMatcapConfig(App::PropertyContainer * view)
             RenderParams::getMatcapPreset()));
     res.tint = float(viewParamOverride<App::PropertyFloat>(
             view, "Render", "MatcapTint", RenderParams::getMatcapTint()));
+    res.stripes = std::max(1, int(viewParamOverride<App::PropertyInteger>(
+            view, "Render", "MatcapStripes",
+            RenderParams::getMatcapStripes())));
     return res;
 }
 

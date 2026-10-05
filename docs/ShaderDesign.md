@@ -317,12 +317,14 @@ config struct the bridge fills. "Property" = per-view dynamic
 - **Shaders**: `fc_mesh_fs.sh` (the matcap branch).
 - **What**: replaces the scene lighting with a fixed studio attached to the
   camera, looked up by each fragment's view-space normal, so form reads the
-  same wherever the light is. The presets (Studio / Clay / Metal / Pearl)
+  same wherever the light is. The presets (Studio / Clay / Metal / Pearl /
+  Zebra, the last the stripes of a surface-continuity view)
   are computed in the shader, not sampled from images — no assets, sharp at
   any resolution, and free for the browser tier. Overrides PBR while on.
 - **Config**: `MatcapConfig` (`translateMatcapConfig`).
 - **Controls**: `Render_Matcap`, `Render_MatcapPreset` (an enumeration),
-  `Render_MatcapTint` (how much each object's own color tints it).
+  `Render_MatcapTint` (how much each object's own color tints it),
+  `Render_MatcapStripes` (the zebra preset's stripe count).
 
 ---
 

@@ -1507,6 +1507,7 @@ bool BGFXRenderer::Private::render(const QColor &col,
         ? background.fromColor : background.toColor;
     view->matcapPreset = matcapconf.preset;
     view->matcapTint = matcapconf.tint;
+    view->matcapStripes = float(matcapconf.stripes);
     view->bumpScale = bumpconf.scale;
     view->bumpParallax = bumpconf.parallax;
 

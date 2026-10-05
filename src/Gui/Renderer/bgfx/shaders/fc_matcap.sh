@@ -22,9 +22,45 @@
 
 // n: shading normal, normalized, view space, already flipped toward the
 // viewer by the caller for two-sided draws.
-// preset: 0 studio, 1 clay, 2 metal, 3 pearl.
-vec3 fc_matcap(float preset, vec3 n)
+// preset: 0 studio, 1 clay, 2 metal, 3 pearl, 4 zebra.
+// stripes: zebra only, the dark/light pairs between the room's two poles.
+vec3 fc_matcap(float preset, vec3 n, float stripes)
 {
+	if (preset > 3.5)
+	{
+		// Zebra: the surface as a mirror in a room of parallel light
+		// strips, which is the surface-continuity view of other CAD
+		// systems. A stripe is a line of equal reflection, so what the
+		// stripes do at an edge says how the two faces meet there: they
+		// STEP where the normal jumps (a crease), they meet but kink
+		// where the faces are tangent and the curvature jumps, and they
+		// run straight through where the curvature is continuous too. A
+		// stripe torn inside one face is that face undulating.
+		//
+		// r is the view ray mirrored by the surface, with the ray taken
+		// along the view axis like every preset here -- so the stripes
+		// are a function of the normal alone and a flat face is one
+		// tone. The room's strips are rings of equal elevation, leaned
+		// a little so that a surface turning about the vertical alone
+		// still crosses some.
+		vec3 r = 2.0 * n.z * n - vec3(0.0, 0.0, 1.0);
+		float t = atan2(r.y, length(r.xz)) + 0.35 * r.x;
+		float ph = t * 2.0 * stripes;
+		// cos, not sin: a face seen head on then sits in the middle of a
+		// light stripe instead of on an edge, where the least turn of
+		// the view would flip it.
+		float s = cos(ph);
+		// One pixel of edge, measured rather than assumed: the phase
+		// runs at any speed across the screen, and a fixed threshold
+		// would alias wherever it runs fast.
+		float w = fwidth(ph);
+		float v = clamp(0.5 + s / max(w, 1.0e-5), 0.0, 1.0);
+		// Stripes finer than the pixel grid can carry go to their mean
+		// rather than to moire.
+		v = mix(v, 0.5, smoothstep(1.0, 2.5, w));
+		return vec3_splat(mix(0.04, 0.96, v));
+	}
+
 	// Key from the upper left, fill from the lower right — the studio
 	// convention, and the one that reads as "lit from above" to the eye.
 	vec3 key = normalize(vec3(-0.45, 0.60, 0.66));

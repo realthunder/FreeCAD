@@ -5611,7 +5611,7 @@ void Gui::initRenderProperties(App::PropertyContainer *view)
     // the names are installed before the value is set.
     if (!view->getPropertyByName("Render_MatcapPreset")) {
         static const char* _matcapPresetEnums[] =
-            {"Studio", "Clay", "Metal", "Pearl", nullptr};
+            {"Studio", "Clay", "Metal", "Pearl", "Zebra", nullptr};
         auto prop = static_cast<App::PropertyEnumeration*>(
                 view->addDynamicProperty("App::PropertyEnumeration",
                                          "Render_MatcapPreset", "Render",
@@ -5619,6 +5619,14 @@ void Gui::initRenderProperties(App::PropertyContainer *view)
         prop->setEnums(_matcapPresetEnums);
         prop->setValue(long(RenderParams::getMatcapPreset()));
     }
+    static const App::PropertyIntegerConstraint::Constraints _stripes_cstr(1,128,1);
+    _renderParam<App::PropertyIntegerConstraint>(view, "MatcapStripes",
+            RenderParams::docMatcapStripes(),
+            long(RenderParams::getMatcapStripes()),
+            [](App::PropertyIntegerConstraint &prop) {
+                if (!prop.getConstraints())
+                    prop.setConstraints(&_stripes_cstr);
+            });
     _renderParam<App::PropertyFloatConstraint>(view, "MatcapTint",
             RenderParams::docMatcapTint(), RenderParams::getMatcapTint(),
             applyUnitConstraint);

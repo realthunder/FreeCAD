@@ -51,7 +51,8 @@ uniform vec4 u_params;
 uniform vec4 u_pbrParams;
 // Matcap shading: x = enabled, y = preset (see fc_matcap.sh),
 // z = how much the object's own color tints it (0 = one uniform
-// material for the whole scene). Overrides the PBR branch while on.
+// material for the whole scene), w = the zebra preset's stripe count.
+// Overrides the PBR branch while on.
 uniform vec4 u_matcapParams;
 uniform vec4 u_envSH[9];
 SAMPLERCUBE(s_texEnv, 1);
@@ -525,7 +526,7 @@ vec4 fcShadeFragment(vec4 base, vec3 n, vec3 geoN, vec3 vpos,
 			// inspection view wants kept.
 			if (u_params.z > 0.5 && n.z < 0.0)
 				n = -n;
-			vec3 mc = fc_matcap(u_matcapParams.y, n);
+			vec3 mc = fc_matcap(u_matcapParams.y, n, u_matcapParams.w);
 			color = mix(mc, mc * base.rgb, u_matcapParams.z)
 				* (occ * ao);
 		}

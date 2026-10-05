@@ -377,7 +377,10 @@ const uint32_t kMagic = 0x46435344;  // 'FCSD'
 //     all of them drawn in one -- the pattern instance toggles under the
 //     dimension lines crossing them. The material chunk carries it, so
 //     kChunkVersion moves with it.
-const uint32_t kVersion = 86;
+// 87: MatcapConfig carries stripes after tint: the stripe count of the
+//     zebra preset. An older snapshot has none, which reads as the
+//     default count.
+const uint32_t kVersion = 87;
 
 /// Layout revision of the out-of-band chunks (mesh, material, shader,
 /// group manifest). Written as the first field of each chunk, so it is
@@ -478,7 +481,7 @@ static_assert(sizeof(PreselHighlightConfig) == 20, "PreselHighlightConfig change
 static_assert(sizeof(SectionConfig) == 12, "SectionConfig changed: stream the new field, then update this");
 static_assert(sizeof(AOConfig) == 28, "AOConfig changed: stream the new field, then update this");
 static_assert(sizeof(CavityConfig) == 16, "CavityConfig changed: stream the new field, then update this");
-static_assert(sizeof(MatcapConfig) == 12, "MatcapConfig changed: stream the new field, then update this");
+static_assert(sizeof(MatcapConfig) == 16, "MatcapConfig changed: stream the new field, then update this");
 static_assert(sizeof(BumpConfig) == 8, "BumpConfig changed: stream the new field, then update this");
 static_assert(sizeof(VolumetricConfig) == 28, "VolumetricConfig changed: stream the new field, then update this");
 static_assert(sizeof(WaterConfig) == 48, "WaterConfig changed: stream the new field, then update this");
@@ -3551,6 +3554,7 @@ static bool saveSnapshotFp(FILE *fp, const SceneSnapshot &snap)
     w.b(snap.matcapconf.enabled);
     w.i32(snap.matcapconf.preset);
     w.f(snap.matcapconf.tint);
+    w.i32(snap.matcapconf.stripes);
 
     w.b(snap.pbrconf.enabled);
     w.f(snap.pbrconf.metallic);
@@ -3998,6 +4002,8 @@ static bool loadSnapshotFp(FILE *fp, SceneSnapshot &snap)
         snap.matcapconf.enabled = r.b();
         snap.matcapconf.preset = r.i32();
         snap.matcapconf.tint = r.f();
+        if (version >= 87)
+            snap.matcapconf.stripes = r.i32();
     }
 
     snap.pbrconf.enabled = r.b();

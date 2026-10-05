@@ -135,6 +135,7 @@ public:
     double CavityRidge;
     bool Matcap;
     long MatcapPreset;
+    long MatcapStripes;
     double MatcapTint;
     bool PBR;
     double PBRMetallic;
@@ -380,6 +381,8 @@ public:
         funcs["Matcap"] = &RenderParamsP::updateMatcap;
         MatcapPreset = this->handle->GetInt("MatcapPreset", 0);
         funcs["MatcapPreset"] = &RenderParamsP::updateMatcapPreset;
+        MatcapStripes = this->handle->GetInt("MatcapStripes", 12);
+        funcs["MatcapStripes"] = &RenderParamsP::updateMatcapStripes;
         MatcapTint = this->handle->GetFloat("MatcapTint", 1.0);
         funcs["MatcapTint"] = &RenderParamsP::updateMatcapTint;
         PBR = this->handle->GetBool("PBR", false);
@@ -874,6 +877,10 @@ public:
     // Auto generated code (Tools/params_utils.py:314)
     static void updateMatcapPreset(RenderParamsP *self) {
         self->MatcapPreset = self->handle->GetInt("MatcapPreset", 0);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateMatcapStripes(RenderParamsP *self) {
+        self->MatcapStripes = self->handle->GetInt("MatcapStripes", 12);
     }
     // Auto generated code (Tools/params_utils.py:314)
     static void updateMatcapTint(RenderParamsP *self) {
@@ -2397,9 +2404,21 @@ static const App::ParamRegistry::Registrar _RenderParamsRegistrar({
 "and stay sharp at any resolution. Studio = soft key light with a\n"
 "rim; Clay = matte, no highlight, the most neutral read of form;\n"
 "Metal = banded sweep with a hard edge, exaggerates curvature;\n"
-"Pearl = warm/cool dual tone, shows shallow undulation.")
+"Pearl = warm/cool dual tone, shows shallow undulation;\n"
+"Zebra = black and white stripes, the surface as a mirror in a\n"
+"room of parallel light strips: the stripes step where two faces\n"
+"meet at an angle, meet with a kink where they are tangent, and\n"
+"run through where the curvature is continuous as well.")
         .setProxy("ComboBox")
-        .setItems({{"Studio", "", nullptr}, {"Clay", "", nullptr}, {"Metal", "", nullptr}, {"Pearl", "", nullptr}}, false, true),
+        .setItems({{"Studio", "", nullptr}, {"Clay", "", nullptr}, {"Metal", "", nullptr}, {"Pearl", "", nullptr}, {"Zebra", "", nullptr}}, false, true),
+    App::ParamInfo("Gui", "RenderParams", "User parameter:BaseApp/Preferences/View/Render", "MatcapStripes", "MatcapStripes", App::ParamInfo::Int, 12)
+        .setTitle("Zebra stripes")
+        .setDoc("Zebra matcap only: how many dark/light stripe pairs the\n"
+"mirrored room has between its two poles. More stripes show a\n"
+"smaller change of direction, until they are finer than the\n"
+"view can draw -- zoom in rather than raise it without end. The\n"
+"stripes are as true as the view mesh: lower the object's\n"
+"Deviation before reading a fine pattern."),
     App::ParamInfo("Gui", "RenderParams", "User parameter:BaseApp/Preferences/View/Render", "MatcapTint", "MatcapTint", App::ParamInfo::Float, 1.0)
         .setTitle("Matcap object tint")
         .setDoc("How much each object's own color tints the matcap, 0 to 1.\n"
@@ -6274,7 +6293,11 @@ const char *RenderParams::docMatcapPreset() {
 "and stay sharp at any resolution. Studio = soft key light with a\n"
 "rim; Clay = matte, no highlight, the most neutral read of form;\n"
 "Metal = banded sweep with a hard edge, exaggerates curvature;\n"
-"Pearl = warm/cool dual tone, shows shallow undulation.");
+"Pearl = warm/cool dual tone, shows shallow undulation;\n"
+"Zebra = black and white stripes, the surface as a mirror in a\n"
+"room of parallel light strips: the stripes step where two faces\n"
+"meet at an angle, meet with a kink where they are tangent, and\n"
+"run through where the curvature is continuous as well.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -6297,6 +6320,39 @@ void RenderParams::setMatcapPreset(const long &v) {
 // Auto generated code (Tools/params_utils.py:431)
 void RenderParams::removeMatcapPreset() {
     instance()->handle->RemoveInt("MatcapPreset");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *RenderParams::docMatcapStripes() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"Zebra matcap only: how many dark/light stripe pairs the\n"
+"mirrored room has between its two poles. More stripes show a\n"
+"smaller change of direction, until they are finer than the\n"
+"view can draw -- zoom in rather than raise it without end. The\n"
+"stripes are as true as the view mesh: lower the object's\n"
+"Deviation before reading a fine pattern.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const long & RenderParams::getMatcapStripes() {
+    return instance()->MatcapStripes;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const long & RenderParams::defaultMatcapStripes() {
+    const static long def = 12;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void RenderParams::setMatcapStripes(const long &v) {
+    instance()->handle->SetInt("MatcapStripes",v);
+    instance()->MatcapStripes = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void RenderParams::removeMatcapStripes() {
+    instance()->handle->RemoveInt("MatcapStripes");
 }
 
 // Auto generated code (Tools/params_utils.py:397)

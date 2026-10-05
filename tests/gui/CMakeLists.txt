@@ -1206,3 +1206,9 @@ fc_add_gui_test(GuiExportHiddenComponent_tests_run
 fc_add_gui_test(GuiServeEmptyDocument_tests_run
                 serve-empty-document.py
                 --timeout 180)
+
+# The Zebra matcap preset: the stripe count follows Render_MatcapStripes,
+# the stripes cross a tangent seam unbroken and break at a creased one.
+fc_add_gui_test(GuiMatcapZebra_tests_run
+                matcap-zebra.py
+                --timeout 180)

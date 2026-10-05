@@ -96,6 +96,10 @@ QString doc(const char *text)
     return QString::fromUtf8(text);
 }
 
+/// Index of the zebra preset in Render_MatcapPreset, the one preset
+/// with a setting of its own.
+const int MatcapZebra = 4;
+
 } // namespace
 
 ShadingOptionsWidget::ShadingOptionsWidget(QWidget *parent)
@@ -294,6 +298,7 @@ ShadingOptionsWidget::ShadingOptionsWidget(QWidget *parent)
     matcapCombo->addItem(tr("Clay"));
     matcapCombo->addItem(tr("Metal"));
     matcapCombo->addItem(tr("Pearl"));
+    matcapCombo->addItem(tr("Zebra"));
     matcapCombo->setToolTip(doc(RenderParams::docMatcapPreset()));
     layout->addWidget(matcapLabel, 5, 0);
     layout->addWidget(matcapCombo, 5, 1);
@@ -320,6 +325,25 @@ ShadingOptionsWidget::ShadingOptionsWidget(QWidget *parent)
     layout->addWidget(matcapTintLabel, 6, 0);
     layout->addLayout(tintRow, 6, 1);
 
+    // The zebra preset's one number. How many stripes are right depends
+    // on how far in the view is and how tightly the surface turns, so
+    // it is dragged with the stripes in sight, like the cavity radius.
+    matcapStripesLabel = new QLabel(tr("Stripes:"), this);
+    matcapStripesSlider = new QSlider(Qt::Horizontal, this);
+    matcapStripesSlider->setRange(2, 64);
+    matcapStripesSlider->setPageStep(4);
+    matcapStripesSlider->setToolTip(doc(RenderParams::docMatcapStripes()));
+    matcapStripesLabel->setToolTip(matcapStripesSlider->toolTip());
+    matcapStripesValue = new QLabel(this);
+    matcapStripesValue->setMinimumWidth(
+        matcapStripesValue->fontMetrics().horizontalAdvance(tr("000")));
+    auto stripesRow = new QHBoxLayout;
+    stripesRow->setContentsMargins(0, 0, 0, 0);
+    stripesRow->addWidget(matcapStripesSlider, 1);
+    stripesRow->addWidget(matcapStripesValue);
+    layout->addWidget(matcapStripesLabel, 7, 0);
+    layout->addLayout(stripesRow, 7, 1);
+
     // The modifiers: each composes with any shading model and with the
     // others, which is exactly why they are checkboxes and not entries in
     // the draw style list above.
@@ -345,7 +369,7 @@ ShadingOptionsWidget::ShadingOptionsWidget(QWidget *parent)
     flags->addWidget(aoCheck, 0, 1);
     flags->addWidget(shadowCheck, 1, 0);
     flags->addWidget(bloomCheck, 1, 1);
-    layout->addLayout(flags, 7, 0, 1, 2);
+    layout->addLayout(flags, 8, 0, 1, 2);
 
     // Cavity is the one modifier here whose usefulness depends on a
     // number rather than on being on: the radius decides which features
@@ -368,8 +392,8 @@ ShadingOptionsWidget::ShadingOptionsWidget(QWidget *parent)
     radiusRow->setContentsMargins(0, 0, 0, 0);
     radiusRow->addWidget(cavityRadiusSlider, 1);
     radiusRow->addWidget(cavityRadiusValue);
-    layout->addWidget(cavityRadiusLabel, 8, 0);
-    layout->addLayout(radiusRow, 8, 1);
+    layout->addWidget(cavityRadiusLabel, 9, 0);
+    layout->addLayout(radiusRow, 9, 1);
 
     // Not "pick a renderer type in the preferences" any more: the
     // render path stopped being a stored choice in ca372262f1, and
@@ -380,7 +404,7 @@ ShadingOptionsWidget::ShadingOptionsWidget(QWidget *parent)
     hint = new QLabel(tr("Needs the render engine, which is not "
                          "running on this view."), this);
     hint->setEnabled(false);
-    layout->addWidget(hint, 9, 0, 1, 2);
+    layout->addWidget(hint, 10, 0, 1, 2);
 
     connect(modelCombo, qOverload<int>(&QComboBox::currentIndexChanged),
             this, [this](int index) {
@@ -439,6 +463,16 @@ ShadingOptionsWidget::ShadingOptionsWidget(QWidget *parent)
                                                             "MatcapPreset"))
             prop->setValue(long(index));
         RenderParams::setMatcapPreset(long(index));
+        updateMatcapStripesEnabled();
+    });
+    connect(matcapStripesSlider, &QSlider::valueChanged, this, [this](int value) {
+        matcapStripesValue->setText(QString::number(value));
+        if (loading)
+            return;
+        if (auto prop = renderProp<App::PropertyInteger>(activeView(),
+                                                         "MatcapStripes"))
+            prop->setValue(long(value));
+        RenderParams::setMatcapStripes(long(value));
     });
     connect(matcapTintSlider, &QSlider::valueChanged, this, [this](int value) {
         matcapTintValue->setText(tr("%1 %").arg(value));
@@ -518,6 +552,16 @@ void ShadingOptionsWidget::updateMatcapTintEnabled()
     matcapTintLabel->setEnabled(on);
     matcapTintSlider->setEnabled(on);
     matcapTintValue->setEnabled(on);
+}
+
+void ShadingOptionsWidget::updateMatcapStripesEnabled()
+{
+    // Stripes belong to the one preset that has any.
+    const bool on = matcapCombo->isEnabled()
+        && matcapCombo->currentIndex() == MatcapZebra;
+    matcapStripesLabel->setEnabled(on);
+    matcapStripesSlider->setEnabled(on);
+    matcapStripesValue->setEnabled(on);
 }
 
 void ShadingOptionsWidget::updateExternalSettings()
@@ -743,6 +787,7 @@ void ShadingOptionsWidget::setModel(long model)
     matcapLabel->setEnabled(matcap);
     matcapCombo->setEnabled(matcap);
     updateMatcapTintEnabled();
+    updateMatcapStripesEnabled();
     updateExternalSettings();
 }
 
@@ -974,6 +1019,11 @@ void ShadingOptionsWidget::refresh()
     // As with the radius: valueChanged is silent when the value has not
     // moved, so the readout is written here rather than left to the signal.
     matcapTintValue->setText(tr("%1 %").arg(matcapTintSlider->value()));
+    if (auto prop = renderProp<App::PropertyInteger>(view, "MatcapStripes"))
+        matcapStripesSlider->setValue(int(prop->getValue()));
+    else
+        matcapStripesSlider->setValue(int(RenderParams::getMatcapStripes()));
+    matcapStripesValue->setText(QString::number(matcapStripesSlider->value()));
     cavityCheck->setChecked(renderFlag(view, "Cavity", false));
     if (auto prop = renderProp<App::PropertyFloat>(view, "CavityRadius"))
         cavityRadiusSlider->setValue(int(prop->getValue() + 0.5));
@@ -1007,6 +1057,7 @@ void ShadingOptionsWidget::refresh()
     matcapLabel->setEnabled(available && matcap);
     matcapCombo->setEnabled(available && matcap);
     updateMatcapTintEnabled();
+    updateMatcapStripesEnabled();
     cavityCheck->setEnabled(available);
     updateCavityRadiusEnabled();
     aoCheck->setEnabled(available);

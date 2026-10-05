@@ -115,6 +115,8 @@ private:
     void updateCavityRadiusEnabled();
     /// Grey the tint row unless the matcap model is on and available.
     void updateMatcapTintEnabled();
+    /// Grey the stripes row unless the matcap in use is the zebra.
+    void updateMatcapStripesEnabled();
     /// Grey the copy-the-image box unless there is an image to copy.
     void updateEnvEmbedEnabled();
     /// Grey the blur row unless the environment is being drawn: the
@@ -172,6 +174,9 @@ private:
     QLabel *matcapTintLabel;
     QSlider *matcapTintSlider;
     QLabel *matcapTintValue;
+    QLabel *matcapStripesLabel;
+    QSlider *matcapStripesSlider;
+    QLabel *matcapStripesValue;
     QCheckBox *cavityCheck;
     QLabel *cavityRadiusLabel;
     QSlider *cavityRadiusSlider;

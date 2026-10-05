@@ -777,15 +777,19 @@ struct CavityConfig {
 /// ship, install or fetch on any tier). Overrides PBRConfig while on.
 struct MatcapConfig {
     bool enabled = false;    ///< matcap shading active
-    /// Which procedural matcap: 0 studio, 1 clay, 2 metal, 3 pearl.
+    /// Which procedural matcap: 0 studio, 1 clay, 2 metal, 3 pearl,
+    /// 4 zebra.
     int preset = 0;
     /// How much the object's own color tints the matcap, 0 to 1. Zero
     /// shades every object as one uniform material.
     float tint = 0.0f;
+    /// Zebra only: the dark/light stripe pairs between the two poles of
+    /// the room the surface mirrors.
+    int stripes = 12;
 
     bool operator==(const MatcapConfig &o) const {
         return enabled == o.enabled && preset == o.preset
-            && tint == o.tint;
+            && tint == o.tint && stripes == o.stripes;
     }
     bool operator!=(const MatcapConfig &o) const { return !(*this == o); }
 };

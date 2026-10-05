@@ -640,7 +640,7 @@ void BGFXView::setTriangleFrameState(const Render::Material &mat, int pass,
     }
     bgfx::setUniform(u_frameParams, frameParams, numFrame);
     float matcapParams[4] = {matcapFrame ? 1.0f : 0.0f,
-                             float(matcapPreset), matcapTint, 0.0f};
+                             float(matcapPreset), matcapTint, matcapStripes};
     bgfx::setUniform(u_matcapParams, matcapParams);
     bgfx::setTexture(1, s_texEnv, env);
 
