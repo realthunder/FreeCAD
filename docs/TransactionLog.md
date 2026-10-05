@@ -15013,6 +15013,8 @@ of them where theirs' rows are taken as they are. Not view state.
   Marked, the objects say what they are -- to be computed -- and the next
   recompute is a step like any other. Rows a copy of the file made
   (30.13) carry no derived values and are computed at once, as before.
+  Put to the user as a reading of "mark changed object for recompute",
+  and confirmed (2026-10-06: "fast forward is ok").
 
 **The dialog** says which: "taken whole, and what it changed is
 recomputed", or "taken as they are. What they changed is marked to
@@ -15189,3 +15191,73 @@ theirs' cell; merged, the sheet has each side's.
 RC 15, BC 30, VC 18, PC 28, FC 16, VW 14, MC 33 (+2), the two-document
 check 24, the tree check 19, the author check 36, the import check 49,
 the request check 31 and the share check 47.
+
+### 31.9 A parse kept without what it borrowed from (user: chase the test failure, 2026-10-06)
+
+`ShapeStorage.ShapeRefCases.testSharingSurvivesTheRoundTrip` failed once
+in a frozen run of the whole suite, with other work running beside it,
+and passed alone: after a reopen the compound's first solid was not the
+box object's shape. It was put down to load. It is not load.
+
+**What it was.** The parse cache of 27.31 and 27.35 kept an entry per
+blob and, with shape values frozen, found another blob's parse of the
+same bytes through a second index, hash to blob. A compound's file names
+the box's file, and its parse holds the box's TShape. The two entries
+were kept and dropped each on its own, and there were two ways for the
+box's to go while the compound's stayed:
+
+- A sweep keeps the 32 released parses used last. The compound's is
+  entered after the box's, and is used again every time the compound
+  alone is read; so there is a number of other parses at which the
+  sweep keeps the one and drops the other.
+- An entry was keyed on its blob's address, and a released blob's
+  address is the next blob's. A parse entered there replaced the box's,
+  and the hash index went on pointing at the address.
+
+The next open then found the compound's parse by its hash -- over the
+old box -- and parsed the box again: two TShapes for one box, which is
+what 27.25 set out to end, and what the case asserts against.
+
+Which of the two the suite ran into is not known; that run's log is
+gone. The first is reproduced on demand (`sweep.py` in
+`~/.cache/txnlog-s31/flake`: a file opened and only its compound read,
+31 other shapes read, the same again, 40 more: `False` every run,
+frozen). The second needs the heap to fall a certain way and was not
+reproduced; it cannot happen as built.
+
+**As built** (`ShapeParseCache`, `PropertyTopoShape.cpp`):
+
+- With shape values frozen a parse is kept **under its content hash**:
+  one entry for the bytes, and the blobs that hold it. There is no
+  second index and no address in the key. An entry is released when no
+  blob holds it. A parse made while another was entered for the same
+  bytes is dropped; the first is the one others already have.
+- Not frozen, an entry per blob as before, in a map of its own. The two
+  maps do not serve each other: a file read partly with the preference
+  on and partly with it off has two parses of what both read. Before, a
+  blob's own entry was found first either way.
+- Each entry carries **the hashes of the files it borrowed from**, and
+  a sweep keeps the entries a blob still holds, the 32 released used
+  last, and whatever any of those names, to any depth. Dropping a
+  source freed next to nothing -- its borrower holds its TShapes -- and
+  cost the sharing.
+
+Not frozen, a sweep drops every released parse as it did, a borrower's
+with its source's.
+
+**Test**: `ShapeStorage.ShapeRefCases.testABorrowersParseIsKeptWithItsSources`
+-- the file opened and only its compound read, 31 other shapes saved,
+opened and read, eight times over, so that the cache sweeps whatever
+its size was when the case began; then the leaf is the box's shape.
+Run against the old cache, built for it, the case fails; 0.7 s.
+
+The other failure named beside this one,
+`ExpressionImageBudgetTest.runawayBytecodeLoopIsStopped`, is the
+sandbox's and is in `docs/Sandbox.md` sec 12, "A soft interrupt written
+from another thread".
+
+**Gates**, frozen and unfrozen each, with both fixes: Python 3021 OK
+(52 skipped frozen, 53 unfrozen; 6 expected failures; +1), ctest
+881/881, and the GUI checks RC 15, BC 30, VC 18, PC 28, FC 16, VW 14,
+MC 33, the two-document check 24, the tree check 19, the author check
+36, the import check 49, the request check 31 and the share check 47.

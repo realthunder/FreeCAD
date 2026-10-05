@@ -712,6 +712,55 @@ class ShapeRefCases(ShapeTestCase):
         self.assertAlmostEqual(reopened.getObject("Comp").Shape.Volume, volume, places=6)
         self.assertEqual(len(reopened.getObject("Comp").Shape.Faces), 12)
 
+    def testABorrowersParseIsKeptWithItsSources(self):
+        """A parse kept after its file was closed is kept with the parses it
+        borrowed from (docs/TransactionLog.md sec 31.9).
+
+        The compound's parse holds the box's TShape. Kept while the box's own
+        parse was swept, it came back on the next open over a box that the box
+        object, parsed again, no longer had. So: open the file and read only
+        the compound, again and again, with enough other shapes read between
+        to sweep the cache more than once -- the compound is always among the
+        parses used last, the box never.
+        """
+        part = FreeCAD.ParamGet("User parameter:BaseApp/Preferences/Mod/Part")
+        had = "ImmutableShapeValues" in part.GetBools()
+        kept = part.GetBool("ImmutableShapeValues", True)
+        doc, _ = self.sharedDocument()
+        project = self.projectPath()
+        doc.saveAs(project)
+        FreeCAD.closeDocument(doc.Name)
+        try:
+            part.SetBool("ImmutableShapeValues", True)
+            for batch in range(8):
+                reopened = self.openDocument(project)
+                self.assertEqual(len(reopened.getObject("Comp").Shape.Solids), 2)
+                FreeCAD.closeDocument(reopened.Name)
+
+                other = self.newDocument("Others")
+                for i in range(31):
+                    feature = other.addObject("Part::Feature", "F%d" % i)
+                    feature.Shape = Part.makeBox(1 + batch, 1 + i, 1)
+                path = self.projectPath("others%d.FCStd" % batch)
+                other.saveAs(path)
+                FreeCAD.closeDocument(other.Name)
+                other = self.openDocument(path)
+                for obj in other.Objects:
+                    self.assertFalse(obj.Shape.isNull())
+                FreeCAD.closeDocument(other.Name)
+
+            reopened = self.openDocument(project)
+            leaf = reopened.getObject("Comp").Shape.Solids[0]
+            self.assertTrue(
+                leaf.isPartner(reopened.getObject("BoxA").Shape),
+                "the compound's parse was kept and the box's was not",
+            )
+        finally:
+            if had:
+                part.SetBool("ImmutableShapeValues", kept)
+            else:
+                part.RemBool("ImmutableShapeValues")
+
     def testResaveOfABorrowingProjectChangesNothing(self):
         doc, _ = self.sharedDocument()
         project = self.directoryPath()

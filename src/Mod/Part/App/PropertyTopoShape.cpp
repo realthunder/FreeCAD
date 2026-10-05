@@ -28,6 +28,7 @@
 # include <mutex>
 # include <sstream>
 # include <unordered_map>
+# include <unordered_set>
 # include <boost/algorithm/string/predicate.hpp>
 # include <Bnd_Box.hxx>
 # include <BRepBndLib.hxx>
@@ -241,14 +242,21 @@ struct ParsedShape
  * and it is why equal-but-unshared duplicates cost one parse and one
  * tessellation instead of N (docs/SharedShapeStorage.md sec 12.5).
  *
- * Keyed on the blob. A blob is one blob manager's, and a manager is a file's
+ * A blob is one blob manager's, and a manager is a file's
  * (docs/TransactionLog.md sec 27.10): every document of one file -- its own,
  * its versions, its branches -- shares it, and so shares the parse. Two
- * files holding the same bytes have two blobs; with shape values frozen
+ * files holding the same bytes have two blobs. With shape values frozen
  * (PartParams ImmutableShapeValues, sec 23.13) nothing can change a TShape
- * in place, so the second finds the first's parse by the content hash
- * (sec 27.25 item 4). With them not frozen, each file parses its own.
- * The weak handle is what says an entry has outlived its content.
+ * in place, so a parse belongs to the bytes: it is kept under the content
+ * hash, every blob of those bytes finds it (sec 27.25 item 4), and it is
+ * kept for a while after the last of them has gone (item 5). With them not
+ * frozen a parse belongs to one blob and goes with it.
+ *
+ * A file that borrows holds its sources' TShapes, so its parse is only as
+ * good as theirs being the ones the cache still hands out. Each entry names
+ * the files it borrowed from, and a sweep keeps what a kept entry names
+ * (sec 31.9): a compound kept without the box it was built over came back,
+ * after a reopen, over a box that was no longer the box object's shape.
  */
 class ShapeParseCache
 {
@@ -262,90 +270,163 @@ public:
     /** The parse of this file, or null.
      *
      * The pointer is into the map's own node, so it survives anything but the
-     * erasure of this entry -- which the sweep only does once the blob has
-     * expired, i.e. once the caller has stopped holding it.
+     * erasure of this entry -- which the sweep only does once every blob that
+     * held it has expired, i.e. once the caller has stopped holding its own.
      */
     const ParsedShape* get(const App::FileBlobHandle& blob)
     {
         std::lock_guard<std::mutex> guard(_mutex);
         const std::string& hash = blob->hash();
-        auto found = _entries.find(blob.get());
-        if (found != _entries.end() && !found->second.blob.expired()
-                && found->second.hash == hash) {
+        if (!PartParams::getImmutableShapeValues()) {
+            // The hash is checked because a released blob's address can be a
+            // new blob's.
+            auto found = _own.find(blob.get());
+            if (found == _own.end() || found->second.released()
+                    || found->second.hash != hash) {
+                return nullptr;
+            }
             found->second.used = ++_tick;
             return &found->second.parsed;
         }
-        if (!PartParams::getImmutableShapeValues())
+        // The same bytes parsed before: by this blob, by another file's, or
+        // by one released since -- a branch switched away from and back, a
+        // version closed and opened again.
+        auto found = _shared.find(hash);
+        if (found == _shared.end())
             return nullptr;
-        // The same bytes parsed before: another file's blob (sec 27.25 item
-        // 4), or one released since, kept for a while (item 5) -- a branch
-        // switched away from and back, a version closed and opened again.
-        auto byHash = _byHash.find(hash);
-        if (byHash == _byHash.end())
-            return nullptr;
-        auto other = _entries.find(byHash->second);
-        if (other == _entries.end() || other->second.hash != hash)
-            return nullptr;
-        ParsedShape shared = other->second.parsed;
-        // A released one is taken over, not shared: nothing else holds it.
-        if (other->second.blob.expired() && other->first != blob.get())
-            _entries.erase(other);
-        Entry& entry = _entries[blob.get()];
-        entry.blob = blob;
-        entry.hash = hash;
-        entry.parsed = std::move(shared);
-        entry.used = ++_tick;
-        _byHash[hash] = blob.get();
-        return &entry.parsed;
+        found->second.hold(blob);
+        found->second.used = ++_tick;
+        return &found->second.parsed;
     }
 
-    const ParsedShape* put(const App::FileBlobHandle& blob, ParsedShape parsed)
+    /** Enter a parse, with the hashes of the files it borrowed from. */
+    const ParsedShape* put(const App::FileBlobHandle& blob, ParsedShape parsed,
+                           std::vector<std::string> sources)
     {
         std::lock_guard<std::mutex> guard(_mutex);
         // Swept here rather than on every read: an entry costs a handle and a
         // shape, and the sweep is what keeps a document's whole geometry from
         // being held alive by files nothing refers to any more -- but for the
         // few released last, kept with shape values frozen (item 5).
-        if (_entries.size() >= _sweepAt) {
-            const std::size_t keep =
-                PartParams::getImmutableShapeValues() ? _keepReleased : 0;
-            std::vector<std::pair<uint64_t, const App::FileBlob*>> released;
-            for (auto& kv : _entries) {
-                if (kv.second.blob.expired())
-                    released.emplace_back(kv.second.used, kv.first);
-            }
-            std::sort(released.begin(), released.end(),
-                      [](const auto& a, const auto& b) { return a.first > b.first; });
-            for (std::size_t i = keep; i < released.size(); ++i)
-                _entries.erase(released[i].second);
-            _byHash.clear();
-            for (auto& kv : _entries)
-                _byHash[kv.second.hash] = kv.first;
-            _sweepAt = std::max<std::size_t>(64, _entries.size() * 2);
+        if (_own.size() + _shared.size() >= _sweepAt)
+            sweep();
+        const std::string& hash = blob->hash();
+        if (!PartParams::getImmutableShapeValues()) {
+            Entry& entry = _own[blob.get()];
+            entry = Entry();
+            entry.hold(blob);
+            entry.hash = hash;
+            entry.sources = std::move(sources);
+            entry.parsed = std::move(parsed);
+            entry.used = ++_tick;
+            return &entry.parsed;
         }
-        Entry& entry = _entries[blob.get()];
-        entry.blob = blob;
-        entry.hash = blob->hash();
-        entry.parsed = std::move(parsed);
+        auto [found, entered] = _shared.try_emplace(hash);
+        Entry& entry = found->second;
+        // One parse for the bytes: entered while this one was being made, the
+        // first is the one others already hold, and this one is dropped.
+        if (entered) {
+            entry.hash = hash;
+            entry.sources = std::move(sources);
+            entry.parsed = std::move(parsed);
+        }
+        entry.hold(blob);
         entry.used = ++_tick;
-        _byHash[entry.hash] = blob.get();
         return &entry.parsed;
     }
 
 private:
     struct Entry
     {
-        std::weak_ptr<App::FileBlob> blob;
-        /// The content, which a lookup by hash checks: a released blob's
-        /// address can be a new blob's.
+        /// The blobs this parse is the content of: one when shape values are
+        /// not frozen, every one of the same bytes when they are.
+        std::vector<std::weak_ptr<App::FileBlob>> holders;
         std::string hash;
+        /// The content hashes of the files this one borrowed from.
+        std::vector<std::string> sources;
         ParsedShape parsed;
         uint64_t used {0};
+
+        bool released() const
+        {
+            for (const auto& holder : holders) {
+                if (!holder.expired())
+                    return false;
+            }
+            return true;
+        }
+
+        void hold(const App::FileBlobHandle& blob)
+        {
+            bool held = false;
+            auto keep = holders.begin();
+            for (auto& holder : holders) {
+                if (holder.expired())
+                    continue;
+                if (!holder.owner_before(blob) && !blob.owner_before(holder))
+                    held = true;
+                if (&*keep != &holder)
+                    *keep = std::move(holder);
+                ++keep;
+            }
+            holders.erase(keep, holders.end());
+            if (!held)
+                holders.emplace_back(blob);
+        }
     };
+
+    void sweep()
+    {
+        for (auto it = _own.begin(); it != _own.end();) {
+            if (it->second.released())
+                it = _own.erase(it);
+            else
+                ++it;
+        }
+        // Kept: what a blob still holds, the released ones used last, and
+        // whatever any of those borrowed from, however long ago that was
+        // used. Dropping a source frees next to nothing -- its borrower holds
+        // its TShapes -- and costs the sharing: the next read of the source
+        // parses it again, into shapes its kept borrower does not have.
+        std::vector<const Entry*> reach;
+        std::vector<std::pair<uint64_t, const Entry*>> released;
+        for (const auto& kv : _shared) {
+            if (kv.second.released())
+                released.emplace_back(kv.second.used, &kv.second);
+            else
+                reach.push_back(&kv.second);
+        }
+        std::sort(released.begin(), released.end(),
+                  [](const auto& a, const auto& b) { return a.first > b.first; });
+        const std::size_t keep = PartParams::getImmutableShapeValues() ? _keepReleased : 0;
+        for (std::size_t i = 0; i < keep && i < released.size(); ++i)
+            reach.push_back(released[i].second);
+        std::unordered_set<const Entry*> kept;
+        while (!reach.empty()) {
+            const Entry* entry = reach.back();
+            reach.pop_back();
+            if (!kept.insert(entry).second)
+                continue;
+            for (const auto& source : entry->sources) {
+                auto found = _shared.find(source);
+                if (found != _shared.end())
+                    reach.push_back(&found->second);
+            }
+        }
+        for (auto it = _shared.begin(); it != _shared.end();) {
+            if (kept.count(&it->second))
+                ++it;
+            else
+                it = _shared.erase(it);
+        }
+        _sweepAt = std::max<std::size_t>(64, (_own.size() + _shared.size()) * 2);
+    }
+
     mutable std::mutex _mutex;
-    std::unordered_map<const App::FileBlob*, Entry> _entries;
-    /// Content hash -> a blob whose parse is in _entries (sec 27.25 item 4).
-    std::unordered_map<std::string, const App::FileBlob*> _byHash;
+    /// Shape values not frozen: a blob's own parse.
+    std::unordered_map<const App::FileBlob*, Entry> _own;
+    /// Shape values frozen: the parse of the bytes, by content hash.
+    std::unordered_map<std::string, Entry> _shared;
     std::size_t _sweepAt {64};
     /// Released parses a sweep keeps, the most recently used first (item 5).
     static constexpr std::size_t _keepReleased = 32;
@@ -428,7 +509,11 @@ const ParsedShape* parseBlob(App::FileBlobManager& manager,
     }
     // Cached even when the parse failed: a file that cannot be read does not
     // get read again once per referrer.
-    return ShapeParseCache::instance().put(blob, std::move(parsed));
+    std::vector<std::string> borrowed;
+    borrowed.reserve(sources.size());
+    for (const auto& source : sources)
+        borrowed.push_back(source->hash());
+    return ShapeParseCache::instance().put(blob, std::move(parsed), std::move(borrowed));
 }
 
 /** The owner table for the save in progress.
