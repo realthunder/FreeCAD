@@ -310,8 +310,10 @@ TopoShape Draft::refineBase(const TopoShape &baseShape) const
             || refined.countSubShapes(TopAbs_FACE) == baseShape.countSubShapes(TopAbs_FACE))
         return TopoShape();
 
-    // Merging faces must not move material. A refine can hand back a valid
-    // solid that does: #334's Draft002 input comes out 2000 of 47000 short.
+    // Merging faces must not move material. On a base whose tolerances hide
+    // a broken edge it does: #334's Draft002 input (an old Draft's output,
+    // a vertex of tolerance 27.8 swallowing an edge that overshoots it by
+    // 8) comes out 2000 of 47000 short, still "valid". Refuse to use it.
     GProp_GProps before, after;
     BRepGProp::VolumeProperties(baseShape.getShape(), before);
     BRepGProp::VolumeProperties(refined.getShape(), after);
