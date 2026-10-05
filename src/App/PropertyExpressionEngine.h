@@ -207,6 +207,12 @@ public:
     fastsignals::signal<void (const App::ObjectIdentifier &)> expressionChanged;
 
     void afterRestore() override;
+    /// Ahead of afterRestore(), for a value read into a live engine among
+    /// others (RestoreBatch): let go of every expression the value read
+    /// does not hold as it is. The engines of a batch are installed one by
+    /// one, and what another still holds of the state being left reads as
+    /// a cycle that neither state has (docs/TransactionLog.md sec 31.6).
+    void releaseBeforeRestore();
     void onContainerRestored() override;
     /// An external target restored after this document (its file loaded
     /// later): the element paths into it register now (sec 27.82).

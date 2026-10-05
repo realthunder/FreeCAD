@@ -5373,13 +5373,74 @@ class TransactionBranchCases(unittest.TestCase):
         finally:
             FreeCAD.removeDocumentObserver(seen)
         self.assertGreater(result["seq"], 0)
+        # The rows are taken as they are, their values with them; what they
+        # changed is marked to be computed again, and not computed here,
+        # where the merge has no row for it (sec 31.7).
         self.assertEqual(recomputed, [])
         self.assertAlmostEqual(box.Shape.Volume, 2000.0)
         self.assertAlmostEqual(doc.getObject("Cyl").Shape.Volume, cylVolume)
-        self.assertNotIn("Touched", box.State)
+        self.assertIn("Touched", box.State)
+        self.assertIn("Touched", doc.getObject("Cyl").State)
         doc.undo()
         self.assertAlmostEqual(box.Shape.Volume, 1000.0)
         self.assertIsNone(doc.getObject("Cyl"))
+
+    def testAMergeRecomputesWhatItChanged(self):
+        # Sec 31.7 (user ruling): what a merge changed is computed again,
+        # though ours changed nothing and theirs' values came with the rows.
+        # Ours has a row since the base -- its own recompute, which is no
+        # change a merge weighs -- so the merge writes a row, and the
+        # recompute is in it: one undo takes back both.
+        doc = self.track(FreeCAD.newDocument("MergeComputes"))
+        doc.UndoMode = 1
+        doc.openTransaction("create")
+        box = doc.addObject("Part::Box", "Box")
+        doc.addObject("Part::Sphere", "Ball")
+        doc.recompute()
+        doc.commitTransaction()
+        doc.saveAs(os.path.join(self.dir, "merge-computes.FCStd"))
+        doc.createTransactionBranch("side")
+        doc.switchTransactionBranch("side")
+        doc.openTransaction("longer")
+        doc.Box.Length = 20
+        doc.addObject("Part::Cylinder", "Cyl")
+        doc.recompute()
+        doc.commitTransaction()
+        doc.switchTransactionBranch("main")
+        doc.Ball.touch()
+        doc.recompute()
+        self.assertAlmostEqual(doc.Box.Shape.Volume, 1000.0)
+
+        preview = doc.previewTransactionMerge("side")
+        self.assertTrue(preview["fast_forward"])
+        self.assertEqual(preview["forward"], 0, "ours has a row of its own")
+        recomputed = []
+
+        class Seen:
+            def slotRecomputedObject(self, obj):
+                recomputed.append(obj.Name)
+
+        seen = Seen()
+        FreeCAD.addDocumentObserver(seen)
+        try:
+            result = doc.mergeTransactionBranch("side")
+        finally:
+            FreeCAD.removeDocumentObserver(seen)
+        row = [t for t in doc.getTransactionLog() if t["seq"] == result["seq"]][0]
+        self.assertEqual(row["kind"], "merge")
+        # (The ball too: the move went back over ours' recompute of it,
+        # which left it as it was before that -- touched.)
+        self.assertLessEqual({"Box", "Cyl"}, set(recomputed))
+        self.assertAlmostEqual(doc.Box.Shape.Volume, 2000.0)
+        self.assertFalse([o.Name for o in doc.Objects if "Touched" in o.State])
+        self.assertEqual(result["failed"], [])
+        doc.undo()
+        self.assertAlmostEqual(doc.Box.Length.Value, 10.0)
+        self.assertAlmostEqual(doc.Box.Shape.Volume, 1000.0)
+        self.assertIsNone(doc.getObject("Cyl"))
+        doc.redo()
+        self.assertAlmostEqual(doc.Box.Shape.Volume, 2000.0)
+        self.assertIsNotNone(doc.getObject("Cyl"))
 
     def testMergeABranchMadeFromTheFileAsFound(self):
         # Sec 28.2 item 2: a file opened without a history starts one at the
@@ -5594,8 +5655,11 @@ class TransactionBranchCases(unittest.TestCase):
             merged = doc.mergeTransactionBranch("desk")
             self.assertEqual(merged["forwarded"], preview["forward"])
             self.assertAlmostEqual(doc.Box.Shape.Volume, 2000.0)
+            # The rows are taken as they are, with their values; what they
+            # changed is marked to be computed again, and is not computed
+            # here, where the merge has no row for it (sec 31.7).
             self.assertNotIn(doc.Name, recomputed)
-            self.assertNotIn("Touched", doc.Box.State)
+            self.assertIn("Touched", doc.Box.State)
             row = [t for t in doc.getTransactionLog() if t["name"] == "longer"][-1]
             self.assertEqual((row["kind"], row["branch"]), ("user", "main"))
             self.assertFalse([t for t in doc.getTransactionLog() if t["kind"] == "merge"])
@@ -6212,6 +6276,136 @@ class TransactionBranchCases(unittest.TestCase):
         self.assertEqual(cells(), {"A1": "1"})
         self.assertFalse(hasattr(doc.Sheet, "width"))
         self.assertFalse([o.Name for o in doc.Objects if "Invalid" in o.State])
+
+    def testASheetsWidthsFollowTheBranch(self):
+        # Sec 31.6: the same of a sheet's column widths and row heights,
+        # which were read into the widths that were there.
+        import re
+
+        doc = self.track(FreeCAD.newDocument("SheetWidths"))
+        doc.UndoMode = 1
+        doc.openTransaction("create")
+        sheet = doc.addObject("Spreadsheet::Sheet", "Sheet")
+        sheet.setColumnWidth("A", 111)
+        sheet.setRowHeight("1", 41)
+        doc.recompute()
+        doc.commitTransaction()
+        doc.saveAs(os.path.join(self.dir, "sheet-widths.FCStd"))
+
+        def sizes():
+            content = doc.Sheet.Content
+            return (
+                sorted(re.findall(r'<Column name="(\w+)"\s+width="(\d+)"', content)),
+                sorted(re.findall(r'<Row name="(\w+)"\s+height="(\d+)"', content)),
+            )
+
+        base = sizes()
+        self.assertEqual(base, ([("A", "111")], [("1", "41")]))
+        doc.createTransactionBranch("side")
+        doc.switchTransactionBranch("side")
+        doc.openTransaction("theirs")
+        doc.Sheet.setColumnWidth("B", 222)
+        doc.Sheet.setRowHeight("2", 42)
+        doc.Sheet.setColumnWidth("A", 100)
+        doc.commitTransaction()
+        side = sizes()
+        self.assertEqual(side, ([("A", "100"), ("B", "222")], [("1", "41"), ("2", "42")]))
+
+        doc.switchTransactionBranch("main")
+        self.assertEqual(sizes(), base)
+        self.assertEqual(doc.Sheet.getColumnWidth("B"), 100, "a column main never set is the default")
+        doc.openTransaction("ours")
+        doc.Sheet.setColumnWidth("E", 55)
+        doc.commitTransaction()
+        ours = sizes()
+        doc.switchTransactionBranch("side")
+        self.assertEqual(sizes(), side)
+        doc.switchTransactionBranch("main")
+        self.assertEqual(sizes(), ours)
+
+    def testExpressionsTurnedRoundFollowTheBranch(self):
+        # Sec 31.6: on one branch the box follows the cylinder, on the other
+        # the cylinder follows the box. The engines of a move are installed
+        # one after another, and the first met what the second still held of
+        # the branch being left: a cycle neither branch has. The expression
+        # was refused, and the box was left without it, in error.
+        doc = self.track(FreeCAD.newDocument("TurnedRound"))
+        doc.UndoMode = 1
+        doc.openTransaction("create")
+        box = doc.addObject("Part::Box", "Box")
+        doc.addObject("Part::Cylinder", "Cyl")
+        box.setExpression("Length", "Cyl.Radius * 3")
+        doc.recompute()
+        doc.commitTransaction()
+        doc.saveAs(os.path.join(self.dir, "turned-round.FCStd"))
+
+        def expressions():
+            return {
+                o.Name: sorted((path, text) for path, text in o.ExpressionEngine)
+                for o in (doc.Box, doc.Cyl)
+            }
+
+        ours = {"Box": [("Length", "Cyl.Radius * 3")], "Cyl": []}
+        theirs = {"Box": [], "Cyl": [("Height", "Box.Width + 1")]}
+        self.assertEqual(expressions(), ours)
+        doc.createTransactionBranch("side")
+        doc.switchTransactionBranch("side")
+        doc.openTransaction("theirs")
+        doc.Box.setExpression("Length", None)
+        doc.Box.Length = 10
+        doc.Cyl.setExpression("Height", "Box.Width + 1")
+        doc.recompute()
+        doc.commitTransaction()
+        self.assertEqual(expressions(), theirs)
+        self.assertEqual(doc.Cyl.Height.Value, 11)
+
+        for visit in (1, 2):
+            doc.switchTransactionBranch("main")
+            self.assertEqual(expressions(), ours, "main, visit %d" % visit)
+            self.assertFalse([o.Name for o in doc.Objects if "Invalid" in o.State])
+            self.assertEqual((doc.Box.Length.Value, doc.Cyl.Height.Value), (6, 10))
+            doc.switchTransactionBranch("side")
+            self.assertEqual(expressions(), theirs, "side, visit %d" % visit)
+            self.assertFalse([o.Name for o in doc.Objects if "Invalid" in o.State])
+            self.assertEqual((doc.Box.Length.Value, doc.Cyl.Height.Value), (10, 11))
+
+    def testAShapeFollowsTheFirstSwitch(self):
+        # Sec 31.6: a shape the log puts back by the file it is kept in. The
+        # property still held the file of the value being replaced -- the
+        # tip's snapshot had just written it -- and took that for the one
+        # awaited: after the first switch away from a branch just worked on,
+        # the sketch had main's two lines and the side branch's three edges,
+        # and said it was up to date.
+        import Part
+
+        V = FreeCAD.Vector
+        doc = self.track(FreeCAD.newDocument("FirstSwitch"))
+        doc.UndoMode = 1
+        doc.openTransaction("create")
+        sketch = doc.addObject("Sketcher::SketchObject", "Sketch")
+        sketch.addGeometry(Part.LineSegment(V(0, 0, 0), V(5, 0, 0)))
+        sketch.addGeometry(Part.LineSegment(V(5, 0, 0), V(5, 5, 0)))
+        doc.recompute()
+        doc.commitTransaction()
+        doc.saveAs(os.path.join(self.dir, "first-switch.FCStd"))
+
+        def lines():
+            return (doc.Sketch.GeometryCount, len(doc.Sketch.Shape.Edges))
+
+        doc.createTransactionBranch("side")
+        doc.switchTransactionBranch("side")
+        doc.openTransaction("theirs")
+        doc.Sketch.addGeometry(Part.LineSegment(V(5, 5, 0), V(0, 5, 0)))
+        doc.recompute()
+        doc.commitTransaction()
+        self.assertEqual(lines(), (3, 3))
+        for visit in (1, 2):
+            doc.switchTransactionBranch("main")
+            self.assertEqual(lines(), (2, 2), "main, visit %d" % visit)
+            self.assertNotIn("Touched", doc.Sketch.State)
+            doc.switchTransactionBranch("side")
+            self.assertEqual(lines(), (3, 3), "side, visit %d" % visit)
+            self.assertNotIn("Touched", doc.Sketch.State)
 
     def testACopyThatTookFromThisFileIsImported(self):
         # Sec 30.33, 30.34: the copy took this file's fillet -- under an id

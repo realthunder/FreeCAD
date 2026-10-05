@@ -576,7 +576,8 @@ public:
         int64_t theirs {0};   ///< the row merged in
         int64_t base {-1};    ///< the newest row both histories hold
         /// Ours has changed nothing since the base: theirs is taken whole,
-        /// derived values included, with no recompute (sec 28.6 Q1).
+        /// derived values included (sec 28.6 Q1) -- and what it changed is
+        /// computed again all the same (sec 31.7).
         bool fastForward {false};
         /// This branch has not moved since the base at all -- records
         /// only -- and the base is on both chains (sec 30.4 P1): theirs'

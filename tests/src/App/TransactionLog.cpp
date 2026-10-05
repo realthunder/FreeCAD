@@ -4074,12 +4074,15 @@ TEST_F(TransactionLogTest, mergeFastForwardsWhenOursIsUnchanged)
     a = dynamic_cast<App::FeatureTest*>(doc()->getObject("A"));
     ASSERT_TRUE(a);
     EXPECT_EQ(a->Integer.getValue(), 2);
-    // Theirs' own count, not one more: nothing was recomputed.
+    // Theirs' own count, not one more: nothing was recomputed here, where
+    // the merge has no row for what a recompute would change -- but what
+    // the rows changed is marked to be computed again (sec 31.7).
     EXPECT_EQ(a->ExecCount.getValue(), execSide);
     auto merged = dynamic_cast<App::FeatureTest*>(doc()->getObject("C"));
     ASSERT_TRUE(merged);
     EXPECT_EQ(merged->ExecCount.getValue(), cExec);
-    EXPECT_FALSE(a->isTouched());
+    EXPECT_TRUE(a->isTouched());
+    EXPECT_TRUE(merged->isTouched());
     log().flush();
     // The chain: side's rows as they were made, then main's record of the
     // switch, written again after them -- and no row of the merge's own.

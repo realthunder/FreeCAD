@@ -14901,3 +14901,152 @@ OK (52 skipped frozen, 53 unfrozen; 6 expected failures; +2), ctest
 31 (+3, run after the rest), the two-document check 24, the tree check
 19, the author check 36, the import check 49, the request check 31 and
 the share check 47.
+
+### 31.6 A value put back is the whole of what is held: the audit (user: chase it, 2026-10-05)
+
+31.1 found a sheet's cells read into the cells that were there. The user
+asked for "the spreadsheet issue" to be chased; of the two readings --
+more of that kind, or cells conflicting whole in a merge, which is
+31.8's -- this is the first.
+
+**How.** Read: the 63 `Restore`s of properties, for the ones that hold
+many things. Run: `audit_probe.py` (`~/.cache/txnlog-s30/audit`) -- two
+branches of one file, each holding what the other does not, in a sheet
+(cells, an alias, widths, heights, merged cells, a style), two objects'
+expressions, a group, a sketch, and a Python feature with eighteen
+properties of the kinds that hold lists, maps and sets; switch back and
+forth twice, then move `main` and go round again, and compare each
+object's saved form with what its branch had. A shape is compared by
+what it is -- its counts, length, area, volume -- since a shape put back
+is written in the stable form (23.12) and its bytes are not those of the
+one computed.
+
+**Found, four, each fixed:**
+
+1. **A sheet's column widths and row heights** were read one by one
+   into the widths that were there, as its cells had been. A width set
+   on one branch was on every other. `PropertyColumnWidths::Restore` and
+   `PropertyRowHeights::Restore` read into a map and set it whole.
+2. **An expression lost, and its object left in error.** On `main` the
+   box's length follows the cylinder; on the branch that expression is
+   gone and the cylinder's height follows the box. Going back, the
+   engines are installed one after another, and the box's was first: its
+   expression met what the cylinder's engine still held of the branch
+   being left, which made a cycle neither branch has. The expression was
+   refused, the box was `Invalid`, and it stayed so on every later
+   visit. Now every engine of a batch first lets go of the expressions
+   its new value does not keep as they are
+   (`PropertyExpressionEngine::releaseBeforeRestore`, from
+   `RestoreBatch::finish`), and only then is any installed.
+3. **A shape that stayed the other branch's, and said it was up to
+   date** -- after the first switch away from a branch just worked on,
+   and only then: the sketch had `main`'s two lines and the branch's
+   three edges, `Up-to-date`. Two things had to go wrong together.
+   - The log puts a shape back by the file it is kept in, and the
+     property waits for the file (`ensureRestored`). A property being
+     loaded holds no file; a live one holds the file of the value it
+     has -- here the tip's snapshot had just written it -- and took
+     *that* for the one that arrived. `PropertyPartShape::Restore` lets
+     go of it first.
+   - The file awaited never came. `restoreBlobsOf` brought back only a
+     file that was not live, and this one was live: by one holder, not
+     the log -- the snapshot had just made it a patch of its successor
+     and the log had let it go -- and that holder let go before the
+     property asked. The log now holds every file of a value it is about
+     to put back, live or not.
+
+   With only the first fixed the shape is not wrong but not put back
+   either: the old one stays. It took both.
+4. (31.1's cells, already fixed.)
+
+**Clean**, by the run: the link lists and sub-lists, the map, the
+integer set, the lists of strings, numbers, booleans, vectors, colours,
+placements and materials, the list of geometry and of shapes, the
+enumeration, a dynamic property only one branch has, a group, the
+sketch's geometry and constraints, merged cells, styles and aliases.
+By reading, the ones the probe has no object for: the constraint list
+and TechDraw's four lists set a whole value; the projected geometry
+clears first.
+
+**Tests.** Python `testASheetsWidthsFollowTheBranch`,
+`testExpressionsTurnedRoundFollowTheBranch` and
+`testAShapeFollowsTheFirstSwitch`: each is its part of the probe, and the
+probe showed each of the three before its fix.
+
+**Left.**
+
+- The frozen suite's one failure during 30.40's gates
+  (`testSharingSurvivesTheRoundTrip`) looks like the same family as 3 --
+  something kept by whoever happens to hold it. Seen once, with these
+  probes running beside it; not reproduced alone.
+- `PropertyPersistentObject` restores into the object it holds. Nothing
+  the log writes uses one with a list in it; not run.
+
+### 31.7 What a merge changed is marked to be computed again (user, 2026-10-05)
+
+**Ruled (user):** "mark changed object for recompute after merge, which
+I think is the only way to make sure everything works." In place of
+28.6 Q1's trust in the values that come with the rows.
+
+**Why it is right**, from 31.6: a derived value that came along the rows
+is theirs, computed on theirs. Item 3 there is one that was wrong and
+said `Up-to-date` -- on a switch, with nothing merged at all -- and
+nothing would ever have found it.
+
+**What is marked**: every object a change of the plan names and the
+merge takes -- taken, derived, or a conflict that went theirs' way; all
+of them where theirs' rows are taken as they are. Not view state.
+
+**What is computed, and where:**
+
+- A merge that writes a row (ours changed too; or ours unchanged but
+  with records after the base) marks them and **recomputes inside the
+  merge's step**, as a three-way merge already did for what it wrote.
+  One undo takes back the merge and its recompute.
+- A fast-forward (30.4 P1) **marks and does not compute.** It writes no
+  row, so a recompute would be a row of its own after theirs', and that
+  was tried first: the branch that had just taken the other was *ahead*
+  of it by that row; the other, a second document of the file, then
+  takes the row, computes, and is ahead in its turn -- and a recomputed
+  cylinder's bytes were not the logged one's, so the two never settle.
+  The first undo after such a merge also took back only the recompute.
+  Marked, the objects say what they are -- to be computed -- and the next
+  recompute is a step like any other. Rows a copy of the file made
+  (30.13) carry no derived values and are computed at once, as before.
+
+**The dialog** says which: "taken whole, and what it changed is
+recomputed", or "taken as they are. What they changed is marked to
+recompute."
+
+**What it costs**, measured on the scanner model of 27.52 (615 objects;
+all of them recomputed, 17.0 s), a pad lengthened on a branch that 25
+objects depend on (`mg_cost.py` in `~/.cache/txnlog-s30/scale`):
+
+| | the merge | of it, recompute | then |
+| --- | --- | --- | --- |
+| the edit's own recompute, on its branch | | 1.01 s | |
+| a merge that writes a row | 1.21 s | 0.98 s, 26 objects | nothing left to compute |
+| a fast-forward | 0.05 s | none | 23 objects marked; their recompute, 0.94 s |
+
+So the price is the edit's own recompute over again, for what the edit
+reached and nothing else -- a second against the seventeen of the whole
+model. Before, the first row was 0.23 s and the model was not checked.
+
+**Tests.** Python `testAMergeRecomputesWhatItChanged`: ours with a row no
+merge weighs, theirs a longer box and a new cylinder; the merge is a
+`merge` row, both are recomputed in it, nothing is left touched, and one
+undo takes back the box, the cylinder and the recompute.
+`testMergeTakesTheShapeWhenOursIsUnchanged` and
+`testABranchInASecondDocumentIsMergedWhenAsked`, which are fast-forwards,
+said "nothing recomputed, nothing touched" and say now "nothing
+recomputed, what changed touched".
+
+**Gates** for 31.6 and 31.7, frozen and unfrozen each: Python 3017 OK
+(52 skipped frozen, 53 unfrozen; 6 expected failures; +4), ctest 881/881
+-- `mergeFastForwardsWhenOursIsUnchanged` says "touched" where it said
+"not touched" -- and the GUI checks RC 15, BC 30, VC 18, PC 28, FC 16, VW
+14, MC 31, the two-document check 24, the tree check 19, the author check
+36, the import check 49, the request check 31 and the share check 47.
+The unfrozen ctest run failed once in
+`ExpressionImageBudgetTest.runawayBytecodeLoopIsStopped`, a guest stopped
+by the clock: 5.0 s there, 2.4 s and passing three times alone.

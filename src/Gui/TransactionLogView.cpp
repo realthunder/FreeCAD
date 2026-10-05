@@ -1355,12 +1355,13 @@ public:
         if (!preview.forward.empty())
             summary += QLatin1Char(' ')
                      + QObject::tr("This branch has not moved since: a fast-forward, the "
-                                   "other's %1 rows taken as they are.")
+                                   "other's %1 rows taken as they are. What they changed "
+                                   "is marked to recompute.")
                            .arg(preview.forward.size());
         else if (preview.fastForward)
             summary += QLatin1Char(' ')
                      + QObject::tr("This branch has changed nothing since: the other is taken "
-                                   "whole, with no recompute.");
+                                   "whole, and what it changed is recomputed.");
         else
             summary += QLatin1Char(' ')
                      + QObject::tr("Derived values are not merged; the result is recomputed.");

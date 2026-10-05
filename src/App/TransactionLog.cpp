@@ -2351,7 +2351,17 @@ void TransactionLog::restoreBlobsOf(const std::string& hash)
     if (!_c._store->getEntity(hash, e))
         return;
     for (const auto& r : e.refs) {
-        if (r.role == "blob" && !_c.liveBlob(r.target))
+        if (r.role != "blob")
+            continue;
+        // Held from here, live or not. A file that is live is live by
+        // whoever holds it, and nothing says that holder outlasts the
+        // restore this is for: the tip's snapshot had just made the file a
+        // patch of its successor, its last holder let go between this and
+        // the property asking, and the property waited for a file nobody
+        // was going to bring (docs/TransactionLog.md sec 31.6).
+        if (FileBlobHandle live = _c.liveBlob(r.target))
+            _c.putBlob(live);
+        else
             _c.restoreBlob(r.target, r.name);
     }
 }

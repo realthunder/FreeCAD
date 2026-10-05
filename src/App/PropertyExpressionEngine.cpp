@@ -689,6 +689,34 @@ size_t PropertyExpressionEngine::numExpressions() const
     return expressions.size();
 }
 
+void PropertyExpressionEngine::releaseBeforeRestore()
+{
+    auto docObj = freecad_dynamic_cast<DocumentObject>(getContainer());
+    if (!restoredExpressions || !docObj || expressions.empty())
+        return;
+    auto doc = docObj->getDocument();
+    if (docObj->isRestoring() || !doc || doc->testStatus(Document::Restoring))
+        return;
+    // As Save() writes them, which is what the value read was written by.
+    std::map<std::string, std::string> kept;
+    for (auto &info : *restoredExpressions)
+        kept[info.path] = info.expr;
+    std::vector<ObjectIdentifier> gone;
+    for (auto &v : expressions) {
+        auto it = kept.find(v.first.toString());
+        if (it == kept.end() || !v.second.expression
+                || it->second != v.second.expression->toString(true))
+            gone.push_back(v.first);
+    }
+    if (gone.empty())
+        return;
+    Base::FlagToggler<bool> flag(restoring);
+    AtomicPropertyChange signaller(*this);
+    for (auto &path : gone)
+        setValue(path, std::shared_ptr<Expression>());
+    signaller.tryInvoke();
+}
+
 void PropertyExpressionEngine::afterRestore()
 {
     bool hasError = false;

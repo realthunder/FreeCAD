@@ -126,6 +126,7 @@ void PropertyColumnWidths::Save(Base::Writer& writer) const
 void PropertyColumnWidths::Restore(Base::XMLReader& reader)
 {
     int Cnt;
+    std::map<int, int> values;
 
     // Column info
     reader.readElement("ColumnInfo");
@@ -140,7 +141,9 @@ void PropertyColumnWidths::Restore(Base::XMLReader& reader)
                 int col = App::decodeColumn(name);
                 int colWidth = atoi(width);
 
-                setValue(col, colWidth);
+                if (colWidth >= 0) {
+                    values[col] = colWidth;
+                }
             }
         }
         catch (...) {
@@ -148,6 +151,11 @@ void PropertyColumnWidths::Restore(Base::XMLReader& reader)
         }
     }
     reader.readEndElement("ColumnInfo");
+
+    // The whole of what is held: read into the widths that were there, one
+    // set on another branch of the file stayed when the log put this value
+    // back (docs/TransactionLog.md sec 31.6).
+    setValues(values);
 }
 
 PyObject* PropertyColumnWidths::getPyObject()

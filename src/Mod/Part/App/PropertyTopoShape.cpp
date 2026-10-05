@@ -1625,6 +1625,17 @@ void PropertyPartShape::Restore(Base::XMLReader &reader)
         _RestoreHash = reader.getAttribute("hash");
         if (!_RestoreHash.empty()) {
             FC_TRACE(getFullName() << " restores from blob " << _RestoreHash);
+            // The file the value being replaced was kept in is not the one
+            // awaited. A property being loaded holds none; a live one -- a
+            // value the transaction log puts back -- does, and
+            // ensureRestored() takes whatever file is held for the one that
+            // arrived: the shape stayed the old value's, under the new
+            // one's name (docs/TransactionLog.md sec 31.6). Kept alive until
+            // the manager has answered, in case it is the same file.
+            const App::FileBlobHandle replaced = _blob;
+            _blob.reset();
+            _blobPlan.clear();
+            _blobMotion = TopLoc_Location();
             _PendingManager = &blobManager();
             _PendingManager->addPendingReferrer(_RestoreHash, this);
             _RestorePending = true;

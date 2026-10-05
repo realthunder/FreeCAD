@@ -41,6 +41,7 @@
 #include "ExpressionParser.h"
 #include "FileBlobManager.h"
 #include "Property.h"
+#include "PropertyExpressionEngine.h"
 #include "StringHasher.h"
 
 FC_LOG_LEVEL_INIT("App", true, true)
@@ -429,6 +430,24 @@ void App::RestoreBatch::finish()
     // Taken out one by one, so an afterRestore() that removes a property
     // yet to come is heard (forget()).
     restoreBatch = _outer;
+    // The engines of the batch are installed one after another, and an
+    // expression is refused where it closes a cycle. What one still holds
+    // of the state being left can close one with what another brings: the
+    // box followed the cylinder there, the cylinder follows the box here.
+    // So each lets go first of what its value does not keep as it is.
+    for (Property* prop : std::vector<Property*>(_props)) {
+        if (std::find(_props.begin(), _props.end(), prop) == _props.end())
+            continue;
+        if (auto engine = freecad_dynamic_cast<PropertyExpressionEngine>(prop)) {
+            try {
+                engine->releaseBeforeRestore();
+            }
+            catch (Base::Exception& e) {
+                FC_ERR("transaction value: before restore of " << prop->getFullName() << ": "
+                       << e.what());
+            }
+        }
+    }
     while (!_props.empty()) {
         Property* prop = _props.front();
         _props.erase(_props.begin());

@@ -8698,15 +8698,30 @@ Document::MergeResult Document::mergeBranch(const std::string& branch,
         if (at && at->kind != "named")
             log->store().nameVersion(at->num, "merged into " + plan.oursName);
     };
-    // Rows another copy of the file made, imported (sec 30.13 F2), carry
-    // no derived values: where a merge takes rows as they are, what they
-    // left out is computed here.
-    auto imported = [&]() {
-        for (const auto& t : log->store().chain(pv.theirs, pv.base + 1)) {
-            if (t.script.find("\"imported\"") != std::string::npos)
-                return true;
+    // Every object a merge changed is marked to be computed again (user
+    // ruling, sec 31.7), however the change came: written here, or along
+    // theirs' rows with the values theirs computed. Those are theirs' and
+    // were computed on theirs -- from what this document may not hold as
+    // theirs did -- and a value that is wrong and says it is up to date is
+    // found by nobody. A merge that writes a row computes them in it; one
+    // that takes theirs' rows as they are leaves them marked.
+    // `all`: every change goes in; else those taken and the conflicts that
+    // went theirs' way.
+    std::map<std::string, std::string> side;
+    auto touchChanged = [&](bool all) {
+        std::set<long> ids;
+        for (const auto& c : pv.changes) {
+            if (c.ckind != "obj")
+                continue;
+            const bool conflict = c.kind == "conflict" || c.kind == "unit";
+            if (all || c.kind == "take" || c.kind == "derived"
+                    || (conflict && side[c.key] == "theirs"))
+                ids.insert(c.cid);
         }
-        return false;
+        for (long cid : ids) {
+            if (auto obj = getObjectByID(cid))
+                obj->touch();
+        }
     };
     if (!pv.forward.empty()) {
         // Sec 30.4 P1, a fast-forward: ours has not moved since the base,
@@ -8757,12 +8772,21 @@ Document::MergeResult Document::mergeBranch(const std::string& branch,
         _clearRedos();
         log->moveHead(pv.theirs);
         _followHead(pv.base);
-        const bool compute = imported();
+        // Rows another copy of the file made, imported (sec 30.13 F2), carry
+        // no derived values: what they left out is computed here.
+        bool compute = false;
+        for (const auto& t : store.chain(pv.theirs, pv.base + 1))
+            compute = compute || t.script.find("\"imported\"") != std::string::npos;
         for (const auto& t : records)
             log->reappend(t);
         _arriveOnBranch();
         result.seq = pv.theirs;
         result.forwarded = pv.forward.size();
+        // Marked, and not computed: this merge has no row of its own for
+        // what a recompute changes, and a row after theirs' would put this
+        // branch ahead of the one it has just taken -- which then takes
+        // that row, computes, and is ahead in its turn (sec 31.7).
+        touchChanged(true);
         if (compute) {
             std::set<std::string> failedBefore;
             for (auto obj : getObjects()) {
@@ -8795,7 +8819,6 @@ Document::MergeResult Document::mergeBranch(const std::string& branch,
 
     // A side for every conflict, or nothing moves (sec 28.6 Q3). A view
     // conflict keeps ours unless picked (Q2).
-    std::map<std::string, std::string> side;
     for (const auto& c : pv.changes) {
         if (c.kind != "conflict" && c.kind != "view")
             continue;
@@ -8935,8 +8958,9 @@ Document::MergeResult Document::mergeBranch(const std::string& branch,
     mUndoMap[d->activeUndoTransaction->getID()] = d->activeUndoTransaction;
 
     // Ours unchanged since the base: the document moved to theirs' state
-    // through the rows, derived values and touched state with it, and no
-    // recompute (sec 28.6 Q1). View state is left to the rule below.
+    // through the rows, derived values and touched state with it -- and
+    // what changed is computed again below all the same (sec 31.7, in
+    // place of 28.6 Q1). View state is left to the rule below.
     const bool moved = pv.fastForward && _moveAlongLog(pv.ours, pv.theirs, false);
 
     std::vector<std::string> relabelled;
@@ -9049,10 +9073,12 @@ Document::MergeResult Document::mergeBranch(const std::string& branch,
                 if (auto obj = getObjectByID(cid))
                     obj->touch();
             }
+            touchChanged(false);
             guarded("recompute", getName(), [&]() { recompute(); });
         }
     }
-    else if (imported()) {
+    else {
+        touchChanged(true);
         guarded("recompute", getName(), [&]() { recompute(); });
     }
     for (auto obj : getObjects()) {
