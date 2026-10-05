@@ -222,6 +222,35 @@ public:
     /// How many views hang this under \a parent (a test's question).
     int hangCount(SoGroup* parent) const;
 
+    /** @name Whose session it is
+     *
+     * SHARED, the session of docs/ThinClient.md 8.11: every view of the
+     * document joins it -- the desktop's other windows, every served
+     * client's mirror -- shows the edit and can work in it. Or the
+     * initiating view's ALONE (ViewParams PerViewEdit; 8.12): no other
+     * view joins, so none hangs this root, takes the session's hides and
+     * swaps, or routes its input to the tool, and each goes on showing
+     * the document as it is.
+     *
+     * The plumbing is the same either way -- a view shows an edit only
+     * through the root it has bound -- so this is policy, asked at the
+     * places that would join a view: Gui::Document for its windows, the
+     * serving source for its mirrors. It is decided when a session starts
+     * (Gui::Document::setEdit) and kept until the next one does, so the
+     * preference changing halfway neither pulls a view in nor strands
+     * one, and the session's end can still tell who was in it.
+     */
+    //@{
+    bool isShared() const
+    {
+        return shared;
+    }
+    void setShared(bool on)
+    {
+        shared = on;
+    }
+    //@}
+
     /** @name Gesture arbitration (docs/ThinClient.md 8.11)
      *
      * Two mice, one state machine. Every view of the session delivers its
@@ -403,6 +432,7 @@ private:
     bool restore {false};
     ViewerContext* holder {nullptr};
     unsigned held {0};
+    bool shared {true};
     std::unique_ptr<VisibilityEntry> editHide;
     std::vector<VisibilityEntry> swaps;
     /// Children 1..N of the root, after the transform and ahead of the

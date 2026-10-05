@@ -284,6 +284,12 @@ Params = [
         "WARNING! This is an experimental option. Please use with caution."),
     ParamFloat('EditingTransparency', 0.5,
         "Automatically make all object transparent except the one in edit"),
+    ParamBool('PerViewEdit', False, title='Edit in one view only', doc=
+        "Run an edit in the one view it is started in. The other 3D views of\n"
+        "the document, and the other viewers of a served one, keep showing the\n"
+        "document as it is and take no input for the edit. When off, every view\n"
+        "of the document joins the edit and can work in it. Takes effect with\n"
+        "the next edit."),
     ParamFloat('DraggerScale', 0.03,
         title='Transform dragger scale',
         doc="Size of the transform dragger relative to the viewport."),

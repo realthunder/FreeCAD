@@ -751,6 +751,9 @@ bool Document::setEdit(Gui::ViewProvider* p, int ModNum, const char *subname)
 
     if(editViewer) {
         EditingRoot *root = editingRoot();
+        // Whose session this is, for as long as it runs: every view's, or
+        // the one it is started in (the user's choice, PerViewEdit).
+        root->setShared(!ViewParams::getPerViewEdit());
         editViewer->setEditingViewProvider(d->_editViewProvider, ModNum, root);
         d->_editingViewer = editViewer;
         d->_editRootNode = root->node();
@@ -759,11 +762,14 @@ bool Document::setEdit(Gui::ViewProvider* p, int ModNum, const char *subname)
         // events routed to the same tool -- so a sketch entered in one
         // window is drawn in from any of them. A client's mirror joins
         // through the serving source, on signalInEdit below, since the
-        // document does not hold mirrors.
-        for (auto view : d->baseViews) {
-            auto view3d = dynamic_cast<View3DInventor *>(view);
-            if (view3d && view3d->getViewer() && view3d->getViewer() != editViewer)
-                view3d->getViewer()->joinEditing(d->_editViewProvider, root);
+        // document does not hold mirrors. Not when the session is its
+        // initiator's alone: then no other view joins, here or there.
+        if (root->isShared()) {
+            for (auto view : d->baseViews) {
+                auto view3d = dynamic_cast<View3DInventor *>(view);
+                if (view3d && view3d->getViewer() && view3d->getViewer() != editViewer)
+                    view3d->getViewer()->joinEditing(d->_editViewProvider, root);
+            }
         }
     }
     Gui::TaskView::TaskDialog* dlg = Gui::Control().activeDialog();
@@ -917,6 +923,15 @@ ViewProvider *Document::getInEdit(ViewProviderDocumentObject **parentVp,
     if(mode) *mode = d->_editMode;
 
     if (d->_editViewProvider) {
+        // The view asking, when there is one to name: a served client's
+        // request and its replayed events run under a scope on its own
+        // mirror, and the answer is that view's -- whether IT is in the
+        // session (docs/ThinClient.md 8.12 item D). The active 3D window
+        // below is the desktop user's, and with a session that is its
+        // initiator's alone (PerViewEdit) it need not have joined.
+        if (ViewerContext *current = ViewerContext::current())
+            return current->getEditingViewProvider() == d->_editViewProvider
+                ? d->_editViewProvider : nullptr;
         // there is only one 3d view which is in edit mode
         auto activeView = dynamic_cast<View3DInventor *>(getActiveView());
         if (activeView)
@@ -4275,8 +4290,9 @@ View3DInventor *Document::createView3D()
 
         auto view3D = new View3DInventor(this, getMainWindow(), shareWidget);
         // A window opened while a session runs shows it too
-        // (docs/ThinClient.md 8.11).
-        if (d->_editViewProvider && d->_editingViewer && view3D->getViewer())
+        // (docs/ThinClient.md 8.11) -- a shared one.
+        if (d->_editViewProvider && d->_editingViewer && view3D->getViewer()
+                && editingRoot()->isShared())
             view3D->getViewer()->joinEditing(d->_editViewProvider, editingRoot());
 
         // Views can now have independent draw styles (i.e. override modes)

@@ -79,6 +79,7 @@ private:
     // Auto generated code (Tools/params_utils.py:451)
     QGroupBox * groupViews = nullptr;
     Gui::PrefCheckBox *UseViewArea = nullptr;
+    Gui::PrefCheckBox *PerViewEdit = nullptr;
     QLabel *labelDocumentTarget = nullptr;
     Gui::PrefComboBox *DocumentTarget = nullptr;
     QLabel *labelDocViewTarget = nullptr;

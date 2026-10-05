@@ -2692,6 +2692,58 @@ the pad entered from the page draws its base and the tool in both, the tool foll
 length changed on the host, while the other occurrence keeps the pad as it was until the
 edit is left.
 
+**Built 2026-10-05: a session can be its initiating view's alone (`PerViewEdit`).** The
+second step, and the first that takes back part of 8.11's ruling rather than building
+under it -- as a preference, off by default, so the shared session stays what a served
+document does unless its user says otherwise (View parameter `PerViewEdit`, "Edit in one
+view only" on the UI preference page). The plumbing needed nothing: a view shows an edit
+only through the root it has bound (`ViewerContext::bindEditingRoot`), each kind of view
+hangs that root for itself, and the session's hides, swaps and overlay reach only the
+views attached to it. Sharing was policy at the places that JOIN a view, and that is where
+it is asked now, of the session rather than of the preference: `EditingRoot::isShared()`,
+set by `Gui::Document::setEdit` as the session starts and kept until the next one does, so
+a preference changed halfway neither pulls a view in nor strands one.
+
+- *The desktop's windows.* `Gui::Document::setEdit` joins the other 3D windows, and
+  `createView3D` a window opened mid-edit, only into a shared session. A window that did
+  not join draws the document as it is, picks and navigates as in view mode, and -- since
+  `Gui::Document::getInEdit` has always asked the ACTIVE 3D window whether it is editing
+  -- answers "not in edit" while it is the active one: the toolbars and commands follow the
+  window, which is how two windows behaved before 8.11 joined them.
+- *The served clients.* The serving source joins no other mirror (on `signalInEdit`, or
+  when a client states its first camera mid-session), and tells the edit's two edges to
+  the client whose mirror started it and to nobody else -- a browser told of an edit
+  sends its left button up the `'E'` channel and draws the session's overlay. A session
+  the desktop started is told to no client, and its overlay is not captured for the wire
+  at all: it rode the one snapshot every client shares, tagged, and nobody here could
+  draw it.
+- *Whose session it is to end.* One edit per document is still the rule (item D), so a
+  second view entering an edit ends the first. Shared, that is every client's own
+  session ending. Alone, it is somebody else's: the `resetEdit` op answers `NotInSession`
+  to a connection whose mirror is not the session's, and the `edit` op (and the context
+  menu's edit entries, which enter through the same call) `EditInProgress`. The desktop
+  user is not refused -- double-clicking another object in another window ends the edit
+  in progress, as it always has.
+- *`getInEdit` answers the view that asks.* Under a `ViewerScope` -- a client's request,
+  its replayed events -- the answer is whether THAT view is in the session, before the
+  active window is consulted: item D's "`getInEdit()` answering the current view's", and
+  what keeps a client's own sketch menu and in-edit publish working beside a desktop
+  window that did not join.
+
+What is NOT per view yet, and shows the moment a session is alone: the task panel is the
+desktop's one `Gui::Control` whoever started the edit (item E; the user's next step is the
+panel as an overlay of the editing view); TempoVis and the panels' other `Visibility`
+writes are document state, so a view outside the session still sees what an edit hid or
+showed; the room's selection is heard by a desktop-started sketch whichever window the
+click was in; undo is one stack (item G, `origin/Transaction`); and in render-cache modes
+0-2 a sketch's geometry is MOVED into the editing root, so a window outside the session
+shows no sketch at all while it is edited.
+
+Verified: `tests/gui/edit-per-view.py` (two windows and one opened mid-edit, under both
+settings of the preference) and `tests/gui/serve-per-view-edit.py` (a window and two
+clients with a view each: the desktop's session told to neither and refused to both, a
+client's told to it alone with the window left out, and the shared control).
+
 **Reading the list.** A is done; C, D and J have their seams built; B, E, F and I are
 wide but mechanical -- each is the move stages 1-5 made, a global becoming a row on a
 context read under a scope; G and H are why only Onshape does this. The shared session

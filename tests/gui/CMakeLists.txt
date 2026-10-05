@@ -161,6 +161,19 @@ fc_add_gui_test(GuiPdPreviewPerView_tests_run pd-preview-per-view.py
 fc_add_gui_test(GuiServePdPreview_tests_run serve-pd-preview.py
                 --timeout 240)
 
+# The preference PerViewEdit: an edit runs in the one view it is started
+# in. The other 3D windows of the document do not join -- they keep the
+# document as it is, and answer "not in edit" -- and with it off every
+# window joins, as before.
+fc_add_gui_test(GuiEditPerView_tests_run edit-per-view.py
+                --timeout 300)
+
+# The same on a served document: a session that is one view's is told to
+# that view's client only, the desktop window stays out of a client's, and
+# no other connection can end it or replace it.
+fc_add_gui_test(GuiServePerViewEdit_tests_run serve-per-view-edit.py
+                --timeout 300)
+
 # A browser's right click (docs/ThinClient.md sec 8.11b): the desktop's 3D
 # view context menu built for what the ray hits, its entries judged for the
 # connection, an edit entry entered in the client's view with no 3D view
