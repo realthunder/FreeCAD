@@ -124,8 +124,16 @@ public Q_SLOTS:
      * who sent it, and put to the merge; the file itself is then dropped.
      */
     void bringRequest(qulonglong id);
+    /// bringRequest() without the merge (sec 30.29): the file becomes a
+    /// branch, which waits in the list as any imported branch does.
+    void bringRequestOnly(qulonglong id);
+    /// Write the bytes of sent file `id` to `path`, as they came: to look
+    /// at somewhere else before anything of it is brought in here.
+    void saveRequestAs(qulonglong id, const QString& path);
     /// Refuse a request: a sent file not yet read (`id`) is dropped unread.
     void dropRequest(qulonglong id);
+    /// dropRequest() of every sent file that waits.
+    void dropAllRequests();
     /// Refuse a request that is a branch: the branch is deleted.
     void deleteRequest(const QString& branch);
 
@@ -146,7 +154,13 @@ private:
     /// branches an import made that this branch has not taken.
     void refreshRequests();
     /// importFile() with who sent the file; false when nothing came.
-    bool importFrom(const QString& path, const QString& branch, const QString& sender);
+    /// `sent` is the row of a file the log holds (sec 30.29), whose bytes
+    /// `path` is a copy of: it is then brought in as that file. Without
+    /// `merge` the branch is left for later.
+    bool importFrom(const QString& path, const QString& branch, const QString& sender,
+                    qulonglong sent = 0, bool merge = true);
+    /// Bring in sent file `id`, with the merge or without.
+    void bringSent(qulonglong id, bool merge);
     /// Ask for a new branch's name and make it from `version`, else `seq`,
     /// else the current head.
     void createBranch(int64_t version, int64_t seq);

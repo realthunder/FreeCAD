@@ -32,6 +32,8 @@
 # include <QDateTime>
 # include <QDialog>
 # include <QDialogButtonBox>
+# include <QDir>
+# include <QFile>
 # include <QFileInfo>
 # include <QFontDatabase>
 # include <QHBoxLayout>
@@ -1518,7 +1520,7 @@ void TransactionLogView::importFile(const QString& path, const QString& branch)
 }
 
 bool TransactionLogView::importFrom(const QString& path, const QString& branch,
-                                    const QString& sender)
+                                    const QString& sender, qulonglong sent, bool merge)
 {
     auto l = log();
     if (!l || !_doc)
@@ -1543,6 +1545,10 @@ bool TransactionLogView::importFrom(const QString& path, const QString& branch,
                 names << QString::fromStdString(b.name);
             }
             if (names.isEmpty()) {
+                // A file the log holds is let go, with a record saying it
+                // had nothing to give (sec 30.29).
+                if (sent)
+                    _doc->importSentFile(static_cast<int64_t>(sent));
                 _status->setText(tr("Nothing new in %1").arg(file));
                 return true;
             }
@@ -1556,8 +1562,10 @@ bool TransactionLogView::importFrom(const QString& path, const QString& branch,
                     return false;
             }
         }
-        const auto result = _doc->importFork(path.toStdString(), from.toStdString(),
-                                             sender.toStdString());
+        const auto result =
+            sent ? _doc->importSentFile(static_cast<int64_t>(sent), from.toStdString())
+                 : _doc->importFork(path.toStdString(), from.toStdString(),
+                                    sender.toStdString());
         refresh();
         if (!result.rows && !result.stoppedAt) {
             _status->setText(tr("Nothing new in %1").arg(file));
@@ -1572,8 +1580,10 @@ bool TransactionLogView::importFrom(const QString& path, const QString& branch,
             Base::Console().Warning("Merge from %s: %s\n", file.toUtf8().constData(),
                                     result.reason.c_str());
         // The merge is the owner's to make (sec 30.3): the preview, then.
-        if (result.rows)
+        if (result.rows && merge)
             mergeBranch(name);
+        else if (result.rows)
+            _status->setText(tr("%1 brought in as branch %2, not merged").arg(file, name));
         if (result.stoppedAt)
             _status->setText(tr("%1: %2 rows came as branch %3, then one could not be applied "
                                 "-- the report view says why")
@@ -1737,30 +1747,117 @@ void TransactionLogView::onRequestContextMenu(const QPoint& pos)
     }
     else {
         menu.addAction(tr("Bring in and merge..."), this, [this, id]() { bringRequest(id); });
+        menu.addAction(tr("Bring in only"), this, [this, id]() { bringRequestOnly(id); });
+        SceneRequest request;
+        if (SceneRequests::find(id, request, _doc->getName())) {
+            menu.addAction(tr("Save a copy as..."), this, [this, id, request]() {
+                const QString path = FileDialog::getSaveFileName(
+                    this, tr("Save a copy of the sent file"), request.name,
+                    tr("FreeCAD document (*.FCStd)"));
+                if (!path.isEmpty())
+                    saveRequestAs(id, path);
+            });
+        }
         menu.addSeparator();
         menu.addAction(tr("Delete, unread"), this, [this, id]() { dropRequest(id); });
+        if (SceneRequests::list(_doc->getName()).size() > 1)
+            menu.addAction(tr("Delete all, unread"), this, [this]() {
+                if (QMessageBox::question(this, tr("Delete the sent files"),
+                                          tr("Delete every file that was sent and has not "
+                                             "been read?"))
+                        == QMessageBox::Yes)
+                    dropAllRequests();
+            });
     }
     menu.exec(_requests->viewport()->mapToGlobal(pos));
 }
 
 void TransactionLogView::bringRequest(qulonglong id)
 {
+    bringSent(id, true);
+}
+
+void TransactionLogView::bringRequestOnly(qulonglong id)
+{
+    bringSent(id, false);
+}
+
+void TransactionLogView::bringSent(qulonglong id, bool merge)
+{
     SceneRequest request;
-    if (!_doc || !SceneRequests::find(id, request) || request.document != _doc->getName())
+    if (!_doc || !SceneRequests::find(id, request, _doc->getName()))
         return;
-    // H7: the import's record names who sent it, and how that name is known.
-    const QString sender = QStringLiteral("%1 (%2)").arg(request.sender, request.senderKind);
-    if (importFrom(request.path, QString(), sender))
-        SceneRequests::drop(id);
+    if (!request.inLog) {
+        // One of a document that keeps no log: a file of this process.
+        // H7: the import's record names who sent it, and how that name is
+        // known.
+        const QString sender = QStringLiteral("%1 (%2)").arg(request.sender, request.senderKind);
+        if (importFrom(request.path, QString(), sender, 0, merge))
+            SceneRequests::drop(id, false, _doc->getName());
+        return;
+    }
+    // The log holds it (sec 30.29). Which of its branches to bring is read
+    // from the file, so its bytes go to one for the asking; the import
+    // itself is of the row, which is what lets the log let the bytes go
+    // once the branch is merged.
+    const QString dir = QString::fromStdString(App::Application::getTempPath())
+        + QStringLiteral("BrowserRequests");
+    QDir().mkpath(dir);
+    const QString path = SceneRequests::uniquePath(dir, request.name);
+    try {
+        _doc->writeSentFile(static_cast<int64_t>(id), path.toStdString());
+    }
+    catch (Base::Exception& e) {
+        FC_ERR("bring in " << request.name.toStdString() << ": " << e.what());
+        _status->setText(tr("%1 not brought in -- the report view says why").arg(request.name));
+        return;
+    }
+    importFrom(path, QString(), QString(), id, merge);
+    QFile::remove(path);
+    scheduleRefresh();
+}
+
+void TransactionLogView::saveRequestAs(qulonglong id, const QString& path)
+{
+    SceneRequest request;
+    if (!_doc || path.isEmpty() || !SceneRequests::find(id, request, _doc->getName()))
+        return;
+    try {
+        if (request.inLog)
+            _doc->writeSentFile(static_cast<int64_t>(id), path.toStdString());
+        else if (!QFile::copy(request.path, path))
+            throw Base::RuntimeError("cannot copy the sent file");
+        _status->setText(tr("%1 saved as %2, still unread here").arg(request.name, path));
+    }
+    catch (Base::Exception& e) {
+        FC_ERR("save " << request.name.toStdString() << ": " << e.what());
+        _status->setText(tr("%1 not saved -- the report view says why").arg(request.name));
+    }
 }
 
 void TransactionLogView::dropRequest(qulonglong id)
 {
     SceneRequest request;
-    if (!SceneRequests::find(id, request))
+    if (!_doc || !SceneRequests::find(id, request, _doc->getName()))
         return;
-    SceneRequests::drop(id);
+    SceneRequests::drop(id, false, _doc->getName());
     _status->setText(tr("%1 deleted, unread").arg(request.name));
+}
+
+void TransactionLogView::dropAllRequests()
+{
+    if (!_doc)
+        return;
+    int dropped = 0;
+    // One at a time, and looked up again each time: dropping one writes a
+    // record, and a row's number is not for keeps.
+    for (int guard = 0; guard < 10000; ++guard) {
+        const auto waiting = SceneRequests::list(_doc->getName());
+        if (waiting.empty() || !SceneRequests::drop(waiting.front().id, false, _doc->getName()))
+            break;
+        ++dropped;
+    }
+    _status->setText(tr("%n sent file(s) deleted, unread", nullptr, dropped));
 }
 
 void TransactionLogView::deleteRequest(const QString& branch)

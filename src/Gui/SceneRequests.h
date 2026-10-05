@@ -38,18 +38,27 @@ namespace Gui
 {
 
 /** A file a client of a served document sent to be merged
- * (docs/TransactionLog.md sec 30.20 H4-H7, 30.23): kept as it came, and
- * not read. Nothing of it is opened, replayed or made until the owner asks
- * -- the log panel's request list is where -- and what it then becomes is
- * a branch, by Document::importFork(), with the sender in the import's
- * record.
+ * (docs/TransactionLog.md sec 30.20 H4-H7, 30.23, 30.29): kept as it came,
+ * and not read. Nothing of it is opened, replayed or made until the owner
+ * asks -- the log panel's request list is where -- and what it then becomes
+ * is a branch, by Document::importSentFile(), with the sender in the
+ * import's record.
+ *
+ * It is kept in the document's transaction log (App::Document::
+ * keepSentFile): a row and a blob, saved with the history, so it is there
+ * after a restart. A document that keeps no log has nowhere to put it, and
+ * its files are kept by this process, under its temp path, as all were.
  */
 struct SceneRequest
 {
+    /// Its number: the row of the log that holds it (`inLog`), which is
+    /// one document's and may change when records are written again; else
+    /// a number of this process.
     uint64_t id {0};
+    bool inLog {false};
     std::string document;   ///< the served document it was sent to, by name
     QString name;           ///< the file's name, reduced to one
-    QString path;           ///< where the host put it
+    QString path;           ///< where the host put it; empty when `inLog`
     qint64 size {0};
     QString sender;         ///< who sent it
     QString senderKind;     ///< how that name is known: App::Actor's kinds
@@ -59,13 +68,22 @@ struct SceneRequest
 namespace SceneRequests
 {
 
-/// The requests sent to `document`, oldest first; every one when empty.
+/// The sent files that wait, unread, for `document`, oldest first; every
+/// document's when empty. One brought in and not merged is a branch, and
+/// is not among them.
 GuiExport std::vector<SceneRequest> list(const std::string& document = std::string());
-/// Request `id`; false when there is none.
-GuiExport bool find(uint64_t id, SceneRequest& request);
-/// Forget request `id`, its file with it unless `keepFile`. False when
-/// there is none.
-GuiExport bool drop(uint64_t id, bool keepFile = false);
+/// Request `id` of `document` (of any, when empty); false when there is
+/// none.
+GuiExport bool find(uint64_t id, SceneRequest& request,
+                    const std::string& document = std::string());
+/// Drop request `id` of `document` unread: its file goes, and the log has
+/// a record of it. `keepFile` leaves the file of one this process keeps.
+/// False when there is none.
+GuiExport bool drop(uint64_t id, bool keepFile = false,
+                    const std::string& document = std::string());
+/// The bytes held for `document`, waiting or brought in and not merged:
+/// what totalLimit() bounds.
+GuiExport qint64 heldBytes(const std::string& document);
 /// Emitted when a request arrives or goes.
 GuiExport fastsignals::signal<void()>& signalChanged();
 
@@ -86,6 +104,19 @@ GuiExport bool uploadLimitIsPreference();
 GuiExport void setUploadLimit(qint64 bytes);
 /// What no setting raises the limit past.
 GuiExport qint64 ceiling();
+
+/** The most that may wait for one document, in bytes, all its sent files
+ * together (docs/TransactionLog.md sec 30.28 J4, 30.29): a file that would
+ * take it past is refused, `TooMany`. A file waits in the document's
+ * history and is saved with it, so this bounds what a client can make a
+ * file grow by. The preference `RequestsTotalMB` of
+ * `BaseApp/Preferences/SceneShare`, 64 unless set; `FC_SERVE_REQUESTS_MB`
+ * presets it and setTotalLimit() overrides it, as for uploadLimit().
+ */
+GuiExport qint64 totalLimit();
+GuiExport bool totalLimitIsPreference();
+/// Override the total, in bytes; 0 goes back to the preference.
+GuiExport void setTotalLimit(qint64 bytes);
 
 /// The name a client asked for, reduced to a plain file name: no directory
 /// part, a conservative set of characters, no leading dot. Empty when

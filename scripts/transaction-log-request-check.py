@@ -1,8 +1,9 @@
-# GUI check of docs/TransactionLog.md sec 30.20, 30.23: the request. A file
-# sent over the control lane as a client of a served document would send it
-# -- kept and not read, listed in the log panel with its sender, refused to
-# a view-only connection and past the upload limit -- then brought in by the
-# owner, merged, and gone from the list; a request that is a branch deleted.
+# GUI check of docs/TransactionLog.md sec 30.20, 30.23, 30.29: the request.
+# A file sent over the control lane as a client of a served document would
+# send it -- kept in the log and not read, listed in the log panel with its
+# sender, refused to a view-only connection, past the upload limit and past
+# what may wait -- then saved aside, brought in by the owner with the merge
+# or without, merged, and let go; a request that is a branch deleted.
 # One GUI run in a fresh user home, given this script at startup:
 #
 #   cd build/conda-relwithdebinfo-801
@@ -169,64 +170,108 @@ def run():
                 os.remove(reply["path"])
             share.SetInt("UploadLimitMB", limit)
 
-            # Sent by an editor: taken, kept, listed -- and not read.
+            # Sent by an editor: taken, kept in the log, listed -- and not read.
             log = len(doc.getTransactionLog())
             branches = [b["name"] for b in doc.getTransactionBranches()]
             documents = len(App.listDocuments())
+            undo = list(doc.UndoNames)
             reply = send(copy, "../../mine.FCStd", 7, "edit")
             check("an editor's file is taken (%r)" % reply,
                   reply.get("ok") is True and reply.get("name") == "mine.FCStd"
                   and reply.get("size") == os.path.getsize(copy) and "path" not in reply)
             sent = Gui.serveRequests(doc.Name)
-            check("it is kept, under a name of the host's choosing (%r)"
-                  % [(r["name"], r["sender"], r["kind"]) for r in sent],
-                  len(sent) == 1 and os.path.isfile(sent[0]["path"])
-                  and os.path.basename(os.path.dirname(sent[0]["path"])) == "BrowserRequests"
-                  and sent[0]["size"] == os.path.getsize(copy))
+            held = doc.getTransactionSentFiles()
+            check("it is kept in the log, as it came (%r)"
+                  % [(r["name"], r["sender"], r["kind"], r["inLog"]) for r in sent],
+                  len(sent) == 1 and sent[0]["inLog"] is True and sent[0]["path"] == ""
+                  and sent[0]["size"] == os.path.getsize(copy) and len(held) == 1
+                  and held[0]["seq"] == sent[0]["id"] == reply.get("request"))
             settle(200)
-            check("and not read: no row, no branch, no document",
-                  len(doc.getTransactionLog()) == log
+            now = doc.getTransactionLog()
+            check("and not read: one row that says so, no branch, no document, no undo step (%r)"
+                  % [(t["kind"], t["name"], t["author"]) for t in now[log:]],
+                  len(now) == log + 1 and now[-1]["kind"] == "request"
+                  and now[-1]["name"] == "mine.FCStd" and "guest" in now[-1]["author"]
+                  and doc.getTransactionOps(now[-1]["seq"]) == []
                   and [b["name"] for b in doc.getTransactionBranches()] == branches
-                  and len(App.listDocuments()) == documents)
+                  and len(App.listDocuments()) == documents and list(doc.UndoNames) == undo)
             listed = rows(requests)
             check("the panel lists it with who sent it (%r)" % listed,
                   requests.isVisible() and len(listed) == 1 and listed[0][0] == "mine.FCStd"
                   and "guest" in listed[0][1] and "not read" in listed[0][3])
 
+            # A copy of it, to look at somewhere else: the bytes as they came.
+            aside = os.path.join(where, "aside.FCStd")
+            QtCore.QMetaObject.invokeMethod(
+                dock, "saveRequestAs", QtCore.Qt.DirectConnection,
+                QtCore.Q_ARG("qulonglong", sent[0]["id"]), QtCore.Q_ARG(str, aside),
+            )
+            check("saved as a copy, and still waiting",
+                  os.path.isfile(aside) and open(aside, "rb").read() == open(copy, "rb").read()
+                  and len(Gui.serveRequests()) == 1)
+
+            # J4: what waits is bounded, all together.
+            total = share.GetInt("RequestsTotalMB", 64)
+            share.SetInt("UploadLimitMB", 2)
+            share.SetInt("RequestsTotalMB", 1)
+            reply = send(big, "big.FCStd")
+            check("past what may wait, refused as too many (%r)" % reply.get("code"),
+                  reply.get("ok") is False and reply.get("code") == "TooMany"
+                  and len(Gui.serveRequests()) == 1)
+            share.SetInt("RequestsTotalMB", total)
+            share.SetInt("UploadLimitMB", limit)
+
             # A second one, dropped unread.
             reply = send(copy, "mine.FCStd", 7, "edit")
             other = [r for r in Gui.serveRequests() if r["id"] == reply.get("request")]
-            check("the same name again does not overwrite the first",
-                  len(other) == 1 and other[0]["path"] != sent[0]["path"])
+            check("the same name again is a second file",
+                  len(other) == 1 and other[0]["id"] != sent[0]["id"]
+                  and len(Gui.serveRequests()) == 2 and len(rows(requests)) == 2)
             QtCore.QMetaObject.invokeMethod(
                 dock, "dropRequest", QtCore.Qt.DirectConnection,
                 QtCore.Q_ARG("qulonglong", other[0]["id"]),
             )
             settle(100)
-            check("dropped unread: its file is gone, the first is there",
-                  not os.path.exists(other[0]["path"]) and os.path.isfile(sent[0]["path"])
-                  and len(Gui.serveRequests()) == 1 and len(rows(requests)) == 1)
+            drops = [t for t in doc.getTransactionLog() if t["kind"] == "drop"]
+            check("dropped unread: let go with a record, the first is there (%r)"
+                  % [t["script"] for t in drops],
+                  [r["id"] for r in Gui.serveRequests()] == [sent[0]["id"]]
+                  and len(doc.getTransactionSentFiles()) == 1 and len(rows(requests)) == 1
+                  and len(drops) == 1 and '"reason":"unread"' in drops[0]["script"])
 
-            # H6: brought in when the owner asks. The merge dialog follows.
+            # Brought in without the merge: a branch that waits, its file held.
+            QtCore.QMetaObject.invokeMethod(
+                dock, "bringRequestOnly", QtCore.Qt.DirectConnection,
+                QtCore.Q_ARG("qulonglong", sent[0]["id"]),
+            )
+            settle(1500)
+            held = doc.getTransactionSentFiles()
+            listed = rows(requests)
+            check("brought in only: a branch in the list, the file held for it (%r, %r)"
+                  % (listed, [(f["name"], f["branch"]) for f in held]),
+                  Gui.serveRequests() == [] and len(held) == 1 and held[0]["branch"] == "mine"
+                  and len(listed) == 1 and listed[0][0] == "mine"
+                  and abs(doc.getObject("Box").Length.Value - 10) < 1e-9)
+            imports = [t for t in doc.getTransactionLog() if t["kind"] == "import"]
+            check("H7: the import's record names the file and who sent it (%r)"
+                  % [t["script"] for t in imports],
+                  len(imports) == 1 and '"sender":"guest (declared)"' in imports[0]["script"]
+                  and '"request":"%s"' % held[0]["hash"] in imports[0]["script"])
+
+            # The merge is the owner's, from the list.
             seen = {}
             QtCore.QTimer.singleShot(300, lambda: drive(seen, "Width"))
             QtCore.QMetaObject.invokeMethod(
-                dock, "bringRequest", QtCore.Qt.DirectConnection,
-                QtCore.Q_ARG("qulonglong", sent[0]["id"]),
+                dock, "mergeBranch", QtCore.Qt.DirectConnection, QtCore.Q_ARG(str, "mine"),
             )
             settle()
-            check("brought in: the merge dialog (%r)" % seen.get("title"),
-                  seen.get("found") is True)
+            check("the merge dialog (%r)" % seen.get("title"), seen.get("found") is True)
             box = doc.getObject("Box")
             check("merged: its length, the width picked, volume %g" % box.Shape.Volume,
                   abs(box.Length.Value - 30) < 1e-9 and abs(box.Width.Value - 5) < 1e-9
                   and abs(box.Shape.Volume - 30 * 5 * 10) < 1e-6)
-            check("the sent file is gone, and the registry is empty",
-                  not os.path.exists(sent[0]["path"]) and Gui.serveRequests() == [])
-            imports = [t for t in doc.getTransactionLog() if t["kind"] == "import"]
-            check("H7: the import's record names who sent it (%r)"
-                  % [t["script"] for t in imports],
-                  len(imports) == 1 and '"sender":"guest (declared)"' in imports[0]["script"])
+            check("merged, the file is let go (%r)" % doc.getTransactionSentFiles(),
+                  doc.getTransactionSentFiles() == [] and Gui.serveRequests() == [])
             came = [t for t in doc.getTransactionLog() if t["name"].startswith("theirs")]
             check("the rows keep the authors the file gives them",
                   len(came) == 1 and came[0]["author_kind"] == "fork")
@@ -234,6 +279,39 @@ def run():
             check("merged, it is no request: the list is empty and hidden (%r)" % rows(requests),
                   rows(requests) == [] and not requests.isVisible()
                   and doc.getTransactionRequests() == [])
+
+            # Brought in and merged in one go, as before; then every one dropped.
+            fork = App.openDocument(copy)
+            settle()
+            fork.openTransaction("theirs deeper")
+            fork.Box.Height = 25
+            fork.recompute()
+            fork.commitTransaction()
+            fork.save()
+            App.closeDocument(fork.Name)
+            App.setActiveDocument(doc.Name)
+            settle()
+            reply = send(copy, "mine.FCStd", 7, "edit")
+            seen = {}
+            QtCore.QTimer.singleShot(300, lambda: drive(seen, "Width"))
+            QtCore.QMetaObject.invokeMethod(
+                dock, "bringRequest", QtCore.Qt.DirectConnection,
+                QtCore.Q_ARG("qulonglong", reply.get("request")),
+            )
+            settle()
+            check("brought in and merged in one go: the dialog, the height, nothing held (%r)"
+                  % seen.get("title"),
+                  seen.get("found") is True and abs(doc.getObject("Box").Height.Value - 25) < 1e-9
+                  and doc.getTransactionSentFiles() == [] and Gui.serveRequests() == [])
+            send(copy, "one.FCStd", 7, "edit")
+            send(copy, "two.FCStd", 7, "edit")
+            settle(100)
+            check("two more wait", len(Gui.serveRequests()) == 2 and len(rows(requests)) == 2)
+            QtCore.QMetaObject.invokeMethod(dock, "dropAllRequests", QtCore.Qt.DirectConnection)
+            settle(300)
+            check("all dropped at once",
+                  Gui.serveRequests() == [] and doc.getTransactionSentFiles() == []
+                  and rows(requests) == [] and not requests.isVisible())
 
             # A request that is a branch: brought and not merged, then deleted.
             fork = App.openDocument(copy)
@@ -260,7 +338,7 @@ def run():
             check("deleted: the branch is gone and so is the request",
                   res["branch"] not in [b["name"] for b in doc.getTransactionBranches()]
                   and rows(requests) == [] and not requests.isVisible()
-                  and abs(doc.getObject("Box").Height.Value - 10) < 1e-9)
+                  and abs(doc.getObject("Box").Height.Value - 25) < 1e-9)
         shutil.rmtree(where, ignore_errors=True)
     except Exception:
         lines.append("FAIL exception\n" + traceback.format_exc())

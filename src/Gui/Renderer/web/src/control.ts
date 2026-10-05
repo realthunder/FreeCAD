@@ -535,7 +535,8 @@ export interface SentRequest {
 /// (docs/TransactionLog.md sec 30.23). The host keeps the file and reads
 /// nothing of it until its owner asks; the answer says only that it was
 /// taken. Needs a connection that may edit: a request becomes rows of the
-/// host's log. Rejects with `TooLarge` past the host's upload limit.
+/// host's log. Rejects with `TooLarge` past the host's upload limit, and
+/// with `TooMany` when what already waits there leaves no room (sec 30.29).
 export function sendRequestFile(name: string, bytes: ArrayBuffer): Promise<SentRequest> {
   return sendOp('requests.send', { name, data: base64Of(bytes) }, 120000);
 }

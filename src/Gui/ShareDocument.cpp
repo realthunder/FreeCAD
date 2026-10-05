@@ -518,6 +518,37 @@ QSpinBox *uploadLimitSpin(QWidget *parent)
     return spin;
 }
 
+/// The control for how much may wait to be merged (docs/TransactionLog.md
+/// sec 30.29): every file sent to one document and not yet dealt with,
+/// together. As uploadLimitSpin(): it shows what holds, and whoever makes
+/// it stores the value.
+QSpinBox *requestsTotalSpin(QWidget *parent)
+{
+    const int mb = 1024 * 1024;
+    auto *spin = new QSpinBox(parent);
+    spin->setObjectName(QStringLiteral("shareRequestsTotal"));
+    spin->setRange(1, 4096);
+    spin->setSuffix(QCoreApplication::translate("Gui::SharePanel", " MB"));
+    spin->setKeyboardTracking(false);
+    spin->setValue(int(SceneRequests::totalLimit() / mb));
+    QString tip = QCoreApplication::translate("Gui::SharePanel",
+        "How much may wait to be merged: the copies sent to one document "
+        "and not yet merged or deleted, all together. A copy that would "
+        "take it past this is refused until you have dealt with one.\n\n"
+        "A copy that waits is kept in the document's history and saved "
+        "with it, so this is also the most that sent files can make the "
+        "document's file grow by.");
+    if (!SceneRequests::totalLimitIsPreference()) {
+        spin->setEnabled(false);
+        tip += QLatin1String("\n\n")
+            + QCoreApplication::translate("Gui::SharePanel",
+                "Set for this session by FC_SERVE_REQUESTS_MB or by a "
+                "script, which the preference does not override.");
+    }
+    spin->setToolTip(tip);
+    return spin;
+}
+
 /// The small always-on-top pill in the corner of the 3D area while
 /// sharing is up: a red dot, "Sharing · N", clickable.
 class ShareIndicator: public QWidget
@@ -735,8 +766,13 @@ public:
         limitSpin = uploadLimitSpin(this);
         connect(limitSpin, qOverload<int>(&QSpinBox::valueChanged), this,
                 [](int mb) { shareParams()->SetInt("UploadLimitMB", mb); });
+        totalSpin = requestsTotalSpin(this);
+        connect(totalSpin, qOverload<int>(&QSpinBox::valueChanged), this,
+                [](int mb) { shareParams()->SetInt("RequestsTotalMB", mb); });
         limitRow->addWidget(new QLabel(tr("Clients may send files up to:"), this));
         limitRow->addWidget(limitSpin);
+        limitRow->addWidget(new QLabel(tr("and waiting to be merged, up to:"), this));
+        limitRow->addWidget(totalSpin);
         limitRow->addStretch(1);
         layout->addLayout(limitRow);
 
@@ -758,7 +794,7 @@ public:
         bottom->addStretch(1);
         bottom->addWidget(closeBtn);
         layout->addLayout(bottom);
-        resize(560, 330);
+        resize(620, 330);
     }
 
     /// The link for one person: the share's address with `token` and
@@ -813,6 +849,11 @@ public:
         if (limitSpin->value() != limit && !limitSpin->hasFocus()) {
             QSignalBlocker quiet(limitSpin);
             limitSpin->setValue(limit);
+        }
+        const int total = int(SceneRequests::totalLimit() / (1024 * 1024));
+        if (totalSpin->value() != total && !totalSpin->hasFocus()) {
+            QSignalBlocker quiet(totalSpin);
+            totalSpin->setValue(total);
         }
         // Rebuild only when membership, a name, an access or the grant
         // list changed — a rebuild every roster tick would yank the
@@ -1220,6 +1261,7 @@ private:
     QComboBox *inviteMode = nullptr;
     QLabel *inviteNote = nullptr;
     QSpinBox *limitSpin = nullptr;
+    QSpinBox *totalSpin = nullptr;
     bool doorKnown = false;
     bool signInDoor = true;
     QString shareToken;
@@ -1568,6 +1610,9 @@ void ShareDocumentManager::openShareDialog()
     auto *limitSpin = uploadLimitSpin(&dlg);
     const int limitWas = limitSpin->value();
     form->addRow(QObject::tr("Clients may send up to:"), limitSpin);
+    auto *totalSpin = requestsTotalSpin(&dlg);
+    const int totalWas = totalSpin->value();
+    form->addRow(QObject::tr("Waiting to be merged, up to:"), totalSpin);
 
     auto *urlPreview = new QLineEdit(&dlg);
     urlPreview->setReadOnly(true);
@@ -1728,6 +1773,8 @@ void ShareDocumentManager::openShareDialog()
         hGrp->SetBool("TrustProxy", proxyBox->isChecked());
     if (limitSpin->isEnabled() && limitSpin->value() != limitWas)
         hGrp->SetInt("UploadLimitMB", limitSpin->value());
+    if (totalSpin->isEnabled() && totalSpin->value() != totalWas)
+        hGrp->SetInt("RequestsTotalMB", totalSpin->value());
     saveDoors(doors);
     // Remembered so the next share reuses it and the links people
     // already hold keep working across a restart. Sharing is never

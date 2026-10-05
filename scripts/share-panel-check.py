@@ -97,8 +97,9 @@ def start(door, port, limit=None, header=None, sign_in=None):
         seen["limit_enabled"] = spin.isEnabled()
         if limit is not None:
             spin.setValue(limit)
+        seen["total"] = dlg.findChild(QtWidgets.QSpinBox, "shareRequestsTotal").value()
         for s in dlg.findChildren(QtWidgets.QSpinBox):
-            if s is not spin:
+            if not s.objectName().startswith("share"):
                 s.setValue(port)
         edit = dlg.findChild(QtWidgets.QLineEdit, "shareIdentityHeader")
         seen["header_shown"] = not edit.isHidden()
@@ -204,8 +205,27 @@ def run():
         settle()
         reply = control({"op": "requests.send", "name": "big.FCStd", "data": big})
         check("raised, the same file is taken %r" % (reply.get("ok"),), reply.get("ok") is True)
+        # What waits is bounded too: all of one document's files together.
+        total = panel.findChild(QtWidgets.QSpinBox, "shareRequestsTotal")
+        check("the panel has what may wait, 64 MB unless set %r" % (total.value(),),
+              total.value() == 64 and total.isEnabled())
+        total.setValue(2)
+        settle()
+        reply = control({"op": "requests.send", "name": "more.FCStd", "data": big})
+        check("a file that would take it past is refused %r"
+              % ((share.GetInt("RequestsTotalMB", 0), reply.get("code")),),
+              share.GetInt("RequestsTotalMB", 0) == 2 and reply.get("ok") is False
+              and reply.get("code") == "TooMany")
         for r in Gui.serveRequests():
-            Gui.serveDropRequest(r["id"])
+            Gui.serveDropRequest(r["id"], r["doc"])
+        reply = control({"op": "requests.send", "name": "more.FCStd", "data": big})
+        check("and taken once the one that waited is dealt with %r" % (reply.get("ok"),),
+              reply.get("ok") is True)
+        total.setValue(64)
+        settle()
+        for r in Gui.serveRequests():
+            Gui.serveDropRequest(r["id"], r["doc"])
+        check("nothing waits", Gui.serveRequests() == [])
 
         edit = panel.findChild(QtWidgets.QLineEdit, "shareInvite")
         modes = panel.findChild(QtWidgets.QComboBox, "shareInviteMode")
@@ -268,8 +288,9 @@ def run():
         check("a sign-in door shows the identity header, empty %r" % (seen,),
               seen["found"] and seen.get("header_shown_after") is True
               and seen.get("header_was") == "")
-        check("the limit the panel set is what the dialog shows %r" % (seen.get("limit"),),
-              seen.get("limit") == 2)
+        check("the limit the panel set is what the dialog shows %r"
+              % ((seen.get("limit"), seen.get("total")),),
+              seen.get("limit") == 2 and seen.get("total") == 64)
         check("the header is kept with the door, without the colon %r" % (stored_doors(share),),
               stored_doors(share).get("thundereal") == "X-Check-Identity")
         alice = connect(port, doc.Name, "laptop", "?token=%s&client=laptop" % token,

@@ -26,6 +26,7 @@
 # include <algorithm>
 # include <chrono>
 # include <cstdlib>
+# include <set>
 # include <QDir>
 # include <QFile>
 # include <QFileInfo>
@@ -34,6 +35,8 @@
 #include <App/Actor.h>
 #include <App/Application.h>
 #include <App/Document.h>
+#include <App/FileHistory.h>
+#include <App/TransactionLog.h>
 #include <Base/Console.h>
 #include <Base/Parameter.h>
 
@@ -52,6 +55,9 @@ namespace
 /// messages of 64 MB at most), less the base64 and the envelope round it.
 constexpr qint64 kCeilingBytes = qint64(46) * 1024 * 1024;
 constexpr qint64 kDefaultMB = 16;
+constexpr qint64 kDefaultTotalMB = 64;
+/// A number of this process's, clear of any row a log numbers.
+constexpr uint64_t kRegistryBase = uint64_t(1) << 40;
 
 std::vector<SceneRequest>& registry()
 {
@@ -69,6 +75,24 @@ qint64& override()
 {
     static qint64 bytes = 0;
     return bytes;
+}
+
+qint64& totalOverride()
+{
+    static qint64 bytes = 0;
+    return bytes;
+}
+
+/// The sent files the log of `doc` holds; none when it keeps no log.
+std::vector<App::Document::SentFile> heldIn(App::Document* doc)
+{
+    try {
+        return doc->sentFiles();
+    }
+    catch (Base::Exception& e) {
+        FC_WARN("sent files of " << doc->getName() << ": " << e.what());
+    }
+    return {};
 }
 
 /// Where a sent file lands: one directory under the host's temp path, of
@@ -98,12 +122,42 @@ std::vector<SceneRequest> SceneRequests::list(const std::string& document)
         if (document.empty() || r.document == document)
             out.push_back(r);
     }
+    // Those a log holds (sec 30.29). One brought in is a branch from then
+    // on, and the panel lists it as that.
+    // A file's history is one, however many documents of it are open: its
+    // files are listed once, under the first of them.
+    std::set<const App::FileHistory*> seen;
+    for (App::Document* doc : App::GetApplication().getDocuments()) {
+        if (!document.empty() && document != doc->getName())
+            continue;
+        // (a document that keeps no log holds none, and has no history to
+        // be made for the asking)
+        if (!doc->getTransactionLog() || !seen.insert(&doc->getFileHistory()).second)
+            continue;
+        for (const auto& f : heldIn(doc)) {
+            if (!f.branch.empty())
+                continue;
+            SceneRequest r;
+            r.id = static_cast<uint64_t>(f.seq);
+            r.inLog = true;
+            r.document = doc->getName();
+            r.name = QString::fromStdString(f.name);
+            r.size = f.size;
+            r.sender = QString::fromStdString(f.sender);
+            r.senderKind = QString::fromStdString(f.senderKind);
+            r.time = f.when;
+            out.push_back(std::move(r));
+        }
+    }
+    std::stable_sort(out.begin(), out.end(), [](const SceneRequest& a, const SceneRequest& b) {
+        return a.time < b.time;
+    });
     return out;
 }
 
-bool SceneRequests::find(uint64_t id, SceneRequest& request)
+bool SceneRequests::find(uint64_t id, SceneRequest& request, const std::string& document)
 {
-    for (const auto& r : registry()) {
+    for (const auto& r : list(document)) {
         if (r.id == id) {
             request = r;
             return true;
@@ -112,8 +166,24 @@ bool SceneRequests::find(uint64_t id, SceneRequest& request)
     return false;
 }
 
-bool SceneRequests::drop(uint64_t id, bool keepFile)
+bool SceneRequests::drop(uint64_t id, bool keepFile, const std::string& document)
 {
+    SceneRequest request;
+    if (!find(id, request, document))
+        return false;
+    if (request.inLog) {
+        App::Document* doc = App::GetApplication().getDocument(request.document.c_str());
+        bool dropped = false;
+        try {
+            dropped = doc && doc->dropSentFile(static_cast<int64_t>(id));
+        }
+        catch (Base::Exception& e) {
+            FC_ERR("drop request " << id << ": " << e.what());
+        }
+        if (dropped)
+            signalChanged()();
+        return dropped;
+    }
     auto& all = registry();
     auto it = std::find_if(all.begin(), all.end(),
                            [id](const SceneRequest& r) { return r.id == id; });
@@ -124,6 +194,21 @@ bool SceneRequests::drop(uint64_t id, bool keepFile)
     all.erase(it);
     signalChanged()();
     return true;
+}
+
+qint64 SceneRequests::heldBytes(const std::string& document)
+{
+    qint64 bytes = 0;
+    for (const auto& r : registry()) {
+        if (r.document == document)
+            bytes += r.size;
+    }
+    // Brought in and not merged, its bytes are held still.
+    if (App::Document* doc = App::GetApplication().getDocument(document.c_str())) {
+        for (const auto& f : heldIn(doc))
+            bytes += f.size;
+    }
+    return bytes;
 }
 
 fastsignals::signal<void()>& SceneRequests::signalChanged()
@@ -176,6 +261,45 @@ qint64 SceneRequests::uploadLimit()
 void SceneRequests::setUploadLimit(qint64 bytes)
 {
     override() = bytes > 0 ? bytes : 0;
+}
+
+namespace
+{
+
+qint64 totalPreset()
+{
+    static const qint64 bytes = []() -> qint64 {
+        const char* env = std::getenv("FC_SERVE_REQUESTS_MB");
+        const long mb = env ? std::atol(env) : 0;
+        return mb > 0 ? qint64(mb) * 1024 * 1024 : 0;
+    }();
+    return bytes;
+}
+
+}  // namespace
+
+bool SceneRequests::totalLimitIsPreference()
+{
+    return totalOverride() <= 0 && totalPreset() <= 0;
+}
+
+qint64 SceneRequests::totalLimit()
+{
+    qint64 bytes = totalOverride();
+    if (bytes <= 0)
+        bytes = totalPreset();
+    if (bytes <= 0) {
+        auto hGrp = App::GetApplication().GetParameterGroupByPath(
+            "User parameter:BaseApp/Preferences/SceneShare");
+        const long mb = hGrp->GetInt("RequestsTotalMB", kDefaultTotalMB);
+        bytes = qint64(mb > 0 ? mb : kDefaultTotalMB) * 1024 * 1024;
+    }
+    return bytes;
+}
+
+void SceneRequests::setTotalLimit(qint64 bytes)
+{
+    totalOverride() = bytes > 0 ? bytes : 0;
 }
 
 QString SceneRequests::sanitizedName(const QString& given)
@@ -283,6 +407,49 @@ void SceneRequests::install()
                 return error;
             if (bytes.isEmpty())
                 return sceneControlError(id, "BadRequest", QStringLiteral("an empty file"));
+            // J4: what waits is bounded, all of one document's together. A
+            // waiting file is in the history and is saved with it.
+            const qint64 most = totalLimit();
+            if (heldBytes(doc->getName()) + bytes.size() > most)
+                return sceneControlError(
+                    id, "TooMany",
+                    QStringLiteral("%1 bytes may wait to be merged at most").arg(most));
+
+            // H7: who sent it, as the roster knows them. No connection is
+            // the desktop's own call.
+            QString sender = QStringLiteral("host");
+            QString senderKind = QString::fromLatin1(App::Actor::kindName(App::Actor::Local));
+            if (client) {
+                const auto actor = SceneActors::of(client);
+                sender = QString::fromStdString(actor->name);
+                senderKind = QString::fromLatin1(App::Actor::kindName(actor->kind));
+            }
+
+            // Kept in the log (sec 30.29): a row under the sender, which
+            // this handler runs as, and the bytes as one blob.
+            App::TransactionLog* log = doc->getTransactionLog();
+            if (log && !log->detached()) {
+                int64_t seq = 0;
+                try {
+                    seq = doc->keepSentFile(std::string(bytes.constData(), size_t(bytes.size())),
+                                            base.toStdString(), sender.toStdString(),
+                                            senderKind.toStdString());
+                }
+                catch (Base::Exception& e) {
+                    return sceneControlError(id, "UploadFailed", QString::fromUtf8(e.what()));
+                }
+                FC_LOG("request row " << seq << " of " << doc->getName() << ": "
+                       << base.toStdString() << ", " << bytes.size() << " bytes, from "
+                       << sender.toStdString());
+                signalChanged()();
+                QJsonObject reply = okReply(id);
+                reply[QLatin1String("request")] = double(seq);
+                reply[QLatin1String("name")] = base;
+                reply[QLatin1String("size")] = double(bytes.size());
+                return reply;
+            }
+
+            // A document with no log: kept by this process, as all were.
             const QString dir = requestDir();
             if (dir.isEmpty())
                 return sceneControlError(id, "UploadFailed",
@@ -299,22 +466,13 @@ void SceneRequests::install()
             }
 
             SceneRequest request;
-            request.id = ++counter();
+            request.id = kRegistryBase + ++counter();
             request.document = doc->getName();
             request.name = base;
             request.path = path;
             request.size = bytes.size();
-            // H7: who sent it, as the roster knows them. No connection is
-            // the desktop's own call.
-            if (client) {
-                const auto actor = SceneActors::of(client);
-                request.sender = QString::fromStdString(actor->name);
-                request.senderKind = QString::fromLatin1(App::Actor::kindName(actor->kind));
-            }
-            else {
-                request.sender = QStringLiteral("host");
-                request.senderKind = QString::fromLatin1(App::Actor::kindName(App::Actor::Local));
-            }
+            request.sender = sender;
+            request.senderKind = senderKind;
             request.time = std::chrono::duration<double>(
                                std::chrono::system_clock::now().time_since_epoch()).count();
             registry().push_back(request);

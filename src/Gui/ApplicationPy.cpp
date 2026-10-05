@@ -262,15 +262,18 @@ PyMethodDef Application::Methods[] = {
   {"serveRequests",           (PyCFunction) Application::sServeRequests, METH_VARARGS,
    "serveRequests(doc='') -> list\n"
    "\n"
-   "The files clients of a served document sent to be merged\n"
-   "(docs/TransactionLog.md sec 30.23), one dict each: id, doc, name,\n"
-   "path, size, sender, kind (how the sender's name is known), time.\n"
-   "Kept as they came and not read; the transaction log panel brings\n"
-   "one in. With doc, only that document's."},
+   "The files clients of a served document sent to be merged, which\n"
+   "wait unread (docs/TransactionLog.md sec 30.23, 30.29), one dict\n"
+   "each: id, doc, name, inLog, path, size, sender, kind (how the\n"
+   "sender's name is known), time. One in the log (inLog) is a row of\n"
+   "its document's history, id the row's number, with no path; one of a\n"
+   "document that keeps no log is a file of this process. The\n"
+   "transaction log panel brings one in. With doc, only that document's."},
   {"serveDropRequest",        (PyCFunction) Application::sServeDropRequest, METH_VARARGS,
-   "serveDropRequest(id) -> bool\n"
+   "serveDropRequest(id, doc='') -> bool\n"
    "\n"
-   "Drop a sent file unread, by its id; False when there is none."},
+   "Drop a sent file unread, by its id -- a row's number is one\n"
+   "document's, so say which with doc. False when there is none."},
   {"serveClients",            (PyCFunction) Application::sServeClients, METH_VARARGS,
    "serveClients() -> list\n"
    "\n"
@@ -1222,6 +1225,7 @@ PyObject* Application::sServeRequests(PyObject * /*self*/, PyObject *args)
         entry.setItem("doc", Py::String(r.document));
         entry.setItem("name", Py::String(r.name.toStdString()));
         entry.setItem("path", Py::String(r.path.toStdString()));
+        entry.setItem("inLog", Py::Boolean(r.inLog));
         entry.setItem("size", Py::Long(static_cast<long long>(r.size)));
         entry.setItem("sender", Py::String(r.sender.toStdString()));
         entry.setItem("kind", Py::String(r.senderKind.toStdString()));
@@ -1234,9 +1238,10 @@ PyObject* Application::sServeRequests(PyObject * /*self*/, PyObject *args)
 PyObject* Application::sServeDropRequest(PyObject * /*self*/, PyObject *args)
 {
     unsigned long long id = 0;
-    if (!PyArg_ParseTuple(args, "K", &id))
+    const char *doc = "";
+    if (!PyArg_ParseTuple(args, "K|s", &id, &doc))
         return nullptr;
-    return Py::new_reference_to(Py::Boolean(SceneRequests::drop(id)));
+    return Py::new_reference_to(Py::Boolean(SceneRequests::drop(id, false, doc)));
 }
 
 PyObject* Application::sServeClients(PyObject * /*self*/, PyObject *args)

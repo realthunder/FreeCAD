@@ -172,7 +172,10 @@ const sendCopy = () => {
     } catch (e: any) {
       window.alert(e?.code === 'TooLarge'
         ? `That file is too large to send (${e.message}).`
-        : `Not sent: ${e?.message ?? e?.code ?? 'the host did not take it'}`);
+        : e?.code === 'TooMany'
+          ? 'Not sent: too much is already waiting to be merged there. '
+            + 'Whoever is sharing the document has to deal with some of it first.'
+          : `Not sent: ${e?.message ?? e?.code ?? 'the host did not take it'}`);
     }
   };
   input.click();
