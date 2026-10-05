@@ -136,6 +136,12 @@ public Q_SLOTS:
     void dropAllRequests();
     /// Refuse a request that is a branch: the branch is deleted.
     void deleteRequest(const QString& branch);
+    /** Read again the sent file that branch `branch` was brought in from
+     * (sec 30.38): an import that stopped at a row it could not apply left
+     * the file held and the branch short, and goes on from that row.
+     * `from` is the copy's branch it came from.
+     */
+    void bringAgain(const QString& branch, const QString& from);
 
 protected:
     void showEvent(QShowEvent*) override;

@@ -1639,6 +1639,8 @@ namespace
 {
 constexpr int RoleRequestId = Qt::UserRole + 20;       // a sent file's number
 constexpr int RoleRequestBranch = Qt::UserRole + 21;   // a branch's name
+constexpr int RoleRequestFrom = Qt::UserRole + 22;     // the copy's branch it came from
+constexpr int RoleRequestStopped = Qt::UserRole + 23;  // its import stopped at a row
 
 QString whenText(double time)
 {
@@ -1685,6 +1687,8 @@ void TransactionLogView::refreshRequests()
         ask = ask || !fresh;
         auto item = new QTreeWidgetItem(_requests);
         item->setData(0, RoleRequestBranch, QString::fromStdString(r.branch));
+        item->setData(0, RoleRequestFrom, QString::fromStdString(r.from));
+        item->setData(0, RoleRequestStopped, r.stoppedAt != 0);
         item->setText(0, QString::fromStdString(r.branch));
         QStringList who;
         for (const auto& name : r.authors)
@@ -1764,6 +1768,18 @@ void TransactionLogView::onRequestContextMenu(const QPoint& pos)
     QMenu menu(this);
     if (!branch.isEmpty()) {
         menu.addAction(tr("Merge..."), this, [this, branch]() { mergeBranch(branch); });
+        // An import that stopped left the file it read held (sec 30.29):
+        // read again, it goes on from the row it stopped at.
+        if (item->data(0, RoleRequestStopped).toBool()) {
+            bool held = false;
+            for (const auto& f : _doc->sentFiles())
+                held = held || f.branch == branch.toStdString();
+            if (held) {
+                const QString from = item->data(0, RoleRequestFrom).toString();
+                menu.addAction(tr("Bring in again"), this,
+                               [this, branch, from]() { bringAgain(branch, from); });
+            }
+        }
         menu.addAction(tr("Open in a document of its own"), this, [this, branch]() {
             try {
                 App::Document::openFileBranch(_doc->getFileHistory().shared_from_this(),
@@ -1852,6 +1868,45 @@ void TransactionLogView::bringSent(qulonglong id, bool merge)
     }
     importFrom(path, QString(), QString(), id, merge);
     QFile::remove(path);
+    scheduleRefresh();
+}
+
+void TransactionLogView::bringAgain(const QString& branch, const QString& from)
+{
+    if (!_doc)
+        return;
+    App::Document::SentFile sent;
+    for (const auto& f : _doc->sentFiles()) {
+        if (f.branch == branch.toStdString())
+            sent = f;
+    }
+    if (!sent.seq) {
+        _status->setText(tr("No sent file is held for branch %1").arg(branch));
+        return;
+    }
+    const QString file = QString::fromStdString(sent.name);
+    try {
+        const auto result = _doc->importSentFile(sent.seq, from.toStdString());
+        refresh();
+        if (result.stoppedAt) {
+            Base::Console().Warning("Bring in %s again: %s\n", sent.name.c_str(),
+                                    result.reason.c_str());
+            _status->setText(tr("%1: %2 more rows came to branch %3, then one could not be "
+                                "applied -- the report view says why")
+                                 .arg(file).arg(result.rows).arg(branch));
+        }
+        else if (result.rows) {
+            _status->setText(tr("%1: %2 more rows came to branch %3, not merged")
+                                 .arg(file).arg(result.rows).arg(branch));
+        }
+        else {
+            _status->setText(tr("Nothing new in %1").arg(file));
+        }
+    }
+    catch (Base::Exception& e) {
+        FC_ERR("bring in " << sent.name << " again: " << e.what());
+        _status->setText(tr("%1 not brought in -- the report view says why").arg(file));
+    }
     scheduleRefresh();
 }
 

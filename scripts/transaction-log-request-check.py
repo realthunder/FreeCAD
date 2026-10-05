@@ -339,6 +339,62 @@ def run():
                   res["branch"] not in [b["name"] for b in doc.getTransactionBranches()]
                   and rows(requests) == [] and not requests.isVisible()
                   and abs(doc.getObject("Box").Height.Value - 25) < 1e-9)
+            # Sec 30.38: an import that stops at a row it cannot apply
+            # leaves the file held and the branch short. Read again from
+            # the panel, it goes on from that row. Nothing a script does
+            # makes a row that cannot be applied, so one is named.
+            fork = App.openDocument(copy)
+            settle()
+            fork.openTransaction("theirs first")
+            fork.Box.Length = 33
+            fork.recompute()
+            fork.commitTransaction()
+            fork.openTransaction("theirs second")
+            fork.Box.Width = 9
+            fork.recompute()
+            fork.commitTransaction()
+            fork.save()
+            App.closeDocument(fork.Name)
+            App.setActiveDocument(doc.Name)
+            settle()
+            reply = send(copy, "stops.FCStd", 7, "edit")
+            os.environ["FC_TXNLOG_IMPORT_STOP_AT"] = "theirs second"
+            QtCore.QMetaObject.invokeMethod(
+                dock, "bringRequestOnly", QtCore.Qt.DirectConnection,
+                QtCore.Q_ARG("qulonglong", reply.get("request")),
+            )
+            del os.environ["FC_TXNLOG_IMPORT_STOP_AT"]
+            settle(1500)
+            asked = doc.getTransactionRequests()
+            held = doc.getTransactionSentFiles()
+            listed = rows(requests)
+            check("stopped at a row: a branch short of it, saying so, the file held (%r, %r)"
+                  % (listed, held),
+                  len(asked) == 1 and asked[0]["stopped_at"] != 0 and len(held) == 1
+                  and held[0]["branch"] == asked[0]["branch"] and len(listed) == 1
+                  and "stopped at a row" in listed[0][3])
+            before = asked[0]["rows"] if asked else 0
+            if asked:
+                QtCore.QMetaObject.invokeMethod(
+                    dock, "bringAgain", QtCore.Qt.DirectConnection,
+                    QtCore.Q_ARG(str, asked[0]["branch"]), QtCore.Q_ARG(str, asked[0]["from"]),
+                )
+            settle(1500)
+            asked = doc.getTransactionRequests()
+            listed = rows(requests)
+            check("brought in again: the rest came to the same branch, held still (%r)" % listed,
+                  len(asked) == 1 and asked[0]["stopped_at"] == 0
+                  and asked[0]["rows"] == before + 1 and len(listed) == 1
+                  and "stopped" not in listed[0][3]
+                  and len(doc.getTransactionSentFiles()) == 1)
+            if asked:
+                doc.mergeTransactionBranch(asked[0]["branch"], {}, "theirs")
+            settle(300)
+            check("merged: the row that had stopped is in, and the file is let go (%r)"
+                  % doc.getObject("Box").Width,
+                  abs(doc.getObject("Box").Width.Value - 9) < 1e-9
+                  and abs(doc.getObject("Box").Length.Value - 33) < 1e-9
+                  and doc.getTransactionSentFiles() == [])
         shutil.rmtree(where, ignore_errors=True)
     except Exception:
         lines.append("FAIL exception\n" + traceback.format_exc())
