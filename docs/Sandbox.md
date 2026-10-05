@@ -1127,7 +1127,9 @@ platform would archive with `emar`.  `-fvisibility=hidden -flto` cut the
 wheel 427 to 368 KB and the hop cost by a third.
 
 The time budget (both runtimes): two stages, a soft interrupt through
-CPython's emscripten signal handling on a shared `int32` buffer, then a
+CPython's emscripten signal handling on a shared `int32` buffer -- the
+word written on the guest's own thread, by `Isolate::RequestInterrupt`
+(sec 12, "A soft interrupt written from another thread") -- then a
 hard `Isolate::TerminateExecution` (wasmtime: epoch interruption);
 `Expression/Sandbox:BudgetMs` 5000, `GraceMs` 1000; outcomes
 `Interrupted` / `Terminated`; `Watchdog` in
@@ -11343,6 +11345,31 @@ sockets, any network for the reference image, a webview escape hatch.
   NOT set (it changes every allocation FreeCAD and OCCT make; RULED
   2026-09-14: leave it).  Reset for a package install only; a library edit drops one
   module (`lib.drop`), never the guest.
+- **A soft interrupt written from another thread can be lost** (found
+  2026-10-06, chasing `ExpressionImageBudgetTest.runawayBytecodeLoopIsStopped`,
+  which had failed once in a gate run and passed alone).  pyodide takes
+  the interrupt buffer's word with a read and then a write of zero
+  (`_Py_CheckEmscriptenSignals_Helper`: `let result = buf[0]; buf[0] = 0`),
+  every fifty bytecode checks.  The watchdog thread's `signal.store(2)`
+  landing between the two is read as nothing and wiped: the loop runs
+  on, the hard stage ends it 700 ms later, and the guest is dropped --
+  a `TimeoutError` still, "terminated" instead of "interrupted", and a
+  boot for the next evaluation.  Traced: the soft stage at 300 ms, the
+  word zero when the call came back, the call not back until the hard
+  stage.  Forty copies of the case side by side: 4 of 280 runs.  It is
+  not the machine being slow -- pinned to one core beside nine busy
+  loops, ten times slower, it passes; the reply to an interrupt takes
+  1 ms.  Built: the watchdog asks V8 for an interrupt
+  (`Isolate::RequestInterrupt`) and the word is written from its
+  callback, on the guest's thread at a stack check, where that read and
+  that write have nothing between them; a request the call did not live
+  to see finds its flag cleared.  400 of 400 the same way after.  The
+  browser console's guest on the page is written to while it is
+  suspended on a host call (7.20, *Interrupt*), which is one thread and
+  safe.  Its guest in a worker (C6) is written to from the page while
+  it runs (`session.ts`, `interrupt()`), two threads, and has this as
+  read, not run: an Interrupt press that lands in the gap does nothing,
+  and the next one stops the loop.  Left as it is.
 - V8 calls the near-heap-limit callback from the LAST-RESORT GC that
   follows a failed array buffer allocation, not only at the heap's
   limit: a callback that stops the guest there stops it for a refused

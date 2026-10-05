@@ -502,11 +502,10 @@ public:
         // (CPython's Py_EMSCRIPTEN_SIGNAL_HANDLING; a non-zero value is
         // taken as a signal number and raised at the next bytecode
         // check).  Its storage is THIS object's `signal` word, wrapped as
-        // a SharedArrayBuffer so the watchdog thread writes it with no
-        // engine involvement -- exactly how a browser worker is
-        // interrupted from the main thread.  Installed by roundTrip only
-        // while there is a budget: the polling costs ~5 us per
-        // expression.
+        // a SharedArrayBuffer.  The word is written on the guest's own
+        // thread, never from the watchdog's (raiseSoft()).  Installed by
+        // roundTrip only while there is a budget: the polling costs
+        // ~5 us per expression.
         {
             std::unique_ptr<v8::BackingStore> store = v8::SharedArrayBuffer::NewBackingStore(
                     &signal, sizeof(signal), [](void*, size_t, void*) {}, nullptr);
@@ -645,9 +644,12 @@ public:
         const bool called = callFn.Get(isolate)->Call(ctx, undef, 2, callArgs).ToLocal(&result);
         const int fired = outer ? watchdog.disarm() : -1;
         // A soft signal the guest did not get to consume must not greet
-        // the next call (the guest zeroes it when it does consume it).
-        if (outer)
+        // the next call (the guest zeroes it when it does consume it),
+        // and neither must one still on its way (raiseSoft()).
+        if (outer) {
+            softWanted.store(false);
             signal.store(0);
+        }
         if (!called) {
             if (tc.HasTerminated()) {
                 // nested: the outer frame is terminating too and cancels
@@ -784,12 +786,38 @@ private:
     /// The interrupt buffer's one word (ExpressionImageRuntime.h,
     /// Outcome): 2 = SIGINT, which the guest raises as KeyboardInterrupt.
     std::atomic<int32_t> signal {0};
+    /// The soft stage is due and the guest has not been told yet.
+    std::atomic<bool> softWanted {false};
     Watchdog watchdog {[this](int stage) {
-        if (stage == 0)
-            signal.store(2);
-        else if (isolate)
+        if (!isolate)
+            return;
+        if (stage == 0) {
+            softWanted.store(true);
+            isolate->RequestInterrupt(&PyodideRuntime::raiseSoft, this);
+        }
+        else {
             isolate->TerminateExecution();
+        }
     }};
+    /** Write the soft stage's signal, on the guest's thread.
+     *
+     * The interpreter takes the signal with a read and then a write of
+     * zero (pyodide's _Py_CheckEmscriptenSignals_Helper), two steps and
+     * not one: a word written from the watchdog thread between them is
+     * read as nothing and then wiped, the interrupt is lost, and the
+     * guest runs on to the hard stage and is dropped -- seen once in a
+     * hundred runs of a tight loop on a busy machine.  V8 runs this at
+     * a stack check of the guest instead, a function entry or a loop's
+     * back edge, and there is neither between that read and that write.
+     * A request the call did not live to see finds softWanted cleared
+     * and does nothing to the next call.
+     */
+    static void raiseSoft(v8::Isolate*, void* data)
+    {
+        auto* self = static_cast<PyodideRuntime*>(data);
+        if (self->softWanted.exchange(false))
+            self->signal.store(2);
+    }
     v8::Isolate* isolate = nullptr;
     CountingAllocator* allocator = nullptr;
     v8::Global<v8::Context> context;
