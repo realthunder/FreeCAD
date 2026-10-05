@@ -13020,7 +13020,7 @@ shares nothing: no dialog, and the panel says so.
   every object the two had at the base as having one id in both. The
   copy's own map (`import:<branch>` in its store) is what would turn them
   back. Not built: an import after a round trip is right only for what
-  the copy made itself.
+  the copy made itself. 30.27 has it measured, and what it takes.
 - **A sketch's geometry ids** (27.40 item 4) come as the copy has them.
   A geometry list is one value, so 28 offers it whole or not at all, and
   two sides that both added geometry conflict rather than interleave.
@@ -13531,8 +13531,8 @@ listed with its operations and its conflicts, then deleted.
 
 **Left.** A file past the ceiling does not come over the wire. The
 registry of sent files is the process's and is not kept across a
-restart. The Share panel has no control for the limit: it is a
-preference, set by hand or by the environment.
+restart: 30.28 has what keeping them in the log would be. The Share panel
+had no control for the limit; 30.26 is that control.
 
 **Gates**, frozen and unfrozen each: Python 3008 OK (52 skipped frozen, 53
 unfrozen; 6 expected failures; +1), ctest 875/875, and the GUI checks RC
@@ -13570,3 +13570,303 @@ log off this path never read the records.
 
 **Gates**, frozen and unfrozen each: Python 3008 OK, ctest 875/875, the
 twelve GUI checks unchanged.
+
+### 30.25 Seen on the way: a merge whose base lies before a reopen (2026-10-05)
+
+Found by the probe of 30.27, which could not get as far as its question:
+the copy imported this file's rows and its merge was refused, "row 3
+opened a file that is not its history's". No round trip is needed for it.
+A file saved, closed and opened again, then asked to merge a branch that
+left before that save: refused. That is the ordinary case of a copy handed
+out on one day and brought back on another.
+
+**The cause.** An open's record says the file as found; `openRecordJumps`
+(27.57) asks whether that is what the rows before it add up to, and takes
+the answer from two versions with the same `Document.xml` and no row with
+ops between them: the one the open recorded, and the newest before it on
+the chain. But a save writes its version after the file, so the copy a
+file carries never holds the version of its own save -- the newest before
+it is the save before that, with every edit since between the two, or
+nothing at all for a file saved once. So every open of a file with a
+history counted as a jump: a merge across it was refused, and a restore or
+a switch across it read the version whole where the rows would have done.
+27.57's own case passed because it goes back to exactly the open's parent,
+which is never asked.
+
+**Fixed** with what 30.21 G1 added for another reason. A save records, in
+the copy the file carries, the version it becomes and the row its state is
+at (`meta` `save:<id>`); a file continues its history only when it is from
+the save that wrote both (the guard of 16.4). So an open whose version is
+that number, at that row, did not jump -- `openRecordJumps` reads the
+saves (`TransactionStore::metaWithPrefix`) before it falls back to the two
+versions. A save to the log only (27.28) writes no such record and keeps
+the file's save id, so a file whose history went on past its document is
+still a jump, as it is one.
+
+**Tests.** Python `testABranchFromBeforeAReopenIsMerged`: a file saved, a
+copy taken, the file edited, saved, closed and opened again, edited once
+more; the copy's base is before the open and before the edit saved with
+it; imported and merged with nothing unresolved -- the copy's length, this
+file's height and width, the copy's cylinder, the volume recomputed. Then
+back to the first save across the open: no version document is made. The
+merge half fails on the old code with the refusal above (the probe); the
+restore half was not run against it.
+
+**Seen, not chased.** The import in this test, and in
+`testAFileEditedWhereThereIsNoLogIsImported` before it, warns once
+"Included file <hash> is missing from the document" (`FileBlobManager`),
+the hash another one each run. The results are right. Which property
+names the file was not looked for.
+
+### 30.26 The Share dialogs: what a client may send, a name invited, the door's header (user, 2026-10-05)
+
+**Ruled (user):** a control for the settings 30.23 left to a preference
+and the environment. Three of sharing's settings had no control; each has
+one now. `FC_SERVE_NO_COI` and the connection caps stay as they are: the
+first is a switch for a page that embeds something cross-origin, the
+second has no setting at all and nobody has asked for one.
+
+**The most a client may send** (`UploadLimitMB`, 30.23): a spin box, 1 to
+46 MB, in the dialog that starts a share and in the sharing panel. In the
+panel it writes the preference as it changes, which holds from the next
+upload; in the dialog it is written when the share is started. While
+`FC_SERVE_UPLOAD_MB` or `setUploadLimit` holds the limit the control shows
+what holds and is disabled, saying which
+(`SceneRequests::uploadLimitIsPreference`).
+
+**A name invited** -- the desktop's `FC_SERVE_INVITE`. The panel's Invite
+row made an identity grant whatever the door, and behind a door that signs
+nobody in an identity grant matches nobody: the one way to let someone
+edit there was "Add grant..." with the token and the name typed in, and a
+link put together by hand (docs/ShareAccess.md sec 2.3, "what it costs").
+The row now follows the door:
+
+- behind a sign-in door, as before: an identity, no token;
+- behind none: a name. The grant is the share's token issued to that name
+  -- which is what 30.6 U6 calls an invitation -- and the link that carries
+  both, `...&token=<secret>&client=<name>`, goes to the clipboard, with a
+  line saying so. A pattern is refused; so is a share with no token, a
+  name having no secret behind it; full control is not offered, being a
+  signed-in identity's (sec 2.2). The same name again adds nothing.
+- A grant that is such an invitation has a **Link** button on its row,
+  for the link again or for one made with "Add grant...".
+
+A name is not a secret. Someone who holds the plain link and gives the
+name gets what the name gets; the tool tip says so. An invitation with a
+token of its own would close that, and needs a second grant to admit the
+page's fetches, which are made before any name is said: not built.
+
+**The door's header** (`FC_SERVE_IDENTITY_HEADER`). A door of one's own
+that signs people in has an "Identity header" field, kept with the door
+(`Doors/<n>/IdentityHeader`): empty reads the ones the server knows, a
+name is the only one read. Applied when the share starts; a door without
+one goes back to what the environment preset.
+
+**Found building it: a typed header was taken for a sign-in.** The server
+believes an identity header whenever it trusts its proxy and the request
+comes from this machine. A quick tunnel is such a proxy, and so is any
+reverse proxy that only carries traffic: neither signs anyone in, and both
+pass on the headers the client wrote. A client that sent
+`X-Forwarded-Email` itself was a verified identity -- so it could write
+under the shared token alone, against 30.6 U4, and an identity grant left
+from a sign-in door would have admitted it as whoever the grant names,
+with no token, a full-control one as a host. Shown by the check before it
+was closed: behind a door with the sign-in off, `X-Forwarded-Email:
+bob@example.com` was on the roster as `bob@example.com`.
+
+Closed for a share started from the dialog:
+`SceneStreamServer::setIdentityDoor(false)` when the door signs nobody in,
+and no header is then taken for an identity; the forwarded address is
+still believed. On again when the share stops. **Not closed for a serve
+started by script or the environment**, where the switch is on as it was:
+`FC_SERVE_TRUST_PROXY=1` behind `scripts/share-edge.sh quick` reads the
+headers still, and the tests' clients say who they are by exactly that
+road (`tests/gui/wsclient.py`). To rule: whether the environment should
+have to say that its proxy signs people in.
+
+**The Gui check** `scripts/share-panel-check.py` (`SHARECHECK_OUT`, 29
+checks): the dialog driven as a user would -- the limit shown, changed,
+stored, and shown again by the panel; changed in the panel and holding at
+the next upload, a file past it refused and taken once it is raised; the
+Invite row asking for a name, a pattern refused, a name invited with the
+share's token, the link on the clipboard and from the row; over the wire,
+that name editing and on the roster as invited, another name looking; a
+sign-in door with a header of its own, which alone then says who signed
+in; the same door with the sign-in off, where neither header makes anyone
+anybody. The wire case `onlySomeoneKnownMayWrite` has the last of these
+too: a signed-in client's header, sent where the door signs nobody in, is
+told `view` and has no identity.
+
+**Gates** for 30.25 and 30.26, frozen and unfrozen each: Python 3009 OK
+(52 skipped frozen, 53 unfrozen; 6 expected failures; +1), ctest 875/875,
+and the GUI checks RC 15, BC 27, VC 18, PC 28, FC 16, VW 14, MC 28, the
+two-document check 24, the tree check 19, the author check 36, the import
+check 39, the request check 22 and the share check 29 (new).
+
+### 30.27 A copy that has itself imported from this file: measured (user: elaborate, 2026-10-05)
+
+30.17 left it in two sentences. This is what happens, run
+(`~/.cache/txnlog-s30/rt/probe.py`; nothing is built).
+
+**The run.** `ours` and `theirs` are one file copied at a box, id 250.
+
+1. Ours adds a cone: `Cone`, id 251. Saved.
+2. Theirs adds a cylinder: `Cyl`, id 4728 there. Theirs imports ours and
+   merges. The cone comes under the next id of *their* file, 4729, by
+   30.15's own rule; their store keeps the map `import:<branch>` = our 251
+   -> their 4729. Their merge row creates object 4729, `Cone`.
+3. Theirs makes the cone taller (a set on 4729) and the cylinder wider.
+   Saved.
+4. Ours imports theirs. Four rows come: the cylinder, their merge, the
+   two edits.
+
+**What ours gets.** The import knows two kinds of object: one both had at
+the base, which has one id in both, and one the copy made, which gets a
+new id here. Their 4729 was not there at the base, so it is one the copy
+made:
+
+| | their row | here |
+| --- | --- | --- |
+| `theirs cyl` | create 4728 `Cyl` | create 4706 `Cyl` -- right |
+| `Merge ours` | create 4729 `Cone` | create 4707 **`Cone001`**: our own cone, a second time |
+| `theirs cone taller` | set 4729 `Height` | set 4707 `Height` -- on the duplicate |
+| `theirs cyl wider` | set 4728 `Radius` | set 4706 `Radius` -- right |
+
+Merged, with nothing reported: `Cone` at height 10, untouched, and
+`Cone001` at 20 beside it.
+
+**So, after a round trip:**
+
+- **everything the copy took from this file comes back a second time**,
+  under a new name -- every object this file made since the base, whether
+  the copy touched it or not, because their merge row creates them all;
+- **what the copy did to those objects lands on the duplicates**: its
+  edits, and its removals, which remove a duplicate and leave the
+  original;
+- **nothing conflicts that should.** Had ours also changed the cone's
+  height, the merge would have said nothing: two cones, each with one
+  side's value;
+- **the base does not move.** The row both hold is still the one of
+  before the first exchange (`base` 2 above), though their history holds
+  our cone's row under its own identity (30.12): it is on the branch
+  their import made, a second parent of their merge, and the base is
+  looked for along first parents only;
+- what the copy made itself -- the cylinder -- is right, which is the
+  whole of 30.17's "right only for what the copy made itself".
+
+No edit went to the wrong object in this run or can: an object not at the
+base always has a create in their rows, so it is always given a new id
+here before anything is set on it.
+
+**What turning it back takes.** Their store says which of their objects
+are ours: `import:<branch>` holds our id -> their id and our name ->
+their name for everything an import brought, and the rows of that branch
+carry our rows' identities, which is how the branch is known to be of
+this file and not of some third copy.
+
+1. **Read their maps, inverted**, when their history is opened for the
+   import: their 4729 -> our 251, their name -> ours. An object so mapped
+   is neither of the two kinds above but a third: one of this file's own
+   that was not there at the base.
+2. **Their merge row is our rows.** Its second parent is the head of
+   their import branch, whose identity is a row of ours -- call it X. In
+   the replay's document, which stands at the base and has no cone yet,
+   the row's creates of mapped objects are made **under the id and the
+   name this file gave them**: 30.22 does that already for a file that is
+   kin (`_applyForeignState`). Its sets go to those ids. What they chose
+   where the two sides conflicted is in the row, and comes as they chose
+   it.
+3. **The row is kept a merge**, its second parent X. Today a merge of the
+   copy's own becomes `user` "since its second parent is not here"
+   (30.15); this one's is. The merge of the imported branch into ours
+   then finds X as the base (`mergeBaseOf` takes the newest row both
+   histories hold), and is the three-way merge it should be: what ours
+   did since X against what theirs did since they took X.
+4. **Every later row of theirs** goes through the same inverted maps: an
+   id where an op names its container, a name where a value is read
+   (`RestoreNames`), the id in an element name's tag
+   (`StringHasher::ImportTags`). The scopes are there; they get more
+   entries.
+5. **The name they gave it.** Had theirs held a `Cone` of its own, ours
+   would have come there as `Cone001`; back here it is `Cone` again, by
+   the name map.
+6. When X is no longer in this log (trimmed), step 3 is left out: the
+   objects still come under their own ids, and the merge works from the
+   older base -- more shown as conflict, nothing duplicated.
+
+Tests it needs: the run above; both sides changing the cone, which must
+conflict; the copy removing it; a name that collided on their side; an
+element name that carries the id; a second round trip.
+
+**Not answered by this:** a third copy. Theirs taking from a copy of
+ours, and ours then taking from theirs, has the same shape with the map
+two steps long. The identities say whose a row is; the ids would have to
+be followed through both maps.
+
+### 30.28 A sent file kept in the log: survey and questions (user: maybe, 2026-10-05)
+
+Not built. 30.23 left a sent file in a list the process keeps and a
+directory under its temp path: gone from the list at a restart, the bytes
+left behind. The user's thought: keep the files in the log, and give the
+panel ways to deal with them later -- merge, trim, or whatever.
+
+**What there is to build on.**
+
+- **The log holds files already.** A blob is an entity (`kind=blob`,
+  23.16) whose bytes live in the file's blob store (the pack store,
+  docs/FileBlobsManager.md 15.11), taken in with
+  `FileBlobManager::adoptBytes` and held while something in the store
+  names it. A blob is durable before the row that names it commits
+  (15.10), so what is in the log survives a crash by 25's recovery, and a
+  restart by the next save, like every other row.
+- **An event with no ops is a row.** A login is one (30.9): kind `login`,
+  under the session of who came, a script saying how. `TransactionLog::
+  record(kind, name, script)` writes such a row; none is an undo step.
+- **An import says where it came from**: its record has the file, the
+  sender (30.23 H7) and the rows; `import:<branch>` keeps the maps.
+- **What travels with a save** is the embedded copy and every blob it
+  still holds as a file (`embed`, 16.4): whatever the log holds goes into
+  the `.FCStd`, and from there to whoever the file is handed to.
+- **`importFork` takes a path.** A blob is read through its handle; a
+  sent file kept as one is written out to a scratch file to be brought
+  in, which is one copy of at most the upload limit.
+- **Nothing bounds how many are sent.** `requests.send` checks one file
+  against the limit and takes any number of them: someone who may edit
+  can fill the temp directory. True today.
+
+**The shape proposed.**
+
+- **Arrival is a row**, kind `request`, under the sender's own session --
+  they are logged in, so the Author column and the sessions say who with
+  nothing new -- named after the file, its script the name, the size and
+  the blob's hash. The bytes are one blob, as they came: **not unpacked**.
+  Taking the archive apart would dedup its members against ours, and
+  would also be reading a zip nobody vouched for on arrival, which H6
+  rules out. They dedup when the file is brought in, as now.
+- **Pending is derived**, as 30.23 H1 has it for a branch: a `request`
+  row is waiting until a later record names it -- the import that brought
+  it in, or a `drop`. No table of states.
+- **The blob is held while the request waits** and let go when it is
+  brought in or dropped: by then it is rows, or nothing. The row stays,
+  so the log still says who sent what and what became of it.
+- **The registry of 30.23 stays for a document with no log**
+  (`TransactionLog` 0), which has nowhere to keep one.
+- **The panel's Requests list** reads the rows where it reads the
+  registry, and a sent file's menu grows: *Bring in and merge...* (as
+  now), *Bring in only* (the branch, to merge later -- it is then the
+  other kind of request), *Save a copy as...* (the bytes to a file of the
+  owner's choosing, to look at somewhere else first), *Drop*; and *Drop
+  all* on the list.
+
+**To rule.**
+
+| | Question | Proposed |
+| --- | --- | --- |
+| J1 | Whether to do it at all | **Yes.** A request that outlives the process is the point of asking the owner rather than merging on arrival: the owner may not be looking. |
+| J2 | Whether a waiting file travels with a save | **Yes, it is in the log, and the log is in the file** -- which is what makes it survive. The cost is said plainly: a file handed on carries what others sent and nobody has looked at, and grows by each one. The other way is a place beside the file, on this machine only, which survives a restart and does not travel, and is one more store to keep right. |
+| J3 | A copy saved without its history (30.21 G2) | **Leaves them out**, with the rest of the history. |
+| J4 | A bound on what waits | **A total, as a setting**: the waiting files of one document together at most four times the upload limit (64 MB as shipped), a file past it refused as `TooMany`, with a control beside the limit's. Nothing bounds it today. |
+| J5 | Age | **None.** A file waits until the owner says; the panel shows when each came. An age after which one is dropped is a second way to lose something nobody looked at. |
+| J6 | What the row says once the file is gone | **Everything but the bytes**: the name, the size, the hash, who sent it, and the record that brought it in or dropped it. Trimming the branch (26.8) takes the row like any other. |
+| J7 | The sender told what became of it | **Not now.** It would be a message to a connection that may be gone; the log has it for when they ask. |
+| J8 | Unpacked on arrival, for the dedup | **No**, by H6. Said above; put here because the user named dedup by content for 30.22. |
