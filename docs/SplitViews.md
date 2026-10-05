@@ -1400,3 +1400,43 @@ on the canvas side is small.
 - A viewer detaches its consumer from the shared backend before every
   swap of `renderer` (adopt, give back, type change) -- the canvas's
   instance outlives a cell that leaves, unlike a lone backend.
+
+## 20. The active view is never the container (2026-10-05)
+
+`MainWindow::activeWindow()` is the embedded view, not the `ViewArea`
+that is the MDI tab: `setActiveWindow` and `onWindowActivated` resolve
+through `MDIView::activeSubView()` (sec 3, sec 6). Two readers of the
+tab's widget were left out of that, and both handed the container out:
+
+- `MainWindow::changeEvent`, `QEvent::ActivationChange`. When the main
+  window becomes the active window again -- a modal dialog closed, the
+  user came back from another program -- it takes
+  `mdiArea->currentSubWindow()->widget()` for the active view. That is
+  the area. It stayed the active view until the keyboard focus next
+  moved INTO a cell (`ViewArea::onFocusChanged` puts the child back), so
+  with the focus in the tree, a task panel or the Python console it
+  stayed for good.
+- `Document::getActiveView()`, when the main window's active view is not
+  one of this document's: it falls back on the document's last view, and
+  the area is created after the view it holds.
+
+Whoever then asked for the active 3D view got none. `Document::setEdit`
+is the one that hurt: `dynamic_cast<View3DInventor*>(getActiveView())`
+was null, `setActiveView(vp)` found the area again as "the view that
+shows this object" and returned it, and the edit started with NO viewer
+-- the task panel open, nothing in the view, `getInEdit()` null, and on
+leaving `Selection.cpp: Object not found` (the sketch selects the name
+`setEditViewer` never recorded). That is, line for line, how
+`tests/gui/sketch-new-in-group.py` failed 3 runs of about 25 on its
+second New Sketch (`it is being edited`, with the `Object not found`
+line in each failing log and in no passing one): the orientation dialog
+of the first closing is such an activation. The failure itself was not
+caught again -- 21 instrumented runs passed -- so that it went by the
+focus is the reading of the code, not a measurement; the state it needs
+is forced by the test below and gives the same symptoms every time.
+
+Both now answer with `activeSubView()`. `tests/gui/edit-after-reactivation.py`
+sends the main window the activation and starts an edit, and does the
+same with another document's view the active one: 11 PASS, and 8 FAIL on
+the tree before (the container as active view, the edit not bound, the
+sketch not selected on leaving -- in both cases).

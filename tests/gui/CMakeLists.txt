@@ -168,6 +168,13 @@ fc_add_gui_test(GuiServePdPreview_tests_run serve-pd-preview.py
 fc_add_gui_test(GuiEditPerView_tests_run edit-per-view.py
                 --timeout 300)
 
+# An edit started after the main window is activated again, or with
+# another document's view the active one, is bound to the 3D view: the
+# split-view container (Gui::ViewArea) was handed out as the active view
+# in both cases, and setEdit found no viewer in it.
+fc_add_gui_test(GuiEditAfterReactivation_tests_run edit-after-reactivation.py
+                --timeout 180)
+
 # The same on a served document: a session that is one view's is told to
 # that view's client only, the desktop window stays out of a client's, and
 # no other connection can end it or replace it.

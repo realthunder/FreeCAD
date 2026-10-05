@@ -3350,6 +3350,15 @@ void MainWindow::changeEvent(QEvent *e)
             QMdiSubWindow* mdi = d->mdiArea->currentSubWindow();
             if (mdi) {
                 auto view = dynamic_cast<MDIView*>(mdi->widget());
+                // The tab's widget may be a container (Gui::ViewArea), and
+                // the active view is the one it embeds, as everywhere else
+                // (onWindowActivated, setActiveWindow). Recorded as it
+                // stood, the container stayed the active view until the
+                // focus next moved into a cell, and whatever asked for the
+                // active 3D view meanwhile was told there is none: an edit
+                // started then had no viewer.
+                if (view)
+                    view = view->activeSubView();
                 if (view && getMainWindow()->activeWindow() != view) {
                     d->activeView = view;
                     Application::Instance->viewActivated(view);
