@@ -45,6 +45,8 @@
 #endif
 
 #include <XCAFDoc_ShapeMapTool.hxx>
+#include <BRep_Builder.hxx>
+#include <TopoDS_Compound.hxx>
 
 #include <boost/algorithm/string.hpp>
 #include <boost/format.hpp>
@@ -55,6 +57,7 @@
 #include <App/GeoFeatureGroupExtension.h>
 #include <App/Link.h>
 #include <Base/Console.h>
+#include <Base/Exception.h>
 #include <Base/Parameter.h>
 #include <Mod/Part/App/PartFeature.h>
 #include <Mod/Part/App/Interface.h>
@@ -424,16 +427,25 @@ void ExportOCAF2::setupObject(TDF_Label label,
     }
 
     std::map<std::string, std::map<std::string, App::Color>> colors;
-    static std::string marker(App::DocumentObject::hiddenMarker() + "*");
-    static std::string shown(App::DocumentObject::shownMarker() + "*");
-    static std::array<const char*, 4> keys = {"Face*", "Edge*", marker.c_str(), shown.c_str()};
     std::string childName;
     if (name) {
         childName = name;
         childName += '.';
     }
-    for (auto key : keys) {
-        for (auto& v : getShapeColors(obj, key)) {
+    std::array<std::map<std::string, App::Color>, 4> found = {
+        getShapeColors(obj, "Face*"), getShapeColors(obj, "Edge*")};
+    // The "!hide"/"!show" marks are no colour and need no view provider: a
+    // Link keeps them in its ColoredElements, through the Link chain. Read
+    // them here rather than through getShapeColors(), so that an exporter
+    // without a GUI (Import.export) honours them as ImportGui.export does.
+    for (auto& sub : App::LinkBaseExtension::getHiddenSubnames(obj)) {
+        found[2].emplace(sub + App::DocumentObject::hiddenMarker(), App::Color());
+    }
+    for (auto& sub : App::LinkBaseExtension::getShownSubnames(obj)) {
+        found[3].emplace(sub + App::DocumentObject::shownMarker(), App::Color());
+    }
+    for (auto& entries : found) {
+        for (auto& v : entries) {
             const char* subname = v.first.c_str();
             if (name) {
                 if (!boost::starts_with(v.first, childName)) {
@@ -577,8 +589,9 @@ void ExportOCAF2::exportObjects(std::vector<App::DocumentObject*>& objs, const c
     myObjects.clear();
     myNames.clear();
     mySetups.clear();
+    bool exported = false;
     if (objs.size() == 1) {
-        exportObject(objs.front(), nullptr, TDF_Label());
+        exported = !exportObject(objs.front(), nullptr, TDF_Label()).IsNull();
     }
     else {
         auto label = aShapeTool->NewShape();
@@ -591,13 +604,22 @@ void ExportOCAF2::exportObjects(std::vector<App::DocumentObject*>& objs, const c
             else {
                 doc = obj->getDocument();
             }
-            exportObject(obj, nullptr, label);
+            if (!exportObject(obj, nullptr, label).IsNull()) {
+                exported = true;
+            }
         }
 
         if (!name && doc && sameDoc) {
             name = doc->getName();
         }
         setName(label, nullptr, name);
+    }
+
+    // Every object empty -- e.g. a container whose children are all hidden,
+    // not exporting hidden objects. The writers then leave no file and say
+    // nothing; a caller asking for a file should hear why there is none.
+    if (!exported) {
+        FC_THROWM(Base::RuntimeError, "Nothing to export: every object has an empty shape");
     }
 
     if (FC_LOG_INSTANCE.isEnabled(FC_LOGLEVEL_LOG)) {
@@ -615,12 +637,25 @@ TDF_Label ExportOCAF2::exportObject(App::DocumentObject* parentObj,
                                     const char* name)
 {
     App::DocumentObject* obj;
-    auto shape = Part::Feature::getTopoShape(parentObj, sub, false, nullptr, &obj, false, !sub);
-    if (!obj || shape.isNull()) {
-        if (obj) {
-            FC_WARN(obj->getFullName() << " has null shape");
-        }
+    Base::Matrix4D mat;
+    auto shape = Part::Feature::getTopoShape(parentObj, sub, false, &mat, &obj, false, !sub);
+    if (!obj) {
         return {};
+    }
+    if (shape.isNull()) {
+        // A container's shape is the compound of its SHOWN children, so one
+        // whose children are all hidden -- by Visibility or by a "!hide"
+        // mark -- has none. Exporting hidden objects, it is still an
+        // assembly of them, each flagged invisible below: go on with an
+        // empty compound that only carries the container's placement.
+        if (!options.exportHidden || obj->getSubObjects().empty()) {
+            FC_WARN(obj->getFullName() << " has null shape");
+            return {};
+        }
+        TopoDS_Compound comp;
+        BRep_Builder().MakeCompound(comp);
+        shape.setShape(comp);
+        shape.setTransform(mat);
     }
 
     // sub may contain more than one hierarchy, e.g. Assembly container may use

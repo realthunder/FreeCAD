@@ -3005,6 +3005,19 @@ Link's shape; the short cut is now skipped while marks apply. Not done: the
 STEP import maps an invisible usage back to `!hide` but has no counterpart
 for a visible usage of a hidden component.
 
+**2026-10-04, the exporter without a GUI.** `ExportOCAF2` took both marks
+from its colour callback, and only `ImportGui.export`'s callback
+(`ViewProvider::getElementColors`) knew them: `Import.export` dropped
+`!hide` and `!show` silently. The marks are App data (the Link's
+`ColoredElements`), so `ExportOCAF2::setupObject` now reads them itself
+(`LinkBaseExtension::getHiddenSubnames`/`getShownSubnames`), the same for
+both exporters. On the way: a container whose children are ALL hidden has
+no shape (the compound of its shown children), and the export stopped
+there -- no file, no error, through either exporter. With
+`ExportHiddenObject` it now goes on as an assembly of the hidden children;
+without it, `exportObjects` raises "Nothing to export". Tests:
+`Import_tests_run`, `ExportMarksTest`.
+
 Where the answer is made, each for the reason of 5.21:
 - **Coin traversals** (GL, pick, bounding box): the object's own
   `SoFCSwitch` asks its root (`SoFCSelectionRoot::isSwitchShown`) and

@@ -369,7 +369,9 @@ private:
 
             hApp->Close(hDoc);
         }
-        _PY_CATCH_OCC(return Py::None());
+        // Throw, not return: an error set under a returned value reaches
+        // the caller as SystemError, the real exception only its cause.
+        _PY_CATCH_OCC(throw Py::Exception());
 
         return Py::None();
     }
