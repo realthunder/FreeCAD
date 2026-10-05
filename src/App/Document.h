@@ -681,7 +681,9 @@ public:
      * values are left out, and whoever merges the branch recomputes.
      *
      * `branch` names the copy's branch, the one its file reopens on when
-     * empty. The branch here is named after the file -- and after the
+     * empty. `sender` is who sent the file, when it was sent by a client
+     * of a served document (sec 30.20 H7): the import's record names them.
+     * The rows keep the authors the file gives them. The branch here is named after the file -- and after the
      * copy's branch when that is not its file's -- and a second import of
      * the same copy continues it. A row that cannot be applied ends the
      * import, the rows before it kept. Nothing is merged: that is
@@ -705,7 +707,34 @@ public:
      * Throws when the file cannot be read, or a branch asked for by name
      * is not there or shares no history.
      */
-    ImportResult importFork(const std::string& path, const std::string& branch = std::string());
+    ImportResult importFork(const std::string& path, const std::string& branch = std::string(),
+                            const std::string& sender = std::string());
+
+    /// An imported branch that waits to be merged (sec 30.20 H1, 30.23).
+    struct ImportRequest
+    {
+        std::string branch;                 ///< the branch here
+        std::string file;                   ///< the file it came from
+        std::string from;                   ///< the copy's branch, empty for a file with none
+        std::vector<std::string> authors;   ///< who made its rows
+        std::string sender;                 ///< who sent the file, when someone did (H7)
+        double when {0};                    ///< when it was last brought
+        size_t rows {0};                    ///< the operations it has to give
+        /// The conflicts the merge's preview finds; -1 when it was not
+        /// asked for, or could not be made.
+        int conflicts {-1};
+        bool independent {false};
+        int64_t stoppedAt {0};
+    };
+    /** The requests (docs/TransactionLog.md sec 30.20 H1): the branches an
+     * import made that the branch this document is on has not taken. Not a
+     * table: worked out from the branches' own marks and from what this
+     * branch's history holds, each time. With `preview`, each is put to
+     * previewMerge() -- one that has nothing to give is left out, and the
+     * rest say how many conflicts it finds; that reads values, and costs
+     * what a merge's preview costs.
+     */
+    std::vector<ImportRequest> importRequests(bool preview = true);
 
     /** Crash recovery (docs/TransactionLog.md sec 25): make this new, empty
      * document what the session that crashed with transient directory
@@ -1465,7 +1494,8 @@ protected:
     /// importFork() of a file with no history (sec 30.19): one row against
     /// the save its `Version` names.
     ImportResult _importState(const std::string& path, const std::string& file,
-                              const std::string& saveId, const std::string& hash);
+                              const std::string& saveId, const std::string& hash,
+                              const std::string& sender);
     /// Sec 26: refuse a branch operation in the middle of something else;
     /// an implicit transaction is committed first.
     void _checkBranchable(const char* what);

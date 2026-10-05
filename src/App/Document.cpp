@@ -7837,6 +7837,10 @@ size_t Document::deleteBranch(const std::string& name)
     if (!versions.empty())
         store.evictVersions(versions);
     store.removeBranch(branch.id);
+    // What an import kept with it (sec 30.15) goes too: a branch made
+    // later may be given its number, and would be taken for an import.
+    if (!store.getMeta("import:" + std::to_string(branch.id)).empty())
+        store.setMeta("import:" + std::to_string(branch.id), std::string());
     const CompactEstimate estimate = _noteDroppedRows(named);
 
     std::ostringstream script;
@@ -9531,7 +9535,8 @@ bool Document::_importStateRow(Document& from, const std::string& file,
 }
 
 Document::ImportResult Document::_importState(const std::string& path, const std::string& file,
-                                              const std::string& saveId, const std::string& hash)
+                                              const std::string& saveId, const std::string& hash,
+                                              const std::string& sender)
 {
     // docs/TransactionLog.md sec 30.19: a file with no history. Its
     // `Version` names the save it is from (G1); the state at that save's
@@ -9614,6 +9619,8 @@ Document::ImportResult Document::_importState(const std::string& path, const std
     m["state"] = hash;
     m["base"] = result.base;
     m["rows"] = result.rows;
+    if (!sender.empty())
+        m["sender"] = sender;
     if (result.independent)
         m["independent"] = true;
     if (result.stoppedAt) {
@@ -9640,7 +9647,8 @@ Document::ImportResult Document::_importState(const std::string& path, const std
     return result;
 }
 
-Document::ImportResult Document::importFork(const std::string& path, const std::string& branch)
+Document::ImportResult Document::importFork(const std::string& path, const std::string& branch,
+                                            const std::string& sender)
 {
     OperationScope scope;   // sec 27.38
     // docs/TransactionLog.md sec 30.13, 30.14: replay, always (F1).
@@ -9660,7 +9668,7 @@ Document::ImportResult Document::importFork(const std::string& path, const std::
         if (!branch.empty())
             THROWM(Base::ValueError, "'" + path + "' carries no history, and so no branch '"
                                          + branch + "'");
-        return _importState(path, fork.file, fork.saved.saveId, fork.saved.hash);
+        return _importState(path, fork.file, fork.saved.saveId, fork.saved.hash, sender);
     }
     auto& theirs = fork.core->store();
     // F6: the branch asked for, else the one the copy's file reopens on.
@@ -9695,7 +9703,7 @@ Document::ImportResult Document::importFork(const std::string& path, const std::
         if (other)
             THROWM(Base::ValueError, "branch '" + result.from + "' of '" + path
                                          + "' shares no history with this file");
-        return _importState(path, fork.file, std::string(), fork.saved.hash);
+        return _importState(path, fork.file, std::string(), fork.saved.hash, sender);
     }
     const auto rows = theirs.chain(from.head, base + 1);
     std::vector<LogTransaction> tailRows;
@@ -10125,6 +10133,8 @@ Document::ImportResult Document::importFork(const std::string& path, const std::
     m["branch"] = result.from;
     m["base"] = result.base;
     m["rows"] = result.rows;
+    if (!sender.empty())
+        m["sender"] = sender;
     if (gap)
         m["state"] = state;
     if (result.stoppedAt) {
@@ -10149,6 +10159,83 @@ Document::ImportResult Document::importFork(const std::string& path, const std::
     keep["names"] = names;
     _finishImport(replay, scratch, mine.id, fork.file, j.dump(), keep.dump(), result);
     return result;
+}
+
+std::vector<Document::ImportRequest> Document::importRequests(bool preview)
+{
+    // docs/TransactionLog.md sec 30.20 H1: a request is an import branch
+    // the branch this document is on has not taken. Nothing records that:
+    // the branch's mark says it came from a file, and this branch's history
+    // says what of it is here.
+    std::vector<ImportRequest> out;
+    TransactionLog* log = getTransactionLog();
+    if (!log || log->detached())
+        return out;
+    if (preview && d->activeUndoTransaction)
+        commitImplicitTransaction();
+    auto& store = log->store();
+    std::set<int64_t> held;
+    for (const auto& t : store.history(log->head()))
+        held.insert(t.seq);
+    std::map<int64_t, LogSession> sessions;
+    for (const auto& s : store.sessions())
+        sessions[s.id] = s;
+    std::map<int64_t, LogUser> users;
+    for (const auto& u : store.users())
+        users[u.id] = u;
+    for (const auto& b : store.branches()) {
+        if (b.id == log->branch() || held.count(b.head))
+            continue;
+        const std::string meta = store.getMeta(importKey(b.id));
+        if (meta.empty())
+            continue;
+        const auto was = nlohmann::json::parse(meta, nullptr, false);
+        if (!was.is_object())
+            continue;
+        ImportRequest r;
+        r.branch = b.name;
+        r.file = was.value("file", std::string());
+        r.from = was.value("branch", std::string());
+        r.independent = was.value("independent", false);
+        std::set<std::string> authors;
+        for (const auto& t : store.chain(b.head, b.fromSeq + 1)) {
+            if (held.count(t.seq))
+                continue;   // taken by an earlier merge
+            if (t.kind == "import") {
+                // The newest says when, who sent it, and where it stopped.
+                r.when = t.time;
+                const auto j = nlohmann::json::parse(t.script, nullptr, false);
+                r.sender.clear();
+                r.stoppedAt = 0;
+                if (j.is_object() && j.contains("import") && j["import"].is_object()) {
+                    r.sender = j["import"].value("sender", std::string());
+                    r.stoppedAt = j["import"].value("stopped_at", int64_t(0));
+                }
+                continue;
+            }
+            if (store.ops(t.seq).empty())
+                continue;
+            ++r.rows;
+            authors.insert(users[sessions[t.session].user].name);
+        }
+        if (!r.rows)
+            continue;
+        r.authors.assign(authors.begin(), authors.end());
+        if (preview) {
+            try {
+                MergePlan plan;
+                planMerge(*this, b.name, 0, plan);
+                if (plan.preview.changes.empty() && plan.preview.forward.empty())
+                    continue;   // nothing of it to give
+                r.conflicts = static_cast<int>(plan.preview.conflicts);
+            }
+            catch (Base::Exception& e) {
+                FC_LOG("request " << b.name << ": " << e.what());
+            }
+        }
+        out.push_back(std::move(r));
+    }
+    return out;
 }
 
 void Document::_followHead(int64_t from)

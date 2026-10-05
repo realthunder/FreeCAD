@@ -607,15 +607,17 @@ cannot be read, or is this document's own.</UserDocu>
     </Methode>
     <Methode Name="importTransactionFork">
       <Documentation>
-        <UserDocu>importTransactionFork(path, branch='') -> dict
+        <UserDocu>importTransactionFork(path, branch='', sender='') -> dict
 Bring a branch of another copy of this document's file in as a branch of
 this file's log (docs/TransactionLog.md sec 30.13, 30.14). The copy's rows
 after the newest row both files hold are replayed in a document of their
 own, each committed here under the author and the identity it had; objects
 the copy made come under new ids, and under new names where theirs are
 taken; derived values are left out. `branch` names the copy's branch, the
-one its file reopens on when empty. The branch here is named after the
-file, and a second import of the same copy continues it. Nothing is merged:
+one its file reopens on when empty. `sender` is who sent the file, when a
+client of a served document did: the import's record names them. The branch
+here is named after the file, and a second import of the same copy continues
+it. Nothing is merged:
 that is mergeTransactionBranch(). The dict has 'branch', 'from', 'base',
 'rows', 'skipped', 'versions' (the copy's named versions that came as
 versions of the branch), 'extended', 'stopped_at' and 'reason' (a row that could
@@ -630,6 +632,18 @@ history with this one -- no row, no save of this log named -- comes too (sec
 mergeTransactionBranch() merges by what the two documents hold. Raises when
 the file cannot be read, or a branch asked for by name is not there or
 shares no history.</UserDocu>
+      </Documentation>
+    </Methode>
+    <Methode Name="getTransactionRequests">
+      <Documentation>
+        <UserDocu>getTransactionRequests(preview=True) -> list of dict
+The requests (docs/TransactionLog.md sec 30.20, 30.23): the branches an
+import made that the branch this document is on has not taken. Each has
+'branch', 'file', 'from' (the copy's branch), 'authors' (who made its
+rows), 'sender' (who sent the file, when a client did), 'when', 'rows' (the
+operations it has to give), 'conflicts' (what the merge's preview finds, -1
+without `preview` or when it could not be made), 'independent' and
+'stopped_at'. With `preview` a branch that has nothing to give is left out.</UserDocu>
       </Documentation>
     </Methode>
     <Methode Name="resolveTransactionLog">

@@ -1506,12 +1506,13 @@ PyObject* DocumentPy::importTransactionFork(PyObject *args)
 {
     char* path;
     const char* branch = "";
-    if (!PyArg_ParseTuple(args, "et|s", "utf-8", &path, &branch))
+    const char* sender = "";
+    if (!PyArg_ParseTuple(args, "et|ss", "utf-8", &path, &branch, &sender))
         return nullptr;
     const std::string file(path);
     PyMem_Free(path);
     PY_TRY {
-        const auto result = getDocumentPtr()->importFork(file, branch);
+        const auto result = getDocumentPtr()->importFork(file, branch, sender);
         Py::Dict d;
         d.setItem("branch", Py::String(result.branch));
         d.setItem("from", Py::String(result.from));
@@ -1529,6 +1530,34 @@ PyObject* DocumentPy::importTransactionFork(PyObject *args)
         d.setItem("renamed", renamed);
         d.setItem("seq", Py::Long(static_cast<long long>(result.seq)));
         return Py::new_reference_to(d);
+    } PY_CATCH;
+}
+
+PyObject* DocumentPy::getTransactionRequests(PyObject *args)
+{
+    PyObject* preview = Py_True;
+    if (!PyArg_ParseTuple(args, "|O!", &PyBool_Type, &preview))
+        return nullptr;
+    PY_TRY {
+        Py::List list;
+        for (const auto& r : getDocumentPtr()->importRequests(Base::asBoolean(preview))) {
+            Py::Dict d;
+            d.setItem("branch", Py::String(r.branch));
+            d.setItem("file", Py::String(r.file));
+            d.setItem("from", Py::String(r.from));
+            Py::List authors;
+            for (const auto& name : r.authors)
+                authors.append(Py::String(name));
+            d.setItem("authors", authors);
+            d.setItem("sender", Py::String(r.sender));
+            d.setItem("when", Py::Float(r.when));
+            d.setItem("rows", Py::Long(static_cast<unsigned long long>(r.rows)));
+            d.setItem("conflicts", Py::Long(static_cast<long>(r.conflicts)));
+            d.setItem("independent", Py::Boolean(r.independent));
+            d.setItem("stopped_at", Py::Long(static_cast<long long>(r.stoppedAt)));
+            list.append(d);
+        }
+        return Py::new_reference_to(list);
     } PY_CATCH;
 }
 

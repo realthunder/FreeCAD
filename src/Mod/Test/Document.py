@@ -6210,3 +6210,93 @@ class TransactionBranchCases(unittest.TestCase):
         # Once merged there is nothing to merge, and the same file is nothing.
         self.assertEqual(doc.previewTransactionMerge(res["branch"])["changes"], [])
         self.assertEqual(doc.importTransactionFork(copy)["rows"], 0)
+
+    def testAnImportedBranchIsARequestUntilItIsMerged(self):
+        # Sec 30.20 H1, H7 (S.h): a request is a branch an import made that
+        # the branch the document is on has not taken -- worked out, not
+        # kept -- with who made its rows, who sent the file, how much it has
+        # to give and what the merge's preview finds.
+        import shutil
+
+        doc = self.track(FreeCAD.newDocument("RequestOurs"))
+        doc.UndoMode = 1
+        doc.openTransaction("create")
+        obj = doc.addObject("App::FeatureTest", "Obj")
+        obj.Integer = 1
+        doc.commitTransaction()
+        path = os.path.join(self.dir, "request-ours.FCStd")
+        copy = os.path.join(self.dir, "request-theirs.FCStd")
+        doc.saveAs(path)
+        shutil.copyfile(path, copy)
+        self.assertEqual(doc.getTransactionRequests(), [])
+
+        doc.openTransaction("ours")
+        doc.Obj.Integer = 2
+        doc.commitTransaction()
+
+        fork = self.track(FreeCAD.openDocument(copy))
+        fork.UndoMode = 1
+        fork.openTransaction("theirs value")
+        fork.Obj.Integer = 9
+        fork.commitTransaction()
+        fork.openTransaction("theirs other")
+        fork.Obj.Float = 2.5
+        fork.commitTransaction()
+        fork.save()
+        FreeCAD.closeDocument(fork.Name)
+        FreeCAD.setActiveDocument(doc.Name)
+
+        res = doc.importTransactionFork(copy, "", "alice@example.com (verified)")
+        self.assertEqual(res["rows"], 2, res)
+        record = [t for t in doc.getTransactionLog() if t["seq"] == res["seq"]]
+        self.assertIn('"sender":"alice@example.com (verified)"', record[0]["script"])
+
+        requests = doc.getTransactionRequests()
+        self.assertEqual(len(requests), 1, requests)
+        request = requests[0]
+        self.assertEqual(request["branch"], "request-theirs")
+        self.assertEqual(request["file"], "request-theirs")
+        self.assertEqual(request["from"], "main")
+        self.assertEqual(request["sender"], "alice@example.com (verified)")
+        self.assertEqual(request["rows"], 2)
+        self.assertEqual(len(request["authors"]), 1)
+        self.assertIn("request-theirs", request["authors"][0])
+        self.assertGreater(request["when"], 0)
+        # Both changed the one value: the preview's one conflict.
+        self.assertEqual(request["conflicts"], 1)
+        self.assertFalse(request["independent"])
+        # Without the preview it is listed all the same, the conflicts unasked.
+        self.assertEqual(doc.getTransactionRequests(False)[0]["conflicts"], -1)
+
+        # Refused without a side, it is still a request; merged, it is none.
+        self.assertEqual(doc.mergeTransactionBranch(res["branch"])["seq"], 0)
+        self.assertEqual(len(doc.getTransactionRequests()), 1)
+        merged = doc.mergeTransactionBranch(res["branch"], {}, "theirs")
+        self.assertGreater(merged["seq"], 0)
+        self.assertEqual(doc.Obj.Integer, 9)
+        self.assertEqual(doc.getTransactionRequests(), [])
+        self.assertEqual(doc.getTransactionRequests(False), [])
+
+        # The copy goes on: the same branch is a request again, for what is new.
+        fork = self.track(FreeCAD.openDocument(copy))
+        fork.UndoMode = 1
+        fork.openTransaction("theirs more")
+        fork.Obj.Float = 7.5
+        fork.commitTransaction()
+        fork.save()
+        FreeCAD.closeDocument(fork.Name)
+        FreeCAD.setActiveDocument(doc.Name)
+        again = doc.importTransactionFork(copy)
+        self.assertTrue(again["extended"])
+        requests = doc.getTransactionRequests()
+        self.assertEqual(len(requests), 1)
+        self.assertEqual(requests[0]["rows"], 1)
+        self.assertEqual(requests[0]["conflicts"], 0)
+        # Brought by hand this time: nobody sent it.
+        self.assertEqual(requests[0]["sender"], "")
+        # Deleted, the request is gone, and so is what the import kept with it.
+        doc.deleteTransactionBranch(res["branch"])
+        self.assertEqual(doc.getTransactionRequests(False), [])
+        doc.createTransactionBranch("after")
+        doc.switchTransactionBranch("main")
+        self.assertEqual(doc.getTransactionRequests(False), [])
