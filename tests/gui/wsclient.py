@@ -32,6 +32,7 @@ clock = time.perf_counter
 IDENTITY = "tester@example.com"
 IDENTITY_HEADER = "X-Forwarded-Email"
 os.environ.setdefault("FC_SERVE_TRUST_PROXY", "1")
+os.environ.setdefault("FC_SERVE_IDENTITY_DOOR", "1")
 
 # The two viewer event frames (docs/ThinClient.md sec 8.5) and the
 # combined one of sec 8.10a.

@@ -465,6 +465,16 @@ const std::string &presetIdentityHeader()
     return preset;
 }
 
+/// Whether the environment said its proxy signs people in
+/// (FC_SERVE_IDENTITY_DOOR), as the server had it before a share here set
+/// it from its door: what stopping the share goes back to.
+bool presetIdentityDoor()
+{
+    static const bool preset =
+        Render::SceneStreamServer::instance().identityDoor();
+    return preset;
+}
+
 /// A header's name as someone would type or paste it: no blanks, no colon
 /// after it.
 QString headerName(const QString &typed)
@@ -1417,6 +1427,7 @@ void ShareDocumentManager::openShareDialog()
     // Before anything below names a header of its own.
     const QString presetHeader =
         QString::fromUtf8(presetIdentityHeader().c_str());
+    presetIdentityDoor();
     QDialog dlg(getMainWindow());
     dlg.setWindowTitle(QObject::tr("Share document"));
     dlg.setObjectName(QStringLiteral("shareStartDialog"));
@@ -1783,7 +1794,7 @@ void ShareDocumentManager::openShareDialog()
     if (!source) {
         server.setToken(std::string());
         server.setGrants({});
-        server.setIdentityDoor(true);
+        server.setIdentityDoor(presetIdentityDoor());
         QMessageBox::critical(getMainWindow(), QObject::tr("Share document"),
                               QObject::tr("The document could not be served. "
                                           "Sharing needs a render engine "
@@ -1795,7 +1806,7 @@ void ShareDocumentManager::openShareDialog()
         SceneServeSource::unserve(guiDoc);
         server.setToken(std::string());
         server.setGrants({});
-        server.setIdentityDoor(true);
+        server.setIdentityDoor(presetIdentityDoor());
         QMessageBox::critical(getMainWindow(), QObject::tr("Share document"),
                               QObject::tr("The scene server could not "
                                           "listen on port %1.").arg(port));
@@ -1879,8 +1890,8 @@ void ShareDocumentManager::stopSharing()
         pimpl->publicOrigin.clear();
     server.stop();
     server.setToken(std::string());
-    // Back to what a scripted serve expects: its own front door, if any.
-    server.setIdentityDoor(true);
+    // Back to what the environment said of a scripted serve's own door.
+    server.setIdentityDoor(presetIdentityDoor());
     // The live list dies with the share — easings and all; the next
     // start seeds a fresh one from what is written down.
     server.setGrants({});

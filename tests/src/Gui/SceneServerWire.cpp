@@ -441,6 +441,8 @@ protected:
         // A front door's headers are believed: that is how a test's client
         // says who it is (known()). One that sends none is unaffected.
         server.setTrustProxy(true);
+        // -- which it is only where the door in front signs people in.
+        server.setIdentityDoor(true);
         port = freePort();
         ASSERT_GT(port, 0);
         ASSERT_TRUE(server.start(port)) << "the listener did not start";

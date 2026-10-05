@@ -423,14 +423,17 @@ public:
     void setIdentityHeader(const std::string &name);
     std::string identityHeader();
 
-    /// Whether the proxy in front signs anyone in at all. On (the
-    /// default), an identity header is read under the trust rule above.
-    /// Off, none is: a proxy that only carries traffic -- a quick tunnel,
-    /// a plain reverse proxy -- passes on whatever headers the client
-    /// sent, and a client that wrote `X-Forwarded-Email` itself would
-    /// otherwise be taken for someone a door verified, and for whoever a
-    /// grant names. The forwarded address is still believed; it decides
-    /// far less. The desktop Share dialog sets this from its door.
+    /// Whether the proxy in front signs anyone in at all. Off (the
+    /// default), no header is taken for an identity: a proxy that only
+    /// carries traffic -- a quick tunnel, a plain reverse proxy -- passes
+    /// on whatever headers the client sent, and a client that wrote
+    /// `X-Forwarded-Email` itself would otherwise be taken for someone a
+    /// door verified, and for whoever a grant names. On, an identity
+    /// header is read under the trust rule above. Trusting the proxy for
+    /// the address does not turn this on; whoever starts the serve says
+    /// so: FC_SERVE_IDENTITY_DOOR=1 presets it at first use, and so does
+    /// FC_SERVE_IDENTITY_HEADER, which names what such a door sends. The
+    /// desktop Share dialog sets it from its door.
     void setIdentityDoor(bool on);
     bool identityDoor();
 

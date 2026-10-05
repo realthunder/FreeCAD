@@ -18,6 +18,7 @@ import json, os, sys, threading, time, traceback
 # use, so before anything is served.
 os.environ["FC_SERVE_IDENTITY_HEADER"] = "X-Check-Identity"
 os.environ["FC_SERVE_TRUST_PROXY"] = "1"
+os.environ["FC_SERVE_IDENTITY_DOOR"] = "1"
 
 import FreeCAD as App
 import FreeCADGui as Gui

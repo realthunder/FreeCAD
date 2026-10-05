@@ -68,6 +68,7 @@ IDENTITY = "carol@example.com"
 # The door believes a front door's identity header only with trust on and
 # a loopback peer; the server reads this when it is first made.
 os.environ["FC_SERVE_TRUST_PROXY"] = "1"
+os.environ["FC_SERVE_IDENTITY_DOOR"] = "1"
 VIEW = "c2-bridge-view"
 RUN_WAIT_S = 120
 

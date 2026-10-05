@@ -82,6 +82,7 @@ def free_port():
 IDENTITY = "tester@example.com"
 IDENTITY_HEADER = "X-Forwarded-Email"
 os.environ.setdefault("FC_SERVE_TRUST_PROXY", "1")
+os.environ.setdefault("FC_SERVE_IDENTITY_DOOR", "1")
 
 
 class WS:

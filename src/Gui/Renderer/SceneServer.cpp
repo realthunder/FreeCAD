@@ -199,8 +199,9 @@ public:
     std::atomic<bool> trustProxy{false};
 
     /// Whether the proxy in front signs anyone in (SceneServer.h,
-    /// setIdentityDoor): off, no header is taken for an identity.
-    std::atomic<bool> identityDoor{true};
+    /// setIdentityDoor): off, which is the default, no header is taken
+    /// for an identity.
+    std::atomic<bool> identityDoor{false};
 
     /// The configured identity header name (SceneServer.h,
     /// setIdentityHeader), stored lowercase; empty = recognize the
@@ -4033,6 +4034,13 @@ SceneStreamServer::Private *SceneStreamServer::ensure()
             pimpl->trustProxy.store(std::atoi(env) != 0);
         if (const char *env = std::getenv("FC_SERVE_IDENTITY_HEADER"))
             pimpl->identityHeaderName = lowered(env);
+        // Whoever starts the serve has to say that its proxy signs people
+        // in (SceneServer.h, setIdentityDoor). Naming the header the door
+        // uses says it too.
+        if (const char *env = std::getenv("FC_SERVE_IDENTITY_DOOR"))
+            pimpl->identityDoor.store(std::atoi(env) != 0);
+        else if (!pimpl->identityHeaderName.empty())
+            pimpl->identityDoor.store(true);
     }
     return pimpl;
 }
