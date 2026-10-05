@@ -381,7 +381,7 @@ public:
         funcs["Matcap"] = &RenderParamsP::updateMatcap;
         MatcapPreset = this->handle->GetInt("MatcapPreset", 0);
         funcs["MatcapPreset"] = &RenderParamsP::updateMatcapPreset;
-        MatcapStripes = this->handle->GetInt("MatcapStripes", 12);
+        MatcapStripes = this->handle->GetInt("MatcapStripes", 6);
         funcs["MatcapStripes"] = &RenderParamsP::updateMatcapStripes;
         MatcapTint = this->handle->GetFloat("MatcapTint", 1.0);
         funcs["MatcapTint"] = &RenderParamsP::updateMatcapTint;
@@ -880,7 +880,7 @@ public:
     }
     // Auto generated code (Tools/params_utils.py:314)
     static void updateMatcapStripes(RenderParamsP *self) {
-        self->MatcapStripes = self->handle->GetInt("MatcapStripes", 12);
+        self->MatcapStripes = self->handle->GetInt("MatcapStripes", 6);
     }
     // Auto generated code (Tools/params_utils.py:314)
     static void updateMatcapTint(RenderParamsP *self) {
@@ -2411,7 +2411,7 @@ static const App::ParamRegistry::Registrar _RenderParamsRegistrar({
 "run through where the curvature is continuous as well.")
         .setProxy("ComboBox")
         .setItems({{"Studio", "", nullptr}, {"Clay", "", nullptr}, {"Metal", "", nullptr}, {"Pearl", "", nullptr}, {"Zebra", "", nullptr}}, false, true),
-    App::ParamInfo("Gui", "RenderParams", "User parameter:BaseApp/Preferences/View/Render", "MatcapStripes", "MatcapStripes", App::ParamInfo::Int, 12)
+    App::ParamInfo("Gui", "RenderParams", "User parameter:BaseApp/Preferences/View/Render", "MatcapStripes", "MatcapStripes", App::ParamInfo::Int, 6)
         .setTitle("Zebra stripes")
         .setDoc("Zebra matcap only: how many dark/light stripe pairs the\n"
 "mirrored room has between its two poles. More stripes show a\n"
@@ -6340,7 +6340,7 @@ const long & RenderParams::getMatcapStripes() {
 
 // Auto generated code (Tools/params_utils.py:413)
 const long & RenderParams::defaultMatcapStripes() {
-    const static long def = 12;
+    const static long def = 6;
     return def;
 }
 

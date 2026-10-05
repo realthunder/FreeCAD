@@ -1187,7 +1187,7 @@ Params = [
         "room of parallel light strips: the stripes step where two faces\n"
         "meet at an angle, meet with a kink where they are tangent, and\n"
         "run through where the curvature is continuous as well."),
-    ParamInt('MatcapStripes',  12, title='Zebra stripes',
+    ParamInt('MatcapStripes',  6, title='Zebra stripes',
         doc="Zebra matcap only: how many dark/light stripe pairs the\n"
         "mirrored room has between its two poles. More stripes show a\n"
         "smaller change of direction, until they are finer than the\n"

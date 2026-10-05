@@ -785,7 +785,7 @@ struct MatcapConfig {
     float tint = 0.0f;
     /// Zebra only: the dark/light stripe pairs between the two poles of
     /// the room the surface mirrors.
-    int stripes = 12;
+    int stripes = 6;
 
     bool operator==(const MatcapConfig &o) const {
         return enabled == o.enabled && preset == o.preset

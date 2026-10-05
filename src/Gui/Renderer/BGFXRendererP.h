@@ -7553,7 +7553,7 @@ public:
     uint32_t bgFillColor = 0x00000000;
     int matcapPreset = 0;
     float matcapTint = 0.0f;
-    float matcapStripes = 12.0f;
+    float matcapStripes = 6.0f;
     float pbrMetallic = 0.0f;
     // Read the Phong specular colour as PBR material data where nothing
     // states a metalness (PBRConfig::fromSpecular).

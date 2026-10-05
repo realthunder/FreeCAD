@@ -382,8 +382,9 @@ do at an edge says how the two faces meet there:
 | are torn or wavy inside one face | that face undulates |
 
 `Render_MatcapStripes` is the number of dark/light pairs between the
-room's two poles (12 by default, a slider beside the preset in the
-shading options). The mirrored ray is taken along the view axis, as
+room's two poles (6 by default, a slider beside the preset in the
+shading options; 12 was the first default, and at a fit-all zoom it
+ran finer than the pixels on an ordinary fillet, which then drew grey). The mirrored ray is taken along the view axis, as
 every preset takes it, so the pattern is a function of the normal
 alone: it does not swim with the position on screen, the same in an
 orthographic and a perspective view -- and **a flat face is one tone**,
