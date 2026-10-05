@@ -1423,6 +1423,13 @@ public:
             else if (c->kind == "take") {
                 item->setText(Takes, QStringLiteral("theirs"));
             }
+            else if (c->kind == "unit") {
+                // One thing with the conflict above it (sec 31.5): it goes
+                // the way that one is picked.
+                item->setText(Takes, QObject::tr("as %1").arg(QString::fromStdString(c->key)));
+                for (int col = 0; col < Columns; ++col)
+                    item->setForeground(col, quiet);
+            }
             else {
                 item->setText(Takes, c->kind == "derived" ? QObject::tr("recomputed")
                                                            : QStringLiteral("-"));

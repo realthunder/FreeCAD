@@ -545,11 +545,14 @@ public:
          * side must be picked. `view`: a conflict on a view-provider
          * property, which keeps ours unless picked otherwise (sec 28.6 Q2).
          * `derived`: a value theirs' recompute wrote, not merged; its owner
-         * is recomputed.
+         * is recomputed. `unit`: a property that is one thing with others
+         * of its object (DocumentObject::getMergeUnit, sec 31.5) and goes
+         * by the side picked for the conflict whose `key` it has.
          */
         std::string kind;
-        /// `set`, `addprop`, `delprop`, `create`, `remove`, or `revive`: an
-        /// object ours removed and theirs changed.
+        /// `set`, `addprop`, `delprop`, `create`, `remove`, `revive`: an
+        /// object ours removed and theirs changed, or `unit`: the conflict
+        /// of such properties together, which writes nothing itself.
         std::string op;
         /// What a pick names it by: `<object>.<property>`, `.<property>` for
         /// the document's own, `view:<object>.<property>`, `<object>`.

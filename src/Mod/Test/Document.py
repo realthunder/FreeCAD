@@ -6067,6 +6067,110 @@ class TransactionBranchCases(unittest.TestCase):
         self.assertFalse([o.Name for o in doc.Objects if "Invalid" in o.State])
         self.assertFalse([o.Name for o in doc.Objects if "Touched" in o.State])
 
+    def testASketchIsMergedAsOneThing(self):
+        # Sec 31.5: a sketch's constraints name its geometry by its place in
+        # the list, so the two properties are one thing. Merged as two --
+        # one side's Geometry kept, the other's Constraints taken -- a
+        # constraint ended on a line that was gone, or on the line that had
+        # moved into its place, with nothing asked and nothing failed. They
+        # are one conflict, and go together by the side picked.
+        import Part
+        import Sketcher
+        from FreeCAD import Vector as V
+
+        def model(name, ours, theirs):
+            doc = self.track(FreeCAD.newDocument(name))
+            doc.UndoMode = 1
+            doc.openTransaction("base")
+            sk = doc.addObject("Sketcher::SketchObject", "Sketch")
+            sk.addGeometry(Part.LineSegment(V(0, 0, 0), V(10, 0, 0)))
+            sk.addGeometry(Part.LineSegment(V(10, 0, 0), V(10, 10, 0)))
+            sk.addGeometry(Part.LineSegment(V(20, 0, 0), V(30, 0, 0)))
+            sk.addGeometry(Part.LineSegment(V(40, 0, 0), V(50, 0, 0)))
+            sk.addConstraint(Sketcher.Constraint("Coincident", 0, 2, 1, 1))
+            doc.addObject("App::FeaturePython", "Other").addProperty("App::PropertyFloat", "T")
+            doc.recompute()
+            doc.commitTransaction()
+            doc.saveAs(os.path.join(self.dir, name + ".FCStd"))
+            doc.createTransactionBranch("side")
+            doc.switchTransactionBranch("side")
+            doc.openTransaction("theirs")
+            theirs(doc)
+            doc.recompute()
+            doc.commitTransaction()
+            doc.switchTransactionBranch("main")
+            doc.openTransaction("ours")
+            ours(doc)
+            doc.recompute()
+            doc.commitTransaction()
+            return doc
+
+        def state(doc):
+            sk = doc.Sketch
+            ids = [sk.getGeometryId(i) for i in range(len(sk.Geometry))]
+            # A constraint by the geometry it is on, not by its place.
+            on = lambda g: ids[g] if 0 <= g < len(ids) else ("none" if g < -100 else "gone")
+            return ids, sorted((c.Type, on(c.First), on(c.Second)) for c in sk.Constraints)
+
+        def removeThird(doc):
+            doc.Sketch.delGeometry(2)
+
+        def constrainThird(doc):
+            doc.Sketch.addConstraint(Sketcher.Constraint("DistanceX", 2, 1, 2, 2, 10))
+
+        # Ours removes the third line, which nothing constrains; theirs
+        # puts a distance on it. Ours changed Geometry only, theirs
+        # Constraints only.
+        doc = model("SketchUnitTheirs", removeThird, constrainThird)
+        ours = state(doc)
+        self.assertEqual(ours, ([1, 2, 4], [("Coincident", 1, 2)]))
+        preview = doc.previewTransactionMerge("side")
+        rows = [(c["kind"], c["op"], c["key"], c["prop"]) for c in preview["changes"]]
+        self.assertEqual(preview["conflicts"], 1, rows)
+        self.assertIn(("conflict", "unit", "Sketch.Geometry", "Geometry"), rows)
+        self.assertEqual(
+            sorted(r for r in rows if r[0] == "unit"),
+            [
+                ("unit", "set", "Sketch.Geometry", "Constraints"),
+                ("unit", "set", "Sketch.Geometry", "Geometry"),
+            ],
+        )
+        self.assertFalse([r for r in rows if r[0] == "take" and r[3] in ("Geometry", "Constraints")])
+        # Nobody picked: nothing moves.
+        refused = doc.mergeTransactionBranch("side")
+        self.assertEqual([c["key"] for c in refused["unresolved"]], ["Sketch.Geometry"])
+        self.assertEqual(state(doc), ours)
+        # Theirs: the sketch is theirs, whole -- the line back, the distance
+        # on it and not on the next.
+        merged = doc.mergeTransactionBranch("side", {"Sketch.Geometry": "theirs"})
+        self.assertEqual(merged["unresolved"], [])
+        self.assertEqual(merged["failed"], [])
+        self.assertEqual(
+            state(doc), ([1, 2, 3, 4], [("Coincident", 1, 2), ("DistanceX", 3, 3)])
+        )
+        self.assertFalse([o.Name for o in doc.Objects if "Invalid" in o.State])
+
+        # Ours: the sketch stays ours, whole.
+        doc = model("SketchUnitOurs", removeThird, constrainThird)
+        merged = doc.mergeTransactionBranch("side", {"Sketch.Geometry": "ours"})
+        self.assertEqual(merged["unresolved"], [])
+        self.assertEqual(state(doc), ([1, 2, 4], [("Coincident", 1, 2)]))
+
+        # A sketch only one side changed is taken as it was, with nothing
+        # asked: ours changed another object.
+        def elsewhere(doc):
+            doc.Other.T = 3.0
+
+        doc = model("SketchUnitTaken", elsewhere, constrainThird)
+        preview = doc.previewTransactionMerge("side")
+        self.assertEqual(preview["conflicts"], 0, preview["changes"])
+        merged = doc.mergeTransactionBranch("side")
+        self.assertEqual(merged["unresolved"], [])
+        self.assertEqual(
+            state(doc), ([1, 2, 3, 4], [("Coincident", 1, 2), ("DistanceX", 3, 3)])
+        )
+        self.assertEqual(doc.Other.T, 3.0)
+
     def testASheetsCellsFollowTheBranch(self):
         # Sec 31.1: a value put back from the log is the whole of what the
         # property holds. A sheet's cells were read into the cells that

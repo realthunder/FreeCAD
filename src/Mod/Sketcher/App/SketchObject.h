@@ -104,6 +104,9 @@ public:
     /** @name methods override Feature */
     //@{
     short mustExecute() const override;
+    /// The geometry, the constraints that name it by its place, and the
+    /// external geometry they name the same way: one thing to a merge.
+    std::vector<std::string> getMergeUnit(const char* prop) const override;
     /// recalculate the Feature (if no recompute is needed see also solve() and solverNeedsUpdate
     /// boolean)
     App::DocumentObjectExecReturn* execute() override;

@@ -1507,6 +1507,11 @@ void DocumentObject::onDocumentRestored()
         Visibility.setStatus(Property::NoModify,true);
 }
 
+std::vector<std::string> DocumentObject::getMergeUnit(const char*) const
+{
+    return {};
+}
+
 void DocumentObject::onUndoRedoFinished()
 {
 

@@ -248,6 +248,89 @@ def run():
             check("next: merged", result["seq"] > 0 and not result["unresolved"])
             check("next: volume %g, white %r" % (box.Shape.Volume, colour(box)),
                   abs(box.Shape.Volume - 30 * 5 * 20) < 1e-6 and colour(box) == (1.0, 1.0, 1.0))
+        # Sec 31.5: a sketch is one thing to a merge. Ours removes a line,
+        # theirs constrains it: one conflict in the dialog, the properties
+        # under it going the way it is picked.
+        import tempfile
+
+        import Part
+        import Sketcher
+
+        sdoc = App.newDocument("MergeSketch")
+        sdoc.UndoMode = 1
+        sdoc.openTransaction("base")
+        sk = sdoc.addObject("Sketcher::SketchObject", "Sketch")
+        for x in (0, 20, 40, 60):
+            sk.addGeometry(Part.LineSegment(App.Vector(x, 0, 0), App.Vector(x + 10, 0, 0)))
+        sdoc.recompute()
+        sdoc.commitTransaction()
+        settle()
+        sdoc.saveAs(os.path.join(tempfile.mkdtemp(prefix="mergesketch-"), "sketch.FCStd"))
+        sdoc.createTransactionBranch("side")
+        sdoc.switchTransactionBranch("side")
+        sdoc.openTransaction("theirs")
+        sdoc.Sketch.addConstraint(Sketcher.Constraint("DistanceX", 2, 1, 2, 2, 10))
+        sdoc.recompute()
+        sdoc.commitTransaction()
+        settle()
+        sdoc.switchTransactionBranch("main")
+        sdoc.openTransaction("ours")
+        sdoc.Sketch.delGeometry(2)
+        sdoc.recompute()
+        sdoc.commitTransaction()
+        settle()
+        App.setActiveDocument(sdoc.Name)
+        settle()
+        sdock, _ = panel()
+
+        def driveUnit(seen):
+            dialog = QtWidgets.QApplication.activeModalWidget()
+            if dialog is None or dialog.objectName() != "TransactionMergeDialog":
+                seen["found"] = False
+                if dialog is not None:
+                    dialog.reject()
+                return
+            seen["found"] = True
+            tree = dialog.findChild(QtWidgets.QTreeWidget)
+            rows = []
+            for i in range(tree.topLevelItemCount()):
+                item = tree.topLevelItem(i)
+                side = tree.itemWidget(item, column(tree, "Takes"))
+                rows.append((item.text(0), item.text(2),
+                             side.currentText() if side is not None
+                             else item.text(column(tree, "Takes"))))
+                if side is not None and item.text(0).startswith("conflict"):
+                    side.setCurrentIndex(side.findText("theirs"))
+            seen["rows"] = rows
+            for b in dialog.findChildren(QtWidgets.QPushButton):
+                if b.objectName() == "merge":
+                    b.click()
+                    return
+            dialog.reject()
+
+        seen = {}
+        QtCore.QTimer.singleShot(300, lambda: driveUnit(seen))
+        QtCore.QMetaObject.invokeMethod(sdock, "mergeBranch", QtCore.Qt.DirectConnection,
+                                        QtCore.Q_ARG(str, "side"))
+        settle()
+        shown = seen.get("rows") or []
+        check("sketch: one conflict in the dialog, with a side (%r)" % shown,
+              seen.get("found") is True
+              and [r[:2] for r in shown if r[0].startswith("conflict")]
+              == [("conflict unit", "Geometry")])
+        check("sketch: its properties under it, going as it goes",
+              sorted(r for r in shown if r[0].startswith("unit"))
+              == [("unit set", "Constraints", "as Sketch.Geometry"),
+                  ("unit set", "Geometry", "as Sketch.Geometry")])
+        sk = sdoc.Sketch
+        ids = [sk.getGeometryId(i) for i in range(len(sk.Geometry))]
+        check("sketch: merged as theirs, the distance on the line it was put on (%r, %r)"
+              % (ids, [(c.Type, c.First) for c in sk.Constraints]),
+              ids == [1, 2, 3, 4] and [(c.Type, ids[c.First]) for c in sk.Constraints]
+              == [("DistanceX", 3)]
+              and not [o.Name for o in sdoc.Objects if "Invalid" in o.State])
+        App.closeDocument(sdoc.Name)
+        settle()
     except Exception:
         lines.append("FAIL exception\n" + traceback.format_exc())
     finally:

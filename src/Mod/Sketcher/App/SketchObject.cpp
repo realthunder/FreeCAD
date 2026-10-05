@@ -249,6 +249,20 @@ void SketchObject::setupObject()
     inherited::setupObject();
 }
 
+std::vector<std::string> SketchObject::getMergeUnit(const char* prop) const
+{
+    // A constraint says which geometry it is on by a place in Geometry, or
+    // in ExternalGeo below zero. A merge that took one side's Constraints
+    // and kept the other's Geometry left a constraint on a line that is
+    // gone, or on the line that moved into its place
+    // (docs/TransactionLog.md sec 31.1).
+    static const std::vector<std::string> unit {"Geometry", "Constraints", "ExternalGeo",
+                                                "ExternalGeometry"};
+    if (prop && std::find(unit.begin(), unit.end(), prop) != unit.end())
+        return unit;
+    return Part::Part2DObject::getMergeUnit(prop);
+}
+
 short SketchObject::mustExecute() const
 {
     if (Geometry.isTouched())

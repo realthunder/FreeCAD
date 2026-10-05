@@ -502,6 +502,16 @@ public:
     /* Return true to cause PropertyView to show linked object's property */
     virtual bool canLinkProperties() const {return true;}
 
+    /** The properties of this object a merge takes or leaves together
+     * (docs/TransactionLog.md sec 31.5), `prop` being one of them: what
+     * is one thing said in several properties, each meaning nothing
+     * without the others -- a sketch's constraints name its geometry by
+     * its place in the list. The first is the one the unit is known by.
+     * Empty for a property that stands alone, which is every property
+     * unless an object says otherwise.
+     */
+    virtual std::vector<std::string> getMergeUnit(const char* prop) const;
+
     /* Return true to bypass duplicate label checking */
     virtual bool allowDuplicateLabel() const {return false;}
 

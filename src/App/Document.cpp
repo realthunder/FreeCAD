@@ -8513,6 +8513,122 @@ void planMerge(Document& doc, const std::string& name, int64_t version, MergePla
         }
         add(std::move(c));
     }
+
+    // Sec 31.5: what an object says is one thing in several properties
+    // (DocumentObject::getMergeUnit) is taken or left together. Each
+    // property alone may have been changed by one side only, and so
+    // "taken" above -- and one side's constraints then sit on the other's
+    // geometry. Where both sides changed something of a unit and do not
+    // end the same, it is one conflict, known by the unit's first
+    // property, and the properties follow the side picked for it.
+    std::map<std::pair<long, std::string>, std::vector<std::string>> units;
+    for (const NetChange* net : {&plan.theirs, &plan.ours}) {
+        for (const auto& key : net->valueOrder) {
+            if (std::get<0>(key) != "obj")
+                continue;
+            DocumentObject* obj = doc.getObjectByID(std::get<1>(key));
+            if (!obj || created.count(std::get<1>(key)))
+                continue;
+            auto unit = obj->getMergeUnit(std::get<2>(key).c_str());
+            if (unit.size() > 1) {
+                const std::string first = unit.front();
+                units.emplace(std::make_pair(std::get<1>(key), first), std::move(unit));
+            }
+        }
+    }
+    for (const auto& kv : units) {
+        const long cid = kv.first.first;
+        struct State
+        {
+            std::string base, ours, theirs, ptype;
+        };
+        std::map<std::string, State> states;
+        std::vector<std::string> here, there;
+        bool differ = false;
+        for (const auto& prop : kv.second) {
+            const NetChange::Key key {"obj", cid, prop};
+            auto moved = [&](const NetChange& net) -> const NetChange::Val* {
+                auto it = net.values.find(key);
+                if (it == net.values.end() || it->second.derived || !netChanged(it->second)
+                        || !it->second.atStart || !it->second.atEnd)
+                    return nullptr;
+                return &it->second;
+            };
+            const NetChange::Val* t = moved(plan.theirs);
+            const NetChange::Val* o = moved(plan.ours);
+            if (!t && !o)
+                continue;
+            // Each side's value where it ends: its own, or the base's
+            // where it left the property as it was.
+            State s;
+            s.base = t ? t->before : o->before;
+            s.theirs = t ? t->after : s.base;
+            s.ours = o ? o->after : s.base;
+            s.ptype = t ? t->ptype : o->ptype;
+            if (t)
+                there.push_back(prop);
+            if (o)
+                here.push_back(prop);
+            differ = differ || s.theirs != s.ours;
+            states.emplace(prop, std::move(s));
+        }
+        if (here.empty() || there.empty() || !differ)
+            continue;
+        pv.changes.erase(std::remove_if(pv.changes.begin(), pv.changes.end(),
+                                        [&](const Document::MergeChange& c) {
+                                            return c.ckind == "obj" && c.cid == cid
+                                                && !c.derived && states.count(c.prop);
+                                        }),
+                         pv.changes.end());
+        auto listed = [](const std::vector<std::string>& props) {
+            std::string out;
+            for (const auto& p : props)
+                out += (out.empty() ? "" : ", ") + p;
+            return out;
+        };
+        Document::MergeChange unit;
+        unit.kind = "conflict";
+        unit.op = "unit";
+        unit.ckind = "obj";
+        unit.cid = cid;
+        unit.object = nameOf(cid);
+        unit.prop = kv.first.second;
+        unit.key = unit.object + "." + unit.prop;
+        unit.note = "one thing, taken or left together: changed here " + listed(here)
+                  + ", there " + listed(there);
+        auto first = states.find(unit.prop);
+        if (first != states.end()) {
+            unit.base = first->second.base;
+            unit.ours = first->second.ours;
+            unit.theirs = first->second.theirs;
+            unit.ptype = first->second.ptype;
+        }
+        const std::string key = unit.key;
+        pv.changes.push_back(std::move(unit));
+        for (const auto& st : states) {
+            if (st.second.theirs == st.second.ours)
+                continue;
+            Document::MergeChange c;
+            c.kind = "unit";
+            c.op = "set";
+            c.ckind = "obj";
+            c.cid = cid;
+            c.object = nameOf(cid);
+            c.prop = st.first;
+            c.key = key;
+            c.ptype = st.second.ptype;
+            c.base = st.second.base;
+            c.ours = st.second.ours;
+            c.theirs = st.second.theirs;
+            c.note = "goes with " + key;
+            pv.changes.push_back(std::move(c));
+        }
+    }
+    if (!units.empty()) {
+        pv.conflicts = 0;
+        for (const auto& c : pv.changes)
+            pv.conflicts += c.kind == "conflict";
+    }
 }
 
 } // namespace
@@ -8731,9 +8847,23 @@ Document::MergeResult Document::mergeBranch(const std::string& branch,
             touch.insert(c.cid);
             continue;
         }
-        const bool conflict = c.kind == "conflict" || c.kind == "view";
+        // A unit's properties (sec 31.5) go by the side picked for the unit.
+        const bool conflict = c.kind == "conflict" || c.kind == "view" || c.kind == "unit";
         if (c.kind != "take" && !(conflict && side[c.key] == "theirs"))
             continue;
+        if (c.op == "unit")
+            continue;   // the unit's own line: its properties are the next ones
+        if (c.kind == "unit") {
+            // Theirs' value where theirs ends -- the base's, for a property
+            // ours changed and theirs left.
+            NetChange::Val v;
+            v.atStart = true;
+            v.atEnd = true;
+            v.after = c.theirs;
+            v.ptype = c.ptype;
+            take(Key {c.ckind, c.cid, c.prop}, v);
+            continue;
+        }
         if (c.op == "create") {
             const NetChange::Obj& o = plan.theirs.objects[c.cid];
             creates.push_back({c.cid, o.cname, o.ctype});
