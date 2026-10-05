@@ -13302,11 +13302,106 @@ the log off, through "Merge from file...".
 file whose objects were all made again elsewhere under the same names
 and types would be read as the same objects changed. A file with no
 `Version` -- never saved with its history, and not a copy made here --
-has no base and is refused: comparing it against the head would be a
-guess at where it came from.
+has no base. As first built it was refused; 30.22 is what it is now.
 
 **Gates**, frozen and unfrozen each: Python 3006 OK (52 skipped frozen, 53
 unfrozen; 6 expected failures; +1), ctest 875/875 (+1), and the GUI
 checks RC 15, BC 27, VC 18, PC 28, FC 16, VW 14, MC 28, the two-document
 check 24, the tree check 19, the author check 36 and the import check 34
 (+5).
+
+### 30.22 A file that shares no history: an independent branch (user, 2026-10-05)
+
+**Ruled (user):** a file with no `Version`, or one that names no save
+this history holds, is still allowed to merge -- as an independent
+branch, which can still be deduplicated by content hash.
+
+So nothing is refused for sharing no history: not a file with no
+history that names no save of this store's (or one its rows no longer
+reach), and not a file with a history that holds no row of this one's.
+What is still refused is another branch of a copy, asked for by name,
+that shares none: a name asks for that branch.
+
+**The branch.** It hangs off no row: `from_seq` 0, its first row's parent
+0, its `target` the branch of the document asked. The replay's document
+is an empty one of this file -- joined to its history, on its string
+table and its blob store -- made by `_importReplay` when the base is no
+row. The file as it is comes as one row, by `_importStateRow`, as 30.21
+brings a state; `independent` is in the result, in the import's record
+and with the branch's maps. Brought again unchanged it is nothing, the
+`Document.xml` hash saying so (G5); changed, one more row on the same
+branch. A file with a history that shares none is brought the same way,
+as the file it is now: its rows are of another history, and are not
+replayed.
+
+**An object that is this file's.** On a branch from nothing there is no
+object to be the same as. But a file that lost its `Version` is still
+this file's kin, and the file's own tables say so: an object of the file
+whose id this file gave that very name (27.40 item 3, one name to one id
+over every version and branch) is that object, and comes under both --
+unless the document asked has it as another type. Anything else is the
+file's own, under an id and a name of this file. Ids are handed out from
+where a file's counter starts, which is not the same from file to file,
+so a file that is no kin has no such pair by chance worth weighing.
+
+**The merge, with no base.** `mergeBaseOf` says -1 for two branches that
+share no row and did not start from one state. For theirs a branch from
+nothing that started empty -- every object's create in its rows -- that
+was "share no history in the log"; it is now merged by what the two
+hold (`planMerge`, `independentOurs`):
+
+- theirs is its rows, from the first;
+- ours is what the document holds: for every value theirs has of an
+  object or a property ours has too, ours' own value, as if ours had made
+  it as well. The log names a value by its content, so the same content
+  is the same value -- `same`, nothing to do -- and any other is a
+  `conflict`, for a side to be picked. Ours' value is found by the last
+  op that wrote it, or stored now when no row ever did (a document opened
+  from a file);
+- a value ours' last write of was a recompute's, or that is an output, is
+  derived as on any merge: theirs is taken and the merge recomputes;
+- what only theirs has comes; **what only ours has stays**. With no base,
+  not having a thing is not having removed it.
+
+It is never a fast-forward. The merge row is the ordinary one, its
+second parent the head merged in, so the next merge of the same branch
+has a base: that one.
+
+When this document itself started from nothing -- made new, never opened
+from a file -- the two do share a start, `mergeBaseOf` says 0, and 28
+does the same work from the rows of both: the same answers, by the older
+road.
+
+**The panel** offers such a file like any other and says in the report
+view that it came as an independent branch; the merge dialog is the one
+any branch gets.
+
+**Tests.** Gtest `aForkIsImportedAsABranch`: a file with a history of
+its own that shares nothing was refused and is now offered as
+independent, brought as one row on a branch that hangs off no row, and
+merged, its object beside this file's; again, nothing.
+`aFileWithNoHistoryIsImportedAsOneRow`: a copy that lost its `Version`
+where there is no log, with a value changed and an object added --
+offered and brought as independent; its row creates the objects this
+file knows under the ids this file knows them by, and the new one under
+a new id; the preview has one conflict, the value, the rest `same` and
+the new object `take`; refused without a side, merged with one; again,
+nothing, and nothing to merge. Python
+`testAFileThatSharesNoHistoryIsMergedByWhatItHolds`: a box and a
+cylinder saved with the log off; the copy made longer and taller, a
+sphere added, the cylinder removed; this file opened with a log -- its
+history starts at the file -- and made lower. The base is -1; the length
+and the height conflict, the width is the same, the sphere comes, the
+shape this file's recompute wrote is no conflict, the cylinder is not
+named; merged with a side each -- the copy's length, this file's height,
+the volume recomputed, the sphere in, the cylinder still there. The Gui
+check has five more (39) for a stranger through "Merge from file...".
+
+**Left.** Kinship is by id and name; a file that is kin but whose
+objects were renumbered -- pasted into a new document elsewhere -- comes
+as all its own, and its objects beside this file's.
+
+**Gates**, frozen and unfrozen each: Python 3007 OK (52 skipped frozen, 53
+unfrozen; 6 expected failures; +1), ctest 875/875, and the GUI checks RC
+15, BC 27, VC 18, PC 28, FC 16, VW 14, MC 28, the two-document check 24,
+the tree check 19, the author check 36 and the import check 39 (+5).

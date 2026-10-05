@@ -307,20 +307,41 @@ def run():
                   seen.get("found") is not True and len(doc.getTransactionLog()) == before
                   and any("Nothing new" in text for text in status(dock)))
 
-            # A file that shares nothing is told apart.
+            # A file that shares nothing is not refused (sec 30.22): it
+            # comes as an independent branch and is merged by what it holds.
             alone = App.newDocument("Alone")
             alone.addObject("Part::Box", "Box")
+            alone.addObject("Part::Cone", "Cone")
             alone.recompute()
             strange = os.path.join(where, "alone.FCStd")
             alone.saveAs(strange)
             App.closeDocument(alone.Name)
             App.setActiveDocument(doc.Name)
             settle()
+            offered = doc.getTransactionForkBranches(strange)
+            current = [b for b in offered if b["current"]]
+            check("a stranger: offered as independent (%r)" % current,
+                  len(current) == 1 and current[0]["independent"]
+                  and current[0]["base"] == 0 and current[0]["ahead"] == 1)
+            objects = len(doc.Objects)
+            seen = bring(dock, strange, pick="")
+            check("a stranger: dialog shown (%r)" % seen.get("title"),
+                  seen.get("found") is True and "alone" in (seen.get("title") or ""))
+            branch = [b for b in doc.getTransactionBranches() if b["name"] == "alone"]
+            check("a stranger: a branch that hangs off no row",
+                  len(branch) == 1 and branch[0]["from_seq"] == 0)
+            # Its box is not this file's box: both are there, and its cone.
+            check("a stranger: its objects beside this file's (%r)"
+                  % sorted(o.Name for o in doc.Objects),
+                  len(doc.Objects) == objects + 2 and doc.getObject("Cone") is not None
+                  and abs(doc.getObject("Box").Length.Value - 44) < 1e-9)
+            check("a stranger: everything computed",
+                  not [o.Name for o in doc.Objects if "Touched" in o.State or "Invalid" in o.State])
             before = len(doc.getTransactionLog())
             seen = bring(dock, strange)
-            check("a stranger: no dialog, nothing written, and the panel says why",
+            check("a stranger, again: nothing",
                   seen.get("found") is not True and len(doc.getTransactionLog()) == before
-                  and any("shares no history" in text for text in status(dock)))
+                  and any("Nothing new" in text for text in status(dock)))
         shutil.rmtree(where, ignore_errors=True)
     except Exception:
         lines.append("FAIL exception\n" + traceback.format_exc())

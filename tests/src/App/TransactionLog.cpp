@@ -5169,8 +5169,41 @@ TEST_F(TransactionLogTest, aForkIsImportedAsABranch)
     ASSERT_TRUE(stranger->saveAs(strange.c_str()));
     App::GetApplication().closeDocument("txnlogStranger");
     App::GetApplication().setActiveDocument(doc());
-    EXPECT_THROW(doc()->importFork(strange), Base::Exception);
     EXPECT_THROW(doc()->importFork(fork, "no-such-branch"), Base::Exception);
+
+    // A file that shares nothing is not refused (sec 30.22): what it is
+    // comes as an independent branch, one that hangs off no row, and is
+    // merged by what the two hold -- its object beside this file's.
+    for (const auto& b : doc()->forkBranches(strange)) {
+        if (b.current) {
+            EXPECT_TRUE(b.independent);
+            EXPECT_EQ(b.base, 0);
+            EXPECT_EQ(b.ahead, 1u);
+        }
+    }
+    const auto alone = doc()->importFork(strange);
+    EXPECT_TRUE(alone.independent);
+    EXPECT_EQ(alone.base, 0);
+    EXPECT_EQ(alone.rows, 1u) << alone.reason;
+    EXPECT_EQ(alone.stoppedAt, 0) << alone.reason;
+    EXPECT_EQ(alone.branch, "txnlog-import-stranger");
+    App::LogBranch apart;
+    ASSERT_TRUE(store.findBranch(alone.branch, apart));
+    EXPECT_EQ(apart.fromSeq, 0);
+    {
+        const auto chain = store.chain(apart.head);
+        ASSERT_FALSE(chain.empty());
+        EXPECT_EQ(chain.front().parent, 0);
+    }
+    const size_t objects = doc()->getObjects().size();
+    const auto joined = doc()->mergeBranch(alone.branch);
+    EXPECT_GT(joined.seq, 0);
+    EXPECT_TRUE(joined.unresolved.empty());
+    EXPECT_TRUE(doc()->getObject("X"));
+    EXPECT_EQ(doc()->getObjects().size(), objects + 1);
+    EXPECT_EQ(featureOf(doc(), "New")->Integer.getValue(), 100);
+    // Brought again, unchanged: nothing.
+    EXPECT_EQ(doc()->importFork(strange).rows, 0u);
 
     Base::FileInfo(path).deleteFile();
     Base::FileInfo(fork).deleteFile();
@@ -5442,17 +5475,99 @@ TEST_F(TransactionLogTest, aFileWithNoHistoryIsImportedAsOneRow)
     EXPECT_EQ(featureOf(doc(), "New")->Integer.getValue(), 100);
     EXPECT_EQ(featureOf(doc(), "Obj")->Integer.getValue(), 9);
 
-    // A file with no history that names no save of this one's is refused,
-    // and so is a branch asked of a file that has none.
-    App::DocumentParams::setTransactionLog(0);
-    App::Document* stranger = App::GetApplication().newDocument("txnlogStranger", "stranger");
-    stranger->addObject("App::FeatureTest", "X");
-    ASSERT_TRUE(stranger->saveAs(strange.c_str()));
-    App::GetApplication().closeDocument("txnlogStranger");
-    App::DocumentParams::setTransactionLog(2);
-    App::GetApplication().setActiveDocument(doc());
-    EXPECT_THROW(doc()->importFork(strange), Base::Exception);
+    // A branch asked of a file that has none is refused.
     EXPECT_THROW(doc()->importFork(fork, "main"), Base::Exception);
+
+    // Sec 30.22: a file that names no save of this history is not refused.
+    // This one is the file's kin all the same -- a copy that lost its
+    // `Version` where there is no log -- with a value changed and an object
+    // added. It comes as an independent branch, from nothing; an object
+    // whose id and name are one of this file's is that object.
+    ASSERT_TRUE(doc()->saveCopy(strange.c_str(), false));
+    {
+        App::DocumentParams::setTransactionLog(0);
+        App::Document* other = App::GetApplication().openDocument(strange.c_str());
+        ASSERT_TRUE(other);
+        const std::string name = other->getName();
+        other->removeDynamicProperty("Version");
+        other->removeDynamicProperty("History");
+        other->removeDynamicProperty("Branch");
+        featureOf(other, "Obj")->Integer.setValue(50);
+        other->addObject("App::FeatureTest", "Extra");
+        ASSERT_TRUE(other->save());
+        App::GetApplication().closeDocument(name.c_str());
+        App::DocumentParams::setTransactionLog(2);
+        App::GetApplication().setActiveDocument(doc());
+    }
+    App::FileHistory::Saved lost;
+    ASSERT_TRUE(App::FileHistory::savedAs(strange, lost));
+    EXPECT_TRUE(lost.saveId.empty());
+    offered = doc()->forkBranches(strange);
+    ASSERT_EQ(offered.size(), 1u);
+    EXPECT_TRUE(offered[0].independent);
+    EXPECT_EQ(offered[0].base, 0);
+    EXPECT_EQ(offered[0].ahead, 1u);
+    const auto kin = doc()->importFork(strange);
+    EXPECT_TRUE(kin.independent);
+    EXPECT_EQ(kin.base, 0);
+    EXPECT_EQ(kin.rows, 1u) << kin.reason;
+    EXPECT_EQ(kin.stoppedAt, 0) << kin.reason;
+    EXPECT_TRUE(kin.renamed.empty());
+    App::LogBranch apart;
+    ASSERT_TRUE(store.findBranch(kin.branch, apart));
+    EXPECT_EQ(apart.fromSeq, 0);
+    {
+        // The whole of it in one row that follows no row, the objects this
+        // file knows under the ids it knows them by.
+        const auto chain = store.chain(apart.head);
+        ASSERT_FALSE(chain.empty());
+        EXPECT_EQ(chain.front().parent, 0);
+        std::map<std::string, long> made;
+        for (const auto& t : chain) {
+            for (const auto& o : store.ops(t.seq)) {
+                if (o.op == "create")
+                    made[o.cname] = o.cid;
+            }
+        }
+        EXPECT_EQ(made["Obj"], featureOf(doc(), "Obj")->getID());
+        EXPECT_EQ(made["New"], featureOf(doc(), "New")->getID());
+        EXPECT_EQ(made[theirNew], featureOf(doc(), theirNew.c_str())->getID());
+        ASSERT_TRUE(made.count("Extra"));
+        EXPECT_FALSE(doc()->getObjectByID(made["Extra"]));
+    }
+    // Merged with no base: what is the same in both is the same, what
+    // differs is for a side to be picked, what only the file has comes, and
+    // nothing here is removed for the file not having it.
+    // (Here both started from nothing, this document having been made new:
+    // the base is no row, and what each holds is in its own rows. A
+    // document opened from a file has no such rows; the Python case
+    // testAFileThatSharesNoHistoryIsMergedByWhatItHolds is that one.)
+    const auto preview = doc()->previewMerge(kin.branch);
+    EXPECT_EQ(preview.base, 0);
+    EXPECT_FALSE(preview.fastForward);
+    EXPECT_EQ(preview.conflicts, 1u);
+    std::map<std::string, std::string> kinds;
+    for (const auto& c : preview.changes)
+        kinds[c.key] = c.kind;
+    EXPECT_EQ(kinds["Obj.Integer"], "conflict");
+    EXPECT_EQ(kinds["Obj.String"], "same");
+    EXPECT_EQ(kinds["Extra"], "take");
+    const auto refused = doc()->mergeBranch(kin.branch);
+    EXPECT_EQ(refused.seq, 0);
+    EXPECT_EQ(refused.unresolved.size(), 1u);
+    const size_t objects = doc()->getObjects().size();
+    const auto joined = doc()->mergeBranch(kin.branch, {{"Obj.Integer", "theirs"}});
+    EXPECT_GT(joined.seq, 0);
+    EXPECT_TRUE(joined.unresolved.empty());
+    EXPECT_EQ(featureOf(doc(), "Obj")->Integer.getValue(), 50);
+    EXPECT_STREQ(featureOf(doc(), "Obj")->String.getValue(), "ours");
+    EXPECT_TRUE(doc()->getObject("Extra"));
+    EXPECT_EQ(doc()->getObjects().size(), objects + 1);
+    EXPECT_EQ(featureOf(doc(), theirNew.c_str())->Integer.getValue(), 8);
+    // The same file again is nothing; and once merged, nothing to merge.
+    EXPECT_EQ(doc()->importFork(strange).rows, 0u);
+    const auto after = doc()->previewMerge(kin.branch);
+    EXPECT_TRUE(after.changes.empty());
 
     for (const auto& file : {path, fork, strange})
         Base::FileInfo(file).deleteFile();

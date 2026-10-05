@@ -630,6 +630,9 @@ public:
         /// when none is named (sec 30.14 F6).
         bool current {false};
         bool closed {false};
+        /// It shares no history with this file, and is offered all the same
+        /// (sec 30.22): what it is now comes as a branch from nothing.
+        bool independent {false};
         /// The row here its history parts from this file's, 0 when the two
         /// share none; and how many operations it has made since.
         int64_t base {0};
@@ -655,6 +658,9 @@ public:
         size_t versions {0};
         /// The branch is an earlier import's, continued (F7).
         bool extended {false};
+        /// The branch hangs off no row of this file (sec 30.22): the file
+        /// shares no history with it, or names no save of it.
+        bool independent {false};
         /// The copy's row the import stopped at, 0 when it took them all,
         /// and why (F8). The rows before it are in. -1 when what could not
         /// come is the file as found, which is a state and no row.
@@ -689,8 +695,15 @@ public:
      * the branch that was the file's, then that one row, then what it has
      * done since.
      *
-     * Throws when the file shares no history with this one, names no save
-     * of this file's, or the branch is not there.
+     * A file that shares no history with this one -- none in its rows, no
+     * save of this file's named by its `Version` -- comes all the same (sec
+     * 30.22), as an independent branch: what it is, as one row on a branch
+     * from nothing, an object of it taken for one of this file's where its
+     * id and its name are that object's. mergeBranch() merges such a branch
+     * by what the two documents hold, with no base to compare against.
+     *
+     * Throws when the file cannot be read, or a branch asked for by name
+     * is not there or shares no history.
      */
     ImportResult importFork(const std::string& path, const std::string& branch = std::string());
 
@@ -1441,12 +1454,14 @@ protected:
     /// are added to. Throws when something of it cannot come.
     void _applyForeignState(Document& from, std::map<long, long>& ids,
                             std::map<std::string, std::string>& names,
-                            std::map<std::string, std::string>& renamed);
+                            std::map<std::string, std::string>& renamed,
+                            const Document* kin = nullptr);
     /// _applyForeignState() as one row of this document's log, the file its
     /// author. False, the row rolled back and `result` saying why, when it
     /// could not come.
     bool _importStateRow(Document& from, const std::string& file, std::map<long, long>& ids,
-                         std::map<std::string, std::string>& names, ImportResult& result);
+                         std::map<std::string, std::string>& names, ImportResult& result,
+                         const Document* kin = nullptr);
     /// importFork() of a file with no history (sec 30.19): one row against
     /// the save its `Version` names.
     ImportResult _importState(const std::string& path, const std::string& file,

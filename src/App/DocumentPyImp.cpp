@@ -1493,6 +1493,7 @@ PyObject* DocumentPy::getTransactionForkBranches(PyObject *args)
             d.setItem("name", Py::String(b.name));
             d.setItem("current", Py::Boolean(b.current));
             d.setItem("closed", Py::Boolean(b.closed));
+            d.setItem("independent", Py::Boolean(b.independent));
             d.setItem("base", Py::Long(static_cast<long long>(b.base)));
             d.setItem("ahead", Py::Long(static_cast<unsigned long long>(b.ahead)));
             list.append(d);
@@ -1519,6 +1520,7 @@ PyObject* DocumentPy::importTransactionFork(PyObject *args)
         d.setItem("skipped", Py::Long(static_cast<unsigned long long>(result.skipped)));
         d.setItem("versions", Py::Long(static_cast<unsigned long long>(result.versions)));
         d.setItem("extended", Py::Boolean(result.extended));
+        d.setItem("independent", Py::Boolean(result.independent));
         d.setItem("stopped_at", Py::Long(static_cast<long long>(result.stoppedAt)));
         d.setItem("reason", Py::String(result.reason));
         Py::Dict renamed;

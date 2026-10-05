@@ -8142,7 +8142,74 @@ struct MergePlan
     NetChange theirs;
     NetChange ours;
     std::string oursName;
+    /// The two share no base (sec 30.22): theirs is a branch from nothing,
+    /// and ours is weighed by what it holds.
+    bool independent {false};
 };
+
+/** Ours, for a merge with no base (docs/TransactionLog.md sec 30.22). An
+ * independent branch -- a file that shares no history with this one,
+ * brought as what it is -- has made everything it holds, and there is no
+ * state the two started from to say what ours did. So ours is what the
+ * document holds: for every value theirs has of an object or a property
+ * ours has too, ours' own, as if ours had made it as well. The same content
+ * is then the same value -- one hash, the log's values being named by
+ * their content -- and anything else is for a side to be picked. A value
+ * ours' last write of was a recompute's is derived, as on any merge. What
+ * ours has and theirs has not is left alone: with no base, not having a
+ * thing is not having removed it.
+ */
+void independentOurs(Document& doc, TransactionLog& log, MergePlan& plan)
+{
+    auto& store = log.store();
+    TransactionLogCore& core = TransactionLogCore::of(doc.getFileHistory());
+    const CaptureConfig config(doc);
+    const int64_t head = log.head();
+    for (const auto& key : plan.theirs.valueOrder) {
+        const NetChange::Val& v = plan.theirs.values[key];
+        if (!v.atEnd || v.after.empty())
+            continue;
+        LogOp at;
+        at.ckind = std::get<0>(key);
+        at.cid = std::get<1>(key);
+        PropertyContainer* container = opContainer(doc, at);
+        Property* prop = container ? container->getPropertyByName(std::get<2>(key).c_str())
+                                   : nullptr;
+        if (!prop)
+            continue;   // theirs alone has it: it comes
+        const CapturedValue now = captureValue(config, *prop);
+        if (!now.ok)
+            continue;
+        NetChange::Val mine;
+        mine.atEnd = true;
+        mine.ptype = v.ptype;
+        LogOp last;
+        const bool logged = store.lastOpOn(at.ckind, at.cid, std::get<2>(key), 0, head, last);
+        mine.derived = (logged && last.derived)
+            || (container->getPropertyType(prop) & Prop_Output) != 0;
+        CapturedValue theirs;
+        const bool same = log.readValue(v.after, theirs) && now.fragment == theirs.fragment
+            && now.attachments.size() == theirs.attachments.size()
+            && std::equal(now.attachments.begin(), now.attachments.end(),
+                          theirs.attachments.begin(), [](const auto& a, const auto& b) {
+                              return a.name == b.name && a.bytes == b.bytes;
+                          });
+        if (same) {
+            mine.after = v.after;
+        }
+        else if (logged && last.op == "set" && !last.vafter.empty() && last.vafter != v.after) {
+            mine.after = last.vafter;
+        }
+        else {
+            // Never written in a row -- a value the file was opened with:
+            // stored now, so the preview can show it.
+            log.flush();
+            mine.after = core.putValue(now, "durable");
+        }
+        plan.ours.valueOrder.push_back(key);
+        plan.ours.values.emplace(key, std::move(mine));
+    }
+}
 
 void planMerge(Document& doc, const std::string& name, int64_t version, MergePlan& plan)
 {
@@ -8196,13 +8263,27 @@ void planMerge(Document& doc, const std::string& name, int64_t version, MergePla
     }
     const auto versions = store.versions();
     pv.base = mergeBaseOf(store, versions, pv.ours, pv.theirs);
-    if (pv.base < 0)
-        THROWM(Base::ValueError, "branches '" + mine.name + "' and '" + name
-                                     + "' share no history in the log");
-    std::string why;
-    if (!diffRows(store, versions, pv.base, pv.theirs, plan.theirs, why)
-            || !diffRows(store, versions, pv.base, pv.ours, plan.ours, why))
-        THROWM(Base::ValueError, "cannot merge branch '" + name + "': " + why);
+    if (pv.base < 0) {
+        // No row in common and no state both started from. A branch that
+        // hangs off no row and started empty holds all it is in its rows
+        // -- an independent branch (sec 30.22) -- and is merged by what the
+        // two hold. Any other shares nothing a merge can read.
+        const auto chain = store.chain(pv.theirs);
+        if (chain.empty() || chain.front().parent != 0
+                || !zeroStateOf(store, versions, chain).empty())
+            THROWM(Base::ValueError, "branches '" + mine.name + "' and '" + name
+                                         + "' share no history in the log");
+        plan.independent = true;
+        for (const auto& t : chain)
+            plan.theirs.add(store.ops(t.seq));
+        independentOurs(doc, *log, plan);
+    }
+    else {
+        std::string why;
+        if (!diffRows(store, versions, pv.base, pv.theirs, plan.theirs, why)
+                || !diffRows(store, versions, pv.base, pv.ours, plan.ours, why))
+            THROWM(Base::ValueError, "cannot merge branch '" + name + "': " + why);
+    }
 
     // What ours changed: view state and what its own recomputes wrote are
     // not changes a merge weighs (sec 28.6 Q1, Q2).
@@ -8225,7 +8306,8 @@ void planMerge(Document& doc, const std::string& name, int64_t version, MergePla
         if (ckind == "obj")
             oursChanged.insert(std::get<1>(kv.first));
     }
-    pv.fastForward = !changed;
+    // With no base nothing of theirs is ours moved on: it is all weighed.
+    pv.fastForward = !changed && !plan.independent;
     // Sec 30.4 P1: ours has not moved since the base at all -- records, a
     // save or a snapshot, are all it has -- and the base is on both chains:
     // theirs' rows can be taken as they are.
@@ -9017,10 +9099,16 @@ std::vector<Document::ForkBranch> Document::forkBranches(const std::string& path
         f.current = true;
         int64_t version = 0;
         if (TransactionLog::savedAt(store, fork.saved.saveId, version, f.base)) {
-            const bool here = stateBranch(store, fork.file, std::string(), held, kept)
-                && kept.value("state", std::string()) == fork.saved.hash;
-            f.ahead = here ? 0 : 1;
+            bool reached = false;
+            for (const auto& t : store.transactions(f.base, 1))
+                reached = t.seq == f.base;
+            if (!reached)
+                f.base = 0;
         }
+        f.independent = f.base == 0;
+        const bool here = stateBranch(store, fork.file, std::string(), held, kept)
+            && kept.value("state", std::string()) == fork.saved.hash;
+        f.ahead = here ? 0 : 1;
         out.push_back(std::move(f));
         return out;
     }
@@ -9047,6 +9135,13 @@ std::vector<Document::ForkBranch> Document::forkBranches(const std::string& path
                     f.ahead = operationsIn(theirs, theirs.chain(closed.head, shared + 1))
                         + operationsIn(theirs, theirs.chain(b.head)) + (here ? 0 : 1);
                 }
+            }
+            if (!f.base) {
+                // No row both hold: the file as it is, from nothing.
+                f.independent = true;
+                const bool here = stateBranch(store, fork.file, std::string(), held, kept)
+                    && kept.value("state", std::string()) == fork.saved.hash;
+                f.ahead = here ? 0 : 1;
             }
         }
         out.push_back(std::move(f));
@@ -9078,6 +9173,51 @@ Document* Document::_importReplay(int64_t base, const std::string& stem, LogBran
             app.setActiveDocument(active);
         return replay;
     }
+    std::string name = stem;
+    LogBranch taken;
+    for (int i = 2; store.findBranch(name, taken); ++i)
+        name = stem + "~" + std::to_string(i);
+    if (base == 0) {
+        // Sec 30.22: an independent branch hangs off no row. Its document
+        // is an empty one of this file -- its history, its string table,
+        // its blob store -- on a branch made from nothing.
+        const std::string docName = app.getUniqueDocumentName(
+            (std::string(getName()) + "_import").c_str());
+        replay = app.newDocument(docName.c_str(), docName.c_str(), false);
+        if (!replay)
+            THROWM(Base::RuntimeError, "cannot make the import's document");
+        scratch = true;
+        try {
+            replay->setStatus(VersionDoc, true);
+            replay->d->noLog = true;
+            replay->_joinHistory(d->history);
+            if (d->history->hasher())
+                replay->d->Hasher = d->history->hasher();
+            replay->setUndoMode(getUndoMode());
+            LogBranch made;
+            made.name = name;
+            made.target = log->branch();
+            made.created = std::chrono::duration<double>(
+                               std::chrono::system_clock::now().time_since_epoch()).count();
+            log->flush();
+            store.addBranch(made);
+            replay->d->noLog = false;
+            LogVersion nowhere;
+            replay->d->transactionLog = std::make_unique<TransactionLog>(*replay, &nowhere);
+            replay->d->transactionLog->setBranch(made.id);
+            replay->d->undoFloor = replay->d->transactionLog->lastSeq();
+            store.getBranch(made.id, mine);
+        }
+        catch (...) {
+            app.closeDocument(replay->getName());
+            if (active && app.getActiveDocument() != active)
+                app.setActiveDocument(active);
+            throw;
+        }
+        if (active && app.getActiveDocument() != active)
+            app.setActiveDocument(active);
+        return replay;
+    }
     LogTransaction at;
     for (const auto& t : store.transactions(base, 1))
         at = t;
@@ -9094,10 +9234,6 @@ Document* Document::_importReplay(int64_t base, const std::string& stem, LogBran
     }
     if (!haveAnchor)
         THROWM(Base::RuntimeError, "no version to reach the row both files hold from");
-    std::string name = stem;
-    LogBranch taken;
-    for (int i = 2; store.findBranch(name, taken); ++i)
-        name = stem + "~" + std::to_string(i);
     replay = _openVersionDocument(d->history, anchor, false, this, false);
     scratch = true;
     try {
@@ -9152,7 +9288,8 @@ void Document::_finishImport(Document* replay, bool scratch, int64_t branch,
 
 void Document::_applyForeignState(Document& from, std::map<long, long>& ids,
                                   std::map<std::string, std::string>& names,
-                                  std::map<std::string, std::string>& renamed)
+                                  std::map<std::string, std::string>& renamed,
+                                  const Document* kin)
 {
     // docs/TransactionLog.md sec 30.19 G3, G7, G8: this document made what
     // `from` -- a document of another copy of the file -- is, recorded
@@ -9181,8 +9318,23 @@ void Document::_applyForeignState(Document& from, std::map<long, long>& ids,
             if (!obj)
                 throw Base::RuntimeError(std::string("cannot create ")
                                          + theirs->getTypeId().getName());
+            // On a branch from nothing (sec 30.22) there is no object to be
+            // the same as, but the file may still be this file's kin: an
+            // object whose id this file gave that very name is that object
+            // -- unless `kin`, the document asked, has it as another type
+            // -- and comes under both, as an object does on any branch of
+            // its file. That is what lets a merge see the two as one.
+            if (kin && !ids.count(theirs->getID()) && !names.count(name)) {
+                const std::string* known = d->history->objectNameOfId(theirs->getID());
+                const DocumentObject* same = kin->getObjectByID(theirs->getID());
+                if (known && *known == name && !getObjectByID(theirs->getID())
+                        && !getObject(name.c_str())
+                        && (!same || same->getTypeId() == theirs->getTypeId()))
+                    obj->_Id = theirs->getID();
+            }
             addObject(obj, name.c_str(), false);
-            ids[theirs->getID()] = obj->getID();
+            if (obj->getID() != theirs->getID())
+                ids[theirs->getID()] = obj->getID();
             const std::string made = obj->getNameInDocument();
             if (made != name) {
                 names[name] = made;
@@ -9290,7 +9442,8 @@ void Document::_applyForeignState(Document& from, std::map<long, long>& ids,
 
 bool Document::_importStateRow(Document& from, const std::string& file,
                                std::map<long, long>& ids,
-                               std::map<std::string, std::string>& names, ImportResult& result)
+                               std::map<std::string, std::string>& names, ImportResult& result,
+                               const Document* kin)
 {
     // docs/TransactionLog.md sec 30.19: one row, the difference between
     // this document and the file as found; one author, the file (G4).
@@ -9323,7 +9476,7 @@ bool Document::_importStateRow(Document& from, const std::string& file,
     std::string why;
     bool failed = false;
     try {
-        _applyForeignState(from, ids, names, renamed);
+        _applyForeignState(from, ids, names, renamed, kin);
     }
     catch (Base::Exception& e) {
         why = e.what();
@@ -9389,17 +9542,17 @@ Document::ImportResult Document::_importState(const std::string& path, const std
     auto& store = log->store();
     ImportResult result;
     int64_t version = 0;
-    if (!TransactionLog::savedAt(store, saveId, version, result.base))
-        THROWM(Base::ValueError, "'" + path + "' carries no history, and "
-                                     + (saveId.empty() ? "names no save"
-                                                       : "the save it names is none")
-                                     + " of this file's");
-    bool reached = false;
-    for (const auto& t : store.transactions(result.base, 1))
-        reached = t.seq == result.base;
-    if (!reached)
-        THROWM(Base::ValueError, "this file's history no longer reaches the save '" + path
-                                     + "' is from");
+    // No save of this history named, or one its rows no longer reach: the
+    // file is not refused (sec 30.22). It comes as an independent branch,
+    // from nothing.
+    if (TransactionLog::savedAt(store, saveId, version, result.base)) {
+        bool reached = false;
+        for (const auto& t : store.transactions(result.base, 1))
+            reached = t.seq == result.base;
+        if (!reached)
+            result.base = 0;
+    }
+    result.independent = result.base == 0;
     LogBranch mine;
     nlohmann::json kept;
     if (stateBranch(store, file, std::string(), mine, kept)
@@ -9408,6 +9561,10 @@ Document::ImportResult Document::_importState(const std::string& path, const std
         return result;
     }
     result.extended = mine.id != 0;
+    // Brought before: one more row on the branch it made, whatever that
+    // branch hangs off.
+    if (mine.id)
+        result.independent = kept.value("independent", false);
     std::map<long, long> ids;
     std::map<std::string, std::string> names;
     importMaps(kept, ids, names);
@@ -9440,7 +9597,8 @@ Document::ImportResult Document::_importState(const std::string& path, const std
     try {
         replay = _importReplay(result.base, file, mine, scratch);
         result.branch = mine.name;
-        replay->_importStateRow(*theirs, file, ids, names, result);
+        replay->_importStateRow(*theirs, file, ids, names, result,
+                                result.independent ? this : nullptr);
     }
     catch (...) {
         if (replay && scratch)
@@ -9456,6 +9614,8 @@ Document::ImportResult Document::_importState(const std::string& path, const std
     m["state"] = hash;
     m["base"] = result.base;
     m["rows"] = result.rows;
+    if (result.independent)
+        m["independent"] = true;
     if (result.stoppedAt) {
         m["stopped_at"] = result.stoppedAt;
         m["reason"] = result.reason;
@@ -9467,6 +9627,8 @@ Document::ImportResult Document::_importState(const std::string& path, const std
     keep["file"] = file;
     keep["path"] = canonical;
     keep["branch"] = std::string();
+    if (result.independent)
+        keep["independent"] = true;
     // A state that did not come is asked for again.
     keep["state"] = result.stoppedAt ? kept.value("state", std::string()) : hash;
     auto list = nlohmann::json::array();
@@ -9508,6 +9670,8 @@ Document::ImportResult Document::importFork(const std::string& path, const std::
 
     ImportResult result;
     result.from = from.name;
+    // The branch the file reopens on, asked for by name or not, is the file.
+    const bool other = from.id != fork.current;
     int64_t base = core.forkBase(theirs, from.head, result.base);
     // G6: the branch the file reopens on has no ancestry when the file was
     // edited where there is no log. What it was made from is the branch
@@ -9524,9 +9688,15 @@ Document::ImportResult Document::importFork(const std::string& path, const std::
         }
     }
     const bool gap = tail.id != 0;
-    if (!base)
-        THROWM(Base::ValueError, "branch '" + result.from + "' of '" + path
-                                     + "' shares no history with this file");
+    if (!base) {
+        // Another branch of the copy is that branch or nothing. The file
+        // itself is not refused (sec 30.22): what it is now comes as an
+        // independent branch.
+        if (other)
+            THROWM(Base::ValueError, "branch '" + result.from + "' of '" + path
+                                         + "' shares no history with this file");
+        return _importState(path, fork.file, std::string(), fork.saved.hash);
+    }
     const auto rows = theirs.chain(from.head, base + 1);
     std::vector<LogTransaction> tailRows;
     if (gap)

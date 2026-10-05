@@ -6111,3 +6111,102 @@ class TransactionBranchCases(unittest.TestCase):
         again = doc.importTransactionFork(copy)
         self.assertEqual(again["rows"], 0, again)
         self.assertEqual(again["seq"], 0)
+
+    def testAFileThatSharesNoHistoryIsMergedByWhatItHolds(self):
+        # Sec 30.22: a file that shares no history with this one -- no row,
+        # no save of this log named -- is not refused. It comes as an
+        # independent branch, from nothing, and is merged with no base: what
+        # the two hold alike is the same, what differs is for a side to be
+        # picked, what only the file has comes, and nothing here is removed
+        # for the file not having it.
+        import shutil
+
+        self.param.SetInt("TransactionLog", 0)
+        plain = FreeCAD.newDocument("PlainOurs")
+        plain.addObject("Part::Box", "Box")
+        plain.addObject("Part::Cylinder", "Cyl")
+        plain.recompute()
+        path = os.path.join(self.dir, "plain-ours.FCStd")
+        copy = os.path.join(self.dir, "plain-theirs.FCStd")
+        plain.saveAs(path)
+        FreeCAD.closeDocument(plain.Name)
+        shutil.copyfile(path, copy)
+        # The copy goes its own way, where there is no log.
+        other = FreeCAD.openDocument(copy)
+        other.Box.Length = 30
+        other.Box.Height = 20
+        other.addObject("Part::Sphere", "Ball")
+        other.removeObject("Cyl")
+        other.recompute()
+        other.save()
+        FreeCAD.closeDocument(other.Name)
+
+        # This file is opened with a log: its history starts at the file.
+        self.param.SetInt("TransactionLog", 2)
+        doc = self.track(FreeCAD.openDocument(path))
+        doc.UndoMode = 1
+        doc.openTransaction("ours lower")
+        doc.Box.Height = 5
+        doc.recompute()
+        doc.commitTransaction()
+        boxId = doc.Box.ID
+
+        offered = doc.getTransactionForkBranches(copy)
+        self.assertEqual(len(offered), 1)
+        self.assertTrue(offered[0]["independent"])
+        self.assertEqual(offered[0]["base"], 0)
+        self.assertEqual(offered[0]["ahead"], 1)
+
+        res = doc.importTransactionFork(copy)
+        self.assertEqual(res["stopped_at"], 0, res)
+        self.assertTrue(res["independent"])
+        self.assertEqual(res["base"], 0)
+        self.assertEqual(res["rows"], 1, res)
+        self.assertEqual(res["branch"], "plain-theirs")
+        self.assertEqual(res["renamed"], {})
+        came = [
+            t
+            for t in doc.getTransactionLog()
+            if t["branch"] == res["branch"] and doc.getTransactionOps(t["seq"])
+        ]
+        self.assertEqual(len(came), 1)
+        self.assertEqual(came[0]["parent"], 0)
+        ops = doc.getTransactionOps(came[0]["seq"])
+        made = {o["cname"]: o["cid"] for o in ops if o["op"] == "create"}
+        # The box is this file's box: the same id under the same name.
+        self.assertEqual(made.get("Box"), boxId)
+        self.assertIn("Ball", made)
+        self.assertNotIn("Cyl", made)
+
+        preview = doc.previewTransactionMerge(res["branch"])
+        self.assertEqual(preview["base"], -1)
+        self.assertFalse(preview["fast_forward"])
+        kinds = {c["key"]: c["kind"] for c in preview["changes"]}
+        self.assertEqual(kinds.get("Box.Length"), "conflict")
+        self.assertEqual(kinds.get("Box.Height"), "conflict")
+        self.assertEqual(kinds.get("Box.Width"), "same")
+        self.assertEqual(kinds.get("Ball"), "take")
+        self.assertNotIn("Cyl", kinds)
+        # A shape this file's own recompute wrote is not a side to pick.
+        self.assertNotEqual(kinds.get("Box.Shape"), "conflict")
+        self.assertEqual(preview["conflicts"], 2, [k for k, v in kinds.items() if v == "conflict"])
+
+        refused = doc.mergeTransactionBranch(res["branch"])
+        self.assertEqual(refused["seq"], 0)
+        self.assertEqual(len(refused["unresolved"]), 2)
+        merged = doc.mergeTransactionBranch(
+            res["branch"], {"Box.Length": "theirs", "Box.Height": "ours"}
+        )
+        self.assertGreater(merged["seq"], 0)
+        self.assertEqual(merged["failed"], [])
+        self.assertEqual(doc.Box.Length.Value, 30)
+        self.assertEqual(doc.Box.Height.Value, 5)
+        self.assertIsNotNone(doc.getObject("Ball"))
+        self.assertIsNotNone(doc.getObject("Cyl"))
+        self.assertAlmostEqual(doc.Box.Shape.Volume, 30 * 10 * 5, 6)
+        self.assertFalse([o.Name for o in doc.Objects if "Invalid" in o.State])
+        self.assertFalse([o.Name for o in doc.Objects if "Touched" in o.State])
+
+        # Once merged there is nothing to merge, and the same file is nothing.
+        self.assertEqual(doc.previewTransactionMerge(res["branch"])["changes"], [])
+        self.assertEqual(doc.importTransactionFork(copy)["rows"], 0)

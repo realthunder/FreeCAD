@@ -1488,20 +1488,20 @@ void TransactionLogView::importFile(const QString& path, const QString& branch)
         // than one with something to bring.
         QString from = branch;
         if (from.isEmpty()) {
+            // What has something to bring: a branch that shares a row, or
+            // the file itself where it shares none (sec 30.22), which comes
+            // as an independent branch.
             QStringList names;
             int current = 0;
-            bool shares = false;
             for (const auto& b : _doc->forkBranches(path.toStdString())) {
-                shares = shares || b.base > 0;
-                if (!b.base || !b.ahead)
+                if (!b.ahead || (!b.base && !b.independent))
                     continue;
                 if (b.current)
                     current = names.size();
                 names << QString::fromStdString(b.name);
             }
             if (names.isEmpty()) {
-                _status->setText(shares ? tr("Nothing new in %1").arg(file)
-                                        : tr("%1 shares no history with this file").arg(file));
+                _status->setText(tr("Nothing new in %1").arg(file));
                 return;
             }
             from = names[current];
@@ -1521,6 +1521,10 @@ void TransactionLogView::importFile(const QString& path, const QString& branch)
             return;
         }
         const QString name = QString::fromStdString(result.branch);
+        if (result.independent)
+            Base::Console().Message("Merge from %s: it shares no history with this file, and "
+                                    "came as the independent branch %s\n",
+                                    file.toUtf8().constData(), result.branch.c_str());
         if (result.stoppedAt)
             Base::Console().Warning("Merge from %s: %s\n", file.toUtf8().constData(),
                                     result.reason.c_str());

@@ -599,8 +599,10 @@ an import takes when none is named), 'closed', 'base' (the row of this
 file's log the branch parts from, 0 when the two share no history) and
 'ahead' (the operations it has made since). A file that carries no history
 offers one thing, itself, under an empty name (sec 30.19): 'base' the row of
-the save its Version names, 0 when this log holds no such save. Raises when
-the file cannot be read, or is this document's own.</UserDocu>
+the save its Version names. 'independent' says the entry shares no history
+with this file and is offered all the same (sec 30.22): 'base' is 0, and
+what the file is now comes as a branch from nothing. Raises when the file
+cannot be read, or is this document's own.</UserDocu>
       </Documentation>
     </Methode>
     <Methode Name="importTransactionFork">
@@ -622,9 +624,12 @@ file as found that could not come), 'renamed' and 'seq' (the import's
 record). A file that carries no history comes as one row, the difference
 between the file and the state at the save its Version names (sec 30.19);
 one whose history is there but is not its tip comes as what the history
-holds, that one row, then what it has done since. Raises when the file
-shares no history with this one, names no save of this log, or has no such
-branch.</UserDocu>
+holds, that one row, then what it has done since. A file that shares no
+history with this one -- no row, no save of this log named -- comes too (sec
+30.22): as one row on a branch from nothing, 'independent' true, which
+mergeTransactionBranch() merges by what the two documents hold. Raises when
+the file cannot be read, or a branch asked for by name is not there or
+shares no history.</UserDocu>
       </Documentation>
     </Methode>
     <Methode Name="resolveTransactionLog">
