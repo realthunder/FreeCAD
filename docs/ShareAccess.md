@@ -172,13 +172,45 @@ person a served scene is started for -- the demo recipes of `docs/Sandbox.md`, a
 tunnel -- `FC_SERVE_INVITE=<name>` does the same with no grant list: the link is
 `?token=<secret>&client=<name>`.
 
-**From the sharing panel** (2026-10-05, docs/TransactionLog.md sec 30.26). The Invite
-row follows the door. Behind a sign-in door it takes an identity, as it did. Behind
-none it takes a name: the grant is the share's token issued to that name, and the link
-that carries both is put on the clipboard. A pattern is refused, a share with no token
-is refused, and full control is not offered. Every grant that is such an invitation --
-a token and a name written out -- has a **Link** button on its row. A name is not a
-secret: whoever holds the plain link and gives that name gets what the name gets.
+**From the sharing panel** (2026-10-05, docs/TransactionLog.md sec 30.26, 30.32). The
+Invite row follows the door. Behind a sign-in door it takes an identity, as it did.
+Behind none it takes a name and a count of browsers, and makes a grant with a token of
+its own that counts them (sec 2.5); the link that carries the token is put on the
+clipboard. A pattern is refused, a share with no token is refused, and full control is
+not offered. Every grant with a link of its own -- one that counts, or a token with a
+name written out -- has a **Link** button on its row. An invitation by name on the
+share's own token, which this row made for a day, still works where one is stored: a
+name is not a secret, and whoever holds the plain link and gives that name gets what
+the name gets.
+
+### 2.5 A grant that counts its browsers
+
+Added 2026-10-05 (docs/TransactionLog.md sec 30.32; numbered after 2.4, read with
+2.3). **A token is half of who its holder is; the browser keeps the other half.** The
+viewer makes an id once, keeps it (`localStorage`), and says it in every hello. The
+host knows a browser by a hash of that id, and keeps a **record** of every browser an
+admitted hello came from, under whatever token or sign-in -- so one browser is the
+same row under another link.
+
+A grant may say **how many browsers it is for** (`maxUsers`; 0, as every grant was,
+counts none). Such a grant admits a hello only with a browser's id, **enrols** the
+first so many, and refuses any other -- or leaves it to a lesser grant on the same
+token. A browser enrolled is someone known in the sense of sec 2.3: it may edit where
+the grant says so, and what it writes is recorded under it (`enrolled`, named
+`<name>~<start of its key>`). A name is a label there: renaming does not make it
+anyone else. The host names a browser, turns it off (out, and kept out) or forgets it
+(out, and enrolled again if it comes back while there is room), from the grant's
+**Users...** or the panel's **Browsers...**.
+
+The panel's Invite row, behind a door that signs nobody in, makes such a grant: a
+token of its own, for one browser unless the count beside the name says more, and
+the link that carries it. A grant that names whom a door signed in can count its
+browsers the same way.
+
+Nobody verified who sits at a browser. What holds: the link works in the browsers it
+was first opened in and in no other, each is a row the host can act on, and each
+one's writes are its own. A plain request -- the polling route, a blob -- carries no
+id and reads under such a grant's token; the socket is what the count holds.
 
 ### 2.4 What a client may send: files
 

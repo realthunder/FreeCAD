@@ -14047,9 +14047,11 @@ layer: typecheck clean, its gate green, bundled.
 
 ### 30.31 An invitation with a token of its own: proposed (user: propose, 2026-10-05)
 
-Not built. 30.26 invites a name with the share's token, and says what
-that is worth: the token is in every plain link, so whoever holds one and
-gives the name gets what the name gets.
+Not built as proposed: the user ruled another shape, 30.32, in which the
+token is half of who its holder is and the browser keeps the other half.
+What follows is the proposal as it was put. 30.26 invites a name with the
+share's token, and says what that is worth: the token is in every plain
+link, so whoever holds one and gives the name gets what the name gets.
 
 **The shape.** Invite mints a token for the invitation, as "New" mints
 the share's: the grant is that token and the name, and the link carries
@@ -14078,3 +14080,135 @@ both. Only whoever was given that link holds its token.
 | K4 | Invitations made on the share's token (30.26, a day old) | **Left as they are**, working; the panel's Invite makes the new kind from now on. |
 | K5 | A serve by the environment (`FC_SERVE_INVITE`) | **As it is**: there the token is handed to one person already. More than one person headless is `Gui.serveSetGrants`. |
 | K6 | An invitation that expires, or works once | **Not now** (docs/ShareAccess.md sec 6 item 5). |
+
+### 30.32 Who holds a token: half the grant's, half the browser's (user, 2026-10-05)
+
+**Ruled (user)**, in place of 30.31's K1-K6:
+
+- **A token is half of who a user is. The other half is in the user's
+  browser** -- an id the browser generates and keeps, as lasting as the
+  browser will keep it -- so that a user can be followed.
+- **The host keeps a record of the users under one shared token, and
+  chooses how many may log in under it.**
+- **The record has the name the user gives itself**, for reading the log
+  by.
+- **The id is the browser's, not the token's**: the host follows one user
+  from one token to another.
+- **The same for someone a door signed in.**
+
+**The browser's half.** The viewer makes 24 random bytes once
+(`fcviewer.device` in `localStorage`, with the browser asked not to clear
+it when storage runs short) and says them in every hello, `"device"`.
+Never in a URL. The host knows a browser by the SHA-1 of that, its
+**key**, and stores nothing else of it. A browser that keeps nothing -- a
+private window, storage refused -- has an id for the life of the page and
+is a new browser at each visit.
+
+**The record** (`SceneDevice`, `SceneStreamServer::devices`): one entry a
+browser, whatever token or sign-in the hello came by -- what its user
+calls itself now and called itself first, the verified identity it last
+came with, when it was first and last heard, the host's own name for it,
+and a switch. Every admitted hello is taken; a refused one leaves
+nothing. At most 4096.
+
+**A grant that counts** (`SceneGrant::maxUsers`, 0 for one that does not,
+which is every grant there was): it admits a hello only with a browser's
+id, **enrols** the first so many (`devices`, their keys), and refuses any
+other. Under it:
+
+- a browser enrolled is **someone known** (30.6 U4): it may write where
+  the grant says edit, and is one user of the connection caps;
+- a hello with no id, from a browser the host turned off, or past the
+  count does not match the grant, and falls to whatever lesser grant the
+  same token has -- an open invitation to look beside it, say -- or is
+  refused;
+- **a name is a label.** A browser that renames itself is the browser it
+  was; the record takes the new name;
+- the upgrade of a socket cannot say which browser it is and is not
+  admitted by such a grant: the hello is, as for a name a grant asks for;
+- a browser is enrolled only by its own hello. One the host forgot or
+  turned off is not enrolled again when the grants are judged anew: it
+  is out, and comes back, if there is room, by opening the link;
+- it is any grant's to count: one that names a token, and one that names
+  whom a door signed in (`*@example.com`, for three browsers).
+
+**Who writes** (`App::Actor::Enrolled`, `enrolled` in the log): a browser
+its grant counts, named `<name>~<the first six of its key>` -- the host's
+name for it when there is one, else what it first called itself -- so two
+browsers of one name are two users, and a name changed on the page does
+not move the author. **Every login row says which browser**, `"device"`,
+the first twelve of the key, whoever logged in: the same browser under
+another token, or signed in, is the same twelve.
+
+**The desktop.** The stored grants keep the count, the browsers enrolled
+and the host's word for whom each is for (`MaxUsers`, `Devices`, `Note`);
+the record is `SceneShare/Devices`. Both are written as hellos change them
+(`deviceEpoch`, `pullDevices`) and handed to the door when a share starts.
+
+- **Invite**, behind a door that signs nobody in, mints a token of its
+  own "for 1 browser(s)" -- the count beside the name -- and puts the link
+  on the clipboard, `...token=<its own>&client=<the name>`. 30.26's
+  invitation on the share's token is no longer made; one made then works
+  as it did.
+- **Add grant...** has "Browsers at most".
+- A grant that counts shows "n of N browser(s)" and has **Users...**: its
+  browsers, each to be named, turned off or on, forgotten, and the count
+  to be changed. **Browsers...** at the panel's foot is the whole record,
+  with the grants each browser is enrolled under.
+- The roster names an enrolled connection with its browser, `lei ~3fa9c1`.
+
+Python: `Gui.serveGrants` / `serveSetGrants` carry `maxUsers` and
+`devices`; `Gui.serveDevices` / `serveSetDevices` are the record;
+`Gui.serveClients` says `device` and `enrolled`.
+
+**What it is and is not.** Nobody verified who sits at a browser: an
+enrolled user is `enrolled`, not `verified`. What holds is that a link
+works in the browsers it was first opened in, as many as the host said,
+and in no other; that each of them is one row the host can name, turn
+out, and find again under another link; and that what each writes is its
+own in the log. Whoever opens a link first has it: a link for one that is
+passed on before it is used is the other person's. And an id is a thing a
+browser keeps: copied out of one browser into another, it is that
+browser.
+
+**Tests.** The wire case `aGrantCountsTheBrowsersItIsFor`: two enrolled
+under one token and writers, a third and one with no id refused; a rename
+that leaves the browser who it was, the record taking the name and the
+first name staying; one turned off, told and out while the other stays,
+and still out when it comes back; the same token with an open invitation
+to look beside the count, where who is not counted looks; one browser one
+entry under two tokens; a plain request that reads; an id too short
+refused; a grant on a signed-in domain counting its browsers, the record
+saying who signed in at each. The share check (47): the Invite row with
+its count, a token of its own and a link that carries it; the link in one
+browser enrolled and writing, in another refused, with no id refused; the
+plain link looking and uncounted; the write under `lei~<key>` as
+`enrolled` and both logins saying their browser; the grant and the record
+stored; the grant's list, the browser turned off -- told, out, kept out
+-- and on again; and after a new share the browser still the invitation's
+and no other. **In a browser** (`scripts/browser-id-drive.js`, headless
+Chrome against a served document behind a grant for one browser): a
+profile's first visit makes an id and is let in to edit; the same profile
+again has kept it and is let in; another profile has another and is
+refused, the grant still holding the one key.
+
+**Left.**
+
+- **A plain request reads.** The polling route and the blob fetches carry
+  no id, so the token of a grant that counts still fetches the scene
+  over HTTP; the socket, which is what the viewer runs on and the only
+  way to write, is what the count holds. Closing it means the viewer
+  saying its id on its fetches too.
+- **A serve by the environment** has no stored record: `FC_SERVE_INVITE`
+  is as it was, and a script that wants a count sets it with
+  `Gui.serveSetGrants` and keeps what `Gui.serveGrants` and
+  `Gui.serveDevices` then say.
+- The record is the host's preferences, one for every document it
+  shares.
+
+**Gates**, frozen and unfrozen each: Python 3010 OK (52 skipped frozen, 53
+unfrozen; 6 expected failures), ctest 875/875 -- the wire tests are one
+entry, 27 cases now -- and the GUI checks RC 15, BC 27, VC 18, PC 28, FC
+16, VW 14, MC 28, the two-document check 24, the tree check 19, the
+author check 36, the import check 39, the request check 28 and the share
+check 47 (+14). The viewer rebuilt (`build/wasm`).
