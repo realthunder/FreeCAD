@@ -171,7 +171,7 @@ regression test of 3.4.
    - a sharp edge's cut point is a corner of the region, with a
      `GeomPlate_PointConstraint` at it.
 
-   `GeomPlate_MakeApprox`, then the fork's G0 fallback (`PlateG0Fallback`),
+   `GeomPlate_MakeApprox`, then the fork's G0 fallback (`PlateG0FallbackRatio`),
    then the boundary-orientation check of `3fa9420429`. For n = 3, all
    filleted, on planes, the plate should come out close to the current
    `GeomFill_ConstrainedFilling` result at setback `d0`. That comparison is
@@ -231,7 +231,7 @@ Each one names the vertex, so FreeCAD can point at it.
   `makeElementShape` path, so a later feature can reference the corner face
   stably.
 - The fork's OCCT is the only one with `SetSetback`. Like the plate
-  fallback (`AppPartPy setOCCTPlateG0Fallback`, dlsym), resolve it at run
+  fallback (`AppPartPy setOCCTPlateG0FallbackRatio`, dlsym), resolve it at run
   time. On another OCCT, a setback corner is an error: "corner setback
   needs the fork's OCCT". It must not silently build a different shape.
 

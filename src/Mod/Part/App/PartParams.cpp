@@ -23,8 +23,8 @@
 #include "PreCompiled.h"
 
 namespace Part {
-// AppPartPy.cpp: hands FilletPlateG0Fallback to the OCCT fork's fillet.
-PartExport bool setOCCTPlateG0Fallback(double distance);
+// AppPartPy.cpp: hands FilletPlateG0FallbackRatio to the OCCT fork's fillet.
+PartExport bool setOCCTPlateG0FallbackRatio(double ratio);
 }
 
 /*[[[cog
@@ -67,7 +67,7 @@ public:
     bool ShareStoredSubShapes;
     long BorrowBelowFace;
     unsigned long LoftMaxDegree;
-    double FilletPlateG0Fallback;
+    double FilletPlateG0FallbackRatio;
     long WarnUnnamedInput;
     double MinimumDeviation;
     double MeshDeviation;
@@ -121,8 +121,8 @@ public:
         funcs["BorrowBelowFace"] = &PartParamsP::updateBorrowBelowFace;
         LoftMaxDegree = this->handle->GetUnsigned("LoftMaxDegree", 5);
         funcs["LoftMaxDegree"] = &PartParamsP::updateLoftMaxDegree;
-        FilletPlateG0Fallback = this->handle->GetFloat("FilletPlateG0Fallback", 0.001);
-        funcs["FilletPlateG0Fallback"] = &PartParamsP::updateFilletPlateG0Fallback;
+        FilletPlateG0FallbackRatio = this->handle->GetFloat("FilletPlateG0FallbackRatio", 0.01);
+        funcs["FilletPlateG0FallbackRatio"] = &PartParamsP::updateFilletPlateG0FallbackRatio;
         WarnUnnamedInput = this->handle->GetInt("WarnUnnamedInput", 0);
         funcs["WarnUnnamedInput"] = &PartParamsP::updateWarnUnnamedInput;
         MinimumDeviation = this->handle->GetFloat("MinimumDeviation", 0.05);
@@ -234,11 +234,11 @@ public:
         self->LoftMaxDegree = self->handle->GetUnsigned("LoftMaxDegree", 5);
     }
     // Auto generated code (Tools/params_utils.py:322)
-    static void updateFilletPlateG0Fallback(PartParamsP *self) {
-        auto v = self->handle->GetFloat("FilletPlateG0Fallback", 0.001);
-        if (self->FilletPlateG0Fallback != v) {
-            self->FilletPlateG0Fallback = v;
-            PartParams::onFilletPlateG0FallbackChanged();
+    static void updateFilletPlateG0FallbackRatio(PartParamsP *self) {
+        auto v = self->handle->GetFloat("FilletPlateG0FallbackRatio", 0.01);
+        if (self->FilletPlateG0FallbackRatio != v) {
+            self->FilletPlateG0FallbackRatio = v;
+            PartParams::onFilletPlateG0FallbackRatioChanged();
         }
     }
     // Auto generated code (Tools/params_utils.py:314)
@@ -326,17 +326,18 @@ static const App::ParamRegistry::Registrar _PartParamsRegistrar({
 "shared too, and it is off wherever DedupCrossFileGeometry is."),
     App::ParamInfo("Part", "PartParams", "User parameter:BaseApp/Preferences/Mod/Part", "LoftMaxDegree", "LoftMaxDegree", App::ParamInfo::UInt, 5)
         .setTitle("Loft Max Degree"),
-    App::ParamInfo("Part", "PartParams", "User parameter:BaseApp/Preferences/Mod/Part", "FilletPlateG0Fallback", "FilletPlateG0Fallback", App::ParamInfo::Float, 0.001)
-        .setTitle("Fillet Plate G0 Fallback")
+    App::ParamInfo("Part", "PartParams", "User parameter:BaseApp/Preferences/Mod/Part", "FilletPlateG0FallbackRatio", "FilletPlateG0FallbackRatio", App::ParamInfo::Float, 0.01)
+        .setTitle("Fillet Plate G0 Fallback Ratio")
         .setDoc("How far a fillet's corner plate may miss its boundary while held tangent\n"
-"to the fillets it joins. A corner where more than three faces meet is\n"
-"filled by a patch kept tangent to the fillets; where a fillet's end\n"
-"meets a face at a sharp angle the patch folds to stay tangent, misses\n"
-"its boundary, and the corner's edges carry the miss as their tolerance.\n"
-"A patch missing it by more than this is built again on positions alone\n"
-"and kept if it fits better: a crease along the fillet instead of a fold.\n"
-"0 keeps every tangent patch. Only with the OCCT fork, which has the\n"
-"setting; another OCCT ignores it.")
+"to the fillets it joins, as a fraction of the smallest fillet radius (or\n"
+"chamfer distance) at the corner. A corner where more than three faces\n"
+"meet is filled by a patch kept tangent to the fillets; where a fillet's\n"
+"end meets a face at a sharp angle the patch folds to stay tangent,\n"
+"misses its boundary, and the corner's edges carry the miss as their\n"
+"tolerance. A patch missing it by more than this is built again on\n"
+"positions alone and kept if it fits better: a crease along the fillet\n"
+"instead of a fold. 0 keeps every tangent patch. Only with the OCCT\n"
+"fork, which has the setting; another OCCT ignores it.")
         .setOnChange(),
     App::ParamInfo("Part", "PartParams", "User parameter:BaseApp/Preferences/Mod/Part", "WarnUnnamedInput", "WarnUnnamedInput", App::ParamInfo::Int, 0)
         .setTitle("Warn Unnamed Input")
@@ -943,39 +944,40 @@ void PartParams::removeLoftMaxDegree() {
 }
 
 // Auto generated code (Tools/params_utils.py:397)
-const char *PartParams::docFilletPlateG0Fallback() {
+const char *PartParams::docFilletPlateG0FallbackRatio() {
     return QT_TRANSLATE_NOOP("PartParams",
 "How far a fillet's corner plate may miss its boundary while held tangent\n"
-"to the fillets it joins. A corner where more than three faces meet is\n"
-"filled by a patch kept tangent to the fillets; where a fillet's end\n"
-"meets a face at a sharp angle the patch folds to stay tangent, misses\n"
-"its boundary, and the corner's edges carry the miss as their tolerance.\n"
-"A patch missing it by more than this is built again on positions alone\n"
-"and kept if it fits better: a crease along the fillet instead of a fold.\n"
-"0 keeps every tangent patch. Only with the OCCT fork, which has the\n"
-"setting; another OCCT ignores it.");
+"to the fillets it joins, as a fraction of the smallest fillet radius (or\n"
+"chamfer distance) at the corner. A corner where more than three faces\n"
+"meet is filled by a patch kept tangent to the fillets; where a fillet's\n"
+"end meets a face at a sharp angle the patch folds to stay tangent,\n"
+"misses its boundary, and the corner's edges carry the miss as their\n"
+"tolerance. A patch missing it by more than this is built again on\n"
+"positions alone and kept if it fits better: a crease along the fillet\n"
+"instead of a fold. 0 keeps every tangent patch. Only with the OCCT\n"
+"fork, which has the setting; another OCCT ignores it.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
-const double & PartParams::getFilletPlateG0Fallback() {
-    return instance()->FilletPlateG0Fallback;
+const double & PartParams::getFilletPlateG0FallbackRatio() {
+    return instance()->FilletPlateG0FallbackRatio;
 }
 
 // Auto generated code (Tools/params_utils.py:413)
-const double & PartParams::defaultFilletPlateG0Fallback() {
-    const static double def = 0.001;
+const double & PartParams::defaultFilletPlateG0FallbackRatio() {
+    const static double def = 0.01;
     return def;
 }
 
 // Auto generated code (Tools/params_utils.py:422)
-void PartParams::setFilletPlateG0Fallback(const double &v) {
-    instance()->handle->SetFloat("FilletPlateG0Fallback",v);
-    instance()->FilletPlateG0Fallback = v;
+void PartParams::setFilletPlateG0FallbackRatio(const double &v) {
+    instance()->handle->SetFloat("FilletPlateG0FallbackRatio",v);
+    instance()->FilletPlateG0FallbackRatio = v;
 }
 
 // Auto generated code (Tools/params_utils.py:431)
-void PartParams::removeFilletPlateG0Fallback() {
-    instance()->handle->RemoveFloat("FilletPlateG0Fallback");
+void PartParams::removeFilletPlateG0FallbackRatio() {
+    instance()->handle->RemoveFloat("FilletPlateG0FallbackRatio");
 }
 
 // Auto generated code (Tools/params_utils.py:397)
@@ -1123,7 +1125,7 @@ void PartParams::removeMinimumAngularDeflection() {
 }
 //[[[end]]]
 
-void Part::PartParams::onFilletPlateG0FallbackChanged()
+void Part::PartParams::onFilletPlateG0FallbackRatioChanged()
 {
-    Part::setOCCTPlateG0Fallback(getFilletPlateG0Fallback());
+    Part::setOCCTPlateG0FallbackRatio(getFilletPlateG0FallbackRatio());
 }

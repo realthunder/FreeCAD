@@ -27,7 +27,6 @@
 #else
 #  include <dlfcn.h>
 #endif
-#include <limits>
 
 #ifndef _PreComp_
 # include <BRep_Builder.hxx>
@@ -418,37 +417,40 @@ PartExport int initOCCTExtension()
     return extVersion;
 }
 
-typedef double (*FuncSetPlateG0Fallback)(double);
+typedef double (*FuncSetPlateG0FallbackRatio)(double);
 
-/// Hands PartParams FilletPlateG0Fallback to the OCCT fork's fillet: a corner
-/// plate that misses its boundary by more than this while held tangent to the
-/// stripes is built again on positions alone (ChFi3d_Builder::
-/// SetPlateG0Fallback). Looked up at run time like SetFuncShowTopoShape, so a
-/// build against upstream OCCT still loads; returns false there.
-PartExport bool setOCCTPlateG0Fallback(double distance)
+/// Hands PartParams FilletPlateG0FallbackRatio to the OCCT fork's fillet: a
+/// corner plate that misses its boundary by more than this fraction of the
+/// smallest radius at the corner while held tangent to the stripes is built
+/// again on positions alone (ChFi3d_Builder::SetPlateG0FallbackRatio). Looked
+/// up at run time like SetFuncShowTopoShape, so a build against upstream OCCT,
+/// or a fork from before the ratio, still loads; returns false there.
+PartExport bool setOCCTPlateG0FallbackRatio(double ratio)
 {
-    static const FuncSetPlateG0Fallback func = []() {
-        FuncSetPlateG0Fallback f = nullptr;
+    static const FuncSetPlateG0FallbackRatio func = []() {
+        FuncSetPlateG0FallbackRatio f = nullptr;
+        const char *name = "ChFi3d_SetPlateG0FallbackRatio";
 #ifdef FC_OS_WIN32
         HMODULE hModule = GetModuleHandleA("TKFillet.dll");
         if (!hModule)
             hModule = LoadLibraryA("TKFillet.dll");
         if (hModule)
-            f = (FuncSetPlateG0Fallback)GetProcAddress(hModule, "ChFi3d_SetPlateG0Fallback");
+            f = (FuncSetPlateG0FallbackRatio)GetProcAddress(hModule, name);
 #else
-        f = (FuncSetPlateG0Fallback)dlsym(RTLD_DEFAULT, "ChFi3d_SetPlateG0Fallback");
+        f = (FuncSetPlateG0FallbackRatio)dlsym(RTLD_DEFAULT, name);
         if (!f) {
             void *hModule = dlopen("libTKFillet.so", RTLD_LAZY);
             if (hModule)
-                f = (FuncSetPlateG0Fallback)dlsym(hModule, "ChFi3d_SetPlateG0Fallback");
+                f = (FuncSetPlateG0FallbackRatio)dlsym(hModule, name);
         }
 #endif
         return f;
     }();
     if (!func)
         return false;
-    // 0 or less turns the fallback off: every tangent plate is kept
-    func(distance > 0.0 ? distance : std::numeric_limits<double>::max());
+    // 0 or less turns the fallback off: every tangent plate is kept (the
+    // fork's distance setting, which takes over then, defaults to off)
+    func(ratio > 0.0 ? ratio : 0.0);
     return true;
 }
 
