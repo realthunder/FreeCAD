@@ -107,6 +107,10 @@ def solid(c):
     return c[1] - c[0] > 40 and c[1] - c[2] > 40
 
 
+def views3d(gdoc):
+    return gdoc.mdiViewsOfType("Gui::View3DInventor")
+
+
 def edit_roots(view):
     """How many times the session's editing root is in the view's graph."""
     from pivy import coin
@@ -144,13 +148,17 @@ def case(name, per_view):
     sketch.Visibility = False
     gdoc = FreeCADGui.getDocument(name)
 
-    v1 = gdoc.activeView()
+    # By type, not activeView(): right after another document closed
+    # that has answered with a view that is not this document's 3D one.
+    settle()
+    v1 = views3d(gdoc)[0]
+    activate(v1)
     FreeCADGui.runCommand("Std_ViewCreate")
     settle()
-    v2 = gdoc.activeView()
-    if len(gdoc.mdiViewsOfType("Gui::View3DInventor")) != 2:
+    if len(views3d(gdoc)) != 2:
         note("ABORT no second 3D view")
         return
+    v2 = views3d(gdoc)[1]
     for v in (v1, v2):
         v.setCameraType("Orthographic")
         v.viewFront()
@@ -189,7 +197,7 @@ def case(name, per_view):
 
     FreeCADGui.runCommand("Std_ViewCreate")
     settle()
-    v3 = gdoc.activeView()
+    v3 = views3d(gdoc)[-1]
     v3.setCameraType("Orthographic")
     v3.viewFront()
     v3.fitAll()

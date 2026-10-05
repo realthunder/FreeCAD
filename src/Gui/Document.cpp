@@ -929,9 +929,18 @@ ViewProvider *Document::getInEdit(ViewProviderDocumentObject **parentVp,
         // session (docs/ThinClient.md 8.12 item D). The active 3D window
         // below is the desktop user's, and with a session that is its
         // initiator's alone (PerViewEdit) it need not have joined.
-        if (ViewerContext *current = ViewerContext::current())
-            return current->getEditingViewProvider() == d->_editViewProvider
-                ? d->_editViewProvider : nullptr;
+        //
+        // Only a client's view is answered "no" here. A desktop viewer
+        // opens a scope around its own events too, and whatever runs under
+        // one of those -- a nested event loop reaches a long way -- is
+        // still the desktop asking, for which the active window answers
+        // as it always has.
+        if (ViewerContext *current = ViewerContext::current()) {
+            if (current->getEditingViewProvider() == d->_editViewProvider)
+                return d->_editViewProvider;
+            if (current->cameraIsRemote())
+                return nullptr;
+        }
         // there is only one 3d view which is in edit mode
         auto activeView = dynamic_cast<View3DInventor *>(getActiveView());
         if (activeView)
