@@ -193,7 +193,11 @@ lists a directory, reads a host file or takes a path from a client.
 - **`requests.send`** -- a copy of the served document, to be merged. The
   host keeps it and reads nothing of it; it is listed in the transaction
   log panel with who sent it, and is opened only when the owner brings it
-  in. The answer has no path.
+  in. The answer has no path. It is kept in the document's transaction
+  log -- a row under the sender and the bytes as one blob, saved with the
+  history, so it waits across a restart -- and let go once the branch it
+  was brought in to is merged or deleted, or when it is dropped unread
+  (docs/TransactionLog.md sec 30.29).
 
 Both are for a connection that may edit (sec 2.3), and both are under one
 limit: **the preference `UploadLimitMB`** of `BaseApp/Preferences/SceneShare`,
@@ -204,6 +208,13 @@ frame of the socket carries once the bytes are base64.
 The dialog that starts a share and the sharing panel both have the control
 ("Clients may send up to"); the panel's holds from the next upload. While
 the environment holds the limit the control shows it and is disabled.
+
+**What waits is bounded too.** The copies sent to one document and not yet
+merged or deleted may together be at most **`RequestsTotalMB`**, 64 unless
+set, preset by **`FC_SERVE_REQUESTS_MB`**; one that would take it past is
+refused, `TooMany`. A waiting copy is in the document's history and is
+saved with it, so this is also the most a client can make the file grow
+by. The control is beside the upload limit's.
 
 ## 3. Prior art
 
@@ -249,10 +260,13 @@ proxy that only carries traffic, passes on whatever headers the client wrote, so
 client that sends `X-Forwarded-Email` itself would be a verified identity -- an editor
 under the shared token, and whoever an identity grant names. `SceneStreamServer::
 setIdentityDoor(false)` keeps the first and drops the second: no header is taken for an
-identity. The Share dialog sets it from its door ("Viewers sign in at this door"). A
-serve started by script or the environment has it on, as before: there
-`FC_SERVE_TRUST_PROXY=1` still reads the headers, and must stand behind a door that
-strips what it does not set.
+identity. The Share dialog sets it from its door ("Viewers sign in at this door").
+
+**It is off unless someone says otherwise** (user, 2026-10-05). A serve started by
+script or the environment says so with `FC_SERVE_IDENTITY_DOOR=1`, or by naming the
+door's header in `FC_SERVE_IDENTITY_HEADER`; `FC_SERVE_TRUST_PROXY=1` alone believes
+the address and nothing else. `scripts/share-edge.sh` prints the pair for its two
+doors that sign people in (`access`, `caddy`) and not for `quick`.
 
 A door of one's own that signs people in may name its header in the dialog ("Identity
 header", kept with the door): for one that uses none of the three above. Empty reads
@@ -382,8 +396,8 @@ Through this door a share link is **tokenless** and carries only the doc group:
 
 Cloudflare Access authenticates the visitor (one-time PIN, Google, or GitHub — §4), the
 grant list authorizes: only an identity a grant covers gets scene bytes, everyone else is
-refused after login. The backend must be launched with `FC_SERVE_TRUST_PROXY=1` (tunnel
-doors force it for the session when started from the dialog) and serves the viewer bundle
+refused after login. The backend must be launched with `FC_SERVE_TRUST_PROXY=1` and
+`FC_SERVE_IDENTITY_DOOR=1` (the dialog sets both for the session from its door) and serves the viewer bundle
 itself from `FC_BGFX_VIEWER_BUILD`, so the one hostname carries page, stream and blobs.
 Headless serves register no doc group by themselves — `Gui.serveDocument(doc)` (a
 Document object, not a name) is what puts `?doc=` on the map.

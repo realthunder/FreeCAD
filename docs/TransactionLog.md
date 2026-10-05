@@ -13654,7 +13654,8 @@ The row now follows the door:
 A name is not a secret. Someone who holds the plain link and gives the
 name gets what the name gets; the tool tip says so. An invitation with a
 token of its own would close that, and needs a second grant to admit the
-page's fetches, which are made before any name is said: not built.
+page's fetches, which are made before any name is said: not built, and
+proposed in 30.31.
 
 **The door's header** (`FC_SERVE_IDENTITY_HEADER`). A door of one's own
 that signs people in has an "Identity header" field, kept with the door
@@ -13682,7 +13683,7 @@ started by script or the environment**, where the switch is on as it was:
 `FC_SERVE_TRUST_PROXY=1` behind `scripts/share-edge.sh quick` reads the
 headers still, and the tests' clients say who they are by exactly that
 road (`tests/gui/wsclient.py`). To rule: whether the environment should
-have to say that its proxy signs people in.
+have to say that its proxy signs people in. Ruled yes: 30.30.
 
 **The Gui check** `scripts/share-panel-check.py` (`SHARECHECK_OUT`, 29
 checks): the dialog driven as a user would -- the limit shown, changed,
@@ -13735,7 +13736,8 @@ made:
 Merged, with nothing reported: `Cone` at height 10, untouched, and
 `Cone001` at 20 beside it.
 
-**So, after a round trip:**
+**So, when the copy had work of its own before it took ours** -- its
+merge is a row, and that row makes our objects:
 
 - **everything the copy took from this file comes back a second time**,
   under a new name -- every object this file made since the base, whether
@@ -13754,9 +13756,36 @@ Merged, with nothing reported: `Cone` at height 10, untouched, and
 - what the copy made itself -- the cylinder -- is right, which is the
   whole of 30.17's "right only for what the copy made itself".
 
-No edit went to the wrong object in this run or can: an object not at the
-base always has a create in their rows, so it is always given a new id
-here before anything is set on it.
+**When the copy had nothing of its own** (`probe3.py`, the same file with
+no cylinder) its merge is a fast-forward (30.4 P1): our rows are on its
+own chain, as the rows they were, and the base the next import finds is
+our cone's row. No row of theirs makes the cone again. What then decides
+is a number:
+
+- **their id for our cone is ours** -- and everything is right. Both
+  sides change the height: one conflict, `Cone.Height`, with the base,
+  ours and theirs, and the merge refused until a side is picked. Run and
+  seen.
+- **their id is another** -- and their rows name an object this file does
+  not have. Such a row is one that "changes nothing here" (30.15) and is
+  left out without a word: their change of the height is gone, the merge
+  reports no conflict and keeps ours; their removal of the cone is gone,
+  and the cone stays. Run and seen, both.
+
+Which it is, is chance for a small file. An import gives what it brings
+the next id of the importing file (30.15), and a file's counter starts
+from the larger of what the file says (`LastId`) and a number a new
+document draws at random below 5000 (`DocumentP`, against collisions
+when shapes are copied between documents). So the two counters agree
+when the file is past 5000 objects' worth of ids, and by luck before
+that: of two runs of one script, one had the cone as 3760 on both sides
+and one as 3069 here and 3199 there.
+
+**An edit to the wrong object is possible**, where the first write-up of
+this said it was not: with their id another than ours, a row of theirs
+names a number, and should this file have given that number to something
+else since, the op is that object's. Not seen in a run; nothing prevents
+it.
 
 **What turning it back takes.** Their store says which of their objects
 are ours: `import:<branch>` holds our id -> their id and our name ->
@@ -13794,7 +13823,15 @@ this file and not of some third copy.
    objects still come under their own ids, and the merge works from the
    older base -- more shown as conflict, nothing duplicated.
 
-Tests it needs: the run above; both sides changing the cone, which must
+Where the copy fast-forwarded there is no merge row, and steps 2 and 3
+have nothing to do: the base is right already. Steps 1 and 4 are what
+that case needs -- their ids for our objects read back as ours -- and are
+all it needs. They are also the smaller half, and what closes the silent
+loss and the wrong object.
+
+Tests it needs: the run above; the fast-forward with their id another
+than ours, which a test has to force since chance decides it; both sides
+changing the cone, which must
 conflict; the copy removing it; a name that collided on their side; an
 element name that carries the id; a second round trip.
 
@@ -13805,10 +13842,11 @@ be followed through both maps.
 
 ### 30.28 A sent file kept in the log: survey and questions (user: maybe, 2026-10-05)
 
-Not built. 30.23 left a sent file in a list the process keeps and a
-directory under its temp path: gone from the list at a restart, the bytes
-left behind. The user's thought: keep the files in the log, and give the
-panel ways to deal with them later -- merge, trim, or whatever.
+Ruled and built since: 30.29. As surveyed: 30.23 left a sent file in a
+list the process keeps and a directory under its temp path: gone from the
+list at a restart, the bytes left behind. The user's thought: keep the
+files in the log, and give the panel ways to deal with them later --
+merge, trim, or whatever.
 
 **What there is to build on.**
 
@@ -13870,3 +13908,173 @@ panel ways to deal with them later -- merge, trim, or whatever.
 | J6 | What the row says once the file is gone | **Everything but the bytes**: the name, the size, the hash, who sent it, and the record that brought it in or dropped it. Trimming the branch (26.8) takes the row like any other. |
 | J7 | The sender told what became of it | **Not now.** It would be a message to a connection that may be gone; the log has it for when they ask. |
 | J8 | Unpacked on arrival, for the dedup | **No**, by H6. Said above; put here because the user named dedup by content for 30.22. |
+
+### 30.29 A sent file kept in the log: as built (user, 2026-10-05)
+
+**Ruled (user):** the file is dropped after merging, and yes to the cap on
+what waits. The rest of 30.28 is as proposed: J1 yes; J2 a waiting file is
+in the log and is saved with it; J3 a copy without its history leaves it
+out; J4 a total, as a setting; J5 no age; J6 the row stays; J7 the sender
+is not told; J8 not unpacked.
+
+**Kept.** `Document::keepSentFile(bytes, name, sender, senderKind)`: the
+bytes go into the file's blob store as one blob
+(`FileBlobManager::adoptBytes`), and the log gets a row, kind `request`,
+named after the file, under whoever acts -- the upload's handler runs as
+the connection, so the row is the sender's -- its script the name, the
+size, the blob's hash, the sender and how that name is known. No ops, no
+undo step. Nothing looks inside the bytes (H6).
+
+**Held.** The store keeps which rows hold a file: table `heldfile`, the
+row, the blob, and the branch it was brought in to. Its blobs are roots
+of the collector, beside the ops' values and the versions' manifests.
+What travels with a save is every blob the embedded copy holds as a file
+(16.4), so a waiting file is in the `.FCStd` and there again when it is
+opened; 25's recovery has it after a crash; a copy saved without its
+history has none of it.
+
+**By the row's identity, not its number -- found by the test.** A
+fast-forward (30.4 P1) takes this branch's records out and writes them
+again after the rows it took, under new numbers. A file kept by its row's
+number would have been collected in between: a request waiting while
+any other branch was fast-forwarded was lost. `heldfile` is keyed on the
+row's session and ordinal, which a record written again keeps (30.12), and
+a file whose row is gone for good -- trimmed, squashed, deleted with its
+branch -- is let go by `releaseOrphanFiles`, which `_releaseSentFiles`
+calls and a fast-forward does not until its records are back. So a sent
+file's number is the one its row has now; what the log's own records say
+of it is its hash, which does not change.
+
+**Brought in.** `Document::importSentFile(seq, branch)`: the bytes written
+to a file of that name in the document's transient directory,
+`importFork` of it, the file removed. The import's record names the file
+by its hash (`"request"`) and who sent it. The row's entry in `heldfile`
+gets the branch.
+
+**Let go** (`_releaseSentFiles`, at the end of a merge, a branch's
+deletion, a trim and a squash):
+
+- **after merging** -- the branch it came to is in this branch's history;
+  by then the file is rows of it;
+- when that branch is deleted, which is the owner saying no;
+- at once when the import finds nothing new in it, with a `drop` record
+  saying so;
+- `Document::dropSentFile(seq)`: unread, with a `drop` record. One brought
+  in already may be dropped too -- the bytes go, the branch stays.
+
+A file whose import stopped at a row it could not apply (F8) stays held:
+the branch is not merged, and the file is what a second try reads.
+
+`sentFiles()` lists what is held; `writeSentFile(seq, path)` writes the
+bytes out as they came. Python: `keepTransactionSentFile`,
+`getTransactionSentFiles`, `dropTransactionSentFile`,
+`writeTransactionSentFile`, `importTransactionSentFile`.
+
+**The upload** (`requests.send`) keeps the file in the log of the
+document it was sent to. A document that keeps no log (`TransactionLog`
+0) has nowhere to put it, and its files are kept by the process, as all
+were in 30.23. `SceneRequests::list` gives both kinds, `inLog` saying
+which; a row's number is one document's, so `find` and `drop` -- and
+`Gui.serveDropRequest(id, doc)` -- take the document.
+
+**The cap (J4).** `SceneRequests::totalLimit()`: the preference
+`RequestsTotalMB`, 64 unless set, preset by `FC_SERVE_REQUESTS_MB`. What
+counts is every byte held for the document -- waiting, or brought in and
+not yet merged. A file that would take it past is refused, `TooMany`,
+before anything is written; the browser says that too much is waiting and
+whoever shares the document has to deal with some of it. Both Share
+dialogs have the control beside the upload limit's.
+
+**The panel.** A sent file's row has *Bring in and merge...*, as before;
+*Bring in only*, which leaves the branch in the list as the other kind of
+request, its file held until that is merged; *Save a copy as...*, the
+bytes to a file of the owner's choosing, still unread here; *Delete,
+unread*; and *Delete all, unread* when more than one waits. Which of the
+file's branches to bring is read from the file, so the bytes are written
+to one for the asking -- at the owner's click, which is when H6 lets it be
+read.
+
+**Tests.** Python `testASentFileIsKeptInTheLogUntilItIsMerged`: kept --
+one row, the bytes back as they came, no branch, no document, no undo
+step; saved, closed and opened again, still there, and a copy without
+history smaller by it; brought in -- a branch, the record naming the file
+and `lei (invited)`, the file held for the branch; merged -- let go, the
+row still saying what was sent; the same file again, nothing new, let go
+with the record; dropped unread; a file waiting across a fast-forward of
+another branch, its row renumbered and its bytes whole; brought in and the
+branch deleted. The Gui check (`transaction-log-request-check.py`, 28):
+sent over the control lane and kept in the log under the sender, saved
+aside, refused past what may wait, a second dropped with its record,
+brought in only and merged from the list, brought in and merged in one go,
+two dropped at once. The share check has three more (33) for the cap's
+control. **In a browser**, `scripts/request-drive.js` against a document
+served under `FC_SERVE_TOKEN` with `FC_SERVE_INVITE=lei`: sent as `lei`,
+the host lists it -- 36,815 bytes, `lei`, `invited` -- with two rows more
+(the login and the request), no branch and no document; as `nobody`, no
+such row in the menu.
+
+**Left.** A file whose import stopped has no "bring in again" in the
+panel: it is held, and is brought again by hand
+(`importTransactionSentFile`). A waiting file is one blob, so two copies
+of one document sent by two people are stored twice until they are
+brought in.
+
+### 30.30 A serve says that its door signs people in (user, 2026-10-05)
+
+**Ruled (user):** yes -- 30.26's question. The identity header is believed
+only where whoever started the serve said its proxy signs people in.
+
+`SceneStreamServer`'s identity door is **off unless set**:
+`FC_SERVE_IDENTITY_DOOR=1` presets it, and so does
+`FC_SERVE_IDENTITY_HEADER`, since naming the header the door sends says
+the same. `FC_SERVE_TRUST_PROXY=1` alone believes the forwarded address
+and nothing else. The Share dialog sets it from its door, as in 30.26,
+and stopping the share puts back what the environment said.
+
+What said nothing and relied on it now says so: `tests/gui/wsclient.py`
+and the two Gui tests with clients of their own, the wire tests' fixture
+(`setIdentityDoor(true)`), `scripts/transaction-log-author-check.py`, and
+`scripts/share-edge.sh`, which prints the pair for `access` and `caddy`
+and not for `quick`. The demo recipes of `docs/Sandbox.md` trust the proxy
+for the address under a token issued to one name, and need nothing more.
+
+**Gates** for 30.29 and 30.30, frozen and unfrozen each: Python 3010 OK
+(52 skipped frozen, 53 unfrozen; 6 expected failures; +1), ctest 875/875,
+and the GUI checks RC 15, BC 27, VC 18, PC 28, FC 16, VW 14, MC 28, the
+two-document check 24, the tree check 19, the author check 36, the import
+check 39, the request check 28 (+6) and the share check 33 (+4). The web
+layer: typecheck clean, its gate green, bundled.
+
+### 30.31 An invitation with a token of its own: proposed (user: propose, 2026-10-05)
+
+Not built. 30.26 invites a name with the share's token, and says what
+that is worth: the token is in every plain link, so whoever holds one and
+gives the name gets what the name gets.
+
+**The shape.** Invite mints a token for the invitation, as "New" mints
+the share's: the grant is that token and the name, and the link carries
+both. Only whoever was given that link holds its token.
+
+- **It also closes what revoking cannot do today.** Forget or disable one
+  person's grant and their token is dead; nobody else's link changes. On
+  the share's token, taking the name's grant away leaves them the plain
+  link, and to shut them out is "New", which shuts out everyone.
+- **The page's fetches.** A page fetches before it has said a name, and a
+  grant with a name written out does not match a request that gives none:
+  under a token of its own the page itself would be refused. Two ways:
+
+  | | | |
+  | --- | --- | --- |
+  | (a) | A second grant with each invitation: the same token, any name, to look. | No change to the door. Two rows a person in the stored list; the panel shows them as one. This is what the tests' `invitation()` helper builds today. |
+  | (b) | The door takes it as read: a grant that is an invitation -- a token and a name written out -- admits its token to look under any name, and to edit under its own. | One grant a person. Some ten lines in `judgeWith`, and its wire case. |
+
+**To rule.**
+
+| | Question | Proposed |
+| --- | --- | --- |
+| K1 | A token per invitation | **Yes**, minted at Invite. |
+| K2 | The page's fetches | **(b)**: the token is the secret; whoever holds it may look, and is the invited name only under that name. One row a person. |
+| K3 | The share's own token | **As it is**: the plain link, to look. |
+| K4 | Invitations made on the share's token (30.26, a day old) | **Left as they are**, working; the panel's Invite makes the new kind from now on. |
+| K5 | A serve by the environment (`FC_SERVE_INVITE`) | **As it is**: there the token is handed to one person already. More than one person headless is `Gui.serveSetGrants`. |
+| K6 | An invitation that expires, or works once | **Not now** (docs/ShareAccess.md sec 6 item 5). |
