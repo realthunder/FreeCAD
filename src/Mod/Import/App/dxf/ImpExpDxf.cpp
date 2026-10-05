@@ -77,6 +77,8 @@
 #include <App/DocumentObjectPy.h>
 #include <App/FeaturePythonPyImp.h>
 #include <Base/Console.h>
+#include <Base/Exception.h>
+#include <Base/FileInfo.h>
 #include <Base/Interpreter.h>
 #include <Base/Matrix.h>
 #include <Base/Parameter.h>
@@ -1753,6 +1755,14 @@ point3D gPntTopoint3D(gp_Pnt& p)
 ImpExpDxfWrite::ImpExpDxfWrite(std::string filepath)
     : CDxfWrite(filepath.c_str())
 {
+    // CDxfWrite only notes a file it cannot open, and no caller asked: an
+    // export to a missing directory wrote nothing and said nothing. Thrown
+    // here, past the base's construction, so its destructor still frees
+    // what it made.
+    if (Failed()) {
+        throw Base::FileException("Cannot open DXF file for writing",
+                                  Base::FileInfo(filepath.c_str()));
+    }
     setOptionSource("User parameter:BaseApp/Preferences/Mod/Draft");
     setOptions();
 }
