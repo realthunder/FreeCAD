@@ -807,7 +807,10 @@ public:
         if (!doc)
             return;
         auto view = Base::freecad_dynamic_cast<Gui::View3DInventor>(doc->getEditingView());
-        if (!view)
+        // A served client's session has no window in it when the document
+        // has none. The preview is the session's and needs no window; the
+        // on-top display, which is a window's, finds none (findEditView).
+        if (!view && !doc->editingViewer())
             return;
 
         Gui::ViewProviderDocumentObject *parentVp = nullptr;
@@ -866,6 +869,7 @@ public:
                 editBodyT = App::SubObjectT(objs.begin(), it+1);
                 auto editObj = sobjT.getSubObject();
                 editObjT = editObj;
+                editOccurrenceT = sobjT;
                 editView = view;
                 editDoc = editBodyT.getDocument();
                 if (hasEditCheckBox) {
@@ -887,9 +891,9 @@ public:
                             if (feat)
                                 feat->setPauseRecompute(true);
                             editPreview = true;
-                            vp->setPreviewDisplayMode(true);
+                            vp->setPreviewDisplayMode(true, editOccurrenceT);
                         }
-                    } else if (editObj)
+                    } else if (editObj && !editShownInSession)
                         editObj->Visibility.setValue(true);
                     if (PartGui::PartParams::getEditOnTop())
                         showEditOnTop(true);
@@ -990,6 +994,19 @@ public:
                     }
                 }
             }
+            // What is swapped in the session's views is not swapped in the
+            // document, so the visible sibling is not what this view shows.
+            // With the preview the view shows the base in the feature's
+            // place; without, the feature in edit, whichever the document
+            // shows.
+            auto vp = Base::freecad_dynamic_cast<ViewProviderAddSub>(
+                    Gui::Application::Instance->getViewProvider(editObjT.getObject()));
+            if (vp && vp->isPreviewInSession()) {
+                if (editShownInSession || objT.getSubObject() == editObjT.getObject())
+                    objT = vp->previewBaseOccurrence();
+            }
+            else if (editShownInSession)
+                objT = editOccurrenceT;
         }
         if (objT == editOnTopT)
             return;
@@ -1078,6 +1095,8 @@ public:
         showEditOnTop(false);
         editOnTopT = App::SubObjectT();
         editBodyT = App::SubObjectT();
+        editOccurrenceT = App::SubObjectT();
+        editShownInSession = false;
         editView = nullptr;
         hasEditCheckBox = false;
         editPreview = false;
@@ -1176,13 +1195,62 @@ public:
         }
     }
 
+    /** Show the feature about to be edited in place of whatever the body
+     * shows, in the views of the edit only.
+     *
+     * The same swap beforeEdit writes into Visibility below -- the other
+     * visible solid features hidden, this one shown -- as entries of each
+     * session view's own visibility table (Gui::Document::
+     * setEditVisibility), for the one occurrence being edited. Nothing is
+     * written to the document and nothing has to be put back: the entries
+     * end with the session. False when the views cannot take them
+     * (render-cache modes 0-2), or the occurrence is not known.
+     */
+    bool beforeEditInSession(PartDesign::Body *body, App::DocumentObject *editingObj)
+    {
+        auto gdoc = Gui::Application::Instance->editDocument();
+        if (!gdoc || !gdoc->canSetEditVisibility())
+            return false;
+        Gui::ViewProviderDocumentObject *parentVp = nullptr;
+        std::string subname;
+        gdoc->getInEdit(&parentVp, &subname);
+        if (!parentVp)
+            return false;
+        App::SubObjectT occurrence(parentVp->getObject(), subname.c_str());
+        if (occurrence.getSubObject() != editingObj)
+            return false;
+        const App::SubObjectT bodyT = occurrence.getParent();
+        auto entry = [&](App::DocumentObject *obj, bool visible) {
+            const App::SubObjectT objT = bodyT.getChild(obj);
+            return gdoc->setEditVisibility(EditSwaps, objT.getObject(),
+                                           objT.getSubName().c_str(), visible ? 1 : 0);
+        };
+        if (!entry(editingObj, true))
+            return false;
+        if (body->isSolidFeature(editingObj)) {
+            for (auto obj : body->Group.getValues()) {
+                if (obj == editingObj
+                        || !obj->Visibility.getValue()
+                        || !obj->isDerivedFrom(PartDesign::Feature::getClassTypeId())
+                        || !body->isSolidFeature(obj))
+                    continue;
+                entry(obj, false);
+            }
+        }
+        return true;
+    }
+
     void beforeEdit(App::DocumentObject *editingObj)
     {
         auto body = PartDesign::Body::findBodyOf(editingObj);
         if (!body)
             return;
-        hideEditObject = !editingObj->Visibility.getValue();
         visibleFeatures.clear();
+        hideEditObject = false;
+        editShownInSession = beforeEditInSession(body, editingObj);
+        if (editShownInSession)
+            return;
+        hideEditObject = !editingObj->Visibility.getValue();
         if (!body->isSolidFeature(editingObj)) {
             editingObj->Visibility.setValue(true);
             return;
@@ -1470,6 +1538,9 @@ public:
     fastsignals::scoped_connection connVisibilityChanged;
     fastsignals::scoped_connection connPrimitiveMoved;
     App::DocumentObjectT editObjT;
+    /// The feature in edit as an occurrence: the top-level object and the
+    /// path down to it, which is what a view's visibility table names
+    App::SubObjectT editOccurrenceT;
     App::SubObjectT editBodyT;
     App::DocumentT editDoc;
     App::SubObjectT editOnTopT;
@@ -1486,6 +1557,14 @@ public:
 
     std::vector<std::vector<App::DocumentObjectT> > visibleFeatures;
     bool hideEditObject = false;
+    /// Whether beforeEdit showed the feature through the session's views
+    /// rather than by Visibility
+    bool editShownInSession = false;
+    /// Whose these entries are among the session's (Gui::EditingRoot::
+    /// setVisibilitySwaps). Between two owners naming the same occurrence
+    /// the earlier name decides, and the preview's -- which hides the
+    /// feature this shows -- has to: keep this one after "PartDesign.Preview".
+    static constexpr const char *EditSwaps = "PartDesign.Shown";
 };
 
 static Monitor *_MonitorInstance;
@@ -1605,7 +1684,7 @@ void MonitorProxy::onPreview(bool checked)
 
     if (vp) {
         _MonitorInstance->editPreview = checked;
-        vp->setPreviewDisplayMode(checked);
+        vp->setPreviewDisplayMode(checked, _MonitorInstance->editOccurrenceT);
         auto feat = Base::freecad_dynamic_cast<PartDesign::Feature>(editObj);
         if (feat)
             feat->setPauseRecompute(checked);
@@ -1613,8 +1692,14 @@ void MonitorProxy::onPreview(bool checked)
             Gui::WaitCursor cursor;
             App::AutoTransaction guard("Recompute");
             editObj->recomputeFeature(true);
-            vp->show();
+            // Shown by the session's views already when they could
+            if (!_MonitorInstance->editShownInSession)
+                vp->show();
         }
+        // The session's preview swaps no Visibility, so nothing tells
+        // the on-top display that what this view shows has changed.
+        if (!_MonitorInstance->editOnTopT.getObjectName().empty())
+            _MonitorInstance->showEditOnTop(true);
     }
 }
 

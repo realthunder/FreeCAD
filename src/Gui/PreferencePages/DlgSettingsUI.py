@@ -51,7 +51,7 @@ ParamGroup = (
         'TextCursorWidth',
     )]),
 
-    ('Views', [_ViewParams['UseViewArea']]
+    ('Views', [_ViewParams['UseViewArea'], _ViewParams['PerViewEdit']]
               + [_OpenViewParams[name] for name in (
         'DocumentTarget',
         'DocViewTarget',

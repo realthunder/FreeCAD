@@ -771,7 +771,8 @@ QJsonObject setEditOp(const QJsonObject &req, const std::string &boundDoc,
 /// Leave the edit mode this document is in, whoever started it. One
 /// editing view provider per document is the first cut (sec 8.10), so
 /// there is only ever one to leave.
-QJsonObject resetEditOp(const QJsonObject &req, const std::string &boundDoc)
+QJsonObject resetEditOp(const QJsonObject &req, const std::string &boundDoc,
+                        uint64_t client)
 {
     const QJsonValue id = req.value(QLatin1String("id"));
 
@@ -785,6 +786,17 @@ QJsonObject resetEditOp(const QJsonObject &req, const std::string &boundDoc)
     if (!gdoc)
         return errorReply(id, "UnknownDocument",
                           QString::fromUtf8(doc->getName()));
+
+    // "Whoever started it" is the shared session's rule: every client
+    // with a view is in it. A session that is its initiating view's alone
+    // (PerViewEdit) is left by that view's connection and by no other.
+    if (ViewerContext *owner = gdoc->editingViewer()) {
+        SceneServeSource *source = SceneServeSource::sourceFor(doc);
+        if (source && !gdoc->editingRoot()->isShared()
+                && source->viewerFor(client) != owner)
+            return errorReply(id, "NotInSession",
+                              QStringLiteral("the edit belongs to another view"));
+    }
 
     // No scope opened here: Gui::Document::resetEdit opens one over the
     // view it was running in, for every caller. It has to, because the
@@ -885,6 +897,16 @@ QJsonObject enterClientEdit(const QJsonValue &id, Document *gdoc, ViewProvider *
         if (!viewer)
             return errorReply(id, "NoView",
                               QStringLiteral("state a camera before editing"));
+    }
+
+    // A document has one edit at a time, so entering one ends the one in
+    // progress -- which every client with a view is in, when it is shared.
+    // One that is its initiating view's alone (PerViewEdit) is not this
+    // client's to end by starting another.
+    if (ViewerContext *owner = gdoc->editingViewer()) {
+        if (viewer && owner != viewer && !gdoc->editingRoot()->isShared())
+            return errorReply(id, "EditInProgress",
+                              QStringLiteral("another view is editing this document"));
     }
 
     const QByteArray sub = subname.toUtf8();
@@ -1337,7 +1359,7 @@ std::string Gui::handleSceneControlRequest(const std::string &json,
         else if (op == QLatin1String("edit"))
             reply = setEditOp(req, boundDoc, client);
         else if (op == QLatin1String("resetEdit"))
-            reply = resetEditOp(req, boundDoc);
+            reply = resetEditOp(req, boundDoc, client);
         else if (op == QLatin1String("command"))
             reply = runCommandOp(req, boundDoc, client);
         else if (op == QLatin1String("onViewFocus"))

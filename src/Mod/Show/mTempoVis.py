@@ -320,11 +320,49 @@ class TempoVis(object):
         self.modifyVPProperty(objs, "Visibility", JUST_SAVE)
         return objs
 
+    def _modify_session_visibility(self, objs, visible):
+        """_modify_session_visibility(objs, visible): shows or hides the objects in the
+        views of the running edit session only, by an entry of each of those views' own
+        visibility table rather than by the objects' Visibility -- which is the document's,
+        so that every other view of it, and every served client, would follow.
+
+        Returns False, having done nothing, when there is no edit session to take the
+        entries (no edit, or render cache modes 0-2): the caller writes Visibility.
+
+        Links to the objects are left as they are: an entry is the object where its own
+        root is drawn."""
+        from .SceneDetails.SessionVisibility import SessionVisibility, session_document
+
+        if session_document() is None:
+            return False
+        if self.state == S_RESTORED:
+            Wrn("Attempting to use a TV that has been restored. There must be a problem with code.")
+            return True
+        if visible:
+            # PartDesign shows one solid feature of a group of siblings at a
+            # time: its Visibility going on turns the others' off. An entry
+            # writes no Visibility, so the same is said here.
+            for obj in objs:
+                for sibling in getattr(obj, "Siblings", None) or []:
+                    if sibling is obj or sibling in objs:
+                        continue
+                    if getattr(sibling, "Visibility", False):
+                        self.modify(SessionVisibility(sibling, False))
+        for obj in objs:
+            self.modify(SessionVisibility(obj, bool(visible)))
+        return True
+
     def show(self, doc_obj_or_list, links_too=True, mild_restore=None):
         """show(doc_obj_or_list, links_too = True): shows objects (sets their Visibility to True).
         doc_obj_or_list can be a document object, or a list of document objects.
-        If links_too is True, all Links of the objects are also hidden, by setting LinkVisibility attribute of each object."""
+        If links_too is True, all Links of the objects are also hidden, by setting LinkVisibility attribute of each object.
+
+        Inside an edit session whose views have a visibility table of their own, the objects
+        are shown in those views only and no Visibility is written (see
+        _modify_session_visibility)."""
         doc_obj_or_list = self._3D_objects(doc_obj_or_list)
+        if self._modify_session_visibility(doc_obj_or_list, True):
+            return
         self.saveBodyVisibleFeature(
             doc_obj_or_list
         )  # fix implicit hiding of other features by PartDesign not being recorded to TV
@@ -333,8 +371,14 @@ class TempoVis(object):
             self.modifyVPProperty(doc_obj_or_list, "LinkVisibility", True, mild_restore)
 
     def hide(self, doc_obj_or_list, links_too=True, mild_restore=None):
-        """hide(doc_obj_or_list): hides objects (sets their Visibility to False). doc_obj_or_list can be a document object, or a list of document objects"""
+        """hide(doc_obj_or_list): hides objects (sets their Visibility to False). doc_obj_or_list can be a document object, or a list of document objects
+
+        Inside an edit session whose views have a visibility table of their own, the objects
+        are hidden in those views only and no Visibility is written (see
+        _modify_session_visibility)."""
         doc_obj_or_list = self._3D_objects(doc_obj_or_list)
+        if self._modify_session_visibility(doc_obj_or_list, False):
+            return
         # no need to saveBodyVisibleFeature here, as no implicit showing will happen
         self.modifyVPProperty(doc_obj_or_list, "Visibility", False, mild_restore)
         if links_too:

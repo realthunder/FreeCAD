@@ -726,8 +726,17 @@ bool Document::setEdit(Gui::ViewProvider* p, int ModNum, const char *subname)
         guard2(App::ObjEditing, sobj);
 
     d->_editMode = ModNum;
+    // What a session holds for its views can be put there from here on --
+    // an edit mode's visibility automation runs as it starts, before any
+    // view is bound (setEditVisibility) -- so nothing of an earlier one
+    // may be left to meet it.
+    if (d->_editRoot)
+        d->_editRoot->endSession();
     d->_editViewProvider = svp->startEditing(ModNum);
     if(!d->_editViewProvider) {
+        // Refused, and whatever it swapped on the way goes with it
+        if (d->_editRoot)
+            d->_editRoot->endSession();
         d->_editViewProviderParent = nullptr;
         d->_editObjs.clear();
         d->_editingObject = nullptr;
@@ -751,6 +760,9 @@ bool Document::setEdit(Gui::ViewProvider* p, int ModNum, const char *subname)
 
     if(editViewer) {
         EditingRoot *root = editingRoot();
+        // Whose session this is, for as long as it runs: every view's, or
+        // the one it is started in (the user's choice, PerViewEdit).
+        root->setShared(!ViewParams::getPerViewEdit());
         editViewer->setEditingViewProvider(d->_editViewProvider, ModNum, root);
         d->_editingViewer = editViewer;
         d->_editRootNode = root->node();
@@ -759,11 +771,14 @@ bool Document::setEdit(Gui::ViewProvider* p, int ModNum, const char *subname)
         // events routed to the same tool -- so a sketch entered in one
         // window is drawn in from any of them. A client's mirror joins
         // through the serving source, on signalInEdit below, since the
-        // document does not hold mirrors.
-        for (auto view : d->baseViews) {
-            auto view3d = dynamic_cast<View3DInventor *>(view);
-            if (view3d && view3d->getViewer() && view3d->getViewer() != editViewer)
-                view3d->getViewer()->joinEditing(d->_editViewProvider, root);
+        // document does not hold mirrors. Not when the session is its
+        // initiator's alone: then no other view joins, here or there.
+        if (root->isShared()) {
+            for (auto view : d->baseViews) {
+                auto view3d = dynamic_cast<View3DInventor *>(view);
+                if (view3d && view3d->getViewer() && view3d->getViewer() != editViewer)
+                    view3d->getViewer()->joinEditing(d->_editViewProvider, root);
+            }
         }
     }
     Gui::TaskView::TaskDialog* dlg = Gui::Control().activeDialog();
@@ -806,6 +821,83 @@ EditingRoot *Document::editingRoot() {
     if (!d->_editRoot)
         d->_editRoot = std::make_unique<EditingRoot>(this);
     return d->_editRoot.get();
+}
+
+bool Document::canSetEditVisibility() const
+{
+    if (Application::Instance->editDocument() != this)
+        return false;
+    // The view the session runs in, else the one setEdit is about to
+    // start it in: found the way setEdit finds it.
+    ViewerContext *viewer = d->_editingViewer;
+    if (!viewer)
+        viewer = ViewerContext::current();
+    if (!viewer) {
+        if (auto view3d = dynamic_cast<View3DInventor *>(getActiveView()))
+            viewer = view3d->getViewer();
+    }
+    return viewer && viewer->canSetEditVisibilities();
+}
+
+namespace {
+bool sameEntry(const VisibilityEntry &entry, const App::DocumentObject *obj,
+               const std::string &subname)
+{
+    return entry.obj == obj->getNameInDocument()
+        && entry.doc == obj->getDocument()->getName()
+        && entry.subname == subname;
+}
+}
+
+bool Document::setEditVisibility(const char *owner, const App::DocumentObject *obj,
+                                 const char *subname, int visible)
+{
+    if (!owner || !obj || !obj->isAttachedToDocument())
+        return false;
+    const std::string sub = subname ? subname : "";
+    EditingRoot *root = const_cast<Document *>(this)->editingRoot();
+    std::vector<VisibilityEntry> entries;
+    if (auto current = root->visibilitySwaps(owner))
+        entries = *current;
+    auto it = std::find_if(entries.begin(), entries.end(),
+            [&](const VisibilityEntry &entry) { return sameEntry(entry, obj, sub); });
+    if (visible < 0) {
+        // Taking back needs no view to agree, and is all that is left to
+        // do once the session has ended and taken the entries with it.
+        if (it == entries.end())
+            return true;
+        entries.erase(it);
+        root->setVisibilitySwaps(owner, std::move(entries));
+        return true;
+    }
+    if (!canSetEditVisibility())
+        return false;
+    if (it == entries.end()) {
+        VisibilityEntry entry;
+        entry.doc = obj->getDocument()->getName();
+        entry.obj = obj->getNameInDocument();
+        entry.subname = sub;
+        entry.rooted = !sub.empty();
+        entries.push_back(std::move(entry));
+        it = entries.end() - 1;
+    }
+    it->visible = visible != 0;
+    return root->setVisibilitySwaps(owner, std::move(entries));
+}
+
+int Document::getEditVisibility(const char *owner, const App::DocumentObject *obj,
+                                const char *subname) const
+{
+    if (!owner || !obj || !obj->isAttachedToDocument() || !d->_editRoot)
+        return -1;
+    const std::string sub = subname ? subname : "";
+    if (auto entries = d->_editRoot->visibilitySwaps(owner)) {
+        for (const auto &entry : *entries) {
+            if (sameEntry(entry, obj, sub))
+                return entry.visible ? 1 : 0;
+        }
+    }
+    return -1;
 }
 
 void Document::resetEdit() {
@@ -879,6 +971,10 @@ void Document::_resetEdit()
         d->_editWantsRestorePrevious = d->_editWantsRestore;
         d->_editWantsRestore = false;
         d->_editViewProvider = nullptr;
+        // The initiating view ended the session as it left; an edit that
+        // never had one -- no 3D view to start in -- ends here.
+        if (d->_editRoot)
+            d->_editRoot->endSession();
 
         // The logic below is not necessary anymore, because this method is
         // changed into a private one,  _resetEdit(). And the exposed
@@ -917,6 +1013,24 @@ ViewProvider *Document::getInEdit(ViewProviderDocumentObject **parentVp,
     if(mode) *mode = d->_editMode;
 
     if (d->_editViewProvider) {
+        // The view asking, when there is one to name: a served client's
+        // request and its replayed events run under a scope on its own
+        // mirror, and the answer is that view's -- whether IT is in the
+        // session (docs/ThinClient.md 8.12 item D). The active 3D window
+        // below is the desktop user's, and with a session that is its
+        // initiator's alone (PerViewEdit) it need not have joined.
+        //
+        // Only a client's view is answered "no" here. A desktop viewer
+        // opens a scope around its own events too, and whatever runs under
+        // one of those -- a nested event loop reaches a long way -- is
+        // still the desktop asking, for which the active window answers
+        // as it always has.
+        if (ViewerContext *current = ViewerContext::current()) {
+            if (current->getEditingViewProvider() == d->_editViewProvider)
+                return d->_editViewProvider;
+            if (current->cameraIsRemote())
+                return nullptr;
+        }
         // there is only one 3d view which is in edit mode
         auto activeView = dynamic_cast<View3DInventor *>(getActiveView());
         if (activeView)
@@ -4275,8 +4389,9 @@ View3DInventor *Document::createView3D()
 
         auto view3D = new View3DInventor(this, getMainWindow(), shareWidget);
         // A window opened while a session runs shows it too
-        // (docs/ThinClient.md 8.11).
-        if (d->_editViewProvider && d->_editingViewer && view3D->getViewer())
+        // (docs/ThinClient.md 8.11) -- a shared one.
+        if (d->_editViewProvider && d->_editingViewer && view3D->getViewer()
+                && editingRoot()->isShared())
             view3D->getViewer()->joinEditing(d->_editViewProvider, editingRoot());
 
         // Views can now have independent draw styles (i.e. override modes)

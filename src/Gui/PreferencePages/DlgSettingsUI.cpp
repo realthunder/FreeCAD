@@ -109,6 +109,17 @@ DlgSettingsUI::DlgSettingsUI(QWidget* parent)
 
     // Auto generated code (Tools/params_utils.py:492)
     layoutViews->addLayout(layoutRow);
+    PerViewEdit = new Gui::PrefCheckBox(this);
+    layoutRow->addWidget(PerViewEdit);
+    PerViewEdit->setChecked(Gui::ViewParams::defaultPerViewEdit());
+    PerViewEdit->setEntryName("PerViewEdit");
+    PerViewEdit->setParamGrpPath("View");
+
+    // Auto generated code (Tools/params_utils.py:486)
+    layoutRow = new QHBoxLayout();
+
+    // Auto generated code (Tools/params_utils.py:492)
+    layoutViews->addLayout(layoutRow);
     labelDocumentTarget = new QLabel(this);
     layoutRow->addWidget(labelDocumentTarget);
     DocumentTarget = new Gui::PrefComboBox(this);
@@ -923,6 +934,7 @@ void DlgSettingsUI::saveSettings()
     // Auto generated code (Tools/params_utils.py:522)
     TextCursorWidth->onSave();
     UseViewArea->onSave();
+    PerViewEdit->onSave();
     DocumentTarget->onSave();
     DocViewTarget->onSave();
     UtilityTarget->onSave();
@@ -982,6 +994,7 @@ void DlgSettingsUI::loadSettings()
     // Auto generated code (Tools/params_utils.py:509)
     TextCursorWidth->onRestore();
     UseViewArea->onRestore();
+    PerViewEdit->onRestore();
     DocumentTarget->onRestore();
     DocViewTarget->onRestore();
     UtilityTarget->onRestore();
@@ -1046,6 +1059,8 @@ void DlgSettingsUI::retranslateUi()
     groupViews->setTitle(QObject::tr("Views"));
     UseViewArea->setToolTip(QApplication::translate("ViewParams", Gui::ViewParams::docUseViewArea()));
     UseViewArea->setText(QObject::tr("Tile views inside one tab"));
+    PerViewEdit->setToolTip(QApplication::translate("ViewParams", Gui::ViewParams::docPerViewEdit()));
+    PerViewEdit->setText(QObject::tr("Edit in one view only"));
     DocumentTarget->setToolTip(QApplication::translate("OpenViewParams", Gui::OpenViewParams::docDocumentTarget()));
     labelDocumentTarget->setText(QObject::tr("New documents open in"));
     labelDocumentTarget->setToolTip(DocumentTarget->toolTip());

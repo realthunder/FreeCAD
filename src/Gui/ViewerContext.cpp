@@ -151,6 +151,11 @@ bool EditingRoot::hasContent() const
     return root->getNumChildren() > 1;
 }
 
+bool EditingRoot::hasEditGeometry() const
+{
+    return root->getNumChildren() > 1 + int(sessionNodes.size());
+}
+
 bool EditingRoot::hasOnViewContent() const
 {
     return onView->getNumChildren() > 0;
@@ -235,8 +240,8 @@ void EditingRoot::attachView(ViewerContext* view)
 {
     if (view && std::find(viewList.begin(), viewList.end(), view) == viewList.end()) {
         viewList.push_back(view);
-        if (editHide) {
-            view->setEditHide(editHide.get());
+        if (editHide || !swaps.empty()) {
+            view->setEditVisibilities(transientEntries());
         }
     }
 }
@@ -248,9 +253,33 @@ void EditingRoot::detachView(ViewerContext* view)
         return;
     }
     viewList.erase(it);
-    if (editHide) {
-        view->setEditHide(nullptr);
+    if (editHide || !swaps.empty()) {
+        view->setEditVisibilities({});
     }
+}
+
+std::vector<VisibilityEntry> EditingRoot::transientEntries() const
+{
+    std::vector<VisibilityEntry> entries;
+    if (editHide) {
+        entries.push_back(*editHide);
+    }
+    for (const auto& owned : swaps) {
+        entries.insert(entries.end(), owned.second.begin(), owned.second.end());
+    }
+    return entries;
+}
+
+bool EditingRoot::applyVisibility()
+{
+    const std::vector<VisibilityEntry> entries = transientEntries();
+    bool ok = true;
+    for (ViewerContext* view : viewList) {
+        if (!view->setEditVisibilities(entries)) {
+            ok = false;
+        }
+    }
+    return ok;
 }
 
 bool EditingRoot::hideEdited(App::DocumentObject* parent, const char* subname)
@@ -269,11 +298,9 @@ bool EditingRoot::hideEdited(App::DocumentObject* parent, const char* subname)
     hide->rooted = true;
     hide->visible = false;
     editHide = std::move(hide);
-    for (ViewerContext* view : viewList) {
-        if (!view->setEditHide(editHide.get())) {
-            showEdited();
-            return false;
-        }
+    if (!applyVisibility()) {
+        showEdited();
+        return false;
     }
     return true;
 }
@@ -284,22 +311,144 @@ void EditingRoot::showEdited()
         return;
     }
     editHide.reset();
-    for (ViewerContext* view : viewList) {
-        view->setEditHide(nullptr);
-    }
+    applyVisibility();
 }
 
-void EditingRoot::setTransform(const Base::Matrix4D& mat)
+bool EditingRoot::setVisibilitySwaps(const std::string& owner,
+                                     std::vector<VisibilityEntry>&& entries)
+{
+    if (entries.empty()) {
+        clearVisibilitySwaps(owner);
+        return true;
+    }
+    swaps[owner] = std::move(entries);
+    if (!applyVisibility()) {
+        clearVisibilitySwaps(owner);
+        return false;
+    }
+    return true;
+}
+
+void EditingRoot::clearVisibilitySwaps(const std::string& owner)
+{
+    if (swaps.erase(owner) == 0) {
+        return;
+    }
+    applyVisibility();
+}
+
+const std::vector<VisibilityEntry>* EditingRoot::visibilitySwaps(const std::string& owner) const
+{
+    auto it = swaps.find(owner);
+    return it == swaps.end() ? nullptr : &it->second;
+}
+
+namespace
+{
+SbMatrix toSbMatrix(const Base::Matrix4D& mat)
 {
     // NOLINTBEGIN
     double dMtrx[16];
     mat.getGLMatrix(dMtrx);
-    transform->setMatrix(SbMatrix(
+    return SbMatrix(
                 dMtrx[0], dMtrx[1], dMtrx[2],  dMtrx[3],
                 dMtrx[4], dMtrx[5], dMtrx[6],  dMtrx[7],
                 dMtrx[8], dMtrx[9], dMtrx[10], dMtrx[11],
-                dMtrx[12],dMtrx[13],dMtrx[14], dMtrx[15]));
+                dMtrx[12],dMtrx[13],dMtrx[14], dMtrx[15]);
     // NOLINTEND
+}
+}  // namespace
+
+void EditingRoot::setTransform(const Base::Matrix4D& mat)
+{
+    editMatrix = mat;
+    transform->setMatrix(toSbMatrix(mat));
+    placeSessionNodes();
+}
+
+void EditingRoot::placeSessionNodes()
+{
+    if (sessionNodes.empty()) {
+        return;
+    }
+    // Under the editing transform like everything else here, so each
+    // holder undoes it first: a second root beside this one would have to
+    // be hung, captured and published by every kind of view all over
+    // again.
+    Base::Matrix4D undo = editMatrix;
+    undo.inverseGauss();
+    for (const SessionNode& entry : sessionNodes) {
+        entry.place->setMatrix(toSbMatrix(undo * entry.world));
+    }
+}
+
+void EditingRoot::addSessionNode(SoNode* node, const Base::Matrix4D& world)
+{
+    if (!node) {
+        return;
+    }
+    if (setSessionNodeTransform(node, world)) {
+        return;
+    }
+    SessionNode entry;
+    entry.node = node;
+    entry.world = world;
+    entry.holder = new SoSeparator;
+    entry.holder->setName("EditingSessionNode");
+    entry.place = new SoTransform;
+    entry.holder->addChild(entry.place);
+    entry.holder->addChild(node);
+    // After the transform and the session nodes already here, ahead of
+    // the edit's own geometry: reset() gives back or drops what follows.
+    root->insertChild(entry.holder, 1 + int(sessionNodes.size()));
+    sessionNodes.push_back(entry);
+    placeSessionNodes();
+}
+
+bool EditingRoot::setSessionNodeTransform(SoNode* node, const Base::Matrix4D& world)
+{
+    for (SessionNode& entry : sessionNodes) {
+        if (entry.node == node) {
+            entry.world = world;
+            placeSessionNodes();
+            return true;
+        }
+    }
+    return false;
+}
+
+void EditingRoot::removeSessionNode(SoNode* node)
+{
+    for (auto it = sessionNodes.begin(); it != sessionNodes.end(); ++it) {
+        if (it->node != node) {
+            continue;
+        }
+        const int index = root->findChild(it->holder);
+        if (index >= 0) {
+            root->removeChild(index);
+        }
+        sessionNodes.erase(it);
+        return;
+    }
+}
+
+bool EditingRoot::hasSessionNode(SoNode* node) const
+{
+    return std::any_of(sessionNodes.begin(), sessionNodes.end(),
+                       [node](const SessionNode& entry) { return entry.node == node; });
+}
+
+void EditingRoot::endSession()
+{
+    while (!sessionNodes.empty()) {
+        removeSessionNode(sessionNodes.back().node);
+    }
+    const bool told = editHide || !swaps.empty();
+    editHide.reset();
+    swaps.clear();
+    if (told) {
+        applyVisibility();
+    }
 }
 
 void EditingRoot::setup(Gui::ViewProvider* vp, SoNode* node, const Base::Matrix4D* mat)
@@ -322,6 +471,7 @@ void EditingRoot::setup(Gui::ViewProvider* vp, SoNode* node, const Base::Matrix4
 
     restore = true;
     auto vpRoot = vp->getRoot();
+    // Appended, so after the session nodes: reset() counts on that.
     for (int i = 0, count = vpRoot->getNumChildren(); i < count; ++i) {
         SoNode* child = vpRoot->getChild(i);
         if (child != vp->getTransformNode()) {
@@ -334,11 +484,14 @@ void EditingRoot::setup(Gui::ViewProvider* vp, SoNode* node, const Base::Matrix4
 
 void EditingRoot::reset(Gui::ViewProvider* vp, bool updateLinks)
 {
-    if (!vp || !hasContent()) {
+    if (!vp || !hasEditGeometry()) {
         return;
     }
+    // The transform and the session nodes stay: only what the edit mode
+    // hung is dropped or given back.
+    const int first = 1 + int(sessionNodes.size());
     if (!restore) {
-        root->getChildren()->truncate(1);
+        root->getChildren()->truncate(first);
         return;
     }
     restore = false;
@@ -347,10 +500,10 @@ void EditingRoot::reset(Gui::ViewProvider* vp, bool updateLinks)
         FC_ERR("WARNING!!! Editing view provider root node is tampered");
     }
     vpRoot->addChild(vp->getTransformNode());
-    for (int i = 1, count = root->getNumChildren(); i < count; ++i) {
+    for (int i = first, count = root->getNumChildren(); i < count; ++i) {
         vpRoot->addChild(root->getChild(i));
     }
-    root->getChildren()->truncate(1);
+    root->getChildren()->truncate(first);
 
     // handle exceptions eventually raised by ViewProviderLink
     try {
@@ -610,6 +763,10 @@ void ViewerContext::resetEditingViewProvider()
     removeEventCallback(SoEvent::getClassTypeId(), Gui::ViewProvider::eventCallback,
                         editViewProvider);
     editViewProvider = nullptr;
+    // The initiator leaving is the session ending, and the joiners are
+    // still attached: whatever the session alone held -- a preview node,
+    // the swaps of its views' visibility -- goes now, in all of them.
+    editRoot->endSession();
     // After the restore, so that an implementation whose graph has to see
     // the children leave (a mirror's publish traversal) still has the root
     // in it when they do.
@@ -728,7 +885,12 @@ bool ViewerContext::hideEditedObject()
     return editRoot->hideEdited(parent, subname.c_str());
 }
 
-bool ViewerContext::setEditHide(const VisibilityEntry*)
+bool ViewerContext::setEditVisibilities(const std::vector<VisibilityEntry>&)
+{
+    return false;
+}
+
+bool ViewerContext::canSetEditVisibilities() const
 {
     return false;
 }

@@ -34,7 +34,7 @@ import ViewParams
 ViewParams.declare_begin()
 ]]]*/
 
-// Auto generated code (Gui/ViewParams.py:626)
+// Auto generated code (Gui/ViewParams.py:632)
 #include <QString>
 
 // Auto generated code (Tools/params_utils.py:82)
@@ -817,6 +817,22 @@ public:
     static void removeEditingTransparency();
     static void setEditingTransparency(const double &v);
     static const char *docEditingTransparency();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter PerViewEdit
+    ///
+    /// Run an edit in the one view it is started in. The other 3D views of
+    /// the document, and the other viewers of a served one, keep showing the
+    /// document as it is and take no input for the edit. When off, every view
+    /// of the document joins the edit and can work in it. Takes effect with
+    /// the next edit.
+    static const bool & getPerViewEdit();
+    static const bool & defaultPerViewEdit();
+    static void removePerViewEdit();
+    static void setPerViewEdit(const bool &v);
+    static const char *docPerViewEdit();
     //@}
 
     // Auto generated code (Tools/params_utils.py:139)
@@ -2340,7 +2356,7 @@ public:
     static const char *docDatumTemporaryScaleFactor();
     //@}
 
-    // Auto generated code (Gui/ViewParams.py:632)
+    // Auto generated code (Gui/ViewParams.py:638)
     static const std::vector<QString> AnimationCurveTypes;
 
     static void onViewParamChanged(const char *sReason);
@@ -2371,7 +2387,7 @@ ViewParams.declare_end()
 }; // class ViewParams
 } // namespace Gui
 
-// Auto generated code (Gui/ViewParams.py:645)
+// Auto generated code (Gui/ViewParams.py:651)
 namespace Gui {
 /// Obtain all display style names, terminated by nullptr entry.
 GuiExport const char **drawStyleNames();

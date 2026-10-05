@@ -114,7 +114,7 @@ public:
     Render::Renderer* renderer = nullptr;
 
     /// The client's own object visibility (setObjectVisibilities), and
-    /// an edit session's hide (setEditHide).
+    /// an edit session's hides and shows (setEditVisibilities).
     ViewVisibility visibility;
     std::function<void()> onVisibilityChanged;
 
@@ -955,16 +955,18 @@ bool MirrorViewer::setObjectVisibilities(std::vector<VisibilityEntry>&& entries)
     return pimpl->visibility.set(std::move(entries));
 }
 
-bool MirrorViewer::setEditHide(const VisibilityEntry* hide)
+bool MirrorViewer::canSetEditVisibilities() const
+{
+    return pimpl->cacheManager != nullptr;
+}
+
+bool MirrorViewer::setEditVisibilities(const std::vector<VisibilityEntry>& entries)
 {
     if (!pimpl->cacheManager) {
         return false;
     }
-    std::vector<VisibilityEntry> entries;
-    if (hide) {
-        entries.push_back(*hide);
-    }
-    if (pimpl->visibility.setTransient(std::move(entries)) && pimpl->onVisibilityChanged) {
+    if (pimpl->visibility.setTransient(std::vector<VisibilityEntry>(entries))
+        && pimpl->onVisibilityChanged) {
         pimpl->onVisibilityChanged();
     }
     return true;
@@ -1266,7 +1268,7 @@ SoPickedPoint* MirrorViewer::getPointOnRay(const SbVec2s& pos, const ViewProvide
     SoSearchAction search;
     CoinPtr<SoPath> editPath;
     SoPath* path = nullptr;
-    if (vp == editViewProvider && pcEditingRoot->getNumChildren() > 1) {
+    if (vp == editViewProvider && editRoot->hasEditGeometry()) {
         editPath = CoinPtr<SoPath>(new SoPath, true);
         editPath->append(pcEditingRoot);
         path = editPath;

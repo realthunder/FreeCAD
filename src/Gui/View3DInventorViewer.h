@@ -432,9 +432,10 @@ public:
     /// ObjectVisibilities property (bare entries only while its
     /// PerViewVisibilities switch is on).
     void setObjectVisibilities(std::vector<VisibilityEntry> &&entries);
-    /// An edit session's transient hide in this view, ahead of the table
-    /// above; see ViewerContext::setEditHide.
-    bool setEditHide(const VisibilityEntry *hide) override;
+    /// An edit session's transient hides and shows in this view, ahead
+    /// of the table above; see ViewerContext::setEditVisibilities.
+    bool setEditVisibilities(const std::vector<VisibilityEntry> &entries) override;
+    bool canSetEditVisibilities() const override;
     /// What this view draws by -- the edit hide, then the parsed map --
     /// resolved per draw of the scene \a feed captures (this viewer's
     /// own render-cache manager when null), or null when the table is

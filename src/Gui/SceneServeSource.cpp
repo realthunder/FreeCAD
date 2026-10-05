@@ -636,8 +636,9 @@ public:
         camera.pickRadius = frame.pickRadius;
         mirror->setCamera(camera);
         // A view stated while a session runs joins it and is told so,
-        // like a desktop window opened mid-edit (8.11).
-        if (doc && !mirror->isEditingViewProvider()) {
+        // like a desktop window opened mid-edit (8.11) -- a shared
+        // session; one that is its initiator's alone takes nobody in.
+        if (doc && !mirror->isEditingViewProvider() && doc->editingRoot()->isShared()) {
             ViewerContext *initiator = doc->editingViewer();
             ViewProvider *vp = doc->getInEdit();
             if (initiator && vp && initiator != mirror) {
@@ -738,6 +739,17 @@ public:
         // with no mirror yet has no view to edit in and is told when it
         // states one (setClientCamera). \a onlyClient restates the state
         // to that one connection.
+        //
+        // A session that is its initiator's alone (EditingRoot::isShared)
+        // is told to the client whose mirror started it and to no other:
+        // nobody else joined, and a browser told of an edit sends its
+        // left button up the 'E' channel and draws the session's overlay.
+        // Started on the desktop it is told to no client at all.
+        if (!onlyClient && doc && !doc->editingRoot()->isShared()) {
+            onlyClient = initiatingClient();
+            if (!onlyClient)
+                return;
+        }
         std::string json = "{\"cmd\":\"edit\",\"editing\":";
         json += editing ? "true" : "false";
         if (const App::DocumentObject *obj = vp.getObject()) {
@@ -758,18 +770,37 @@ public:
             server.sendControl(entry.first, json);
     }
 
+    /// The connection whose mirror started the document's session; 0
+    /// when the desktop did, or nothing is being edited.
+    uint64_t initiatingClient() const
+    {
+        ViewerContext *initiator = doc ? doc->editingViewer() : nullptr;
+        if (!initiator)
+            return 0;
+        for (const auto &entry : mirrors) {
+            if (entry.second.get() == initiator)
+                return entry.first;
+        }
+        return 0;
+    }
+
     /// Every mirror that did not start the document's session joins it
     /// (docs/ThinClient.md 8.11): the shared root in its served graph,
-    /// its replayed events routed to the one tool.
+    /// its replayed events routed to the one tool. None does when the
+    /// session is its initiator's alone.
     void joinEditing()
     {
         if (!doc)
             return;
         ViewerContext *initiator = doc->editingViewer();
-        ViewProvider *vp = doc->getInEdit();
+        // Not getInEdit(), which answers for the ACTIVE 3D window: a
+        // window that did not join says nothing is being edited.
+        ViewProvider *vp = initiator ? initiator->getEditingViewProvider() : nullptr;
         if (!initiator || !vp)
             return;
         EditingRoot *root = doc->editingRoot();
+        if (!root->isShared())
+            return;
         for (auto &entry : mirrors) {
             if (entry.second.get() != initiator)
                 entry.second->joinEditing(vp, root);
@@ -826,6 +857,10 @@ public:
     void feedEditOverlay(const SbViewportRegion &viewport)
     {
         EditingRoot *edit = editSession && doc ? doc->editingRoot() : nullptr;
+        // A session nobody here is in -- the desktop's alone -- has no
+        // client to draw its overlay, and is not theirs to be sent.
+        if (edit && !edit->isShared() && !initiatingClient())
+            edit = nullptr;
         SoNode *node = edit && (edit->hasContent() || edit->hasOnViewContent())
             ? edit->publishNode() : nullptr;
         if (editCapture && editCaptureRoot != node)

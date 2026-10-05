@@ -2755,7 +2755,7 @@ SoPickedPoint* View3DInventorViewer::getPointOnRay(const SbVec3f& pos, const SbV
     // to fail to get intersections between the ray and a line
     
     CoinPtr<SoPath> path;
-    if(vp == editViewProvider && pcEditingRoot->getNumChildren() > 1) {
+    if(vp == editViewProvider && editRoot->hasEditGeometry()) {
         path = _pimpl->tmpPath;
         path->truncate(0);
         path->append(pcEditingRoot);
@@ -2977,16 +2977,18 @@ void View3DInventorViewer::setObjectVisibilities(std::vector<VisibilityEntry> &&
         onVisibilityChanged();
 }
 
-bool View3DInventorViewer::setEditHide(const VisibilityEntry *hide)
+bool View3DInventorViewer::canSetEditVisibilities() const
 {
     // The table is read only where the render-cache manager is (mode 3);
     // modes 0-2 have no per-view visibility at all.
-    if (!getRenderCacheManager())
+    return getRenderCacheManager() != nullptr;
+}
+
+bool View3DInventorViewer::setEditVisibilities(const std::vector<VisibilityEntry> &entries)
+{
+    if (!canSetEditVisibilities())
         return false;
-    std::vector<VisibilityEntry> entries;
-    if (hide)
-        entries.push_back(*hide);
-    if (_pimpl->visibility.setTransient(std::move(entries)))
+    if (_pimpl->visibility.setTransient(std::vector<VisibilityEntry>(entries)))
         onVisibilityChanged();
     return true;
 }

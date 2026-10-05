@@ -2637,6 +2637,129 @@ there. A label remembers the group it hung under, since a mirror's answer now ch
 it joins and leaves a session. `serve-pattern-markers.py` asserts the markers hang under
 the session's node (`EditingOnViewRoot`) during the edit and nothing is left after it.
 
+**Built 2026-10-05: a PartDesign feature's edit preview is the session's.** The first
+step of the road back from 8.11 toward an edit per view (user, 2026-10-05: the goal is a
+true per-view edit, on the desktop and in the browser). The fork's preview-on-edit was
+document state twice over: the tinted tool shape was a child of the base feature's switch
+in the shared scene, and `Visibility` was written to hide the feature and show its base
+-- item E's "TempoVis and `Visibility`: document state", for the one writer that runs on
+every PartDesign edit. Every view drew it, every served client, and every Link to the
+body. It is the session's now, in two halves.
+
+*The tool is a session node.* `EditingRoot::addSessionNode(node, world)` hangs a node in
+the session's editing root beside the edit mode's own geometry -- so it is drawn by
+exactly the views that hang that root, captured by the desktop's `editingCapture`, and
+published by the serving source in the session's tagged overlay 7, with no new plumbing
+in any of the three. It is placed in WORLD coordinates (here the base feature's
+occurrence, where the base's own root used to carry it): each holder undoes the editing
+transform above it and is re-placed whenever that changes, because a gizmo hands
+`setup` a transform of its own and the edited object can move. `setup` and `reset` keep
+managing only the edit's own geometry -- a session node is neither dropped by a second
+`setup` nor handed to the view provider with its moved children -- and
+`hasEditGeometry()` is the question `getPointOnRay` asks now, since "more than the
+transform" is no longer "the edited object's geometry is here".
+
+*The swap is transient visibility.* `EditingRoot::setVisibilitySwaps` (see
+`docs/CoinRetirement.md` 5.18): the feature's occurrence hidden and its base's shown in
+each session view's own table, never written to `Visibility` or to a view's map. A mirror
+tells its client through the `visibility` push it already had.
+
+Both end with the session: `EditingRoot::endSession()`, called by the initiating view as
+it leaves, while the joiners are still attached -- the document's `signalResetEdit`, where
+the PartDesign monitor takes its preview down, fires only after every view has left, so
+without it a preview would outlive the views it was told to. The monitor no longer needs a
+desktop window either: a document served with none gets the preview and the recompute
+pause from its client's session, where it had neither.
+
+What it costs: the editing root is drawn as a scene-camera overlay, over the finished
+scene with a depth buffer of its own. The default translucent preview was drawn on top
+already (`SoFCPathAnnotation` priority -2) and looks as it did; an OPAQUE preview
+(`PreviewWithTransparency` off) was depth-tested against the base and is now drawn over
+it. Not solved here. What it does not cover: the rest of item E's writers -- a sketch-based
+panel showing its profile, a primitive panel showing the body's origin, the monitor
+hiding the other solid features to show a non-tip one -- still write `Visibility`, and
+are the next step (TempoVis onto per-view visibility).
+
+Verified: `SharedEditingRootTest` gains five cases (a session node through `setup` and
+`reset`, with moved children, its world frame under a changing editing transform, the
+session's end, a view with no table refusing the swaps); `tests/gui/pd-preview-per-view.py`
+on the desktop and `tests/gui/serve-pd-preview.py` on a served document -- a client with a
+view told the swap, one without told nothing, the tool under the session's root and not
+the base's switch, for a session with a desktop window in it and for one with none. Scored
+against the document path (the session path switched off): 8 of 38 and 13 of 32 fail. And
+looked at in a real browser beside the desktop window, a body and a Link to it on screen:
+the pad entered from the page draws its base and the tool in both, the tool following a
+length changed on the host, while the other occurrence keeps the pad as it was until the
+edit is left.
+
+**Built 2026-10-05: a session can be its initiating view's alone (`PerViewEdit`).** The
+second step, and the first that takes back part of 8.11's ruling rather than building
+under it -- as a preference, off by default, so the shared session stays what a served
+document does unless its user says otherwise (View parameter `PerViewEdit`, "Edit in one
+view only" on the UI preference page). The plumbing needed nothing: a view shows an edit
+only through the root it has bound (`ViewerContext::bindEditingRoot`), each kind of view
+hangs that root for itself, and the session's hides, swaps and overlay reach only the
+views attached to it. Sharing was policy at the places that JOIN a view, and that is where
+it is asked now, of the session rather than of the preference: `EditingRoot::isShared()`,
+set by `Gui::Document::setEdit` as the session starts and kept until the next one does, so
+a preference changed halfway neither pulls a view in nor strands one.
+
+- *The desktop's windows.* `Gui::Document::setEdit` joins the other 3D windows, and
+  `createView3D` a window opened mid-edit, only into a shared session. A window that did
+  not join draws the document as it is, picks and navigates as in view mode, and -- since
+  `Gui::Document::getInEdit` has always asked the ACTIVE 3D window whether it is editing
+  -- answers "not in edit" while it is the active one: the toolbars and commands follow the
+  window, which is how two windows behaved before 8.11 joined them.
+- *The served clients.* The serving source joins no other mirror (on `signalInEdit`, or
+  when a client states its first camera mid-session), and tells the edit's two edges to
+  the client whose mirror started it and to nobody else -- a browser told of an edit
+  sends its left button up the `'E'` channel and draws the session's overlay. A session
+  the desktop started is told to no client, and its overlay is not captured for the wire
+  at all: it rode the one snapshot every client shares, tagged, and nobody here could
+  draw it.
+- *Whose session it is to end.* One edit per document is still the rule (item D), so a
+  second view entering an edit ends the first. Shared, that is every client's own
+  session ending. Alone, it is somebody else's: the `resetEdit` op answers `NotInSession`
+  to a connection whose mirror is not the session's, and the `edit` op (and the context
+  menu's edit entries, which enter through the same call) `EditInProgress`. The desktop
+  user is not refused -- double-clicking another object in another window ends the edit
+  in progress, as it always has.
+- *`getInEdit` answers the client's view that asks.* Under a `ViewerScope` on a mirror --
+  a client's request, its replayed events -- the answer is whether THAT view is in the
+  session, before the active window is consulted: item D's "`getInEdit()` answering the
+  current view's", and what keeps a client's own sketch menu and in-edit publish working
+  beside a desktop window that did not join. A desktop viewer's scope says yes when it is
+  in the session and otherwise leaves the answer to the active window, as before.
+
+What is NOT per view yet, and shows the moment a session is alone: the task panel is the
+desktop's one `Gui::Control` whoever started the edit (item E; the user's next step is the
+panel as an overlay of the editing view); TempoVis and the panels' other `Visibility`
+writes were document state, so a view outside the session still saw what an edit hid or
+showed (TempoVis and the PartDesign monitor are the session's since the next entry); the
+room's selection is heard by a desktop-started sketch whichever window the click was in;
+undo is one stack (item G, `origin/Transaction`); and in render-cache modes 0-2 a sketch's
+geometry is MOVED into the editing root, so a window outside the session shows no sketch
+at all while it is edited.
+
+Verified: `tests/gui/edit-per-view.py` (two windows and one opened mid-edit, under both
+settings of the preference) and `tests/gui/serve-per-view-edit.py` (a window and two
+clients with a view each: the desktop's session told to neither and refused to both, a
+client's told to it alone with the window left out, and the shared control).
+
+**Built 2026-10-05: TempoVis and the PartDesign monitor swap in the session's views.**
+The third step, and item E's "TempoVis and `Visibility`: document state" for the writers
+that matter: what an edit hides and shows to get out of its own way is hidden and shown in
+the views of that edit and nowhere else. `Show.TempoVis.show`/`.hide` inside an edit
+session, and the PartDesign monitor's swap of the tip for the feature being edited, are
+transient entries of each session view's visibility table (`Gui::Document::
+setEditVisibility`, `docs/CoinRetirement.md` 5.18) instead of `Visibility` writes. A
+client in the session is told through its `visibility` push; a client outside it, a window
+that did not join (`PerViewEdit`), another document showing the object -- none of them
+sees a sketch's dependents vanish or its support appear. With the preview and the sketch's
+own hide before it, the edits the tests drive -- a sketch on a pad, a pad that is and is
+not the tip -- write none of the `Visibility` properties they watch; the two panels named
+in 5.18 still write theirs.
+
 **Reading the list.** A is done; C, D and J have their seams built; B, E, F and I are
 wide but mechanical -- each is the move stages 1-5 made, a global becoming a row on a
 context read under a scope; G and H are why only Onshape does this. The shared session

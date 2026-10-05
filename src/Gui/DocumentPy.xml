@@ -74,6 +74,44 @@ Returns the current object in edit mode or None if there is no such object.</Use
 End the current editing.</UserDocu>
       </Documentation>
     </Methode>
+    <Methode Name="canSetEditVisibility">
+      <Documentation>
+        <UserDocu>canSetEditVisibility() -> bool
+
+Whether the views of this document's edit session -- the one running, or
+the one being entered -- take visibility entries of their own
+(setEditVisibility). False outside an edit, and when the view the edit
+runs in has no visibility table (render cache modes 0-2).</UserDocu>
+      </Documentation>
+    </Methode>
+    <Methode Name="setEditVisibility">
+      <Documentation>
+        <UserDocu>setEditVisibility(obj, visible, subname='', owner='TempoVis') -> bool
+
+Show, hide, or stop overriding an object in the views of this document's
+edit session, and in no other view. The object's Visibility is not
+written. The entry is gone when the edit ends.
+
+obj : App.DocumentObject
+visible : bool or None
+    True to show, False to hide, None to take the entry back.
+subname : str
+    One occurrence of an object under obj. Empty: obj wherever it is drawn.
+owner : str
+    Keeps one caller's entries apart from another's.
+
+Returns False, and changes nothing, when the views cannot take the entry
+(see canSetEditVisibility).</UserDocu>
+      </Documentation>
+    </Methode>
+    <Methode Name="getEditVisibility">
+      <Documentation>
+        <UserDocu>getEditVisibility(obj, subname='', owner='TempoVis') -> bool or None
+
+What setEditVisibility last set for the object: True, False, or None when
+it has no entry.</UserDocu>
+      </Documentation>
+    </Methode>
     <Methode Name="addAnnotation">
       <Documentation>
         <UserDocu>addAnnotation(annoName, fileName, modName) -> None

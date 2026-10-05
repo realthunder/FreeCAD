@@ -263,11 +263,13 @@ public:
     //@{
     /// Replace the table; false when nothing changed.
     bool setObjectVisibilities(std::vector<VisibilityEntry>&& entries);
-    /// An edit session's transient hide, ahead of the table above (see
-    /// ViewerContext::setEditHide). Raised by the session rather than by
-    /// the client, so a change is reported through the callback below.
-    bool setEditHide(const VisibilityEntry* hide) override;
-    /// Told when setEditHide -- or a structure change resolving the
+    /// An edit session's transient hides and shows, ahead of the table
+    /// above (see ViewerContext::setEditVisibilities). Raised by the
+    /// session rather than by the client, so a change is reported through
+    /// the callback below.
+    bool setEditVisibilities(const std::vector<VisibilityEntry>& entries) override;
+    bool canSetEditVisibilities() const override;
+    /// Told when setEditVisibilities -- or a structure change resolving the
     /// entries again -- changes the table, so the serving source
     /// republishes and tells the client what it draws by.
     void setOnVisibilityCallback(std::function<void()> callback);

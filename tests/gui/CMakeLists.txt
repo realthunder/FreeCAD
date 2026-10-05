@@ -147,6 +147,51 @@ fc_add_gui_test(GuiServePatternMarkers_tests_run serve-pattern-markers.py
 fc_add_gui_test(GuiPdLeaveEditRecompute_tests_run pd-leave-edit-recompute.py
                 --timeout 200)
 
+# A PartDesign feature's edit preview is the edit session's: the tinted
+# tool hangs in the session's editing root and each session view swaps
+# the feature for its base in its own visibility table. No Visibility is
+# written, and a Link's occurrence of the feature keeps it, with no tool.
+fc_add_gui_test(GuiPdPreviewPerView_tests_run pd-preview-per-view.py
+                --timeout 300)
+
+# The same on a served document: a client with a view is told the swap,
+# one without is told nothing, the tool is published with the session's
+# overlay and not in the shared scene -- with a desktop window in the
+# session, and for a document that has none.
+fc_add_gui_test(GuiServePdPreview_tests_run serve-pd-preview.py
+                --timeout 240)
+
+# The preference PerViewEdit: an edit runs in the one view it is started
+# in. The other 3D windows of the document do not join -- they keep the
+# document as it is, and answer "not in edit" -- and with it off every
+# window joins, as before.
+fc_add_gui_test(GuiEditPerView_tests_run edit-per-view.py
+                --timeout 300)
+
+# The same on a served document: a session that is one view's is told to
+# that view's client only, the desktop window stays out of a client's, and
+# no other connection can end it or replace it.
+fc_add_gui_test(GuiServePerViewEdit_tests_run serve-per-view-edit.py
+                --timeout 300)
+
+# TempoVis inside an edit hides and shows in the views of that edit, by
+# entries of their visibility tables, and writes no Visibility: a sketch
+# on a pad, its dependents hidden and its support shown in the window of
+# the edit only.
+fc_add_gui_test(GuiTempoVisPerView_tests_run tempovis-per-view.py
+                --timeout 300)
+
+# The same on a served document: a client in the session is told the
+# table, a client with no view nothing.
+fc_add_gui_test(GuiServeTempoVis_tests_run serve-tempovis.py
+                --timeout 240)
+
+# Editing a PartDesign feature that is not the tip shows it in the tip's
+# place in the views of the edit only: no Visibility is written, and a
+# Link to the body keeps the tip.
+fc_add_gui_test(GuiPdEditShownPerView_tests_run pd-edit-shown-per-view.py
+                --timeout 300)
+
 # A browser's right click (docs/ThinClient.md sec 8.11b): the desktop's 3D
 # view context menu built for what the ray hits, its entries judged for the
 # connection, an edit entry entered in the client's view with no 3D view

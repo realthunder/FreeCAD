@@ -366,6 +366,41 @@ public:
      * of them (docs/ThinClient.md 8.11).
      */
     EditingRoot *editingRoot();
+    /** @name What an edit shows and hides in its own views
+     *
+     * An object's visibility in the views of this document's edit
+     * session and in no other: a transient entry of each of those views'
+     * visibility table (EditingRoot::setVisibilitySwaps), where an edit's
+     * visibility automation -- TempoVis -- used to write Visibility,
+     * which is the document's and shows in every view. Gone with the
+     * session at the latest.
+     *
+     * For the session being entered as well as the one running: an edit
+     * mode swaps while it starts (ViewProvider::setEdit), before a view
+     * is bound, and the entries wait for the views.
+     */
+    //@{
+    /** Whether the session's views take such entries.
+     *
+     * False outside an edit -- this is not the application's edit
+     * document -- and when the view the session runs in, or would start
+     * in, has no visibility table of its own (render-cache modes 0-2):
+     * the caller writes Visibility as before.
+     */
+    bool canSetEditVisibility() const;
+    /** Show (\a visible 1), hide (0) or stop overriding (-1) \a obj.
+     *
+     * \a subname names one occurrence of an object under \a obj; empty,
+     * the entry is \a obj wherever its own root is drawn. \a owner keeps
+     * one caller's entries apart from another's. False when the views
+     * cannot take it (see canSetEditVisibility); nothing is changed then.
+     */
+    bool setEditVisibility(const char *owner, const App::DocumentObject *obj,
+                           const char *subname, int visible);
+    /// What setEditVisibility last set for it: 1, 0, or -1 for nothing.
+    int getEditVisibility(const char *owner, const App::DocumentObject *obj,
+                          const char *subname) const;
+    //@}
     /// reset from edit mode, this cause all document to reset edit
     void resetEdit();
     /** Set whether leaving edit mode should restore the previous edit session

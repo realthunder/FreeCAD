@@ -25,6 +25,12 @@ is what this watches, and why a one-line fix got a test.
 
 Scored against the tree before the fix: the origin plane comes back
 visible.
+
+"Shown" is what the edit shows. Where the views of an edit have a
+visibility table of their own (render cache mode 3) TempoVis shows the
+support in those views by an entry and leaves its Visibility alone
+(tests/gui/tempovis-per-view.py); elsewhere it writes Visibility. Both
+are read here.
 """
 import os
 import traceback
@@ -49,6 +55,13 @@ def check(name, cond, detail=""):
     note(("PASS " if cond else "FAIL ") + name
          + (" | " + str(detail) if detail else ""))
     return cond
+
+
+def shown_in_edit(obj):
+    """Whether the running edit shows obj: by its own views' entry where
+    there is one, by the object's Visibility otherwise."""
+    entry = FreeCADGui.activeDocument().getEditVisibility(obj)
+    return obj.ViewObject.Visibility if entry is None else entry
 
 
 def run():
@@ -93,7 +106,7 @@ def run():
 
         FreeCADGui.activeDocument().setEdit(sketch)
         QtCore.QCoreApplication.processEvents()
-        shown = xy.ViewObject.Visibility
+        shown = shown_in_edit(xy)
         note("after setEdit: %s visible=%s" % (xy.Name, shown))
         check("the attached origin plane is NOT shown on sketch edit",
               not shown, "%s visible=%s" % (xy.TypeId, shown))
@@ -128,7 +141,7 @@ def run():
 
         FreeCADGui.activeDocument().setEdit(sketch2)
         QtCore.QCoreApplication.processEvents()
-        dshown = datum.ViewObject.Visibility
+        dshown = shown_in_edit(datum)
         note("after setEdit: %s visible=%s" % (datum.Name, dshown))
         check("the attached user datum plane IS shown on sketch edit",
               dshown, "%s visible=%s" % (datum.TypeId, dshown))

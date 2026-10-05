@@ -125,6 +125,7 @@ public:
     long MaxSelectionNotification;
     bool MapChildrenPlacement;
     double EditingTransparency;
+    bool PerViewEdit;
     double DraggerScale;
     double HiddenLineTransparency;
     bool HiddenLineOverrideTransparency;
@@ -384,6 +385,8 @@ public:
         funcs["MapChildrenPlacement"] = &ViewParamsP::updateMapChildrenPlacement;
         EditingTransparency = this->handle->GetFloat("EditingTransparency", 0.5);
         funcs["EditingTransparency"] = &ViewParamsP::updateEditingTransparency;
+        PerViewEdit = this->handle->GetBool("PerViewEdit", false);
+        funcs["PerViewEdit"] = &ViewParamsP::updatePerViewEdit;
         DraggerScale = this->handle->GetFloat("DraggerScale", 0.03);
         funcs["DraggerScale"] = &ViewParamsP::updateDraggerScale;
         HiddenLineTransparency = this->handle->GetFloat("HiddenLineTransparency", 0.4);
@@ -922,6 +925,10 @@ public:
     // Auto generated code (Tools/params_utils.py:314)
     static void updateEditingTransparency(ViewParamsP *self) {
         self->EditingTransparency = self->handle->GetFloat("EditingTransparency", 0.5);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updatePerViewEdit(ViewParamsP *self) {
+        self->PerViewEdit = self->handle->GetBool("PerViewEdit", false);
     }
     // Auto generated code (Tools/params_utils.py:314)
     static void updateDraggerScale(ViewParamsP *self) {
@@ -1641,6 +1648,13 @@ static const App::ParamRegistry::Registrar _ViewParamsRegistrar({
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "EditingTransparency", "EditingTransparency", App::ParamInfo::Float, 0.5)
         .setTitle("Automatically make all object transparent except the one in edit")
         .setDoc("Automatically make all object transparent except the one in edit"),
+    App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "PerViewEdit", "PerViewEdit", App::ParamInfo::Bool, false)
+        .setTitle("Edit in one view only")
+        .setDoc("Run an edit in the one view it is started in. The other 3D views of\n"
+"the document, and the other viewers of a served one, keep showing the\n"
+"document as it is and take no input for the edit. When off, every view\n"
+"of the document joins the edit and can work in it. Takes effect with\n"
+"the next edit."),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "DraggerScale", "DraggerScale", App::ParamInfo::Float, 0.03)
         .setTitle("Transform dragger scale")
         .setDoc("Size of the transform dragger relative to the viewport."),
@@ -3978,6 +3992,38 @@ void ViewParams::setEditingTransparency(const double &v) {
 // Auto generated code (Tools/params_utils.py:431)
 void ViewParams::removeEditingTransparency() {
     instance()->handle->RemoveFloat("EditingTransparency");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *ViewParams::docPerViewEdit() {
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Run an edit in the one view it is started in. The other 3D views of\n"
+"the document, and the other viewers of a served one, keep showing the\n"
+"document as it is and take no input for the edit. When off, every view\n"
+"of the document joins the edit and can work in it. Takes effect with\n"
+"the next edit.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const bool & ViewParams::getPerViewEdit() {
+    return instance()->PerViewEdit;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const bool & ViewParams::defaultPerViewEdit() {
+    const static bool def = false;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void ViewParams::setPerViewEdit(const bool &v) {
+    instance()->handle->SetBool("PerViewEdit",v);
+    instance()->PerViewEdit = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void ViewParams::removePerViewEdit() {
+    instance()->handle->RemoveBool("PerViewEdit");
 }
 
 // Auto generated code (Tools/params_utils.py:397)
@@ -7494,7 +7540,7 @@ void ViewParams::removeDatumTemporaryScaleFactor() {
     instance()->handle->RemoveFloat("DatumTemporaryScaleFactor");
 }
 
-// Auto generated code (Gui/ViewParams.py:661)
+// Auto generated code (Gui/ViewParams.py:667)
 const std::vector<QString> ViewParams::AnimationCurveTypes = {
     QStringLiteral("Linear"),
     QStringLiteral("InQuad"),
@@ -7539,7 +7585,7 @@ const std::vector<QString> ViewParams::AnimationCurveTypes = {
     QStringLiteral("OutInBounce"),
 };
 
-// Auto generated code (Gui/ViewParams.py:669)
+// Auto generated code (Gui/ViewParams.py:675)
 static const char *DrawStyleNames[] = {
     QT_TRANSLATE_NOOP("DrawStyle", "As Is"),
     QT_TRANSLATE_NOOP("DrawStyle", "Points"),
@@ -7552,7 +7598,7 @@ static const char *DrawStyleNames[] = {
     nullptr,
 };
 
-// Auto generated code (Gui/ViewParams.py:679)
+// Auto generated code (Gui/ViewParams.py:685)
 static const char *DrawStyleDocs[] = {
     QT_TRANSLATE_NOOP("DrawStyle", "Display style, normal display mode"),
     QT_TRANSLATE_NOOP("DrawStyle", "Display style, show points only"),
@@ -7565,13 +7611,13 @@ static const char *DrawStyleDocs[] = {
 };
 
 namespace Gui {
-// Auto generated code (Gui/ViewParams.py:689)
+// Auto generated code (Gui/ViewParams.py:695)
 const char **drawStyleNames()
 {
     return DrawStyleNames;
 }
 
-// Auto generated code (Gui/ViewParams.py:696)
+// Auto generated code (Gui/ViewParams.py:702)
 const char *drawStyleNameFromIndex(int i)
 {
     if (i < 0 || i>= 8)
@@ -7579,7 +7625,7 @@ const char *drawStyleNameFromIndex(int i)
     return DrawStyleNames[i];
 }
 
-// Auto generated code (Gui/ViewParams.py:705)
+// Auto generated code (Gui/ViewParams.py:711)
 int drawStyleIndexFromName(const char *name)
 {
     if (!name)
@@ -7591,7 +7637,7 @@ int drawStyleIndexFromName(const char *name)
     return -1;
 }
 
-// Auto generated code (Gui/ViewParams.py:718)
+// Auto generated code (Gui/ViewParams.py:724)
 const char *drawStyleDocumentation(int i)
 {
     if (i < 0 || i>= 8)
