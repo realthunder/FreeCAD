@@ -107,7 +107,9 @@ public:
     /// the wire (docs/SceneServerPort.md sec 7.1): the POSIX head
     /// reader below today, a Beast parser after stage 2.
     struct HttpRequest {
-        std::string method;   ///< "GET" or "POST"; nothing else gets here
+        /// "GET" or "POST" -- or "OPTIONS", a browser asking ahead of a
+        /// request from another origin; nothing else gets here
+        std::string method;
         std::string path;     ///< the request target up to its '?'
         std::string query;    ///< what followed the '?', if anything
         /// Names lowercased (they match case-insensitively), values
@@ -153,6 +155,9 @@ public:
         /// `Access-Control-Allow-Headers: *` -- the /log beacon's
         /// preflight wants it.
         bool allowAnyHeader = false;
+        /// The answer to a browser asking ahead (OPTIONS): the verbs the
+        /// server speaks, and how long the answer holds.
+        bool preflight = false;
         /// Cross-origin isolation on this answer: what a page needs
         /// before the browser gives it a SharedArrayBuffer, which is how
         /// the Python console runs its guest in a worker where there is
@@ -420,11 +425,19 @@ public:
         bool enrol = false;
     };
 
-    /// What is asking (SceneGrant::maxUsers): a plain request, which
-    /// cannot say which browser it is; a hello, which does and may be
-    /// enrolled; or a connection judged again, which is enrolled or is
-    /// not.
-    enum class Ask { Fetch, Hello, Again };
+    /// What is asking (SceneGrant::maxUsers): a plain request for
+    /// something of the scene, or a hello -- either says which browser it
+    /// is and may be enrolled, and one that does not say is none of the
+    /// grant's (docs/TransactionLog.md sec 30.40); a connection judged
+    /// again, which is enrolled or is not; or a plain request for what is
+    /// not the scene's -- the console beacon, which can carry no header,
+    /// and a mount's files -- which the token opens whoever holds it.
+    enum class Ask { Fetch, Hello, Again, Open };
+
+    /// The header a plain request says which browser it is in: the id the
+    /// hello gives as `device`. A header and never the URL, which is what
+    /// gets copied, logged and kept in a history.
+    static constexpr const char *kDeviceHeader = "x-fc-device";
 
     /// The record of browsers (SceneServer.h, SceneDevice), by key, and
     /// the count that says it or an enrolment changed. tokenMutex.
@@ -520,8 +533,9 @@ public:
     /// of it. A hello from a browser it has enrolled, or has room to
     /// enrol, matches; one with no id, one the host turned off, and one
     /// past the count do not, and fall to whatever lesser grant there
-    /// is. A plain request cannot say which browser it is, and such a
-    /// grant admits it to read.
+    /// is. A plain request for the scene is judged as a hello is, by the
+    /// browser its header names (Ask::Fetch); only what is not the
+    /// scene's is opened by the token alone (Ask::Open).
     static Judgement judgeWith(const std::vector<SceneGrant> &list,
                                const std::string &token,
                                const std::string &identity,
@@ -548,7 +562,7 @@ public:
             const bool counts = g.maxUsers > 0 && g.access != 2;
             bool member = false;
             bool joins = false;
-            if (counts && ask != Ask::Fetch) {
+            if (counts && ask != Ask::Open) {
                 if (device.empty())
                     continue;
                 if (record) {
@@ -559,7 +573,7 @@ public:
                 member = std::find(g.devices.begin(), g.devices.end(), device)
                     != g.devices.end();
                 if (!member) {
-                    if (ask != Ask::Hello
+                    if (ask == Ask::Again
                             || int(g.devices.size()) >= g.maxUsers)
                         continue;
                     joins = true;
@@ -594,9 +608,9 @@ public:
                 ? ClientAccess::Host
                 : ClientAccess::Edit,
             identity, out.invited || out.enrolled);
-        // A plain request under a grant that counts its users said
-        // nothing of who it is: it reads.
-        if (best->maxUsers > 0 && ask == Ask::Fetch && !out.invited)
+        // What the token alone opened under a grant that counts its
+        // users said nothing of who it is: it is nobody known.
+        if (best->maxUsers > 0 && ask == Ask::Open && !out.invited)
             out.access = writerRule(out.access, identity, false);
         out.grant = best->id;
         return out;
@@ -2369,6 +2383,17 @@ public:
         // gets nothing.
         std::string wsKey = req.header("sec-websocket-key");
 
+        // A browser asking ahead, before a request from another origin
+        // that carries a header of its own -- which browser it is
+        // (kDeviceHeader). It asks with no token and no header, so it is
+        // answered before the door, and told nothing but that it may ask.
+        if (req.method == "OPTIONS") {
+            reply.status = 204;
+            reply.allowAnyHeader = true;
+            reply.preflight = true;
+            return Route::Reply;
+        }
+
         // The viewer bundle answers before the door: it is the
         // published viewer code, not scene bytes, and the browser
         // fetches the page's subresources without the link's ?token=
@@ -2383,24 +2408,49 @@ public:
             return Route::Reply;
 
         std::string presentedToken = queryValue(query, "token");
+        const std::string askedAs = queryValue(query, "client");
+        const std::string askedFrom = fwd.empty() ? peerIp : fwd;
         // A socket says which browser it is in its hello: under a grant
         // that counts its users (SceneGrant::maxUsers) the upgrade is not
-        // admitted by it, and waits for that. A plain request cannot say,
-        // and reads.
-        Judgement entry = judge(presentedToken, identity,
-                                queryValue(query, "client"),
-                                fwd.empty() ? peerIp : fwd, std::string(),
+        // admitted by it, and waits for that. A plain request says it in
+        // a header, and is judged as the hello is: a browser the grant
+        // has, or has room for, and no other (sec 30.40). The first load
+        // comes before the hello, so it is what enrols a new browser.
+        const std::string device = wsKey.empty()
+            ? deviceKeyOf(req.header(kDeviceHeader)) : std::string();
+        Judgement entry = judge(presentedToken, identity, askedAs, askedFrom,
+                                device,
                                 wsKey.empty() ? Ask::Fetch : Ask::Again);
+        if (entry.admitted && entry.enrol)
+            noteDevice(device, askedAs, identity);
         bool authorized = entry.admitted;
-        if (!authorized && wsKey.empty()) {
-            reply.status = 403;
+        // Refused, in the socket's words for it: `Refused` where grants
+        // judge -- the link may be right and this browser not one of its
+        // -- and `BadToken` where one token is the whole door. The page
+        // says which.
+        auto refuse = [&] {
+            static const char grantsWord[] = "Refused";
+            static const char tokenWord[] = "BadToken";
+            const char *word = grantsActive() ? grantsWord : tokenWord;
+            reply.set(403, "text/plain", "no-store");
+            reply.body.assign(word, word + std::strlen(word));
             return Route::Reply;
+        };
+        if (wsKey.empty()) {
+            // What is not the scene's is the token's to open, as it was:
+            // a mount's files, and the beacon below.
+            if (!authorized
+                    && !judge(presentedToken, identity, askedAs, askedFrom,
+                              std::string(), Ask::Open).admitted)
+                return refuse();
+            // A gated mount (SceneServer.h, setHttpMount): behind the
+            // door, ahead of the scene routes, which share no prefix with
+            // one.
+            if (serveMount(req, true, reply))
+                return Route::Reply;
+            if (!authorized && path != "/log")
+                return refuse();
         }
-
-        // A gated mount (SceneServer.h, setHttpMount): behind the door,
-        // ahead of the scene routes, which share no prefix with one.
-        if (wsKey.empty() && serveMount(req, true, reply))
-            return Route::Reply;
 
         // /blob?key=<content key>: one out-of-band texture payload
         // (SceneDump.h, v26). Content addressed and immutable, so the
@@ -3077,7 +3127,8 @@ public:
         {
             auto &r = parser.get();
             req.method = std::string(r.method_string());
-            if (req.method != "GET" && req.method != "POST")
+            if (req.method != "GET" && req.method != "POST"
+                    && req.method != "OPTIONS")
                 return false;
             splitTarget(std::string(r.target()), req);
             for (const auto &f : r) {
@@ -3104,6 +3155,11 @@ public:
             res.set(http::field::access_control_allow_origin, "*");
             if (reply.allowAnyHeader)
                 res.set(http::field::access_control_allow_headers, "*");
+            if (reply.preflight) {
+                res.set(http::field::access_control_allow_methods,
+                        "GET, POST");
+                res.set(http::field::access_control_max_age, "86400");
+            }
             if (reply.isolate) {
                 res.set("Cross-Origin-Embedder-Policy", "require-corp");
                 if (reply.isolateDocument) {

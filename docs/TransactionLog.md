@@ -14599,6 +14599,109 @@ check 19, the author check 36, the import check 49, the request check 31
 (+3) and the share check 47. The two fixes were each switched off once to
 see their test fail.
 
+### 30.40 A plain request says which browser it is (user: chase it, 2026-10-05)
+
+30.39's N1, built. The user asked for the leak to be chased and did not
+say N1 or N2; N1 was the proposal, and it is what is here.
+
+**Run first, since 30.39 had only read it.** A served box behind one
+grant, `t-one`, for one browser; two browser profiles, one after the
+other (`scripts/browser-id-drive.js`, which now says what the page
+fetched and how much it draws, and keeps a picture):
+
+| | the door said | `GET /scene` | parts fetched | on the page |
+| --- | --- | --- | --- | --- |
+| first profile | edit | 200, 997 bytes | 7 | the box |
+| second, before | refused | 200, 997 bytes | 6 | **the box** |
+| second, after | refused | 403 | none | "Access refused -- this invite does not cover you" |
+
+And `curl` with the token and nothing else read the scene. So 30.39 had
+it right: a link for one browser showed the model to every browser that
+opened it.
+
+**The rule.** Under a grant that counts its browsers, a plain request
+for anything of the scene is judged as a hello is (`Ask::Fetch`):
+
+- it says which browser it is in a header, `X-FC-Device`, the id the
+  hello gives as `device`. A header, never the URL;
+- a browser the grant has reads. One it has room for is **enrolled by
+  that request** and reads -- the first load comes before the hello, so
+  this is how a new browser gets in, and how one that can only poll
+  does. 30.32's "only by its own hello" is now "by its first request
+  that says who it is"; the hello that follows is the same browser and
+  gives the record its name;
+- one that says nothing, one whose id is too short to be one, one the
+  host turned off and one past the count do not match the grant: they
+  fall to a lesser grant on the same token -- an open invitation to
+  look beside the count -- or read nothing. A refused request enrols
+  nobody and leaves nothing in the record;
+- "of the scene" is `/scene`, `/blob`, `/blobs`, `/level` and
+  `/decisions`.
+
+**What the token still opens alone** (`Ask::Open`): the console beacon,
+`/log`, which `sendBeacon` can give no header and which reads nothing;
+and a gated mount's files -- the Python guest's runtime -- which the
+page's loaders fetch with no say in their headers and which are no part
+of any document.
+
+**The answer says why.** A 403 has the socket's word for it in its body:
+`Refused` where grants judge, `BadToken` where one token is the whole
+door. The page shows the message it showed for the socket's -- before,
+every 403 at first load was "check the share link", which is the wrong
+advice to someone holding a good link that is somebody else's.
+
+**Another origin.** A header of the page's own makes a request from
+another origin (`?scene=<url>`) ask ahead, and the server answered no
+`OPTIONS` at all. It does now, before the door, since such a request
+carries neither token nor header: 204, any header, `GET, POST`, good for
+a day. The cost is the browser's: it asks ahead once for each address,
+so a `/blob` or a `/level` from another origin is two requests where it
+was one. A page served by the scene server itself -- every share link --
+asks nothing ahead.
+
+**The viewer** says the header on each of its six plain requests (first
+load, polling, full scene, `/blob`, `/blobs`, `/level`); `build/wasm`
+rebuilt.
+
+**Tests.** The wire case `aPlainRequestSaysWhichBrowserItIs`: with no id
+nothing of the scene by any of the five routes, the body `Refused`,
+nobody enrolled; an id too short the same; the first request with an id
+enrolled, in the record, and reading the rest, counted once; another
+browser refused; the hello after a first load the same browser, its name
+the record's, and the other browser's hello refused; the beacon let
+through by the token and not by a wrong one; `OPTIONS` answered; a
+browser turned off reading nothing more; beside an open invitation to
+look, whoever is not counted looking; a grant that counts nobody asking
+nothing. `aGrantCountsTheBrowsersItIsFor` lost its "a plain request
+reads". In a browser, the table above.
+
+**Left.**
+
+- A grant that asks for a name is not matched by a request, which says
+  none: `docs/ShareAccess.md` sec 2.3 has had it so, with an open
+  invitation to look beside the named one for the first load. Run here:
+  such a grant alone answers the first load 403 and the page stops
+  there, before any hello. The panel's Invite makes no such grant
+  (30.32: the count is what it goes by, the name is a note).
+- The `/blob` answer is still `public, immutable`: a cache between the
+  server and two browsers may give the second what the first fetched.
+  It is named by the hash of its bytes, which only the scene says.
+- `/decisions` by hand, under such a grant, wants the header of an
+  enrolled browser.
+
+**Gates**, frozen and unfrozen each: Python 3013 OK (52 skipped frozen,
+53 unfrozen; 6 expected failures), ctest 881/881 -- the wire tests are
+one entry, 28 cases now -- and the GUI checks RC 15, BC 30, VC 18, PC 28,
+FC 16, VW 14, MC 31, the two-document check 24, the tree check 19, the
+author check 36, the import check 49, the request check 31 and the share
+check 47. The frozen Python run failed once in
+`ShapeStorage.ShapeRefCases.testSharingSurvivesTheRoundTrip` -- a leaf no
+longer the partner of the box it was read with -- while 31.6's probes
+were running on the box beside it; alone the module passed three times
+and the suite once. Nothing of 30.40 is in its path. Not chased here: it
+is of the family 31.6 found, a file's parse kept by whoever happens to
+hold it.
+
 ## 31. Phase 8: a value that is many things (survey and questions, 2026-10-05)
 
 15's phase 8 is "`enc = delta`, generic first, then the sketch codec --

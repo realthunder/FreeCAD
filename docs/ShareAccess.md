@@ -209,8 +209,10 @@ browsers the same way.
 
 Nobody verified who sits at a browser. What holds: the link works in the browsers it
 was first opened in and in no other, each is a row the host can act on, and each
-one's writes are its own. A plain request -- the polling route, a blob -- carries no
-id and reads under such a grant's token; the socket is what the count holds.
+one's writes are its own. A plain request -- the first load, the polling route, a
+blob -- says which browser it is in a header, `X-FC-Device`, and is judged as a hello
+is: a browser the grant has, or has room for, reads; one that says nothing, and one
+past the count, reads nothing of the scene (docs/TransactionLog.md sec 30.40).
 
 ### 2.4 What a client may send: files
 

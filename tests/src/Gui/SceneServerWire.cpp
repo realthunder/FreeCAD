@@ -110,9 +110,11 @@ struct HttpReply
 };
 
 /// One HTTP exchange on a fresh connection, the way the polling
-/// fallback and the blob fetches use the server.
+/// fallback and the blob fetches use the server. \a headers go with it,
+/// as the one a viewer says which browser it is in does.
 HttpReply httpRequest(int port, http::verb verb, const std::string& target,
-                      const std::string& body = {}, bool chunked = false)
+                      const std::string& body = {}, bool chunked = false,
+                      const std::vector<std::pair<std::string, std::string>>& headers = {})
 {
     HttpReply out;
     net::io_context ioc;
@@ -121,6 +123,9 @@ HttpReply httpRequest(int port, http::verb verb, const std::string& target,
     http::request<http::string_body> req {verb, target, 11};
     req.set(http::field::host, "localhost");
     req.set(http::field::connection, "close");
+    for (const auto& h : headers) {
+        req.set(h.first, h.second);
+    }
     if (!body.empty()) {
         req.body() = body;
         // chunked(true) is Transfer-Encoding: chunked and no
@@ -1463,11 +1468,8 @@ TEST_F(SceneServerWire, aGrantCountsTheBrowsersItIsFor)
         }
         EXPECT_EQ(bens, 1) << "one browser, one entry, whatever the token";
     }
-    // A plain request cannot say which browser it is: it reads, where the
-    // token is one a grant counts browsers under.
-    server.setGrants({one});
-    EXPECT_EQ(httpRequest(port, http::verb::get, "/scene?v=0&token=t-mixed").status, 200u);
-    EXPECT_EQ(httpRequest(port, http::verb::get, "/scene?v=0&token=wrong").status, 403u);
+    // (What a plain request reads under such a grant:
+    // aPlainRequestSaysWhichBrowserItIs.)
     // An id too short to be one is none.
     {
         Render::SceneGrant fresh;
@@ -1499,6 +1501,152 @@ TEST_F(SceneServerWire, aGrantCountsTheBrowsersItIsFor)
         ASSERT_TRUE(server.device(info.device, seen));
         EXPECT_EQ(seen.identity, info.identity) << "the record says who signed in at it";
     }
+}
+
+/// docs/TransactionLog.md sec 30.40: a grant that counts its browsers is
+/// asked of a plain request too. The first load of a page comes before
+/// its hello, so a request that said nothing of who it is read the whole
+/// scene for a browser the hello then refused.
+TEST_F(SceneServerWire, aPlainRequestSaysWhichBrowserItIs)
+{
+    auto& server = Render::SceneStreamServer::instance();
+    struct Restore
+    {
+        ~Restore()
+        {
+            auto& s = Render::SceneStreamServer::instance();
+            s.setGrants({});
+            s.setDevices({});
+            s.setToken({});
+        }
+    } restore;
+    const std::string anna = "anna-browser-0123456789abcdef";
+    const std::string ben = "ben-browser-0123456789abcdef";
+    const std::string key(40, 'd');
+    server.publishBlob(key, makePayload(11, 200));
+    using Said = std::vector<std::pair<std::string, std::string>>;
+    auto get = [&](const std::string& target, const std::string& id = {}) {
+        return httpRequest(port, http::verb::get, target, {}, false,
+                           id.empty() ? Said {} : Said {{"X-FC-Device", id}});
+    };
+    auto post = [&](const std::string& target, const std::string& body,
+                    const std::string& id = {}) {
+        return httpRequest(port, http::verb::post, target, body, false,
+                           id.empty() ? Said {} : Said {{"X-FC-Device", id}});
+    };
+
+    Render::SceneGrant one;
+    one.token = "t-fetch";
+    one.maxUsers = 1;
+    server.setGrants({one});
+    const uint64_t epoch = server.deviceEpoch();
+
+    // Saying nothing of who it is, a request reads nothing of the scene:
+    // not the scene, not a part of it, not what the viewers made of it.
+    HttpReply r = get("/scene?v=0&token=t-fetch");
+    ASSERT_TRUE(r.ok);
+    EXPECT_EQ(r.status, 403u);
+    EXPECT_EQ(r.body, "Refused") << "the door's word, which the page reads";
+    EXPECT_EQ(get("/blob?key=" + key + "&token=t-fetch").status, 403u);
+    EXPECT_EQ(post("/blobs?token=t-fetch", key + "\n").status, 403u);
+    EXPECT_EQ(get("/level?source=" + key + "&level=1&token=t-fetch").status, 403u);
+    EXPECT_EQ(get("/decisions?token=t-fetch").status, 403u);
+    // An id too short to be one is none.
+    EXPECT_EQ(get("/scene?v=0&token=t-fetch", "abc").status, 403u);
+    EXPECT_TRUE(server.grants()[0].devices.empty()) << "a request refused enrols nobody";
+    EXPECT_EQ(server.deviceEpoch(), epoch);
+
+    // The first request that says who it is enrols the browser, as its
+    // hello would have: that request is the page's first load.
+    r = get("/scene?v=0&token=t-fetch", anna);
+    ASSERT_TRUE(r.ok);
+    EXPECT_EQ(r.status, 200u);
+    EXPECT_EQ(r.body, asString(versioned(version, payload)));
+    ASSERT_EQ(server.grants()[0].devices.size(), 1u);
+    const std::string annaKey = server.grants()[0].devices[0];
+    EXPECT_EQ(annaKey.size(), 40u);
+    EXPECT_GT(server.deviceEpoch(), epoch);
+    Render::SceneDevice known;
+    EXPECT_TRUE(server.device(annaKey, known)) << "the host's record has it from then";
+    // ... and reads the rest, counted once.
+    EXPECT_EQ(get("/blob?key=" + key + "&token=t-fetch", anna).status, 200u);
+    EXPECT_EQ(post("/blobs?token=t-fetch", key + "\n", anna).status, 200u);
+    EXPECT_EQ(server.grants()[0].devices.size(), 1u);
+
+    // Another browser is one too many, whatever it asks for.
+    r = get("/scene?v=0&token=t-fetch", ben);
+    EXPECT_EQ(r.status, 403u);
+    EXPECT_EQ(r.body, "Refused");
+    EXPECT_EQ(get("/blob?key=" + key + "&token=t-fetch", ben).status, 403u);
+    EXPECT_EQ(server.grants()[0].devices.size(), 1u);
+
+    // The hello that follows a first load is the same browser's, and the
+    // name it gives is the record's; the other browser's is refused.
+    Render::SceneClientInfo info;
+    {
+        WsClient a(port, "/scene?token=t-fetch", WsClient::Headers {});
+        a.hello("fetch-anna", ",\"device\":\"" + anna + "\"");
+        ASSERT_TRUE(waitFor([&] { return findClient("fetch-anna", info); }));
+        EXPECT_TRUE(info.enrolled);
+        EXPECT_EQ(info.device, annaKey);
+        EXPECT_EQ(info.access, Render::ClientAccess::Edit);
+        EXPECT_EQ(server.grants()[0].devices.size(), 1u);
+        ASSERT_TRUE(server.device(annaKey, known));
+        EXPECT_EQ(known.name, "fetch-anna");
+        EXPECT_EQ(known.enrolledAs, "fetch-anna");
+        WsClient b(port, "/scene?token=t-fetch", WsClient::Headers {});
+        b.hello("fetch-ben", ",\"device\":\"" + ben + "\"");
+        bool refused = false;
+        for (int i = 0; i < 6 && !refused; ++i) {
+            WsClient::Msg m = b.read(1500);
+            if (!m.ok) {
+                break;
+            }
+            refused = m.text && has(m.data, "Refused");
+        }
+        EXPECT_TRUE(refused);
+    }
+
+    // What is not the scene's the token opens, as it did: the beacon, which
+    // can carry no header.
+    EXPECT_EQ(post("/log?token=t-fetch", "a line\n").status, 204u);
+    EXPECT_EQ(post("/log?token=wrong", "a line\n").status, 403u);
+
+    // A browser asking ahead of a request from another origin is told it
+    // may send the header, with no token asked of it.
+    r = httpRequest(port, http::verb::options, "/scene?v=0");
+    ASSERT_TRUE(r.ok);
+    EXPECT_EQ(r.status, 204u);
+    EXPECT_EQ(r.res[http::field::access_control_allow_headers], "*");
+    EXPECT_NE(std::string(r.res[http::field::access_control_allow_methods]).find("GET"),
+              std::string::npos);
+
+    // A browser the host turned off reads nothing more.
+    auto record = server.devices();
+    for (auto& d : record) {
+        if (d.key == annaKey) {
+            d.enabled = false;
+        }
+    }
+    server.setDevices(record);
+    EXPECT_EQ(get("/scene?v=0&token=t-fetch", anna).status, 403u);
+    EXPECT_EQ(get("/blob?key=" + key + "&token=t-fetch", anna).status, 403u);
+
+    // Beside an open invitation to look on the same token, whoever is not
+    // counted looks -- a request as a hello does.
+    Render::SceneGrant look;
+    look.token = "t-fetch";
+    look.access = 1;
+    server.setGrants({look, one});
+    EXPECT_EQ(get("/scene?v=0&token=t-fetch").status, 200u);
+    EXPECT_EQ(get("/scene?v=0&token=t-fetch", ben).status, 200u);
+    EXPECT_EQ(get("/scene?v=0&token=wrong", ben).status, 403u);
+
+    // A door that counts nobody asks no request who it is.
+    Render::SceneGrant open;
+    open.token = "t-open";
+    server.setGrants({open});
+    EXPECT_EQ(get("/scene?v=0&token=t-open").status, 200u);
 }
 
 TEST_F(SceneServerWire, theCapCountsUsersNotAddresses)

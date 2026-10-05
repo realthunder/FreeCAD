@@ -343,6 +343,37 @@ EM_JS(char *, fcviewer_device_id, (), {
     return s;
 });
 
+/// The id above, read once.
+static const std::string &deviceId()
+{
+    static std::string s_deviceId;
+    if (s_deviceId.empty()) {
+        if (char *id = fcviewer_device_id()) {
+            s_deviceId = id;
+            std::free(id);
+        }
+    }
+    return s_deviceId;
+}
+
+/// The headers of a plain request to the scene server: which browser this
+/// is, as the hello says it (docs/TransactionLog.md sec 30.40). The door
+/// of a grant that counts its browsers lets a request read nothing of the
+/// scene without it, and the first load comes before the hello. A header
+/// and never the URL. \a textBody: a POST of lines, which says so too.
+static const char *const *sceneHeaders(bool textBody = false)
+{
+    static const std::string id = deviceId();
+    static const char *get[] = {"X-FC-Device", id.c_str(), nullptr};
+    static const char *post[] = {"Content-Type", "text/plain",
+                                 "X-FC-Device", id.c_str(), nullptr};
+    if (id.empty()) {
+        get[0] = nullptr;
+        post[2] = nullptr;
+    }
+    return textBody ? post : get;
+}
+
 // ?cam=<yaw,pitch,dist,cx,cy,cz,panX,panY> reproduces an exact viewport
 // (the string the 'v' key prints); null when absent.
 EM_JS(char *, fcviewer_cam_param, (), {
@@ -6254,6 +6285,7 @@ static void fetchBlob(const std::string &key)
         emscripten_fetch_close(fetch);
         blobFailed(*key);
     };
+    attr.requestHeaders = sceneHeaders();
     ++s_requestsInFlight;
     std::string url = s_sceneUrl + "/blob?key=" + key + tokenQuery();
     emscripten_fetch(&attr, url.c_str());
@@ -6339,8 +6371,7 @@ static void flushBatch()
     // still doing only costs a duplicate ask; never timing out costs
     // the stall.
     attr.timeoutMSecs = (unsigned long)(2.0 * kInFlightTimeoutMs);
-    static const char *headers[] = {"Content-Type", "text/plain", nullptr};
-    attr.requestHeaders = headers;
+    attr.requestHeaders = sceneHeaders(true);
     attr.requestData = req->body.data();
     attr.requestDataSize = req->body.size();
     attr.userData = req;
@@ -7014,6 +7045,7 @@ public:
         attr.onerror = [](emscripten_fetch_t *fetch) {
             emscripten_fetch_close(fetch);
         };
+        attr.requestHeaders = sceneHeaders();
         std::string url = s_sceneUrl + "/level?source=" + req.source
             + "&level=" + std::to_string(req.level) + docQuery()
             + tokenQuery();
@@ -8734,15 +8766,29 @@ static void onPollResult(emscripten_fetch_t *fetch)
     schedulePoll();
 }
 
+/// Say what a 403 to a plain request means, in the door's own word for it
+/// (SceneServer.cpp, route): `Refused` is a grant that does not cover this
+/// browser -- one past the count of an invitation, say -- where the link
+/// itself may be right; anything else is the link. The same two messages
+/// the socket's refusals get. Before the fetch is closed.
+static void showRefusal(const emscripten_fetch_t *fetch)
+{
+    const bool grant = fetch->data && fetch->numBytes >= 7
+        && std::strncmp(fetch->data, "Refused", 7) == 0;
+    fcviewer_status(grant ? "Access refused \xe2\x80\x94 "
+                            "this invite does not cover you"
+                          : "Not authorized \xe2\x80\x94 "
+                            "check the share link", 0.0, -1.0);
+}
+
 static void onPollError(emscripten_fetch_t *fetch)
 {
     // A gated backend refusing the token will refuse it next time
     // too; polling on would be a request every 500ms forever.
     if (fetch->status == 403) {
+        showRefusal(fetch);
         emscripten_fetch_close(fetch);
         s_polling = false;
-        fcviewer_status("Not authorized \xe2\x80\x94 check the share link",
-                        0.0, -1.0);
         return;
     }
     emscripten_fetch_close(fetch);
@@ -8779,6 +8825,7 @@ static void doPoll(void * = nullptr)
     attr.attributes = EMSCRIPTEN_FETCH_LOAD_TO_MEMORY;
     attr.onsuccess = onPollResult;
     attr.onerror = onPollError;
+    attr.requestHeaders = sceneHeaders();
     char url[512];
     std::snprintf(url, sizeof(url), "%s/scene?v=%llu&s=%llu%s%s",
                   s_sceneUrl.c_str(),
@@ -8839,16 +8886,9 @@ static void sendHello()
     }
     // Which browser this is (fcviewer_device_id): the door of a grant
     // that counts its users asks for it, and every door records it.
-    static std::string s_deviceId;
-    if (s_deviceId.empty()) {
-        if (char *id = fcviewer_device_id()) {
-            s_deviceId = id;
-            std::free(id);
-        }
-    }
-    if (!s_deviceId.empty()) {
+    if (!deviceId().empty()) {
         hello += ",\"device\":\"";
-        jsonEscapeTo(hello, s_deviceId);
+        jsonEscapeTo(hello, deviceId());
         hello += '"';
     }
     hello += '}';
@@ -9105,9 +9145,8 @@ static void onInitFetchError(emscripten_fetch_t *fetch)
     // Refused at the door: neither the stream nor a retry can help
     // until the page is reloaded with the right token.
     if (fetch->status == 403) {
+        showRefusal(fetch);
         emscripten_fetch_close(fetch);
-        fcviewer_status("Not authorized \xe2\x80\x94 check the share link",
-                        0.0, -1.0);
         return;
     }
     emscripten_fetch_close(fetch);
@@ -9204,6 +9243,7 @@ static void requestFullScene()
     attr.attributes = EMSCRIPTEN_FETCH_LOAD_TO_MEMORY;
     attr.onsuccess = onInitFetchDone;
     attr.onerror = onInitFetchError;
+    attr.requestHeaders = sceneHeaders();
     char url[512];
     std::snprintf(url, sizeof(url), "%s/scene?v=0%s%s", s_sceneUrl.c_str(),
                   docQuery().c_str(), tokenQuery().c_str());
@@ -9220,6 +9260,7 @@ static void startInitialFetch()
     attr.onsuccess = onInitFetchDone;
     attr.onerror = onInitFetchError;
     attr.onprogress = onInitFetchProgress;
+    attr.requestHeaders = sceneHeaders();
     char url[512];
     std::snprintf(url, sizeof(url), "%s/scene?v=%llu&s=%llu%s%s",
                   s_sceneUrl.c_str(),
