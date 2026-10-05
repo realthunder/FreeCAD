@@ -1520,17 +1520,21 @@ protected:
                        const std::string& record, const std::string& keep, ImportResult& result);
     /// Make this document what `from`, a document of another copy of the
     /// file, is (sec 30.19), recorded into the open transaction; the maps
-    /// are added to. Throws when something of it cannot come.
+    /// are added to. Throws when something of it cannot come. `same` are
+    /// the objects of the other copy that are objects of this file (sec
+    /// 30.33), by its id for each: one not here comes under its own id.
     void _applyForeignState(Document& from, std::map<long, long>& ids,
                             std::map<std::string, std::string>& names,
                             std::map<std::string, std::string>& renamed,
-                            const Document* kin = nullptr);
+                            const Document* kin = nullptr,
+                            const std::map<long, long>* same = nullptr);
     /// _applyForeignState() as one row of this document's log, the file its
     /// author. False, the row rolled back and `result` saying why, when it
     /// could not come.
     bool _importStateRow(Document& from, const std::string& file, std::map<long, long>& ids,
                          std::map<std::string, std::string>& names, ImportResult& result,
-                         const Document* kin = nullptr);
+                         const Document* kin = nullptr,
+                         const std::map<long, long>* same = nullptr);
     /// importFork() of a file with no history (sec 30.19): one row against
     /// the save its `Version` names.
     /// Let go every sent file whose branch was merged into this one or is

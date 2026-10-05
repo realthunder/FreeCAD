@@ -5309,6 +5309,348 @@ TEST_F(TransactionLogTest, aForkImportTakesTheBranchAskedForAndTheFilesItNames)
     Base::FileInfo(fork).deleteFile();
 }
 
+TEST_F(TransactionLogTest, aCopyThatTookFromThisFileNamesItsObjects)
+{
+    // Sec 30.33: a copy that has taken this file's rows holds this file's
+    // objects under ids of its own, and names them so in every row it
+    // writes after. Which numbers those are is chance -- here they are made
+    // to be the worst there is: the copy's id for each object is this
+    // file's id for another. Its edit and its removal are of the objects
+    // they were made on.
+    App::DocumentParams::setTransactionLog(2);   // embedded
+    doc()->setLastObjectId(6000);
+    edit(doc(), "create", [&]() { make("Obj")->Integer.setValue(1); });
+    const std::string tmp = Base::FileInfo::getTempPath();
+    const std::string path = tmp + "txnlog-round-ours.FCStd";
+    const std::string fork = tmp + "txnlog-round-theirs.FCStd";
+    Base::FileInfo(path).deleteFile();
+    Base::FileInfo(fork).deleteFile();
+    ASSERT_TRUE(doc()->saveAs(path.c_str()));
+    ASSERT_TRUE(Base::FileInfo(path).copyTo(fork.c_str()));
+
+    edit(doc(), "ours made", [&]() {
+        make("Mine")->Integer.setValue(10);
+        make("Gone")->Integer.setValue(20);
+        make("Other")->Integer.setValue(30);
+    });
+    const long mine = featureOf(doc(), "Mine")->getID();
+    const long gone = featureOf(doc(), "Gone")->getID();
+    const long kept = featureOf(doc(), "Other")->getID();
+    ASSERT_EQ(gone, mine + 1);
+    ASSERT_EQ(kept, mine + 2);
+    ASSERT_TRUE(doc()->save());
+
+    // The copy takes them: nothing of its own, so the rows as they are.
+    // Its counter is one past this file's, so each lands on the next.
+    App::Document* other = App::GetApplication().openDocument(fork.c_str());
+    ASSERT_TRUE(other);
+    std::string otherName = other->getName();
+    other->setUndoMode(1);
+    other->getFileHistory().noteObjectId(mine);
+    const auto took = other->importFork(path);
+    ASSERT_EQ(took.stoppedAt, 0) << took.reason;
+    ASSERT_EQ(took.rows, 1u);
+    const auto into = other->mergeBranch(took.branch);
+    ASSERT_TRUE(into.unresolved.empty());
+    ASSERT_TRUE(featureOf(other, "Mine"));
+    ASSERT_EQ(featureOf(other, "Mine")->getID(), gone);
+    ASSERT_EQ(featureOf(other, "Gone")->getID(), kept);
+    edit(other, "theirs changed", [&]() { featureOf(other, "Mine")->Integer.setValue(11); });
+    edit(other, "theirs removed", [&]() { other->removeObject("Gone"); });
+    ASSERT_TRUE(other->save());
+    App::GetApplication().closeDocument(otherName.c_str());
+    App::GetApplication().setActiveDocument(doc());
+
+    edit(doc(), "ours again", [&]() { featureOf(doc(), "Mine")->String.setValue("ours"); });
+    const auto result = doc()->importFork(fork);
+    EXPECT_EQ(result.stoppedAt, 0) << result.reason;
+    EXPECT_EQ(result.rows, 2u);
+    EXPECT_TRUE(result.renamed.empty());
+    auto& store = log().store();
+    App::LogBranch branch;
+    ASSERT_TRUE(store.findBranch(result.branch, branch));
+    int sets = 0;
+    int removes = 0;
+    for (const auto& t : store.chain(branch.head, result.base + 1)) {
+        for (const auto& o : store.ops(t.seq)) {
+            EXPECT_NE(o.op, "create") << t.name;
+            // A removal's row says what the object's values were, too.
+            if (o.op == "set" && o.prop == "Integer" && t.name == "theirs changed") {
+                EXPECT_EQ(o.cid, mine) << t.name;
+                ++sets;
+            }
+            else if (o.op == "set") {
+                EXPECT_EQ(o.cid, gone) << t.name;
+            }
+            if (o.op == "remove") {
+                EXPECT_EQ(o.cid, gone) << t.name;
+                ++removes;
+            }
+        }
+    }
+    EXPECT_EQ(sets, 1);
+    EXPECT_EQ(removes, 1);
+    const auto merged = doc()->mergeBranch(result.branch);
+    EXPECT_TRUE(merged.unresolved.empty());
+    ASSERT_TRUE(featureOf(doc(), "Mine"));
+    EXPECT_EQ(featureOf(doc(), "Mine")->getID(), mine);
+    EXPECT_EQ(featureOf(doc(), "Mine")->Integer.getValue(), 11);
+    EXPECT_STREQ(featureOf(doc(), "Mine")->String.getValue(), "ours");
+    EXPECT_FALSE(doc()->getObject("Gone"));
+    ASSERT_TRUE(featureOf(doc(), "Other"));
+    EXPECT_EQ(featureOf(doc(), "Other")->getID(), kept);
+    EXPECT_EQ(featureOf(doc(), "Other")->Integer.getValue(), 30);
+    EXPECT_EQ(doc()->getObjects().size(), 3u);
+
+    // Both change one value of it: that is a conflict, and is said.
+    other = App::GetApplication().openDocument(fork.c_str());
+    ASSERT_TRUE(other);
+    otherName = other->getName();
+    other->setUndoMode(1);
+    edit(other, "theirs again", [&]() { featureOf(other, "Mine")->Integer.setValue(12); });
+    ASSERT_TRUE(other->save());
+    App::GetApplication().closeDocument(otherName.c_str());
+    App::GetApplication().setActiveDocument(doc());
+    edit(doc(), "ours too", [&]() { featureOf(doc(), "Mine")->Integer.setValue(13); });
+    const auto again = doc()->importFork(fork);
+    EXPECT_EQ(again.stoppedAt, 0) << again.reason;
+    EXPECT_EQ(again.rows, 1u);
+    EXPECT_TRUE(again.extended);
+    const auto refused = doc()->mergeBranch(again.branch);
+    ASSERT_EQ(refused.unresolved.size(), 1u);
+    EXPECT_EQ(refused.unresolved.front().key, "Mine.Integer");
+    EXPECT_EQ(featureOf(doc(), "Mine")->Integer.getValue(), 13);
+    const auto picked = doc()->mergeBranch(again.branch, {{"Mine.Integer", "theirs"}});
+    EXPECT_TRUE(picked.unresolved.empty());
+    EXPECT_EQ(featureOf(doc(), "Mine")->Integer.getValue(), 12);
+    Base::FileInfo(path).deleteFile();
+    Base::FileInfo(fork).deleteFile();
+}
+
+TEST_F(TransactionLogTest, aMergeOfThisFilesRowsStaysAMerge)
+{
+    // Sec 30.33, 30.34: the copy had work of its own when it took this
+    // file's rows, so what it took is in a merge row of its own -- a row
+    // that makes this file's objects. Brought back, the row makes them
+    // under the ids and the names they have here, and is a merge still:
+    // its second parent the row of this file it merged, which is then where
+    // the merge of the branch starts from.
+    App::DocumentParams::setTransactionLog(2);   // embedded
+    doc()->setLastObjectId(6000);
+    edit(doc(), "create", [&]() { make("Obj")->Integer.setValue(1); });
+    const std::string tmp = Base::FileInfo::getTempPath();
+    const std::string path = tmp + "txnlog-back-ours.FCStd";
+    const std::string fork = tmp + "txnlog-back-theirs.FCStd";
+    Base::FileInfo(path).deleteFile();
+    Base::FileInfo(fork).deleteFile();
+    ASSERT_TRUE(doc()->saveAs(path.c_str()));
+    ASSERT_TRUE(Base::FileInfo(path).copyTo(fork.c_str()));
+
+    edit(doc(), "ours made", [&]() { make("Mine")->Integer.setValue(10); });
+    const long mine = featureOf(doc(), "Mine")->getID();
+    log().flush();
+    int64_t oursMade = 0;
+    for (const auto& t : log().store().transactions()) {
+        if (t.name == "ours made")
+            oursMade = t.seq;
+    }
+    ASSERT_GT(oursMade, 0);
+    ASSERT_TRUE(doc()->save());
+
+    // The copy has a Mine of its own -- under the very id this file's has
+    // -- so this file's comes there under another name, and another id.
+    App::Document* other = App::GetApplication().openDocument(fork.c_str());
+    ASSERT_TRUE(other);
+    std::string otherName = other->getName();
+    other->setUndoMode(1);
+    edit(other, "theirs made", [&]() {
+        auto made = static_cast<App::FeatureTest*>(other->addObject("App::FeatureTest", "Mine"));
+        made->Integer.setValue(7);
+    });
+    ASSERT_EQ(featureOf(other, "Mine")->getID(), mine);
+    const auto took = other->importFork(path);
+    ASSERT_EQ(took.stoppedAt, 0) << took.reason;
+    ASSERT_EQ(took.renamed.size(), 1u);
+    const std::string there = took.renamed.begin()->second;
+    ASSERT_NE(there, "Mine");
+    const auto into = other->mergeBranch(took.branch);
+    ASSERT_TRUE(into.unresolved.empty());
+    ASSERT_TRUE(featureOf(other, there.c_str()));
+    const long mineThere = featureOf(other, there.c_str())->getID();
+    ASSERT_NE(mineThere, mine);
+    edit(other, "theirs changed", [&]() {
+        featureOf(other, there.c_str())->Integer.setValue(11);
+        featureOf(other, "Obj")->Link.setValue(featureOf(other, there.c_str()));
+    });
+    ASSERT_TRUE(other->save());
+    App::GetApplication().closeDocument(otherName.c_str());
+    App::GetApplication().setActiveDocument(doc());
+
+    const auto result = doc()->importFork(fork);
+    EXPECT_EQ(result.stoppedAt, 0) << result.reason;
+    EXPECT_EQ(result.rows, 3u);
+    // The copy's own Mine is not this file's, and is renamed; this file's,
+    // which the copy had renamed, is Mine again and no renaming to report.
+    ASSERT_EQ(result.renamed.size(), 1u);
+    EXPECT_EQ(result.renamed.begin()->first, "Mine");
+    const std::string theirMine = result.renamed.begin()->second;
+    EXPECT_NE(theirMine, "Mine");
+    auto& store = log().store();
+    App::LogBranch branch;
+    ASSERT_TRUE(store.findBranch(result.branch, branch));
+    int merges = 0;
+    for (const auto& t : store.chain(branch.head, result.base + 1)) {
+        const auto ops = store.ops(t.seq);
+        if (ops.empty())
+            continue;
+        if (t.name == "theirs made" || t.name == "theirs changed") {
+            EXPECT_EQ(t.kind, "user") << t.name;
+            EXPECT_EQ(t.mergeFrom, 0) << t.name;
+            continue;
+        }
+        ++merges;
+        EXPECT_EQ(t.kind, "merge") << t.name;
+        EXPECT_EQ(t.mergeFrom, oursMade) << t.name;
+        int creates = 0;
+        for (const auto& o : ops) {
+            if (o.op != "create")
+                continue;
+            ++creates;
+            EXPECT_EQ(o.cid, mine);
+            EXPECT_EQ(o.cname, "Mine");
+        }
+        EXPECT_EQ(creates, 1);
+    }
+    EXPECT_EQ(merges, 1);
+
+    // Nothing here has changed since the copy took it: nothing to ask.
+    const auto preview = doc()->previewMerge(result.branch);
+    EXPECT_EQ(preview.base, oursMade);
+    EXPECT_EQ(preview.conflicts, 0u);
+    const auto merged = doc()->mergeBranch(result.branch);
+    EXPECT_TRUE(merged.unresolved.empty());
+    EXPECT_EQ(doc()->getObjects().size(), 3u);
+    ASSERT_TRUE(featureOf(doc(), "Mine"));
+    EXPECT_EQ(featureOf(doc(), "Mine")->getID(), mine);
+    EXPECT_EQ(featureOf(doc(), "Mine")->Integer.getValue(), 11);
+    ASSERT_TRUE(featureOf(doc(), theirMine.c_str()));
+    EXPECT_EQ(featureOf(doc(), theirMine.c_str())->Integer.getValue(), 7);
+    // The link the copy set names this file's object, by its name there.
+    EXPECT_EQ(featureOf(doc(), "Obj")->Link.getValue(), featureOf(doc(), "Mine"));
+
+    // A second round: this file changes the object the copy made, and the
+    // copy takes that. Nothing comes a second time on that side either.
+    edit(doc(), "ours again", [&]() {
+        featureOf(doc(), theirMine.c_str())->Integer.setValue(8);
+    });
+    ASSERT_TRUE(doc()->save());
+    other = App::GetApplication().openDocument(fork.c_str());
+    ASSERT_TRUE(other);
+    otherName = other->getName();
+    other->setUndoMode(1);
+    const size_t before = other->getObjects().size();
+    const auto back = other->importFork(path);
+    EXPECT_EQ(back.stoppedAt, 0) << back.reason;
+    EXPECT_TRUE(back.renamed.empty());
+    const auto round = other->mergeBranch(back.branch);
+    EXPECT_TRUE(round.unresolved.empty());
+    EXPECT_EQ(other->getObjects().size(), before);
+    ASSERT_TRUE(featureOf(other, "Mine"));
+    EXPECT_EQ(featureOf(other, "Mine")->getID(), mine);
+    EXPECT_EQ(featureOf(other, "Mine")->Integer.getValue(), 8);
+    ASSERT_TRUE(featureOf(other, there.c_str()));
+    EXPECT_EQ(featureOf(other, there.c_str())->getID(), mineThere);
+    EXPECT_EQ(featureOf(other, there.c_str())->Integer.getValue(), 11);
+    EXPECT_EQ(featureOf(other, "Obj")->Link.getValue(), featureOf(other, there.c_str()));
+    App::GetApplication().closeDocument(otherName.c_str());
+    App::GetApplication().setActiveDocument(doc());
+    Base::FileInfo(path).deleteFile();
+    Base::FileInfo(fork).deleteFile();
+}
+
+TEST_F(TransactionLogTest, aMergeThatLeftSomethingOutIsARowLikeAny)
+{
+    // Sec 30.34: a replay may leave things out -- a view provider's ops
+    // where there is no Gui. A merge row kept a merge says the branch holds
+    // this file's rows up to the one it names, and what the copy left out
+    // would read as taken back. Here the copy's replayed row is made to
+    // lack one of the two changes of the row it stands for: its merge comes
+    // as a row like any, and this file's change stays.
+    App::DocumentParams::setTransactionLog(2);   // embedded
+    edit(doc(), "create", [&]() { make("Obj")->Integer.setValue(1); });
+    const std::string tmp = Base::FileInfo::getTempPath();
+    const std::string path = tmp + "txnlog-left-ours.FCStd";
+    const std::string fork = tmp + "txnlog-left-theirs.FCStd";
+    Base::FileInfo(path).deleteFile();
+    Base::FileInfo(fork).deleteFile();
+    ASSERT_TRUE(doc()->saveAs(path.c_str()));
+    ASSERT_TRUE(Base::FileInfo(path).copyTo(fork.c_str()));
+    edit(doc(), "ours", [&]() {
+        featureOf(doc(), "Obj")->String.setValue("ours");
+        featureOf(doc(), "Obj")->Integer.setValue(5);
+    });
+    ASSERT_TRUE(doc()->save());
+
+    App::Document* other = App::GetApplication().openDocument(fork.c_str());
+    ASSERT_TRUE(other);
+    const std::string otherName = other->getName();
+    other->setUndoMode(1);
+    edit(other, "theirs made", [&]() { other->addObject("App::FeatureTest", "Theirs"); });
+    const auto took = other->importFork(path);
+    ASSERT_EQ(took.stoppedAt, 0) << took.reason;
+    ASSERT_EQ(took.rows, 1u);
+    {
+        auto otherLog = other->getTransactionLog();
+        ASSERT_TRUE(otherLog);
+        otherLog->flush();
+        auto& theirs = otherLog->store();
+        App::LogBranch came;
+        ASSERT_TRUE(theirs.findBranch(took.branch, came));
+        int rewritten = 0;
+        for (const auto& t : theirs.chain(came.head, took.base + 1)) {
+            if (t.name != "ours")
+                continue;
+            std::vector<App::LogOp> ops;
+            for (const auto& o : theirs.ops(t.seq)) {
+                if (o.prop != "String")
+                    ops.push_back(o);
+            }
+            ASSERT_EQ(ops.size(), 1u);
+            theirs.replaceTransactions(t, ops, {});
+            ++rewritten;
+        }
+        ASSERT_EQ(rewritten, 1);
+    }
+    const auto into = other->mergeBranch(took.branch);
+    ASSERT_TRUE(into.unresolved.empty());
+    ASSERT_EQ(featureOf(other, "Obj")->Integer.getValue(), 5);
+    ASSERT_STRNE(featureOf(other, "Obj")->String.getValue(), "ours");
+    edit(other, "theirs changed", [&]() { featureOf(other, "Theirs")->Integer.setValue(3); });
+    ASSERT_TRUE(other->save());
+    App::GetApplication().closeDocument(otherName.c_str());
+    App::GetApplication().setActiveDocument(doc());
+
+    const auto result = doc()->importFork(fork);
+    EXPECT_EQ(result.stoppedAt, 0) << result.reason;
+    auto& store = log().store();
+    App::LogBranch branch;
+    ASSERT_TRUE(store.findBranch(result.branch, branch));
+    for (const auto& t : store.chain(branch.head, result.base + 1)) {
+        if (!store.ops(t.seq).empty()) {
+            EXPECT_NE(t.kind, "merge") << t.name;
+            EXPECT_EQ(t.mergeFrom, 0) << t.name;
+        }
+    }
+    const auto merged = doc()->mergeBranch(result.branch);
+    EXPECT_TRUE(merged.unresolved.empty());
+    EXPECT_STREQ(featureOf(doc(), "Obj")->String.getValue(), "ours");
+    EXPECT_EQ(featureOf(doc(), "Obj")->Integer.getValue(), 5);
+    ASSERT_TRUE(featureOf(doc(), "Theirs"));
+    EXPECT_EQ(featureOf(doc(), "Theirs")->Integer.getValue(), 3);
+    Base::FileInfo(path).deleteFile();
+    Base::FileInfo(fork).deleteFile();
+}
+
 TEST_F(TransactionLogTest, aFileWithNoHistoryIsImportedAsOneRow)
 {
     // Sec 30.19 (S.g): a copy handed out without the history says which

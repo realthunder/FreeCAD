@@ -342,6 +342,94 @@ def run():
             check("a stranger, again: nothing",
                   seen.get("found") is not True and len(doc.getTransactionLog()) == before
                   and any("Nothing new" in text for text in status(dock)))
+        # Sec 30.33, 30.34: a copy that took from this file, and comes back.
+        # This file's cone, green, is taken by a copy that has work of its
+        # own -- so under another id there, and in a merge row of the
+        # copy's -- and made taller. Back here it is this file's cone, the
+        # copy's merge is a merge, and nothing of this file is taken back:
+        # the colour is a view provider's, which a replay with no Gui would
+        # have left out.
+        ours = App.newDocument("RoundOurs")
+        ours.UndoMode = 1
+        ours.openTransaction("base")
+        ours.addObject("Part::Box", "Box")
+        ours.recompute()
+        ours.commitTransaction()
+        settle()
+        mine = os.path.join(where, "round.FCStd")
+        copy = os.path.join(where, "roundcopy.FCStd")
+        ours.saveAs(mine)
+        shutil.copyfile(mine, copy)
+        ours.openTransaction("ours cone")
+        cone = ours.addObject("Part::Cone", "Cone")
+        ours.recompute()
+        ours.commitTransaction()
+        settle()
+        ours.openTransaction("ours green")
+        cone.ViewObject.ShapeColor = (0.0, 1.0, 0.0)
+        ours.commitTransaction()
+        settle()
+        ours.save()
+        coneId = cone.ID
+        green = [t["seq"] for t in ours.getTransactionLog() if t["name"] == "ours green"]
+        theirs = App.openDocument(copy)
+        theirs.UndoMode = 1
+        # Made and coloured in one row: every view value of it is in that
+        # row, and they are one colour under several names.
+        theirs.openTransaction("theirs cyl")
+        theirs.addObject("Part::Cylinder", "Cyl")
+        theirs.recompute()
+        theirs.Cyl.ViewObject.ShapeColor = (1.0, 0.0, 0.0)
+        theirs.commitTransaction()
+        settle()
+        took = theirs.importTransactionFork(mine)
+        theirs.mergeTransactionBranch(took["branch"])
+        settle()
+        check("round trip: the copy has the cone, green, under an id of its own (%r, %r)"
+              % (colour(theirs.Cone), theirs.Cone.ID),
+              colour(theirs.Cone) == (0.0, 1.0, 0.0) and theirs.Cone.ID != coneId)
+        theirs.openTransaction("theirs taller")
+        theirs.Cone.Height = 20
+        theirs.recompute()
+        theirs.commitTransaction()
+        settle()
+        theirs.save()
+        App.closeDocument(theirs.Name)
+        App.setActiveDocument(ours.Name)
+        settle()
+        res = ours.importTransactionFork(copy)
+        came = [t for t in ours.getTransactionLog() if t["branch"] == res["branch"]]
+        merges = [t for t in came if t["kind"] == "merge"]
+        check("round trip: nothing stopped, nothing renamed (%r)" % res,
+              res["stopped_at"] == 0 and res["renamed"] == {} and res["rows"] == 3)
+        check("round trip: the copy's merge is a merge here, of this file's last row (%r, %r)"
+              % ([(t["kind"], t["name"]) for t in came], green),
+              len(merges) == 1 and len(green) == 1 and merges[0]["merge_from"] == green[0])
+        made = [(o["ckind"], o["cid"], o.get("cname")) for t in merges
+                for o in ours.getTransactionOps(t["seq"]) if o["op"] == "create"]
+        check("round trip: the row makes this file's cone, and its view provider (%r)" % made,
+              sorted(made) == [("obj", coneId, "Cone"), ("view", coneId, "Cone")])
+        preview = ours.previewTransactionMerge(res["branch"])
+        check("round trip: the merge starts where the copy took this file (%r)"
+              % preview["base"], len(green) == 1 and preview["base"] == green[0]
+              and preview["conflicts"] == 0)
+        merged = ours.mergeTransactionBranch(res["branch"])
+        settle()
+        check("round trip: merged with nothing to ask (%r)" % merged["unresolved"],
+              merged["unresolved"] == [] and merged["failed"] == [])
+        check("round trip: one cone, this file's (%r)" % sorted(o.Name for o in ours.Objects),
+              sorted(o.Name for o in ours.Objects) == ["Box", "Cone", "Cyl"]
+              and ours.Cone.ID == coneId)
+        check("round trip: the copy's change is on it, and computed (%r)" % ours.Cone.Height,
+              abs(ours.Cone.Height.Value - 20) < 1e-9
+              and not [o.Name for o in ours.Objects
+                       if "Touched" in o.State or "Invalid" in o.State])
+        check("round trip: the colour it was given here is still its (%r)" % (colour(ours.Cone),),
+              colour(ours.Cone) == (0.0, 1.0, 0.0))
+        check("round trip: the copy's cylinder has the colour it was made with (%r)"
+              % (colour(ours.Cyl),), colour(ours.Cyl) == (1.0, 0.0, 0.0))
+        App.closeDocument(ours.Name)
+        settle()
         shutil.rmtree(where, ignore_errors=True)
     except Exception:
         lines.append("FAIL exception\n" + traceback.format_exc())

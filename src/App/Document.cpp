@@ -9084,6 +9084,134 @@ void importMaps(const nlohmann::json& kept, std::map<long, long>& ids,
     }
 }
 
+/// A row an import replayed (sec 30.15): its script says of which file.
+bool isReplayed(const LogTransaction& t)
+{
+    return t.script.find("\"imported\"") != std::string::npos;
+}
+
+/// An object a row made, and the name its source gave it: a replayed row
+/// says which names it could not keep (sec 30.4 P4).
+struct MadeObject
+{
+    long id {0};
+    std::string name;
+    std::string source;
+    std::string type;
+};
+
+std::vector<MadeObject> madeBy(TransactionStore& store, const LogTransaction& t)
+{
+    std::map<std::string, std::string> was;   // the name here, to the source's
+    if (isReplayed(t)) {
+        const auto j = nlohmann::json::parse(t.script, nullptr, false);
+        if (j.is_object() && j.contains("renamed") && j["renamed"].is_object()) {
+            for (auto it = j["renamed"].begin(); it != j["renamed"].end(); ++it) {
+                if (it.value().is_string())
+                    was[it.value().get<std::string>()] = it.key();
+            }
+        }
+    }
+    std::vector<MadeObject> out;
+    for (const auto& o : store.ops(t.seq)) {
+        if (o.op != "create" || o.ckind != "obj")
+            continue;
+        MadeObject m;
+        m.id = o.cid;
+        m.name = o.cname;
+        m.type = o.ctype;
+        auto it = was.find(o.cname);
+        m.source = it == was.end() ? o.cname : it->second;
+        out.push_back(std::move(m));
+    }
+    return out;
+}
+
+/** What two copies of a file hold of each other's (docs/TransactionLog.md
+ * sec 30.33). One row -- one identity (sec 30.12) -- made the same objects
+ * wherever it is held: in the copy that wrote it, under the ids that copy
+ * gave them, and in a copy that replayed it, under ids of its own (sec
+ * 30.15). So the rows a store replayed, looked for in the other store, say
+ * which of the other's objects it holds, and as what. No map either copy
+ * kept is read for this: a map says what a branch brought, a row says what
+ * it made. `rows` are `scan`'s; a pair is the object in `scan`, then the
+ * same object in `other`.
+ *
+ * Within a row the objects are told apart by type and by the name their
+ * source gave them. A name that went through two copies, renamed in each,
+ * is not known by that: what is left is paired where one object of a type
+ * is left on either side, and else not at all -- an object not paired comes
+ * as one the copy made, which is what every object did before this.
+ */
+void sameObjects(TransactionStore& scan, const std::vector<LogTransaction>& rows,
+                 TransactionStore& other,
+                 std::vector<std::pair<MadeObject, MadeObject>>& pairs)
+{
+    for (const auto& t : rows) {
+        LogRowId id;
+        if (!scan.rowId(t.seq, id))
+            continue;
+        const int64_t seq = other.findRow(id);
+        if (!seq)
+            continue;
+        LogTransaction there;
+        for (const auto& r : other.transactions(seq, 1)) {
+            if (r.seq == seq)
+                there = r;
+        }
+        if (!there.seq)
+            continue;
+        const auto mine = madeBy(scan, t);
+        if (mine.empty())
+            continue;
+        const auto theirs = madeBy(other, there);
+        std::vector<int> match(mine.size(), -1);
+        std::vector<bool> used(theirs.size(), false);
+        for (size_t i = 0; i < mine.size(); ++i) {
+            for (size_t j = 0; j < theirs.size(); ++j) {
+                if (!used[j] && mine[i].type == theirs[j].type
+                        && mine[i].source == theirs[j].source) {
+                    match[i] = static_cast<int>(j);
+                    used[j] = true;
+                    break;
+                }
+            }
+        }
+        for (size_t i = 0; i < mine.size(); ++i) {
+            if (match[i] >= 0)
+                continue;
+            int left = 0;
+            int found = -1;
+            for (size_t k = 0; k < mine.size(); ++k)
+                left += match[k] < 0 && mine[k].type == mine[i].type;
+            for (size_t j = 0; j < theirs.size(); ++j) {
+                if (used[j] || theirs[j].type != mine[i].type)
+                    continue;
+                found = found < 0 ? static_cast<int>(j) : -2;
+            }
+            if (left == 1 && found >= 0) {
+                match[i] = found;
+                used[found] = true;
+            }
+        }
+        for (size_t i = 0; i < mine.size(); ++i) {
+            if (match[i] >= 0)
+                pairs.emplace_back(mine[i], theirs[match[i]]);
+        }
+    }
+}
+
+/// The rows of `store` an import replayed, in the history of `head`.
+std::vector<LogTransaction> replayedRows(TransactionStore& store, int64_t head)
+{
+    std::vector<LogTransaction> out;
+    for (auto& t : store.history(head)) {
+        if (isReplayed(t))
+            out.push_back(std::move(t));
+    }
+    return out;
+}
+
 /// The import branch that holds a file as found (sec 30.19 G5): the one
 /// made for `file` and `branch` of it whose maps name a state. False when
 /// there is none; `kept` is its meta.
@@ -9340,7 +9468,7 @@ void Document::_finishImport(Document* replay, bool scratch, int64_t branch,
 void Document::_applyForeignState(Document& from, std::map<long, long>& ids,
                                   std::map<std::string, std::string>& names,
                                   std::map<std::string, std::string>& renamed,
-                                  const Document* kin)
+                                  const Document* kin, const std::map<long, long>* paired)
 {
     // docs/TransactionLog.md sec 30.19 G3, G7, G8: this document made what
     // `from` -- a document of another copy of the file -- is, recorded
@@ -9383,7 +9511,19 @@ void Document::_applyForeignState(Document& from, std::map<long, long>& ids,
                         && (!same || same->getTypeId() == theirs->getTypeId()))
                     obj->_Id = theirs->getID();
             }
-            addObject(obj, name.c_str(), false);
+            // Sec 30.33: one of this file's own that the copy took and this
+            // branch has not got comes under the id and the name it has.
+            std::string wanted = name;
+            auto both = paired ? paired->find(theirs->getID())
+                               : std::map<long, long>::const_iterator();
+            if (paired && both != paired->end() && !getObjectByID(both->second)) {
+                const std::string* known = d->history->objectNameOfId(both->second);
+                if (known && !getObject(known->c_str())) {
+                    obj->_Id = both->second;
+                    wanted = *known;
+                }
+            }
+            addObject(obj, wanted.c_str(), false);
             if (obj->getID() != theirs->getID())
                 ids[theirs->getID()] = obj->getID();
             const std::string made = obj->getNameInDocument();
@@ -9494,7 +9634,7 @@ void Document::_applyForeignState(Document& from, std::map<long, long>& ids,
 bool Document::_importStateRow(Document& from, const std::string& file,
                                std::map<long, long>& ids,
                                std::map<std::string, std::string>& names, ImportResult& result,
-                               const Document* kin)
+                               const Document* kin, const std::map<long, long>* same)
 {
     // docs/TransactionLog.md sec 30.19: one row, the difference between
     // this document and the file as found; one author, the file (G4).
@@ -9527,7 +9667,7 @@ bool Document::_importStateRow(Document& from, const std::string& file,
     std::string why;
     bool failed = false;
     try {
-        _applyForeignState(from, ids, names, renamed, kin);
+        _applyForeignState(from, ids, names, renamed, kin, same);
     }
     catch (Base::Exception& e) {
         why = e.what();
@@ -9809,6 +9949,40 @@ Document::ImportResult Document::importFork(const std::string& path, const std::
     std::map<std::string, std::string> names;
     importMaps(kept, ids, names);
 
+    // Sec 30.33: nor is every other object one the copy made. What the
+    // copy took from this file it holds under ids of its own, and names
+    // them in its rows; what this file took from the copy it holds under
+    // ids of this file. Both are the same object in both, known by the row
+    // that made it, and an op of the copy's on one is an op on that object
+    // here -- not on nothing, and not on whatever this file gave the number
+    // to.
+    std::map<long, long> same;
+    std::map<std::string, std::string> sameNames;
+    {
+        fork.core->flush();
+        log->flush();
+        std::vector<std::pair<MadeObject, MadeObject>> there;   // the copy's, then ours
+        sameObjects(theirs, replayedRows(theirs, from.head), store, there);
+        if (gap)
+            sameObjects(theirs, replayedRows(theirs, tail.head), store, there);
+        std::vector<std::pair<MadeObject, MadeObject>> here;   // ours, then the copy's
+        sameObjects(store, replayedRows(store, mine.id ? mine.head : result.base), theirs, here);
+        for (const auto& p : here)
+            there.emplace_back(p.second, p.first);
+        for (const auto& p : there) {
+            if (!same.emplace(p.first.id, p.second.id).second)
+                continue;
+            if (p.first.name != p.second.name)
+                sameNames.emplace(p.first.name, p.second.name);
+        }
+        // What an earlier import of this branch kept says the same of what
+        // it brought, and stays as it is.
+        for (const auto& kv : same)
+            ids.emplace(kv.first, kv.second);
+        for (const auto& kv : sameNames)
+            names.emplace(kv.first, kv.second);
+    }
+
     // Named after the file, and after the copy's branch when that is not
     // its file's own (30.14).
     auto& app = GetApplication();
@@ -9886,6 +10060,63 @@ Document::ImportResult Document::importFork(const std::string& path, const std::
     std::map<int64_t, int64_t> seqs;   // the copy's rows, to the rows here
     // Dynamic properties left out for having no type, by object and name.
     std::set<std::pair<long, std::string>> untyped;
+
+    // Sec 30.34: a merge of the copy's own, of rows this file holds. The
+    // row is this file's rows as the copy took them, and stays a merge
+    // here, its second parent the newest of them -- so the merge of this
+    // branch starts from there, and weighs what each side did since the
+    // copy took it, not since the two parted.
+    //
+    // That says the branch holds everything up to that row, and a replay
+    // is allowed to leave things out (sec 30.15): a view provider's ops
+    // where there is no Gui, a property with no type. What the copy left
+    // out it did not undo, and a merge from the later base would read it so
+    // -- this file's change against the copy's "back to what it was". So
+    // the row is kept a merge only when every change of the rows it stands
+    // for is in the row the copy replayed for it. Else it is a row like
+    // any, and the merge works from the older base: more of it shown as a
+    // conflict, nothing taken back.
+    auto mergedHere = [&](const LogTransaction& t) -> int64_t {
+        int64_t second = 0;
+        if (!t.mergeFrom || !core.forkBase(theirs, t.mergeFrom, second) || !second)
+            return 0;
+        rlog->flush();
+        std::set<int64_t> have;
+        for (const auto& r : store.history(rlog->head()))
+            have.insert(r.seq);
+        if (have.count(second))
+            return 0;   // nothing the branch has not got
+        std::set<int64_t> merged;
+        for (const auto& r : theirs.history(t.mergeFrom))
+            merged.insert(r.seq);
+        using Change = std::tuple<std::string, std::string, long, std::string>;
+        for (const auto& r : store.history(second)) {
+            if (have.count(r.seq))
+                continue;
+            std::vector<Change> changes;
+            for (const auto& o : store.ops(r.seq)) {
+                if (o.op == "set" && (o.derived || o.vbefore == o.vafter))
+                    continue;
+                changes.emplace_back(o.op, o.ckind, o.cid, o.prop);
+            }
+            if (changes.empty())
+                continue;
+            LogRowId id;
+            const int64_t there = store.rowId(r.seq, id) ? theirs.findRow(id) : 0;
+            if (!there || !merged.count(there))
+                return 0;
+            std::set<Change> replayed;
+            for (const auto& o : theirs.ops(there)) {
+                auto it = ids.find(o.cid);
+                replayed.emplace(o.op, o.ckind, it == ids.end() ? o.cid : it->second, o.prop);
+            }
+            for (const auto& c : changes) {
+                if (!replayed.count(c))
+                    return 0;
+            }
+        }
+        return second;
+    };
     auto replayRows = [&](const std::vector<LogTransaction>& list) {
         // F5: the copy's named versions past the base come as versions of the
         // branch, each taken when the replay has reached the row it is at.
@@ -9913,12 +10144,28 @@ Document::ImportResult Document::importFork(const std::string& path, const std::
         for (const auto& t : list) {
             const auto ops = theirs.ops(t.seq);
             if (ops.empty()) {
-                ++result.skipped;   // a record: a save, a snapshot, a recompute
+                // A record: a save, a snapshot, a recompute. A merge that
+                // had nothing to write is one too (sec 28.2), and still
+                // says the copy holds what it merged (sec 30.34): a record
+                // here, this process's as the import's own is.
+                if (t.kind == "merge") {
+                    if (const int64_t second = mergedHere(t)) {
+                        nlohmann::json j;
+                        j["imported"] = {{"file", fork.file}, {"seq", t.seq}};
+                        rlog->record("merge", t.name, j.dump(), second);
+                        rlog->flush();
+                    }
+                }
+                ++result.skipped;
                 versionsAt(t.seq);
                 continue;
             }
             const int64_t session = author(t.session);
             std::map<std::string, std::string> renamed;
+            // Of those, the names of this file's own objects, which the
+            // copy had renamed and which are their own again here: said in
+            // the row, and no renaming to report.
+            std::set<std::string> home;
             std::string why;
             try {
                 // Everything read, and every object's type known, before
@@ -9956,6 +10203,10 @@ Document::ImportResult Document::importFork(const std::string& path, const std::
                     values.emplace_back(&o, std::move(v));
                 }
 
+                // A merge of rows this file has not got is a row like any
+                // (sec 30.15); one of rows it has stays a merge (sec 30.34).
+                const int64_t second = t.kind == "merge" ? mergedHere(t) : 0;
+
                 // The row, as a transaction of its author's. Only the
                 // transaction is: what the commit records beside it -- a
                 // snapshot -- is this process's.
@@ -9968,7 +10219,8 @@ Document::ImportResult Document::importFork(const std::string& path, const std::
                 txn->Name = t.name;
                 txn->Origin = t.origin;
                 if (t.kind != "user" && t.kind != "implicit")
-                    txn->LogKind = t.kind == "merge" ? std::string("user") : t.kind;
+                    txn->LogKind = t.kind == "merge" && !second ? std::string("user") : t.kind;
+                txn->MergeFrom = second;
                 txn->Implicit = t.kind == "implicit";
                 if (t.inverts) {
                     auto it = seqs.find(t.inverts);
@@ -9997,15 +10249,40 @@ Document::ImportResult Document::importFork(const std::string& path, const std::
                             continue;
                         Base::Type type = Base::Type::getTypeIfDerivedFrom(
                             o.ctype.c_str(), DocumentObject::getClassTypeId(), true);
+                        // Sec 30.33: an object both hold is not made a
+                        // second time. It is there, and the row's values
+                        // are values of it; or it is not -- the copy has a
+                        // row that makes it, a merge of what it took from
+                        // this file -- and comes under the id and the name
+                        // this file gave it, as an object does on any
+                        // branch of its file.
+                        long asId = 0;
+                        std::string wanted = o.cname;
+                        auto both = same.find(o.cid);
+                        if (both != same.end()) {
+                            if (replay->getObjectByID(both->second)) {
+                                ids[o.cid] = both->second;
+                                continue;
+                            }
+                            const std::string* known = d->history->objectNameOfId(both->second);
+                            if (known && !replay->getObject(known->c_str())) {
+                                asId = both->second;
+                                wanted = *known;
+                            }
+                        }
                         auto obj = static_cast<DocumentObject*>(type.createInstance());
                         if (!obj)
                             throw Base::RuntimeError("cannot create " + o.ctype);
-                        replay->addObject(obj, o.cname.c_str(), false);
+                        if (asId)
+                            obj->_Id = asId;
+                        replay->addObject(obj, wanted.c_str(), false);
                         ids[o.cid] = obj->getID();
                         const std::string name = obj->getNameInDocument();
                         if (name != o.cname) {
                             names[o.cname] = name;
                             renamed[o.cname] = name;
+                            if (asId)
+                                home.insert(o.cname);
                         }
                         else {
                             names.erase(o.cname);
@@ -10046,6 +10323,7 @@ Document::ImportResult Document::importFork(const std::string& path, const std::
                         StringHasher::ImportTags tags(ids);
                         RestoreStrings strings(fork.history->hasher(), replay->getStringHasher());
                         RestoreBatch batch;
+                        const CaptureConfig config(*replay);
                         for (const auto& kv : values) {
                             const LogOp& o = *kv.first;
                             auto c = container(o);
@@ -10061,6 +10339,29 @@ Document::ImportResult Document::importFork(const std::string& path, const std::
                                 // A property of the object's type the copy's
                                 // build had and this one has not.
                                 throw Base::RuntimeError("no property " + o.prop);
+                            }
+                            // A view provider has one value under several
+                            // names -- a colour, its appearance, its
+                            // material -- and they undo each other when all
+                            // are written back, which a row that makes an
+                            // object would do: the last written won, and a
+                            // colour came as the default. Only what
+                            // differs is written, as a merge does (sec 28).
+                            // Not so for an object's own: the same text
+                            // there can name another object here.
+                            if (o.ckind == "view") {
+                                const CapturedValue now = captureValue(config, *prop);
+                                const CapturedValue& v = kv.second;
+                                if (now.ok && now.fragment == v.fragment
+                                        && now.attachments.size() == v.attachments.size()
+                                        && std::equal(now.attachments.begin(),
+                                                      now.attachments.end(),
+                                                      v.attachments.begin(),
+                                                      [](const auto& x, const auto& y) {
+                                                          return x.name == y.name
+                                                              && x.bytes == y.bytes;
+                                                      }))
+                                    continue;
                             }
                             restoreValue(*prop, kv.second);
                         }
@@ -10083,26 +10384,39 @@ Document::ImportResult Document::importFork(const std::string& path, const std::
                 }
                 catch (...) {
                     replay->_abortTransaction();
-                    for (const auto& kv : renamed)
+                    for (const auto& kv : renamed) {
                         names.erase(kv.first);
+                        auto both = sameNames.find(kv.first);
+                        if (both != sameNames.end())
+                            names[kv.first] = both->second;
+                    }
                     for (const auto& o : ops) {
-                        if (o.op == "create" && o.ckind == "obj")
-                            ids.erase(o.cid);
+                        if (o.op != "create" || o.ckind != "obj")
+                            continue;
+                        ids.erase(o.cid);
+                        auto both = same.find(o.cid);
+                        if (both != same.end())
+                            ids[o.cid] = both->second;
                     }
                     throw;
                 }
 
+                nlohmann::json j;
+                j["imported"] = {{"file", fork.file}, {"seq", t.seq}};
                 if (txn->isEmpty()) {
-                    // Nothing of it changes anything here.
+                    // Nothing of it changes anything here. A merge still
+                    // says what the copy holds, as one with no ops does.
                     replay->mUndoMap.erase(txn->getID());
                     delete txn;
                     replay->d->activeUndoTransaction = nullptr;
+                    if (second) {
+                        rlog->record("merge", t.name, j.dump(), second);
+                        rlog->flush();
+                    }
                     ++result.skipped;
                     versionsAt(t.seq);
                     continue;
                 }
-                nlohmann::json j;
-                j["imported"] = {{"file", fork.file}, {"seq", t.seq}};
                 if (!renamed.empty())
                     j["renamed"] = renamed;
                 txn->LogScript = j.dump();
@@ -10122,8 +10436,10 @@ Document::ImportResult Document::importFork(const std::string& path, const std::
                 if (stamp.seq) {
                     seqs[t.seq] = stamp.seq;
                     ++result.rows;
-                    for (const auto& kv : renamed)
-                        result.renamed[kv.first] = kv.second;
+                    for (const auto& kv : renamed) {
+                        if (!home.count(kv.first))
+                            result.renamed[kv.first] = kv.second;
+                    }
                 }
                 else {
                     ++result.skipped;
@@ -10155,7 +10471,8 @@ Document::ImportResult Document::importFork(const std::string& path, const std::
         try {
             if (opened)
                 asFound = Document::openFileVersion(fork.history, found.num, false);
-            whole = replay->_importStateRow(*asFound, fork.file, ids, names, result);
+            whole = replay->_importStateRow(*asFound, fork.file, ids, names, result, nullptr,
+                                            &same);
         }
         catch (...) {
             if (opened && asFound)

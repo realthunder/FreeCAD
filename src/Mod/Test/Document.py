@@ -6020,6 +6020,135 @@ class TransactionBranchCases(unittest.TestCase):
         self.assertFalse([o.Name for o in doc.Objects if "Invalid" in o.State])
         self.assertFalse([o.Name for o in doc.Objects if "Touched" in o.State])
 
+    def testACopyThatTookFromThisFileIsImported(self):
+        # Sec 30.33, 30.34: the copy took this file's fillet -- under an id
+        # of its own -- built on it, and changed it. Brought back, the
+        # fillet is this file's fillet and not a second one, the copy's
+        # change is a change of it, the copy's merge is a merge still, and a
+        # shape nothing recomputes names the fillet by the id it has here.
+        import re
+        import shutil
+
+        doc = self.track(FreeCAD.newDocument("RoundOurs"))
+        doc.UndoMode = 1
+        doc.openTransaction("create")
+        doc.addObject("Part::Box", "Box")
+        doc.recompute()
+        doc.commitTransaction()
+        path = os.path.join(self.dir, "round-ours.FCStd")
+        copy = os.path.join(self.dir, "round-theirs.FCStd")
+        doc.saveAs(path)
+        shutil.copyfile(path, copy)
+
+        doc.openTransaction("ours fillet")
+        mine = doc.addObject("Part::Fillet", "Mine")
+        mine.Base = doc.Box
+        mine.Edges = [(1, 1, 1), (5, 1, 1)]
+        doc.recompute()
+        doc.commitTransaction()
+        doc.save()
+        ourIds = {o.Name: o.ID for o in doc.Objects}
+        made = [t["seq"] for t in doc.getTransactionLog() if t["name"] == "ours fillet"]
+        self.assertEqual(len(made), 1)
+
+        def expand(hasher, text):
+            def one(m):
+                sid = hasher.getID(int(m.group(1), 16))
+                return expand(hasher, sid.Data) if sid else "<missing>"
+
+            return re.sub(r"#([0-9a-f]+)", one, text)
+
+        def byElement(shape):
+            return {e: n for n, e in shape.ElementMap.items()}
+
+        def retag(text, tags):
+            def one(m):
+                tag = int(m.group(2), 16)
+                return ";:H%s%x" % (m.group(1), tags.get(tag, tag))
+
+            return re.sub(r";:H(-?)([0-9a-f]+)", one, text)
+
+        fork = self.track(FreeCAD.openDocument(copy))
+        fork.UndoMode = 1
+        # Work of its own first: its merge of this file is then a row that
+        # makes the fillet, and the fillet's id there is not the one here.
+        fork.openTransaction("theirs cylinder")
+        fork.addObject("Part::Cylinder", "Cyl")
+        fork.recompute()
+        fork.commitTransaction()
+        took = fork.importTransactionFork(path)
+        self.assertEqual(took["stopped_at"], 0, took)
+        self.assertEqual(fork.mergeTransactionBranch(took["branch"])["unresolved"], [])
+        self.assertNotEqual(fork.Mine.ID, ourIds["Mine"])
+        fork.openTransaction("theirs chamfer")
+        chamfer = fork.addObject("Part::Chamfer", "Theirs")
+        chamfer.Base = fork.Mine
+        chamfer.Edges = [(3, 0.2, 0.2), (8, 0.2, 0.2)]
+        fork.recompute()
+        fork.commitTransaction()
+        fork.openTransaction("theirs static")
+        static = fork.addObject("Part::Feature", "Static")
+        static.Shape = chamfer.Shape
+        fork.commitTransaction()
+        fork.openTransaction("theirs label")
+        fork.Mine.Label2 = "theirs"
+        fork.Box.Height = 12
+        fork.recompute()
+        fork.commitTransaction()
+        self.assertFalse([o.Name for o in fork.Objects if "Invalid" in o.State])
+        theirIds = {o.Name: o.ID for o in fork.Objects}
+        rawStatic = byElement(fork.Static.Shape)
+        saidStatic = {e: expand(fork.Hasher, n) for e, n in rawStatic.items()}
+        # The static shape names the fillet, by the id it has in the copy.
+        tagged = ";:H%x" % theirIds["Mine"]
+        self.assertTrue([n for n in saidStatic.values() if tagged in n])
+        for text in saidStatic.values():
+            self.assertNotIn("<missing>", text)
+        fork.save()
+        FreeCAD.closeDocument(fork.Name)
+        FreeCAD.setActiveDocument(doc.Name)
+
+        res = doc.importTransactionFork(copy)
+        self.assertEqual(res["stopped_at"], 0, res)
+        self.assertEqual(res["renamed"], {})
+        self.assertEqual(res["rows"], 5, res)
+        came = [t for t in doc.getTransactionLog() if t["branch"] == res["branch"]]
+        merges = [t for t in came if t["kind"] == "merge"]
+        self.assertEqual(len(merges), 1, [(t["kind"], t["name"]) for t in came])
+        self.assertEqual(merges[0]["merge_from"], made[0])
+        creates = [
+            (o["cid"], o["cname"])
+            for o in doc.getTransactionOps(merges[0]["seq"])
+            if o["op"] == "create"
+        ]
+        self.assertEqual(creates, [(ourIds["Mine"], "Mine")])
+
+        preview = doc.previewTransactionMerge(res["branch"])
+        self.assertEqual(preview["base"], made[0])
+        self.assertEqual(preview["conflicts"], 0)
+        merged = doc.mergeTransactionBranch(res["branch"])
+        self.assertEqual(merged["unresolved"], [])
+        self.assertEqual(merged["failed"], [])
+        self.assertEqual(
+            sorted(o.Name for o in doc.Objects), ["Box", "Cyl", "Mine", "Static", "Theirs"]
+        )
+        self.assertEqual(doc.Mine.ID, ourIds["Mine"])
+        self.assertEqual(doc.Mine.Label2, "theirs")
+        self.assertEqual(doc.Box.Height.Value, 12)
+        self.assertEqual(doc.Theirs.Base, doc.Mine)
+        # Every element of the shape nothing recomputes, named as the copy
+        # named it with the ids of this file: the fillet's own among them.
+        tags = {theirIds[n]: doc.getObject(n).ID for n in theirIds}
+        self.assertEqual(tags[theirIds["Mine"]], ourIds["Mine"])
+        hereStatic = byElement(doc.Static.Shape)
+        self.assertEqual(sorted(hereStatic), sorted(rawStatic))
+        self.assertEqual(
+            {e: expand(doc.Hasher, n) for e, n in hereStatic.items()},
+            {e: retag(n, tags) for e, n in saidStatic.items()},
+        )
+        self.assertFalse([o.Name for o in doc.Objects if "Invalid" in o.State])
+        self.assertFalse([o.Name for o in doc.Objects if "Touched" in o.State])
+
     def testAFileEditedWhereThereIsNoLogIsImported(self):
         # Sec 30.19 G6 (S.g): a copy whose history is there but whose file
         # is not its tip -- edited by something that knows no log, which
