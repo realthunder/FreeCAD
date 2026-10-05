@@ -13019,8 +13019,8 @@ shares nothing: no dialog, and the panel says so.
   objects it took from here by the ids it gave them, and the import reads
   every object the two had at the base as having one id in both. The
   copy's own map (`import:<branch>` in its store) is what would turn them
-  back. Not built: an import after a round trip is right only for what
-  the copy made itself. 30.27 has it measured, and what it takes.
+  back. Built since: 30.27 has it measured, 30.33 and 30.34 as built --
+  by the rows both hold, not by the map.
 - **A sketch's geometry ids** (27.40 item 4) come as the copy has them.
   A geometry list is one value, so 28 offers it whole or not at all, and
   two sides that both added geometry conflict rather than interleave.
@@ -13706,8 +13706,9 @@ check 39, the request check 22 and the share check 29 (new).
 
 ### 30.27 A copy that has itself imported from this file: measured (user: elaborate, 2026-10-05)
 
-30.17 left it in two sentences. This is what happens, run
-(`~/.cache/txnlog-s30/rt/probe.py`; nothing is built).
+Built since: 30.33 (the ids) and 30.34 (the merge row). As measured,
+before either: 30.17 left it in two sentences. This is what happened, run
+(`~/.cache/txnlog-s30/rt/probe.py`).
 
 **The run.** `ours` and `theirs` are one file copied at a box, id 250.
 
@@ -14212,3 +14213,223 @@ entry, 27 cases now -- and the GUI checks RC 15, BC 27, VC 18, PC 28, FC
 16, VW 14, MC 28, the two-document check 24, the tree check 19, the
 author check 36, the import check 39, the request check 28 and the share
 check 47 (+14). The viewer rebuilt (`build/wasm`).
+
+### 30.33 A copy that took from this file: one row made one object (user: build it, 2026-10-05)
+
+The first half of 30.27's "what turning it back takes": steps 1, 4 and 5,
+and the part of step 2 that makes an object. Not as 30.27 proposed it.
+
+**Not the copy's map.** 30.27 would have read `import:<branch>` out of
+the copy's store backwards. Four things are wrong with that, seen when
+it was to be written:
+
+- The map's keys are ids of *the file the copy imported from*. That is
+  this file only when the copy took from this file itself. Took it from
+  a third copy that had taken from here, and the keys are the third
+  copy's ids: 30.27's "not answered by this".
+- What says the branch is of this file is its rows' identities -- and a
+  row of this file replayed in a third copy, then in this one, has that
+  identity too.
+- Two copies of one file number on from the same `LastId` and reach for
+  the same names. Each adds an object after the copy: the same id and
+  the same name `Pad`, for two objects. No check of an id against a name
+  tells them apart.
+- And the map goes with its branch: a copy that deletes the branch it
+  imported into, once merged, has no map.
+
+**By the row.** One row -- one identity (30.12) -- made the same objects
+wherever it is held: in the copy that wrote it, under the ids that copy
+gave them; in a copy that replayed it (30.15), under ids of its own. A
+replayed row keeps the identity, and says in its script that it was
+replayed. So:
+
+- every row *the copy* replayed that this store holds too pairs the
+  copy's id for each object it made with this file's -- whichever of the
+  two wrote the row, and through however many copies it came;
+- every row *this file* replayed that the copy holds too does the same
+  the other way. That is the object the copy made and this file took,
+  which 30.15's kept map covers only while the import branch is
+  continued: a branch edited here since, or deleted once merged, makes
+  the next import start a new one with no map, and the copy's rows on
+  its own objects had nothing to land on.
+
+`sameObjects(scan, rows, other, pairs)`, with `replayedRows(store,
+head)`: the rows of a history whose script says `imported`, each looked
+up by identity in the other store, their `create` ops paired. Within a
+row objects are told apart by type and by the name their source gave
+them -- a replayed row's `renamed` says what it could not keep (P4) --
+and what is left is paired where one object of a type is left on either
+side. What is not paired comes as one the copy made, as everything did.
+
+`importFork` reads both ways -- the copy's history from the branch
+asked for, this file's from the branch continued or the base -- into
+`same`, the copy's id to the id here, and `sameNames`; and seeds the
+import's maps with them, behind what the branch kept. From there on
+30.15 and 30.16 do what they did: an op's container, a name in a value
+(`RestoreNames`), the id in an element name's tag
+(`StringHasher::ImportTags`).
+
+**A create of an object both hold** is not a second object. It is there
+in the replay's document, and the row's values are values of it; or it
+is not -- the copy's merge row makes it, where the copy had work of its
+own -- and it comes under the id and the name this file gave it, which
+is what 30.22 does for a file that is kin. `_applyForeignState` takes
+the same map, for a file as found (30.19 G6) that has such an object.
+
+**The name they gave it** (step 5). The copy's own `Mine`, and this
+file's `Mine` there as `Mine001`: back here the copy's is `Mine001` and
+this file's is `Mine`. The row's script says both, since a later pairing
+reads it; the import reports the first only -- the second is no
+renaming, the object has the name it always had here.
+
+**Measured**, the probes of 30.27 again:
+
+| | before | now |
+| --- | --- | --- |
+| the copy had work of its own (A) | `Cone001` beside `Cone`, the edit on the duplicate | one `Cone`, under its id, the edit on it |
+| fast-forward, the ids differ, both change it (B2) | stopped, "no object for the value of Height" -- or, the number being another object's, written to that | one conflict, `Cone.Height` |
+| fast-forward, the ids differ, the copy removes it (B2) | the removal gone | removed |
+
+30.27 had B2 as rows "left out without a word". Run again, the change
+was not left out: a value whose object is not here stops the import
+(F8), and the result says where and why -- which the probe did not
+print, and the merge that followed had nothing to say. The removal was
+left out without a word: an object to remove that is not found is no
+error there.
+
+**Left.** Every import now reads every row either history replayed, to
+its ops, and looks each up in the other store. That grows with what the
+two have exchanged, not with their length.
+
+**Tests.** Gtest `aCopyThatTookFromThisFileNamesItsObjects`: the ids
+made to be the worst there are -- `FileHistory::noteObjectId` puts the
+copy's counter one past this file's, so the copy's id for each of three
+objects is this file's id for the next. The copy changes the first and
+removes the second. Before: the change written to the second and the
+third removed. Now the two rows name the objects they were made on, the
+merge has this file's own change beside the copy's, the third is as it
+was; then both change one value, which is a conflict, said, and picked.
+The rest is in 30.34's tests.
+
+### 30.34 A merge of this file's rows stays a merge (2026-10-05)
+
+Steps 2, 3 and 6 of 30.27.
+
+**The row.** A `merge` of the copy's own, replayed: 30.15 made it `user`,
+"since its second parent is not here". `mergedHere(row)`: along the
+copy's chain from the row's second parent, the newest row this store
+holds (`forkBase`) -- X. When the branch the rows are replayed on has X
+already, nothing: a merge of the copy's own branches, whose common part
+is behind the base. Else the row is committed `merge`, its second parent
+X (`Transaction::MergeFrom`). A merge of the copy's that wrote nothing
+is a record there (28.2) and a record here, for the same reason: the
+base moves. So is one whose replay changes nothing here.
+
+Then `mergeBaseOf` finds X, by what it always did -- the newest row both
+histories hold -- and `diffRows` goes from X back to where the chains
+part and forward along the branch, as it does between two branches of
+one file that have merged each other. In the run of 30.27: base 4, not
+2; the cone neither made nor removed; its height changed by theirs
+alone; nothing asked.
+
+**What a merge row promises, and the check.** A merge with second parent
+X says: this branch holds this file's rows up to X. A replay does not
+promise that. 30.15 leaves out a view provider's ops where there is no
+Gui, a property with no type, a row that changes nothing there. What the
+copy left out, it did not undo -- and from the base X it reads as
+exactly that: this file's change, against the copy's "as it was before".
+With nothing changed here since, the merge would take it, and take this
+file's own change back. From the older base it is no change of theirs at
+all.
+
+So the row is kept a merge only when it holds what it says. For every
+row in X's history that the branch has not got, and every change of it
+that is not a derived value or a set of what was there: the copy holds
+the row, in what its merge merged, and its replayed row has an op of
+that kind on that object and property. Failing one, the row is `user`
+as before and the merge works from the older base -- more shown as a
+conflict, nothing duplicated, nothing taken back. Which is also step 6:
+X trimmed here is X not found.
+
+The cost is two histories read per merge row replayed, as a preview
+reads them.
+
+**Tests.** Gtest `aMergeOfThisFilesRowsStaysAMerge`: the copy makes a
+`Mine` of its own -- under the id this file's `Mine` has -- takes this
+file's as `Mine001`, changes it and links to it. Back: three rows, one a
+`merge` whose second parent is the row here that made `Mine` and whose
+one create is that id under that name; the copy's own `Mine` renamed and
+reported, this file's not; the preview's base that row and no conflict;
+merged, three objects, the link naming this file's `Mine`. Then the
+second round: this file changes the copy's object and the copy takes
+it -- nothing made there, every id as it was, the change on its own
+object. `aMergeThatLeftSomethingOutIsARowLikeAny`: the copy's replayed
+row rewritten in its store to lack one of the two changes of the row it
+stands for, before the copy merges; back here its merge is no merge, and
+this file's value stays. Python `testACopyThatTookFromThisFileIsImported`:
+Part -- this file's fillet taken by the copy under another id, a chamfer
+built on it there and a `Part::Feature` holding the chamfer's shape;
+back, the merge a merge with the fillet's row as its second parent, the
+five objects, the chamfer's `Base` this file's fillet, and every element
+of the shape nothing recomputes named as the copy named it with this
+file's ids -- the fillet's tag among them. The Gui check
+(`scripts/transaction-log-import-check.py`, +10, 49): this file's cone,
+made green here, taken by a copy that has a cylinder of its own and made
+taller there; back, the copy's merge a merge of this file's last row,
+making the cone and its view provider under the id they have, the
+preview's base that row, one cone, taller, and green. With view
+providers on both sides the check of what was left out passes, which is
+what the case is for: every row then carries some thirty view ops.
+
+**Left.**
+
+- **An object both had at the base, removed in the copy and made
+  again** -- an undo of the removal -- comes as a second object: the row
+  that made it is before the base, not replayed by either, and only
+  replayed rows are read for pairs. Reading every row both hold would
+  find it, at the cost of the whole shared history per import.
+- **A file with no history** (30.19) has no rows to pair by: an object it
+  holds of this file's is known by 30.22's rule or not at all.
+- **A row squashed or trimmed** on either side keeps the identity of the
+  newest row it stands for (30.12), and the objects of the others are
+  not paired.
+- **Two renamings**: a name changed in each of two copies on its way
+  here is paired by type alone, so two objects of one type made in one
+  row and renamed twice are not.
+
+### 30.35 Seen on the way: a view provider's values, all written back (2026-10-05)
+
+The Gui check of 30.34 failed first: the cone came back in the default
+colour, though the copy had it green and its merge row said green.
+
+A row that makes an object has a set for every property the object has,
+its view provider's with them -- `DiffuseColor`, `ShapeAppearance`,
+`ShapeColor`, `ShapeMaterial`, in that order. They are one colour under
+four names, each writing the others. 30.15's replay restored every value
+of the row: the colour, then the material, which is the default one and
+put the colour back. The row here was recorded with what that left, so
+the log said default too.
+
+28 knew: a merge writes only what differs, "view properties that are one
+value under several names ... undo each other when all are written
+back". 30.19's file as found does the same. The replay of a row did not.
+It does now, for a view provider's values: one that is what the
+property holds is not written. Not for an object's own, where the same
+text in the copy's value and in this file's can name two objects (a link
+to `Mine` there is a link to `Mine001` here).
+
+That is older than the round trip and wider: with the rule switched off
+the copy's own cylinder, made and painted red in one transaction, came
+in the default colour as well. A plain import of 30.15 had it, for any
+object a copy made and coloured in one row. The Gui check has both now.
+
+**Gates** for 30.33 to 30.35, frozen and unfrozen each: Python 3011 OK
+(52 skipped frozen, 53 unfrozen; 6 expected failures; +1), ctest 878/878
+(+3), and the GUI checks RC 15, BC 27, VC 18, PC 28, FC 16, VW 14, MC 28,
+the two-document check 24, the tree check 19, the author check 36, the
+import check 49 (+10), the request check 28 and the share check 47. Each
+half was switched off once to see its test fail: without the pairs the
+copy's edit is written to this file's next object and its removal
+removes the one after; without the check of what was left out this
+file's value is taken back; without the view rule both colours are the
+default.
