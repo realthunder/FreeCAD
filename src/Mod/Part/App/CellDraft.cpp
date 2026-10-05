@@ -352,6 +352,50 @@ bool interiorPoint(const TopoDS_Shape& cell, gp_Pnt& p)
     return false;
 }
 
+// What is wrong with a draft's result, or nothing: BRepCheck, and the
+// boolean argument check, which also sees faces crossing each other
+// (section 2.2 of docs/NewDraft.md).
+std::string checkResult(const TopoDS_Shape& shape)
+{
+    if (!BRepCheck_Analyzer(shape).IsValid()) {
+        return "the result is not a valid solid";
+    }
+    BOPAlgo_ArgumentAnalyzer check;
+    check.SetShape1(BRepBuilderAPI_Copy(shape).Shape());
+    check.SelfInterMode() = true;
+    check.CurveOnSurfaceMode() = true;
+    check.SetRunParallel(true);
+    check.Perform();
+    if (!check.HasFaulty()) {
+        return std::string();
+    }
+    bool selfInter = false, curveOnSurface = false;
+    for (const auto& r : check.GetCheckResult()) {
+        if (FC_LOG_INSTANCE.isEnabled(FC_LOGLEVEL_LOG)) {
+            for (const auto& fs : r.GetFaultyShapes1()) {
+                Bnd_Box fb;
+                BRepBndLib::Add(fs, fb, false);
+                double a0, b0, c0, a1, b1, c1;
+                fb.Get(a0, b0, c0, a1, b1, c1);
+                int st = -1;
+                if (fs.ShapeType() == TopAbs_FACE) {
+                    st = int(BRepAdaptor_Surface(TopoDS::Face(fs), false).GetType());
+                }
+                FC_LOG("faulty " << int(r.GetCheckStatus()) << " shape type "
+                                 << int(fs.ShapeType()) << " surface " << st << " bb (" << a0
+                                 << ", " << b0 << ", " << c0 << ")-(" << a1 << ", " << b1 << ", "
+                                 << c1 << ")");
+            }
+        }
+        selfInter = selfInter || r.GetCheckStatus() == BOPAlgo_SelfIntersect;
+        curveOnSurface = curveOnSurface || r.GetCheckStatus() == BOPAlgo_InvalidCurveOnSurface;
+    }
+    std::string what = selfInter && curveOnSurface
+        ? "self-intersection, an edge off its face"
+        : (selfInter ? "self-intersection" : (curveOnSurface ? "an edge off its face" : "other"));
+    return "the result fails the boolean check (" + what + ")";
+}
+
 bool isBoundaryFace(const TopoDS_Shape& face)
 {
     return face.Orientation() == TopAbs_FORWARD || face.Orientation() == TopAbs_REVERSED;
@@ -442,6 +486,7 @@ private:
     gp_Ax1 hinge;
     double turn = 0.0;
     double disp = 0.0;
+    double reachLimit = 0.0;
     Bnd_Box band;
 };
 
@@ -524,6 +569,15 @@ bool CellDraftOne::prepare()
         }
     }
 
+    // How far a neighbour is extended at most: across the whole solid. A
+    // neighbour nearly parallel to the new plane meets it far away (#474's
+    // ledge: 1668 away on a part 30 across, and a fuse of 52 s in a box that
+    // size); past the solid, the stop at the body cuts the growth off, and
+    // without the stop a larger box is tried on a leak.
+    Bnd_Box solidBox;
+    BRepBndLib::Add(solid, solidBox, false);
+    reachLimit = boxDiagonal(solidBox);
+
     // The neighbours: faces sharing an edge with the drafted set.
     TopTools_MapOfShape seen;
     for (const auto& f : fset) {
@@ -599,6 +653,9 @@ bool CellDraftOne::prepare()
                 for (const auto& p : {p0, p1}) {
                     double d = gp_Vec(newPlane.Location(), p).Dot(gp_Vec(newNormal));
                     double t = -d / slope;
+                    if (std::abs(t) > reachLimit) {
+                        t = t > 0 ? reachLimit : -reachLimit;
+                    }
                     nb->reach = std::max(nb->reach, std::abs(t));
                     band.Add(p.Translated(t * w));
                 }
@@ -714,7 +771,12 @@ bool CellDraftOne::attempt(double scale)
     FC_TIME_INIT(t);
 
     double diag = boxDiagonal(band);
-    double margin = scale * std::max(2 * disp, 0.25 * diag) + Precision::Confusion() * 100;
+    // The move of the face's far edge bounds the region, but no further
+    // than across the solid: an 80 deg turn moved #474's ledge 832 on a part
+    // 30 across, and the fuse in a box that size took 50 s and gave cells
+    // of negative volume. A leak tries a larger box.
+    double move = std::min(std::max(2 * disp, 0.25 * diag), reachLimit);
+    double margin = scale * move + Precision::Confusion() * 100;
     Bnd_Box local = band;
     local.Enlarge(margin);
     double x0, y0, z0, x1, y1, z1;
@@ -764,7 +826,7 @@ bool CellDraftOne::attempt(double scale)
                 Bnd_Box fb;
                 BRepBndLib::Add(nb.face, fb, false);
                 pts = boxCorners(fb);
-                ext = scale * (1.5 * nb.reach + disp) + 0.1 * diag;
+                ext = scale * (1.5 * nb.reach + std::min(disp, reachLimit)) + 0.1 * diag;
             }
             tool = planeRect(nb.plane, pts, ext);
         }
@@ -848,7 +910,7 @@ bool CellDraftOne::attempt(double scale)
                     }
                     Handle(Geom_BoundedSurface) bs = GeomConvert::SurfaceToBSplineSurface(
                         new Geom_RectangularTrimmedSurface(s, u0, u1, v0, v1));
-                    double length = scale * std::max(2 * disp, 0.25 * diag);
+                    double length = scale * move;
                     bool closedU = s->IsUPeriodic() && u1 - u0 >= s->UPeriod() - 1e-9;
                     bool closedV = s->IsVPeriodic() && v1 - v0 >= s->VPeriod() - 1e-9;
                     for (bool inU : {true, false}) {
@@ -1345,11 +1407,16 @@ bool CellDraftOne::attempt(double scale)
     unify.Build();
     result = unify.Shape();
     Handle(BRepTools_History) mergeHistory = unify.History();
-    if (!BRepCheck_Analyzer(result).IsValid()) {
-        // UnifySameDomain can break a face it merges (#876's cones). Merge
-        // planar pieces only, else keep the pieces apart: the chosen cells'
-        // solid is valid as it is.
-        FC_LOG("merge invalid, planar pieces only");
+    FC_TIME_LOG(t, "merge");
+    // Every result is checked both ways before it is used: here, so that a
+    // failure is tried again with a fuzzy fuse. UnifySameDomain can break
+    // what it merges -- a curved face (#876's cones: self-intersecting
+    // wires), or an edge joined on one face and not on the next (#474's
+    // ramp parts: two collinear edges overlapping). Then the planar pieces
+    // only are merged, else none: the chosen cells' solid as it is.
+    std::string wrong = checkResult(result);
+    if (!wrong.empty()) {
+        FC_LOG("merge: " << wrong << "; planar pieces only");
         ShapeUpgrade_UnifySameDomain planar(built, true, true, false);
         planar.AllowInternalEdges(false);
         TopTools_IndexedDataMapOfShapeListOfShape ef;
@@ -1371,21 +1438,22 @@ bool CellDraftOne::attempt(double scale)
             planar.KeepShape(v);
         }
         planar.Build();
-        if (BRepCheck_Analyzer(planar.Shape()).IsValid()) {
+        std::string planarWrong = checkResult(planar.Shape());
+        if (planarWrong.empty()) {
             result = planar.Shape();
             mergeHistory = planar.History();
         }
-        else if (BRepCheck_Analyzer(built).IsValid()) {
-            FC_LOG("planar merge invalid, pieces kept");
+        else {
+            FC_LOG("planar merge: " << planarWrong << "; pieces kept");
+            std::string builtWrong = checkResult(built);
+            if (!builtWrong.empty()) {
+                return fail(CellDraft::NotASolid, builtWrong);
+            }
             result = built;
             mergeHistory = new BRepTools_History;
         }
-        else {
-            return fail(CellDraft::NotASolid, "the chosen cells make no valid solid");
-        }
     }
-
-    FC_TIME_LOG(t, "merge");
+    FC_TIME_LOG(t, "check");
     // The history: the fuse's, from the solid's own shapes and from the
     // tools to their owners; then the choice of cells; then the merge.
     Handle(BRepTools_History) h1 = new BRepTools_History;
@@ -1690,31 +1758,6 @@ void CellDraft::Build(const Message_ProgressRange& /*theRange*/)
         }
         setError(Boolean, TopoDS_Shape(), TopoDS_Shape(), msg);
         return;
-    }
-
-    // Every result is checked both ways before it is returned.
-    FC_TIME_INIT(t);
-    if (changed) {
-        BRepCheck_Analyzer analyzer(cur);
-        if (!analyzer.IsValid()) {
-            setError(NotASolid, TopoDS_Shape(), TopoDS_Shape(), "the result is not a valid solid");
-            return;
-        }
-        FC_TIME_LOG(t, "BRepCheck");
-        BOPAlgo_ArgumentAnalyzer check;
-        check.SetShape1(BRepBuilderAPI_Copy(cur).Shape());
-        check.SelfInterMode() = true;
-        check.CurveOnSurfaceMode() = true;
-        check.SetRunParallel(true);
-        check.Perform();
-        FC_TIME_LOG(t, "boolean check");
-        if (check.HasFaulty()) {
-            setError(NotASolid,
-                     TopoDS_Shape(),
-                     TopoDS_Shape(),
-                     "the result fails the boolean check (self-intersection)");
-            return;
-        }
     }
 
     myShape = cur;
