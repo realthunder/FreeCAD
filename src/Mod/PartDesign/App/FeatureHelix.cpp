@@ -258,8 +258,13 @@ App::DocumentObjectExecReturn* Helix::sweep(const TopoDS_Shape& path,
         result.setShape(result.getShape().Reversed(), false);
 
     // The helical approximation needs a looser tolerance for the boolean to
-    // succeed.
-    fix.LimitTolerance(result.getShape(), Precision::Confusion() * size * Tolerance.getValue());
+    // succeed. That tolerance goes with the helix's size and the sweep's own
+    // error does not (about 1e-5 at any size): on a small helix the error is
+    // the larger, the sides stood further from the base than they said they
+    // could, and the boolean kept slivers of them.
+    fix.LimitTolerance(result.getShape(),
+                       std::max(Precision::Confusion() * size * Tolerance.getValue(),
+                                mkPipe.ErrorOnSurface()));
     fixShape(result);
     if (Linearize.getValue())
         result.linearize(true, false);
