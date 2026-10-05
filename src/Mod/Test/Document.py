@@ -6067,6 +6067,48 @@ class TransactionBranchCases(unittest.TestCase):
         self.assertFalse([o.Name for o in doc.Objects if "Invalid" in o.State])
         self.assertFalse([o.Name for o in doc.Objects if "Touched" in o.State])
 
+    def testASheetsCellsFollowTheBranch(self):
+        # Sec 31.1: a value put back from the log is the whole of what the
+        # property holds. A sheet's cells were read into the cells that
+        # were there, so a cell set on one branch stayed on every other --
+        # and so did its alias, which is a property of the sheet.
+        doc = self.track(FreeCAD.newDocument("SheetBranches"))
+        doc.UndoMode = 1
+        doc.openTransaction("create")
+        doc.addObject("Spreadsheet::Sheet", "Sheet")
+        doc.recompute()
+        doc.commitTransaction()
+        doc.saveAs(os.path.join(self.dir, "sheet-branches.FCStd"))
+
+        doc.createTransactionBranch("side")
+        doc.switchTransactionBranch("side")
+        doc.openTransaction("theirs")
+        doc.Sheet.set("B1", "2")
+        doc.Sheet.setAlias("B1", "width")
+        doc.recompute()
+        doc.commitTransaction()
+        self.assertEqual(doc.Sheet.width, 2)
+
+        def cells():
+            return {c: doc.Sheet.getContents(c) for c in doc.Sheet.getUsedCells()}
+
+        doc.switchTransactionBranch("main")
+        self.assertEqual(cells(), {})
+        self.assertFalse(hasattr(doc.Sheet, "width"))
+        doc.openTransaction("ours")
+        doc.Sheet.set("A1", "1")
+        doc.recompute()
+        doc.commitTransaction()
+        self.assertEqual(cells(), {"A1": "1"})
+
+        doc.switchTransactionBranch("side")
+        self.assertEqual(cells(), {"B1": "2"})
+        self.assertEqual(doc.Sheet.width, 2)
+        doc.switchTransactionBranch("main")
+        self.assertEqual(cells(), {"A1": "1"})
+        self.assertFalse(hasattr(doc.Sheet, "width"))
+        self.assertFalse([o.Name for o in doc.Objects if "Invalid" in o.State])
+
     def testACopyThatTookFromThisFileIsImported(self):
         # Sec 30.33, 30.34: the copy took this file's fillet -- under an id
         # of its own -- built on it, and changed it. Brought back, the
