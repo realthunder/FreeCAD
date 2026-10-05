@@ -32,6 +32,7 @@
 #include "App/TransactionLog.h"
 #include "App/TransactionValue.h"
 #include "App/Transactions.h"
+#include "Base/Console.h"
 #include "Base/FileInfo.h"
 #include "Base/Stream.h"
 #include <src/App/InitApplication.h>
@@ -5309,6 +5310,100 @@ TEST_F(TransactionLogTest, aForkImportTakesTheBranchAskedForAndTheFilesItNames)
     Base::FileInfo(fork).deleteFile();
 }
 
+namespace {
+
+/// The warnings the console is sent, kept.
+class WarningsHeard: public Base::ILogger
+{
+public:
+    WarningsHeard()
+    {
+        bErr = bMsg = bLog = bCritical = bNotification = false;
+        Base::Console().AttachObserver(this);
+    }
+    ~WarningsHeard() override
+    {
+        Base::Console().DetachObserver(this);
+    }
+    void SendLog(const std::string&, const std::string& msg, Base::LogStyle level,
+                 Base::IntendedRecipient, Base::ContentType) override
+    {
+        if (level == Base::LogStyle::Warning)
+            said.push_back(msg);
+    }
+    const char* Name() override
+    {
+        return "TxnLogWarningsHeard";
+    }
+    size_t saying(const char* what) const
+    {
+        size_t n = 0;
+        for (const auto& m : said)
+            n += m.find(what) != std::string::npos;
+        return n;
+    }
+    std::vector<std::string> said;
+};
+
+} // namespace
+
+TEST_F(TransactionLogTest, aVersionOpenedWaitsForNoHistoryFile)
+{
+    // Sec 30.37: a version taken after a save says, in its Document.xml,
+    // which history file the document carried then -- and carries none
+    // (sec 27.29). Opened as a document, or read for an import's replay, it
+    // waited for that file and the blob store said one was missing.
+    App::DocumentParams::setTransactionLog(2);   // embedded
+    edit(doc(), "create", [&]() { make("Obj")->Integer.setValue(1); });
+    const std::string tmp = Base::FileInfo::getTempPath();
+    const std::string path = tmp + "txnlog-nohist-ours.FCStd";
+    const std::string fork = tmp + "txnlog-nohist-theirs.FCStd";
+    Base::FileInfo(path).deleteFile();
+    Base::FileInfo(fork).deleteFile();
+    ASSERT_TRUE(doc()->saveAs(path.c_str()));
+    log().flush();
+    int64_t saved = 0;
+    for (const auto& v : log().store().versions())
+        saved = std::max(saved, v.num);
+    ASSERT_GT(saved, 0);
+    // A save's version names the history file that save wrote. The next
+    // save writes another, and the first is nobody's any more.
+    edit(doc(), "two", [&]() { featureOf(doc(), "Obj")->Integer.setValue(2); });
+    ASSERT_TRUE(doc()->save());
+    ASSERT_TRUE(Base::FileInfo(path).copyTo(fork.c_str()));
+    edit(doc(), "three", [&]() { featureOf(doc(), "Obj")->String.setValue("ours"); });
+    ASSERT_TRUE(doc()->save());
+
+    WarningsHeard heard;
+    App::Document* version = doc()->openVersion(saved, false);
+    ASSERT_TRUE(version);
+    ASSERT_NE(version, doc());
+    ASSERT_TRUE(featureOf(version, "Obj"));
+    EXPECT_EQ(featureOf(version, "Obj")->Integer.getValue(), 1);
+    EXPECT_EQ(heard.saying("is missing from the document"), 0u)
+        << (heard.said.empty() ? std::string() : heard.said.front());
+    const std::string versionName = version->getName();
+    App::GetApplication().closeDocument(versionName.c_str());
+    App::GetApplication().setActiveDocument(doc());
+    heard.said.clear();
+
+    // An import reads such a version to replay the copy's rows from.
+    App::Document* other = App::GetApplication().openDocument(fork.c_str());
+    ASSERT_TRUE(other);
+    const std::string otherName = other->getName();
+    other->setUndoMode(1);
+    edit(other, "theirs", [&]() { featureOf(other, "Obj")->Integer.setValue(3); });
+    ASSERT_TRUE(other->save());
+    App::GetApplication().closeDocument(otherName.c_str());
+    App::GetApplication().setActiveDocument(doc());
+    const auto result = doc()->importFork(fork);
+    EXPECT_EQ(result.rows, 1u) << result.reason;
+    EXPECT_EQ(heard.saying("is missing from the document"), 0u)
+        << (heard.said.empty() ? std::string() : heard.said.front());
+    Base::FileInfo(path).deleteFile();
+    Base::FileInfo(fork).deleteFile();
+}
+
 TEST_F(TransactionLogTest, aCopyThatTookFromThisFileNamesItsObjects)
 {
     // Sec 30.33: a copy that has taken this file's rows holds this file's
@@ -5423,6 +5518,145 @@ TEST_F(TransactionLogTest, aCopyThatTookFromThisFileNamesItsObjects)
     const auto picked = doc()->mergeBranch(again.branch, {{"Mine.Integer", "theirs"}});
     EXPECT_TRUE(picked.unresolved.empty());
     EXPECT_EQ(featureOf(doc(), "Mine")->Integer.getValue(), 12);
+    Base::FileInfo(path).deleteFile();
+    Base::FileInfo(fork).deleteFile();
+}
+
+TEST_F(TransactionLogTest, aSentFileIsThereAfterACrash)
+{
+    // Sec 30.29, 30.38: a file kept in the log is a row and a blob, and
+    // both are down before the call returns. What a crash leaves behind
+    // recovers with the file waiting, its bytes as they came.
+    doc()->openTransaction("create");
+    make("Obj")->Integer.setValue(1);
+    doc()->commitTransaction();
+    std::string bytes;
+    for (int i = 0; i < 5000; ++i)
+        bytes += static_cast<char>((i * 31 + 7) & 0xff);
+    const int64_t kept = doc()->keepSentFile(bytes, "sent.FCStd", "lei", "invited");
+    ASSERT_GT(kept, 0);
+    doc()->openTransaction("after");
+    featureOf(doc(), "Obj")->Integer.setValue(2);
+    doc()->commitTransaction();
+    log().flush();
+
+    const std::string crashed = Base::FileInfo::getTempPath() + "txnlog-crashed-sent";
+    Base::FileInfo(crashed).deleteDirectoryRecursive();
+    for (const char* sub : {"history", "blobs"}) {
+        const std::string from = doc()->TransientDir.getStrValue() + "/" + sub;
+        const std::string to = crashed + "/" + sub;
+        Base::FileInfo(to).createDirectories();
+        if (!Base::FileInfo(from).isDir())
+            continue;
+        for (const auto& file : Base::FileInfo(from).getDirectoryContent()) {
+            if (file.isFile())
+                file.copyTo((to + "/" + file.fileName()).c_str());
+        }
+    }
+    auto recovered = App::GetApplication().recoverDocument(crashed.c_str(), false);
+    ASSERT_TRUE(recovered);
+    const std::string name = recovered->getName();
+    ASSERT_TRUE(featureOf(recovered, "Obj"));
+    EXPECT_EQ(featureOf(recovered, "Obj")->Integer.getValue(), 2);
+    const auto held = recovered->sentFiles();
+    ASSERT_EQ(held.size(), 1u);
+    EXPECT_EQ(held.front().name, "sent.FCStd");
+    EXPECT_EQ(held.front().sender, "lei");
+    EXPECT_EQ(held.front().senderKind, "invited");
+    EXPECT_EQ(held.front().size, static_cast<int64_t>(bytes.size()));
+    EXPECT_TRUE(held.front().branch.empty());
+    const std::string out = Base::FileInfo::getTempPath() + "txnlog-crashed-sent.out";
+    Base::FileInfo(out).deleteFile();
+    recovered->writeSentFile(held.front().seq, out);
+    {
+        Base::FileInfo fi(out);
+        Base::ifstream in(fi, std::ios::in | std::ios::binary);
+        const std::string back((std::istreambuf_iterator<char>(in)),
+                               std::istreambuf_iterator<char>());
+        EXPECT_EQ(back, bytes);
+    }
+    Base::FileInfo(out).deleteFile();
+    // And it can still be let go.
+    EXPECT_TRUE(recovered->dropSentFile(held.front().seq));
+    EXPECT_TRUE(recovered->sentFiles().empty());
+    App::GetApplication().closeDocument(name.c_str());
+}
+
+TEST_F(TransactionLogTest, anObjectTheCopyBringsBackIsNotASecondOne)
+{
+    // Sec 30.37: the copy removes an object and undoes that. The undo's
+    // row makes the object -- the one it was, under its id -- and an import
+    // made a new one of it: for an object both had where they parted, and
+    // for one of the copy's own that an earlier import had brought.
+    App::DocumentParams::setTransactionLog(2);   // embedded
+    edit(doc(), "create", [&]() {
+        make("Obj")->Integer.setValue(1);
+        make("Back")->Integer.setValue(2);
+    });
+    const long back = featureOf(doc(), "Back")->getID();
+    const std::string tmp = Base::FileInfo::getTempPath();
+    const std::string path = tmp + "txnlog-undo-ours.FCStd";
+    const std::string fork = tmp + "txnlog-undo-theirs.FCStd";
+    Base::FileInfo(path).deleteFile();
+    Base::FileInfo(fork).deleteFile();
+    ASSERT_TRUE(doc()->saveAs(path.c_str()));
+    ASSERT_TRUE(Base::FileInfo(path).copyTo(fork.c_str()));
+
+    App::Document* other = App::GetApplication().openDocument(fork.c_str());
+    ASSERT_TRUE(other);
+    std::string otherName = other->getName();
+    other->setUndoMode(1);
+    edit(other, "theirs removed", [&]() { other->removeObject("Back"); });
+    ASSERT_FALSE(other->getObject("Back"));
+    ASSERT_TRUE(other->undo());
+    ASSERT_TRUE(featureOf(other, "Back"));
+    ASSERT_EQ(featureOf(other, "Back")->getID(), back);
+    edit(other, "theirs changed", [&]() { featureOf(other, "Back")->Integer.setValue(5); });
+    edit(other, "theirs made", [&]() {
+        static_cast<App::FeatureTest*>(other->addObject("App::FeatureTest", "Theirs"))
+            ->Integer.setValue(7);
+    });
+    ASSERT_TRUE(other->save());
+    App::GetApplication().closeDocument(otherName.c_str());
+    App::GetApplication().setActiveDocument(doc());
+
+    edit(doc(), "ours", [&]() { featureOf(doc(), "Obj")->String.setValue("ours"); });
+    const auto result = doc()->importFork(fork);
+    EXPECT_EQ(result.stoppedAt, 0) << result.reason;
+    EXPECT_TRUE(result.renamed.empty());
+    const auto merged = doc()->mergeBranch(result.branch);
+    EXPECT_TRUE(merged.unresolved.empty());
+    EXPECT_EQ(doc()->getObjects().size(), 3u);
+    ASSERT_TRUE(featureOf(doc(), "Back"));
+    EXPECT_EQ(featureOf(doc(), "Back")->getID(), back);
+    EXPECT_EQ(featureOf(doc(), "Back")->Integer.getValue(), 5);
+    ASSERT_TRUE(featureOf(doc(), "Theirs"));
+    const long theirs = featureOf(doc(), "Theirs")->getID();
+
+    // The copy's own object, which that import brought: removed, back.
+    other = App::GetApplication().openDocument(fork.c_str());
+    ASSERT_TRUE(other);
+    otherName = other->getName();
+    other->setUndoMode(1);
+    edit(other, "theirs removed again", [&]() { other->removeObject("Theirs"); });
+    ASSERT_TRUE(other->undo());
+    ASSERT_TRUE(featureOf(other, "Theirs"));
+    edit(other, "theirs changed again", [&]() {
+        featureOf(other, "Theirs")->Integer.setValue(8);
+    });
+    ASSERT_TRUE(other->save());
+    App::GetApplication().closeDocument(otherName.c_str());
+    App::GetApplication().setActiveDocument(doc());
+    const auto again = doc()->importFork(fork);
+    EXPECT_EQ(again.stoppedAt, 0) << again.reason;
+    EXPECT_TRUE(again.extended);
+    EXPECT_TRUE(again.renamed.empty());
+    const auto more = doc()->mergeBranch(again.branch);
+    EXPECT_TRUE(more.unresolved.empty());
+    EXPECT_EQ(doc()->getObjects().size(), 3u);
+    ASSERT_TRUE(featureOf(doc(), "Theirs"));
+    EXPECT_EQ(featureOf(doc(), "Theirs")->getID(), theirs);
+    EXPECT_EQ(featureOf(doc(), "Theirs")->Integer.getValue(), 8);
     Base::FileInfo(path).deleteFile();
     Base::FileInfo(fork).deleteFile();
 }

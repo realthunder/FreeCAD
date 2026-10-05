@@ -10061,6 +10061,21 @@ Document::ImportResult Document::importFork(const std::string& path, const std::
     // Dynamic properties left out for having no type, by object and name.
     std::set<std::pair<long, std::string>> untyped;
 
+    // An object both copies had where they parted, under one id (sec
+    // 30.15): the newest row before the base that made or removed it is
+    // the same row in both stores. An id alone does not say so -- two
+    // copies number on from one counter, and reach for the same names.
+    auto atBase = [&](long cid) {
+        LogOp here;
+        LogOp there;
+        if (!store.lastOpOn("obj", cid, std::string(), 0, result.base, here)
+                || !theirs.lastOpOn("obj", cid, std::string(), 0, base, there))
+            return false;
+        LogRowId mine;
+        LogRowId other;
+        return store.rowId(here.txn, mine) && theirs.rowId(there.txn, other) && mine == other;
+    };
+
     // Sec 30.34: a merge of the copy's own, of rows this file holds. The
     // row is this file's rows as the copy took them, and stays a merge
     // here, its second parent the newest of them -- so the merge of this
@@ -10203,9 +10218,18 @@ Document::ImportResult Document::importFork(const std::string& path, const std::
                     values.emplace_back(&o, std::move(v));
                 }
 
+                // For a test of what follows a row that cannot be applied
+                // (F8), which nothing a script does brings about: the row
+                // of this name is one.
+                if (const char* stop = std::getenv("FC_TXNLOG_IMPORT_STOP_AT")) {
+                    if (t.name == stop)
+                        throw Base::RuntimeError("stopped for a test");
+                }
                 // A merge of rows this file has not got is a row like any
                 // (sec 30.15); one of rows it has stays a merge (sec 30.34).
                 const int64_t second = t.kind == "merge" ? mergedHere(t) : 0;
+                const auto idsBefore = ids;
+                const auto namesBefore = names;
 
                 // The row, as a transaction of its author's. Only the
                 // transaction is: what the commit records beside it -- a
@@ -10256,17 +10280,30 @@ Document::ImportResult Document::importFork(const std::string& path, const std::
                         // this file -- and comes under the id and the name
                         // this file gave it, as an object does on any
                         // branch of its file.
+                        //
+                        // So is one the copy removed and makes again -- an
+                        // undo of the removal: one this import brought
+                        // before, or one both had at the base, which is
+                        // the same object when the row that last made or
+                        // removed it before the base is one row in both
+                        // (sec 30.37).
                         long asId = 0;
                         std::string wanted = o.cname;
-                        auto both = same.find(o.cid);
-                        if (both != same.end()) {
-                            if (replay->getObjectByID(both->second)) {
-                                ids[o.cid] = both->second;
+                        long held = 0;
+                        if (auto both = same.find(o.cid); both != same.end())
+                            held = both->second;
+                        else if (auto brought = ids.find(o.cid); brought != ids.end())
+                            held = brought->second;
+                        else if (atBase(o.cid))
+                            held = o.cid;
+                        if (held) {
+                            if (replay->getObjectByID(held)) {
+                                ids[o.cid] = held;
                                 continue;
                             }
-                            const std::string* known = d->history->objectNameOfId(both->second);
+                            const std::string* known = d->history->objectNameOfId(held);
                             if (known && !replay->getObject(known->c_str())) {
-                                asId = both->second;
+                                asId = held;
                                 wanted = *known;
                             }
                         }
@@ -10384,20 +10421,8 @@ Document::ImportResult Document::importFork(const std::string& path, const std::
                 }
                 catch (...) {
                     replay->_abortTransaction();
-                    for (const auto& kv : renamed) {
-                        names.erase(kv.first);
-                        auto both = sameNames.find(kv.first);
-                        if (both != sameNames.end())
-                            names[kv.first] = both->second;
-                    }
-                    for (const auto& o : ops) {
-                        if (o.op != "create" || o.ckind != "obj")
-                            continue;
-                        ids.erase(o.cid);
-                        auto both = same.find(o.cid);
-                        if (both != same.end())
-                            ids[o.cid] = both->second;
-                    }
+                    names = namesBefore;
+                    ids = idsBefore;
                     throw;
                 }
 

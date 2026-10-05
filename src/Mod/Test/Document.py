@@ -5914,8 +5914,10 @@ class TransactionBranchCases(unittest.TestCase):
         # -- are the copy's. This file has other strings under those
         # numbers once both have gone on, and gives the copy's new objects
         # other ids. The strings come by content, the ids mapped.
+        import io
         import re
         import shutil
+        import zipfile
 
         doc = self.track(FreeCAD.newDocument("StringsOurs"))
         doc.UndoMode = 1
@@ -5978,6 +5980,32 @@ class TransactionBranchCases(unittest.TestCase):
         ref.Sub = (fillet, ("Face3",))
         fork.recompute()
         fork.commitTransaction()
+        # An expression that names an element: its name is in the text, and
+        # the ids that name holds are beside it (sec 27.77).
+        fork.openTransaction("theirs expression")
+        expr = fork.addObject("App::FeaturePython", "Expr")
+        expr.addProperty("App::PropertyFloat", "T")
+        edges = byElement(fillet.Shape)
+        edge = sorted(e for e, n in edges.items() if e.startswith("Edge") and "#" in n)[0]
+        expr.setExpression("T", "Theirs2.<<%s>>._shape.Length" % edges[edge])
+        fork.recompute()
+        fork.commitTransaction()
+        theirLength = expr.T
+        self.assertGreater(theirLength, 0)
+
+        def heldBy(obj):
+            data = bytes(obj.dumpPropertyContent("ExpressionEngine", Compression=0))
+            archive = zipfile.ZipFile(io.BytesIO(data))
+            xml = "".join(archive.read(n).decode() for n in archive.namelist())
+            found = re.search(r'<Ids index="0" ref="0" sids="([^"]*)"', xml)
+            return {int(x, 16) for x in found.group(1).split()} if found else set()
+
+        theirText = dict(expr.ExpressionEngine)["T"]
+        theirHeld = heldBy(expr)
+        self.assertTrue(theirHeld)
+        saidHeld = sorted(expand(fork.Hasher, "#%x" % i) for i in theirHeld)
+        for text in saidHeld:
+            self.assertNotIn("<missing>", text)
         theirIds = {o.Name: o.ID for o in fork.Objects}
         rawStatic = byElement(fork.Static.Shape)
         self.assertTrue(rawStatic)
@@ -5992,13 +6020,16 @@ class TransactionBranchCases(unittest.TestCase):
 
         res = doc.importTransactionFork(copy)
         self.assertEqual(res["stopped_at"], 0, res)
-        self.assertEqual(res["rows"], 4, res)
+        self.assertEqual(res["rows"], 5, res)
         merged = doc.mergeTransactionBranch(res["branch"])
         self.assertEqual(merged["unresolved"], [])
         self.assertEqual(merged["failed"], [])
 
         # The copy's objects have other ids here: this file made one since.
-        tags = {theirIds[n]: doc.getObject(n).ID for n in ("Theirs", "Theirs2", "Static", "Ref")}
+        tags = {
+            theirIds[n]: doc.getObject(n).ID
+            for n in ("Theirs", "Theirs2", "Static", "Ref", "Expr")
+        }
         self.assertTrue([a for a, b in tags.items() if a != b], tags)
         # The shape nothing recomputes: every element named as the copy
         # named it, said in this file's strings and this file's object ids.
@@ -6016,6 +6047,22 @@ class TransactionBranchCases(unittest.TestCase):
         )
         # The reference resolves, and this file's own fillet is as it was.
         self.assertEqual(doc.Ref.Sub, (doc.Theirs2, ["Face3"]))
+        # The expression names the edge it named: it finds it, and the ids
+        # it holds for the name are strings of this file's table that say
+        # what the copy's said, with this file's object ids.
+        self.assertEqual(dict(doc.Expr.ExpressionEngine)["T"], theirText)
+        self.assertAlmostEqual(doc.Expr.T, theirLength, 9)
+        held = heldBy(doc.Expr)
+        self.assertEqual({i for i in held if doc.Hasher.getID(i)}, held)
+        self.assertEqual(
+            sorted(expand(doc.Hasher, "#%x" % i) for i in held),
+            sorted(retag(text, tags) for text in saidHeld),
+        )
+        # Which are the strings the edge's name here is made of.
+        self.assertEqual(
+            {int(x, 16) for x in re.findall(r"#([0-9a-f]+)", byElement(doc.Theirs2.Shape)[edge])},
+            held,
+        )
         self.assertTrue(doc.Mine.Shape.isValid())
         self.assertFalse([o.Name for o in doc.Objects if "Invalid" in o.State])
         self.assertFalse([o.Name for o in doc.Objects if "Touched" in o.State])

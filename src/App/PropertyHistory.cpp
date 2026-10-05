@@ -150,6 +150,17 @@ void PropertyHistory::Restore(Base::XMLReader& reader)
         _entries.push_back({reader.getAttribute("hash"), reader.getAttribute("ext", "")});
     }
     reader.readEndElement("History");
+    // A version says what history its file carried when it was taken, and
+    // carries none of it (docs/TransactionLog.md sec 27.29): a document
+    // read from one has its file's log -- joined, or being recovered from.
+    // There is nothing to wait for, and the manager would say that a file
+    // is missing of every version opened.
+    if (auto doc = Base::freecad_dynamic_cast<Document>(getContainer())) {
+        if (doc->isReplaying()) {
+            _entries.clear();
+            return;
+        }
+    }
     // The manager hands each over, at once or when the entries are drained.
     auto& manager = blobManager();
     for (const auto& e : _entries)
