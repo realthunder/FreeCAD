@@ -2767,12 +2767,17 @@ every view, every client and every Link to the body. It is now entries of the se
 views on the path of the body being edited (`docs/CoinRetirement.md` 5.18), so a Link to
 the body in the same view shows no origin either. The first, a sketch-based panel hiding
 the profile it was just given, stays a document write on purpose: it is the outcome of
-the pick, not a state of the edit. Not followed, and still open as a question rather
-than a defect: a TempoVis entry is the object where its own root is drawn, so it does
+the pick, not a state of the edit. Not followed, and ruled to stay so (the user,
+2026-10-06): a TempoVis entry is the object where its own root is drawn, so it does
 not reach a Link's copy of the object the way `LinkVisibility` did. Every Link that shows
 a dependent is itself a dependent and is hidden whole, which covers what an edit hides;
 what it SHOWS (a sketch's support) is shown at the edited occurrence only, which is the
 per-view answer anyway.
+
+**Next (ordered 2026-10-06): the task panel per view.** Item E's first notch -- a panel
+has an owner view, is hosted in the combo view (shown for the active view) or in its
+view (shown always), and a client gets its own view's. Designed in
+`docs/TaskPanelPerView.md`; nothing is built.
 
 **Reading the list.** A is done; C, D and J have their seams built; B, E, F and I are
 wide but mechanical -- each is the move stages 1-5 made, a global becoming a row on a
