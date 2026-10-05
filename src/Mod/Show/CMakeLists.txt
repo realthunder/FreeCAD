@@ -16,6 +16,7 @@ SET(Show_SceneDetails_SRCS
     SceneDetails/ClipPlane.py
     SceneDetails/ObjectClipPlane.py
     SceneDetails/Pickability.py
+    SceneDetails/SessionVisibility.py
     SceneDetails/VProperty.py
     SceneDetails/Workbench.py
 )
