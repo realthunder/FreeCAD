@@ -13025,7 +13025,7 @@ shares nothing: no dialog, and the panel says so.
   A geometry list is one value, so 28 offers it whole or not at all, and
   two sides that both added geometry conflict rather than interleave.
 - **An expression naming an element** goes through `RestoreStrings` and
-  is not in a test.
+  was not in a test. It is: 30.37.
 - **F1's short cut**, copying the rows where nothing collides, is not
   built: every import replays.
 
@@ -14014,9 +14014,8 @@ the host lists it -- 36,815 bytes, `lei`, `invited` -- with two rows more
 (the login and the request), no branch and no document; as `nobody`, no
 such row in the menu.
 
-**Left.** A file whose import stopped has no "bring in again" in the
-panel: it is held, and is brought again by hand
-(`importTransactionSentFile`). A waiting file is one blob, so two copies
+**Left.** A file whose import stopped had no "bring in again" in the
+panel -- it has now, 30.38. A waiting file is one blob, so two copies
 of one document sent by two people are stored twice until they are
 brought in.
 
@@ -14384,10 +14383,8 @@ what the case is for: every row then carries some thirty view ops.
 **Left.**
 
 - **An object both had at the base, removed in the copy and made
-  again** -- an undo of the removal -- comes as a second object: the row
-  that made it is before the base, not replayed by either, and only
-  replayed rows are read for pairs. Reading every row both hold would
-  find it, at the cost of the whole shared history per import.
+  again** -- an undo of the removal -- came as a second object. Closed
+  since: 30.37.
 - **A file with no history** (30.19) has no rows to pair by: an object it
   holds of this file's is known by 30.22's rule or not at all.
 - **A row squashed or trimmed** on either side keeps the identity of the
@@ -14458,3 +14455,146 @@ pane's edge; and it is the list's for that row, two colours in all.
 All thirteen Gui checks run again: RC 15, BC 30, VC 18, PC 28, FC 16,
 VW 14, MC 28, the two-document check 24, the tree check 19, the author
 check 36, the import check 49, the request check 28, the share check 47.
+
+### 30.37 What the import had left: a file nobody carries, an object brought back, an expression (user: chase them, 2026-10-05)
+
+**"Included file ... is missing from the document"**, once at every
+import (30.25, seen and not chased), and at every version opened as a
+document once its file had been saved again. Not the import's: the
+`History` property's. A version's `Document.xml` is the document as it
+was written, and says which history file it carried then -- the one that
+save embedded. A version carries none of it (27.29), so that file lives
+while the document's `History` names it, which is until the next save.
+A version read after that -- by `openVersion`, by an import for the
+document its rows are replayed in -- restored a `History` that waited
+for a file nobody holds, and the blob store said so.
+Nothing was lost; the message was the defect, said of a file that is not
+supposed to be there, in the same words a real loss gets.
+
+`PropertyHistory::Restore`: in a document being read from a version
+(`Document::isReplaying()`) the element is read and nothing is waited
+for. The document's history is its file's log, which it has joined or is
+recovered from: a crash recovery reads its newest version the same way,
+and is covered by the same line, though it was not seen to warn.
+
+Gtest `aVersionOpenedWaitsForNoHistoryFile`, listening on the console:
+saved, saved again, saved a third time; the first save's version opened,
+and a copy imported whose replay reads the second's. Before, one warning
+each. The first form of the test heard nothing and passed without the
+fix: the version it opened was the newest save's, whose file the
+document still held.
+
+**An object the copy brings back** (30.34 "Left"). The copy removes an
+object and undoes that; the undo's row makes the object, under the id it
+had. A replayed create made a new object of it -- `Back001`, the copy's
+later change on that, and the removal still standing against this file's
+`Back`. Two kinds, one rule: a create of an object this file holds is
+that object.
+
+- One the copy made and an earlier import brought: its id is in the
+  import's map already. That it was not read there for a create was an
+  oversight of 30.33's.
+- One both had where they parted. An id alone does not say so (30.33),
+  so `atBase(id)`: the newest row before the base that made or removed
+  it, in each store (`lastOpOn` with no property), is one row by its
+  identity.
+
+Then as 30.33 has it: there in the replay's document, or made under its
+id and the name the file gave it. Gtest
+`anObjectTheCopyBringsBackIsNotASecondOne`, both kinds, the second across
+two imports: without the rule nothing named `Back` is left here and one
+renaming is reported.
+
+An object that was in the file when its history began has no row that
+made it, and is not found this way.
+
+**An expression naming an element** (30.17 "Left") is in a test now:
+`testAForkImportTakesItsStringsByContent` has the copy set
+`Theirs2.<<name of an edge>>._shape.Length`. What an expression keeps is
+not what I first asserted: its text names the edge by its index
+(`<<Edge1>>`) and the ids of the mapped name are beside it
+(`<ExpressionIds>`, 27.77). After the import the text is the copy's, the
+value is the copy's, and the ids held are this file's: each one a string
+of this table that says what the copy's said, with this file's object
+ids, and together the ids the edge's name here is made of. Nothing to
+fix.
+
+### 30.38 What the sent files had left: brought in again, and a crash (2026-10-05)
+
+**Bring in again** (30.29 "Left"). A request that is a branch whose
+import stopped at a row (F8), and whose file the log still holds, has
+*Bring in again* in its menu: `TransactionLogView::bringAgain(branch,
+from)`, the held file read again (`importSentFile`), which goes on from
+the row it stopped at (30.15). The status line says how many more rows
+came, or that it stopped again, with the reason in the report view.
+
+Nothing a script does makes a row that cannot be applied -- a type or a
+property this build lacks -- so the check names one:
+`FC_TXNLOG_IMPORT_STOP_AT=<row name>` makes the replay refuse the row of
+that name, read at each row and for tests only. The request check (+3,
+31): a file sent with two rows more, the second named; brought in only
+-- a branch short of it, the list saying "stopped at a row", the file
+held for the branch; brought in again with nothing named -- one row more
+on the same branch, the file held still; merged -- both changes in and
+the file let go.
+
+**A sent file across a crash** (30.29, not tested) is in a test, and
+needed nothing: gtest `aSentFileIsThereAfterACrash` keeps a file, writes
+a row after it, copies the log's directories as a crash would leave
+them, and recovers -- the file waiting with its name, its sender and
+how that name is known, its bytes as they came, and dropped like any.
+
+### 30.39 Not built: a plain request under a grant that counts (2026-10-05)
+
+30.32 left it: an HTTP request carries no browser id, so the token of a
+grant that counts browsers still reads the scene over HTTP. "Closing it
+means the viewer saying its id on its fetches too" -- surveyed, and it is
+neither that small nor as harmless as 30.32 has it.
+
+**It is not only a request made by hand.** The viewer's first load is
+`GET /scene` over HTTP, for the progress bar, and the socket and its
+hello come after (`startInitialFetch`, then `startStream`). Read in the
+code, not run: a browser past the count gets the scene by that first
+request, shows it, and is then told "Access refused -- this invite does
+not cover you" by the socket. It has no live session and cannot write.
+It has the model as it stood. 30.32's browser drive saw the refusal; it
+did not look at what was on the page. So a link "for one browser"
+shows the model to whoever opens it, once per load.
+
+**What closing it runs into:**
+
+- A browser is enrolled by its hello (30.32), and the first load comes
+  before the hello. A rule that a fetch under such a grant must be an
+  enrolled browser's refuses a new browser's own first load, unless the
+  viewer says hello first, or a fetch that says its id may enrol -- which
+  is 30.32's rule changed.
+- **A browser that can only poll** -- no socket through its proxy -- reads
+  today, by `/scene` again and again. If a fetch never enrols it cannot
+  join such a grant at all.
+- **The beacon** (`/log`, `navigator.sendBeacon`) cannot carry a header.
+  It reads nothing, and can stay as it is.
+- **The header** is a custom one, so a viewer served from another origin
+  than the scene sends a preflight for it.
+- The viewer is rebuilt, and the wire tests and the browser drive get
+  the case: past the count, nothing of the scene.
+
+**To rule:**
+
+- N1: a fetch that says which browser it is may enrol while there is
+  room -- the first load enrols, a browser that can only poll still
+  joins, and 30.32's "only by its own hello" becomes "by its first
+  request that says who it is". Proposed: it is the smaller change to
+  the viewer and loses nobody.
+- N2: or the viewer says hello first and reads after, and a fetch never
+  enrols -- 30.32 as ruled, and a browser that can only poll is out of a
+  grant that counts.
+- Either way a request with no id under such a grant reads nothing but
+  what is not the scene's.
+
+**Gates** for 30.37 and 30.38, frozen and unfrozen each: Python 3011 OK
+(52 skipped frozen, 53 unfrozen; 6 expected failures; the strings case
+grown, none added), ctest 881/881 (+3), and the GUI checks RC 15, BC 30,
+VC 18, PC 28, FC 16, VW 14, MC 28, the two-document check 24, the tree
+check 19, the author check 36, the import check 49, the request check 31
+(+3) and the share check 47. The two fixes were each switched off once to
+see their test fail.
