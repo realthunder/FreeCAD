@@ -2815,6 +2815,60 @@ edit, so it puts the base's occurrence on top instead. Verified by
 a Link's occurrence as the view outside; 8 of its 38 claims fail on the
 document path) and `tests/gui/serve-pd-preview.py`.
 
+**An edit's swaps: TempoVis, and the PartDesign monitor (2026-10-05).**
+The writers that run on nearly every edit. `Show.TempoVis` is what an
+edit mode's "visibility automation" goes through -- the sketcher hiding
+whatever is built on the sketch and showing what it is attached to, the
+attachment panel doing the same for a datum -- and it did it by saving
+and writing `Visibility` (`SceneDetails.VProperty`). Inside an edit
+session whose views have a table, `TempoVis.show` and `.hide` now use a
+second detail, `SceneDetails.SessionVisibility`: a BARE entry per object
+(the object wherever its own root is drawn) through
+`Gui.Document.setEditVisibility(obj, visible, subname='', owner='TempoVis')`,
+which keeps one owner's entries in `EditingRoot`'s swaps apart from
+another's -- the swaps are keyed by owner since this, and the table's own
+rule ranks two entries naming one draw whoever owns them: the longer key
+first, so a preview's occurrence beats TempoVis's object. Three things
+the detail has to get right that `VProperty` got for free:
+
+- *The session does not exist yet.* The sketcher runs its TempoVis from
+  `ViewProvider::setEdit`, before `Gui::Document::setEdit` binds a view.
+  The entries are put in the document's root and wait for the views
+  (`attachView` applies them); whether those views will take them is
+  asked up front, `Gui::Document::canSetEditVisibility` -- the session's
+  view, or the one `setEdit` is about to start it in, has a table
+  (`ViewerContext::canSetEditVisibilities`). `setEdit` clears the root
+  before `startEditing` and when it is refused, and `_resetEdit` when an
+  edit ends that never had a view, so nothing of one edit meets the next.
+- *PartDesign's one visible feature.* A feature's `Visibility` going on
+  turns its siblings' off (`PartDesign::Feature::onChanged`); an entry
+  writes none, so `TempoVis.show` hides the shown object's visible
+  `Siblings` itself.
+- *Nothing to restore, nothing to save around.* The entries end with the
+  session (`EditingRoot::endSession`); a TempoVis restored afterwards
+  finds them gone. `affects_persistence` is false: a save during the edit
+  has no `Visibility` to put back first.
+
+Links to the objects are not followed (`links_too`, `LinkVisibility`): an
+entry is the object where its own root is drawn. Outside an edit, and in
+modes 0-2, TempoVis writes `Visibility` exactly as before.
+
+The PartDesign edit monitor's own swap goes the same way
+(`beforeEditInSession`, owner `PartDesign.Shown`): to edit a feature that
+is not the tip the body has to show it in the tip's place, which was two
+`Visibility` writes and a restore at the end -- one that a bare
+`resetEdit` of a primitive did not make, leaving the body showing the
+edited feature. As PATH entries for the occurrence being edited there is
+nothing to restore, and a Link to the body keeps the tip. Still written
+to the document: a sketch-based panel showing its profile, and a
+primitive's panel showing the body's origin (which also turns a Link to
+the body off and does not turn it back on -- found 2026-10-05, not fixed).
+
+Verified by `tests/gui/tempovis-per-view.py` (a sketch on a pad, two
+windows with `PerViewEdit` so that one is outside the edit; 5 of 16 fail
+with the session path off), `tests/gui/serve-tempovis.py` (3 of 11) and
+`tests/gui/pd-edit-shown-per-view.py` (4 of 13).
+
 - **Found on the way (`5124c6cc87`):** a path hide leaked to every
   other occurrence of the same node. An object's root sits under each
   group and link that shows it, and the caches above its switch -- its

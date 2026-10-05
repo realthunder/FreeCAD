@@ -2724,25 +2724,41 @@ a preference changed halfway neither pulls a view in nor strands one.
   menu's edit entries, which enter through the same call) `EditInProgress`. The desktop
   user is not refused -- double-clicking another object in another window ends the edit
   in progress, as it always has.
-- *`getInEdit` answers the view that asks.* Under a `ViewerScope` -- a client's request,
-  its replayed events -- the answer is whether THAT view is in the session, before the
-  active window is consulted: item D's "`getInEdit()` answering the current view's", and
-  what keeps a client's own sketch menu and in-edit publish working beside a desktop
-  window that did not join.
+- *`getInEdit` answers the client's view that asks.* Under a `ViewerScope` on a mirror --
+  a client's request, its replayed events -- the answer is whether THAT view is in the
+  session, before the active window is consulted: item D's "`getInEdit()` answering the
+  current view's", and what keeps a client's own sketch menu and in-edit publish working
+  beside a desktop window that did not join. A desktop viewer's scope says yes when it is
+  in the session and otherwise leaves the answer to the active window, as before.
 
 What is NOT per view yet, and shows the moment a session is alone: the task panel is the
 desktop's one `Gui::Control` whoever started the edit (item E; the user's next step is the
 panel as an overlay of the editing view); TempoVis and the panels' other `Visibility`
-writes are document state, so a view outside the session still sees what an edit hid or
-showed; the room's selection is heard by a desktop-started sketch whichever window the
-click was in; undo is one stack (item G, `origin/Transaction`); and in render-cache modes
-0-2 a sketch's geometry is MOVED into the editing root, so a window outside the session
-shows no sketch at all while it is edited.
+writes were document state, so a view outside the session still saw what an edit hid or
+showed (TempoVis and the PartDesign monitor are the session's since the next entry); the
+room's selection is heard by a desktop-started sketch whichever window the click was in;
+undo is one stack (item G, `origin/Transaction`); and in render-cache modes 0-2 a sketch's
+geometry is MOVED into the editing root, so a window outside the session shows no sketch
+at all while it is edited.
 
 Verified: `tests/gui/edit-per-view.py` (two windows and one opened mid-edit, under both
 settings of the preference) and `tests/gui/serve-per-view-edit.py` (a window and two
 clients with a view each: the desktop's session told to neither and refused to both, a
 client's told to it alone with the window left out, and the shared control).
+
+**Built 2026-10-05: TempoVis and the PartDesign monitor swap in the session's views.**
+The third step, and item E's "TempoVis and `Visibility`: document state" for the writers
+that matter: what an edit hides and shows to get out of its own way is hidden and shown in
+the views of that edit and nowhere else. `Show.TempoVis.show`/`.hide` inside an edit
+session, and the PartDesign monitor's swap of the tip for the feature being edited, are
+transient entries of each session view's visibility table (`Gui::Document::
+setEditVisibility`, `docs/CoinRetirement.md` 5.18) instead of `Visibility` writes. A
+client in the session is told through its `visibility` push; a client outside it, a window
+that did not join (`PerViewEdit`), another document showing the object -- none of them
+sees a sketch's dependents vanish or its support appear. With the preview and the sketch's
+own hide before it, the edits the tests drive -- a sketch on a pad, a pad that is and is
+not the tip -- write none of the `Visibility` properties they watch; the two panels named
+in 5.18 still write theirs.
 
 **Reading the list.** A is done; C, D and J have their seams built; B, E, F and I are
 wide but mechanical -- each is the move stages 1-5 made, a global becoming a row on a
