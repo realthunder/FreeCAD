@@ -172,6 +172,14 @@ person a served scene is started for -- the demo recipes of `docs/Sandbox.md`, a
 tunnel -- `FC_SERVE_INVITE=<name>` does the same with no grant list: the link is
 `?token=<secret>&client=<name>`.
 
+**From the sharing panel** (2026-10-05, docs/TransactionLog.md sec 30.26). The Invite
+row follows the door. Behind a sign-in door it takes an identity, as it did. Behind
+none it takes a name: the grant is the share's token issued to that name, and the link
+that carries both is put on the clipboard. A pattern is refused, a share with no token
+is refused, and full control is not offered. Every grant that is such an invitation --
+a token and a name written out -- has a **Link** button on its row. A name is not a
+secret: whoever holds the plain link and gives that name gets what the name gets.
+
 ### 2.4 What a client may send: files
 
 Added 2026-10-05 (docs/TransactionLog.md sec 30.23). Two control ops carry
@@ -192,6 +200,10 @@ limit: **the preference `UploadLimitMB`** of `BaseApp/Preferences/SceneShare`,
 16 unless set, preset for a headless serve by **`FC_SERVE_UPLOAD_MB`**. It is
 read at each upload. It cannot be raised past 46 MB, which is what one
 frame of the socket carries once the bytes are base64.
+
+The dialog that starts a share and the sharing panel both have the control
+("Clients may send up to"); the panel's holds from the next upload. While
+the environment holds the limit the control shows it and is disabled.
 
 ## 3. Prior art
 
@@ -229,6 +241,22 @@ origin in a header:
 
 **They all reduce to one origin-side contract: a trusted front door asserts an identity
 in a header.** Build to that and the front door is swappable.
+
+**Only a door that signs people in is believed about who they are** (2026-10-05,
+docs/TransactionLog.md sec 30.26). Trusting the proxy is two things: its word for the
+client's address, and its word for the client's identity. A quick tunnel, or a reverse
+proxy that only carries traffic, passes on whatever headers the client wrote, so a
+client that sends `X-Forwarded-Email` itself would be a verified identity -- an editor
+under the shared token, and whoever an identity grant names. `SceneStreamServer::
+setIdentityDoor(false)` keeps the first and drops the second: no header is taken for an
+identity. The Share dialog sets it from its door ("Viewers sign in at this door"). A
+serve started by script or the environment has it on, as before: there
+`FC_SERVE_TRUST_PROXY=1` still reads the headers, and must stand behind a door that
+strips what it does not set.
+
+A door of one's own that signs people in may name its header in the dialog ("Identity
+header", kept with the door): for one that uses none of the three above. Empty reads
+those; a name is the only one read.
 
 What it does to §2:
 

@@ -423,6 +423,17 @@ public:
     void setIdentityHeader(const std::string &name);
     std::string identityHeader();
 
+    /// Whether the proxy in front signs anyone in at all. On (the
+    /// default), an identity header is read under the trust rule above.
+    /// Off, none is: a proxy that only carries traffic -- a quick tunnel,
+    /// a plain reverse proxy -- passes on whatever headers the client
+    /// sent, and a client that wrote `X-Forwarded-Email` itself would
+    /// otherwise be taken for someone a door verified, and for whoever a
+    /// grant names. The forwarded address is still believed; it decides
+    /// far less. The desktop Share dialog sets this from its door.
+    void setIdentityDoor(bool on);
+    bool identityDoor();
+
     /// Replace the live grant list (docs/ShareAccess.md §2) — the door
     /// itself. Seeded from the enabled persistent grants when sharing
     /// starts, free to evolve at runtime, gone with the process. A

@@ -198,6 +198,10 @@ public:
     /// every accepted connection.
     std::atomic<bool> trustProxy{false};
 
+    /// Whether the proxy in front signs anyone in (SceneServer.h,
+    /// setIdentityDoor): off, no header is taken for an identity.
+    std::atomic<bool> identityDoor{true};
+
     /// The configured identity header name (SceneServer.h,
     /// setIdentityHeader), stored lowercase; empty = recognize the
     /// well-known ones. Guarded by tokenMutex, like the token — read
@@ -254,7 +258,7 @@ public:
     /// is the client's own invention. Empty when nothing asserted one.
     std::string assertedIdentity(const HttpRequest &req)
     {
-        if (!trustProxy.load())
+        if (!trustProxy.load() || !identityDoor.load())
             return {};
         if (!isLoopback(req.peerIp))
             return {};
@@ -4177,6 +4181,16 @@ void SceneStreamServer::setTrustProxy(bool on)
 bool SceneStreamServer::trustProxy()
 {
     return ensure()->trustProxy.load();
+}
+
+void SceneStreamServer::setIdentityDoor(bool on)
+{
+    ensure()->identityDoor.store(on);
+}
+
+bool SceneStreamServer::identityDoor()
+{
+    return ensure()->identityDoor.load();
 }
 
 void SceneStreamServer::setConnectionCaps(int users, int perUser)

@@ -1200,6 +1200,7 @@ TEST_F(SceneServerWire, onlySomeoneKnownMayWrite)
             s.setGrants({});
             s.setTokenInvitee({});
             s.setToken({});
+            s.setIdentityDoor(true);
         }
     } restore;
     auto told = [&](WsClient& c) -> std::string {
@@ -1230,6 +1231,19 @@ TEST_F(SceneServerWire, onlySomeoneKnownMayWrite)
         ASSERT_TRUE(waitFor([&] { return findClient("rule-signed-in", info); }));
         EXPECT_EQ(info.access, Render::ClientAccess::Edit) << "verified, so it may write";
     }
+    // A proxy that signs nobody in vouches for nobody (docs/ShareAccess.md
+    // sec 4): a tunnel that only carries traffic passes on the header the
+    // client wrote, and that is the client's own word.
+    server.setIdentityDoor(false);
+    {
+        WsClient typed(port, "/scene?token=s3cret", known());
+        typed.hello("rule-typed-header");
+        EXPECT_TRUE(has(told(typed), "\"access\":\"view\""));
+        ASSERT_TRUE(waitFor([&] { return findClient("rule-typed-header", info); }));
+        EXPECT_EQ(info.access, Render::ClientAccess::View);
+        EXPECT_TRUE(info.identity.empty()) << info.identity;
+    }
+    server.setIdentityDoor(true);
     // -- until the host says whose it is: then it is an invitation to that
     // one name, by the name the hello gives, and to nobody else.
     server.setTokenInvitee("lei");

@@ -137,19 +137,33 @@ qint64 SceneRequests::ceiling()
     return kCeilingBytes;
 }
 
+namespace
+{
+
+/// A headless serve has no preferences dialog: the environment presets the
+/// limit, as it does the token (docs/ShareAccess.md).
+qint64 preset()
+{
+    static const qint64 bytes = []() -> qint64 {
+        const char* env = std::getenv("FC_SERVE_UPLOAD_MB");
+        const long mb = env ? std::atol(env) : 0;
+        return mb > 0 ? qint64(mb) * 1024 * 1024 : 0;
+    }();
+    return bytes;
+}
+
+}  // namespace
+
+bool SceneRequests::uploadLimitIsPreference()
+{
+    return override() <= 0 && preset() <= 0;
+}
+
 qint64 SceneRequests::uploadLimit()
 {
     qint64 bytes = override();
-    if (bytes <= 0) {
-        // A headless serve has no preferences dialog: the environment
-        // presets it, as it does the token (docs/ShareAccess.md).
-        static const qint64 preset = []() -> qint64 {
-            const char* env = std::getenv("FC_SERVE_UPLOAD_MB");
-            const long mb = env ? std::atol(env) : 0;
-            return mb > 0 ? qint64(mb) * 1024 * 1024 : 0;
-        }();
-        bytes = preset;
-    }
+    if (bytes <= 0)
+        bytes = preset();
     if (bytes <= 0) {
         auto hGrp = App::GetApplication().GetParameterGroupByPath(
             "User parameter:BaseApp/Preferences/SceneShare");

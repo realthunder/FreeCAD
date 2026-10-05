@@ -69,6 +69,7 @@
 #include "Document.h"
 #include "MainWindow.h"
 #include "Renderer/SceneServer.h"
+#include "SceneRequests.h"
 #include "SceneServeSource.h"
 
 using namespace Gui;
@@ -140,6 +141,10 @@ struct FrontDoor
     /// in front: links carry no token, the grant list keyed on
     /// verified identities is what admits people.
     bool identityDoor = false;
+    /// The request header that door states who signed in with, when it is
+    /// none of the ones the server knows (SceneStreamServer::
+    /// setIdentityHeader); empty for those.
+    QString identityHeader;
 };
 
 /// The stored front doors, seeded once with the three bundled presets:
@@ -158,6 +163,8 @@ std::vector<FrontDoor> loadDoors()
         d.publicOrigin = QString::fromUtf8(
             sub->GetASCII("PublicOrigin", "").c_str());
         d.identityDoor = sub->GetBool("IdentityDoor", false);
+        d.identityHeader = QString::fromUtf8(
+            sub->GetASCII("IdentityHeader", "").c_str());
         if (!d.name.isEmpty())
             out.push_back(d);
     }
@@ -191,6 +198,9 @@ void saveDoors(const std::vector<FrontDoor> &list)
         sub->SetInt("Mode", d.mode);
         sub->SetASCII("PublicOrigin", d.publicOrigin.toUtf8().constData());
         sub->SetBool("IdentityDoor", d.identityDoor);
+        if (!d.identityHeader.isEmpty())
+            sub->SetASCII("IdentityHeader",
+                          d.identityHeader.toUtf8().constData());
     }
     hGrp->SetBool("DoorsSeeded", true);
 }
@@ -445,6 +455,59 @@ QString ruleHelp()
         "stops an honest client, not a determined one.");
 }
 
+/// The header FC_SERVE_IDENTITY_HEADER preset, as the server had it before
+/// anything here named one: what a door with no header of its own goes
+/// back to.
+const std::string &presetIdentityHeader()
+{
+    static const std::string preset =
+        Render::SceneStreamServer::instance().identityHeader();
+    return preset;
+}
+
+/// A header's name as someone would type or paste it: no blanks, no colon
+/// after it.
+QString headerName(const QString &typed)
+{
+    QString name = typed.trimmed();
+    while (name.endsWith(QLatin1Char(':')))
+        name.chop(1);
+    return name.trimmed();
+}
+
+/// The control for the most a client may send (docs/ShareAccess.md sec
+/// 2.4): the preference SceneRequests::uploadLimit() reads at each upload.
+/// It shows what holds; while the environment or a script holds the limit
+/// it is disabled and says so. Whoever makes it stores the value.
+QSpinBox *uploadLimitSpin(QWidget *parent)
+{
+    const int mb = 1024 * 1024;
+    const int most = int(SceneRequests::ceiling() / mb);
+    auto *spin = new QSpinBox(parent);
+    spin->setObjectName(QStringLiteral("shareUploadLimit"));
+    spin->setRange(1, most);
+    spin->setSuffix(QCoreApplication::translate("Gui::SharePanel", " MB"));
+    spin->setKeyboardTracking(false);
+    spin->setValue(int(SceneRequests::uploadLimit() / mb));
+    QString tip = QCoreApplication::translate("Gui::SharePanel",
+        "The largest file someone who may edit can send to this machine: "
+        "a file a task panel asks for, or their copy of the document, sent "
+        "to be merged. A copy that was sent is kept unread until you bring "
+        "it in from the transaction log panel.\n\n"
+        "%1 MB is the most one message carries. A larger file is handed "
+        "over some other way and brought in with \"Merge from file...\".")
+        .arg(most);
+    if (!SceneRequests::uploadLimitIsPreference()) {
+        spin->setEnabled(false);
+        tip += QLatin1String("\n\n")
+            + QCoreApplication::translate("Gui::SharePanel",
+                "Set for this session by FC_SERVE_UPLOAD_MB or by a "
+                "script, which the preference does not override.");
+    }
+    spin->setToolTip(tip);
+    return spin;
+}
+
 /// The small always-on-top pill in the corner of the 3D area while
 /// sharing is up: a red dot, "Sharing · N", clickable.
 class ShareIndicator: public QWidget
@@ -537,6 +600,7 @@ public:
         : QDialog(parent)
     {
         setWindowTitle(tr("Sharing"));
+        setObjectName(QStringLiteral("sharePanel"));
         setAttribute(Qt::WA_DeleteOnClose, false);
         auto *layout = new QVBoxLayout(this);
 
@@ -553,6 +617,7 @@ public:
         layout->addLayout(urlRow);
 
         tree = new QTreeWidget(this);
+        tree->setObjectName(QStringLiteral("shareRoster"));
         tree->setColumnCount(6);
         tree->setHeaderLabels({tr("Client"), tr("Address"), tr("Document"),
                                tr("Connected"), tr("Access"), QString()});
@@ -572,13 +637,9 @@ public:
         // narrower.
         auto *inviteRow = new QHBoxLayout;
         inviteEdit = new QLineEdit(this);
-        inviteEdit->setPlaceholderText(tr("name@example.com"));
-        inviteEdit->setToolTip(tr(
-            "Invite a signed-in identity: the email the front door "
-            "verifies. The grant needs no token — the sign-in is the "
-            "invitation. Behind no sign-in door an identity grant "
-            "matches nobody."));
-        auto *inviteMode = new QComboBox(this);
+        inviteEdit->setObjectName(QStringLiteral("shareInvite"));
+        inviteMode = new QComboBox(this);
+        inviteMode->setObjectName(QStringLiteral("shareInviteMode"));
         inviteMode->addItem(tr("Can edit"));
         inviteMode->addItem(tr("View only"));
         inviteMode->addItem(tr("Full control"));
@@ -587,26 +648,59 @@ public:
                    "identity written out in full; on a pattern the grant "
                    "admits editors."), Qt::ToolTipRole);
         auto *inviteBtn = new QPushButton(tr("Invite"), this);
-        auto invite = [this, inviteMode]() {
+        inviteBtn->setObjectName(QStringLiteral("shareInviteButton"));
+        auto invite = [this]() {
             const QString id = inviteEdit->text().trimmed();
             if (id.isEmpty())
                 return;
             const int mode = inviteMode->currentIndex();
-            if (mode == 2 && !literalIdentity(id)) {
-                QMessageBox::warning(this, tr("Invite"),
-                    tr("Full control goes to one signed-in identity, "
-                       "written out in full -- not a pattern."));
-                return;
-            }
             ShareGrant g;
-            g.identity = id;
-            g.name = g.address = QStringLiteral("*");
-            g.access = mode == 2 ? 3 : mode;
+            if (signInDoor) {
+                if (mode == 2 && !literalIdentity(id)) {
+                    QMessageBox::warning(this, tr("Invite"),
+                        tr("Full control goes to one signed-in identity, "
+                           "written out in full -- not a pattern."));
+                    return;
+                }
+                g.identity = id;
+                g.name = g.address = QStringLiteral("*");
+                g.access = mode == 2 ? 3 : mode;
+            }
+            else {
+                // No door signs anyone in, so an identity grant would
+                // match nobody. What invites here is the share's token
+                // issued to one name (docs/ShareAccess.md sec 2.3): a
+                // grant with both, and a link that carries both.
+                if (shareToken.isEmpty()) {
+                    QMessageBox::warning(this, tr("Invite"),
+                        tr("A name invites nobody without a secret behind "
+                           "it. Share with a token, or through a sign-in "
+                           "door."));
+                    return;
+                }
+                if (!literalIdentity(id)) {
+                    QMessageBox::warning(this, tr("Invite"),
+                        tr("An invitation goes to one name, written out in "
+                           "full -- not a pattern."));
+                    return;
+                }
+                g.token = shareToken;
+                g.name = id;
+                g.identity = g.address = QStringLiteral("*");
+                g.access = mode == 1 ? 1 : 0;
+            }
             auto list = loadGrants();
-            list.push_back(g);
-            saveGrants(list);
-            pushGrants(list);
+            bool held = false;
+            for (const auto &e : list)
+                held = held || sameGrant(e, g);
+            if (!held) {
+                list.push_back(g);
+                saveGrants(list);
+                pushGrants(list);
+            }
             inviteEdit->clear();
+            if (!signInDoor)
+                copyLink(g);
             lastSig.clear();
             if (onChanged)
                 onChanged();
@@ -618,6 +712,23 @@ public:
         inviteRow->addWidget(inviteMode);
         inviteRow->addWidget(inviteBtn);
         layout->addLayout(inviteRow);
+        inviteNote = new QLabel(this);
+        inviteNote->setObjectName(QStringLiteral("shareInviteNote"));
+        inviteNote->setWordWrap(true);
+        inviteNote->hide();
+        layout->addWidget(inviteNote);
+        setDoor(true, QString());
+
+        // What a client may send (docs/ShareAccess.md sec 2.4). Read at
+        // each upload, so a change here holds from the next one.
+        auto *limitRow = new QHBoxLayout;
+        limitSpin = uploadLimitSpin(this);
+        connect(limitSpin, qOverload<int>(&QSpinBox::valueChanged), this,
+                [](int mb) { shareParams()->SetInt("UploadLimitMB", mb); });
+        limitRow->addWidget(new QLabel(tr("Clients may send files up to:"), this));
+        limitRow->addWidget(limitSpin);
+        limitRow->addStretch(1);
+        layout->addLayout(limitRow);
 
         auto *bottom = new QHBoxLayout;
         // A grant cannot be created by anyone connecting, so it needs
@@ -637,7 +748,48 @@ public:
         bottom->addStretch(1);
         bottom->addWidget(closeBtn);
         layout->addLayout(bottom);
-        resize(560, 300);
+        resize(560, 330);
+    }
+
+    /// The link for one person: the share's address with `token` and
+    /// `client` in it. Empty while the share has no address to give.
+    std::function<QString(const QString &token, const QString &client)> linkFor;
+
+    /// What the share's door is: whether a sign-in stands in front, and
+    /// the token a plain link carries. The Invite row follows it -- an
+    /// identity behind a sign-in door, a name with the token behind none.
+    void setDoor(bool signIn, const QString &token)
+    {
+        shareToken = token;
+        if (doorKnown && signIn == signInDoor)
+            return;
+        doorKnown = true;
+        signInDoor = signIn;
+        if (signIn) {
+            inviteEdit->setPlaceholderText(tr("name@example.com"));
+            inviteEdit->setToolTip(tr(
+                "Invite a signed-in identity: the email the front door "
+                "verifies. The grant needs no token -- the sign-in is the "
+                "invitation."));
+        }
+        else {
+            inviteEdit->setPlaceholderText(tr("a name"));
+            inviteEdit->setToolTip(tr(
+                "Invite one person by name. No door signs anyone in here, "
+                "so the invitation is the share's token issued to that "
+                "name: a grant with both, and a link that carries both, "
+                "put on the clipboard. Whoever opens that link may edit "
+                "and is recorded under the name as invited; everyone else "
+                "holding the token may look.\n\n"
+                "A name is not a secret: someone who holds the plain link "
+                "and gives this name gets the same. For a boundary, share "
+                "through a sign-in door."));
+        }
+        // Full control is for a signed-in identity (docs/ShareAccess.md
+        // sec 2.2); a name somebody typed never gets it.
+        setItemEnabled(inviteMode, 2, signIn);
+        if (!signIn && inviteMode->currentIndex() == 2)
+            inviteMode->setCurrentIndex(0);
     }
 
     void refresh(const QString &url,
@@ -645,6 +797,13 @@ public:
                  const std::vector<ShareGrant> &grants)
     {
         urlEdit->setText(url);
+        // The limit as it holds now: a script or another dialog may have
+        // moved the preference.
+        const int limit = int(SceneRequests::uploadLimit() / (1024 * 1024));
+        if (limitSpin->value() != limit && !limitSpin->hasFocus()) {
+            QSignalBlocker quiet(limitSpin);
+            limitSpin->setValue(limit);
+        }
         // Rebuild only when membership, a name, an access or the grant
         // list changed — a rebuild every roster tick would yank the
         // combo out from under the pointer. Durations update in place.
@@ -892,6 +1051,18 @@ public:
                 });
                 tree->setItemWidget(item, 4, mode);
 
+                // An invitation issued to one name has a link of its own:
+                // the token and the name both ride in it.
+                if (!g.token.isEmpty() && literalIdentity(g.name)) {
+                    auto *link = new QPushButton(tr("Link"), actions);
+                    link->setToolTip(tr(
+                        "Copy this person's link: the share's address "
+                        "with this invitation's token and their name."));
+                    connect(link, &QPushButton::clicked, this,
+                            [this, saved = g]() { copyLink(saved); });
+                    row->addWidget(link);
+                }
+
                 auto *toggle = new QPushButton(
                     g.enabled ? tr("Disable") : tr("Enable"), actions);
                 toggle->setToolTip(tr(
@@ -1016,11 +1187,32 @@ private:
             onChanged();
     }
 
-public:
+    /// Put the link of a name invitation on the clipboard, and say so.
+    void copyLink(const ShareGrant &g)
+    {
+        const QString link = linkFor ? linkFor(g.token, g.name) : QString();
+        if (link.isEmpty()) {
+            inviteNote->setText(tr(
+                "%1 is invited. The share has no address yet; copy the "
+                "link from the grant's row once it has.").arg(g.name));
+        }
+        else {
+            QApplication::clipboard()->setText(link);
+            inviteNote->setText(tr(
+                "The link for %1 is on the clipboard. It lets its holder "
+                "edit under that name.").arg(g.name));
+        }
+        inviteNote->show();
+    }
 
-private:
     QLineEdit *urlEdit = nullptr;
     QLineEdit *inviteEdit = nullptr;
+    QComboBox *inviteMode = nullptr;
+    QLabel *inviteNote = nullptr;
+    QSpinBox *limitSpin = nullptr;
+    bool doorKnown = false;
+    bool signInDoor = true;
+    QString shareToken;
     QTreeWidget *tree = nullptr;
     std::vector<std::pair<uint64_t, bool>> lastSig;
 };
@@ -1132,17 +1324,27 @@ public:
     /// the viewer page is wherever fcviewer.html is hosted, and with
     /// none configured the query tail is shown alone, ready to paste
     /// after one.
-    QString shareUrl() const
+    ///
+    /// With `client`, the link of one person: it says that name in the
+    /// viewer's hello, and carries `invitation` -- the token of the grant
+    /// that invites them -- where the plain link carries the share's.
+    QString shareUrl(const QString &invitation = QString(),
+                     const QString &client = QString()) const
     {
+        const QString &secret = invitation.isEmpty() ? token : invitation;
         QString query;
         if (!docs.empty())
             query = QStringLiteral("doc=%1").arg(
                 QString::fromUtf8(QUrl::toPercentEncoding(
                     QString::fromUtf8(docs.front()->getName()))));
-        if (!token.isEmpty())
+        if (!secret.isEmpty())
             query += (query.isEmpty() ? QStringLiteral("token=%1")
                                       : QStringLiteral("&token=%1"))
-                .arg(token);
+                .arg(secret);
+        if (!client.isEmpty())
+            query += (query.isEmpty() ? QStringLiteral("client=%1")
+                                      : QStringLiteral("&client=%1"))
+                .arg(QString::fromUtf8(QUrl::toPercentEncoding(client)));
 
         if (mode != FrontDoor::Lan) {
             if (publicOrigin.isEmpty())
@@ -1212,8 +1414,12 @@ void ShareDocumentManager::openShareDialog()
     }
 
     auto hGrp = shareParams();
+    // Before anything below names a header of its own.
+    const QString presetHeader =
+        QString::fromUtf8(presetIdentityHeader().c_str());
     QDialog dlg(getMainWindow());
     dlg.setWindowTitle(QObject::tr("Share document"));
+    dlg.setObjectName(QStringLiteral("shareStartDialog"));
     auto *layout = new QVBoxLayout(&dlg);
     auto *form = new QFormLayout;
     layout->addLayout(form);
@@ -1297,6 +1503,23 @@ void ShareDocumentManager::openShareDialog()
         "the grants authorize."));
     form->addRow(QString(), identityBox);
 
+    auto *headerEdit = new QLineEdit(&dlg);
+    headerEdit->setObjectName(QStringLiteral("shareIdentityHeader"));
+    headerEdit->setPlaceholderText(presetHeader.isEmpty()
+        ? QStringLiteral("Cf-Access-Authenticated-User-Email, "
+                         "X-Auth-Request-Email, X-Forwarded-Email")
+        : presetHeader);
+    headerEdit->setToolTip(QObject::tr(
+        "The request header in which the door says who signed in. Left "
+        "empty, the ones Cloudflare Access, oauth2-proxy and ngrok use "
+        "are read. Name another for a door with a header of its own -- "
+        "Tailscale-User-Login, Remote-Email, X-authentik-email -- and "
+        "that one alone is read.\n\n"
+        "A header is believed only when the request arrives from this "
+        "machine, which is where the door's proxy or tunnel runs."));
+    auto *headerLabel = new QLabel(QObject::tr("Identity header:"), &dlg);
+    form->addRow(headerLabel, headerEdit);
+
     auto *tokenRow = new QHBoxLayout;
     auto *tokenEdit = new QLineEdit(&dlg);
     // The token this machine last shared with, so the links already in
@@ -1328,6 +1551,12 @@ void ShareDocumentManager::openShareDialog()
         "Tunnel doors are proxies by construction, so they set this "
         "themselves."));
     form->addRow(QString(), proxyBox);
+
+    // What a client may send (docs/ShareAccess.md sec 2.4); the sharing
+    // panel has the same control once the share is up.
+    auto *limitSpin = uploadLimitSpin(&dlg);
+    const int limitWas = limitSpin->value();
+    form->addRow(QObject::tr("Clients may send up to:"), limitSpin);
 
     auto *urlPreview = new QLineEdit(&dlg);
     urlPreview->setReadOnly(true);
@@ -1420,6 +1649,9 @@ void ShareDocumentManager::openShareDialog()
         identityBox->setVisible(own);
         originEdit->setText(door.publicOrigin);
         identityBox->setChecked(own && door.identityDoor);
+        headerEdit->setText(door.identityHeader);
+        headerLabel->setVisible(own && door.identityDoor);
+        headerEdit->setVisible(own && door.identityDoor);
         // A tunnel door is a local proxy by construction: the client
         // address and any identity arrive in headers, from loopback.
         proxyBox->setEnabled(lan);
@@ -1447,7 +1679,16 @@ void ShareDocumentManager::openShareDialog()
     QObject::connect(identityBox, &QCheckBox::toggled, &dlg,
                      [&](bool on) {
                          currentDoor().identityDoor = on;
+                         const bool own = currentDoor().mode == FrontDoor::Own;
+                         headerLabel->setVisible(own && on);
+                         headerEdit->setVisible(own && on);
                          updatePreview();
+                         dlg.adjustSize();
+                     });
+    QObject::connect(headerEdit, &QLineEdit::textChanged, &dlg,
+                     [&]() {
+                         currentDoor().identityHeader =
+                             headerName(headerEdit->text());
                      });
     applyDoor();
     layout->addWidget(buttons);
@@ -1474,6 +1715,8 @@ void ShareDocumentManager::openShareDialog()
     // force it on for the session without rewriting the preference.
     if (door.mode == FrontDoor::Lan)
         hGrp->SetBool("TrustProxy", proxyBox->isChecked());
+    if (limitSpin->isEnabled() && limitSpin->value() != limitWas)
+        hGrp->SetInt("UploadLimitMB", limitSpin->value());
     saveDoors(doors);
     // Remembered so the next share reuses it and the links people
     // already hold keep working across a restart. Sharing is never
@@ -1519,6 +1762,17 @@ void ShareDocumentManager::openShareDialog()
     auto &server = Render::SceneStreamServer::instance();
     server.setTrustProxy(door.mode != FrontDoor::Lan
                          || proxyBox->isChecked());
+    // Only a door that signs people in is believed about who they are. A
+    // tunnel or a proxy that just carries traffic passes on whatever
+    // headers the client wrote, and trusting the proxy for the address
+    // must not make a typed `X-Forwarded-Email` a verified identity.
+    server.setIdentityDoor(identityDoor);
+    // The header the door says who signed in with: this door's own, else
+    // whatever FC_SERVE_IDENTITY_HEADER preset -- none, for the ones the
+    // server knows.
+    server.setIdentityHeader(identityDoor && !door.identityHeader.isEmpty()
+        ? std::string(door.identityHeader.toUtf8().constData())
+        : presetIdentityHeader());
     // The door first: it must gate the very first request the
     // listener answers, not arrive after it is up. The token is still
     // set for the link preview and as what the hello vocabulary
@@ -1529,6 +1783,7 @@ void ShareDocumentManager::openShareDialog()
     if (!source) {
         server.setToken(std::string());
         server.setGrants({});
+        server.setIdentityDoor(true);
         QMessageBox::critical(getMainWindow(), QObject::tr("Share document"),
                               QObject::tr("The document could not be served. "
                                           "Sharing needs a render engine "
@@ -1540,6 +1795,7 @@ void ShareDocumentManager::openShareDialog()
         SceneServeSource::unserve(guiDoc);
         server.setToken(std::string());
         server.setGrants({});
+        server.setIdentityDoor(true);
         QMessageBox::critical(getMainWindow(), QObject::tr("Share document"),
                               QObject::tr("The scene server could not "
                                           "listen on port %1.").arg(port));
@@ -1597,6 +1853,10 @@ void ShareDocumentManager::showPanel()
         pimpl->panel->onChanged = []() {
             ShareDocumentManager::instance().refreshUi();
         };
+        pimpl->panel->linkFor = [this](const QString &token,
+                                       const QString &client) {
+            return pimpl->shareUrl(token, client);
+        };
     }
     // Show first: refreshUi only fills a visible panel, so the other
     // order opens it with an empty link until the next roster tick.
@@ -1619,6 +1879,8 @@ void ShareDocumentManager::stopSharing()
         pimpl->publicOrigin.clear();
     server.stop();
     server.setToken(std::string());
+    // Back to what a scripted serve expects: its own front door, if any.
+    server.setIdentityDoor(true);
     // The live list dies with the share — easings and all; the next
     // start seeds a fresh one from what is written down.
     server.setGrants({});
@@ -1679,6 +1941,7 @@ void ShareDocumentManager::refreshUi()
             e.liveId = g.id;
             grants.push_back(e);
         }
+        pimpl->panel->setDoor(pimpl->identityDoor, pimpl->token);
         pimpl->panel->refresh(url, clients, grants);
     }
 }

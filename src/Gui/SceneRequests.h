@@ -78,6 +78,10 @@ GuiExport fastsignals::signal<void()>& signalChanged();
  * once the bytes are base64: ceiling().
  */
 GuiExport qint64 uploadLimit();
+/// Whether the preference is what decides: false while `FC_SERVE_UPLOAD_MB`
+/// or setUploadLimit() holds the limit, when a control for the preference
+/// would change nothing.
+GuiExport bool uploadLimitIsPreference();
 /// Override the limit, in bytes; 0 goes back to the preference.
 GuiExport void setUploadLimit(qint64 bytes);
 /// What no setting raises the limit past.
