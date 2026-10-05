@@ -279,6 +279,7 @@ size_t diffFeed(const char *what, const DrawCallList &a,
 /// mismatch names the block it is in. Listed once, used twice.
 #define FC_SCENEDIFF_CONFIGS(X)                                             \
     X(background) X(hlconfig) X(secconf) X(aoconf) X(pbrconf)               \
+    X(cavityconf) X(matcapconf)                                             \
     X(bumpconf) X(lightconf) X(volconf) X(waterconf) X(bloomconf)           \
     X(outconf)                                                              \
     X(debugconf) X(usershaderconf) X(preselconf) X(selconf)                 \

@@ -127,6 +127,8 @@ void BGFXRenderer::Private::makeSnapshot(Render::SceneSnapshot &snap,
     snap.hlconfig = hlconfig;
     snap.secconf = secconf;
     snap.aoconf = aoconf;
+    snap.cavityconf = cavityconf;
+    snap.matcapconf = matcapconf;
     snap.pbrconf = pbrconf;
     snap.bumpconf = bumpconf;
     snap.lightconf = lightconf;

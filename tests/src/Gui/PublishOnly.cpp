@@ -411,6 +411,55 @@ TEST(PublishOnly, aCameraMoveDoesNotRepublish)
     EXPECT_NE(changed, ~uint64_t(0));
 }
 
+TEST(PublishOnly, theFramesMatcapAndCavityArePublished)
+{
+    // The snapshot has carried both since versions 42 and 43, and the
+    // viewer applies what it reads -- but the publish never filled them
+    // in, so a streamed viewer drew every matcap view lit, and cavity
+    // with the strengths of a default rather than the view's.
+    const int port = servePort();
+    ASSERT_GT(port, 0);
+
+    auto r = makePublisher();
+    ASSERT_TRUE(r);
+    r->setScene(makeScene());
+    Render::MatcapConfig matcap;
+    matcap.enabled = true;
+    matcap.preset = 4;
+    matcap.tint = 0.25f;
+    matcap.stripes = 20;
+    r->setMatcapConfig(matcap);
+    Render::CavityConfig cavity;
+    cavity.enabled = true;
+    cavity.valley = 0.7f;
+    cavity.ridge = 0.2f;
+    cavity.radius = 5.f;
+    r->setCavityConfig(cavity);
+    ASSERT_TRUE(r->publish(QColor(32, 32, 32), kIdentity, kIdentity, 1280, 720));
+
+    HttpReply reply;
+    for (int i = 0; i < 200 && !reply.ok; ++i) {
+        reply = httpGet(port, "/scene?v=0");
+        if (!reply.ok) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        }
+    }
+    ASSERT_TRUE(reply.ok) << "no answer from the scene server";
+    ASSERT_GT(reply.body.size(), 8u);
+    Render::SceneSnapshot back;
+    ASSERT_TRUE(Render::loadSceneSnapshot(
+            reinterpret_cast<const uint8_t*>(reply.body.data()) + 8,
+            reply.body.size() - 8, back));
+    EXPECT_TRUE(back.matcapconf == matcap)
+        << "matcap on the wire: enabled " << back.matcapconf.enabled
+        << ", preset " << back.matcapconf.preset << ", tint "
+        << back.matcapconf.tint << ", stripes " << back.matcapconf.stripes;
+    EXPECT_TRUE(back.cavityconf == cavity)
+        << "cavity on the wire: enabled " << back.cavityconf.enabled
+        << ", valley " << back.cavityconf.valley << ", ridge "
+        << back.cavityconf.ridge << ", radius " << back.cavityconf.radius;
+}
+
 TEST(PublishOnly, noGraphicsDeviceIsCreated)
 {
     // Runs after the publish above (gtest runs a file's tests in

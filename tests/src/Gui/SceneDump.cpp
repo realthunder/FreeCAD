@@ -508,6 +508,25 @@ TEST(SceneDump, theOutputTransformCrossesTheWire)
     }
 }
 
+/// The matcap crosses the wire with the zebra preset's stripe count
+/// (v87): a viewer without it striped every zebra view at the default
+/// count, whatever the view asked for.
+TEST(SceneDump, theMatcapCrossesTheWire)
+{
+    Render::SceneSnapshot snap = makeScene();
+    snap.matcapconf.enabled = true;
+    snap.matcapconf.preset = 4;
+    snap.matcapconf.tint = 0.25f;
+    snap.matcapconf.stripes = 20;
+    std::vector<uint8_t> payload;
+    ASSERT_TRUE(Render::saveSceneSnapshot(payload, snap));
+    Render::SceneSnapshot loaded;
+    ASSERT_TRUE(Render::loadSceneSnapshot(payload.data(), payload.size(),
+                                          loaded));
+    EXPECT_TRUE(loaded.matcapconf == snap.matcapconf);
+    EXPECT_EQ(loaded.matcapconf.stripes, 20);
+}
+
 /// A float texture payload crosses the wire as floats (v63).
 ///
 /// This is what an HDR environment is: the sky is thousands of times

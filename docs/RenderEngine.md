@@ -399,6 +399,13 @@ the surface does not, so lower it before judging a fine pattern. And a
 draw with a generated (MaterialX) material does not take a matcap at
 all, zebra included -- it is shaded as the document it carries says.
 
+A streamed viewer shades with the host view's matcap, and takes its
+cavity strengths and radius (the cavity SWITCH stays the viewer's own).
+The snapshot had carried both blocks since versions 42 and 43 and the
+viewer applied what it read, but the publish did not fill them in until
+2026-10-05, so a browser drew every matcap view lit;
+`PublishOnly.theFramesMatcapAndCavityArePublished` holds that now.
+
 `tests/gui/matcap-zebra.py` holds it: the number of stripes across a
 sphere doubles from 8 to 16, pixel pairs to either side of a tangent
 seam carry the same tone, and about half of those across a creased seam
