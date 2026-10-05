@@ -1669,7 +1669,7 @@ void Document::_commitTransaction(bool notify)
             TransactionMeasure::onCommit(*this, *d->activeUndoTransaction);
         const bool implicit = d->activeUndoTransaction->Implicit;
         bool snapshotDue = false;
-        if (auto log = getTransactionLog()) {
+        if (auto log = d->closing ? nullptr : getTransactionLog()) {
             const std::string& kind = d->activeUndoTransaction->LogKind;
             d->activeUndoTransaction->LogSeq =
                 log->onCommit(*d->activeUndoTransaction,
@@ -2247,6 +2247,14 @@ Document::~Document()
     Console().Log("-App::Document: %s %p\n",getName(), this);
 #endif
 
+    // A transaction still open here is committed by clearUndos(), and is
+    // not logged. By now the Gui has deleted its half of the document
+    // (signalDeleteDocument), and what that teardown wrote -- to a view
+    // provider, with the log on -- opened a transaction naming one: a
+    // record of freed memory, which the log read to say what the op was
+    // of, and crashed. Nothing reads the log of a document that is going;
+    // the transaction itself is destroyed as it always was.
+    d->closing = true;
     try {
         clearUndos();
     }

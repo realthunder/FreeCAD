@@ -162,6 +162,9 @@ struct DocumentP
     /// The scratch document a restore to a version reads the version into
     /// (docs/TransactionLog.md sec 24.5): it keeps no log of its own.
     bool noLog {false};
+    /// The document is being destroyed: what is still open is not logged
+    /// (Document::~Document).
+    bool closing {false};
     /// A crash recovery rebuilding the document from its log (sec 25.2):
     /// what it writes is in the log already, and is no transaction.
     bool replaying {false};

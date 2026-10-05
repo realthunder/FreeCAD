@@ -13539,3 +13539,34 @@ unfrozen; 6 expected failures; +1), ctest 875/875, and the GUI checks RC
 15, BC 27, VC 18, PC 28, FC 16, VW 14, MC 28, the two-document check 24,
 the tree check 19, the author check 36, the import check 39 and the
 request check 22 (new).
+
+### 30.24 Seen on the way: a transaction open when its document goes (2026-10-05)
+
+Not S.h's. Running the panel mirror's gate over the refactored upload,
+`SandboxPanelMirror.test_cam_op_panel` took the application down with a
+SIGSEGV -- in `describe()`, under `TransactionLog::onCommit`, under
+`Document::clearUndos`, under `Document::~Document`. The lines are of
+July and September; the gate had not been run on this branch since the
+log was made the default.
+
+**What happened.** `Application::closeDocument` commits the implicit
+transaction, then emits `signalDeleteDocument`, at which the Gui deletes
+its half of the document. What that teardown writes to a view provider
+opens, with the log on, a new implicit transaction that names the view
+provider (24.9) -- which is then freed. The document's destructor
+commits what is still open, and the log reads each record's container to
+say what its op is of: freed memory. CAM closes a temporary document for
+each tool shape it reads, which is why a CAM job found it.
+
+**Fixed** in the destructor: a transaction still open when the document
+is destroyed is committed as before and not logged
+(`DocumentP::closing`). Nothing reads the log of a document that is
+going, and what is left open there is the teardown's own or a transaction
+nobody committed. The transaction is destroyed as it always was; with the
+log off this path never read the records.
+
+**Tests.** The gate's own case: it crashed, and passes --
+`SandboxPanelMirror` 8 of 8 with `SandboxToolBarMirror`, 14 OK.
+
+**Gates**, frozen and unfrozen each: Python 3008 OK, ctest 875/875, the
+twelve GUI checks unchanged.
