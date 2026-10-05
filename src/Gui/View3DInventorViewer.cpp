@@ -2977,11 +2977,16 @@ void View3DInventorViewer::setObjectVisibilities(std::vector<VisibilityEntry> &&
         onVisibilityChanged();
 }
 
-bool View3DInventorViewer::setEditVisibilities(const std::vector<VisibilityEntry> &entries)
+bool View3DInventorViewer::canSetEditVisibilities() const
 {
     // The table is read only where the render-cache manager is (mode 3);
     // modes 0-2 have no per-view visibility at all.
-    if (!getRenderCacheManager())
+    return getRenderCacheManager() != nullptr;
+}
+
+bool View3DInventorViewer::setEditVisibilities(const std::vector<VisibilityEntry> &entries)
+{
+    if (!canSetEditVisibilities())
         return false;
     if (_pimpl->visibility.setTransient(std::vector<VisibilityEntry>(entries)))
         onVisibilityChanged();

@@ -246,6 +246,10 @@ void ViewProviderAddSub::updatePreviewTransform(const Part::TopoShape &shape)
 }
 
 namespace {
+/// Whose the preview's swaps are, among the session's
+/// (Gui::EditingRoot::setVisibilitySwaps)
+const char PreviewSwaps[] = "PartDesign.Preview";
+
 Gui::VisibilityEntry visibilityEntry(const App::SubObjectT &objT, bool visible)
 {
     Gui::VisibilityEntry entry;
@@ -303,7 +307,7 @@ bool ViewProviderAddSub::showPreviewInSession(const App::SubObjectT &occurrence)
     if (!resolvePreview(occurrence, world, entries, baseT))
         return false;
     // Refused by a view with no table of its own, and then by all
-    if (!root->setVisibilitySwaps(std::move(entries)))
+    if (!root->setVisibilitySwaps(PreviewSwaps, std::move(entries)))
         return false;
     root->addSessionNode(previewGroup, world);
     previewOccurrence = occurrence;
@@ -327,7 +331,7 @@ bool ViewProviderAddSub::dropPreviewFromSession()
         Gui::EditingRoot *root = gdoc->editingRoot();
         if (root->hasSessionNode(previewGroup)) {
             root->removeSessionNode(previewGroup);
-            root->clearVisibilitySwaps();
+            root->clearVisibilitySwaps(PreviewSwaps);
         }
     }
     return true;

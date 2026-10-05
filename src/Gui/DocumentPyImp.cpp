@@ -174,6 +174,49 @@ PyObject* DocumentPy::resetEdit(PyObject *args)
     Py_Return;
 }
 
+PyObject* DocumentPy::canSetEditVisibility(PyObject *args)
+{
+    if (!PyArg_ParseTuple(args, ""))
+        return nullptr;
+    return Py::new_reference_to(Py::Boolean(getDocumentPtr()->canSetEditVisibility()));
+}
+
+PyObject* DocumentPy::setEditVisibility(PyObject *args)
+{
+    PyObject *pyObj;
+    PyObject *pyVisible;
+    const char *subname = "";
+    const char *owner = "TempoVis";
+    if (!PyArg_ParseTuple(args, "O!O|ss", &App::DocumentObjectPy::Type, &pyObj,
+                          &pyVisible, &subname, &owner))
+        return nullptr;
+    PY_TRY {
+        auto obj = static_cast<App::DocumentObjectPy*>(pyObj)->getDocumentObjectPtr();
+        const int visible = pyVisible == Py_None ? -1 : (PyObject_IsTrue(pyVisible) ? 1 : 0);
+        return Py::new_reference_to(Py::Boolean(
+                getDocumentPtr()->setEditVisibility(owner, obj, subname, visible)));
+    }
+    PY_CATCH
+}
+
+PyObject* DocumentPy::getEditVisibility(PyObject *args)
+{
+    PyObject *pyObj;
+    const char *subname = "";
+    const char *owner = "TempoVis";
+    if (!PyArg_ParseTuple(args, "O!|ss", &App::DocumentObjectPy::Type, &pyObj,
+                          &subname, &owner))
+        return nullptr;
+    PY_TRY {
+        auto obj = static_cast<App::DocumentObjectPy*>(pyObj)->getDocumentObjectPtr();
+        const int visible = getDocumentPtr()->getEditVisibility(owner, obj, subname);
+        if (visible < 0)
+            Py_Return;
+        return Py::new_reference_to(Py::Boolean(visible != 0));
+    }
+    PY_CATCH
+}
+
 PyObject* DocumentPy::addAnnotation(PyObject *args)
 {
     char *psAnnoName,*psFileName,*psModName = nullptr;

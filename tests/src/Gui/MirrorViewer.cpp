@@ -1484,10 +1484,30 @@ TEST_F(SharedEditingRootTest, theSessionsEndTakesItsNodesAndSwaps)
     std::vector<Gui::VisibilityEntry> entries(1);
     entries[0].doc = "Doc";
     entries[0].obj = "Obj";
-    EXPECT_TRUE(root->setVisibilitySwaps(std::move(entries)));
-    EXPECT_EQ(root->visibilitySwaps().size(), 1U);
+    EXPECT_TRUE(root->setVisibilitySwaps("one", std::move(entries)));
+    ASSERT_NE(root->visibilitySwaps("one"), nullptr);
+    EXPECT_EQ(root->visibilitySwaps("one")->size(), 1U);
+    // Each owner swaps and takes back what is its own
+    std::vector<Gui::VisibilityEntry> others(2);
+    others[0].doc = others[1].doc = "Doc";
+    others[0].obj = "A";
+    others[1].obj = "B";
+    EXPECT_TRUE(root->setVisibilitySwaps("two", std::move(others)));
+    EXPECT_EQ(root->visibilitySwaps("two")->size(), 2U);
+    root->clearVisibilitySwaps("one");
+    EXPECT_EQ(root->visibilitySwaps("one"), nullptr);
+    ASSERT_NE(root->visibilitySwaps("two"), nullptr);
+    EXPECT_EQ(root->visibilitySwaps("two")->size(), 2U);
+    // An empty set is a take-back
+    EXPECT_TRUE(root->setVisibilitySwaps("two", {}));
+    EXPECT_FALSE(root->hasVisibilitySwaps());
+
+    std::vector<Gui::VisibilityEntry> again(1);
+    again[0].doc = "Doc";
+    again[0].obj = "Obj";
+    EXPECT_TRUE(root->setVisibilitySwaps("one", std::move(again)));
     root->endSession();
-    EXPECT_TRUE(root->visibilitySwaps().empty());
+    EXPECT_FALSE(root->hasVisibilitySwaps());
 }
 
 /// A view with no visibility table of its own -- these mirrors are built
@@ -1500,8 +1520,9 @@ TEST_F(SharedEditingRootTest, swapsAreRefusedByAViewWithNoTable)
     std::vector<Gui::VisibilityEntry> entries(1);
     entries[0].doc = "Doc";
     entries[0].obj = "Obj";
-    EXPECT_FALSE(root->setVisibilitySwaps(std::move(entries)));
-    EXPECT_TRUE(root->visibilitySwaps().empty());
+    EXPECT_FALSE(mirror->canSetEditVisibilities());
+    EXPECT_FALSE(root->setVisibilitySwaps("one", std::move(entries)));
+    EXPECT_FALSE(root->hasVisibilitySwaps());
 }
 
 TEST_F(MirrorViewerTest, theModifiersAreThisClientsOwn)

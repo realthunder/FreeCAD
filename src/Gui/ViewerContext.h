@@ -28,6 +28,7 @@
 #include <Inventor/nodes/SoSeparator.h>
 
 #include <memory>
+#include <string>
 #include <vector>
 
 #include <map>
@@ -347,23 +348,36 @@ public:
      * to write Visibility, which is document state: every view changed,
      * and every served client's. These are the same swaps as entries of
      * each session view's own visibility table, transient like the hide
-     * above and after it in the table: path entries, a hide or a show
-     * each. A view joining later takes them on attach and drops them on
-     * detach; they end with the session (endSession) at the latest.
+     * above and after it in the table: entries, a hide or a show each. A
+     * view joining later takes them on attach and drops them on detach;
+     * they end with the session (endSession) at the latest.
+     *
+     * Kept per OWNER, a name: the PartDesign preview and TempoVis each
+     * swap what is theirs and take back only that. Between two entries
+     * that both name a draw the table's own rule decides, whoever owns
+     * them: the longer key -- one occurrence ahead of the object wherever
+     * it is drawn -- and, between equals, the earlier, the owners' going
+     * in by the order of their names.
      */
     //@{
-    /** Replace the session's swaps, in every view of the session.
+    /** Replace \a owner's swaps, in every view of the session.
      *
-     * False, and none in force anywhere, when some view cannot take them
-     * (render-cache modes 0-2, which have no per-view table): the caller
-     * falls back to document Visibility.
+     * False, and none of that owner's in force anywhere, when some view
+     * cannot take them (render-cache modes 0-2, which have no per-view
+     * table): the caller falls back to document Visibility. With no view
+     * attached yet -- an edit mode swapping while it starts, before the
+     * session's views bind -- they are kept for the views that attach;
+     * whether those will take them is ViewerContext::
+     * canSetEditVisibilities, which the caller asks first.
      */
-    bool setVisibilitySwaps(std::vector<VisibilityEntry>&& entries);
-    /// Drop them. Idempotent.
-    void clearVisibilitySwaps();
-    const std::vector<VisibilityEntry>& visibilitySwaps() const
+    bool setVisibilitySwaps(const std::string& owner, std::vector<VisibilityEntry>&& entries);
+    /// Drop \a owner's. Idempotent.
+    void clearVisibilitySwaps(const std::string& owner);
+    /// \a owner's swaps, or null when it has none.
+    const std::vector<VisibilityEntry>* visibilitySwaps(const std::string& owner) const;
+    bool hasVisibilitySwaps() const
     {
-        return swaps;
+        return !swaps.empty();
     }
     //@}
 
@@ -434,7 +448,7 @@ private:
     unsigned held {0};
     bool shared {true};
     std::unique_ptr<VisibilityEntry> editHide;
-    std::vector<VisibilityEntry> swaps;
+    std::map<std::string, std::vector<VisibilityEntry>> swaps;
     /// Children 1..N of the root, after the transform and ahead of the
     /// edit's own geometry.
     std::vector<SessionNode> sessionNodes;
@@ -708,6 +722,10 @@ public:
      * answers.
      */
     virtual bool setEditVisibilities(const std::vector<VisibilityEntry>& entries);
+    /// Whether setEditVisibilities would take entries: whether this view
+    /// has a visibility table of its own. Asked before a session's views
+    /// are bound, when there is nobody yet to refuse.
+    virtual bool canSetEditVisibilities() const;
     void setEditingTransform(const Base::Matrix4D& mat);
     /** The root this view shows the edit through.
      *

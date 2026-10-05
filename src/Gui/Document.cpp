@@ -726,8 +726,17 @@ bool Document::setEdit(Gui::ViewProvider* p, int ModNum, const char *subname)
         guard2(App::ObjEditing, sobj);
 
     d->_editMode = ModNum;
+    // What a session holds for its views can be put there from here on --
+    // an edit mode's visibility automation runs as it starts, before any
+    // view is bound (setEditVisibility) -- so nothing of an earlier one
+    // may be left to meet it.
+    if (d->_editRoot)
+        d->_editRoot->endSession();
     d->_editViewProvider = svp->startEditing(ModNum);
     if(!d->_editViewProvider) {
+        // Refused, and whatever it swapped on the way goes with it
+        if (d->_editRoot)
+            d->_editRoot->endSession();
         d->_editViewProviderParent = nullptr;
         d->_editObjs.clear();
         d->_editingObject = nullptr;
@@ -814,6 +823,83 @@ EditingRoot *Document::editingRoot() {
     return d->_editRoot.get();
 }
 
+bool Document::canSetEditVisibility() const
+{
+    if (Application::Instance->editDocument() != this)
+        return false;
+    // The view the session runs in, else the one setEdit is about to
+    // start it in: found the way setEdit finds it.
+    ViewerContext *viewer = d->_editingViewer;
+    if (!viewer)
+        viewer = ViewerContext::current();
+    if (!viewer) {
+        if (auto view3d = dynamic_cast<View3DInventor *>(getActiveView()))
+            viewer = view3d->getViewer();
+    }
+    return viewer && viewer->canSetEditVisibilities();
+}
+
+namespace {
+bool sameEntry(const VisibilityEntry &entry, const App::DocumentObject *obj,
+               const std::string &subname)
+{
+    return entry.obj == obj->getNameInDocument()
+        && entry.doc == obj->getDocument()->getName()
+        && entry.subname == subname;
+}
+}
+
+bool Document::setEditVisibility(const char *owner, const App::DocumentObject *obj,
+                                 const char *subname, int visible)
+{
+    if (!owner || !obj || !obj->isAttachedToDocument())
+        return false;
+    const std::string sub = subname ? subname : "";
+    EditingRoot *root = const_cast<Document *>(this)->editingRoot();
+    std::vector<VisibilityEntry> entries;
+    if (auto current = root->visibilitySwaps(owner))
+        entries = *current;
+    auto it = std::find_if(entries.begin(), entries.end(),
+            [&](const VisibilityEntry &entry) { return sameEntry(entry, obj, sub); });
+    if (visible < 0) {
+        // Taking back needs no view to agree, and is all that is left to
+        // do once the session has ended and taken the entries with it.
+        if (it == entries.end())
+            return true;
+        entries.erase(it);
+        root->setVisibilitySwaps(owner, std::move(entries));
+        return true;
+    }
+    if (!canSetEditVisibility())
+        return false;
+    if (it == entries.end()) {
+        VisibilityEntry entry;
+        entry.doc = obj->getDocument()->getName();
+        entry.obj = obj->getNameInDocument();
+        entry.subname = sub;
+        entry.rooted = !sub.empty();
+        entries.push_back(std::move(entry));
+        it = entries.end() - 1;
+    }
+    it->visible = visible != 0;
+    return root->setVisibilitySwaps(owner, std::move(entries));
+}
+
+int Document::getEditVisibility(const char *owner, const App::DocumentObject *obj,
+                                const char *subname) const
+{
+    if (!owner || !obj || !obj->isAttachedToDocument() || !d->_editRoot)
+        return -1;
+    const std::string sub = subname ? subname : "";
+    if (auto entries = d->_editRoot->visibilitySwaps(owner)) {
+        for (const auto &entry : *entries) {
+            if (sameEntry(entry, obj, sub))
+                return entry.visible ? 1 : 0;
+        }
+    }
+    return -1;
+}
+
 void Document::resetEdit() {
     bool vpIsNotNull = d->_editViewProvider != nullptr;
     bool vpHasChanged = d->_editViewProvider != d->_editViewProviderPrevious;
@@ -885,6 +971,10 @@ void Document::_resetEdit()
         d->_editWantsRestorePrevious = d->_editWantsRestore;
         d->_editWantsRestore = false;
         d->_editViewProvider = nullptr;
+        // The initiating view ended the session as it left; an edit that
+        // never had one -- no 3D view to start in -- ends here.
+        if (d->_editRoot)
+            d->_editRoot->endSession();
 
         // The logic below is not necessary anymore, because this method is
         // changed into a private one,  _resetEdit(). And the exposed

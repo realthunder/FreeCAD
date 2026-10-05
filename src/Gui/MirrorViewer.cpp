@@ -955,6 +955,11 @@ bool MirrorViewer::setObjectVisibilities(std::vector<VisibilityEntry>&& entries)
     return pimpl->visibility.set(std::move(entries));
 }
 
+bool MirrorViewer::canSetEditVisibilities() const
+{
+    return pimpl->cacheManager != nullptr;
+}
+
 bool MirrorViewer::setEditVisibilities(const std::vector<VisibilityEntry>& entries)
 {
     if (!pimpl->cacheManager) {

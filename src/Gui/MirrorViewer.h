@@ -268,6 +268,7 @@ public:
     /// session rather than by the client, so a change is reported through
     /// the callback below.
     bool setEditVisibilities(const std::vector<VisibilityEntry>& entries) override;
+    bool canSetEditVisibilities() const override;
     /// Told when setEditVisibilities -- or a structure change resolving the
     /// entries again -- changes the table, so the serving source
     /// republishes and tells the client what it draws by.

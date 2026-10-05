@@ -261,11 +261,12 @@ void EditingRoot::detachView(ViewerContext* view)
 std::vector<VisibilityEntry> EditingRoot::transientEntries() const
 {
     std::vector<VisibilityEntry> entries;
-    entries.reserve(swaps.size() + 1);
     if (editHide) {
         entries.push_back(*editHide);
     }
-    entries.insert(entries.end(), swaps.begin(), swaps.end());
+    for (const auto& owned : swaps) {
+        entries.insert(entries.end(), owned.second.begin(), owned.second.end());
+    }
     return entries;
 }
 
@@ -313,23 +314,33 @@ void EditingRoot::showEdited()
     applyVisibility();
 }
 
-bool EditingRoot::setVisibilitySwaps(std::vector<VisibilityEntry>&& entries)
+bool EditingRoot::setVisibilitySwaps(const std::string& owner,
+                                     std::vector<VisibilityEntry>&& entries)
 {
-    swaps = std::move(entries);
+    if (entries.empty()) {
+        clearVisibilitySwaps(owner);
+        return true;
+    }
+    swaps[owner] = std::move(entries);
     if (!applyVisibility()) {
-        clearVisibilitySwaps();
+        clearVisibilitySwaps(owner);
         return false;
     }
     return true;
 }
 
-void EditingRoot::clearVisibilitySwaps()
+void EditingRoot::clearVisibilitySwaps(const std::string& owner)
 {
-    if (swaps.empty()) {
+    if (swaps.erase(owner) == 0) {
         return;
     }
-    swaps.clear();
     applyVisibility();
+}
+
+const std::vector<VisibilityEntry>* EditingRoot::visibilitySwaps(const std::string& owner) const
+{
+    auto it = swaps.find(owner);
+    return it == swaps.end() ? nullptr : &it->second;
 }
 
 namespace
@@ -875,6 +886,11 @@ bool ViewerContext::hideEditedObject()
 }
 
 bool ViewerContext::setEditVisibilities(const std::vector<VisibilityEntry>&)
+{
+    return false;
+}
+
+bool ViewerContext::canSetEditVisibilities() const
 {
     return false;
 }
