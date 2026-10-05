@@ -25,15 +25,8 @@
 #include "PreCompiled.h"
 #ifndef _PreComp_
 # include <BRepOffsetAPI_DraftAngle.hxx>
-# include <BRepBndLib.hxx>
-# include <BRepGProp.hxx>
 # include <BRepBuilderAPI_MakeEdge.hxx>
-# include <BRepBuilderAPI_MakeVertex.hxx>
-# include <BRepClass3d_SolidExplorer.hxx>
-# include <BRepExtrema_DistShapeShape.hxx>
 # include <BRep_Tool.hxx>
-# include <Bnd_Box.hxx>
-# include <GProp_GProps.hxx>
 # include <Standard_Version.hxx>
 # include <TopTools_IndexedMapOfShape.hxx>
 # include <TopExp.hxx>
@@ -93,11 +86,16 @@ Draft::Draft()
             "The side of that edge the guessed plane faces");
     ADD_PROPERTY_TYPE(Method,(long(MethodAuto)),"Draft",App::Prop_None,
             "Auto: the classic draft, and the new one if that fails.\n"
-            "Classic: draft the base shape as it is.\n"
-            "New: refine the base shape first, unless its feature refines\n"
-            "already, then draft. A selected face merged by the refine\n"
-            "drafts the whole merged face.");
+            "Classic: OCCT's draft, which keeps the topology of the base\n"
+            "shape and refuses a draft that would change it.\n"
+            "New: a draft that can change topology: neighbours grow or\n"
+            "shrink to meet the drafted face, and a face split in coplanar\n"
+            "pieces drafts as one face.");
     Method.setEnums(DraftMethodEnums);
+    ADD_PROPERTY_TYPE(StopAtBody,(true),"Draft",App::Prop_None,
+            "New draft only: a drafted face stops at the body. Where it\n"
+            "leans out, its neighbours grow to meet it, but not past a face\n"
+            "of the body that has the whole body on its inner side.");
 }
 
 namespace
@@ -288,87 +286,10 @@ short Draft::mustExecute() const
         NeutralPlane.isTouched() ||
         PullDirection.isTouched() ||
         Reversed.isTouched() ||
-        Method.isTouched())
+        Method.isTouched() ||
+        StopAtBody.isTouched())
         return 1;
     return DressUp::mustExecute();
-}
-
-TopoShape Draft::refineBase(const TopoShape &baseShape) const
-{
-    // A feature that refines its result has nothing left to merge. Draft
-    // inherits a Refine property it does not apply.
-    auto base = getBaseObject(true);
-    if (base && !base->isDerivedFrom<Draft>()) {
-        auto refine = Base::freecad_dynamic_cast<App::PropertyBool>(
-                base->getPropertyByName("Refine"));
-        if (refine && refine->getValue())
-            return TopoShape();
-    }
-    TopoShape refined(0, getDocument()->getStringHasher());
-    refined.makERefine(baseShape, nullptr, false);
-    if (refined.isNull()
-            || refined.countSubShapes(TopAbs_FACE) == baseShape.countSubShapes(TopAbs_FACE))
-        return TopoShape();
-
-    // Merging faces must not move material. On a base whose tolerances hide
-    // a broken edge it does: #334's Draft002 input (an old Draft's output,
-    // a vertex of tolerance 27.8 swallowing an edge that overshoots it by
-    // 8) comes out 2000 of 47000 short, still "valid". Refuse to use it.
-    GProp_GProps before, after;
-    BRepGProp::VolumeProperties(baseShape.getShape(), before);
-    BRepGProp::VolumeProperties(refined.getShape(), after);
-    double scale = std::max(std::fabs(before.Mass()), Precision::Confusion());
-    if (std::fabs(after.Mass() - before.Mass()) > 1e-6 * scale) {
-        FC_WARN(getFullName() << ": refine changed the base volume from "
-                << before.Mass() << " to " << after.Mass() << ", not used");
-        return TopoShape();
-    }
-    return refined;
-}
-
-// The faces of <refined> the given faces of the shape it was refined from
-// went into: the one holding a point inside each. Two selected pieces of one
-// merged face give that face once.
-static std::vector<TopoShape> facesAfterRefine(const std::vector<TopoShape> &faces,
-                                               const TopoShape &refined)
-{
-    auto refinedFaces = refined.getSubTopoShapes(TopAbs_FACE);
-    std::vector<Bnd_Box> boxes(refinedFaces.size());
-    for (size_t i = 0; i < refinedFaces.size(); ++i) {
-        BRepBndLib::Add(refinedFaces[i].getShape(), boxes[i]);
-        boxes[i].Enlarge(Precision::Confusion());
-    }
-
-    std::vector<TopoShape> res;
-    std::vector<bool> taken(refinedFaces.size(), false);
-    for (const auto &face : faces) {
-        gp_Pnt pnt;
-        if (!BRepClass3d_SolidExplorer::FindAPointInTheFace(TopoDS::Face(face.getShape()), pnt))
-            FC_THROWM(Base::CADKernelError, "Failed to find a point inside a drafted face");
-        TopoDS_Vertex vertex = BRepBuilderAPI_MakeVertex(pnt);
-        double tol = BRep_Tool::Tolerance(TopoDS::Face(face.getShape())) + Precision::Confusion();
-        int best = -1;
-        double bestDist = tol;
-        for (size_t i = 0; i < refinedFaces.size(); ++i) {
-            if (boxes[i].IsOut(pnt))
-                continue;
-            BRepExtrema_DistShapeShape dist(vertex, refinedFaces[i].getShape());
-            if (!dist.IsDone())
-                continue;
-            double faceTol = tol + BRep_Tool::Tolerance(TopoDS::Face(refinedFaces[i].getShape()));
-            if (dist.Value() <= faceTol && (best < 0 || dist.Value() < bestDist)) {
-                best = static_cast<int>(i);
-                bestDist = dist.Value();
-            }
-        }
-        if (best < 0)
-            FC_THROWM(Base::CADKernelError, "Failed to find a drafted face in the refined shape");
-        if (!taken[best]) {
-            taken[best] = true;
-            res.push_back(refinedFaces[best]);
-        }
-    }
-    return res;
 }
 
 App::DocumentObjectExecReturn *Draft::execute()
@@ -519,10 +440,11 @@ App::DocumentObjectExecReturn *Draft::execute()
     // BRepFeat_MakeDPrism requires a support for the operation but will probably support multiple
     //       wires in the sketch
     auto makeDraft = [&](const TopoShape &base, const std::vector<TopoShape> &draftFaces,
-                         std::string &error) {
+                         bool cell, std::string &error) {
         TopoShape shape(0,getDocument()->getStringHasher());
         try {
-            shape.makEDraft(base,draftFaces,pullDirection,angle,neutralPlane);
+            shape.makEDraft(base,draftFaces,pullDirection,angle,neutralPlane,
+                            true,nullptr,cell,StopAtBody.getValue());
             if (shape.isNull()) {
                 error = "Resulting shape is null";
                 return TopoShape();
@@ -551,7 +473,7 @@ App::DocumentObjectExecReturn *Draft::execute()
     std::string error;
     TopoShape result;
     if (method != MethodNew) {
-        result = makeDraft(baseShape, faces, error);
+        result = makeDraft(baseShape, faces, false, error);
         if (!result.isNull() || method == MethodClassic) {
             if (result.isNull())
                 return new App::DocumentObjectExecReturn(error.c_str());
@@ -560,37 +482,17 @@ App::DocumentObjectExecReturn *Draft::execute()
         }
     }
 
-    // The new draft: the classic draft refuses a face split in coplanar
-    // pieces, and a face beside such a split, where the drafted piece's
-    // corner leaves its neighbour's plane. Refined, the pieces are one face.
-    TopoShape refined;
-    try {
-        refined = refineBase(baseShape);
-        if (!refined.isNull())
-            faces = facesAfterRefine(faces, refined);
-    } catch (Standard_Failure &e) {
-        FC_LOG(getFullName() << ": refine failed: " << e.GetMessageString());
-        refined = TopoShape();
-    } catch (Base::Exception &e) {
-        FC_LOG(getFullName() << ": refine failed: " << e.what());
-        refined = TopoShape();
-    }
-
-    if (refined.isNull()) {
-        // Nothing to merge: the draft is the classic one, and Auto has its
-        // answer already.
-        if (method == MethodAuto)
-            return new App::DocumentObjectExecReturn(error.c_str());
-        result = makeDraft(baseShape, faces, error);
-    } else {
-        std::string refinedError;
-        result = makeDraft(refined, faces, refinedError);
-        if (result.isNull()) {
-            if (error.empty())
-                error = refinedError;
-            else
-                error += "\nOn the refined base shape: " + refinedError;
-        }
+    // The new draft (docs/NewDraft.md): the classic draft keeps the topology
+    // of the base shape, and refuses a draft whose result has another one --
+    // a face swept past the edge of its neighbour, a face split in coplanar
+    // pieces. The cell draft rebuilds the topology around the drafted face.
+    std::string cellError;
+    result = makeDraft(baseShape, faces, true, cellError);
+    if (result.isNull()) {
+        if (error.empty())
+            error = cellError;
+        else
+            error += "\n" + cellError;
     }
     if (result.isNull())
         return new App::DocumentObjectExecReturn(error.c_str());

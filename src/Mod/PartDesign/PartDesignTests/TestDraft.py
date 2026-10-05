@@ -234,7 +234,7 @@ class TestDraft(unittest.TestCase):
         finally:
             FreeCAD.closeDocument(doc.Name)
 
-    def makeDraftOn(self, shape, face, neutral, method):
+    def makeDraftOn(self, shape, face, neutral, method, angle=5, stop=True, reversed=False):
         """A Draft of the faces picked by <face> about the face picked by
         <neutral>, on a Part::Feature holding <shape> as the body's base."""
         base = self.Doc.addObject("Part::Feature", "Base")
@@ -248,8 +248,10 @@ class TestDraft(unittest.TestCase):
         draft = body.newObject("PartDesign::Draft", "Draft")
         draft.Base = (base, faces)
         draft.NeutralPlane = (base, neutrals)
-        draft.Angle = 5
+        draft.Angle = angle
         draft.Method = method
+        draft.StopAtBody = stop
+        draft.Reversed = reversed
         self.Doc.recompute()
         return draft
 
@@ -269,8 +271,9 @@ class TestDraft(unittest.TestCase):
     def testDraftSplitWallPiece(self):
         # Two 10x10x5 boxes side by side, not refined: their front wall y=0
         # is two coplanar pieces. One piece drafted about the floor: the
-        # classic draft cannot keep the other piece, the new one refines the
-        # base first and drafts the whole merged wall.
+        # classic draft cannot keep the other piece, the new one drafts the
+        # pieces as one face. The rest of the body is not refined: floor,
+        # top and back stay in two pieces each.
         V = App.Vector
         shape = Part.makeBox(10, 10, 5).fuse(Part.makeBox(10, 10, 5, V(10, 0, 0)))
         volume = 1000 - 20 * 5 * 5 * math.tan(math.radians(5)) / 2
@@ -280,13 +283,13 @@ class TestDraft(unittest.TestCase):
             self.assertNotIn("Invalid", draft.State, method)
             self.assertTrue(draft.Shape.isValid(), method)
             self.assertAlmostEqual(draft.Shape.Volume, volume, 6, method)
-            self.assertEqual(len(draft.Shape.Faces), 6, method)
+            self.assertEqual(len(draft.Shape.Faces), 9, method)
 
     def testDraftSplitFloorCorner(self):
         # A prism whose front wall y=0 (x in [10,20]) meets a slanted wall
         # at (10,0), floor and top split along x=10 from that corner. The
         # wall drafted about the end x=20: its corner slides along the
-        # slanted wall, past the split, which only the refined base allows.
+        # slanted wall, past the split, which the classic draft refuses.
         V = App.Vector
         prism = Part.Face(Part.makePolygon([V(0, -5, 0), V(10, 0, 0), V(10, 10, 0),
                                             V(0, 10, 0), V(0, -5, 0)])).extrude(V(0, 0, 5))
@@ -302,6 +305,80 @@ class TestDraft(unittest.TestCase):
         self.assertNotIn("Invalid", draft.State)
         self.assertTrue(draft.Shape.isValid())
         self.assertAlmostEqual(draft.Shape.Volume, 5 * area, 6)
+        # the splits of floor and top are kept
+        self.assertEqual(len(draft.Shape.Faces), 10)
+
+    def testDraftWallBreaksThrough(self):
+        # A 20 cube, a 4x6 slot 2 off its front wall y=0, 18 deep. The slot's
+        # front wall drafted about its floor at 15 deg swings 18 tan(15 deg)
+        # toward the front, through the 2 thick wall at 2 / tan(15 deg) above
+        # the floor. The classic draft refuses; Auto falls back to the new
+        # draft, which cuts the front wall open.
+        V = App.Vector
+        shape = Part.makeBox(20, 20, 20).cut(
+            Part.makeBox(4, 6, 18, V(8, 2, 2))).removeSplitter()
+        h = 2 / math.tan(math.radians(15))
+        volume = 8000 - 4 * 6 * 18 - 4 * (h * 2 / 2 + 2 * (18 - h))
+        draft = self.makeDraftOn(shape, self.planeAt("Y", 2), self.planeAt("Z", 2), "Auto",
+                                 angle=15)
+        self.assertNotIn("Invalid", draft.State)
+        self.assertTrue(draft.Shape.isValid())
+        self.assertAlmostEqual(draft.Shape.Volume, volume, 6)
+        # the drafted face and the front wall it breaks through are named
+        # after the base's faces, the same over a recompute
+        names = dict(draft.Shape.ElementMap)
+        front = [i for i, f in enumerate(shape.Faces, 1) if self.planeAt("Y", 0)(f)][0]
+        cut = [n for n, e in names.items()
+               if n.startswith("Face%d;" % front) and e.startswith("Face")]
+        self.assertEqual(len(cut), 1)
+        self.assertLess(draft.Shape.getElement(names[cut[0]]).Area, 400 - 1)
+        draft.touch()
+        self.Doc.recompute()
+        self.assertEqual(dict(draft.Shape.ElementMap), names)
+
+    def testDraftStopAtBody(self):
+        # A 20x10x10 block, a notch [0,10]x[0,5]x[5,10] off its front top.
+        # The ledge z=5 drafted about the notch's back wall at 60 deg rises
+        # 5 tan(60 deg) = 8.66 at its front, past the block's top at 10. By
+        # default it stops at the top's plane, which closes over the notch's
+        # front; without the stop a fin stands over the top.
+        V = App.Vector
+        shape = Part.makeBox(20, 10, 10).cut(Part.makeBox(10, 5, 5, V(0, 0, 5)))
+        shape = shape.removeSplitter()
+        t = math.tan(math.radians(60))
+        for stop, volume in ((False, 1750 + 125 * t),
+                             (True, 1750 + 125 * t - 10 * (5 * t - 5) ** 2 / (2 * t))):
+            draft = self.makeDraftOn(shape, self.planeAt("Z", 5), self.planeAt("Y", 5), "New",
+                                     angle=60, stop=stop)
+            self.assertNotIn("Invalid", draft.State, stop)
+            self.assertTrue(draft.Shape.isValid(), stop)
+            self.assertAlmostEqual(draft.Shape.Volume, volume, 6, stop)
+
+    def testDraftFaceVanishes(self):
+        # A wedge truncated by a 0.2 wide face at x=10, its walls meeting
+        # 0.2 past it. Drafted outward about a plane 50 below, the face's
+        # new plane lies past where the walls meet: the face would vanish,
+        # which the new draft refuses rather than hand back a body without it.
+        V = App.Vector
+        shape = Part.Face(Part.makePolygon([V(0, -5, 0), V(10, -0.1, 0), V(10, 0.1, 0),
+                                            V(0, 5, 0), V(0, -5, 0)])).extrude(V(0, 0, 10))
+        base = self.Doc.addObject("Part::Feature", "Base")
+        base.Shape = shape
+        plane = self.Doc.addObject("Part::Feature", "Plane")
+        plane.Shape = Part.makePlane(200, 200, V(-100, -100, -50))
+        body = self.Doc.addObject("PartDesign::Body", "Body")
+        body.BaseFeature = base
+        self.Doc.recompute()
+        face = [i for i, f in enumerate(shape.Faces, 1) if self.planeAt("X", 10)(f)][0]
+        draft = body.newObject("PartDesign::Draft", "Draft")
+        draft.Base = (base, ["Face%d" % face])
+        draft.NeutralPlane = (plane, ["Face1"])
+        draft.Angle = 5
+        draft.Method = "New"
+        draft.Reversed = True
+        self.Doc.recompute()
+        self.assertIn("Invalid", draft.State)
+        self.assertIn("FaceVanishes", draft.getStatusString())
 
     def tearDown(self):
         #closing doc
