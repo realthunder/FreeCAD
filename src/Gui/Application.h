@@ -492,6 +492,8 @@ public:
     static PyObject* sCyclesRenderTest         (PyObject *self,PyObject *args,PyObject *kwd);
     static PyObject* sServeGrants              (PyObject *self,PyObject *args);
     static PyObject* sServeSetGrants           (PyObject *self,PyObject *args);
+    static PyObject* sServeDevices             (PyObject *self,PyObject *args);
+    static PyObject* sServeSetDevices          (PyObject *self,PyObject *args);
     static PyObject* sServeStop                (PyObject *self,PyObject *args);
     static PyObject* sUpdateLocale             (PyObject *self,PyObject *args);
     static PyObject* sGetLocale                (PyObject *self,PyObject *args);

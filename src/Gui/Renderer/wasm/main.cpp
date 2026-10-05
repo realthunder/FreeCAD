@@ -309,6 +309,40 @@ EM_JS(char *, fcviewer_stored_client, (), {
     return s;
 });
 
+// The id this browser keeps (docs/TransactionLog.md sec 30.32): half of who
+// a connection is, where a grant counts the browsers it is for, and what
+// lets a host follow one browser from one link to another. Made once, at
+// random, and kept in localStorage -- with the browser asked not to clear
+// it when storage runs short -- so it is the same at every visit; it goes
+// in the hello and never in a URL. A browser that keeps nothing (a private
+// window, storage refused) gets one for the life of the page, and is a new
+// browser each time.
+EM_JS(char *, fcviewer_device_id, (), {
+    var key = 'fcviewer.device';
+    var id = null;
+    try { id = window.localStorage.getItem(key); } catch (e) {}
+    if (!id || !/^[A-Za-z0-9_-]{16,128}$/.test(id)) {
+        id = Module.fcviewerDeviceId || null;
+        if (!id) {
+            var bytes = new Uint8Array(24);
+            (window.crypto || window.msCrypto).getRandomValues(bytes);
+            id = "";
+            for (var i = 0; i < bytes.length; i++)
+                id += (bytes[i] < 16 ? '0' : "") + bytes[i].toString(16);
+            Module.fcviewerDeviceId = id;
+        }
+        try {
+            window.localStorage.setItem(key, id);
+            if (navigator.storage && navigator.storage.persist)
+                navigator.storage.persist().catch(function () {});
+        } catch (e) {}
+    }
+    var len = lengthBytesUTF8(id) + 1;
+    var s = _malloc(len);
+    stringToUTF8(id, s, len);
+    return s;
+});
+
 // ?cam=<yaw,pitch,dist,cx,cy,cz,panX,panY> reproduces an exact viewport
 // (the string the 'v' key prints); null when absent.
 EM_JS(char *, fcviewer_cam_param, (), {
@@ -8801,6 +8835,20 @@ static void sendHello()
     if (!s_tokenParam.empty()) {
         hello += ",\"token\":\"";
         jsonEscapeTo(hello, s_tokenParam);
+        hello += '"';
+    }
+    // Which browser this is (fcviewer_device_id): the door of a grant
+    // that counts its users asks for it, and every door records it.
+    static std::string s_deviceId;
+    if (s_deviceId.empty()) {
+        if (char *id = fcviewer_device_id()) {
+            s_deviceId = id;
+            std::free(id);
+        }
+    }
+    if (!s_deviceId.empty()) {
+        hello += ",\"device\":\"";
+        jsonEscapeTo(hello, s_deviceId);
         hello += '"';
     }
     hello += '}';

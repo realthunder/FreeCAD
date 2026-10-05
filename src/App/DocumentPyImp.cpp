@@ -980,7 +980,7 @@ bool actorFromPy(const char* kind, const char* name, const char* access, unsigne
     if (!Actor::kindFromName(kind, actor.kind) || actor.kind == Actor::Local
             || actor.kind == Actor::Fork) {
         PyErr_SetString(PyExc_ValueError,
-                        "kind must be 'verified', 'invited' or 'declared'");
+                        "kind must be 'verified', 'invited', 'enrolled' or 'declared'");
         return false;
     }
     if (!name[0]) {

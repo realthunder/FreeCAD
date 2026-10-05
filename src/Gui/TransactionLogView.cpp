@@ -840,7 +840,8 @@ void TransactionLogView::appendTransactions(int64_t fromSeq)
             const App::LogSession& session = sessions[t.session];
             const App::LogUser& author = users[session.user];
             QString name = QString::fromStdString(author.name);
-            if (author.kind == "invited" || author.kind == "declared")
+            if (author.kind == "invited" || author.kind == "declared"
+                    || author.kind == "enrolled")
                 name += QStringLiteral(" (%1)").arg(QString::fromStdString(author.kind));
             item->setText(TxnAuthor, name);
             QString tip = tr("%1 user, session %2")

@@ -48,6 +48,11 @@ namespace App
  * per login and a user row per kind and name, so one person's logins are
  * one author.
  *
+ * `Enrolled` is one of the browsers a grant counts (docs/TransactionLog.md
+ * sec 30.32): known by half a grant gave -- a token, or a sign-in -- and
+ * half its own, the id it keeps. Nobody verified who sits at it; the host's
+ * record of browsers says which one it is.
+ *
  * `Fork` is no connection: the desktop user of another copy of the file,
  * whose rows were imported (sec 30.13 F4). Two people both called `host`
  * are two people, so the name says which file's.
@@ -60,7 +65,8 @@ struct AppExport Actor
         Verified,
         Invited,
         Declared,
-        Fork
+        Fork,
+        Enrolled
     };
     Kind kind {Local};
     std::string name;
@@ -68,9 +74,14 @@ struct AppExport Actor
     std::string access;
     /// One admitted connection; 0 for a user with no connection of its own.
     uint64_t login {0};
+    /// The browser the connection came from, by the start of its key in
+    /// the host's record (sec 30.32); empty when it said none. Whatever
+    /// the kind: a login says it, so one browser can be followed from one
+    /// token or sign-in to another.
+    std::string device;
 
-    /// `local`, `verified`, `invited`, `declared`, `fork`: the kind as the
-    /// log stores it.
+    /// `local`, `verified`, `invited`, `declared`, `fork`, `enrolled`: the
+    /// kind as the log stores it.
     static const char* kindName(Kind kind);
     /// The kind of a stored name; false for a name that is none.
     static bool kindFromName(const std::string& name, Kind& kind);

@@ -49,7 +49,7 @@ std::map<uint64_t, std::shared_ptr<const App::Actor>>& registry()
 
 bool sameUser(const App::Actor& a, const App::Actor& b)
 {
-    return a.kind == b.kind && a.name == b.name;
+    return a.kind == b.kind && a.name == b.name && a.device == b.device;
 }
 
 /// The registry's actor of a connection the roster lists, replaced when
@@ -71,9 +71,26 @@ App::Actor SceneActors::describe(const Render::SceneClientInfo& info)
     App::Actor actor;
     actor.login = info.id;
     actor.access = Render::clientAccessName(info.access);
+    // Which browser, whoever it is (docs/TransactionLog.md sec 30.32): the
+    // start of its key, as the host's record lists it.
+    actor.device = info.device.substr(0, 12);
     if (!info.identity.empty()) {
         actor.kind = App::Actor::Verified;
         actor.name = info.identity;
+        return actor;
+    }
+    // One of the browsers its grant counts: known by what the grant gave
+    // and the id the browser keeps. Named as the host labelled it, else as
+    // it first called itself -- not as it calls itself now, which it may
+    // change -- with the start of its key, since two may share a name.
+    if (info.enrolled && !info.device.empty()) {
+        Render::SceneDevice known;
+        Render::SceneStreamServer::instance().device(info.device, known);
+        std::string name = !known.label.empty() ? known.label
+            : !known.enrolledAs.empty() ? known.enrolledAs
+            : info.client.empty() ? std::string("user") : info.client;
+        actor.kind = App::Actor::Enrolled;
+        actor.name = name + "~" + info.device.substr(0, 6);
         return actor;
     }
     // The door has said whether it holds an invitation issued to this one

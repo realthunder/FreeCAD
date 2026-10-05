@@ -1316,6 +1316,191 @@ TEST_F(SceneServerWire, onlySomeoneKnownMayWrite)
     EXPECT_FALSE(server.setClientAccess(info.id, Render::ClientAccess::Edit));
 }
 
+/// A grant may count the browsers it is for (docs/TransactionLog.md sec
+/// 30.32): a hello says which browser it is by an id the browser keeps,
+/// the first of them are enrolled and are someone known, and any other is
+/// refused -- or falls to a lesser grant on the same token. The record of
+/// browsers follows one across tokens, and the host turns one out.
+TEST_F(SceneServerWire, aGrantCountsTheBrowsersItIsFor)
+{
+    auto& server = Render::SceneStreamServer::instance();
+    struct Restore
+    {
+        ~Restore()
+        {
+            auto& s = Render::SceneStreamServer::instance();
+            s.setGrants({});
+            s.setDevices({});
+            s.setToken({});
+        }
+    } restore;
+    auto told = [&](WsClient& c) -> std::string {
+        for (int i = 0; i < 6; ++i) {
+            WsClient::Msg m = c.read(1500);
+            if (!m.ok) {
+                return {};
+            }
+            if (m.text && (has(m.data, "\"cmd\":\"config\"") || has(m.data, "\"cmd\":\"error\""))) {
+                return m.data;
+            }
+        }
+        return {};
+    };
+    auto device = [](const char* id) {
+        return std::string(",\"device\":\"") + id + "\"";
+    };
+    const std::string anna = "anna-browser-0123456789abcdef";
+    const std::string ben = "ben-browser-0123456789abcdef";
+    const std::string cleo = "cleo-browser-0123456789abcdef";
+    Render::SceneClientInfo info;
+
+    // One token, for two browsers, to edit.
+    Render::SceneGrant two;
+    two.token = "t-two";
+    two.maxUsers = 2;
+    server.setGrants({two});
+    const uint64_t epoch = server.deviceEpoch();
+    {
+        // The upgrade cannot say which browser it is, and waits for the
+        // hello; the hello enrols it.
+        WsClient a(port, "/scene?token=t-two", WsClient::Headers {});
+        a.hello("count-anna", device(anna.c_str()));
+        ASSERT_TRUE(waitFor([&] { return findClient("count-anna", info); }));
+        EXPECT_TRUE(info.enrolled);
+        EXPECT_FALSE(info.invited);
+        EXPECT_TRUE(info.identity.empty());
+        EXPECT_EQ(info.access, Render::ClientAccess::Edit) << "one a grant counts is known";
+        EXPECT_EQ(info.device.size(), 40u);
+        const std::string annaKey = info.device;
+        EXPECT_GT(server.deviceEpoch(), epoch);
+
+        WsClient b(port, "/scene?token=t-two", WsClient::Headers {});
+        b.hello("count-ben", device(ben.c_str()));
+        ASSERT_TRUE(waitFor([&] { return findClient("count-ben", info); }));
+        EXPECT_TRUE(info.enrolled);
+        const std::string benKey = info.device;
+        EXPECT_NE(annaKey, benKey);
+
+        auto grants = server.grants();
+        ASSERT_EQ(grants.size(), 1u);
+        EXPECT_EQ(grants[0].devices, (std::vector<std::string> {annaKey, benKey}));
+
+        // A third browser is one too many, and so is one that says none.
+        WsClient c(port, "/scene?token=t-two", WsClient::Headers {});
+        c.hello("count-cleo", device(cleo.c_str()));
+        EXPECT_TRUE(has(told(c), "Refused"));
+        WsClient none(port, "/scene?token=t-two", WsClient::Headers {});
+        none.hello("count-none");
+        EXPECT_TRUE(has(told(none), "Refused"));
+        EXPECT_EQ(server.grants()[0].devices.size(), 2u);
+
+        // A name is a label: under another it is the browser it was.
+        a.sendText("{\"cmd\":\"client\",\"name\":\"count-anna-2\"}");
+        ASSERT_TRUE(waitFor([&] { return findClient("count-anna-2", info); }));
+        EXPECT_TRUE(info.enrolled);
+        EXPECT_EQ(info.access, Render::ClientAccess::Edit);
+        Render::SceneDevice known;
+        ASSERT_TRUE(server.device(annaKey, known));
+        EXPECT_EQ(known.name, "count-anna-2");
+        EXPECT_EQ(known.enrolledAs, "count-anna") << "what a log names it by does not move";
+
+        // The host turns one browser out; the other stays.
+        known.enabled = false;
+        auto record = server.devices();
+        for (auto& d : record) {
+            if (d.key == annaKey) {
+                d.enabled = false;
+            }
+        }
+        server.setDevices(record);
+        EXPECT_TRUE(has(told(a), "Refused"));
+        EXPECT_TRUE(findClient("count-ben", info));
+        EXPECT_TRUE(info.enrolled);
+    }
+    {
+        // It comes back as itself, and is still out; the other comes back
+        // and is still in, without being counted twice.
+        WsClient a(port, "/scene?token=t-two", WsClient::Headers {});
+        a.hello("count-anna", device(anna.c_str()));
+        EXPECT_TRUE(has(told(a), "Refused"));
+        WsClient b(port, "/scene?token=t-two", WsClient::Headers {});
+        b.hello("count-ben", device(ben.c_str()));
+        ASSERT_TRUE(waitFor([&] { return findClient("count-ben", info); }));
+        EXPECT_TRUE(info.enrolled);
+        EXPECT_EQ(server.grants()[0].devices.size(), 2u);
+    }
+
+    // The same token with an open invitation to look beside it: who is
+    // not counted looks.
+    Render::SceneGrant one;
+    one.token = "t-mixed";
+    one.maxUsers = 1;
+    Render::SceneGrant look;
+    look.token = "t-mixed";
+    look.access = 1;
+    server.setGrants({look, one});
+    {
+        WsClient b(port, "/scene?token=t-mixed", WsClient::Headers {});
+        b.hello("mixed-ben", device(ben.c_str()));
+        ASSERT_TRUE(waitFor([&] { return findClient("mixed-ben", info); }));
+        EXPECT_TRUE(info.enrolled);
+        EXPECT_EQ(info.access, Render::ClientAccess::Edit);
+        WsClient c(port, "/scene?token=t-mixed", WsClient::Headers {});
+        c.hello("mixed-cleo", device(cleo.c_str()));
+        EXPECT_TRUE(has(told(c), "\"access\":\"view\""));
+        ASSERT_TRUE(waitFor([&] { return findClient("mixed-cleo", info); }));
+        EXPECT_FALSE(info.enrolled);
+        EXPECT_EQ(info.access, Render::ClientAccess::View);
+        // The record has the browser all the same, and has the one it met
+        // under the other token as the same one.
+        Render::SceneDevice known;
+        ASSERT_TRUE(server.device(info.device, known));
+        EXPECT_EQ(known.name, "mixed-cleo");
+        int bens = 0;
+        for (const auto& d : server.devices()) {
+            bens += d.enrolledAs == "count-ben" ? 1 : 0;
+            EXPECT_NE(d.enrolledAs, "mixed-ben");
+        }
+        EXPECT_EQ(bens, 1) << "one browser, one entry, whatever the token";
+    }
+    // A plain request cannot say which browser it is: it reads, where the
+    // token is one a grant counts browsers under.
+    server.setGrants({one});
+    EXPECT_EQ(httpRequest(port, http::verb::get, "/scene?v=0&token=t-mixed").status, 200u);
+    EXPECT_EQ(httpRequest(port, http::verb::get, "/scene?v=0&token=wrong").status, 403u);
+    // An id too short to be one is none.
+    {
+        Render::SceneGrant fresh;
+        fresh.token = "t-short";
+        fresh.maxUsers = 1;
+        server.setGrants({fresh});
+        WsClient s(port, "/scene?token=t-short", WsClient::Headers {});
+        s.hello("short-id", device("abc"));
+        EXPECT_TRUE(has(told(s), "Refused"));
+        EXPECT_TRUE(server.grants()[0].devices.empty());
+    }
+    // A sign-in is half too: the grant that names a domain counts its
+    // browsers the same way.
+    {
+        Render::SceneGrant domain;
+        domain.identity = "*@example.test";
+        domain.maxUsers = 1;
+        server.setGrants({domain});
+        WsClient v(port, "/scene", known());
+        v.hello("signed-in", device(anna.c_str()));
+        // (anna's browser was turned off above)
+        EXPECT_TRUE(has(told(v), "Refused"));
+        WsClient w(port, "/scene", known());
+        w.hello("signed-in", device(cleo.c_str()));
+        ASSERT_TRUE(waitFor([&] { return findClient("signed-in", info); }));
+        EXPECT_TRUE(info.enrolled);
+        EXPECT_FALSE(info.identity.empty());
+        Render::SceneDevice seen;
+        ASSERT_TRUE(server.device(info.device, seen));
+        EXPECT_EQ(seen.identity, info.identity) << "the record says who signed in at it";
+    }
+}
+
 TEST_F(SceneServerWire, theCapCountsUsersNotAddresses)
 {
     auto& server = Render::SceneStreamServer::instance();

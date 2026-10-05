@@ -1392,7 +1392,12 @@ int64_t TransactionLog::login(const Actor& actor)
     // U2). Where it came from is not recorded.
     std::string script = "{\"user\":" + quoted(actor.name) + ",\"kind\":\""
         + Actor::kindName(actor.kind) + "\",\"access\":" + quoted(actor.access)
-        + ",\"verified\":" + (actor.kind == Actor::Verified ? "true" : "false") + "}";
+        + ",\"verified\":" + (actor.kind == Actor::Verified ? "true" : "false");
+    // Which browser (sec 30.32), so it can be followed from one login to
+    // another, under whatever token or sign-in.
+    if (!actor.device.empty())
+        script += ",\"device\":" + quoted(actor.device);
+    script += "}";
     LogTransaction t;
     t.session = session;
     number(t);

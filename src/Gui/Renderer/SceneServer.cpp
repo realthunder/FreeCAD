@@ -414,7 +414,40 @@ public:
         uint64_t grant = 0;   ///< admitting grant id; 0 = legacy door
         /// Admitted on an invitation issued to its one name (invitedBy).
         bool invited = false;
+        /// One of the browsers its grant counts (SceneGrant::maxUsers);
+        /// \a enrol: not yet, and to be added to them.
+        bool enrolled = false;
+        bool enrol = false;
     };
+
+    /// What is asking (SceneGrant::maxUsers): a plain request, which
+    /// cannot say which browser it is; a hello, which does and may be
+    /// enrolled; or a connection judged again, which is enrolled or is
+    /// not.
+    enum class Ask { Fetch, Hello, Again };
+
+    /// The record of browsers (SceneServer.h, SceneDevice), by key, and
+    /// the count that says it or an enrolment changed. tokenMutex.
+    std::map<std::string, SceneDevice> deviceRecord;
+    uint64_t deviceEpochCounter = 0;
+    /// No more than this are remembered: a record is what an admitted
+    /// hello leaves, and a token many hold must not grow it without end.
+    static constexpr size_t kDeviceRecordMax = 4096;
+
+    /// The key of the id a hello gave (SceneDevice::key); empty when it
+    /// gave none worth the name. An id is what a browser generated: long
+    /// enough not to be guessed, and of nothing a URL or a log could not
+    /// carry.
+    static std::string deviceKeyOf(const std::string &id)
+    {
+        if (id.size() < 16 || id.size() > 128)
+            return {};
+        for (unsigned char c : id) {
+            if (!std::isalnum(c) && c != '-' && c != '_')
+                return {};
+        }
+        return sha1Hex(id.data(), id.size());
+    }
 
     /// Whether \a grant is an invitation the host issued to one named
     /// person, and \a client that person (docs/TransactionLog.md sec 30.6
@@ -481,16 +514,30 @@ public:
     /// Judge a presentation against a grant list (docs/ShareAccess.md
     /// §2): the most specific matching grant decides, and no match —
     /// or a banned best match — refuses.
+    ///
+    /// A grant that counts its users (SceneGrant::maxUsers) is matched by
+    /// the browser as well: \a device its key, \a record what is known
+    /// of it. A hello from a browser it has enrolled, or has room to
+    /// enrol, matches; one with no id, one the host turned off, and one
+    /// past the count do not, and fall to whatever lesser grant there
+    /// is. A plain request cannot say which browser it is, and such a
+    /// grant admits it to read.
     static Judgement judgeWith(const std::vector<SceneGrant> &list,
                                const std::string &token,
                                const std::string &identity,
                                const std::string &client,
-                               const std::string &address)
+                               const std::string &address,
+                               const std::string &device = std::string(),
+                               const std::map<std::string, SceneDevice>
+                                   *record = nullptr,
+                               Ask ask = Ask::Fetch)
     {
         Judgement out;
         const std::string addr = portlessAddress(address);
         const SceneGrant *best = nullptr;
         int64_t bestScore = -1;
+        bool bestMember = false;
+        bool bestJoins = false;
         for (const auto &g : list) {
             if (!g.token.empty() && !secretEqual(g.token, token))
                 continue;
@@ -498,6 +545,26 @@ public:
                     || !patternMatches(g.client, client)
                     || !patternMatches(g.address, addr))
                 continue;
+            const bool counts = g.maxUsers > 0 && g.access != 2;
+            bool member = false;
+            bool joins = false;
+            if (counts && ask != Ask::Fetch) {
+                if (device.empty())
+                    continue;
+                if (record) {
+                    auto known = record->find(device);
+                    if (known != record->end() && !known->second.enabled)
+                        continue;
+                }
+                member = std::find(g.devices.begin(), g.devices.end(), device)
+                    != g.devices.end();
+                if (!member) {
+                    if (ask != Ask::Hello
+                            || int(g.devices.size()) >= g.maxUsers)
+                        continue;
+                    joins = true;
+                }
+            }
             // Identity outranks name outranks address: the verified
             // part first, then what a person chose, then where they
             // happen to be. The token is a filter, not a rank — a ban
@@ -505,21 +572,32 @@ public:
             int64_t score = (int64_t(specificityOf(g.identity)) * 8192
                              + specificityOf(g.client)) * 8192
                             + specificityOf(g.address);
+            // Of two that are otherwise alike, the one that knows the
+            // browser is the more particular.
+            score = score * 2 + (member || joins ? 1 : 0);
             if (score > bestScore) {
                 bestScore = score;
                 best = &g;
+                bestMember = member;
+                bestJoins = joins;
             }
         }
         if (!best || best->access == 2)
             return out;
         out.admitted = true;
         out.invited = identity.empty() && invitedBy(*best, client);
+        out.enrolled = bestMember || bestJoins;
+        out.enrol = bestJoins;
         out.access = writerRule(
             best->access == 1 ? ClientAccess::View
             : best->access == 3 && hostIdentity(best->identity, identity)
                 ? ClientAccess::Host
                 : ClientAccess::Edit,
-            identity, out.invited);
+            identity, out.invited || out.enrolled);
+        // A plain request under a grant that counts its users said
+        // nothing of who it is: it reads.
+        if (best->maxUsers > 0 && ask == Ask::Fetch && !out.invited)
+            out.access = writerRule(out.access, identity, false);
         out.grant = best->id;
         return out;
     }
@@ -527,7 +605,9 @@ public:
     /// The door: the grant list when one is set, else the legacy
     /// shared token (SceneServer.h, setGrants).
     Judgement judge(const std::string &token, const std::string &identity,
-                    const std::string &client, const std::string &address)
+                    const std::string &client, const std::string &address,
+                    const std::string &device = std::string(),
+                    Ask ask = Ask::Fetch)
     {
         std::lock_guard<std::mutex> guard(tokenMutex);
         if (grantList.empty()) {
@@ -543,7 +623,53 @@ public:
             out.access = writerRule(ClientAccess::Edit, identity, out.invited);
             return out;
         }
-        return judgeWith(grantList, token, identity, client, address);
+        Judgement out = judgeWith(grantList, token, identity, client, address,
+                                  device, &deviceRecord, ask);
+        if (out.admitted && out.enrol) {
+            // The browser becomes one of the grant's (SceneGrant::
+            // maxUsers): from here it is known, and counted.
+            for (auto &g : grantList) {
+                if (g.id == out.grant) {
+                    g.devices.push_back(device);
+                    ++deviceEpochCounter;
+                    break;
+                }
+            }
+        }
+        return out;
+    }
+
+    /// Keep what an admitted hello said of its browser (SceneDevice):
+    /// the name its user gives, the identity it came with, when. Every
+    /// door's, not only a grant that counts: the record is what lets the
+    /// host see one browser under another token.
+    void noteDevice(const std::string &key, const std::string &name,
+                    const std::string &identity)
+    {
+        if (key.empty())
+            return;
+        const double now = std::chrono::duration<double>(
+            std::chrono::system_clock::now().time_since_epoch()).count();
+        std::lock_guard<std::mutex> guard(tokenMutex);
+        auto it = deviceRecord.find(key);
+        if (it == deviceRecord.end()) {
+            if (deviceRecord.size() >= kDeviceRecordMax)
+                return;
+            SceneDevice d;
+            d.key = key;
+            d.first = now;
+            d.enrolledAs = name;
+            it = deviceRecord.emplace(key, std::move(d)).first;
+            ++deviceEpochCounter;
+        }
+        SceneDevice &d = it->second;
+        if (d.name != name || d.identity != identity)
+            ++deviceEpochCounter;
+        if (d.enrolledAs.empty())
+            d.enrolledAs = name;
+        d.name = name;
+        d.identity = identity;
+        d.last = now;
     }
 
     bool grantsActive()
@@ -1271,6 +1397,11 @@ public:
         /// connMutex. With no verified identity this is what lets it
         /// write.
         bool invited = false;
+        /// The browser this is (SceneDevice::key), from its hello; and
+        /// whether its grant counts it among its users
+        /// (Judgement::enrolled), which also lets it write. connMutex.
+        std::string deviceKey;
+        bool enrolled = false;
         /// The host asked this connection closed (guarded by
         /// connMutex): its farewell is on the outbox, and its own loop
         /// sends that and hangs up. Set only through kick().
@@ -1509,11 +1640,13 @@ public:
     void rejudgeConnections()
     {
         std::vector<SceneGrant> list;
+        std::map<std::string, SceneDevice> record;
         std::string secret;
         std::string invitee;
         {
             std::lock_guard<std::mutex> guard(tokenMutex);
             list = grantList;
+            record = deviceRecord;
             secret = tokenSecret;
             invitee = tokenInvitee;
         }
@@ -1532,11 +1665,16 @@ public:
                         && tokenInvites(secret, invitee, conn->client);
                     entry.access = writerRule(conn->access, conn->identity,
                                               entry.invited);
+                    entry.enrolled = false;
                 }
                 else {
+                    // A browser its grant no longer counts -- forgotten,
+                    // turned off -- is not enrolled again here: that takes
+                    // a hello.
                     entry = judgeWith(list, conn->presentedToken,
                                       conn->identity, conn->client,
-                                      conn->matchAddr);
+                                      conn->matchAddr, conn->deviceKey,
+                                      &record, Ask::Again);
                 }
                 if (!entry.admitted) {
                     conn->queueText(
@@ -1551,9 +1689,11 @@ public:
                         conn->queueText(configJson(entry.access));
                         changed = true;
                     }
-                    if (conn->invited != entry.invited)
+                    if (conn->invited != entry.invited
+                            || conn->enrolled != entry.enrolled)
                         changed = true;
                     conn->invited = entry.invited;
+                    conn->enrolled = entry.enrolled;
                     conn->grant = entry.grant;
                 }
             }
@@ -1580,6 +1720,8 @@ public:
             info.grant = conn->grant;
             info.viewer = conn->viewer;
             info.invited = conn->invited;
+            info.device = conn->deviceKey;
+            info.enrolled = conn->enrolled;
             info.authorized = conn->authorized;
             info.access = conn->access;
             info.connectedMs = uint64_t(
@@ -1610,7 +1752,8 @@ public:
                     if (access == ClientAccess::Host && conn->identity.empty())
                         return false;
                     // and a writer is someone known (sec 30.6 U4)
-                    if (writerRule(access, conn->identity, conn->invited)
+                    if (writerRule(access, conn->identity,
+                                   conn->invited || conn->enrolled)
                             != access)
                         return false;
                     conn->access = access;
@@ -2101,6 +2244,10 @@ public:
     {
         if (!conn.identity.empty())
             return "id:" + conn.identity;
+        // One of the browsers a grant counts is a user of its own, where
+        // every other connection of a grant is the grant's.
+        if (conn.enrolled && !conn.deviceKey.empty())
+            return "dev:" + conn.deviceKey;
         if (conn.grant)
             return "grant:" + std::to_string(conn.grant);
         if (conn.matchAddr.empty() || isLoopback(conn.matchAddr))
@@ -2236,9 +2383,14 @@ public:
             return Route::Reply;
 
         std::string presentedToken = queryValue(query, "token");
+        // A socket says which browser it is in its hello: under a grant
+        // that counts its users (SceneGrant::maxUsers) the upgrade is not
+        // admitted by it, and waits for that. A plain request cannot say,
+        // and reads.
         Judgement entry = judge(presentedToken, identity,
                                 queryValue(query, "client"),
-                                fwd.empty() ? peerIp : fwd);
+                                fwd.empty() ? peerIp : fwd, std::string(),
+                                wsKey.empty() ? Ask::Fetch : Ask::Again);
         bool authorized = entry.admitted;
         if (!authorized && wsKey.empty()) {
             reply.status = 403;
@@ -3435,13 +3587,23 @@ public:
                 }
                 std::string name;
                 jsonStr(json, "client", name);
+                // Which browser this is (SceneDevice): the id it keeps,
+                // known here by its hash only.
+                std::string device;
+                jsonStr(json, "device", device);
+                const std::string deviceKey = deviceKeyOf(device);
+                {
+                    std::lock_guard<std::mutex> guard(connMutex);
+                    conn.deviceKey = deviceKey;
+                }
                 const bool grants = grantsActive();
                 // Judged when a grant may match the name, when the door has
                 // not opened yet, and when the shared token is an
                 // invitation to one name: the name only exists now.
                 if (grants || !conn.authorized || hasTokenInvitee()) {
                     Judgement entry = judge(offered, conn.identity, name,
-                                            conn.matchAddr);
+                                            conn.matchAddr, deviceKey,
+                                            Ask::Hello);
                     if (!entry.admitted) {
                         std::lock_guard<std::mutex> guard(connMutex);
                         conn.queueText(grants
@@ -3456,6 +3618,7 @@ public:
                     conn.presentedToken = offered;
                     conn.grant = entry.grant;
                     conn.invited = entry.invited;
+                    conn.enrolled = entry.enrolled;
                     conn.access = entry.access;
                     // Said at once, so the page offers only what this
                     // connection may do
@@ -3478,6 +3641,9 @@ public:
                     if (conn.access != ClientAccess::Edit)
                         conn.queueText(configJson(conn.access));
                 }
+                // The record of browsers takes every admitted hello,
+                // whichever door admitted it.
+                noteDevice(deviceKey, name, conn.identity);
             }
             else if (!conn.authorized) {
                 return;
@@ -3526,14 +3692,19 @@ public:
                 jsonStr(json, "name", name);
                 if (conn.authorized && grantsActive()) {
                     std::string token;
+                    std::string deviceKey;
                     uint64_t fromGrant;
                     {
                         std::lock_guard<std::mutex> guard(connMutex);
                         token = conn.presentedToken;
+                        deviceKey = conn.deviceKey;
                         fromGrant = conn.grant;
                     }
+                    // The browser is who it was under another name: one a
+                    // grant counts stays counted, and the name is a label.
                     Judgement entry = judge(token, conn.identity, name,
-                                            conn.matchAddr);
+                                            conn.matchAddr, deviceKey,
+                                            Ask::Again);
                     if (!entry.admitted) {
                         addEasing(conn, token, name, fromGrant);
                     }
@@ -3546,8 +3717,10 @@ public:
                     // whoever it says it is, and no longer writes.
                     std::lock_guard<std::mutex> guard(connMutex);
                     conn.invited = entry.admitted && entry.invited;
+                    conn.enrolled = entry.admitted && entry.enrolled;
                     const ClientAccess now =
-                        writerRule(conn.access, conn.identity, conn.invited);
+                        writerRule(conn.access, conn.identity,
+                                   conn.invited || conn.enrolled);
                     if (now != conn.access) {
                         conn.access = now;
                         conn.queueText(configJson(now));
@@ -3571,10 +3744,14 @@ public:
                         conn.queueText(configJson(now));
                     }
                 }
+                std::string renamed;
                 {
                     std::lock_guard<std::mutex> guard(connMutex);
                     conn.client = name;
+                    if (conn.authorized)
+                        renamed = conn.deviceKey;
                 }
+                noteDevice(renamed, name, conn.identity);
                 notifyClientsChanged();
                 return;
             }
@@ -4140,6 +4317,50 @@ std::vector<SceneGrant> SceneStreamServer::grants()
     Private *p = ensure();
     std::lock_guard<std::mutex> guard(p->tokenMutex);
     return p->grantList;
+}
+
+void SceneStreamServer::setDevices(const std::vector<SceneDevice> &list)
+{
+    Private *p = ensure();
+    {
+        std::lock_guard<std::mutex> guard(p->tokenMutex);
+        p->deviceRecord.clear();
+        for (const auto &d : list) {
+            if (!d.key.empty())
+                p->deviceRecord[d.key] = d;
+        }
+    }
+    // One turned off is out, where a grant counted it.
+    p->rejudgeConnections();
+}
+
+std::vector<SceneDevice> SceneStreamServer::devices()
+{
+    Private *p = ensure();
+    std::lock_guard<std::mutex> guard(p->tokenMutex);
+    std::vector<SceneDevice> out;
+    out.reserve(p->deviceRecord.size());
+    for (const auto &entry : p->deviceRecord)
+        out.push_back(entry.second);
+    return out;
+}
+
+bool SceneStreamServer::device(const std::string &key, SceneDevice &out)
+{
+    Private *p = ensure();
+    std::lock_guard<std::mutex> guard(p->tokenMutex);
+    auto it = p->deviceRecord.find(key);
+    if (it == p->deviceRecord.end())
+        return false;
+    out = it->second;
+    return true;
+}
+
+uint64_t SceneStreamServer::deviceEpoch()
+{
+    Private *p = ensure();
+    std::lock_guard<std::mutex> guard(p->tokenMutex);
+    return p->deviceEpochCounter;
 }
 
 uint64_t SceneStreamServer::addGrant(SceneGrant grant)

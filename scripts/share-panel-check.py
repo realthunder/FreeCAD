@@ -56,14 +56,75 @@ def off(fn, *args):
     return box.get("r")
 
 
-def connect(port, doc, name, query="", headers=""):
+def connect(port, doc, name, query="", headers="", device=""):
+    """A client, as the viewer page would be one: `device` the id its browser
+    keeps (docs/TransactionLog.md sec 30.32), none when empty."""
+
     def talk():
         ws = WS(port, "/scene" + query, headers)
-        ws.hello(name, ',"doc":"%s"' % doc)
+        ws.hello(name, ',"doc":"%s"%s' % (doc, ',"device":"%s"' % device if device else ""))
         ws.next_binary(20.0)
         return ws
 
     return off(talk)
+
+
+def turned_away(port, doc, name, query="", device=""):
+    """What the door says to a hello it refuses; None when it says nothing."""
+
+    def talk():
+        ws = WS(port, "/scene" + query, "")
+        ws.hello(name, ',"doc":"%s"%s' % (doc, ',"device":"%s"' % device if device else ""))
+        try:
+            for _ in range(6):
+                text = ws.next_text(3.0)
+                if text is None:
+                    return None
+                if b'"cmd":"error"' in text:
+                    return json.loads(text.decode()).get("code")
+        except RuntimeError:
+            return "closed"
+        return None
+
+    return off(talk)
+
+
+def write(ws, doc, value, rid):
+    def talk():
+        raw = ws.op(json.dumps({"id": rid, "op": "setProperty", "doc": doc, "obj": "Box",
+                                "target": "object", "name": "Length", "value": value},
+                               separators=(",", ":")))
+        return json.loads(raw.decode("utf-8")) if raw else None
+
+    return off(talk)
+
+
+def browsers(panel, grant_row, act):
+    """Open the browsers dialog of the grant on `grant_row` of the roster
+    (its "Users..." button), and let `act(dialog)` use it."""
+    seen = {"found": False}
+
+    def drive():
+        dlg = QtWidgets.QApplication.activeModalWidget()
+        if dlg is None or dlg.objectName() != "shareBrowsers":
+            if dlg is not None:
+                dlg.reject()
+            return
+        seen["found"] = True
+        try:
+            act(dlg, seen)
+        finally:
+            dlg.accept()
+
+    tree = panel.findChild(QtWidgets.QTreeWidget, "shareRoster")
+    buttons = [b for b in tree.findChildren(QtWidgets.QPushButton)
+               if b.text() == "Users..." and b.isVisible()]
+    seen["buttons"] = len(buttons)
+    if buttons:
+        QtCore.QTimer.singleShot(300, drive)
+        buttons[grant_row].click()
+        settle(25)
+    return seen
 
 
 def roster():
@@ -238,49 +299,173 @@ def run():
         check("a pattern invites nobody %r" % (seen,),
               seen.get("box") is True and len(Gui.serveGrants()) == 1)
 
+        users = panel.findChild(QtWidgets.QSpinBox, "shareInviteUsers")
+        check("the Invite row says how many browsers it is for, one unless set %r"
+              % ((users.value(), users.isVisible()),), users.value() == 1 and users.isVisible())
         clipboard.setText("nothing")
         seen = invite(panel, "lei")
         grants = Gui.serveGrants()
-        named = [g for g in grants if g["client"] == "lei"]
-        check("a name is invited: a grant with the share's token and the name %r" % (grants,),
-              not seen.get("box") and len(grants) == 2 and len(named) == 1
-              and named[0]["token"] == token and named[0]["access"] == 0)
+        mine = [g for g in grants if g["maxUsers"] > 0]
+        check("a name is invited: a grant with a token of its own, for one browser %r" % (grants,),
+              not seen.get("box") and len(grants) == 2 and len(mine) == 1
+              and mine[0]["token"] not in ("", token) and mine[0]["maxUsers"] == 1
+              and mine[0]["devices"] == [] and mine[0]["access"] == 0)
+        own = mine[0]["token"] if mine else ""
         link = clipboard.text()
-        check("and the link on the clipboard carries both %r" % (link,),
-              "token=%s" % token in link and "client=lei" in link and "doc=Shared" in link)
+        check("and the link on the clipboard carries that token and the name %r" % (link,),
+              "token=%s" % own in link and "client=lei" in link and "doc=Shared" in link
+              and token not in link)
         note = panel.findChild(QtWidgets.QLabel, "shareInviteNote")
         check("the panel says so %r" % (note.text(),),
               not note.isHidden() and "lei" in note.text())
         invite(panel, "lei")
-        check("the same name again adds nothing", len(Gui.serveGrants()) == 2)
+        check("the same name again adds nothing, and gives the same link",
+              len(Gui.serveGrants()) == 2 and clipboard.text() == link)
 
-        lei = connect(port, doc.Name, "lei", "?token=%s&client=lei" % token)
-        eve = connect(port, doc.Name, "eve", "?token=%s&client=eve" % token)
+        # The link, opened in a browser: the id the browser keeps is the
+        # other half of who it is.
+        lei_browser = "browser-of-lei-0123456789abcdef"
+        eve_browser = "browser-of-eve-0123456789abcdef"
+        lei = connect(port, doc.Name, "lei", "?token=%s&client=lei" % own, device=lei_browser)
         settle(25)
         who = roster()
-        check("the invited name may edit and is on the roster as invited %r"
-              % (dict((k, (v["access"], v["invited"])) for k, v in who.items()),),
-              who.get("lei", {}).get("access") == "edit" and who.get("lei", {}).get("invited")
-              and who.get("eve", {}).get("access") == "view"
-              and not who.get("eve", {}).get("invited"))
+        check("the first browser to open it is enrolled, and may edit %r"
+              % (dict((k, (v["access"], v["enrolled"], v["invited"])) for k, v in who.items()),),
+              who.get("lei", {}).get("access") == "edit" and who.get("lei", {}).get("enrolled")
+              and not who.get("lei", {}).get("invited"))
+        key = who.get("lei", {}).get("device", "")
+        check("the grant holds its browser, by a hash of the id %r"
+              % ([g["devices"] for g in Gui.serveGrants() if g["maxUsers"] > 0],),
+              len(key) == 40 and lei_browser not in key
+              and [g["devices"] for g in Gui.serveGrants() if g["maxUsers"] > 0] == [[key]])
+        code = turned_away(port, doc.Name, "lei", "?token=%s&client=lei" % own, eve_browser)
+        check("the same link in another browser is refused %r" % (code,), code == "Refused")
+        code = turned_away(port, doc.Name, "lei", "?token=%s&client=lei" % own)
+        check("and so is a client that says no browser %r" % (code,), code == "Refused")
+        eve = connect(port, doc.Name, "eve", "?token=%s&client=eve" % token, device=eve_browser)
+        settle(25)
+        who = roster()
+        check("the plain link still admits to look, and its browser is not counted %r"
+              % (dict((k, (v["access"], v["enrolled"])) for k, v in who.items()),),
+              who.get("eve", {}).get("access") == "view" and not who.get("eve", {}).get("enrolled"))
+        record = dict((d["enrolledAs"], d) for d in Gui.serveDevices())
+        check("the record has both browsers, by what each called itself %r" % (sorted(record),),
+              sorted(record) == ["eve", "lei"] and record["lei"]["key"] == key)
+
+        # What it writes is recorded under the browser, and its login says
+        # which one.
+        reply = write(lei, doc.Name, 23, 5)
+        settle(25)
+        authors = [(t["author"], t["author_kind"]) for t in doc.getTransactionLog()
+                   if t["kind"] == "user" and t["author_kind"] != "local"]
+        logins = [json.loads(t["script"]) for t in doc.getTransactionLog()
+                  if t["kind"] == "login"]
+        check("its write is its own, under the name it came by and its browser %r %r"
+              % (reply, authors),
+              bool(reply) and reply.get("ok") is True
+              and authors == [("lei~%s" % key[:6], "enrolled")])
+        check("a login says which browser, whoever it is %r" % (logins,),
+              sorted(l.get("device") for l in logins) == sorted([key[:12], record["eve"]["key"][:12]]))
+
+        # Stored: the grant with its browser, and the record.
+        settle(120)
+        stored = share.GetGroup("Grants")
+        kept = [stored.GetGroup(n) for n in stored.GetGroups()]
+        counted = [g for g in kept if g.GetInt("MaxUsers", 0) > 0]
+        devices = share.GetGroup("Devices")
+        check("the grant is stored with its browser, and the record with both %r"
+              % ([g.GetString("Devices", "") for g in counted],),
+              len(counted) == 1 and counted[0].GetString("Devices", "") == key
+              and counted[0].GetString("Note", "") == "lei"
+              and sorted(devices.GetGroup(n).GetString("EnrolledAs", "")
+                         for n in devices.GetGroups()) == ["eve", "lei"])
 
         clipboard.setText("nothing")
         tree = panel.findChild(QtWidgets.QTreeWidget, "shareRoster")
         names = [tree.topLevelItem(i).text(0) for i in range(tree.topLevelItemCount())]
+        counts = [tree.topLevelItem(i).text(3) for i in range(tree.topLevelItemCount())]
         links = [b for b in tree.findChildren(QtWidgets.QPushButton)
                  if b.text() == "Link" and b.isVisible()]
-        check("the invitation's row has its link %r" % ((names, len(links)),),
-              names.count("lei") == 2 and len(links) == 1)
+        check("the roster says which browser, the grant how many it has %r"
+              % ((names, counts, len(links)),),
+              "lei ~%s" % key[:6] in names and "lei" in names
+              and "1 of 1 browser(s)" in counts and len(links) == 1)
         if links:
             links[0].click()
             settle()
-        check("which copies it again", clipboard.text() == link)
+        check("and its Link copies the link again", clipboard.text() == link)
+
+        # The grant's browsers: one named by the host, then turned off.
+        def name_it(dlg, seen):
+            rows = dlg.findChild(QtWidgets.QTreeWidget, "shareBrowserList")
+            seen["rows"] = [rows.topLevelItem(i).text(0) for i in range(rows.topLevelItemCount())]
+            seen["most"] = dlg.findChild(QtWidgets.QSpinBox, "shareGrantUsers").value()
+
+        seen = browsers(panel, 0, name_it)
+        check("the grant lists its one browser %r" % (seen,),
+              seen["found"] and seen.get("rows") == ["lei ~%s" % key[:6]] and seen.get("most") == 1)
+
+        def turn_off(dlg, seen):
+            rows = dlg.findChild(QtWidgets.QTreeWidget, "shareBrowserList")
+            rows.setCurrentItem(rows.topLevelItem(0))
+            for b in dlg.findChildren(QtWidgets.QPushButton):
+                if b.text() == "Turn off / on":
+                    b.click()
+            seen["state"] = rows.topLevelItem(0).text(5)
+
+        seen = browsers(panel, 0, turn_off)
+
+        def farewell():
+            # A page reads what it is told, which is how it hears it is out.
+            try:
+                for _ in range(8):
+                    text = lei.next_text(3.0)
+                    if text is None:
+                        return None
+                    if b'"cmd":"error"' in text:
+                        return json.loads(text.decode()).get("code")
+            except RuntimeError:
+                return "closed"
+            return None
+
+        told = off(farewell)
+        off(lei.close)
+        settle(40)
+        who = roster()
+        check("turned off, the browser is told and is out, and the others are where they were "
+              "%r %r %r" % (seen.get("state"), told, sorted(who)),
+              seen.get("state") == "off" and told == "Refused" and "lei" not in who
+              and "eve" in who)
+        code = turned_away(port, doc.Name, "lei", "?token=%s&client=lei" % own, lei_browser)
+        check("and stays out when it comes back %r" % (code,), code == "Refused")
+        seen = browsers(panel, 0, turn_off)
+        settle(20)
+        lei = connect(port, doc.Name, "lei", "?token=%s&client=lei" % own, device=lei_browser)
+        settle(25)
+        check("turned on again, it is the browser it was",
+              roster().get("lei", {}).get("enrolled") is True
+              and [g["devices"] for g in Gui.serveGrants() if g["maxUsers"] > 0] == [[key]])
 
         for ws in (lei, eve):
             off(ws.close)
         settle(20)
         stop(panel)
         check("sharing stopped", Gui.serveGrants() == [] and not panel.isVisible())
+
+        # A new share: what was stored is the door again.
+        port = free_port()
+        start("LAN", port)
+        lei = connect(port, doc.Name, "lei", "?token=%s&client=lei" % own, device=lei_browser)
+        settle(25)
+        check("shared again, the browser is still the invitation's, and no other is %r"
+              % ([g["devices"] for g in Gui.serveGrants() if g["maxUsers"] > 0],),
+              roster().get("lei", {}).get("enrolled") is True
+              and turned_away(port, doc.Name, "lei", "?token=%s&client=lei" % own, eve_browser)
+              == "Refused")
+        off(lei.close)
+        settle(20)
+        panel = share_panel()
+        stop(panel)
 
         # --- a sign-in door with a header of its own
         port = free_port()

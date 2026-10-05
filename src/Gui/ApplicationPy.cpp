@@ -280,6 +280,8 @@ PyMethodDef Application::Methods[] = {
    "The scene stream server's connected clients, one dict each: id,\n"
    "client (label), identity (verified by the front door, may be\n"
    "empty), invited (admitted on an invitation issued to its one name),\n"
+   "device (the key of the browser it is, empty when it said none),\n"
+   "enrolled (one of the browsers its grant counts),\n"
    "doc, address, viewer, viewOnly, access ('view', 'edit' or\n"
    "'host'), connectedMs, and the\n"
    "uplink counters uplinkMsgs/uplinkBytes/uplinkWire with the camera\n"
@@ -303,7 +305,9 @@ PyMethodDef Application::Methods[] = {
    "The scene stream server's live grant list (the door), one dict\n"
    "each: id, token, identity, client, address, access (0 edit,\n"
    "1 view-only, 2 banned, 3 host -- a host only for the identity it\n"
-   "names literally, edit for anyone else it matches), liveOnly."},
+   "names literally, edit for anyone else it matches), liveOnly,\n"
+   "maxUsers (how many browsers it is for; 0 counts none) and devices\n"
+   "(the keys of those enrolled, docs/TransactionLog.md sec 30.32)."},
   {"serveSetGrants",          (PyCFunction) Application::sServeSetGrants, METH_VARARGS,
    "serveSetGrants(list) -> None\n"
    "\n"
@@ -311,6 +315,20 @@ PyMethodDef Application::Methods[] = {
    "(all keys optional). A non-empty list becomes the door on every\n"
    "endpoint; an empty one falls back to the shared token. Every\n"
    "connection is re-judged."},
+  {"serveDevices",            (PyCFunction) Application::sServeDevices, METH_VARARGS,
+   "serveDevices() -> list\n"
+   "\n"
+   "The record of browsers (docs/TransactionLog.md sec 30.32), one dict\n"
+   "each: key (the hash of the id the browser keeps), name (what its\n"
+   "user calls itself, as last given), enrolledAs (as first given),\n"
+   "identity (the verified one it last came with), label (the host's\n"
+   "own name for it), first, last, enabled."},
+  {"serveSetDevices",         (PyCFunction) Application::sServeSetDevices, METH_VARARGS,
+   "serveSetDevices(list) -> None\n"
+   "\n"
+   "Replace the record of browsers with dicts of the serveDevices()\n"
+   "shape. One with enabled False is refused wherever a grant counts\n"
+   "its users; every connection is re-judged."},
   {"serveStop",               (PyCFunction) Application::sServeStop, METH_VARARGS,
    "serveStop() -> None\n"
    "\n"
@@ -1258,6 +1276,8 @@ PyObject* Application::sServeClients(PyObject * /*self*/, PyObject *args)
         entry.setItem("client", Py::String(c.client));
         entry.setItem("identity", Py::String(c.identity));
         entry.setItem("invited", Py::Boolean(c.invited));
+        entry.setItem("device", Py::String(c.device));
+        entry.setItem("enrolled", Py::Boolean(c.enrolled));
         entry.setItem("grant",
                       Py::Long(static_cast<unsigned long long>(c.grant)));
         entry.setItem("doc", Py::String(c.doc));
@@ -1336,6 +1356,11 @@ PyObject* Application::sServeGrants(PyObject * /*self*/, PyObject *args)
         entry.setItem("address", Py::String(g.address));
         entry.setItem("access", Py::Long(long(g.access)));
         entry.setItem("liveOnly", Py::Boolean(g.liveOnly));
+        entry.setItem("maxUsers", Py::Long(long(g.maxUsers)));
+        Py::List devices;
+        for (const auto &key : g.devices)
+            devices.append(Py::String(key));
+        entry.setItem("devices", devices);
         list.append(entry);
     }
     return Py::new_reference_to(list);
@@ -1363,6 +1388,12 @@ PyObject* Application::sServeSetGrants(PyObject * /*self*/, PyObject *args)
             g.address = str("address");
             if (entry.hasKey("access"))
                 g.access = int(Py::Long(entry.getItem("access")));
+            if (entry.hasKey("maxUsers"))
+                g.maxUsers = int(Py::Long(entry.getItem("maxUsers")));
+            if (entry.hasKey("devices")) {
+                for (const auto &key : Py::Sequence(entry.getItem("devices")))
+                    g.devices.push_back(Py::String(key).as_std_string("utf-8"));
+            }
             if (entry.hasKey("id"))
                 g.id = uint64_t(
                     static_cast<unsigned long long>(
@@ -1370,6 +1401,63 @@ PyObject* Application::sServeSetGrants(PyObject * /*self*/, PyObject *args)
             grants.push_back(std::move(g));
         }
         Render::SceneStreamServer::instance().setGrants(grants);
+        Py_Return;
+    }
+    catch (Py::Exception &) {
+        return nullptr;
+    }
+}
+
+PyObject* Application::sServeDevices(PyObject * /*self*/, PyObject *args)
+{
+    if (!PyArg_ParseTuple(args, ""))
+        return nullptr;
+    Py::List list;
+    for (const auto &d : Render::SceneStreamServer::instance().devices()) {
+        Py::Dict entry;
+        entry.setItem("key", Py::String(d.key));
+        entry.setItem("name", Py::String(d.name));
+        entry.setItem("enrolledAs", Py::String(d.enrolledAs));
+        entry.setItem("identity", Py::String(d.identity));
+        entry.setItem("label", Py::String(d.label));
+        entry.setItem("first", Py::Float(d.first));
+        entry.setItem("last", Py::Float(d.last));
+        entry.setItem("enabled", Py::Boolean(d.enabled));
+        list.append(entry);
+    }
+    return Py::new_reference_to(list);
+}
+
+PyObject* Application::sServeSetDevices(PyObject * /*self*/, PyObject *args)
+{
+    PyObject *seq = nullptr;
+    if (!PyArg_ParseTuple(args, "O", &seq))
+        return nullptr;
+    try {
+        Py::Sequence input(seq);
+        std::vector<Render::SceneDevice> devices;
+        for (const auto &it : input) {
+            Py::Dict entry(it);
+            Render::SceneDevice d;
+            auto str = [&entry](const char *key) -> std::string {
+                return entry.hasKey(key)
+                    ? Py::String(entry.getItem(key)).as_std_string("utf-8")
+                    : std::string();
+            };
+            d.key = str("key");
+            d.name = str("name");
+            d.enrolledAs = str("enrolledAs");
+            d.identity = str("identity");
+            d.label = str("label");
+            if (entry.hasKey("first"))
+                d.first = double(Py::Float(entry.getItem("first")));
+            if (entry.hasKey("last"))
+                d.last = double(Py::Float(entry.getItem("last")));
+            if (entry.hasKey("enabled"))
+                d.enabled = Py::Object(entry.getItem("enabled")).isTrue();
+            devices.push_back(std::move(d));
+        }
+        Render::SceneStreamServer::instance().setDevices(devices);
         Py_Return;
     }
     catch (Py::Exception &) {

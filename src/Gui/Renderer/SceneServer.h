@@ -247,6 +247,39 @@ struct SceneGrant {
     /// so a renamed client can reconnect; the panel shows them apart,
     /// with a way to keep or drop them.
     bool liveOnly = false;
+    /// How many browsers this grant is for (docs/ShareAccess.md sec 2.5,
+    /// docs/TransactionLog.md sec 30.32). 0, the default: it counts
+    /// nobody, and is the invitation it always was. More: the grant
+    /// admits a connection only with the id its browser keeps
+    /// (SceneDevice), enrols the first `maxUsers` of them in `devices`,
+    /// and refuses any other. One enrolled is someone known, and may
+    /// write where the grant says edit: what it presents is half the
+    /// grant's -- its token, or the identity a door verified -- and half
+    /// its own.
+    int maxUsers = 0;
+    /// The browsers enrolled, by SceneDevice::key. Filled by the server
+    /// at a hello; whoever stores the grants stores these with them.
+    std::vector<std::string> devices;
+};
+
+/// A browser, as the host's record knows it (docs/ShareAccess.md sec 2.5):
+/// the id it generated once and keeps, which comes with every hello
+/// whatever token or sign-in the connection came by -- so the record
+/// follows one browser across them. Kept by its hash; the id itself is
+/// not stored.
+struct SceneDevice {
+    std::string key;         ///< SHA-1 of the browser's id, hex
+    std::string name;        ///< what its user calls itself, as last given
+    std::string enrolledAs;  ///< and as first given: what a log names it by
+    std::string identity;    ///< the verified identity it last came with
+    /// The host's own name for it, when it gave one: what a log then
+    /// names it by. Never from the browser.
+    std::string label;
+    double first = 0;        ///< first and last hello, seconds since the epoch
+    double last = 0;
+    /// Off: refused wherever a grant counts its users. The host's way to
+    /// turn one browser out of a token several share.
+    bool enabled = true;
 };
 
 /// One connected viewer as the sharing UI sees it (docs/MultiDocServe.md
@@ -276,6 +309,11 @@ struct SceneClientInfo {
     /// verified identity it is what lets the connection write
     /// (docs/TransactionLog.md sec 30.6 U4, U6).
     bool invited = false;
+    /// The browser it is (SceneDevice::key); empty when its hello gave no
+    /// id. \a enrolled: admitted as one of the browsers its grant counts
+    /// (SceneGrant::maxUsers), which makes it someone known.
+    std::string device;
+    bool enrolled = false;
     /// Past the door: a connection still waiting for a token it has not
     /// presented is on the roster and gets no scene bytes.
     bool authorized = false;
@@ -451,6 +489,18 @@ public:
     /// easings the server has minted since.
     void setGrants(const std::vector<SceneGrant> &list);
     std::vector<SceneGrant> grants();
+
+    /// The record of browsers (SceneDevice): every one an admitted hello
+    /// came from, whichever door admitted it. setDevices() replaces it --
+    /// what was stored, when sharing starts; a browser turned off there
+    /// is re-judged out. deviceEpoch() moves whenever the record or a
+    /// grant's enrolment changed by a hello, which is the cue to store
+    /// both again.
+    void setDevices(const std::vector<SceneDevice> &list);
+    std::vector<SceneDevice> devices();
+    uint64_t deviceEpoch();
+    /// The record's entry for \a key; false when it has none.
+    bool device(const std::string &key, SceneDevice &out);
     /// Add one grant to the live list (a rule made in the panel while
     /// sharing runs). Returns its assigned id.
     uint64_t addGrant(SceneGrant grant);
