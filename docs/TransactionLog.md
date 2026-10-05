@@ -14598,3 +14598,203 @@ VC 18, PC 28, FC 16, VW 14, MC 28, the two-document check 24, the tree
 check 19, the author check 36, the import check 49, the request check 31
 (+3) and the share check 47. The two fixes were each switched off once to
 see their test fail.
+
+## 31. Phase 8: a value that is many things (survey and questions, 2026-10-05)
+
+15's phase 8 is "`enc = delta`, generic first, then the sketch codec --
+the point at which two clients in one sketch, or two branches, stop
+conflicting on the whole array". Built of what is below: 31.1's last
+item, and 31.5, which waits for no ruling. The rest waits for 31.3.
+
+### 31.1 What exists (survey, 2026-10-05)
+
+- **The generic delta is built** (23.2, 23.8): a superseded value is
+  kept as a zstd patch against the one that replaced it, a version's
+  entries and an op's `before` alike. 20 measured it enough for size --
+  409 KB to 121 bytes on a sketch edit -- and said then what the sketch
+  codec is wanted for: merge, not size. So phase 8 is a merge that looks
+  inside a value. The store needs nothing.
+- **A merge sees a property as one value** (28): a key is (container,
+  property), a value is known by its hash, a change is taken whole or is
+  a conflict, and what goes in is put back whole (`restoreValue`).
+- **Measured, two branches of one sketch** (`sk_probe.py` in
+  `~/.cache/txnlog-s30/rt`): three lines and a coincidence, then
+
+  | ours | theirs | the merge |
+  | --- | --- | --- |
+  | adds a line (id 5) | adds a line (id 4) | conflict, `Sketch.Geometry`: one side's line or the other's |
+  | removes the third line, which nothing constrains | constrains the third line | **nothing asked, nothing failed**: two lines, and a distance on line 3 |
+  | adds a line | constrains an old line | right |
+
+  The second is not a missing feature. `Geometry` and `Constraints` are
+  two properties and were merged as two -- ours changed one, theirs the
+  other, each "taken" -- and a constraint names its geometry by its
+  place in the list. The sketch says it is up to date. And with four
+  lines, ours removing the third (`sk_probe2.py`): theirs' distance, put
+  on line 3, is on line 4 after the merge, which is in its place.
+  Nothing asked, nothing failed, nothing to see. Closed, 31.5.
+- **What a sketch gives to go by.** Each geometry has an id
+  (`SketchGeometryExtension`, written with it), one that no branch of
+  the file gives twice (27.45): the two lines above are 4 and 5. A
+  sketch's element names are made of it (`g5`, `e7` for external
+  geometry, `g5v1` for a point). A constraint has none -- a tag in
+  memory, a name if the user gave one -- and says `First`, `Second`,
+  `Third` and `ElementIds` as places in the list, negative for external
+  geometry. External geometry is a list of its own, each with an id and
+  the reference it was made from.
+- **The solver** changes the last digits of every line it touches (20):
+  two sides that each solved have "changed" all the geometry, by nothing
+  anyone did.
+- **A copy of the file** (30.15) mints geometry ids from its own counter:
+  each copy's next line is 4. Between branches an id is one geometry;
+  between copies it is not, as an object id was not before 30.15.
+- **Others of the kind**, measured (`arr_probe.py`), each side adding one
+  thing: a group's `Group` -- an object each -- conflicts whole; an
+  object's `ExpressionEngine` -- an expression each, on two properties --
+  conflicts whole; a sheet's `cells` -- a cell each -- conflicts whole. A
+  body in which two branches each added a feature is the first of these.
+- **Seen on the way, and fixed: a sheet's cells did not follow the
+  branch.** `PropertySheet::Restore` read the cells into whatever cells
+  were there. A document being opened has none; a value put back from
+  the log -- a switch, an undo past the hot window, a restore, a merge --
+  is read into a sheet that has. A cell set on one branch was there on
+  every other, and `main`'s were on the branch. `Restore` clears first.
+  Python `testASheetsCellsFollowTheBranch`, with an alias, which is a
+  property of the sheet and goes and comes by its own ops.
+
+### 31.2 Proposed shape
+
+**A unit.** What is merged together is not always one property: a
+sketch's geometry, its constraints and its external geometry are one
+thing. An object says which of its properties are a unit and how a unit
+is merged -- App knows nothing of sketches -- and every other property is
+merged as now. Where *either* side changed *anything* of a unit that the
+other side changed anything of, the unit is merged by its own rule; that
+is what the second row above needs, where no one property was changed by
+both.
+
+**By element.** The rule for a unit reads the three states -- at the
+base, ours, theirs -- as elements with identities, and merges those as
+28 merges properties: changed on one side, taken; the same on both, the
+same; changed on both and differently, a conflict *of that element*;
+removed on one side and changed on the other, a conflict.
+
+- *A list of links* (`Group`): the element is the object; added and
+  removed are all there is. Order: ours, then what theirs added.
+- *Expressions*: the element is the path.
+- *Cells*: the element is the address.
+- *A sketch*: geometry by id; external geometry by id and reference;
+  constraints read with their places turned into ids, merged, and turned
+  back into places in the merged list.
+
+**What is written** is what a merge writes now: whole values, in one
+`merge` row. An undo of it, a replay, a copy's import of it need nothing
+new.
+
+**The picker** lists an element's conflict under its property --
+`Sketch.Geometry #5`, `Body.Group Pad001`, `Sheet.cells B1` -- with a
+side for each, and one choice for all of a property.
+
+**A sketch after a merge is solved**, as it is recomputed now; one that
+does not solve is in `failed`.
+
+### 31.3 Questions
+
+- **P1, the order.** The sketch is the hard one and the rarer conflict.
+  A group, expressions and cells are simple, and a body edited on two
+  branches conflicts on `Group` every time. Proposed: the unit and the
+  three simple rules first, then the sketch.
+- **P2, what a constraint is known by.** (a) What it says: its type and
+  the geometry it is on, by id -- its value and the rest are then what
+  changed. Two constraints of one type on the same geometry are told
+  apart by order. No change to any file. (b) An id of its own, minted
+  as a geometry's is and written with it: exact, and every file written
+  from then on has it. Proposed: (a).
+- **P3, two sides that moved one geometry.** Proposed: within the
+  solver's noise, the same; beyond it, a conflict of that element -- two
+  people dragged one point to two places, and that is theirs to settle.
+  The other answer is to take one side's place and let the solver decide,
+  asking only when it fails.
+- **P4, one side removed what the other constrained, or built on.**
+  Proposed: a conflict, as an object removed there and changed here is
+  (28). The other answer drops the constraint with its geometry and says
+  so.
+- **P5, how far the picker goes**: a side per element, as proposed, or a
+  side per property with the elements shown.
+- **P6, a copy of the file.** Its new geometry has the ids this file
+  gave other geometry. Proposed: a later step of its own -- the copy's
+  ids mapped as its objects' are (30.15), in its values and in the
+  element names that carry them. Until then a branch an import made is
+  merged as now: a sketch both changed is a conflict, whole. That needs
+  saying in the code, since an id read as the same geometry across
+  copies would merge two lines into one.
+- **P7, two people in one sketch at once.** Not this phase: it needs an
+  edit session of each client's own (`docs/MultiViewEdit.md`). This phase
+  is what such a session would be merged by.
+
+### 31.4 Build order, once ruled
+
+1. The unit: an object's say in what is merged together, the plan and
+   the merge reading it, element conflicts in the result and the picks.
+   A list of links.
+2. Expressions, cells.
+3. The sketch: geometry and external geometry by id, the constraints
+   through them, the solver's noise.
+4. The picker.
+5. A copy's geometry ids (P6).
+
+### 31.5 Built ahead of the rulings: a sketch is one thing to a merge (2026-10-05)
+
+31.1's second row is wrong in what is shipped, under any answer to 31.3,
+and what closes it is the first step of 31.4 whichever way the rest is
+ruled.
+
+**The unit.** `DocumentObject::getMergeUnit(prop)`: the properties of the
+object that are one thing with `prop`, the first being what the unit is
+known by; empty unless an object says otherwise. `SketchObject` says
+`Geometry`, `Constraints`, `ExternalGeo`, `ExternalGeometry`.
+
+**In the plan** (`planMerge`), after the properties are weighed one by
+one as 28 has it: for each unit, each side's value of each property
+where that side ends -- its own, or the base's where it left the
+property alone. Where both sides changed something of the unit and do
+not end the same, what 28 made of its properties one by one is taken
+out, and in its place:
+
+- one **conflict**, op `unit`, under the key of the unit's first
+  property (`Sketch.Geometry`), saying which properties each side
+  changed. It is what a side is picked for, and writes nothing itself;
+- one change of kind **`unit`** for each property the two sides end
+  differently in, under that same key, with theirs' value -- the base's,
+  for a property ours changed and theirs left.
+
+**In the merge**, a `unit` change goes by the side picked for its key:
+theirs, and every property of the unit is put as theirs has it -- the
+ones theirs changed, and the ones ours changed, back to what they were
+when the two parted; ours, and nothing of the unit is written. No side,
+and the merge is refused as for any conflict. The dialog shows the
+conflict with its side, and the `unit` rows below with the changes that
+ask nothing, greyed, each "as Sketch.Geometry".
+
+So until 31.4's third step a sketch that two branches both changed is
+one question, whole -- 31.1's first row asked it already, of `Geometry`
+alone -- and its third row, which merged right because a line added goes
+to the end, asks now too. That is the price of not guessing: nothing
+short of reading the elements can tell the third row from the second.
+
+Python `testASketchIsMergedAsOneThing`: four lines, ours removing the
+third and theirs putting a distance on it. One conflict, `Sketch.Geometry`,
+with `Geometry` and `Constraints` under it and neither taken alone;
+nobody picking, nothing moves; theirs picked, the sketch is theirs --
+four lines, the distance on the third, by its id; ours picked, it is
+ours; and a sketch only theirs changed is taken with nothing asked. The
+Gui merge check (+3, 31) has it through the dialog: one conflict with a
+side, `Geometry` and `Constraints` going as it goes, merged as theirs
+with the distance on the line it was put on.
+
+**Gates** for 31.1's sheet and 31.5, frozen and unfrozen each: Python 3013
+OK (52 skipped frozen, 53 unfrozen; 6 expected failures; +2), ctest
+881/881, and the GUI checks RC 15, BC 30, VC 18, PC 28, FC 16, VW 14, MC
+31 (+3, run after the rest), the two-document check 24, the tree check
+19, the author check 36, the import check 49, the request check 31 and
+the share check 47.
