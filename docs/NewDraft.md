@@ -338,8 +338,9 @@ a face, and a result without it is more surprising than an error.
 
 ### 4.9 A drafted face stops at the body
 
-Decided 2026-10-05: a drafted face does not grow the body past its own
-extent. Where the face leans out, its neighbours grow to meet it, but not
+Decided 2026-10-05: by default a drafted face does not grow the body
+past its own extent (an option turns the stop off: `SetStopAtBody`,
+PartDesign's `StopAtBody`, section 6). Where the face leans out, its neighbours grow to meet it, but not
 beyond a face of the body that bounds the whole solid: `notch_ledge_a60`'s
 ledge rises 8.66 at its front over a notch 5 deep, and instead of a fin
 standing 3.66 over the block's top, the ledge stops at the top's plane
@@ -553,22 +554,28 @@ already does (`OCC_VERSION_HEX`).
   (some forty lines), the classic draft untouched.
 - `src/Mod/Part/App/CellDraft.h/.cpp`: `Part::CellDraft`, a
   `BRepBuilderAPI_MakeShape` (constructor with the shape; `Add(face,
-  direction, angle, neutral plane)`; `Build`; `Error()` with the face and
+  direction, angle, neutral plane)`; `SetStopAtBody(bool)`, default true,
+  the stop of section 4.9 -- false lets a drafted face grow past the body,
+  the plain local-operation result; `Build`; `Error()` with the face and
   neighbour of section 4.8) whose `Modified` / `Generated` / `IsDeleted`
   read one `BRepTools_History` -- the fuse's, the cell choice's and the
   merges', merged. `F`'s new face is `Modified(F)`; a neighbour grown or
   cut is `Modified` of the neighbour; a face swallowed `IsDeleted`; a new
   edge (the corner of `notch_bevel_ledge`) `Generated` from the faces it
   lies between.
-- `TopoShape::makEDraft` gains the method and runs `CellDraft` through
-  `makEShape`, so the element map comes from that history as for every
-  other operation.
+- `TopoShape::makEDraft` gains the method and the stop flag and runs
+  `CellDraft` through `makEShape`, so the element map comes from that
+  history as for every other operation.
 - `PartDesign::Draft`:
   - **New**: the cell draft. The refine-then-classic of today goes away:
     the cell draft drafts coplanar pieces as one face itself (section 4.3)
     and does not refine the rest of the body.
   - **Auto**: Classic; if it fails, the cell draft (decided: no refine +
     classic in between).
+  - **`StopAtBody`** (bool, default true): passed to the cell draft's
+    `SetStopAtBody`; it has no effect on the classic draft. A file saved
+    before the property existed restores it as true. Shown with `Method`
+    in the property view and the task panel.
   - Errors: the classic draft's refusal reported with its status and the
     face, edge or vertex it names, as an element name of the base
     (`Draft_EdgeRecomputation` on `Edge12`, ...); the cell draft's with
@@ -596,9 +603,10 @@ already does (`OCC_VERSION_HEX`).
 
 1. `Part::CellDraft`, phase 1 (single planar faces, sequential faces, the
    stop of 4.9, all errors of 4.8), the local fuse of 4.2, history;
-   `TopoShape::makEDraft`'s method; the suite cases.
-2. `PartDesign::Draft`: `Method = New` / Auto on it, error reporting for
-   both drafts, `TestDraft`.
+   `SetStopAtBody`; `TopoShape::makEDraft`'s method; the suite cases
+   (both ways for `notch_ledge_a60` and the bevelled notch).
+2. `PartDesign::Draft`: `Method = New` / Auto on it, the `StopAtBody`
+   property, error reporting for both drafts, `TestDraft`.
 3. Measure the self-intersection check after a classic draft (section
    2.2), and an envelope check for a classic result grown past the body
    (section 5.5): their cost on the sweep, and how many classic results
@@ -611,7 +619,8 @@ already does (`OCC_VERSION_HEX`).
 
 1. A drafted face that would vanish: refused (`FaceVanishes`).
 2. A drafted face stops at the body's faces; it does not grow past the
-   body (section 4.9).
+   body (section 4.9). It is an option, on by default: `SetStopAtBody` in
+   the API, `StopAtBody` on PartDesign's Draft.
 3. Auto's fallback is the cell draft only; no refine + classic before it.
 4. In FreeCAD's Part, not in OCCT (section 6).
 5. The self-intersection check after a classic draft: measure first
