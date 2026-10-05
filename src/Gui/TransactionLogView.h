@@ -93,6 +93,10 @@ private Q_SLOTS:
     void onMergeBranch();
     void onImportFile();
     void onOpenBranch();
+    void onRequestActivated(QTreeWidgetItem* item);
+    void onRequestContextMenu(const QPoint& pos);
+    /// Ask the merge's preview of each request how many conflicts it finds.
+    void previewRequests();
     void applyVisibility();
     /// Lay the graph out over the rows shown (docs/TransactionLog.md sec 26).
     void layoutGraph();
@@ -113,6 +117,17 @@ public Q_SLOTS:
      * with something to bring.
      */
     void importFile(const QString& path, const QString& branch);
+    /** Bring in a file a client of the served document sent
+     * (docs/TransactionLog.md sec 30.20 H6, 30.23): request `id` of
+     * Gui::SceneRequests, which until now was kept and not read. It is
+     * imported as importFile() imports any file, the import's record naming
+     * who sent it, and put to the merge; the file itself is then dropped.
+     */
+    void bringRequest(qulonglong id);
+    /// Refuse a request: a sent file not yet read (`id`) is dropped unread.
+    void dropRequest(qulonglong id);
+    /// Refuse a request that is a branch: the branch is deleted.
+    void deleteRequest(const QString& branch);
 
 protected:
     void showEvent(QShowEvent*) override;
@@ -127,6 +142,11 @@ private:
     void refreshVersions();
     /// The branch switcher's items (docs/TransactionLog.md sec 26).
     void refreshBranches();
+    /// The request list (sec 30.20 H2): files sent and not read, and the
+    /// branches an import made that this branch has not taken.
+    void refreshRequests();
+    /// importFile() with who sent the file; false when nothing came.
+    bool importFrom(const QString& path, const QString& branch, const QString& sender);
     /// Ask for a new branch's name and make it from `version`, else `seq`,
     /// else the current head.
     void createBranch(int64_t version, int64_t seq);
@@ -145,6 +165,18 @@ private:
     fastsignals::scoped_connection _connDeleteDoc;
     fastsignals::scoped_connection _connNewDoc;
     fastsignals::scoped_connection _connRestoreDoc;
+    fastsignals::scoped_connection _connRequests;
+    /// What the preview said of a request, by branch: the head it was
+    /// asked of, this branch's head then, and the conflicts -- -2 for a
+    /// branch with nothing to give, which is no request.
+    struct Previewed
+    {
+        int64_t theirs {0};
+        int64_t ours {0};
+        int conflicts {-1};
+    };
+    std::map<std::string, Previewed> _previewed;
+    QTimer _previewTimer;
     bool _fillingBranches {false};
 
     QLabel* _status {nullptr};
@@ -157,6 +189,7 @@ private:
     QPushButton* _renameBranch {nullptr};
     QPushButton* _mergeBranch {nullptr};
     QPushButton* _importFile {nullptr};
+    QTreeWidget* _requests {nullptr};
     QPushButton* _openBranch {nullptr};
     QCheckBox* _allBranches {nullptr};
     QCheckBox* _hideRecords {nullptr};

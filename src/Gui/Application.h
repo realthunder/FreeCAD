@@ -484,6 +484,8 @@ public:
     static PyObject* sIsLiveImport             (PyObject *self,PyObject *args);
     static PyObject* sIsBuildingVisuals        (PyObject *self,PyObject *args);
     static PyObject* sServeClients             (PyObject *self,PyObject *args);
+    static PyObject* sServeRequests            (PyObject *self,PyObject *args);
+    static PyObject* sServeDropRequest         (PyObject *self,PyObject *args);
     static PyObject* sServeSetClientMode       (PyObject *self,PyObject *args);
     static PyObject* sServeKickClient          (PyObject *self,PyObject *args);
     static PyObject* sCyclesDevices            (PyObject *self,PyObject *args);

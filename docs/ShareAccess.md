@@ -172,6 +172,27 @@ person a served scene is started for -- the demo recipes of `docs/Sandbox.md`, a
 tunnel -- `FC_SERVE_INVITE=<name>` does the same with no grant list: the link is
 `?token=<secret>&client=<name>`.
 
+### 2.4 What a client may send: files
+
+Added 2026-10-05 (docs/TransactionLog.md sec 30.23). Two control ops carry
+a file from a browser to the host, and both go one way only: the client
+sends a name and bytes, the host alone decides where they land, and no op
+lists a directory, reads a host file or takes a path from a client.
+
+- **`widgets.upload`** -- a mirrored task panel's file chooser
+  (docs/Sandbox.md 7.22). The answer is the path the host wrote, which the
+  panel's field then names.
+- **`requests.send`** -- a copy of the served document, to be merged. The
+  host keeps it and reads nothing of it; it is listed in the transaction
+  log panel with who sent it, and is opened only when the owner brings it
+  in. The answer has no path.
+
+Both are for a connection that may edit (sec 2.3), and both are under one
+limit: **the preference `UploadLimitMB`** of `BaseApp/Preferences/SceneShare`,
+16 unless set, preset for a headless serve by **`FC_SERVE_UPLOAD_MB`**. It is
+read at each upload. It cannot be raised past 46 MB, which is what one
+frame of the socket carries once the bytes are base64.
+
 ## 3. Prior art
 
 - **Ticket exchange** — a long-lived credential buys a short-lived, often single-use

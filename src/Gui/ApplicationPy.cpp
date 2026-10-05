@@ -56,6 +56,7 @@
 #include "Document.h"
 #include "SceneServeSource.h"
 #include "Renderer/SceneServer.h"
+#include "SceneRequests.h"
 #include "Renderer/CyclesRenderer.h"
 #include "DocumentObserverPython.h"
 #include "DownloadManager.h"
@@ -258,6 +259,18 @@ PyMethodDef Application::Methods[] = {
    "display at all. A non-zero port starts the scene stream server\n"
    "there. Returns False when the configured render engine cannot\n"
    "publish without a graphics device."},
+  {"serveRequests",           (PyCFunction) Application::sServeRequests, METH_VARARGS,
+   "serveRequests(doc='') -> list\n"
+   "\n"
+   "The files clients of a served document sent to be merged\n"
+   "(docs/TransactionLog.md sec 30.23), one dict each: id, doc, name,\n"
+   "path, size, sender, kind (how the sender's name is known), time.\n"
+   "Kept as they came and not read; the transaction log panel brings\n"
+   "one in. With doc, only that document's."},
+  {"serveDropRequest",        (PyCFunction) Application::sServeDropRequest, METH_VARARGS,
+   "serveDropRequest(id) -> bool\n"
+   "\n"
+   "Drop a sent file unread, by its id; False when there is none."},
   {"serveClients",            (PyCFunction) Application::sServeClients, METH_VARARGS,
    "serveClients() -> list\n"
    "\n"
@@ -1194,6 +1207,36 @@ PyObject* Application::sCyclesRenderTest(PyObject * /*self*/, PyObject *args, Py
         return nullptr;
     }
     Py_RETURN_TRUE;
+}
+
+PyObject* Application::sServeRequests(PyObject * /*self*/, PyObject *args)
+{
+    const char *doc = "";
+    if (!PyArg_ParseTuple(args, "|s", &doc))
+        return nullptr;
+
+    Py::List list;
+    for (const auto &r : SceneRequests::list(doc)) {
+        Py::Dict entry;
+        entry.setItem("id", Py::Long(static_cast<unsigned long long>(r.id)));
+        entry.setItem("doc", Py::String(r.document));
+        entry.setItem("name", Py::String(r.name.toStdString()));
+        entry.setItem("path", Py::String(r.path.toStdString()));
+        entry.setItem("size", Py::Long(static_cast<long long>(r.size)));
+        entry.setItem("sender", Py::String(r.sender.toStdString()));
+        entry.setItem("kind", Py::String(r.senderKind.toStdString()));
+        entry.setItem("time", Py::Float(r.time));
+        list.append(entry);
+    }
+    return Py::new_reference_to(list);
+}
+
+PyObject* Application::sServeDropRequest(PyObject * /*self*/, PyObject *args)
+{
+    unsigned long long id = 0;
+    if (!PyArg_ParseTuple(args, "K", &id))
+        return nullptr;
+    return Py::new_reference_to(Py::Boolean(SceneRequests::drop(id)));
 }
 
 PyObject* Application::sServeClients(PyObject * /*self*/, PyObject *args)

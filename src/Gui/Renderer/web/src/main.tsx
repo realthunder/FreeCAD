@@ -17,7 +17,7 @@ import { OmniBox } from './omni';
 import { ToolbarStrip } from './toolbar';
 import type { LoupeMark } from './loupe';
 import { NARROW } from './panel';
-import { sendOp } from './control';
+import { sendOp, sendRequestFile } from './control';
 import type { CyclesDevice, CyclesState, SelectionItem, Subject } from './control';
 // Extraction only (cssCodeSplit: false emits it as web/inspector.css);
 // the injection below is what actually loads it.
@@ -153,6 +153,29 @@ const askName = () => {
   const name = next.trim();
   window.fcviewerSetClient?.(name);
   setClientName(name);
+};
+
+// A copy of the document, edited elsewhere, offered to whoever is sharing
+// it (docs/TransactionLog.md sec 30.23). The browser's own picker chooses
+// the file; the host keeps it unread until its owner brings it in.
+const sendCopy = () => {
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = '.FCStd,.fcstd';
+  input.onchange = async () => {
+    const file = input.files?.[0];
+    if (!file) return;
+    try {
+      const sent = await sendRequestFile(file.name, await file.arrayBuffer());
+      window.alert(`Sent ${sent.name}. Whoever is sharing the document `
+                   + 'decides whether it is merged.');
+    } catch (e: any) {
+      window.alert(e?.code === 'TooLarge'
+        ? `That file is too large to send (${e.message}).`
+        : `Not sent: ${e?.message ?? e?.code ?? 'the host did not take it'}`);
+    }
+  };
+  input.click();
 };
 
 // The omni search box (docs/OmniSearch.md sec 6): '/' with the canvas
@@ -351,6 +374,8 @@ render(() => (
         { label: 'Search  /', onSelect: () => setOmniOpen(true) },
         { label: clientName() ? `Name: ${clientName()}` : 'Set name…',
           onSelect: askName },
+        ...(viewOnly() ? [] : [{ label: 'Send my copy to merge...',
+                                 onSelect: sendCopy }]),
         { label: 'Spreadsheet',
           checked: () => sheetOpen(),
           onSelect: () => setSheetOpen(!sheetOpen()) },

@@ -39,6 +39,7 @@
 # include <QInputDialog>
 # include <QLabel>
 # include <QLineEdit>
+# include <QLocale>
 # include <QMenu>
 # include <QMessageBox>
 # include <QPainter>
@@ -60,6 +61,7 @@
 #include <App/Document.h>
 #include <App/DocumentParams.h>
 #include <App/FileBlobManager.h>
+#include <App/FileHistory.h>
 #include <App/TransactionLog.h>
 #include <Base/Console.h>
 #include <Base/Tools.h>
@@ -68,6 +70,7 @@
 #include "Application.h"
 #include "Document.h"
 #include "FileDialog.h"
+#include "SceneRequests.h"
 
 FC_LOG_LEVEL_INIT("Gui", true, true)
 
@@ -347,6 +350,24 @@ TransactionLogView::TransactionLogView(Gui::Document* pcDocument, QWidget* paren
     _status->setTextInteractionFlags(Qt::TextSelectableByMouse);
     layout->addWidget(_status);
 
+    // The requests (sec 30.20 H2): what someone else has done to a copy of
+    // this file and offers to it. Shown only while there is one.
+    _requests = new QTreeWidget(this);
+    _requests->setObjectName(QStringLiteral("TransactionRequests"));
+    _requests->setRootIsDecorated(false);
+    _requests->setUniformRowHeights(true);
+    _requests->setHeaderLabels(
+        {tr("Request"), tr("From"), tr("When"), tr("What"), tr("Conflicts")});
+    _requests->setToolTip(tr("Changes offered to this file: a file a client of the shared "
+                             "session sent, which is kept and not read until it is brought "
+                             "in here, and every branch brought in from a file that this "
+                             "branch has not merged. Double-click to bring in and merge; "
+                             "the menu deletes one or opens it in a document of its own"));
+    _requests->setContextMenuPolicy(Qt::CustomContextMenu);
+    _requests->setMaximumHeight(120);
+    _requests->hide();
+    layout->addWidget(_requests);
+
     auto splitter = new QSplitter(Qt::Vertical, this);
     layout->addWidget(splitter, 1);
 
@@ -482,11 +503,21 @@ TransactionLogView::TransactionLogView(Gui::Document* pcDocument, QWidget* paren
     connect(_mergeBranch, &QPushButton::clicked, this, &TransactionLogView::onMergeBranch);
     connect(_importFile, &QPushButton::clicked, this, &TransactionLogView::onImportFile);
     connect(_openBranch, &QPushButton::clicked, this, &TransactionLogView::onOpenBranch);
+    connect(_requests, &QTreeWidget::itemActivated, this,
+            [this](QTreeWidgetItem* item, int) { onRequestActivated(item); });
+    connect(_requests, &QTreeWidget::customContextMenuRequested, this,
+            &TransactionLogView::onRequestContextMenu);
+    // The preview reads values: asked once things have settled, not at
+    // every commit.
+    _previewTimer.setSingleShot(true);
+    _previewTimer.setInterval(800);
+    connect(&_previewTimer, &QTimer::timeout, this, &TransactionLogView::previewRequests);
     connect(_allBranches, &QCheckBox::toggled, this, &TransactionLogView::applyVisibility);
     connect(_hideRecords, &QCheckBox::toggled, this, &TransactionLogView::applyVisibility);
     connect(_showLogins, &QCheckBox::toggled, this, &TransactionLogView::applyVisibility);
 
     //NOLINTBEGIN
+    _connRequests = SceneRequests::signalChanged().connect([this]() { scheduleRefresh(); });
     _connActiveDoc = Application::Instance->signalActiveDocument.connect(
         [this](const Gui::Document& doc) {
             attach(doc.getDocument());
@@ -556,6 +587,10 @@ void TransactionLogView::detach()
 {
     _connections.clear();
     _doc = nullptr;
+    _previewed.clear();
+    _previewTimer.stop();
+    _requests->clear();
+    _requests->hide();
     _lastSeq = 0;
     _lastVersion = 0;
     _transactions->clear();
@@ -623,6 +658,7 @@ void TransactionLogView::refresh()
         _lastSeq = last;
         refreshVersions();
         refreshBranches();
+        refreshRequests();
         applyVisibility();
     }
     catch (Base::Exception& e) {
@@ -1478,9 +1514,15 @@ void TransactionLogView::onImportFile()
 
 void TransactionLogView::importFile(const QString& path, const QString& branch)
 {
+    importFrom(path, branch, QString());
+}
+
+bool TransactionLogView::importFrom(const QString& path, const QString& branch,
+                                    const QString& sender)
+{
     auto l = log();
     if (!l || !_doc)
-        return;
+        return false;
     const QString file = QFileInfo(path).fileName();
     try {
         // F6: the branch asked for; else the one the copy's file reopens
@@ -1502,7 +1544,7 @@ void TransactionLogView::importFile(const QString& path, const QString& branch)
             }
             if (names.isEmpty()) {
                 _status->setText(tr("Nothing new in %1").arg(file));
-                return;
+                return true;
             }
             from = names[current];
             if (names.size() > 1) {
@@ -1511,14 +1553,15 @@ void TransactionLogView::importFile(const QString& path, const QString& branch)
                                              tr("The branch of %1 to bring in:").arg(file), names,
                                              current, false, &ok);
                 if (!ok || from.isEmpty())
-                    return;
+                    return false;
             }
         }
-        const auto result = _doc->importFork(path.toStdString(), from.toStdString());
+        const auto result = _doc->importFork(path.toStdString(), from.toStdString(),
+                                             sender.toStdString());
         refresh();
         if (!result.rows && !result.stoppedAt) {
             _status->setText(tr("Nothing new in %1").arg(file));
-            return;
+            return true;
         }
         const QString name = QString::fromStdString(result.branch);
         if (result.independent)
@@ -1535,10 +1578,203 @@ void TransactionLogView::importFile(const QString& path, const QString& branch)
             _status->setText(tr("%1: %2 rows came as branch %3, then one could not be applied "
                                 "-- the report view says why")
                                  .arg(file).arg(result.rows).arg(name));
+        return true;
     }
     catch (Base::Exception& e) {
         FC_ERR("merge from " << path.toStdString() << ": " << e.what());
         _status->setText(tr("%1 not brought in -- the report view says why").arg(file));
+    }
+    return false;
+}
+
+namespace
+{
+constexpr int RoleRequestId = Qt::UserRole + 20;       // a sent file's number
+constexpr int RoleRequestBranch = Qt::UserRole + 21;   // a branch's name
+
+QString whenText(double time)
+{
+    return QDateTime::fromMSecsSinceEpoch(static_cast<qint64>(time * 1000))
+        .toString(QStringLiteral("yyyy-MM-dd HH:mm"));
+}
+}  // namespace
+
+void TransactionLogView::refreshRequests()
+{
+    _requests->clear();
+    auto l = log();
+    if (!l || !_doc || l->detached()) {
+        _requests->hide();
+        return;
+    }
+    // H6: a file a client sent is here as it came, and has not been read.
+    for (const auto& r : SceneRequests::list(_doc->getName())) {
+        auto item = new QTreeWidgetItem(_requests);
+        item->setData(0, RoleRequestId, QVariant::fromValue(static_cast<qulonglong>(r.id)));
+        item->setText(0, r.name);
+        QString from = r.sender;
+        if (r.senderKind != QLatin1String("verified") && r.senderKind != QLatin1String("local"))
+            from += QStringLiteral(" (%1)").arg(r.senderKind);
+        item->setText(1, from);
+        item->setText(2, whenText(r.time));
+        item->setText(3, tr("%1, sent and not read").arg(QLocale().formattedDataSize(r.size)));
+        item->setToolTip(0, tr("Sent by %1. Nothing of it has been opened: bringing it in "
+                               "reads it, as a file handed over any other way would be read")
+                                .arg(from));
+    }
+    // H1: a branch an import made that this branch has not taken.
+    bool ask = false;
+    const int64_t ours = l->head();
+    for (const auto& r : _doc->importRequests(false)) {
+        App::LogBranch branch;
+        if (!l->store().findBranch(r.branch, branch))
+            continue;
+        auto known = _previewed.find(r.branch);
+        const bool fresh = known != _previewed.end() && known->second.theirs == branch.head
+            && known->second.ours == ours;
+        if (fresh && known->second.conflicts == -2)
+            continue;   // the preview found nothing of it to give
+        ask = ask || !fresh;
+        auto item = new QTreeWidgetItem(_requests);
+        item->setData(0, RoleRequestBranch, QString::fromStdString(r.branch));
+        item->setText(0, QString::fromStdString(r.branch));
+        QStringList who;
+        for (const auto& name : r.authors)
+            who << QString::fromStdString(name);
+        QString from = who.join(QStringLiteral(", "));
+        if (!r.sender.empty())
+            from += tr("; sent by %1").arg(QString::fromStdString(r.sender));
+        item->setText(1, from);
+        item->setText(2, whenText(r.when));
+        QString what = tr("%n operation(s)", nullptr, static_cast<int>(r.rows));
+        if (r.independent)
+            what += tr(", shares no history");
+        if (r.stoppedAt)
+            what += tr(", stopped at a row");
+        item->setText(3, what);
+        item->setText(4, !fresh ? QStringLiteral("...")
+                         : known->second.conflicts < 0 ? QStringLiteral("?")
+                                                      : QString::number(known->second.conflicts));
+        item->setToolTip(0, tr("Brought in from %1 and not merged into this branch")
+                                .arg(QString::fromStdString(r.file)));
+    }
+    _requests->setVisible(_requests->topLevelItemCount() > 0);
+    if (_requests->isVisible()) {
+        for (int c = 0; c < _requests->columnCount(); ++c)
+            _requests->resizeColumnToContents(c);
+    }
+    if (ask && isVisible())
+        _previewTimer.start();
+}
+
+void TransactionLogView::previewRequests()
+{
+    auto l = log();
+    if (!l || !_doc || l->detached())
+        return;
+    try {
+        std::map<std::string, int> found;
+        for (const auto& r : _doc->importRequests(true))
+            found[r.branch] = r.conflicts;
+        _previewed.clear();
+        for (const auto& r : _doc->importRequests(false)) {
+            App::LogBranch branch;
+            if (!l->store().findBranch(r.branch, branch))
+                continue;
+            Previewed p;
+            p.theirs = branch.head;
+            p.ours = l->head();
+            auto it = found.find(r.branch);
+            p.conflicts = it == found.end() ? -2 : it->second;
+            _previewed[r.branch] = p;
+        }
+    }
+    catch (Base::Exception& e) {
+        FC_ERR("transaction log view, requests: " << e.what());
+    }
+    refreshRequests();
+}
+
+void TransactionLogView::onRequestActivated(QTreeWidgetItem* item)
+{
+    if (!item)
+        return;
+    const QString branch = item->data(0, RoleRequestBranch).toString();
+    if (!branch.isEmpty())
+        mergeBranch(branch);
+    else
+        bringRequest(item->data(0, RoleRequestId).toULongLong());
+}
+
+void TransactionLogView::onRequestContextMenu(const QPoint& pos)
+{
+    QTreeWidgetItem* item = _requests->itemAt(pos);
+    if (!item || !_doc)
+        return;
+    const QString branch = item->data(0, RoleRequestBranch).toString();
+    const qulonglong id = item->data(0, RoleRequestId).toULongLong();
+    QMenu menu(this);
+    if (!branch.isEmpty()) {
+        menu.addAction(tr("Merge..."), this, [this, branch]() { mergeBranch(branch); });
+        menu.addAction(tr("Open in a document of its own"), this, [this, branch]() {
+            try {
+                App::Document::openFileBranch(_doc->getFileHistory().shared_from_this(),
+                                              branch.toStdString(), 0, true);
+            }
+            catch (Base::Exception& e) {
+                FC_ERR("open request " << branch.toStdString() << ": " << e.what());
+                _status->setText(tr("Not opened -- the report view says why"));
+            }
+        });
+        menu.addSeparator();
+        menu.addAction(tr("Delete"), this, [this, branch]() {
+            if (QMessageBox::question(this, tr("Delete a request"),
+                                      tr("Delete branch %1, and with it what was brought "
+                                         "in from the file?").arg(branch))
+                    == QMessageBox::Yes)
+                deleteRequest(branch);
+        });
+    }
+    else {
+        menu.addAction(tr("Bring in and merge..."), this, [this, id]() { bringRequest(id); });
+        menu.addSeparator();
+        menu.addAction(tr("Delete, unread"), this, [this, id]() { dropRequest(id); });
+    }
+    menu.exec(_requests->viewport()->mapToGlobal(pos));
+}
+
+void TransactionLogView::bringRequest(qulonglong id)
+{
+    SceneRequest request;
+    if (!_doc || !SceneRequests::find(id, request) || request.document != _doc->getName())
+        return;
+    // H7: the import's record names who sent it, and how that name is known.
+    const QString sender = QStringLiteral("%1 (%2)").arg(request.sender, request.senderKind);
+    if (importFrom(request.path, QString(), sender))
+        SceneRequests::drop(id);
+}
+
+void TransactionLogView::dropRequest(qulonglong id)
+{
+    SceneRequest request;
+    if (!SceneRequests::find(id, request))
+        return;
+    SceneRequests::drop(id);
+    _status->setText(tr("%1 deleted, unread").arg(request.name));
+}
+
+void TransactionLogView::deleteRequest(const QString& branch)
+{
+    if (!_doc || branch.isEmpty())
+        return;
+    try {
+        _doc->deleteBranch(branch.toStdString());
+        _previewed.erase(branch.toStdString());
+        _status->setText(tr("Request %1 deleted").arg(branch));
+    }
+    catch (Base::Exception& e) {
+        FC_ERR("delete request " << branch.toStdString() << ": " << e.what());
+        _status->setText(tr("Not deleted -- the report view says why"));
     }
 }
 

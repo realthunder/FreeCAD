@@ -13405,3 +13405,137 @@ as all its own, and its objects beside this file's.
 unfrozen; 6 expected failures; +1), ctest 875/875, and the GUI checks RC
 15, BC 27, VC 18, PC 28, FC 16, VW 14, MC 28, the two-document check 24,
 the tree check 19, the author check 36 and the import check 39 (+5).
+
+### 30.23 S.h as built: the request (2026-10-05)
+
+**H1-H7 (user, 2026-10-05): as proposed, with the upload's cap made a
+setting.** H4 is the op of its own.
+
+**What a request is (H1).** Nothing keeps one. `Document::
+importRequests(preview)` works it out each time: every branch that
+carries an import's mark (30.15) whose head the history of the branch
+this document is on does not hold, with the rows of it that history does
+not hold either -- so a branch merged once and brought to again is a
+request for what is new. Each says its file, the copy's branch, who made
+its rows, who sent the file, when it was last brought, how many
+operations it has to give, whether it is independent (30.22) and where
+an import stopped. With `preview` each is put to the merge's plan: one
+with nothing to give is left out, and the rest say how many conflicts it
+finds. Python `getTransactionRequests(preview=True)`.
+
+A deleted branch takes its import mark with it (`deleteBranch`): the
+store may give its number to a branch made later, which would then have
+been taken for an import.
+
+**A client's file (H4-H7).** `requests.send`, a control op beside
+`widgets.upload` and built as that one is (docs/Sandbox.md 7.22): a name
+and bytes, one way, the host alone deciding where they land --
+`<temp>/BrowserRequests`, a directory of its own, never over a file that
+is there. The answer is the request's number, its name and its size, and
+no path.
+
+- **Who may send one (H5)**: the op is a mutating one, so a view-only
+  connection is refused before the handler runs.
+- **It is not read (H6).** The handler writes the file and lists it
+  (`Gui::SceneRequests`), and that is all it does. Nothing is opened,
+  parsed or replayed because a connection sent bytes: a file from someone
+  else names object types to make and holds values to restore, a Python
+  proxy among them. That happens when the owner brings it in from the log
+  panel, exactly as for a file the owner was handed any other way -- there
+  is no second, quieter road in. The registry is the process's: a sent
+  file not brought in is gone with the session, its bytes left in the
+  temp directory.
+- **Who sent it (H7)**: the connection's actor as the roster knows it
+  (`SceneActors::of`) -- the name and how it is known -- is kept with the
+  file and handed to the import, `importFork(path, branch, sender)`, whose
+  record names it (`"sender"`). The rows keep the authors the file gives
+  them.
+
+`Gui.serveRequests(doc='')` lists what is waiting, `Gui.serveDropRequest(
+id)` drops one unread.
+
+**The cap is a setting.** One limit for both uploads,
+`SceneRequests::uploadLimit()`: the preference `UploadLimitMB` of
+`BaseApp/Preferences/SceneShare`, 16 unless set; `FC_SERVE_UPLOAD_MB`
+presets it for a headless serve, as `FC_SERVE_TOKEN` presets the token;
+`setUploadLimit` overrides both for the life of the process. Read at
+each upload, so changing the preference needs no restart. **It cannot be
+raised past what one frame of the socket carries**: the server reads
+messages of 64 MB at most and the bytes travel as base64, so the ceiling
+is 46 MB. A file larger than that does not come this way; it is handed
+over and brought in with "Merge from file...". Sending in pieces would
+lift that and is not built.
+
+`widgets.upload` lost its constant and its copies of the name and path
+helpers to the same module; what it does is unchanged.
+
+**The panel (H2, H3).** A "Requests" list between the status line and
+the rows, there only while there is something in it:
+
+- **a file sent and not read** -- its name, who sent it (with how the
+  name is known, unless a sign-in verified it), when, its size;
+- **a branch brought in and not merged** -- the branch, who made its rows
+  and who sent it, when, how many operations, and the conflicts the
+  preview finds.
+
+Activating a row brings a sent file in and puts it to the merge dialog
+(`bringRequest`), or puts a branch to it; the menu has the same, "Open in
+a document of its own" for a branch, and Delete -- a sent file dropped
+unread, a branch deleted with what was brought. "Merge from file..." is
+as it was (H3): cancel the dialog and the branch stays in the list.
+
+The preview reads values, so it is not asked at every commit: the list
+is rebuilt with the rows, cheaply, and a count is asked for 0.8 s after
+things settle, kept by the two heads it was asked of. Until then the
+column shows `...`.
+
+**The browser.** The viewer's menu has "Send my copy to merge..." for a
+connection that may edit: the browser's own file picker, the bytes on the
+control lane (`sendRequestFile`), and a line saying it was sent and that
+whoever shares the document decides. `TooLarge` is said as that.
+
+**Seen in a browser.** A document served under `FC_SERVE_TOKEN` with
+`FC_SERVE_INVITE=lei`, and `scripts/request-drive.js` -- headless Chrome,
+the menu opened, the row clicked, the browser's own file chooser given a
+copy of the file edited elsewhere. As `client=lei`: the row is there, the
+page says "Sent mine.FCStd. Whoever is sharing the document decides
+whether it is merged.", and the host lists the file whole (36,780 bytes)
+from `lei`, `invited`, with no branch and no document made of it. As
+`client=nobody`, who may only look: no such row. The driver's first run
+found a view-only page with the row: the page draws it until the host's
+answer to its hello says what the connection may do, so the driver now
+waits for that, and clicks the row by where it is -- the menu redraws its
+rows, and a browser opens a file chooser only on a real click.
+
+**Tests.** Python `testAnImportedBranchIsARequestUntilItIsMerged`: a
+copy with two rows, one on a value this file changed too, brought with a
+sender -- the import's record names them; one request, its file, its
+branch, its sender, one author named after the file, two operations, one
+conflict; without the preview, the conflicts unasked; refused without a
+side it is still a request, merged it is none; the copy goes on and the
+same branch is a request again, for the one row that is new, nobody
+having sent it; deleted, it is gone, and a branch made after is no
+request. The Gui check `scripts/transaction-log-request-check.py`
+(`REQUESTCHECK_OUT`, 22 checks): sent over the control lane as a
+connection would -- a view-only one refused; no name and no base64
+refused; past the limit set in the preference refused as `TooLarge`, and
+`widgets.upload` under the same setting, the same bytes going once it is
+raised; an editor's file taken, a path in its name reduced to a name,
+the answer with no path in it; kept under `BrowserRequests`, and no row,
+no branch and no document made of it; listed in the panel with who sent
+it; the same name again not over the first, and that one dropped unread;
+brought in -- the merge dialog, the side picked, the file gone, the
+import's record naming the sender, the rows the file's own author's --
+and, merged, the list empty and hidden; a branch brought and not merged
+listed with its operations and its conflicts, then deleted.
+
+**Left.** A file past the ceiling does not come over the wire. The
+registry of sent files is the process's and is not kept across a
+restart. The Share panel has no control for the limit: it is a
+preference, set by hand or by the environment.
+
+**Gates**, frozen and unfrozen each: Python 3008 OK (52 skipped frozen, 53
+unfrozen; 6 expected failures; +1), ctest 875/875, and the GUI checks RC
+15, BC 27, VC 18, PC 28, FC 16, VW 14, MC 28, the two-document check 24,
+the tree check 19, the author check 36, the import check 39 and the
+request check 22 (new).

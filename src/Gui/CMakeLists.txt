@@ -972,6 +972,7 @@ SET(View3D_CPP_SRCS
     OmniControl.cpp
     SceneControl.cpp
     SceneWidgets.cpp
+    SceneRequests.cpp
     View3DInventorRiftViewer.cpp
     View3DSettings.cpp
     CoinRiftWidget.cpp
@@ -1006,6 +1007,7 @@ SET(View3D_SRCS
     OmniControl.h
     SceneControl.h
     SceneWidgets.h
+    SceneRequests.h
     SceneControlP.h
     View3DInventorRiftViewer.h
     View3DSettings.h

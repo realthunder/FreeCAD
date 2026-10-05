@@ -510,3 +510,32 @@ export function isBrowserSafeCommand(name: string): boolean {
     || name === 'Sketcher_External'
     || name === 'Sketcher_CarbonCopy';
 }
+
+/// Bytes as base64, in chunks: `String.fromCharCode(...bytes)` over a whole
+/// file is one argument per byte, and a few hundred kilobytes overflows the
+/// call.
+function base64Of(bytes: ArrayBuffer): string {
+  const view = new Uint8Array(bytes);
+  const CHUNK = 0x8000;
+  let text = '';
+  for (let at = 0; at < view.length; at += CHUNK) {
+    text += String.fromCharCode(...view.subarray(at, at + CHUNK));
+  }
+  return btoa(text);
+}
+
+/// What the host says of a file it took as a request.
+export interface SentRequest {
+  request: number;
+  name: string;
+  size: number;
+}
+
+/// Send a copy of the document to whoever is sharing it, to be merged
+/// (docs/TransactionLog.md sec 30.23). The host keeps the file and reads
+/// nothing of it until its owner asks; the answer says only that it was
+/// taken. Needs a connection that may edit: a request becomes rows of the
+/// host's log. Rejects with `TooLarge` past the host's upload limit.
+export function sendRequestFile(name: string, bytes: ArrayBuffer): Promise<SentRequest> {
+  return sendOp('requests.send', { name, data: base64Of(bytes) }, 120000);
+}
