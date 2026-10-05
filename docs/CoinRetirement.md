@@ -2777,8 +2777,9 @@ it beats a persisted show of the same path, and never written into
 as it attaches -- a view opened mid-edit hides it too -- and
 `resetEditingRoot` clears it everywhere. A served client's mirror
 republishes and re-announces its table when the hide comes or goes.
-Modes 0-2 have no per-view table (`setEditHide` answers false there) and
-keep the move and the TempoVis hide. What changes in-session is nothing
+Modes 0-2 have no per-view table (`setEditVisibilities`, `setEditHide`
+until 2026-10-05, answers false there) and keep the move and the TempoVis
+hide. What changes in-session is nothing
 visible, since every view of the document joins the session; the payoff
 is a view outside it -- another document showing the sketch through a
 link -- and per-client sessions later. The sketch's `getElementPicked`
@@ -2788,6 +2789,31 @@ edit, is the shape's element. Verified by `tests/gui/edit-hide.py` (the
 mechanism, a Python view provider, two views and one opened mid-edit)
 and `tests/gui/sketch-edit-hide.py` (a sketch in a Body, in a Part a
 Link shows, and edited through that Link).
+
+**An edit's swaps: the PartDesign preview (2026-10-05).** The second
+user of the transient source, and the first that SHOWS. The fork's
+preview-on-edit draws a feature's base with the tinted tool shape over it
+in place of the feature, and did it in the document: the tool hung as the
+`headChild` of the base feature's switch -- the one scene every view and
+every served client draws -- and the two `Visibility` properties were
+swapped. Now `EditingRoot` holds, beside the edited occurrence's hide, a
+list of swaps (`setVisibilitySwaps`: path entries, a hide or a show each)
+and applies hide-then-swaps to each view of the session through one
+call, `ViewerContext::setEditVisibilities`, which replaced `setEditHide`.
+`ViewProviderAddSub::setPreviewDisplayMode(on, occurrence)` hides the
+feature's occurrence and shows its base's -- the same path with its last
+step replaced -- and hangs the tool in the session's editing root
+(`addSessionNode`, `docs/ThinClient.md` 8.12). No `Visibility` is
+written. A view outside the session keeps the feature, at its pre-edit
+shape since the preview pauses its recompute. A base that is not a
+sibling of the feature (one outside the body) has no occurrence to show
+in its place, and modes 0-2 have no table: both keep the document path,
+unchanged. The edit monitor's "show on top" follows: with nothing
+swapped in the document the visible sibling is still the feature in
+edit, so it puts the base's occurrence on top instead. Verified by
+`tests/gui/pd-preview-per-view.py` (two views, one opened mid-edit, and
+a Link's occurrence as the view outside; 8 of its 38 claims fail on the
+document path) and `tests/gui/serve-pd-preview.py`.
 
 - **Found on the way (`5124c6cc87`):** a path hide leaked to every
   other occurrence of the same node. An object's root sits under each

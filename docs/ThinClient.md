@@ -2637,6 +2637,61 @@ there. A label remembers the group it hung under, since a mirror's answer now ch
 it joins and leaves a session. `serve-pattern-markers.py` asserts the markers hang under
 the session's node (`EditingOnViewRoot`) during the edit and nothing is left after it.
 
+**Built 2026-10-05: a PartDesign feature's edit preview is the session's.** The first
+step of the road back from 8.11 toward an edit per view (user, 2026-10-05: the goal is a
+true per-view edit, on the desktop and in the browser). The fork's preview-on-edit was
+document state twice over: the tinted tool shape was a child of the base feature's switch
+in the shared scene, and `Visibility` was written to hide the feature and show its base
+-- item E's "TempoVis and `Visibility`: document state", for the one writer that runs on
+every PartDesign edit. Every view drew it, every served client, and every Link to the
+body. It is the session's now, in two halves.
+
+*The tool is a session node.* `EditingRoot::addSessionNode(node, world)` hangs a node in
+the session's editing root beside the edit mode's own geometry -- so it is drawn by
+exactly the views that hang that root, captured by the desktop's `editingCapture`, and
+published by the serving source in the session's tagged overlay 7, with no new plumbing
+in any of the three. It is placed in WORLD coordinates (here the base feature's
+occurrence, where the base's own root used to carry it): each holder undoes the editing
+transform above it and is re-placed whenever that changes, because a gizmo hands
+`setup` a transform of its own and the edited object can move. `setup` and `reset` keep
+managing only the edit's own geometry -- a session node is neither dropped by a second
+`setup` nor handed to the view provider with its moved children -- and
+`hasEditGeometry()` is the question `getPointOnRay` asks now, since "more than the
+transform" is no longer "the edited object's geometry is here".
+
+*The swap is transient visibility.* `EditingRoot::setVisibilitySwaps` (see
+`docs/CoinRetirement.md` 5.18): the feature's occurrence hidden and its base's shown in
+each session view's own table, never written to `Visibility` or to a view's map. A mirror
+tells its client through the `visibility` push it already had.
+
+Both end with the session: `EditingRoot::endSession()`, called by the initiating view as
+it leaves, while the joiners are still attached -- the document's `signalResetEdit`, where
+the PartDesign monitor takes its preview down, fires only after every view has left, so
+without it a preview would outlive the views it was told to. The monitor no longer needs a
+desktop window either: a document served with none gets the preview and the recompute
+pause from its client's session, where it had neither.
+
+What it costs: the editing root is drawn as a scene-camera overlay, over the finished
+scene with a depth buffer of its own. The default translucent preview was drawn on top
+already (`SoFCPathAnnotation` priority -2) and looks as it did; an OPAQUE preview
+(`PreviewWithTransparency` off) was depth-tested against the base and is now drawn over
+it. Not solved here. What it does not cover: the rest of item E's writers -- a sketch-based
+panel showing its profile, a primitive panel showing the body's origin, the monitor
+hiding the other solid features to show a non-tip one -- still write `Visibility`, and
+are the next step (TempoVis onto per-view visibility).
+
+Verified: `SharedEditingRootTest` gains five cases (a session node through `setup` and
+`reset`, with moved children, its world frame under a changing editing transform, the
+session's end, a view with no table refusing the swaps); `tests/gui/pd-preview-per-view.py`
+on the desktop and `tests/gui/serve-pd-preview.py` on a served document -- a client with a
+view told the swap, one without told nothing, the tool under the session's root and not
+the base's switch, for a session with a desktop window in it and for one with none. Scored
+against the document path (the session path switched off): 8 of 38 and 13 of 32 fail. And
+looked at in a real browser beside the desktop window, a body and a Link to it on screen:
+the pad entered from the page draws its base and the tool in both, the tool following a
+length changed on the host, while the other occurrence keeps the pad as it was until the
+edit is left.
+
 **Reading the list.** A is done; C, D and J have their seams built; B, E, F and I are
 wide but mechanical -- each is the move stages 1-5 made, a global becoming a row on a
 context read under a scope; G and H are why only Onshape does this. The shared session

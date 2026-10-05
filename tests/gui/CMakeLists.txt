@@ -147,6 +147,20 @@ fc_add_gui_test(GuiServePatternMarkers_tests_run serve-pattern-markers.py
 fc_add_gui_test(GuiPdLeaveEditRecompute_tests_run pd-leave-edit-recompute.py
                 --timeout 200)
 
+# A PartDesign feature's edit preview is the edit session's: the tinted
+# tool hangs in the session's editing root and each session view swaps
+# the feature for its base in its own visibility table. No Visibility is
+# written, and a Link's occurrence of the feature keeps it, with no tool.
+fc_add_gui_test(GuiPdPreviewPerView_tests_run pd-preview-per-view.py
+                --timeout 300)
+
+# The same on a served document: a client with a view is told the swap,
+# one without is told nothing, the tool is published with the session's
+# overlay and not in the shared scene -- with a desktop window in the
+# session, and for a document that has none.
+fc_add_gui_test(GuiServePdPreview_tests_run serve-pd-preview.py
+                --timeout 240)
+
 # A browser's right click (docs/ThinClient.md sec 8.11b): the desktop's 3D
 # view context menu built for what the ray hits, its entries judged for the
 # connection, an edit entry entered in the client's view with no 3D view

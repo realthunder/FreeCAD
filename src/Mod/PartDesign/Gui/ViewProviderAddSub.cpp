@@ -43,6 +43,7 @@
 
 #include <boost/algorithm/string/predicate.hpp>
 
+#include <App/Application.h>
 #include "ViewProviderAddSub.h"
 #include <Mod/Part/Gui/PartParams.h>
 #include <Mod/PartDesign/App/FeatureAddSub.h>
@@ -55,6 +56,8 @@
 #include <Gui/Document.h>
 #include <Gui/SoFCSelectionAction.h>
 #include <Gui/SoFCUnifiedSelection.h>
+#include <Gui/ViewerContext.h>
+#include <Gui/ViewVisibility.h>
 #include <Base/Console.h>
 
 #include "ViewProviderAddSub.h"
@@ -210,8 +213,10 @@ void ViewProviderAddSub::updateData(const App::Property* p) {
 void ViewProviderAddSub::refreshPreviewBase()
 {
     if (previewActive) {
+        // Off forgets the occurrence
+        const App::SubObjectT occurrence = previewOccurrence;
         setPreviewDisplayMode(false);
-        setPreviewDisplayMode(true);
+        setPreviewDisplayMode(true, occurrence);
     }
 }
 
@@ -226,6 +231,106 @@ void ViewProviderAddSub::updatePreviewTransform(const Part::TopoShape &shape)
         matrix *= base->Placement.getValue().inverse().toMatrix()
                  * feat->Placement.getValue().toMatrix();
     previewTransform->setMatrix(convert(matrix));
+
+    // The session's preview hangs in world coordinates, where the base
+    // feature's own root used to carry it along: follow the frame.
+    if (!isPreviewInSession())
+        return;
+    auto doc = App::GetApplication().getDocument(previewSession.c_str());
+    auto gdoc = doc ? Gui::Application::Instance->getDocument(doc) : nullptr;
+    Base::Matrix4D world;
+    std::vector<Gui::VisibilityEntry> entries;
+    App::SubObjectT baseT;
+    if (gdoc && resolvePreview(previewOccurrence, world, entries, baseT))
+        gdoc->editingRoot()->setSessionNodeTransform(previewGroup, world);
+}
+
+namespace {
+Gui::VisibilityEntry visibilityEntry(const App::SubObjectT &objT, bool visible)
+{
+    Gui::VisibilityEntry entry;
+    entry.doc = objT.getDocumentName();
+    entry.obj = objT.getObjectName();
+    entry.subname = objT.getSubNameNoElement();
+    entry.rooted = true;
+    entry.visible = visible;
+    return entry;
+}
+}
+
+bool ViewProviderAddSub::resolvePreview(const App::SubObjectT &occurrence,
+                                        Base::Matrix4D &world,
+                                        std::vector<Gui::VisibilityEntry> &entries,
+                                        App::SubObjectT &baseT) const
+{
+    auto top = occurrence.getObject();
+    if (!top)
+        return false;
+    world = Base::Matrix4D();
+    if (top->getSubObject(occurrence.getSubNameNoElement().c_str(), nullptr, &world)
+            != getObject())
+        return false;
+    entries.push_back(visibilityEntry(occurrence, false));
+
+    baseT = App::SubObjectT();
+    auto feat = Base::freecad_dynamic_cast<PartDesign::Feature>(getObject());
+    auto base = feat ? feat->BaseFeature.getValue() : nullptr;
+    if (!base)
+        return true;
+
+    // The base as the occurrence beside this one: the same path with its
+    // last step replaced. A base that is not there -- one outside the
+    // body -- has no occurrence a view could show in this one's place.
+    baseT = occurrence.getParent().getChild(base);
+    auto baseTop = baseT.getObject();
+    world = Base::Matrix4D();
+    if (!baseTop
+            || baseTop->getSubObject(baseT.getSubName().c_str(), nullptr, &world) != base)
+        return false;
+    entries.push_back(visibilityEntry(baseT, true));
+    return true;
+}
+
+bool ViewProviderAddSub::showPreviewInSession(const App::SubObjectT &occurrence)
+{
+    auto gdoc = Gui::Application::Instance->editDocument();
+    if (!gdoc || !gdoc->editingViewer())
+        return false;
+    Gui::EditingRoot *root = gdoc->editingRoot();
+    Base::Matrix4D world;
+    std::vector<Gui::VisibilityEntry> entries;
+    App::SubObjectT baseT;
+    if (!resolvePreview(occurrence, world, entries, baseT))
+        return false;
+    // Refused by a view with no table of its own, and then by all
+    if (!root->setVisibilitySwaps(std::move(entries)))
+        return false;
+    root->addSessionNode(previewGroup, world);
+    previewOccurrence = occurrence;
+    previewBase = baseT;
+    previewSession = gdoc->getDocument()->getName();
+    return true;
+}
+
+bool ViewProviderAddSub::dropPreviewFromSession()
+{
+    if (!isPreviewInSession())
+        return false;
+    auto doc = App::GetApplication().getDocument(previewSession.c_str());
+    auto gdoc = doc ? Gui::Application::Instance->getDocument(doc) : nullptr;
+    previewSession.clear();
+    previewOccurrence = App::SubObjectT();
+    previewBase = App::SubObjectT();
+    if (gdoc) {
+        // Still this preview's: a session that ended has taken both by
+        // itself, and the next one's are not this feature's to drop.
+        Gui::EditingRoot *root = gdoc->editingRoot();
+        if (root->hasSessionNode(previewGroup)) {
+            root->removeSessionNode(previewGroup);
+            root->clearVisibilitySwaps();
+        }
+    }
+    return true;
 }
 
 bool ViewProviderAddSub::isPreviewMode() const
@@ -237,13 +342,25 @@ bool ViewProviderAddSub::isPreviewMode() const
         && pcModeSwitch->getChild(mode) == previewGroup;
 }
 
-void ViewProviderAddSub::setPreviewDisplayMode(bool on) {
+void ViewProviderAddSub::setPreviewDisplayMode(bool on, const App::SubObjectT &occurrence) {
     SoFCSwitch *fcSwitch =  nullptr;
     if (pcModeSwitch->isOfType(SoFCSwitch::getClassTypeId()))
         fcSwitch = static_cast<SoFCSwitch*>(pcModeSwitch);
 
+    if (on && isPreviewInSession())
+        dropPreviewFromSession();
+    else if (!on && dropPreviewFromSession()) {
+        previewActive = false;
+        return;
+    }
+
     if (on) {
         checkAddSubColor();
+
+        if (showPreviewInSession(occurrence)) {
+            previewActive = true;
+            return;
+        }
 
         auto feat = Base::freecad_dynamic_cast<PartDesign::Feature>(getObject());
         auto base = feat ? feat->BaseFeature.getValue() : nullptr;
