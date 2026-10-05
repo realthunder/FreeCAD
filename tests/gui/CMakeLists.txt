@@ -199,6 +199,12 @@ fc_add_gui_test(GuiServeTempoVis_tests_run serve-tempovis.py
 fc_add_gui_test(GuiPdEditShownPerView_tests_run pd-edit-shown-per-view.py
                 --timeout 300)
 
+# The origin a PartDesign panel shows for picking (Revolution's axes, a
+# primitive's planes) is an entry of the edit's views, on the body being
+# edited: no Visibility is written, and a Link to the body shows none.
+fc_add_gui_test(GuiPdOriginInEdit_tests_run pd-origin-in-edit.py
+                --timeout 240)
+
 # A browser's right click (docs/ThinClient.md sec 8.11b): the desktop's 3D
 # view context menu built for what the ray hits, its entries judged for the
 # connection, an edit entry entered in the client's view with no 3D view

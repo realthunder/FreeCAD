@@ -24,6 +24,11 @@
 #ifndef GUI_VIEWPROVIDER_ViewProviderOrigin_H
 #define GUI_VIEWPROVIDER_ViewProviderOrigin_H
 
+#include <map>
+#include <string>
+#include <vector>
+
+#include <App/DocumentObserver.h>
 #include <App/PropertyGeo.h>
 
 #include "ViewProviderDocumentObject.h"
@@ -64,7 +69,17 @@ public:
      * Control the visibility of origin and associated objects when needed
      */
     ///@{
-    /// Set temporary visibility of some of origin's objects e.g. while rotating or mirroring
+    /** Set temporary visibility of some of origin's objects e.g. while rotating or mirroring
+     *
+     * Inside an edit whose views have a visibility table of their own
+     * (Gui::Document::canSetEditVisibility) nothing is written: the origin
+     * is shown in the views of the edit only, and where the edit goes
+     * through the origin's container only in that occurrence -- not in a
+     * Link to the container, not in a view outside the edit, not for a
+     * served client that is not in it. The entries end with the edit, so
+     * nothing is left shown by a panel that is never destroyed. Otherwise
+     * Visibility is written and resetTemporaryVisibility() puts it back.
+     */
     void setTemporaryVisibility (bool axis, bool planes);
     /// Returns true if the origin in temporary visibility mode
     bool isTemporaryVisibility ();
@@ -107,7 +122,13 @@ protected:
 private:
     SoGroup *pcGroupChildren;
 
+    bool setTemporaryVisibilityInEdit(bool axis, bool planes);
+
     std::map<App::DocumentObject*, bool> tempVisMap;
+    /// What setTemporaryVisibility put into an edit's views instead, and
+    /// the document whose edit it is
+    std::vector<App::SubObjectT> tempEditEntries;
+    std::string tempEditDocument;
 };
 
 } // namespace Gui

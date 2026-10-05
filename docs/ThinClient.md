@@ -2760,6 +2760,20 @@ own hide before it, the edits the tests drive -- a sketch on a pad, a pad that i
 not the tip -- write none of the `Visibility` properties they watch; the two panels named
 in 5.18 still write theirs.
 
+**Built 2026-10-05: the origin a panel shows is the session's too.** The second of those
+two: a panel that takes an axis or a plane as a reference shows the body's origin while
+it is open, and did it by writing the origin's `Visibility` and its features' -- seen by
+every view, every client and every Link to the body. It is now entries of the session's
+views on the path of the body being edited (`docs/CoinRetirement.md` 5.18), so a Link to
+the body in the same view shows no origin either. The first, a sketch-based panel hiding
+the profile it was just given, stays a document write on purpose: it is the outcome of
+the pick, not a state of the edit. Not followed, and still open as a question rather
+than a defect: a TempoVis entry is the object where its own root is drawn, so it does
+not reach a Link's copy of the object the way `LinkVisibility` did. Every Link that shows
+a dependent is itself a dependent and is hidden whole, which covers what an edit hides;
+what it SHOWS (a sketch's support) is shown at the edited occurrence only, which is the
+per-view answer anyway.
+
 **Reading the list.** A is done; C, D and J have their seams built; B, E, F and I are
 wide but mechanical -- each is the move stages 1-5 made, a global becoming a row on a
 context read under a scope; G and H are why only Onshape does this. The shared session

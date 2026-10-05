@@ -2859,15 +2859,50 @@ is not the tip the body has to show it in the tip's place, which was two
 `Visibility` writes and a restore at the end -- one that a bare
 `resetEdit` of a primitive did not make, leaving the body showing the
 edited feature. As PATH entries for the occurrence being edited there is
-nothing to restore, and a Link to the body keeps the tip. Still written
-to the document: a sketch-based panel showing its profile, and a
-primitive's panel showing the body's origin (which also turns a Link to
-the body off and does not turn it back on -- found 2026-10-05, not fixed).
+nothing to restore, and a Link to the body keeps the tip.
+
+The origin a panel shows for picking goes the same way
+(`ViewProviderCoordinateSystem::setTemporaryVisibility`, owner
+`Origin.Temporary`; Revolution, Helix, the patterns, Mirrored, the
+primitives, the attacher and the feature pick all call it): PATH entries
+under the occurrence of the body the edit goes through -- the origin
+shown, its axes and planes shown or hidden as the panel asked -- and bare
+ones when the edit goes through no container of that origin. It falls
+back to `Visibility` when the views cannot take entries, and stays with
+whichever way it started until it is reset. One thing had to give for it:
+an origin's display-mode switch has `defaultChild` NONE, so that a body
+shown through a Link or drawn on top does not bring its datums along, and
+a per-view show traverses `defaultChild` -- an origin could not be shown
+in one view at all. A view's OWN entry for an object now takes its first
+mode where `defaultChild` is NONE (`SoFCSwitch`, `perViewShownChild`);
+the overrides an object inherits still go by `defaultChild`.
+
+Two findings of 2026-10-05 around a primitive's panel turned out not to
+be defects of the panel. "It turns a Link to the body off and never back
+on": the attacher in the panel hides whatever depends on the primitive,
+the Link included, through TempoVis -- an entry of the edit's views now,
+so the Link's `Visibility` is not written at all, and its occurrence is
+drawn again when the edit ends. "The origin stays shown after a bare
+`resetEdit`": the panels put the origin back in their destructors, and a
+`deleteLater()` is not run by an event loop nested in the function that
+asked for it -- which is what a test settling with a local `QEventLoop`
+does. A test that returns to the main loop between steps sees it put
+back, and with the entries there is nothing to put back.
+
+Still written to the document, deliberately: a sketch-based panel hides
+the sketch that was just picked as a profile or a section
+(`TaskSketchBasedParameters`, `LinkSubWidget`). That is the outcome of
+the pick, as the command hides the sketch a new feature consumes, not
+something the panel takes back.
 
 Verified by `tests/gui/tempovis-per-view.py` (a sketch on a pad, two
 windows with `PerViewEdit` so that one is outside the edit; 5 of 16 fail
 with the session path off), `tests/gui/serve-tempovis.py` (3 of 11) and
-`tests/gui/pd-edit-shown-per-view.py` (4 of 13).
+`tests/gui/pd-edit-shown-per-view.py` (4 of 13). The origin:
+`tests/gui/pd-origin-in-edit.py`, a revolution (axes) and a box (planes,
+and the attacher's hide of the Link) in a body with a Link to it: 15
+pass, and 3 fail on the tree before -- both panels write `Visibility`,
+and the X axis is drawn at the Link's occurrence as well.
 
 - **Found on the way (`5124c6cc87`):** a path hide leaked to every
   other occurrence of the same node. An object's root sits under each
