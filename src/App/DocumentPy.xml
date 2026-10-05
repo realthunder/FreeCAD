@@ -646,6 +646,46 @@ without `preview` or when it could not be made), 'independent' and
 'stopped_at'. With `preview` a branch that has nothing to give is left out.</UserDocu>
       </Documentation>
     </Methode>
+    <Methode Name="keepTransactionSentFile">
+      <Documentation>
+        <UserDocu>keepTransactionSentFile(path, name='', sender='', kind='') -> int
+Keep the file at `path` in the log as a file someone sent to be merged
+(docs/TransactionLog.md sec 30.28, 30.29): a 'request' row under whoever
+acts, and the bytes as one blob. Nothing of the file is read. `name` is the
+name it is kept under (the file's own when empty), `sender` who sent it and
+`kind` how that name is known. Returns the row's seq.</UserDocu>
+      </Documentation>
+    </Methode>
+    <Methode Name="getTransactionSentFiles">
+      <Documentation>
+        <UserDocu>getTransactionSentFiles() -> list of dict
+The sent files the log holds, oldest first: 'seq' (the request row), 'name',
+'hash', 'size', 'sender', 'sender_kind', 'when', and 'branch' -- the branch
+it was brought in to, empty until it is. A file is held until that branch
+is merged into this one or deleted, or until it is dropped.</UserDocu>
+      </Documentation>
+    </Methode>
+    <Methode Name="dropTransactionSentFile">
+      <Documentation>
+        <UserDocu>dropTransactionSentFile(seq) -> bool
+Let the sent file of row `seq` go, with a record saying so. False when the
+log holds none for that row.</UserDocu>
+      </Documentation>
+    </Methode>
+    <Methode Name="writeTransactionSentFile">
+      <Documentation>
+        <UserDocu>writeTransactionSentFile(seq, path)
+Write the sent file of row `seq` to `path`, as it came.</UserDocu>
+      </Documentation>
+    </Methode>
+    <Methode Name="importTransactionSentFile">
+      <Documentation>
+        <UserDocu>importTransactionSentFile(seq, branch='') -> dict
+Bring the sent file of row `seq` in, as importTransactionFork() brings a
+file from a path; the import's record names the row and who sent it. The
+answer is that method's.</UserDocu>
+      </Documentation>
+    </Methode>
     <Methode Name="resolveTransactionLog">
       <Documentation>
         <UserDocu>resolveTransactionLog() -> int

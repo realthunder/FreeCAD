@@ -253,6 +253,20 @@ struct LogString
     std::string postfix;
 };
 
+/** A file someone sent to be merged, for as long as the log holds its bytes
+ * (table `heldfile`, docs/TransactionLog.md sec 30.29): `seq` the `request`
+ * row that says who sent what, `hash` the blob, `branch` the branch it was
+ * brought in to -- 0 until it is. The store keeps it by the row's identity
+ * (LogRowId), so `seq` is the number the row has now: a fast-forward gives
+ * a record another.
+ */
+struct LogHeldFile
+{
+    int64_t seq {0};
+    std::string hash;
+    int64_t branch {0};
+};
+
 /** The interface the document sees: a log is appended, read and truncated
  * through this and nothing else (sec 13.2). openSQLite() is the one
  * implementation.
@@ -432,6 +446,20 @@ public:
     /// Every meta entry whose key starts with `prefix`, as (key, value).
     virtual std::vector<std::pair<std::string, std::string>>
     metaWithPrefix(const std::string& prefix) = 0;
+
+    /// Hold blob `hash` for the request row `seq` (sec 30.29): a root of
+    /// the collector until it is released, or its row goes.
+    virtual void holdFile(int64_t seq, const std::string& hash) = 0;
+    /// Say which branch the file of row `seq` was brought in to.
+    virtual void setHeldFileBranch(int64_t seq, int64_t branch) = 0;
+    /// Let the file of row `seq` go, and collect. False when none is held.
+    virtual bool releaseFile(int64_t seq) = 0;
+    /// Let go every file whose row is gone -- trimmed, squashed, deleted
+    /// with its branch -- and collect. Not while a fast-forward has taken
+    /// records out to write them again. Returns how many.
+    virtual size_t releaseOrphanFiles() = 0;
+    /// The files held, by row.
+    virtual std::vector<LogHeldFile> heldFiles() = 0;
 
     /// A consistent, compacted copy of the whole store at `path` (SQLite's
     /// VACUUM INTO); the file must not exist. What the embedded mode ships.

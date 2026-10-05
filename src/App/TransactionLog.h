@@ -287,6 +287,16 @@ public:
     /// Returns its seq.
     int64_t record(const char* kind, const std::string& name, const std::string& script,
                    int64_t mergeFrom = 0);
+    /** Keep `file`, which someone sent to be merged (docs/TransactionLog.md
+     * sec 30.29): a `request` row named `name` under whoever acts, `script`
+     * its JSON, and the bytes held by the store until
+     * TransactionStore::releaseFile(). Nothing of the file is read.
+     * Returns the row's seq.
+     */
+    int64_t keepFile(const FileBlobHandle& file, const std::string& name,
+                     const std::string& script);
+    /// The file held for request row `seq`; null when none is.
+    FileBlobHandle heldFile(int64_t seq);
 
     /// Put the log on branch `id` (sec 26): the next row follows its head.
     /// Kept in `meta` so a recovery continues on it. False if no such branch.

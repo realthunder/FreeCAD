@@ -736,6 +736,46 @@ public:
      */
     std::vector<ImportRequest> importRequests(bool preview = true);
 
+    /// A file someone sent to be merged, kept in the log (sec 30.29).
+    struct SentFile
+    {
+        /// Its `request` row, as numbered now: a fast-forward gives a
+        /// record another number, and the file goes with it.
+        int64_t seq {0};
+        std::string name;         ///< the file's name
+        std::string hash;         ///< the blob that holds it
+        int64_t size {0};
+        std::string sender;       ///< who sent it
+        std::string senderKind;   ///< how that name is known: Actor's kinds
+        double when {0};          ///< when it came
+        /// The branch it was brought in to; empty until it is. Its bytes
+        /// are held until that branch is merged or deleted.
+        std::string branch;
+    };
+    /** Keep `bytes`, a file someone sent to be merged, in the log
+     * (docs/TransactionLog.md sec 30.28, 30.29): a `request` row named
+     * `name` under whoever acts, saying who sent it, and the bytes as one
+     * blob. Nothing of the file is read -- not opened, not unpacked (sec
+     * 30.20 H6). It is saved with the history and recovered with it.
+     * Returns the row. Throws when the document keeps no log.
+     */
+    int64_t keepSentFile(const std::string& bytes, const std::string& name,
+                         const std::string& sender = std::string(),
+                         const std::string& senderKind = std::string());
+    /// The sent files the log holds, oldest first.
+    std::vector<SentFile> sentFiles();
+    /// Let the file of row `seq` go unread, with a record saying so. False
+    /// when none is held.
+    bool dropSentFile(int64_t seq);
+    /// Write the bytes of the file of row `seq` to `path`, as they came.
+    void writeSentFile(int64_t seq, const std::string& path);
+    /** Bring the file of row `seq` in: importFork() of its bytes, the
+     * import's record naming the file and who sent it. The file stays held
+     * until the branch it came to is merged into this one or deleted; one
+     * that has nothing to give is let go at once.
+     */
+    ImportResult importSentFile(int64_t seq, const std::string& branch = std::string());
+
     /** Crash recovery (docs/TransactionLog.md sec 25): make this new, empty
      * document what the session that crashed with transient directory
      * `oldDir` had -- its newest version, the log's tail replayed over it --
@@ -1493,6 +1533,9 @@ protected:
                          const Document* kin = nullptr);
     /// importFork() of a file with no history (sec 30.19): one row against
     /// the save its `Version` names.
+    /// Let go every sent file whose branch was merged into this one or is
+    /// gone (sec 30.29).
+    void _releaseSentFiles();
     ImportResult _importState(const std::string& path, const std::string& file,
                               const std::string& saveId, const std::string& hash,
                               const std::string& sender);

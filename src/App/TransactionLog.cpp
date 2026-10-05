@@ -292,6 +292,23 @@ public:
     std::vector<std::pair<std::string, std::string>>
     metaWithPrefix(const std::string& prefix) override
     { return inner().metaWithPrefix(prefix); }
+    void holdFile(int64_t seq, const std::string& hash) override { inner().holdFile(seq, hash); }
+    void setHeldFileBranch(int64_t seq, int64_t branch) override
+    { inner().setHeldFileBranch(seq, branch); }
+    bool releaseFile(int64_t seq) override
+    {
+        const bool held = inner().releaseFile(seq);
+        _core.releaseBlobs();
+        return held;
+    }
+    size_t releaseOrphanFiles() override
+    {
+        const size_t gone = inner().releaseOrphanFiles();
+        if (gone)
+            _core.releaseBlobs();
+        return gone;
+    }
+    std::vector<LogHeldFile> heldFiles() override { return inner().heldFiles(); }
 
 private:
     TransactionStore& inner()
@@ -1318,6 +1335,41 @@ int64_t TransactionLog::record(const char* kind, const std::string& name,
         _c._store->append(t, none);
     });
     return t.seq;
+}
+
+int64_t TransactionLog::keepFile(const FileBlobHandle& file, const std::string& name,
+                                 const std::string& script)
+{
+    // docs/TransactionLog.md sec 30.29: a row that says who sent what, under
+    // whoever acts, and the bytes held as one blob. The blob is made
+    // durable and named in the store before the row that says it is there.
+    LogTransaction t;
+    number(t);
+    t.kind = "request";
+    t.name = name;
+    t.time = now();
+    t.script = script;
+    post([this, t, file]() mutable {
+        const std::string hash = _c.putBlob(file);
+        std::vector<LogOp> none;
+        _c._store->append(t, none);
+        _c._store->holdFile(t.seq, hash);
+    });
+    return t.seq;
+}
+
+FileBlobHandle TransactionLog::heldFile(int64_t seq)
+{
+    flush();
+    for (const auto& f : _c._store->heldFiles()) {
+        if (f.seq != seq)
+            continue;
+        if (auto blob = _c.liveBlob(f.hash))
+            return blob;
+        _c.restoreBlob(f.hash, std::string());
+        return _c.liveBlob(f.hash);
+    }
+    return FileBlobHandle();
 }
 
 int64_t TransactionLog::login(const Actor& actor)

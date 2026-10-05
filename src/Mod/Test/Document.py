@@ -6383,3 +6383,169 @@ class TransactionBranchCases(unittest.TestCase):
         self.assertEqual(doc.Box.Height.Value, 10)
         self.assertEqual(doc.Box.Length.Value, 10)
         self.assertIsNone(doc.getObject("Cyl"))
+
+    def testASentFileIsKeptInTheLogUntilItIsMerged(self):
+        # Sec 30.28, 30.29: a file someone sent to be merged is a row of the
+        # log and one blob it holds -- unread, saved with the history, and
+        # let go once the branch it was brought in to is merged or deleted.
+        import json, shutil
+
+        def rows(doc, kind):
+            return [t for t in doc.getTransactionLog() if t["kind"] == kind]
+
+        doc = self.track(FreeCAD.newDocument("SentOurs"))
+        doc.UndoMode = 1
+        doc.openTransaction("create")
+        doc.addObject("Part::Box", "Box")
+        doc.recompute()
+        doc.commitTransaction()
+        path = os.path.join(self.dir, "sent-ours.FCStd")
+        copy = os.path.join(self.dir, "sent-theirs.FCStd")
+        doc.saveAs(path)
+        shutil.copyfile(path, copy)
+
+        fork = self.track(FreeCAD.openDocument(copy))
+        fork.UndoMode = 1
+        fork.openTransaction("theirs longer")
+        fork.Box.Length = 20
+        fork.recompute()
+        fork.commitTransaction()
+        fork.openTransaction("theirs cylinder")
+        fork.addObject("Part::Cylinder", "Cyl")
+        fork.recompute()
+        fork.commitTransaction()
+        fork.save()
+        FreeCAD.closeDocument(fork.Name)
+        FreeCAD.setActiveDocument(doc.Name)
+        with open(copy, "rb") as handle:
+            sent = handle.read()
+
+        # Kept: a row, the bytes, and nothing else.
+        undo = list(doc.UndoNames)
+        documents = len(FreeCAD.listDocuments())
+        branches = [b["name"] for b in doc.getTransactionBranches()]
+        seq = doc.keepTransactionSentFile(copy, "mine.FCStd", "lei", "invited")
+        held = doc.getTransactionSentFiles()
+        self.assertEqual(len(held), 1)
+        self.assertEqual(held[0]["seq"], seq)
+        self.assertEqual(held[0]["name"], "mine.FCStd")
+        self.assertEqual(held[0]["size"], len(sent))
+        self.assertEqual((held[0]["sender"], held[0]["sender_kind"]), ("lei", "invited"))
+        self.assertEqual(held[0]["branch"], "")
+        request = rows(doc, "request")
+        self.assertEqual([t["seq"] for t in request], [seq])
+        self.assertEqual(request[0]["name"], "mine.FCStd")
+        self.assertEqual(json.loads(request[0]["script"])["request"]["file"], held[0]["hash"])
+        self.assertEqual(doc.getTransactionOps(seq), [])
+        # H6: not read. No branch, no document, no request of the other kind.
+        self.assertEqual(list(doc.UndoNames), undo)
+        self.assertEqual(len(FreeCAD.listDocuments()), documents)
+        self.assertEqual([b["name"] for b in doc.getTransactionBranches()], branches)
+        self.assertEqual(doc.getTransactionRequests(False), [])
+        self.assertEqual(doc.Box.Length.Value, 10)
+        back = os.path.join(self.dir, "sent-back.FCStd")
+        doc.writeTransactionSentFile(seq, back)
+        with open(back, "rb") as handle:
+            self.assertEqual(handle.read(), sent)
+
+        # It is in the log, and the log is in the file: saved, closed and
+        # opened again, it is still there, as it came.
+        doc.save()
+        plain = os.path.join(self.dir, "sent-plain.FCStd")
+        doc.saveCopy(plain, False)
+        FreeCAD.closeDocument(doc.Name)
+        doc = self.track(FreeCAD.openDocument(path))
+        doc.UndoMode = 1
+        again = doc.getTransactionSentFiles()
+        self.assertEqual([(f["seq"], f["hash"]) for f in again], [(seq, held[0]["hash"])])
+        os.remove(back)
+        doc.writeTransactionSentFile(seq, back)
+        with open(back, "rb") as handle:
+            self.assertEqual(handle.read(), sent)
+        # A copy saved without its history carries none of it.
+        self.assertLess(os.path.getsize(plain), os.path.getsize(path) - len(sent) // 2)
+
+        # Brought in: a branch, the import's record naming the row and who
+        # sent it. The file is still held: the branch is not merged.
+        res = doc.importTransactionSentFile(seq)
+        self.assertEqual(res["stopped_at"], 0, res)
+        self.assertEqual(res["branch"], "mine")
+        self.assertEqual(res["rows"], 2, res)
+        record = json.loads([t for t in doc.getTransactionLog() if t["seq"] == res["seq"]][0]["script"])
+        self.assertEqual(record["import"]["request"], held[0]["hash"])
+        self.assertEqual(record["import"]["sender"], "lei (invited)")
+        held = doc.getTransactionSentFiles()
+        self.assertEqual([(f["seq"], f["branch"]) for f in held], [(seq, "mine")])
+        requests = doc.getTransactionRequests(False)
+        self.assertEqual([r["branch"] for r in requests], ["mine"])
+        self.assertEqual(doc.Box.Length.Value, 10)
+
+        # Merged, it is rows of this history, and the bytes are let go.
+        merged = doc.mergeTransactionBranch("mine")
+        self.assertEqual(merged["unresolved"], [])
+        self.assertEqual(doc.Box.Length.Value, 20)
+        self.assertIsNotNone(doc.getObject("Cyl"))
+        self.assertEqual(doc.getTransactionSentFiles(), [])
+        with self.assertRaises(ValueError):
+            doc.writeTransactionSentFile(seq, back)
+        # The row stays, and says what was sent.
+        self.assertEqual([t["name"] for t in rows(doc, "request")], ["mine.FCStd"])
+
+        # The same file again has nothing to give: let go at once, and said.
+        seq2 = doc.keepTransactionSentFile(copy, "mine.FCStd", "lei", "invited")
+        self.assertEqual(len(doc.getTransactionSentFiles()), 1)
+        res = doc.importTransactionSentFile(seq2)
+        self.assertEqual((res["rows"], res["stopped_at"]), (0, 0), res)
+        self.assertEqual(doc.getTransactionSentFiles(), [])
+        drops = [json.loads(t["script"])["drop"] for t in rows(doc, "drop")]
+        self.assertEqual([(d["name"], d["reason"]) for d in drops], [("mine.FCStd", "nothing new")])
+
+        # Dropped unread.
+        seq3 = doc.keepTransactionSentFile(copy, "other.FCStd", "eve", "declared")
+        self.assertTrue(doc.dropTransactionSentFile(seq3))
+        self.assertFalse(doc.dropTransactionSentFile(seq3))
+        self.assertEqual(doc.getTransactionSentFiles(), [])
+        drops = [json.loads(t["script"])["drop"] for t in rows(doc, "drop")]
+        self.assertEqual((drops[-1]["name"], drops[-1]["reason"]), ("other.FCStd", "unread"))
+        self.assertEqual(doc.getTransactionRequests(False), [])
+
+        # A waiting file is kept by its row, whatever number the row has: a
+        # fast-forward of another branch writes this branch's records again.
+        side = self.track(doc.openTransactionBranch("side", False))
+        FreeCAD.setActiveDocument(doc.Name)
+        seq5 = doc.keepTransactionSentFile(copy, "waits.FCStd", "lei", "invited")
+        side.UndoMode = 1
+        side.openTransaction("side wider")
+        side.Box.Width = 17
+        side.recompute()
+        side.commitTransaction()
+        FreeCAD.closeDocument(side.Name)
+        FreeCAD.setActiveDocument(doc.Name)
+        forwarded = doc.mergeTransactionBranch("side")
+        self.assertGreater(forwarded["forwarded"], 0, forwarded)
+        self.assertEqual(doc.Box.Width.Value, 17)
+        waiting = doc.getTransactionSentFiles()
+        self.assertEqual([f["name"] for f in waiting], ["waits.FCStd"])
+        self.assertNotEqual(waiting[0]["seq"], seq5)
+        doc.writeTransactionSentFile(waiting[0]["seq"], back)
+        with open(back, "rb") as handle:
+            self.assertEqual(len(handle.read()), os.path.getsize(copy))
+        self.assertTrue(doc.dropTransactionSentFile(waiting[0]["seq"]))
+
+        # Brought in and refused: the branch deleted takes the file with it.
+        fork = self.track(FreeCAD.openDocument(copy))
+        fork.UndoMode = 1
+        fork.openTransaction("theirs taller")
+        fork.Box.Height = 30
+        fork.recompute()
+        fork.commitTransaction()
+        fork.save()
+        FreeCAD.closeDocument(fork.Name)
+        FreeCAD.setActiveDocument(doc.Name)
+        seq4 = doc.keepTransactionSentFile(copy, "mine.FCStd", "lei", "invited")
+        res = doc.importTransactionSentFile(seq4)
+        self.assertEqual(res["rows"], 1, res)
+        self.assertEqual([f["seq"] for f in doc.getTransactionSentFiles()], [seq4])
+        doc.deleteTransactionBranch(res["branch"])
+        self.assertEqual(doc.getTransactionSentFiles(), [])
+        self.assertEqual(doc.Box.Height.Value, 10)

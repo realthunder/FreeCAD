@@ -156,6 +156,11 @@ public:
              " from_version INTEGER, from_seq INTEGER, head_seq INTEGER, id_base INTEGER,"
              " last_id INTEGER DEFAULT 0, created REAL, closed REAL,"
              " target INTEGER DEFAULT 0)");
+        // Sec 30.29: the files of requests, held until they are dealt with.
+        // By the row's identity, not its number: a fast-forward writes a
+        // record again under a new one (sec 30.4 P1).
+        exec("CREATE TABLE IF NOT EXISTS heldfile(session INTEGER, ord INTEGER, file BLOB,"
+             " branch INTEGER DEFAULT 0, PRIMARY KEY(session, ord)) WITHOUT ROWID");
         if (!hasRow("SELECT 1 FROM branch WHERE id=1"))
             exec("INSERT INTO branch(id,name,from_version,from_seq,head_seq,id_base,created,"
                  "closed) VALUES(1,'main',0,0,(SELECT COALESCE(MAX(seq),0) FROM txn),0,"
@@ -1147,6 +1152,7 @@ public:
         std::vector<uint32_t> roots;
         addRoots(g, opRoots, roots);
         addRoots(g, manifestRoots, roots);
+        addRoots(g, fileRoots, roots);
         std::vector<char> held;
         if (walk(g, roots, nullptr, held))
             sweep(g, held);
@@ -1158,6 +1164,7 @@ public:
                                            " UNION ALL SELECT vafter FROM op WHERE vafter<>''";
     static constexpr const char* manifestRoots =
         "SELECT manifest FROM version WHERE manifest IS NOT NULL";
+    static constexpr const char* fileRoots = "SELECT file FROM heldfile";
 
     /** What the collector walks: every hash the ref edges, the roots and the
      * composites' and manifests' own data name, numbered, with the edges of
@@ -1420,6 +1427,7 @@ public:
             std::vector<uint32_t> manifests, roots;
             addRoots(g, manifestRoots, manifests);
             addRoots(g, opRoots, roots);
+            addRoots(g, fileRoots, roots);
             roots.insert(roots.end(), manifests.begin(), manifests.end());
             std::vector<char> listed, all;
             if (walk(g, manifests, nullptr, listed) && walk(g, roots, nullptr, all)) {
@@ -1903,6 +1911,82 @@ public:
         bindText(s, 1, key);
         bindText(s, 2, value);
         step(s);
+    }
+
+    void holdFile(int64_t seq, const std::string& hash) override
+    {
+        auto s = prepare("INSERT OR REPLACE INTO heldfile(session,ord,file,branch)"
+                         " SELECT session, ord, ?, 0 FROM txn WHERE seq=?");
+        bindHash(s, 1, hash);
+        sqlite3_bind_int64(s, 2, seq);
+        step(s);
+    }
+
+    void setHeldFileBranch(int64_t seq, int64_t branch) override
+    {
+        auto s = prepare("UPDATE heldfile SET branch=? WHERE (session, ord) IN"
+                         " (SELECT session, ord FROM txn WHERE seq=?)");
+        sqlite3_bind_int64(s, 1, branch);
+        sqlite3_bind_int64(s, 2, seq);
+        step(s);
+    }
+
+    bool releaseFile(int64_t seq) override
+    {
+        exec("BEGIN");
+        try {
+            auto s = prepare("DELETE FROM heldfile WHERE (session, ord) IN"
+                             " (SELECT session, ord FROM txn WHERE seq=?)");
+            sqlite3_bind_int64(s, 1, seq);
+            step(s);
+            const bool held = sqlite3_changes(db) > 0;
+            if (held)
+                collectEntities();
+            exec("COMMIT");
+            return held;
+        }
+        catch (...) {
+            exec("ROLLBACK");
+            throw;
+        }
+    }
+
+    size_t releaseOrphanFiles() override
+    {
+        exec("BEGIN");
+        try {
+            exec("DELETE FROM heldfile WHERE NOT EXISTS (SELECT 1 FROM txn"
+                 " WHERE txn.session=heldfile.session AND txn.ord=heldfile.ord)");
+            const size_t gone = static_cast<size_t>(sqlite3_changes(db));
+            if (gone)
+                collectEntities();
+            exec("COMMIT");
+            return gone;
+        }
+        catch (...) {
+            exec("ROLLBACK");
+            throw;
+        }
+    }
+
+    std::vector<LogHeldFile> heldFiles() override
+    {
+        std::vector<LogHeldFile> out;
+        // A copy read as it is (the guard's, a history opened from a file)
+        // may be of before there was such a table.
+        if (!hasRow("SELECT 1 FROM sqlite_master WHERE type='table' AND name='heldfile'"))
+            return out;
+        auto s = prepare("SELECT t.seq, h.file, h.branch FROM heldfile h JOIN txn t"
+                         " ON t.session=h.session AND t.ord=h.ord ORDER BY t.seq");
+        while (sqlite3_step(s) == SQLITE_ROW) {
+            LogHeldFile f;
+            f.seq = sqlite3_column_int64(s, 0);
+            f.hash = columnHash(s, 1);
+            f.branch = sqlite3_column_int64(s, 2);
+            out.push_back(std::move(f));
+        }
+        sqlite3_reset(s);
+        return out;
     }
 
     std::vector<std::pair<std::string, std::string>>

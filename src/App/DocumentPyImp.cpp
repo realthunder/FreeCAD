@@ -1502,6 +1502,32 @@ PyObject* DocumentPy::getTransactionForkBranches(PyObject *args)
     } PY_CATCH;
 }
 
+namespace {
+
+/// What an import did, as the Python methods answer it.
+Py::Dict importResultDict(const App::Document::ImportResult& result)
+{
+    Py::Dict d;
+    d.setItem("branch", Py::String(result.branch));
+    d.setItem("from", Py::String(result.from));
+    d.setItem("base", Py::Long(static_cast<long long>(result.base)));
+    d.setItem("rows", Py::Long(static_cast<unsigned long long>(result.rows)));
+    d.setItem("skipped", Py::Long(static_cast<unsigned long long>(result.skipped)));
+    d.setItem("versions", Py::Long(static_cast<unsigned long long>(result.versions)));
+    d.setItem("extended", Py::Boolean(result.extended));
+    d.setItem("independent", Py::Boolean(result.independent));
+    d.setItem("stopped_at", Py::Long(static_cast<long long>(result.stoppedAt)));
+    d.setItem("reason", Py::String(result.reason));
+    Py::Dict renamed;
+    for (const auto& kv : result.renamed)
+        renamed.setItem(Py::String(kv.first), Py::String(kv.second));
+    d.setItem("renamed", renamed);
+    d.setItem("seq", Py::Long(static_cast<long long>(result.seq)));
+    return d;
+}
+
+} // namespace
+
 PyObject* DocumentPy::importTransactionFork(PyObject *args)
 {
     char* path;
@@ -1512,24 +1538,88 @@ PyObject* DocumentPy::importTransactionFork(PyObject *args)
     const std::string file(path);
     PyMem_Free(path);
     PY_TRY {
-        const auto result = getDocumentPtr()->importFork(file, branch, sender);
-        Py::Dict d;
-        d.setItem("branch", Py::String(result.branch));
-        d.setItem("from", Py::String(result.from));
-        d.setItem("base", Py::Long(static_cast<long long>(result.base)));
-        d.setItem("rows", Py::Long(static_cast<unsigned long long>(result.rows)));
-        d.setItem("skipped", Py::Long(static_cast<unsigned long long>(result.skipped)));
-        d.setItem("versions", Py::Long(static_cast<unsigned long long>(result.versions)));
-        d.setItem("extended", Py::Boolean(result.extended));
-        d.setItem("independent", Py::Boolean(result.independent));
-        d.setItem("stopped_at", Py::Long(static_cast<long long>(result.stoppedAt)));
-        d.setItem("reason", Py::String(result.reason));
-        Py::Dict renamed;
-        for (const auto& kv : result.renamed)
-            renamed.setItem(Py::String(kv.first), Py::String(kv.second));
-        d.setItem("renamed", renamed);
-        d.setItem("seq", Py::Long(static_cast<long long>(result.seq)));
-        return Py::new_reference_to(d);
+        return Py::new_reference_to(
+            importResultDict(getDocumentPtr()->importFork(file, branch, sender)));
+    } PY_CATCH;
+}
+
+PyObject* DocumentPy::keepTransactionSentFile(PyObject *args)
+{
+    char* path;
+    const char* name = "";
+    const char* sender = "";
+    const char* kind = "";
+    if (!PyArg_ParseTuple(args, "et|sss", "utf-8", &path, &name, &sender, &kind))
+        return nullptr;
+    const std::string file(path);
+    PyMem_Free(path);
+    PY_TRY {
+        Base::FileInfo fi(file);
+        Base::ifstream in(fi, std::ios::in | std::ios::binary);
+        if (!in)
+            throw Base::FileException("cannot read the file", fi);
+        std::string bytes((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+        const std::string as = *name ? std::string(name) : fi.fileName();
+        return Py::new_reference_to(Py::Long(static_cast<long long>(
+            getDocumentPtr()->keepSentFile(bytes, as, sender, kind))));
+    } PY_CATCH;
+}
+
+PyObject* DocumentPy::getTransactionSentFiles(PyObject *args)
+{
+    if (!PyArg_ParseTuple(args, ""))
+        return nullptr;
+    PY_TRY {
+        Py::List list;
+        for (const auto& f : getDocumentPtr()->sentFiles()) {
+            Py::Dict d;
+            d.setItem("seq", Py::Long(static_cast<long long>(f.seq)));
+            d.setItem("name", Py::String(f.name));
+            d.setItem("hash", Py::String(f.hash));
+            d.setItem("size", Py::Long(static_cast<long long>(f.size)));
+            d.setItem("sender", Py::String(f.sender));
+            d.setItem("sender_kind", Py::String(f.senderKind));
+            d.setItem("when", Py::Float(f.when));
+            d.setItem("branch", Py::String(f.branch));
+            list.append(d);
+        }
+        return Py::new_reference_to(list);
+    } PY_CATCH;
+}
+
+PyObject* DocumentPy::dropTransactionSentFile(PyObject *args)
+{
+    long long seq = 0;
+    if (!PyArg_ParseTuple(args, "L", &seq))
+        return nullptr;
+    PY_TRY {
+        return Py::new_reference_to(Py::Boolean(getDocumentPtr()->dropSentFile(seq)));
+    } PY_CATCH;
+}
+
+PyObject* DocumentPy::writeTransactionSentFile(PyObject *args)
+{
+    long long seq = 0;
+    char* path;
+    if (!PyArg_ParseTuple(args, "Let", &seq, "utf-8", &path))
+        return nullptr;
+    const std::string file(path);
+    PyMem_Free(path);
+    PY_TRY {
+        getDocumentPtr()->writeSentFile(seq, file);
+        Py_Return;
+    } PY_CATCH;
+}
+
+PyObject* DocumentPy::importTransactionSentFile(PyObject *args)
+{
+    long long seq = 0;
+    const char* branch = "";
+    if (!PyArg_ParseTuple(args, "L|s", &seq, &branch))
+        return nullptr;
+    PY_TRY {
+        return Py::new_reference_to(
+            importResultDict(getDocumentPtr()->importSentFile(seq, branch)));
     } PY_CATCH;
 }
 

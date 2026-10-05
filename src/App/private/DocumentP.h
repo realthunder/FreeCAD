@@ -181,6 +181,9 @@ struct DocumentP
     /// A saveCopy() without history: the copy embeds nothing, and the
     /// History property the live document had is put back afterwards.
     bool savingWithoutHistory {false};
+    /// The sent file importFork() is bringing in (sec 30.29), by its hash,
+    /// for the import's record to name; empty for a file from a path.
+    std::string importingRequest;
     std::function<void()> restoreHistory;
 #ifdef USE_OLD_DAG
     DependencyList DepList;

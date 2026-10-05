@@ -7815,6 +7815,8 @@ size_t Document::trimBranch(const std::string& name, int64_t version, bool bridg
            << ",\"versions\":" << versions.size() << compactJson(estimate) << "}";
     log->record("trim", "Trim " + name + " to version " + std::to_string(keep.num), script.str());
     refreshVersionNames();
+    // A sent file whose row went with these is let go (sec 30.29).
+    _releaseSentFiles();
     signalBranchesChanged(*this);
     return removed;
 }
@@ -7865,6 +7867,8 @@ size_t Document::deleteBranch(const std::string& name)
     // later may be given its number, and would be taken for an import.
     if (!store.getMeta("import:" + std::to_string(branch.id)).empty())
         store.setMeta("import:" + std::to_string(branch.id), std::string());
+    // -- and the file it was brought in from, if the log held one.
+    _releaseSentFiles();
     const CompactEstimate estimate = _noteDroppedRows(named);
 
     std::ostringstream script;
@@ -7956,6 +7960,8 @@ size_t Document::squashVersions(int64_t from, int64_t to)
     // count only (sec 27.48).
     _noteDroppedRows(named);
     refreshVersionNames();
+    // A sent file whose row went with these is let go (sec 30.29).
+    _releaseSentFiles();
     signalBranchesChanged(*this);
     return path.size();
 }
@@ -8535,6 +8541,23 @@ Document::MergeResult Document::mergeBranch(const std::string& branch,
     if (!log)
         return result;
     _checkBranchable("merge a branch");
+    // A sent file is held until its branch is merged (sec 30.29): however
+    // this ends, what is merged by then is let go.
+    struct Release
+    {
+        Document& doc;
+        ~Release()
+        {
+            try {
+                doc._releaseSentFiles();
+            }
+            catch (Base::Exception& e) {
+                FC_WARN("sent files of " << doc.getName() << ": " << e.what());
+            }
+            catch (...) {
+            }
+        }
+    } release {*this};
     auto sideOk = [](const std::string& side) { return side == "ours" || side == "theirs"; };
     if (!fallback.empty() && !sideOk(fallback))
         THROWM(Base::ValueError, "a side is 'ours' or 'theirs', not '" + fallback + "'");
@@ -9645,6 +9668,8 @@ Document::ImportResult Document::_importState(const std::string& path, const std
     m["rows"] = result.rows;
     if (!sender.empty())
         m["sender"] = sender;
+    if (!d->importingRequest.empty())
+        m["request"] = d->importingRequest;
     if (result.independent)
         m["independent"] = true;
     if (result.stoppedAt) {
@@ -10159,6 +10184,8 @@ Document::ImportResult Document::importFork(const std::string& path, const std::
     m["rows"] = result.rows;
     if (!sender.empty())
         m["sender"] = sender;
+    if (!d->importingRequest.empty())
+        m["request"] = d->importingRequest;
     if (gap)
         m["state"] = state;
     if (result.stoppedAt) {
@@ -10183,6 +10210,202 @@ Document::ImportResult Document::importFork(const std::string& path, const std::
     keep["names"] = names;
     _finishImport(replay, scratch, mine.id, fork.file, j.dump(), keep.dump(), result);
     return result;
+}
+
+int64_t Document::keepSentFile(const std::string& bytes, const std::string& name,
+                               const std::string& sender, const std::string& senderKind)
+{
+    // docs/TransactionLog.md sec 30.29. H6 holds: the bytes are taken as
+    // they are, one blob, and nothing here looks inside them.
+    checkNotFrozen("keep a sent file");
+    TransactionLog* log = getTransactionLog();
+    if (!log || log->detached())
+        THROWM(Base::RuntimeError, "the document keeps no log to hold a sent file in");
+    if (bytes.empty())
+        THROWM(Base::ValueError, "an empty file");
+    std::string file = Base::FileInfo(name).fileName();
+    if (file.empty())
+        file = "sent.FCStd";
+    FileBlobHandle blob = getFileBlobManager().adoptBytes(bytes, "FCStd");
+    if (!blob)
+        THROWM(Base::RuntimeError, "the file's store did not take " + file);
+    nlohmann::json j;
+    j["request"] = {{"name", file},
+                    {"size", bytes.size()},
+                    {"file", blob->hash()},
+                    {"sender", sender},
+                    {"kind", senderKind}};
+    const int64_t seq = log->keepFile(blob, file, j.dump());
+    signalBranchesChanged(*this);
+    return seq;
+}
+
+std::vector<Document::SentFile> Document::sentFiles()
+{
+    std::vector<SentFile> out;
+    TransactionLog* log = getTransactionLog();
+    if (!log || log->detached())
+        return out;
+    auto& store = log->store();
+    for (const auto& held : store.heldFiles()) {
+        SentFile f;
+        f.seq = held.seq;
+        f.hash = held.hash;
+        for (const auto& t : store.transactions(held.seq, 1)) {
+            if (t.seq != held.seq)
+                continue;
+            f.name = t.name;
+            f.when = t.time;
+            const auto j = nlohmann::json::parse(t.script, nullptr, false);
+            if (j.is_object() && j.contains("request") && j["request"].is_object()) {
+                f.size = j["request"].value("size", int64_t(0));
+                f.sender = j["request"].value("sender", std::string());
+                f.senderKind = j["request"].value("kind", std::string());
+            }
+        }
+        LogBranch branch;
+        if (held.branch && store.getBranch(held.branch, branch))
+            f.branch = branch.name;
+        out.push_back(std::move(f));
+    }
+    return out;
+}
+
+namespace {
+
+/// The record that says a sent file was let go, and why. The file is named
+/// by its bytes: a row's number is not for keeps (a fast-forward writes a
+/// record again under another).
+std::string dropScript(const std::string& hash, const std::string& name, const char* reason)
+{
+    nlohmann::json j;
+    j["drop"] = {{"request", hash}, {"name", name}, {"reason", reason}};
+    return j.dump();
+}
+
+} // namespace
+
+bool Document::dropSentFile(int64_t seq)
+{
+    TransactionLog* log = getTransactionLog();
+    if (!log || log->detached())
+        return false;
+    for (const auto& f : sentFiles()) {
+        if (f.seq != seq)
+            continue;
+        // One brought in already is rows on its branch: letting the bytes
+        // go loses nothing, and is no rejection of the branch.
+        log->record("drop", "Drop " + f.name,
+                    dropScript(f.hash, f.name, f.branch.empty() ? "unread" : "brought in"));
+        log->store().releaseFile(seq);
+        signalBranchesChanged(*this);
+        return true;
+    }
+    return false;
+}
+
+void Document::writeSentFile(int64_t seq, const std::string& path)
+{
+    TransactionLog* log = getTransactionLog();
+    FileBlobHandle blob = log && !log->detached() ? log->heldFile(seq) : FileBlobHandle();
+    std::string bytes;
+    if (!blob || !blob->read(bytes))
+        THROWM(Base::ValueError, "no file is held for row " + std::to_string(seq));
+    Base::FileInfo fi(path);
+    Base::ofstream out(fi, std::ios::out | std::ios::binary | std::ios::trunc);
+    out.write(bytes.data(), static_cast<std::streamsize>(bytes.size()));
+    out.close();
+    if (!out)
+        throw Base::FileException("cannot write the sent file", fi);
+}
+
+Document::ImportResult Document::importSentFile(int64_t seq, const std::string& branch)
+{
+    TransactionLog* log = getTransactionLog();
+    if (!log || log->detached())
+        THROWM(Base::RuntimeError, "the document keeps no log");
+    SentFile sent;
+    for (const auto& f : sentFiles()) {
+        if (f.seq == seq)
+            sent = f;
+    }
+    if (!sent.seq)
+        THROWM(Base::ValueError, "no file is held for row " + std::to_string(seq));
+    // importFork() reads a file, and names the branch after it: the bytes
+    // go to one of that name, in a directory of this row's.
+    const std::string dir = TransientDir.getStrValue() + "/requests/" + std::to_string(seq);
+    Base::FileInfo(dir).createDirectories();
+    const std::string path = dir + "/" + sent.name;
+    auto tidy = [&]() {
+        Base::FileInfo(path).deleteFile();
+        Base::FileInfo(dir).deleteDirectory();
+    };
+    ImportResult result;
+    d->importingRequest = sent.hash;
+    try {
+        writeSentFile(seq, path);
+        // H7: who sent it, and how that name is known.
+        std::string sender = sent.sender;
+        if (!sent.senderKind.empty())
+            sender += " (" + sent.senderKind + ")";
+        result = importFork(path, branch, sender);
+    }
+    catch (...) {
+        d->importingRequest.clear();
+        tidy();
+        throw;
+    }
+    d->importingRequest.clear();
+    tidy();
+    auto& store = log->store();
+    LogBranch came;
+    if ((result.rows || result.stoppedAt) && store.findBranch(result.branch, came)) {
+        store.setHeldFileBranch(seq, came.id);
+    }
+    else if (!result.rows && !result.stoppedAt) {
+        // Nothing of it is new here: there is no branch to wait for.
+        log->record("drop", "Drop " + sent.name,
+                    dropScript(sent.hash, sent.name, "nothing new"));
+        store.releaseFile(seq);
+    }
+    _releaseSentFiles();
+    signalBranchesChanged(*this);
+    return result;
+}
+
+void Document::_releaseSentFiles()
+{
+    // Ruled (user, 2026-10-05): the file is dropped after merging. A sent
+    // file that was brought in is held until its branch is in this one --
+    // by then it is rows of this history -- or is deleted, which is the
+    // owner saying no.
+    TransactionLog* log = getTransactionLog();
+    if (!log || log->detached())
+        return;
+    auto& store = log->store();
+    // One whose row is gone -- trimmed, squashed, deleted with a branch.
+    store.releaseOrphanFiles();
+    const auto held = store.heldFiles();
+    if (held.empty())
+        return;
+    std::set<int64_t> mine;
+    bool walked = false;
+    for (const auto& f : held) {
+        if (!f.branch)
+            continue;
+        LogBranch branch;
+        bool done = !store.getBranch(f.branch, branch);
+        if (!done) {
+            if (!walked) {
+                for (const auto& t : store.history(log->head()))
+                    mine.insert(t.seq);
+                walked = true;
+            }
+            done = mine.count(branch.head) != 0;
+        }
+        if (done)
+            store.releaseFile(f.seq);
+    }
 }
 
 std::vector<Document::ImportRequest> Document::importRequests(bool preview)
