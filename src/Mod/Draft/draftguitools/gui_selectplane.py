@@ -73,8 +73,12 @@ class Draft_SelectPlane:
     def Activated(self):
         """Execute when the command is called."""
 
+        # The view the command was called in: the show below is deferred,
+        # and by then no view is being handled (docs/TaskPanelPerView.md).
+        owner = Gui.Control.currentOwner()
+
         def _show_dialog():
-            dia = Gui.Control.showDialog(self.taskd)
+            dia = Gui.Control.showDialog(self.taskd, view=owner)
             dia.setDocumentName(Gui.ActiveDocument.Document.Name)
             dia.setAutoCloseOnDeletedDocument(True)
 

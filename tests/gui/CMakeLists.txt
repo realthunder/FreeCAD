@@ -1278,3 +1278,9 @@ fc_add_gui_test(GuiMatcapZebra_tests_run
 # client's edit -- and what the keyed Control answers for another view.
 fc_add_gui_test(GuiTaskPanelOwner_tests_run task-panel-owner.py
                 --timeout 240)
+
+# A Draft command's panel is shown from Draft's todo queue, after the
+# command returned: it belongs to the view the command was run in, not to
+# whichever view is active when the queue runs.
+fc_add_gui_test(GuiDraftPanelOwner_tests_run draft-panel-owner.py
+                --timeout 180)

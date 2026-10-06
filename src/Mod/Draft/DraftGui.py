@@ -856,8 +856,10 @@ class DraftToolBar:
     # Interface modes
     # ---------------------------------------------------------------------------
 
-    def _show_dialog(self, panel):
-        task = FreeCADGui.Control.showDialog(panel)
+    def _show_dialog(self, panel, owner=None):
+        # owner: the view the panel was asked in (docs/TaskPanelPerView.md).
+        # This runs from the todo queue, where no view is being handled.
+        task = FreeCADGui.Control.showDialog(panel, view=owner)
         # this fork's Control.showDialog returns None rather than a task dialog
         # wrapper, and that wrapper has neither setter, so the dialog is not
         # tied to a document here and does not close with it
@@ -879,7 +881,8 @@ class DraftToolBar:
             FreeCADGui.Snapper.setPointConstraintProvider(self)
         self.retranslateUi(self.baseWidget)
         self.panel = DraftTaskPanel(self.baseWidget, extra)
-        todo.delay(self._show_dialog, self.panel)
+        owner = FreeCADGui.Control.currentOwner()
+        todo.delay(lambda panel: self._show_dialog(panel, owner), self.panel)
         self.setTitle(title, icon)
 
     def redraw(self):
@@ -1295,7 +1298,8 @@ class DraftToolBar:
 
         todo.delay(FreeCADGui.Control.closeDialog, None)
         panel = TaskPanel(extra, on_close_call)
-        todo.delay(self._show_dialog, panel)
+        owner = FreeCADGui.Control.currentOwner()
+        todo.delay(lambda panel: self._show_dialog(panel, owner), panel)
 
     # ---------------------------------------------------------------------------
     # Processing functions

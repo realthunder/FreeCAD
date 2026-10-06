@@ -243,8 +243,12 @@ class Scale(gui_base_original.Modifier):
         when valid x, y, and z have been entered in the input fields.
         """
 
+        # The view the command runs in: the show below is deferred, and by
+        # then no view is being handled (docs/TaskPanelPerView.md).
+        owner = Gui.Control.currentOwner()
+
         def _show_dialog():
-            dia = Gui.Control.showDialog(self.task)
+            dia = Gui.Control.showDialog(self.task, view=owner)
             dia.setDocumentName(self.doc.Name)
             dia.setAutoCloseOnDeletedDocument(True)
 
