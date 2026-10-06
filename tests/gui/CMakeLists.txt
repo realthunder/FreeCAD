@@ -1284,3 +1284,10 @@ fc_add_gui_test(GuiOpenThroughCommand_tests_run
 fc_add_gui_test(GuiStatusDimensionText_tests_run
                 status-dimension-text.py
                 --timeout 120)
+
+# A tip shows its whole icon and keeps its own pictures: a tip of two lines
+# cut its icon's last rows off, and the first picture of the navigation
+# styles' table was taken for the tip's icon.
+fc_add_gui_test(GuiToolTipIconAndImages_tests_run
+                tooltip-icon-and-images.py
+                --timeout 180)
