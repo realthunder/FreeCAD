@@ -48,8 +48,12 @@ public:
     TxnLogFakeView()
     {
         ADD_PROPERTY(Shade, (0));
+        ADD_PROPERTY_TYPE(Paint, (0), "", App::Prop_OwnerValue, "");
     }
     App::PropertyInteger Shade;
+    /// Part of what the owner holds, as the look of each element an object
+    /// names is (App::Prop_OwnerValue)
+    App::PropertyInteger Paint;
     App::DocumentObject* owner {nullptr};
     const App::DocumentObject* getTransactionOwner() const override
     {
@@ -1958,6 +1962,55 @@ TEST_F(TransactionLogTest, coldUndoReachesViewProviders)
     ASSERT_TRUE(doc()->undoLogged(shadeRow.seq));
     EXPECT_EQ(view.Shade.getValue(), 0);
     EXPECT_EQ(a->Integer.getValue(), 7);
+}
+
+TEST_F(TransactionLogTest, aRestorePutsBackWhatAViewHoldsOfItsOwnersValue)
+{
+    // docs/ShapeAppearanceDesign.md sec 13.4 Q4: a restore to a version
+    // leaves a view provider's values as they are unless
+    // ViewObjectTransaction is set (sec 24.9) -- but not one that is part
+    // of a value its object holds, which comes back with the object's.
+    std::map<const App::DocumentObject*, TxnLogFakeView*> views;
+    App::Document::setViewResolver([&views](const App::DocumentObject* obj) {
+        auto it = views.find(obj);
+        return it == views.end() ? nullptr : static_cast<App::PropertyContainer*>(it->second);
+    });
+    const bool viewTxn = App::DocumentParams::getViewObjectTransaction();
+    App::DocumentParams::setViewObjectTransaction(false);
+    struct Reset
+    {
+        bool viewTxn;
+        ~Reset()
+        {
+            App::Document::setViewResolver({});
+            App::DocumentParams::setViewObjectTransaction(viewTxn);
+        }
+    } reset {viewTxn};
+
+    doc()->openTransaction("create");
+    auto a = make("A");
+    doc()->commitTransaction();
+    TxnLogFakeView view;
+    view.owner = a;
+    views[a] = &view;
+
+    doc()->openTransaction("paint");
+    a->Integer.setValue(1);
+    view.Paint.setValue(3);
+    view.Shade.setValue(5);
+    doc()->commitTransaction();
+    ASSERT_EQ(doc()->snapshotToLog(), 1);
+
+    doc()->openTransaction("again");
+    a->Integer.setValue(2);
+    view.Paint.setValue(4);
+    view.Shade.setValue(6);
+    doc()->commitTransaction();
+
+    ASSERT_TRUE(doc()->restoreVersion(1));
+    EXPECT_EQ(a->Integer.getValue(), 1);
+    EXPECT_EQ(view.Paint.getValue(), 3);   // the owner's: with it
+    EXPECT_EQ(view.Shade.getValue(), 6);   // the view's own: left
 }
 
 TEST_F(TransactionLogTest, viewChangesAreLoggedWhateverTheSetting)

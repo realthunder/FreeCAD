@@ -503,6 +503,47 @@ def run():
         check("the source's name taken away: nothing of it left (%r)" % shown(doc.Cut),
               {gloss(x) for x in vpc.ShapeAppearance} == {own} and shown(doc.Cut) == {})
         App.closeDocument(doc.Name)
+
+        # A version restored brings the names with their looks (sec 13.2
+        # item 3): the names are the object's and came alone, a view
+        # provider's values being left as they are unless
+        # ViewObjectTransaction is set.
+        doc = App.newDocument("PaintRestore")
+        doc.UndoMode = 1
+        doc.openTransaction("base")
+        doc.addObject("Part::Box", "Box")
+        doc.recompute()
+        doc.commitTransaction()
+        doc.saveAs(os.path.join(folder, "PaintRestore.FCStd"))
+        vp = doc.Box.ViewObject
+        top, bottom = face(doc.Box, ZMin=10), face(doc.Box, ZMax=0)
+        paint(doc, "green bottom", "Box", {bottom: GREEN})
+        doc.openTransaction("matte red top")
+        looks = {k: v for k, v in vp.getElementAppearances().items() if k not in ("Face", "Edge", "Vertex")}
+        looks[top] = App.Material(DiffuseColor=RED, Shininess=0.25)
+        vp.setElementAppearances(looks)
+        doc.recompute()
+        doc.commitTransaction()
+        both = {top: RED, bottom: GREEN}
+        there = shown(doc.Box)
+        doc.save()
+        version = doc.getTransactionVersions()[-1]["num"]
+        doc.openTransaction("none")
+        vp.setElementAppearances({})
+        doc.recompute()
+        doc.commitTransaction()
+        check("the names taken away after a version (%r)" % named(doc.Box),
+              named(doc.Box) == {} and shown(doc.Box) == {})
+        check("view state is not undo state here",
+              not App.ParamGet("User parameter:BaseApp/Preferences/Document").GetBool("ViewObjectTransaction", False))
+        doc.restoreTransactionVersion(version)
+        doc.recompute()
+        check("the version restored: the names with their colours (%r)" % named(doc.Box),
+              named(doc.Box) == both and stored(doc.Box) == both)
+        check("the material with its name (%r)" % gloss(vp.getElementAppearances()[top]),
+              gloss(vp.getElementAppearances()[top]) == 0.25)
+        check("and drawn as the version had them (%r)" % shown(doc.Box), shown(doc.Box) == there)
+        App.closeDocument(doc.Name)
     except Exception:
         lines.append("FAIL exception\n" + traceback.format_exc())
     finally:

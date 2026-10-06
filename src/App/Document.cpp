@@ -5590,12 +5590,12 @@ void Document::_applyVersion(Document& version, bool views)
     std::vector<FileBlobHandle> held;
     const auto& fromManager = version.getFileBlobManager();
     auto restoreContainer = [&](PropertyContainer& live, const PropertyContainer& from,
-                                bool isDocument, bool values) {
+                                bool isDocument, bool values, bool ownerOnly = false) {
         std::map<std::string, Property*> want, have;
         from.getPropertyMap(want);
         live.getPropertyMap(have);
         for (auto& kv : have) {
-            if (values)
+            if (values || ownerOnly)
                 break;
             if (want.count(kv.first) || live.getDynamicPropertyData(kv.second).name.empty())
                 continue;
@@ -5604,6 +5604,8 @@ void Document::_applyVersion(Document& version, bool views)
         for (auto& kv : want) {
             short type = from.getPropertyType(kv.second);
             if ((type & Prop_Transient) || (type & Prop_NoPersist))
+                continue;
+            if (ownerOnly && !(type & Prop_OwnerValue))
                 continue;
             if (isDocument && keptOnRestore(kv.first.c_str()))
                 continue;
@@ -5665,14 +5667,18 @@ void Document::_applyVersion(Document& version, bool views)
     // ViewObjectTransaction, the setting that has a view provider's change
     // open a transaction of its own. The version document's are the
     // version's, restored by the Gui from its GuiDocument.xml.
-    if (views || DocumentParams::getViewObjectTransaction()) {
-        for (auto& kv : target) {
-            auto live = viewOf(getObjectByID(kv.first));
-            auto from = viewOf(kv.second);
-            if (live && from) {
+    // Whatever the setting says, what a view provider holds of its object's
+    // own value comes with it (Prop_OwnerValue): the look of each element
+    // the object names is no more view state than the names are
+    // (docs/ShapeAppearanceDesign.md sec 13.4 Q4).
+    const bool allViews = views || DocumentParams::getViewObjectTransaction();
+    for (auto& kv : target) {
+        auto live = viewOf(getObjectByID(kv.first));
+        auto from = viewOf(kv.second);
+        if (live && from) {
+            if (allViews)
                 restoreContainer(*live, *from, false, false);
-                restoreContainer(*live, *from, false, true);
-            }
+            restoreContainer(*live, *from, false, true, !allViews);
         }
     }
     // 5. Touched as the version was saved (sec 27.60): its Document.xml
@@ -6858,6 +6864,14 @@ struct LogFold
     std::set<long> touch;                // its derived values the log did not keep
     std::set<Key> derived;               // of `values`: what a recompute wrote
     TouchedFold touched;                 // the touched state, sec 27.58
+    /// Whether a view op is one of a value its object holds, and is taken
+    /// where view ops are not (Prop_OwnerValue). Unset: none is.
+    std::function<bool(const LogOp&)> ownerValue;
+
+    bool skipped(const LogOp& o, bool views) const
+    {
+        return o.ckind == "view" && !views && !(ownerValue && ownerValue(o));
+    }
 
     void forget(long cid)
     {
@@ -6875,7 +6889,7 @@ struct LogFold
     {
         for (auto it = ops.rbegin(); it != ops.rend(); ++it) {
             const LogOp& o = *it;
-            if (o.ckind == "view" && !views)
+            if (skipped(o, views))
                 continue;
             Key key(o.ckind, o.cid, o.prop);
             if (o.op == "create" && o.ckind == "obj") {
@@ -6936,7 +6950,7 @@ struct LogFold
                 removes.insert(o.cid);
         }
         for (const auto& o : ops) {
-            if (o.ckind == "view" && !views)
+            if (skipped(o, views))
                 continue;
             Key key(o.ckind, o.cid, o.prop);
             if (o.op == "create" && o.ckind == "obj") {
@@ -7129,6 +7143,13 @@ bool Document::_moveAlongLog(int64_t fromHead, int64_t toSeq, bool views)
     };
 
     LogFold fold;
+    // Asked of the view provider there is now: one this move makes again is
+    // made with its defaults, as its other values are.
+    fold.ownerValue = [this](const LogOp& o) {
+        auto view = viewOf(getObjectByID(o.cid));
+        auto prop = view ? view->getPropertyByName(o.prop.c_str()) : nullptr;
+        return prop && (view->getPropertyType(prop) & Prop_OwnerValue);
+    };
     for (auto it = back.rbegin(); it != back.rend(); ++it) {
         auto ops = store.ops((*it)->seq);
         if (ops.empty()) {

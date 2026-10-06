@@ -2820,7 +2820,9 @@ object's look" and spelled it `getMaterial(0)` or `getTransparency(0)` reads
 > one can be merged. The user ruled the order: this first, made to work,
 > the merge on top of it. **13.2's first item is built. 13.4 is ruled:
 > 13.6 has the rulings and the build order, which replaces 13.5's. 13.7 is
-> what is built of it, step by step.**
+> what is built of it, step by step: all seven steps, 2026-10-07, with one
+> thing of 13.6 withdrawn (under step 4) and one question left for a ruling
+> (under step 3).**
 
 ### 13.1 What is there
 
@@ -2868,20 +2870,22 @@ the colour and its alpha: gloss, emission, a finish, a texture.
    brought no colour at all, with nothing asked; a version restored lost
    both lists. It waits now: the other half's change comes back to it.
    Undo and redo were whole before and are.
-2. **A name taken away leaves its paint.** `setElementColors({})` on a box
+2. **A name taken away leaves its paint.** *Fixed, 13.7 step 3.*
+   `setElementColors({})` on a box
    with two painted faces: no names, no colours, and both faces drawn as
    they were. `updateColors()` writes the faces the names paint over the
    list as it is; nothing says which entries of the list it wrote the
    last time, so nothing takes them back. A face cannot be unpainted by
    the way it was painted.
 3. **A version restored brings the names without their colours.**
+   *Fixed, 13.7 step 7.*
    `ColoredElements` is the object's and is put back; `MappedColors` is
    the view provider's, and a restore puts a view provider's back only
    where `ViewObjectTransaction` says so, which is off unless set
    (docs/TransactionLog.md sec 24.9). Two names and no colour, in the
    document and in the file saved from it. (Before item 1 both lists came
    out empty, which hid it.)
-4. **A colour is all a name can hold.**
+4. **A colour is all a name can hold.** *A material now, 13.7 step 4.*
 
 ### 13.3 Proposed
 
@@ -3294,3 +3298,48 @@ Paint check, 60: a cut whose faces are a box's -- the box's face given a
 material by name, the cut's face made from it has it and no other face
 of the cut; the box's face only painted, the cut's has its colour and
 its own gloss; the name taken away, nothing of it left on the cut.
+
+**Step 7, the restore (2026-10-07).** 13.2 item 3, Q4. A version restored
+put `ColoredElements` back, the object's, and left `MappedAppearance`, its
+view provider's, as it was: a restore puts a view provider's values back
+only under `ViewObjectTransaction` (docs/TransactionLog.md sec 24.9). The
+names came back without their looks.
+
+The log does not know these two properties, and is not told of them. It
+is told a kind: **`App::Prop_OwnerValue`**, a property type beside
+`Prop_Transient` and the rest -- *part of a value the container's owner
+holds, put back with that even where the container's own values are
+not*. `MappedAppearance` and `MappedColors` are declared so. (A property's
+type is asked of the property, which keeps it in its status bits:
+`Property::PropOwnerValue`, bit 20, kept through a file's saved status as
+the other static ones are. The enum alone was the first build, and
+answered no for everything.) Where a restore leaves view state alone it
+now takes what is so marked:
+
+- by the log (`Document::_moveAlongLog`): a row's view op is folded where
+  its property is one, asked of the view provider there is
+  (`LogFold::ownerValue`);
+- by reading the version whole (`Document::_applyVersion`): the view
+  provider's properties of that kind alone are compared and written.
+
+With `ViewObjectTransaction` set nothing changes: everything of a view
+provider's was put back already.
+
+*A limit.* The kind is asked of the view provider as it is in the
+document. An object the restore has to make again -- deleted since the
+version -- has none while the rows are folded, and its named looks are
+not taken: it comes back painted by its names' absence, as its other view
+values come back at their defaults. Not met by a check; it is the log's
+to close, where a view provider made again is given its values.
+
+What is drawn follows without help: both properties' changes reach
+`updateColors()`, and a face the version does not name goes back to the
+object's look by step 3.
+
+gtest `aRestorePutsBackWhatAViewHoldsOfItsOwnersValue`, with the stand-in
+view provider given one property of the kind beside its plain one: a
+version restored with `ViewObjectTransaction` off, the first back at the
+version's value, the second left. Paint check, 65: a box with a painted
+face and a face given a material, a version, the names taken away, the
+version restored -- the names with their colours, the material with its
+name, and drawn as the version had them.

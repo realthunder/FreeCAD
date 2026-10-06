@@ -54,6 +54,7 @@ enum PropertyType
   Prop_Output      = 8, /*!< Modified property doesn't touch its parent container */
   Prop_NoRecompute = 16,/*!< Modified property doesn't touch its container for recompute */
   Prop_NoPersist   = 32,/*!< Property won't be saved to file at all */
+  Prop_OwnerValue  = 64,/*!< Part of a value the container's owner holds: put back with that even where the container's own values are not (a view provider's look for each element its object names) */
 };
 
 struct AppExport PropertyData

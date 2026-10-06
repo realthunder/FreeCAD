@@ -2035,11 +2035,13 @@ ViewProviderPartExt::ViewProviderPartExt()
     ADD_PROPERTY_TYPE(DrawStyle,((long int)0), osgroup, App::Prop_None, "Defines the style of the edges in the 3D view.");
     DrawStyle.setEnums(DrawStyleEnums);
 
+    // Prop_OwnerValue: one value with the object's ColoredElements, and put
+    // back with it where a view provider's own values are not
     ADD_PROPERTY_TYPE(MappedAppearance,(std::vector<App::MaterialAppearance>()),"",
-            (App::PropertyType)(App::Prop_Hidden|App::Prop_ReadOnly),"");
+            (App::PropertyType)(App::Prop_Hidden|App::Prop_ReadOnly|App::Prop_OwnerValue),"");
     // Empty and wired after, as DiffuseColor is above and for its reason
     ADD_PROPERTY_TYPE(MappedColors,(std::vector<Base::Color>()),"",
-            (App::PropertyType)(App::Prop_Hidden|App::Prop_ReadOnly),"");
+            (App::PropertyType)(App::Prop_Hidden|App::Prop_ReadOnly|App::Prop_OwnerValue),"");
     MappedColors.setAppearance(&MappedAppearance, nullptr, true);
 
     ADD_PROPERTY(MapFaceColor,(PartParams::getMapFaceColor()));

@@ -154,6 +154,7 @@ short Property::getType() const
     GET_PTYPE(Transient);
     GET_PTYPE(NoRecompute);
     GET_PTYPE(NoPersist);
+    GET_PTYPE(OwnerValue);
     return type;
 }
 
@@ -167,6 +168,7 @@ void Property::syncType(unsigned type) {
     SYNC_PTYPE(Output);
     SYNC_PTYPE(NoRecompute);
     SYNC_PTYPE(NoPersist);
+    SYNC_PTYPE(OwnerValue);
 }
 
 const char* Property::getGroup() const
@@ -407,6 +409,7 @@ void Property::setStatusValue(unsigned long status) {
         |(1<<PropOutput)
         |(1<<PropHidden)
         |(1<<PropNoPersist)
+        |(1<<PropOwnerValue)
         |(1<<Busy);
 
     status &= ~mask;

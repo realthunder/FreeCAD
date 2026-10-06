@@ -104,6 +104,10 @@ public:
                      // looking knows what it is.
                      // See docs/MaterialStorage.md 15.6.
 
+        PropOwnerValue = 20, // corresponding to Prop_OwnerValue; one of the
+                             // static bits below, out of their run because
+                             // the user bits end it
+
         // The following bits are corresponding to PropertyType set when the
         // property added. These types are meant to be static, and cannot be
         // changed in runtime. It is mirrored here to save the linear search
