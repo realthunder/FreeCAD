@@ -25,6 +25,7 @@
 
 #include <map>
 #include <memory>
+#include <set>
 
 #include <App/PropertyUnits.h>
 #include <Gui/ViewProviderGeometryObject.h>
@@ -811,6 +812,13 @@ protected:
     };
     MeshLadderState meshLadder;
     bool UpdatingColor;
+    /// The elements ColoredElements' names painted when updateColors() last
+    /// ran, each from 0, by kind (a TopAbs_ShapeEnum)
+    std::map<int, std::set<int>> paintedByName;
+    /// Make paintedByName again from the names, as a document read has to
+    void rememberPaintedByName();
+    void setFaceColors(const std::vector<App::Color> &colors,
+                       const std::vector<int> &unpainted);
     bool highlightFaceEdges = false;
 
     /// Whether the last APPLIED per-face materials diverge in value in a

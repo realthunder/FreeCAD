@@ -3071,3 +3071,61 @@ the one they had.
 for each name, the two read back from a saved file by name and as drawn,
 and the same from a file made as an older build wrote it -- the store
 taken out of GuiDocument.xml and `MappedColors` typed a plain colour list.
+
+**Step 3, a name taken away takes its paint (2026-10-06).** 13.2 item 2.
+`updateColors()` keeps which elements the names painted when it last ran
+(`paintedByName`, by kind, not saved). One of them that no name paints now
+is given the object's look before the names are written: an edge or a
+vertex its default colour, a face its whole entry
+(`AppearanceList::clearOverride`). An element coloured by its number was
+never among them and is left as written.
+
+What the names painted is not in a file -- the faces are there as painted
+and nothing says by whom -- so `finishRestoring()` makes it again from the
+names (`rememberPaintedByName()`), through the same lookup
+`updateColors()` uses, now a function of its own (`namedElements()`).
+
+The faces are written one at a time now (`setFaceColors()`), not as one
+colour list through `DiffuseColor`: a face no name paints is left as it
+is, and a list of one colour is not taken for a statement about the
+object. A face given the object's colour is given the base's, so that
+`Transparency`, a percentage, does not leave a face a rounding away from
+the object it is the colour of.
+
+**Every face painted alike is the object painted, and stays so** (`allsix.py`,
+measured). Sec 12 keeps what all of a list's entries agree on as the base
+(`AppearanceList::normalize()`, pinned by
+`aFieldEveryFaceAgreesOnBelongsToTheObject` and
+`equalListsSerialiseIdentically`): the sixth face of a box painted red by
+name makes the base red, `ShapeColor` with it, and a name taken away then
+has that red to go back to -- nothing is seen to change. The object's own
+colour is gone from the document. This is the storage's rule and is left
+as it is; **whether a base no face shows should survive is the user's to
+rule**, and it is 12.6's "a per-face write never changes `base`" against
+those two tests.
+
+*What was broken under it, and is fixed.* Written a face at a time, the
+fold moves the base without ending the list's follow of the object's
+material card (sec 15), as a whole-object write does. The card's look came
+straight back as the base, no face overrode it any more, and the six faces
+were drawn in the object's old colour with their names still saying red
+and `ShapeColor` red. `setFaceColors()` ends the follow where its writes
+moved the base. The same can be reached without names -- a script painting
+every face alike, one entry at a time, on an object that follows its card
+-- and that is *not* fixed: it is the list's, not the view provider's.
+
+*A trap met there.* `MaterialAppearance::operator==` calls two materials
+that name one card (`uuid`) the same whatever their colours say. A base
+before and after a change of colour compare equal by it; `sameLook()`
+compares the fields. `AppearanceList::set1Value()` uses the operator to
+decide there is nothing to write, which step 4 runs into.
+
+The Set Colors panel had its own way round item 2 -- it gives an element
+the object's colour, applies, and only then takes its name away
+(`TaskElementColors`, `removeItems()`). It still does, and need not.
+
+Paint check, 31: one name of two taken away in a document just read, a
+face coloured by its number beside it, the last name taken away and that
+face alone left; six faces red by name all drawn red and the object red
+with them, and one of the six names taken away with nothing drawn that was
+not.

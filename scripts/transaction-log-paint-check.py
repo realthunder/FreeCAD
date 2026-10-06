@@ -251,6 +251,50 @@ def run():
         check("an older file read: by name (%r)" % named(doc.Box), named(doc.Box) == both)
         check("its colours in the store (%r)" % stored(doc.Box), stored(doc.Box) == both)
         check("and drawn where they were", shown(doc.Box) == there)
+
+        # A name taken away takes its paint (sec 13.2): in a document just
+        # read, where which faces the names painted is not in the file; one
+        # of two, then the last; and not the paint of a face coloured by its
+        # number, which is no name's.
+        vp = doc.Box.ViewObject
+        vp.setElementColors({top: RED})
+        doc.recompute()
+        check("one name taken away, just read: its face is the object's again (%r)" % shown(doc.Box),
+              named(doc.Box) == {top: RED} and list(shown(doc.Box).values()) == [RED])
+        front = face(doc.Box, XMax=0)
+        colors = list(vp.DiffuseColor)
+        colors[int(front[4:]) - 1] = BLUE + (1.0,)
+        vp.DiffuseColor = colors
+        check("a face coloured by its number (%r)" % shown(doc.Box),
+              sorted(shown(doc.Box).values()) == sorted([RED, BLUE]))
+        vp.setElementColors({})
+        doc.recompute()
+        check("the last name taken away: that face alone is left (%r)" % shown(doc.Box),
+              named(doc.Box) == {} and list(shown(doc.Box).values()) == [BLUE])
+        App.closeDocument(doc.Name)
+
+        # Every face painted one colour by name is the object painted: the
+        # appearance keeps what all its faces agree on as the object's own
+        # (docs/ShapeAppearanceDesign.md sec 12). The six are drawn red and
+        # the object is red with them -- they came out the object's colour
+        # as it had been, the paint gone, the object's material card having
+        # taken the base back -- and a name taken away has that red to go
+        # back to.
+        doc = App.newDocument("PaintAll")
+        doc.addObject("Part::Box", "Box")
+        doc.recompute()
+        vp = doc.Box.ViewObject
+        vp.setElementColors({"Face%d" % (i + 1): RED for i in range(6)})
+        doc.recompute()
+        drawn = sorted({rgb(c) for c in vp.DiffuseColor})
+        check("six faces red by name: all drawn red, the object with them (%r, %r)"
+              % (drawn, rgb(vp.ShapeColor)),
+              drawn == [RED] and rgb(vp.ShapeColor) == RED and len(named(doc.Box)) == 6)
+        vp.setElementColors({"Face%d" % (i + 1): RED for i in range(5)})
+        doc.recompute()
+        drawn = sorted({rgb(c) for c in vp.DiffuseColor})
+        check("one taken away: five names, and nothing left as it was not (%r)" % drawn,
+              drawn == [RED] and len(named(doc.Box)) == 5)
         App.closeDocument(doc.Name)
     except Exception:
         lines.append("FAIL exception\n" + traceback.format_exc())

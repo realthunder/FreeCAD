@@ -3859,6 +3859,63 @@ struct ColorInfo {
     }
 };
 
+/** Which elements of a shape the names paint
+ *
+ * For each kind of element, its index from 0 to the place of its name in
+ * \a subs. A name the shape has not as it is -- its face split, or cut -- is
+ * looked up through what it became.
+ */
+static void namedElements(App::DocumentObject *obj, const Part::TopoShape &shape,
+                          const std::vector<App::PropertyLinkBase::ShadowSub> &subs,
+                          std::array<std::map<int,int>,TopAbs_SHAPE> &named)
+{
+    std::set<Data::MappedName> subMap;
+    for(auto &v : subs) {
+        if(v.first.size())
+            subMap.insert(shape.getElementName(v.first.c_str()).name);
+    }
+    int i=-1;
+    for(auto &v : subs) {
+        ++i;
+        Data::IndexedName element;
+        if (v.first.size())
+            element = shape.getElementName(v.first.c_str()).index;
+        else
+            element = Data::IndexedName(v.second.c_str());
+        auto idx = shape.shapeTypeAndIndex(element);
+        if(idx.second) {
+            named[idx.first][idx.second-1] = i;
+            continue;
+        }else if(v.first.empty())
+            continue;
+
+        for(auto &names : Part::Feature::getRelatedElements(obj,v.first.c_str())) {
+            if(!subMap.insert(names.name).second)
+                continue;
+            auto idx = Part::TopoShape::shapeTypeAndIndex(names.index);
+            if(idx.second>0)
+                named[idx.first][idx.second-1] = i;
+        }
+    }
+}
+
+void ViewProviderPartExt::rememberPaintedByName()
+{
+    paintedByName.clear();
+    auto prop = getColoredElements(pcObject);
+    if(!prop || prop->getSubValues().empty())
+        return;
+    auto shape = getShape();
+    if(shape.isNull())
+        return;
+    std::array<std::map<int,int>,TopAbs_SHAPE> named;
+    namedElements(pcObject, shape, prop->getShadowSubs(), named);
+    for(int type : {TopAbs_VERTEX, TopAbs_EDGE, TopAbs_FACE}) {
+        for(auto &v : named[type])
+            paintedByName[type].insert(v.first);
+    }
+}
+
 void ViewProviderPartExt::checkColorUpdate()
 {
     if (MapFaceColor.getValue()
@@ -3909,56 +3966,56 @@ void ViewProviderPartExt::updateColors(App::Document *sourceDoc, bool forceColor
     infos[TopAbs_FACE].init(TopAbs_FACE,this);
     bool noColorMap = !ForceMapColors.getValue() && !forceColorMap && !hasBaseFeature();
 
-    std::set<Data::MappedName> subMap;
-    for(auto &v : subs) {
-        if(v.first.size())
-            subMap.insert(shape.getElementName(v.first.c_str()).name);
-    }
-    int i=-1;
-    for(auto &v : subs) {
-        ++i;
-        Data::IndexedName element;
-        if (v.first.size())
-            element = shape.getElementName(v.first.c_str()).index;
-        else
-            element = Data::IndexedName(v.second.c_str());
-        auto idx = shape.shapeTypeAndIndex(element);
-        if(idx.second) {
-            infos[idx.first].colors[idx.second-1] = mappedColors[i];
-            continue;
-        }else if(v.first.empty())
-            continue;
-
-        for(auto &names : Part::Feature::getRelatedElements(pcObject,v.first.c_str())) {
-            if(!subMap.insert(names.name).second)
-                continue;
-            auto idx = Part::TopoShape::shapeTypeAndIndex(names.index);
-            if(idx.second>0)
-                infos[idx.first].colors[idx.second-1] = mappedColors[i];
-        }
+    std::array<std::map<int,int>,TopAbs_SHAPE> named;
+    namedElements(pcObject, shape, subs, named);
+    for(auto &info : infos) {
+        if(!info.prop) continue;
+        for(auto &v : named[info.type])
+            info.colors[v.first] = mappedColors[v.second];
     }
     std::map<App::DocumentObject*,ElementCache> caches;
     for(auto &info : infos) {
         if(!info.prop) continue;
+        int count = shape.countSubShapes(info.type);
+        // What the names painted the last time and paint no more goes back
+        // to the object's look (docs/ShapeAppearanceDesign.md sec 13.2). The
+        // list written to does not say which those are: an element coloured
+        // by its number -- a script, an import -- is in it too, and is not
+        // the names' to take back.
+        std::set<int> &painted = paintedByName[info.type];
+        std::vector<int> unpainted;
+        for(int idx : painted) {
+            if(idx<count && !info.colors.count(idx))
+                unpainted.push_back(idx);
+        }
+        painted.clear();
+        for(auto &v : info.colors) {
+            if(v.first<count)
+                painted.insert(v.first);
+        }
         if(noColorMap || !info.mapColor) {
-            if(info.colors.empty())
+            if(info.colors.empty() && unpainted.empty()) {
                 info.prop.touch();
-            else {
-                auto colors = info.prop.getValues();
-                if(colors.size()!=shape.countSubShapes(info.type)) {
-                    colors.clear();
-                    colors.resize(shape.countSubShapes(info.type),info.defaultColor);
-                }
-                for(auto &v : info.colors) {
-                    if(v.first>=(int)colors.size())
-                        break;
-                    colors[v.first] = v.second;
-                }
-                info.prop.setValues(colors);
+                continue;
             }
+            auto colors = info.prop.getValues();
+            if((int)colors.size()!=count) {
+                colors.clear();
+                colors.resize(count,info.defaultColor);
+            }
+            for(int idx : unpainted)
+                colors[idx] = info.defaultColor;
+            for(auto &v : info.colors) {
+                if(v.first>=(int)colors.size())
+                    break;
+                colors[v.first] = v.second;
+            }
+            if(info.type==TopAbs_FACE)
+                setFaceColors(colors, unpainted);
+            else
+                info.prop.setValues(colors);
             continue;
         }
-        int count = shape.countSubShapes(info.type);
         bool touched = false;
         std::vector<App::Color> colors(count,info.defaultColor);
         auto it = info.colors.begin();
@@ -3996,8 +4053,83 @@ void ViewProviderPartExt::updateColors(App::Document *sourceDoc, bool forceColor
             colors.clear();
             colors.push_back(info.defaultColor);
         }
-        info.prop.setValues(colors);
+        if(info.type==TopAbs_FACE) {
+            if(!touched)
+                colors.clear();
+            setFaceColors(colors, unpainted);
+        }
+        else
+            info.prop.setValues(colors);
     }
+}
+
+/** Whether two materials say the same, field by field
+ *
+ * Not operator==, to which two materials that name one card are the same
+ * whatever their colours say.
+ */
+static bool sameLook(const App::MaterialAppearance &a, const App::MaterialAppearance &b)
+{
+    return a.getType()==b.getType() && a.pbr==b.pbr
+        && a.ambientColor==b.ambientColor && a.diffuseColor==b.diffuseColor
+        && a.specularColor==b.specularColor && a.emissiveColor==b.emissiveColor
+        && a.shininess==b.shininess && a.finish==b.finish && a.texture==b.texture
+        && a.image==b.image && a.imagePath==b.imagePath
+        && a.uuid==b.uuid && a.materialx==b.materialx;
+}
+
+/** Write what updateColors() made of the faces
+ *
+ * \a colors is a colour for each face, or none for "every face the
+ * object's". \a unpainted are the faces a name painted and paints no more:
+ * all of their look goes back to the object's, not the colour alone.
+ *
+ * One face at a time: what no name paints is left as it is, a look given
+ * by number among it.
+ *
+ * Every face given one look is the object given it, however it is written:
+ * the list keeps what all of its entries agree on as the base
+ * (docs/ShapeAppearanceDesign.md sec 12, App::AppearanceList::normalize), so
+ * a box with its six faces painted red by name is a red box, and a name
+ * taken away then has that red to go back to. Written a face at a time the
+ * list does not end its follow of the object's material card as a
+ * whole-object write does, and the card's look came straight back as the
+ * base with no face left overriding it: the six lost their paint. So it is
+ * ended here.
+ */
+void ViewProviderPartExt::setFaceColors(const std::vector<App::Color> &colors,
+                                        const std::vector<int> &unpainted)
+{
+    // A list that came a material for each face has no base chosen until
+    // it is asked for, and "back to the object's" has to have one
+    deriveAppearanceBase();
+    App::Color objectColor = ShapeColor.getValue();
+    objectColor.setTransparency(Transparency.getValue()/100.0f);
+    ShapeAppearance.editList([&](App::AppearanceList &list) {
+        const App::MaterialAppearance before = list.getBase();
+        // As the base has it, where a face is given the object's colour:
+        // Transparency is a percentage, and the base's alpha is not rounded
+        const App::Color base = before.diffuseColor;
+        const int count = static_cast<int>(colors.size());
+        if(count && list.getSize()!=count) {
+            // Entries counted for another shape say nothing of this one's
+            if(list.getSize()>1)
+                list.clearOverrides();
+            list.setSize(count);
+        }
+        for(int i=0; i<list.getSize(); ++i) {
+            if(!count || colors[i]==objectColor)
+                list.setDiffuseColor(i, base);
+            else
+                list.setDiffuseColor(i, colors[i]);
+        }
+        for(int idx : unpainted) {
+            if(idx<list.getSize())
+                list.clearOverride(idx);
+        }
+        if(list.isFollowingMaterial() && !sameLook(list.getBase(), before))
+            list.setFollowMaterial(false);
+    });
 }
 
 void ViewProviderPartExt::updateData(const App::Property* prop)
@@ -8140,6 +8272,11 @@ void ViewProviderPartExt::finishRestoring()
 
     if(VisualTouched && (isUpdateForced() || Visibility.getValue()))
         updateVisual();
+
+    // The faces the names painted are in the file as painted, and which
+    // they are is not: made again from the names, so that one taken away
+    // after this can take its paint with it.
+    rememberPaintedByName();
 }
 
 Base::BoundBox3d
