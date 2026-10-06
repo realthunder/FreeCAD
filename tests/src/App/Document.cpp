@@ -129,6 +129,44 @@ TEST_F(DocumentTest, liveImportUserEditExemptsTreeRankByIdentity)
     doc()->setStatus(App::Document::LiveImport, false);
 }
 
+// A load is the program filling a document in, also when a command started
+// it: File > Open runs the whole restore under that command's guard, with the
+// document live for exactly as long, and every object of the file was refused.
+TEST_F(DocumentTest, liveImportUserEditSuspendedForTheLoadItself)
+{
+    doc()->setStatus(App::Document::LiveImport, true);
+    {
+        // Arrange: the command that asked for the load
+        App::Document::UserEditGuard command;
+        EXPECT_THROW(doc()->addObject("App::FeatureTest", "refused"), Base::AbortException);
+        {
+            // Act: the load
+            App::Document::UserEditSuspend loading;
+
+            // Assert: what the load creates and writes arrives ...
+            App::DocumentObject* obj = nullptr;
+            EXPECT_NO_THROW(obj = doc()->addObject("App::FeatureTest", "loaded"));
+            ASSERT_NE(obj, nullptr);
+            EXPECT_NO_THROW(obj->Label.setValue("restored"));
+            EXPECT_FALSE(App::Document::isUserEditing());
+            {
+                // ... a command the user clicks while the load pumps events
+                // is still refused ...
+                App::Document::UserEditGuard clicked;
+                EXPECT_THROW(obj->Label.setValue("edited"), Base::AbortException);
+                EXPECT_THROW(doc()->removeObject("loaded"), Base::AbortException);
+            }
+            // ... and its leaving does not put the load under a guard.
+            EXPECT_NO_THROW(obj->Label.setValue("restored further"));
+        }
+        // The load over, the rest of the command is a command again.
+        EXPECT_TRUE(App::Document::isUserEditing());
+        EXPECT_THROW(doc()->addObject("App::FeatureTest", "refusedAgain"), Base::AbortException);
+    }
+    EXPECT_FALSE(App::Document::isUserEditing());
+    doc()->setStatus(App::Document::LiveImport, false);
+}
+
 
 // A cross-document link made while a document has no file gets its DocInfo
 // only at Save(), so nothing watched the linked document for it: closing

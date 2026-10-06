@@ -1271,3 +1271,10 @@ fc_add_gui_test(GuiExportHiddenComponent_tests_run
 fc_add_gui_test(GuiServeEmptyDocument_tests_run
                 serve-empty-document.py
                 --timeout 180)
+
+# A file opened through a command arrives whole: File > Open and the recent
+# list run the load under the command's own UserEditGuard, the load marks
+# its document as filling, and every object of the file was refused.
+fc_add_gui_test(GuiOpenThroughCommand_tests_run
+                open-through-command.py
+                --timeout 180)

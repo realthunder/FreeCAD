@@ -785,6 +785,11 @@ std::vector<Document*> Application::openDocuments(const std::vector<std::string>
     if (errs)
         errs->resize(filenames.size());
 
+    // Opening is the program filling documents in, also when a command asked
+    // for it. Declared ahead of the open guard, so that what its destructor
+    // signals -- the end of the open -- still runs inside this scope.
+    Document::UserEditSuspend loading;
+
     DocOpenGuard guard(_isRestoring, signalFinishOpenDocument);
     _pendingDocs.clear();
     _pendingDocsReopen.clear();

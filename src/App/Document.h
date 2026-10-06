@@ -509,6 +509,28 @@ public:
         bool toggled;
     };
 
+    /** Scope in which the program fills a document in, whoever asked for it.
+     *
+     * A load is not a command's edit even when a command started it -- File >
+     * Open, a recent file, a macro -- and the command's UserEditGuard is
+     * still standing while the load creates the objects of a document that
+     * carries LiveImport for exactly as long. Without this every object of a
+     * file opened from the menu was refused and the document came up empty.
+     *
+     * It steps the guard down rather than exempting a restoring document: the
+     * load pumps events, a command the user clicks meanwhile raises a guard
+     * of its own inside this scope, and that one must still be refused.
+     */
+    class AppExport UserEditSuspend {
+    public:
+        UserEditSuspend();
+        ~UserEditSuspend();
+        UserEditSuspend(const UserEditSuspend &) = delete;
+        UserEditSuspend &operator=(const UserEditSuspend &) = delete;
+    private:
+        bool saved;
+    };
+
     /// Whether a user command is running inside a UserEditGuard.
     static bool isUserEditing();
 

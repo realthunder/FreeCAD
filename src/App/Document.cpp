@@ -1531,6 +1531,17 @@ Document::UserEditGuard::~UserEditGuard()
     }
 }
 
+Document::UserEditSuspend::UserEditSuspend()
+    : saved(s_userEditing)
+{
+    s_userEditing = false;
+}
+
+Document::UserEditSuspend::~UserEditSuspend()
+{
+    s_userEditing = saved;
+}
+
 bool Document::isUserEditing()
 {
     return s_userEditing;
@@ -3164,6 +3175,9 @@ bool Document::isAnyRestoring() {
 void Document::restore (const char *filename,
         bool delaySignal, const std::vector<std::string> &objNames)
 {
+    // The load's own writes, not those of the command that asked for it.
+    UserEditSuspend loading;
+
     if(!filename)
         filename = FileName.getValue();
     Base::FileInfo fi(filename);
