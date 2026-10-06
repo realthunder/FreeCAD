@@ -15261,3 +15261,160 @@ from another thread".
 881/881, and the GUI checks RC 15, BC 30, VC 18, PC 28, FC 16, VW 14,
 MC 33, the two-document check 24, the tree check 19, the author check
 36, the import check 49, the request check 31 and the share check 47.
+
+### 31.10 Phase 8, the sketch: merged by what it holds (user, 2026-10-06)
+
+**Ruled (user, 2026-10-06, to the list put to them):** "Agree with all
+your recommendations", which were, of 31.3:
+
+- P3, both sides moved one geometry: **the last writer**, beyond the
+  solver's noise; then solved; nothing asked.
+- A merged sketch that does not solve: **the whole sketch is asked**, as
+  31.5 has it. The merge by elements is an attempt, and what was shipped
+  is under it.
+- P2: **(a)** -- a constraint is known by its type and the geometry it is
+  on, by id. No file changes. Both sides changing one constraint's value
+  is the last writer's.
+- P4, one side removed what the other constrained: **the removal
+  stands**, the constraint is left out and the row says so. Nothing is
+  asked and nothing is brought back.
+- P5: **no picker by element.** The dialog shows the sketch as "both",
+  with what the clock decided, as it shows cells.
+- P6, a copy's geometry ids: **later.** A branch a copy of the file made
+  is asked whole.
+
+And of a merge that moves constraints to other places while expressions
+name them by place: "assign temp names to constraint and change all
+expression references accordingly before merging". Not built in this
+step; see Left.
+
+**The solver's noise, measured** (`noise.py` in `~/.cache/txnlog-s31/sk`):
+a quadrilateral with angles, an inscribed circle and a tangent arc, taken
+to one set of values by two routes -- five steps of one distance and two
+of an angle, against one step each. Every geometry the constraints fix
+ends within 1.5e-14 of itself, on coordinates of forty. The arc's ends,
+which nothing fixes, end 0.045 apart: that is not noise, it is a place
+nobody chose, and the last writer's is as good as any. The line between
+"the same" and "moved" is set at 1e-7, what the kernel calls one point,
+seven orders above the one and five below the other
+(`SamePlace`, `SketchMerge.cpp`).
+
+**What an object says.** `DocumentObject::mergeUnit(base, ours, theirs,
+merged, notes)`: a unit both sides changed, each of its properties as
+saved at the base and where each side ends; and for each side, asked for
+only if wanted, the unit after each of its rows with the row's time. The
+object hands back the properties as they go in and what became of each
+thing theirs changed -- or false, and the unit is 31.5's one question.
+App reads no geometry.
+
+**The sketch** (`SketchObject::mergeUnit`, `SketchMerge.cpp`). Each
+state is read into lists of its own; nothing of the sketch is touched,
+and this runs for a preview.
+
+- *Geometry*, by id. What one side alone moved, added or removed is that
+  side's. What both moved, to two places, is where the one that moved it
+  last left it: the newest row of each side that left it somewhere else,
+  ours on a tie. **What one side removed is gone**, whatever the other
+  did to it. Ours' order, then what theirs added. Two geometries are the
+  same when their saved text is, numbers within `SamePlace`.
+- *Constraints*, by key: the type, and each element's geometry by id
+  with its point -- `DistanceX,g4.1,g4.2,`; an external one is `e<id>`,
+  the axes `e-1` and `e-2`; the second of two alike is `...#2`. What it
+  says beside that -- value, name, driving, where its label is -- is what
+  is compared, with a reference constraint's value left out: that is the
+  solver's. One both changed, or one side removed and the other changed,
+  is the later's, as cells are (31.8). Two sides that added the same
+  constraint added one.
+- Each constraint kept is put on the place its geometry has in the
+  merged list. **One on geometry that is gone goes with it**, and is in
+  the notes as `dropped`.
+- *External geometry* is one side's, whole: its list, and the
+  references it is made from. Where both sides changed which there is,
+  the sketch is not merged this way.
+- **Then the solver**, on the merged lists, in a solver of its own:
+  over-constrained, conflicting, redundant, malformed or not solving --
+  what a recompute would refuse -- and the answer is false.
+
+**In the plan** (`mergeUnitByObject`, from `planMerge`'s units): tried
+where 31.5 would make the conflict. A property neither side changed is
+given as the document has it. The rows of a side are read from the log
+when the object asks. What comes back is a `merge` change (31.8) for
+each property that is not ours' already, or that has notes, with the
+notes as its `elements`; they are written as any `merge` change is, and
+the object is among those 31.7 marks and computes. Refused before the
+object is asked: a branch with rows another copy of the file made (P6),
+and a value that is more than its text.
+
+**The row** says under `merge.later` what the clock decided, as for
+cells, and under `merge.dropped` each constraint left out with its
+geometry.
+
+**The dialog** needed nothing: `merge set`, "both", the note under the
+pointer -- "theirs: g5", "changed by both, the later kept: g4 -> theirs",
+"left out, what it was on being removed: DistanceX,g3.1,g3.2,".
+
+**Places an expression names.** `DocumentObject::getMergePlaces(state,
+prop, names)`: for a sketch, `Constraints`, each place by the
+constraint's name or its key. Where the merged list has another
+constraint at a place than ours' has, or than theirs' has, and an
+expression names that place -- ours' read in the document, in every
+property that holds expressions; theirs' in the values theirs wrote --
+the merge by elements is not made, and the sketch is asked whole. A
+merge that only adds at the end, where nobody names the new places by
+number from the other side, goes through.
+
+**Tests.** Python `testASketchIsMergedByWhatItHolds`: each side adds a
+line, both there, undone and redone as one step; ours removes the third
+line and theirs puts a distance on it and on the fourth -- the third
+stays removed, its distance is `dropped` in the notes and in the row,
+the other is on the fourth line where that is now, twelve long; both
+drag one point, each order, the later's place, and `merge.later` in the
+row; both set one distance, the later's, the line as long; a bound
+`Constraints[2]` that the merge would move is asked whole, and one it
+would not is merged. `testASketchIsMergedAsOneThing` is now the case
+that does not solve -- ours ten along x, theirs twenty-five long --
+with the same asserts: one conflict, nobody picking, theirs, ours, and a
+sketch only theirs changed taken with nothing asked. The Gui merge check
+(+2, 35): the conflict in the dialog is that case; and a sketch ours
+removed a line of and added one to, theirs constraining two, is two
+`merge set` rows, "both", nothing to pick, the note saying what was left
+out.
+
+**Left.**
+
+- **Expressions that name a constraint by its place**, the user's rule
+  above. Today such a merge is refused and asked whole, which is safe
+  and is not the rule. And it is wider than this step: a sketch *taken*
+  whole from theirs, with an expression ours wrote naming a place theirs
+  moved, is wrong today (`left.py`: theirs takes the first constraint
+  out, ours binds a cylinder's height to `Sketch.Constraints[1]`; merged,
+  the expression still says `[1]`, which is no constraint, and the
+  cylinder is in `failed`. Where another constraint stands at the place
+  it would be that one's value and nothing said -- by reading, not run).
+  `Restore` gives every constraint a new tag, so the Sketcher's own
+  renaming, which goes by tag, does not see it. The rule covers both. What is there to build it
+  on: `getMergePlaces`; the Sketcher's renaming of every reference in
+  the document when a constraint is named or moves
+  (`PropertyConstraintList::applyValues`, `constraintsRenamed`); and
+  that an object's `ExpressionEngine` is merged by its paths (31.8),
+  which are those places.
+- External geometry both sides changed.
+- A copy's geometry ids (P6).
+- Geometry a side's recompute alone moved is not among what that side
+  "changed" (28: derived), so a side picked whole in the fallback is
+  solved from the other's places. Seen with a line told to be vertical
+  that started horizontal, which the solver could not turn; contrived,
+  and 31.5's, not this step's.
+- A merge that changes nothing of the document writes its row and is no
+  undo step: undo then takes back the step before it (`left.py`: both
+  sides add the same constraint; the row is written, the undo count is
+  as it was, and undo takes ours' constraint out). Older than this.
+
+**Gates**, frozen and unfrozen each: Python 3022 OK (52 skipped frozen,
+53 unfrozen; 6 expected failures; +1), ctest 881/881, and the GUI checks
+RC 15, BC 30, VC 18, PC 28, FC 16, VW 14, MC 35 (+2), the two-document
+check 24, the tree check 19, the author check 36, the import check 49,
+the request check 31 and the share check 47. One change after that run
+-- a state that does not read is refused instead of thrown out of
+(`Lists::read`) -- and the two sketch cases, both ways, and the merge
+check, again.

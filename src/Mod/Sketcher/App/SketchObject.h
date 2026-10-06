@@ -107,6 +107,15 @@ public:
     /// The geometry, the constraints that name it by its place, and the
     /// external geometry they name the same way: one thing to a merge.
     std::vector<std::string> getMergeUnit(const char* prop) const override;
+    /// A sketch two branches both changed: geometry by its id, constraints
+    /// by what they say of which geometry, and the result one that solves
+    /// (SketchMerge.cpp, docs/TransactionLog.md sec 31.10).
+    bool mergeUnit(const MergeUnitState& base, const MergeUnitSide& ours,
+                   const MergeUnitSide& theirs, MergeUnitState& merged,
+                   std::vector<MergeUnitNote>& notes) const override;
+    /// `Constraints`: each constraint by its name, or by what it says.
+    bool getMergePlaces(const MergeUnitState& at, std::string& prop,
+                        std::vector<std::string>& names) const override;
     /// recalculate the Feature (if no recompute is needed see also solve() and solverNeedsUpdate
     /// boolean)
     App::DocumentObjectExecReturn* execute() override;

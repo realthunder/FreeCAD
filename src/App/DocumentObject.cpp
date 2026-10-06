@@ -1512,6 +1512,18 @@ std::vector<std::string> DocumentObject::getMergeUnit(const char*) const
     return {};
 }
 
+bool DocumentObject::mergeUnit(const MergeUnitState&, const MergeUnitSide&, const MergeUnitSide&,
+                               MergeUnitState&, std::vector<MergeUnitNote>&) const
+{
+    return false;
+}
+
+bool DocumentObject::getMergePlaces(const MergeUnitState&, std::string&,
+                                    std::vector<std::string>&) const
+{
+    return false;
+}
+
 bool DocumentObject::isMergedByElement(const Property* prop) const
 {
     if (!prop)

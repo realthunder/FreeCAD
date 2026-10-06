@@ -8393,6 +8393,217 @@ bool mergeByElement(Document& doc, TransactionLog& log, const Document::MergePre
     return true;
 }
 
+/// A property of a unit as the plan has it: the value where the two
+/// parted and where each side ends, as entity refs.
+struct UnitValue
+{
+    std::string base, ours, theirs, ptype;
+};
+
+/** A unit both sides changed, merged by its object (docs/TransactionLog.md
+ * sec 31.10). `states` has the properties either side changed; the rest of
+ * the unit is as the document holds it, for all three. The object is given
+ * each as it is saved, and each side's rows to say who wrote a thing last;
+ * what it hands back goes in as `merge` changes, one for each property
+ * that is not ours' already, with what became of the things theirs
+ * changed. False, and the unit is the one question it was: where the
+ * object will not, where a value is more than its text, and where a side
+ * has rows another copy of the file made -- a copy gives its new geometry
+ * the ids this file gave other geometry (sec 31.3 P6).
+ */
+bool mergeUnitByObject(Document& doc, TransactionLog& log, const MergePlan& plan,
+                       const Document::MergePreview& pv, long cid,
+                       const std::string& objectName,
+                       const std::vector<std::string>& props,
+                       const std::map<std::string, UnitValue>& states,
+                       std::vector<Document::MergeChange>& out)
+{
+    DocumentObject* obj = doc.getObjectByID(cid);
+    if (!obj)
+        return false;
+    auto& store = log.store();
+    for (const int64_t head : {pv.ours, pv.theirs}) {
+        for (const auto& t : store.chain(head, pv.base + 1)) {
+            if (t.script.find("\"imported\"") != std::string::npos)
+                return false;
+        }
+    }
+    auto text = [&](const std::string& hash, std::string& fragment) {
+        CapturedValue v;
+        if (hash.empty() || !log.readValue(hash, v) || !v.attachments.empty())
+            return false;
+        fragment = std::move(v.fragment);
+        return true;
+    };
+    const CaptureConfig config(doc);
+    DocumentObject::MergeUnitState base;
+    DocumentObject::MergeUnitSide ours, theirs;
+    std::set<std::string> known;
+    for (const auto& name : props) {
+        Property* prop = obj->getPropertyByName(name.c_str());
+        if (!prop)
+            continue;
+        auto st = states.find(name);
+        if (st == states.end()) {
+            const CapturedValue now = captureValue(config, *prop);
+            if (!now.ok || !now.attachments.empty())
+                return false;
+            base[name] = ours.at[name] = theirs.at[name] = now.fragment;
+        }
+        else if (!text(st->second.base, base[name]) || !text(st->second.ours, ours.at[name])
+                 || !text(st->second.theirs, theirs.at[name])) {
+            return false;
+        }
+        known.insert(name);
+    }
+    auto rowsOf = [&store, &text, &base, &known, &pv, cid](int64_t head) {
+        return [&store, &text, &base, &known, &pv, cid, head]() {
+            std::vector<std::pair<double, DocumentObject::MergeUnitState>> rows;
+            DocumentObject::MergeUnitState at = base;
+            for (const auto& t : store.chain(head, pv.base + 1)) {
+                bool wrote = false;
+                for (const auto& op : store.ops(t.seq)) {
+                    if (op.op != "set" || op.ckind != "obj" || op.cid != cid
+                            || !known.count(op.prop))
+                        continue;
+                    std::string fragment;
+                    if (!text(op.vafter, fragment))
+                        continue;
+                    at[op.prop] = std::move(fragment);
+                    wrote = true;
+                }
+                if (wrote)
+                    rows.emplace_back(t.time, at);
+            }
+            return rows;
+        };
+    };
+    ours.rows = rowsOf(pv.ours);
+    theirs.rows = rowsOf(pv.theirs);
+
+    DocumentObject::MergeUnitState merged;
+    std::vector<DocumentObject::MergeUnitNote> notes;
+    try {
+        if (!obj->mergeUnit(base, ours, theirs, merged, notes))
+            return false;
+    }
+    catch (const Base::Exception& e) {
+        FC_WARN("merge of " << obj->getFullName() << " by what it holds: " << e.what());
+        return false;
+    }
+    // An expression that names a thing of the unit by its place -- a
+    // sketch's `Constraints[3]` -- says another thing where the merge moved
+    // it. Until such expressions are carried along (sec 31.10, left), a
+    // merge that moves a place one of them names is not made: ours' are
+    // read in the document, theirs' in the values theirs wrote.
+    {
+        std::string placed;
+        std::vector<std::string> was, their, now;
+        if (obj->getMergePlaces(ours.at, placed, was)
+                && obj->getMergePlaces(theirs.at, placed, their)
+                && obj->getMergePlaces(merged, placed, now) && (was != now || their != now)) {
+            const std::string open = placed + "[";
+            auto moved = [&](const std::string& fragment, const std::vector<std::string>& from) {
+                for (std::size_t at = fragment.find(open); at != std::string::npos;
+                     at = fragment.find(open, at + 1)) {
+                    std::size_t end = at + open.size();
+                    std::size_t place = 0;
+                    bool digits = false;
+                    while (end < fragment.size() && fragment[end] >= '0' && fragment[end] <= '9') {
+                        place = place * 10 + static_cast<std::size_t>(fragment[end++] - '0');
+                        digits = true;
+                    }
+                    if (!digits || end >= fragment.size() || fragment[end] != ']')
+                        continue;
+                    if (place >= from.size() || place >= now.size() || from[place] != now[place])
+                        return true;
+                }
+                return false;
+            };
+            for (DocumentObject* other : doc.getObjects()) {
+                std::vector<Property*> held;
+                other->getPropertyList(held);
+                for (Property* prop : held) {
+                    if (!prop->isDerivedFrom(PropertyExpressionContainer::getClassTypeId()))
+                        continue;
+                    const CapturedValue live = captureValue(config, *prop);
+                    if (live.ok && moved(live.fragment, was))
+                        return false;
+                }
+            }
+            for (const auto& kv : plan.theirs.values) {
+                std::string fragment;
+                if (kv.second.atEnd && kv.second.after != kv.second.before
+                        && kv.second.after.size()
+                        && Base::Type::fromName(kv.second.ptype.c_str())
+                               .isDerivedFrom(PropertyExpressionContainer::getClassTypeId())
+                        && text(kv.second.after, fragment)
+                        && fragment.find(open) != std::string::npos && moved(fragment, their))
+                    return false;
+            }
+        }
+    }
+    TransactionLogCore& core = TransactionLogCore::of(doc.getFileHistory());
+    log.flush();
+    auto stored = [&](const std::string& fragment) {
+        CapturedValue v;
+        v.ok = true;
+        v.fragment = fragment;
+        return core.putValue(v, "durable");
+    };
+    std::vector<Document::MergeChange> changes;
+    for (const auto& name : props) {
+        auto to = merged.find(name);
+        if (!known.count(name) || to == merged.end())
+            continue;
+        Document::MergeChange c;
+        for (const auto& n : notes) {
+            if (n.prop == name)
+                c.elements.push_back({n.key, n.change, n.side, n.byTime});
+        }
+        if (to->second == ours.at[name] && c.elements.empty())
+            continue;
+        c.kind = "merge";
+        c.op = "set";
+        c.ckind = "obj";
+        c.cid = cid;
+        c.object = objectName;
+        c.prop = name;
+        c.key = objectName + "." + name;
+        auto st = states.find(name);
+        if (st != states.end()) {
+            c.ptype = st->second.ptype;
+            c.base = st->second.base;
+            c.ours = st->second.ours;
+            c.theirs = st->second.theirs;
+        }
+        else {
+            c.ptype = obj->getPropertyByName(name.c_str())->getTypeId().getName();
+            c.base = c.ours = c.theirs = stored(ours.at[name]);
+        }
+        c.merged = to->second == ours.at[name] && !c.ours.empty() ? c.ours : stored(to->second);
+        if (c.merged.empty())
+            return false;
+        std::string taken, decided, dropped;
+        for (const auto& n : c.elements) {
+            std::string& list = n.change == "dropped" ? dropped : n.byTime ? decided : taken;
+            list += (list.empty() ? "" : ", ") + n.key
+                + (n.byTime ? " -> " + n.side : n.change == "removed" ? " (removed)" : "");
+        }
+        c.note = "merged by what it holds";
+        if (!taken.empty())
+            c.note += "; theirs: " + taken;
+        if (!decided.empty())
+            c.note += "; changed by both, the later kept: " + decided;
+        if (!dropped.empty())
+            c.note += "; left out, what it was on being removed: " + dropped;
+        changes.push_back(std::move(c));
+    }
+    for (auto& c : changes)
+        out.push_back(std::move(c));
+    return true;
+}
+
 void planMerge(Document& doc, const std::string& name, int64_t version, MergePlan& plan)
 {
     TransactionLog* log = doc.getTransactionLog();
@@ -8778,11 +8989,7 @@ void planMerge(Document& doc, const std::string& name, int64_t version, MergePla
     }
     for (const auto& kv : units) {
         const long cid = kv.first.first;
-        struct State
-        {
-            std::string base, ours, theirs, ptype;
-        };
-        std::map<std::string, State> states;
+        std::map<std::string, UnitValue> states;
         std::vector<std::string> here, there;
         bool differ = false;
         for (const auto& prop : kv.second) {
@@ -8800,7 +9007,7 @@ void planMerge(Document& doc, const std::string& name, int64_t version, MergePla
                 continue;
             // Each side's value where it ends: its own, or the base's
             // where it left the property as it was.
-            State s;
+            UnitValue s;
             s.base = t ? t->before : o->before;
             s.theirs = t ? t->after : s.base;
             s.ours = o ? o->after : s.base;
@@ -8820,6 +9027,12 @@ void planMerge(Document& doc, const std::string& name, int64_t version, MergePla
                                                 && !c.derived && states.count(c.prop);
                                         }),
                          pv.changes.end());
+        // Sec 31.10: by what it holds, where its object can; else the one
+        // question below.
+        if (!plan.independent
+                && mergeUnitByObject(doc, *log, plan, pv, cid, nameOf(cid), kv.second, states,
+                                     pv.changes))
+            continue;
         auto listed = [](const std::vector<std::string>& props) {
             std::string out;
             for (const auto& p : props)
@@ -9372,14 +9585,21 @@ Document::MergeResult Document::mergeBranch(const std::string& branch,
     // What nobody was asked about (sec 31.8): each thing both sides had
     // changed, and whose it is in the merge -- the one that wrote it last.
     auto decided = nlohmann::json::array();
+    // And what was left out with nobody asked (sec 31.10): a constraint on
+    // geometry the other side removed.
+    auto dropped = nlohmann::json::array();
     for (const auto& c : pv.changes) {
         for (const auto& e : c.elements) {
-            if (e.byTime)
+            if (e.change == "dropped")
+                dropped.push_back({{"key", c.key}, {"element", e.key}, {"side", e.side}});
+            else if (e.byTime)
                 decided.push_back({{"key", c.key}, {"element", e.key}, {"side", e.side}});
         }
     }
     if (!decided.empty())
         m["later"] = std::move(decided);
+    if (!dropped.empty())
+        m["dropped"] = std::move(dropped);
     if (!relabelled.empty())
         m["relabelled"] = relabelled;
     if (!result.failed.empty())

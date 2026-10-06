@@ -6364,7 +6364,11 @@ class TransactionBranchCases(unittest.TestCase):
         # one side's Geometry kept, the other's Constraints taken -- a
         # constraint ended on a line that was gone, or on the line that had
         # moved into its place, with nothing asked and nothing failed. They
-        # are one conflict, and go together by the side picked.
+        # are one thing: merged by what the sketch holds where that solves
+        # (sec 31.10, testASketchIsMergedByWhatItHolds), and where it does
+        # not, one conflict, going together by the side picked. Here it
+        # does not: ours says the third line is ten along x, theirs that it
+        # is twenty-five long.
         import Part
         import Sketcher
         from FreeCAD import Vector as V
@@ -6403,18 +6407,25 @@ class TransactionBranchCases(unittest.TestCase):
             on = lambda g: ids[g] if 0 <= g < len(ids) else ("none" if g < -100 else "gone")
             return ids, sorted((c.Type, on(c.First), on(c.Second)) for c in sk.Constraints)
 
-        def removeThird(doc):
-            doc.Sketch.delGeometry(2)
+        def tenAlong(doc):
+            doc.Sketch.addConstraint(Sketcher.Constraint("Horizontal", 2))
+            doc.Sketch.addConstraint(Sketcher.Constraint("DistanceX", 2, 1, 2, 2, 10))
+
+        def farApart(doc):
+            doc.Sketch.addConstraint(Sketcher.Constraint("Distance", 2, 1, 2, 2, 25))
 
         def constrainThird(doc):
             doc.Sketch.addConstraint(Sketcher.Constraint("DistanceX", 2, 1, 2, 2, 10))
 
-        # Ours removes the third line, which nothing constrains; theirs
-        # puts a distance on it. Ours changed Geometry only, theirs
-        # Constraints only.
-        doc = model("SketchUnitTheirs", removeThird, constrainThird)
+        doc = model("SketchUnitTheirs", tenAlong, farApart)
         ours = state(doc)
-        self.assertEqual(ours, ([1, 2, 4], [("Coincident", 1, 2)]))
+        self.assertEqual(
+            ours,
+            (
+                [1, 2, 3, 4],
+                [("Coincident", 1, 2), ("DistanceX", 3, 3), ("Horizontal", 3, "none")],
+            ),
+        )
         preview = doc.previewTransactionMerge("side")
         rows = [(c["kind"], c["op"], c["key"], c["prop"]) for c in preview["changes"]]
         self.assertEqual(preview["conflicts"], 1, rows)
@@ -6431,21 +6442,22 @@ class TransactionBranchCases(unittest.TestCase):
         refused = doc.mergeTransactionBranch("side")
         self.assertEqual([c["key"] for c in refused["unresolved"]], ["Sketch.Geometry"])
         self.assertEqual(state(doc), ours)
-        # Theirs: the sketch is theirs, whole -- the line back, the distance
-        # on it and not on the next.
+        # Theirs: the sketch is theirs, whole -- its distance, and neither
+        # of ours'.
         merged = doc.mergeTransactionBranch("side", {"Sketch.Geometry": "theirs"})
         self.assertEqual(merged["unresolved"], [])
         self.assertEqual(merged["failed"], [])
         self.assertEqual(
-            state(doc), ([1, 2, 3, 4], [("Coincident", 1, 2), ("DistanceX", 3, 3)])
+            state(doc), ([1, 2, 3, 4], [("Coincident", 1, 2), ("Distance", 3, 3)])
         )
+        self.assertAlmostEqual(doc.Sketch.Geometry[2].length(), 25.0, places=6)
         self.assertFalse([o.Name for o in doc.Objects if "Invalid" in o.State])
 
         # Ours: the sketch stays ours, whole.
-        doc = model("SketchUnitOurs", removeThird, constrainThird)
+        doc = model("SketchUnitOurs", tenAlong, farApart)
         merged = doc.mergeTransactionBranch("side", {"Sketch.Geometry": "ours"})
         self.assertEqual(merged["unresolved"], [])
-        self.assertEqual(state(doc), ([1, 2, 4], [("Coincident", 1, 2)]))
+        self.assertEqual(state(doc), ours)
 
         # A sketch only one side changed is taken as it was, with nothing
         # asked: ours changed another object.
@@ -6461,6 +6473,176 @@ class TransactionBranchCases(unittest.TestCase):
             state(doc), ([1, 2, 3, 4], [("Coincident", 1, 2), ("DistanceX", 3, 3)])
         )
         self.assertEqual(doc.Other.T, 3.0)
+
+    def testASketchIsMergedByWhatItHolds(self):
+        # Sec 31.10: a sketch two branches both changed is merged by its
+        # geometry, each known by its id, and its constraints, each by what
+        # it says of which geometry. What one side alone did is that
+        # side's; what both did to one thing is the later's; what one side
+        # removed is gone, and a constraint on it with it. Nothing is
+        # asked, and the row says what nobody was asked about.
+        import json
+        import time
+
+        import Part
+        import Sketcher
+        from FreeCAD import Vector as V
+
+        def line(a, b):
+            return Part.LineSegment(V(a[0], a[1], 0), V(b[0], b[1], 0))
+
+        def step(doc, name, edit):
+            doc.openTransaction(name)
+            edit(doc.Sketch)
+            doc.recompute()
+            doc.commitTransaction()
+            time.sleep(0.02)   # the later of two rows is known by its time
+
+        def model(name, ours, theirs, oursLater=True):
+            doc = self.track(FreeCAD.newDocument(name))
+            doc.UndoMode = 1
+            doc.openTransaction("base")
+            sk = doc.addObject("Sketcher::SketchObject", "Sketch")
+            sk.addGeometry(line((0, 0), (10, 0)))
+            sk.addGeometry(line((10, 0), (10, 10)))
+            sk.addGeometry(line((20, 0), (30, 0)))
+            sk.addGeometry(line((40, 0), (50, 0)))
+            sk.addConstraint(Sketcher.Constraint("Coincident", 0, 2, 1, 1))
+            sk.addConstraint(Sketcher.Constraint("DistanceX", 0, 1, 0, 2, 10))
+            doc.recompute()
+            doc.commitTransaction()
+            doc.saveAs(os.path.join(self.dir, name + ".FCStd"))
+            doc.createTransactionBranch("side")   # and the document is on it
+            if oursLater:
+                step(doc, "theirs", theirs)
+                doc.switchTransactionBranch("main")
+                step(doc, "ours", ours)
+            else:
+                doc.switchTransactionBranch("main")
+                step(doc, "ours", ours)
+                doc.switchTransactionBranch("side")
+                step(doc, "theirs", theirs)
+                doc.switchTransactionBranch("main")
+            return doc
+
+        def state(doc):
+            sk = doc.Sketch
+            ids = [sk.getGeometryId(i) for i in range(len(sk.Geometry))]
+            on = lambda g: ids[g] if 0 <= g < len(ids) else ("none" if g < -100 else "gone")
+            return ids, [(c.Type, on(c.First), round(c.Value, 6)) for c in sk.Constraints]
+
+        def notes(preview, prop):
+            return [
+                (e["element"], e["change"], e["side"], e["by_time"])
+                for c in preview["changes"]
+                if c["kind"] == "merge" and c["prop"] == prop
+                for e in c["elements"]
+            ]
+
+        def merge(doc):
+            preview = doc.previewTransactionMerge("side")
+            self.assertEqual(preview["conflicts"], 0, preview["changes"])
+            merged = doc.mergeTransactionBranch("side")
+            self.assertEqual(merged["unresolved"], [])
+            self.assertEqual(merged["failed"], [])
+            self.assertFalse([o.Name for o in doc.Objects if "Invalid" in o.State])
+            return preview, merged
+
+        base = [("Coincident", 1, 0.0), ("DistanceX", 1, 10.0)]
+
+        # Each side adds a line: both are there, ours' first.
+        doc = model(
+            "SketchPartsAdd",
+            lambda s: s.addGeometry(line((0, 20), (5, 20))),
+            lambda s: s.addGeometry(line((0, 30), (5, 30))),
+        )
+        ours = state(doc)
+        preview, merged = merge(doc)
+        self.assertEqual(notes(preview, "Geometry"), [("g5", "added", "theirs", False)])
+        self.assertEqual(state(doc), ([1, 2, 3, 4, 6, 5], base))
+        self.assertAlmostEqual(doc.Sketch.Geometry[5].StartPoint.y, 30.0, places=6)
+        # One step, undone and done again.
+        doc.undo()
+        self.assertEqual(state(doc), ours)
+        doc.redo()
+        self.assertEqual(state(doc), ([1, 2, 3, 4, 6, 5], base))
+
+        # Ours removes the third line and so moves the fourth up a place;
+        # theirs puts a distance on each. The line stays removed and the
+        # distance on it is left out -- the row says so -- and the other is
+        # on the fourth line, where that is now.
+        def distances(s):
+            s.addConstraint(Sketcher.Constraint("DistanceX", 2, 1, 2, 2, 10))
+            s.addConstraint(Sketcher.Constraint("DistanceX", 3, 1, 3, 2, 12))
+
+        doc = model("SketchPartsRemoved", lambda s: s.delGeometry(2), distances)
+        preview, merged = merge(doc)
+        self.assertEqual(
+            notes(preview, "Constraints"),
+            [
+                ("DistanceX,g4.1,g4.2,", "added", "theirs", False),
+                ("DistanceX,g3.1,g3.2,", "dropped", "theirs", False),
+            ],
+        )
+        self.assertEqual(state(doc), ([1, 2, 4], base + [("DistanceX", 4, 12.0)]))
+        self.assertAlmostEqual(doc.Sketch.Geometry[2].length(), 12.0, places=6)
+        row = [t for t in doc.getTransactionLog() if t["seq"] == merged["seq"]][0]
+        said = json.loads(row["script"])["merge"]
+        self.assertEqual(
+            said.get("dropped"),
+            [{"key": "Sketch.Constraints", "element": "DistanceX,g3.1,g3.2,", "side": "theirs"}],
+        )
+
+        # Both drag one end of the fourth line, to two places: it is where
+        # the later left it, whichever side that was.
+        up = lambda s: s.movePoint(3, 1, V(40, 7, 0))
+        down = lambda s: s.movePoint(3, 1, V(40, -9, 0))
+        doc = model("SketchPartsMovedOurs", up, down)
+        preview, merged = merge(doc)
+        self.assertEqual(notes(preview, "Geometry"), [("g4", "changed", "ours", True)])
+        self.assertAlmostEqual(doc.Sketch.Geometry[3].StartPoint.y, 7.0, places=6)
+        doc = model("SketchPartsMovedTheirs", up, down, oursLater=False)
+        preview, merged = merge(doc)
+        self.assertEqual(notes(preview, "Geometry"), [("g4", "changed", "theirs", True)])
+        self.assertAlmostEqual(doc.Sketch.Geometry[3].StartPoint.y, -9.0, places=6)
+        row = [t for t in doc.getTransactionLog() if t["seq"] == merged["seq"]][0]
+        self.assertIn(
+            {"key": "Sketch.Geometry", "element": "g4", "side": "theirs"},
+            json.loads(row["script"])["merge"].get("later"),
+        )
+
+        # Both set the one distance: the later's, and the line as long.
+        doc = model(
+            "SketchPartsValue", lambda s: s.setDatum(1, 14), lambda s: s.setDatum(1, 17), False
+        )
+        preview, merged = merge(doc)
+        self.assertEqual(
+            notes(preview, "Constraints"), [("DistanceX,g1.1,g1.2,", "changed", "theirs", True)]
+        )
+        self.assertEqual(state(doc)[1], [("Coincident", 1, 0.0), ("DistanceX", 1, 17.0)])
+        self.assertAlmostEqual(doc.Sketch.Geometry[0].length(), 17.0, places=6)
+
+        # An expression that names a constraint by its place is not carried
+        # along yet: where the merge would move the place it names, the
+        # sketch is one question still, as in sec 31.5. Ours takes the
+        # first constraint out; theirs adds a third and binds it, as
+        # `Constraints[2]`, which in the merge would be the second.
+        def bound(s):
+            s.addConstraint(Sketcher.Constraint("DistanceX", 3, 1, 3, 2, 12))
+            s.setExpression("Constraints[2]", "6 + 6")
+
+        doc = model("SketchPartsPlace", lambda s: s.delConstraint(0), bound)
+        preview = doc.previewTransactionMerge("side")
+        self.assertEqual(preview["conflicts"], 1, preview["changes"])
+        self.assertIn(
+            ("conflict", "unit", "Sketch.Geometry"),
+            [(c["kind"], c["op"], c["key"]) for c in preview["changes"]],
+        )
+        # And where it would not, it is merged: ours adds a line.
+        doc = model("SketchPartsPlaceKept", lambda s: s.addGeometry(line((0, 20), (5, 20))), bound)
+        preview, merged = merge(doc)
+        self.assertEqual(state(doc), ([1, 2, 3, 4, 5], base + [("DistanceX", 4, 12.0)]))
+        self.assertEqual(doc.Sketch.ExpressionEngine, [("Constraints[2]", "6 + 6")])
 
     def testASheetsCellsFollowTheBranch(self):
         # Sec 31.1: a value put back from the log is the whole of what the

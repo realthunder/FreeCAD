@@ -36,6 +36,7 @@
 
 #include <bitset>
 #include <functional>
+#include <map>
 #include <fastsignals/signal.h>
 #include <unordered_map>
 
@@ -511,6 +512,51 @@ public:
      * unless an object says otherwise.
      */
     virtual std::vector<std::string> getMergeUnit(const char* prop) const;
+
+    /// A merge unit at one moment: each of its properties as it is saved.
+    using MergeUnitState = std::map<std::string, std::string>;
+    /// What one branch made of a unit since the two parted.
+    struct MergeUnitSide
+    {
+        /// The unit where the branch ends.
+        MergeUnitState at;
+        /// The unit after each of the branch's rows that wrote any of it,
+        /// oldest first, with the row's time: what says who wrote a thing
+        /// last. Read from the log when asked, and only then.
+        std::function<std::vector<std::pair<double, MergeUnitState>>()> rows;
+    };
+    /// What became of one thing of a unit the other branch changed.
+    struct MergeUnitNote
+    {
+        std::string prop;     ///< the property it is a thing of
+        std::string key;      ///< what it is known by
+        /// `added`, `changed` or `removed` by theirs; `dropped`: left out
+        /// because what it stands on is gone.
+        std::string change;
+        std::string side;     ///< whose it is in the merge
+        bool byTime {false};  ///< both changed it, and the later was kept
+    };
+    /** A unit both branches changed, merged by what it holds
+     * (docs/TransactionLog.md sec 31.10): `merged` is each property as it
+     * goes in, `notes` what was done to the things theirs changed. False
+     * where the object cannot, or will not -- the result is not one it
+     * would stand behind -- and the unit is then one question, a side for
+     * the whole of it (sec 31.5). Nothing of the object is changed here:
+     * this is asked for a preview too.
+     */
+    virtual bool mergeUnit(const MergeUnitState& base, const MergeUnitSide& ours,
+                           const MergeUnitSide& theirs, MergeUnitState& merged,
+                           std::vector<MergeUnitNote>& notes) const;
+
+    /** The places of a unit an expression may name a thing by -- a
+     * sketch's `Constraints[3]` -- in one state of it: `prop` is the list,
+     * `names` what stands at each place, by something that is the same
+     * wherever the thing is. A merge moves things to other places, and an
+     * expression that says a place then says another thing
+     * (docs/TransactionLog.md sec 31.10). False where there are none.
+     */
+    virtual bool getMergePlaces(const MergeUnitState& at, std::string& prop,
+                                std::vector<std::string>& names) const;
 
     /** Whether `prop` of this object is merged by the things it holds
      * (Property::splitSaved, docs/TransactionLog.md sec 31.8) where two

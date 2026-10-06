@@ -248,9 +248,11 @@ def run():
             check("next: merged", result["seq"] > 0 and not result["unresolved"])
             check("next: volume %g, white %r" % (box.Shape.Volume, colour(box)),
                   abs(box.Shape.Volume - 30 * 5 * 20) < 1e-6 and colour(box) == (1.0, 1.0, 1.0))
-        # Sec 31.5: a sketch is one thing to a merge. Ours removes a line,
-        # theirs constrains it: one conflict in the dialog, the properties
-        # under it going the way it is picked.
+        # Sec 31.5, 31.10: a sketch is one thing to a merge, and is merged
+        # by what it holds where that solves. Ours says a line is ten along
+        # x, theirs that it is twenty-five long: together they do not
+        # solve, and it is one conflict in the dialog, the properties under
+        # it going the way it is picked.
         import tempfile
 
         import Part
@@ -269,13 +271,14 @@ def run():
         sdoc.createTransactionBranch("side")
         sdoc.switchTransactionBranch("side")
         sdoc.openTransaction("theirs")
-        sdoc.Sketch.addConstraint(Sketcher.Constraint("DistanceX", 2, 1, 2, 2, 10))
+        sdoc.Sketch.addConstraint(Sketcher.Constraint("Distance", 2, 1, 2, 2, 25))
         sdoc.recompute()
         sdoc.commitTransaction()
         settle()
         sdoc.switchTransactionBranch("main")
         sdoc.openTransaction("ours")
-        sdoc.Sketch.delGeometry(2)
+        sdoc.Sketch.addConstraint(Sketcher.Constraint("Horizontal", 2))
+        sdoc.Sketch.addConstraint(Sketcher.Constraint("DistanceX", 2, 1, 2, 2, 10))
         sdoc.recompute()
         sdoc.commitTransaction()
         settle()
@@ -327,9 +330,86 @@ def run():
         check("sketch: merged as theirs, the distance on the line it was put on (%r, %r)"
               % (ids, [(c.Type, c.First) for c in sk.Constraints]),
               ids == [1, 2, 3, 4] and [(c.Type, ids[c.First]) for c in sk.Constraints]
-              == [("DistanceX", 3)]
+              == [("Distance", 3)]
               and not [o.Name for o in sdoc.Objects if "Invalid" in o.State])
         App.closeDocument(sdoc.Name)
+        settle()
+
+        # Sec 31.10: ours removes a line and adds one, theirs constrains
+        # the removed one and another: nothing to pick. The line stays
+        # removed, the constraint on it is left out and said so, and the
+        # other is on its line, which is in another place now.
+        edoc = App.newDocument("MergeSketchParts")
+        edoc.UndoMode = 1
+        edoc.openTransaction("base")
+        sk = edoc.addObject("Sketcher::SketchObject", "Sketch")
+        for x in (0, 20, 40, 60):
+            sk.addGeometry(Part.LineSegment(App.Vector(x, 0, 0), App.Vector(x + 10, 0, 0)))
+        edoc.recompute()
+        edoc.commitTransaction()
+        settle()
+        edoc.saveAs(os.path.join(tempfile.mkdtemp(prefix="mergeparts-"), "parts.FCStd"))
+        edoc.createTransactionBranch("side")
+        edoc.switchTransactionBranch("side")
+        edoc.openTransaction("theirs")
+        edoc.Sketch.addConstraint(Sketcher.Constraint("DistanceX", 2, 1, 2, 2, 10))
+        edoc.Sketch.addConstraint(Sketcher.Constraint("DistanceX", 3, 1, 3, 2, 12))
+        edoc.recompute()
+        edoc.commitTransaction()
+        settle()
+        edoc.switchTransactionBranch("main")
+        edoc.openTransaction("ours")
+        edoc.Sketch.delGeometry(2)
+        edoc.Sketch.addGeometry(Part.LineSegment(App.Vector(0, 20, 0), App.Vector(5, 20, 0)))
+        edoc.recompute()
+        edoc.commitTransaction()
+        settle()
+        App.setActiveDocument(edoc.Name)
+        settle()
+        edock, _ = panel()
+
+        def driveParts(seen):
+            dialog = QtWidgets.QApplication.activeModalWidget()
+            if dialog is None or dialog.objectName() != "TransactionMergeDialog":
+                seen["found"] = False
+                if dialog is not None:
+                    dialog.reject()
+                return
+            seen["found"] = True
+            tree = dialog.findChild(QtWidgets.QTreeWidget)
+            takes = column(tree, "Takes")
+            rows = []
+            for i in range(tree.topLevelItemCount()):
+                item = tree.topLevelItem(i)
+                rows.append((item.text(0), item.text(2), item.text(takes),
+                             tree.itemWidget(item, takes) is not None, item.toolTip(takes)))
+            seen["rows"] = rows
+            for b in dialog.findChildren(QtWidgets.QPushButton):
+                if b.objectName() == "merge":
+                    seen["enabled"] = b.isEnabled()
+                    b.click()
+                    return
+            dialog.reject()
+
+        seen = {}
+        QtCore.QTimer.singleShot(300, lambda: driveParts(seen))
+        QtCore.QMetaObject.invokeMethod(edock, "mergeBranch", QtCore.Qt.DirectConnection,
+                                        QtCore.Q_ARG(str, "side"))
+        settle()
+        shown = sorted(r for r in (seen.get("rows") or []) if r[1] in ("Geometry", "Constraints"))
+        check("sketch parts: merged by what it holds, nothing to pick (%r)" % shown,
+              seen.get("found") is True and seen.get("enabled") is True
+              and [r[:4] for r in shown] == [("merge set", "Constraints", "both", False),
+                                             ("merge set", "Geometry", "both", False)]
+              and "left out" in shown[0][4] and "g3" in shown[0][4])
+        sk = edoc.Sketch
+        ids = [sk.getGeometryId(i) for i in range(len(sk.Geometry))]
+        check("sketch parts: the line stays removed, the other distance on its line (%r, %r)"
+              % (ids, [(c.Type, c.First) for c in sk.Constraints]),
+              ids == [1, 2, 4, 5] and [(c.Type, ids[c.First], c.Value) for c in sk.Constraints]
+              == [("DistanceX", 4, 12.0)]
+              and not [o.Name for o in edoc.Objects if "Invalid" in o.State])
+        App.closeDocument(edoc.Name)
         settle()
 
         # Sec 31.8: a sheet whose cells both branches set, each another, is

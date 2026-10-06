@@ -60,6 +60,7 @@ SET(Features_SRCS
     SketchObjectExternal.cpp
     SketchObjectConstraints.cpp
     SketchObjectOperations.cpp
+    SketchMerge.cpp
     SketchAnalysis.h
     SketchAnalysis.cpp
     Analyse.h
