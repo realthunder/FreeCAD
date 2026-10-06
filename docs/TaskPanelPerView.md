@@ -17,7 +17,8 @@ Implementation is the Linux session's (x16); the Windows session tests. This
 document is the survey (sec 2), the design (sec 3-7), the constraints that
 are not negotiable until other work lands (sec 8), the milestones with what
 each is tested by (sec 9), and the readings of the order that were assumed
-and want confirming (sec 10). Nothing in it is built.
+and want confirming (sec 10). What is built, and where it departs from the
+design, is sec 11: milestone 1 so far.
 
 It is step E of `docs/ThinClient.md` 8.12 ("Chrome -- process-global ... per
 client, a Control per view, which neither fork has") taken one notch: the
@@ -542,3 +543,123 @@ Docs to keep in step: `docs/ThinClient.md` 8.12 item E, `docs/SplitViews.md`
    behaviour is real from M2, several live dialogs are not.
 6. In a SHARED edit session every client in the session still sees the
    session's panel; "always per view" is literal only under `PerViewEdit`.
+
+## 11. Built
+
+### 11.1 Milestone 1 (2026-10-06, `68f95d11fd`)
+
+The owner and the keyed `Control`. Nothing visible changed: the task view
+still shows the one dialog, whichever view is active.
+
+- `Gui::TaskOwner` (`src/Gui/TaskOwner.{h,cpp}`) as sec 3 has it, with two
+  things settled that the sketch left open:
+  - a mirror's liveness is `ViewerContext::lifetime()`, a `weak_ptr` every
+    view context now hands out (expired first thing in its destructor).
+    No id for the serving source to validate was needed, and the same
+    token is the mirror's identity: a dead view's owners still equal each
+    other, and equal no view that came to stand at its address. A desktop
+    view is a `QPointer` plus the address it was made with, compared
+    together for the same reason.
+  - a 3D viewer that sits in no `MDIView` (one made inside a dialog) is an
+    owner of the mirror's kind that is not remote. `isRemote()` asks the
+    context (`cameraIsRemote()`), not the kind.
+- `Control`: `showDialog(dlg, owner)`, and `activeDialog` / `accept` /
+  `reject` / `closeDialog` / `isAllowedAlter*` with an owner or with
+  upstream's `App::Document *`. One private function, `dialogOf(owner)`,
+  answers all of them; `exclusive()` returns true and nothing else reads it.
+  - **An unowned dialog is everybody's**: asked for any view, it is that
+    view's. That is what "behaves as today" has to mean for the keyed
+    forms.
+  - `accept` / `reject` / `closeDialog` are OVERLOADS beside the
+    argument-less slots, not one function with a default argument as sec
+    4.1 writes them: a slot with a defaulted argument cannot be connected
+    by member pointer, and five sites do
+    `QTimer::singleShot(..., &ControlSingleton::closeDialog)`. They name
+    the slot with `qOverload<>` now.
+  - `showDialog(dlg, App::Document *)` takes the view being handled when it
+    is one of that document's (a served document may have no desktop view,
+    and under a client's scope the asking view is that client's), else the
+    document's active view, else nobody.
+- `TaskDialog::owner()`, set once by `showDialog` before the dialog's
+  `open()`; `getAssociatedView()`. A dialog shown again keeps the view it
+  was first shown for.
+- `signalShowDialog` / `signalRemoveDialog` carry the owner as a third
+  argument. Both listeners (`Fw::PanelMirror`, PartDesign's `Monitor`) take
+  it and do not use it yet.
+- Python: `view=` and `attachTo=` on `Gui.Control.showDialog`,
+  `activeDialog`, `activeTaskDialog` and `closeDialog`; a task dialog
+  object has `getAssociatedView()` and `getOwnerKind()` (`'view'`,
+  `'client'`, `'viewer'`, `'none'`, `'gone'`).
+  - **Not in the design: `Gui.Control.currentOwner()`.** A deferred Python
+    show has to carry its owner, and a client's view has no Python object
+    to be named by. This returns an opaque token for
+    `TaskOwner::current()` that `view=` accepts beside a view object.
+
+**The audit of deferred shows.** C++: none. Every file that both shows a
+dialog and defers something was read; the timers there do other work
+(a delayed selection clear, a delayed focus). Python: four, all Draft's,
+through its `todo` queue -- `DraftGui.py` `taskUi` and the base-widget
+panel, `gui_selectplane.py`, `gui_scale.py`. They take `currentOwner()`
+when the show is queued and pass it (sec 11.2). BIM's and CAM's timers
+near a `showDialog` show a form or a status widget, not a task dialog.
+
+Found on the way, not changed:
+
+- **Deferred CLOSES and ACCEPTS.** Five `singleShot` closes (Surface x2,
+  PartDesign's feature pick x2, Part's mirror) and two queued
+  `invokeMethod(&Control(), "accept")` in the feature pick act on "the"
+  dialog. Right while `exclusive()` holds; they join the list of sec 7 for
+  M6. They cannot simply take `TaskOwner::current()`: the task box that
+  queues them does not know its dialog, and the view active at that moment
+  need not be the dialog's.
+- `gui_selectplane.py` and `gui_scale.py` call `setDocumentName` and
+  `setAutoCloseOnDeletedDocument` on what `showDialog` returns, which in
+  this fork is None: an AttributeError the `todo` queue swallows with a
+  warning, after the panel is up. `DraftGui.py` guards it. M2 brings the
+  auto-close switches, and `showDialog` returning the dialog object as
+  upstream's does belongs with them.
+- `ControlSingleton::showDialog`'s branch for a main window with no combo
+  view never sets the active dialog, so `activeDialog()` is null there
+  with a panel on screen. Older than this work; the keyed forms inherit it.
+- `Gui::Document::setEdit` still names the document on the argument-less
+  `activeDialog()` (sec 7). It is the same dialog while `exclusive()`
+  holds; it moves to the edit view's with the stack, M2.
+
+Test: `tests/gui/task-panel-owner.py` (`GuiTaskPanelOwner_tests_run`), two
+views of one document, a second document, one served client: 34 checks. On
+the tree before (`0259b90df5`) 9 of 35 pass, the ones that name no view;
+the rest fail on the missing keyword or method. What it does NOT cover: a
+deferred show under a CLIENT's scope -- a client may run only allowlisted
+commands and none of them queues a panel, so the owner crossing a timer is
+shown with two desktop views; and two clients told apart, which wants the
+client id a mirror does not know yet (M5).
+
+### 11.2 Draft's deferred shows (2026-10-06)
+
+The four sites the audit found. Draft queues a panel's show on its `todo`
+list, which a zero timer runs after the command has returned; each site
+now takes `Gui.Control.currentOwner()` where it queues and passes it as
+`view=` where the queue runs.
+
+Measured, on the milestone 1 binaries with the Draft files before and
+after (`tests/gui/draft-panel-owner.py`, `GuiDraftPanelOwner_tests_run`):
+a command run with view a1 active, a2 activated before control returns to
+the event loop.
+
+| | before | after |
+|---|---|---|
+| `Draft_SelectPlane` (`gui_selectplane.py`) | a2's | a1's |
+| `Draft_Line` (`DraftGui.py`, `taskUi`) | a2's | a1's |
+
+So the hazard of sec 3 is real on the desktop too, not only for a client:
+two views, a click in the other one inside the same event-loop pass.
+`gui_scale.py`'s second panel has the same change and is not exercised --
+it needs two picked points. The `setDocumentName` on None noted in 11.1
+still prints its warning in both columns.
+
+### 11.3 The suites
+
+On `68f95d11fd` (milestone 1 on the merge of PartDesignPort `84c14e12d5`):
+Python 3379 tests OK; ctest 953 of 953 (962 entries, 3819 s serial); the
+GUI gate 70 tests OK, the panel mirror's module among them. Rows in
+`docs/Testing.md`.
