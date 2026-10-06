@@ -24,10 +24,15 @@ report views, the reporter's own files -- is kept beside the dev tree under
 | 2 | 2026-10-06 | a file opened from the menu comes up empty (`scanner.FCStd`) | STAGED |
 | 3 | 2026-10-06 | tooltips are clipped: navigation style, and toolbar buttons with an icon | FIXED |
 | 4 | 2026-10-06 | status bar dimension reads `100 mm x 80 mm`, wanted `100 x 80 mm` | STAGED |
-| 5 | 2026-10-06 | title bar with the workbench bar docked: the menu does not unfold on hover | OPEN |
-| 6 | 2026-10-06 | maximized with the custom title bar: sometimes no margin at the top | OPEN |
+| 5 | 2026-10-06 | title bar with the workbench bar docked: the menu does not unfold on hover | FIXED if it is entry 6's cause; to confirm |
+| 6 | 2026-10-06 | maximized with the custom title bar: sometimes no margin at the top | FIXED |
 | 7 | 2026-10-06 | crash after answering Yes to the recompute question on `scanner.FCStd` | STAGED, cause of the GL error open |
 | 8 | 2026-10-06 | `scanner.FCStd`: the migration recompute fails | OPEN |
+| 9 | 2026-10-06 | the 3D view lags behind the mouse: hover highlight, wheel zoom | OPEN |
+| 10 | 2026-10-06 | a 3D view is slow to take a new size | OPEN |
+| 11 | 2026-10-06 | dark theme: wrong colors (checkbox border, title bar buttons), audit asked | OPEN |
+| 12 | 2026-10-06 | TechDraw: dimensions and cosmetics are covered by the face fill | OPEN |
+| 13 | 2026-10-06 | report view: grouped messages with an expand icon in the margin, no underscore (change request) | OPEN |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -145,7 +150,7 @@ each carry their unit.
 mm`), and so does a schema whose text does not end in its unit.
 `tests/gui/status-dimension-text.py`, 3 PASS.
 
-## 5. Title bar with the workbench bar docked: the menu does not unfold -- OPEN
+## 5. Title bar with the workbench bar docked: the menu does not unfold -- FIXED if it is entry 6's cause; to confirm
 
 **Reported (2026-10-06):** "in the customized titlebar is docked with
 workbench sometimes malfunction, the menu bar will not show when mouser hover.
@@ -158,13 +163,21 @@ one):** `TitleBarWidget` 1920 x 35 at the top of the main window;
 toolbar (851 x 35, `WorkbenchTabWidget` 832 x 29) parented to
 `MenuBarLeftArea`, not to the main window.
 
-**History to read:** `b39dd73fed` fold the title bar menu behind the logo,
-`c35c0b05a6` a hamburger, a hover, and a switch, `1863cf74a5` let the title bar
-take the workbench toolbar, `929082dc3c` ignore the reflex click that folds a
-just-unfolded menu, `d6183b77a1` and `27c5ba835f` (keyboard), `d64805c1a1` a
-menuBar() call must not shove the toolbars under the title bar.
+**Not reproduced as reported.** With the reporter's configuration in the dev
+tree the title bar comes up as above and the hover mechanism is intact: the
+logo button is on top at its own centre, a 250 ms timer on it unfolds the bar
+(`TitleBarMenuButton`, `MainWindow.cpp`), the overlay is raised on every
+unfold. Nothing in it depends on the workbench bar.
 
-## 6. Maximized with the custom title bar: sometimes no margin at the top -- OPEN
+**What entry 6 found does explain it:** in the state a run-time switch of the
+title bar leaves a maximized window in, Qt maps the pointer 8 px away from
+where the widgets are drawn, so a pointer resting on the logo is, to Qt, not
+on it. That state lasts until the window leaves the maximized state. Whether
+re-docking the workbench bar does anything about it was not established, so
+this is closed only if the reporter no longer sees it after the stage that
+has entry 6's fix.
+
+## 6. Maximized with the custom title bar: sometimes no margin at the top -- FIXED
 
 **Reported (2026-10-06):** "when maximized, sometimes, with the customized
 toolbar, it leaves no margin at top. sometimes it is fine."
@@ -173,9 +186,41 @@ toolbar, it leaves no margin at top. sometimes it is fine."
 geometry (0, 0, 1920 x 1040), frame (-8, -8, 1936 x 1056), screen 1920 x 1080
 at 100%, title bar at y = 0.
 
-**History to read:** `8a7f412fe3` stop a maximized custom title bar hanging
-off the top of the screen, `d712eae660` fix the 8px input offset of a
-maximized custom title bar.
+**"Sometimes" is: after the title bar was switched while the window was
+maximized.** Started with the custom title bar on, the window is right however
+it is then maximized (Qt, the system, back from minimized, back from full
+screen). Switched at run time -- `CustomTitleBar` written by a theme or a
+preference pack, or Std_ViewTitleBar -- on a maximized window, it is not. The
+reporter's configuration had no `CustomTitleBar` at 09:25 and had it at 09:37,
+with a preference pack applied at 09:33.
+
+**Measured** (`..\dl\gt-maxprobe-2`, `-3`, `-4`, `gt-normalprobe-*`), 1920 x
+1080 screen at 100%:
+
+| | the system's client area | Qt's geometry |
+|---|---|---|
+| started custom, maximized | (0, 0) 1920 x 1040 | (0, 0) 1920 x 1040 |
+| switched on while maximized | (0, 0) 1920 x 1040 | (-8, 8) 1936 x 1040 |
+| back to normal after that | (0, -9) 1920 x 1018 | (0, -8) 1920 x 1017 |
+| after a second off and on | (-16, -40) | (-16, -39) |
+
+So: 16 px of title bar past the right edge with the window buttons, every
+widget answering the pointer 8 px from where it is drawn, and a normal
+placement above the top of the screen, further with every switch.
+`SWP_FRAMECHANGED` does not reconcile the two accounts and neither does a
+resize; leaving the maximized state does.
+
+**Fix:** `43b51e8425`. `MainWindow::applyTitleBarParams()` takes a maximized
+window out of that state, switches a turn of the event loop later, and
+maximizes it again; Std_ViewTitleBar goes through the parameter and takes the
+same road. Windows only. `tests/gui/titlebar-switch-maximized.py`, 7 PASS.
+Tried first inside the vendored kit's `attach()`/`detach()` and not kept: Qt
+has to hear of the restore through its window system queue before the flags
+change, which from inside the backend means running the event loop there.
+
+**Still to look at here:** the earlier fixes this builds on (`8a7f412fe3`,
+`d712eae660`) are in the kit as LOCAL DIVERGENCE; this one is not in the kit,
+so a program using the kit without FreeCAD's main window still has it.
 
 ## 7. Crash after answering Yes to the recompute question -- STAGED, cause of the GL error open
 
@@ -224,34 +269,72 @@ failed to obtain shape from scanner#Binder008.?Face1` (`Null shape`), "auto
 change element reference" on `Helix001.Profile` and `Pocket037.Profile`, and a
 run of TechDraw "no exact match for changed 2d reference". Not looked at yet.
 
+## 9. The 3D view lags behind the mouse -- OPEN
+
+**Reported (2026-10-06 11:58):** "the 3d view seems lagging in response to
+mouse movement and wheel. a mouse over highlight is visibly delayed a few
+hundries of ms. and moving away the mouse to an empty area does not cancel the
+previous highlight. mouse wheel zoom is also visibly lagging. after stopping
+wheeling, I can see the 3d view is catching up with the lingering zooming
+operation."
+
+Three symptoms: (a) the preselection highlight arrives a few hundred ms late;
+(b) moving to empty space does not clear it; (c) wheel zoom queues up and
+keeps playing after the wheel has stopped.
+
+**Added by the reporter:** 12:01 "scanner.FCStd was open when it lagged";
+12:04 "a document with just a box behave the same. there seem to have a
+general delay in renderer response that's cause the problem."; 12:06 "there is
+no visible mouse hover highlight or wheel zooming delay in Techdraw view", and
+"it is draw by the same renderer backend". So: not the size of the model, and
+the same backend draws a TechDraw page without the delay -- what differs
+between the two kinds of view is where to look.
+
+**Ruled out so far:** the debugger the copy runs under. Its log has 321
+first-chance C++ exceptions for the 33 minutes of that session, not one per
+mouse move.
+
+## 10. A 3D view is slow to take a new size -- OPEN
+
+**Reported (2026-10-06 12:04):** "when I create a new document, the mdi window
+will zoom to fit. the background gradient is stuck at its old size and visibly
+delayed almost a second and more to fit the window. same for switching the
+view window, the background together with content stuck for too long to fit.
+these may or may not be related to the mouse problem".
+
+Two cases: (a) a new document's view growing to fill the MDI area -- the
+background stays at the old size for a second or more; (b) switching between
+view windows -- background and content both stay at the old size too long.
+Possibly one delay behind this and entry 9, in the reporter's reading.
+
+## 11. Dark theme: wrong colors -- OPEN
+
+**Reported (2026-10-06 11:58):** "checkbox border and customized toolbar
+maximize/minimize icon got bad color in dark theme. audit for other similar UI
+color problem."
+
+Two named: the checkbox border, and the maximize/minimize icons of the custom
+title bar. Asked for beyond those: an audit of the dark theme for other
+widgets with the same kind of wrong color.
+
+## 12. TechDraw: dimensions and cosmetics are covered by the face fill -- OPEN
+
+**Reported (2026-10-06 11:58):** "techdraw dimension/cosmetics is covered by
+face filling."
+
+## 13. Report view: grouped messages (a change request) -- OPEN
+
+**Asked (2026-10-06 11:58):** "do not use underscore in console grouped
+message, intead, put a clickable expansion icon before the message (note,
+those grouped message should still align with other normal message, put the
+icon in front of it, in the margin area)."
+
+Wanted: no underscore on a grouped message; a clickable expand icon ahead of
+it; the message text itself stays aligned with ordinary messages, the icon in
+the margin.
+
 ## Inbox
 
 Notes not sorted into an entry yet. Add a line here at any time, in any words;
 it is read before each entry is started and moved up into the table.
 
-- **2026-10-06 11:58, 3D view lags behind the mouse.** "the 3d view seems
-  lagging in response to mouse movement and wheel. a mouse over highlight is
-  visibly delayed a few hundries of ms. and moving away the mouse to an empty
-  area does not cancel the previous highlight. mouse wheel zoom is also visibly
-  lagging. after stopping wheeling, I can see the 3d view is catching up with
-  the lingering zooming operation." Three symptoms in it: (a) preselection
-  highlight arrives a few hundred ms late; (b) moving to empty space does not
-  clear the highlight; (c) wheel zoom queues up and keeps playing after the
-  wheel has stopped. Added 12:01: "scanner.FCStd was open when it lagged" (the
-  677-object file of entries 2, 7 and 8). Not said yet: whether it is the same
-  with an empty or small document.
-- **2026-10-06 11:58, dark theme colors.** "checkbox border and customized
-  toolbar maximize/minimize icon got bad color in dark theme. audit for other
-  similar UI color problem." Two named: the checkbox border, and the
-  maximize/minimize icons of the custom title bar. Asked for beyond those: an
-  audit of the dark theme for other widgets with the same kind of wrong color.
-- **2026-10-06 11:58, TechDraw.** "techdraw dimension/cosmetics is covered by
-  face filling." Dimensions and cosmetic elements are drawn under the face
-  fill instead of over it.
-- **2026-10-06 11:58, grouped messages in the console (a change request).**
-  "do not use underscore in console grouped message, intead, put a clickable
-  expansion icon before the message (note, those grouped message should still
-  align with other normal message, put the icon in front of it, in the margin
-  area)." Wanted: no underscore on a grouped message; a clickable expand icon
-  ahead of it; the message text itself stays aligned with ordinary messages,
-  the icon sitting in the margin.
