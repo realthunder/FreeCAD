@@ -16024,3 +16024,196 @@ test had a file opened three times before a merge.
 RC 15, BC 30, VC 18, PC 28, FC 16, VW 14, MC 40, the two-document check
 24, the tree check 19, the author check 36, the import check 49, the
 request check 31, the share check 47 and the squash check 13.
+
+### 31.16 Face colours through a merge: by element name (survey, measured, proposed; 2026-10-06)
+
+**Asked (user):** "are there any plan for merging shapeappearance", and
+then: "I think it can only work by element name. by index or take whole
+from either side are likely to fail." **Ruled by that: by element name.**
+Nothing is built; this is the survey, what was measured, and the plan put
+to them.
+
+**What exists.** No plan was written anywhere. `ShapeAppearance` is a view
+provider's property, so 28.6 Q2 applies: the whole value, taken where only
+theirs changed it, ours kept and nothing asked where both did. It has no
+`splitSaved`.
+
+But the fork has the names already, for colours:
+
+- `ColoredElements`, on the object (`Part::Feature`, `App::Part`, and a
+  link's): a `PropertyLinkSub` of the painted elements, with their mapped
+  names, so it follows a change of topology;
+- `MappedColors`, on the view provider: a colour for each, by its place in
+  that list;
+- `ViewProviderPartExt::updateColors()`, after every recompute: the
+  per-face part of `ShapeAppearance` (and the edges' and vertices' arrays)
+  made again from those two and from the colours the shape's sources have.
+
+That is what Set Colors and `setElementColors` write. Colour and
+transparency only: a face's other material fields
+(docs/ShapeAppearanceDesign.md) have no name behind them. And a script
+that writes `DiffuseColor`, or an importer bringing a STEP file's face
+colours, writes by index and leaves no name at all.
+
+**Measured** (`ap.py`, `ap2.py`, one GUI run each; a box, and a cut of a
+box by a cylinder):
+
+| | what the merge does today |
+| --- | --- |
+| each branch paints another face | asked: `Box.ColoredElements` a conflict, `MappedColors` and `ShapeAppearance` view conflicts beside it |
+| theirs paints a face, ours changes a radius | all three `take`, nothing asked; merged, **no colour**, both lists empty |
+| the same, ours' change making a seventh face | the same |
+| theirs paints a plain box, ours adds another object | the paint is there, as `ShapeAppearance` says it by index; both lists empty -- the names are gone |
+| a switch back to the branch that painted | `ColoredElements` and `MappedColors` come back **empty** |
+
+The last is not the merge's. `updateColors()` takes the two lists not
+being of one length for damage and cuts the longer down. A value put back
+is put back one property at a time -- a switch, a merge, and by reading
+(not run) a restore to a version and an import's replay -- so between the
+first and the second the lists differ by all of it, and both are cut to
+nothing. 31.6's audit of "a value put back is the whole of what is held"
+did not reach a pair held in two containers.
+
+**Proposed.**
+
+1. *The pair put back whole.* The cut in `updateColors()` goes, or waits
+   for the batch to end (`RestoreBatch`, 27.67): first, since it loses
+   what a branch holds on a plain switch.
+2. *One unit, by name.* `ColoredElements` and `MappedColors` are one thing
+   said in two properties -- as a sketch's constraints and geometry are
+   (31.5), but across the object and its view provider, which a unit
+   cannot yet be. Merged by what it holds (31.8, 31.10): the element's
+   mapped name is the key, the colour its value.
+3. *`ShapeAppearance`'s per-face part is not merged.* It is what
+   `updateColors()` makes of the names after the merge's recompute
+   (31.7). Its base, the object's one material, is a value like any.
+
+**Questions.**
+
+| | Question | Recommended |
+| --- | --- | --- |
+| Q1 | A face's whole material by name, or its colour only | The whole material: the named list holds materials, so "only by name" is true of everything a face can be given. More to change in the storage of docs/ShapeAppearanceDesign.md. |
+| Q2 | What is written by index -- a script's `DiffuseColor`, an importer's face colours | Named when written: the faces it sets are looked up and go into the named list. Else an index path stays, and fails as the user expects. |
+| Q3 | One face painted differently on both branches | Asked, as an object's own value is: once it is by face it is a decision about the model, not view state that changes all the time (28.6 Q2's reason). |
+
+## 32. A shape diff: seeing what a merge or a pick would take (plan, 2026-10-06)
+
+**Asked (user):** "also plan for another feature. shape diff tool, so that
+the user can visualize how two shapes differ to aid decision for merging
+and picking." 28.3 Q4 had left it for later: "The picker shows values as
+text; comparing two branches in the 3D view (Onshape's visual diff) is
+left for later." A plan, with what was looked at and one probe. Nothing
+is built.
+
+### 32.1 What exists (survey)
+
+- **The two shapes are already named.** A merge preview has a line for
+  every object whose shape theirs' recompute wrote -- `derived`, with the
+  value at the base and at theirs as entity refs (28.6). A row has the
+  value before and after each `set`. The dialog shows them as nothing: "a
+  derived value -- a shape -- is named by its ref alone"
+  (`TransactionLogView.cpp`, `valueText`).
+- **Theirs' shape is read without its branch.** Probe (`sd.py`): a filleted
+  cut, changed on two branches. `getTransactionValue(theirs)` gives the
+  fragment with the element map and the `.brp` beside it, at once. Ours is
+  the live document's: the preview's `ours` ref for a derived value is the
+  base's, since 28 does not weigh what a recompute wrote.
+- **The names line up across branches.** Same probe: eight faces on each
+  side, eight names, all eight in both -- one string table for the file
+  (27.44, 27.65), and an import's tags mapped (30.16). Each pair was the
+  same face, changed.
+- **By geometry**, for a shape with no names: `TopoShape::searchSubShape`
+  finds a sub-shape of one shape in another by its geometry;
+  `CongruenceIndex` (`ShapeCongruence.h`, 27.37) says one shape is another
+  moved, and by what motion.
+- **A state as a document**: `openVersion`, `openFileBranch` (27.12,
+  27.23) -- a version or a branch open beside the document, sharing its
+  parses (27.25). The panel's versions menu opens one.
+- **A shape drawn over an object, that is not its `Shape`:** PartDesign's
+  preview (`ViewProviderAddSub`, `previewGroup`) -- what a feature adds or
+  takes, in colours of its own (`PreviewAddColor`, `PreviewSubColor`,
+  `PreviewIntersectColor`, with transparency), an annotation over the
+  view. It draws a property of its own object; nothing draws a shape that
+  is no object's.
+- **Two views with one camera:** `View3DInventor::bindView`,
+  `bindCamera`, `syncCamera`.
+
+### 32.2 Proposed shape
+
+**A state** is the live document, a branch's head, a version, or a row.
+**The diff** is of one object's shape at two of them.
+
+*How two shapes are compared*, cheapest first, each going on only with
+what the one before left unsaid:
+
+1. One ref: no difference.
+2. **By element name.** A face, edge or vertex with one name in both is
+   one thing: unchanged where the two are one geometry -- at once where
+   they are one `TShape`, which frozen values and the parse cache make
+   common (23.12, 27.25) -- else *changed*, a pair. A name in one only:
+   *added* or *removed*; and where the name is made of the other's (a face
+   a later feature split or cut, `getRelatedElements`), a pair again.
+3. **By geometry**, for what has no name, and for a shape with no element
+   map: the geometry search, face by face; the whole shape first through
+   the congruence index, so a shape only moved is said to be moved, not
+   changed in every face.
+4. **By volume**, when asked and not before: what theirs has that ours has
+   not and the reverse, two booleans. The picture that reads best for
+   solids, and the one that costs and can fail. Never in a preview by
+   itself.
+
+*What it gives* is data, with no Gui in it: for each element of either
+shape what became of it and its partner; the motion, where it is one; the
+two solids, where asked. In Part (`Part::ShapeDiff`, `Shape.diff(other)`),
+so it is tested headless and is there for a script, for the browser's
+tier and for what the road map calls the AI-native interface.
+
+*How it is shown.* In the document's own 3D view, over the object, and
+not of the document: no object, no row, no undo step, nothing saved.
+Unchanged faces grey and thin, changed ones in one colour, what only
+theirs has in another, what only ours has in a third and ghosted; a
+slider from one to the other; "differences only". Drawn as PartDesign's
+preview is: the nodes a Part view provider makes of a shape, as an
+annotation over the view. The first cut is
+Coin's: the bgfx backend draws what it claims and Coin the rest
+(docs/RenderEngine.md), so it is seen with either; the diff going down
+the scene stream to a browser is a step of its own.
+
+*Where it is asked for.*
+
+- The merge dialog: a line of an object whose shape differs, selected,
+  shows ours against theirs -- and the base against either. This is the
+  case asked for: `Box.Length` 12 here and 15 there is two numbers in the
+  dialog and two shapes in the view.
+- The panel's rows: a row against the one before it, for a pick (31.12).
+- The versions list: a version against the document as it is.
+
+*Not in this:* what the merge would *make* -- that is a merge and a
+recompute in a document of its own, then a diff against it. After the
+rest.
+
+### 32.3 Questions
+
+| | Question | Recommended |
+| --- | --- | --- |
+| Q1 | What says two faces are one | **The name first, geometry for what has none.** A name is what a reference, a colour (31.16) and a constraint hold a face by, so the diff shows what those will see. Geometry alone would call a face rebuilt in the same place unchanged though everything hung on it is lost; say so in the legend where the two disagree. |
+| Q2 | Overlay in the one view, or two views side by side | **Overlay, with the slider**, drawn the way PartDesign's preview is. Side by side is nearly there -- `openVersion` and `bindView` -- and can be had cheaply beside it, but it leaves the comparing to the eye and shows nothing of which face is which. |
+| Q3 | The first cut | **One object, from the merge dialog and from a row**; the whole document at once -- objects made, removed, moved, each one's faces -- next; the merged result last. |
+| Q4 | Volumes | **Not in the first cut.** On demand when it comes, and a candidate for the out-of-process kernel (docs/ComputeBoundaries.md). |
+| Q5 | Other things than shapes | **Part first, the entry shaped for others**: a view provider is asked to show its object at two states. A sketch's geometry by id (31.10 has it as notes already) and a mesh can follow. |
+| Q6 | An object only moved | **Shown as moved**: its outline where it was. A `Placement` is a value, and the dialog has it as text; the view has it as a ghost. |
+| Q7 | The browser | **Later**: the diff is data and can go down the stream; the first cut is the desktop's. |
+
+### 32.4 Build order, once ruled
+
+1. **Measure**: the names of two branches after the edits a user makes --
+   a parameter, a feature added before another, a sketch redrawn -- on
+   the scanner model (27.52): how many faces pair by name, how many by
+   geometry only, how long each takes. Q1 from numbers.
+2. `Part::ShapeDiff` and its Python, with tests. Headless.
+3. A value at a state as a shape: the log's value into a `TopoShape` with
+   its names, as the sketch merge reads a list (31.10); the state's
+   document where the log has not kept the value.
+4. The overlay, the dialog's and the row's entry, a Gui check.
+5. The versions list; the whole document.
+6. Volumes; the merged result; the stream.
