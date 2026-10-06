@@ -18,9 +18,11 @@ report views, the reporter's own files -- is kept beside the dev tree under
 | # | Reported | Problem | State |
 |---|---|---|---|
 | 1 | 2026-10-06 | idle progress bar in the status bar | FIXED |
-| 2 | 2026-10-06 | `scanner.FCStd` opens to errors and an empty document | OPEN |
-| 3 | 2026-10-06 | navigation style tooltips in the status bar are clipped | OPEN |
-| 4 | 2026-10-06 | status bar dimension reads `100 mm x 80 mm`, wanted `100 x 80 mm` | OPEN |
+| 2 | 2026-10-06 | a file opened from the menu comes up empty (`scanner.FCStd`) | FOUND |
+| 3 | 2026-10-06 | tooltips are clipped: navigation style, and toolbar buttons with an icon | OPEN |
+| 4 | 2026-10-06 | status bar dimension reads `100 mm x 80 mm`, wanted `100 x 80 mm` | FOUND |
+| 5 | 2026-10-06 | title bar with the workbench bar docked: the menu does not unfold on hover | OPEN |
+| 6 | 2026-10-06 | maximized with the custom title bar: sometimes no margin at the top | OPEN |
 
 ## 1. Idle progress bar in the status bar -- FIXED
 
@@ -39,7 +41,7 @@ included -- showed it.
 **Fix:** `e511bddc39`. `tests/gui/statusbar-progress-idle.py`, 11 PASS (4 FAIL
 before).
 
-## 2. `scanner.FCStd` opens to errors and an empty document -- OPEN
+## 2. A file opened from the menu comes up empty -- FOUND
 
 **Reported (2026-10-06):** "with current setting (take a snapshot of user.cfg)
 opening d:\Zheng.Lei\mech\scanner.FCStd got a bunch of warning and errors in
@@ -48,19 +50,99 @@ console without showing anything in the tree or the 3d view."
 **Evidence:** `..\dl\handson\2026-10-06\` -- `user.cfg.ondisk` and
 `system.cfg.ondisk` (the files as they were on disk at 09:37),
 `user-BaseApp.live.cfg` (the running program's parameters, exported),
-`report-view.log` (the last 400 report view lines).
+`report-view-full.log` (the report view), `scanner.FCStd` (a copy of the file,
+677 objects, written 09:17 by FreeCAD-Link 2025.1020).
 
 **Seen in the running copy:** the document `scanner` is open with 0 objects.
-The report view is one message repeated per object of the file: `Cannot create
-object 'Dimension097': (The document 'scanner' is still being filled in, and a
-command may not change it until that finishes. ...)`.
+The report view is one message per object of the file, 677 of them: `Cannot
+create object 'Dimension097': (The document 'scanner' is still being filled
+in, and a command may not change it until that finishes. ...)`.
 
-## 3. Navigation style tooltips in the status bar are clipped -- OPEN
+WARNING -- an empty `scanner` document is open in that session with the file's
+path. Saving it would write an empty document over the file. The copy above is
+intact.
+
+**Not the settings.** Reproduced in the dev tree by `Std_RecentFiles` with the
+reporter's `user.cfg` and again with a `user.cfg` holding nothing but the
+recent file: 677 refusals and 0 objects both times.
+
+**Cause:** File > Open and the recent list are commands, and a command runs
+inside `App::Document::UserEditGuard`, which refuses any change to a document
+carrying `LiveImport`. A load sets `LiveImport` on its own document
+(`Gui::Application::refreshLiveLoad`) so that a command clicked meanwhile is
+refused -- and the load a command started runs under that command's guard.
+Both halves date from 2026-08-23 (`fa503839a2`, `e20bedc723`) and neither has
+changed since; every test opens its files from Python, a command line argument
+or a drop, where no guard stands, which is how it went unseen.
+
+**Fix (not committed yet):** `App::Document::UserEditSuspend`, held by
+`Application::openDocuments` and `Document::restore` -- it steps the guard down
+for the load and a command clicked meanwhile raises its own inside it.
+`DocumentTest.liveImportUserEditSuspendedForTheLoadItself`,
+`tests/gui/open-through-command.py`.
+
+**Not checked yet:** an import started from the menu that turns `LiveImport`
+on for itself (`Gui.setLiveImport`, the IFC importer) stands in the same place.
+
+## 3. Tooltips are clipped -- OPEN
 
 **Reported (2026-10-06):** "the tooltips of navigation style option in status
-bar is clipped."
+bar is clipped." Then: "not only the navigation tooltips, some of the toolbar
+button tooltip with icon is also clipped. check my running instance."
 
-## 4. Status bar dimension: `100 x 80 mm` -- OPEN
+**Seen in the running copy:** tooltips are drawn by `Gui::TipLabel`
+(`Widgets.cpp`), not Qt's, because `ToolTipIconSize` is above 0; the
+navigation style tips are rich text, a table of `<img>` cells
+(`Mod/Tux/NavigationIndicatorGui.py`). Stylesheet `FreeCAD.qss`, theme Light,
+which gives `Gui--TipLabel` a 1px border and a radius. The last tip shown was
+393 x 100. Not reproduced or measured yet.
+
+## 4. Status bar dimension: `100 x 80 mm` -- FOUND
 
 **Reported (2026-10-06):** "in the status bar the dimension, instead of
 something like 100 mm x 80 mm, write it as 100 x 80 mm."
+
+**Where:** `View3DInventorViewer::printDimension()` joins two strings that
+each carry their unit.
+
+**Fix (not committed yet):** the unit is said once when both sides share it; a
+view 1.5 m wide and 700 mm high keeps both, and so does a schema whose text
+does not end in its unit.
+
+## 5. Title bar with the workbench bar docked: the menu does not unfold -- OPEN
+
+**Reported (2026-10-06):** "in the customized titlebar is docked with
+workbench sometimes malfunction, the menu bar will not show when mouser hover.
+I can fix it by re-docking the workbench bar." Then: "the customized title bar
+problem seem to happen before, check git history."
+
+**Seen in the running copy (state at the time, not known to be the failing
+one):** `TitleBarWidget` 1920 x 35 at the top of the main window;
+`FoldableMenuBar` 54 x 35 holding a `QMenuBar` of 558 x 21; the `Workbench`
+toolbar (851 x 35, `WorkbenchTabWidget` 832 x 29) parented to
+`MenuBarLeftArea`, not to the main window.
+
+**History to read:** `b39dd73fed` fold the title bar menu behind the logo,
+`c35c0b05a6` a hamburger, a hover, and a switch, `1863cf74a5` let the title bar
+take the workbench toolbar, `929082dc3c` ignore the reflex click that folds a
+just-unfolded menu, `d6183b77a1` and `27c5ba835f` (keyboard), `d64805c1a1` a
+menuBar() call must not shove the toolbars under the title bar.
+
+## 6. Maximized with the custom title bar: sometimes no margin at the top -- OPEN
+
+**Reported (2026-10-06):** "when maximized, sometimes, with the customized
+toolbar, it leaves no margin at top. sometimes it is fine."
+
+**Seen in the running copy (maximized, looking right at the time):** window
+geometry (0, 0, 1920 x 1040), frame (-8, -8, 1936 x 1056), screen 1920 x 1080
+at 100%, title bar at y = 0.
+
+**History to read:** `8a7f412fe3` stop a maximized custom title bar hanging
+off the top of the screen, `d712eae660` fix the 8px input offset of a
+maximized custom title bar.
+
+## Inbox
+
+Notes not sorted into an entry yet. Add a line here at any time, in any words;
+it is read before each entry is started and moved up into the table.
+
