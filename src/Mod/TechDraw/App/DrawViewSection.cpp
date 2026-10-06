@@ -1230,20 +1230,36 @@ void DrawViewSection::setChangePoints(const ChangePointVector &points)
     if (!baseDvp)
         return;
 
+    if (points.size() < 2)
+        return;
+
     auto lineEnds = sectionLineEnds();
 
-    // current section line mid point in proj cs
-    Base::Vector3d oldMid = baseDvp->projectPoint((lineEnds.first+lineEnds.second)/2);
+    // The current section line mid point. sectionLineEnds() answers in
+    // the base view's coordinates already, as projectPoint leaves them
+    // (Y inverted, not scaled); it used to be projected a second time
+    // here, which made it some other point.
+    Base::Vector3d oldMid = (lineEnds.first + lineEnds.second) / 2;
 
-    Base::Vector3d p0 = DU::toVector3d(points.front().getLocation());
-    Base::Vector3d p1 = DU::toVector3d(points.back().getLocation());
+    // The points come as the base view draws them: the same
+    // coordinates times the view's scale (the ends are drawn further
+    // out by the same length each, which their middle does not see).
+    // Taken for unscaled, every call moved a section that is not on
+    // the centroid away from it by the scale again -- a line put back
+    // where it was, in a view at 2:1, cut twice as far out.
+    double scale = baseDvp->getScale();
+    if (!(scale > 0.0))
+        scale = 1.0;
+    Base::Vector3d p0 = DU::toVector3d(points.front().getLocation()) / scale;
+    Base::Vector3d p1 = DU::toVector3d(points.back().getLocation()) / scale;
     Base::Vector3d newMid = (p1+p0)/2;
 
     if (!DU::vectorEqual(oldMid, newMid)) {
-        Base::Vector3d centroid = baseDvp->getOriginalCentroid();
-
-        newMid = baseDvp->inverseProjectPoint(newMid) + centroid; // new mid point in view cs
-        SectionOrigin.setValue(newMid);
+        // Moved by as much as the middle moved, in the plane of the
+        // base view: what the origin has along the view's direction,
+        // which the line cannot show, stays.
+        Base::Vector3d moved = baseDvp->inverseProjectPoint(newMid - oldMid);
+        SectionOrigin.setValue(SectionOrigin.getValue() + moved);
     }
 
     Base::Vector3d oldDir = lineEnds.second - lineEnds.first;

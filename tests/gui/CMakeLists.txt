@@ -223,6 +223,12 @@ fc_add_gui_test(GuiTechDrawPageBackendSwitch_tests_run
 fc_add_gui_test(GuiTechDrawPageBackendSingleDraw_tests_run
                 techdraw-page-backend-single-draw.py --timeout 240)
 
+# A click on a TechDraw section line is not a move, and a move is by what
+# the line moved: every release recomputed the section, and at any scale
+# but 1:1 each time took it further from the centroid.
+fc_add_gui_test(GuiTechDrawSectionLineClick_tests_run
+                techdraw-section-line-click.py --timeout 180)
+
 # A TechDraw colour a document stored with no opacity -- every colour of an
 # older document -- is drawn: dimensions, balloons and hatches restored
 # from one were on the page fully transparent.

@@ -134,6 +134,11 @@ private:
     TechDraw::ChangePointVector m_changePointData;
     bool               m_movablePoints = false;
     bool               m_interactive = false;
+    // A change point mark being dragged, and the points as they were
+    // when the drag began: a press and release with no drag between
+    // them puts them back (onItemMoved).
+    bool               m_markDragging = false;
+    TechDraw::ChangePointVector m_changePointsAtPress;
 };
 
 }
