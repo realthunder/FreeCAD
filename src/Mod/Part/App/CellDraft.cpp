@@ -50,13 +50,14 @@
 #include <BRepBndLib.hxx>
 #include <BRepBuilderAPI_Copy.hxx>
 #include <BRepBuilderAPI_MakeFace.hxx>
+#include <BRepBuilderAPI_MakeWire.hxx>
 #include <BRepCheck_Analyzer.hxx>
 #include <BRepClass3d_SolidClassifier.hxx>
 #include <BRepClass3d_SolidExplorer.hxx>
 #include <BRepGProp.hxx>
-#include <BRepPrimAPI_MakeBox.hxx>
-#include <BRepPrimAPI_MakeCone.hxx>
+#include <BRepLib.hxx>
 #include <BRepPrimAPI_MakeCylinder.hxx>
+#include <BRepPrimAPI_MakeBox.hxx>
 #include <BRepPrimAPI_MakeSphere.hxx>
 #include <BRepPrimAPI_MakeTorus.hxx>
 #include <BRepTools.hxx>
@@ -69,6 +70,8 @@
 #include <GeomConvert.hxx>
 #include <GeomLib.hxx>
 #include <Geom_BSplineSurface.hxx>
+#include <Geom_ConicalSurface.hxx>
+#include <Geom_CylindricalSurface.hxx>
 #include <Geom_RectangularTrimmedSurface.hxx>
 #include <Geom_Surface.hxx>
 #include <IntAna_QuadQuadGeo.hxx>
@@ -221,19 +224,73 @@ CellDraft::ErrorType findRotation(const gp_Pln& pl,
     return CellDraft::NoError;
 }
 
-// A direct frame in which a surface of revolution with the given position
-// turns the same way, its seam in the same place: the position itself if it
-// is direct, its axis reversed otherwise. Measured on #876's cones and
-// #334: a tool solid in this frame fuses where one in a frame of its own
-// (gp_Ax2 from the axis alone) loses cells or leaves a self-intersection,
-// and turning the seam away (0.9 rad) does worse.
-gp_Ax2 turnFrame(const gp_Ax3& pos)
+// The position of a surface of revolution made direct, turning the same way
+// with its seam in the same place: its axis reversed if it is not direct.
+// Measured: a tool solid in a frame of its own (gp_Ax2 from the axis alone)
+// loses cells or leaves a self-intersection (#876's cones, #334), turning
+// the seam away (0.9 rad) does worse, and a tool on #523's corner post's
+// own indirect surface fuses into cells that are neither inside nor outside.
+gp_Ax3 directFrame(const gp_Ax3& pos)
 {
-    gp_Dir main = pos.Direction();
-    if (!pos.Direct()) {
-        main.Reverse();
+    if (pos.Direct()) {
+        return pos;
     }
-    return gp_Ax2(pos.Location(), main, pos.XDirection());
+    gp_Dir main = pos.Direction();
+    main.Reverse();
+    return gp_Ax3(pos.Location(), main, pos.XDirection());
+}
+
+// A solid of revolution on a surface (a cone's), between two parameters
+// along it, closed by planes square to its axis. Made on the neighbour's own
+// surface, the pieces of its extension are pieces of that surface, and the
+// merge puts them back together with the neighbour's own; made from the
+// cone's apex instead (another location and reference radius, so another
+// v), the merged cones of #876 came out with self-intersecting wires and the
+// draft fell back to merging planar pieces only (66 to 78 faces where 44 to
+// 48 do).
+TopoDS_Shape revolutionTool(const Handle(Geom_Surface) & surface, double v0, double v1)
+{
+    TopoDS_Face lateral =
+        BRepBuilderAPI_MakeFace(surface, 0.0, 2 * M_PI, v0, v1, Precision::Confusion()).Face();
+    BRep_Builder builder;
+    TopoDS_Shell shell;
+    builder.MakeShell(shell);
+    builder.Add(shell, lateral);
+    for (TopExp_Explorer exp(lateral, TopAbs_EDGE); exp.More(); exp.Next()) {
+        const TopoDS_Edge& e = TopoDS::Edge(exp.Current());
+        if (BRep_Tool::Degenerated(e) || BRep_Tool::IsClosed(e, lateral)) {
+            continue;  // the apex, the seam
+        }
+        // the cap uses the circle the other way round from the lateral face
+        TopoDS_Face cap = BRepBuilderAPI_MakeFace(BRepBuilderAPI_MakeWire(e).Wire(), true).Face();
+        for (TopExp_Explorer ce(cap, TopAbs_EDGE); ce.More(); ce.Next()) {
+            if (ce.Current().IsSame(e) && ce.Current().Orientation() == e.Orientation()) {
+                cap.Reverse();
+            }
+        }
+        builder.Add(shell, cap);
+    }
+    shell.Closed(true);
+    TopoDS_Solid solid;
+    builder.MakeSolid(solid);
+    builder.Add(solid, shell);
+    BRepLib::OrientClosedSolid(solid);
+    return solid;
+}
+
+// The range of v on a surface of revolution (v along the axis by
+// vPerHeight) that covers the given points, padded by a tenth.
+std::pair<double, double>
+axialRange(const gp_Ax3& pos, double vPerHeight, const std::vector<gp_Pnt>& pts)
+{
+    double v0 = Precision::Infinite(), v1 = -Precision::Infinite();
+    for (const auto& p : pts) {
+        double v = gp_Vec(pos.Location(), p).Dot(gp_Vec(pos.Direction())) * vPerHeight;
+        v0 = std::min(v0, v);
+        v1 = std::max(v1, v);
+    }
+    double pad = 0.1 * (v1 - v0);
+    return {v0 - pad, v1 + pad};
 }
 
 // A face on a plane covering the given points, each side extended.
@@ -1077,9 +1134,13 @@ bool CellDraftOne::attempt(double scale)
                     // plane of another tool (#523's corner post). The solid
                     // turns the way the face's surface does, so that the
                     // neighbour's own piece and the pieces of its extension
-                    // merge back as one surface.
+                    // merge back as one surface. Unlike a cone's (below), it
+                    // starts where the box does: on the face's own surface,
+                    // #876's bottom face drafted about face 16 at 5 deg came
+                    // out 0.34 over the classic draft's volume.
                     gp_Cylinder cyl = surf.Cylinder();
-                    gp_Ax2 frame = turnFrame(cyl.Position());
+                    gp_Ax3 pos = directFrame(cyl.Position());
+                    gp_Ax2 frame(pos.Location(), pos.Direction(), pos.XDirection());
                     gp_Pnt loc = frame.Location();
                     gp_Vec dir(frame.Direction());
                     double t0 = Precision::Infinite(), t1 = -Precision::Infinite();
@@ -1096,29 +1157,33 @@ bool CellDraftOne::attempt(double scale)
                     break;
                 }
                 case GeomAbs_Cone: {
-                    // the nappe the face is on, from the apex past the box,
-                    // turning as the face's surface does (see above)
+                    // the nappe the face is on, on the face's own surface
+                    // (revolutionTool()), from past the box to past the box
+                    // or to the apex
                     gp_Cone cone = surf.Cone();
-                    gp_Pnt apex = cone.Apex();
-                    gp_Dir d = cone.Axis().Direction();
-                    gp_Pnt q;
-                    BRepClass3d_SolidExplorer::FindAPointInTheFace(nb.face, q);
-                    if (gp_Vec(apex, q).Dot(gp_Vec(d)) < 0) {
-                        d.Reverse();
+                    double u0, u1, fv0, fv1;
+                    BRepTools::UVBounds(nb.face, u0, u1, fv0, fv1);
+                    double faceV = (fv0 + fv1) / 2;
+                    if (!cone.Position().Direct()) {
+                        // the axis reversed: v changes sign
+                        cone = gp_Cone(directFrame(cone.Position()), -cone.SemiAngle(),
+                                       cone.RefRadius());
+                        faceV = -faceV;
                     }
-                    double h = 1.5 * boxDiag
-                        + apex.Distance(gp_Pnt((x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2));
-                    double r = h * std::tan(std::abs(cone.SemiAngle()));
-                    gp_Ax2 frame = turnFrame(cone.Position());
-                    if (frame.Direction().Dot(d) > 0) {
-                        frame.SetLocation(apex);
-                        tool = BRepPrimAPI_MakeCone(frame, 0.0, r, h).Shape();
+                    double semi = cone.SemiAngle();
+                    auto range = axialRange(cone.Position(), 1.0 / std::cos(semi), corners);
+                    double vApex = -cone.RefRadius() / std::sin(semi);
+                    if (faceV > vApex) {
+                        range.first = std::max(range.first, vApex);
                     }
                     else {
-                        // from the far end back to the apex
-                        frame.SetLocation(apex.Translated(h * gp_Vec(d)));
-                        tool = BRepPrimAPI_MakeCone(frame, r, 0.0, h).Shape();
+                        range.second = std::min(range.second, vApex);
                     }
+                    if (range.second - range.first < Precision::Confusion()) {
+                        continue;  // the box is past the apex: nothing to extend
+                    }
+                    tool = revolutionTool(new Geom_ConicalSurface(cone), range.first,
+                                          range.second);
                     solidTool = true;
                     break;
                 }
