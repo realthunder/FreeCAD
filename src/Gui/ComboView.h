@@ -93,10 +93,17 @@ public:
 private Q_SLOTS:
     void onCurrentTabChanged(int index);
     void onSplitterMoved();
+    /// A dialog's page came up: the Tasks tab is brought to the front
+    void onDialogShown();
+    /// The Tasks tab is marked while the page it shows is a dialog's
+    void onShownDialogChanged(bool dialog);
+    /// A dialog that had been shown is gone: back to the tab before it
+    void onShownDialogClosed();
 
 protected:
     void showDialog(Gui::TaskView::TaskDialog *dlg);
-    void closeDialog();
+    /// Close \a dlg, or with null the dialog the task view takes for it
+    void closeDialog(Gui::TaskView::TaskDialog *dlg = nullptr);
     void closedDialog();
     void changeEvent(QEvent *e) override;
 

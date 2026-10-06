@@ -58,9 +58,11 @@
 #include <Base/Matrix.h>
 #include <Base/Placement.h>
 
+#include "Control.h"
 #include "Document.h"
 #include "EditableDatumLabel.h"
 #include "InventorBase.h"
+#include "MainWindow.h"
 #include "MirrorViewer.h"
 #include "Selection.h"
 #include "SoFCUnifiedSelection.h"
@@ -438,6 +440,11 @@ MirrorViewer::~MirrorViewer()
         ViewerScope scope(this);
         pimpl->doc->resetEdit();
     }
+    // And a task dialog this view still owns is closed with it: rejected,
+    // not accepted -- nobody is there to answer it
+    // (docs/TaskPanelPerView.md sec 5.4).
+    if (getMainWindow())
+        Control().ownerClosed(TaskOwner(this));
     // And whatever is left: give the view provider its children back now
     // (the initiator), or take this view out of the session (a joiner),
     // while this is still a MirrorViewer. The base destructor cannot,

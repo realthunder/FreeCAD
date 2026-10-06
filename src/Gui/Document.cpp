@@ -810,7 +810,9 @@ bool Document::setEdit(Gui::ViewProvider* p, int ModNum, const char *subname)
             }
         }
     }
-    Gui::TaskView::TaskDialog* dlg = Gui::Control().activeDialog();
+    // The dialog of the view the edit runs in, which is where an edit
+    // mode shows its panel -- not of whichever view is being handled
+    Gui::TaskView::TaskDialog* dlg = Gui::Control().activeDialog(TaskOwner(editViewer));
     if (dlg)
         dlg->setDocumentName(this->getDocument()->getName());
     if (d->_editViewProvider->isDerivedFrom(ViewProviderDocumentObject::getClassTypeId())) {

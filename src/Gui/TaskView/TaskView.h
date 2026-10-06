@@ -44,6 +44,9 @@ class Property;
 
 namespace Gui {
 class ControlSingleton;
+class Document;
+class MDIView;
+class ViewProviderDocumentObject;
 namespace DockWnd{
 class ComboView;
 }
@@ -173,6 +176,12 @@ struct TaskInfo
     /// The dialog's content widgets as shown: a listener to
     /// Control().signalShowDialog may have added its own.
     std::vector<QWidget*> contents;
+    /// Its open() has returned: not activated before that
+    bool opened {false};
+    /// Told activate() and not yet deactivate()
+    bool active {false};
+    /// Its page has been shown: the Tasks tab is raised the first time
+    bool raised {false};
 };
 
 /** TaskView class
@@ -212,9 +221,33 @@ public:
     const TaskInfo *currentTaskInfo() const;
     /// The open dialog of \a owner's view, or null
     TaskDialog *dialog(const TaskOwner &owner) const;
+    /** Whether \a info's page is the one to show while \a view is the
+     * active view (docs/TaskPanelPerView.md sec 5.1).
+     *
+     * A dialog's own view, and a dialog nobody owns for every view. And
+     * every view that is in the edit the dialog's view started: with
+     * PerViewEdit off an edit is every view's of its document, and its
+     * panel with it.
+     */
+    static bool showsFor(const TaskInfo &info, const TaskOwner &view);
+    /** \a owner's view is going: close what it owns.
+     *
+     * A dialog that asked to be told (setAutoCloseOnClosedView) is told;
+     * any other is rejected, and removed whatever it answers -- there is
+     * nobody left to answer it.
+     */
+    void ownerClosed(const TaskOwner &owner);
 
 Q_SIGNALS:
     void taskUpdate();
+    /// A dialog's page is shown for the first time, or the dialog was
+    /// asked for again while its page is the one shown: what holds the
+    /// task view brings it to the front
+    void dialogShown();
+    /// What is shown changed: a dialog's page (true) or the watchers'
+    void shownDialogChanged(bool dialog);
+    /// A dialog whose page had been shown is gone
+    void shownDialogClosed();
 
 protected Q_SLOTS:
     /// Accept or reject THE dialog: the shown one, else the only one
@@ -235,12 +268,31 @@ private:
     TaskInfo *currentTaskInfo();
     /// The dialog an argument-less entry point acts on
     TaskInfo *theTaskInfo();
-    /// Show \a info's page, or the watchers' with null
+    /// The dialog to show while \a view is the active view, or null
+    TaskInfo *infoFor(const TaskOwner &view);
+    /// Show what the main window's active view calls for
+    void showForActiveView();
+    /// Show \a info's page, or the watchers' with null, and tell the
+    /// dialogs (syncActivation)
     void setShownTaskInfo(TaskInfo *info);
+    /// The same without telling the dialogs
+    void showPage(TaskInfo *info);
+    /// activate() the dialog that became the one worked in, deactivate()
+    /// the ones that stopped being so
+    void syncActivation();
+    /// The lines on the watchers' page that say where the panels are
+    void updateHint();
+    /// Remove a dialog whose view is gone, telling or rejecting it
+    void closeLost(TaskDialog *dlg);
+    /// The same for every dialog whose view died without a word
+    void closeOrphans();
     /// The panel of the page that is shown
     QSint::ActionPanel *shownPanel() const;
-    /// Carry the contextual panels over to the page now shown
-    void moveContextualPanels(QSint::ActionPanel *to);
+    /// Whether the page shown is the watchers'
+    bool watchersShown() const;
+    /// Put the contextual panels where they belong now: in the panel of
+    /// the page that is shown, or out of sight
+    void placeContextualPanels(QSint::ActionPanel *to);
     void transactionChange();
 
 protected:
@@ -262,8 +314,9 @@ public:
     /** Add a widget to the task panel alongside whatever else is shown
      *
      * Upstream keeps one task panel per document and attaches the widget to the
-     * one belonging to \a doc. This fork's task view follows the active document
-     * instead, so \a doc is accepted for source compatibility and not used.
+     * one belonging to \a doc. This fork's task view follows the active VIEW:
+     * the widget is shown, above whatever page is, while a view of \a doc is the
+     * active one, and with every view when \a doc is null.
      */
     void addContextualPanel(QWidget* panel, App::Document* doc = nullptr);
     /// Remove a widget added by addContextualPanel and delete it
@@ -275,6 +328,10 @@ protected:
     void slotDeletedDocument();
     void slotUndoDocument(const App::Document&);
     void slotRedoDocument(const App::Document&);
+    void slotActivateView(const Gui::MDIView*);
+    void slotViewClosed(const Gui::MDIView*);
+    void slotResetEdit(const Gui::ViewProviderDocumentObject&);
+    void slotDeleteDocument(const Gui::Document&);
 
     std::vector<TaskWatcher*> ActiveWatcher;
 
@@ -290,14 +347,31 @@ protected:
 
     /// The open dialogs. One at most while ControlSingleton::exclusive().
     std::vector<TaskInfo> taskInfos;
-    /// Widgets added by addContextualPanel, which sit in the panel of the
-    /// page that is shown.
-    std::vector<QWidget*> contextualPanels;
+    /// A widget added by addContextualPanel and the document it is for
+    struct ContextualPanel
+    {
+        QWidget *widget {nullptr};
+        App::Document *doc {nullptr};
+    };
+    /// They sit in the panel of the page that is shown while a view of
+    /// their document is active, and in \ref parking otherwise.
+    std::vector<ContextualPanel> contextualPanels;
+    /// Where a contextual panel is kept while it is not shown: never
+    /// visible itself.
+    QWidget *parking;
+    /// On the watchers' page, above them: which views hold a panel that
+    /// is not the one shown, each with a button that goes there.
+    QWidget *hint;
+    QBoxLayout *hintRows;
 
     Connection connectApplicationActiveDocument;
     Connection connectApplicationDeleteDocument;
     Connection connectApplicationUndoDocument;
     Connection connectApplicationRedoDocument;
+    Connection connectApplicationActivateView;
+    Connection connectApplicationCloseView;
+    Connection connectApplicationResetEdit;
+    Connection connectGuiDeleteDocument;
 };
 
 } //namespace TaskView

@@ -100,6 +100,42 @@ public:
         return autoCloseTransaction;
     }
 
+    /** @name Closing with what the dialog was opened for
+     *  Upstream's switches (docs/TaskPanelPerView.md sec 5.4), each off
+     *  by default. A dialog that sets one is told by the matching
+     *  autoClosedOn...() and then removed; it is neither accepted nor
+     *  rejected.
+     */
+    //@{
+    /// Close when the edit running in the dialog's view is left
+    void setAutoCloseOnResetEdit(bool on) {
+        autoCloseResetEdit = on;
+    }
+    bool isAutoCloseOnResetEdit() const {
+        return autoCloseResetEdit;
+    }
+    /// Close when the document the dialog names (setDocumentName), or
+    /// the document of its view, is closed
+    void setAutoCloseOnDeletedDocument(bool on) {
+        autoCloseDeletedDocument = on;
+    }
+    bool isAutoCloseOnDeletedDocument() const {
+        return autoCloseDeletedDocument;
+    }
+    /** Be told when the dialog's view is closed.
+     *
+     * A dialog never outlives its view: there is nobody left to answer
+     * it. One that sets this is told by autoClosedOnClosedView(); any
+     * other is rejected.
+     */
+    void setAutoCloseOnClosedView(bool on) {
+        autoCloseClosedView = on;
+    }
+    bool isAutoCloseOnClosedView() const {
+        return autoCloseClosedView;
+    }
+    //@}
+
     const std::string& getDocumentName() const
     { return documentName; }
     void setDocumentName(const std::string& doc)
@@ -153,6 +189,31 @@ public:
     /// is called by the framework when the dialog is automatically closed due to
     /// changing the active transaction
     virtual void autoClosedOnTransactionChange();
+    /// is called by the framework when the dialog is automatically closed due to
+    /// leaving the edit of its view
+    virtual void autoClosedOnResetEdit();
+    /// is called by the framework when the dialog is automatically closed due to
+    /// closing its document
+    virtual void autoClosedOnDeletedDocument();
+    /// is called by the framework when the dialog is automatically closed due to
+    /// closing its view
+    virtual void autoClosedOnClosedView();
+    /** Called when the dialog becomes the one its user is working in, and
+     * when it stops being so (docs/TaskPanelPerView.md sec 4.3).
+     *
+     * A dialog is active while its view is the active one: first after
+     * open(), then every time its view is come back to. deactivate()
+     * ends each activate(), the last one before closed(). They are for
+     * what a dialog holds outside its own widgets and only one dialog can
+     * hold at a time: an event filter on the main window, a cursor. The
+     * selection gate is not among them -- a dialog's view selects into
+     * an instance of its own, gate included (sec 12).
+     *
+     * A served client's dialog is active from open() to closed(): its
+     * view is the only one its client has.
+     */
+    virtual void activate();
+    virtual void deactivate();
     /// is called by the framework if a button is clicked which has no accept or reject role
     virtual void clicked(int);
     /// is called by the framework if the dialog is accepted (Ok)
@@ -180,6 +241,9 @@ private:
     TaskOwner taskOwner;
     bool escapeButton;
     bool autoCloseTransaction;
+    bool autoCloseResetEdit {false};
+    bool autoCloseDeletedDocument {false};
+    bool autoCloseClosedView {false};
 
     friend class TaskDialogAttorney;
 };

@@ -100,8 +100,17 @@ public:
     /// active transaction.
     Py::Object setAutoCloseOnTransactionChange(const Py::Tuple&);
     Py::Object isAutoCloseOnTransactionChange(const Py::Tuple&);
+    /// The same on leaving the edit of the dialog's view, on closing its
+    /// document, and on closing its view
+    Py::Object setAutoCloseOnResetEdit(const Py::Tuple&);
+    Py::Object isAutoCloseOnResetEdit(const Py::Tuple&);
+    Py::Object setAutoCloseOnDeletedDocument(const Py::Tuple&);
+    Py::Object isAutoCloseOnDeletedDocument(const Py::Tuple&);
+    Py::Object setAutoCloseOnClosedView(const Py::Tuple&);
+    Py::Object isAutoCloseOnClosedView(const Py::Tuple&);
 
     Py::Object getDocumentName(const Py::Tuple&);
+    Py::Object setDocumentName(const Py::Tuple&);
 
     /// The desktop view the dialog belongs to, or None
     Py::Object getAssociatedView(const Py::Tuple&);
@@ -177,11 +186,25 @@ public:
     bool reject() override;
     /// is called by the framework if the user press the help button 
     void helpRequested() override;
+    /// The panel's method of the same name, when it has one
+    void autoClosedOnTransactionChange() override;
+    void autoClosedOnResetEdit() override;
+    void autoClosedOnDeletedDocument() override;
+    void autoClosedOnClosedView() override;
+    /** The panel's panelActivated() and panelDeactivated().
+     *
+     * Not activate() and deactivate(): panels have methods of those names
+     * that mean something of their own (Assembly's tear the tool down).
+     */
+    void activate() override;
+    void deactivate() override;
 
     /// event handling
     bool eventFilter(QObject *watched, QEvent *event) override;
 
 private:
+    /// Call the panel's method \a name, taking no argument, if it has one
+    void callHook(const char *name);
     bool tryLoadUiFile();
     bool tryLoadForm();
     void appendForm(QWidget* widget, const QPixmap& icon);

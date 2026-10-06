@@ -1301,3 +1301,15 @@ fc_add_gui_test(GuiSelectionPerView_tests_run selection-per-view.py
 # segmentation fault.
 fc_add_gui_test(GuiEditViewClosed_tests_run edit-view-closed.py
                 --timeout 300)
+
+# The combo view's Tasks tab shows the panel of the ACTIVE view
+# (docs/TaskPanelPerView.md sec 5.1, milestone 2): a dialog's page while
+# its view is active, the watchers and a line saying where the panel is
+# otherwise, the same page on return; the tab is raised once and not
+# taken on every activation. Closing a view leaves the edit that runs in
+# it and closes the dialog it owns -- on the tree before, closing the view
+# a sketch was edited in was a segmentation fault. The auto-close
+# switches, a contextual panel shown with its own document's views, and,
+# with the test-only TaskPanelAllowConcurrent, a dialog per view.
+fc_add_gui_test(GuiTaskPanelCombo_tests_run task-panel-combo.py
+                --timeout 400)

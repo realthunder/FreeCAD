@@ -31,6 +31,7 @@
 # include <QPointer>
 #endif
 
+#include <App/Application.h>
 #include <App/AutoTransaction.h>
 #include <Gui/ComboView.h>
 #include <Gui/DockWindowManager.h>
@@ -53,10 +54,30 @@ using namespace std;
 
 ControlSingleton* ControlSingleton::_pcSingleton = nullptr;
 static QPointer<Gui::TaskView::TaskView> _taskPanel = nullptr;
-/// The view that took a selection instance of its own for the open dialog
-static QPointer<Gui::MDIView> _dialogSelectionView;
 
 namespace {
+/// An open dialog as Control keeps it
+struct OpenDialog
+{
+    Gui::TaskView::TaskDialog *dialog {nullptr};
+    /// The view that took a selection instance of its own for it
+    QPointer<Gui::MDIView> selectionView;
+    /// Handed to the task view: until then it is nobody's answer, as a
+    /// dialog was not the active one while its own open() ran
+    bool shown {false};
+};
+/// The open dialogs. One at most while ControlSingleton::exclusive().
+std::vector<OpenDialog> openDialogs;
+
+OpenDialog *recordOf(const Gui::TaskView::TaskDialog *dlg)
+{
+    for (OpenDialog &open : openDialogs) {
+        if (open.dialog == dlg)
+            return &open;
+    }
+    return nullptr;
+}
+
 /** The observers of a dialog go where its view selects.
  *
  * A dialog is built before it is shown, by whoever shows it, so its task
@@ -87,8 +108,7 @@ void adoptDialogObservers(Gui::TaskView::TaskDialog *dlg)
 } // namespace
 
 ControlSingleton::ControlSingleton()
-  : ActiveDialog(nullptr)
-  , oldTabIndex(-1)
+  : oldTabIndex(-1)
 {
 
 }
@@ -203,21 +223,62 @@ void ControlSingleton::showModelView()
 
 bool ControlSingleton::exclusive() const
 {
-    return true;
+    static ParameterGrp::handle hGrp = App::GetApplication().GetParameterGroupByPath(
+            "User parameter:BaseApp/Preferences/TaskView");
+    return !hGrp->GetBool("TaskPanelAllowConcurrent", false);
+}
+
+bool ControlSingleton::isOpen(const Gui::TaskView::TaskDialog *dlg) const
+{
+    return recordOf(dlg) != nullptr;
 }
 
 Gui::TaskView::TaskDialog* ControlSingleton::dialogOf(const TaskOwner &owner) const
 {
-    if (!ActiveDialog)
+    // Asked by every command that wants to know whether it may run
+    if (openDialogs.empty())
         return nullptr;
-    const TaskOwner &its = ActiveDialog->owner();
     // A dialog shown with no view to name is everybody's, as every dialog
     // was before one had an owner.
-    if (its.isNull())
-        return ActiveDialog;
-    if (owner.isNull())
-        return (exclusive() || its == TaskOwner::current()) ? ActiveDialog : nullptr;
-    return its == owner ? ActiveDialog : nullptr;
+    for (const OpenDialog &open : openDialogs) {
+        if (open.shown && open.dialog->owner().isNull())
+            return open.dialog;
+    }
+    // Asked for nobody in particular: THE dialog while there can be only
+    // one, else the dialog of the view being handled.
+    const bool any = owner.isNull() && exclusive();
+    const TaskOwner whose = (owner.isNull() && !any) ? TaskOwner::current() : owner;
+    for (const OpenDialog &open : openDialogs) {
+        if (open.shown && (any || open.dialog->owner() == whose))
+            return open.dialog;
+    }
+    return nullptr;
+}
+
+Gui::TaskView::TaskDialog* ControlSingleton::blockerOf(const TaskOwner &owner) const
+{
+    const bool one = exclusive();
+    for (const OpenDialog &open : openDialogs) {
+        if (!open.shown)
+            continue;
+        // One at a time. And where several may be open, one for a view:
+        // a dialog nobody owns is everybody's, so it shares the task view
+        // with no other, whichever of the two comes first.
+        const TaskOwner &its = open.dialog->owner();
+        if (one || owner.isNull() || its.isNull() || its == owner)
+            return open.dialog;
+    }
+    return nullptr;
+}
+
+bool ControlSingleton::mayShowDialog(const TaskOwner &owner) const
+{
+    return !blockerOf(owner.isNull() ? TaskOwner::current() : owner);
+}
+
+bool ControlSingleton::mayShowDialog(App::Document *attachTo) const
+{
+    return attachTo ? !blockerOf(ownerOf(attachTo)) : mayShowDialog();
 }
 
 TaskOwner ControlSingleton::ownerOf(App::Document *doc) const
@@ -249,16 +310,15 @@ void ControlSingleton::showDialog(Gui::TaskView::TaskDialog *dlg, App::Document 
 
 void ControlSingleton::showDialogFor(Gui::TaskView::TaskDialog *dlg, const TaskOwner &owner)
 {
+    if (!dlg) {
+        qWarning() << "ControlSingleton::showDialog: Task dialog is null";
+        return;
+    }
     // only one dialog at a time, print a warning instead of raising an assert
-    if (ActiveDialog && ActiveDialog != dlg) {
-        if (dlg) {
-            qWarning() << "ControlSingleton::showDialog: Can't show "
-                       << dlg->metaObject()->className()
-                       << " since there is already an active task dialog";
-        }
-        else {
-            qWarning() << "ControlSingleton::showDialog: Task dialog is null";
-        }
+    if (!isOpen(dlg) && blockerOf(owner)) {
+        qWarning() << "ControlSingleton::showDialog: Can't show "
+                   << dlg->metaObject()->className()
+                   << " since there is already an active task dialog";
         return;
     }
 
@@ -272,26 +332,33 @@ void ControlSingleton::showDialogFor(Gui::TaskView::TaskDialog *dlg, const TaskO
     // The owner is named once, before the dialog is opened: its open() and
     // whoever hears signalShowDialog may ask for it. A dialog shown again
     // keeps the view it was first shown for.
-    const bool fresh = dlg && ActiveDialog != dlg;
-    if (fresh) {
+    if (!isOpen(dlg)) {
         TaskView::TaskDialogAttorney::setOwner(dlg, owner);
+        OpenDialog open;
+        open.dialog = dlg;
         // And the view selects into an instance of its own for as long as
         // the dialog is open (docs/TaskPanelPerView.md sec 12), unless the
         // dialog says it works on the selection every view shares.
-        if (!_dialogSelectionView && dlg->usesOwnSelection()) {
+        if (dlg->usesOwnSelection()) {
             if (MDIView *view = owner.mdiView()) {
                 view->takeOwnSelection();
-                _dialogSelectionView = view;
+                open.selectionView = view;
             }
         }
+        openDialogs.push_back(open);
+        // Heard from the start: a dialog may be closed by its own open()
+        connect(dlg, &TaskView::TaskDialog::aboutToBeDestroyed,
+                this, [this, dlg] { closedDialog(dlg); });
         adoptDialogObservers(dlg);
     }
 
+    bool handed = false;
     auto pcComboView = qobject_cast<Gui::DockWnd::ComboView*>
         (Gui::DockWindowManager::instance()->getDockWindow("Combo View"));
     // should return the pointer to combo view
     if (pcComboView) {
         pcComboView->showDialog(dlg);
+        handed = true;
 
         // make sure that the combo view is shown
         auto dw = qobject_cast<QDockWidget*>(pcComboView->parentWidget());
@@ -300,12 +367,6 @@ void ControlSingleton::showDialogFor(Gui::TaskView::TaskDialog *dlg, const TaskO
             dw->toggleViewAction()->activate(QAction::Trigger);
             dw->setFeatures(QDockWidget::DockWidgetMovable|QDockWidget::DockWidgetFloatable);
         }
-
-        if (ActiveDialog == dlg)
-            return; // dialog is already defined
-        ActiveDialog = dlg;
-        connect(dlg, &TaskView::TaskDialog::aboutToBeDestroyed,
-                this, &ControlSingleton::closedDialog);
     }
     // not all workbenches have the combo view enabled
     else if (!_taskPanel) {
@@ -315,11 +376,20 @@ void ControlSingleton::showDialogFor(Gui::TaskView::TaskDialog *dlg, const TaskO
         _taskPanel = new Gui::TaskView::TaskView(dw);
         dw->setWidget(_taskPanel);
         _taskPanel->showDialog(dlg);
+        handed = true;
         // Opposite the tree, which owns the left side.
         getMainWindow()->addDockWidget(Qt::RightDockWidgetArea, dw);
         connect(dlg, &TaskView::TaskDialog::destroyed, dw, &ControlSingleton::deleteLater);
         dw->show();
         dw->raise();
+    }
+
+    // Still there: its own open() may have closed it
+    if (OpenDialog *open = recordOf(dlg)) {
+        if (handed)
+            open->shown = true;
+        else
+            closedDialog(dlg);
     }
 }
 
@@ -337,96 +407,149 @@ Gui::TaskView::TaskDialog* ControlSingleton::activeDialog(App::Document *attache
 {
     if (!attachedTo)
         return activeDialog();
-    Gui::TaskView::TaskDialog *dlg = dialogOf(TaskOwner());
-    if (!dlg || dlg->owner().isNull())
-        return dlg;
-    Gui::Document *gdoc = dlg->owner().document();
-    return (gdoc && gdoc->getDocument() == attachedTo) ? dlg : nullptr;
+    // The dialog of one of the document's views: of the view being
+    // handled first, when it is one of them.
+    const TaskOwner current = TaskOwner::current();
+    Gui::TaskView::TaskDialog *found = nullptr;
+    for (const OpenDialog &open : openDialogs) {
+        if (!open.shown)
+            continue;
+        const TaskOwner &its = open.dialog->owner();
+        if (its.isNull())
+            return open.dialog;
+        Gui::Document *gdoc = its.document();
+        if (!gdoc || gdoc->getDocument() != attachedTo)
+            continue;
+        if (its == current)
+            return open.dialog;
+        if (!found)
+            found = open.dialog;
+    }
+    return found;
 }
 
 void ControlSingleton::accept(const TaskOwner &owner)
 {
-    if (dialogOf(owner))
-        accept();
+    if (auto dlg = dialogOf(owner))
+        acceptDialog(dlg);
 }
 
 void ControlSingleton::reject(const TaskOwner &owner)
 {
-    if (dialogOf(owner))
-        reject();
+    if (auto dlg = dialogOf(owner))
+        rejectDialog(dlg);
 }
 
 void ControlSingleton::closeDialog(const TaskOwner &owner)
 {
-    if (dialogOf(owner))
-        closeDialog();
+    if (auto dlg = dialogOf(owner))
+        removeDialog(dlg);
 }
 
 void ControlSingleton::accept(App::Document *attachedTo)
 {
-    if (activeDialog(attachedTo))
-        accept();
+    if (auto dlg = activeDialog(attachedTo))
+        acceptDialog(dlg);
 }
 
 void ControlSingleton::reject(App::Document *attachedTo)
 {
-    if (activeDialog(attachedTo))
-        reject();
+    if (auto dlg = activeDialog(attachedTo))
+        rejectDialog(dlg);
 }
 
 void ControlSingleton::closeDialog(App::Document *attachedTo)
 {
-    if (activeDialog(attachedTo))
-        closeDialog();
+    if (auto dlg = activeDialog(attachedTo))
+        removeDialog(dlg);
 }
 
 void ControlSingleton::accept()
 {
-    Gui::TaskView::TaskView* taskView = taskPanel();
-    if (taskView) {
-        taskView->accept();
-        qApp->processEvents(QEventLoop::ExcludeUserInputEvents |
-                            QEventLoop::ExcludeSocketNotifiers);
-    }
+    acceptDialog(dialogOf(TaskOwner()));
 }
 
 void ControlSingleton::reject()
 {
+    rejectDialog(dialogOf(TaskOwner()));
+}
+
+void ControlSingleton::closeDialog()
+{
+    removeDialog(dialogOf(TaskOwner()));
+}
+
+// The dialog these three act on is named to the task view: left to itself
+// it takes the one whose page it shows, which need not be the one asked
+// about.
+
+void ControlSingleton::acceptDialog(Gui::TaskView::TaskDialog *dlg)
+{
     Gui::TaskView::TaskView* taskView = taskPanel();
     if (taskView) {
-        taskView->reject();
+        if (dlg)
+            taskView->accept(dlg);
+        else
+            taskView->accept();
         qApp->processEvents(QEventLoop::ExcludeUserInputEvents |
                             QEventLoop::ExcludeSocketNotifiers);
     }
 }
 
-void ControlSingleton::closeDialog()
+void ControlSingleton::rejectDialog(Gui::TaskView::TaskDialog *dlg)
+{
+    Gui::TaskView::TaskView* taskView = taskPanel();
+    if (taskView) {
+        if (dlg)
+            taskView->reject(dlg);
+        else
+            taskView->reject();
+        qApp->processEvents(QEventLoop::ExcludeUserInputEvents |
+                            QEventLoop::ExcludeSocketNotifiers);
+    }
+}
+
+void ControlSingleton::removeDialog(Gui::TaskView::TaskDialog *dlg)
 {
     auto pcComboView = qobject_cast<Gui::DockWnd::ComboView*>
         (Gui::DockWindowManager::instance()->getDockWindow("Combo View"));
     // should return the pointer to combo view
     if (pcComboView) {
-        pcComboView->closeDialog();
+        pcComboView->closeDialog(dlg);
     } else if (_taskPanel) {
-        _taskPanel->removeDialog();
+        if (dlg)
+            _taskPanel->removeDialog(dlg);
+        else
+            _taskPanel->removeDialog();
     }
 }
 
-void ControlSingleton::closedDialog()
+void ControlSingleton::ownerClosed(const TaskOwner &owner)
 {
-    ActiveDialog = nullptr;
+    if (Gui::TaskView::TaskView* taskView = taskPanel())
+        taskView->ownerClosed(owner);
+}
+
+void ControlSingleton::closedDialog(Gui::TaskView::TaskDialog *dlg)
+{
+    QPointer<MDIView> selectionView;
+    for (auto it = openDialogs.begin(); it != openDialogs.end(); ++it) {
+        if (it->dialog == dlg) {
+            selectionView = it->selectionView;
+            openDialogs.erase(it);
+            break;
+        }
+    }
     // After the dialog's own closed(): what it left selected is what its
     // view hands back to the room.
-    if (MDIView *view = _dialogSelectionView) {
-        _dialogSelectionView = nullptr;
+    if (MDIView *view = selectionView)
         view->releaseOwnSelection();
-    }
     if (auto pcComboView = qobject_cast<Gui::DockWnd::ComboView*>
         (Gui::DockWindowManager::instance()->getDockWindow("Combo View"))) {
         pcComboView->closedDialog();
         // make sure that the combo view is shown
         auto dw = qobject_cast<QDockWidget*>(pcComboView->parentWidget());
-        if (dw) {
+        if (dw && openDialogs.empty()) {
             dw->setFeatures(QDockWidget::DockWidgetClosable
                             | QDockWidget::DockWidgetMovable
                             | QDockWidget::DockWidgetFloatable);

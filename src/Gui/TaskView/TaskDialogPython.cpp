@@ -167,6 +167,7 @@ void ControlPy::init_type()
                         "document 'attachTo', else the view being handled when this is\n"
                         "called. A deferred call (a timer) should pass the view it was\n"
                         "asked under.\n"
+                        "Returns the task dialog.\n"
                         "if a task is already active a RuntimeError is raised");
     add_keyword_method("activeDialog",&ControlPy::activeDialog,
                         "check if a dialog is active in the task panel\n"
@@ -234,15 +235,20 @@ Py::Object ControlPy::showDialog(const Py::Tuple& args, const Py::Dict& kwds)
                                      const_cast<char**>(names), &arg0, &view, &attachTo))
         throw Py::Exception();
     PyTaskTarget target(view, attachTo);
-    Gui::TaskView::TaskDialog* act = Gui::Control().activeDialog();
-    if (act)
+    // Asked before the dialog is built: building it takes the panel's
+    // form, and a refused dialog would take the form with it
+    const bool may = target.document ? Gui::Control().mayShowDialog(target.document)
+                                     : Gui::Control().mayShowDialog(target.owner);
+    if (!may)
         throw Py::RuntimeError("Active task dialog found");
     auto dlg = new TaskDialogPython(Py::Object(arg0));
+    // Held by a guarded pointer: the panel's own open() may close it
+    Py::Object task = Py::asObject(new TaskDialogPy(dlg));
     if (target.document)
         Gui::Control().showDialog(dlg, target.document);
     else
         Gui::Control().showDialog(dlg, target.owner);
-    return Py::None();
+    return task;
 }
 
 Py::Object ControlPy::activeDialog(const Py::Tuple& args, const Py::Dict& kwds)
@@ -470,8 +476,27 @@ void TaskDialogPy::init_type()
                        "active transaction");
     add_varargs_method("isAutoCloseOnTransactionChange",&TaskDialogPy::isAutoCloseOnTransactionChange,
                        "Checks if the task dialog will be closed when the active transaction has changed -> bool");
+    add_varargs_method("setAutoCloseOnResetEdit",&TaskDialogPy::setAutoCloseOnResetEdit,
+                       "Defines whether a task dialog must be closed when the edit running in\n"
+                       "its view is left; the panel's autoClosedOnResetEdit() is called");
+    add_varargs_method("isAutoCloseOnResetEdit",&TaskDialogPy::isAutoCloseOnResetEdit,
+                       "Checks if the task dialog will be closed when the edit is left -> bool");
+    add_varargs_method("setAutoCloseOnDeletedDocument",&TaskDialogPy::setAutoCloseOnDeletedDocument,
+                       "Defines whether a task dialog must be closed when the document it names\n"
+                       "(setDocumentName), or the document of its view, is closed; the panel's\n"
+                       "autoClosedOnDeletedDocument() is called");
+    add_varargs_method("isAutoCloseOnDeletedDocument",&TaskDialogPy::isAutoCloseOnDeletedDocument,
+                       "Checks if the task dialog will be closed with its document -> bool");
+    add_varargs_method("setAutoCloseOnClosedView",&TaskDialogPy::setAutoCloseOnClosedView,
+                       "Defines whether the panel's autoClosedOnClosedView() is called when the\n"
+                       "view the task dialog belongs to is closed. A dialog never outlives its\n"
+                       "view: one that does not ask for this is rejected.");
+    add_varargs_method("isAutoCloseOnClosedView",&TaskDialogPy::isAutoCloseOnClosedView,
+                       "Checks if the task dialog is told when its view is closed -> bool");
     add_varargs_method("getDocumentName",&TaskDialogPy::getDocumentName,
                        "Get the name of the document the task dialog is attached to -> str");
+    add_varargs_method("setDocumentName",&TaskDialogPy::setDocumentName,
+                       "Set the name of the document the task dialog is attached to");
     add_varargs_method("getAssociatedView",&TaskDialogPy::getAssociatedView,
                        "Get the view of the main window the task dialog belongs to -> view or None\n"
                        "None for a dialog that belongs to no view, or to a served client's.");
@@ -587,11 +612,62 @@ Py::Object TaskDialogPy::isAutoCloseOnTransactionChange(const Py::Tuple& args)
     return Py::Boolean(dialog->isAutoCloseOnTransactionChange());
 }
 
+Py::Object TaskDialogPy::setAutoCloseOnResetEdit(const Py::Tuple& args)
+{
+    Py::Boolean value(args[0]);
+    dialog->setAutoCloseOnResetEdit(static_cast<bool>(value));
+    return Py::None();
+}
+
+Py::Object TaskDialogPy::isAutoCloseOnResetEdit(const Py::Tuple& args)
+{
+    if (!PyArg_ParseTuple(args.ptr(), ""))
+        throw Py::Exception();
+    return Py::Boolean(dialog->isAutoCloseOnResetEdit());
+}
+
+Py::Object TaskDialogPy::setAutoCloseOnDeletedDocument(const Py::Tuple& args)
+{
+    Py::Boolean value(args[0]);
+    dialog->setAutoCloseOnDeletedDocument(static_cast<bool>(value));
+    return Py::None();
+}
+
+Py::Object TaskDialogPy::isAutoCloseOnDeletedDocument(const Py::Tuple& args)
+{
+    if (!PyArg_ParseTuple(args.ptr(), ""))
+        throw Py::Exception();
+    return Py::Boolean(dialog->isAutoCloseOnDeletedDocument());
+}
+
+Py::Object TaskDialogPy::setAutoCloseOnClosedView(const Py::Tuple& args)
+{
+    Py::Boolean value(args[0]);
+    dialog->setAutoCloseOnClosedView(static_cast<bool>(value));
+    return Py::None();
+}
+
+Py::Object TaskDialogPy::isAutoCloseOnClosedView(const Py::Tuple& args)
+{
+    if (!PyArg_ParseTuple(args.ptr(), ""))
+        throw Py::Exception();
+    return Py::Boolean(dialog->isAutoCloseOnClosedView());
+}
+
 Py::Object TaskDialogPy::getDocumentName(const Py::Tuple& args)
 {
     if (!PyArg_ParseTuple(args.ptr(), ""))
         throw Py::Exception();
     return Py::String(dialog->getDocumentName());
+}
+
+Py::Object TaskDialogPy::setDocumentName(const Py::Tuple& args)
+{
+    const char* name = "";
+    if (!PyArg_ParseTuple(args.ptr(), "s", &name))
+        throw Py::Exception();
+    dialog->setDocumentName(name);
+    return Py::None();
 }
 
 Py::Object TaskDialogPy::getAssociatedView(const Py::Tuple& args)
@@ -875,6 +951,52 @@ void TaskDialogPython::helpRequested()
         Base::PyException e; // extract the Python error text
         e.ReportException();
     }
+}
+
+void TaskDialogPython::callHook(const char *name)
+{
+    Base::PyGILStateLocker lock;
+    try {
+        if (dlg.hasAttr(std::string(name))) {
+            Py::Callable method(dlg.getAttr(std::string(name)));
+            Py::Tuple args;
+            method.apply(args);
+        }
+    }
+    catch (Py::Exception&) {
+        Base::PyException e; // extract the Python error text
+        e.ReportException();
+    }
+}
+
+void TaskDialogPython::autoClosedOnTransactionChange()
+{
+    callHook("autoClosedOnTransactionChange");
+}
+
+void TaskDialogPython::autoClosedOnResetEdit()
+{
+    callHook("autoClosedOnResetEdit");
+}
+
+void TaskDialogPython::autoClosedOnDeletedDocument()
+{
+    callHook("autoClosedOnDeletedDocument");
+}
+
+void TaskDialogPython::autoClosedOnClosedView()
+{
+    callHook("autoClosedOnClosedView");
+}
+
+void TaskDialogPython::activate()
+{
+    callHook("panelActivated");
+}
+
+void TaskDialogPython::deactivate()
+{
+    callHook("panelDeactivated");
 }
 
 bool TaskDialogPython::eventFilter(QObject *watched, QEvent *event)

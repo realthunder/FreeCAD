@@ -27,6 +27,7 @@
 # include <QActionEvent>
 # include <QApplication>
 # include <QCursor>
+# include <QLabel>
 # include <QLineEdit>
 # include <QPointer>
 # include <QPushButton>
@@ -35,12 +36,19 @@
 # include <QComboBox>
 #endif
 
+#include <optional>
+
+#include <App/Document.h>
 #include <Gui/ActionFunction.h>
 #include <Gui/Application.h>
+#include <Gui/BitmapFactory.h>
 #include <Gui/Control.h>
 #include <Gui/Document.h>
 #include <Gui/MainWindow.h>
+#include <Gui/MDIView.h>
+#include <Gui/ViewerContext.h>
 #include <Gui/ViewParams.h>
+#include <Gui/ViewProviderDocumentObject.h>
 #include <Gui/Widgets.h>
 
 #include "TaskView.h"
@@ -55,6 +63,17 @@
 
 using namespace Gui::TaskView;
 namespace sp = std::placeholders;
+
+namespace {
+/// The view the main window's user is working in. Not the view being
+/// handled (TaskOwner::current()): a client's request does not change
+/// what the desktop's task view shows.
+Gui::TaskOwner activeOwner()
+{
+    Gui::MainWindow *mw = Gui::getMainWindow();
+    return Gui::TaskOwner(mw ? mw->activeWindow() : nullptr);
+}
+} // namespace
 
 
 //**************************************************************************
@@ -347,6 +366,24 @@ TaskView::TaskView(QWidget *parent)
     // this->scrollarea->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     this->scrollarea->setMinimumWidth(200);
 
+    // Where the panels are, when the page shown is the watchers' and a
+    // dialog is open for another view: a box above the watchers with a
+    // button per view. Hidden while it has nothing to say.
+    auto hintBox = new TaskBox(Gui::BitmapFactory().pixmap("edit-edit.svg"),
+                               tr("Task panel in another view"), false, nullptr);
+    hintBox->setObjectName(QStringLiteral("taskPanelElsewhere"));
+    auto hintBody = new QWidget(hintBox);
+    this->hintRows = new QVBoxLayout(hintBody);
+    this->hintRows->setContentsMargins(0, 0, 0, 0);
+    hintBox->groupLayout()->addWidget(hintBody);
+    this->hint = hintBox;
+    taskPanel->addWidget(hint);
+    taskPanel->setScheme(QSint::FreeCADPanelScheme::defaultScheme());
+    hint->hide();
+
+    this->parking = new QWidget(this);
+    this->parking->hide();
+
     Gui::SelectionRoom().Attach(this);
 
     //NOLINTBEGIN
@@ -362,6 +399,30 @@ TaskView::TaskView(QWidget *parent)
     connectApplicationRedoDocument = 
     App::GetApplication().signalRedoDocument.connect
         (std::bind(&Gui::TaskView::TaskView::slotRedoDocument, this, sp::_1));
+    if (Gui::Application::Instance) {
+        // The view, not the document: two views of one document are two
+        // owners (docs/TaskPanelPerView.md sec 5.1)
+        connectApplicationActivateView =
+        Gui::Application::Instance->signalActivateView.connect
+            (std::bind(&Gui::TaskView::TaskView::slotActivateView, this, sp::_1));
+        connectApplicationCloseView =
+        Gui::Application::Instance->signalCloseView.connect
+            (std::bind(&Gui::TaskView::TaskView::slotViewClosed, this, sp::_1));
+        connectApplicationResetEdit =
+        Gui::Application::Instance->signalResetEdit.connect
+            (std::bind(&Gui::TaskView::TaskView::slotResetEdit, this, sp::_1));
+    }
+    // Ahead of every other listener, the GUI's own above all: that one
+    // closes the document's views (Gui::Document::beforeDelete) before it
+    // says anything itself, and a view closed with a dialog rejects it.
+    connectGuiDeleteDocument =
+    App::GetApplication().signalDeleteDocument.connect(
+        [this](const App::Document &doc) {
+            Gui::Document *gdoc = Gui::Application::Instance
+                ? Gui::Application::Instance->getDocument(&doc) : nullptr;
+            if (gdoc)
+                slotDeleteDocument(*gdoc);
+        }, fastsignals::at_front);
 
     this->timer = new QTimer(this);
     this->timer->setSingleShot(true);
@@ -377,6 +438,10 @@ TaskView::~TaskView()
     connectApplicationDeleteDocument.disconnect();
     connectApplicationUndoDocument.disconnect();
     connectApplicationRedoDocument.disconnect();
+    connectApplicationActivateView.disconnect();
+    connectApplicationCloseView.disconnect();
+    connectApplicationResetEdit.disconnect();
+    connectGuiDeleteDocument.disconnect();
     Gui::SelectionRoom().Detach(this);
 
     if (ActiveWatcher.size()) {
@@ -389,8 +454,14 @@ TaskView::~TaskView()
 
 bool TaskView::isEmpty(bool includeWatcher) const
 {
-    if (!taskInfos.empty() || !contextualPanels.empty())
+    if (!taskInfos.empty())
         return false;
+    // A contextual panel counts while it is shown, which is while a view
+    // of its document is the active one
+    for (const ContextualPanel &panel : contextualPanels) {
+        if (panel.widget->parentWidget() != parking)
+            return false;
+    }
 
     if (includeWatcher) {
         for (auto * watcher : ActiveWatcher) {
@@ -543,14 +614,129 @@ QSize TaskView::minimumSizeHint() const
 void TaskView::slotActiveDocument(const App::Document& doc)
 {
     Q_UNUSED(doc); 
-    if (taskInfos.empty())
+    if (watchersShown())
         updateWatcher();
 }
 
 void TaskView::slotDeletedDocument()
 {
-    if (taskInfos.empty())
+    if (watchersShown())
         updateWatcher();
+}
+
+void TaskView::slotActivateView(const Gui::MDIView *view)
+{
+    Q_UNUSED(view);
+    showForActiveView();
+    // A view that went without being closed leaves its dialog to nobody,
+    // and while only one dialog may be open nothing else could be shown.
+    // Not from here: this is in the middle of an activation.
+    for (const TaskInfo &info : taskInfos) {
+        if (!info.owner.isNull() && !info.owner.isValid()) {
+            // NOLINTNEXTLINE
+            QTimer::singleShot(0, this, &TaskView::closeOrphans);
+            break;
+        }
+    }
+}
+
+void TaskView::closeLost(TaskDialog *dlg)
+{
+    if (dlg->isAutoCloseOnClosedView())
+        dlg->autoClosedOnClosedView();
+    else
+        reject(dlg);
+    // Whatever it answered: there is nobody left to answer it
+    if (infoOf(dlg))
+        removeDialog(dlg);
+}
+
+void TaskView::closeOrphans()
+{
+    // By the dialogs' own pointers: removing one takes its entry out
+    std::vector<TaskDialog*> lost;
+    for (const TaskInfo &info : taskInfos) {
+        if (!info.owner.isNull() && !info.owner.isValid())
+            lost.push_back(info.ActiveDialog);
+    }
+    for (TaskDialog *dlg : lost) {
+        if (infoOf(dlg))
+            closeLost(dlg);
+    }
+}
+
+void TaskView::ownerClosed(const TaskOwner &owner)
+{
+    if (owner.isNull())
+        return;
+    std::vector<TaskDialog*> lost;
+    for (const TaskInfo &info : taskInfos) {
+        if (info.owner == owner)
+            lost.push_back(info.ActiveDialog);
+    }
+    if (lost.empty())
+        return;
+    // As the going view: what a dialog does on its way out -- to the
+    // selection above all -- is that view's business, and it need not be
+    // the active one.
+    std::optional<ViewerScope> scope;
+    if (ViewerContext *context = owner.context())
+        scope.emplace(context);
+    for (TaskDialog *dlg : lost) {
+        if (infoOf(dlg))
+            closeLost(dlg);
+    }
+}
+
+void TaskView::slotViewClosed(const Gui::MDIView *view)
+{
+    ownerClosed(TaskOwner(const_cast<Gui::MDIView*>(view)));
+}
+
+void TaskView::slotResetEdit(const Gui::ViewProviderDocumentObject &vp)
+{
+    // The dialog of the EDIT's view, which need not be the active one. A
+    // dialog nobody owns goes by the document it names.
+    Gui::Document *gdoc = vp.getDocument();
+    if (!gdoc)
+        return;
+    const TaskOwner owner(gdoc->editingViewer());
+    const std::string name = gdoc->getDocument()->getName();
+    std::vector<TaskDialog*> closing;
+    for (const TaskInfo &info : taskInfos) {
+        TaskDialog *dlg = info.ActiveDialog;
+        if (!dlg->isAutoCloseOnResetEdit())
+            continue;
+        if (info.owner.isNull() ? (dlg->getDocumentName().empty() || dlg->getDocumentName() == name)
+                                : info.owner == owner)
+            closing.push_back(dlg);
+    }
+    for (TaskDialog *dlg : closing) {
+        if (!infoOf(dlg))
+            continue;
+        dlg->autoClosedOnResetEdit();
+        if (infoOf(dlg))
+            removeDialog(dlg);
+    }
+}
+
+void TaskView::slotDeleteDocument(const Gui::Document &gdoc)
+{
+    const std::string name = gdoc.getDocument()->getName();
+    std::vector<TaskDialog*> closing;
+    for (const TaskInfo &info : taskInfos) {
+        TaskDialog *dlg = info.ActiveDialog;
+        if (dlg->isAutoCloseOnDeletedDocument()
+                && (dlg->getDocumentName() == name || info.owner.document() == &gdoc))
+            closing.push_back(dlg);
+    }
+    for (TaskDialog *dlg : closing) {
+        if (!infoOf(dlg))
+            continue;
+        dlg->autoClosedOnDeletedDocument();
+        if (infoOf(dlg))
+            removeDialog(dlg);
+    }
 }
 
 void TaskView::transactionChange()
@@ -568,7 +754,7 @@ void TaskView::transactionChange()
         removeDialog(dlg);
     }
 
-    if (taskInfos.empty())
+    if (watchersShown())
         updateWatcher();
 }
 
@@ -594,7 +780,7 @@ void TaskView::OnChange(Gui::SelectionSingleton::SubjectType &rCaller,
         Reason.Type == SelectionChanges::SetSelection ||
         Reason.Type == SelectionChanges::RmvSelection) {
 
-        if (taskInfos.empty())
+        if (watchersShown())
             updateWatcher();
     }
 
@@ -648,20 +834,72 @@ QSint::ActionPanel *TaskView::shownPanel() const
     return taskPanel;
 }
 
-void TaskView::moveContextualPanels(QSint::ActionPanel *to)
+bool TaskView::watchersShown() const
 {
-    // They sit alongside whatever is shown, above it: taken out of the
-    // panel they are in and put at the top of the one coming up.
+    return stack->currentWidget() == scrollarea;
+}
+
+bool TaskView::showsFor(const TaskInfo &info, const TaskOwner &view)
+{
+    if (info.owner.isNull() || info.owner == view)
+        return true;
+    // An edit every view of its document takes part in is every one of
+    // those views' own, and so is its panel (PerViewEdit off): asked of
+    // the session, which was told when it began who it is for.
+    ViewerContext *its = info.owner.context();
+    ViewerContext *that = view.context();
+    if (!its || !that || !its->isEditingInitiator() || !that->isEditingViewProvider())
+        return false;
+    EditingRoot *root = its->editingRoot();
+    return root && root->isShared() && that->editingRoot() == root;
+}
+
+TaskInfo *TaskView::infoFor(const TaskOwner &view)
+{
+    // Nobody's first: it shows over everything
+    for (TaskInfo &info : taskInfos) {
+        if (info.owner.isNull())
+            return &info;
+    }
+    for (TaskInfo &info : taskInfos) {
+        if (info.owner == view)
+            return &info;
+    }
+    for (TaskInfo &info : taskInfos) {
+        if (showsFor(info, view))
+            return &info;
+    }
+    return nullptr;
+}
+
+void TaskView::placeContextualPanels(QSint::ActionPanel *to)
+{
+    // A panel is for the views of one document: shown while one of them
+    // is the active view, kept out of sight otherwise.
+    Gui::Document *gdoc = activeOwner().document();
+    App::Document *doc = gdoc ? gdoc->getDocument() : nullptr;
+    // They sit alongside whatever is shown, above it; on the watchers'
+    // page below the line that says where the panels are.
     auto box = qobject_cast<QBoxLayout*>(to->layout());
-    int at = 0;
-    for (QWidget *panel : contextualPanels) {
-        if (panel->parentWidget() == to)
+    int at = (box && hint->parentWidget() == to) ? box->indexOf(hint) + 1 : 0;
+    for (const ContextualPanel &entry : contextualPanels) {
+        QWidget *panel = entry.widget;
+        const bool here = !entry.doc || entry.doc == doc;
+        QWidget *home = here ? static_cast<QWidget*>(to) : parking;
+        if (panel->parentWidget() == home) {
+            if (here)
+                ++at;
             continue;
+        }
         // A new parent hides a widget: one its owner had not hidden is
         // shown again where it lands.
         const bool hidden = panel->isHidden();
         if (auto from = qobject_cast<QSint::ActionPanel*>(panel->parentWidget()))
             from->removeWidget(panel);
+        if (!here) {
+            panel->setParent(parking);
+            continue;
+        }
         if (box)
             box->insertWidget(at++, panel);
         else
@@ -671,22 +909,136 @@ void TaskView::moveContextualPanels(QSint::ActionPanel *to)
     }
 }
 
+void TaskView::updateHint()
+{
+    // Made anew each time: a line for every dialog whose page is not the
+    // one shown. They are read on the watchers' page only.
+    while (QLayoutItem *item = hintRows->takeAt(0)) {
+        if (QWidget *row = item->widget()) {
+            row->hide();
+            row->deleteLater();
+        }
+        delete item;
+    }
+    const TaskInfo *shown = currentTaskInfo();
+    int rows = 0;
+    for (const TaskInfo &info : taskInfos) {
+        if (&info == shown)
+            continue;
+        ++rows;
+        MDIView *view = info.owner.mdiView();
+        if (!view) {
+            // A view the main window cannot go to
+            auto label = new QLabel(info.owner.isRemote()
+                    ? tr("A remote client has a task panel open.")
+                    : tr("A task panel is open for a view that is not in this window."), hint);
+            label->setWordWrap(true);
+            hintRows->addWidget(label);
+            continue;
+        }
+        QString title = view->windowTitle();
+        title.remove(QLatin1String("[*]"));
+        auto button = new QPushButton(tr("Go to %1").arg(title), hint);
+        button->setToolTip(tr("Make %1 the active view, and show its task panel").arg(title));
+        // A long title is cut short rather than widening the dock
+        button->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Fixed);
+        const TaskOwner owner = info.owner;
+        connect(button, &QPushButton::clicked, this, [owner] {
+            MDIView *view = owner.mdiView();
+            if (view && getMainWindow())
+                getMainWindow()->setActiveWindow(view);
+        });
+        hintRows->addWidget(button);
+    }
+    if (hint->isHidden() == (rows > 0)) {
+        hint->setVisible(rows > 0);
+        triggerMinimumSizeHint();
+    }
+}
+
+void TaskView::showPage(TaskInfo *info)
+{
+    QWidget *page = info ? static_cast<QWidget*>(info->page) : scrollarea;
+    QSint::ActionPanel *panel = info ? static_cast<QSint::ActionPanel*>(info->page->panel)
+                                     : taskPanel;
+    if (stack->currentWidget() != page) {
+        // The watchers are on their page only while it is the one shown,
+        // as they were in the one shared panel only while no dialog was
+        if (watchersShown())
+            removeTaskWatcher();
+        placeContextualPanels(panel);
+        stack->setCurrentWidget(page);
+        if (!info) {
+            taskPanel->removeStretch();
+            // put the watcher back in control
+            addTaskWatcher();
+        }
+        Q_EMIT shownDialogChanged(info != nullptr);
+        Control().signalDialogActivated(info ? info->owner : TaskOwner());
+    }
+    else {
+        // The same page, for a view of another document perhaps
+        placeContextualPanels(panel);
+    }
+    updateHint();
+    if (info && !info->raised) {
+        info->raised = true;
+        Q_EMIT dialogShown();
+    }
+}
+
+void TaskView::syncActivation()
+{
+    // A dialog is active while its page is the one shown, and a client's
+    // from open() to closed(): its view is the only one its client has.
+    // By the dialogs' own pointers, and looked up again each time: what a
+    // dialog does when it is told may close one.
+    const TaskInfo *shownInfo = currentTaskInfo();
+    const TaskDialog *shown = shownInfo ? shownInfo->ActiveDialog : nullptr;
+    std::vector<TaskDialog*> ending, starting;
+    for (const TaskInfo &info : taskInfos) {
+        const bool wanted = info.opened && (info.ActiveDialog == shown || info.owner.isRemote());
+        if (info.active && !wanted)
+            ending.push_back(info.ActiveDialog);
+        else if (!info.active && wanted)
+            starting.push_back(info.ActiveDialog);
+    }
+    for (TaskDialog *dlg : ending) {
+        TaskInfo *info = infoOf(dlg);
+        if (info && info->active) {
+            info->active = false;
+            dlg->deactivate();
+        }
+    }
+    for (TaskDialog *dlg : starting) {
+        TaskInfo *info = infoOf(dlg);
+        if (info && !info->active) {
+            info->active = true;
+            dlg->activate();
+        }
+    }
+}
+
 void TaskView::setShownTaskInfo(TaskInfo *info)
 {
-    QSint::ActionPanel *panel = info ? info->page->panel : taskPanel;
-    moveContextualPanels(panel);
-    stack->setCurrentWidget(info ? static_cast<QWidget*>(info->page) : scrollarea);
+    showPage(info);
+    syncActivation();
+}
+
+void TaskView::showForActiveView()
+{
+    setShownTaskInfo(infoFor(activeOwner()));
 }
 
 void TaskView::showDialog(TaskDialog *dlg)
 {
-    // if trying to open the same dialog twice nothing needs to be done
-    if (infoOf(dlg))
+    // if trying to open the same dialog twice nothing needs to be done,
+    // but to bring it to the front as the first time
+    if (TaskInfo *again = infoOf(dlg)) {
+        if (currentTaskInfo() == again)
+            Q_EMIT dialogShown();
         return;
-
-    // remove the TaskWatcher as long as the Dialog is up
-    if (taskInfos.empty())
-        removeTaskWatcher();
+    }
 
     // Every dialog has a page of its own. That only one may be open is
     // not decided here: ControlSingleton::exclusive().
@@ -743,9 +1095,6 @@ void TaskView::showDialog(TaskDialog *dlg)
     // give to task dialog to customize the button box
     dlg->modifyStandardButtons(info.ActiveCtrl->buttonBox);
 
-    // The contextual panels first: they stay above the dialog's content
-    moveContextualPanels(panel);
-
     if (ViewParams::getStickyTaskControl() && parentWidget()) {
         if (dlg->buttonPosition() == TaskDialog::North)
             info.page->layout->insertWidget(0, info.ActiveCtrl);
@@ -770,13 +1119,20 @@ void TaskView::showDialog(TaskDialog *dlg)
     if (!dlg->needsFullSpace())
         panel->addStretch();
 
-    // set as active Dialog
+    // Shown at once when its view is the one being worked in. Otherwise
+    // its page waits for that view, and the watchers' page says where it
+    // is (docs/TaskPanelPerView.md sec 5.1).
     TaskPage *page = info.page;
     stack->addWidget(page);
     taskInfos.push_back(std::move(info));
-    setShownTaskInfo(&taskInfos.back());
+    showPage(infoFor(activeOwner()));
 
     dlg->open();
+    // Opened, then activated; open() may have closed it
+    if (TaskInfo *opened = infoOf(dlg)) {
+        opened->opened = true;
+        syncActivation();
+    }
 
     getMainWindow()->updateActions();
 
@@ -832,27 +1188,33 @@ void TaskView::removeDialog(TaskDialog *dlg)
     if (info) {
         // See 'accept' and 'reject'
         if (dlg->property("taskview_accept_or_reject").isNull()) {
-            Control().signalRemoveDialog(info->page, info->contents, dlg->owner());
-            for (auto widget : info->contents)
-                info->page->panel->removeWidget(widget);
-            remove = dlg;
-            page = info->page;
-            taskInfos.erase(taskInfos.begin() + (info - taskInfos.data()));
-            // Whatever else is open comes up, else the watchers' page
-            setShownTaskInfo(taskInfos.empty() ? nullptr : &taskInfos.back());
-            stack->removeWidget(page);
-            page->hide();
+            // Its last activation ends before it is told it is closed
+            if (info->active) {
+                info->active = false;
+                dlg->deactivate();
+                info = infoOf(dlg);
+            }
         }
         else {
             dlg->setProperty("taskview_remove_dialog", true);
+            info = nullptr;
         }
     }
 
-    if (taskInfos.empty()) {
-        taskPanel->removeStretch();
-
-        // put the watcher back in control
-        addTaskWatcher();
+    bool wasShown = false;
+    if (info) {
+        Control().signalRemoveDialog(info->page, info->contents, dlg->owner());
+        for (auto widget : info->contents)
+            info->page->panel->removeWidget(widget);
+        remove = dlg;
+        page = info->page;
+        wasShown = info->raised;
+        taskInfos.erase(taskInfos.begin() + (info - taskInfos.data()));
+        // What the active view calls for comes up: another dialog's page,
+        // else the watchers', which get their place back with it
+        showForActiveView();
+        stack->removeWidget(page);
+        page->hide();
     }
 
     if (remove) {
@@ -861,6 +1223,8 @@ void TaskView::removeDialog(TaskDialog *dlg)
         // children as they were the one shared panel's.
         connect(remove, &QObject::destroyed, page, &QObject::deleteLater);
         remove->closed();
+        if (wasShown && watchersShown())
+            Q_EMIT shownDialogClosed();
         remove->emitDestructionSignal();
         if (getMainWindow()->isClosingAll())
             delete remove;
@@ -878,7 +1242,7 @@ void TaskView::updateWatcher(void)
 
 void TaskView::onUpdateWatcher(void)
 {
-    if (!taskInfos.empty())
+    if (!watchersShown())
         return;
 
     if (ActiveWatcher.empty()) {
@@ -934,7 +1298,7 @@ void TaskView::addTaskWatcher(const std::vector<TaskWatcher*> &Watcher)
         tw->deleteLater();
 
     ActiveWatcher = Watcher;
-    if (taskInfos.empty())
+    if (watchersShown())
         addTaskWatcher();
 }
 
@@ -943,7 +1307,7 @@ void TaskView::takeTaskWatcher(TaskView *other)
     clearTaskWatcher();
     ActiveWatcher.swap(other->ActiveWatcher);
     other->clearTaskWatcher();
-    if (isEmpty(false))
+    if (watchersShown())
         addTaskWatcher();
 }
 
@@ -1088,15 +1452,17 @@ void TaskView::restoreActionStyle()
 
 void TaskView::addContextualPanel(QWidget* panel, App::Document* doc)
 {
-    // See the declaration: this fork's task view is not per-document.
-    (void)doc;
-    if (!panel || std::find(contextualPanels.begin(), contextualPanels.end(), panel)
-            != contextualPanels.end())
+    if (!panel)
         return;
+    for (const ContextualPanel &entry : contextualPanels) {
+        if (entry.widget == panel)
+            return;
+    }
 
-    shownPanel()->addWidget(panel);
-    contextualPanels.push_back(panel);
-    panel->show();
+    contextualPanels.push_back({panel, doc});
+    placeContextualPanels(shownPanel());
+    if (panel->parentWidget() != parking)
+        panel->show();
     triggerMinimumSizeHint();
     Q_EMIT taskUpdate();
 }
@@ -1104,7 +1470,8 @@ void TaskView::addContextualPanel(QWidget* panel, App::Document* doc)
 void TaskView::removeContextualPanel(QWidget* panel, App::Document* doc)
 {
     (void)doc;
-    auto it = std::find(contextualPanels.begin(), contextualPanels.end(), panel);
+    auto it = std::find_if(contextualPanels.begin(), contextualPanels.end(),
+            [panel](const ContextualPanel &entry) { return entry.widget == panel; });
     if (!panel || it == contextualPanels.end())
         return;
 

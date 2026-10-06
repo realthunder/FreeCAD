@@ -134,6 +134,31 @@ void TaskDialog::autoClosedOnTransactionChange()
 
 }
 
+void TaskDialog::autoClosedOnResetEdit()
+{
+
+}
+
+void TaskDialog::autoClosedOnDeletedDocument()
+{
+
+}
+
+void TaskDialog::autoClosedOnClosedView()
+{
+
+}
+
+void TaskDialog::activate()
+{
+
+}
+
+void TaskDialog::deactivate()
+{
+
+}
+
 void TaskDialog::clicked(int)
 {
 

@@ -74,6 +74,15 @@ ComboView::ComboView(bool showModel, Gui::Document* pcDocument, QWidget *parent)
     // task panel
     taskPanel = new Gui::TaskView::TaskView(this);
     taskIndex = tabs->addTab(taskPanel, tr("Tasks"));
+    // The tab follows what the task view SHOWS, which follows the active
+    // view (docs/TaskPanelPerView.md sec 5.1): raised when a dialog's
+    // page first comes up, not on every activation of its view.
+    connect(taskPanel, &Gui::TaskView::TaskView::dialogShown,
+            this, &ComboView::onDialogShown);
+    connect(taskPanel, &Gui::TaskView::TaskView::shownDialogChanged,
+            this, &ComboView::onShownDialogChanged);
+    connect(taskPanel, &Gui::TaskView::TaskView::shownDialogClosed,
+            this, &ComboView::onShownDialogClosed);
 
     // task panel
     //projectView = new Gui::ProjectWidget(this);
@@ -158,16 +167,19 @@ void ComboView::onSplitterMoved()
 
 void ComboView::showDialog(Gui::TaskView::TaskDialog *dlg)
 {
-    static QIcon icon = Gui::BitmapFactory().pixmap("edit-edit.svg");
-
     checkFocus();
 
+    // set the dialog. The Tasks tab is switched to when its page comes
+    // up (onDialogShown): at once for the view being worked in, later
+    // for another.
+    taskPanel->showDialog(dlg);
+}
+
+void ComboView::onDialogShown()
+{
     // switch to the TaskView tab
     oldTabIndex = tabs->currentIndex();
     tabs->setCurrentIndex(taskIndex);
-    tabs->setTabIcon(taskIndex, icon);
-    // set the dialog
-    taskPanel->showDialog(dlg);
 
     // force to show the combo view
     if (modelIndex < 0) {
@@ -176,22 +188,31 @@ void ComboView::showDialog(Gui::TaskView::TaskDialog *dlg)
     }
 }
 
-void ComboView::closeDialog()
+void ComboView::onShownDialogChanged(bool dialog)
+{
+    static QIcon icon = Gui::BitmapFactory().pixmap("edit-edit.svg");
+    tabs->setTabIcon(taskIndex, dialog ? icon : QIcon());
+}
+
+void ComboView::onShownDialogClosed()
+{
+    // dialog has been closed
+    tabs->setCurrentIndex(oldTabIndex);
+}
+
+void ComboView::closeDialog(Gui::TaskView::TaskDialog *dlg)
 {
     // close the dialog
     checkFocus();
-    taskPanel->removeDialog();
+    if (dlg)
+        taskPanel->removeDialog(dlg);
+    else
+        taskPanel->removeDialog();
 }
 
 void ComboView::closedDialog()
 {
-    static QIcon icon = QIcon();
-
     checkFocus();
-
-    // dialog has been closed
-    tabs->setCurrentIndex(oldTabIndex);
-    tabs->setTabIcon(taskIndex, icon);
 }
 
 void ComboView::showTreeView()

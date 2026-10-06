@@ -86,6 +86,21 @@ public:
     /// The dialog of \a owner's view, or null. A dialog that has no owner
     /// is everybody's.
     Gui::TaskView::TaskDialog* activeDialog(const TaskOwner &owner) const;
+    /** Whether showDialog() for \a owner would show a dialog, or refuse.
+     *
+     * For a caller that has to know before it builds the dialog. Null is
+     * the view being handled now, as for showDialog().
+     */
+    bool mayShowDialog(const TaskOwner &owner = TaskOwner()) const;
+    /// The same asked the way upstream keys it
+    bool mayShowDialog(App::Document *attachTo) const;
+    /** \a owner's view is going, and takes its dialog with it.
+     *
+     * For a view that is no window of the main window -- a served
+     * client's above all -- which nothing else hears of. A window's own
+     * closing is heard by the task view (Application::signalCloseView).
+     */
+    void ownerClosed(const TaskOwner &owner);
     //@}
 
     /** @name Upstream's signatures
@@ -142,6 +157,9 @@ public:
     /// The dialog's page in the task view, its content widgets, its owner.
     fastsignals::signal<void (QWidget *, std::vector<QWidget*> &, const TaskOwner &)> signalShowDialog;
     fastsignals::signal<void (QWidget *, std::vector<QWidget*> &, const TaskOwner &)> signalRemoveDialog;
+    /// The page the task view shows changed: to the dialog of this owner,
+    /// or to the watchers' page (nobody).
+    fastsignals::signal<void (const TaskOwner &)> signalDialogActivated;
 
 public Q_SLOTS:
     /// These three act on the dialog activeDialog() answers.
@@ -151,9 +169,9 @@ public Q_SLOTS:
     /// raises the task view panel
     void showTaskView();
 
-private Q_SLOTS:
+private:
     /// This get called by the TaskView when the Dialog is finished
-    void closedDialog();
+    void closedDialog(Gui::TaskView::TaskDialog *dlg);
 
 private:
     struct status {
@@ -162,7 +180,6 @@ private:
 
     std::stack<status> StatusStack;
 
-    Gui::TaskView::TaskDialog *ActiveDialog;
     int oldTabIndex;
 
 private:
@@ -179,12 +196,28 @@ private:
      * True until a transaction has an owner too: the application has one
      * active transaction, and a second dialog opening its own would
      * commit the first one's work in progress (docs/TaskPanelPerView.md
-     * sec 8). Nothing but dialogOf() depends on which way this says.
+     * sec 8). Only dialogOf() and blockerOf() depend on which way this
+     * says.
+     *
+     * A hidden parameter, TaskView/TaskPanelAllowConcurrent, says false
+     * instead. It is for tests, which open dialogs that hold no
+     * transaction: a dialog per view, the path everything here is built
+     * for and nothing yet ships.
      */
     bool exclusive() const;
     /// The dialog an entry point acts on for \a owner; the null owner is
     /// the argument left out.
     Gui::TaskView::TaskDialog* dialogOf(const TaskOwner &owner) const;
+    /// The open dialog that keeps one from being shown for \a owner (null
+    /// here is nobody), or null.
+    Gui::TaskView::TaskDialog* blockerOf(const TaskOwner &owner) const;
+    /// Whether \a dlg is one of the open dialogs
+    bool isOpen(const Gui::TaskView::TaskDialog *dlg) const;
+    /// The three entry points with the dialog settled; null is whatever
+    /// the task view takes for "the" dialog.
+    void acceptDialog(Gui::TaskView::TaskDialog *dlg);
+    void rejectDialog(Gui::TaskView::TaskDialog *dlg);
+    void removeDialog(Gui::TaskView::TaskDialog *dlg);
     /// showDialog() with the owner settled: null here is nobody.
     void showDialogFor(Gui::TaskView::TaskDialog *dlg, const TaskOwner &owner);
     /// The view a dialog keyed by \a doc belongs to.
