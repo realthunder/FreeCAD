@@ -2786,7 +2786,14 @@ per-view answer anyway.
 **Next (ordered 2026-10-06): the task panel per view.** Item E's first notch -- a panel
 has an owner view, is hosted in the combo view (shown for the active view) or in its
 view (shown always), and a client gets its own view's. Designed in
-`docs/TaskPanelPerView.md`; nothing is built.
+`docs/TaskPanelPerView.md`. Built so far (2026-10-06, sec 11 to 13 there): the owner and
+a `Control` that answers by view; a selection instance, gate included, for a view that
+edits or owns a dialog; and the combo view following the active view -- the dialog's page
+while its view is active, the watchers and a line saying where the panel is otherwise.
+`Control` keeps a record per open dialog where it had one `ActiveDialog`, but still
+admits one dialog at a time: the application's one open transaction is what stands in
+the way of more. Not built: the panel hosted in its view, and the client getting only
+its own.
 
 **Reading the list.** A is done; C, D and J have their seams built; B, E, F and I are
 wide but mechanical -- each is the move stages 1-5 made, a global becoming a row on a

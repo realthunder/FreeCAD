@@ -18,7 +18,9 @@ document is the survey (sec 2), the design (sec 3-7), the constraints that
 are not negotiable until other work lands (sec 8), the milestones with what
 each is tested by (sec 9), and the readings of the order that were assumed
 and want confirming (sec 10). What is built, and where it departs from the
-design, is sec 11: milestone 1 so far.
+design, is sec 11 to 13: milestone 1, a selection per view, and milestone
+2. Milestones 3 to 5 -- the panel inside its view, the dock overlays, the
+browser -- are not started.
 
 It is step E of `docs/ThinClient.md` 8.12 ("Chrome -- process-global ... per
 client, a Control per view, which neither fork has") taken one notch: the
@@ -724,6 +726,10 @@ do not build a task view.
 
 ### 11.5 Put to the user before the second half
 
+*Answered by sec 12 and built in sec 13: the gate went with the selection
+a view has of its own, and a view's closing is now said
+(`Application::signalCloseView`). Kept as written at the time.*
+
 The second half of milestone 2 is where behaviour changes, and one point
 of sec 4.3 does not survive contact with the fork as written:
 
@@ -934,3 +940,287 @@ transaction per session is new work, to be built on that branch's model
 merge is its own job: 482 commits, a trial merge conflicting in 94 files
 (41 Sketcher, 23 Gui, 7 App), and almost nothing in the files of this
 document.
+
+## 13. Milestone 2, second half: the task view follows the active view (2026-10-06, `48123ff033`)
+
+The behaviour of milestone 2, on the stack of sec 11.4 and the selection
+of sec 12. Combo mode is now what sec 1 says it is.
+
+### 13.1 What the user sees
+
+- The Tasks tab shows the panel of the ACTIVE view. Activate another view
+  and it shows the watchers, as with no dialog open; come back and the
+  panel is there as it was left -- the same widgets, what was typed in
+  them, where it was scrolled.
+- While the page shown is the watchers' and a dialog is open for another
+  view, a box above the watchers says so: "Task panel in another view",
+  with a button per such view, "Go to <view title>", that makes that view
+  the active one. A dialog a served client owns has a line and no button:
+  the main window has no view to go to.
+- The Tasks tab is brought to the front when a dialog's page FIRST comes
+  up, and when a dialog already shown is asked for again; not when its
+  view is merely come back to. The tab's busy icon is on while the page
+  shown is a dialog's.
+- Closing a view takes its dialog with it, and an edit that runs in it is
+  left first (13.3, point 1).
+- Nothing changes for one view, or for a dialog nobody owns: it shows over
+  everything, as every dialog did.
+
+### 13.2 What is built
+
+**The task view** (`src/Gui/TaskView/TaskView.{h,cpp}`).
+
+- `showsFor(info, view)` is the rule: a dialog's own view; every view for
+  a dialog nobody owns; and every view that is in the edit the dialog's
+  view started (13.3, point 2). `infoFor(view)` picks by it, nobody's
+  first. The view asked about is the main window's active one, never
+  `TaskOwner::current()`: a client's request must not change what the
+  desktop's task view shows.
+- `showPage` puts a page up; `syncActivation` tells the dialogs;
+  `setShownTaskInfo` is the two. They are apart because `showDialog` shows
+  the page, THEN calls `open()`, then activates: opened, then activated.
+- **The watchers are on their page only while it is the one shown**, taken
+  off and put back as it is left and returned to, exactly as they were
+  taken out of the one shared panel while a dialog was up. Every "is a
+  dialog open?" guard that meant "are the watchers showing?" asks
+  `watchersShown()` now -- seven of them; a selection change with a dialog
+  open for ANOTHER view updates the watchers, which it did not before.
+- The hint is a `TaskBox` named `taskPanelElsewhere` at the top of the
+  watchers' panel, made anew whenever the shown page or the set of dialogs
+  changes, hidden while it has nothing to say.
+- `TaskDialog::activate()` / `deactivate()`, virtual and empty. A dialog
+  is active while its page is the one shown; each `activate()` is ended
+  by a `deactivate()`, the last one before `closed()`. They are told by
+  the dialogs' own pointers, looked up again each time, because what a
+  dialog does when told may close one. Nothing is done to the selection
+  gate: sec 12 made it the view's.
+- **Contextual panels** are kept with the document they were added for
+  (`addContextualPanel(panel, doc)` no longer ignores `doc`): shown at the
+  top of whatever page is shown while a view of that document is the
+  active one, and parked in a hidden widget otherwise. A null document is
+  every view's, as before.
+- Three signals for whatever holds the task view: `dialogShown()`,
+  `shownDialogChanged(bool)`, `shownDialogClosed()`. The combo view's tab
+  switching and busy icon hang off them
+  (`ComboView::onDialogShown` and its two siblings) where they hung off
+  `showDialog` / `closedDialog`. `Control().signalDialogActivated(owner)`
+  is sent with them; nothing listens yet (M5).
+
+**Closing** (sec 5.4).
+
+- `Application::signalCloseView` and `Application::viewClosed()`, as
+  upstream has them, called from `MDIView::closeEvent` once the close is
+  accepted and before anything is taken down -- and from
+  `ViewArea::closeEvent` for every view in its cells, which go with their
+  container without being closed one by one. `signalDetachView` was there
+  already and is not this: it is sent only for a document's views and
+  after the document has let go.
+- `TaskDialog` has upstream's three switches, off by default, each with
+  its `autoClosedOn...()`: on reset edit (the dialog of the EDIT's view,
+  `Gui::Document::editingViewer()`, heard on `signalResetEdit`), on
+  deleted document (the document the dialog names, or its view's), on
+  closed view. The deleted document is heard on the App signal, connected
+  AHEAD of every other listener (`fastsignals::at_front`): the GUI's own
+  listener closes the document's views before it says anything itself
+  (`Gui::Document::beforeDelete`), and by then a view closed with a
+  dialog has rejected it -- which is what the first build did.
+- `TaskView::ownerClosed(owner)` closes what a going view owns, inside
+  that view's own `ViewerScope`. A client's mirror calls it from its
+  destructor, after it has left its edit
+  (`Control().ownerClosed`). A view that died with no word at all leaves
+  an owner that is no longer valid; the next activation finds it and
+  closes its dialog from a zero timer, because while only one dialog may
+  be open a stranded one locks the task view for good.
+
+**Control** (`src/Gui/Control.{h,cpp}`).
+
+- One `ActiveDialog` and the file-static `_dialogSelectionView` are gone:
+  a record per open dialog -- the dialog, the view that took a selection
+  instance for it, whether it has been handed to the task view. `dialogOf`
+  reads the records; `blockerOf(owner)` says which open dialog keeps one
+  from being shown for a view; `mayShowDialog()` is that question public,
+  for a caller that must know before it builds the dialog.
+- `accept` / `reject` / `closeDialog`, in every form, name the dialog to
+  the task view. Left to itself the task view takes the page it shows,
+  which with a dialog in another view is not the one asked about.
+- `exclusive()` reads the hidden `TaskView/TaskPanelAllowConcurrent`
+  (default off, no preference page): the test-only switch of sec 8. With
+  it on, one dialog per view; a dialog nobody owns still shares the task
+  view with no other.
+- `Gui::Document::setEdit` names the document on the dialog of the edit's
+  view.
+
+**Python** (`src/Gui/TaskView/TaskDialogPython.{h,cpp}`).
+
+- `Gui.Control.showDialog()` returns the task dialog, as upstream's does.
+- The task dialog has `setDocumentName`, and `setAutoCloseOnResetEdit`,
+  `...OnDeletedDocument`, `...OnClosedView` with their `is...` forms.
+- A panel's `autoClosedOnTransactionChange`, `autoClosedOnResetEdit`,
+  `autoClosedOnDeletedDocument` and `autoClosedOnClosedView` are called,
+  and its `panelActivated` / `panelDeactivated` (13.3, point 3).
+
+### 13.3 Where it departs from the design, to be confirmed
+
+1. **Closing an edit's view LEAVES the edit; it does not reject its
+   panel.** Sec 5.4 and the test of M2 say "closing the editing view
+   rejects the panel". In this fork a sketch's `reject()` is
+   `cancelEditing()`: it undoes everything done since the sketch was
+   entered. Closing a view would have thrown the sketch's work away with
+   no question asked. So the edit is left, as it is when its document is
+   closed (`Document::canClose` has always done `_resetEdit()` there):
+   what was done is kept. Leaving an edit closes its panel as it always
+   has. A dialog the view still owns after that -- one that is no edit's
+   -- has nobody left to answer it and IS rejected, unless it asked to be
+   told instead (`setAutoCloseOnClosedView`). Upstream's switch decides
+   whether a dialog closes with its view; here it decides only how.
+2. **An edit that every view of its document shares shows its panel in
+   every one of them.** With `PerViewEdit` off (the default) a sketch
+   entered in one cell is drawn in from any view of the document; hiding
+   its panel when the user clicked into the next cell would take the
+   panel away from an edit they are still in. The rule is the one sec 6
+   already has for the browser (`EditingRoot::isShared()`), asked for the
+   desktop. A view of ANOTHER document shows the watchers and the hint.
+   With `PerViewEdit` on, the panel is its one view's.
+3. **A Python panel is told by `panelActivated()` /
+   `panelDeactivated()`**, not `activate()` / `deactivate()`. Panels
+   already have methods of those names that mean something of their own:
+   Assembly's five `deactivate()` tear the tool down, and would have been
+   called the first time their view was left; FEM's base task panel has
+   both. Upstream does not pass the two on to Python at all.
+4. A served client's dialog is active from `open()` to `closed()`: its
+   view is the only one its client has, and the desktop's task view never
+   shows its page.
+5. A contextual panel is put at the TOP of the page when it is added.
+   Before, it was appended on being added and moved to the top the first
+   time the page changed.
+
+### 13.4 Found on the way
+
+- **A crash, on the tree before: closing the view a sketch is being
+  edited in.** Not this milestone's doing, but exactly on its path, and
+  the reason for point 1 above being built at `closeEvent`. The viewer's
+  destructor gave the edited geometry back and left the document's
+  session bound to it (`Gui::Document::_editingViewer`, and the sketch's
+  own copy); sec 12 then gave the view a selection instance of its own,
+  which goes with the view and, going, tells its observers to read the
+  selection again -- the sketch among them, through a viewer that no
+  longer existed (`ViewProviderSketch::constraintPreselectInViews`).
+  Before sec 12 the same close left a dangling edit and no crash was
+  seen. Fixed twice over (`9469facb2d`): the edit is left while the view
+  is whole (`Application::viewClosed`), and a desktop viewer destroyed without
+  being closed leaves its edit in its own destructor, as a client's
+  mirror already did.
+- **Draft's `setDocumentName` on None** (sec 11.1) is gone with
+  `showDialog` returning the dialog: `gui_selectplane.py` and
+  `gui_scale.py` work as written, and `DraftGui.py` lost its guard. Every
+  Draft, BIM and Assembly panel that asked to close with its document
+  now does.
+- A Python panel's `autoClosedOnTransactionChange()` was never called.
+  Assembly's joint panel has one (it tears the joint tool down on an
+  undo); it runs now.
+- `Control().showDialog(nullptr)` with no dialog open walked into the
+  null pointer; it warns and returns.
+- The main window with no combo view (sec 11.1) now records its dialog as
+  open like any other.
+- `tests/gui`'s runner isolates the configuration and the cache but not
+  `XDG_DATA_HOME`: the crash above wrote its log into the real
+  `~/.local/share/FreeCAD`. Not changed.
+
+### 13.5 The audit of pages that are alive and hidden
+
+Sec 5.1 asks for it: a page whose view is not active is alive and hidden,
+and nothing in it may assume it is visible.
+
+- No task box in `src/Mod` overrides `showEvent` or `hideEvent` in C++.
+- In Python two widgets near a panel do. CAM's `IconTabWidget`
+  (`Path/Op/Gui/Base.py`) installs event filters on its ancestors when
+  shown and removes them when hidden, and schedules a relabel: symmetric,
+  and about its own layout. FEM's `extract_link_view` is a popup that
+  says `close` when hidden. Neither starts or stops work a hidden page
+  would break.
+- `Gui::PropertyLinkEditor` attaches its selection observer on show and
+  detaches it on hide; it is a dialog of its own, not a page's child.
+- What a hidden page does lose is its PICTURES in the browser:
+  `Fw::PanelMirror::grabPicture` returns nothing for a widget that is not
+  visible, and a client-owned dialog's page is now never the one the
+  desktop shows. The models -- every widget the mirror walks -- do not
+  depend on it (`visible` is read as "not explicitly hidden"), and a
+  picture was already missing whenever the desktop's Tasks tab was not
+  the one in front. For M5.
+- A page's widgets are used while its view is not active by exactly one
+  path today: a keyed `Control().accept(owner)` and its siblings. The
+  rest of sec 12.5's second point stands for view mode.
+
+### 13.6 Measured
+
+`tests/gui/task-panel-combo.py` (`GuiTaskPanelCombo_tests_run`): document
+A with two views, a second and a third document, the Assembly's solver
+panel for the contextual one. 66 checks. Scored on the tree before
+(`c108db0c04`) twice, because that tree does not survive the test:
+
+| | before | after |
+|---|---|---|
+| as written | 17 of the first 31, then SIGSEGV on closing the editing view | 66 of 66 |
+| with that one step left out (`GT_NO_EDIT_VIEW_CLOSE`) | 28 of 61 | -- |
+
+What moved, by what the user would see:
+
+| | before | after |
+|---|---|---|
+| a1's panel, with a2 active | still shown | the watchers, and "Go to <a1>" |
+| the Tasks tab's busy icon, with a2 active | on | off |
+| back in a1 | the panel | the same panel, what was typed still in it |
+| the tab the user switched to, on coming back | kept | kept |
+| a sketch edited in a1 with `PerViewEdit`, a2 active | its panel | the watchers and the hint |
+| the same with `PerViewEdit` off, a2 active | its panel | its panel |
+| ... and another document's view active | its panel | the watchers and the hint |
+| closing the view a sketch is edited in | SIGSEGV | the edit is left, the line drawn in it kept |
+| closing a view that owns a plain panel | the panel stays, for nobody | rejected |
+| a panel that asked to close with its document | `showDialog` gave None to ask on | told, not rejected |
+| a second panel for another view, test switch on | refused | shown, each for its own view |
+| the Assembly's solver panel, another document's view active | shown | not shown |
+| a panel told it is activated / deactivated | never | once per visit, each ended |
+
+The readings are the real ones: the stack's current page, the tab bar's
+icon and index, the widgets' own visibility up to the task view, and the
+hint's buttons clicked. Two of the test's helpers were tightened AFTER the
+before runs -- "shown" now means nothing between the widget and the task
+view is hidden, and a hint line awaiting deletion is not counted -- so the
+before column was read by the looser forms; no check that passed there
+depends on the difference as far as reading them tells.
+
+`tests/gui/edit-view-closed.py` (`GuiEditViewClosed_tests_run`): the crash
+of 13.4 on its own -- a sketch and an edit with no dialog, `PerViewEdit`
+on and off, and a view that is not the edit's closed beside it. 21 of 21.
+It was written after the fix and so was never run on the tree before; the
+crash it guards is the one the first test measured there, by the same
+close.
+
+The three tests nearest: `GuiTaskPanelOwner` 34 of 34, `GuiDraftPanelOwner`
+2 of 2, `GuiSelectionPerView` 26 of 26.
+
+The suites on it (`03c509ac9a`): Python 3379 OK; ctest 957 of 957, 966
+entries, 3806 s serial; the GUI gate 70 OK. Rows in `docs/Testing.md`,
+with what a fresh user home does to the gate.
+
+### 13.7 What it does not do
+
+- **A view is closed without a question.** An edit in it is left and a
+  plain panel it owns is rejected, with no "this view has a task panel
+  open" first. Closing the last view of a document still asks what it
+  always asked.
+- **The keyed forms go by owner alone.** With `PerViewEdit` off a second
+  view of the document SHOWS the sketch's panel, but
+  `Control().activeDialog(owner)` asked for that view answers none: the
+  dialog is still the first view's. The argument-less form answers it, as
+  it answers any dialog while only one may be open.
+- **A dialog opened for a view that is not the active one** -- a deferred
+  show that carried its owner, a client's -- raises nothing: the Tasks tab
+  comes to the front when its page first does.
+- The five deferred closes and two queued accepts of sec 11.1 still act
+  on "the" dialog.
+- The hint's three strings are new and untranslated.
+- With the test switch on and no combo view, the standalone task dock is
+  still deleted with the first dialog it was made for.
+- Everything of sec 5.2 to 6: the panel in its view, the dock overlays,
+  the browser.
