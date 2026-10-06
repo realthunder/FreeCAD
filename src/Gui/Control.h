@@ -139,7 +139,7 @@ public:
     void reject(const TaskOwner &owner);
     void closeDialog(const TaskOwner &owner);
 
-    /// The task view, the dialog's content widgets, the dialog's owner.
+    /// The dialog's page in the task view, its content widgets, its owner.
     fastsignals::signal<void (QWidget *, std::vector<QWidget*> &, const TaskOwner &)> signalShowDialog;
     fastsignals::signal<void (QWidget *, std::vector<QWidget*> &, const TaskOwner &)> signalRemoveDialog;
 

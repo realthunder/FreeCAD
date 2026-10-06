@@ -30,6 +30,7 @@
 # include <QLineEdit>
 # include <QPointer>
 # include <QPushButton>
+# include <QStackedWidget>
 # include <QTimer>
 # include <QComboBox>
 #endif
@@ -278,11 +279,48 @@ QSize TaskPanel::minimumSizeHint() const
 
 //**************************************************************************
 //**************************************************************************
+// TaskPage
+//++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+TaskPage::TaskPage(QWidget *parent)
+    : QWidget(parent)
+{
+    // Laid out as the task view lays out its own scroll area, so that a
+    // dialog's page stands exactly where the one shared panel stood.
+    this->layout = new QVBoxLayout(this);
+    this->layout->setContentsMargins(0, 0, 0, 0);
+    this->layout->setSpacing(0);
+    this->scrollarea = new QScrollArea(this);
+    this->layout->addWidget(scrollarea, 1);
+
+    panel = new TaskPanel(this);
+    QSizePolicy sizePolicy(QSizePolicy::Preferred, QSizePolicy::Preferred);
+    sizePolicy.setHorizontalStretch(0);
+    sizePolicy.setVerticalStretch(0);
+    sizePolicy.setHeightForWidth(panel->sizePolicy().hasHeightForWidth());
+    panel->setSizePolicy(sizePolicy);
+    panel->setScheme(QSint::FreeCADPanelScheme::defaultScheme());
+    this->scrollarea->setWidget(panel);
+    this->scrollarea->setWidgetResizable(true);
+    this->scrollarea->setMinimumWidth(200);
+    // The task view does not ask its dock for room: what does not fit is
+    // scrolled. That was never written down anywhere. QScrollArea takes
+    // its size hint from its widget the FIRST time it is asked and keeps
+    // it, and the one panel every dialog used to share was first asked at
+    // start-up, empty. A page asked with its dialog's content in it would
+    // have its dock widened to fit, so it is asked here, empty as well.
+    (void)this->scrollarea->sizeHint();
+}
+
+TaskPage::~TaskPage() = default;
+
+//**************************************************************************
+//**************************************************************************
 // TaskView
 //++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
 TaskView::TaskView(QWidget *parent)
-    : QWidget(parent),ActiveDialog(nullptr),ActiveCtrl(nullptr)
+    : QWidget(parent)
 {
     //addWidget(new TaskEditControl(this));
     //addWidget(new TaskAppearance(this));
@@ -291,8 +329,11 @@ TaskView::TaskView(QWidget *parent)
     this->setAutoFillBackground(true);
     this->layout = new QVBoxLayout(this);
     this->layout->setSpacing(0);
-    this->scrollarea = new QScrollArea(this);
-    this->layout->addWidget(scrollarea, 1);
+    this->stack = new QStackedWidget(this);
+    this->layout->addWidget(stack, 1);
+    // Page 0, the watchers'. A page per open dialog follows it.
+    this->scrollarea = new QScrollArea(stack);
+    this->stack->addWidget(scrollarea);
 
     taskPanel = new TaskPanel(this);
     QSizePolicy sizePolicy(QSizePolicy::Preferred, QSizePolicy::Preferred);
@@ -348,7 +389,7 @@ TaskView::~TaskView()
 
 bool TaskView::isEmpty(bool includeWatcher) const
 {
-    if (ActiveCtrl || ActiveDialog || !contextualPanels.empty())
+    if (!taskInfos.empty() || !contextualPanels.empty())
         return false;
 
     if (includeWatcher) {
@@ -396,6 +437,12 @@ bool TaskView::event(QEvent* event)
 
 void TaskView::keyPressEvent(QKeyEvent* ke)
 {
+    // The page that is shown, by its own pointers: a click below may
+    // close the dialog and take its entry with it.
+    TaskInfo *info = currentTaskInfo();
+    TaskDialog *ActiveDialog = info ? info->ActiveDialog : nullptr;
+    TaskEditControl *ActiveCtrl = info ? info->ActiveCtrl : nullptr;
+    QWidget *page = info ? info->page : nullptr;
     if (ActiveCtrl && ActiveDialog) {
         if (ke->key() == Qt::Key_Return || ke->key() == Qt::Key_Enter) {
             // spin box uses Key_Return to signal finish editing. At least for
@@ -406,7 +453,7 @@ void TaskView::keyPressEvent(QKeyEvent* ke)
                 return;
 
             // get all buttons of the complete task dialog
-            QList<QPushButton*> list = this->findChildren<QPushButton*>();
+            QList<QPushButton*> list = page->findChildren<QPushButton*>();
             for (int i=0; i<list.size(); ++i) {
                 QPushButton *pb = list.at(i);
                 if (pb->isDefault() && pb->isVisible()) {
@@ -474,8 +521,11 @@ void TaskView::triggerMinimumSizeHint()
 
 void TaskView::adjustMinimumSizeHint()
 {
-    QSize ms = scrollarea->minimumSizeHint();
-    scrollarea->setMinimumWidth(ms.width());
+    QScrollArea *area = scrollarea;
+    if (TaskInfo *info = currentTaskInfo())
+        area = info->page->scrollarea;
+    QSize ms = area->minimumSizeHint();
+    area->setMinimumWidth(ms.width());
 }
 
 QSize TaskView::minimumSizeHint() const
@@ -493,36 +543,43 @@ QSize TaskView::minimumSizeHint() const
 void TaskView::slotActiveDocument(const App::Document& doc)
 {
     Q_UNUSED(doc); 
-    if (!ActiveDialog)
+    if (taskInfos.empty())
         updateWatcher();
 }
 
 void TaskView::slotDeletedDocument()
 {
-    if (!ActiveDialog)
+    if (taskInfos.empty())
+        updateWatcher();
+}
+
+void TaskView::transactionChange()
+{
+    // By the dialogs' own pointers: removing one takes its entry out
+    std::vector<TaskDialog*> closing;
+    for (const TaskInfo &info : taskInfos) {
+        if (info.ActiveDialog && info.ActiveDialog->isAutoCloseOnTransactionChange())
+            closing.push_back(info.ActiveDialog);
+    }
+    for (TaskDialog *dlg : closing) {
+        if (!infoOf(dlg))
+            continue;
+        dlg->autoClosedOnTransactionChange();
+        removeDialog(dlg);
+    }
+
+    if (taskInfos.empty())
         updateWatcher();
 }
 
 void TaskView::slotUndoDocument(const App::Document&)
 {
-    if (ActiveDialog && ActiveDialog->isAutoCloseOnTransactionChange()) {
-        ActiveDialog->autoClosedOnTransactionChange();
-        removeDialog();
-    }
-
-    if (!ActiveDialog)
-        updateWatcher();
+    transactionChange();
 }
 
 void TaskView::slotRedoDocument(const App::Document&)
 {
-    if (ActiveDialog && ActiveDialog->isAutoCloseOnTransactionChange()) {
-        ActiveDialog->autoClosedOnTransactionChange();
-        removeDialog();
-    }
-
-    if (!ActiveDialog)
-        updateWatcher();
+    transactionChange();
 }
 
 /// @cond DOXERR
@@ -537,49 +594,136 @@ void TaskView::OnChange(Gui::SelectionSingleton::SubjectType &rCaller,
         Reason.Type == SelectionChanges::SetSelection ||
         Reason.Type == SelectionChanges::RmvSelection) {
 
-        if (!ActiveDialog)
+        if (taskInfos.empty())
             updateWatcher();
     }
 
 }
 /// @endcond
 
+TaskInfo *TaskView::infoOf(const TaskDialog *dlg)
+{
+    for (TaskInfo &info : taskInfos) {
+        if (info.ActiveDialog == dlg)
+            return &info;
+    }
+    return nullptr;
+}
+
+TaskInfo *TaskView::currentTaskInfo()
+{
+    QWidget *shown = stack->currentWidget();
+    for (TaskInfo &info : taskInfos) {
+        if (info.page == shown)
+            return &info;
+    }
+    return nullptr;
+}
+
+const TaskInfo *TaskView::currentTaskInfo() const
+{
+    return const_cast<TaskView*>(this)->currentTaskInfo();
+}
+
+TaskInfo *TaskView::theTaskInfo()
+{
+    if (TaskInfo *info = currentTaskInfo())
+        return info;
+    return taskInfos.empty() ? nullptr : &taskInfos.front();
+}
+
+TaskDialog *TaskView::dialog(const TaskOwner &owner) const
+{
+    for (const TaskInfo &info : taskInfos) {
+        if (info.owner == owner)
+            return info.ActiveDialog;
+    }
+    return nullptr;
+}
+
+QSint::ActionPanel *TaskView::shownPanel() const
+{
+    if (const TaskInfo *info = currentTaskInfo())
+        return info->page->panel;
+    return taskPanel;
+}
+
+void TaskView::moveContextualPanels(QSint::ActionPanel *to)
+{
+    // They sit alongside whatever is shown, above it: taken out of the
+    // panel they are in and put at the top of the one coming up.
+    auto box = qobject_cast<QBoxLayout*>(to->layout());
+    int at = 0;
+    for (QWidget *panel : contextualPanels) {
+        if (panel->parentWidget() == to)
+            continue;
+        // A new parent hides a widget: one its owner had not hidden is
+        // shown again where it lands.
+        const bool hidden = panel->isHidden();
+        if (auto from = qobject_cast<QSint::ActionPanel*>(panel->parentWidget()))
+            from->removeWidget(panel);
+        if (box)
+            box->insertWidget(at++, panel);
+        else
+            to->addWidget(panel);
+        if (!hidden)
+            panel->show();
+    }
+}
+
+void TaskView::setShownTaskInfo(TaskInfo *info)
+{
+    QSint::ActionPanel *panel = info ? info->page->panel : taskPanel;
+    moveContextualPanels(panel);
+    stack->setCurrentWidget(info ? static_cast<QWidget*>(info->page) : scrollarea);
+}
+
 void TaskView::showDialog(TaskDialog *dlg)
 {
     // if trying to open the same dialog twice nothing needs to be done
-    if (ActiveDialog == dlg)
+    if (infoOf(dlg))
         return;
-    assert(!ActiveDialog);
-    assert(!ActiveCtrl);
 
     // remove the TaskWatcher as long as the Dialog is up
-    removeTaskWatcher();
+    if (taskInfos.empty())
+        removeTaskWatcher();
+
+    // Every dialog has a page of its own. That only one may be open is
+    // not decided here: ControlSingleton::exclusive().
+    TaskInfo info;
+    info.ActiveDialog = dlg;
+    info.owner = dlg->owner();
+    info.page = new TaskPage(stack);
+    // As narrow as the watchers' page may be now: the minimum the one
+    // shared scroll area had when a dialog came up in it.
+    info.page->scrollarea->setMinimumWidth(scrollarea->minimumWidth());
+    TaskPanel *panel = info.page->panel;
 
     // first create the control element, set it up and wire it:
-    ActiveCtrl = new TaskEditControl(this);
-    ActiveCtrl->buttonBox->setStandardButtons(dlg->getStandardButtons());
+    info.ActiveCtrl = new TaskEditControl(info.page);
+    info.ActiveCtrl->buttonBox->setStandardButtons(dlg->getStandardButtons());
     // What TaskDialogPy's accept() and reject() press
-    TaskDialogAttorney::setButtonBox(dlg, ActiveCtrl->buttonBox);
+    TaskDialogAttorney::setButtonBox(dlg, info.ActiveCtrl->buttonBox);
 
     // clang-format off
     // make connection to the needed signals
-    connect(ActiveCtrl->buttonBox, &QDialogButtonBox::accepted,
-            this, &TaskView::accept);
-    connect(ActiveCtrl->buttonBox, &QDialogButtonBox::rejected,
-            this, &TaskView::reject);
-    connect(ActiveCtrl->buttonBox, &QDialogButtonBox::helpRequested,
-            this, &TaskView::helpRequested);
-    connect(ActiveCtrl->buttonBox, &QDialogButtonBox::clicked,
-            this, &TaskView::clicked);
+    connect(info.ActiveCtrl->buttonBox, &QDialogButtonBox::accepted,
+            this, [this, dlg] { accept(dlg); });
+    connect(info.ActiveCtrl->buttonBox, &QDialogButtonBox::rejected,
+            this, [this, dlg] { reject(dlg); });
+    connect(info.ActiveCtrl->buttonBox, &QDialogButtonBox::helpRequested,
+            this, [this, dlg] { helpRequested(dlg); });
+    connect(info.ActiveCtrl->buttonBox, &QDialogButtonBox::clicked,
+            this, [this, dlg](QAbstractButton *button) { clicked(button, dlg); });
     // clang-format on
 
-    this->contents = dlg->getDialogContent();
+    info.contents = dlg->getDialogContent();
 
     if (ViewParams::getTaskNoWheelFocus()) {
         // Since task dialog contains mlutiple panels which often require
         // scrolling up and down to access. Using wheel focus in any input
         // field may cause accidental change of value while scrolling.
-        for (auto widget : this->contents) {
+        for (auto widget : info.contents) {
             for(auto child : widget->findChildren<QWidget*>()) {
                 
                 if (child->focusPolicy() == Qt::WheelFocus
@@ -594,43 +738,49 @@ void TaskView::showDialog(TaskDialog *dlg)
         }
     }
 
-    Control().signalShowDialog(this, this->contents, dlg->owner());
+    Control().signalShowDialog(info.page, info.contents, dlg->owner());
 
     // give to task dialog to customize the button box
-    dlg->modifyStandardButtons(ActiveCtrl->buttonBox);
+    dlg->modifyStandardButtons(info.ActiveCtrl->buttonBox);
+
+    // The contextual panels first: they stay above the dialog's content
+    moveContextualPanels(panel);
 
     if (ViewParams::getStickyTaskControl() && parentWidget()) {
         if (dlg->buttonPosition() == TaskDialog::North)
-            this->layout->insertWidget(0, ActiveCtrl);
+            info.page->layout->insertWidget(0, info.ActiveCtrl);
         else
-            this->layout->addWidget(ActiveCtrl);
-        for (auto widget : this->contents)
-            taskPanel->addWidget(widget);
+            info.page->layout->addWidget(info.ActiveCtrl);
+        for (auto widget : info.contents)
+            panel->addWidget(widget);
     }
     else if (dlg->buttonPosition() == TaskDialog::North) {
-        taskPanel->addWidget(ActiveCtrl);
-        for (auto widget : this->contents)
-            taskPanel->addWidget(widget);
+        panel->addWidget(info.ActiveCtrl);
+        for (auto widget : info.contents)
+            panel->addWidget(widget);
     }
     else {
-        for (auto widget : this->contents)
-            taskPanel->addWidget(widget);
-        taskPanel->addWidget(ActiveCtrl);
+        for (auto widget : info.contents)
+            panel->addWidget(widget);
+        panel->addWidget(info.ActiveCtrl);
     }
 
-    taskPanel->setScheme(QSint::FreeCADPanelScheme::defaultScheme());
+    panel->setScheme(QSint::FreeCADPanelScheme::defaultScheme());
 
     if (!dlg->needsFullSpace())
-        taskPanel->addStretch();
+        panel->addStretch();
 
     // set as active Dialog
-    ActiveDialog = dlg;
+    TaskPage *page = info.page;
+    stack->addWidget(page);
+    taskInfos.push_back(std::move(info));
+    setShownTaskInfo(&taskInfos.back());
 
-    ActiveDialog->open();
+    dlg->open();
 
     getMainWindow()->updateActions();
 
-    Gui::LineEditStyle::setupChildren(this);
+    Gui::LineEditStyle::setupChildren(page);
     triggerMinimumSizeHint();
 
     Q_EMIT taskUpdate();
@@ -662,36 +812,54 @@ bool TaskView::eventFilter(QObject *o, QEvent *ev)
 
 void TaskView::removeDialog(void)
 {
+    TaskInfo *info = theTaskInfo();
+    removeDialog(info ? info->ActiveDialog : nullptr);
+}
+
+void TaskView::removeDialog(TaskDialog *dlg)
+{
     getMainWindow()->updateActions();
 
-    if (ActiveCtrl) {
-        taskPanel->removeWidget(ActiveCtrl);
-        delete ActiveCtrl;
-        ActiveCtrl = 0;
+    TaskInfo *info = dlg ? infoOf(dlg) : nullptr;
+    if (info && info->ActiveCtrl) {
+        info->page->panel->removeWidget(info->ActiveCtrl);
+        delete info->ActiveCtrl;
+        info->ActiveCtrl = nullptr;
     }
 
-    TaskDialog* remove = NULL;
-    if (ActiveDialog) {
+    TaskDialog* remove = nullptr;
+    TaskPage *page = nullptr;
+    if (info) {
         // See 'accept' and 'reject'
-        if (ActiveDialog->property("taskview_accept_or_reject").isNull()) {
-            Control().signalRemoveDialog(this, this->contents, ActiveDialog->owner());
-            for (auto widget : contents) 
-                taskPanel->removeWidget(widget);
-            contents.clear();
-            remove = ActiveDialog;
-            ActiveDialog = 0;
+        if (dlg->property("taskview_accept_or_reject").isNull()) {
+            Control().signalRemoveDialog(info->page, info->contents, dlg->owner());
+            for (auto widget : info->contents)
+                info->page->panel->removeWidget(widget);
+            remove = dlg;
+            page = info->page;
+            taskInfos.erase(taskInfos.begin() + (info - taskInfos.data()));
+            // Whatever else is open comes up, else the watchers' page
+            setShownTaskInfo(taskInfos.empty() ? nullptr : &taskInfos.back());
+            stack->removeWidget(page);
+            page->hide();
         }
         else {
-            ActiveDialog->setProperty("taskview_remove_dialog", true);
+            dlg->setProperty("taskview_remove_dialog", true);
         }
     }
 
-    taskPanel->removeStretch();
+    if (taskInfos.empty()) {
+        taskPanel->removeStretch();
 
-    // put the watcher back in control
-    addTaskWatcher();
-    
+        // put the watcher back in control
+        addTaskWatcher();
+    }
+
     if (remove) {
+        // The page goes when the dialog has: the dialog owns its content
+        // widgets and deletes them, and until then they are the page's
+        // children as they were the one shared panel's.
+        connect(remove, &QObject::destroyed, page, &QObject::deleteLater);
         remove->closed();
         remove->emitDestructionSignal();
         if (getMainWindow()->isClosingAll())
@@ -710,7 +878,7 @@ void TaskView::updateWatcher(void)
 
 void TaskView::onUpdateWatcher(void)
 {
-    if (ActiveCtrl || ActiveDialog)
+    if (!taskInfos.empty())
         return;
 
     if (ActiveWatcher.empty()) {
@@ -766,7 +934,7 @@ void TaskView::addTaskWatcher(const std::vector<TaskWatcher*> &Watcher)
         tw->deleteLater();
 
     ActiveWatcher = Watcher;
-    if (!ActiveCtrl && !ActiveDialog)
+    if (taskInfos.empty())
         addTaskWatcher();
 }
 
@@ -849,45 +1017,61 @@ void TaskView::removeTaskWatcher()
 
 void TaskView::accept()
 {
-    if (!ActiveDialog) { // Protect against segfaults due to out-of-order deletions
+    TaskInfo *info = theTaskInfo();
+    accept(info ? info->ActiveDialog : nullptr);
+}
+
+void TaskView::accept(TaskDialog *dlg)
+{
+    if (!dlg || !infoOf(dlg)) { // Protect against segfaults due to out-of-order deletions
         Base::Console().Warning("ActiveDialog was null in call to TaskView::accept()\n");
         return;
     }
 
     // Make sure that if 'accept' calls 'closeDialog' the deletion is postponed until
     // the dialog leaves the 'accept' method
-    ActiveDialog->setProperty("taskview_accept_or_reject", true);
-    bool success = ActiveDialog->accept();
-    ActiveDialog->setProperty("taskview_accept_or_reject", QVariant());
-    if (success || ActiveDialog->property("taskview_remove_dialog").isValid())
-        removeDialog();
+    dlg->setProperty("taskview_accept_or_reject", true);
+    bool success = dlg->accept();
+    dlg->setProperty("taskview_accept_or_reject", QVariant());
+    if (success || dlg->property("taskview_remove_dialog").isValid())
+        removeDialog(dlg);
 }
 
 void TaskView::reject()
 {
-    if (!ActiveDialog) { // Protect against segfaults due to out-of-order deletions
+    TaskInfo *info = theTaskInfo();
+    reject(info ? info->ActiveDialog : nullptr);
+}
+
+void TaskView::reject(TaskDialog *dlg)
+{
+    if (!dlg || !infoOf(dlg)) { // Protect against segfaults due to out-of-order deletions
         Base::Console().Warning("ActiveDialog was null in call to TaskView::reject()\n");
         return;
     }
 
     // Make sure that if 'reject' calls 'closeDialog' the deletion is postponed until
     // the dialog leaves the 'reject' method
-    ActiveDialog->setProperty("taskview_accept_or_reject", true);
-    bool success = ActiveDialog->reject();
-    ActiveDialog->setProperty("taskview_accept_or_reject", QVariant());
-    if (success || ActiveDialog->property("taskview_remove_dialog").isValid())
-        removeDialog();
+    dlg->setProperty("taskview_accept_or_reject", true);
+    bool success = dlg->reject();
+    dlg->setProperty("taskview_accept_or_reject", QVariant());
+    if (success || dlg->property("taskview_remove_dialog").isValid())
+        removeDialog(dlg);
 }
 
-void TaskView::helpRequested()
+void TaskView::helpRequested(TaskDialog *dlg)
 {
-    ActiveDialog->helpRequested();
+    if (infoOf(dlg))
+        dlg->helpRequested();
 }
 
-void TaskView::clicked (QAbstractButton * button)
+void TaskView::clicked(QAbstractButton *button, TaskDialog *dlg)
 {
-    int id = ActiveCtrl->buttonBox->standardButton(button);
-    ActiveDialog->clicked(id);
+    TaskInfo *info = infoOf(dlg);
+    if (!info || !info->ActiveCtrl)
+        return;
+    int id = info->ActiveCtrl->buttonBox->standardButton(button);
+    dlg->clicked(id);
 }
 
 void TaskView::clearActionStyle()
@@ -910,7 +1094,7 @@ void TaskView::addContextualPanel(QWidget* panel, App::Document* doc)
             != contextualPanels.end())
         return;
 
-    taskPanel->addWidget(panel);
+    shownPanel()->addWidget(panel);
     contextualPanels.push_back(panel);
     panel->show();
     triggerMinimumSizeHint();
@@ -924,7 +1108,8 @@ void TaskView::removeContextualPanel(QWidget* panel, App::Document* doc)
     if (!panel || it == contextualPanels.end())
         return;
 
-    taskPanel->removeWidget(panel);
+    if (auto in = qobject_cast<QSint::ActionPanel*>(panel->parentWidget()))
+        in->removeWidget(panel);
     contextualPanels.erase(it);
     panel->deleteLater();
     triggerMinimumSizeHint();

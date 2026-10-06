@@ -29,9 +29,12 @@
 
 #include <Gui/QSint/include/QSint>
 #include <Gui/Selection.h>
+#include <Gui/TaskOwner.h>
 #include "TaskWatcher.h"
 
+class QAbstractButton;
 class QBoxLayout;
+class QStackedWidget;
 class QTimer;
 
 namespace App {
@@ -139,6 +142,39 @@ public:
     ~TaskWidget() override;
 };
 
+/** One open dialog's page (docs/TaskPanelPerView.md sec 4.2).
+  *
+  * Self-contained: a scrolled panel for the dialog's content, and the
+  * button box either in that panel or pinned outside the scrolling (the
+  * StickyTaskControl preference). Content and buttons travel together,
+  * which is what lets a page stand in the task view's stack or be handed
+  * to another host.
+  */
+class GuiExport TaskPage : public QWidget
+{
+    Q_OBJECT
+
+public:
+    explicit TaskPage(QWidget *parent = nullptr);
+    ~TaskPage() override;
+
+    QBoxLayout *layout;
+    QScrollArea *scrollarea;
+    TaskPanel *panel;
+};
+
+/// One open dialog as the task view keeps it
+struct TaskInfo
+{
+    TaskPage *page {nullptr};
+    TaskDialog *ActiveDialog {nullptr};
+    TaskEditControl *ActiveCtrl {nullptr};
+    TaskOwner owner;
+    /// The dialog's content widgets as shown: a listener to
+    /// Control().signalShowDialog may have added its own.
+    std::vector<QWidget*> contents;
+};
+
 /** TaskView class
   * handles the FreeCAD task view panel. Keeps track of the inserted content elements.
   * This elements get injected mostly by the ViewProvider classes of the selected
@@ -172,19 +208,40 @@ public:
 
     QSize minimumSizeHint() const override;
 
+    /// The dialog whose page is shown, or null while the watchers are
+    const TaskInfo *currentTaskInfo() const;
+    /// The open dialog of \a owner's view, or null
+    TaskDialog *dialog(const TaskOwner &owner) const;
+
 Q_SIGNALS:
     void taskUpdate();
 
 protected Q_SLOTS:
+    /// Accept or reject THE dialog: the shown one, else the only one
     void accept();
     void reject();
-    void helpRequested();
-    void clicked (QAbstractButton * button);
     void onUpdateWatcher();
+
+protected:
+    void accept(TaskDialog *dlg);
+    void reject(TaskDialog *dlg);
+    void helpRequested(TaskDialog *dlg);
+    void clicked(QAbstractButton *button, TaskDialog *dlg);
 
 private:
     void triggerMinimumSizeHint();
     void adjustMinimumSizeHint();
+    TaskInfo *infoOf(const TaskDialog *dlg);
+    TaskInfo *currentTaskInfo();
+    /// The dialog an argument-less entry point acts on
+    TaskInfo *theTaskInfo();
+    /// Show \a info's page, or the watchers' with null
+    void setShownTaskInfo(TaskInfo *info);
+    /// The panel of the page that is shown
+    QSint::ActionPanel *shownPanel() const;
+    /// Carry the contextual panels over to the page now shown
+    void moveContextualPanels(QSint::ActionPanel *to);
+    void transactionChange();
 
 protected:
     bool eventFilter(QObject *, QEvent*) override;
@@ -199,6 +256,7 @@ protected:
     void showDialog(TaskDialog *dlg);
     // removes the running dialog after accept() or reject() from the TaskView
     void removeDialog();
+    void removeDialog(TaskDialog *dlg);
 
 public:
     /** Add a widget to the task panel alongside whatever else is shown
@@ -220,16 +278,20 @@ protected:
 
     std::vector<TaskWatcher*> ActiveWatcher;
 
+    /** The stack: page 0 is \ref scrollarea with the watchers' panel
+     * \ref taskPanel in it, and every open dialog has a page of its own
+     * after it (docs/TaskPanelPerView.md sec 4.2).
+     */
+    QStackedWidget *stack;
     QSint::ActionPanel* taskPanel;
-    TaskDialog *ActiveDialog;
-    TaskEditControl *ActiveCtrl;
     QBoxLayout *layout;
     QScrollArea *scrollarea;
     QTimer *timer;
-    
-    std::vector<QWidget*> contents;
-    /// Widgets added by addContextualPanel. Kept out of \ref contents because
-    /// showDialog/removeDialog own that list and would drop the bookkeeping.
+
+    /// The open dialogs. One at most while ControlSingleton::exclusive().
+    std::vector<TaskInfo> taskInfos;
+    /// Widgets added by addContextualPanel, which sit in the panel of the
+    /// page that is shown.
     std::vector<QWidget*> contextualPanels;
 
     Connection connectApplicationActiveDocument;
