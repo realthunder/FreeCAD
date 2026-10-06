@@ -2818,8 +2818,8 @@ object's look" and spelled it `getMaterial(0)` or `getTransparency(0)` reads
 > transaction log (docs/TransactionLog.md sec 31.16-31.18): a face's look
 > has to be held by the face's name before two branches that each painted
 > one can be merged. The user ruled the order: this first, made to work,
-> the merge on top of it. **13.2's first item is built; the rest waits on
-> 13.4.**
+> the merge on top of it. **13.2's first item is built. 13.4 is ruled:
+> 13.6 has the rulings and the build order, which replaces 13.5's.**
 
 ### 13.1 What is there
 
@@ -2940,3 +2940,80 @@ gave it one.
    whose every field is its own.
 5. The panel.
 6. Handed on from a source; then the restore (Q4).
+
+### 13.6 Ruled, and the plan (user, 2026-10-06)
+
+**Ruled**, on 13.4, in the user's words: "1 whole material. 2 check how
+view provider handles diffusecolor, do the same for mappedcolors. 3 does
+view provider still have a base color property? maybe we shall add one to
+the ShapeApperance property if none. it any removeal can go back to base
+color. 4~6 yes. 7 TaskFaceColors is retired. check who still use it. The
+replacement is TaskElementColors. extend it to support material. write
+down the plan, start in next session".
+
+| | Ruled | What was checked, and what follows |
+| --- | --- | --- |
+| Q1 | **A whole material.** | No "colour only" kind of entry: 13.3's "which of it is the face's own" is dropped. A face Set Colors paints gets the object's material with that colour. See *the store* below for what that leaves of a painted face following the object's finish. |
+| Q2 | **As `DiffuseColor` is.** | `DiffuseColor` is `PartGui::PropertyDiffuseColor`, a colour list with no storage of its own: a name over `ShapeAppearance`'s diffuse field (`setAppearance`), read by resolving, written through the appearance's setters, a plain list when copied. It is *saved with its values* while the appearance says nothing a colour list cannot (`variesOnlyInDiffuse`), so an older reader opens the file with its colours, and restored into the appearance. `MappedColors` becomes the same over `MappedAppearance`: kept for scripts and for old files, written while every named entry is a colour and no more. Not "read, not written" as 13.4 recommended. |
+| Q3 | **Back to the base.** | There is one: `ShapeAppearance`'s base (sec 12, `getBase()` / `setBase()`, Python `Base`), which `ShapeColor`, `Transparency` and `ShapeMaterial` follow. Nothing to add. A name taken away puts its face back to it. |
+| Q4 | Yes. | The named colours restored with their names whatever `ViewObjectTransaction` says. |
+| Q5 | Yes. | A face takes its source face's material where the source gave it one. |
+| Q6 | Yes. | Part's view providers first. |
+| Q7 | **`TaskFaceColors` is retired; `TaskElementColors` gets materials.** | It is retired already: out of `Part/Gui/CMakeLists.txt` (commented), `Part_ColorPerFace` opens `TaskElementColors` through `setEdit(ViewProvider::Color)`. What is left of it: the three files `TaskFaceColors.{cpp,h,ui}`, an `#include` of the header in `ViewProviderExt.cpp`, and a comment. `parttests/ColorPerFaceTest.py` writes `DiffuseColor` by number and is a test of that, not of the panel. The files go; 13.4's "write names instead" has nothing to apply to. |
+
+**The store, as it will be built** (mine to have filled in, the user's to
+overrule). `MappedAppearance`, an `App::PropertyAppearanceList` on the
+view provider, one entry for each element `ColoredElements` names, in its
+order. It is the list sec 12 describes, so it has a base and stores of
+each field only what differs from it. Its base is kept the object's base.
+Then:
+
+- an entry is a whole material, as ruled, and reads as one;
+- a list in which only colours differ stores colours and nothing else,
+  which is what `MappedColors` writes for an older reader;
+- while no named face has a gloss or a finish of its own, the named faces
+  read the object's -- so a face that was only given a colour still takes
+  a new finish given to the object, as today. Once one named face has a
+  finish of its own the others hold the one they had, which is what sec
+  12.2 does to overriding faces and for the same reason.
+
+Keeping the base the object's is a write to `MappedAppearance` whenever
+the object's base changes and names exist. To be weighed when it is
+built: the alternative is to resolve against the object's base when the
+faces are written and store nothing.
+
+**Build order**, replacing 13.5. Each step with the paint check
+(`scripts/transaction-log-paint-check.py`) grown for it, and the gates
+frozen and unfrozen.
+
+1. *Done*: the pair put back whole (13.2 item 1).
+2. **The store.** `MappedAppearance`; `MappedColors` a name over its
+   diffuse field, the way `PropertyDiffuseColor` is -- the same class if
+   it will serve, since it is already "a colour list whose storage is an
+   appearance". An old file's `MappedColors` restored into it. Read first:
+   `PropertyDiffuseColor` whole (`ViewProviderExt.cpp`, from "a name over
+   ShapeAppearance's diffuse field"), sec 1.1 and 7.2 for what may not be
+   done through a base pointer, and `finishRestoring`.
+   `updateColors()` reads the store; nothing to see yet.
+3. **A name taken away takes its paint** (13.2 item 2): the faces the
+   names wrote the last time, kept, and made again from the names when a
+   document is read; a face no longer named goes back to the base. A face
+   written by number is never among them and is left as written.
+4. **Whole materials.** `getElementAppearances` / `setElementAppearances`
+   on `Gui::ViewProvider`, with Python; the colour calls read and write
+   the same store. `updateColors()` writes a named face's material, not
+   its colour alone -- through `ShapeAppearance.setMaterial(i, m)`, so the
+   list stays in sec 12's form. Edges and vertices stay colours.
+5. **The panel.** `TaskElementColors`: a material for a row, where it has
+   a colour. What it offers to choose one with -- the appearance cards of
+   `MaterialStorage.md`, `DlgMaterialPropertiesImp` -- is to be looked at
+   then. `TaskFaceColors.{cpp,h,ui}` and its `#include` deleted.
+6. **Handed on from a source** (Q5): `getElementColor()` hands on a
+   material.
+7. **The restore** (Q4): a version restored puts `MappedAppearance` back
+   with `ColoredElements`. That is the transaction log's side
+   (`Document::restoreVersion`, `_moveAlongLog`'s `views`), and where the
+   pair first has to be one thing to it.
+
+After 7 the merge by name (docs/TransactionLog.md sec 31.16-31.18), then
+the shape diff (sec 32).
