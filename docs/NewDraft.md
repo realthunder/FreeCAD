@@ -3,7 +3,10 @@
 Status: phase 1 implemented 2026-10-05 -- `Part::CellDraft`
 (`src/Mod/Part/App/CellDraft.*`) behind PartDesign's `Method = New` and
 Auto's fallback, with `StopAtBody`; section 10 says what the port changed
-and measured. The design below came with a Python prototype (section 5)
+and measured. Step 3 done 2026-10-06: Auto checks the classic draft's
+result and takes the cell draft where it crosses itself or grows past the
+body (section 11, with pictures); #876's cones and the internal edges in
+section 12. The design below came with a Python prototype (section 5)
 that the earlier measurements come from; the open questions settled
 2026-10-05 (section 9).
 
