@@ -1,7 +1,8 @@
 # Corner Blending -- setback vertex blends for fillets
 
-Status: design only. Nothing implemented. The PartDesign feature waits for the
-upstream PartDesign port to merge; the OCCT side can start before that.
+Status: the OCCT side of phases 1 and 2 is implemented, as the fillet's
+fallback first (section 9). The Part API, the PartDesign property and the
+task panel (phases 3 to 5) are not started.
 
 Request: realthunder/FreeCAD_assembly3#894, "[FR] Blend Corner feature"
 (2021-11). Related: #917 (variable radius; the fork's fillet has per-edge
@@ -326,3 +327,152 @@ code, and gate it on the sweeps not moving.
   stripes. Measure the G1 error on the 3.4 cases before building any GUI. A
   2n-sided patch with good inputs may do far better than today's plates,
   which are fed projected curves.
+
+## 9. Implementation (2026-10-06)
+
+The first use is not the user-picked corner of section 4.2 but a fallback:
+where a fillet fails at a corner today, the corner is set back and built
+again. The user's ruling (2026-10-06): start at each edge's `d0`, then grow
+the setback; gate it with a setting, on by default, like the plate fallback.
+
+### 9.1 What it is in OCCT
+
+- **Storage and API as in 3.1.** `ChFiDS_FilSpine::SetSetback(isFirst, D)` /
+  `Setback(isFirst)` (less than 0 = none), and on `BRepFilletAPI_MakeFillet`
+  `SetSetback(V, E, D)`, `SetSetback(V, D)` and `Setback(V, E)`. Setbacks on
+  sharp edges are not stored: a sharp edge takes the largest setback of the
+  stripes beside it (the answer 8 proposed).
+- **Routing.** `PerformFilletOnVertex` sends a vertex with a setback on any
+  stripe ending there to `PerformMoreThreeCorner`, whatever the counts.
+- **Not a factored routine but a mode.** Section 3.2 step 3 planned a new
+  `PerformSetbackCorner` on code lifted out of `PerformMoreThreeCorner`.
+  That function turned out to cut its stripes already: it holds each
+  stripe's end as two parameters on its contact curves, `p(ic, ...)`, and
+  builds the section, the face curves, the plate and the DS from them. So a
+  setback is a mode of it (`isSetback`): after the stripes' intersections
+  are looked for (they give `d0`), every stripe's two parameters are set at
+  its setback, by bisection on each contact curve for the point whose
+  projection on the stripe's edge lies `d` from V along the edge, and each
+  sharp edge is cut the same distance along itself. The code after that
+  runs as for a corner whose stripes do not meet. The blocks that would
+  move the parameters again (the offsets toward the farthest end, the step
+  back to common points, the free border, the two-stripe intersection) are
+  skipped. A corner without a setback takes none of the new code.
+- **d0.** Where two stripes meet (`ChFi3d_SearchFD`), the meeting point on
+  their common face, measured along each one's edge; a stripe meeting
+  neither neighbour stops at its radius. A setback below `d0` is `d0`.
+- **A setback past the stripe's piece at the corner** drops that piece
+  (`RemoveSD`) and cuts the next, as step 2 planned; past the stripe's last
+  piece, or past a sharp edge's length, the corner fails.
+- **Edges between tangent faces are cut like sharp ones.** The corner code
+  crosses such an edge with one curve projected over several faces. With a
+  setback that plate came out valid in memory, invalid once written and
+  read back, and its volume a twentieth off (#876). In setback mode no
+  curve is projected over several faces, which is what 3.2 step 4 asked;
+  the face curves are the corner code's own battens and lines in the face's
+  parameters, from the contact curves' tangents, so the new 2D Hermite of
+  step 4 was not needed.
+
+### 9.2 The fallback
+
+`ChFi3d_Builder::SetCornerSetbackFallback(multiple)` (default 2, 0 = off;
+`extern "C" ChFi3d_SetCornerSetbackFallback` for a caller that looks it up
+at run time). `Compute()` runs the computation as before; where it ends not
+done with bad vertices (an exception out of it included, where it has them),
+it sets back every fillet stripe's end at those vertices and computes again:
+`d0`, then 1, 1.5, 2... times the largest radius at the vertex, up to the
+multiple. A step that fails at a vertex not set back yet is taken again with
+that vertex added, since setting one corner back can move the failure to the
+next. The first result that passes these checks is kept; with none, the
+setbacks and the failure are put back as they were. Fillets only; a chamfer
+has no setback. The checks, each one added for a result that got past the
+ones before it:
+
+- valid, and valid again after being written and read back (a plate over
+  several faces, section 9.1);
+- no edge looser than the input's loosest, or a twentieth of the smallest
+  radius set back. A set back corner on #523's cylinder was valid with an
+  edge of 0.39 at radius 3; today's fillets keep edges of up to about a
+  thirtieth of their radius (the plate fallback's measurements);
+- no face of no area: corners of #876's Fillet002 came out valid with a
+  face of area 2e-17 between two edges, which no mesh covers;
+- every fillet asked for is there: the midpoint of each edge filleted lies
+  off the result's faces by half of what a fillet of its radius moves it,
+  r (1 / cos(a / 2) - 1) for the angle a between the faces' normals there,
+  and by 1e-6 at least. In the every-edge sweep, 82 results were valid and
+  were the input itself, the fillet on a right-angled edge dropped
+  (`mini_post` E14, `issue474` Fillet002 E5...). A flat threshold of a
+  thousandth of the radius refused #876's own corner as well, whose edges
+  run between walls a degree apart.
+
+Two failures had no vertex to give the fallback, and now report one:
+
+- a corner that keeps only a partial result (its plate not done) left
+  `done` true; the computation ended without a shape, but the vertex was
+  not among the faulty ones;
+- a corner that returned without giving a stripe's end its points made
+  `ChFi3d_FilDS` read point 0 of the DS later (`Standard_ProgramError`, the
+  #876 XFAIL). The vertex loop now checks each stripe end after its corner.
+
+- a corner that put a null shape in the DS (the two-stripe corner of
+  `issue273_Fillet001` at edges 38 and 39, radius 0.3). Today another corner
+  of that fillet fails first and the DS is never built; once the fallback
+  mended that one, the topological build read the null shape and the
+  process died (81 crashes in the first vertex sweep). A null shape there
+  crashes the build in any case, so this is a failure either way.
+
+These change only how a failure is reported: the computation failed, or
+crashed, before.
+
+Each step of the ladder starts from a clean state: `Reset()` first (a
+failed computation leaves corner stripes with no spine, and `Compute` reads
+every spine before its own `Reset`; the same builder computed twice after a
+failure crashes upstream too), and a new `TopOpeBRepBuild_HBuilder`, as a
+build broken off by an exception leaves the old one half cleared.
+
+### 9.3 Measured so far
+
+Driver `sb.cpp` (scratch), `SetSetback` set explicitly:
+
+| Corner | Setbacks | Result |
+|---|---|---|
+| box, 3 fillets r 1 | 0, 1, 2, 3, 4 | all valid; volume 993.7251 at 0 (sphere corner 993.7293), falling monotonically to 992.2485 at 4 |
+| pyramid apex, 4 / 5 / 6 fillets | 0, 1, 2, 3 | all valid; at 0 the volume of today's corner to 1e-6 (4 and 6 edges) |
+| box, 2 fillets + 1 sharp edge | 0 to 3 | all valid |
+| box, 1 fillet + 2 sharp edges | 0 to 2 | all valid |
+
+Plate quality is the open question 8 raised: the box corner's largest edge
+tolerance is 1.5e-3 at `d0` and 5.5e-2 at 4 times the radius.
+
+The fallback, on `issue876_fillet_base.brep` (`tests/fork/fillet`):
+
+| Case | Today | With the fallback |
+|---|---|---|
+| the four edges at (17,16.75,3), r 0.3 | `Standard_ProgramError` | valid, 8665.7840, at `d0` |
+| the same, r 1 | `Standard_ProgramError` | valid, 8665.7870, at `d0` |
+| edge 37 alone, r 1 | not done, two faulty vertices | valid, 8665.7835 |
+
+The edges there run between nearly coplanar drafted faces, so the fillets
+change the volume by thousandths; the results agree with a mesh of them.
+
+The sweeps of the fillet work (`tests/fork/fillet`; every edge of 32 shapes
+alone at 0.3, 0.8 and 2, and at every vertex of three edges or more all of
+them, each pair and each one at 0.3 and 1), the installed TKFillet against
+the new one, each case in a process of its own:
+
+| Sweep | Cases | Made before | Made before, now | Failures made now |
+|---|---|---|---|---|
+| every edge | 4719 | 2680 | 2680, identical | 64 |
+| vertex | 14642 | 9611 | 9611, identical | 301 |
+
+Nothing that was made changes, in validity, volume or tolerance; no case
+crashes or times out that did not before. Each of the 365 results made now
+is valid, valid again when written and read back, and meshes; the change
+of its volume agrees with the change of its mesh's to 0.0035 (median) and
+0.39 at most (a vertex of `issue474` Fillet002, 42 taken off), where the
+fillets made before do to 0.026 and 0.28 on the same shapes.
+
+The suite, `tests/fork/fillet/run_tests.py`: 139 pass, 2 known broken; the
+#876 corner and the four ends past #523's cylinder are made, and with the
+FreeCAD preference at 0 the #876 corner is refused as before.
+
