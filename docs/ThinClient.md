@@ -906,6 +906,15 @@ instance rather than following later scopes, because the session outlives any on
 replayed event. `attachSelection()` is unchanged and still means the room, so every
 other observer in the tree is untouched and the stage-2 rule stands where it was right.
 
+**Superseded 2026-10-06** (`docs/TaskPanelPerView.md` sec 12): `attachSelection()` no
+longer means the room. A view of the main window selects into an instance of its own
+while it edits or owns a task dialog, and an observer is a FOLLOWER of the active view's
+instance (the default with no scope open, and what the tree and the property view ask
+for), BOUND to the instance a scope has current when it is built (an edit's task boxes),
+or ADOPTED by a dialog's view. A client's mirror is never the active view, so the rule
+this section protected -- what a mirror picks does not drive the room's panels -- holds
+by that instead.
+
 **What a mirror's selection does not do is repaint the served graph.** The graph is one,
 shared by every client, so a per-client highlight is not expressible in it: the room's
 observer feeds it and the mirror's instance has none. That is the honest reading of "a

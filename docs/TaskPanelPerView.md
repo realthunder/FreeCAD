@@ -743,3 +743,194 @@ of sec 4.3 does not survive contact with the fork as written:
   may assume it is visible"), and it is the larger part of the work.
 - There is no view-closed signal in `Gui::Application` yet (upstream's
   `slotViewClosed` listens to one); auto-close on a closed view needs it.
+
+## 12. A selection per view (built 2026-10-06, `e81747aafd`)
+
+Ordered between the two halves of milestone 2 (user, 2026-10-06), and it
+replaces the selection-gate proposal of 11.5: with the selection a view's
+own, its gate is too, and nothing has to be taken out and put back.
+
+### 12.1 The order, in the user's words
+
+> we need to do something about the selection. each edit session shall
+> have their own selection instance to avoid leaking.
+
+> if there is active view that is in editing, tree view selection should
+> route to the selection instance for that view. 3d view selection knows
+> which view it is originated. if it is from a view that is in edit,
+> route to that instance.
+
+> About dialogs, yes if it is intended for editing. The tree view two way
+> sync only applies to desktop. Client views selection whether in edit or
+> not shall not affect tree view. [...] Maybe we should give each view a
+> selection instance by default.
+
+> 1, opt out, 2, always entered on copy of the room selector, because
+> that's what they expect today, they can later on clean it if desired.
+
+(1: every task dialog gives its view an instance unless the dialog opts
+out. 2: an edit and a dialog start on a copy of the shared selection.)
+
+### 12.2 The model
+
+- **The view answers which instance it selects into.** A view of the main
+  window has a selection instance of its own while it has a reason to:
+  it is in an edit, or it owns a task dialog (`MDIView::takeOwnSelection`
+  / `releaseOwnSelection`, counted, so an edit with its dialog is one
+  instance). Otherwise it shares the room, as every view did. A served
+  client's view has had its own all along; nothing changes for it.
+- **The preference `PerViewSelection`** (View, default off) gives every
+  view its own from the start. One mechanism, two defaults: the shared
+  default keeps "select in one view, act in another" working from the 3D
+  views -- 72 sites ask for the selection of every document, the Link
+  commands among them -- and keeps a selection lit in every view of its
+  document. Read when a view is made.
+- **Entered on a copy, handed back at the end.** The first take copies
+  the room's selection (the entries themselves, picked points included).
+  The last release copies the view's selection back into the room: a
+  sketch stays selected after it is closed, for every view, ready for the
+  next command. *The hand-back is not in the order; it is what keeps
+  today's behaviour whole, and wants confirming.* What another view
+  selected in the room meanwhile is replaced by it.
+- **An edit session's instance is its initiator's** -- unchanged from
+  `docs/ThinClient.md` 8.11: a view that joins a shared session selects
+  into the initiating view's instance. What is new is that a desktop
+  initiator has one.
+- **3D picks go by the view they come from.** Every Coin event a desktop
+  viewer handles is handled with that view's instance current: the
+  session's in an edit, its own or the room outside one
+  (`View3DInventorViewer::processSoEvent`; the delayed preselection of a
+  hover fires from a timer and opens the same scope).
+- **Everything with no view of its own goes by the ACTIVE view.** The
+  tree, a toolbar command, a shortcut, the Python console: with no scope
+  open, `Gui::Selection()` is the active view's instance
+  (`SelectionSingleton::setAmbient`, set by
+  `MDIView::updateAmbientSelection` when a view is activated, takes or
+  releases an instance, or enters or leaves a session). A client's mirror
+  is never the active view of the main window, so a client's selection
+  never reaches the tree.
+- **The panels show the active view's selection.** The tree, the property
+  view and the selection view FOLLOW: they are attached to the active
+  view's instance, moved when another view is activated, and told to read
+  the selection again.
+
+### 12.3 Observers
+
+The larger part of the work. Before, every observer attached to the room
+by rule, and only the sketch's view provider bound itself to its
+session's instance. Now an observer is one of three things:
+
+- **A follower** hears the active view's instance and is moved with it
+  (`followSelection()`). The default with no scope open -- which is what
+  a workbench's or an addon's global observer is, Python's included --
+  and what the three panels ask for explicitly.
+- **Bound** to one instance (`bindSelection`, `attachSelectionToCurrent`),
+  and so by default when it is built while a scope has a view's own
+  instance current: an edit is STARTED inside its view's scope
+  (`Gui::Document::setEdit`), so the task boxes and the edit-mode
+  observers built there belong to that view. A viewer is bound to the
+  instance it selects into and rebinds when that changes.
+- **Adopted** (`adoptSelection`): given a home. `Control().showDialog`
+  finds every observer in the dialog and the widgets it shows and gives
+  it the owner view's instance -- the ones listening move, the ones that
+  listen only while a button of theirs is down attach there when they do.
+
+Moving an observer tells it `RmvPreselect` and `SetSelection` ("read the
+selection again"), the message an observer is already sent when too many
+changes pile up.
+
+Three things that make it hold:
+
+- **The notifying instance is the current one** for the extent of its
+  notification. Of about 1500 `Gui::Selection()` sites many are inside an
+  observer, and "the selection" there has to be the one that changed, not
+  whichever view is active.
+- **An instance that ends lets go of its observers**: they fall back to
+  following, except one filtered to an object, which is dropped rather
+  than handed to another instance with its gate.
+- **An instance is retired, not deleted, while a scope still names it**
+  (`SelectionSingleton::retire`): leaving an edit releases the instance
+  from inside the scope that made it current.
+
+The nine observers of the old kind (`Base::Observer`, attached to the
+room and not movable: the task view's watchers, the sketcher's general
+box, the material dialogs) are told of the active view's selection
+THROUGH the room, and of no other.
+
+### 12.4 Measured
+
+`tests/gui/selection-per-view.py` (`GuiSelectionPerView_tests_run`): one
+document, two views, a dialog and then an edit in one of them; then a
+second document with the preference on. 26 checks. On the tree before
+(`76d3a68d1e`), 13 of the first 23 fail, every one a leak between the two
+views:
+
+| | before | after |
+|---|---|---|
+| what a1 selects, read with a2 active | selected | not |
+| a clear with a2 active | clears a1's | leaves it |
+| the tree, a global Python observer | one selection | the active view's |
+| a gate set for a1's dialog | gates a2 | gates a1 only |
+| a click in a2 | lands in a1 too | a2's |
+| the highlight of what a1 selects | drawn in both | drawn in a1 |
+| in an edit: a1's picks from a2, a2's from a1 | shared | apart |
+
+The click, the tree and the picture are the real ones: synthetic mouse
+events on the view's own widget, the tree's selected items, the
+renderer's framebuffer in mode 3.
+
+`SelectionStack_tests_run` grew from 10 to 17 cases. One was RESTATED:
+`anObserverBuiltInsideAScopeStillHearsTheRoom` pinned the rule this
+replaces, and is now `anObserverBuiltInsideAViewsScopeBelongsToThatView`.
+The rest are new: following, binding, adoption, an instance ending, one
+retired inside its scope.
+
+Suites on it: Python 3379 OK; the GUI gate 70 OK; full ctest 954 of 955
+(964 entries, 3782 s serial), the one failure being that restated case,
+which was then rebuilt with the seven new ones and the preference's check
+box -- 17 of 17, and the 11 entries nearest the change again, on that
+build.
+
+### 12.5 What it does not do
+
+- **Render cache mode 0.** A view's highlight is per view in mode 3,
+  where each view's cache manager holds it. In plain Coin the highlight
+  state lives in scene nodes every view of the document shares
+  (`docs/ThinClient.md` 8.12 C, "one shared graph cannot carry N
+  highlights"): two views with different selections draw whichever
+  applied last.
+- **A dialog used while its view is not the active one.** Its widgets'
+  slots run with no scope open and reach the ACTIVE view's instance, and
+  an observer it builds late follows instead of being adopted. In combo
+  mode the panel is only shown while its view is active once the second
+  half of milestone 2 is in; view mode (M3) needs a scope around the
+  events delivered to a page.
+- **Observers a dialog keeps outside its widgets** (a plain member, a
+  Python observer registered by the panel) are not found by the adoption
+  and follow the active view.
+- **A Python panel cannot opt out** (`TaskDialog::usesOwnSelection` is
+  C++ only so far), and no dialog opts out yet.
+- **A shared session a client is in.** The session's instance is one for
+  every view in it, by 8.11: while the desktop's active view is in such a
+  session, the tree shows the session's selection, a client's picks in
+  it included. A client's OWN selection never reaches the tree.
+- **Deferred calls** run with no scope and take the active view's
+  instance, the hazard of sec 3.
+- The 31 sites that name the room on purpose (`SelectionRoom()`) were not
+  reviewed against the new meaning of "the room": the instance of the
+  views that have none of their own.
+
+### 12.6 Sec 8 corrected: what `origin/Transaction` gives
+
+Sec 8 and M6 say several live dialogs wait on `origin/Transaction`. Read
+on 2026-10-06 at `7d2c9e0a23`: it does not lift the limit.
+`Application::setActiveTransaction` still commits every document's open
+transaction before it opens the next, and the branch's own
+`docs/TransactionLog.md` lists "one edit slot: an open transaction or
+edit session is everyone's" under what it does not do (30.10). What it
+adds is per-author undo of COMMITTED steps over the transaction log. A
+transaction per session is new work, to be built on that branch's model
+-- so the merge has to come before M6, not that M6 comes with it. The
+merge is its own job: 482 commits, a trial merge conflicting in 94 files
+(41 Sketcher, 23 Gui, 7 App), and almost nothing in the files of this
+document.
