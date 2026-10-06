@@ -882,3 +882,55 @@ classic draft recomputes to the cell draft's body.
 first one's inner face at 20 deg leaning 3.64 into the second; the
 classic result is valid and fails the boolean check, Auto's is the two
 ribs fused, `800 + 500 tan(a) - 10 (50 tan(a) - 30 + 4.5 / tan(a))`.
+
+## 12. #876 (2026-10-06)
+
+### 12.1 The cones merge
+
+#876's roof (face 44, under the 2 thick lid) drafted about any of its
+walls came back in 66 to 78 faces, where the input has 44: the merge of
+section 10.1 broke the corner cones it put back together (a
+self-intersecting wire, an unorientable face), and the draft fell back to
+merging planar pieces only. The cone's tool was made from its apex
+(`BRepPrimAPI_MakeCone`, reference radius 0 there), the face's cone has
+its reference radius 1 at z = 3: the same surface, another location and
+so another v, and the merge, putting pieces of both on one surface, got
+their curves wrong. The tool is now made on the face's own surface
+(`revolutionTool()`: the lateral face of the face's `gp_Cone` between two
+values of v, past the box or to the apex, closed by planes): the 11 roof
+drafts come out in 44 to 48 faces, the same volumes, and a little
+faster (the 11 in the sweep, two recomputes each: 15.0 s to 12.5 s).
+
+Two things on the way, both measured:
+
+- The planar caps of such a solid must use their circle the other way
+  round from the lateral face. `BRepLib::OrientClosedSolid` turns the
+  whole solid, not a face of it; with a cap the same way round the tool is
+  not a valid solid, and the fuse leaks.
+- The frame must be direct. On #523's corner post the cylinder's own
+  position is indirect (axis -z); a tool on it fused into cells inside the
+  post that classify as outside (`NoClosure` for the top drafted about
+  face 3 at 15 deg). The position is made direct first (`directFrame()`:
+  the axis reversed, the seam and the turn kept; v changes sign).
+
+The cylinder's tool stays as it was (`BRepPrimAPI_MakeCylinder` in the
+direct frame, from where the box starts): on the face's own surface,
+#876's bottom face drafted about face 16 at 5 deg came out 0.34 over the
+classic draft's volume, and no cylinder needed merging.
+
+On the sweep (the 1222 and the 500, `Method = New`, the stop on) the only
+changes are the 11 roof drafts' face counts; every other case gives the
+same result, volume and face count as before.
+
+### 12.2 The roof through the lid: still refused
+
+Face 44 about face 36 at 5 deg rises 2.02 at its far edge, through the
+2 thick lid by a sliver at most 0.02 thick, from 0.3 inside the far wall.
+At the corner cones, tangent to the walls either side, the fuse does not
+split that sliver along the cone: the cell over the cusp between the cone
+and the two walls' planes stays one with the sliver over the cavity, and
+the fill reaches the wall below the cusp (`NoClosure`, with the tools on
+the face's own cones as before). The prototype gave a body (7628.97);
+which body is right there -- a slot 0.02 wide opened in the lid -- is a
+question for phase 2's tangent chains, where a neighbour tangent to the
+next one is handled as one surface.
