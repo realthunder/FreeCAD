@@ -1278,3 +1278,9 @@ fc_add_gui_test(GuiServeEmptyDocument_tests_run
 fc_add_gui_test(GuiOpenThroughCommand_tests_run
                 open-through-command.py
                 --timeout 180)
+
+# The status bar's view dimension says a shared unit once, "100 x 80 mm",
+# and keeps both where the sides differ.
+fc_add_gui_test(GuiStatusDimensionText_tests_run
+                status-dimension-text.py
+                --timeout 120)

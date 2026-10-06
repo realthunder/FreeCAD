@@ -6901,8 +6901,24 @@ void View3DInventorViewer::printDimension() const
         Base::Quantity qHeight(Base::Quantity::MilliMetre);
         qWidth.setValue(fWidth);
         qHeight.setValue(fHeight);
-        QString wStr = QString::fromStdString(Base::UnitsApi::schemaTranslate(qWidth));
-        QString hStr = QString::fromStdString(Base::UnitsApi::schemaTranslate(qHeight));
+        double wFactor = 1.0;
+        double hFactor = 1.0;
+        std::string wUnit;
+        std::string hUnit;
+        QString wStr =
+            QString::fromStdString(Base::UnitsApi::schemaTranslate(qWidth, wFactor, wUnit));
+        QString hStr =
+            QString::fromStdString(Base::UnitsApi::schemaTranslate(qHeight, hFactor, hUnit));
+
+        // A unit both share is said once, "100 x 80 mm". Two that differ --
+        // a view 15 m wide and 7000 mm high -- each keep their own, and so
+        // does a schema whose text does not end in its unit (feet and inches).
+        const QString unit = QString::fromStdString(wUnit);
+        if (!unit.isEmpty() && wUnit == hUnit && wStr.endsWith(unit)
+            && hStr.endsWith(unit)) {
+            wStr.chop(unit.size());
+            wStr = wStr.trimmed();
+        }
 
         // Create final string and update window
         dim = QStringLiteral("%1 x %2").arg(wStr, hStr);
