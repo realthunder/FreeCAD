@@ -2095,6 +2095,26 @@ public:
         return TopoShape(0,Hasher).makESlices(*this,dir,distances,op);
     }
 
+    /** Sets back the fillets at a vertex: each one stops a distance from the
+     * vertex, measured along its edge, and the opening they leave is closed by
+     * one patch tangent to them (a setback corner, docs/CornerBlending.md).
+     * Only with the OCCT fork; another OCCT throws.
+     */
+    struct FilletCorner {
+        /// A vertex of the source shape where filleted edges end
+        TopoDS_Shape vertex;
+        /** The setback of every fillet ending at the vertex; 0 sets them back
+         * only as far as they meet, less than 0 sets none here
+         */
+        double setback = -1.0;
+        /** The setbacks of single fillets, by an edge of each, over 'setback'.
+         * An edge that is not filleted is set back as far as the fillets
+         * beside it, and cannot be given a setback of its own.
+         */
+        std::vector<std::pair<TopoDS_Shape, double>> edges;
+    };
+    typedef std::vector<FilletCorner> FilletCorners;
+
     /* Make fillet shape
      *
      * @param source: the source shape
@@ -2103,6 +2123,7 @@ public:
      * @param radius2: the radius of the ending of the fillet
      * @param op: optional string to be encoded into topo naming for indicating
      *            the operation
+     * @param corners: setback corners. @sa FilletCorner.
      *
      * @return The original content of this TopoShape is discarded and replaced
      *         with the new shape. The function returns the TopoShape itself as
@@ -2110,7 +2131,8 @@ public:
      *         for the same shape in the same line of code.
      */
     TopoShape &makEFillet(const TopoShape &source, const std::vector<TopoShape> &edges, 
-            double radius1, double radius2, const char *op=nullptr);
+            double radius1, double radius2, const char *op=nullptr,
+            const FilletCorners &corners = FilletCorners());
     /* Make fillet shape
      *
      * @param edges: the edges of the source shape where to make fillets
@@ -2118,12 +2140,14 @@ public:
      * @param radius2: the radius of the ending of the fillet
      * @param op: optional string to be encoded into topo naming for indicating
      *            the operation
+     * @param corners: setback corners. @sa FilletCorner.
      *
      * @return Return the new shape. The TopoShape itself is not modified.
      */
     TopoShape makEFillet(const std::vector<TopoShape> &edges, 
-            double radius1, double radius2, const char *op=nullptr) const {
-        return TopoShape(0,Hasher).makEFillet(*this,edges,radius1,radius2,op);
+            double radius1, double radius2, const char *op=nullptr,
+            const FilletCorners &corners = FilletCorners()) const {
+        return TopoShape(0,Hasher).makEFillet(*this,edges,radius1,radius2,op,corners);
     }
 
     /// Describes a segment of an edge for fillet operation
@@ -2163,6 +2187,7 @@ public:
      *                       closeset parameter.
      * @param op: optional string to be encoded into topo naming for indicating
      *            the operation
+     * @param corners: setback corners. @sa FilletCorner.
      *
      * @return The original content of this TopoShape is discarded and replaced
      *         with the new shape. The function returns the TopoShape itself as
@@ -2173,7 +2198,8 @@ public:
                           const std::vector<TopoShape> &edges, 
                           const std::vector<FilletSegments> &segments,
                           double defaultRadius=0.0,
-                          const char *op=nullptr);
+                          const char *op=nullptr,
+                          const FilletCorners &corners = FilletCorners());
 
     /* Make fillet shape with variable radius per edge
      *
@@ -2187,14 +2213,16 @@ public:
      *                       closeset parameter.
      * @param op: optional string to be encoded into topo naming for indicating
      *            the operation
+     * @param corners: setback corners. @sa FilletCorner.
      *
      * @return Return the new shape. The TopoShape itself is not modified.
      */
     TopoShape makEFillet(const std::vector<TopoShape> &edges, 
                          const std::vector<FilletSegments> &segments,
                          double defaultRadius=0.0,
-                         const char *op=nullptr) const {
-        return TopoShape(0,Hasher).makEFillet(*this,edges,segments,defaultRadius,op);
+                         const char *op=nullptr,
+                         const FilletCorners &corners = FilletCorners()) const {
+        return TopoShape(0,Hasher).makEFillet(*this,edges,segments,defaultRadius,op,corners);
     }
 
     /* Make chamfer shape
@@ -2205,6 +2233,7 @@ public:
      * @param size2: the size of the other side of the chamfer
      * @param op: optional string to be encoded into topo naming for indicating
      *            the operation
+     * @param corners: setback corners. @sa FilletCorner.
      * @param flipDirection: whether to reverse two sides of the chamfer
      * @param asAngle: treat size2 as an angle of the chamfer
      *

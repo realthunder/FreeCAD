@@ -43,6 +43,8 @@ namespace Part {
     PartExport void getPyShapes(PyObject *obj, std::vector<TopoShape> &shapes, std::vector<App::DocumentObjectT> *objs = nullptr);
     PartExport std::vector<TopoShape> getPyShapes(PyObject *obj, std::vector<App::DocumentObjectT> *objs = nullptr);
     PartExport int initOCCTExtension();
+    /// A function of the OCCT fork's TKFillet by name, null without it
+    PartExport void *lookUpTKFillet(const char *name);
 }
 
 #endif //PART_PYCXX_H

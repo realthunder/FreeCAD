@@ -420,7 +420,7 @@ PartExport int initOCCTExtension()
 /// A function of the OCCT fork's TKFillet, looked up at run time like
 /// SetFuncShowTopoShape, so that a build against upstream OCCT, or a fork from
 /// before the function, still loads; null there.
-static void *lookUpTKFillet(const char *name)
+PartExport void *lookUpTKFillet(const char *name)
 {
 #ifdef FC_OS_WIN32
     HMODULE hModule = GetModuleHandleA("TKFillet.dll");

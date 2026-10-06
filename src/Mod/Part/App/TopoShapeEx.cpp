@@ -5047,8 +5047,80 @@ TopoShape &TopoShape::removEShape(const TopoShape &shape, const std::vector<Topo
     return *this;
 }
 
+namespace {
+// BRepFilletAPI_SetSetback of the OCCT fork's TKFillet
+typedef void (*FuncSetFilletSetback)(BRepFilletAPI_MakeFillet &,
+                                     const TopoDS_Vertex &,
+                                     const TopoDS_Edge *,
+                                     double);
+
+// Whether a fillet contour of mkFillet ends at the vertex, the one holding
+// edge if given
+bool filletEndsAt(const BRepFilletAPI_MakeFillet &mkFillet,
+                  const TopoDS_Shape &vertex,
+                  const TopoDS_Edge *edge = nullptr)
+{
+    for (int ic = 1; ic <= mkFillet.NbContours(); ++ic) {
+        if (edge && mkFillet.Contour(*edge) != ic)
+            continue;
+        if (mkFillet.FirstVertex(ic).IsSame(vertex) || mkFillet.LastVertex(ic).IsSame(vertex))
+            return true;
+    }
+    return false;
+}
+
+// Hands the setback corners to mkFillet, after its edges are added. The
+// setbacks are the OCCT fork's (docs/CornerBlending.md), looked up at run
+// time like its fallback settings; asking for one without the fork throws
+// rather than build a different shape.
+void setFilletCorners(BRepFilletAPI_MakeFillet &mkFillet,
+                      const TopoShape &shape,
+                      const TopoShape::FilletCorners &corners)
+{
+    if (corners.empty())
+        return;
+    static const auto setSetback =
+        (FuncSetFilletSetback)lookUpTKFillet("BRepFilletAPI_SetSetback");
+    if (!setSetback)
+        FC_THROWM(Base::CADKernelError, "fillet corner setback needs the OCCT fork");
+
+    for (const auto &corner : corners) {
+        const auto &vertex = corner.vertex;
+        if (vertex.IsNull())
+            FC_THROWM(Base::CADKernelError, "null fillet corner vertex");
+        if (vertex.ShapeType() != TopAbs_VERTEX)
+            FC_THROWM(Base::CADKernelError, "fillet corner is not a vertex");
+        int vindex = shape.findShape(vertex);
+        if (!vindex)
+            FC_THROWM(Base::CADKernelError, "fillet corner vertex does not belong to the shape");
+        if (!filletEndsAt(mkFillet, vertex))
+            FC_THROWM(Base::CADKernelError, "no fillet ends at corner Vertex" << vindex);
+        if (corner.setback >= 0.0)
+            setSetback(mkFillet, TopoDS::Vertex(vertex), nullptr, corner.setback);
+        for (const auto &v : corner.edges) {
+            const auto &shapeEdge = v.first;
+            if (shapeEdge.IsNull())
+                FC_THROWM(Base::CADKernelError, "null fillet corner edge");
+            if (shapeEdge.ShapeType() != TopAbs_EDGE)
+                FC_THROWM(Base::CADKernelError, "fillet corner setback is not on an edge");
+            int eindex = shape.findShape(shapeEdge);
+            if (!eindex)
+                FC_THROWM(Base::CADKernelError, "fillet corner edge does not belong to the shape");
+            const TopoDS_Edge &edge = TopoDS::Edge(shapeEdge);
+            if (!mkFillet.Contour(edge))
+                FC_THROWM(Base::CADKernelError, "fillet corner Vertex" << vindex
+                        << ": Edge" << eindex << " is not filleted");
+            if (!filletEndsAt(mkFillet, vertex, &edge))
+                FC_THROWM(Base::CADKernelError, "fillet corner Vertex" << vindex
+                        << ": the fillet of Edge" << eindex << " does not end there");
+            setSetback(mkFillet, TopoDS::Vertex(vertex), &edge, v.second);
+        }
+    }
+}
+} // anonymous namespace
+
 TopoShape &TopoShape::makEFillet(const TopoShape &shape, const std::vector<TopoShape> &edges,
-        double radius1, double radius2, const char *op)
+        double radius1, double radius2, const char *op, const FilletCorners &corners)
 {
     if(!op) op = Part::OpCodes::Fillet;
     if(shape.isNull())
@@ -5066,6 +5138,7 @@ TopoShape &TopoShape::makEFillet(const TopoShape &shape, const std::vector<TopoS
             FC_THROWM(Base::CADKernelError,"edge does not belong to the shape");
         mkFillet.Add(radius1, radius2, TopoDS::Edge(edge));
     }
+    setFilletCorners(mkFillet, shape, corners);
     return makEShape(mkFillet,shape,op);
 }
 
@@ -5073,7 +5146,8 @@ TopoShape &TopoShape::makEFillet(const TopoShape &shape,
                                  const std::vector<TopoShape> &edges,
                                  const std::vector<FilletSegments> &segments,
                                  double defaultRadius,
-                                 const char *op)
+                                 const char *op,
+                                 const FilletCorners &corners)
 {
     if(!op) op = Part::OpCodes::Fillet;
     if(shape.isNull())
@@ -5142,6 +5216,7 @@ TopoShape &TopoShape::makEFillet(const TopoShape &shape,
             UandR.SetValue(j++, gp_Pnt2d(1.0, edgeSegments.back().radius));
         mkFillet.Add(UandR, TopoDS::Edge(edge));
     }
+    setFilletCorners(mkFillet, shape, corners);
     return makEShape(mkFillet,shape,op);
 }
 

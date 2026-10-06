@@ -1578,27 +1578,113 @@ PyObject*  TopoShapePy::scaled(PyObject *args) const
     return static_cast<TopoShapePy*>(pyobj.ptr())->scale(args);
 }
 
-PyObject* TopoShapePy::makeFillet(PyObject *args) const
+namespace {
+// The (key, value) pairs of a dict, or of a sequence of 2-sequences
+std::vector<std::pair<Py::Object, Py::Object>> pyPairs(PyObject *obj, const char *what)
+{
+    std::vector<std::pair<Py::Object, Py::Object>> res;
+    if (PyDict_Check(obj)) {
+        PyObject *key, *value;
+        Py_ssize_t pos = 0;
+        while (PyDict_Next(obj, &pos, &key, &value))
+            res.emplace_back(Py::Object(key), Py::Object(value));
+        return res;
+    }
+    if (!PySequence_Check(obj) || PyUnicode_Check(obj))
+        throw Py::TypeError(std::string("expect ") + what + " as a dict or a sequence of pairs");
+    for (const auto &item : Py::Sequence(obj)) {
+        if (!PySequence_Check(item.ptr()) || PySequence_Size(item.ptr()) != 2)
+            throw Py::TypeError(std::string("expect ") + what + " as a dict or a sequence of pairs");
+        Py::Sequence pair(item);
+        res.emplace_back(pair[0], pair[1]);
+    }
+    return res;
+}
+
+// A sub-shape of shape given as a shape or by its name
+TopoDS_Shape pySubShape(const TopoShape &shape, const Py::Object &obj)
+{
+    if (PyUnicode_Check(obj.ptr()))
+        return shape.getSubShape(Py::String(obj).as_std_string().c_str());
+    if (PyObject_TypeCheck(obj.ptr(), &TopoShapePy::Type))
+        return static_cast<TopoShapePy*>(obj.ptr())->getTopoShapePtr()->getShape();
+    throw Py::TypeError("expect a shape or a sub-shape name");
+}
+
+bool isPyNumber(PyObject *obj)
+{
+    return PyNumber_Check(obj) && !PySequence_Check(obj);
+}
+
+// A float or an int as a double
+double pyDouble(PyObject *obj)
+{
+    double v = PyFloat_AsDouble(obj);
+    if (v == -1.0 && PyErr_Occurred())
+        throw Py::Exception();
+    return v;
+}
+
+// makeFillet()'s corners: {vertex: setback | {edge: setback} | (setback, {edge: setback})}
+TopoShape::FilletCorners pyFilletCorners(const TopoShape &shape, PyObject *obj)
+{
+    TopoShape::FilletCorners corners;
+    if (!obj || obj == Py_None)
+        return corners;
+    for (const auto &item : pyPairs(obj, "corners")) {
+        corners.emplace_back();
+        auto &corner = corners.back();
+        corner.vertex = pySubShape(shape, item.first);
+        PyObject *value = item.second.ptr();
+        PyObject *edges = nullptr;
+        if (isPyNumber(value))
+            corner.setback = pyDouble(value);
+        else if (PyTuple_Check(value) && PyTuple_Size(value) == 2
+                 && isPyNumber(PyTuple_GetItem(value, 0))) {
+            corner.setback = pyDouble(PyTuple_GetItem(value, 0));
+            edges = PyTuple_GetItem(value, 1);
+        }
+        else
+            edges = value;
+        if (!edges)
+            continue;
+        for (const auto &e : pyPairs(edges, "corner edges"))
+            corner.edges.emplace_back(pySubShape(shape, e.first), pyDouble(e.second.ptr()));
+    }
+    return corners;
+}
+} // anonymous namespace
+
+PyObject* TopoShapePy::makeFillet(PyObject *args, PyObject *kwds) const
 {
     // use two radii for all edges
     double radius1, radius2;
     PyObject *obj;
+    PyObject *pyCorners = Py_None;
 #ifndef FC_NO_ELEMENT_MAP
-    if (!PyArg_ParseTuple(args, "ddO", &radius1, &radius2, &obj)) {
+    static const std::array<const char *, 5> kwlist2{"radius1", "radius2", "edges", "corners", nullptr};
+    static const std::array<const char *, 4> kwlist1{"radius", "edges", "corners", nullptr};
+    if (!Base::Wrapped_ParseTupleAndKeywords(args, kwds, "ddO|O", kwlist2,
+                                             &radius1, &radius2, &obj, &pyCorners)) {
         PyErr_Clear();
-        if (!PyArg_ParseTuple(args, "dO", &radius1, &obj)) {
+        if (!Base::Wrapped_ParseTupleAndKeywords(args, kwds, "dO|O", kwlist1,
+                                                 &radius1, &obj, &pyCorners)) {
             PyErr_SetString(PyExc_TypeError, "This method accepts:\n"
                     "-- one radius and a list of edges\n"
-                    "-- two radii and a list of edges");
+                    "-- two radii and a list of edges\n"
+                    "either followed by optional corners");
             return nullptr;
         }
         radius2 = radius1;
     }
     try {
-        return Py::new_reference_to(shape2pyshape(getTopoShapePtr()->makEFillet(
-                        getPyShapes(obj),radius1,radius2)));
+        const auto &shape = *getTopoShapePtr();
+        return Py::new_reference_to(shape2pyshape(shape.makEFillet(
+                        getPyShapes(obj),radius1,radius2,nullptr,pyFilletCorners(shape,pyCorners))));
     }PY_CATCH_OCC
 #else
+    (void)kwds;
+    (void)pyCorners;
     if (PyArg_ParseTuple(args, "ddO", &radius1, &radius2, &obj)) {
         try {
             const TopoDS_Shape& shape = this->getTopoShapePtr()->getShape();

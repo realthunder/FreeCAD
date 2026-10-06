@@ -459,12 +459,23 @@ scaled(factor,[base=App.Vector(0,0,0)]) -> shape
       </Documentation>
       <Sandbox tier="call"/>
     </Methode>
-    <Methode Name="makeFillet" Const="true">
+    <Methode Name="makeFillet" Const="true" Keyword="true">
       <Documentation>
         <UserDocu>Make fillet.
-makeFillet(radius,edgeList) -> Shape
+makeFillet(radius,edgeList,corners=None) -> Shape
 or
-makeFillet(radius1,radius2,edgeList) -> Shape
+makeFillet(radius1,radius2,edgeList,corners=None) -> Shape
+--
+corners: setback corners, where the fillets at a vertex each stop a distance
+from it, measured along the edge, and the opening they leave is closed by one
+patch tangent to them. Only with the OCCT fork. A dict, or a sequence of
+pairs, from a vertex of this shape to its setback:
+  {vertex: setback}: every fillet ending at the vertex; 0 sets them back only
+      as far as they meet
+  {vertex: {edge: setback}}: single fillets, by an edge of each
+  {vertex: (setback, {edge: setback})}: both, the edges' over the vertex's
+A vertex or edge is a shape or a sub-shape name such as 'Vertex3'. An edge
+that is not filleted is set back as far as the fillets beside it.
         </UserDocu>
       </Documentation>
       <Sandbox tier="call"/>

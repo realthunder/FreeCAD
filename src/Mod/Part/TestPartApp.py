@@ -42,6 +42,7 @@ from parttests.TestLinkArray import (
 )
 from parttests.ShapeListTest import ShapeListTest
 from parttests.TopoShapeListTest import TopoShapeListTest
+from parttests.FilletCornerTest import FilletCornerTest
 
 #---------------------------------------------------------------------------
 # define the test cases to test the FreeCAD Part module
