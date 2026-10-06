@@ -27,12 +27,15 @@ report views, the reporter's own files -- is kept beside the dev tree under
 | 5 | 2026-10-06 | title bar with the workbench bar docked: the menu does not unfold on hover | FIXED if it is entry 6's cause; to confirm |
 | 6 | 2026-10-06 | maximized with the custom title bar: sometimes no margin at the top | FIXED |
 | 7 | 2026-10-06 | crash after answering Yes to the recompute question on `scanner.FCStd` | STAGED, cause of the GL error open |
-| 8 | 2026-10-06 | `scanner.FCStd`: the migration recompute fails | OPEN |
+| 8 | 2026-10-06 | `scanner.FCStd`: the migration recompute fails | FOUND in full; the helix FIXED; the rest is entries 14 to 16 |
 | 9 | 2026-10-06 | the 3D view lags behind the mouse: hover highlight, wheel zoom | OPEN |
 | 10 | 2026-10-06 | a 3D view is slow to take a new size | OPEN |
 | 11 | 2026-10-06 | dark theme: wrong colors (checkbox border, title bar buttons), audit asked | OPEN |
 | 12 | 2026-10-06 | TechDraw: dimensions and cosmetics are covered by the face fill | OPEN |
 | 13 | 2026-10-06 | report view: grouped messages with an expand icon in the margin, no underscore (change request) | OPEN |
+| 14 | 2026-10-06 | a Draft with no neutral plane given turns the other way after a recompute (from entry 8) | FOUND |
+| 15 | 2026-10-06 | a Pad "up to first" gives a third result (from entry 8) | OPEN |
+| 16 | 2026-10-06 | faces of a "Mutated" copy-on-change binder are renamed by every recompute in a new session (from entry 8; the old build too) | FOUND |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -260,14 +263,43 @@ the document had finished loading -- reached the same "Recompute error" box
 and repainted without a GL error, so answering before the load had finished
 is the lead to follow.
 
-## 8. `scanner.FCStd`: the migration recompute fails -- OPEN
+## 8. `scanner.FCStd`: the migration recompute fails -- FOUND in full; the helix FIXED
 
 **Seen (2026-10-06), twice:** the file is from FreeCAD-Link 2025.1020 and asks
 for a recompute "for migration purpose"; the recompute ends in "Recompute
-failed!". In the report view: `SubShapeBinder.cpp(477): scanner#Binder018
-failed to obtain shape from scanner#Binder008.?Face1` (`Null shape`), "auto
-change element reference" on `Helix001.Profile` and `Pocket037.Profile`, and a
-run of TechDraw "no exact match for changed 2d reference". Not looked at yet.
+failed!".
+
+**Measured against the build that wrote the file.** The same script was run
+headless in both -- `FreeCAD-Link-Tip-...-20251015\bin\FreeCADCmd.exe` (OCCT
+7.7.2) and the dev tree (OCCT 8.0.1) -- on a copy of the file: touch every
+object, recompute, list what is invalid and every object's volume
+(`..\dl\handson\2026-10-06\entry8-*.txt`). The old build needs no recompute to
+open the file (0 objects touched as loaded; here 223), so nothing below shows
+in it until something is recomputed.
+
+| | old build, full recompute | this build |
+|---|---|---|
+| invalid | 4: Binder013, 014, 017, 018 | 6: the same four, `Draft`, `Fillet011` |
+| `Helix`, `Helix001` (subtractive) | 978.14, as saved | 17.49 |
+| `Pad051` and the four features after it | 3400.82 ... | 3282.67 ... (saved: 3256.82) |
+
+Four separate things:
+
+1. **The subtractive helix cut nothing and kept the intersection -- FIXED,**
+   `a0a7f68092`. The file has `Outside` on and `AddSubType` Subtractive, and
+   the old build cuts: in this fork the type was already the authority and
+   `Outside` was left over, doing nothing. `Helix::onDocumentRestored` (from
+   `fda7e0a6ce`, 2026-09-27) read that pair as a file from before
+   `AddSubType` and turned it into Intersecting. It does that now only for
+   an object without `_ProfileBasedVersion`, which is what an upstream file
+   is. `TestHelix.testSubtractiveOutside` covers both kinds of file; the two
+   helixes and the two links to them come out as saved again.
+2. **`Draft` fails** ("Failed to create draft:"), and `Fillet011` after it
+   only in the sense of the next entry. Entry 14.
+3. **`Pad051` and what follows it** (`Hole007`, `Pocket040` to `042`, and
+   `Fillet011` on `Pocket042`) differ. Entry 15.
+4. **The four binders.** Not a regression: the old build breaks them the same
+   way as soon as `Binder008` is recomputed. Entry 16.
 
 ## 9. The 3D view lags behind the mouse -- OPEN
 
@@ -332,6 +364,62 @@ icon in front of it, in the margin area)."
 Wanted: no underscore on a grouped message; a clickable expand icon ahead of
 it; the message text itself stays aligned with ordinary messages, the icon in
 the margin.
+
+## 14. A Draft with no neutral plane given turns the other way -- FOUND
+
+**From entry 8.** `Draft` in `scanner.FCStd`: face `Face6` of `Pad036`, 11 deg,
+`Reversed` on, no neutral plane and no pull direction. Old build: valid, 285.76.
+This build: "Failed to create draft:", and with `Reversed` OFF the same 285.76.
+
+**Not the kernel's draft.** On a plain box every case agrees between 7.7.2 and
+8.0.1, guessed plane included (`entry8-box-*.txt`), and the pad's shape as
+stored in the file, drafted on its own in this build, gives the old result.
+
+**Cause:** with no neutral plane given, `Draft::execute` guesses one from "the
+first edge of the first face". Recomputed here, `Pad036`'s top face lists its
+four edges in another order than the stored shape has them -- the first is the
+opposite edge -- so the guessed plane is on the other side, the pull direction
+points the other way, and `Reversed` means the opposite
+(`entry8-draft*.txt`). Whether the order comes from OCCT 8.0.1's prism or from
+the ported Pad was not established.
+
+**Not fixed.** The guess depends on an order nothing promises. A file saved
+with a guessed plane has no record of which edge it was; one way out is to
+record the edge by its mapped name the first time, taken from the stored shape
+on restore. To decide with the reporter.
+
+## 15. A Pad "up to first" gives a third result -- OPEN
+
+**From entry 8.** `Pad051`: `Type` UpToFirst, `Reversed`, profile `Binder033`,
+base `Pocket039`. Volume as saved 3256.82; old build recomputed 3400.82; this
+build 3282.67. The base and the profile are the same in both builds by volume
+and by face and edge count. The old build does not reproduce the saved value
+either, so the file does not say which is right. `Hole007` and `Pocket040` to
+`042` sit on it and differ in step; `Pocket040` and `042` are `TwoLengths` in
+the old build and read here as `Length` with `SideType` "Two sides", with the
+same tool volume where the base is the same (`Pocket042`: 577.27 in both).
+Not looked at further.
+
+## 16. Faces of a "Mutated" binder are renamed by every recompute in a new session -- FOUND
+
+**From entry 8; the old build does the same.** `Binder008` binds `Body004`
+with `BindCopyOnChange` Mutated. Such a binder copies its support into a
+temporary document (`_tmp_binder`, `SubShapeBinder::update`), and the element
+names of its shape carry the copies' object ids: `Face1` was
+`...;:Hd4b:7,F;:Hd4c,F;...` in the file, `...;:H86d:7,F;:H86e,F;...` after a
+recompute here and `...;:Hb88:7,F;:Hb89,F;...` after one in the old build. The
+ids are whatever the temporary document's counter stood at, so they differ in
+every session, and `Binder013`, `014`, `017` and `018`, which refer to
+`Binder008`'s faces by those names, lose them: "Failed to obtain shape
+scanner#Binder008.?Face1".
+
+What makes it show here is that this build recomputes the file on opening,
+for migration, where the old one had no reason to recompute `Binder008`.
+
+**Not fixed.** The names would be stable if the copies' ids were replaced by
+those of the objects they are copies of. Files saved before that would break
+once more, unless a missing name is also looked up with the copies' ids taken
+out of both sides. To decide with the reporter.
 
 ## Inbox
 
