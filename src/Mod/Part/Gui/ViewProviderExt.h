@@ -245,7 +245,14 @@ public:
      *
      * The names are the object's and their looks are here, one entry for
      * each (docs/ShapeAppearanceDesign.md sec 13). An entry is a whole
-     * material.
+     * material, and is read as one: by getMaterial(), never by what the
+     * list keeps as its base, which is whatever its entries agree on.
+     *
+     * The list's follow flag is put to a use of its own here. Set, the list
+     * holds colours and no more -- what a file older than this property
+     * has, read in through MappedColors -- and each element is the object
+     * in that colour, whatever the object comes to look like. The setters
+     * clear it: what they store is the whole of each look.
      */
     App::PropertyAppearanceList MappedAppearance;
     /// A name over MappedAppearance's diffuse field, as DiffuseColor is
@@ -317,11 +324,9 @@ public:
             const std::map<std::string,App::MaterialAppearance> &appearances) override;
     /** The named elements' looks, as they are to be drawn
      *
-     * MappedAppearance over the object's base as that is now, not as it was
-     * when the names were written: of each entry the colour is the
-     * element's own always, and of the rest what it was given that the
-     * object did not have (docs/ShapeAppearanceDesign.md sec 13.7). A
-     * shared copy until this writes to it; nothing is stored.
+     * MappedAppearance, each entry a whole material; or, where the list
+     * holds colours and no more (its follow flag), the object as it is now
+     * in each of them. Read with getMaterial() and getDiffuseColors().
      */
     App::AppearanceList namedAppearances() const;
     std::map<std::string,App::Color> getElementColors(const char *element=nullptr) const override;

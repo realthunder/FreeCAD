@@ -2314,6 +2314,13 @@ void ViewProviderPartExt::onChanged(const App::Property* prop)
         // arrays, which is what applyShapeAppearance fills in -- colours
         // alone while diffuse is the only varying field, whole materials
         // once any other field varies per face.
+        //
+        // A named face is its whole look, and in this list holds only what
+        // of that the object has not: the object given the gloss a named
+        // face has leaves nothing saying the face keeps it. So the names
+        // are written again where there are any, ahead of the draw.
+        if (MappedAppearance.getSize() && !UpdatingColor && !isRestoring())
+            updateColors();
         applyShapeAppearance();
         Gui::ColorUpdater::addObject(getObject());
     }
@@ -3337,20 +3344,20 @@ std::map<std::string,App::Color> ViewProviderPartExt::getElementColors(const cha
 
 App::AppearanceList ViewProviderPartExt::namedAppearances() const
 {
-    App::AppearanceList list = MappedAppearance.getList();
+    const App::AppearanceList &list = MappedAppearance.getList();
     const int count = list.getSize();
-    if(!count)
+    if(!count || !list.isFollowingMaterial())
         return list;
-    if(list.isPBR()!=ShapeAppearance.isPBR())
-        list.convertPBR(ShapeAppearance.isPBR());
-    // The colours first, as they read over the base they were written
-    // against: an entry whose colour that base happened to have states no
-    // colour of its own, and would take the object's new one.
+    // Colours and no more. Not the list with another base under it: what a
+    // list keeps as its base is what all its entries agree on, the default
+    // material's gloss here, and says nothing of the object.
     const std::vector<App::Color> colors = list.getDiffuseColors();
-    list.setBase(ShapeAppearance.getBase());
+    App::AppearanceList looks;
+    looks.setPBR(ShapeAppearance.isPBR());
+    looks.setSize(count, ShapeAppearance.getBase());
     for(int i=0; i<count; ++i)
-        list.setDiffuseColor(i, colors[i]);
-    return list;
+        looks.setDiffuseColor(i, colors[i]);
+    return looks;
 }
 
 std::map<std::string,App::MaterialAppearance>
@@ -3399,8 +3406,8 @@ void ViewProviderPartExt::setElementColors(const std::map<std::string,App::Color
     if(!propColoredElements)
         return;
     bool touched = false;
-    // The object's own first: a name given a colour and no more takes the
-    // rest of its look from the object as this call leaves it.
+    // The object's own first: a new name is the object as this call leaves
+    // it, in the colour it is given.
     for(auto &v : info) {
         if(v.first == "Face") {
             if(ShapeColor.getValue()!=v.second) {
@@ -3494,15 +3501,15 @@ void ViewProviderPartExt::setNamedElements(App::PropertyLinkSub *names,
                                            const std::vector<App::MaterialAppearance> &looks,
                                            bool touched)
 {
-    // Stored over the object's base as it is now, so that of each look
-    // only what the object has not is the element's own -- and its colour,
-    // which namedAppearances() holds for it whatever the base comes to be.
+    // The whole of each look, and said to be so: the follow flag is what
+    // marks a list of colours and no more (namedAppearances()).
     App::AppearanceList list;
     if(!looks.empty()) {
         list.setPBR(ShapeAppearance.isPBR());
         list.setSize(static_cast<int>(looks.size()), ShapeAppearance.getBase());
         for(size_t i=0;i<looks.size();++i)
             list.set1Value(static_cast<int>(i), looks[i]);
+        list.setFollowMaterial(false);
     }
     if(!MappedAppearance.getList().isSame(list)) {
         touched = true;

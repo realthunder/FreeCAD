@@ -322,13 +322,14 @@ def run():
             doc.recompute()
 
         own = gloss(vp.ShapeAppearance.Base)
-        # A colour and no more: the face goes on taking the object's gloss.
+        # A face given a colour is the object as it is then, in that
+        # colour, whole: a gloss the object is given after is not the face's.
         paint(doc, "green bottom", "Box", {bottom: GREEN})
         glossed(0.5)
-        check("a face given a colour takes the object's new gloss (%r)" % gloss(vp.ShapeAppearance[ibottom]),
-              gloss(vp.ShapeAppearance[ibottom]) == 0.5 and rgb(vp.DiffuseColor[ibottom]) == GREEN)
+        check("a face given a colour keeps the gloss the object had (%r)" % gloss(vp.ShapeAppearance[ibottom]),
+              gloss(vp.ShapeAppearance[ibottom]) == own and rgb(vp.DiffuseColor[ibottom]) == GREEN)
         check("and so its name says (%r)" % gloss(vp.getElementAppearances()[bottom]),
-              gloss(vp.getElementAppearances()[bottom]) == 0.5)
+              gloss(vp.getElementAppearances()[bottom]) == own)
         glossed(own)
 
         doc.openTransaction("matte red top")
@@ -367,10 +368,49 @@ def run():
               and named(doc.Box) == {top: BLUE, bottom: GREEN})
         check("and drawn as it was (%r)" % gloss(vp.ShapeAppearance[itop]),
               gloss(vp.ShapeAppearance[itop]) == 0.25 and shown(doc.Box) == there)
+        # One name alone, and names that agree: a list keeps what all its
+        # entries agree on as its base, and the looks are not read from that.
+        matte = vp.getElementAppearances()[top]
+        vp.setElementAppearances({top: matte})
+        doc.recompute()
+        check("one name alone keeps its material (%r)" % gloss(vp.ShapeAppearance[itop]),
+              gloss(vp.ShapeAppearance[itop]) == 0.25 and gloss(vp.getElementAppearances()[top]) == 0.25)
+        vp.setElementAppearances({top: matte, bottom: matte})
+        doc.recompute()
+        check("two names with one material keep it (%r)" % sorted({gloss(x) for x in vp.ShapeAppearance}),
+              gloss(vp.ShapeAppearance[itop]) == 0.25 and gloss(vp.ShapeAppearance[ibottom]) == 0.25
+              and sorted({gloss(x) for x in vp.ShapeAppearance}) == sorted({0.25, own}))
+        # The object given the gloss a named face has, and then another:
+        # the face's is its own through both.
+        glossed(0.25)
+        glossed(0.6)
+        check("the object given that gloss and then another: the faces keep theirs (%r)"
+              % sorted({gloss(x) for x in vp.ShapeAppearance}),
+              gloss(vp.ShapeAppearance[itop]) == 0.25 and gloss(vp.ShapeAppearance[ibottom]) == 0.25
+              and gloss(vp.ShapeAppearance.Base) == 0.6)
+        glossed(own)
         vp.setElementAppearances({})
         doc.recompute()
-        check("its name taken away: all of the look goes back (%r)" % sorted({gloss(x) for x in vp.ShapeAppearance}),
+        check("the names taken away: all of the look goes back (%r)" % sorted({gloss(x) for x in vp.ShapeAppearance}),
               {gloss(x) for x in vp.ShapeAppearance} == {own} and shown(doc.Box) == {})
+        App.closeDocument(doc.Name)
+
+        # Names out of an older file have colours and no more: each is the
+        # object in its colour, whatever the object comes to look like --
+        # until the names are written again, whole.
+        doc = App.openDocument(old)
+        vp = doc.Box.ViewObject
+        was = named(doc.Box)
+        glossed(0.5)
+        check("names from an older file take the object's gloss (%r)" % sorted({gloss(x) for x in vp.ShapeAppearance}),
+              {gloss(x) for x in vp.ShapeAppearance} == {0.5}
+              and {gloss(v) for v in vp.getElementAppearances().values() if gloss(v) != 1.0} == {0.5}
+              and named(doc.Box) == was and len(shown(doc.Box)) == len(was))
+        vp.setElementColors(dict(was))
+        doc.recompute()
+        glossed(0.6)
+        check("written again they are whole, and keep it (%r)" % sorted({gloss(x) for x in vp.ShapeAppearance}),
+              sorted({gloss(x) for x in vp.ShapeAppearance}) == [0.5, 0.6] and named(doc.Box) == was)
         App.closeDocument(doc.Name)
     except Exception:
         lines.append("FAIL exception\n" + traceback.format_exc())

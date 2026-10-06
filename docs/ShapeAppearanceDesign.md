@@ -3049,23 +3049,11 @@ From the class, with nothing written for it:
 store's colours. Nothing is drawn that was not.
 
 **The base, weighed** (13.6 left it open, and proposed keeping it the
-object's). *Not kept.* Keeping it is a write to a saved property whenever
-the object's look changes and names exist: a row in the log nobody made,
-and two branches' stores differing where neither painted. It also loses
-something. A field is a named face's own while it differs from the base;
-kept in step, a face whose gloss the object's came to match for a while
-would stop holding it, and follow the object from then on.
-
-So the store is read over the object's base as that is when it is read,
-and nothing is stored for it: a copy -- the list is shared until written,
-it costs a pointer -- its base set to the object's, each entry's colour
-put back as it was. That is step 4's `namedAppearances()`. The stored base
-is the object's as it was when the names were last written, which is what
-the entries were sparse against then. What a named face has of its own:
-**its colour always; of the rest, what it was given that the object did
-not have.** The rest of 13.6's description stands -- the fields are held
-by array, so once one named face has a gloss of its own the others hold
-the one they had.
+object's). *Not kept*: it would be a write to a saved property whenever
+the object's look changes and names exist -- a row in the log nobody made,
+and two branches' stores differing where neither painted. What was built
+in its place at step 4, the store read over the object's base as that is
+when it is read, **did not stand either: see "withdrawn" under step 4.**
 
 `scripts/transaction-log-paint-check.py`, 26: the seven new are a material
 for each name, the two read back from a saved file by name and as drawn,
@@ -3142,20 +3130,61 @@ class: the default material in each colour out, the colour of each
 material in.
 
 *`ViewProviderPartExt`.* Both setters end in one place
-(`setNamedElements()`): the looks stored over the object's base as it is
-then, so that of each only what the object has not is an entry's own.
+(`setNamedElements()`), which stores the whole of each look.
 `setElementColors()` gives a name that has a look its new colour and
-leaves the rest of the look; a new name is the object with that colour.
-`setElementAppearances()`'s `Face` is the base, whole
+leaves the rest of the look; a new name is the object as it is then, in
+that colour. `setElementAppearances()`'s `Face` is the base, whole
 (`ShapeAppearance.setBase`); `Edge` and `Vertex` are colours, as their
 arrays are.
 
-`namedAppearances()` is 13.7's reading of the store: a copy, its base set
-to the object's as it is now, each entry's colour put back. `updateColors()`
-draws from it: a named face is given its whole look
-(`AppearanceList::set1Value`) over what the colours wrote, so the per-face
-part of `ShapeAppearance` stays in sec 12's form. `getElementAppearances()`
-with no element answers from it too; with one, it is the face as drawn.
+`updateColors()` draws from `namedAppearances()`: a named face is given
+its whole look (`AppearanceList::set1Value`) over what the colours wrote,
+so the per-face part of `ShapeAppearance` stays in sec 12's form.
+`getElementAppearances()` with no element answers from it too; with one,
+it is the face as drawn.
+
+**An entry is a whole material and nothing of it follows the object** --
+Q1 as it was ruled, the loss 13.4 named with it. A face that is painted is
+the object as it was when it was painted, in that colour; a gloss the
+object is given after is not the face's.
+
+*Withdrawn, having been built and committed with this step:* 13.6's way
+of keeping a painted face following the object's finish -- the store
+sparse against a base, a field the face's own while it differs from it,
+the base swapped for the object's when read. It cannot be had from the
+list. What a list keeps as its base is what all its entries agree on (sec
+12, the fold of step 3), so the base under the store is the object's look
+only until the entries agree on something else: one named face given a
+gloss is a list of one, which is its own base; two named faces given the
+same gloss agree on it. Either way the gloss was in the base, the base was
+swapped out, and the faces drew the object's. Measured through the panel
+at step 5, which names one face at a time (`panelp.py`: gloss 0.25 given,
+0.37 drawn). The step's own check had two names with different looks and
+did not see it.
+
+So the looks are read as whole materials (`getMaterial()`), which the fold
+does not change. Following the object could be had honestly with one more
+stored value -- the object's look the names were written over, to compare
+each entry with -- **which is the user's to ask for; it is not built.**
+
+*What follows the object, and how it is told.* A file older than the
+store has colours and no more, read in through `MappedColors`. Those
+entries are not materials anybody chose -- the default material in each
+colour -- and to draw them as whole looks would give every painted face of
+every older document the default gloss. So the list's own follow flag
+(sec 15's, which this list has no other use for) marks them: set, as a
+list is born, the store holds colours and no more, and each element is
+the object as it is *now* in that colour (`namedAppearances()`); the
+setters clear it, and what they store is whole. Nothing is written when a
+document is read, and an older document's painted faces go on taking the
+object's finish until its names are next written.
+
+*The object given a look a named face has.* The per-face part of
+`ShapeAppearance` holds of a face only what the object has not (sec 12).
+The object given the gloss a named face has leaves nothing saying the
+face keeps it, and given another after, the face went with it. The names
+are written again when `ShapeAppearance` changes and there are any
+(`onChanged`), ahead of the draw.
 
 A map a look names is content the document holds by its hash, and the
 list that names it has to hold it: `holdStoredBlobs()` on the store when a
@@ -3181,9 +3210,12 @@ Left alone because the same test stands between a restored
 let through there has not been looked at. The paint check sets the
 object's gloss through `ShapeAppearance.Base`.
 
-Paint check, 43: a face given a colour and no more takes a gloss given to
-the object after, and its name says so; a material by name drawn with its
-gloss, the other faces with the object's, read back by name, the object's
-own look not the names'; undone and redone; a colour given to a name that
-has a material changes its colour and keeps the rest; saved and read back
-by name and as drawn; its name taken away, all of the look gone back.
+Paint check, 48: a face given a colour keeps the gloss the object had,
+and its name says so; a material by name drawn with its gloss, the other
+faces with the object's, read back by name, the object's own look not the
+names'; undone and redone; a colour given to a name that has a material
+changes its colour and keeps the rest; saved and read back by name and as
+drawn; one name alone keeping its material, and two with one material;
+the object given that gloss and then another, the faces keeping theirs;
+the names taken away, all of the look gone back; names out of an older
+file taking the object's gloss, and written again keeping it.
