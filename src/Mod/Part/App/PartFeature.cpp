@@ -136,6 +136,12 @@ struct Feature::ShapeVersion {
     TopLoc_Location blobMotion;
     /// The persisted form, a dynamic `_BaseShape<N>` property, or null
     PropertyPartShape *materialized = nullptr;
+    /** How the live shape lies to this generation's, both before their
+     * placement, when the feature said so (Feature::setShapeMotion()): the
+     * generation is searched moved by it.  In memory only.
+     */
+    Base::Matrix4D motion;
+    bool moved = false;
 
     /** The generation's shape.  A generation adopted from a restored
      * property is not parsed just to be listed: its shape is read from the
@@ -1480,6 +1486,18 @@ void Feature::onBeforeChange(const App::Property *prop) {
             version.blob = propShape->_blob;
             version.blobPlan = propShape->_blobPlan;
             version.blobMotion = propShape->_blobMotion;
+            if (propShape == &Shape && _hasShapeMotion) {
+                // The shape moves as a whole, and what is retained of it
+                // lies that much further from the live one
+                for (auto &older : _shapeVersions) {
+                    if (older.prop != propShape)
+                        continue;
+                    older.motion = _shapeMotion * older.motion;
+                    older.moved = true;
+                }
+                version.motion = _shapeMotion;
+                version.moved = true;
+            }
             if (!version.shape.isNull()) {
                 std::vector<App::DocumentObject *> objs;
                 std::vector<std::string> subs;
@@ -1518,6 +1536,13 @@ void Feature::onBeforeChange(const App::Property *prop) {
         }
     }
     GeoFeature::onBeforeChange(prop);
+}
+
+void Feature::setShapeMotion(const Base::Matrix4D *motion)
+{
+    _hasShapeMotion = motion != nullptr;
+    if (motion)
+        _shapeMotion = *motion;
 }
 
 void Feature::adoptShapeVersions()
@@ -1805,6 +1830,14 @@ Feature::searchElementCache(const std::string &element,
             // the generation's own element map, an indexed name by position.
             TopoShape sub = version.geometry().getSubTopoShape(
                     element.c_str() + version.prefix.size(), true);
+            if (!sub.isNull() && version.moved) {
+                // Out of the placement the generation had, moved as the
+                // feature said its shape was, into the live placement
+                Base::Matrix4D mat = version.geometry().getTransform();
+                mat.inverseGauss();
+                mat = propShape->getShape().getTransform() * version.motion * mat;
+                sub = sub.makETransform(mat);
+            }
             if (!sub.isNull())
                 searchLiveShape(propShape, prefix, sub, names, options, tol, atol);
         }

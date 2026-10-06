@@ -36,7 +36,8 @@ report views, the reporter's own files -- is kept beside the dev tree under
 | 13 | 2026-10-06 | report view: grouped messages with an expand icon in the margin, no underscore (change request) | OPEN |
 | 14 | 2026-10-06 | a Draft with no neutral plane given turns the other way after a recompute (from entry 8) | STAGED |
 | 15 | 2026-10-06 | a Pad "up to first" gives a third result (from entry 8) | OPEN |
-| 16 | 2026-10-06 | faces of a "Mutated" copy-on-change binder are renamed by every recompute in a new session (from entry 8; the old build too) | FOUND; B and C decided, next |
+| 16 | 2026-10-06 | faces of a "Mutated" copy-on-change binder are renamed by every recompute in a new session (from entry 8; the old build too) | FIXED |
+| 17 | 2026-10-06 | `Sketch043`, `Sketch055`: "Missing external geometry reference", seen once the binders of entry 16 are valid | OPEN |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -412,7 +413,7 @@ the old build and read here as `Length` with `SideType` "Two sides", with the
 same tool volume where the base is the same (`Pocket042`: 577.27 in both).
 Not looked at further.
 
-## 16. Faces of a "Mutated" binder are renamed by every recompute in a new session -- FOUND; B and C decided, next
+## 16. Faces of a "Mutated" binder are renamed by every recompute in a new session -- FIXED
 
 **From entry 8; the old build does the same.** `Binder008` binds `Body004`
 with `BindCopyOnChange` Mutated. Such a binder copies its support into a
@@ -461,24 +462,285 @@ copy-on-change LINK keeps its copies as objects of the document, saved with
 it, so their ids are the same in every session and "the instance's
 references keep their names" through a recompute and a reopen.
 
-**Not fixed. Three ways,** to decide with the reporter:
+**Three ways were put to the reporter:**
 - B. Replace the copies' ids in the binder's names by those of the objects
-  they are copies of. Stable from then on, and what the branch's rule 3 asks
-  for. Files saved before break once more.
+  they are copies of.
 - C. B, and a missing name is also looked up with the copies' ids taken out
   of both sides, so that once is repaired on open.
 - E. Keep a Mutated binder's copies in the document, as a copy-on-change
-  link does. The names are stable without any renaming and a reload has
-  nothing to copy again; the file grows by the copies, and a file from
-  before still has to make them once.
+  link does.
 
 **Decided (the reporter, 2026-10-06):** "do B+C first then the rest of issues in
-the notes. no Transaction merge for now." So: B and C, on this branch, ahead of
-entries 9 to 13 and 15. `SubShapeBinder::update` is changed on both branches;
-the change is written to merge with `origin/Transaction` later, not onto it.
+the notes. no Transaction merge for now."
+
+**What checking B and C found, before anything was changed:**
+- The three ids are the sketch's, the pad's and the body's copies, and
+  `Document::copyObject` hands the copies back in the order of what they are
+  copies of.
+- The temporary document is ONE for the whole session: `newDocument(
+  "_tmp_binder", ..., tempDoc)` returns the one that exists. Every Mutated
+  binder copies into it. Its object ids start at random (`DocumentP`'s
+  constructor) and go on from copy to copy.
+- The STRING ids in the names (`#98`, `#e:1`) change for the same reason.
+  The strings hold the object ids -- `#f = #d:;:H98,E`, a sketch edge's name
+  with the sketch copy's id -- so another copy id is another string and gets
+  another number: `#f`, then `#22`, then `#34` over three copies of one body.
+  With those out as well, `Face1`, `Face2` and `Face3` of `Binder008` read the
+  same, so C as it was put ("exactly one face matches") could not have worked
+  on this file.
+- The search by geometry, which repairs a renamed reference everywhere else,
+  finds nothing here because the shape MOVES. `Binder008` is `Relative` and
+  sits in `LinkGroup001`, whose placement is 53 mm along z; its stored shape
+  was made with the group at the origin (`Cache_Body004` is the identity in
+  the file). Recomputed, it is seen from the group and lands 53 mm away -- in
+  the old build too. The search looked where the faces had been.
+
+**Decided again (the reporter, 2026-10-06, on hearing the above):** "is it
+because each document object id has a random start. you can reset object id
+to fixed on for temp document".
+
+**Fix.** Two changes, in `SubShapeBinder::update`:
+- *The names.* Each Mutated binder copies into a temporary document of its
+  own (`_tmp_binder_<document>_<binder>`), emptied before each copy:
+  `Document::clearDocument()` starts the object ids over, and the string
+  table is cleared with it. The copies are then numbered 1, 2, ... in the
+  order of the dependency list and their strings are made in the same order
+  every time. `Binder008`'s `Face1` is `#e:1;:G;XTR;:H2:7,F;:H3,F;:X;BND:-1:0;
+  :Hb:12,F;:H-58b:1b,F` after a full recompute, and the same, character for
+  character, after a save, a new session and another full recompute
+  (`..\dl\handson\2026-10-06\entry16-first.txt`, `entry16-second.txt`).
+- *The once.* A binder whose every support is seen from another place than
+  at its last update, all by one motion, says so
+  (`Part::Feature::setShapeMotion()`), and the generations of its shape
+  retained at that change are searched moved the same way
+  (`searchElementCache()`). On the reporter's file `Binder013`, `014`, `017`
+  and `018` come out valid, on `Face1` and `Face3` as before, after the full
+  recompute that used to lose them.
+
+They come out 53 mm from where the file had them, with `Binder008`. That is
+the file's own state -- a binder never recomputed since its group moved --
+and not something either change does.
+
+`TestSubShapeBinder.testCopyOnChangeNamesAreTheSameEveryTime` (the copies
+numbered from 1, a second binder of the same body naming the faces alike, the
+names the same after a reopen and a recompute of everything) and
+`testMovedBinderIsSearchedWhereItWent`; TestShapeBinder 8 OK. The second has
+not been scored against a tree without the motion yet.
+
+**Left, and known:**
+- Several changes of a copied property in one session make their strings in
+  another order than a new session does, which copies and applies the
+  properties once. The names then change once more after a reopen, and the
+  search by geometry has to find the references.
+- The names still say the COPIES, by numbers that mean nothing outside the
+  temporary document. `origin/Transaction` has what B asked for: a map of
+  tags applied while a shape's names are imported (`StringHasher::ImportTags`,
+  used for a file imported as a branch). After the merge the binder's copy is
+  one more user of it. Its `rewriteTags` replaces the digits and leaves the
+  length fields that count across them: on the fixture here a shorter id
+  changes `:15` to `:14` and `:21` to `:1f` in the same name, so that is to
+  look at then.
+- With the four binders valid, what is built on them is recomputed for the
+  first time: `Sketch043` and `Sketch055` now say "Missing external geometry
+  reference". Entry 17.
 
 ## Inbox
 
 Notes not sorted into an entry yet. Add a line here at any time, in any words;
 it is read before each entry is started and moved up into the table.
 
+- **2026-10-06 15:21, TechDraw section line.** "clicking a section line in
+  techdraw page will trigger a section operation even without moving the
+  section line. also the selection line position will be shifted each time the
+  section is recomputed". Two symptoms: (a) a plain click on a section line,
+  with no drag, starts the section operation -- a click is taken for a move;
+  (b) the section line is drawn at a shifted position after each recompute of
+  the section, so it drifts. ("selection line" in the second sentence read as
+  the section line; the reporter's word kept.) Not said yet: which document
+  and view, and which way or by how much it shifts.
+- **2026-10-06 15:24, omni search (a change request).** "omni search first
+  entry append a <space> after / to let user know to type a space." Wanted: in
+  the first entry the omni search shows, a `/` is followed by a visible
+  `<space>`, so that it is plain a space has to be typed after the slash.
+  **Revised by the reporter, 15:33, and this is the one to do:** "Maybe we can
+  make the space optional/implicit, so that if the word does not match any
+  reserved keyword (param, cmd, etc.) treat it as object. We also accept space
+  to disambiguate. how about that, in this way, no need to show <space>. also
+  check wasm viewer, I remeber it already shows <space> there". So: after `/`,
+  a word that is not a reserved keyword (`cmd`, `param`, ...) is an object
+  query without any space; `/ ` with the space stays valid and is how to force
+  an object query that would otherwise read as a keyword; nothing is shown for
+  the space.
+  Read from the source by the note-taker, nothing run: the grammar is
+  `OmniSearch::parseInput` (`src/Gui/OmniSearch.cpp`) and its mirror
+  `parseInput` in `src/Gui/Renderer/web/src/omni.tsx`, which says it follows
+  the desktop's -- both change together. Today a `/` followed by anything but
+  a full prefix (`/ `, `/cmd `, `/param `) is the chooser, so `/box` lists
+  modes, not objects. The desktop's chooser rows are titled `/`, `/cmd`,
+  `/param` (`OmniSearchEdit::setupChooser`). The browser's are titled `/ ` and
+  `/cmd ` with a real trailing space in the string (`MODE_ROWS`) and no
+  `/param` (not offered there on purpose); no literal `<space>` or other
+  visible mark for it was found in `web/src` -- what it looks like on screen
+  was not checked. Two cases the rule had to settle, **decided by the
+  reporter, 15:36** ("yes, show both for partial keyword, keyword wins"):
+  a partial keyword (`/c`, `/par`) lists both -- the matching mode rows and
+  the objects matching the word; a full keyword (`/cmd`) is the keyword, and
+  an object called `cmd` is reached with the space, `/ cmd`.
+- **2026-10-06 15:28, omni search: the settings it collects (an audit asked).**
+  "audit for all parameter/preference settings auto collected by omni search.
+  ensure all settings has documentation, but not overly long. screen for those
+  long ones that you may mistakenly added for development purposes". Asked
+  for: (a) go through every parameter/preference setting the omni search
+  collects automatically; (b) each must have documentation; (c) none of it
+  overly long; (d) pick out the long ones in particular -- text an agent wrote
+  as development notes that ended up as a setting's documentation.
+- **2026-10-06 15:44, face highlight edge is jagged.** "face highlight
+  silhouette shows jagged edge regardless whether msaa is used or not". The
+  outline of a highlighted face is aliased, and switching MSAA on or off makes
+  no difference to it. Not said yet: whether this is the hover highlight, the
+  selection highlight or both, and which document.
+- **2026-10-06 15:48, a long halt after enabling MSAA and pressing OK.**
+  "while I am testing to toggle msaa, after first enabled it and click ok in
+  preference page there is a long halt where the application is unresponsive.
+  I know for some reason ok on preference page trigger updating all view
+  provider. check if this is the cause of slow down." Asked for: find out
+  whether the halt is the update of every view provider that OK on the
+  preferences sets off, or the MSAA change itself. Not said yet: which
+  document was open, and how long the halt was.
+  Read from the source by the note-taker, nothing run or measured:
+  - OK saves EVERY page, changed or not: `DlgPreferencesImp::applyChanges`
+    calls `saveSettings()` on each page of each group
+    (`src/Gui/DlgPreferencesImp.cpp`).
+  - The update of every view provider exists and is one timer:
+    `src/Mod/Part/Gui/PartParams.cpp`, `getTimer()`, 100 ms, then
+    `ViewProviderPart::reload()` on every Part view provider of every
+    document. It is started by (a) a tessellation preference whose VALUE
+    changed -- the generated `update...` functions compare first, so a page
+    saving the same number does not start it; (b) `RespectSystemDPI` or
+    `ShapeInstancing` changing; (c) ANY notification of the `RenderCache` key
+    in `Preferences/View` or the `Type` key in `Preferences/View/Render`
+    (`InstancingGateObserver::OnChange` does not compare); (d) a renderer
+    backend attaching or going away (`Render::Renderer::addActivityObserver`).
+    So what to establish is whether OK re-notifies `RenderCache`/`Type` when
+    they are written unchanged, and whether an MSAA change makes a backend
+    detach and attach.
+  - The MSAA change itself: `applyAntiAlias` in
+    `src/Gui/PreferencePages/DlgSettings3DViewImp.cpp`, a delayed handler on
+    the `AntiAliasing` key. A view with a renderer backend takes the new
+    sample count in place (`View3DInventorViewer::applyRendererAntiAliasing`
+    -> `setMSAASamples`); a view without one is CLONED and the original
+    deleted, which rebuilds the whole view.
+- **2026-10-06 15:51, every setting behind a generated helper class, so the
+  omni search finds it (a change request, application-wide).** "audit the
+  whole application and collect every Base::Parameter based settings into cog
+  generated helper class access so that omni search can find it". And, added
+  15:53: "in the process, also change the relevant code to monitor
+  parameter/setting change and apply the change with delay handler". Asked
+  for: (a) go through the whole application for settings read or written
+  straight through the parameter system; (b) move each behind a cog-generated
+  helper class, which is what registers a setting for the omni search;
+  (c) while there, make the code that uses a setting watch it for changes and
+  apply a change through a delayed handler, instead of reading it once or
+  needing a restart or a preferences OK.
+  Goes with the 15:28 note above (documentation of the settings the omni
+  search collects): a setting moved here needs its short documentation too.
+  Read from the source by the note-taker, for the size of it, nothing changed:
+  the omni search lists settings out of `App::ParamRegistry`
+  (`src/Gui/OmniSearch.cpp`), which the classes generated by
+  `src/Tools/params_utils.py` fill -- 14 of them today (App: Document, Group,
+  Link; Gui: Expr, OpenView, Overlay, Render, ReportView, Tree, View; Mesh;
+  Part App and Part Gui; Spreadsheet). Against that, 377 source files outside
+  `3rdParty` call `GetParameterGroupByPath` or `ParamGet` directly. The delayed
+  handler asked for in (c) has a precedent in `ParamHandlers::addDelayedHandler`
+  (used by `DlgSettings3DViewImp::attachObserver`) and in the generated
+  classes' own `on...Changed` hooks.
+- **2026-10-06 15:56, TechDraw: errors without end after switching the page's
+  renderer.** "when techdraw page is opened with qgraphics rendering, and then
+  switching to bgfx vg renderer, there is continuous error output". A page
+  opened while drawn by QGraphics, then switched to the bgfx vector renderer:
+  the report view fills with errors and does not stop. The text, from the
+  reporter (16:01): "QBackingStore::endPaint() called with active painter; did
+  you forget to destroy it or call QPainter::end() on it?". Not said yet: how
+  the switch was made (preference, menu, command), which document, and whether
+  a page opened directly with the bgfx vector renderer is clean.
+  Read from that session's report log by the note-taker (a copy is
+  `..\dl\handson\2026-10-06\techdraw-switch-report-view.log`; nothing run):
+  - The Qt warning is the tail, not the cause. From 15:58:40 on, the page's
+    viewport throws inside its paint event, 82 times in two minutes: "CAUGHT
+    ... std::exception: invalid vector subscript", "Unhandled std::exception
+    caught in GUIApplication::notify", event type 12 (Paint), receiver the
+    `QWidget` under `TechDrawGui::QGVPage (PageView)` in
+    `TechDrawGui::MDIViewPage (Page)`. Each throw leaves the paint with its
+    painter still open, which is what Qt then complains of -- 630 times, with
+    "QPainter::begin: A paint device can only be painted by one painter at a
+    time", "QPixmap::fill: Cannot fill while pixmap is being painted on" and
+    "QPaintDevice: Cannot destroy paint device that is being painted" beside
+    it. So the thing to find is the vector indexed out of range in the page's
+    paint after the switch.
+  - The same exception text appears earlier in that log from somewhere else,
+    twice, each time the preferences dialog was opened (15:43:32, 15:52:46):
+    "C++ exception thrown for 'TechDrawGui::DlgPrefsTechDrawAnnotationImp'
+    (invalid vector subscript)". Possibly a problem of its own -- the TechDraw
+    Annotation preferences page failing to load -- and possibly the same
+    out-of-range read.
+- **2026-10-06 16:05, the view cell menu opens a spreadsheet nobody asked
+  for.** "where there is a spreadsheet opened, I click 'View cell menu' of the
+  spreadsheet view and change it to a 3d view. then I click 3d view again
+  without any selection, a spreadsheet view is auto created. If I have one 3d
+  view and one techdraw page, and I click 'view cell menu' of the techdraw
+  page, it auto switch to spreadsheet for that view." Two cases:
+  (a) a spreadsheet view open; its cell changed to a 3D view through the view
+  cell menu; then "3D view" chosen again with nothing selected -- a spreadsheet
+  view is created by itself;
+  (b) one 3D view and one TechDraw page open; opening the view cell menu of
+  the TechDraw page alone -- no choice made in it -- turns that cell into a
+  spreadsheet.
+  Common to both: the menu, or its 3D-view entry, falls through to "spreadsheet"
+  when it has nothing to act on. Not said yet: which document, and whether the
+  document has more than one spreadsheet.
+- **2026-10-06 16:08, the view cell menu of a TechDraw page lists every
+  TechDraw object.** "if techdraw page is on one view, and I click 'view cell
+  menu' I can see all techdraw objects listed in the menu, like 'Page',
+  'Detail', 'Dimension', etc." The menu that should offer what a cell can show
+  lists the page's own child objects -- detail views, dimensions and the like
+  -- next to the page, as if each could be shown in a cell. Same menu as the
+  16:05 note above; possibly the same list being built too widely.
+- **2026-10-06 16:09, the view cell menu changes the wrong cell.** "with two
+  3d view and one spreadsheet view side by side. I click 'view cell button' on
+  one of the 3d view and select a techdraw page, the spreadsheet view switched
+  to techdraw." Three cells side by side, two 3D views and a spreadsheet; the
+  view cell button of one of the 3D views is used to choose a TechDraw page;
+  the SPREADSHEET cell becomes the TechDraw page, not the 3D view whose button
+  was pressed. Third note on this menu (16:05, 16:08): here the choice is
+  right and the cell it lands in is wrong. Not said yet: which of the two 3D
+  views, and which cell was the active one at the time.
+- **2026-10-06 16:19, TechDraw drawn by bgfx is broken outright, not only
+  after a switch** (corrects the 15:56 note above). "it seems bgfx rendering
+  of techdraw is broken right now. I restarted the app with the rendering
+  option turned on. and it still gives me blank page and continuous error
+  'QBackingStore::endPaint() called with active painter; did you forget to
+  destroy it or call QPainter::end() on it?'" So: restarted with the option
+  already on, page opened fresh -- blank page, the same stream of errors. The
+  switch in the 15:56 note is not needed to get it.
+  Read from the restarted session's report log by the note-taker (copy:
+  `..\dl\handson\2026-10-06\techdraw-bgfx-after-restart-report-view.log`;
+  nothing run):
+  - Same cause as before under the Qt warning: "invalid vector subscript"
+    thrown in the page viewport's paint, again and again from 16:16 on.
+  - WORSE, and new: the same exception also cuts the LOAD short. At 16:16:16,
+    opening `scanner.FCStd`: "<Gui> Document.cpp(3700): restore scanner:
+    deferred view provider restore aborted (invalid vector subscript), 320
+    objects fall back to defaults". The view properties of 320 objects were
+    not restored from the file in that session -- colours, visibility, display
+    modes come up as defaults. Saving the document from that session would
+    write those defaults over what the file had.
+  - The FIRST of the 215 caught exceptions of that session is not a paint:
+    16:17:17, "event type 2" (a mouse press), "receiver QWidget
+    'ViewAreaMenuButton'" under `Gui::ViewAreaCell`. Pressing the view cell
+    menu button threw the same "invalid vector subscript". That ties this to
+    the three view cell menu notes above (16:05, 16:08, 16:09): what that menu
+    then did may be what is left of an operation an exception cut short.
+  - Just before it in the log, for context: "DVS: SectionOrigin doesn't
+    intersect part in SectionView003", "DVS::prepareShape - failed to build
+    shape SectionView003 - Bnd_Box is void". Whether the section view that
+    fails to build is what the out-of-range read trips over is not known.

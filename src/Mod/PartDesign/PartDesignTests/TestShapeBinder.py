@@ -138,6 +138,114 @@ class TestSubShapeBinder(unittest.TestCase):
         self.assertAlmostEqual(feat.B.Value, 600)
         self.assertNotIn("Touched", binder.State)
 
+    def _padAndBinder(self):
+        """A pad on five lines, no two of its faces alike, and a binder of
+        its body in another body, with three more binders on faces of it"""
+        body = self.Doc.addObject("PartDesign::Body", "Body")
+        sketch = body.newObject("Sketcher::SketchObject", "Sketch")
+        points = [(0, 0), (30, 0), (30, 20), (10, 20), (0, 10)]
+        for i, a in enumerate(points):
+            b = points[(i + 1) % len(points)]
+            sketch.addGeometry(
+                Part.LineSegment(Base.Vector(a[0], a[1], 0), Base.Vector(b[0], b[1], 0))
+            )
+        for i in range(len(points)):
+            sketch.addConstraint(
+                Sketcher.Constraint("Coincident", i, 2, (i + 1) % len(points), 1)
+            )
+        pad = body.newObject("PartDesign::Pad", "Pad")
+        pad.Profile = sketch
+        pad.Length = 12
+        holder = self.Doc.addObject("PartDesign::Body", "Holder")
+        binder = holder.newObject("PartDesign::SubShapeBinder", "Binder")
+        binder.Support = [(body, ("",))]
+        self.Doc.recompute()
+        for face in ("Face1", "Face3", "Face7"):
+            ref = holder.newObject("PartDesign::SubShapeBinder", "Ref" + face)
+            ref.Support = [(binder, (face,))]
+        self.Doc.recompute()
+        return body, sketch, pad, holder, binder
+
+    @staticmethod
+    def _faceNames(binder):
+        names = binder.Shape.ElementReverseMap
+        return sorted((k, v) for k, v in names.items() if k.startswith("Face"))
+
+    def _references(self):
+        """What the three binders on faces refer to, and the area they get"""
+        res = []
+        for face in ("Face1", "Face3", "Face7"):
+            ref = self.Doc.getObject("Ref" + face)
+            self.assertTrue(ref.isValid(), ref.getStatusString())
+            res.append((ref.Support[0][1], round(ref.Shape.Area, 6)))
+        return res
+
+    def testCopyOnChangeNamesAreTheSameEveryTime(self):
+        """A binder that copies its support names its elements by the copies,
+        and the copies are numbered the same every time: each binder copies
+        into an emptied temporary document of its own. They all copied into
+        one, whose ids went on from copy to copy and started at random in
+        every session, so the first recompute after an open renamed every
+        element, and a reference to one was lost unless it could be found
+        again by its geometry."""
+        import os, tempfile
+
+        body, sketch, pad, holder, binder = self._padAndBinder()
+        binder.BindCopyOnChange = "Mutated"
+        self.Doc.recompute()
+        names = self._faceNames(binder)
+        references = self._references()
+        self.assertEqual(len(names), 7)
+        self.assertEqual([r[0] for r in references], [("Face1",), ("Face3",), ("Face7",)])
+
+        copies = binder.getPropertyByName("_CopiedLink")[0].Document
+        ids = sorted(o.ID for o in copies.Objects)
+        self.assertEqual(ids, list(range(1, len(body.OutListRecursive) + 2)))
+
+        # another binder of the same body, later: the same names for the
+        # same faces, up to where its own id comes in
+        other = holder.newObject("PartDesign::SubShapeBinder", "Other")
+        other.Support = [(body, ("",))]
+        other.BindCopyOnChange = "Mutated"
+        self.Doc.recompute()
+        self.assertNotEqual(other.getPropertyByName("_CopiedLink")[0].Document.Name, copies.Name)
+        self.assertEqual(
+            [name.split(";:X;")[0] for _, name in self._faceNames(other)],
+            [name.split(";:X;")[0] for _, name in names],
+        )
+
+        path = os.path.join(tempfile.mkdtemp(), "PartDesignTestSubShapeBinder.FCStd")
+        self.Doc.saveAs(path)
+        FreeCAD.closeDocument(self.Doc.Name)
+        self.Doc = FreeCAD.openDocument(path)
+        for obj in self.Doc.Objects:
+            obj.touch()
+        self.Doc.recompute()
+        self.assertEqual(self._faceNames(self.Doc.getObject("Binder")), names)
+        self.assertEqual(self._references(), references)
+
+    def testMovedBinderIsSearchedWhereItWent(self):
+        """A relative binder whose container moved is recomputed to another
+        place. A reference into it that has to be found again by its geometry
+        -- the names changed as well -- is looked for where the geometry
+        went. It was looked for where it had been, and lost."""
+        body, sketch, pad, holder, binder = self._padAndBinder()
+        names = self._faceNames(binder)
+        references = self._references()
+        center = binder.Shape.BoundBox.Center
+
+        holder.Placement = FreeCAD.Placement(
+            Base.Vector(3, -4, 53), FreeCAD.Rotation(Base.Vector(0, 1, 0), 3.5)
+        )
+        # other names for the same faces
+        binder.BindCopyOnChange = "Mutated"
+        self.Doc.recompute()
+        self.assertTrue(binder.isValid(), binder.getStatusString())
+        self.assertGreater(binder.Shape.BoundBox.Center.distanceToPoint(center), 50)
+        renamed = set(name for _, name in self._faceNames(binder))
+        self.assertFalse(renamed.intersection(name for _, name in names))
+        self.assertEqual(self._references(), references)
+
     def testOffsetBinder(self):
         # See PR 7445
         body = self.Doc.addObject('PartDesign::Body','Body')
