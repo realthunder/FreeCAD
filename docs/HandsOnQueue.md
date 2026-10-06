@@ -7,6 +7,9 @@ closed it. The copy under test is the staged one -- `docs/DevEnvironment.md`,
 "A second env for hands-on testing" -- so a fix reaches the reporter only at
 the next stage, and each entry says which stage has it.
 
+Stages so far: 2026-10-06 07:56 (`84c14e12d5`, the first), 2026-10-06 11:23
+(`c1028260e3`: entries 1, 2, 4, 7).
+
 States: `OPEN` (not looked at), `FOUND` (cause known, no fix yet), `FIXED`
 (committed and tested in the dev tree, not staged yet), `STAGED` (in the copy
 under test, waiting for the reporter to confirm), `CLOSED`.
@@ -17,16 +20,16 @@ report views, the reporter's own files -- is kept beside the dev tree under
 
 | # | Reported | Problem | State |
 |---|---|---|---|
-| 1 | 2026-10-06 | idle progress bar in the status bar | FIXED |
-| 2 | 2026-10-06 | a file opened from the menu comes up empty (`scanner.FCStd`) | FIXED |
+| 1 | 2026-10-06 | idle progress bar in the status bar | STAGED |
+| 2 | 2026-10-06 | a file opened from the menu comes up empty (`scanner.FCStd`) | STAGED |
 | 3 | 2026-10-06 | tooltips are clipped: navigation style, and toolbar buttons with an icon | OPEN |
-| 4 | 2026-10-06 | status bar dimension reads `100 mm x 80 mm`, wanted `100 x 80 mm` | FIXED |
+| 4 | 2026-10-06 | status bar dimension reads `100 mm x 80 mm`, wanted `100 x 80 mm` | STAGED |
 | 5 | 2026-10-06 | title bar with the workbench bar docked: the menu does not unfold on hover | OPEN |
 | 6 | 2026-10-06 | maximized with the custom title bar: sometimes no margin at the top | OPEN |
-| 7 | 2026-10-06 | crash after answering Yes to the recompute question on `scanner.FCStd` | FIXED, cause of the GL error open |
+| 7 | 2026-10-06 | crash after answering Yes to the recompute question on `scanner.FCStd` | STAGED, cause of the GL error open |
 | 8 | 2026-10-06 | `scanner.FCStd`: the migration recompute fails | OPEN |
 
-## 1. Idle progress bar in the status bar -- FIXED
+## 1. Idle progress bar in the status bar -- STAGED
 
 **Reported (2026-10-06):** "no activity but the status bar progress bar is
 shown with 0 progress."
@@ -43,7 +46,7 @@ included -- showed it.
 **Fix:** `e511bddc39`. `tests/gui/statusbar-progress-idle.py`, 11 PASS (4 FAIL
 before).
 
-## 2. A file opened from the menu comes up empty -- FIXED
+## 2. A file opened from the menu comes up empty -- STAGED
 
 **Reported (2026-10-06):** "with current setting (take a snapshot of user.cfg)
 opening d:\Zheng.Lei\mech\scanner.FCStd got a bunch of warning and errors in
@@ -101,7 +104,7 @@ navigation style tips are rich text, a table of `<img>` cells
 which gives `Gui--TipLabel` a 1px border and a radius. The last tip shown was
 393 x 100. Not reproduced or measured yet.
 
-## 4. Status bar dimension: `100 x 80 mm` -- FIXED
+## 4. Status bar dimension: `100 x 80 mm` -- STAGED
 
 **Reported (2026-10-06):** "in the status bar the dimension, instead of
 something like 100 mm x 80 mm, write it as 100 x 80 mm."
@@ -146,7 +149,7 @@ at 100%, title bar at y = 0.
 off the top of the screen, `d712eae660` fix the 8px input offset of a
 maximized custom title bar.
 
-## 7. Crash after answering Yes to the recompute question -- FIXED, cause of the GL error open
+## 7. Crash after answering Yes to the recompute question -- STAGED, cause of the GL error open
 
 **Reported (2026-10-06):** "a crash just happend. check the minidump." Then:
 "recompute request dialog is poped. last time crash happend after I said yes",
