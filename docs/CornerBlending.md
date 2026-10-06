@@ -1,8 +1,8 @@
 # Corner Blending -- setback vertex blends for fillets
 
 Status: the OCCT side of phases 1 and 2 is implemented, as the fillet's
-fallback first (section 9). The Part API, the PartDesign property and the
-task panel (phases 3 to 5) are not started.
+fallback first (section 9), and the Part API of phase 3 (section 9.4). The
+PartDesign property and the task panel (phases 4 and 5) are not started.
 
 Request: realthunder/FreeCAD_assembly3#894, "[FR] Blend Corner feature"
 (2021-11). Related: #917 (variable radius; the fork's fillet has per-edge
@@ -476,3 +476,51 @@ The suite, `tests/fork/fillet/run_tests.py`: 139 pass, 2 known broken; the
 #876 corner and the four ends past #523's cylinder are made, and with the
 FreeCAD preference at 0 the #876 corner is refused as before.
 
+### 9.4 The Part API (phase 3)
+
+As 4.1 planned, with these settled:
+
+- **The call.** `TopoShape::FilletCorner` is a vertex, a setback for every
+  fillet ending there (less than 0: none), and a list of (edge, setback)
+  over it. Both `makEFillet` overloads, the two radii and the segments,
+  take a `FilletCorners` after `op`. The vertex and edges are
+  `TopoDS_Shape`s, not `TopoShape`s: a struct nested in `TopoShape` cannot
+  hold one.
+- **Run-time lookup.** A member function has no portable name to look up,
+  so the fork exports `BRepFilletAPI_SetSetback(maker, V, E, D)` with C
+  linkage (null E: every contour at V), as it does the fallback settings.
+  FreeCAD finds it through `lookUpTKFillet`, exported from `AppPartPy.cpp`
+  for this. Without it a corner throws "fillet corner setback needs the
+  OCCT fork".
+- **Checked before OCCT sees it**, since `SetSetback` ignores what it
+  cannot place: the vertex belongs to the shape and some contour ends
+  there ("no fillet ends at corner VertexN"); each edge is filleted
+  ("fillet corner VertexN: EdgeM is not filleted") and its contour ends at
+  the vertex ("the fillet of EdgeM does not end there"). An edge names its
+  contour, so it need not touch the vertex itself, for a tangent chain. A
+  sharp edge takes no setback of its own, as 9.1 says.
+- **Python.** `makeFillet(radius, edges, corners=None)` and the two-radius
+  form, now with keywords. `corners` is a dict or a sequence of pairs from
+  a vertex to `setback`, `{edge: setback}`, or `(setback, {edge: setback})`;
+  a vertex or edge is a shape or a name such as `"Vertex7"`.
+- **History.** The patch takes the name the sphere or plate corner had,
+  generated from the vertex (`Vertex7;:G;FLT...`), so a later feature that
+  referenced the corner face keeps it when the corner is set back.
+
+Measured on a 10 box, three fillets r 1 at (10,10,10)
+(`parttests/FilletCornerTest.py`):
+
+| Corners | Volume | Closest to the vertex | Patch mean curvature |
+|---|---|---|---|
+| none (sphere) | 993.7293 | 0.732 | 1 |
+| setback 0 | 993.7251 | 0.744 | 0.85 to 1.07 |
+| setback 2 | 993.5924 | 0.811 | 0.18 to 1.00 |
+| setback 4 | 992.2487 | 1.185 | 0.09 to 0.72 |
+| 3, 1.5 and 2 by edge | 993.8057 | 0.712 | 0.14 to 1.3 |
+| 3 and 1.5 by edge, the third at d0 | 994.0769 | 0.548 | 0.10 to 2.28 |
+
+Every one is valid, and its patch stays inside the box to 1.4e-3 and does
+not fold (its mean curvature keeps one sign). The last row keeps more
+material than today's corner: with one edge at `d0` the patch turns tight
+there and runs closer to the vertex. That is the shape asked for, not a
+bulge; it is why uneven setbacks want the GUI's handles (section 6).
