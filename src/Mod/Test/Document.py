@@ -7290,9 +7290,11 @@ class TransactionBranchCases(unittest.TestCase):
         # each is known by the row both files hold: this file's line is the
         # line it was, the copy's is new, and the sketch both went on with
         # is merged by what it holds, with nothing asked. Then round again,
-        # each way, on the branches the imports made and on new ones.
-        # Not so through a third copy, or once a merged branch is deleted:
-        # there the rows do not say, and the sketch is one question.
+        # each way: on the branches the imports made, on new ones where
+        # those have gone on by themselves, and with each branch deleted
+        # once it is merged -- its rows stay, for the merge stands on them
+        # (sec 31.19). Not so through a third copy: there the rows do not
+        # say, and the sketch is one question.
         import shutil
 
         import ArchiveMembers
@@ -7342,7 +7344,9 @@ class TransactionBranchCases(unittest.TestCase):
             self.assertFalse(
                 [o.Name for o in doc.Objects if "Invalid" in o.State or "Touched" in o.State]
             )
-            if stray:
+            if stray == "delete":
+                doc.deleteTransactionBranch(res["branch"])
+            elif stray:
                 # The branch goes on by itself, so the next import starts
                 # another: with no map kept, only the rows are left to say
                 # which number is which.
@@ -7358,8 +7362,8 @@ class TransactionBranchCases(unittest.TestCase):
             doc.UndoMode = 1
             return doc
 
-        for stray in (False, True):
-            stem = "back-stray" if stray else "back"
+        for stray in (False, True, "delete"):
+            stem = "back-%s" % stray
             doc = self.track(FreeCAD.newDocument("RoundOurs"))
             doc.UndoMode = 1
             doc.openTransaction("base")
@@ -7443,8 +7447,7 @@ class TransactionBranchCases(unittest.TestCase):
         # hold. Where a row is missing the copy's numbers are not guessed
         # at -- measured, this file's own line came back as a second line
         # -- and the sketch both changed is the one question it was: a copy
-        # that deleted the branch it had merged this file's rows from, and
-        # one that took them through a third copy.
+        # that took this file's rows through a third copy.
         import shutil
 
         import Part
@@ -7497,23 +7500,6 @@ class TransactionBranchCases(unittest.TestCase):
             FreeCAD.closeDocument(doc.Name)
             return [path] + others
 
-        # The copy merges this file's line, and deletes the branch.
-        path, copy = files("gone", ["theirs"])
-        fork = reopen(copy)
-        add(fork, "theirs 20", 20, 8)
-        res, minted, conflicts = asked(fork, path)
-        self.assertEqual((minted, conflicts), ({True}, []))
-        fork.mergeTransactionBranch(res["branch"])
-        fork.deleteTransactionBranch(res["branch"])
-        self.assertEqual(len(fork.Sketch.Geometry), 6)
-        fork.save()
-        FreeCAD.closeDocument(fork.Name)
-        doc = reopen(path)
-        add(doc, "ours -10", -10, 4)
-        res, minted, conflicts = asked(doc, copy)
-        self.assertEqual((minted, conflicts), ({False}, ["Sketch.Geometry"]))
-        FreeCAD.closeDocument(doc.Name)
-
         # A third copy takes this file's line; the second takes the third's.
         path, copy, third = files("third", ["theirs", "others"])
         other = reopen(third)
@@ -7536,6 +7522,86 @@ class TransactionBranchCases(unittest.TestCase):
         res, minted, conflicts = asked(doc, copy)
         self.assertEqual((minted, conflicts), ({False}, ["Sketch.Geometry"]))
         FreeCAD.closeDocument(doc.Name)
+
+    def testADeletedBranchKeepsTheRowsItsMergeStandsOn(self):
+        # Sec 31.19 (the user's: "keep the rows of the merged branch"). A
+        # branch deleted took all its rows. What another branch had merged
+        # of it went too, and with it what the merge stood on: for a branch
+        # an import made, the rows that say which object of the copy's is
+        # which of this file's (sec 30.33) -- an object this file made and
+        # the copy changed came back as a second one. Only what no other
+        # branch's history reaches goes with the branch.
+        import json
+        import shutil
+
+        def rows(doc):
+            return {t["seq"] for t in doc.getTransactionLog()}
+
+        def record(doc):
+            return json.loads([t for t in doc.getTransactionLog() if t["kind"] == "trim"][-1]["script"])
+
+        def edit(doc, name, fn):
+            doc.openTransaction(name)
+            fn()
+            doc.commitTransaction()
+
+        doc = self.track(FreeCAD.newDocument("KeptOurs"))
+        doc.UndoMode = 1
+        edit(doc, "base", lambda: doc.addObject("App::FeatureTest", "Obj"))
+        path = os.path.join(self.dir, "kept-ours.FCStd")
+        copy = os.path.join(self.dir, "kept-theirs.FCStd")
+        doc.saveAs(path)
+        shutil.copyfile(path, copy)
+
+        # In one file: a branch merged and one that is not.
+        doc.createTransactionBranch("merged")
+        edit(doc, "on merged", lambda: setattr(doc.Obj, "Integer", 2))
+        doc.switchTransactionBranch("main")
+        doc.createTransactionBranch("left")
+        edit(doc, "on left", lambda: setattr(doc.Obj, "Float", 2.5))
+        doc.switchTransactionBranch("main")
+        edit(doc, "on main", lambda: setattr(doc.Obj, "Label", "Mine"))
+        res = doc.mergeTransactionBranch("merged")
+        self.assertEqual((res["unresolved"], res["failed"]), ([], []))
+        log = {t["name"]: t["seq"] for t in doc.getTransactionLog()}
+        before = rows(doc)
+        doc.deleteTransactionBranch("merged")
+        self.assertIn(log["on merged"], rows(doc))
+        self.assertEqual(before - rows(doc), set())
+        self.assertEqual((record(doc)["rows"], record(doc)["merged"] > 0), (0, True))
+        doc.deleteTransactionBranch("left")
+        self.assertNotIn(log["on left"], rows(doc))
+        self.assertGreater(record(doc)["rows"], 0)
+        self.assertEqual(record(doc)["merged"], 0)
+        self.assertEqual(doc.Obj.Integer, 2)
+
+        # Across two: this file makes an object, the copy takes it, deletes
+        # the branch it came on, and changes it.
+        edit(doc, "ours makes", lambda: doc.addObject("App::FeatureTest", "Made"))
+        doc.save()
+        FreeCAD.closeDocument(doc.Name)
+        fork = self.track(FreeCAD.openDocument(copy))
+        fork.UndoMode = 1
+        edit(fork, "theirs own", lambda: fork.addObject("App::FeatureTest", "Theirs"))
+        res = fork.importTransactionFork(path)
+        self.assertEqual(res["stopped_at"], 0, res)
+        merged = fork.mergeTransactionBranch(res["branch"])
+        self.assertEqual((merged["unresolved"], merged["failed"]), ([], []))
+        fork.deleteTransactionBranch(res["branch"])
+        self.assertIsNotNone(fork.getObject("Made"))
+        edit(fork, "theirs changes", lambda: setattr(fork.Made, "Integer", 7))
+        fork.save()
+        FreeCAD.closeDocument(fork.Name)
+        doc = self.track(FreeCAD.openDocument(path))
+        doc.UndoMode = 1
+        res = doc.importTransactionFork(copy)
+        self.assertEqual(res["stopped_at"], 0, res)
+        pv = doc.previewTransactionMerge(res["branch"])
+        self.assertEqual(pv["conflicts"], 0, [(c["kind"], c["key"]) for c in pv["changes"]])
+        merged = doc.mergeTransactionBranch(res["branch"])
+        self.assertEqual((merged["unresolved"], merged["failed"]), ([], []))
+        self.assertEqual(sorted(o.Name for o in doc.Objects), ["Made", "Obj", "Theirs"])
+        self.assertEqual(doc.Made.Integer, 7)
 
     def testABranchIsMergedAcrossOpensOlderThanTheVersionsKept(self):
         # Sec 31.15, seen on the way: whether an open found the file its

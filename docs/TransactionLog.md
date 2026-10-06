@@ -16211,6 +16211,92 @@ provider's values alone unless `ViewObjectTransaction` is set.
 53 unfrozen; 6 expected failures), ctest 881/881, and the GUI checks as
 in 31.15 with the paint check, 19.
 
+### 31.19 A deleted branch keeps the rows its merge stands on (user, 2026-10-06)
+
+**Asked**, of 31.15's "Left": whether deleting a merged branch should keep
+the rows its merge stands on. **Ruled (user): "keep the rows of the merged
+branch."**
+
+**What it was.** `deleteBranch` (16.7) removed every row of the branch's
+chain that no other branch's *chain* has. A merge reaches the branch
+through its second parent, which is no chain: so a branch deleted once
+merged took the rows the merge row names, and the merge was left naming
+nothing. Two things read those rows. The next merge of the two starts
+from the newest row both histories hold (28.2), and with them gone starts
+from an older one. And for a branch an import made they are what says
+which object, and which number, of the copy's is which of this file's
+(30.33, 31.15): 31.15 measured this file's line coming back as a second
+line, and then refused such a file its numbers.
+
+**What it is.** Only what no other branch's *history* reaches goes with
+the branch: `history()` follows the second parents (28.2 item 1). The
+branch's own rows after the merge go as before; so does the whole of a
+branch nothing merged. The record says both: `"rows"` removed, `"merged"`
+kept. The branch's versions go as they did, a version being a branch's;
+and what an import kept with the branch -- its maps -- goes too, the rows
+saying the same.
+
+**Measured** (`rt.py`, `RT_DELETE`: each file deletes the import's branch
+once it has merged it). Before the ruling, with 31.15's rule: asked at
+the second import, and at every one after. Now: the four imports of the
+round trip as in 31.15, nothing asked, each line once, under the ids it
+has without the deleting.
+
+**Three things the kept rows met**, each fixed where it was:
+
+- *The row both hold, with no version behind it and a recompute's value
+  gone.* The next import starts from a row of the deleted branch; its
+  versions went with the branch, so 31.15's walk from another version is
+  what reaches it -- and that walk goes back over rows of this file's own
+  whose derived values a file's copy of the log does not carry. The fold
+  refused: "cannot reach the row both files hold". In the document an
+  import replays in, a derived value the log names and has not got is one
+  it never had: its owner is computed again, as the import does with
+  every derived value (30.15 F2). Only there: a switch or a restore that
+  cannot fold still reads a version whole, where the value is.
+- *An open's version taken for another at its row.* `openRecordJumps`
+  took the newest version at the open's row for the one the open
+  recorded. An import brings the copy's named versions (30.15 F5), and a
+  version a branch was made from is named: so a file with any branch,
+  imported by its copy, put a second version at the row the copy opened
+  at, and the copy could merge nothing -- "row 2 opened a file that is
+  not its history's" (`kr.py`). Older than this section and than the
+  deleting. The version is looked for by the number the open's row says.
+- *A merge kept a merge (30.34), and a row a merge brought.* That check
+  wants every row behind the merge's second parent held by the copy. A
+  row this file's own merge took from a local branch is not: the copy
+  replayed the chain, so it holds the merge and not the row. With the row
+  kept the check failed, the copy's merge came as a row like any, and
+  three things were asked that are not asked now. Such a row is
+  now looked for in the replay of the merge that brought it. A file that
+  had kept its branch met the same before this.
+
+**Tests**, Python, `TransactionBranchCases`, frozen and unfrozen:
+
+- `testADeletedBranchKeepsTheRowsItsMergeStandsOn`: a branch merged and
+  one not, both deleted -- the first's rows there and the record saying
+  so, the second's gone; then across two files -- this file, which has
+  merged a branch of its own, makes an object; the copy takes it, deletes
+  the import's branch, changes the object; back here nothing is asked,
+  there is one such object, and it has the change.
+- `testGeometryACopyTookComesBackUnderItsOwnId` runs a third time, each
+  import's branch deleted once merged.
+- `testNumbersTheRowsDoNotAccountForComeAsTheyAre` is the third copy
+  alone: the deleted branch is no longer a case of it.
+
+**Left.**
+
+- 31.15's rule still refuses a file whose merge has a second parent that
+  is gone. A delete no longer makes one; a trim can.
+- A deleted branch's rows stay for as long as the merge that took them
+  does. Nothing takes them later but a trim of the branch that merged
+  them, which stops at its own chain: by reading, not run.
+- The panel's question before a delete does not say how many rows stay.
+
+**Gates**, frozen and unfrozen each: Python 3034 OK (52 skipped frozen,
+53 unfrozen; 6 expected failures; +1), ctest 881/881, and the GUI checks
+as in 31.18, the paint check 19 among them.
+
 ## 32. A shape diff: seeing what a merge or a pick would take (plan, 2026-10-06)
 
 **Asked (user):** "also plan for another feature. shape diff tool, so that

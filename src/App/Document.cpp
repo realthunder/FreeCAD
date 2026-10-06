@@ -6856,6 +6856,7 @@ struct LogFold
     std::map<Key, LogOp> added;          // there at the end, with what adds it
     std::set<Key> removed;               // gone at the end
     std::set<long> touch;                // its derived values the log did not keep
+    std::set<Key> derived;               // of `values`: what a recompute wrote
     TouchedFold touched;                 // the touched state, sec 27.58
 
     void forget(long cid)
@@ -6902,8 +6903,13 @@ struct LogFold
                 touched.back(o);
                 if (!o.vbefore.empty()) {
                     values[key] = o.vbefore;
-                    if (o.derived)
+                    if (o.derived) {
                         touch.erase(o.cid);
+                        derived.insert(key);
+                    }
+                    else {
+                        derived.erase(key);
+                    }
                 }
                 else if (o.derived && o.ckind == "obj") {
                     values.erase(key);
@@ -6954,8 +6960,13 @@ struct LogFold
                 touched.forward(o);
                 if (!o.vafter.empty()) {
                     values[key] = o.vafter;
-                    if (o.derived)
+                    if (o.derived) {
                         touch.erase(o.cid);
+                        derived.insert(key);
+                    }
+                    else {
+                        derived.erase(key);
+                    }
                 }
                 else if (o.derived && o.ckind == "obj") {
                     values.erase(key);
@@ -6984,16 +6995,38 @@ bool openRecordJumps(TransactionStore& store, const std::vector<LogVersion>& ver
     std::set<int64_t> on {0};
     for (const auto& c : chain)
         on.insert(c.seq);
+    // Which version the open recorded, and what its document was, the row
+    // says itself. The version is looked for by that: another may sit at
+    // the same row -- one an import named there (sec 30.15 F5), which was
+    // taken for the open's, and a copy that imported a file with a named
+    // version where the two parted could then merge nothing (sec 31.19) --
+    // and the open's own may be gone, an unnamed one going when enough have
+    // come after it (sec 16.3, 31.15).
+    int64_t num = 0;
+    std::string docxml;
+    {
+        const auto j = nlohmann::json::parse(t.script, nullptr, false);
+        if (j.is_object()) {
+            if (j.contains("version") && j["version"].is_number_integer())
+                num = j["version"].get<int64_t>();
+            if (j.contains("docxml") && j["docxml"].is_string())
+                docxml = j["docxml"].get<std::string>();
+        }
+    }
     const LogVersion* at = nullptr;
     const LogVersion* before = nullptr;
     for (const auto& v : versions) {
-        if (v.seq == t.parent) {
+        if (num ? v.num == num : v.seq == t.parent) {
             if (!at || v.num > at->num)
                 at = &v;
         }
         else if (v.seq < t.parent && on.count(v.seq) && (!before || v.seq > before->seq)) {
             before = &v;
         }
+    }
+    if (at) {
+        num = at->num;
+        docxml = at->docxml_hash;
     }
     // The save says so itself (sec 30.21 G1, 30.25). A file continues its
     // history only when it is from the save that wrote both -- the guard of
@@ -7003,22 +7036,10 @@ bool openRecordJumps(TransactionStore& store, const std::vector<LogVersion>& ver
     // version being that one, at that row, is what says the file as found is
     // what the rows add up to.
     //
-    // The version itself need not be there still (sec 31.15): an unnamed
-    // one goes when enough have come after it (sec 16.3), and the row says
-    // which it recorded and what its document was. Without that, every
-    // open older than the versions kept read as a file that is not its
-    // history's, and no branch made before it could be merged.
-    int64_t num = at ? at->num : 0;
-    std::string docxml = at ? at->docxml_hash : std::string();
-    if (!at) {
-        const auto j = nlohmann::json::parse(t.script, nullptr, false);
-        if (j.is_object()) {
-            if (j.contains("version") && j["version"].is_number_integer())
-                num = j["version"].get<int64_t>();
-            if (j.contains("docxml") && j["docxml"].is_string())
-                docxml = j["docxml"].get<std::string>();
-        }
-    }
+    // The version itself need not be there still (sec 31.15): without the
+    // row's own word for it, every open older than the versions kept read
+    // as a file that is not its history's, and no branch made before it
+    // could be merged.
     if (num && t.parent > 0) {
         for (const auto& save : store.metaWithPrefix("save:")) {
             std::istringstream in(save.second);
@@ -7141,8 +7162,21 @@ bool Document::_moveAlongLog(int64_t fromHead, int64_t toSeq, bool views)
     std::map<LogFold::Key, CapturedValue> want;
     for (const auto& kv : fold.values) {
         CapturedValue v;
-        if (!log->readValue(kv.second, v))
+        if (!log->readValue(kv.second, v)) {
+            // A value a recompute wrote is a cache: a file's copy of the
+            // log need not carry it, and a row may name one that is gone.
+            // For the document an import replays in that is as good as a
+            // row that never had it (sec 31.19): the owner is computed
+            // again, which is what the import does with every derived
+            // value it meets (sec 30.15 F2). Anywhere else the move is
+            // refused, and the caller reads a version whole, where the
+            // value is.
+            if (d->replaying && fold.derived.count(kv.first) && std::get<0>(kv.first) == "obj") {
+                fold.touch.insert(std::get<1>(kv.first));
+                continue;
+            }
             return false;
+        }
         want.emplace(kv.first, std::move(v));
     }
 
@@ -7860,13 +7894,32 @@ size_t Document::deleteBranch(const std::string& name)
         THROWM(Base::ValueError, "branch '" + name + "' is the one the document is on");
 
     const Shared shared = sharedWith(store, branch.id);
+    // What another branch merged of it stays (sec 31.19, the user's: "keep
+    // the rows of the merged branch"). A merge names the row it took the
+    // branch at, and the rows behind that one are what the merge stands
+    // on: where the next merge of the two starts from (sec 28.2), and, for
+    // a branch an import made, what says which object and which number of
+    // the copy's is which of this file's (sec 30.33, 31.15). Only what no
+    // other branch's history reaches goes with the branch.
+    std::set<int64_t> held;
+    for (const auto& b : store.branches()) {
+        if (b.id == branch.id)
+            continue;
+        for (const auto& t : store.history(b.head))
+            held.insert(t.seq);
+    }
     std::vector<int64_t> rows;
     std::set<int64_t> gone;
+    size_t merged = 0;
     for (const auto& t : store.chain(branch.head)) {
-        if (!shared.rows.count(t.seq)) {
-            rows.push_back(t.seq);
-            gone.insert(t.seq);
+        if (shared.rows.count(t.seq))
+            continue;
+        if (held.count(t.seq)) {
+            ++merged;
+            continue;
         }
+        rows.push_back(t.seq);
+        gone.insert(t.seq);
     }
     // Its versions, and any other taken at one of its own rows; a version
     // another branch forked from stays, named (sec 16.7).
@@ -7896,8 +7949,8 @@ size_t Document::deleteBranch(const std::string& name)
 
     std::ostringstream script;
     script << "{\"deleted\":" << jsonString(name) << ",\"rows\":" << rows.size()
-           << ",\"versions\":" << versions.size() << ",\"kept\":" << kept
-           << compactJson(estimate) << "}";
+           << ",\"merged\":" << merged << ",\"versions\":" << versions.size() << ",\"kept\":"
+           << kept << compactJson(estimate) << "}";
     log->record("trim", "Delete branch " + name, script.str());
     refreshVersionNames();
     signalBranchesChanged(*this);
@@ -11748,6 +11801,26 @@ Document::ImportResult Document::importFork(const std::string& path, const std::
         std::set<int64_t> merged;
         for (const auto& r : theirs.history(t.mergeFrom))
             merged.insert(r.seq);
+        // A row of that history is on its chain, or a merge on the chain
+        // took it from another branch of this file. The copy replayed the
+        // chain (sec 30.15), so of the second kind it holds the merge and
+        // not the row: what the row changed is looked for in the merge's
+        // replay. (Until a deleted branch kept the rows its merge stands
+        // on, sec 31.19, such rows were gone once their branch was, and
+        // only a file that had kept the branch met this.)
+        const auto own = store.chain(second);
+        std::set<int64_t> onChain;
+        for (const auto& r : own)
+            onChain.insert(r.seq);
+        std::map<int64_t, int64_t> broughtBy;
+        for (const auto& m : own) {
+            if (!m.mergeFrom)
+                continue;
+            for (const auto& r : store.history(m.mergeFrom)) {
+                if (!onChain.count(r.seq))
+                    broughtBy.emplace(r.seq, m.seq);
+            }
+        }
         using Change = std::tuple<std::string, std::string, long, std::string>;
         for (const auto& r : store.history(second)) {
             if (have.count(r.seq))
@@ -11760,8 +11833,15 @@ Document::ImportResult Document::importFork(const std::string& path, const std::
             }
             if (changes.empty())
                 continue;
+            int64_t by = r.seq;
+            if (!onChain.count(r.seq)) {
+                auto brought = broughtBy.find(r.seq);
+                if (brought == broughtBy.end())
+                    return 0;
+                by = brought->second;
+            }
             LogRowId id;
-            const int64_t there = store.rowId(r.seq, id) ? theirs.findRow(id) : 0;
+            const int64_t there = store.rowId(by, id) ? theirs.findRow(id) : 0;
             if (!there || !merged.count(there))
                 return 0;
             std::set<Change> replayed;
