@@ -22,7 +22,7 @@ report views, the reporter's own files -- is kept beside the dev tree under
 |---|---|---|---|
 | 1 | 2026-10-06 | idle progress bar in the status bar | STAGED |
 | 2 | 2026-10-06 | a file opened from the menu comes up empty (`scanner.FCStd`) | STAGED |
-| 3 | 2026-10-06 | tooltips are clipped: navigation style, and toolbar buttons with an icon | OPEN |
+| 3 | 2026-10-06 | tooltips are clipped: navigation style, and toolbar buttons with an icon | FIXED |
 | 4 | 2026-10-06 | status bar dimension reads `100 mm x 80 mm`, wanted `100 x 80 mm` | STAGED |
 | 5 | 2026-10-06 | title bar with the workbench bar docked: the menu does not unfold on hover | OPEN |
 | 6 | 2026-10-06 | maximized with the custom title bar: sometimes no margin at the top | OPEN |
@@ -91,18 +91,46 @@ recompute runs (entry 8 is what it then does).
 **Not checked yet:** an import started from the menu that turns `LiveImport`
 on for itself (`Gui.setLiveImport`, the IFC importer) stands in the same place.
 
-## 3. Tooltips are clipped -- OPEN
+## 3. Tooltips are clipped -- FIXED
 
 **Reported (2026-10-06):** "the tooltips of navigation style option in status
 bar is clipped." Then: "not only the navigation tooltips, some of the toolbar
 button tooltip with icon is also clipped. check my running instance."
 
 **Seen in the running copy:** tooltips are drawn by `Gui::TipLabel`
-(`Widgets.cpp`), not Qt's, because `ToolTipIconSize` is above 0; the
-navigation style tips are rich text, a table of `<img>` cells
-(`Mod/Tux/NavigationIndicatorGui.py`). Stylesheet `FreeCAD.qss`, theme Light,
-which gives `Gui--TipLabel` a 1px border and a radius. The last tip shown was
-393 x 100. Not reproduced or measured yet.
+(`Widgets.cpp`), not Qt's; the navigation style tips are rich text, a table
+of `<img>` cells (`Mod/Tux/NavigationIndicatorGui.py`).
+
+**Reproduced** in the dev tree with the reporter's configuration, by sending
+each visible toolbar button and each navigation style the event a hover sends
+and photographing the tip, both as the widget drew it and off the screen
+(`..\dl\gt-tips-fc3\`, 45 tips). One condition first: `Gui::ToolTip` installs
+itself on the application at its first use, which is the first preselection
+in a 3D view -- before that the tips are Qt's and none of this shows. A fresh
+start looks right; a session that has touched a model does not.
+
+**Two defects**, neither of them the screen or the stylesheet (each tip on
+screen matched what the widget drew, pixel for pixel):
+
+- A tip of two lines is lower than its icon. The label was sized to the
+  icon's height alone, and the icon is drawn inside the label's margin: 64 px
+  of picture in a 64 px label starting 2 px down. `Std_MeasureDistance` and
+  `PartDesign_SubShapeBinder` of the first 40 buttons; any command with a one
+  line tip.
+- The icon is found as the FIRST `<img>` of a tip, whoever put it there. In a
+  navigation style's tip that is the first cell of the table of mouse buttons:
+  the "Select" cell came up empty and its picture hung in the top right
+  corner, in all eleven styles. `Mod/Material`'s tree tips carry pictures the
+  same way.
+
+Checked and NOT a defect: an icon that looks cut at the right or the bottom
+edge (`Std_CloseAllWindows`) is the artwork; the pixmap in the tip is byte for
+byte what the SVG renders to at 64 px.
+
+**Fix:** `b1ba3ecc0d`. The height takes the margins in; only an image
+floated right -- what `Action::createToolTip()` writes -- is taken for the
+icon. `tests/gui/tooltip-icon-and-images.py`, 6 PASS over 58 toolbar tips and
+11 navigation styles.
 
 ## 4. Status bar dimension: `100 x 80 mm` -- STAGED
 
@@ -201,3 +229,29 @@ run of TechDraw "no exact match for changed 2d reference". Not looked at yet.
 Notes not sorted into an entry yet. Add a line here at any time, in any words;
 it is read before each entry is started and moved up into the table.
 
+- **2026-10-06 11:58, 3D view lags behind the mouse.** "the 3d view seems
+  lagging in response to mouse movement and wheel. a mouse over highlight is
+  visibly delayed a few hundries of ms. and moving away the mouse to an empty
+  area does not cancel the previous highlight. mouse wheel zoom is also visibly
+  lagging. after stopping wheeling, I can see the 3d view is catching up with
+  the lingering zooming operation." Three symptoms in it: (a) preselection
+  highlight arrives a few hundred ms late; (b) moving to empty space does not
+  clear the highlight; (c) wheel zoom queues up and keeps playing after the
+  wheel has stopped. Added 12:01: "scanner.FCStd was open when it lagged" (the
+  677-object file of entries 2, 7 and 8). Not said yet: whether it is the same
+  with an empty or small document.
+- **2026-10-06 11:58, dark theme colors.** "checkbox border and customized
+  toolbar maximize/minimize icon got bad color in dark theme. audit for other
+  similar UI color problem." Two named: the checkbox border, and the
+  maximize/minimize icons of the custom title bar. Asked for beyond those: an
+  audit of the dark theme for other widgets with the same kind of wrong color.
+- **2026-10-06 11:58, TechDraw.** "techdraw dimension/cosmetics is covered by
+  face filling." Dimensions and cosmetic elements are drawn under the face
+  fill instead of over it.
+- **2026-10-06 11:58, grouped messages in the console (a change request).**
+  "do not use underscore in console grouped message, intead, put a clickable
+  expansion icon before the message (note, those grouped message should still
+  align with other normal message, put the icon in front of it, in the margin
+  area)." Wanted: no underscore on a grouped message; a clickable expand icon
+  ahead of it; the message text itself stays aligned with ordinary messages,
+  the icon sitting in the margin.
