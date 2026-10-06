@@ -1519,7 +1519,12 @@ bool DocumentObject::mergeUnit(const MergeUnitState&, const MergeUnitSide&, cons
 }
 
 bool DocumentObject::getMergePlaces(const MergeUnitState&, std::string&,
-                                    std::vector<std::string>&) const
+                                    std::vector<MergePlace>&) const
+{
+    return false;
+}
+
+bool DocumentObject::nameMergePlaces(MergeUnitState&, const std::vector<std::string>&) const
 {
     return false;
 }

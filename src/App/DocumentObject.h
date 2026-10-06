@@ -548,15 +548,28 @@ public:
                            const MergeUnitSide& theirs, MergeUnitState& merged,
                            std::vector<MergeUnitNote>& notes) const;
 
+    /// One place of a list an expression may name a thing of by number.
+    struct MergePlace
+    {
+        /// What stands there, by something that is the same wherever it
+        /// stands: a constraint by its type and the geometry it is on.
+        std::string key;
+        std::string name;      ///< the name it has, if it has one
+        std::string autoName;  ///< a name made of the key, for one that has none
+    };
     /** The places of a unit an expression may name a thing by -- a
-     * sketch's `Constraints[3]` -- in one state of it: `prop` is the list,
-     * `names` what stands at each place, by something that is the same
-     * wherever the thing is. A merge moves things to other places, and an
-     * expression that says a place then says another thing
-     * (docs/TransactionLog.md sec 31.10). False where there are none.
+     * sketch's `Constraints[3]` -- in one state of it: `prop` is the list.
+     * A merge moves things to other places, and an expression that says a
+     * place then says another thing; so before a merge every thing named
+     * by its place is given a name, and the expressions say the name
+     * (docs/TransactionLog.md sec 31.11). False where there are none.
      */
     virtual bool getMergePlaces(const MergeUnitState& at, std::string& prop,
-                                std::vector<std::string>& names) const;
+                                std::vector<MergePlace>& places) const;
+    /** The same state with its places named: `names` has one for each
+     * place, empty for a thing that stays without. False where it cannot.
+     */
+    virtual bool nameMergePlaces(MergeUnitState& at, const std::vector<std::string>& names) const;
 
     /** Whether `prop` of this object is merged by the things it holds
      * (Property::splitSaved, docs/TransactionLog.md sec 31.8) where two

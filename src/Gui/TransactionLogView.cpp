@@ -1430,6 +1430,14 @@ public:
                 item->setText(Takes, QObject::tr("both"));
                 item->setToolTip(Takes, QString::fromStdString(c->note));
             }
+            else if (c->kind == "name") {
+                // What an expression named by its place is named before
+                // the merge (sec 31.11): ours, saying the names.
+                item->setText(Takes, QObject::tr("named"));
+                item->setToolTip(Takes, QString::fromStdString(c->note));
+                for (int col = 0; col < Columns; ++col)
+                    item->setForeground(col, quiet);
+            }
             else if (c->kind == "unit") {
                 // One thing with the conflict above it (sec 31.5): it goes
                 // the way that one is picked.

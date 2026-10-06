@@ -412,6 +412,59 @@ def run():
         App.closeDocument(edoc.Name)
         settle()
 
+        # Sec 31.11: what an expression names by its place is named before
+        # the merge. Theirs takes the first constraint out; ours binds a
+        # cylinder to the second, as `Constraints[1]`. The dialog shows the
+        # naming, and the cylinder says the name after.
+        ndoc = App.newDocument("MergeNamed")
+        ndoc.UndoMode = 1
+        ndoc.openTransaction("base")
+        sk = ndoc.addObject("Sketcher::SketchObject", "Sketch")
+        for x in (0, 20, 40, 60):
+            sk.addGeometry(Part.LineSegment(App.Vector(x, 0, 0), App.Vector(x + 10, 0, 0)))
+        sk.addConstraint(Sketcher.Constraint("Horizontal", 0))
+        sk.addConstraint(Sketcher.Constraint("DistanceX", 0, 1, 0, 2, 10))
+        ndoc.addObject("Part::Cylinder", "Cyl")
+        ndoc.recompute()
+        ndoc.commitTransaction()
+        settle()
+        ndoc.saveAs(os.path.join(tempfile.mkdtemp(prefix="mergenamed-"), "named.FCStd"))
+        ndoc.createTransactionBranch("side")
+        ndoc.openTransaction("theirs")
+        ndoc.Sketch.delConstraint(0)
+        ndoc.recompute()
+        ndoc.commitTransaction()
+        settle()
+        ndoc.switchTransactionBranch("main")
+        ndoc.openTransaction("ours")
+        ndoc.Cyl.setExpression("Height", "Sketch.Constraints[1]")
+        ndoc.recompute()
+        ndoc.commitTransaction()
+        settle()
+        App.setActiveDocument(ndoc.Name)
+        settle()
+        ndock, _ = panel()
+        seen = {}
+        QtCore.QTimer.singleShot(300, lambda: driveParts(seen))
+        QtCore.QMetaObject.invokeMethod(ndock, "mergeBranch", QtCore.Qt.DirectConnection,
+                                        QtCore.Q_ARG(str, "side"))
+        settle()
+        shown = sorted(r for r in (seen.get("rows") or []) if r[0].startswith("name"))
+        check("named: the dialog says what is named (%r)" % shown,
+              seen.get("found") is True and seen.get("enabled") is True
+              and [r[:4] for r in shown] == [("name set", "Constraints", "named", False),
+                                             ("name set", "ExpressionEngine", "named", False)]
+              and "Constraints[1] -> DistanceX_g1p1_g1p2" in shown[0][4])
+        check("named: the constraint has its name and the cylinder says it (%r, %r)"
+              % ([c.Name for c in ndoc.Sketch.Constraints], ndoc.Cyl.ExpressionEngine),
+              [c.Name for c in ndoc.Sketch.Constraints] == ["DistanceX_g1p1_g1p2"]
+              and ndoc.Cyl.ExpressionEngine
+              == [("Height", "Sketch.Constraints.DistanceX_g1p1_g1p2")]
+              and abs(ndoc.Cyl.Height.Value - 10) < 1e-9
+              and not [o.Name for o in ndoc.Objects if "Invalid" in o.State])
+        App.closeDocument(ndoc.Name)
+        settle()
+
         # Sec 31.8: a sheet whose cells both branches set, each another, is
         # merged by its cells -- shown as that, with nothing to pick.
         cdoc = App.newDocument("MergeCells")

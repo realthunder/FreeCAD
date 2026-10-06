@@ -551,7 +551,10 @@ public:
          * both changed it, and it holds many things each known by something
          * of its own (Property::splitSaved, sec 31.8): what goes in is
          * `merged`, ours with what theirs did to the things ours left
-         * alone, and nothing is asked.
+         * alone, and nothing is asked. `name`: a value of ours as it is
+         * with what expressions named by its place named instead (sec
+         * 31.11) -- `merged`; it goes in where the merge writes nothing
+         * else to that property.
          */
         std::string kind;
         /// `set`, `addprop`, `delprop`, `create`, `remove`, `revive`: an

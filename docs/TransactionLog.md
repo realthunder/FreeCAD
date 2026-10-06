@@ -15418,3 +15418,110 @@ the request check 31 and the share check 47. One change after that run
 -- a state that does not read is refused instead of thrown out of
 (`Lists::read`) -- and the two sketch cases, both ways, and the merge
 check, again.
+
+### 31.11 What an expression names by its place is named; external geometry by id (user, 2026-10-06)
+
+**Ruled (user, 2026-10-06):** "no need to remove the name. let's change
+the term from temp naming to auto naming, that is, before merging, auto
+name all index reference to the constraint with auto names. you will
+also need to resolve name conflicts in this case. i think we can safely
+match by constraint type and its involved geometry elements." And, of
+31.10's one side's external geometry: "why do you add the limit". There
+was no reason but caution; it is gone, below. Both of 31.10's first two
+"Left" are this section.
+
+**The name.** A constraint's key (31.10) is its type and the geometry
+it is on, by id; the name made of it says the same in letters an
+expression can say: `DistanceX,g4.1,g4.2,` is `DistanceX_g4p1_g4p2`, an
+axis `en1`, the second of two alike `..._2`. It is the same on any
+branch that has the constraint, which is what settles every question
+below without asking one. `DocumentObject::getMergePlaces` gives, for a
+state of the unit, each place's key, its name and that made name;
+`nameMergePlaces` gives the state back with names put in.
+
+**Before the plan weighs anything** (`namePlaces`, from `planMerge`),
+for each sketch whose constraints either side changed and whose list is
+not the same on all three -- base, ours, theirs:
+
+- *Which places are named by number*: read in every value that holds
+  expressions -- an `ExpressionEngine`, a sheet's `cells` -- ours' in the
+  document, theirs' and the base's in the plan's values.
+  `Sketch.Constraints[3]`, `<<label>>.Constraints[3]`, and in the
+  sketch's own values a bare `Constraints[3]`, which is how a bound
+  dimension's path is written. Another document's (`Doc#Sketch.`) is
+  left alone.
+- *One name for a constraint*, on all three: ours' where ours named it,
+  else theirs', else the base's; and one with no name that anything
+  names by number, the made name. So **two names for one constraint**
+  are ours' -- it is one constraint by its type and its geometry -- and
+  **one name for two constraints** stays with ours', theirs' taking its
+  made name. A made name that is taken gets `_2`.
+- *Every value says so.* The list on each side with the names in; every
+  value that holds expressions with the number, or the name that lost,
+  out -- each read by the places of the side it is of, the base's by the
+  base's. This is done to the text as saved (`sayPlaceNames`): the
+  values are in the log, not in a document. What follows -- 28's
+  weighing, 31.8's merge of an engine by its paths, 31.10's of the
+  sketch -- sees names only. A reference the Sketcher renumbered on one
+  branch because a constraint before it went is then no change at all,
+  where by its text it was one.
+- *Ours' own values that changed by it* are kept aside, and are changes
+  of kind **`name`** in the preview: the list "named: Constraints[1] ->
+  DistanceX_g1p1_g1p2", an engine or a sheet that "says the names
+  Sketch.Constraints has now". The merge writes each where it writes
+  nothing else to that property. The dialog shows them, greyed, `named`.
+
+**The names stay.** Nothing is turned back into a place.
+
+**Not named:** a sketch whose list is the same on both sides and at the
+base -- nothing can move; and anything where theirs is taken as it is
+(28.6 Q1, 30.4 P1) -- ours wrote nothing that could say a place theirs
+moved, and theirs' own expressions say what theirs' Sketcher made them
+say. So "all" in the ruling is read as all that a merge could move. An
+index that nothing moves stays an index.
+
+**The guard of 31.10** is still there, under this: where the naming
+could not be done -- a value it cannot read -- and a place an expression
+names would move, the sketch is asked whole.
+
+**External geometry** (`SketchObject::mergeUnit`): by id, as geometry
+is -- what one side added is there, what one side removed is gone and a
+constraint on it with it, ours' order and then theirs'. Where one lies
+is its source's doing and the next recompute's; what it is of and its
+flags are theirs' where only theirs changed them. The references it is
+made from, `ExternalGeometry`, are merged line by line of the saved
+list, each known by its object and sub-element. Two branches that each
+took another edge of one box and put a line's end on it merge to both,
+each constraint on its own edge.
+
+**Tests.** Python `testWhatAnExpressionNamesByItsPlaceIsNamed`: the
+place that moves (ours removes a constraint, theirs binds a new one as
+`Constraints[2]`: merged, named, the path says the name, twelve long,
+undone and redone); the sketch taken whole (31.10's `left.py`: the
+cylinder is ten high and says the name, where it failed); one name on
+two constraints; two names on one; a sheet's cell; and theirs taken as
+it is, where the index stays. `testASketchIsMergedByWhatItHolds`: its
+guard case is gone, and it has the two edges of a box. The Gui merge
+check (+2, 37): the dialog's two `name set` rows, `named`, with the note,
+and the cylinder after.
+
+**Left.**
+
+- An expression in *another document* that names a place of this
+  sketch.
+- A label with `>>` in it, and a name that is not letters, digits and
+  `_` (the Sketcher writes such a name another way): not read by
+  `sayPlaceNames`, so left as they are.
+- The last writer of an expression bound to a place is found by reading
+  each row's value with the names its side *ends* with: right unless the
+  place moved on that branch between the row and its end, and then ours
+  stays.
+- Whose name, where both named one constraint, is ours' and not the
+  later's.
+- A copy's geometry ids (P6), and the other three of 31.10's.
+
+**Gates**, frozen and unfrozen each: Python 3023 OK (52 skipped frozen,
+53 unfrozen; 6 expected failures; +1), ctest 881/881, and the GUI checks
+RC 15, BC 30, VC 18, PC 28, FC 16, VW 14, MC 37 (+2), the two-document
+check 24, the tree check 19, the author check 36, the import check 49,
+the request check 31 and the share check 47.

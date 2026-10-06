@@ -67,6 +67,7 @@ recompute path. Also, it enables more complicated dependencies beyond trees.
 # include <boost/filesystem.hpp>
 #endif
 
+#include <cctype>
 #include <boost/algorithm/string.hpp>
 #include <boost/bimap.hpp>
 #include <boost/graph/strong_components.hpp>
@@ -8179,7 +8180,429 @@ struct MergePlan
     /// The two share no base (sec 30.22): theirs is a branch from nothing,
     /// and ours is weighed by what it holds.
     bool independent {false};
+
+    /// Sec 31.11: the places of one list of one object that expressions
+    /// named by number, and what each is called on each side.
+    struct Places
+    {
+        long cid {0};
+        std::string object;   ///< the object's name
+        std::string label;    ///< its label, as a saved value has it in `<<>>`
+        std::string prop;     ///< the list: `Constraints`
+        struct Side
+        {
+            std::vector<std::string> byPlace;            ///< the name of each place, or none
+            std::map<std::string, std::string> byName;   ///< a name that is to be another
+        };
+        Side side[3];
+    };
+    enum { AtBase = 0, AtOurs = 1, AtTheirs = 2 };
+    std::vector<Places> places;
+    /// What the document is to hold of a value the naming rewrote, where
+    /// the merge writes nothing else there: ours, saying names.
+    struct Named
+    {
+        std::string ref;        ///< the value, as an entity ref
+        std::string fragment;
+        std::string ptype;
+        std::string note;
+    };
+    std::map<NetChange::Key, Named> named;
+
+    /// The same saved value with the places of every list in `places`
+    /// said by name, as `side` has them. `owner` is the object whose
+    /// property the value is: its own list it may name with no object.
+    std::string sayNames(const std::string& fragment, int side, long owner) const;
 };
+
+/** A saved value with the places of one list said by name (sec 31.11):
+ * `Sketch.Constraints[3]` is `Sketch.Constraints.<name>`, and a name that
+ * is to be another is that one. The list is the object's where the text
+ * says so -- `Sketch.`, or its label in `<<>>` -- and, in a value of the
+ * object itself (`own`), where it says none: a path `Constraints[3]`.
+ * With `seen`, nothing is rewritten and the places named by number are
+ * noted there.
+ */
+std::string sayPlaceNames(const std::string& fragment, const MergePlan::Places& table, int side,
+                          bool own, std::set<std::size_t>* seen = nullptr)
+{
+    const std::string& word = table.prop;
+    const auto& names = table.side[side];
+    auto ident = [](char c) {
+        return std::isalnum(static_cast<unsigned char>(c)) || c == '_';
+    };
+    std::string out;
+    std::size_t from = 0;
+    for (std::size_t at = fragment.find(word); at != std::string::npos;
+         at = fragment.find(word, at + 1)) {
+        const std::size_t end = at + word.size();
+        if (end >= fragment.size())
+            break;
+        bool refers = false;
+        if (at > 0 && fragment[at - 1] == '.') {
+            const std::size_t dot = at - 1;
+            if (dot > 0 && ident(fragment[dot - 1])) {
+                std::size_t a = dot;
+                while (a > 0 && ident(fragment[a - 1]))
+                    --a;
+                // `Doc#Sketch.` is another document's, `X.Sketch.` no object's.
+                if (a > 0 && (fragment[a - 1] == '.' || fragment[a - 1] == '#'))
+                    continue;
+                refers = fragment.compare(a, dot - a, table.object) == 0;
+            }
+            else if (dot >= 8 && fragment.compare(dot - 8, 8, "&gt;&gt;") == 0) {
+                const std::size_t open = fragment.rfind("&lt;&lt;", dot - 8);
+                if (open == std::string::npos || (open > 0 && fragment[open - 1] == '#'))
+                    continue;
+                refers = fragment.compare(open + 8, dot - 16 - open, table.label) == 0;
+            }
+            else {
+                refers = own;   // `.Constraints[3]`
+            }
+        }
+        else if (at == 0 || !ident(fragment[at - 1])) {
+            refers = own;
+        }
+        if (!refers)
+            continue;
+        if (fragment[end] == '[') {
+            std::size_t close = end + 1;
+            std::size_t place = 0;
+            while (close < fragment.size() && fragment[close] >= '0' && fragment[close] <= '9')
+                place = place * 10 + static_cast<std::size_t>(fragment[close++] - '0');
+            if (close == end + 1 || close >= fragment.size() || fragment[close] != ']')
+                continue;
+            if (seen) {
+                seen->insert(place);
+                continue;
+            }
+            if (place >= names.byPlace.size() || names.byPlace[place].empty())
+                continue;
+            out.append(fragment, from, end - from);
+            out += "." + names.byPlace[place];
+            from = close + 1;
+        }
+        else if (!seen && fragment[end] == '.' && end + 1 < fragment.size()
+                 && (ident(fragment[end + 1]) && !std::isdigit(static_cast<unsigned char>(fragment[end + 1])))) {
+            std::size_t e = end + 1;
+            while (e < fragment.size() && ident(fragment[e]))
+                ++e;
+            auto to = names.byName.find(fragment.substr(end + 1, e - end - 1));
+            if (to == names.byName.end())
+                continue;
+            out.append(fragment, from, end + 1 - from);
+            out += to->second;
+            from = e;
+        }
+    }
+    if (seen || from == 0)
+        return fragment;
+    out.append(fragment, from, std::string::npos);
+    return out;
+}
+
+std::string MergePlan::sayNames(const std::string& fragment, int side, long owner) const
+{
+    std::string out = fragment;
+    for (const auto& table : places) {
+        if (out.find(table.prop) != std::string::npos)
+            out = sayPlaceNames(out, table, side, table.cid == owner);
+    }
+    return out;
+}
+
+bool holdsExpressions(const std::string& ptype)
+{
+    return Base::Type::fromName(ptype.c_str())
+        .isDerivedFrom(PropertyExpressionContainer::getClassTypeId());
+}
+
+/** Before a merge, everything an expression names by its place in a list
+ * is given a name, and the expressions say the name (a ruling, docs/
+ * TransactionLog.md sec 31.11). A merge moves things to other places; a
+ * name goes with the thing.
+ *
+ * For each object that says it has such places (getMergePlaces) and whose
+ * list either side changed: the list at the base, ours and theirs, each
+ * place known by its key. A thing has one name on all three -- ours' where
+ * ours named it, else theirs', else the base's; one that has none and is
+ * named by number anywhere gets the name its object makes of its key, the
+ * same on any branch. A name theirs gave to another thing than ours did is
+ * theirs' thing's made name instead: two things, two names.
+ *
+ * Then every value the plan weighs says so: the list itself with the
+ * names in, and every value that holds expressions with the numbers out --
+ * each read by the side it is of, the base's by the base's places. What of
+ * ours that changes is kept in `named`: the document is given it where the
+ * merge writes nothing else there.
+ */
+void namePlaces(Document& doc, TransactionLog& log, MergePlan& plan)
+{
+    const CaptureConfig config(doc);
+    TransactionLogCore& core = TransactionLogCore::of(doc.getFileHistory());
+    auto text = [&](const std::string& hash, std::string& fragment) {
+        CapturedValue v;
+        if (hash.empty() || !log.readValue(hash, v) || !v.attachments.empty())
+            return false;
+        fragment = std::move(v.fragment);
+        return true;
+    };
+    bool flushed = false;
+    auto stored = [&](const std::string& fragment) {
+        if (!flushed) {
+            log.flush();
+            flushed = true;
+        }
+        CapturedValue v;
+        v.ok = true;
+        v.fragment = fragment;
+        return core.putValue(v, "durable");
+    };
+    // The document's own value of a property: as the naming has left it.
+    auto live = [&](const NetChange::Key& key, Property& prop, std::string& fragment) {
+        auto it = plan.named.find(key);
+        if (it != plan.named.end()) {
+            fragment = it->second.fragment;
+            return true;
+        }
+        const CapturedValue now = captureValue(config, prop);
+        if (!now.ok || !now.attachments.empty())
+            return false;
+        fragment = now.fragment;
+        return true;
+    };
+    auto usable = [](const NetChange::Val* v) {
+        return v && v->atStart && v->atEnd && !v->before.empty() && !v->after.empty();
+    };
+
+    std::set<std::pair<long, std::string>> done;
+    std::vector<std::pair<long, std::vector<std::string>>> units;
+    for (const NetChange* net : {&plan.theirs, &plan.ours}) {
+        for (const auto& key : net->valueOrder) {
+            if (std::get<0>(key) != "obj")
+                continue;
+            DocumentObject* obj = doc.getObjectByID(std::get<1>(key));
+            if (!obj)
+                continue;
+            auto unit = obj->getMergeUnit(std::get<2>(key).c_str());
+            if (unit.empty() || !done.emplace(std::get<1>(key), unit.front()).second)
+                continue;
+            units.emplace_back(std::get<1>(key), std::move(unit));
+        }
+    }
+    for (const auto& u : units) {
+        const long cid = u.first;
+        DocumentObject* obj = doc.getObjectByID(cid);
+        DocumentObject::MergeUnitState state[3];
+        bool read = true;
+        for (const auto& name : u.second) {
+            Property* prop = obj->getPropertyByName(name.c_str());
+            if (!prop)
+                continue;
+            const NetChange::Key key {"obj", cid, name};
+            auto find = [&](const NetChange& net) -> const NetChange::Val* {
+                auto it = net.values.find(key);
+                return it == net.values.end() ? nullptr : &it->second;
+            };
+            const NetChange::Val* t = find(plan.theirs);
+            const NetChange::Val* o = find(plan.ours);
+            if ((t && !usable(t)) || (o && !usable(o))) {
+                read = false;   // added or removed with its object: not this
+                break;
+            }
+            std::string now;
+            read = read && live(key, *prop, now);
+            std::string& base = state[MergePlan::AtBase][name];
+            read = read && (t ? text(t->before, base) : o ? text(o->before, base) : (base = now, true));
+            read = read && (t ? text(t->after, state[MergePlan::AtTheirs][name])
+                              : (state[MergePlan::AtTheirs][name] = base, true));
+            read = read && (o ? text(o->after, state[MergePlan::AtOurs][name])
+                              : (state[MergePlan::AtOurs][name] = base, true));
+            if (!read)
+                break;
+        }
+        if (!read)
+            continue;
+        MergePlan::Places table;
+        std::vector<DocumentObject::MergePlace> places[3];
+        if (!obj->getMergePlaces(state[0], table.prop, places[0])
+                || !obj->getMergePlaces(state[1], table.prop, places[1])
+                || !obj->getMergePlaces(state[2], table.prop, places[2]))
+            continue;
+        // A list that is the same on all three moves nothing.
+        auto same = [](const std::vector<DocumentObject::MergePlace>& a,
+                       const std::vector<DocumentObject::MergePlace>& b) {
+            return a.size() == b.size()
+                && std::equal(a.begin(), a.end(), b.begin(), [](const auto& x, const auto& y) {
+                       return x.key == y.key && x.name == y.name;
+                   });
+        };
+        if (same(places[0], places[1]) && same(places[0], places[2]))
+            continue;
+        table.cid = cid;
+        table.object = obj->getNameInDocument();
+        table.label = Base::Persistence::encodeAttribute(obj->Label.getValue());
+
+        // Which places are named by number, on each side.
+        std::set<std::size_t> seen[3];
+        for (DocumentObject* other : doc.getObjects()) {
+            std::vector<Property*> held;
+            other->getPropertyList(held);
+            for (Property* prop : held) {
+                if (!prop->isDerivedFrom(PropertyExpressionContainer::getClassTypeId()))
+                    continue;
+                std::string fragment;
+                if (live(NetChange::Key {"obj", other->getID(), prop->getName()}, *prop, fragment))
+                    sayPlaceNames(fragment, table, MergePlan::AtOurs, other == obj,
+                                  &seen[MergePlan::AtOurs]);
+            }
+        }
+        for (const NetChange* net : {&plan.theirs, &plan.ours}) {
+            for (const auto& kv : net->values) {
+                if (std::get<0>(kv.first) != "obj" || !holdsExpressions(kv.second.ptype))
+                    continue;
+                const bool own = std::get<1>(kv.first) == cid;
+                std::string fragment;
+                if (text(kv.second.before, fragment))
+                    sayPlaceNames(fragment, table, MergePlan::AtBase, own, &seen[MergePlan::AtBase]);
+                if (net == &plan.theirs && text(kv.second.after, fragment))
+                    sayPlaceNames(fragment, table, MergePlan::AtTheirs, own,
+                                  &seen[MergePlan::AtTheirs]);
+            }
+        }
+
+        // One name for a thing.
+        std::map<std::string, std::string> nameOf;
+        std::set<std::string> used;
+        for (int side : {MergePlan::AtOurs, MergePlan::AtTheirs, MergePlan::AtBase}) {
+            for (const auto& p : places[side]) {
+                if (!p.name.empty())
+                    used.insert(p.name);
+            }
+        }
+        auto made = [&](const DocumentObject::MergePlace& p) {
+            std::string name = p.autoName;
+            for (int n = 2; name.empty() || used.count(name); ++n)
+                name = p.autoName + "_" + std::to_string(n);
+            used.insert(name);
+            return name;
+        };
+        std::set<std::string> given;
+        for (int side : {MergePlan::AtOurs, MergePlan::AtTheirs, MergePlan::AtBase}) {
+            for (const auto& p : places[side]) {
+                if (p.name.empty() || nameOf.count(p.key))
+                    continue;
+                // The name is this thing's unless a side before gave it to
+                // another: then two things had one name, and this one
+                // takes the name made of what it is.
+                nameOf[p.key] = given.insert(p.name).second ? p.name : made(p);
+            }
+        }
+        for (int side : {MergePlan::AtOurs, MergePlan::AtTheirs, MergePlan::AtBase}) {
+            for (std::size_t place : seen[side]) {
+                if (place < places[side].size() && !nameOf.count(places[side][place].key))
+                    nameOf[places[side][place].key] = made(places[side][place]);
+            }
+        }
+        if (nameOf.empty())
+            continue;
+        bool renames[3] = {false, false, false};
+        for (int side = 0; side < 3; ++side) {
+            auto& to = table.side[side];
+            for (const auto& p : places[side]) {
+                auto it = nameOf.find(p.key);
+                to.byPlace.push_back(it == nameOf.end() ? std::string() : it->second);
+                if (to.byPlace.back() != p.name) {
+                    renames[side] = true;
+                    if (!p.name.empty())
+                        to.byName[p.name] = to.byPlace.back();
+                }
+            }
+        }
+
+        // The list itself, named, on each side that is not so already.
+        const NetChange::Key placed {"obj", cid, table.prop};
+        std::string namedRef[3];
+        for (int side = 0; side < 3; ++side) {
+            if (!renames[side])
+                continue;
+            DocumentObject::MergeUnitState named = state[side];
+            if (obj->nameMergePlaces(named, table.side[side].byPlace))
+                namedRef[side] = stored(named[table.prop]);
+            if (namedRef[side].empty()) {
+                read = false;
+                break;
+            }
+            state[side] = std::move(named);
+        }
+        if (!read)
+            continue;
+        for (NetChange* net : {&plan.theirs, &plan.ours}) {
+            auto it = net->values.find(placed);
+            if (it == net->values.end())
+                continue;
+            const int end = net == &plan.theirs ? MergePlan::AtTheirs : MergePlan::AtOurs;
+            if (!namedRef[MergePlan::AtBase].empty())
+                it->second.before = namedRef[MergePlan::AtBase];
+            if (!namedRef[end].empty())
+                it->second.after = namedRef[end];
+        }
+        if (!namedRef[MergePlan::AtOurs].empty()) {
+            std::string count;
+            for (std::size_t i = 0; i < places[1].size(); ++i) {
+                if (table.side[1].byPlace[i] != places[1][i].name)
+                    count += (count.empty() ? "" : ", ") + table.prop + "[" + std::to_string(i)
+                           + "] -> " + table.side[1].byPlace[i];
+            }
+            Property* prop = obj->getPropertyByName(table.prop.c_str());
+            plan.named[placed] = {namedRef[MergePlan::AtOurs], state[MergePlan::AtOurs][table.prop],
+                                  prop->getTypeId().getName(), "named: " + count};
+        }
+
+        // And every value that holds expressions says the names.
+        auto say = [&](std::string& ref, int side, bool own) {
+            std::string fragment;
+            if (!text(ref, fragment) || fragment.find(table.prop) == std::string::npos)
+                return;
+            const std::string to = sayPlaceNames(fragment, table, side, own);
+            if (to != fragment)
+                ref = stored(to);
+        };
+        for (NetChange* net : {&plan.theirs, &plan.ours}) {
+            for (auto& kv : net->values) {
+                if (std::get<0>(kv.first) != "obj" || !holdsExpressions(kv.second.ptype))
+                    continue;
+                const bool own = std::get<1>(kv.first) == cid;
+                say(kv.second.before, MergePlan::AtBase, own);
+                say(kv.second.after, net == &plan.theirs ? MergePlan::AtTheirs : MergePlan::AtOurs,
+                    own);
+            }
+        }
+        for (DocumentObject* other : doc.getObjects()) {
+            std::vector<Property*> held;
+            other->getPropertyList(held);
+            for (Property* prop : held) {
+                if (!prop->isDerivedFrom(PropertyExpressionContainer::getClassTypeId()))
+                    continue;
+                const NetChange::Key key {"obj", other->getID(), prop->getName()};
+                std::string fragment;
+                if (!live(key, *prop, fragment)
+                        || fragment.find(table.prop) == std::string::npos)
+                    continue;
+                const std::string to =
+                    sayPlaceNames(fragment, table, MergePlan::AtOurs, other == obj);
+                if (to == fragment)
+                    continue;
+                auto& entry = plan.named[key];
+                entry.ref = stored(to);
+                entry.fragment = to;
+                entry.ptype = prop->getTypeId().getName();
+                entry.note = "says the names " + table.object + "." + table.prop + " has now";
+            }
+        }
+        plan.places.push_back(std::move(table));
+    }
+}
 
 /** Ours, for a merge with no base (docs/TransactionLog.md sec 30.22). An
  * independent branch -- a file that shares no history with this one,
@@ -8256,8 +8679,8 @@ void independentOurs(Document& doc, TransactionLog& log, MergePlan& plan)
  * order, then what theirs added. True with `c` made a `merge`; false, and
  * `c` is the conflict it was, for a property that is one value.
  */
-bool mergeByElement(Document& doc, TransactionLog& log, const Document::MergePreview& pv,
-                    Document::MergeChange& c)
+bool mergeByElement(Document& doc, TransactionLog& log, const MergePlan& plan,
+                    const Document::MergePreview& pv, Document::MergeChange& c)
 {
     DocumentObject* obj = doc.getObjectByID(c.cid);
     Property* prop = obj ? obj->getPropertyByName(c.prop.c_str()) : nullptr;
@@ -8265,10 +8688,13 @@ bool mergeByElement(Document& doc, TransactionLog& log, const Document::MergePre
             || !obj->isMergedByElement(prop))
         return false;
     using Elements = Property::SavedElements;
-    auto split = [&](const std::string& hash, Elements& out) {
+    // A row's value is as its side wrote it; the plan's say names where
+    // the row said places (sec 31.11), and so must it to be compared.
+    auto split = [&](const std::string& hash, Elements& out, int side = -1) {
         CapturedValue v;
         return !hash.empty() && log.readValue(hash, v) && v.attachments.empty()
-            && prop->splitSaved(v.fragment, out);
+            && prop->splitSaved(side < 0 ? v.fragment : plan.sayNames(v.fragment, side, c.cid),
+                                out);
     };
     Elements base, ours, theirs;
     if (!split(c.base, base) || !split(c.ours, ours) || !split(c.theirs, theirs))
@@ -8290,6 +8716,7 @@ bool mergeByElement(Document& doc, TransactionLog& log, const Document::MergePre
     // set the property, each one's value before against its value after.
     auto& store = log.store();
     auto writtenBy = [&](int64_t head) {
+        const int side = head == pv.ours ? MergePlan::AtOurs : MergePlan::AtTheirs;
         std::map<std::string, double> at;
         for (const auto& t : store.chain(head, pv.base + 1)) {
             for (const auto& op : store.ops(t.seq)) {
@@ -8297,7 +8724,7 @@ bool mergeByElement(Document& doc, TransactionLog& log, const Document::MergePre
                         || op.derived)
                     continue;
                 Elements before, after;
-                if (!split(op.vbefore, before) || !split(op.vafter, after))
+                if (!split(op.vbefore, before, side) || !split(op.vafter, after, side))
                     continue;
                 const auto was = byKey(before);
                 const auto is = byKey(after);
@@ -8445,10 +8872,16 @@ bool mergeUnitByObject(Document& doc, TransactionLog& log, const MergePlan& plan
             continue;
         auto st = states.find(name);
         if (st == states.end()) {
-            const CapturedValue now = captureValue(config, *prop);
-            if (!now.ok || !now.attachments.empty())
-                return false;
-            base[name] = ours.at[name] = theirs.at[name] = now.fragment;
+            auto named = plan.named.find(NetChange::Key {"obj", cid, name});
+            if (named != plan.named.end()) {
+                base[name] = ours.at[name] = theirs.at[name] = named->second.fragment;
+            }
+            else {
+                const CapturedValue now = captureValue(config, *prop);
+                if (!now.ok || !now.attachments.empty())
+                    return false;
+                base[name] = ours.at[name] = theirs.at[name] = now.fragment;
+            }
         }
         else if (!text(st->second.base, base[name]) || !text(st->second.ours, ours.at[name])
                  || !text(st->second.theirs, theirs.at[name])) {
@@ -8493,54 +8926,55 @@ bool mergeUnitByObject(Document& doc, TransactionLog& log, const MergePlan& plan
     }
     // An expression that names a thing of the unit by its place -- a
     // sketch's `Constraints[3]` -- says another thing where the merge moved
-    // it. Until such expressions are carried along (sec 31.10, left), a
-    // merge that moves a place one of them names is not made: ours' are
-    // read in the document, theirs' in the values theirs wrote.
+    // it. The naming before the merge (sec 31.11) has left none; where it
+    // could not be done and one is left that the merge would move, the
+    // merge is not made. Ours' are read in the document, as the naming
+    // left it; theirs' in the values theirs wrote.
     {
-        std::string placed;
-        std::vector<std::string> was, their, now;
-        if (obj->getMergePlaces(ours.at, placed, was)
-                && obj->getMergePlaces(theirs.at, placed, their)
-                && obj->getMergePlaces(merged, placed, now) && (was != now || their != now)) {
-            const std::string open = placed + "[";
-            auto moved = [&](const std::string& fragment, const std::vector<std::string>& from) {
-                for (std::size_t at = fragment.find(open); at != std::string::npos;
-                     at = fragment.find(open, at + 1)) {
-                    std::size_t end = at + open.size();
-                    std::size_t place = 0;
-                    bool digits = false;
-                    while (end < fragment.size() && fragment[end] >= '0' && fragment[end] <= '9') {
-                        place = place * 10 + static_cast<std::size_t>(fragment[end++] - '0');
-                        digits = true;
-                    }
-                    if (!digits || end >= fragment.size() || fragment[end] != ']')
-                        continue;
-                    if (place >= from.size() || place >= now.size() || from[place] != now[place])
-                        return true;
-                }
-                return false;
-            };
+        MergePlan::Places table;
+        std::vector<DocumentObject::MergePlace> was, their, now;
+        if (obj->getMergePlaces(ours.at, table.prop, was)
+                && obj->getMergePlaces(theirs.at, table.prop, their)
+                && obj->getMergePlaces(merged, table.prop, now)) {
+            table.cid = cid;
+            table.object = objectName;
+            table.label = Base::Persistence::encodeAttribute(obj->Label.getValue());
+            std::set<std::size_t> oursSay, theirsSay;
             for (DocumentObject* other : doc.getObjects()) {
                 std::vector<Property*> held;
                 other->getPropertyList(held);
                 for (Property* prop : held) {
                     if (!prop->isDerivedFrom(PropertyExpressionContainer::getClassTypeId()))
                         continue;
+                    auto named = plan.named.find(
+                        NetChange::Key {"obj", other->getID(), prop->getName()});
+                    if (named != plan.named.end()) {
+                        sayPlaceNames(named->second.fragment, table, 0, other == obj, &oursSay);
+                        continue;
+                    }
                     const CapturedValue live = captureValue(config, *prop);
-                    if (live.ok && moved(live.fragment, was))
-                        return false;
+                    if (live.ok)
+                        sayPlaceNames(live.fragment, table, 0, other == obj, &oursSay);
                 }
             }
             for (const auto& kv : plan.theirs.values) {
                 std::string fragment;
-                if (kv.second.atEnd && kv.second.after != kv.second.before
-                        && kv.second.after.size()
-                        && Base::Type::fromName(kv.second.ptype.c_str())
-                               .isDerivedFrom(PropertyExpressionContainer::getClassTypeId())
-                        && text(kv.second.after, fragment)
-                        && fragment.find(open) != std::string::npos && moved(fragment, their))
-                    return false;
+                if (std::get<0>(kv.first) == "obj" && kv.second.atEnd
+                        && kv.second.after != kv.second.before && !kv.second.after.empty()
+                        && holdsExpressions(kv.second.ptype) && text(kv.second.after, fragment))
+                    sayPlaceNames(fragment, table, 0, std::get<1>(kv.first) == cid, &theirsSay);
             }
+            auto moved = [&](const std::set<std::size_t>& said,
+                             const std::vector<DocumentObject::MergePlace>& from) {
+                for (std::size_t place : said) {
+                    if (place >= from.size() || place >= now.size()
+                            || from[place].key != now[place].key)
+                        return true;
+                }
+                return false;
+            };
+            if (moved(oursSay, was) || moved(theirsSay, their))
+                return false;
         }
     }
     TransactionLogCore& core = TransactionLogCore::of(doc.getFileHistory());
@@ -8740,6 +9174,13 @@ void planMerge(Document& doc, const std::string& name, int64_t version, MergePla
         }
     }
 
+    // Sec 31.11: what expressions name by its place is named first. Not
+    // where theirs is taken as it is: ours wrote nothing that could say a
+    // place theirs moved, and theirs' own say what theirs' Sketcher made
+    // them say.
+    if (!plan.independent && !pv.fastForward && pv.forward.empty())
+        namePlaces(doc, *log, plan);
+
     auto nameOf = [&](long cid) -> std::string {
         if (auto obj = doc.getObjectByID(cid))
             return obj->getNameInDocument();
@@ -8873,7 +9314,7 @@ void planMerge(Document& doc, const std::string& name, int64_t version, MergePla
             // them where both sides had it and have it still.
             if (c.kind == "conflict" && ckind == "obj" && !plan.independent && v.atStart
                     && v.atEnd && o->second.atStart && o->second.atEnd)
-                mergeByElement(doc, *log, pv, c);
+                mergeByElement(doc, *log, plan, pv, c);
         }
         add(std::move(c));
     }
@@ -9082,6 +9523,23 @@ void planMerge(Document& doc, const std::string& name, int64_t version, MergePla
         for (const auto& c : pv.changes)
             pv.conflicts += c.kind == "conflict";
     }
+
+    // Sec 31.11: what the naming made of ours' own values. Each goes in
+    // unless the merge writes that property another way.
+    for (const auto& kv : plan.named) {
+        Document::MergeChange c;
+        c.kind = "name";
+        c.op = "set";
+        c.ckind = "obj";
+        c.cid = std::get<1>(kv.first);
+        c.object = nameOf(c.cid);
+        c.prop = std::get<2>(kv.first);
+        c.key = c.object + "." + c.prop;
+        c.ptype = kv.second.ptype;
+        c.merged = kv.second.ref;
+        c.note = kv.second.note;
+        pv.changes.push_back(std::move(c));
+    }
 }
 
 } // namespace
@@ -9168,7 +9626,7 @@ Document::MergeResult Document::mergeBranch(const std::string& branch,
                 continue;
             const bool conflict = c.kind == "conflict" || c.kind == "unit";
             if (all || c.kind == "take" || c.kind == "derived" || c.kind == "merge"
-                    || (conflict && side[c.key] == "theirs"))
+                    || c.kind == "name" || (conflict && side[c.key] == "theirs"))
                 ids.insert(c.cid);
         }
         for (long cid : ids) {
@@ -9393,6 +9851,16 @@ Document::MergeResult Document::mergeBranch(const std::string& branch,
         else {
             take(Key {c.ckind, c.cid, c.prop}, plan.theirs.values[Key {c.ckind, c.cid, c.prop}]);
         }
+    }
+    // Sec 31.11: ours' own values as the naming left them, where nothing
+    // above writes the property: the list with its names in, and the
+    // expressions that say them.
+    for (const auto& c : pv.changes) {
+        const Key key {c.ckind, c.cid, c.prop};
+        if (c.kind != "name" || sets.count(key)
+                || std::find(removes.begin(), removes.end(), c.cid) != removes.end())
+            continue;
+        sets[key] = c.merged;
     }
 
     // Every value there, before anything moves.

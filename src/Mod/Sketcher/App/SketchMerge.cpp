@@ -138,8 +138,13 @@ struct Lists
     std::map<long, int> geoAt;
     std::map<long, int> extAt;
     std::map<long, std::string> geoText;
-    /// The external geometry there is: each id with what it is of.
-    std::set<std::pair<long, std::string>> extSet;
+    /// External geometry by id: what it is of, with its flags. Where it
+    /// lies is its source's doing, and a recompute's.
+    std::map<long, std::string> extText;
+    /// The references external geometry is made from, each line as saved
+    /// and known by its object and sub-element.
+    std::string linksHead;
+    std::vector<std::pair<std::string, std::string>> linkLines;
     /// A constraint's key and its content with the places out, by place.
     std::vector<std::string> conKey;
     std::vector<std::string> conText;
@@ -161,8 +166,11 @@ struct Lists
                 || !readSaved(cons, at, "Constraints"))
             return false;
         auto l = at.find("ExternalGeometry");
-        if (l != at.end())
+        if (l != at.end()) {
             links = l->second;
+            if (!splitLinks())
+                return false;
+        }
         const auto& geos = geo.getValues();
         for (int i = 0; i < static_cast<int>(geos.size()); ++i) {
             const long id = GeometryFacade::getId(geos[i]);
@@ -177,7 +185,8 @@ struct Lists
             const long id = GeometryFacade::getId(exts[i]);
             if (!extAt.emplace(id, i).second)
                 return false;
-            extSet.emplace(id, ExternalGeometryFacade::getFacade(exts[i])->getRef());
+            auto facade = ExternalGeometryFacade::getFacade(exts[i]);
+            extText[id] = facade->getRef() + " " + std::to_string(facade->getFlags());
         }
         std::map<std::string, int> seen;
         const auto& list = cons.getValuesForce();
@@ -203,6 +212,50 @@ struct Lists
             conText.push_back(writer.getString());
         }
         return true;
+    }
+
+    /// `<LinkSubList count="2">`, then a line for each link, then the end.
+    bool splitLinks()
+    {
+        std::size_t at = 0;
+        while (at < links.size()) {
+            std::size_t end = links.find('\n', at);
+            end = end == std::string::npos ? links.size() : end + 1;
+            const std::string line = links.substr(at, end - at);
+            at = end;
+            if (line.find("<LinkSubList") != std::string::npos) {
+                linksHead = line;
+                continue;
+            }
+            if (line.find("<Link ") == std::string::npos)
+                continue;
+            auto value = [&](const char* name) {
+                const std::string open = std::string(name) + "=\"";
+                const std::size_t a = line.find(open);
+                const std::size_t b = a == std::string::npos
+                    ? a : line.find('"', a + open.size());
+                return b == std::string::npos ? std::string()
+                                              : line.substr(a, b + 1 - a);
+            };
+            const std::string key = value("obj") + " " + value("sub");
+            if (key.size() < 3)
+                return false;
+            for (const auto& had : linkLines) {
+                if (had.first == key)
+                    return false;   // one reference twice: not known one by one
+            }
+            linkLines.emplace_back(key, line);
+        }
+        return !linksHead.empty() || linkLines.empty();
+    }
+
+    bool hasLink(const std::string& key) const
+    {
+        for (const auto& l : linkLines) {
+            if (l.first == key)
+                return true;
+        }
+        return false;
     }
 
     /// What a constraint is known by (sec 31.3 P2 a): its type and the
@@ -307,15 +360,76 @@ bool SketchObject::mergeUnit(const MergeUnitState& baseAt, const MergeUnitSide& 
         notes.push_back({prop, key, change, side, byTime});
     };
 
-    // External geometry is what the references make it, and a place in it
-    // is what a constraint goes by: one side's, whole. Both having changed
-    // which there is, is the whole sketch's question still.
-    const bool oursExt = ours.extSet != base.extSet || ours.links != base.links;
-    const bool theirsExt = theirs.extSet != base.extSet || theirs.links != base.links;
-    if (oursExt && theirsExt && (ours.extSet != theirs.extSet || ours.links != theirs.links))
-        return false;
-    const Lists& extOf = theirsExt ? theirs : ours;
-    const State& extFrom = theirsExt ? theirsSide.at : oursSide.at;
+    // External geometry, by id, and the references it is made from, each
+    // by its object and sub-element: what one side added is there, what
+    // one side removed is gone. Where one lies is its source's doing and a
+    // recompute's, so of one both have, ours' is as good -- but for what
+    // it is of and its flags, which are theirs' where only theirs changed
+    // them. Ours' order, then what theirs added.
+    std::vector<const Part::Geometry*> exts;
+    std::map<long, int> extPlace;
+    bool theirsExt = false;
+    for (const Part::Geometry* g : ours.ext.getValues()) {
+        const long id = GeometryFacade::getId(g);
+        const bool inBase = base.extText.count(id) != 0;
+        const bool inTheirs = theirs.extText.count(id) != 0;
+        if (!inBase && inTheirs)
+            return false;   // one id, two geometries: a copy's (sec 31.3 P6)
+        if (inBase && !inTheirs) {
+            note("ExternalGeo", "e" + std::to_string(id), "removed", "theirs", false);
+            theirsExt = true;
+            continue;
+        }
+        const bool theirsOnly = inBase && inTheirs && base.extText.at(id) == ours.extText.at(id)
+            && base.extText.at(id) != theirs.extText.at(id);
+        extPlace[id] = static_cast<int>(exts.size());
+        exts.push_back(theirsOnly ? theirs.ext.getValues()[theirs.extAt.at(id)] : g);
+        if (theirsOnly) {
+            note("ExternalGeo", "e" + std::to_string(id), "changed", "theirs", false);
+            theirsExt = true;
+        }
+    }
+    for (const Part::Geometry* g : theirs.ext.getValues()) {
+        const long id = GeometryFacade::getId(g);
+        if (ours.extText.count(id) || base.extText.count(id))
+            continue;
+        note("ExternalGeo", "e" + std::to_string(id), "added", "theirs", false);
+        theirsExt = true;
+        extPlace[id] = static_cast<int>(exts.size());
+        exts.push_back(g);
+    }
+    std::string links = ours.linksHead;
+    {
+        std::vector<std::string> lines;
+        for (const auto& l : ours.linkLines) {
+            if (base.hasLink(l.first) && !theirs.hasLink(l.first))
+                continue;
+            lines.push_back(l.second);
+        }
+        for (const auto& l : theirs.linkLines) {
+            if (!ours.hasLink(l.first) && !base.hasLink(l.first))
+                lines.push_back(l.second);
+        }
+        const std::size_t count = links.find("count=\"");
+        const std::size_t close =
+            count == std::string::npos ? count : links.find('"', count + 7);
+        if (close == std::string::npos) {
+            if (!lines.empty())
+                return false;
+            links = ours.links;
+        }
+        else {
+            links.replace(count + 7, close - count - 7, std::to_string(lines.size()));
+            for (const auto& line : lines)
+                links += line;
+            const std::size_t tail = ours.links.rfind("</LinkSubList>");
+            const std::size_t lead = tail == std::string::npos ? tail
+                                                               : ours.links.rfind('\n', tail);
+            links += tail == std::string::npos
+                ? std::string("</LinkSubList>\n")
+                : ours.links.substr(lead == std::string::npos ? tail : lead + 1);
+        }
+    }
 
     // Geometry, by id. What one side alone moved, added or removed is that
     // side's; what both moved, to two places, is where the one that moved
@@ -430,8 +544,8 @@ bool SketchObject::mergeUnit(const MergeUnitState& baseAt, const MergeUnitSide& 
                     c->setGeoId(e, to->second);
             }
             else {
-                auto to = extOf.extAt.find(GeometryFacade::getId(k.from->ext.getValues()[-at - 1]));
-                if (to == extOf.extAt.end())
+                auto to = extPlace.find(GeometryFacade::getId(k.from->ext.getValues()[-at - 1]));
+                if (to == extPlace.end())
                     gone = true;
                 else
                     c->setGeoId(e, -to->second - 1);
@@ -455,7 +569,6 @@ bool SketchObject::mergeUnit(const MergeUnitState& baseAt, const MergeUnitSide& 
     // solve is not written; the whole of it is asked instead.
     try {
         std::vector<const Part::Geometry*> all(geos);
-        const auto& exts = extOf.ext.getValues();
         all.insert(all.end(), exts.rbegin(), exts.rend());
         Sketch solver;
         const int dofs = solver.setUpSketch(all, list, static_cast<int>(exts.size()));
@@ -487,26 +600,76 @@ bool SketchObject::mergeUnit(const MergeUnitState& baseAt, const MergeUnitSide& 
     merged = oursSide.at;
     merged["Geometry"] = geoSaved.fragment;
     merged["Constraints"] = consSaved.fragment;
-    for (const char* name : {"ExternalGeo", "ExternalGeometry"}) {
-        auto it = extFrom.find(name);
-        if (it != extFrom.end())
-            merged[name] = it->second;
+    if (theirsExt) {
+        Part::PropertyGeometryList extOut;
+        extOut.setValues(exts);
+        const App::CapturedValue extSaved = App::captureValue(*doc, extOut);
+        if (!extSaved.ok || !extSaved.attachments.empty())
+            return false;
+        merged["ExternalGeo"] = extSaved.fragment;
     }
-    if (theirsExt)
-        notes.push_back({"ExternalGeo", "external geometry", "changed", "theirs", false});
+    if (merged.count("ExternalGeometry") && links != ours.links)
+        merged["ExternalGeometry"] = links;
     return true;
 }
 
 bool SketchObject::getMergePlaces(const MergeUnitState& at, std::string& prop,
-                                  std::vector<std::string>& names) const
+                                  std::vector<MergePlace>& places) const
 {
     Lists lists;
     if (!lists.read(at))
         return false;
     prop = "Constraints";
-    names.clear();
+    places.clear();
     const auto& list = lists.cons.getValuesForce();
-    for (std::size_t i = 0; i < list.size(); ++i)
-        names.push_back(list[i]->Name.empty() ? "?" + lists.conKey[i] : list[i]->Name);
+    for (std::size_t i = 0; i < list.size(); ++i) {
+        // `DistanceX,g4.1,g4.2,` is `DistanceX_g4p1_g4p2`: a name an
+        // expression can say, and the same on any branch that has the
+        // constraint.
+        std::string made;
+        for (char c : lists.conKey[i]) {
+            if (c == ',' || c == ':' || c == '#') {
+                if (!made.empty() && made.back() != '_')
+                    made += '_';
+            }
+            else if (c == '.') {
+                made += 'p';
+            }
+            else if (c == '-') {
+                made += 'n';
+            }
+            else {
+                made += c;
+            }
+        }
+        while (!made.empty() && made.back() == '_')
+            made.pop_back();
+        places.push_back({lists.conKey[i], list[i]->Name, made});
+    }
+    return true;
+}
+
+bool SketchObject::nameMergePlaces(MergeUnitState& at, const std::vector<std::string>& names) const
+{
+    App::Document* doc = getDocument();
+    PropertyConstraintList cons;
+    if (!doc || !readSaved(cons, at, "Constraints"))
+        return false;
+    const auto& list = cons.getValuesForce();
+    if (list.size() != names.size())
+        return false;
+    std::vector<std::unique_ptr<Constraint>> owned;
+    std::vector<Constraint*> named;
+    for (std::size_t i = 0; i < list.size(); ++i) {
+        owned.emplace_back(list[i]->clone());
+        owned.back()->Name = names[i];
+        named.push_back(owned.back().get());
+    }
+    PropertyConstraintList out;
+    out.setValues(named);
+    const App::CapturedValue saved = App::captureValue(*doc, out);
+    if (!saved.ok || !saved.attachments.empty())
+        return false;
+    at["Constraints"] = saved.fragment;
     return true;
 }

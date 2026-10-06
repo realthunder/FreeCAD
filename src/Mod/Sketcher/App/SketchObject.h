@@ -113,9 +113,11 @@ public:
     bool mergeUnit(const MergeUnitState& base, const MergeUnitSide& ours,
                    const MergeUnitSide& theirs, MergeUnitState& merged,
                    std::vector<MergeUnitNote>& notes) const override;
-    /// `Constraints`: each constraint by its name, or by what it says.
+    /// `Constraints`: each constraint by what it says of which geometry,
+    /// with its name and one made of that.
     bool getMergePlaces(const MergeUnitState& at, std::string& prop,
-                        std::vector<std::string>& names) const override;
+                        std::vector<MergePlace>& places) const override;
+    bool nameMergePlaces(MergeUnitState& at, const std::vector<std::string>& names) const override;
     /// recalculate the Feature (if no recompute is needed see also solve() and solverNeedsUpdate
     /// boolean)
     App::DocumentObjectExecReturn* execute() override;

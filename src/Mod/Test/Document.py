@@ -6622,27 +6622,222 @@ class TransactionBranchCases(unittest.TestCase):
         self.assertEqual(state(doc)[1], [("Coincident", 1, 0.0), ("DistanceX", 1, 17.0)])
         self.assertAlmostEqual(doc.Sketch.Geometry[0].length(), 17.0, places=6)
 
-        # An expression that names a constraint by its place is not carried
-        # along yet: where the merge would move the place it names, the
-        # sketch is one question still, as in sec 31.5. Ours takes the
-        # first constraint out; theirs adds a third and binds it, as
-        # `Constraints[2]`, which in the merge would be the second.
-        def bound(s):
-            s.addConstraint(Sketcher.Constraint("DistanceX", 3, 1, 3, 2, 12))
-            s.setExpression("Constraints[2]", "6 + 6")
+        # External geometry, each side adding an edge of the box and
+        # putting a line's end on it: both are there, each constraint on
+        # its own, and the references the edges are made from.
+        def edge(name, line):
+            def add(s):
+                s.addExternal("Box", name)
+                s.addConstraint(
+                    Sketcher.Constraint("PointOnObject", line, 1, -len(s.ExternalGeo))
+                )
 
-        doc = model("SketchPartsPlace", lambda s: s.delConstraint(0), bound)
-        preview = doc.previewTransactionMerge("side")
-        self.assertEqual(preview["conflicts"], 1, preview["changes"])
-        self.assertIn(
-            ("conflict", "unit", "Sketch.Geometry"),
-            [(c["kind"], c["op"], c["key"]) for c in preview["changes"]],
-        )
-        # And where it would not, it is merged: ours adds a line.
-        doc = model("SketchPartsPlaceKept", lambda s: s.addGeometry(line((0, 20), (5, 20))), bound)
+            return add
+
+        def boxed(name, ours, theirs):
+            doc = self.track(FreeCAD.newDocument(name))
+            doc.UndoMode = 1
+            doc.openTransaction("base")
+            box = doc.addObject("Part::Box", "Box")
+            box.Placement.Base = V(0, 0, -5)
+            sk = doc.addObject("Sketcher::SketchObject", "Sketch")
+            for x in (0, 20, 40, 60):
+                sk.addGeometry(line((x, 30), (x + 10, 35)))
+            doc.recompute()
+            doc.commitTransaction()
+            doc.saveAs(os.path.join(self.dir, name + ".FCStd"))
+            doc.createTransactionBranch("side")
+            step(doc, "theirs", theirs)
+            doc.switchTransactionBranch("main")
+            step(doc, "ours", ours)
+            return doc
+
+        # The four edges of the box's bottom, which lie in the sketch.
+        flat = [
+            "Edge%d" % (i + 1)
+            for i, e in enumerate(Part.makeBox(10, 10, 10).Edges)
+            if abs(e.tangentAt(e.FirstParameter).z) < 0.5 and e.Vertexes[0].Z < 1
+        ]
+        self.assertEqual(len(flat), 4)
+        doc = boxed("SketchPartsExternal", edge(flat[0], 2), edge(flat[1], 3))
         preview, merged = merge(doc)
-        self.assertEqual(state(doc), ([1, 2, 3, 4, 5], base + [("DistanceX", 4, 12.0)]))
-        self.assertEqual(doc.Sketch.ExpressionEngine, [("Constraints[2]", "6 + 6")])
+        self.assertEqual(
+            [(o.Name, subs) for o, subs in doc.Sketch.ExternalGeometry],
+            [("Box", (flat[0], flat[1]))],
+        )
+        self.assertEqual(len(doc.Sketch.ExternalGeo), 4)   # the two axes and the two edges
+        self.assertEqual(
+            [(c.Type, c.First, c.Second) for c in doc.Sketch.Constraints],
+            [("PointOnObject", 2, -3), ("PointOnObject", 3, -4)],
+        )
+        for at, on in ((2, -3), (3, -4)):
+            # On the edge's line, which is what the constraint says.
+            end = doc.Sketch.Geometry[at].StartPoint
+            edge = doc.Sketch.ExternalGeo[-on - 1]
+            along = edge.EndPoint - edge.StartPoint
+            off = (end - edge.StartPoint).cross(along).Length / along.Length
+            self.assertLess(off, 1e-6)
+
+    def testWhatAnExpressionNamesByItsPlaceIsNamed(self):
+        # Sec 31.11 (a ruling): before a merge, a constraint an expression
+        # names by its place -- `Constraints[2]` -- is given a name, made of
+        # its type and the geometry it is on, the same on any branch; the
+        # expressions say the name, and the name stays. A merge moves
+        # constraints to other places; a name goes with the constraint.
+        import time
+
+        import Part
+        import Sketcher
+        from FreeCAD import Vector as V
+
+        def model(name, setup, ours, theirs):
+            doc = self.track(FreeCAD.newDocument(name))
+            doc.UndoMode = 1
+            doc.openTransaction("base")
+            sk = doc.addObject("Sketcher::SketchObject", "Sketch")
+            for x in (0, 20, 40, 60):
+                sk.addGeometry(Part.LineSegment(V(x, 0, 0), V(x + 10, 0, 0)))
+            sk.addConstraint(Sketcher.Constraint("Horizontal", 0))
+            sk.addConstraint(Sketcher.Constraint("DistanceX", 0, 1, 0, 2, 10))
+            doc.addObject("Part::Cylinder", "Cyl")
+            setup(doc)
+            doc.recompute()
+            doc.commitTransaction()
+            doc.saveAs(os.path.join(self.dir, name + ".FCStd"))
+            doc.createTransactionBranch("side")   # and the document is on it
+            for where, edit in (("side", theirs), ("main", ours)):
+                doc.switchTransactionBranch(where)
+                doc.openTransaction(where)
+                edit(doc)
+                doc.recompute()
+                doc.commitTransaction()
+                time.sleep(0.02)
+            return doc
+
+        def constraints(doc):
+            sk = doc.Sketch
+            ids = [sk.getGeometryId(i) for i in range(len(sk.Geometry))]
+            return [(c.Name, c.Type, ids[c.First]) for c in sk.Constraints]
+
+        def merge(doc):
+            preview = doc.previewTransactionMerge("side")
+            self.assertEqual(preview["conflicts"], 0, preview["changes"])
+            merged = doc.mergeTransactionBranch("side")
+            self.assertEqual(merged["unresolved"], [])
+            self.assertEqual(merged["failed"], [])
+            self.assertFalse([o.Name for o in doc.Objects if "Invalid" in o.State])
+            return preview
+
+        nothing = lambda doc: None
+        first = "DistanceX_g1p1_g1p2"
+        fourth = "DistanceX_g4p1_g4p2"
+
+        # Ours takes the first constraint out, so the distance is at place
+        # 0; theirs adds a distance on the fourth line and binds it -- at
+        # place 2, which in the merge is place 1. The sketch is merged, the
+        # new constraint has its name and the expression says it.
+        def bound(doc):
+            doc.Sketch.addConstraint(Sketcher.Constraint("DistanceX", 3, 1, 3, 2, 12))
+            doc.Sketch.setExpression("Constraints[2]", "6 + 6")
+
+        doc = model("NamedMoved", nothing, lambda d: d.Sketch.delConstraint(0), bound)
+        ours = constraints(doc)
+        merge(doc)
+        self.assertEqual(constraints(doc), [("", "DistanceX", 1), (fourth, "DistanceX", 4)])
+        self.assertEqual(doc.Sketch.ExpressionEngine, [(".Constraints." + fourth, "6 + 6")])
+        self.assertAlmostEqual(doc.Sketch.Geometry[3].length(), 12.0, places=6)
+        doc.undo()
+        self.assertEqual(constraints(doc), ours)
+        self.assertEqual(doc.Sketch.ExpressionEngine, [])
+        doc.redo()
+        self.assertEqual(doc.Sketch.ExpressionEngine, [(".Constraints." + fourth, "6 + 6")])
+
+        # A sketch taken whole: theirs takes the first constraint out, ours
+        # binds a cylinder to the second, by its place. Merged as two
+        # properties this said `Constraints[1]` of a list with one
+        # constraint, and the cylinder failed.
+        doc = model(
+            "NamedTaken",
+            nothing,
+            lambda d: d.Cyl.setExpression("Height", "Sketch.Constraints[1]"),
+            lambda d: d.Sketch.delConstraint(0),
+        )
+        preview = merge(doc)
+        self.assertEqual(
+            sorted((c["key"], c["note"]) for c in preview["changes"] if c["kind"] == "name"),
+            [
+                ("Cyl.ExpressionEngine", "says the names Sketch.Constraints has now"),
+                ("Sketch.Constraints", "named: Constraints[1] -> " + first),
+            ],
+        )
+        self.assertEqual(constraints(doc), [(first, "DistanceX", 1)])
+        self.assertEqual(doc.Cyl.ExpressionEngine, [("Height", "Sketch.Constraints." + first)])
+        self.assertAlmostEqual(doc.Cyl.Height.Value, 10.0, places=6)
+
+        # One name, two constraints: ours names the distance `width`,
+        # theirs a new one. Ours' keeps the name; theirs' is known by what
+        # it is, and what theirs bound to `width` says that.
+        def theirsWidth(doc):
+            doc.Sketch.addConstraint(Sketcher.Constraint("DistanceX", 3, 1, 3, 2, 12))
+            doc.Sketch.renameConstraint(2, "width")
+            doc.Cyl.setExpression("Radius", "Sketch.Constraints.width / 4")
+
+        doc = model(
+            "NamedTwoThings", nothing, lambda d: d.Sketch.renameConstraint(1, "width"), theirsWidth
+        )
+        merge(doc)
+        self.assertEqual(
+            constraints(doc),
+            [("", "Horizontal", 1), ("width", "DistanceX", 1), (fourth, "DistanceX", 4)],
+        )
+        self.assertEqual(
+            doc.Cyl.ExpressionEngine, [("Radius", "Sketch.Constraints." + fourth + " / 4")]
+        )
+        self.assertAlmostEqual(doc.Cyl.Radius.Value, 3.0, places=6)
+
+        # One constraint, two names: it is one constraint, by its type and
+        # its geometry, and has ours' name; theirs' expression says that.
+        def theirsName(doc):
+            doc.Sketch.renameConstraint(1, "w2")
+            doc.Cyl.setExpression("Radius", "Sketch.Constraints.w2 / 4")
+
+        def oursName(doc):
+            doc.Sketch.renameConstraint(1, "w1")
+            doc.Sketch.addGeometry(Part.LineSegment(V(0, 20, 0), V(5, 20, 0)))
+
+        doc = model("NamedTwoNames", nothing, oursName, theirsName)
+        merge(doc)
+        self.assertEqual(constraints(doc), [("", "Horizontal", 1), ("w1", "DistanceX", 1)])
+        self.assertEqual(doc.Cyl.ExpressionEngine, [("Radius", "Sketch.Constraints.w1 / 4")])
+        self.assertAlmostEqual(doc.Cyl.Radius.Value, 2.5, places=6)
+
+        # A cell says a place too.
+        def sheet(doc):
+            doc.addObject("Spreadsheet::Sheet", "Sheet").set("A1", "=Sketch.Constraints[1] * 2")
+
+        doc = model(
+            "NamedCell",
+            sheet,
+            lambda d: d.Sketch.delConstraint(0),
+            lambda d: d.Sketch.addConstraint(Sketcher.Constraint("Horizontal", 2)),
+        )
+        merge(doc)
+        self.assertEqual(
+            constraints(doc), [(first, "DistanceX", 1), ("", "Horizontal", 3)]
+        )
+        self.assertEqual(doc.Sheet.getContents("A1"), "=Sketch.Constraints." + first + " * 2")
+        self.assertAlmostEqual(doc.Sheet.A1.Value, 20.0, places=6)
+
+        # Nothing is named where nothing can move: theirs is taken as it is.
+        doc = model(
+            "NamedForward",
+            lambda d: d.Cyl.setExpression("Height", "Sketch.Constraints[1]"),
+            nothing,
+            lambda d: d.Sketch.addConstraint(Sketcher.Constraint("Horizontal", 2)),
+        )
+        merge(doc)
+        self.assertEqual(doc.Cyl.ExpressionEngine, [("Height", "Sketch.Constraints[1]")])
+        self.assertEqual([n for n, _, _ in constraints(doc)], ["", "", ""])
 
     def testASheetsCellsFollowTheBranch(self):
         # Sec 31.1: a value put back from the log is the whole of what the
