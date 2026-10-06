@@ -36,6 +36,7 @@
 
 namespace TechDraw {
 class DrawPage;
+class DrawView;
 class DrawViewPart;
 }
 
@@ -88,6 +89,14 @@ public:
     /// stable and the sheet always draws on layer 0, below every view.
     static void feedTemplate(TechDraw::DrawPage* page, Render::Page2D& out,
                              float rasterScale);
+
+    /// Where a view sits on the page, in mm with +Y up. Not always its
+    /// own X/Y: those of a projection group's item are relative to the
+    /// group, as the Qt tier has it by parenting the item to the group.
+    /// What the feed places a view by, and so what a host compares to
+    /// tell that a view moved.
+    static void pagePosition(const TechDraw::DrawView* view, double& x,
+                             double& y);
 
     /// Feed one view's edges/vertices/faces as items at the given layer.
     static void feedViewPart(TechDraw::DrawViewPart* dvp, Render::Page2D& out,

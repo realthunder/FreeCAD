@@ -64,6 +64,8 @@
 #include <Mod/TechDraw/App/DrawGeomHatch.h>
 #include <Mod/TechDraw/App/DrawHatch.h>
 #include <Mod/TechDraw/App/DrawPage.h>
+#include <Mod/TechDraw/App/DrawProjGroup.h>
+#include <Mod/TechDraw/App/DrawProjGroupItem.h>
 #include <Mod/TechDraw/App/DrawSVGTemplate.h>
 #include <Mod/TechDraw/App/DrawUtil.h>
 #include <Mod/TechDraw/App/DrawViewPart.h>
@@ -338,15 +340,42 @@ bool emitEdge(Page2D::Recorder& rec, const TechDraw::BaseGeomPtr& geom,
         // Native vg arc: re-flattened per zoom band like circles, and
         // (M3) ~22 bytes on the wire instead of a point list. vg's arc
         // angles are clockwise-from-x-axis in the same y-down space the
-        // geometry lives in; (start, end, cw) and its reversed twin
-        // denote the same circle segment, so getReversed() is moot for
-        // a stroke.
+        // geometry lives in; an arc and its reversed twin denote the
+        // same circle segment, so getReversed() is moot for a stroke.
+        //
+        // The angles are taken from the arc's own points, as the Qt
+        // tier draws it (PathBuilder: end points, large-arc and sweep
+        // flags). aoc->startAngle and endAngle are the curve's
+        // PARAMETERS, measured from the circle's own X axis, and a
+        // projected circle keeps whatever axis its source had: fed as
+        // they are, an arc came out on the right circle and the wrong
+        // part of it -- the trimmed arcs of a detail view swept across
+        // the whole page.
         auto aoc = std::static_pointer_cast<AOC>(geom);
+        const float cx = ox + (float)Rez::guiX(aoc->center.x);
+        const float cy = oy + (float)Rez::guiX(aoc->center.y);
+        const float radius = (float)Rez::guiX(aoc->radius);
+        auto angle = [&aoc](const Base::Vector3d& p) {
+            return std::atan2(p.y - aoc->center.y, p.x - aoc->center.x);
+        };
+        const double twoPi = 2.0 * M_PI;
+        // how far clockwise (towards +y, the way vg counts) from a to b
+        auto turn = [twoPi](double a, double b) {
+            const double d = std::fmod(b - a, twoPi);
+            return d < 0.0 ? d + twoPi : d;
+        };
+        const double a0 = angle(aoc->startPnt);
+        const double a1 = angle(aoc->endPnt);
         rec.beginPath();
-        rec.arc(ox + (float)Rez::guiX(aoc->center.x),
-                oy + (float)Rez::guiX(aoc->center.y),
-                (float)Rez::guiX(aoc->radius), (float)aoc->startAngle,
-                (float)aoc->endAngle, aoc->cw);
+        if ((aoc->startPnt - aoc->endPnt).Length() < 1.0e-7 * aoc->radius) {
+            // a closed arc: the two ends say nothing of a direction
+            rec.circle(cx, cy, radius);
+            return true;
+        }
+        // Clockwise if that way round meets the middle before the end.
+        const bool clockwise =
+            turn(a0, angle(aoc->midPnt)) < turn(a0, a1);
+        rec.arc(cx, cy, radius, (float)a0, (float)a1, clockwise);
         return true;
     }
     case BEZIER: {
@@ -1246,8 +1275,10 @@ void PageFeed::feedViewPart(TechDraw::DrawViewPart* dvp, Page2D& out,
         return;
     // The scene position of the view: page coordinates are y-up mm,
     // the page (and Qt scene) y-down Rez units.
-    const float ox = (float)Rez::guiX(dvp->X.getValue());
-    const float oy = (float)-Rez::guiX(dvp->Y.getValue());
+    double pageX = 0.0, pageY = 0.0;
+    pagePosition(dvp, pageX, pageY);
+    const float ox = (float)Rez::guiX(pageX);
+    const float oy = (float)-Rez::guiX(pageY);
 
     // Every index gets a setItem even when its geometry is skipped (an
     // empty recorder draws nothing): id presence then stays contiguous
@@ -1532,8 +1563,11 @@ void PageFeed::feedViewPart(TechDraw::DrawViewPart* dvp, Page2D& out,
     sweep('e', index);
 
     // Vertex dots and arc center marks (QGIViewPart::drawAllVertexes):
-    // radius LineWidth * VertexScale, never in CoarseView or with
+    // LineWidth * VertexScale across, never in CoarseView or with
     // frames off; center marks are crosses, gated by ArcCenterMarks.
+    // Across, not out from the centre: QGIVertex::setRadius draws an
+    // ellipse as WIDE as its argument, so what the Qt tier calls the
+    // radius is the dot's diameter.
     const double vertexScale =
         vp ? vp->VertexScale.getValue() : TechDraw::Preferences::vertexScale();
     const double lineWidthMm = vp ? vp->lineWidthScaled() : 0.42;
@@ -1564,7 +1598,7 @@ void PageFeed::feedViewPart(TechDraw::DrawViewPart* dvp, Page2D& out,
         else if (showVerts && !vert->isReference()) {
             rec.beginPath();
             rec.circle(vx, vy,
-                       vp ? (float)Rez::guiX(lineWidthMm * vertexScale)
+                       vp ? (float)Rez::guiX(lineWidthMm * vertexScale) / 2.0f
                           : style.vertexRadius);
             rec.fillConvex(vertexColor);
         }
@@ -1573,6 +1607,19 @@ void PageFeed::feedViewPart(TechDraw::DrawViewPart* dvp, Page2D& out,
         ++index;
     }
     sweep('v', index);
+}
+
+void PageFeed::pagePosition(const TechDraw::DrawView* view, double& x,
+                            double& y)
+{
+    x = view->X.getValue();
+    y = view->Y.getValue();
+    if (auto item = dynamic_cast<const TechDraw::DrawProjGroupItem*>(view)) {
+        if (TechDraw::DrawProjGroup* group = item->getPGroup()) {
+            x += group->X.getValue();
+            y += group->Y.getValue();
+        }
+    }
 }
 
 void PageFeed::feedViewCapture(QGIView* qgiv, Page2D& out, uint32_t layer)
