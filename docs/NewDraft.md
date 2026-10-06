@@ -881,7 +881,25 @@ classic draft recomputes to the cell draft's body.
 `TestDraft.testDraftAutoCrossesRib`: two ribs 3 apart on a plate, the
 first one's inner face at 20 deg leaning 3.64 into the second; the
 classic result is valid and fails the boolean check, Auto's is the two
-ribs fused, `800 + 500 tan(a) - 10 (50 tan(a) - 30 + 4.5 / tan(a))`.
+ribs fused, `640 + 300 tan(a) - 6 (50 tan(a) - 30 + 4.5 / tan(a))`.
+`TestDraft.testDraftAutoStopAtBody`: a block stepped down over its front
+half, the ledge drafted at 60 deg past the top; the classic draft makes
+the fin, Auto with the stop takes the stopped cell draft, Auto without it
+the classic result.
+
+Pictures (`docs/pictures/NewDraft/`, made by `make_newdraft.sh` in
+`occt/tests/fork/draft/pictures`): the draft asked for, the classic draft,
+Auto. In a result the faces the draft made are orange, and where the
+result crosses itself, the faces crossing red; the second row is a view
+of its own (the profile, the crossing).
+
+![Two ribs](pictures/NewDraft/auto_ribs_a20.png)
+
+![A step](pictures/NewDraft/auto_step_a60.png)
+
+![#962's ribs](pictures/NewDraft/auto_issue962_f43_n30_a15.png)
+
+![#309](pictures/NewDraft/auto_issue309_f2_n9_a60.png)
 
 ## 12. #876 (2026-10-06)
 
@@ -922,6 +940,8 @@ On the sweep (the 1222 and the 500, `Method = New`, the stop on) the only
 changes are the 11 roof drafts' face counts; every other case gives the
 same result, volume and face count as before.
 
+![#876's roof](pictures/NewDraft/cones_issue876_f44_n36_a15.png)
+
 ### 12.2 The roof through the lid: still refused
 
 Face 44 about face 36 at 5 deg rises 2.02 at its far edge, through the
@@ -934,3 +954,22 @@ the face's own cones as before). The prototype gave a body (7628.97);
 which body is right there -- a slot 0.02 wide opened in the lid -- is a
 question for phase 2's tangent chains, where a neighbour tangent to the
 next one is handled as one surface.
+
+### 12.3 Internal edges
+
+The pictures showed lines on the ribs' plate in Auto's result where none
+should be: internal edges, the first rib's sides extended (section 10.1:
+a neighbour's plane goes in as a rectangle) across the plate's top and
+bottom. Where a tool's face cuts a face of the solid without splitting it,
+the general fuse leaves the cut in that face as an internal edge, and the
+merge, which joins faces, keeps it. The solid is valid and boolean-clean,
+but the lines are drawn and can be picked. 426 of the sweep's 1554 valid
+results had them (1540 edges).
+
+They are taken out of every face of the result (`stripInternalEdges()`,
+the history composed with the merge's), before the checks. On the sweep:
+none left; 7 of #334's results in fewer faces at the same volume (182 to
+163: the internal edges had made the merge fail, and the draft fell back
+to merging planar pieces); #474 Fillet002 face 10 about 11 at 60 deg,
+`NotASolid` before, now valid at the classic draft's volume (2104.3660);
+every other case the same result, volume and face count.
