@@ -787,7 +787,7 @@ public:
                 std::bind(&Monitor::slotShowDialog, this, sp::_1, sp::_2));
 
         Gui::Control().signalRemoveDialog.connect(
-            [this](QWidget *, std::vector<QWidget*> &contents) {
+            [this](QWidget *, std::vector<QWidget*> &contents, const Gui::TaskOwner &) {
                 if (!taskWidget)
                     return;
                 for (auto it=contents.begin(); it!=contents.end(); ) {

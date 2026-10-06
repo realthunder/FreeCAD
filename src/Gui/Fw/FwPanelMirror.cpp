@@ -381,10 +381,12 @@ void PanelMirror::start()
     if (!getMainWindow())
         return;  // no task view to follow (a test drives `show` itself)
     _connShow = Control().signalShowDialog.connect(
-        [this](QWidget* view, std::vector<QWidget*>& contents) { onShowDialog(view, contents); },
+        [this](QWidget* view, std::vector<QWidget*>& contents, const TaskOwner&) {
+            onShowDialog(view, contents);
+        },
         fastsignals::advanced_tag {});
     _connRemove = Control().signalRemoveDialog.connect(
-        [this](QWidget*, std::vector<QWidget*>&) { onRemoveDialog(); },
+        [this](QWidget*, std::vector<QWidget*>&, const TaskOwner&) { onRemoveDialog(); },
         fastsignals::advanced_tag {});
     if (Gui::TaskView::TaskDialog* dlg = Control().activeDialog()) {
         QList<QWidget*> contents;

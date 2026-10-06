@@ -37,7 +37,10 @@
 #include <Gui/MainWindow.h>
 
 #include "Control.h"
+#include "Application.h"
 #include "BitmapFactory.h"
+#include "Document.h"
+#include "MDIView.h"
 #include "Tree.h"
 #include "TaskView/TaskView.h"
 
@@ -165,7 +168,53 @@ void ControlSingleton::showModelView()
     }
 }
 
-void ControlSingleton::showDialog(Gui::TaskView::TaskDialog *dlg)
+bool ControlSingleton::exclusive() const
+{
+    return true;
+}
+
+Gui::TaskView::TaskDialog* ControlSingleton::dialogOf(const TaskOwner &owner) const
+{
+    if (!ActiveDialog)
+        return nullptr;
+    const TaskOwner &its = ActiveDialog->owner();
+    // A dialog shown with no view to name is everybody's, as every dialog
+    // was before one had an owner.
+    if (its.isNull())
+        return ActiveDialog;
+    if (owner.isNull())
+        return (exclusive() || its == TaskOwner::current()) ? ActiveDialog : nullptr;
+    return its == owner ? ActiveDialog : nullptr;
+}
+
+TaskOwner ControlSingleton::ownerOf(App::Document *doc) const
+{
+    Gui::Document *gdoc = doc ? Application::Instance->getDocument(doc) : nullptr;
+    if (!gdoc)
+        return TaskOwner();
+    // The view being handled, when it is one of this document's: a served
+    // document may have no desktop view at all, and under a client's scope
+    // the view that asks is that client's.
+    TaskOwner current = TaskOwner::current();
+    if (current.document() == gdoc)
+        return current;
+    return TaskOwner(gdoc->getActiveView());
+}
+
+void ControlSingleton::showDialog(Gui::TaskView::TaskDialog *dlg, const TaskOwner &owner)
+{
+    showDialogFor(dlg, owner.isNull() ? TaskOwner::current() : owner);
+}
+
+void ControlSingleton::showDialog(Gui::TaskView::TaskDialog *dlg, App::Document *attachTo)
+{
+    if (attachTo)
+        showDialogFor(dlg, ownerOf(attachTo));
+    else
+        showDialog(dlg);
+}
+
+void ControlSingleton::showDialogFor(Gui::TaskView::TaskDialog *dlg, const TaskOwner &owner)
 {
     // only one dialog at a time, print a warning instead of raising an assert
     if (ActiveDialog && ActiveDialog != dlg) {
@@ -186,6 +235,12 @@ void ControlSingleton::showDialog(Gui::TaskView::TaskDialog *dlg)
     // Do this before showing the dialog because its open() function is called
     // which may open a transaction but fails when auto transaction is still active.
     App::AutoTransaction::setEnable(false);
+
+    // The owner is named once, before the dialog is opened: its open() and
+    // whoever hears signalShowDialog may ask for it. A dialog shown again
+    // keeps the view it was first shown for.
+    if (dlg && ActiveDialog != dlg)
+        TaskView::TaskDialogAttorney::setOwner(dlg, owner);
 
     auto pcComboView = qobject_cast<Gui::DockWnd::ComboView*>
         (Gui::DockWindowManager::instance()->getDockWindow("Combo View"));
@@ -225,7 +280,59 @@ void ControlSingleton::showDialog(Gui::TaskView::TaskDialog *dlg)
 
 Gui::TaskView::TaskDialog* ControlSingleton::activeDialog() const
 {
-    return ActiveDialog;
+    return dialogOf(TaskOwner());
+}
+
+Gui::TaskView::TaskDialog* ControlSingleton::activeDialog(const TaskOwner &owner) const
+{
+    return dialogOf(owner);
+}
+
+Gui::TaskView::TaskDialog* ControlSingleton::activeDialog(App::Document *attachedTo) const
+{
+    if (!attachedTo)
+        return activeDialog();
+    Gui::TaskView::TaskDialog *dlg = dialogOf(TaskOwner());
+    if (!dlg || dlg->owner().isNull())
+        return dlg;
+    Gui::Document *gdoc = dlg->owner().document();
+    return (gdoc && gdoc->getDocument() == attachedTo) ? dlg : nullptr;
+}
+
+void ControlSingleton::accept(const TaskOwner &owner)
+{
+    if (dialogOf(owner))
+        accept();
+}
+
+void ControlSingleton::reject(const TaskOwner &owner)
+{
+    if (dialogOf(owner))
+        reject();
+}
+
+void ControlSingleton::closeDialog(const TaskOwner &owner)
+{
+    if (dialogOf(owner))
+        closeDialog();
+}
+
+void ControlSingleton::accept(App::Document *attachedTo)
+{
+    if (activeDialog(attachedTo))
+        accept();
+}
+
+void ControlSingleton::reject(App::Document *attachedTo)
+{
+    if (activeDialog(attachedTo))
+        reject();
+}
+
+void ControlSingleton::closeDialog(App::Document *attachedTo)
+{
+    if (activeDialog(attachedTo))
+        closeDialog();
 }
 
 void ControlSingleton::accept()
@@ -278,23 +385,58 @@ void ControlSingleton::closedDialog()
 
 bool ControlSingleton::isAllowedAlterDocument() const
 {
-    if (ActiveDialog)
-        return ActiveDialog->isAllowedAlterDocument();
-    return true;
+    return isAllowedAlterDocument(TaskOwner());
 }
-
 
 bool ControlSingleton::isAllowedAlterView() const
 {
-    if (ActiveDialog)
-        return ActiveDialog->isAllowedAlterView();
-    return true;
+    return isAllowedAlterView(TaskOwner());
 }
 
 bool ControlSingleton::isAllowedAlterSelection() const
 {
-    if (ActiveDialog)
-        return ActiveDialog->isAllowedAlterSelection();
+    return isAllowedAlterSelection(TaskOwner());
+}
+
+bool ControlSingleton::isAllowedAlterDocument(const TaskOwner &owner) const
+{
+    if (auto dlg = dialogOf(owner))
+        return dlg->isAllowedAlterDocument();
+    return true;
+}
+
+bool ControlSingleton::isAllowedAlterView(const TaskOwner &owner) const
+{
+    if (auto dlg = dialogOf(owner))
+        return dlg->isAllowedAlterView();
+    return true;
+}
+
+bool ControlSingleton::isAllowedAlterSelection(const TaskOwner &owner) const
+{
+    if (auto dlg = dialogOf(owner))
+        return dlg->isAllowedAlterSelection();
+    return true;
+}
+
+bool ControlSingleton::isAllowedAlterDocument(App::Document *attachedTo) const
+{
+    if (auto dlg = activeDialog(attachedTo))
+        return dlg->isAllowedAlterDocument();
+    return true;
+}
+
+bool ControlSingleton::isAllowedAlterView(App::Document *attachedTo) const
+{
+    if (auto dlg = activeDialog(attachedTo))
+        return dlg->isAllowedAlterView();
+    return true;
+}
+
+bool ControlSingleton::isAllowedAlterSelection(App::Document *attachedTo) const
+{
+    if (auto dlg = activeDialog(attachedTo))
+        return dlg->isAllowedAlterSelection();
     return true;
 }
 

@@ -1479,6 +1479,7 @@ SET(FreeCADGui_CPP_SRCS
     Namespace.h
     resource.cpp
     Control.cpp
+    TaskOwner.cpp
     SpaceballEvent.cpp
     PreferencePackManager.cpp
     FreeCADStyle.cpp
@@ -1523,6 +1524,7 @@ SET(FreeCADGui_SRCS
     PreCompiled.h
     QtAll.h
     Control.h
+    TaskOwner.h
     SpaceballEvent.h
     PreferencePackManager.h
     FreeCADStyle.h

@@ -41,10 +41,11 @@ public:
     ~ControlPy() override;
 
     Py::Object repr() override;
-    Py::Object showDialog(const Py::Tuple&);
-    Py::Object activeDialog(const Py::Tuple&);
-    Py::Object activeTaskDialog(const Py::Tuple&);
-    Py::Object closeDialog(const Py::Tuple&);
+    Py::Object showDialog(const Py::Tuple&, const Py::Dict&);
+    Py::Object activeDialog(const Py::Tuple&, const Py::Dict&);
+    Py::Object activeTaskDialog(const Py::Tuple&, const Py::Dict&);
+    Py::Object closeDialog(const Py::Tuple&, const Py::Dict&);
+    Py::Object currentOwner(const Py::Tuple&);
     Py::Object addTaskWatcher(const Py::Tuple&);
     Py::Object clearTaskWatcher(const Py::Tuple&);
     Py::Object isAllowedAlterDocument(const Py::Tuple&);
@@ -101,6 +102,11 @@ public:
     Py::Object isAutoCloseOnTransactionChange(const Py::Tuple&);
 
     Py::Object getDocumentName(const Py::Tuple&);
+
+    /// The desktop view the dialog belongs to, or None
+    Py::Object getAssociatedView(const Py::Tuple&);
+    /// What kind of view the dialog belongs to
+    Py::Object getOwnerKind(const Py::Tuple&);
 
     /*!
       Indicates whether this task dialog allows other commands to modify

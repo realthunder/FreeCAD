@@ -29,11 +29,17 @@
 # include <QPointer>
 #endif
 
+#include <App/Document.h>
+#include <App/DocumentPy.h>
 #include <Base/Interpreter.h>
 #include <Gui/Application.h>
 #include <Gui/BitmapFactory.h>
 #include <Gui/Command.h>
 #include <Gui/Control.h>
+#include <Gui/Document.h>
+#include <Gui/DocumentPy.h>
+#include <Gui/MDIView.h>
+#include <Gui/MDIViewPy.h>
 #include <Gui/UiLoader.h>
 #include <Gui/PythonWrapper.h>
 
@@ -45,6 +51,98 @@ using namespace Gui;
 using namespace Gui::TaskView;
 
 ControlPy* ControlPy::instance = nullptr;
+
+namespace
+{
+/// What Gui.Control.currentOwner() hands out: a TaskOwner by value. A view
+/// of the main window has a Python object to be named by; a served
+/// client's has none, and this is how Python carries either one across a
+/// timer.
+const char* const ownerCapsule = "Gui.TaskOwner";
+
+void deleteOwnerCapsule(PyObject* capsule)
+{
+    delete static_cast<Gui::TaskOwner*>(PyCapsule_GetPointer(capsule, ownerCapsule));
+}
+
+/** Whose dialog a call is about, as Python names it.
+ *
+ * `view` is a view of the main window (Gui.ActiveDocument.ActiveView and
+ * the like) or what currentOwner() returned; `attachTo` is a document,
+ * which is upstream's keyword for the same thing one notch coarser.
+ * Neither, or None for both, is the argument left out.
+ */
+struct PyTaskTarget
+{
+    Gui::TaskOwner owner;
+    App::Document* document {nullptr};
+
+    PyTaskTarget(PyObject* view, PyObject* attachTo)
+    {
+        if (view && PyCapsule_IsValid(view, ownerCapsule)) {
+            owner = *static_cast<Gui::TaskOwner*>(PyCapsule_GetPointer(view, ownerCapsule));
+        }
+        else if (view && view != Py_None) {
+            owner = Gui::TaskOwner(viewOf(view));
+        }
+        if (attachTo && attachTo != Py_None) {
+            if (!owner.isNull()) {
+                throw Py::TypeError("give either view or attachTo, not both");
+            }
+            if (PyObject_TypeCheck(attachTo, &App::DocumentPy::Type)) {
+                document = static_cast<App::DocumentPy*>(attachTo)->getDocumentPtr();
+            }
+            else if (PyObject_TypeCheck(attachTo, &Gui::DocumentPy::Type)) {
+                document = static_cast<Gui::DocumentPy*>(attachTo)->getDocumentPtr()->getDocument();
+            }
+            else {
+                throw Py::TypeError("attachTo must be a document, or None");
+            }
+        }
+    }
+
+    Gui::TaskView::TaskDialog* activeDialog() const
+    {
+        if (document) {
+            return Gui::Control().activeDialog(document);
+        }
+        if (!owner.isNull()) {
+            return Gui::Control().activeDialog(owner);
+        }
+        return Gui::Control().activeDialog();
+    }
+
+private:
+    /// The view behind a Python view object: an MDIViewPy, or a view type
+    /// of a module's own that says how to reach its base (cast_to_base).
+    static Gui::MDIView* viewOf(PyObject* obj)
+    {
+        if (PyObject_TypeCheck(obj, &Gui::MDIViewPy::Type)) {
+            return static_cast<Gui::MDIViewPy*>(obj)->getMDIViewPtr();
+        }
+        if (PyObject_HasAttrString(obj, "cast_to_base")) {
+            Py::Object base = Py::Object(obj).callMemberFunction("cast_to_base");
+            if (PyObject_TypeCheck(base.ptr(), &Gui::MDIViewPy::Type)) {
+                return static_cast<Gui::MDIViewPy*>(base.ptr())->getMDIViewPtr();
+            }
+        }
+        throw Py::TypeError("view must be a view of the main window, what "
+                            "currentOwner() returned, or None");
+    }
+};
+
+PyTaskTarget parseTaskTarget(const Py::Tuple& args, const Py::Dict& kwds)
+{
+    PyObject* view = Py_None;
+    PyObject* attachTo = Py_None;
+    static const char* names[] = {"view", "attachTo", nullptr};
+    if (!PyArg_ParseTupleAndKeywords(args.ptr(), kwds.ptr(), "|OO",
+                                     const_cast<char**>(names), &view, &attachTo)) {
+        throw Py::Exception();
+    }
+    return {view, attachTo};
+}
+}  // namespace
 
 ControlPy* ControlPy::getInstance()
 {
@@ -61,20 +159,36 @@ void ControlPy::init_type()
     behaviors().supportRepr();
     behaviors().supportGetattr();
     behaviors().supportSetattr();
-    add_varargs_method("showDialog",&ControlPy::showDialog,
+    add_keyword_method("showDialog",&ControlPy::showDialog,
                         "show the given dialog in the task panel\n"
-                        "showDialog(dialog)\n"
+                        "showDialog(dialog, view=None, attachTo=None)\n"
                         "--\n"
+                        "A task dialog belongs to a view: 'view', else the view of the\n"
+                        "document 'attachTo', else the view being handled when this is\n"
+                        "called. A deferred call (a timer) should pass the view it was\n"
+                        "asked under.\n"
                         "if a task is already active a RuntimeError is raised");
-    add_varargs_method("activeDialog",&ControlPy::activeDialog,
+    add_keyword_method("activeDialog",&ControlPy::activeDialog,
                         "check if a dialog is active in the task panel\n"
-                        "activeDialog() --> bool");
-    add_varargs_method("activeTaskDialog",&ControlPy::activeTaskDialog,
+                        "activeDialog(view=None, attachTo=None) --> bool\n"
+                        "--\n"
+                        "With 'view' or 'attachTo', whether that view or that document's\n"
+                        "view has one.");
+    add_keyword_method("activeTaskDialog",&ControlPy::activeTaskDialog,
                         "return the active task dialog if there is one\n"
-                        "activeTaskDialog() --> TaskDialog or None");
-    add_varargs_method("closeDialog",&ControlPy::closeDialog,
+                        "activeTaskDialog(view=None, attachTo=None) --> TaskDialog or None");
+    add_keyword_method("closeDialog",&ControlPy::closeDialog,
                         "close the active dialog\n"
-                        "closeDialog()");
+                        "closeDialog(view=None, attachTo=None)");
+    add_varargs_method("currentOwner",&ControlPy::currentOwner,
+                        "name the view being handled now, to be passed as 'view' later\n"
+                        "currentOwner() --> object\n"
+                        "--\n"
+                        "For a call that is deferred: take this when the timer is set\n"
+                        "and pass it to showDialog() when it fires, so the dialog belongs\n"
+                        "to the view it was asked in and not to whichever is active by\n"
+                        "then. It names a served client's view too, which has no view\n"
+                        "object.");
     add_varargs_method("addTaskWatcher",&ControlPy::addTaskWatcher,
                         "install a (list of) TaskWatcher\n"
                         "addTaskWatcher(TaskWatcher | list)");
@@ -110,41 +224,62 @@ Py::Object ControlPy::repr()
     return Py::String(s_out.str());
 }
 
-Py::Object ControlPy::showDialog(const Py::Tuple& args)
+Py::Object ControlPy::showDialog(const Py::Tuple& args, const Py::Dict& kwds)
 {
     PyObject* arg0;
-    if (!PyArg_ParseTuple(args.ptr(), "O", &arg0))
+    PyObject* view = Py_None;
+    PyObject* attachTo = Py_None;
+    static const char* names[] = {"dialog", "view", "attachTo", nullptr};
+    if (!PyArg_ParseTupleAndKeywords(args.ptr(), kwds.ptr(), "O|OO",
+                                     const_cast<char**>(names), &arg0, &view, &attachTo))
         throw Py::Exception();
+    PyTaskTarget target(view, attachTo);
     Gui::TaskView::TaskDialog* act = Gui::Control().activeDialog();
     if (act)
         throw Py::RuntimeError("Active task dialog found");
     auto dlg = new TaskDialogPython(Py::Object(arg0));
-    Gui::Control().showDialog(dlg);
+    if (target.document)
+        Gui::Control().showDialog(dlg, target.document);
+    else
+        Gui::Control().showDialog(dlg, target.owner);
     return Py::None();
 }
 
-Py::Object ControlPy::activeDialog(const Py::Tuple& args)
+Py::Object ControlPy::activeDialog(const Py::Tuple& args, const Py::Dict& kwds)
 {
-    if (!PyArg_ParseTuple(args.ptr(), ""))
-        throw Py::Exception();
-    Gui::TaskView::TaskDialog* dlg = Gui::Control().activeDialog();
+    Gui::TaskView::TaskDialog* dlg = parseTaskTarget(args, kwds).activeDialog();
     return Py::Boolean(dlg != nullptr);
 }
 
-Py::Object ControlPy::activeTaskDialog(const Py::Tuple& args)
+Py::Object ControlPy::activeTaskDialog(const Py::Tuple& args, const Py::Dict& kwds)
 {
-    if (!PyArg_ParseTuple(args.ptr(), ""))
-        throw Py::Exception();
-    Gui::TaskView::TaskDialog* dlg = Gui::Control().activeDialog();
+    Gui::TaskView::TaskDialog* dlg = parseTaskTarget(args, kwds).activeDialog();
     return (dlg ? Py::asObject(new TaskDialogPy(dlg)) : Py::None());
 }
 
-Py::Object ControlPy::closeDialog(const Py::Tuple& args)
+Py::Object ControlPy::closeDialog(const Py::Tuple& args, const Py::Dict& kwds)
+{
+    PyTaskTarget target = parseTaskTarget(args, kwds);
+    if (target.document)
+        Gui::Control().closeDialog(target.document);
+    else if (!target.owner.isNull())
+        Gui::Control().closeDialog(target.owner);
+    else
+        Gui::Control().closeDialog();
+    return Py::None();
+}
+
+Py::Object ControlPy::currentOwner(const Py::Tuple& args)
 {
     if (!PyArg_ParseTuple(args.ptr(), ""))
         throw Py::Exception();
-    Gui::Control().closeDialog();
-    return Py::None();
+    auto owner = new Gui::TaskOwner(Gui::TaskOwner::current());
+    PyObject* capsule = PyCapsule_New(owner, ownerCapsule, deleteOwnerCapsule);
+    if (!capsule) {
+        delete owner;
+        throw Py::Exception();
+    }
+    return Py::asObject(capsule);
 }
 
 Py::Object ControlPy::addTaskWatcher(const Py::Tuple& args)
@@ -337,6 +472,16 @@ void TaskDialogPy::init_type()
                        "Checks if the task dialog will be closed when the active transaction has changed -> bool");
     add_varargs_method("getDocumentName",&TaskDialogPy::getDocumentName,
                        "Get the name of the document the task dialog is attached to -> str");
+    add_varargs_method("getAssociatedView",&TaskDialogPy::getAssociatedView,
+                       "Get the view of the main window the task dialog belongs to -> view or None\n"
+                       "None for a dialog that belongs to no view, or to a served client's.");
+    add_varargs_method("getOwnerKind",&TaskDialogPy::getOwnerKind,
+                       "Say what the task dialog belongs to -> str\n"
+                       "'view': a view of the main window (getAssociatedView)\n"
+                       "'client': a served client's view\n"
+                       "'viewer': a 3D viewer that sits in no view\n"
+                       "'none': no view; the dialog is everybody's\n"
+                       "'gone': a view that no longer exists");
     add_varargs_method("isAllowedAlterDocument",&TaskDialogPy::isAllowedAlterDocument,
                        "Indicates whether this task dialog allows other commands to modify\n"
                        "the document while it is open -> bool");
@@ -447,6 +592,32 @@ Py::Object TaskDialogPy::getDocumentName(const Py::Tuple& args)
     if (!PyArg_ParseTuple(args.ptr(), ""))
         throw Py::Exception();
     return Py::String(dialog->getDocumentName());
+}
+
+Py::Object TaskDialogPy::getAssociatedView(const Py::Tuple& args)
+{
+    if (!PyArg_ParseTuple(args.ptr(), ""))
+        throw Py::Exception();
+    if (Gui::MDIView* view = dialog->getAssociatedView())
+        return Py::asObject(view->getPyObject());
+    return Py::None();
+}
+
+Py::Object TaskDialogPy::getOwnerKind(const Py::Tuple& args)
+{
+    if (!PyArg_ParseTuple(args.ptr(), ""))
+        throw Py::Exception();
+    const Gui::TaskOwner& owner = dialog->owner();
+    const char* kind = "viewer";
+    if (owner.isNull())
+        kind = "none";
+    else if (!owner.isValid())
+        kind = "gone";
+    else if (owner.mdiView())
+        kind = "view";
+    else if (owner.isRemote())
+        kind = "client";
+    return Py::String(kind);
 }
 
 Py::Object TaskDialogPy::isAllowedAlterDocument(const Py::Tuple& args)

@@ -31,12 +31,16 @@
 #include <QPointer>
 #include <FCGlobal.h>
 
+#include <Gui/TaskOwner.h>
+
 
 namespace App {
 
 }
 
 namespace Gui {
+class ControlSingleton;
+class MDIView;
 namespace TaskView {
 
 class TaskContent;
@@ -100,6 +104,17 @@ public:
     { return documentName; }
     void setDocumentName(const std::string& doc)
     { documentName = doc; }
+
+    /** The view this dialog belongs to (docs/TaskPanelPerView.md sec 3).
+     *
+     * Named when the dialog is shown: the view Control().showDialog() was
+     * given, else the view being handled at that moment. Nobody before
+     * that, and for a dialog shown with no view to name.
+     */
+    const TaskOwner& owner() const
+    { return taskOwner; }
+    /// The owner's desktop view, or null. Upstream's name for it.
+    MDIView* getAssociatedView() const;
     /*!
       Indicates whether this task dialog allows other commands to modify
       the document while it is open.
@@ -153,6 +168,7 @@ protected:
 
 private:
     std::string documentName;
+    TaskOwner taskOwner;
     bool escapeButton;
     bool autoCloseTransaction;
 
@@ -167,9 +183,14 @@ private:
     static QDialogButtonBox* getButtonBox(TaskDialog* dlg) {
         return dlg->buttonBox;
     }
+    /// The owner is the showing's to name, once: Control().showDialog().
+    static void setOwner(TaskDialog* dlg, const TaskOwner& owner) {
+        dlg->taskOwner = owner;
+    }
 
     friend class TaskDialogPy;
     friend class TaskView;
+    friend class Gui::ControlSingleton;
 };
 
 } //namespace TaskView

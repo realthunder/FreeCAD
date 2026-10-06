@@ -941,6 +941,19 @@ public:
         return nullptr;
     }
 
+    /** A handle that expires when this view is destroyed.
+     *
+     * For whatever must name a view past its end without dangling: a
+     * client's mirror goes when its client does, and it is no QObject to
+     * point a QPointer at. Two handles of one view share ownership, so
+     * they also say "the same view" after it is gone, which an address
+     * cannot (Gui::TaskOwner).
+     */
+    std::weak_ptr<const void> lifetime() const
+    {
+        return life;
+    }
+
 protected:
     ViewerContext();
 
@@ -993,6 +1006,8 @@ private:
     std::unique_ptr<EditingRoot> ownEditRoot;
     /// Every entry made for this view and not yet gone (trackOnViewEntry)
     std::vector<OnViewEntry*> onViewEntries;
+    /// What lifetime() hands out.
+    std::shared_ptr<const void> life {std::make_shared<char>()};
 };
 
 /** Make \a context the current view for this scope's dynamic extent.

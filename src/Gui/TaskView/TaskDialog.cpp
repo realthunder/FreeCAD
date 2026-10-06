@@ -57,6 +57,11 @@ TaskDialog::~TaskDialog()
     }
 }
 
+Gui::MDIView* TaskDialog::getAssociatedView() const
+{
+    return taskOwner.mdiView();
+}
+
 //==== Slots ===============================================================
 
 void TaskDialog::addTaskBox(QWidget* widget)

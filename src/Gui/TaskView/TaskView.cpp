@@ -594,7 +594,7 @@ void TaskView::showDialog(TaskDialog *dlg)
         }
     }
 
-    Control().signalShowDialog(this, this->contents);
+    Control().signalShowDialog(this, this->contents, dlg->owner());
 
     // give to task dialog to customize the button box
     dlg->modifyStandardButtons(ActiveCtrl->buttonBox);
@@ -674,7 +674,7 @@ void TaskView::removeDialog(void)
     if (ActiveDialog) {
         // See 'accept' and 'reject'
         if (ActiveDialog->property("taskview_accept_or_reject").isNull()) {
-            Control().signalRemoveDialog(this, this->contents);
+            Control().signalRemoveDialog(this, this->contents, ActiveDialog->owner());
             for (auto widget : contents) 
                 taskPanel->removeWidget(widget);
             contents.clear();

@@ -558,6 +558,9 @@ ViewerContext::ViewerContext()
 // header.
 ViewerContext::~ViewerContext()
 {
+    // First, so that nothing reached from below takes this view for one
+    // that is still there.
+    life.reset();
     // Not resetEditingViewProvider(): that reaches virtuals which by here
     // have no override left to reach. An implementation that can still be
     // in a session ends its half of it in its OWN destructor, while it is

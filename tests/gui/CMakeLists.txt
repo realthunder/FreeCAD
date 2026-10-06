@@ -1270,3 +1270,11 @@ fc_add_gui_test(GuiServeEmptyDocument_tests_run
 fc_add_gui_test(GuiMatcapZebra_tests_run
                 matcap-zebra.py
                 --timeout 180)
+
+# A task dialog belongs to the view it was opened for
+# (docs/TaskPanelPerView.md, milestone 1): what a dialog reports as its
+# view -- shown bare, for a named view, for a document, across a deferral,
+# by a command, by an edit in another document's view, by a served
+# client's edit -- and what the keyed Control answers for another view.
+fc_add_gui_test(GuiTaskPanelOwner_tests_run task-panel-owner.py
+                --timeout 240)
