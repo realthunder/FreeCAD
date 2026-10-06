@@ -217,6 +217,12 @@ fc_add_gui_test(GuiTechDrawLineStandardOutOfRange_tests_run
 fc_add_gui_test(GuiTechDrawPageBackendSwitch_tests_run
                 techdraw-page-backend-switch.py --timeout 180)
 
+# A TechDraw page drawn by the backend is drawn once: the Qt items of what
+# the backend's layer holds are not painted over it, and the layer shows
+# what only they used to -- frames, labels, what is selected.
+fc_add_gui_test(GuiTechDrawPageBackendSingleDraw_tests_run
+                techdraw-page-backend-single-draw.py --timeout 240)
+
 # A TechDraw colour a document stored with no opacity -- every colour of an
 # older document -- is drawn: dimensions, balloons and hatches restored
 # from one were on the page fully transparent.

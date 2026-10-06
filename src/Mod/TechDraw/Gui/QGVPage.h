@@ -29,8 +29,10 @@
 #include <memory>
 #include <set>
 #include <string>
+#include <unordered_set>
 
 #include <QGraphicsView>
+#include <QPointer>
 
 #include <memory>
 #include <QLabel>
@@ -91,6 +93,15 @@ class QGVNavStyle;
 class TechDrawGuiExport QGVPage: public QGraphicsView
 {
     Q_OBJECT
+    /// What the last paint did with the scene's items while the backend
+    /// draws the page: how many it left to the backend's layer, and how
+    /// many Qt painted all the same (the ones the layer does not hold).
+    /// Both 0 while Qt draws the page. For tests and for diagnosis.
+    Q_PROPERTY(int vgItemsCovered READ vgItemsCovered)
+    Q_PROPERTY(int vgItemsPainted READ vgItemsPainted)
+    /// how many views the layer was fed again, in full or their state
+    /// only, since the page view was made
+    Q_PROPERTY(int vgViewFeeds READ vgViewFeeds)
 
 public:
     enum RendererType
@@ -109,6 +120,9 @@ public:
     /// Mark the vg page preview stale; the next repaint rebuilds the
     /// tracked view set and re-feeds everything.
     void invalidateVgPage() { m_vgPageStructure = 0; }
+    int vgItemsCovered() const { return m_vgItemsCovered; }
+    int vgItemsPainted() const { return m_vgItemsPainted; }
+    int vgViewFeeds() const { return m_vgViewFeeds; }
 
     QGSPage* getScene() { return m_scene; }
 
@@ -171,6 +185,8 @@ protected:
     QPixmap prepareCursorPixmap(const char* iconName, QPoint& hotspot);
 
     void drawForeground(QPainter* painter, const QRectF& rect) override;
+    void drawItems(QPainter* painter, int numItems, QGraphicsItem* items[],
+                   const QStyleOptionGraphicsItem options[]) override;
 
     std::string getNavStyleParameter();
     Base::Type getStyleType(std::string model);
@@ -217,13 +233,20 @@ private:
     MDIViewPage* m_parentMDI;
     QContextMenuEvent* m_saveContextEvent;
 
-    // The vg 2D page engine preview (docs/TechDrawPortAndSection.md
-    // sec 16, milestone M2): parameter-gated, drawn under the scene.
+    // The page drawn by the backend (docs/TechDrawPortAndSection.md
+    // sec 16 and 37): parameter-gated. The layer is the page's picture;
+    // the Qt items of what it holds stay in the scene for the mouse and
+    // are not painted (drawItems).
     // Damage-driven: each tracked view's signalGuiPaint (HLR done,
     // faces done, any repaint-worthy property change) marks only that
     // view dirty; a paint re-feeds exactly the dirty views. X/Y carry
     // no signal (the App side purges their touch), so the track caches
     // the fed position and a paint-time compare catches moves.
+    // What a view shows of its state -- preselected, selected, a label
+    // being dragged -- changes Qt items only: the scene reports where
+    // (QGraphicsScene::changed), and the views that read from there
+    // are fed their state again (m_vgState), which computes no
+    // geometry.
     struct VgViewTrack
     {
         uint32_t layer = 0;
@@ -232,8 +255,22 @@ private:
         // Visibility carries no signal either; -1 = not fed yet.
         int8_t fedVisible = -1;
         fastsignals::scoped_connection repaint;
+        // The view's Qt item, found again when it went away (a page
+        // redrawn makes new ones), and where it stood in the scene when
+        // it was last read: an item under a view that moves is carried
+        // along with no X/Y of its own changing.
+        QPointer<QGIView> qgiv;
+        QPointF fedScenePos;
+        // PageFeed::sceneExtent as of the last feed
+        QRectF extent;
+        // Its Qt item sits in a clip group, whatever the document says
+        // of the view itself (a dimension of a view that is in one):
+        // Qt's with the group, never fed.
+        bool clipped = false;
     };
     void drawVgPreview(QPainter* painter);
+    /// The scene changed there: mark the views that read from there.
+    void vgSceneChanged(const QList<QRectF>& region);
     /// Swap the viewport between the Qt raster one and a QOpenGLWidget
     /// (the composite's). Never from inside a paint.
     void setVgViewport(bool gl);
@@ -243,6 +280,22 @@ private:
     std::unique_ptr<Render::Page2D> m_vgPage;
     std::map<std::string, VgViewTrack> m_vgViews;
     std::set<std::string> m_vgDirty;
+    // views to feed their state again, nothing else
+    std::set<std::string> m_vgState;
+    // The Qt items of the views the layer holds, as of this paint:
+    // what drawItems leaves unpainted, with everything under them.
+    // Compared, never dereferenced.
+    std::unordered_set<const QGraphicsItem*> m_vgCovered;
+    bool m_vgTemplateCovered = false;
+    // The layer reached the page in the paint under way. Until it
+    // does, the Qt items are the page and all of them are painted.
+    bool m_vgDrawn = false;
+    // look for the Qt items of the views that have none (drawVgPreview)
+    bool m_vgResolve = true;
+    QMetaObject::Connection m_vgSceneConnection;
+    int m_vgItemsCovered = 0;
+    int m_vgItemsPainted = 0;
+    int m_vgViewFeeds = 0;
     size_t m_vgPageStructure = 0;
     size_t m_vgTemplateStamp = 0;
     // The GL compositor's state: the blitter lives in the viewport's

@@ -48,6 +48,7 @@
 #include <QPainterPath>
 #include <QPen>
 #include <QPixmap>
+#include <QStyleOptionGraphicsItem>
 #include <QSvgRenderer>
 #include <QTextBlock>
 #include <QTextDocument>
@@ -77,10 +78,15 @@
 
 #include "PageFeed.h"
 #include "PreferencesGui.h"
+#include "QGCustomSvg.h"
 #include "QGIDecoration.h"
+#include "QGIFace.h"
 #include "QGIMatting.h"
 #include "QGIPrimPath.h"
+#include "QGIVertex.h"
 #include "QGIView.h"
+#include "QGIViewDimension.h"
+#include "QGMText.h"
 #include "QGSPage.h"
 #include "Rez.h"
 #include "ViewProviderGeomHatch.h"
@@ -180,6 +186,14 @@ void emitDashedPolyline(Page2D::Recorder& rec, const std::vector<Pt>& pts,
 {
     if (pts.size() < 2 || dashes.empty())
         return;
+    // a pattern with no length would never get anywhere
+    float period = 0.0f;
+    for (float d : dashes)
+        period += d > 0.0f ? d : 0.0f;
+    if (!(period > 1.0e-4f)) {
+        emitPolyline(rec, pts, ox, oy);
+        return;
+    }
     size_t di = 0;
     float remain = dashes[0];
     bool down = true;
@@ -545,15 +559,41 @@ float avgScale(const QTransform& t)
     return det > 0.0 ? (float)std::sqrt(det) : 1.0f;
 }
 
+// What a pen of width 0 is captured as: PageFeed::PageHairline unless
+// the host asked otherwise for the capture under way (HairlineScope).
+// The capture runs on the GUI thread only.
+float captureHairline = PageFeed::PageHairline;
+
+struct HairlineScope
+{
+    explicit HairlineScope(float hairline) : saved(captureHairline)
+    {
+        captureHairline = hairline;
+    }
+    ~HairlineScope() { captureHairline = saved; }
+    float saved;
+};
+
 // A pen's stroke width in page units. Width 0 is Qt's cosmetic
-// hairline, drawn one device pixel at any zoom -- a concept a retained
-// page has no analog for; the ISO 0.35mm standard line reads the same
-// at page scale (balloon leaders and bubbles arrive this way).
+// hairline, drawn one device pixel at any zoom (a view's frame, balloon
+// leaders and bubbles arrive this way). The page draws a stroke of
+// width 0 that way too; a consumer that does not is given a page
+// width that reads the same at page scale, the ISO 0.35mm line.
 float penWidth(const QPen& pen, const QTransform& t)
 {
-    const double w =
-        pen.widthF() > 0.0 ? pen.widthF() : Rez::guiX(0.35);
-    return (float)w * avgScale(t);
+    if (!(pen.widthF() > 0.0))
+        return captureHairline;
+    return (float)pen.widthF() * avgScale(t);
+}
+
+// What a pen's dash pattern counts in. Qt counts in pen widths, and a
+// cosmetic pen's in device pixels, which a page has none of: its
+// dashes are the 0.35mm line's.
+float dashUnit(const QPen& pen, const QTransform& t)
+{
+    if (!(pen.widthF() > 0.0))
+        return PageFeed::PageHairline;
+    return (float)pen.widthF() * avgScale(t);
 }
 
 // Replay a QPainterPath's elements into the recorder, mapped to page
@@ -598,7 +638,7 @@ std::vector<float> penDashes(const QPen& pen, const QTransform& t)
     std::vector<float> dashes;
     if (pen.style() == Qt::SolidLine || pen.style() == Qt::NoPen)
         return dashes;
-    const float w = penWidth(pen, t);
+    const float w = dashUnit(pen, t);
     for (qreal d : pen.dashPattern())
         dashes.push_back((float)d * w);
     return dashes;
@@ -872,6 +912,34 @@ void captureSvgItem(Page2D::Recorder& rec, QGraphicsSvgItem* item,
     emitCapturedImage(rec, id, local, item->sceneTransform());
 }
 
+// A rectangle an item's own paint() draws round itself, in the pen it
+// would use: the dashed frame of a preselected or selected symbol, the
+// box of a framed dimension value, the box of a leader's text.
+void captureFrameRect(Page2D::Recorder& rec, const QGraphicsItem* item,
+                      const QRectF& rect, const QPen& pen)
+{
+    QPainterPath path;
+    path.addRect(rect);
+    emitStyledPath(rec, path, item->sceneTransform(), pen,
+                   QBrush(Qt::NoBrush));
+}
+
+// Some items settle what their children are drawn with in their own
+// paint(): a dimension and a balloon set their line widths there, a
+// center line and a break line their pens. On a page the backend draws
+// alone no item is painted, so what paint() would have settled is
+// settled here, before the children are read -- by running that paint()
+// on a painter nobody looks at. Groups only: a group draws nothing of
+// its own (the selection rectangle a QGraphicsItemGroup would add is
+// not in an option with no state).
+void settleInPaint(QGraphicsItem* group)
+{
+    static QImage scratch(1, 1, QImage::Format_ARGB32_Premultiplied);
+    QPainter painter(&scratch);
+    QStyleOptionGraphicsItem option;
+    group->paint(&painter, &option, nullptr);
+}
+
 void capturePixmapItem(Page2D::Recorder& rec, QGraphicsPixmapItem* item,
                        CaptureImages* imgs)
 {
@@ -933,18 +1001,42 @@ void captureItemTree(QGraphicsItem* item, Page2D::Recorder& rec,
             typeid(*item).name(), r.x(), r.y(), r.width(), r.height(),
             rec.bytes().size());
     }
-    if (auto text = dynamic_cast<QGraphicsTextItem*>(item))
+    if (dynamic_cast<QGraphicsItemGroup*>(item))
+        settleInPaint(item);
+    if (auto text = dynamic_cast<QGraphicsTextItem*>(item)) {
+        // the box comes first, as QGMText::paint has it
+        auto boxed = dynamic_cast<QGMText*>(item);
+        if (boxed && boxed->showBox())
+            captureFrameRect(rec, item,
+                             item->boundingRect().adjusted(1, 1, -1, -1),
+                             QPen());
         captureTextItem(rec, text);
+    }
     else if (auto prim = dynamic_cast<QGIPrimPath*>(item))
         capturePrimPath(rec, prim);
     else if (auto shape = dynamic_cast<QAbstractGraphicsShapeItem*>(item))
         captureShapeItem(rec, shape);
     else if (auto line = dynamic_cast<QGraphicsLineItem*>(item))
         captureLineItem(rec, line);
-    else if (auto svg = dynamic_cast<QGraphicsSvgItem*>(item))
+    else if (auto svg = dynamic_cast<QGraphicsSvgItem*>(item)) {
+        auto framed = dynamic_cast<QGCustomSvg*>(item);
+        if (framed && framed->framePen().style() != Qt::NoPen)
+            captureFrameRect(rec, item, item->boundingRect(),
+                             framed->framePen());
         captureSvgItem(rec, svg, imgs);
+    }
     else if (auto pix = dynamic_cast<QGraphicsPixmapItem*>(item))
         capturePixmapItem(rec, pix, imgs);
+    else if (auto datum = dynamic_cast<QGIDatumLabel*>(item)) {
+        // the frame of a theoretically exact dimension; the value
+        // itself is a child text item
+        if (datum->isFramed()) {
+            QPen pen;
+            pen.setWidthF(datum->getLineWidth());
+            pen.setColor(datum->getDimText()->defaultTextColor());
+            captureFrameRect(rec, item, item->boundingRect(), pen);
+        }
+    }
     QList<QGraphicsItem*> children = item->childItems();
     std::stable_sort(children.begin(), children.end(),
                      [](const QGraphicsItem* a, const QGraphicsItem* b) {
@@ -1572,7 +1664,11 @@ void PageFeed::feedViewPart(TechDraw::DrawViewPart* dvp, Page2D& out,
         vp ? vp->VertexScale.getValue() : TechDraw::Preferences::vertexScale();
     const double lineWidthMm = vp ? vp->lineWidthScaled() : 0.42;
     const bool showVerts = !dvp->CoarseView.getValue() && frames;
-    const bool showCenters = vp && vp->ArcCenterMarks.getValue();
+    // QGIViewPart::showCenterMarks: with frames off, only if they print
+    const bool showCenters = vp && vp->ArcCenterMarks.getValue()
+        && (frames
+            || TechDraw::Preferences::getPreferenceGroup("Decorations")
+                   ->GetBool("PrintCenterMarks", false));
     const uint32_t vertexColor = vp
         ? packColor(PreferencesGui::getAccessibleQColor(
               PreferencesGui::vertexQColor()))
@@ -1584,15 +1680,18 @@ void PageFeed::feedViewPart(TechDraw::DrawViewPart* dvp, Page2D& out,
         const float vy = oy + (float)Rez::guiX(vert->y());
         if (vert->isCenter()) {
             if (showCenters) {
-                const float half = (float)Rez::guiX(
-                    lineWidthMm * vertexScale * vp->CenterScale.getValue()
-                    / 2.0);
+                // QGICMark: each arm is as long as the size it is given
+                // (the cross is twice that across), in the centre mark
+                // colour, which is a preference of its own.
+                const float arm = (float)Rez::guiX(
+                    lineWidthMm * vertexScale * vp->CenterScale.getValue());
                 rec.beginPath();
-                rec.moveTo(vx - half, vy);
-                rec.lineTo(vx + half, vy);
-                rec.moveTo(vx, vy - half);
-                rec.lineTo(vx, vy + half);
-                rec.stroke(vertexColor, (float)Rez::guiX(lineWidthMm * 0.5));
+                rec.moveTo(vx - arm, vy);
+                rec.lineTo(vx + arm, vy);
+                rec.moveTo(vx, vy - arm);
+                rec.lineTo(vx, vy + arm);
+                rec.stroke(packColor(PreferencesGui::centerQColor()),
+                           (float)Rez::guiX(lineWidthMm * 0.5));
             }
         }
         else if (showVerts && !vert->isReference()) {
@@ -1622,10 +1721,12 @@ void PageFeed::pagePosition(const TechDraw::DrawView* view, double& x,
     }
 }
 
-void PageFeed::feedViewCapture(QGIView* qgiv, Page2D& out, uint32_t layer)
+void PageFeed::feedViewCapture(QGIView* qgiv, Page2D& out, uint32_t layer,
+                               float hairline)
 {
     if (!qgiv)
         return;
+    HairlineScope scope(hairline);
     TechDraw::DrawView* feature = qgiv->getViewObject();
     const char* name = feature ? feature->getNameInDocument() : nullptr;
     if (!name)
@@ -1656,10 +1757,12 @@ void PageFeed::feedViewCapture(QGIView* qgiv, Page2D& out, uint32_t layer)
                 std::move(rec));
 }
 
-void PageFeed::feedViewDecorations(QGIView* qgiv, Page2D& out, uint32_t layer)
+void PageFeed::feedViewDecorations(QGIView* qgiv, Page2D& out, uint32_t layer,
+                                   float hairline)
 {
     if (!qgiv)
         return;
+    HairlineScope scope(hairline);
     TechDraw::DrawView* feature = qgiv->getViewObject();
     const char* name = feature ? feature->getNameInDocument() : nullptr;
     if (!name)
@@ -1671,9 +1774,21 @@ void PageFeed::feedViewDecorations(QGIView* qgiv, Page2D& out, uint32_t layer)
     imgs.name = name;
     imgs.tag = 'j';
     if (qgiv->isVisible()) {
-        for (QGraphicsItem* child : qgiv->childItems()) {
-            if (dynamic_cast<QGIDecoration*>(child))
-                captureItemTree(child, rec, qgiv, &imgs);
+        // Everything that is not fed from App data or under an id of
+        // its own: the decorations, and the frame, label, caption and
+        // lock every view has (the lock is a child of the frame).
+        // Nested views are left out by the walker.
+        QList<QGraphicsItem*> children = qgiv->childItems();
+        std::stable_sort(children.begin(), children.end(),
+                         [](const QGraphicsItem* a, const QGraphicsItem* b) {
+                             return a->zValue() < b->zValue();
+                         });
+        for (QGraphicsItem* child : children) {
+            if (dynamic_cast<QGIPrimPath*>(child)          // feedViewPart
+                || dynamic_cast<QGIMatting*>(child)        // below
+                || dynamic_cast<QGraphicsPixmapItem*>(child)) // the underlay
+                continue;
+            captureItemTree(child, rec, qgiv, &imgs);
         }
     }
     purgeCapturedImages(out, imgs);
@@ -1696,6 +1811,81 @@ void PageFeed::feedViewDecorations(QGIView* qgiv, Page2D& out, uint32_t layer)
     purgeCapturedImages(out, imgs);
     out.setItem(itemId(name, 'm', 0), Page2D::Kind::Annotation, layer,
                 std::move(mrec));
+}
+
+void PageFeed::feedViewState(QGIView* qgiv, Page2D& out, uint32_t layer,
+                             float hairline)
+{
+    if (!qgiv)
+        return;
+    HairlineScope scope(hairline);
+    TechDraw::DrawView* feature = qgiv->getViewObject();
+    const char* name = feature ? feature->getNameInDocument() : nullptr;
+    if (!name)
+        return;
+    if (!dynamic_cast<TechDraw::DrawViewPart*>(feature)) {
+        // all of it is a capture, and a capture reads the colours of now
+        feedViewCapture(qgiv, out, layer, hairline);
+        return;
+    }
+    feedViewDecorations(qgiv, out, layer, hairline);
+
+    // The geometry feedViewPart drew from App data is in its normal
+    // colours. What is preselected or selected is laid over it, read
+    // off the Qt items: a face as the last of the faces -- over the
+    // fills and the shaded underlay, under the hatch lines and the
+    // edges, which is as far as the Qt tier raises it
+    // (QGIFace::raiseForHighlight) -- an edge over the
+    // edges, a vertex over the vertices.
+    Page2D::Recorder faces, edges, vertices;
+    if (qgiv->isVisible()) {
+        for (QGraphicsItem* child : qgiv->childItems()) {
+            auto prim = dynamic_cast<QGIPrimPath*>(child);
+            if (!prim || !prim->isPretty() || !child->isVisible())
+                continue;
+            if (dynamic_cast<QGIFace*>(child))
+                capturePrimPath(faces, prim);
+            else if (dynamic_cast<QGIVertex*>(child))
+                capturePrimPath(vertices, prim);
+            else
+                capturePrimPath(edges, prim);
+        }
+    }
+    // Removed and set again, not replaced: an item replaced keeps its
+    // place in the draw order of its kind, and geometry fed since then
+    // would be drawn over it.
+    auto lay = [&](char tag, Page2D::Kind kind, Page2D::Recorder& rec) {
+        const Page2D::ItemId id = itemId(name, tag, 0);
+        if (out.hasItem(id))
+            out.removeItem(id);
+        if (!rec.empty())
+            out.setItem(id, kind, layer, std::move(rec));
+    };
+    lay('F', Page2D::Kind::Face, faces);
+    lay('E', Page2D::Kind::Edge, edges);
+    lay('V', Page2D::Kind::Vertex, vertices);
+}
+
+namespace {
+
+void uniteExtent(const QGraphicsItem* item, const QGraphicsItem* root,
+                 QRectF& extent)
+{
+    if (item != root && dynamic_cast<const QGIView*>(item))
+        return;
+    extent |= item->sceneBoundingRect();
+    for (const QGraphicsItem* child : item->childItems())
+        uniteExtent(child, root, extent);
+}
+
+} // namespace
+
+QRectF PageFeed::sceneExtent(QGIView* qgiv)
+{
+    QRectF extent;
+    if (qgiv)
+        uniteExtent(qgiv, qgiv, extent);
+    return extent;
 }
 
 void PageFeed::feedTemplate(TechDraw::DrawPage* page, Page2D& out,
@@ -1762,6 +1952,11 @@ void PageFeed::feedTemplate(TechDraw::DrawPage* page, Page2D& out,
     Page2D::Recorder rec;
     rec.image(image, 0.0f, (float)-sheetH, (float)sheetW, (float)sheetH);
     out.setItem(item, Page2D::Kind::Face, 0, std::move(rec));
+}
+
+bool PageFeed::hasTemplate(const Page2D& out)
+{
+    return out.hasImage(itemId("__page_template", 'i', 0));
 }
 
 void PageFeed::feedPage(TechDraw::DrawPage* page, Page2D& out)

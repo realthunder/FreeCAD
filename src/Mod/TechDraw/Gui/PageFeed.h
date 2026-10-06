@@ -32,6 +32,8 @@
 
 #include <cstdint>
 
+#include <QRectF>
+
 #include <Mod/TechDraw/TechDrawGlobal.h>
 
 namespace TechDraw {
@@ -71,6 +73,15 @@ public:
         float deflection = 0.5f;
     };
 
+    /// What the Qt-side tiers make of a pen of width 0 -- Qt's cosmetic
+    /// pen, one device pixel wide at any zoom, which a view's frame and
+    /// a balloon's leader are drawn with. Render::Page2D draws a stroke
+    /// of width 0 exactly so, and a host that draws with it asks for 0.
+    /// The default is a page width instead, 3.5 Rez units (the ISO
+    /// 0.35 mm line), for the page that is streamed: a viewer built
+    /// before the engine knew the hairline draws width 0 as nothing.
+    static constexpr float PageHairline = 3.5f;
+
     /// Feed every DrawViewPart of the page, and the template. Item ids
     /// derive from the view's document name, so re-feeding an edited
     /// view damages only its items. Views land on layers >= 1; layer 0
@@ -89,6 +100,9 @@ public:
     /// stable and the sheet always draws on layer 0, below every view.
     static void feedTemplate(TechDraw::DrawPage* page, Render::Page2D& out,
                              float rasterScale);
+    /// Whether feedTemplate left a picture of the template on the page
+    /// (it leaves none of a page with no SVG template).
+    static bool hasTemplate(const Render::Page2D& out);
 
     /// Where a view sits on the page, in mm with +Y up. Not always its
     /// own X/Y: those of a projection group's item are relative to the
@@ -111,15 +125,37 @@ public:
     /// own ids). A hidden view records an empty item, clearing stale
     /// content.
     static void feedViewCapture(QGIView* qgiv, Render::Page2D& out,
-                                uint32_t layer);
+                                uint32_t layer,
+                                float hairline = PageHairline);
 
-    /// The decorations a part view carries as Qt-side children with no
-    /// App-side geometry (section lines, detail highlights, view center
-    /// lines): captured like feedViewCapture but restricted to
-    /// QGIDecoration children -- everything else of a part view is fed
-    /// from App data by feedViewPart.
+    /// What a part view carries as Qt-side children with no App-side
+    /// geometry: the decorations (section lines, detail highlights,
+    /// view center lines) and the view's own frame, label, caption and
+    /// lock. Captured like feedViewCapture, leaving out what
+    /// feedViewPart feeds from App data (edges, vertices, faces, the
+    /// shaded underlay).
     static void feedViewDecorations(QGIView* qgiv, Render::Page2D& out,
-                                    uint32_t layer);
+                                    uint32_t layer,
+                                    float hairline = PageHairline);
+
+    /// What a view shows of its STATE -- preselected, selected, a frame
+    /// that follows the mouse -- for a host that draws the page alone,
+    /// its Qt items not painting (QGVPage with the backend's page
+    /// layer). Everything captured is captured again in the colours it
+    /// has now; for a part view, the edges, vertices and faces that
+    /// are in the preselect or select colours are laid over the ones
+    /// feedViewPart drew from App data, faces under the edges. Cheap:
+    /// no geometry is computed. A host that mirrors the page somewhere
+    /// else (PageServe) does not call this: nothing would tell it when
+    /// the state ends.
+    static void feedViewState(QGIView* qgiv, Render::Page2D& out,
+                              uint32_t layer, float hairline = PageHairline);
+
+    /// The scene rectangle of everything the Qt-side tiers read of a
+    /// view, hidden items included (one shown later is inside it),
+    /// nested views left out (they are views of their own). A change
+    /// of the scene outside it cannot change what the view fed.
+    static QRectF sceneExtent(QGIView* qgiv);
 };
 
 } // namespace TechDrawGui

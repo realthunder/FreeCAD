@@ -73,6 +73,7 @@ QColor QGICMark::getCMarkColor()
 }
 
 void QGICMark::setPrettyNormal() {
+    m_pretty = false;
     m_colCurrent = getCMarkColor();
     update();
 }

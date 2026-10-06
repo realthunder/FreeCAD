@@ -79,6 +79,7 @@ void QGIEdge::setHiddenEdge(bool b) {
 }
 
 void QGIEdge::setPrettyNormal() {
+    m_pretty = false;
     if (isHiddenEdge) {
         m_colCurrent = getHiddenColor();
     } else {

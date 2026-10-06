@@ -2540,18 +2540,160 @@ viewport's painter, whose pen is the palette's text colour.
   diameter).
 
 **Still open.**
-- The layer is under the Qt items and the Qt items still paint: the page is
-  drawn twice, and translucent antialiased strokes blended twice look
-  bolder. Making the backend's picture the only one -- Qt items kept for
-  the mouse, not painted where the layer covers them -- is the interactive
-  integration section 16 left for later, and is not designed.
-- Views inside a `DrawViewClip`: positions relative to the clip, and no
-  clipping in the layer.
-- A GL viewport has no multisampling, so on an OpenGL session the Qt items
-  over the layer are aliased (the constructor's "rotten quality").
+- ~~The layer is under the Qt items and the Qt items still paint: the page
+  is drawn twice.~~ Closed by section 37.
+- ~~Views inside a `DrawViewClip`: positions relative to the clip, and no
+  clipping in the layer.~~ Section 37: a clip group is Qt's, whole.
+- A GL viewport has no multisampling, so on an OpenGL session whatever Qt
+  still paints over the layer is aliased (the constructor's "rotten
+  quality"). Since section 37 that is little: template fields, a clip
+  group, a tracker.
 
 `tests/gui/techdraw-page-backend-switch.py` covers the switch and the
 picture; a `QWidget.grab()` cannot read a GL viewport and
 `grabFramebuffer()` renders first, which discards what was painted, so the
 test reads the layer through the raster path (`PageRendererVgComposite`
 off) on every session and only switches on the composite one.
+
+## 37. Implementation status (2026-10-06): the page drawn once
+
+With `PageRendererVg` on, the backend's layer went under the Qt items and
+every Qt item was painted over it all the same: each line and each letter
+twice, bolder for it, and a paint that cost both. Decided by the reporter
+(docs/HandsOnQueue.md entry 20): the backend's picture is the one that
+stays; the Qt items stop painting what it holds and go on taking the
+mouse.
+
+**Who paints what.** The scene is untouched -- every item is still in it,
+visible, hit-tested, hovered, selected, dragged. What changed is the page
+view's paint. While the layer is on, `QGVPage` sets
+`QGraphicsView::IndirectPainting`, which makes Qt hand the items to
+`QGVPage::drawItems` instead of painting them itself, and that one function
+decides:
+
+| item | painted by |
+|---|---|
+| a view the layer was fed, and everything under it | the layer |
+| the template's picture (an SVG template) | the layer |
+| the template's fields, a parametric template | Qt |
+| a clip group (`DrawViewClip`) and what is in it | Qt, whole: children, clipping and all |
+| a tracker, a ghost, anything top-level that is not a view | Qt |
+| a view the layer has not been fed yet | Qt |
+| the rubber band, the grid | Qt (the view's own, not items) |
+
+If the layer did not reach the page in a paint -- no device, a frame that
+failed, the first paint after the switch -- `drawItems` paints every item:
+the page is never empty. Nothing is keyed on the items themselves, so a
+print, an SVG or PDF export, or another view of the same scene paints as
+before.
+
+`PageRendererVgVerify` (default off) paints the Qt items over the layer
+again, which is how the layer was first looked at: where the two pictures
+differ the page shows both.
+
+**What the layer had to learn.** With Qt painting over it, the layer never
+had to show what only Qt items drew. Now it does:
+
+- *Frames, labels, captions, locks.* `PageFeed::feedViewDecorations` takes
+  every child of a part view that is not fed from App data (edges,
+  vertices, faces, the shaded underlay) or under an id of its own (the
+  matting): the decorations as before, and now the view's frame, label,
+  caption and lock. The streamed page gets them too.
+- *Preselected and selected.* `PageFeed::feedViewState`: a capture is
+  taken again in the colours its items have now; for a part view, whose
+  geometry comes from App data in its normal colours, the edges, vertices
+  and faces that are in the highlight colours (`QGIPrimPath::isPretty`)
+  are laid over it, read off the Qt items -- a face as the last of the
+  faces, under the hatch lines and the edges, as
+  `QGIFace::raiseForHighlight` has it. No geometry is computed. Only the
+  page view calls it: a page mirrored elsewhere would never be told when
+  the state ends.
+- *What an item settles in its own paint.* A dimension and a balloon set
+  their line widths in `paint()`, a center line and a break line their
+  pens. An item that is never painted never did; the capture runs each
+  group's `paint()` on a painter nobody looks at before it reads the
+  children.
+- *What an item draws by hand.* The frame of a theoretically exact
+  dimension (`QGIDatumLabel`), the box of a leader's text (`QGMText`), the
+  dashed rectangle round a preselected symbol (`QGCustomSvg`): none was a
+  child item, so none was captured. They are now.
+- *Centre marks* were half Qt's size, in the vertex colour, and drawn
+  with frames off where Qt hides them unless they print.
+
+**When the state is fed again.** A hover or a selection changes Qt items
+and nothing in the document. `QGVPage` listens to
+`QGraphicsScene::changed`, which says where; each tracked view keeps the
+scene rectangle of everything its feed reads, hidden items included
+(`PageFeed::sceneExtent`), and a change inside it marks the view for a
+state feed at the next paint. A view carried along by the view it sits on
+(a dimension, when its part view is dragged) is caught by comparing its
+scene position, since no X/Y of its own changes. An idle page feeds
+nothing; a hover feeds one view once on the way in and once on the way
+out.
+
+**Hairlines and thin strokes (the engine).** Two things only showed once
+Qt stopped painting over the layer:
+- A view's frame is drawn with Qt's cosmetic pen: width 0, one device
+  pixel at any zoom. The capture turned that into a 0.35 mm stroke, which
+  is a pixel at the size of a sheet on screen and five when zoomed in.
+- vg fades a stroke narrower than a pixel with the SQUARE of its width.
+  Dimension lines at a sheet's width on screen are a third of a pixel:
+  they came out at a tenth of their weight where Qt draws a third.
+
+`Render::Page2D` now never draws a stroke narrower than one device pixel.
+Width 0 is a hairline in full colour; a stroke that comes out narrower
+than a pixel is drawn a pixel wide and as much lighter as it is narrower.
+Both depend on the zoom band, so an item that has such strokes is
+recorded again when the band changes (it would be tessellated again
+anyway). `QGVPage` asks the capture for width 0; the streamed page still
+gets the 0.35 mm width (`PageFeed::PageHairline`), because a viewer built
+before this draws width 0 as nothing -- to change together with a viewer
+rebuild.
+
+**Measured**, 668 x 630, Direct3D 11, a full paint of four pages of a
+real document (`scanner.FCStd`), in ms: Qt-painted / the layer alone /
+both, as it was:
+
+| page | items | Qt | layer alone | both |
+|---|---|---|---|---|
+| Page | 659 | 6.3 | 5.2 | 10.8 |
+| Page001 | 396 | 3.6 | 4.5 | 7.9 |
+| Page002 | 162 | 3.5 | 5.6 | 6.5 |
+| Page003 | 872 | 8.3 | 6.6 | 17.2 |
+
+Of each page's items Qt still paints 25: the template's group and its 24
+fields. The layer alone costs about what Qt costs -- less on a full page,
+more on a sparse one, where the 3 ms of the read-back (section 36) is
+most of it.
+
+**The mouse**, by events sent to the viewport, the same steps with the
+layer on and off: hovering an edge preselects it and the frame; a click
+selects `Edge0`, a click on the sheet clears; a press on a face selects
+`Face0`; the view dragged by its label 40 mm right and 20 up ends at the
+same X/Y (160.22, 119.70 from 120, 100) with its picture at the same
+place. Identical selection at every step, and the highlight colours on
+the page in both.
+
+On an OpenGL session (`FC_BGFX_D3D11=0`) the layer is composited in a GL
+viewport and the same test passes there, read through the raster path as
+section 36 has it.
+
+**Still different from the Qt page.**
+- Text is drawn in the fonts TechDraw ships; any other family comes out
+  in osifont (section 16). With Qt painting on top that was hidden.
+- The template is a raster, capped at twice the SVG's own size: it stops
+  sharpening when zoomed far in, where Qt's stays vector.
+- A frame's dashes grow with the zoom (the line stays a hairline): Qt
+  counts a cosmetic pen's dashes in device pixels.
+- Vertex dots are a little smaller than Qt's, which strokes them as well
+  as fills them.
+- A template colourized for a dark sheet (`QGraphicsColorizeEffect` on
+  the SVG item) is not in the raster.
+`tests/gui/techdraw-page-backend-single-draw.py`, 17 claims: the items
+are left to the layer; no ink of either picture away from the other's
+and about as much of it; the verify switch gives another, heavier
+picture (the control: without it "drawn once" could not fail); a
+selected and a preselected edge are in their colours with the Qt items
+still not painting, and the page is back pixel for pixel when they end;
+nothing is fed while nothing happens; a group moved leaves nothing
+behind.

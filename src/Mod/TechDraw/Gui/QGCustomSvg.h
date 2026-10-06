@@ -62,6 +62,11 @@ public:
     void setPrettySel();
     void setPreselect(bool enable);
 
+    /// The dashed rectangle paint() draws round the image while it is
+    /// preselected or selected (Qt::NoPen otherwise): what the 2D page
+    /// capture (PageFeed) reads.
+    QPen framePen() const { return m_pen; }
+
 protected:
     QSvgRenderer *m_svgRender;
     bool m_hasHover = false;
