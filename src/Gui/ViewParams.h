@@ -34,7 +34,7 @@ import ViewParams
 ViewParams.declare_begin()
 ]]]*/
 
-// Auto generated code (Gui/ViewParams.py:632)
+// Auto generated code (Gui/ViewParams.py:639)
 #include <QString>
 
 // Auto generated code (Tools/params_utils.py:82)
@@ -833,6 +833,23 @@ public:
     static void removePerViewEdit();
     static void setPerViewEdit(const bool &v);
     static const char *docPerViewEdit();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter PerViewSelection
+    ///
+    /// Give every view a selection of its own. What is selected in one view
+    /// is then selected, highlighted and acted on in that view only, and the
+    /// tree shows the selection of the active view. When off, the views share
+    /// one selection, and a view selects on its own only while it is in an
+    /// edit or has a task panel open. Takes effect for views opened
+    /// afterwards.
+    static const bool & getPerViewSelection();
+    static const bool & defaultPerViewSelection();
+    static void removePerViewSelection();
+    static void setPerViewSelection(const bool &v);
+    static const char *docPerViewSelection();
     //@}
 
     // Auto generated code (Tools/params_utils.py:139)
@@ -2356,7 +2373,7 @@ public:
     static const char *docDatumTemporaryScaleFactor();
     //@}
 
-    // Auto generated code (Gui/ViewParams.py:638)
+    // Auto generated code (Gui/ViewParams.py:645)
     static const std::vector<QString> AnimationCurveTypes;
 
     static void onViewParamChanged(const char *sReason);
@@ -2387,7 +2404,7 @@ ViewParams.declare_end()
 }; // class ViewParams
 } // namespace Gui
 
-// Auto generated code (Gui/ViewParams.py:651)
+// Auto generated code (Gui/ViewParams.py:658)
 namespace Gui {
 /// Obtain all display style names, terminated by nullptr entry.
 GuiExport const char **drawStyleNames();

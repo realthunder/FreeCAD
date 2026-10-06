@@ -23,6 +23,7 @@
 #ifndef GUI_MDIVIEW_H
 #define GUI_MDIVIEW_H
 
+#include <memory>
 #include <fastsignals/signal.h>
 #include <QMainWindow>
 #include <Gui/ActiveObjectList.h>
@@ -40,6 +41,7 @@ class MainWindow;
 class ViewProvider;
 class ViewProviderDocumentObject;
 class MDIViewPy;
+class SelectionSingleton;
 
 /** Base class of all windows belonging to a document.
  * There are two ways of belonging to a document:
@@ -198,7 +200,44 @@ protected:
     /** \internal */
     void changeEvent(QEvent *e) override;
 
+public:
+    /** @name This view's own selection (docs/TaskPanelPerView.md sec 12)
+     *
+     * The views of the main window share one selection instance, the
+     * room, until one of them has a reason to select on its own: it is in
+     * an edit, or it owns a task dialog. For as long as it has, what is
+     * picked in it, what a dialog's gate lets through, and what the tree
+     * and the commands do while it is the active view are its own, and
+     * the other views are not disturbed. With the preference
+     * PerViewSelection every view has its own from the start.
+     */
+    //@{
+    /// The instance this view selects into, or null while it shares the room
+    SelectionSingleton *selectionInstance() const
+    { return ownSelection.get(); }
+    /** Take an instance of this view's own. Counted: every take is given
+     * back with releaseOwnSelection(). The first one makes the instance,
+     * as a copy of what is selected in the room -- an edit and a dialog
+     * start on the selection their user had.
+     */
+    void takeOwnSelection();
+    /** Give one take back. The last one hands what is selected here back
+     * to the room and ends the instance.
+     */
+    void releaseOwnSelection();
+    /// Make the active view's instance the one that is current while no
+    /// scope is open (SelectionSingleton::setAmbient)
+    static void updateAmbientSelection();
+    //@}
+
 private:
+    /// Tell the viewers of this view, and the ambient instance
+    void selectionInstanceChanged();
+    std::unique_ptr<SelectionSingleton> ownSelection;
+    int ownSelectionTakes = 0;
+    /// Its own for good (PerViewSelection), not for the length of a take
+    bool ownSelectionKept = false;
+
     ViewMode currentMode;
     Qt::WindowStates wstate;
     // list of active objects of this view

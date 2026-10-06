@@ -1090,13 +1090,16 @@ QTreeWidgetItem *TreeWidget::contextItem;
 
 TreeWidget::TreeWidget(const char *name, QWidget* parent)
     : QTreeWidget(parent)
-    , SelectionObserver(true, ResolveMode::NoResolve)
+    , SelectionObserver(false, ResolveMode::NoResolve)
     , searchObject(nullptr)
     , searchDoc(nullptr)
     , searchContextDoc(nullptr)
     , editingItem(nullptr)
     , myName(name)
 {
+    // The selection of the view the user is working in, whatever scope
+    // happens to be open while the tree is built.
+    this->followSelection();
     if (TreeParams::getItemBackground() && _TreeItemBackground.style() == Qt::NoBrush) {
         App::Color color;
         color.setPackedValue(TreeParams::getItemBackground());

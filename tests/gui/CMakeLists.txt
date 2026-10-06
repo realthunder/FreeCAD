@@ -1284,3 +1284,11 @@ fc_add_gui_test(GuiTaskPanelOwner_tests_run task-panel-owner.py
 # whichever view is active when the queue runs.
 fc_add_gui_test(GuiDraftPanelOwner_tests_run draft-panel-owner.py
                 --timeout 180)
+
+# A view that is editing, or that owns a task dialog, selects into an
+# instance of its own (docs/TaskPanelPerView.md sec 12): what is picked
+# or gated there stays out of the other views, the tree and a global
+# observer follow the active view, the highlight is drawn in the one
+# view, and what the edit leaves selected is handed back at its end.
+fc_add_gui_test(GuiSelectionPerView_tests_run selection-per-view.py
+                --timeout 240)

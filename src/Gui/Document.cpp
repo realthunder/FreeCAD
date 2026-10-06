@@ -75,6 +75,7 @@
 #include "MDIView.h"
 #include "NotificationArea.h"
 #include "Selection.h"
+#include "TaskOwner.h"
 #include "Thumbnail.h"
 #include "Tree.h"
 #include "View3DInventor.h"
@@ -141,6 +142,8 @@ struct DocumentP
     std::string                 _editSubElement;
     Base::Matrix4D              _editingTransform;
     ViewerContext*              _editingViewer;
+    /// The view that took a selection instance of its own for the edit
+    QPointer<MDIView>           _editSelectionView;
     std::set<const App::DocumentObject*> _editObjs;
 
     std::vector<CameraInfo>     _savedViews;
@@ -732,8 +735,34 @@ bool Document::setEdit(Gui::ViewProvider* p, int ModNum, const char *subname)
     // may be left to meet it.
     if (d->_editRoot)
         d->_editRoot->endSession();
+
+    // The view the edit starts in selects into an instance of its own
+    // from here to the edit's end (docs/TaskPanelPerView.md sec 12), and
+    // the edit is STARTED in it: the observers an edit mode builds as it
+    // starts attach to the instance that is current, and what it does to
+    // the selection on its way in is done to that one. A client's view has
+    // had its own all along, made current by its scope.
+    std::optional<SelectionScope> editSelection;
+    if (MDIView *selView = d->_editSelectionView) {
+        // Left behind by an edit that did not end the usual way
+        d->_editSelectionView = nullptr;
+        selView->releaseOwnSelection();
+    }
+    if (editViewer) {
+        if (MDIView *selView = TaskOwner(editViewer).mdiView()) {
+            selView->takeOwnSelection();
+            d->_editSelectionView = selView;
+        }
+        if (SelectionSingleton *sel = editViewer->selectionInstance())
+            editSelection.emplace(*sel);
+    }
+
     d->_editViewProvider = svp->startEditing(ModNum);
     if(!d->_editViewProvider) {
+        if (MDIView *selView = d->_editSelectionView) {
+            d->_editSelectionView = nullptr;
+            selView->releaseOwnSelection();
+        }
         // Refused, and whatever it swapped on the way goes with it
         if (d->_editRoot)
             d->_editRoot->endSession();
@@ -988,6 +1017,12 @@ void Document::_resetEdit()
     d->_editObjs.clear();
     d->_editingObject = nullptr;
     d->_editRootNode.reset();
+    // The edit's view gives its selection back: what the edit left
+    // selected goes to the room, as its user expects to find it.
+    if (MDIView *selView = d->_editSelectionView) {
+        d->_editSelectionView = nullptr;
+        selView->releaseOwnSelection();
+    }
     if(Application::Instance->editDocument() == this)
         Application::Instance->setEditDocument(nullptr);
 }

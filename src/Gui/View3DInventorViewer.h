@@ -235,6 +235,18 @@ public:
 
     /// Observer message from the Selection
     void onSelectionChanged(const SelectionChanges &Reason) override;
+    /** The selection this view selects into, when it has one of its own
+     *
+     * Its MDI view's (MDIView::selectionInstance); null while that shares
+     * the room.
+     */
+    SelectionSingleton* selectionInstance() const override;
+    /** Hear the selection this view selects into, and draw that one
+     *
+     * The session's while it is in an edit, else its own, else the room.
+     * Called whenever one of those changes.
+     */
+    void syncSelectionInstance();
 
     void checkGroupOnTop(const SelectionChanges &Reason, bool alt=false);
     void refreshGroupOnTop();
@@ -523,6 +535,7 @@ protected:
     /// selectionRoot, so an edit never reaches the main scene feed and is
     /// captured separately (editingCapture).
     void hangEditingRoot(EditingRoot* root, bool hang) override;
+    void sessionSelectionChanged() override;
 
 public:
     void setEditingCursor (const QCursor& cursor);

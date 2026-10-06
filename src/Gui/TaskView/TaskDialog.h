@@ -135,6 +135,15 @@ public:
     { return true; }
     virtual bool needsFullSpace() const
     { return false; }
+    /*!
+      Whether the view this dialog is shown for selects into an instance of
+      its own while the dialog is open (docs/TaskPanelPerView.md sec 12):
+      what is picked for the dialog, and the gate it sets, then stay out of
+      the other views. A dialog that works on the selection every view
+      shares says false.
+    */
+    virtual bool usesOwnSelection() const
+    { return true; }
 
 public:
     /// is called by the framework when the dialog is opened

@@ -247,7 +247,8 @@ void PropertyView::hideEvent(QHideEvent *ev) {
 }
 
 void PropertyView::showEvent(QShowEvent *ev) {
-    this->attachSelection();
+    // The selection of the view the user is working in
+    this->followSelection();
     this->timer->start(ViewParams::getPropertyViewTimer());
     QWidget::showEvent(ev);
 }

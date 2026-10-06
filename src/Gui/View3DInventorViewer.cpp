@@ -1649,7 +1649,10 @@ void View3DInventorViewer::init()
     fpsEnabled = false;
     vboEnabled = false;
 
-    attachSelection();
+    // The selection this view selects into is the one it draws: its own
+    // when its MDI view has one, else the room. Never a follower of the
+    // active view, and not whatever a scope has current while it is built.
+    syncSelectionInstance();
 
     // Coin should not clear the pixel-buffer, so the background image
     // is not removed.
@@ -6947,12 +6950,20 @@ bool View3DInventorViewer::processSoEvent(const SoEvent* ev)
 
     // In an edit session every event is handled AS this view, so that
     // what it selects lands in the SESSION's instance (docs/ThinClient.md
-    // 8.11): the room for a session the desktop started, which is what
-    // Gui::Selection() answered here anyway, and the initiating client's
-    // own for one a browser started, where the tool state machine listens.
+    // 8.11): the initiating view's own, where the tool state machine
+    // listens. Outside one, what is picked here is still THIS view's --
+    // its own instance when it has one, else the room -- whichever view
+    // is the active one: a hover over a view the user is not working in
+    // must not land in the selection of the one they are
+    // (docs/TaskPanelPerView.md sec 12).
     std::optional<ViewerScope> sessionScope;
+    std::optional<SelectionScope> ownScope;
     if (editViewProvider) {
         sessionScope.emplace(this);
+    }
+    else {
+        SelectionSingleton* own = selectionInstance();
+        ownScope.emplace(own ? *own : SelectionRoom());
     }
 
     if (naviCubeEnabled && naviCube->processSoEvent(ev)) {
@@ -8926,6 +8937,28 @@ void View3DInventorViewer::setCursorRepresentation(int modearg)
         assert(0);
         break;
     }
+}
+
+SelectionSingleton* View3DInventorViewer::selectionInstance() const
+{
+    for (QWidget* w = parentWidget(); w; w = w->parentWidget()) {
+        if (auto view = qobject_cast<MDIView*>(w)) {
+            return view->selectionInstance();
+        }
+    }
+    return nullptr;
+}
+
+void View3DInventorViewer::syncSelectionInstance()
+{
+    SelectionSingleton* sel = sessionSelectionInstance();
+    bindSelection(sel ? *sel : SelectionRoom());
+}
+
+void View3DInventorViewer::sessionSelectionChanged()
+{
+    syncSelectionInstance();
+    MDIView::updateAmbientSelection();
 }
 
 void View3DInventorViewer::hangEditingRoot(EditingRoot* root, bool hang)

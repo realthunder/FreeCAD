@@ -113,6 +113,7 @@ SelectionObserver::SelectionObserver(const ViewProviderDocumentObject *vp, bool 
 
 SelectionObserver::~SelectionObserver()
 {
+    home = nullptr;
     detachSelection();
 }
 
@@ -133,18 +134,145 @@ bool SelectionObserver::isSelectionAttached() const
     return connectSelection.connected();
 }
 
+namespace {
+/// Every observer that is attached or has been given a home: who to move
+/// when the active view changes, and who to let go of when an instance
+/// ends. A handful to a few dozen, so a vector.
+std::vector<SelectionObserver*> &knownObservers()
+{
+    // Never destroyed: an observer with static storage may be destroyed
+    // after any static of this file.
+    static auto observers = new std::vector<SelectionObserver*>;
+    return *observers;
+}
+
+bool isKnown(const SelectionObserver *observer)
+{
+    auto &all = knownObservers();
+    return std::find(all.begin(), all.end(), observer) != all.end();
+}
+
+void makeKnown(SelectionObserver *observer)
+{
+    if (!isKnown(observer))
+        knownObservers().push_back(observer);
+}
+} // namespace
+
 void SelectionObserver::attachSelection()
 {
-    // The room, not the current instance: an observer outlives any scope
-    // that happens to be open while it is built, and what a mirror picks
-    // must not drive the room's panels. docs/ThinClient.md section 8.4.
-    // An observer that belongs to one client's edit session says so with
-    // attachSelectionToCurrent() instead.
-    attachTo(SelectionRoom());
+    if (connectSelection.connected())
+        return;
+    if (home) {
+        following = false;
+        attachTo(*home);
+        return;
+    }
+    // An instance a scope made current, when it is some view's own: the
+    // observer is being built for that view -- inside its edit's start,
+    // inside one of a client's events -- and stays with it. The room is
+    // not such an instance: under it, and with no scope open, an observer
+    // follows the active view. docs/TaskPanelPerView.md sec 12.
+    SelectionSingleton &current = Selection();
+    if (SelectionSingleton::scoped() && &current != &SelectionRoom()) {
+        following = false;
+        attachTo(current);
+        return;
+    }
+    followSelection();
+}
+
+void SelectionObserver::followSelection()
+{
+    if (connectSelection.connected() && following)
+        return;
+    SelectionSingleton &to = SelectionSingleton::ambient();
+    const bool moved = connectSelection.connected() && observed != &to;
+    if (moved)
+        detachSelection();
+    following = true;
+    attachTo(to);
+    if (moved)
+        tellSelection(to);
+}
+
+void SelectionObserver::bindSelection(SelectionSingleton &sel)
+{
+    following = false;
+    if (connectSelection.connected() && observed == &sel)
+        return;
+    const bool moved = connectSelection.connected();
+    if (moved)
+        detachSelection();
+    attachTo(sel);
+    if (moved)
+        tellSelection(sel);
+}
+
+void SelectionObserver::adoptSelection(SelectionSingleton &sel)
+{
+    home = &sel;
+    makeKnown(this);
+    if (connectSelection.connected())
+        bindSelection(sel);
+}
+
+void SelectionObserver::tellSelection(SelectionSingleton &sel)
+{
+    // What it knew is another instance's. "Read the selection again" is
+    // what an observer is already told when too many changes pile up, so
+    // it is the one message every kind of observer has an answer to.
+    SelectionScope scope(sel);
+    _onSelectionChanged(SelectionChanges(SelectionChanges::RmvPreselect));
+    _onSelectionChanged(SelectionChanges(SelectionChanges::SetSelection));
+}
+
+void SelectionObserver::ambientChanged(SelectionSingleton &from, SelectionSingleton &to)
+{
+    // A copy: an observer told to read again may attach or detach others
+    const std::vector<SelectionObserver*> all = knownObservers();
+    for (SelectionObserver *observer : all) {
+        if (!isKnown(observer) || !observer->following || observer->observed != &from)
+            continue;
+        observer->connectSelection.disconnect();
+        observer->observed = nullptr;
+        observer->attachTo(to);
+        observer->tellSelection(to);
+    }
+}
+
+void SelectionObserver::instanceGone(SelectionSingleton &dying)
+{
+    const bool room = (&dying == SelectionSingleton::_pcRoom);
+    const std::vector<SelectionObserver*> all = knownObservers();
+    for (SelectionObserver *observer : all) {
+        if (!isKnown(observer))
+            continue;
+        if (observer->home == &dying)
+            observer->home = nullptr;
+        if (observer->observed != &dying)
+            continue;
+        observer->connectSelection.disconnect();
+        observer->observed = nullptr;
+        // The room goes at shutdown and takes everything with it. An
+        // observer filtered to one object put a gate on its instance and
+        // is not handed to another to gate that. Anything else outlived
+        // the view it was built for and follows the active one.
+        if (room || !observer->filterDocName.empty()) {
+            auto &known = knownObservers();
+            known.erase(std::remove(known.begin(), known.end(), observer), known.end());
+            continue;
+        }
+        observer->following = true;
+        SelectionSingleton &to = SelectionSingleton::ambient();
+        observer->attachTo(to);
+        observer->tellSelection(to);
+    }
 }
 
 void SelectionObserver::attachSelectionToCurrent()
 {
+    following = false;
     attachTo(Selection());
 }
 
@@ -157,6 +285,7 @@ void SelectionObserver::attachTo(SelectionSingleton& sel)
 {
     if (!connectSelection.connected()) {
         observed = &sel;
+        makeKnown(this);
         bool newStyle = (resolve >= ResolveMode::NewStyleElement);
         bool oldStyle = (resolve == ResolveMode::OldStyleElement);
         auto &signal = newStyle ? sel.signalSelectionChanged3 :
@@ -202,6 +331,11 @@ void SelectionObserver::detachSelection()
             (observed ? *observed : SelectionRoom()).rmvSelectionGate();
     }
     observed = nullptr;
+    // Still known while it has a home to come back to
+    if (!home) {
+        auto &known = knownObservers();
+        known.erase(std::remove(known.begin(), known.end(), this), known.end());
+    }
 }
 
 // -------------------------------------------
@@ -544,6 +678,11 @@ void SelectionSingleton::notify(SelectionChanges &&Chng)
     NotificationRecursion = 0;
     PendingAddSelection = 0;
     Base::FlagToggler<bool> flag(Notifying);
+    // What an observer reads back while it is being told is THIS
+    // instance, whichever one happens to be current: a hover in a view
+    // that is not the active one notifies while another view's instance
+    // is, and "the selection" an observer then asks for is not that one.
+    SelectionScope notifying(*this);
     NotificationQueue.push_back(std::move(Chng));
     while(!NotificationQueue.empty()) {
         auto msg = NotificationQueue.front();
@@ -567,7 +706,11 @@ void SelectionSingleton::notify(SelectionChanges &&Chng)
             notify = true;
         }
         if(notify) {
-            Notify(msg);
+            // The observers of the old kind are attached to the room and
+            // cannot be moved: they are told of the active view's
+            // selection through it, and of no other.
+            if (this == &ambient())
+                roomInstance().Notify(msg);
             try {
                 signalSelectionChanged(msg);
             }
@@ -2149,11 +2292,98 @@ SelectionSingleton::SelectionSingleton() :
  * A destructor.
  * A more elaborate description of the destructor.
  */
-SelectionSingleton::~SelectionSingleton() = default;
+SelectionSingleton::~SelectionSingleton()
+{
+    // While it is still whole: the active view falls back to the room,
+    // and whoever listened here is let go of or follows it there.
+    if (this == _pcAmbient)
+        setAmbient(nullptr);
+    SelectionObserver::instanceGone(*this);
+    delete ActiveGate;
+    ActiveGate = nullptr;
+    // A scope still open on it is its owner's bug (retire() is how an
+    // owner avoids one); what it would return to must at least exist.
+    if (this != _pcRoom) {
+        for (auto &entry : _InstanceStack) {
+            if (entry == this)
+                entry = _pcRoom;
+        }
+        if (_pcSingleton == this)
+            _pcSingleton = _pcRoom;
+    }
+}
 
 SelectionSingleton* SelectionSingleton::_pcSingleton = nullptr;
 SelectionSingleton* SelectionSingleton::_pcRoom = nullptr;
+SelectionSingleton* SelectionSingleton::_pcAmbient = nullptr;
 std::vector<SelectionSingleton*> SelectionSingleton::_InstanceStack;
+std::vector<std::unique_ptr<SelectionSingleton>> SelectionSingleton::_Retired;
+
+SelectionSingleton& SelectionSingleton::ambient()
+{
+    return _pcAmbient ? *_pcAmbient : roomInstance();
+}
+
+bool SelectionSingleton::scoped()
+{
+    return !_InstanceStack.empty();
+}
+
+void SelectionSingleton::setAmbient(SelectionSingleton *sel)
+{
+    SelectionSingleton &room = roomInstance();
+    SelectionSingleton &from = ambient();
+    SelectionSingleton &to = sel ? *sel : room;
+    if (&from == &to)
+        return;
+    _pcAmbient = (&to == &room) ? nullptr : &to;
+    // The bottom of the stack is what is current with every scope closed
+    if (_InstanceStack.empty())
+        _pcSingleton = &to;
+    else
+        _InstanceStack.front() = &to;
+    SelectionObserver::ambientChanged(from, to);
+    // And the old kind, through the room they are attached to
+    SelectionScope scope(to);
+    room.Notify(SelectionChanges(SelectionChanges::RmvPreselect));
+    room.Notify(SelectionChanges(SelectionChanges::SetSelection));
+}
+
+bool SelectionSingleton::inScope(const SelectionSingleton *sel)
+{
+    if (_InstanceStack.empty())
+        return false;
+    if (_pcSingleton == sel)
+        return true;
+    // The bottom entry is the ambient instance, which no scope opened
+    return std::find(_InstanceStack.begin() + 1, _InstanceStack.end(), sel)
+        != _InstanceStack.end();
+}
+
+void SelectionSingleton::retire(std::unique_ptr<SelectionSingleton> sel)
+{
+    if (!sel)
+        return;
+    if (sel.get() == _pcAmbient)
+        setAmbient(nullptr);
+    if (inScope(sel.get()))
+        _Retired.push_back(std::move(sel));
+}
+
+void SelectionSingleton::copySelection(const SelectionSingleton &other)
+{
+    if (this == &other)
+        return;
+    if (_SelList.size() == other._SelList.size()
+            && getSelectionT("*", ResolveMode::NoResolve)
+                == other.getSelectionT("*", ResolveMode::NoResolve))
+        return;
+    // The entries themselves, so that a picked point comes along. Nothing
+    // of this is a user's doing, so nothing of it is logged for a macro.
+    rmvPreselect();
+    _SelList = other._SelList;
+    notify(SelectionChanges(SelectionChanges::SetSelection));
+}
 
 SelectionSingleton& SelectionSingleton::instance()
 {
@@ -2191,6 +2421,19 @@ void SelectionSingleton::popInstance(SelectionSingleton &sel)
         FC_WARN("Selection scopes closed out of order");
     _pcSingleton = _InstanceStack.back();
     _InstanceStack.pop_back();
+    // An instance given up while this scope named it can go now
+    if (!_Retired.empty()) {
+        std::vector<std::unique_ptr<SelectionSingleton>> gone;
+        for (auto it = _Retired.begin(); it != _Retired.end();) {
+            if (!inScope(it->get())) {
+                gone.push_back(std::move(*it));
+                it = _Retired.erase(it);
+            }
+            else {
+                ++it;
+            }
+        }
+    }
 }
 
 void SelectionSingleton::destruct ()
@@ -2201,6 +2444,8 @@ void SelectionSingleton::destruct ()
         FC_WARN("Selection scope still open at shutdown");
         _InstanceStack.clear();
     }
+    _Retired.clear();
+    _pcAmbient = nullptr;
     delete _pcRoom;
     _pcRoom = nullptr;
     _pcSingleton = nullptr;

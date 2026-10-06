@@ -737,6 +737,7 @@ void ViewerContext::setEditingViewProvider(Gui::ViewProvider* vp, int ModNum, Ed
     editViewProvider->setEditViewer(this, ModNum);
     addEventCallback(SoEvent::getClassTypeId(), Gui::ViewProvider::eventCallback,
                      editViewProvider);
+    sessionSelectionChanged();
 }
 
 void ViewerContext::resetEditingViewProvider()
@@ -774,6 +775,7 @@ void ViewerContext::resetEditingViewProvider()
     // the children leave (a mirror's publish traversal) still has the root
     // in it when they do.
     unbindEditingRoot();
+    sessionSelectionChanged();
 }
 
 void ViewerContext::joinEditing(Gui::ViewProvider* vp, EditingRoot* root)
@@ -801,6 +803,7 @@ void ViewerContext::joinEditing(Gui::ViewProvider* vp, EditingRoot* root)
     setSelectionEnabled(false);
     addEventCallback(SoEvent::getClassTypeId(), Gui::ViewProvider::eventCallback,
                      editViewProvider);
+    sessionSelectionChanged();
 }
 
 void ViewerContext::leaveEditing()
@@ -821,6 +824,7 @@ void ViewerContext::leaveEditing()
     editViewProvider = nullptr;
     joinedEditing = false;
     unbindEditingRoot();
+    sessionSelectionChanged();
 }
 
 SoNode* ViewerContext::getEditRootNode() const

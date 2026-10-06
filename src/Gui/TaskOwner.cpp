@@ -129,6 +129,17 @@ Gui::Document* TaskOwner::document() const
     return nullptr;
 }
 
+SelectionSingleton* TaskOwner::selectionInstance() const
+{
+    if (MDIView* mdi = mdiView()) {
+        return mdi->selectionInstance();
+    }
+    if (kind == Kind::Context && !life.expired()) {
+        return ctx->selectionInstance();
+    }
+    return nullptr;
+}
+
 bool TaskOwner::isRemote() const
 {
     return kind == Kind::Context && !life.expired() && ctx->cameraIsRemote();

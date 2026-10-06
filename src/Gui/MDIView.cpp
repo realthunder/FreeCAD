@@ -46,6 +46,10 @@
 #include "Document.h"
 #include "FileDialog.h"
 #include "MainWindow.h"
+#include "Selection.h"
+#include "View3DInventor.h"
+#include "View3DInventorViewer.h"
+#include "ViewParams.h"
 #include "ViewProviderDocumentObject.h"
 
 
@@ -64,6 +68,13 @@ MDIView::MDIView(Gui::Document* pcDocument,QWidget* parent, Qt::WindowFlags wfla
 {
     setAttribute(Qt::WA_DeleteOnClose);
 
+    // Every view its own selection, for whoever asked for that: from the
+    // start and for good, with nothing to copy in and nothing to hand back.
+    if (ViewParams::getPerViewSelection()) {
+        ownSelection = std::make_unique<SelectionSingleton>();
+        ownSelectionKept = true;
+    }
+
     if (pcDocument)
     {
       //NOLINTBEGIN
@@ -74,8 +85,65 @@ MDIView::MDIView(Gui::Document* pcDocument,QWidget* parent, Qt::WindowFlags wfla
     }
 }
 
+void MDIView::takeOwnSelection()
+{
+    if (ownSelectionTakes++ > 0 || ownSelection)
+        return;
+    ownSelection = std::make_unique<SelectionSingleton>();
+    // An edit and a dialog start on what their user had selected: that is
+    // what each of them has always found, and each clears it if it wants
+    // to start clean.
+    ownSelection->copySelection(SelectionRoom());
+    selectionInstanceChanged();
+}
+
+void MDIView::releaseOwnSelection()
+{
+    if (ownSelectionTakes <= 0)
+        return;
+    if (--ownSelectionTakes > 0 || !ownSelection || ownSelectionKept)
+        return;
+    // What the edit or the dialog left selected is what its user is left
+    // with, as it was when there was one selection for everything: a
+    // sketch stays selected after it is closed, ready for the next
+    // command.
+    std::unique_ptr<SelectionSingleton> gone = std::move(ownSelection);
+    SelectionRoom().copySelection(*gone);
+    selectionInstanceChanged();
+    SelectionSingleton::retire(std::move(gone));
+}
+
+void MDIView::selectionInstanceChanged()
+{
+    for (auto viewer : findChildren<View3DInventorViewer*>())
+        viewer->syncSelectionInstance();
+    updateAmbientSelection();
+}
+
+void MDIView::updateAmbientSelection()
+{
+    MainWindow *mw = getMainWindow();
+    MDIView *view = mw ? mw->activeWindow() : nullptr;
+    SelectionSingleton *sel = nullptr;
+    if (auto view3d = qobject_cast<View3DInventor*>(view)) {
+        // The session's when the view is in an edit: a view that joined
+        // one selects where the edit's tools listen.
+        if (view3d->getViewer())
+            sel = view3d->getViewer()->sessionSelectionInstance();
+    }
+    else if (view) {
+        sel = view->selectionInstance();
+    }
+    SelectionSingleton::setAmbient(sel);
+}
+
 MDIView::~MDIView()
 {
+    // The view's own selection goes with it, and is nobody's to hand back
+    // to: whoever listened follows the view that is active now.
+    if (ownSelection)
+        SelectionSingleton::retire(std::move(ownSelection));
+
     // Nothing may call INTO a view that is being destroyed, and Qt's own
     // automatic disconnect is too late to promise that: it happens in
     // ~QObject, two destructors after this one, and the damage lands in

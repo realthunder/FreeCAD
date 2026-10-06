@@ -41,6 +41,7 @@
 #include "BitmapFactory.h"
 #include "Document.h"
 #include "MDIView.h"
+#include "Selection.h"
 #include "Tree.h"
 #include "TaskView/TaskView.h"
 
@@ -52,6 +53,38 @@ using namespace std;
 
 ControlSingleton* ControlSingleton::_pcSingleton = nullptr;
 static QPointer<Gui::TaskView::TaskView> _taskPanel = nullptr;
+/// The view that took a selection instance of its own for the open dialog
+static QPointer<Gui::MDIView> _dialogSelectionView;
+
+namespace {
+/** The observers of a dialog go where its view selects.
+ *
+ * A dialog is built before it is shown, by whoever shows it, so its task
+ * boxes attached to whatever was current then. Every selection observer
+ * found in the dialog and in the widgets it shows is given the owner
+ * view's instance as its home: the ones listening move there, the ones
+ * that only listen while a button of theirs is down attach there when
+ * they do.
+ */
+void adoptDialogObservers(Gui::TaskView::TaskDialog *dlg)
+{
+    Gui::SelectionSingleton *sel = dlg->owner().selectionInstance();
+    if (!sel)
+        return;
+    auto adopt = [sel](QObject *object) {
+        if (auto observer = dynamic_cast<Gui::SelectionObserver*>(object))
+            observer->adoptSelection(*sel);
+    };
+    adopt(dlg);
+    for (QObject *child : dlg->findChildren<QObject*>())
+        adopt(child);
+    for (QWidget *widget : dlg->getDialogContent()) {
+        adopt(widget);
+        for (QObject *child : widget->findChildren<QObject*>())
+            adopt(child);
+    }
+}
+} // namespace
 
 ControlSingleton::ControlSingleton()
   : ActiveDialog(nullptr)
@@ -239,8 +272,20 @@ void ControlSingleton::showDialogFor(Gui::TaskView::TaskDialog *dlg, const TaskO
     // The owner is named once, before the dialog is opened: its open() and
     // whoever hears signalShowDialog may ask for it. A dialog shown again
     // keeps the view it was first shown for.
-    if (dlg && ActiveDialog != dlg)
+    const bool fresh = dlg && ActiveDialog != dlg;
+    if (fresh) {
         TaskView::TaskDialogAttorney::setOwner(dlg, owner);
+        // And the view selects into an instance of its own for as long as
+        // the dialog is open (docs/TaskPanelPerView.md sec 12), unless the
+        // dialog says it works on the selection every view shares.
+        if (!_dialogSelectionView && dlg->usesOwnSelection()) {
+            if (MDIView *view = owner.mdiView()) {
+                view->takeOwnSelection();
+                _dialogSelectionView = view;
+            }
+        }
+        adoptDialogObservers(dlg);
+    }
 
     auto pcComboView = qobject_cast<Gui::DockWnd::ComboView*>
         (Gui::DockWindowManager::instance()->getDockWindow("Combo View"));
@@ -370,6 +415,12 @@ void ControlSingleton::closeDialog()
 void ControlSingleton::closedDialog()
 {
     ActiveDialog = nullptr;
+    // After the dialog's own closed(): what it left selected is what its
+    // view hands back to the room.
+    if (MDIView *view = _dialogSelectionView) {
+        _dialogSelectionView = nullptr;
+        view->releaseOwnSelection();
+    }
     if (auto pcComboView = qobject_cast<Gui::DockWnd::ComboView*>
         (Gui::DockWindowManager::instance()->getDockWindow("Combo View"))) {
         pcComboView->closedDialog();

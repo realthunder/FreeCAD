@@ -1555,6 +1555,10 @@ void Application::viewActivated(MDIView* pcView)
                  (const char*)pcView->windowTitle().toUtf8(),static_cast<void *>(pcView));
 #endif
 
+    // What "the selection" means from here on is this view's: before
+    // anyone hears of the activation, so that what they read is right.
+    MDIView::updateAmbientSelection();
+
     signalActivateView(pcView);
 
     // The DisplayModeInView rows present the ACTIVE 3D view's

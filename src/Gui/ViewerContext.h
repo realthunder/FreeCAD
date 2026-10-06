@@ -967,6 +967,15 @@ protected:
      */
     virtual void hangEditingRoot(EditingRoot* root, bool hang);
 
+    /** This view entered or left an edit session.
+     *
+     * sessionSelectionInstance() may answer another instance from here
+     * on. A view that draws a selection, or that the user works in,
+     * follows it; the base does nothing.
+     */
+    virtual void sessionSelectionChanged()
+    {}
+
     /** The editing root this view currently shows through.
      *
      * The session's root while one runs here, else this view's own

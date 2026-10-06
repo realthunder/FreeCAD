@@ -32,6 +32,7 @@
 #include <set>
 #include <type_traits>
 #include <deque>
+#include <memory>
 #include <fastsignals/signal.h>
 
 #include <boost/multi_index_container.hpp>
@@ -274,8 +275,43 @@ public:
     bool isSelectionBlocked() const;
     bool isSelectionAttached() const;
 
-    /** Attaches to the selection. */
+    /** Attaches to the selection.
+     *
+     * To the instance this observer was given a home in (adoptSelection),
+     * else to the one a scope has made current -- an observer built while
+     * a view enters an edit belongs to that view's selection -- else it
+     * FOLLOWS the active view: it hears that view's instance, and when
+     * another view becomes the active one it is moved to that view's and
+     * told to read the selection again (SetSelection). While every view
+     * of the main window shares one instance, which is the default
+     * outside an edit, following is the same as being attached to it.
+     * docs/TaskPanelPerView.md sec 12.
+     */
     void attachSelection();
+    /** Follows the active view's selection whatever scope is open.
+     *
+     * For what shows the user the selection they are working with: the
+     * tree, the property view, the selection view. A served client's view
+     * is never the active one, so these never follow a client.
+     */
+    void followSelection();
+    /** Attaches to \a sel and stays with it, moving from wherever it was.
+     *
+     * An observer that was attached elsewhere is told to read the
+     * selection again. When \a sel goes away the observer falls back to
+     * following the active view.
+     */
+    void bindSelection(SelectionSingleton &sel);
+    /** Gives the observer a home: \a sel is where it attaches.
+     *
+     * Moved there now when it is attached, and attached there by a later
+     * attachSelection() when it is not -- a task box that only listens
+     * while one of its buttons is down.
+     */
+    void adoptSelection(SelectionSingleton &sel);
+    /// Whether this observer follows the active view
+    bool isFollowingSelection() const
+    { return following; }
     /** Attaches to whichever instance is current right now.
      *
      * That is the room on the desktop and everywhere else no
@@ -305,11 +341,23 @@ private:
     void _onSelectionChanged(const SelectionChanges& msg);
     void attachTo(SelectionSingleton& sel);
 
+    /// Have the observer read the selection of \a sel again
+    void tellSelection(SelectionSingleton &sel);
+    /// The followers of \a from move to \a to
+    static void ambientChanged(SelectionSingleton &from, SelectionSingleton &to);
+    /// Nothing may go on pointing at \a dying
+    static void instanceGone(SelectionSingleton &dying);
+    friend class SelectionSingleton;
+
 private:
     using Connection = fastsignals::connection;
     Connection connectSelection;
     /// The instance this observer is attached to; null means the room.
     SelectionSingleton* observed = nullptr;
+    /// Where attachSelection() attaches, when it was given one
+    SelectionSingleton* home = nullptr;
+    /// Attached to the active view's instance, and moved with it
+    bool following = false;
     std::string filterDocName;
     std::string filterObjName;
     ResolveMode resolve;
@@ -843,9 +891,36 @@ public:
      * deliberately instead. Reached as Gui::SelectionRoom().
      */
     static SelectionSingleton& roomInstance();
+    /** The instance that is current while no scope is open
+     *
+     * The ACTIVE view's: a view that is editing, or that owns a task
+     * dialog, selects into an instance of its own, and what the tree, a
+     * command or the Python console does while that view is the active
+     * one is done to that instance. The room for every other view, which
+     * is what null asks for. Set by the main window's view activation
+     * (MDIView::updateAmbientSelection); the observers that follow are
+     * moved and told. docs/TaskPanelPerView.md sec 12.
+     */
+    static void setAmbient(SelectionSingleton *sel);
+    static SelectionSingleton& ambient();
+    /// Whether a Gui::SelectionScope is open
+    static bool scoped();
+    /** Make what is selected here the same as in \a other
+     *
+     * The selection only -- not the gate, the preselection or the
+     * history. The observers are told to read it again.
+     */
+    void copySelection(const SelectionSingleton &other);
+    /** Give up an instance that a scope may still have current
+     *
+     * Deleted at once when no open scope names it, else when the last
+     * one that does has closed.
+     */
+    static void retire(std::unique_ptr<SelectionSingleton> sel);
     static void destruct ();
     friend class SelectionFilter;
     friend class SelectionScope;
+    friend class SelectionObserver;
 
     // Python interface
     static PyMethodDef    Methods[];
@@ -991,6 +1066,11 @@ protected:
     static SelectionSingleton* _pcSingleton;
     /// The room instance, which outlives every scope
     static SelectionSingleton* _pcRoom;
+    /// What is current with no scope open, when that is not the room
+    static SelectionSingleton* _pcAmbient;
+    /// Given up while a scope still named them (retire)
+    static std::vector<std::unique_ptr<SelectionSingleton>> _Retired;
+    static bool inScope(const SelectionSingleton *sel);
     /// What each open scope displaced, innermost last
     static std::vector<SelectionSingleton*> _InstanceStack;
 

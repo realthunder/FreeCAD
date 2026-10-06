@@ -532,7 +532,8 @@ void SelectionView::hideEvent(QHideEvent *ev) {
 
 void SelectionView::showEvent(QShowEvent *ev) {
     FC_TRACE(this << " attaching selection observer");
-    this->attachSelection();
+    // The selection of the view the user is working in
+    this->followSelection();
 
     selectionView->clear();
     for(auto &objT : Gui::Selection().getSelectionT("*", ResolveMode::NoResolve))

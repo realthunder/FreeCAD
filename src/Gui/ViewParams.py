@@ -290,6 +290,13 @@ Params = [
         "document as it is and take no input for the edit. When off, every view\n"
         "of the document joins the edit and can work in it. Takes effect with\n"
         "the next edit."),
+    ParamBool('PerViewSelection', False, title='A selection per view', doc=
+        "Give every view a selection of its own. What is selected in one view\n"
+        "is then selected, highlighted and acted on in that view only, and the\n"
+        "tree shows the selection of the active view. When off, the views share\n"
+        "one selection, and a view selects on its own only while it is in an\n"
+        "edit or has a task panel open. Takes effect for views opened\n"
+        "afterwards."),
     ParamFloat('DraggerScale', 0.03,
         title='Transform dragger scale',
         doc="Size of the transform dragger relative to the viewport."),

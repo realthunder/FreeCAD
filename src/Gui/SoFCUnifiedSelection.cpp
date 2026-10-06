@@ -1467,6 +1467,15 @@ void SoFCUnifiedSelection::Private::onPreselectTimer() {
     if(preselTimer.isScheduled())
         preselTimer.unschedule();
 
+    // The delayed preselection of a hover fires from a timer, with no
+    // event of the view being handled: it is still that view's, and lands
+    // in the instance that view selects into.
+    std::optional<SelectionScope> viewScope;
+    if (this->pcViewer && !SelectionSingleton::scoped()) {
+        SelectionSingleton *sel = this->pcViewer->sessionSelectionInstance();
+        viewScope.emplace(sel ? *sel : SelectionRoom());
+    }
+
     if (viewMouseButtons() != Qt::NoButton)
         return;
 

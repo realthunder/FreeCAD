@@ -34,6 +34,7 @@ namespace Gui
 
 class Document;
 class MDIView;
+class SelectionSingleton;
 class ViewerContext;
 
 /** The view a task panel belongs to (docs/TaskPanelPerView.md sec 3).
@@ -96,6 +97,9 @@ public:
     Gui::Document* document() const;
     /// Whether this is a served client's view.
     bool isRemote() const;
+    /// The selection instance the view has of its own, or null while it
+    /// shares the room (and for a dead or null owner).
+    SelectionSingleton* selectionInstance() const;
 
     bool operator==(const TaskOwner& other) const;
     bool operator!=(const TaskOwner& other) const

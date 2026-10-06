@@ -120,6 +120,17 @@ DlgSettingsUI::DlgSettingsUI(QWidget* parent)
 
     // Auto generated code (Tools/params_utils.py:492)
     layoutViews->addLayout(layoutRow);
+    PerViewSelection = new Gui::PrefCheckBox(this);
+    layoutRow->addWidget(PerViewSelection);
+    PerViewSelection->setChecked(Gui::ViewParams::defaultPerViewSelection());
+    PerViewSelection->setEntryName("PerViewSelection");
+    PerViewSelection->setParamGrpPath("View");
+
+    // Auto generated code (Tools/params_utils.py:486)
+    layoutRow = new QHBoxLayout();
+
+    // Auto generated code (Tools/params_utils.py:492)
+    layoutViews->addLayout(layoutRow);
     labelDocumentTarget = new QLabel(this);
     layoutRow->addWidget(labelDocumentTarget);
     DocumentTarget = new Gui::PrefComboBox(this);
@@ -935,6 +946,7 @@ void DlgSettingsUI::saveSettings()
     TextCursorWidth->onSave();
     UseViewArea->onSave();
     PerViewEdit->onSave();
+    PerViewSelection->onSave();
     DocumentTarget->onSave();
     DocViewTarget->onSave();
     UtilityTarget->onSave();
@@ -995,6 +1007,7 @@ void DlgSettingsUI::loadSettings()
     TextCursorWidth->onRestore();
     UseViewArea->onRestore();
     PerViewEdit->onRestore();
+    PerViewSelection->onRestore();
     DocumentTarget->onRestore();
     DocViewTarget->onRestore();
     UtilityTarget->onRestore();
@@ -1061,6 +1074,8 @@ void DlgSettingsUI::retranslateUi()
     UseViewArea->setText(QObject::tr("Tile views inside one tab"));
     PerViewEdit->setToolTip(QApplication::translate("ViewParams", Gui::ViewParams::docPerViewEdit()));
     PerViewEdit->setText(QObject::tr("Edit in one view only"));
+    PerViewSelection->setToolTip(QApplication::translate("ViewParams", Gui::ViewParams::docPerViewSelection()));
+    PerViewSelection->setText(QObject::tr("A selection per view"));
     DocumentTarget->setToolTip(QApplication::translate("OpenViewParams", Gui::OpenViewParams::docDocumentTarget()));
     labelDocumentTarget->setText(QObject::tr("New documents open in"));
     labelDocumentTarget->setToolTip(DocumentTarget->toolTip());

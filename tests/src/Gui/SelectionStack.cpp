@@ -18,6 +18,7 @@
 // the selection style) are plain per-instance state, which is exactly the
 // property under test.
 
+#include <memory>
 #include <gtest/gtest.h>
 
 #include <App/Application.h>
@@ -79,6 +80,7 @@ protected:
 
     void SetUp() override
     {
+        Gui::SelectionSingleton::setAmbient(nullptr);
         Gui::SelectionRoom().setPreselectionText(std::string());
         Gui::SelectionRoom().setSelectionStyle(
             Gui::SelectionSingleton::SelectionStyle::NormalSelection);
@@ -184,23 +186,187 @@ TEST_F(SelectionStackTest, observersHearTheRoomOnly)
     EXPECT_EQ(observer.count, 1);
 }
 
-TEST_F(SelectionStackTest, anObserverBuiltInsideAScopeStillHearsTheRoom)
+TEST_F(SelectionStackTest, anObserverBuiltInsideAViewsScopeBelongsToThatView)
 {
-    // The trap this closes: a task panel built while a client's event is
-    // being replayed would otherwise spend its whole life attached to that
-    // client's instance, and go deaf the moment the scope closed.
+    // Restated 2026-10-06 (docs/TaskPanelPerView.md sec 12). This case
+    // pinned the opposite -- "an observer built inside a scope still hears
+    // the room" -- from when the room was every panel's and a scope was
+    // one replayed event. A task dialog now belongs to the view it is
+    // opened for, and what is built while that view's instance is current
+    // is built for that view: an edit is started inside its view's scope
+    // exactly so that its task boxes hear what that view picks.
     Gui::SelectionSingleton& room = Gui::SelectionRoom();
     Gui::SelectionSingleton mirror;
+    {
+        Gui::SelectionScope scope(mirror);
+        CountingObserver observer;
+        ASSERT_TRUE(observer.isSelectionAttached());
+        EXPECT_FALSE(observer.isFollowingSelection());
 
-    Gui::SelectionScope scope(mirror);
+        mirror.signalSelectionChanged(Gui::SelectionChanges());
+        EXPECT_EQ(observer.count, 1);
+
+        room.signalSelectionChanged(Gui::SelectionChanges());
+        EXPECT_EQ(observer.count, 1);
+    }
+}
+
+TEST_F(SelectionStackTest, anObserverBuiltUnderTheRoomsScopeFollows)
+{
+    // A scope on the room says "no view's own": a desktop view that
+    // shares the room opens one around its events, and an observer built
+    // there is nobody's in particular.
+    Gui::SelectionSingleton& room = Gui::SelectionRoom();
+    Gui::SelectionScope scope(room);
     CountingObserver observer;
-    ASSERT_TRUE(observer.isSelectionAttached());
+    EXPECT_TRUE(observer.isFollowingSelection());
+}
 
-    mirror.signalSelectionChanged(Gui::SelectionChanges());
-    EXPECT_EQ(observer.count, 0);
+TEST_F(SelectionStackTest, aFollowerMovesWithTheActiveViewsInstance)
+{
+    Gui::SelectionSingleton& room = Gui::SelectionRoom();
+    Gui::SelectionSingleton own;
+
+    CountingObserver follower;
+    ASSERT_TRUE(follower.isFollowingSelection());
+    CurrentObserver bound;  // to the room, and it stays there
+
+    // Another view becomes the active one, with an instance of its own
+    Gui::SelectionSingleton::setAmbient(&own);
+    EXPECT_EQ(&Gui::Selection(), &own);
+    // Told to read the selection again: no preselection, then all of it
+    EXPECT_EQ(follower.count, 2);
+    EXPECT_EQ(bound.count, 0);
+
+    own.signalSelectionChanged(Gui::SelectionChanges());
+    EXPECT_EQ(follower.count, 3);
+    EXPECT_EQ(bound.count, 0);
 
     room.signalSelectionChanged(Gui::SelectionChanges());
-    EXPECT_EQ(observer.count, 1);
+    EXPECT_EQ(follower.count, 3);
+    EXPECT_EQ(bound.count, 1);
+
+    // A scope still wins over the active view, and closing it returns there
+    {
+        Gui::SelectionScope scope(room);
+        EXPECT_EQ(&Gui::Selection(), &room);
+    }
+    EXPECT_EQ(&Gui::Selection(), &own);
+
+    Gui::SelectionSingleton::setAmbient(nullptr);
+    EXPECT_EQ(&Gui::Selection(), &room);
+    EXPECT_EQ(follower.count, 5);
+}
+
+TEST_F(SelectionStackTest, theActiveViewChangesUnderAnOpenScope)
+{
+    // A view is activated from inside the handling of an event: what is
+    // current stays the scope's, and what it returns to is the new view's.
+    Gui::SelectionSingleton& room = Gui::SelectionRoom();
+    Gui::SelectionSingleton scoped;
+    Gui::SelectionSingleton own;
+    {
+        Gui::SelectionScope scope(scoped);
+        Gui::SelectionSingleton::setAmbient(&own);
+        EXPECT_EQ(&Gui::Selection(), &scoped);
+    }
+    EXPECT_EQ(&Gui::Selection(), &own);
+    Gui::SelectionSingleton::setAmbient(nullptr);
+    EXPECT_EQ(&Gui::Selection(), &room);
+}
+
+TEST_F(SelectionStackTest, anInstanceThatEndsHandsItsObserversBack)
+{
+    // A view's instance ends with its edit, and a task box of that edit
+    // is deleted a little later: it must not be left pointing at it.
+    Gui::SelectionSingleton& room = Gui::SelectionRoom();
+    auto own = std::make_unique<Gui::SelectionSingleton>();
+    std::unique_ptr<CountingObserver> observer;
+    {
+        Gui::SelectionScope scope(*own);
+        observer = std::make_unique<CountingObserver>();
+    }
+    ASSERT_FALSE(observer->isFollowingSelection());
+
+    own.reset();
+    EXPECT_TRUE(observer->isSelectionAttached());
+    EXPECT_TRUE(observer->isFollowingSelection());
+
+    const int before = observer->count;
+    room.signalSelectionChanged(Gui::SelectionChanges());
+    EXPECT_EQ(observer->count, before + 1);
+}
+
+TEST_F(SelectionStackTest, theActiveViewsInstanceEndsAndTheRoomIsCurrent)
+{
+    Gui::SelectionSingleton& room = Gui::SelectionRoom();
+    CountingObserver follower;
+    {
+        Gui::SelectionSingleton own;
+        Gui::SelectionSingleton::setAmbient(&own);
+        ASSERT_EQ(&Gui::Selection(), &own);
+    }
+    EXPECT_EQ(&Gui::Selection(), &room);
+    const int before = follower.count;
+    room.signalSelectionChanged(Gui::SelectionChanges());
+    EXPECT_EQ(follower.count, before + 1);
+}
+
+TEST_F(SelectionStackTest, anInstanceRetiredInsideItsScopeOutlivesTheScope)
+{
+    // Leaving an edit gives the view's instance up from inside the scope
+    // that made it current.
+    Gui::SelectionSingleton& room = Gui::SelectionRoom();
+    auto own = std::make_unique<Gui::SelectionSingleton>();
+    Gui::SelectionSingleton* raw = own.get();
+    {
+        Gui::SelectionScope scope(*raw);
+        Gui::SelectionSingleton::retire(std::move(own));
+        ASSERT_EQ(&Gui::Selection(), raw);
+        // Still whole: this would be a write into freed memory otherwise
+        raw->setPreselectionText("still here");
+        EXPECT_EQ(raw->getPreselectionText(), "still here");
+    }
+    EXPECT_EQ(&Gui::Selection(), &room);
+}
+
+TEST_F(SelectionStackTest, anAdoptedObserverAttachesAtItsHome)
+{
+    // What showing a task dialog does to the observers found in it
+    Gui::SelectionSingleton& room = Gui::SelectionRoom();
+    Gui::SelectionSingleton own;
+
+    // One that only listens while a button of its box is down
+    class LateObserver: public Gui::SelectionObserver
+    {
+    public:
+        LateObserver()
+            : Gui::SelectionObserver(false)
+        {}
+        int count = 0;
+
+    protected:
+        void onSelectionChanged(const Gui::SelectionChanges&) override
+        {
+            ++count;
+        }
+    };
+    LateObserver late;
+    late.adoptSelection(own);
+    EXPECT_FALSE(late.isSelectionAttached());
+    late.attachSelection();
+    own.signalSelectionChanged(Gui::SelectionChanges());
+    room.signalSelectionChanged(Gui::SelectionChanges());
+    EXPECT_EQ(late.count, 1);
+
+    // One that is listening already moves, and is told to read again
+    CountingObserver listening;
+    listening.adoptSelection(own);
+    EXPECT_FALSE(listening.isFollowingSelection());
+    EXPECT_EQ(listening.count, 2);
+    own.signalSelectionChanged(Gui::SelectionChanges());
+    room.signalSelectionChanged(Gui::SelectionChanges());
+    EXPECT_EQ(listening.count, 3);
 }
 
 TEST_F(SelectionStackTest, anObserverOfTheCurrentInstanceFollowsTheScopeItWasBuiltIn)
