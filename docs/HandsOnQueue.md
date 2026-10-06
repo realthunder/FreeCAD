@@ -18,11 +18,13 @@ report views, the reporter's own files -- is kept beside the dev tree under
 | # | Reported | Problem | State |
 |---|---|---|---|
 | 1 | 2026-10-06 | idle progress bar in the status bar | FIXED |
-| 2 | 2026-10-06 | a file opened from the menu comes up empty (`scanner.FCStd`) | FOUND |
+| 2 | 2026-10-06 | a file opened from the menu comes up empty (`scanner.FCStd`) | FIXED |
 | 3 | 2026-10-06 | tooltips are clipped: navigation style, and toolbar buttons with an icon | OPEN |
-| 4 | 2026-10-06 | status bar dimension reads `100 mm x 80 mm`, wanted `100 x 80 mm` | FOUND |
+| 4 | 2026-10-06 | status bar dimension reads `100 mm x 80 mm`, wanted `100 x 80 mm` | FIXED |
 | 5 | 2026-10-06 | title bar with the workbench bar docked: the menu does not unfold on hover | OPEN |
 | 6 | 2026-10-06 | maximized with the custom title bar: sometimes no margin at the top | OPEN |
+| 7 | 2026-10-06 | crash after answering Yes to the recompute question on `scanner.FCStd` | FIXED, cause of the GL error open |
+| 8 | 2026-10-06 | `scanner.FCStd`: the migration recompute fails | OPEN |
 
 ## 1. Idle progress bar in the status bar -- FIXED
 
@@ -41,7 +43,7 @@ included -- showed it.
 **Fix:** `e511bddc39`. `tests/gui/statusbar-progress-idle.py`, 11 PASS (4 FAIL
 before).
 
-## 2. A file opened from the menu comes up empty -- FOUND
+## 2. A file opened from the menu comes up empty -- FIXED
 
 **Reported (2026-10-06):** "with current setting (take a snapshot of user.cfg)
 opening d:\Zheng.Lei\mech\scanner.FCStd got a bunch of warning and errors in
@@ -75,11 +77,13 @@ Both halves date from 2026-08-23 (`fa503839a2`, `e20bedc723`) and neither has
 changed since; every test opens its files from Python, a command line argument
 or a drop, where no guard stands, which is how it went unseen.
 
-**Fix (not committed yet):** `App::Document::UserEditSuspend`, held by
+**Fix:** `c988990274`. `App::Document::UserEditSuspend`, held by
 `Application::openDocuments` and `Document::restore` -- it steps the guard down
 for the load and a command clicked meanwhile raises its own inside it.
 `DocumentTest.liveImportUserEditSuspendedForTheLoadItself`,
-`tests/gui/open-through-command.py`.
+`tests/gui/open-through-command.py`, 6 PASS. The reporter's file through the
+recent list afterwards: no refusal, the objects arrive and the migration
+recompute runs (entry 8 is what it then does).
 
 **Not checked yet:** an import started from the menu that turns `LiveImport`
 on for itself (`Gui.setLiveImport`, the IFC importer) stands in the same place.
@@ -97,7 +101,7 @@ navigation style tips are rich text, a table of `<img>` cells
 which gives `Gui--TipLabel` a 1px border and a radius. The last tip shown was
 393 x 100. Not reproduced or measured yet.
 
-## 4. Status bar dimension: `100 x 80 mm` -- FOUND
+## 4. Status bar dimension: `100 x 80 mm` -- FIXED
 
 **Reported (2026-10-06):** "in the status bar the dimension, instead of
 something like 100 mm x 80 mm, write it as 100 x 80 mm."
@@ -105,9 +109,10 @@ something like 100 mm x 80 mm, write it as 100 x 80 mm."
 **Where:** `View3DInventorViewer::printDimension()` joins two strings that
 each carry their unit.
 
-**Fix (not committed yet):** the unit is said once when both sides share it; a
-view 1.5 m wide and 700 mm high keeps both, and so does a schema whose text
-does not end in its unit.
+**Fix:** `15927772df`. The unit is said once when both sides share it
+(`176.99 x 80.00 mm`); sides in different units keep both (`15.49 m x 7000.00
+mm`), and so does a schema whose text does not end in its unit.
+`tests/gui/status-dimension-text.py`, 3 PASS.
 
 ## 5. Title bar with the workbench bar docked: the menu does not unfold -- OPEN
 
@@ -140,6 +145,53 @@ at 100%, title bar at y = 0.
 **History to read:** `8a7f412fe3` stop a maximized custom title bar hanging
 off the top of the screen, `d712eae660` fix the 8px input offset of a
 maximized custom title bar.
+
+## 7. Crash after answering Yes to the recompute question -- FIXED, cause of the GL error open
+
+**Reported (2026-10-06):** "a crash just happend. check the minidump." Then:
+"recompute request dialog is poped. last time crash happend after I said yes",
+and: "last time I said yes before the document is fully loaded. maybe that's
+also a factor."
+
+**Evidence:** `..\dl\handson\2026-10-06\` -- `crash1-cdb.log` (the debugger's
+log: the first-chance stack, 86 frames with lines), `crash1-crash.log`,
+`crash1-report-view.log`. The full dump is
+`..\tools\dbg\dumps\fcad_user_av_1c84_2026-10-06_10-33-26-440_ffb8.dmp`,
+6.9 GB; nothing below needed it.
+
+**What happened, from the stack:** the file was opened from the Python
+console (`FreeCADGui.loadFile`), the "Recomputation required" question was
+answered Yes, the recompute failed ("Recompute failed!"), and the "Recompute
+error" box opened. That box runs an event loop; the 3D view repainted inside
+it; `BGFXView::blitReadback` ended with `checkGLError("readback composite")`;
+OpenGL had an error to report; and reporting it crashed: access violation in
+`QDebug::operator<<(const char*)`, reading address 0x2.
+
+**Cause of the crash:** `_checkGLError` named the error from a table of four
+strings indexed with `min(code - GL_INVALID_ENUM, 4)`. Three codes have a
+name, 0x0503 got "Unknown", and everything from `GL_STACK_UNDERFLOW` (0x0504)
+up -- out of memory, invalid framebuffer operation -- indexed entry 4, one
+past the end. Same code in the Diligent backend.
+
+**Fix:** `41f6c2cdcb`. `Render::glErrorName()` in
+`src/Gui/Renderer/GLErrorName.h`, total over every value, used by both
+backends; the line now carries the code in hex. `GLErrorName_tests_run`.
+
+**Still open here:** which GL error it was, and why the readback composite
+raises one while a message box is up. The fixed line will say. The repeat in
+the dev tree -- same file, opened through the recent list, Yes answered once
+the document had finished loading -- reached the same "Recompute error" box
+and repainted without a GL error, so answering before the load had finished
+is the lead to follow.
+
+## 8. `scanner.FCStd`: the migration recompute fails -- OPEN
+
+**Seen (2026-10-06), twice:** the file is from FreeCAD-Link 2025.1020 and asks
+for a recompute "for migration purpose"; the recompute ends in "Recompute
+failed!". In the report view: `SubShapeBinder.cpp(477): scanner#Binder018
+failed to obtain shape from scanner#Binder008.?Face1` (`Null shape`), "auto
+change element reference" on `Helix001.Profile` and `Pocket037.Profile`, and a
+run of TechDraw "no exact match for changed 2d reference". Not looked at yet.
 
 ## Inbox
 
