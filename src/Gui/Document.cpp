@@ -23,6 +23,8 @@
 #include "PreCompiled.h"
 #include "Renderer/Renderer.h"
 
+#include <functional>
+
 #ifndef _PreComp_
 # include <mutex>
 # include <QApplication>
@@ -1198,7 +1200,25 @@ void Document::slotNewObject(const App::DocumentObject& Obj)
                 return;
             }
             Base::Type type = Base::Type::getTypeIfDerivedFrom(cName.c_str(), ViewProviderDocumentObject::getClassTypeId(), true);
-            pcProvider = static_cast<ViewProviderDocumentObject*>(type.createInstance());
+            // A view provider that throws while it is being made leaves its
+            // object without one, and only its object. Let out of here, the
+            // exception ended the slice of a progressive load's drain that
+            // was making it, and the drain gave up every record still to
+            // come: one TechDraw view failing on a bad preference left 320
+            // objects with their saved view properties not restored.
+            try {
+                pcProvider = static_cast<ViewProviderDocumentObject*>(type.createInstance());
+            }
+            catch (const Base::Exception &e) {
+                FC_ERR("Cannot create view provider '" << cName << "' for "
+                        << Obj.getFullName() << ": " << e.what());
+                return;
+            }
+            catch (const std::exception &e) {
+                FC_ERR("Cannot create view provider '" << cName << "' for "
+                        << Obj.getFullName() << ": " << e.what());
+                return;
+            }
             // createInstance could return a null pointer
             if (!pcProvider) {
                 // type not derived from ViewProviderDocumentObject!!!
@@ -3404,6 +3424,25 @@ void Document::runDeferredRestoreSlice()
     // scope, not just that sweep: every phase of the drain is the file's own
     // record being replayed, and none of it is an edit.
     App::Document::RestoreDrainGuard drainScope(d->_pcDocument);
+    // One view provider failing in its own step -- its update, its finish --
+    // is that object's failure: reported, and the drain goes on to the next.
+    // Left to the handlers at the end, which are for a record that cannot be
+    // read, it took every record still parked with it; and thrown from the
+    // sweep, before the first record, that was all of them.
+    auto guarded = [](const App::DocumentObject *obj, const char *step,
+                      const std::function<void()> &func) {
+        try {
+            func();
+        }
+        catch (Base::Exception &e) {
+            e.ReportException();
+            FC_ERR("restore " << obj->getFullName() << ": " << step << " failed");
+        }
+        catch (const std::exception &e) {
+            FC_ERR("restore " << obj->getFullName() << ": " << step << " failed ("
+                    << e.what() << ")");
+        }
+    };
     try {
         // Phase zero: the parked shape archive entries
         // (docs/DocumentLoad.md §14). Serving them before any view
@@ -3479,7 +3518,7 @@ void Document::runDeferredRestoreSlice()
                 if (vpd && vpd->testStatus(Gui::isRestoring)) {
                     FC_TIME_INIT(tSweep);
                     vpd->setStatus(Gui::isRestoring, false);
-                    vpd->updateView();
+                    guarded(obj, "the update of its view", [vpd] { vpd->updateView(); });
                     vpd->setStatus(Gui::isRestoring, true);
                     auto dSweep = Base::GetDuration(tSweep);
                     d->_deferSweepTime += dSweep;
@@ -3630,14 +3669,16 @@ void Document::runDeferredRestoreSlice()
                     auto names = std::move(late->second);
                     d->_deferLateChanges.erase(late);
                     for (const auto &name : names) {
-                        if (auto prop = obj->getPropertyByName(name.c_str()))
-                            slotChangedObject(*obj, *prop);
+                        if (auto prop = obj->getPropertyByName(name.c_str())) {
+                            guarded(obj, "a change held back for its view",
+                                    [this, obj, prop] { slotChangedObject(*obj, *prop); });
+                        }
                     }
                 }
                 if (vpd && (fresh || vpd->testStatus(Gui::isRestoring))) {
                     FC_TIME_INIT(tFinish);
                     vpd->setStatus(Gui::isRestoring, false);
-                    vpd->finishRestoring();
+                    guarded(obj, "the finish of its view", [vpd] { vpd->finishRestoring(); });
                     auto user = d->_deferUserVisibility.find(obj);
                     if (user != d->_deferUserVisibility.end()) {
                         // Hidden or shown since the open, over the file.

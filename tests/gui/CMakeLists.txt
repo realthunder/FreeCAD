@@ -205,6 +205,12 @@ fc_add_gui_test(GuiPdEditShownPerView_tests_run pd-edit-shown-per-view.py
 fc_add_gui_test(GuiPdOriginInEdit_tests_run pd-origin-in-edit.py
                 --timeout 240)
 
+# A TechDraw view gets its view provider with the line standard preference
+# out of range: the preference page stored -1 in it, and every view of a
+# part then threw out of its view provider's constructor.
+fc_add_gui_test(GuiTechDrawLineStandardOutOfRange_tests_run
+                techdraw-line-standard-out-of-range.py --timeout 180)
+
 # A browser's right click (docs/ThinClient.md sec 8.11b): the desktop's 3D
 # view context menu built for what the ray hits, its entries judged for the
 # connection, an edit entry entered in the client's view with no 3D view

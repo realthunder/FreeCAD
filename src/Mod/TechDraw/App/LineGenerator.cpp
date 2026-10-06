@@ -360,9 +360,15 @@ std::vector<std::string> LineGenerator::getLineDescriptions()
 //! standard
 std::string  LineGenerator::getLineStandardsBody()
 {
-    int activeStandard = Preferences::lineStandard();
+    // The preference may name a standard that is not there: fewer files
+    // than when it was stored, or none found at all. This is read by a view
+    // provider as it is made, where throwing loses the object its view.
+    size_t activeStandard = static_cast<size_t>(Preferences::lineStandard());
     std::vector<std::string> choices = getAvailableLineStandards();
-    return getBodyFromString(choices.at(activeStandard));
+    if (choices.empty()) {
+        return {};
+    }
+    return getBodyFromString(choices[activeStandard < choices.size() ? activeStandard : 0]);
 }
 
 
@@ -381,7 +387,7 @@ bool LineGenerator::isCurrentProportional()
 bool LineGenerator::isProportional(size_t standardIndex)
 {
     std::vector<std::string> choices = getAvailableLineStandards();
-    if (standardIndex > choices.size()) {
+    if (standardIndex >= choices.size()) {
         // we don't have a standard for the specified index.
         return true;
     }
@@ -399,8 +405,11 @@ std::string LineGenerator::getBodyFromString(std::string inString)
 {
     size_t firstDot = inString.find(".");
     if (firstDot == std::string::npos) {
-        // something has gone very wrong if an entry in choices does not contain a dot.
-        THROWM(Base::RuntimeError, "Malformed standard name found.  Could not determine standards body.")
+        // An entry without a dot: any file with "LineDef" in its name is
+        // listed, so a stray one in the definitions folder gets here. No
+        // body, rather than an exception out of whoever asked -- a view
+        // provider being made, for one.
+        return {};
     }
     return inString.substr(0, firstDot);
 }

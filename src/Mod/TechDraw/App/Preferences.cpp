@@ -34,6 +34,7 @@
 #include <Base/Parameter.h>
 
 #include "Preferences.h"
+#include "ArrowPropEnum.h"
 #include "LineGenerator.h"
 
 //getters for parameters used in multiple places.
@@ -48,6 +49,16 @@ const double Preferences::DefaultArrowSize = 3.5;
 Base::Reference<ParameterGrp> Preferences::getPreferenceGroup(const char* Name)
 {
     return App::GetApplication().GetUserParameter().GetGroup("BaseApp/Preferences/Mod/TechDraw")->GetGroup(Name);
+}
+
+//! An index preference, kept within the table it indexes. A parameter can hold
+//! anything -- a combo box with no current item stores -1 -- and what reads
+//! these indexes a table or sets an enumeration with them, as an object or
+//! its view provider is made. Out of range reads as the default.
+static int indexPreference(const char* group, const char* name, int defaultIndex, int count)
+{
+    int index = Preferences::getPreferenceGroup(group)->GetInt(name, defaultIndex);
+    return (index < 0 || index >= count) ? defaultIndex : index;
 }
 
 std::string Preferences::labelFont()
@@ -125,7 +136,8 @@ double Preferences::vertexScale()
 
 int Preferences::scaleType()
 {
-    return getPreferenceGroup("General")->GetInt("DefaultScaleType", 0);
+    // DrawView::ScaleTypeEnums: Page, Automatic, Custom
+    return indexPreference("General", "DefaultScaleType", 0, 3);
 }
 
 double Preferences::scale()
@@ -152,7 +164,8 @@ bool Preferences::useGlobalDecimals()
 
 int Preferences::projectionAngle()
 {
-    return getPreferenceGroup("General")->GetInt("ProjectionAngle", 0);  //First Angle
+    // First Angle, Third Angle
+    return indexPreference("General", "ProjectionAngle", 0, 2);
 }
 
 int Preferences::lineGroup()
@@ -162,7 +175,7 @@ int Preferences::lineGroup()
 
 int Preferences::balloonArrow()
 {
-    return getPreferenceGroup("Decorations")->GetInt("BalloonArrow", 0);
+    return indexPreference("Decorations", "BalloonArrow", 0, ArrowPropEnum::ArrowCount);
 }
 
 double Preferences::balloonKinkLength()
@@ -172,7 +185,8 @@ double Preferences::balloonKinkLength()
 
 int Preferences::balloonShape()
 {
-    return getPreferenceGroup("Decorations")->GetInt("BalloonShape", 0);
+    // DrawViewBalloon::balloonTypeEnums has eight shapes
+    return indexPreference("Decorations", "BalloonShape", 0, 8);
 }
 
 QString Preferences::defaultTemplate()
@@ -429,15 +443,40 @@ bool Preferences::storeProjectedGeometry()
 }
 
 //! an index into the list of available line standards/version found in LineGroupDirectory
+//! the line standard in use: an index into
+//! LineGenerator::getAvailableLineStandards(). Never negative. The parameter
+//! has been found holding -1, a combo box's "no current item", stored by the
+//! preference page while it refilled its list; everything that reads this
+//! indexes with it, and a view provider doing so in its constructor took the
+//! loading of a document down with it. A reader still has to check it against
+//! the standards it finds, which may be fewer than the parameter says.
 int Preferences::lineStandard()
 {
-    return getPreferenceGroup("Standards")->GetInt("LineStandard", 1);
+    const int defaultStandard = 1;
+    int index = getPreferenceGroup("Standards")->GetInt("LineStandard", defaultStandard);
+    return index < 0 ? defaultStandard : index;
 }
 
 //! update the line standard preference.  used in the preferences dialog.
+//! An index that names no standard is not stored.
 void Preferences::setLineStandard(int index)
 {
+    if (index < 0) {
+        return;
+    }
     getPreferenceGroup("Standards")->SetInt("LineStandard", index);
+}
+
+//! the entry of the line standards found that the preference names; the
+//! first when it names none of them, and nothing when none was found.
+static std::string activeLineStandard()
+{
+    std::vector<std::string> choices = LineGenerator::getAvailableLineStandards();
+    if (choices.empty()) {
+        return {};
+    }
+    size_t index = static_cast<size_t>(Preferences::lineStandard());
+    return choices[index < choices.size() ? index : 0];
 }
 
 std::string Preferences::lineDefinitionLocation()
@@ -500,16 +539,14 @@ int Preferences::LineSpacingISO()
 std::string Preferences::currentLineDefFile()
 {
     std::string lineDefDir = Preferences::lineDefinitionLocation();
-    std::vector<std::string> choices = LineGenerator::getAvailableLineStandards();
-    std::string fileName = choices.at(Preferences::lineStandard()) + ".LineDef.csv";
+    std::string fileName = activeLineStandard() + ".LineDef.csv";
     return lineDefDir + fileName;
 }
 
 std::string Preferences::currentElementDefFile()
 {
     std::string lineDefDir = Preferences::lineElementsLocation();
-    std::vector<std::string> choices = LineGenerator::getAvailableLineStandards();
-    std::string fileName = choices.at(Preferences::lineStandard()) + ".ElementDef.csv";
+    std::string fileName = activeLineStandard() + ".ElementDef.csv";
     return lineDefDir + fileName;
 }
 

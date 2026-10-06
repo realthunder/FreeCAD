@@ -38,6 +38,8 @@ report views, the reporter's own files -- is kept beside the dev tree under
 | 15 | 2026-10-06 | a Pad "up to first" gives a third result (from entry 8) | OPEN |
 | 16 | 2026-10-06 | faces of a "Mutated" copy-on-change binder are renamed by every recompute in a new session (from entry 8; the old build too) | FIXED |
 | 17 | 2026-10-06 | `Sketch043`, `Sketch055`: "Missing external geometry reference", seen once the binders of entry 16 are valid | OPEN |
+| 18 | 2026-10-06 | TechDraw pages do not load: "invalid vector subscript", the views loose in the tree, 320 objects restored to defaults | FIXED |
+| 19 | 2026-10-06 | TechDraw: other indexes taken on trust (an audit asked) | OPEN |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -543,6 +545,133 @@ not been scored against a tree without the motion yet.
 - With the four binders valid, what is built on them is recomputed for the
   first time: `Sketch043` and `Sketch055` now say "Missing external geometry
   reference". Entry 17.
+
+## 17. `Sketch043`, `Sketch055`: "Missing external geometry reference" -- OPEN
+
+**From entry 16.** With `Binder013`, `014`, `017` and `018` valid again, what
+is built on them is recomputed for the first time in a full recompute of
+`scanner.FCStd`, and these two sketches fail (`entry16-first.txt`). Not looked
+at. One thing to check first: the four binders move 53 mm with `Binder008`
+and are renamed with it, and they are not the ones whose container moved, so
+the search by geometry has no motion to go by for a reference into THEM.
+
+## 18. TechDraw pages do not load: "invalid vector subscript" -- FIXED
+
+**Reported (2026-10-06, the Inbox notes of 15:56 and 16:19, and then):**
+"currently techdraw pages does not load correctly", "see why techdraw
+grouping is in correct. probably due to progressive loading", and, on the
+cause, "how could this happen. add code to clamp to prevent it from
+happening again".
+
+**Seen.** Opening `scanner.FCStd`: "deferred view provider restore aborted
+(invalid vector subscript), 320 objects fall back to defaults"; the views of
+a page loose in the tree; with the page drawn by the backend, a blank page
+and Qt's "endPaint() called with active painter" without end. Saving from
+such a session would have written default view properties over the file's.
+
+**Cause.** The reporter's `user.cfg` had `Mod/TechDraw/Standards/LineStandard`
+at -1. It is an index into the line standards found, and
+`Preferences::lineStandard()` handed it out as it was to four `.at()`
+(`currentLineDefFile`, `currentElementDefFile`,
+`LineGenerator::getLineStandardsBody`, `isProportional`).
+`ViewProviderViewPart`'s constructor asks for the standards body, so every
+view of a part threw as its view provider was made.
+
+**How the -1 got there:** the annotation preference page wrote it.
+`changeEvent(LanguageChange)` runs `loadSettings()` again;
+`loadLineStandardsChoices` empties the combo box, which emits "current index
+-1"; `onLineStandardChanged`, connected since the first load, stored that and
+then threw reading the definitions of standard -1, before the line that puts
+the index back. The first exception in the reporter's log is that one: event
+type 89 on `DlgPrefsTechDrawAnnotationImp`, 15:42:23. Upstream reads around
+the same value ("likely caused by an old development version").
+
+**Reproduced** in the dev tree with a copy of that `user.cfg`
+(a load script kept in scratch, its outputs under `td\out-*`): 35 TechDraw views with no view provider, 154
+TechDraw objects claimed by nothing in the tree, the abort above.
+
+**Fix.**
+- *The reads.* `lineStandard()` is never negative; the four readers take the
+  first standard when the index names none and nothing when none was found;
+  `getBodyFromString` gives no body for a name without a dot where it threw.
+  `scaleType()`, `projectionAngle()`, `balloonArrow()` and `balloonShape()`
+  read as their default when out of the table they index.
+- *The writer.* The page refills the combo box with its signals blocked,
+  connects the slot once, ignores "no current item" in the slot and in
+  `saveSettings`; `setLineStandard` stores no negative index.
+- *The restore* (`Gui/Document.cpp`). A view provider that throws while it is
+  made leaves its object without one (`slotNewObject`), and one that throws in
+  its update or its finish is reported and passed over (`drainDeferredRestore`).
+  Either used to end the drain and drop every record still parked. Measured
+  with the restore change alone and the bad preference still in: no abort, the
+  35 views and the 10 pages reported one by one, everything else restored.
+
+With all of it, on the same configuration: no exception, every object has its
+view provider, every TechDraw object is claimed in the tree.
+`tests/gui/techdraw-line-standard-out-of-range.py` (5 PASS; not scored against
+the tree before the change, where the same script's first claim is the 35
+missing view providers above). TestTechDrawApp 6 OK.
+
+Not tried: the page drawn by the backend (`PageRendererVg`), which the 16:19
+note found blank with the same exception in its paint. The default was
+switched on and back off the same day (the reporter: "yes, make it default
+on", then "change back the default renderer to qgraphicsview").
+
+## 19. TechDraw: other indexes taken on trust (an audit asked) -- OPEN
+
+**Asked (2026-10-06):** "audit for similar problem in techdraw". Read through
+by a second agent, App and Gui, nothing run. What entry 18 already covers is
+left out. In this fork an enumeration set to an index it does not have keeps
+it, and `getValueAsString()` then throws; `getValue()` and `isValue()` do
+not. So for enumerations the places are the `getValueAsString()` callers.
+
+Runs at load, recompute or paint:
+1. `Gui/ViewProviderProjGroupItem.cpp:64` -- `Type.getValueAsString()` in
+   `updateData()`, for a `Type` a file can hold beyond its 10 entries.
+2. `App/DrawViewDimension.cpp:1740, 1789, 1834` -- `SavedGeometry.getValues()
+   .at(iReference)` where only "not empty" is checked; the 2D vertex variant
+   (1767) has the check the other three lack. In `execute()`.
+3. `Gui/QGIViewBalloon.cpp:440, 650` -- `BubbleShape.getValueAsString()`; a
+   file value beyond 7 (the preference is now clamped).
+4. `Gui/QGIViewDimension.cpp:772, 2112`, `Gui/QGIProjGroup.cpp:114` --
+   `Type.getValueAsString()` of file enumerations, in page build and draw.
+5. `App/DrawProjGroup.cpp:845, 921` -- `ProjectionTypeEnums[projConv]` and
+   `[projConv + 1]`, a C array of three indexed with the `ProjectionAngle`
+   preference (now clamped to 0..1). The two lines disagree by one: with the
+   valid value 1 the second gives "Default" and throws.
+6. `App/DrawProjGroupItem.cpp:172, 353` and `DrawProjGroup.cpp` (367, 418, 437,
+   526, 554, 575, 955, 1260, 1330) -- the same `Type` as 1, on the App side.
+7. `App/LandmarkDimension.cpp:126` -- `reprs.at(index)`, `ReferenceTags` from
+   the file shorter than the 3D references.
+8. `App/LineGenerator.cpp:253, 288, 351` -- a malformed row of a line
+   definition file (`tokens.front()`, `begin()+2`, `.at(1)`), in the
+   `LineGenerator` constructor.
+
+Not a crash, wrong result:
+- `LineGenerator.cpp:186, 192` compare the preference with `ANSI=0, ISO=1,
+  ASME=2`, but the index is a place in the sorted file list, which with the
+  shipped files is ANSI, ASME, ISO.
+- The page writes `LineStyleHighlight`; `Preferences::HighlightLineStyle()`
+  reads `LineStyleHighLight`. The setting is never read.
+- `loadLineStyleBoxes` (`DlgPrefsTechDrawAnnotationImp.cpp`): `count() > style`
+  is off by one, so the last style is never selected again and the next
+  Apply stores 0.
+
+Writers that can store -1: every TechDraw `Gui::PrefComboBox` saves
+`currentIndex()`, which is -1 for an empty list -- `pcbLineGroup`, the four
+line style boxes (their readers clamp), `pcbBalloonArrow` and `pcbArrow` after
+a `setCurrentIndex` with a preference out of range. Task panels set document
+properties straight from `currentIndex()` (TaskLeaderLine, TaskBalloon,
+TaskDimension, TaskRichAnno); only `BubbleShape` has a reader that throws.
+
+Dialog only: `TaskProjGroup.cpp:138-150`, `TaskSectionView.cpp:115`,
+`TaskComplexSection.cpp:254`, `DlgPrefsTechDrawAnnotationImp.cpp:200-203`
+(`lgNames.at(1..3)` on a line group row with fewer than four fields).
+
+Not covered by the audit: the fixed `references.at(1)`/`.at(2)` of the
+dimension helpers, the restore of cosmetics and centre lines, broken and
+complex sections, details, templates, weld symbols, hatch and PAT parsing,
+the command files and the Python.
 
 ## Inbox
 

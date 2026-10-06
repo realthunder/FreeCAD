@@ -27,6 +27,8 @@
 # include <vector>
 #endif
 
+#include <QSignalBlocker>
+
 #include <Base/Tools.h>
 
 #include <Mod/TechDraw/App/LineGroup.h>
@@ -88,7 +90,10 @@ void DlgPrefsTechDrawAnnotationImp::saveSettings()
     ui->cbCutSurface->onSave();
 
     ui->pcbLineGroup->onSave();
-    ui->pcbLineStandard->onSave();
+    // not with no current item: that is saved as -1, which names no standard
+    if (ui->pcbLineStandard->currentIndex() >= 0) {
+        ui->pcbLineStandard->onSave();
+    }
     ui->pcbSectionStyle->onSave();
     ui->pcbCenterStyle->onSave();
     ui->pcbHighlightStyle->onSave();
@@ -141,15 +146,26 @@ void DlgPrefsTechDrawAnnotationImp::loadSettings()
 
     ui->cbEndCap->onRestore();
 
-    ui->pcbLineStandard->onRestore();
-    DrawGuiUtil::loadLineStandardsChoices(ui->pcbLineStandard);
-    if (ui->pcbLineStandard->count() > Preferences::lineStandard()) {
-        ui->pcbLineStandard->setCurrentIndex(Preferences::lineStandard());
+    {
+        // Refilled in silence. This runs again on a language change, with the
+        // slot below connected by then: emptying the list said "index -1",
+        // the slot stored that as the line standard and then threw reading
+        // the definitions of standard -1, before the index was put back.
+        QSignalBlocker quiet(ui->pcbLineStandard);
+        ui->pcbLineStandard->onRestore();
+        DrawGuiUtil::loadLineStandardsChoices(ui->pcbLineStandard);
+        if (ui->pcbLineStandard->count() > Preferences::lineStandard()) {
+            ui->pcbLineStandard->setCurrentIndex(Preferences::lineStandard());
+        }
+        else if (ui->pcbLineStandard->count() > 0) {
+            ui->pcbLineStandard->setCurrentIndex(0);
+        }
     }
     // we have to connect the slot after the inital load or the current standard will
     // be set to index 0 when the widget is created
     connect(ui->pcbLineStandard, qOverload<int>(&QComboBox::currentIndexChanged),
-            this, &DlgPrefsTechDrawAnnotationImp::onLineStandardChanged);
+            this, &DlgPrefsTechDrawAnnotationImp::onLineStandardChanged,
+            Qt::UniqueConnection);
 
     ui->pcbSectionStyle->onRestore();
     ui->pcbCenterStyle->onRestore();
@@ -207,6 +223,9 @@ void DlgPrefsTechDrawAnnotationImp::onLineGroupChanged(int index)
 //! line style comboboxes are filled for the correct standard.
 void DlgPrefsTechDrawAnnotationImp::onLineStandardChanged(int index)
 {
+    if (index < 0) { // the list is empty, or being refilled: no standard is chosen
+        return;
+    }
     Preferences::setLineStandard(index);
     m_lineGenerator->reloadDescriptions();
     loadLineStyleBoxes();
