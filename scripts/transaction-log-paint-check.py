@@ -296,6 +296,82 @@ def run():
         check("one taken away: five names, and nothing left as it was not (%r)" % drawn,
               drawn == [RED] and len(named(doc.Box)) == 5)
         App.closeDocument(doc.Name)
+
+        # A whole material by name (sec 13.6 step 4).
+        doc = App.newDocument("PaintLook")
+        doc.UndoMode = 1
+        doc.openTransaction("base")
+        doc.addObject("Part::Box", "Box")
+        doc.recompute()
+        doc.commitTransaction()
+        vp = doc.Box.ViewObject
+        top, bottom = face(doc.Box, ZMin=10), face(doc.Box, ZMax=0)
+        itop, ibottom = int(top[4:]) - 1, int(bottom[4:]) - 1
+
+        def gloss(m):
+            return round(m.Shininess, 3)
+
+        def glossed(value):
+            # The object's gloss, through the appearance's base. Not through
+            # ShapeMaterial: assigned a material that names the card the
+            # object wears, in another gloss, that leaves the base as it was
+            # (sec 13.7, the third of the trap).
+            base = vp.ShapeAppearance.Base
+            base.Shininess = value
+            vp.ShapeAppearance.Base = base
+            doc.recompute()
+
+        own = gloss(vp.ShapeAppearance.Base)
+        # A colour and no more: the face goes on taking the object's gloss.
+        paint(doc, "green bottom", "Box", {bottom: GREEN})
+        glossed(0.5)
+        check("a face given a colour takes the object's new gloss (%r)" % gloss(vp.ShapeAppearance[ibottom]),
+              gloss(vp.ShapeAppearance[ibottom]) == 0.5 and rgb(vp.DiffuseColor[ibottom]) == GREEN)
+        check("and so its name says (%r)" % gloss(vp.getElementAppearances()[bottom]),
+              gloss(vp.getElementAppearances()[bottom]) == 0.5)
+        glossed(own)
+
+        doc.openTransaction("matte red top")
+        looks = {k: v for k, v in vp.getElementAppearances().items() if k not in ("Face", "Edge", "Vertex")}
+        looks[top] = App.Material(DiffuseColor=RED, Shininess=0.25)
+        vp.setElementAppearances(looks)
+        doc.recompute()
+        doc.commitTransaction()
+        check("a material by name: drawn with its gloss (%r)" % gloss(vp.ShapeAppearance[itop]),
+              gloss(vp.ShapeAppearance[itop]) == 0.25 and rgb(vp.DiffuseColor[itop]) == RED)
+        check("the other faces with the object's (%r)" % sorted({gloss(x) for x in vp.ShapeAppearance}),
+              sorted({gloss(x) for x in vp.ShapeAppearance}) == sorted({0.25, own}))
+        check("read back by name (%r)" % gloss(vp.getElementAppearances()[top]),
+              gloss(vp.getElementAppearances()[top]) == 0.25
+              and named(doc.Box) == {top: RED, bottom: GREEN})
+        check("the object's own look is not the names' (%r)" % gloss(vp.getElementAppearances()["Face"]),
+              gloss(vp.getElementAppearances()["Face"]) == own)
+        doc.undo()
+        check("undone: the face the object's, the first name left (%r)" % named(doc.Box),
+              gloss(vp.ShapeAppearance[itop]) == own and named(doc.Box) == {bottom: GREEN})
+        doc.redo()
+        check("redone (%r)" % gloss(vp.ShapeAppearance[itop]),
+              gloss(vp.ShapeAppearance[itop]) == 0.25 and named(doc.Box) == {top: RED, bottom: GREEN})
+        # A colour given to a name that has a material changes its colour.
+        paint(doc, "blue top", "Box", {top: BLUE})
+        check("a colour by name keeps the name's material (%r)" % gloss(vp.ShapeAppearance[itop]),
+              gloss(vp.ShapeAppearance[itop]) == 0.25 and rgb(vp.DiffuseColor[itop]) == BLUE)
+        there = shown(doc.Box)
+        path = os.path.join(folder, "PaintLook.FCStd")
+        doc.saveAs(path)
+        App.closeDocument(doc.Name)
+        doc = App.openDocument(path)
+        vp = doc.Box.ViewObject
+        check("saved and read: the material by name (%r)" % gloss(vp.getElementAppearances()[top]),
+              gloss(vp.getElementAppearances()[top]) == 0.25
+              and named(doc.Box) == {top: BLUE, bottom: GREEN})
+        check("and drawn as it was (%r)" % gloss(vp.ShapeAppearance[itop]),
+              gloss(vp.ShapeAppearance[itop]) == 0.25 and shown(doc.Box) == there)
+        vp.setElementAppearances({})
+        doc.recompute()
+        check("its name taken away: all of the look goes back (%r)" % sorted({gloss(x) for x in vp.ShapeAppearance}),
+              {gloss(x) for x in vp.ShapeAppearance} == {own} and shown(doc.Box) == {})
+        App.closeDocument(doc.Name)
     except Exception:
         lines.append("FAIL exception\n" + traceback.format_exc())
     finally:

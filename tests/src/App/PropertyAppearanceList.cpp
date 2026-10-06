@@ -2822,6 +2822,34 @@ TEST_F(PropertyAppearanceListTest, anAppearanceCardKeepsThePaintedFaces)
     EXPECT_TRUE(prop.getMaterial(5).diffuseColor == packed(0x0000ffff));
 }
 
+TEST_F(PropertyAppearanceListTest, anEntryGivenItsCardInAnotherColourIsWritten)
+{
+    // Two materials naming one card compare equal whatever their colours
+    // (MaterialAppearance::operator==), and set1Value took that for nothing
+    // to write: a face painted over an object that wears a card kept the
+    // object's colour.
+    App::MaterialAppearance card;
+    card.uuid = "f0e1d2c3-b4a5-6978-8a9b-0c1d2e3f4050";
+    card.diffuseColor = packed(0x0000ffff);
+    App::PropertyAppearanceList prop;
+    prop.setSize(4, card);
+    App::MaterialAppearance painted = card;
+    painted.diffuseColor = packed(0xff0000ff);
+    painted.shininess = 0.25F;
+    ASSERT_TRUE(painted == card);
+
+    prop.set1Value(2, painted);
+    EXPECT_TRUE(prop.isOverride(2));
+    EXPECT_TRUE(prop.getDiffuseColor(2) == packed(0xff0000ff));
+    EXPECT_FLOAT_EQ(prop.getShininess(2), 0.25F);
+    EXPECT_TRUE(prop.getDiffuseColor(1) == packed(0x0000ffff));
+
+    // and written again it is nothing: the storage is not so much as copied
+    const App::AppearanceList before = prop.getList();
+    prop.set1Value(2, painted);
+    EXPECT_TRUE(prop.getList().isSameData(before));
+}
+
 TEST_F(PropertyAppearanceListTest, aListOfOneEntryHasNoOverrides)
 {
     // 12.6: that entry IS what the object looks like

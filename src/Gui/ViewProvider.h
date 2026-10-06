@@ -501,6 +501,19 @@ public:
     virtual void setElementColors(const std::map<std::string, Base::Color> &colors) {
         (void)colors;
     }
+    /** The elements' looks, each a whole material
+     *
+     * The colour calls with all of a look where they have its colour, and
+     * the same names. A view provider that keeps colours and no more answers
+     * with the default material in each colour and takes the colour of what
+     * it is given, which is what these do unless overridden.
+     */
+    //@{
+    virtual std::map<std::string, App::MaterialAppearance>
+    getElementAppearances(const char *element=nullptr) const;
+    virtual void
+    setElementAppearances(const std::map<std::string, App::MaterialAppearance> &appearances);
+    //@}
     virtual void updateColors(App::Document *sourceDoc=0, bool forceColorMap=false) {
         (void)sourceDoc;
         (void)forceColorMap;

@@ -2034,9 +2034,12 @@ void AppearanceList::set1Value(int idx, const MaterialAppearance &value)
         setSize(rd().count + 1, mat);
     }
     else {
-        if (getMaterial(idx) == mat)
-            return;
-        touchFields();
+        // Field by field, and nothing decided here: each write below leaves
+        // the storage as it found it where its field is unchanged, which is
+        // what tells the property there is nothing to record. This used to
+        // ask MaterialAppearance::operator== first -- to which two materials
+        // that name one card are the same whatever their colours say, so an
+        // entry given its own material in another colour was not written.
         applyEntry(idx, mat);
     }
 }

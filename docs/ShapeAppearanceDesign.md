@@ -3129,3 +3129,61 @@ face coloured by its number beside it, the last name taken away and that
 face alone left; six faces red by name all drawn red and the object red
 with them, and one of the six names taken away with nothing drawn that was
 not.
+
+**Step 4, whole materials (2026-10-07).**
+
+*The calls.* `Gui::ViewProvider::getElementAppearances(element)` and
+`setElementAppearances(map)`, a name to an `App::MaterialAppearance`,
+beside the two colour calls and with their names -- `Face`, `Edge` and
+`Vertex` for the object's own. Python's of the same names, a dict of
+`App.Material`. A view provider that keeps colours and no more (a link's
+elements, `App::Part`, PartDesign's body: Q6) has them from the base
+class: the default material in each colour out, the colour of each
+material in.
+
+*`ViewProviderPartExt`.* Both setters end in one place
+(`setNamedElements()`): the looks stored over the object's base as it is
+then, so that of each only what the object has not is an entry's own.
+`setElementColors()` gives a name that has a look its new colour and
+leaves the rest of the look; a new name is the object with that colour.
+`setElementAppearances()`'s `Face` is the base, whole
+(`ShapeAppearance.setBase`); `Edge` and `Vertex` are colours, as their
+arrays are.
+
+`namedAppearances()` is 13.7's reading of the store: a copy, its base set
+to the object's as it is now, each entry's colour put back. `updateColors()`
+draws from it: a named face is given its whole look
+(`AppearanceList::set1Value`) over what the colours wrote, so the per-face
+part of `ShapeAppearance` stays in sec 12's form. `getElementAppearances()`
+with no element answers from it too; with one, it is the face as drawn.
+
+A map a look names is content the document holds by its hash, and the
+list that names it has to hold it: `holdStoredBlobs()` on the store when a
+look with a texture or a MaterialX set is written. *Written, not run:*
+nothing here gives a named face a texture yet.
+
+*In App, found by it.* `AppearanceList::set1Value()` asked
+`MaterialAppearance::operator==` whether there was anything to write, and
+to that two materials naming one card are the same whatever their colours
+say. An object that wears a card has its `uuid` in its base, so a face
+given "the object's material, in red" was not written at all. It writes
+field by field now, each field leaving the storage alone where it is
+unchanged; gtest `anEntryGivenItsCardInAnotherColourIsWritten`.
+
+*The same trap a third time, found and not fixed* (`glossp.py`):
+`vp.ShapeMaterial = m`, with `m` the object's material in another gloss,
+leaves the base as it was on an object that wears a card -- and
+`ShapeMaterial` reads back the new gloss, so the mirror and what it
+mirrors disagree. `ViewProviderGeometryObject::onChanged` asks the same
+operator whether the material differs from the base before it writes.
+Left alone because the same test stands between a restored
+`ShapeMaterial` and the base on every document read, and what it would
+let through there has not been looked at. The paint check sets the
+object's gloss through `ShapeAppearance.Base`.
+
+Paint check, 43: a face given a colour and no more takes a gloss given to
+the object after, and its name says so; a material by name drawn with its
+gloss, the other faces with the object's, read back by name, the object's
+own look not the names'; undone and redone; a colour given to a name that
+has a material changes its colour and keeps the rest; saved and read back
+by name and as drawn; its name taken away, all of the look gone back.

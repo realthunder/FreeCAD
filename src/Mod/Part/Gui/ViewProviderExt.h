@@ -311,6 +311,19 @@ public:
      */
     //@{
     void setElementColors(const std::map<std::string,App::Color> &colors) override;
+    std::map<std::string,App::MaterialAppearance>
+    getElementAppearances(const char *element=nullptr) const override;
+    void setElementAppearances(
+            const std::map<std::string,App::MaterialAppearance> &appearances) override;
+    /** The named elements' looks, as they are to be drawn
+     *
+     * MappedAppearance over the object's base as that is now, not as it was
+     * when the names were written: of each entry the colour is the
+     * element's own always, and of the rest what it was given that the
+     * object did not have (docs/ShapeAppearanceDesign.md sec 13.7). A
+     * shared copy until this writes to it; nothing is stored.
+     */
+    App::AppearanceList namedAppearances() const;
     std::map<std::string,App::Color> getElementColors(const char *element=nullptr) const override;
     //@}
 
@@ -817,8 +830,15 @@ protected:
     std::map<int, std::set<int>> paintedByName;
     /// Make paintedByName again from the names, as a document read has to
     void rememberPaintedByName();
-    void setFaceColors(const std::vector<App::Color> &colors,
-                       const std::vector<int> &unpainted);
+    void setFaceColors(const std::vector<App::Color> &colors, int faceCount,
+                       const std::vector<int> &unpainted,
+                       const std::map<int,int> &named,
+                       const App::AppearanceList &looks);
+    /// Write the names and a look for each, the tail of both setters
+    void setNamedElements(App::PropertyLinkSub *names,
+                          const std::vector<std::string> &subs,
+                          const std::vector<App::MaterialAppearance> &looks,
+                          bool touched);
     bool highlightFaceEdges = false;
 
     /// Whether the last APPLIED per-face materials diverge in value in a
