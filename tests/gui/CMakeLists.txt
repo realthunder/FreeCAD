@@ -211,6 +211,12 @@ fc_add_gui_test(GuiPdOriginInEdit_tests_run pd-origin-in-edit.py
 fc_add_gui_test(GuiTechDrawLineStandardOutOfRange_tests_run
                 techdraw-line-standard-out-of-range.py --timeout 180)
 
+# A TechDraw page switched to the backend's page layer and back while it is
+# open: on a session whose backend is not OpenGL the switch crashed in the
+# page's paint, and switching off left the view on a GL viewport.
+fc_add_gui_test(GuiTechDrawPageBackendSwitch_tests_run
+                techdraw-page-backend-switch.py --timeout 180)
+
 # A browser's right click (docs/ThinClient.md sec 8.11b): the desktop's 3D
 # view context menu built for what the ray hits, its entries judged for the
 # connection, an edit entry entered in the client's view with no 3D view

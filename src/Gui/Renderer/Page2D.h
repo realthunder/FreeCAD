@@ -249,8 +249,15 @@ public:
     /// Fails when bgfx cannot come up -- or was brought up by someone
     /// else in a state we cannot verify; test hosts run without the 3D
     /// renderer active.
+    ///
+    ///  transparent clears to transparent black instead of opaque
+    /// white: the pixels are then a layer with premultiplied alpha for
+    /// a host that paints its own sheet and backdrop underneath -- what
+    /// renderToTexture hands the GL compositor, for the hosts that
+    /// cannot share a texture with the device.
     bool renderOffscreen(uint16_t width, uint16_t height,
-                         std::vector<uint8_t>& rgba);
+                         std::vector<uint8_t>& rgba,
+                         bool transparent = false);
 
     /// The interactive desktop compositor: render the page into a
     /// persistent page-owned color target (transparent background,

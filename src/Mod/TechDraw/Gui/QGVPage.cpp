@@ -42,6 +42,7 @@
 #include <Gui/Application.h>
 #include <Gui/BitmapFactory.h>
 #include <Gui/Document.h>
+#include <Gui/MainWindow.h>
 #include <Gui/ViewProviderDocumentObject.h>
 #include <Gui/NavigationStyle.h>
 #include <Gui/Selection.h>
@@ -129,6 +130,8 @@ class QGVPage::Private: public ParameterGrp::ObserverType
 public:
     /// handle to the viewer parameter group
     ParameterGrp::handle hGrp;
+    /// TechDraw's own General group, for the page renderer switch
+    ParameterGrp::handle hGrpGeneral;
     QGVPage* page;
     explicit Private(QGVPage* page) : page(page)
     {
@@ -136,6 +139,8 @@ public:
         hGrp = App::GetApplication().GetParameterGroupByPath(
             "User parameter:BaseApp/Preferences/View");
         hGrp->Attach(this);
+        hGrpGeneral = Preferences::getPreferenceGroup("General");
+        hGrpGeneral->Attach(this);
     }
     void init()
     {
@@ -150,7 +155,16 @@ public:
     void OnChange(ParameterGrp::SubjectType& rCaller, ParameterGrp::MessageType Reason) override
     {
         const ParameterGrp& rGrp = static_cast<ParameterGrp&>(rCaller);
-        if (strcmp(Reason, "NavigationStyle") == 0) {
+        if (strcmp(Reason, "PageRendererVg") == 0
+            || strcmp(Reason, "PageRendererVgComposite") == 0) {
+            // Which renderer draws the page is decided in the
+            // background's paint, and the background is cached: without
+            // this the switch waits for whatever next invalidates it.
+            page->m_vgWarmupTried = false;
+            page->resetCachedContent();
+            page->viewport()->update();
+        }
+        else if (strcmp(Reason, "NavigationStyle") == 0) {
             std::string model =
                 rGrp.GetASCII("NavigationStyle", CADNavigationStyle::getClassTypeId().getName());
             page->setNavigationStyle(model);
@@ -178,6 +192,7 @@ public:
         hGrp = App::GetApplication().GetParameterGroupByPath(
             "User parameter:BaseApp/Preferences/View");
         hGrp->Detach(this);
+        hGrpGeneral->Detach(this);
     }
 };
 
@@ -348,6 +363,14 @@ void QGVPage::drawBackground(QPainter* painter, const QRectF&)
 
     painter->save();
     painter->resetTransform();
+    // The sheet's outline, said rather than inherited. The cached
+    // background is painted into a pixmap, whose painter starts with a
+    // black pen and no antialiasing; with the cache off (the backend's
+    // page layer needs it off) this is the viewport's painter, whose
+    // pen is the palette's text colour and which antialiases -- a dark
+    // theme then drew the outline in light grey, a pixel off.
+    painter->setRenderHint(QPainter::Antialiasing, false);
+    painter->setPen(QPen(Qt::black, 0));
 
     painter->setBrush(*bkgBrush);
     painter->drawRect(
@@ -381,6 +404,51 @@ void QGVPage::drawBackground(QPainter* painter, const QRectF&)
             ->GetBool("PageRendererVg", false)) {
         drawVgPreview(painter);
     }
+    else if (m_vgPage) {
+        // Switched off in a running session: hand the page back to Qt
+        // the way the constructor set it up (queued -- this is the
+        // viewport's own paint event).
+        QMetaObject::invokeMethod(
+            this,
+            [this]() {
+                if (m_vgPage
+                    && !TechDraw::Preferences::getPreferenceGroup("General")
+                            ->GetBool("PageRendererVg", false)) {
+                    leaveVgPreview();
+                }
+            },
+            Qt::QueuedConnection);
+    }
+}
+
+void QGVPage::setVgViewport(bool gl)
+{
+    auto glvp = qobject_cast<QOpenGLWidget*>(viewport());
+    if (gl == (glvp != nullptr))
+        return;
+    if (glvp && m_vgBlitter) {
+        // The blitter's GL program lives in the outgoing viewport's
+        // context and goes with it.
+        glvp->makeCurrent();
+        delete m_vgBlitter;
+        m_vgBlitter = nullptr;
+        glvp->doneCurrent();
+    }
+    setRenderer(gl ? OpenGL : Native);
+}
+
+void QGVPage::leaveVgPreview()
+{
+    setVgViewport(false);
+    m_vgViews.clear();
+    m_vgDirty.clear();
+    m_vgPageStructure = 0;
+    m_vgTemplateStamp = 0;
+    m_vgPage.reset();
+    m_vgWarmupTried = false;
+    m_vgCompositeLogged = false;
+    setCacheMode(QGraphicsView::CacheBackground);
+    viewport()->update();
 }
 
 void QGVPage::drawVgPreview(QPainter* painter)
@@ -455,8 +523,10 @@ void QGVPage::drawVgPreview(QPainter* painter)
             auto vpd = dynamic_cast<Gui::ViewProviderDocumentObject*>(
                 Gui::Application::Instance->getViewProvider(dv));
             const int8_t visNow = !vpd || vpd->isShow() ? 1 : 0;
-            if ((float)dv->X.getValue() != v.second.fedX
-                || (float)dv->Y.getValue() != v.second.fedY
+            double pageX = 0.0, pageY = 0.0;
+            PageFeed::pagePosition(dv, pageX, pageY);
+            if ((float)pageX != v.second.fedX
+                || (float)pageY != v.second.fedY
                 || visNow != v.second.fedVisible)
                 m_vgDirty.insert(v.first);
         }
@@ -493,8 +563,10 @@ void QGVPage::drawVgPreview(QPainter* painter)
                 PageFeed::feedViewCapture(qgiv, *m_vgPage,
                                           it->second.layer);
             }
-            it->second.fedX = (float)dv->X.getValue();
-            it->second.fedY = (float)dv->Y.getValue();
+            double pageX = 0.0, pageY = 0.0;
+            PageFeed::pagePosition(dv, pageX, pageY);
+            it->second.fedX = (float)pageX;
+            it->second.fedY = (float)pageY;
             auto vpd = dynamic_cast<Gui::ViewProviderDocumentObject*>(
                 Gui::Application::Instance->getViewProvider(dv));
             it->second.fedVisible = !vpd || vpd->isShow() ? 1 : 0;
@@ -540,32 +612,50 @@ void QGVPage::drawVgPreview(QPainter* painter)
     const bool wantComposite =
         TechDraw::Preferences::getPreferenceGroup("General")
             ->GetBool("PageRendererVgComposite", true);
+    // Whether it CAN engage is settled before the viewport is touched.
+    // The backend's device is one per process, so where the session
+    // runs on anything but OpenGL (Direct3D 11 is the Windows default)
+    // the answer is no for good, and the page keeps its raster
+    // viewport and takes the readback path below: a GL viewport would
+    // buy nothing there and costs the Qt items their quality. It used
+    // to be asked the other way round -- GL viewport first, then a
+    // warm-up from inside its first paint -- and on a Direct3D session
+    // that warm-up left the painter without a GL context, which Qt
+    // dereferenced.
+    bool canComposite =
+        wantComposite && Render::RendererFactory::deviceSharesQtGL();
+    if (wantComposite && !canComposite && !m_vgWarmupTried) {
+        // Once per page host -- a refusal will not change.
+        m_vgWarmupTried = true;
+        // Only a session with no device at all is warmed up, on GL,
+        // which is what sharing needs. The main window's own warm-up
+        // surface supplies the format, as it does at startup: the
+        // backend keeps a view keyed by the widget it is handed, and
+        // this viewport does not outlive the page.
+        auto warm = Render::RendererFactory::drawDevice()
+            ? nullptr
+            : Gui::getMainWindow()->findChild<QOpenGLWidget*>(
+                  QStringLiteral("GLSurfaceWarmup"));
+        if (warm && Render::RendererFactory::warmup("bgfx - OpenGL", warm))
+            canComposite = Render::RendererFactory::deviceSharesQtGL();
+    }
     auto glvp = qobject_cast<QOpenGLWidget*>(viewport());
-    if (wantComposite && !glvp) {
-        // Switch the viewport to GL for the next paint; this one is
-        // the old viewport's own paint event, so it cannot be
-        // destroyed from here.
+    if (canComposite != (glvp != nullptr)) {
+        // Switch the viewport for the next paint -- to GL, or back
+        // when the composite was switched off; this one is the old
+        // viewport's own paint event, so it cannot be destroyed from
+        // here.
         QMetaObject::invokeMethod(
             this,
-            [this]() {
-                if (!qobject_cast<QOpenGLWidget*>(viewport())) {
-                    setRenderer(OpenGL);
-                    setCacheMode(QGraphicsView::CacheNone);
-                    viewport()->update();
-                }
+            [this, canComposite]() {
+                setVgViewport(canComposite);
+                setCacheMode(QGraphicsView::CacheNone);
+                viewport()->update();
             },
             Qt::QueuedConnection);
     }
-    if (wantComposite && glvp
+    if (canComposite && glvp
         && painter->paintEngine()->type() == QPaintEngine::OpenGL2) {
-        if (!Render::RendererFactory::deviceSharesQtGL()
-            && !m_vgWarmupTried) {
-            // Bring the device up exactly as the first 3D view would;
-            // the desktop bgfx backend is GL, which is what sharing
-            // needs. Once per page host -- a refusal will not change.
-            m_vgWarmupTried = true;
-            Render::RendererFactory::warmup("bgfx - OpenGL", glvp);
-        }
         if (Render::RendererFactory::deviceSharesQtGL()) {
             const qreal dpr = glvp->devicePixelRatioF();
             Render::Page2D::View pv = view;
@@ -624,15 +714,27 @@ void QGVPage::drawVgPreview(QPainter* painter)
         }
     }
 
+    // The readback path: what a session whose device is not OpenGL
+    // gets on every paint. The same layer the compositor blits -- device
+    // pixels, transparent where the page draws nothing, so the sheet
+    // and the backdrop painted above stay.
+    const qreal dpr = viewport()->devicePixelRatioF();
+    view.zoom *= (float)dpr;
+    view.panX *= (float)dpr;
+    view.panY *= (float)dpr;
+    view.devicePixelRatio = (float)dpr;
     m_vgPage->setView(view);
-    const int width = viewport()->width();
-    const int height = viewport()->height();
+    const int width = (int)std::lround(viewport()->width() * dpr);
+    const int height = (int)std::lround(viewport()->height() * dpr);
     std::vector<uint8_t> rgba;
-    if (!m_vgPage->renderOffscreen((uint16_t)width, (uint16_t)height, rgba))
+    if (!m_vgPage->renderOffscreen((uint16_t)width, (uint16_t)height, rgba,
+                                   true)) {
         return;
+    }
 
     QImage image(rgba.data(), width, height, width * 4,
-                 QImage::Format_RGBA8888);
+                 QImage::Format_RGBA8888_Premultiplied);
+    image.setDevicePixelRatio(dpr);
     painter->save();
     painter->resetTransform();
     painter->drawImage(0, 0, image);

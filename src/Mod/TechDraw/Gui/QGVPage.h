@@ -234,6 +234,12 @@ private:
         fastsignals::scoped_connection repaint;
     };
     void drawVgPreview(QPainter* painter);
+    /// Swap the viewport between the Qt raster one and a QOpenGLWidget
+    /// (the composite's). Never from inside a paint.
+    void setVgViewport(bool gl);
+    /// The preview switched off in a running session: drop its state
+    /// and give the page back to Qt as the constructor set it up.
+    void leaveVgPreview();
     std::unique_ptr<Render::Page2D> m_vgPage;
     std::map<std::string, VgViewTrack> m_vgViews;
     std::set<std::string> m_vgDirty;

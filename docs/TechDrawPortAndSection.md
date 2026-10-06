@@ -2480,3 +2480,78 @@ sources resolves to a non-null pixmap**, and selecting the style makes it
 the menu's default action, hides the "Undefined" entry and moves the
 indicator's icon.  The image check is the one that matters: a tooltip
 referencing a name absent from the resource fails silently at render time.
+
+## 36. Implementation status (2026-10-06): the page layer on a session that is not OpenGL
+
+Section 23 was written when the desktop backend was OpenGL everywhere. On
+Windows the session's device is Direct3D 11 now (docs/RenderEngine.md 7.10),
+and the device is one per process, so there the zero-copy composite can
+never engage: `deviceSharesQtGL()` is false for good. What `PageRendererVg`
+did on such a session was swap the viewport for a `QOpenGLWidget` anyway and
+warm the backend up from inside that viewport's first paint; the warm-up
+left the open `QPainter` with no current GL context and Qt dereferenced the
+null (`QOpenGLContext::isOpenGLES`, docs/HandsOnQueue.md entry 20).
+
+**What decides the viewport now.** `QGVPage::drawVgPreview` settles whether
+the composite CAN engage before it touches the viewport:
+
+| the session's device | viewport | the layer reaches the page by |
+|---|---|---|
+| OpenGL in Qt's share group | `QOpenGLWidget` | `renderToTexture` + a textured blit (section 23) |
+| anything else (Direct3D, Vulkan, Metal) | the raster `QWidget` | `renderOffscreen` + `QImage`, every paint |
+| none yet | warmed up on OpenGL once, from the main window's `GLSurfaceWarmup` widget, then the first row | |
+
+The viewport follows the answer both ways (`setVgViewport`): to GL when the
+composite can engage, back to raster when `PageRendererVgComposite` is
+switched off. `RendererLib::warmup(QOpenGLWidget*)` hands the caller's GL
+context back on every way out, whoever calls it from wherever.
+
+**The read-back path is a real path now**, not a fallback nobody looks at.
+`Page2D::renderOffscreen(w, h, rgba, transparent)`: with `transparent` the
+target is cleared to transparent black and the pixels are the same
+premultiplied layer the compositor blits, so the host's own sheet and
+backdrop stay (it used to paint the whole viewport white). The page asks
+for device pixels and tags the image with the pixel ratio. Cost, 668 x 630
+on Direct3D 11: about 3 ms a paint on top of Qt's (1.8 -> 4.7 ms for one
+view; 3.0-7.3 -> 5.6-10.1 ms over four pages of a real document). It still
+creates and destroys its target on every call; a retained target is the
+obvious next saving and has not been needed yet.
+
+**Switching in a running session.** `QGVPage::Private` observes
+`PageRendererVg` and `PageRendererVgComposite` (the decision is taken in the
+background's paint, and the background is cached, so nothing else would
+repaint it). Off: `leaveVgPreview` drops the layer and its tracks, puts the
+raster viewport back and the background cache on -- the page is then the
+Qt-painted one pixel for pixel. The sheet's outline is drawn with a stated
+pen and no antialiasing: uncached, the background is painted by the
+viewport's painter, whose pen is the palette's text colour.
+
+**Three feed defects a real document showed** (`PageFeed.cpp`):
+- an arc of circle was drawn from `AOC::startAngle`/`endAngle`. Those are
+  curve parameters, measured from the circle's own X axis, which a
+  projection leaves wherever the source had it; the arc came out on the
+  right circle and the wrong part of it. The angles come from the start,
+  middle and end points now (the Qt tier, `PathBuilder`, draws from the end
+  points and the two SVG flags);
+- a projection group's items were placed by their own X/Y, which are
+  relative to the group: `PageFeed::pagePosition`, used by the feed and by
+  both damage checks (`QGVPage` and `PageServe`);
+- a vertex dot had twice Qt's size (`QGIVertex::setRadius` takes the
+  diameter).
+
+**Still open.**
+- The layer is under the Qt items and the Qt items still paint: the page is
+  drawn twice, and translucent antialiased strokes blended twice look
+  bolder. Making the backend's picture the only one -- Qt items kept for
+  the mouse, not painted where the layer covers them -- is the interactive
+  integration section 16 left for later, and is not designed.
+- Views inside a `DrawViewClip`: positions relative to the clip, and no
+  clipping in the layer.
+- A GL viewport has no multisampling, so on an OpenGL session the Qt items
+  over the layer are aliased (the constructor's "rotten quality").
+
+`tests/gui/techdraw-page-backend-switch.py` covers the switch and the
+picture; a `QWidget.grab()` cannot read a GL viewport and
+`grabFramebuffer()` renders first, which discards what was painted, so the
+test reads the layer through the raster path (`PageRendererVgComposite`
+off) on every session and only switches on the composite one.

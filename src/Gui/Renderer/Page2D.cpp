@@ -1224,7 +1224,7 @@ bool Page2D::render(uint16_t viewId, uint16_t width, uint16_t height)
 static bool _offscreenDeviceUp = false;
 
 bool Page2D::renderOffscreen(uint16_t width, uint16_t height,
-                             std::vector<uint8_t>& rgba)
+                             std::vector<uint8_t>& rgba, bool transparent)
 {
     if (!width || !height)
         return false;
@@ -1297,7 +1297,7 @@ bool Page2D::renderOffscreen(uint16_t width, uint16_t height,
     bgfx::setViewRect(viewId, 0, 0, width, height);
     bgfx::setViewClear(viewId,
                        BGFX_CLEAR_COLOR | BGFX_CLEAR_DEPTH | BGFX_CLEAR_STENCIL,
-                       0xffffffff, 1.0f, 0);
+                       transparent ? 0x00000000 : 0xffffffff, 1.0f, 0);
 
     bool ok = render(viewId, width, height);
     bgfx::touch(viewId);
@@ -1449,7 +1449,7 @@ bool Page2D::render(uint16_t, uint16_t, uint16_t)
     return false;
 }
 
-bool Page2D::renderOffscreen(uint16_t, uint16_t, std::vector<uint8_t>&)
+bool Page2D::renderOffscreen(uint16_t, uint16_t, std::vector<uint8_t>&, bool)
 {
     return false;
 }
