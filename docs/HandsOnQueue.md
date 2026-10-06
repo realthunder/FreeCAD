@@ -41,6 +41,7 @@ report views, the reporter's own files -- is kept beside the dev tree under
 | 17 | 2026-10-06 | `Sketch043`, `Sketch055`: "Missing external geometry reference", seen once the binders of entry 16 are valid | OPEN |
 | 18 | 2026-10-06 | TechDraw pages do not load: "invalid vector subscript", the views loose in the tree, 320 objects restored to defaults | STAGED |
 | 19 | 2026-10-06 | TechDraw: other indexes taken on trust (an audit asked) | OPEN |
+| 20 | 2026-10-06 | TechDraw: crash when the page is switched to the backend's renderer; and what it then drew | FIXED; what "drawn by the backend" has to mean is open |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -674,6 +675,98 @@ dimension helpers, the restore of cosmetics and centre lines, broken and
 complex sections, details, templates, weld symbols, hatch and PAT parsing,
 the command files and the Python.
 
+## 20. TechDraw: crash when the page is switched to the backend -- FIXED
+
+**Reported (2026-10-06 17:53, under cdb):** "there is a crash when I started
+bgfx rendering of techdraw". The copy staged 17:44, a page open and painted
+by Qt, `Mod/TechDraw/General/PageRendererVg` switched on.
+
+**Seen** (`tools\dbg\cdb_fcad_user.log`, first chance): an access violation
+reading 0x8 in `QOpenGLContext::isOpenGLES`, from
+`QOpenGL2PaintEngineEx::renderHintsChanged`, from a `QGraphicsSvgItem` being
+painted, inside the first paint of a `QOpenGLWidget` that
+`QGVPage::setRenderer` had just made the viewport. Two lines before it:
+"bgfx is already running on Direct3D 11 in this process; OpenGL 2.1 needs a
+restart to select" and Qt's `Warning: "" failed to compile!`.
+
+**Cause.** `QOpenGLContext::currentContext()` was null in the middle of the
+page's paint. The page layer wanted its zero-copy composite, which needs the
+backend's device on OpenGL in Qt's share group: it swapped the viewport for
+a GL one, and in that viewport's first paint called
+`RendererFactory::warmup("bgfx - OpenGL", viewport)`. On this session the
+device was already up on Direct3D 11 (the Windows default), so the warm-up
+could change nothing -- but it still made the device's own Qt context
+current, pumped a frame and called `doneCurrent()`. The painter that Qt had
+open on the viewport was left with no context: its next shader would not
+compile, and the item after that dereferenced the null.
+
+**Reproduced** in the dev tree with a copy of the reporter's `user.cfg`
+(`PageRendererVg` is 0 in it: the switch was made in the running session),
+a box, a page, a view, the preference set from a timer: the same fault
+address (`Qt6Gui.dll+0x39d896`), the same two lines before it.
+
+**Fix.**
+- *The renderer.* `BGFXRendererLib::warmup(QOpenGLWidget*)` gives the caller
+  its GL context back on every way out.
+- *The page.* Whether the composite can engage is settled before the
+  viewport is touched. A device that is up and not OpenGL never will share,
+  so the page keeps its raster viewport and reads the layer back. Only a
+  session with no device at all is warmed up, and from the main window's
+  warm-up surface, not from a viewport that dies with the page.
+- *Switching.* The page view watches the two preferences and repaints.
+  Switched off, it drops the layer and goes back to a raster viewport with
+  its background cached, as the constructor left it; the composite switched
+  off alone takes it off the GL viewport too.
+
+**Then what it drew**, once it drew at all (found by looking at the page and
+by differencing it against the Qt-painted one, the box page first and
+`scanner.FCStd` after):
+- The read-back layer was opaque white: the grey backdrop and the sheet's
+  outline were painted over. `Page2D::renderOffscreen` takes `transparent`
+  now, the page asks for it and for device pixels (it ignored the pixel
+  ratio).
+- The sheet's outline came out light grey and a pixel off with the
+  background cache off: the pen and the antialiasing were whatever the
+  painter arrived with. Both are set now.
+- Vertex dots twice the size of Qt's: `QGIVertex::setRadius` draws an
+  ellipse as wide as its argument.
+- On `scanner.FCStd`, `Page`: arcs sweeping across the whole sheet. The feed
+  drew an arc of circle from `AOC::startAngle`/`endAngle`, which are the
+  curve's parameters, measured from the circle's own X axis; it takes the
+  angles from the arc's start, middle and end points now, as the Qt tier
+  draws from the end points.
+- Same page: Bottom, Front and Top drawn a second time at the bottom left
+  corner of the sheet. They are items of a projection group, whose X/Y are
+  relative to the group. `PageFeed::pagePosition` adds the group's, and the
+  two damage checks (the page view's and the browser page's) compare it, so
+  a moved group re-feeds its items.
+
+**Measured**, this build, 668 x 630 viewport, Direct3D 11, a full paint of
+the page: the box page 1.8 ms Qt-painted, 4.7 with the layer; the four
+pages of `scanner.FCStd` taken, 3.0 to 7.3 ms Qt-painted and 5.6 to 10.1
+with the layer. Switching back gives the Qt-painted page pixel for pixel
+(0 of 420840) on all four. An OpenGL session (`FC_BGFX_D3D11=0`) composites
+in a GL viewport ("vg compositor active") and switches back the same; its
+picture was read with `glReadPixels` and is right, with the Qt items
+aliased -- a GL viewport has no multisampling here.
+
+`tests/gui/techdraw-page-backend-switch.py`, 11 PASS on a fresh
+configuration, on the reporter's and on an OpenGL session. Scored: the same
+steps crashed before the first two fixes (no DONE line), and with the arc
+and the group position put back as they were the test FAILS "no ink away
+from what Qt draws" (495 pixels), both together -- not one at a time.
+
+**Open, the reporter's to say.** With the layer on, the page is drawn
+TWICE: the backend's layer underneath, and every Qt item on top of it, as
+before. That is what `PageRendererVg` was built as ("the verification tier
+... not yet its interactive integration"). It is why text and the template
+look bolder with it on (the same strokes blended twice), and it means the
+option buys nothing on screen yet. If "drawn by the backend" is to mean the
+backend's picture alone, the Qt items have to stop painting what the layer
+covers while still taking the mouse -- not started, not designed.
+Not done either: a clip group's views (their X/Y are relative to the clip,
+and the layer does not clip), and antialiasing for the GL viewport.
+
 ## Inbox
 
 Notes not sorted into an entry yet. Add a line here at any time, in any words;
@@ -874,3 +967,18 @@ it is read before each entry is started and moved up into the table.
     intersect part in SectionView003", "DVS::prepareShape - failed to build
     shape SectionView003 - Bnd_Box is void". Whether the section view that
     fails to build is what the out-of-range read trips over is not known.
+- **2026-10-06 17:56, `scanner.FCStd` restores with a wrong colour,
+  sometimes.** "the scanner file restore sometimes got wrong color, I am
+  seeing the motor body light grey part is showing light blue". A part that is
+  light grey in the file -- the motor body -- comes up light blue; not on every
+  load. Not said yet: the object's name, how often, and whether the colour is
+  wrong in the 3D view only or in the property editor too.
+  Read from the session's report log by the note-taker (copy:
+  `..\dl\handson\2026-10-06\wrong-color-report-view-1756.log`; nothing run):
+  this is the copy staged 17:44 (`f7d3aa0cf2`), session started 17:50:19,
+  `scanner` loaded 17:50:31. The "deferred view provider restore aborted ...
+  320 objects fall back to defaults" line of the 16:19 note is NOT in this
+  log, and there is no caught exception in it at all -- so this wrong colour
+  is not that abort. It is a load that reports nothing wrong and still shows
+  a colour the file does not have. "Sometimes" points at something that
+  depends on order or timing in the load rather than on the file.
