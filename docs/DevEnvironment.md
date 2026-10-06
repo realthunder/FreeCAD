@@ -2669,9 +2669,23 @@ the log at every start -- `NtGlobalFlag` (0 = no debug heap) and where
 `FreeCADBase`'s symbols came from (`private pdb symbols`, out of
 `.conda\user-app`, read straight through the compression) -- then traps an
 access violation on first chance, logs registers and 60 frames, and passes it
-on with `gn`. It writes ONE full dump per session
-(`dbg\dumps\fcad_user_av*.dmp`, 1-2 GB each): a fault that repeats would
-otherwise fill the drive.
+on with `gn`. It writes ONE dump per session
+(`dbg\dumps\fcad_user_av*.dmp`): a fault that repeats would otherwise fill
+the drive. The dump is `/mhtipu` -- every stack, the memory the stacks point
+at, handles, unloaded modules -- not `/ma`: the first real one, a session with
+a 677-object document open, was a 6.9 GB full dump, and the stack in the log
+had already said everything it was read for.
+
+**A debugger client started from a script must be given a way to end.** `cdb
+-remote ... -c "<commands>"` whose command string has a syntax error does not
+run the `.remote_exit` at its end; it stays attached, reading a standard input
+that a script does not have. The one launched that way on 2026-10-06 never
+returned, and within a minute the box was out of commit -- 53.5 of 55.9 GB,
+`AUDIODG.EXE` and a FreeCAD under test dead of failed allocations, the agent's
+own process with them -- and 15 GB came back the moment that client was
+killed. Not proved to be the cause; the timing is all there is. Run such a
+client with its output sent to a file rather than captured, under a timeout,
+and check the command string on a throwaway target first.
 
 Verified on the first stage (2026-10-06): the launched process had 240 modules
 from `.conda\user` and `.conda\user-app` and none from `.conda\freecad`,
