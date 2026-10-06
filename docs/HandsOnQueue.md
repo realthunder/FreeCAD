@@ -9,7 +9,7 @@ the next stage, and each entry says which stage has it.
 
 Stages so far: 2026-10-06 07:56 (`84c14e12d5`, the first), 2026-10-06 11:23
 (`c1028260e3`: entries 1, 2, 4, 7), 2026-10-06 13:59 (`489c64799c`: entries 3, 5, 6, and
-the helix of entry 8).
+the helix of entry 8), 2026-10-06 14:44 (`6b1bd3f434`: entry 14).
 
 States: `OPEN` (not looked at), `FOUND` (cause known, no fix yet), `FIXED`
 (committed and tested in the dev tree, not staged yet), `STAGED` (in the copy
@@ -34,9 +34,9 @@ report views, the reporter's own files -- is kept beside the dev tree under
 | 11 | 2026-10-06 | dark theme: wrong colors (checkbox border, title bar buttons), audit asked | OPEN |
 | 12 | 2026-10-06 | TechDraw: dimensions and cosmetics are covered by the face fill | OPEN |
 | 13 | 2026-10-06 | report view: grouped messages with an expand icon in the margin, no underscore (change request) | OPEN |
-| 14 | 2026-10-06 | a Draft with no neutral plane given turns the other way after a recompute (from entry 8) | FIXED |
+| 14 | 2026-10-06 | a Draft with no neutral plane given turns the other way after a recompute (from entry 8) | STAGED |
 | 15 | 2026-10-06 | a Pad "up to first" gives a third result (from entry 8) | OPEN |
-| 16 | 2026-10-06 | faces of a "Mutated" copy-on-change binder are renamed by every recompute in a new session (from entry 8; the old build too) | FOUND |
+| 16 | 2026-10-06 | faces of a "Mutated" copy-on-change binder are renamed by every recompute in a new session (from entry 8; the old build too) | FOUND; B and C decided, next |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -366,7 +366,7 @@ Wanted: no underscore on a grouped message; a clickable expand icon ahead of
 it; the message text itself stays aligned with ordinary messages, the icon in
 the margin.
 
-## 14. A Draft with no neutral plane given turns the other way -- FIXED
+## 14. A Draft with no neutral plane given turns the other way -- STAGED
 
 **From entry 8.** `Draft` in `scanner.FCStd`: face `Face6` of `Pad036`, 11 deg,
 `Reversed` on, no neutral plane and no pull direction. Old build: valid, 285.76.
@@ -412,7 +412,7 @@ the old build and read here as `Length` with `SideType` "Two sides", with the
 same tool volume where the base is the same (`Pocket042`: 577.27 in both).
 Not looked at further.
 
-## 16. Faces of a "Mutated" binder are renamed by every recompute in a new session -- FOUND
+## 16. Faces of a "Mutated" binder are renamed by every recompute in a new session -- FOUND; B and C decided, next
 
 **From entry 8; the old build does the same.** `Binder008` binds `Body004`
 with `BindCopyOnChange` Mutated. Such a binder copies its support into a
@@ -472,8 +472,10 @@ references keep their names" through a recompute and a reopen.
   nothing to copy again; the file grows by the copies, and a file from
   before still has to make them once.
 
-`SubShapeBinder::update` is changed on both branches, so whichever it is
-goes in with the merge of `origin/Transaction` in mind.
+**Decided (the reporter, 2026-10-06):** "do B+C first then the rest of issues in
+the notes. no Transaction merge for now." So: B and C, on this branch, ahead of
+entries 9 to 13 and 15. `SubShapeBinder::update` is changed on both branches;
+the change is written to merge with `origin/Transaction` later, not onto it.
 
 ## Inbox
 
