@@ -9023,6 +9023,31 @@ struct UnitValue
     std::string base, ours, theirs, ptype;
 };
 
+/// A unit's member (DocumentObject::getMergeUnit) is a property of the
+/// object, or -- `view:` before its name -- one of its view provider's
+/// (docs/TransactionLog.md sec 31.20): the look of each element an object
+/// names is one thing with the names.
+bool unitOfView(const std::string& member)
+{
+    return member.compare(0, 5, "view:") == 0;
+}
+std::string unitProp(const std::string& member)
+{
+    return unitOfView(member) ? member.substr(5) : member;
+}
+const char* unitKind(const std::string& member)
+{
+    return unitOfView(member) ? "view" : "obj";
+}
+std::string unitMember(const std::string& ckind, const std::string& prop)
+{
+    return ckind == "view" ? "view:" + prop : prop;
+}
+NetChange::Key unitKey(long cid, const std::string& member)
+{
+    return NetChange::Key {unitKind(member), cid, unitProp(member)};
+}
+
 /** A unit both sides changed, merged by its object (docs/TransactionLog.md
  * sec 31.10). `states` has the properties either side changed; the rest of
  * the unit is as the document holds it, for all three. The object is given
@@ -9030,7 +9055,10 @@ struct UnitValue
  * what it hands back goes in as `merge` changes, one for each property
  * that is not ours' already, with what became of the things theirs
  * changed. False, and the unit is the one question it was: where the
- * object will not, where a value is more than its text, and where a side
+ * object will not, where a value is more than its text -- but a view
+ * provider's, which is read and saved again as text where its property can
+ * be (sec 31.20: a list of looks is a file beside the text at any length)
+ * -- and where a side
  * has rows another copy of the file made whose numbers did not come as
  * this file's -- a copy gives its new geometry the ids this file gave
  * other geometry (sec 31.3 P6, 31.14).
@@ -9056,36 +9084,74 @@ bool mergeUnitByObject(Document& doc, TransactionLog& log, const MergePlan& plan
                 return false;
         }
     }
-    auto text = [&](const std::string& hash, std::string& fragment) {
-        CapturedValue v;
-        if (hash.empty() || !log.readValue(hash, v) || !v.attachments.empty())
+    const CaptureConfig config(doc);
+    CaptureConfig inlined(doc);
+    inlined.forceXML = true;
+    // The kind of each member's property, by member.
+    std::map<std::string, std::string> types;
+    // A view provider's value that has a file beside its text, as text
+    // alone: read into a property of its kind and saved again.
+    auto asText = [&](const CapturedValue& v, const std::string& member, std::string& fragment) {
+        if (v.attachments.empty()) {
+            fragment = v.fragment;
+            return true;
+        }
+        auto kind = types.find(member);
+        if (!unitOfView(member) || kind == types.end())
             return false;
-        fragment = std::move(v.fragment);
+        Base::Type type = Base::Type::fromName(kind->second.c_str());
+        if (type.isBad() || !type.isDerivedFrom(Property::getClassTypeId()))
+            return false;
+        std::unique_ptr<Property> held(static_cast<Property*>(type.createInstance()));
+        if (!held)
+            return false;
+        try {
+            restoreValue(*held, v);
+        }
+        catch (const Base::Exception&) {
+            return false;
+        }
+        catch (const std::exception&) {
+            return false;
+        }
+        CapturedValue again = captureValue(inlined, *held);
+        if (!again.ok || !again.attachments.empty())
+            return false;
+        fragment = std::move(again.fragment);
         return true;
     };
-    const CaptureConfig config(doc);
+    auto text = [&](const std::string& hash, std::string& fragment,
+                    const std::string& member = std::string()) {
+        CapturedValue v;
+        return !hash.empty() && log.readValue(hash, v) && asText(v, member, fragment);
+    };
     DocumentObject::MergeUnitState base;
     DocumentObject::MergeUnitSide ours, theirs;
     std::set<std::string> known;
     for (const auto& name : props) {
-        Property* prop = obj->getPropertyByName(name.c_str());
+        PropertyContainer* holder = unitOfView(name) ? Document::viewOf(obj) : obj;
+        Property* prop = holder ? holder->getPropertyByName(unitProp(name).c_str()) : nullptr;
         if (!prop)
             continue;
+        types[name] = prop->getTypeId().getName();
         auto st = states.find(name);
         if (st == states.end()) {
-            auto named = plan.named.find(NetChange::Key {"obj", cid, name});
+            auto named = unitOfView(name) ? plan.named.end()
+                                          : plan.named.find(NetChange::Key {"obj", cid, name});
             if (named != plan.named.end()) {
                 base[name] = ours.at[name] = theirs.at[name] = named->second.fragment;
             }
             else {
                 const CapturedValue now = captureValue(config, *prop);
-                if (!now.ok || !now.attachments.empty())
+                std::string fragment;
+                if (!now.ok || !asText(now, name, fragment))
                     return false;
-                base[name] = ours.at[name] = theirs.at[name] = now.fragment;
+                base[name] = ours.at[name] = theirs.at[name] = fragment;
             }
         }
-        else if (!text(st->second.base, base[name]) || !text(st->second.ours, ours.at[name])
-                 || !text(st->second.theirs, theirs.at[name])) {
+        else if (!text(st->second.base, base[name], name)
+                 || !text(st->second.ours, ours.at[name], name)
+                 || !text(st->second.theirs, theirs.at[name], name)) {
             return false;
         }
         known.insert(name);
@@ -9097,13 +9163,16 @@ bool mergeUnitByObject(Document& doc, TransactionLog& log, const MergePlan& plan
             for (const auto& t : store.chain(head, pv.base + 1)) {
                 bool wrote = false;
                 for (const auto& op : store.ops(t.seq)) {
-                    if (op.op != "set" || op.ckind != "obj" || op.cid != cid
-                            || !known.count(op.prop))
+                    if (op.op != "set" || (op.ckind != "obj" && op.ckind != "view")
+                            || op.cid != cid)
+                        continue;
+                    const std::string member = unitMember(op.ckind, op.prop);
+                    if (!known.count(member))
                         continue;
                     std::string fragment;
-                    if (!text(op.vafter, fragment))
+                    if (!text(op.vafter, fragment, member))
                         continue;
-                    at[op.prop] = std::move(fragment);
+                    at[member] = std::move(fragment);
                     wrote = true;
                 }
                 if (wrote)
@@ -9200,10 +9269,10 @@ bool mergeUnitByObject(Document& doc, TransactionLog& log, const MergePlan& plan
             continue;
         c.kind = "merge";
         c.op = "set";
-        c.ckind = "obj";
+        c.ckind = unitKind(name);
         c.cid = cid;
         c.object = objectName;
-        c.prop = name;
+        c.prop = unitProp(name);
         // The unit's key, as 31.5's rows have: left out, it is all left out.
         c.key = objectName + "." + props.front();
         auto st = states.find(name);
@@ -9214,23 +9283,27 @@ bool mergeUnitByObject(Document& doc, TransactionLog& log, const MergePlan& plan
             c.theirs = st->second.theirs;
         }
         else {
-            c.ptype = obj->getPropertyByName(name.c_str())->getTypeId().getName();
+            c.ptype = types[name];
             c.base = c.ours = c.theirs = stored(ours.at[name]);
         }
         c.merged = to->second == ours.at[name] && !c.ours.empty() ? c.ours : stored(to->second);
         if (c.merged.empty())
             return false;
-        std::string taken, decided, dropped;
+        std::string taken, decided, dropped, ruled;
         for (const auto& n : c.elements) {
-            std::string& list = n.change == "dropped" ? dropped : n.byTime ? decided : taken;
+            std::string& list = n.change == "dropped" ? dropped
+                              : n.change == "ruled" ? ruled : n.byTime ? decided : taken;
             list += (list.empty() ? "" : ", ") + n.key
-                + (n.byTime ? " -> " + n.side : n.change == "removed" ? " (removed)" : "");
+                + (n.byTime || n.change == "ruled" ? " -> " + n.side
+                   : n.change == "removed" ? " (removed)" : "");
         }
         c.note = "merged by what it holds";
         if (!taken.empty())
             c.note += "; theirs: " + taken;
         if (!decided.empty())
             c.note += "; changed by both, the later kept: " + decided;
+        if (!ruled.empty())
+            c.note += "; changed by both, kept as the setting has it: " + ruled;
         if (!dropped.empty())
             c.note += "; left out, what it was on being removed: " + dropped;
         changes.push_back(std::move(c));
@@ -9672,14 +9745,17 @@ void planWeigh(Document& doc, TransactionLog& logRef, MergePlan& plan)
     // end the same, it is one conflict, known by the unit's first
     // property, and the properties follow the side picked for it.
     std::map<std::pair<long, std::string>, std::vector<std::string>> units;
+    // A unit may hold a property of the object's view provider, named
+    // `view:` first (sec 31.20), and is found from either end.
     for (const NetChange* net : {&plan.theirs, &plan.ours}) {
         for (const auto& key : net->valueOrder) {
-            if (std::get<0>(key) != "obj")
+            const std::string& ckind = std::get<0>(key);
+            if (ckind != "obj" && ckind != "view")
                 continue;
             DocumentObject* obj = doc.getObjectByID(std::get<1>(key));
             if (!obj || created.count(std::get<1>(key)))
                 continue;
-            auto unit = obj->getMergeUnit(std::get<2>(key).c_str());
+            auto unit = obj->getMergeUnit(unitMember(ckind, std::get<2>(key)).c_str());
             if (unit.size() > 1) {
                 const std::string first = unit.front();
                 units.emplace(std::make_pair(std::get<1>(key), first), std::move(unit));
@@ -9698,7 +9774,7 @@ void planWeigh(Document& doc, TransactionLog& logRef, MergePlan& plan)
         std::vector<std::string> here, there;
         bool differ = false;
         for (const auto& prop : kv.second) {
-            const NetChange::Key key {"obj", cid, prop};
+            const NetChange::Key key = unitKey(cid, prop);
             auto computed = [&](const NetChange& net) -> const NetChange::Val* {
                 auto it = net.values.find(key);
                 CapturedValue held;
@@ -9750,8 +9826,9 @@ void planWeigh(Document& doc, TransactionLog& logRef, MergePlan& plan)
             continue;
         pv.changes.erase(std::remove_if(pv.changes.begin(), pv.changes.end(),
                                         [&](const Document::MergeChange& c) {
-                                            return c.ckind == "obj" && c.cid == cid
-                                                && !c.derived && states.count(c.prop);
+                                            return (c.ckind == "obj" || c.ckind == "view")
+                                                && c.cid == cid && !c.derived
+                                                && states.count(unitMember(c.ckind, c.prop));
                                         }),
                          pv.changes.end());
         // Sec 31.10: by what it holds, where its object can; else the one
@@ -9800,10 +9877,10 @@ void planWeigh(Document& doc, TransactionLog& logRef, MergePlan& plan)
                 Document::MergeChange c;
                 c.kind = "unit";
                 c.op = "set";
-                c.ckind = "obj";
+                c.ckind = unitKind(st.first);
                 c.cid = cid;
                 c.object = nameOf(cid);
-                c.prop = st.first;
+                c.prop = unitProp(st.first);
                 c.key = key;
                 c.ptype = st.second.ptype;
                 c.base = st.second.base;

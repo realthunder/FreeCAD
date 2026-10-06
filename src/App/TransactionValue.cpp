@@ -64,7 +64,7 @@ public:
         // the writer's defaults, file version 1, XML not forced), so that
         // a saved part and a captured value are the same bytes.
         setFileVersion(1);
-        setForceXML(0);
+        setForceXML(config.forceXML ? 1 : 0);
         setSplitXML(false);
         setSchemaVersion(config.schema);
         // A property holding the file its value was last written to may

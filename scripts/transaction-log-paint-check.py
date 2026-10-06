@@ -544,6 +544,94 @@ def run():
               gloss(vp.getElementAppearances()[top]) == 0.25)
         check("and drawn as the version had them (%r)" % shown(doc.Box), shown(doc.Box) == there)
         App.closeDocument(doc.Name)
+
+        # Painted on both branches (docs/TransactionLog.md sec 31.20): the
+        # names and their looks are one thing, merged by name.
+        def both(name):
+            d = App.newDocument(name)
+            d.UndoMode = 1
+            d.openTransaction("base")
+            d.addObject("Part::Box", "Box")
+            d.recompute()
+            d.commitTransaction()
+            d.saveAs(os.path.join(folder, name + ".FCStd"))
+            return d
+
+        def asked(pv):
+            return [(c["kind"], c["key"]) for c in pv["changes"] if c["kind"] in ("conflict", "unit")]
+
+        doc = both("PaintBoth")
+        top, bottom = face(doc.Box, ZMin=10), face(doc.Box, ZMax=0)
+        itop = int(top[4:]) - 1
+        doc.createTransactionBranch("side")
+        doc.openTransaction("side matte red top")
+        doc.Box.ViewObject.setElementAppearances({top: App.Material(DiffuseColor=RED, Shininess=0.25)})
+        doc.recompute()
+        doc.commitTransaction()
+        doc.switchTransactionBranch("main")
+        paint(doc, "main green bottom", "Box", {bottom: GREEN})
+        pv = doc.previewTransactionMerge("side")
+        check("each branch painted another face: nothing asked (%r)" % asked(pv), pv["conflicts"] == 0)
+        merged = doc.mergeTransactionBranch("side")
+        check("and merged", (merged["unresolved"], merged["failed"]) == ([], []))
+        doc.recompute()
+        vp = doc.Box.ViewObject
+        check("both by name (%r)" % named(doc.Box), named(doc.Box) == {top: RED, bottom: GREEN})
+        check("theirs' with its material (%r)" % gloss(vp.getElementAppearances()[top]),
+              gloss(vp.getElementAppearances()[top]) == 0.25 and gloss(vp.ShapeAppearance[itop]) == 0.25)
+        check("and both drawn (%r)" % shown(doc.Box), sorted(shown(doc.Box).values()) == sorted([RED, GREEN]))
+        doc.undo()
+        check("the merge undone: ours alone (%r)" % named(doc.Box),
+              named(doc.Box) == {bottom: GREEN} and list(shown(doc.Box).values()) == [GREEN])
+        doc.redo()
+        check("and redone (%r)" % named(doc.Box),
+              named(doc.Box) == {top: RED, bottom: GREEN} and len(shown(doc.Box)) == 2)
+        App.closeDocument(doc.Name)
+
+        # One face painted on both, and another taken away by theirs: the
+        # first is ours unless the setting says otherwise, the second goes.
+        def same(name):
+            d = both(name)
+            paint(d, "green bottom", "Box", {face(d.Box, ZMax=0): GREEN})
+            d.createTransactionBranch("side")
+            d.openTransaction("side red top, no bottom")
+            d.Box.ViewObject.setElementColors({face(d.Box, ZMin=10): RED})
+            d.recompute()
+            d.commitTransaction()
+            d.switchTransactionBranch("main")
+            paint(d, "main blue top", "Box", {face(d.Box, ZMin=10): BLUE})
+            return d
+
+        doc = same("PaintSame")
+        top = face(doc.Box, ZMin=10)
+        setting = App.ParamGet("User parameter:BaseApp/Preferences/Document")
+        try:
+            pv = doc.previewTransactionMerge("side")
+            check("one face painted by both: nothing asked (%r)" % asked(pv), pv["conflicts"] == 0)
+            setting.SetString("TransactionLogMergeFacePaint", "asked")
+            pv = doc.previewTransactionMerge("side")
+            check("asked, where the setting says to ask (%r)" % asked(pv),
+                  pv["conflicts"] == 1 and ("conflict", "Box.ColoredElements") in asked(pv))
+            setting.SetString("TransactionLogMergeFacePaint", "theirs")
+            pv = doc.previewTransactionMerge("side")
+            check("theirs, where it says theirs: nothing asked (%r)" % asked(pv), pv["conflicts"] == 0)
+            setting.RemString("TransactionLogMergeFacePaint")
+            merged = doc.mergeTransactionBranch("side")
+            check("merged as it is set by default", (merged["unresolved"], merged["failed"]) == ([], []))
+            doc.recompute()
+            check("ours' colour on the face both painted, theirs' removal taken (%r)" % named(doc.Box),
+                  named(doc.Box) == {top: BLUE} and list(shown(doc.Box).values()) == [BLUE])
+            App.closeDocument(doc.Name)
+            doc = same("PaintSameTheirs")
+            setting.SetString("TransactionLogMergeFacePaint", "theirs")
+            merged = doc.mergeTransactionBranch("side")
+            doc.recompute()
+            check("and with the setting theirs, theirs' (%r)" % named(doc.Box),
+                  (merged["unresolved"], merged["failed"]) == ([], [])
+                  and named(doc.Box) == {top: RED} and list(shown(doc.Box).values()) == [RED])
+        finally:
+            setting.RemString("TransactionLogMergeFacePaint")
+        App.closeDocument(doc.Name)
     except Exception:
         lines.append("FAIL exception\n" + traceback.format_exc())
     finally:

@@ -339,6 +339,11 @@ bool SketchObject::mergeUnit(const MergeUnitState& baseAt, const MergeUnitSide& 
                              const MergeUnitSide& theirsSide, MergeUnitState& merged,
                              std::vector<MergeUnitNote>& notes) const
 {
+    // Another unit of this object's: the faces painted by name, which are
+    // any shape's (Part::Feature).
+    if (!baseAt.count("Geometry") && !baseAt.count("Constraints"))
+        return Part::Part2DObject::mergeUnit(baseAt, oursSide, theirsSide, merged, notes);
+
     Lists base, ours, theirs;
     if (!base.read(baseAt) || !ours.read(oursSide.at) || !theirs.read(theirsSide.at))
         return false;

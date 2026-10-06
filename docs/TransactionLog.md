@@ -16297,6 +16297,99 @@ has without the deleting.
 53 unfrozen; 6 expected failures; +1), ctest 881/881, and the GUI checks
 as in 31.18, the paint check 19 among them.
 
+### 31.20 Faces painted on both branches: merged by name (2026-10-07)
+
+31.16's second step, on the store docs/ShapeAppearanceDesign.md sec 13
+built: the names in the object's `ColoredElements`, a whole material for
+each in its view provider's `MappedAppearance`, by place.
+
+**Measured before** (`mergep.py`, 31.16's cases on the new store): each
+branch painting another face is asked -- `Box.ColoredElements` a conflict,
+`view:Box.MappedAppearance` and `view:Box.ShapeAppearance` beside it as
+view conflicts -- and merged with a side picked it has that side's face
+alone.
+
+**A unit may hold a view provider's property.** The two are one thing
+(31.17 item 1), and a unit (31.5) was an object's own properties.
+`DocumentObject::getMergeUnit()` may now name a member `view:` first --
+`view:MappedAppearance` -- and the plan reads it where it reads the
+others: found from either end (a row that wrote only the looks finds the
+unit too), weighed under the key of the unit's first property, taken or
+left with it, and written to the view provider. Nothing of
+`DocumentObject` changed: a member is a string.
+
+**A value that is more than its text.** A unit is merged from each
+property as it is saved, and a property saved with a file beside its text
+could not be (31.10: "where a value is more than its text"). A list of
+looks is that at any length -- a material is more than the 64 bytes a
+list may have and stay in the text. For a view provider's member such a
+value is read into a property of its kind and saved again as text alone
+(`CaptureConfig::forceXML`); what the object hands back goes into the log
+in that form, and is written to the property as any value is. An object's
+own member is as it was: a sketch whose geometry is a file beside the text
+is still one question.
+
+**`Part::Feature`** says `ColoredElements` and `view:MappedAppearance`
+are a unit, and merges it (`PartFeatureMerge.cpp`):
+
+- *by what an element is called on any branch*: its mapped name where
+  the saved name has one, else the name it has. The tag it was saved as
+  goes with it, so the name follows the shape as it did;
+- what one side alone added, changed or took away is that side's; the
+  same on both is the same;
+- **what both changed, and differently** -- a look given by both, or a
+  look given by one and the name taken away by the other -- goes by the
+  setting, 31.18's `TransactionLogMergeFacePaint` (the Document
+  preferences, a string): `ours`, the default; `theirs`; or `asked`,
+  where the object's paint is then one question as a unit is (31.5). Not
+  by the clock, as a cell or an expression is (31.8): that was the
+  ruling;
+- ours' order, then what theirs added.
+
+It refuses, and the unit is one question, where one side's is a list of
+colours and no more and the other's of whole looks (an older file's
+names against names written since: "the object in this colour" needs the
+object's look, which is the view provider's and not in the unit), where
+the names and the looks of a state are not of one length, and where the
+object has no view provider to hold the looks -- a merge run without the
+Gui.
+
+**Not done here.**
+
+- `ShapeAppearance` is still one value to the merge: both branches
+  having painted, it is a view conflict, ours kept, nothing asked (28.6
+  Q2). Its per-face part comes right after, since `updateColors()` makes
+  it again from the merged names. Its base does not: an object's own
+  look changed by theirs while ours painted a face is left out, with the
+  row saying so. 31.17 item 4 -- what `updateColors()` writes logged as
+  derived -- is what would free the base, and is not built:
+  `App::DerivedViewWrites` only keeps a view write from opening a
+  transaction, and inside one it is recorded as any other.
+- 31.17's lookup at merge time for faces given a look by number, and
+  `TransactionLogMergeFaceLoss`.
+- A look that names a texture: the value put back as text does not carry
+  its claim on the content. Not met: nothing gives a named face a
+  texture yet.
+- `App::Part`'s and a link's `ColoredElements` keep their own rule.
+
+**Checked** in the Gui, where the view provider is
+(`scripts/transaction-log-paint-check.py`, 78; +13): theirs gives a face a
+material and ours paints another -- nothing asked, both by name, theirs'
+with its gloss, both drawn, undone and redone; one face painted by both
+and another's name taken away by theirs -- nothing asked, asked where the
+setting says to ask (one conflict, `Box.ColoredElements`, the two
+properties under it), nothing asked where it says theirs; merged by
+default ours' colour is on the face and theirs' removal is taken; merged
+with the setting theirs, theirs'. No test without the Gui: there is no
+view provider there, and the unit is then one question as it was.
+
+**Seen on the way, not chased** (`remerge.py`, a box and a cylinder, no
+paint): a merge undone cannot be made again. The branch still counts as
+merged -- the preview has the base at theirs' head and nothing to bring
+-- so `mergeTransactionBranch` writes nothing and says nothing failed.
+Redo brings the merge back; another answer to its questions cannot be
+given. The log's, and older than this section.
+
 ## 32. A shape diff: seeing what a merge or a pick would take (plan, 2026-10-06)
 
 **Asked (user):** "also plan for another feature. shape diff tool, so that

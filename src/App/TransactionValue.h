@@ -93,6 +93,11 @@ struct CaptureConfig
     /// copy of an XLink writes relative to (capturingDocument()). Read on
     /// the main thread only -- links are captured there (sec 24.3).
     const Document* document {nullptr};
+    /// The value as its text alone: what a save would put in a file beside
+    /// Document.xml is written inline. Not the bytes a save writes, and so
+    /// not for a value the log is to hold as the document's: for one a
+    /// merge takes apart (docs/TransactionLog.md sec 31.20).
+    bool forceXML {false};
     CaptureConfig() = default;
     explicit CaptureConfig(const Document& doc);
 };
