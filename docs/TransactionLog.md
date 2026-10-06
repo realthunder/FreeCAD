@@ -16096,6 +16096,70 @@ did not reach a pair held in two containers.
 | Q2 | What is written by index -- a script's `DiffuseColor`, an importer's face colours | Named when written: the faces it sets are looked up and go into the named list. Else an index path stays, and fails as the user expects. |
 | Q3 | One face painted differently on both branches | Asked, as an object's own value is: once it is by face it is a decision about the model, not view state that changes all the time (28.6 Q2's reason). |
 
+### 31.17 Face materials by name: rulings, and what the merge will ask of them (user, 2026-10-06)
+
+**Ruled (user)**, on 31.16's questions:
+
+- **Q1: the whole material.** "full material, and I plan to work on that
+  first, I mean extend the current name based coloring into material and
+  make it work first, then we can use it for merging." So the order is:
+  the named store grown from a colour to a material and made to work; the
+  merge after it, on top of it. 31.16's steps 2 and 3 wait for that.
+- **Q2: what has no name is looked up when it is merged.** "if named
+  coloring is missing, then do name lookup at merging time on both side
+  and try to merge in best effort, and tolerate miss coloring (to some
+  extent) if name lookup failed." Not named when written, as 31.16
+  recommended: a script's or an importer's write by index stays what it
+  is, and the merge finds the names.
+- Q3, one face painted differently on both branches, is not answered.
+
+**Not started.** Who builds the first part is not said; nothing of
+`ViewProviderPartExt` or the appearance's storage is touched until it is,
+31.16's step 1 with them -- the cut in `updateColors()` is in the code
+that part rewrites.
+
+**What the merge will need of the named store**, so that the first part
+can be built with the second in sight:
+
+1. *One thing to put back.* Today a painted face is an entry in a list on
+   the object and an entry in a list on its view provider, by place. A
+   value is put back one property at a time (31.16, measured): either the
+   two become one value, or neither reads the other until both are in.
+2. *A key that is the same on any branch.* The element's mapped name, as
+   `ColoredElements` holds it beside the indexed one: what a face is
+   called does not depend on how many faces come before it.
+3. *Its saved text taken apart and put together by that key*
+   (`splitSaved`, `joinSaved`, 31.8), a face's material being one thing.
+   Then two branches that each painted another face ask nothing.
+4. *What is made of the names is derived.* The per-face part of
+   `ShapeAppearance` after a recompute is `updateColors()`'s to write and
+   not a change of its branch: logged as a recompute's value is (10), or
+   not at all, so that a merge does not take it for a side's decision.
+5. *What a face has from where it came* -- a colour a source object has,
+   `MapFaceColor` -- is derived too, and stays out of the named store.
+
+**The lookup at merge time (Q2).** For an object whose per-face part of
+`ShapeAppearance` differs from what its named store makes -- faces set
+by index:
+
+- each side's overriding faces are given names from that side's own
+  shape: ours from the document, theirs and the base from the log, by
+  the ref the preview has (32.1: read at once, with its element map);
+- by those names the three are merged as the named ones are;
+- after the merge's recompute the names are looked up in the shape that
+  came of it, a face that was split or cut found through what its name
+  became (`getRelatedElements`), and what is found is written by index
+  again, since that is what it was.
+
+*Best effort* is then: a face with no name, a name the merged shape has
+not, a side whose shape the log did not keep. Each is one face left as
+the merged shape's base has it -- not a conflict, not a failed merge --
+and the merge's row says which faces, as it says what it left out
+(31.12). "To some extent" needs a number: proposed, where a side loses
+more than half of what it had painted the object is not merged by face
+at all, and goes by the rule it has today, ours kept, said in the row.
+**The user's to set.**
+
 ## 32. A shape diff: seeing what a merge or a pick would take (plan, 2026-10-06)
 
 **Asked (user):** "also plan for another feature. shape diff tool, so that
