@@ -8,7 +8,8 @@ closed it. The copy under test is the staged one -- `docs/DevEnvironment.md`,
 the next stage, and each entry says which stage has it.
 
 Stages so far: 2026-10-06 07:56 (`84c14e12d5`, the first), 2026-10-06 11:23
-(`c1028260e3`: entries 1, 2, 4, 7).
+(`c1028260e3`: entries 1, 2, 4, 7), 2026-10-06 13:59 (`489c64799c`: entries 3, 5, 6, and
+the helix of entry 8).
 
 States: `OPEN` (not looked at), `FOUND` (cause known, no fix yet), `FIXED`
 (committed and tested in the dev tree, not staged yet), `STAGED` (in the copy
@@ -22,12 +23,12 @@ report views, the reporter's own files -- is kept beside the dev tree under
 |---|---|---|---|
 | 1 | 2026-10-06 | idle progress bar in the status bar | STAGED |
 | 2 | 2026-10-06 | a file opened from the menu comes up empty (`scanner.FCStd`) | STAGED |
-| 3 | 2026-10-06 | tooltips are clipped: navigation style, and toolbar buttons with an icon | FIXED |
+| 3 | 2026-10-06 | tooltips are clipped: navigation style, and toolbar buttons with an icon | STAGED |
 | 4 | 2026-10-06 | status bar dimension reads `100 mm x 80 mm`, wanted `100 x 80 mm` | STAGED |
-| 5 | 2026-10-06 | title bar with the workbench bar docked: the menu does not unfold on hover | FIXED if it is entry 6's cause; to confirm |
-| 6 | 2026-10-06 | maximized with the custom title bar: sometimes no margin at the top | FIXED |
+| 5 | 2026-10-06 | title bar with the workbench bar docked: the menu does not unfold on hover | STAGED if it is entry 6's cause; to confirm |
+| 6 | 2026-10-06 | maximized with the custom title bar: sometimes no margin at the top | STAGED |
 | 7 | 2026-10-06 | crash after answering Yes to the recompute question on `scanner.FCStd` | STAGED, cause of the GL error open |
-| 8 | 2026-10-06 | `scanner.FCStd`: the migration recompute fails | FOUND in full; the helix FIXED; the rest is entries 14 to 16 |
+| 8 | 2026-10-06 | `scanner.FCStd`: the migration recompute fails | FOUND in full; the helix STAGED; the rest is entries 14 to 16 |
 | 9 | 2026-10-06 | the 3D view lags behind the mouse: hover highlight, wheel zoom | OPEN |
 | 10 | 2026-10-06 | a 3D view is slow to take a new size | OPEN |
 | 11 | 2026-10-06 | dark theme: wrong colors (checkbox border, title bar buttons), audit asked | OPEN |
@@ -99,7 +100,7 @@ recompute runs (entry 8 is what it then does).
 **Not checked yet:** an import started from the menu that turns `LiveImport`
 on for itself (`Gui.setLiveImport`, the IFC importer) stands in the same place.
 
-## 3. Tooltips are clipped -- FIXED
+## 3. Tooltips are clipped -- STAGED
 
 **Reported (2026-10-06):** "the tooltips of navigation style option in status
 bar is clipped." Then: "not only the navigation tooltips, some of the toolbar
@@ -180,7 +181,7 @@ re-docking the workbench bar does anything about it was not established, so
 this is closed only if the reporter no longer sees it after the stage that
 has entry 6's fix.
 
-## 6. Maximized with the custom title bar: sometimes no margin at the top -- FIXED
+## 6. Maximized with the custom title bar: sometimes no margin at the top -- STAGED
 
 **Reported (2026-10-06):** "when maximized, sometimes, with the customized
 toolbar, it leaves no margin at top. sometimes it is fine."
