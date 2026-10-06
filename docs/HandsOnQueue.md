@@ -9,7 +9,8 @@ the next stage, and each entry says which stage has it.
 
 Stages so far: 2026-10-06 07:56 (`84c14e12d5`, the first), 2026-10-06 11:23
 (`c1028260e3`: entries 1, 2, 4, 7), 2026-10-06 13:59 (`489c64799c`: entries 3, 5, 6, and
-the helix of entry 8), 2026-10-06 14:44 (`6b1bd3f434`: entry 14).
+the helix of entry 8), 2026-10-06 14:44 (`6b1bd3f434`: entry 14), 2026-10-06 17:44
+(`f7d3aa0cf2`: entries 16 and 18).
 
 States: `OPEN` (not looked at), `FOUND` (cause known, no fix yet), `FIXED`
 (committed and tested in the dev tree, not staged yet), `STAGED` (in the copy
@@ -36,9 +37,9 @@ report views, the reporter's own files -- is kept beside the dev tree under
 | 13 | 2026-10-06 | report view: grouped messages with an expand icon in the margin, no underscore (change request) | OPEN |
 | 14 | 2026-10-06 | a Draft with no neutral plane given turns the other way after a recompute (from entry 8) | STAGED |
 | 15 | 2026-10-06 | a Pad "up to first" gives a third result (from entry 8) | OPEN |
-| 16 | 2026-10-06 | faces of a "Mutated" copy-on-change binder are renamed by every recompute in a new session (from entry 8; the old build too) | FIXED |
+| 16 | 2026-10-06 | faces of a "Mutated" copy-on-change binder are renamed by every recompute in a new session (from entry 8; the old build too) | STAGED |
 | 17 | 2026-10-06 | `Sketch043`, `Sketch055`: "Missing external geometry reference", seen once the binders of entry 16 are valid | OPEN |
-| 18 | 2026-10-06 | TechDraw pages do not load: "invalid vector subscript", the views loose in the tree, 320 objects restored to defaults | FIXED |
+| 18 | 2026-10-06 | TechDraw pages do not load: "invalid vector subscript", the views loose in the tree, 320 objects restored to defaults | STAGED |
 | 19 | 2026-10-06 | TechDraw: other indexes taken on trust (an audit asked) | OPEN |
 
 ## 1. Idle progress bar in the status bar -- STAGED
@@ -415,7 +416,7 @@ the old build and read here as `Length` with `SideType` "Two sides", with the
 same tool volume where the base is the same (`Pocket042`: 577.27 in both).
 Not looked at further.
 
-## 16. Faces of a "Mutated" binder are renamed by every recompute in a new session -- FIXED
+## 16. Faces of a "Mutated" binder are renamed by every recompute in a new session -- STAGED
 
 **From entry 8; the old build does the same.** `Binder008` binds `Body004`
 with `BindCopyOnChange` Mutated. Such a binder copies its support into a
@@ -555,7 +556,7 @@ at. One thing to check first: the four binders move 53 mm with `Binder008`
 and are renamed with it, and they are not the ones whose container moved, so
 the search by geometry has no motion to go by for a reference into THEM.
 
-## 18. TechDraw pages do not load: "invalid vector subscript" -- FIXED
+## 18. TechDraw pages do not load: "invalid vector subscript" -- STAGED
 
 **Reported (2026-10-06, the Inbox notes of 15:56 and 16:19, and then):**
 "currently techdraw pages does not load correctly", "see why techdraw
