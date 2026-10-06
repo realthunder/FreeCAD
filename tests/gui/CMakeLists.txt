@@ -1191,6 +1191,13 @@ fc_add_gui_test(GuiSequencerInputAfterStop_tests_run
                 sequencer-input-after-stop.py
                 --timeout 120)
 
+# The progress bar is on screen only while something runs: the status bar's
+# item registry shows every widget that does not carry a userEnabled
+# property, and the bar did not, so each registration showed it idle.
+fc_add_gui_test(GuiStatusBarProgressIdle_tests_run
+                statusbar-progress-idle.py
+                --timeout 120)
+
 # A number typed into a tool's on-view box is the number the tool uses: the
 # box commits on Enter and Tab ahead of reading its own text, and committed
 # what it held before the typing.
