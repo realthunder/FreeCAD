@@ -34,7 +34,7 @@ report views, the reporter's own files -- is kept beside the dev tree under
 | 11 | 2026-10-06 | dark theme: wrong colors (checkbox border, title bar buttons), audit asked | OPEN |
 | 12 | 2026-10-06 | TechDraw: dimensions and cosmetics are covered by the face fill | OPEN |
 | 13 | 2026-10-06 | report view: grouped messages with an expand icon in the margin, no underscore (change request) | OPEN |
-| 14 | 2026-10-06 | a Draft with no neutral plane given turns the other way after a recompute (from entry 8) | FOUND |
+| 14 | 2026-10-06 | a Draft with no neutral plane given turns the other way after a recompute (from entry 8) | FIXED |
 | 15 | 2026-10-06 | a Pad "up to first" gives a third result (from entry 8) | OPEN |
 | 16 | 2026-10-06 | faces of a "Mutated" copy-on-change binder are renamed by every recompute in a new session (from entry 8; the old build too) | FOUND |
 
@@ -366,7 +366,7 @@ Wanted: no underscore on a grouped message; a clickable expand icon ahead of
 it; the message text itself stays aligned with ordinary messages, the icon in
 the margin.
 
-## 14. A Draft with no neutral plane given turns the other way -- FOUND
+## 14. A Draft with no neutral plane given turns the other way -- FIXED
 
 **From entry 8.** `Draft` in `scanner.FCStd`: face `Face6` of `Pad036`, 11 deg,
 `Reversed` on, no neutral plane and no pull direction. Old build: valid, 285.76.
@@ -376,18 +376,29 @@ This build: "Failed to create draft:", and with `Reversed` OFF the same 285.76.
 8.0.1, guessed plane included (`entry8-box-*.txt`), and the pad's shape as
 stored in the file, drafted on its own in this build, gives the old result.
 
-**Cause:** with no neutral plane given, `Draft::execute` guesses one from "the
-first edge of the first face". Recomputed here, `Pad036`'s top face lists its
-four edges in another order than the stored shape has them -- the first is the
-opposite edge -- so the guessed plane is on the other side, the pull direction
-points the other way, and `Reversed` means the opposite
-(`entry8-draft*.txt`). Whether the order comes from OCCT 8.0.1's prism or from
-the ported Pad was not established.
+**Cause:** with no neutral plane given, `Draft::execute` guesses one from an
+edge of the first face: through the edge, its normal -- the pull direction --
+along the face. Which edge, and which of the two ways along the face, decide
+which way the draft goes, and both came out of how the shape happens to be
+written down: the first edge that will do, in the order the face lists them,
+and the cross product of the edge's own direction with the axis of the face's
+surface. Recomputed here, `Pad036`'s top face has its edges in another order
+AND its plane the other way up (`entry8-draft*.txt`, `entry14-record.txt`).
+The order alone was the first reading and was wrong: with the same edge taken,
+the draft still turned over.
 
-**Not fixed.** The guess depends on an order nothing promises. A file saved
-with a guessed plane has no record of which edge it was; one way out is to
-record the edge by its mapped name the first time, taken from the stored shape
-on restore. To decide with the reporter.
+**Decided (the reporter, 2026-10-06):** "1 yes" -- write the guessed edge down
+by its mapped name, taken from the stored shape on restore, so old files keep
+their result.
+
+**Fix:** `73da015564`. `_NeutralEdge` holds the edge by its mapped name and
+`_NeutralSense` the side, as it relates to the face (into the face from the
+edge, or with the face's outward normal where the plane is across the face).
+The first guess fills them in; a file from before them gets them from the
+base's stored shape as it is restored. On the reporter's file the record
+follows the edge from `Edge4` to `Edge10` across the pad's recompute and
+`Draft` comes out valid at 285.76 with `Reversed` on, as saved.
+`TestDraft.testGuessedNeutralPlaneKeepsItsEdge`; TestDraft 4 OK.
 
 ## 15. A Pad "up to first" gives a third result -- OPEN
 
@@ -417,10 +428,52 @@ scanner#Binder008.?Face1".
 What makes it show here is that this build recomputes the file on opening,
 for migration, where the old one had no reason to recompute `Binder008`.
 
-**Not fixed.** The names would be stable if the copies' ids were replaced by
-those of the objects they are copies of. Files saved before that would break
-once more, unless a missing name is also looked up with the copies' ids taken
-out of both sides. To decide with the reporter.
+**Asked (the reporter, 2026-10-06):** "check remote Transaction branch on its
+importing of external document element names. see if it solves the binder
+naming problem".
+
+**It does not, read from the branch** (`origin/Transaction` at `7d2c9e0a23`;
+not built or run here). What it does for a shape that crosses documents
+(`docs/TransactionLog.md` 27.76 to 27.80; `1effdebb0e`, `eac207251f`,
+`9f18e39c1b`):
+- the STRING ids in the names (`#98`) are translated into the table of the
+  document the shape arrives in, where they used to stay as the other
+  table's numbers and mean nothing after a reopen;
+- the external marker names the document it came from, `;:X#<id>`, and a
+  shape with the old bare marker asks for its owner's recompute once;
+- a reference holds the strings of the name it refers by.
+
+A binder's copy lives in a temporary document, so its shape is such a
+crossing, and `SubShapeBinder::update` takes all three. The part of the name
+that changes here is none of them: it is the OBJECT ids of the copies
+(`:Hd4b`, `:Hd4c`, `:Hd53`), and the design leaves those alone on purpose --
+27.76 item 3, "Tags are not imported". Two things follow:
+- the branch names the ORIGINAL's document in the marker for a copy ("a
+  copy's is the original's, its own being temporary") while the tags to the
+  left of it are still the temporary copies' ids, which is not what its own
+  rule 3 says those tags are;
+- it recomputes every crossing shape once for the new marker, which is the
+  recompute that renames `Binder008`'s faces. A file like this one would
+  lose the four references on its first open there, as it does here.
+
+What the branch does show (27.74) is the case that IS stable: a
+copy-on-change LINK keeps its copies as objects of the document, saved with
+it, so their ids are the same in every session and "the instance's
+references keep their names" through a recompute and a reopen.
+
+**Not fixed. Three ways,** to decide with the reporter:
+- B. Replace the copies' ids in the binder's names by those of the objects
+  they are copies of. Stable from then on, and what the branch's rule 3 asks
+  for. Files saved before break once more.
+- C. B, and a missing name is also looked up with the copies' ids taken out
+  of both sides, so that once is repaired on open.
+- E. Keep a Mutated binder's copies in the document, as a copy-on-change
+  link does. The names are stable without any renaming and a reload has
+  nothing to copy again; the file grows by the copies, and a file from
+  before still has to make them once.
+
+`SubShapeBinder::update` is changed on both branches, so whichever it is
+goes in with the merge of `origin/Transaction` in mind.
 
 ## Inbox
 
