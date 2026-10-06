@@ -3852,16 +3852,17 @@ void ViewProviderPartExt::updateColors(App::Document *sourceDoc, bool forceColor
 
     Base::FlagToggler<> flag(UpdatingColor);
     auto prop = getColoredElements(pcObject);
-    if(prop && prop->getSubValues().size()!=(size_t)MappedColors.getSize()) {
-        if(prop->getSubValues().size()<(size_t)MappedColors.getSize())
-            MappedColors.setSize(prop->getSubValues().size());
-        else {
-            auto subs = prop->getSubValues();
-            subs.resize(MappedColors.getSize());
-            prop->setValue(pcObject,subs);
-        }
+    // The painted elements and their colours are one list held in two
+    // properties: the names on the object, the colours here. The two do not
+    // change at once. A value put back -- an undo, a branch switched to, a
+    // version restored, a merge -- writes one and then the other, and
+    // between the two they differ in length. That is not damage to repair:
+    // cutting the longer down to the shorter, as this did, left both cut
+    // for good whenever the list put back was longer than the one there
+    // (docs/TransactionLog.md sec 31.16). The other half is on its way, and
+    // its change comes back here.
+    if(prop && prop->getSubValues().size()!=(size_t)MappedColors.getSize())
         return;
-    }
 
     auto shape = getShape();
     if(shape.isNull())

@@ -2811,3 +2811,132 @@ before they refreshed only while the list was uniform and otherwise held
 whatever the last uniform value had been (12.1). Every read that meant "the
 object's look" and spelled it `getMaterial(0)` or `getTransparency(0)` reads
 `getBase()` now.
+
+## 13. The painted elements, by name, as materials
+
+> Survey and proposal, 2026-10-06. Asked for by the merge of the
+> transaction log (docs/TransactionLog.md sec 31.16-31.18): a face's look
+> has to be held by the face's name before two branches that each painted
+> one can be merged. The user ruled the order: this first, made to work,
+> the merge on top of it. **13.2's first item is built; the rest waits on
+> 13.4.**
+
+### 13.1 What is there
+
+A face painted through Set Colors is held by name, and has been since
+before this document:
+
+- `ColoredElements`, on the object (`Part::Feature`, `App::Part`, a
+  link's): a `PropertyLinkSub` to the object itself, its sub-elements the
+  painted ones. It holds each with its mapped name, so it is a reference
+  like any other: it follows the face when the shape's faces are counted
+  otherwise, and keeps the strings its names are made of.
+- `MappedColors`, on the view provider: a colour for each, by its place in
+  that list. Hidden, read only.
+- `ViewProviderPartExt::updateColors()`, after a recompute and after
+  either changes: each name looked up in the shape as it now is -- a face
+  that was split or cut found through what its name became -- and the
+  colour written to that face's entry of `DiffuseColor`, an edge's of
+  `LineColorArray`, a vertex's of `PointColorArray`. With `MapFaceColor`
+  and its siblings, a face no name paints takes the colour of the face it
+  came from in the shape's sources (`getElementColor`).
+- The way in: `Gui::ViewProvider::getElementColors` / `setElementColors`,
+  a name to a colour, with `Face`, `Edge` and `Vertex` for the object's
+  own; Python's of the same name; `TaskElementColors`, the panel.
+  `ViewProviderLink` and `Gui::ViewProviderPart` have their own of the
+  two calls, PartDesign's body its own of the first.
+
+So sec 12's overriding faces are, for a face painted this way, something
+made: the names say which faces, and the list is written from them.
+
+What does not go through it writes a face by its number and leaves no
+name: `TaskFaceColors` (Part's own per-face panel), the importer
+(`ImportOCAFGui::applyFaceMaterials`, a STEP file's faces), a script that
+sets `DiffuseColor` or `ShapeAppearance`. And every field of sec 12 but
+the colour and its alpha: gloss, emission, a finish, a texture.
+
+### 13.2 What does not work, measured
+
+`ap.py`, `ap2.py`, `apu.py`: GUI probes, a box and a cut.
+
+1. **The pair cut down when it is put back.** *Fixed, 2026-10-06.*
+   `updateColors()` took the two lists differing in length for damage and
+   cut the longer to the shorter. What puts a value back writes one
+   property and then the other. A branch switched to that had painted a
+   third face came back with two names; a merge that took a painted face
+   brought no colour at all, with nothing asked; a version restored lost
+   both lists. It waits now: the other half's change comes back to it.
+   Undo and redo were whole before and are.
+2. **A name taken away leaves its paint.** `setElementColors({})` on a box
+   with two painted faces: no names, no colours, and both faces drawn as
+   they were. `updateColors()` writes the faces the names paint over the
+   list as it is; nothing says which entries of the list it wrote the
+   last time, so nothing takes them back. A face cannot be unpainted by
+   the way it was painted.
+3. **A version restored brings the names without their colours.**
+   `ColoredElements` is the object's and is put back; `MappedColors` is
+   the view provider's, and a restore puts a view provider's back only
+   where `ViewObjectTransaction` says so, which is off unless set
+   (docs/TransactionLog.md sec 24.9). Two names and no colour, in the
+   document and in the file saved from it. (Before item 1 both lists came
+   out empty, which hid it.)
+4. **A colour is all a name can hold.**
+
+### 13.3 Proposed
+
+**The store.** `MappedAppearance`, on the view provider beside
+`MappedColors`' place: an `App::PropertyAppearance`, one entry for each
+named element, in the order `ColoredElements` has them. `MappedColors` is
+read from a file that has it and is no longer written.
+
+**What an entry sets.** A material, and which of it is the face's own: its
+*colour* -- diffuse and alpha, what Set Colors gives today -- or the
+*whole* of it. A face that was only given a colour goes on taking the
+object's gloss and finish when those change, as it does now and as sec
+12.2 has an overriding face do; a face given a material is that material.
+
+**What is made of it.** The per-face part of `ShapeAppearance` is the
+names', written by `updateColors()`: for each named face its entry, laid
+over the object's base where the entry is a colour only. A face the names
+painted the last time and paint no more goes back to the base -- the
+faces last written are kept for that, and made again from the names when
+a document is read.
+
+A face written by number -- a script, the importer, `TaskFaceColors` --
+stays as written and is no name's: `updateColors()` leaves a face alone
+that it never wrote. (Ruled, docs/TransactionLog.md sec 31.17: such a
+face gets its name when it is merged, not when it is written.)
+
+**The way in.** `getElementAppearances` / `setElementAppearances` beside
+the two colour calls, a name to a material; the colour calls stay, and
+read and write the same store. The panel offers a material for a row
+where it offers a colour. Edges and vertices stay colours: their arrays
+are.
+
+**What a face has from where it came.** `MapFaceColor` hands on a colour.
+It would hand on the entry: the source face's material where the source
+gave it one.
+
+### 13.4 Questions
+
+| | Question | Recommended |
+| --- | --- | --- |
+| Q1 | What an entry holds | **A material and what of it is the face's own**, colour or whole (13.3). The alternative, a whole material always, is simpler to store and loses what works today: a painted face following the object's finish. |
+| Q2 | `MappedColors` | **Read, not written**: one store. An older build of this fork then opens a newer file with the names and no colours -- the state item 3 leaves today. The alternative keeps both written, the colour twice. |
+| Q3 | A name taken away | **The face goes back to the object's look** (item 2). |
+| Q4 | A version restored | **The colours come with their names, whatever `ViewObjectTransaction` says**: the two are one thing. Wider than this -- whether a restore should put back every appearance, "colours are important in CAD" (24.10) -- is 24.9's to reopen, not this section's. |
+| Q5 | Handed on from a source face | **Its material**, where the source face has one of its own; its colour as now where it has not. |
+| Q6 | Which view providers | **Part's first.** A link's elements, `App::Part` and PartDesign's body keep colours until this works. |
+| Q7 | By number | **Left as written** (ruled). `TaskFaceColors` could write names instead, being a panel a user picks faces in: recommended, as a step after. |
+
+### 13.5 Build order, once ruled
+
+1. The pair put back whole. *Done* (13.2 item 1), with
+   `scripts/transaction-log-paint-check.py`.
+2. `MappedAppearance`, read from `MappedColors`; `updateColors()` writing
+   from it, colours as now. No change to see.
+3. A name taken away takes its paint (item 2); the faces last written.
+4. Whole materials: the calls, their Python, the composition for a face
+   whose every field is its own.
+5. The panel.
+6. Handed on from a source; then the restore (Q4).

@@ -16160,6 +16160,57 @@ more than half of what it had painted the object is not merged by face
 at all, and goes by the rule it has today, ours kept, said in the row.
 **The user's to set.**
 
+### 31.18 Face materials by name: who builds, two settings, and the first step (user, 2026-10-06)
+
+**Ruled (user):** "you are to work on the name mapped material. make that
+half threshold as a parameter. painted on both side, ours by default,
+also a setting. agree with the shape diff."
+
+- The named store is built here, first (31.17). Its survey, what was
+  measured wrong with it and the proposal are where the appearance is
+  designed: docs/ShapeAppearanceDesign.md sec 13, seven questions.
+- 31.17's "to some extent" is a parameter, half by default: where a side
+  loses more of its painted faces than that to names not found, the
+  object is not merged by face. Proposed name
+  `TransactionLogMergeFaceLoss`, a percentage, 50.
+- 31.16 Q3, one face painted differently on both: **ours, by default, and
+  a setting.** Proposed `TransactionLogMergeFacePaint`: ours, theirs, or
+  asked.
+- 32.3: **agreed**, all seven as recommended. 32.4 is the order.
+
+Neither setting is built: both are the merge's, which comes after.
+
+**The first step, built: the pair put back whole.** 31.16's table, again:
+
+| | before | now |
+| --- | --- | --- |
+| theirs paints a face, ours changes a radius | no colour, both lists empty, nothing asked | the face red, by name |
+| the same, ours' change making a seventh face | the same | the face red -- `Face2` where theirs painted it, `Face6` in the merged shape, the same face |
+| a switch back to the branch that painted a third face | two names of three | three |
+
+One line of `ViewProviderPartExt::updateColors()`: the two lists differing
+in length is the other half not there yet, and it waits. The second row is
+the user's point made by a run: the name carried the colour to another
+number, and neither the number nor a side taken whole could have.
+
+Each branch painting another face is still asked -- `ColoredElements` a
+conflict, the two view values beside it. That is the merge by name, to
+come.
+
+**The Gui check.** `scripts/transaction-log-paint-check.py`, 19, run as
+the others are (`PAINTCHECK_OUT`): undo and redo step by step; the branch
+with a third face left and come back to, by name and as drawn; the merge
+that takes a painted face, and the one across a seventh face.
+
+**Seen on the way**, both in docs/ShapeAppearanceDesign.md sec 13.2 and
+neither fixed: a name taken away leaves its paint; a version restored
+brings the names and not their colours, since a restore leaves a view
+provider's values alone unless `ViewObjectTransaction` is set.
+
+**Gates**, frozen and unfrozen each: Python 3033 OK (52 skipped frozen,
+53 unfrozen; 6 expected failures), ctest 881/881, and the GUI checks as
+in 31.15 with the paint check, 19.
+
 ## 32. A shape diff: seeing what a merge or a pick would take (plan, 2026-10-06)
 
 **Asked (user):** "also plan for another feature. shape diff tool, so that
@@ -16257,6 +16308,9 @@ recompute in a document of its own, then a diff against it. After the
 rest.
 
 ### 32.3 Questions
+
+**Ruled (user, 2026-10-06): "agree with the shape diff"** -- each as
+recommended.
 
 | | Question | Recommended |
 | --- | --- | --- |
