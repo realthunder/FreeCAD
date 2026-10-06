@@ -1539,6 +1539,12 @@ bool DocumentObject::importMintedName(std::string&, const std::map<long, long>&)
     return false;
 }
 
+bool DocumentObject::pairMintedIds(const char*, const std::string&, const std::string&,
+                                   std::map<long, long>&) const
+{
+    return false;
+}
+
 bool DocumentObject::isMergedByElement(const Property* prop) const
 {
     if (!prop)

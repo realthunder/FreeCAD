@@ -699,39 +699,16 @@ std::size_t idDigits(const std::string& text, std::size_t tag, std::size_t end, 
     return from;
 }
 
-}  // namespace
-
-bool SketchObject::importMintedIds(const char* prop, std::string& fragment,
-                                   std::map<long, long>& ids, bool seed)
+/// Each id a saved list of geometry says, in the order it says them. A
+/// geometry says its id twice: in its own tag, and in the tag of the
+/// sketch's extension of it. The axes, which are nobody's to number, are
+/// below one and left out. `each(tag, end, digits, size, id)`: the tag
+/// from `tag` to `end`, the id's digits at `digits`, `size` of them.
+template<typename Each>
+void eachSavedId(const std::string& fragment, Each each)
 {
-    if (seed) {
-        for (const auto* list : {&Geometry.getValues(), &ExternalGeo.getValues()}) {
-            for (const Part::Geometry* g : *list) {
-                const long id = GeometryFacade::getId(g);
-                if (id > 0)
-                    ids.emplace(id, id);
-            }
-        }
-    }
-    if (!prop || (strcmp(prop, "Geometry") != 0 && strcmp(prop, "ExternalGeo") != 0))
-        return false;
-    // A geometry says its id twice: in its own tag, and in the tag of the
-    // sketch's extension of it. Both by the same map; the axes, which are
-    // nobody's to number, are below one.
-    // A number this file has not given a thing of this sketch stays the
-    // number it is -- all of them, for a sketch the copy made; one it has
-    // given is another thing here, and the copy's gets the next.
-    auto mint = [this](long id) {
-        App::Document* doc = getDocument();
-        const long floor = std::max(geoLastId, id - 1);
-        geoLastId = doc ? doc->nextGeoId(*this, floor) : floor + 1;
-        return geoLastId;
-    };
     static const std::string geometry = "<Geometry ";
     static const std::string extension = "<GeoExtension type=\"Sketcher::SketchGeometryExtension\"";
-    std::string out;
-    out.reserve(fragment.size() + 16);
-    std::size_t last = 0;
     std::size_t at = 0;
     while (true) {
         const std::size_t g = fragment.find(geometry, at);
@@ -752,15 +729,100 @@ bool SketchObject::importMintedIds(const char* prop, std::string& fragment,
         const long id = std::strtol(said.c_str(), &stop, 10);
         if (said.empty() || *stop || id <= 0)
             continue;
-        auto known = ids.find(id);
-        if (known == ids.end())
-            known = ids.emplace(id, mint(id)).first;
-        out.append(fragment, last, digits - last);
-        out += std::to_string(known->second);
-        last = digits + size;
+        each(tag, end, digits, size, id);
     }
+}
+
+}  // namespace
+
+bool SketchObject::importMintedIds(const char* prop, std::string& fragment,
+                                   std::map<long, long>& ids, bool seed)
+{
+    if (seed) {
+        // Not a number the map says is another of the copy's (sec 31.15):
+        // a copy that took this geometry from this file holds it under a
+        // number of its own, and its number of this one is another thing.
+        std::set<long> given;
+        for (const auto& kv : ids)
+            given.insert(kv.second);
+        for (const auto* list : {&Geometry.getValues(), &ExternalGeo.getValues()}) {
+            for (const Part::Geometry* g : *list) {
+                const long id = GeometryFacade::getId(g);
+                if (id > 0 && !given.count(id))
+                    ids.emplace(id, id);
+            }
+        }
+    }
+    if (!prop || (strcmp(prop, "Geometry") != 0 && strcmp(prop, "ExternalGeo") != 0))
+        return false;
+    // Both ids of a geometry by the same map.
+    // A number this file has not given a thing of this sketch stays the
+    // number it is -- all of them, for a sketch the copy made; one it has
+    // given is another thing here, and the copy's gets the next.
+    auto mint = [this](long id) {
+        App::Document* doc = getDocument();
+        const long floor = std::max(geoLastId, id - 1);
+        geoLastId = doc ? doc->nextGeoId(*this, floor) : floor + 1;
+        return geoLastId;
+    };
+    std::string out;
+    out.reserve(fragment.size() + 16);
+    std::size_t last = 0;
+    eachSavedId(fragment,
+                [&](std::size_t, std::size_t, std::size_t digits, std::size_t size, long id) {
+                    auto known = ids.find(id);
+                    if (known == ids.end())
+                        known = ids.emplace(id, mint(id)).first;
+                    out.append(fragment, last, digits - last);
+                    out += std::to_string(known->second);
+                    last = digits + size;
+                });
     out.append(fragment, last, std::string::npos);
     fragment = std::move(out);
+    return true;
+}
+
+bool SketchObject::pairMintedIds(const char* prop, const std::string& theirs,
+                                 const std::string& ours, std::map<long, long>& ids) const
+{
+    if (!prop || (strcmp(prop, "Geometry") != 0 && strcmp(prop, "ExternalGeo") != 0))
+        return false;
+    // A row replayed puts the list back as it was saved: the same things
+    // in the same order, each under the number its file has for it. So
+    // the two are read side by side -- and are not one list where they
+    // differ in how many they hold or in what kind of thing holds a place.
+    auto said = [](const std::string& fragment) {
+        std::vector<std::pair<std::string, long>> out;
+        eachSavedId(fragment,
+                    [&](std::size_t tag, std::size_t end, std::size_t, std::size_t, long id) {
+                        static const std::string type = " type=\"";
+                        std::string kind;
+                        const std::size_t at = fragment.find(type, tag);
+                        if (at != std::string::npos && at < end) {
+                            const std::size_t from = at + type.size();
+                            const std::size_t to = fragment.find('"', from);
+                            if (to != std::string::npos && to < end)
+                                kind = fragment.substr(from, to - from);
+                        }
+                        out.emplace_back(std::move(kind), id);
+                    });
+        return out;
+    };
+    const auto there = said(theirs);
+    const auto here = said(ours);
+    if (there.size() != here.size())
+        return false;
+    std::map<long, long> found;
+    std::map<long, long> back;
+    for (std::size_t i = 0; i < there.size(); ++i) {
+        if (there[i].first != here[i].first)
+            return false;
+        if (found.emplace(there[i].second, here[i].second).first->second != here[i].second
+                || back.emplace(here[i].second, there[i].second).first->second != there[i].second)
+            return false;
+    }
+    for (const auto& kv : found)
+        ids.emplace(kv.first, kv.second);
     return true;
 }
 

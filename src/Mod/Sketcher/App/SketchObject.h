@@ -124,6 +124,9 @@ public:
                          bool seed) override;
     /// `g5;SKT`, `g5v1;SKT`, `e7;SKT`: the id in an element's name.
     bool importMintedName(std::string& name, const std::map<long, long>& ids) const override;
+    /// The same list in two copies' numbers: geometry by geometry (sec 31.15).
+    bool pairMintedIds(const char* prop, const std::string& theirs, const std::string& ours,
+                       std::map<long, long>& ids) const override;
     /// recalculate the Feature (if no recompute is needed see also solve() and solverNeedsUpdate
     /// boolean)
     App::DocumentObjectExecReturn* execute() override;

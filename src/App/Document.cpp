@@ -7002,16 +7002,33 @@ bool openRecordJumps(TransactionStore& store, const std::vector<LogVersion>& ver
     // version, so there is nothing before to compare with: the open's
     // version being that one, at that row, is what says the file as found is
     // what the rows add up to.
-    if (at && t.parent > 0) {
+    //
+    // The version itself need not be there still (sec 31.15): an unnamed
+    // one goes when enough have come after it (sec 16.3), and the row says
+    // which it recorded and what its document was. Without that, every
+    // open older than the versions kept read as a file that is not its
+    // history's, and no branch made before it could be merged.
+    int64_t num = at ? at->num : 0;
+    std::string docxml = at ? at->docxml_hash : std::string();
+    if (!at) {
+        const auto j = nlohmann::json::parse(t.script, nullptr, false);
+        if (j.is_object()) {
+            if (j.contains("version") && j["version"].is_number_integer())
+                num = j["version"].get<int64_t>();
+            if (j.contains("docxml") && j["docxml"].is_string())
+                docxml = j["docxml"].get<std::string>();
+        }
+    }
+    if (num && t.parent > 0) {
         for (const auto& save : store.metaWithPrefix("save:")) {
             std::istringstream in(save.second);
             int64_t version = 0, seq = 0;
             in >> version >> seq;
-            if (version == at->num && seq == t.parent)
+            if (version == num && seq == t.parent)
                 return false;
         }
     }
-    if (!at || !before || at->docxml_hash.empty() || at->docxml_hash != before->docxml_hash)
+    if (!before || docxml.empty() || docxml != before->docxml_hash)
         return true;
     for (const auto& c : chain) {
         if (c.seq > before->seq && c.seq <= t.parent && !store.ops(c.seq).empty())
@@ -10636,6 +10653,91 @@ std::vector<LogTransaction> replayedRows(TransactionStore& store, int64_t head)
     return out;
 }
 
+/** Whether every number in the history of `head` is one the rows of the
+ * two stores can account for (docs/TransactionLog.md sec 31.15). What
+ * `scan` took from a file comes in a row it replayed, and `other` knows
+ * the row or it does not. A row it does not know is of a third file --
+ * whose merges may hold what `other` made, under numbers no row of
+ * `other`'s pairs: measured, a line that went out through a third copy
+ * came back as a second line. And a merge whose second parent is gone --
+ * its branch deleted once merged -- took its rows with it, and with them
+ * what they said: the same line, twice again. Not a merge behind `base`,
+ * the row both hold: what it brought the two number alike.
+ */
+bool numbersAccountedFor(TransactionStore& scan, int64_t head, int64_t base,
+                         TransactionStore& other)
+{
+    std::set<int64_t> behind;
+    for (const auto& t : scan.history(base))
+        behind.insert(t.seq);
+    for (const auto& t : scan.history(head)) {
+        if (t.mergeFrom && !behind.count(t.seq)) {
+            bool there = false;
+            for (const auto& r : scan.transactions(t.mergeFrom, 1))
+                there = there || r.seq == t.mergeFrom;
+            if (!there)
+                return false;
+        }
+        if (!isReplayed(t))
+            continue;
+        LogRowId id;
+        if (!scan.rowId(t.seq, id) || !other.findRow(id))
+            return false;
+    }
+    return true;
+}
+
+/// A value two copies of a file both hold, by its hash in each store.
+struct SameValue
+{
+    std::string prop;
+    std::string theirs;
+    std::string ours;
+};
+
+/** The values two copies of a file hold of each other's rows
+ * (docs/TransactionLog.md sec 31.15). A row replayed (sec 30.15) puts its
+ * values back as they were saved, and the row keeps its identity: so the
+ * value a row set is one value in the store that wrote the row and in the
+ * store that replayed it, however many copies it came through -- each
+ * saying the numbers its own file has for what the value holds. `rows` are
+ * `scan`'s, replayed; each is looked for in `other`. `scanIsTheirs` says
+ * which of the two is the copy; `here` gives the id here of an object the
+ * copy names, 0 for one this file is not known to hold. What is found is
+ * kept by the copy's id of the object.
+ */
+void sameValues(TransactionStore& scan, const std::vector<LogTransaction>& rows,
+                TransactionStore& other, bool scanIsTheirs,
+                const std::function<long(long)>& here, std::multimap<long, SameValue>& out)
+{
+    auto value = [](const LogOp& o) {
+        return o.op == "set" && o.ckind == "obj" && !o.derived && !o.vafter.empty();
+    };
+    for (const auto& t : rows) {
+        LogRowId id;
+        if (!scan.rowId(t.seq, id))
+            continue;
+        const int64_t seq = other.findRow(id);
+        if (!seq)
+            continue;
+        const auto theirOps = scanIsTheirs ? scan.ops(t.seq) : other.ops(seq);
+        const auto ourOps = scanIsTheirs ? other.ops(seq) : scan.ops(t.seq);
+        for (const auto& a : theirOps) {
+            if (!value(a))
+                continue;
+            const long cid = here(a.cid);
+            if (!cid)
+                continue;
+            for (const auto& b : ourOps) {
+                if (value(b) && b.cid == cid && b.prop == a.prop) {
+                    out.emplace(a.cid, SameValue {a.prop, a.vafter, b.vafter});
+                    break;
+                }
+            }
+        }
+    }
+}
+
 /// The import branch that holds a file as found (sec 30.19 G5): the one
 /// made for `file` and `branch` of it whose maps name a state. False when
 /// there is none; `kept` is its meta.
@@ -10833,6 +10935,28 @@ Document* Document::_importReplay(int64_t base, const std::string& stem, LogBran
         if (!haveAnchor || v.seq > anchor.seq || (v.seq == anchor.seq && v.num > anchor.num)) {
             anchor = v;
             haveAnchor = true;
+        }
+    }
+    if (!haveAnchor) {
+        // No version behind the row (sec 31.15): the file as found is not
+        // kept for good, and a row an earlier import replayed has only
+        // that behind it. The rows lead there from any version whose chain
+        // meets the row's -- back to where they meet, then forward -- so:
+        // the one that meets it latest, and of those the oldest.
+        int64_t best = -1;
+        for (const auto& v : store.versions()) {
+            int64_t meet = -1;
+            for (const auto& t : store.chain(v.seq)) {
+                if (onChain.count(t.seq))
+                    meet = std::max(meet, t.seq);
+            }
+            if (meet < 0)
+                continue;
+            if (!haveAnchor || meet > best || (meet == best && v.seq < anchor.seq)) {
+                anchor = v;
+                best = meet;
+                haveAnchor = true;
+            }
         }
     }
     if (!haveAnchor)
@@ -11382,15 +11506,19 @@ Document::ImportResult Document::importFork(const std::string& path, const std::
     // to.
     std::map<long, long> same;
     std::map<std::string, std::string> sameNames;
+    std::vector<LogTransaction> theyReplayed;
+    std::vector<LogTransaction> weReplayed;
     {
         fork.core->flush();
         log->flush();
+        theyReplayed = replayedRows(theirs, from.head);
+        weReplayed = replayedRows(store, mine.id ? mine.head : result.base);
         std::vector<std::pair<MadeObject, MadeObject>> there;   // the copy's, then ours
-        sameObjects(theirs, replayedRows(theirs, from.head), store, there);
+        sameObjects(theirs, theyReplayed, store, there);
         if (gap)
             sameObjects(theirs, replayedRows(theirs, tail.head), store, there);
         std::vector<std::pair<MadeObject, MadeObject>> here;   // ours, then the copy's
-        sameObjects(store, replayedRows(store, mine.id ? mine.head : result.base), theirs, here);
+        sameObjects(store, weReplayed, theirs, here);
         for (const auto& p : here)
             there.emplace_back(p.second, p.first);
         for (const auto& p : there) {
@@ -11407,25 +11535,112 @@ Document::ImportResult Document::importFork(const std::string& path, const std::
             names.emplace(kv.first, kv.second);
     }
 
+    // An object both copies had where they parted, under one id (sec
+    // 30.15): the newest row before the base that made or removed it is
+    // the same row in both stores. An id alone does not say so -- two
+    // copies number on from one counter, and reach for the same names.
+    auto atBase = [&](long cid) {
+        LogOp here;
+        LogOp there;
+        if (!store.lastOpOn("obj", cid, std::string(), 0, result.base, here)
+                || !theirs.lastOpOn("obj", cid, std::string(), 0, base, there))
+            return false;
+        LogRowId mine;
+        LogRowId other;
+        return store.rowId(here.txn, mine) && theirs.rowId(there.txn, other) && mine == other;
+    };
+
     // Sec 31.14: what an object numbers -- a sketch its geometry -- the
     // copy numbered on from where this file numbers on from, so its new
     // numbers are not this file's. They come under numbers of this file,
-    // kept as the object ids are. Only where the two are known to have
-    // been one at the base and to have gone on apart: not where the copy
-    // has itself taken rows from another file -- what it took from this
-    // one it holds under numbers of its own, which are then not new -- nor
-    // where this branch starts on rows an import brought, nor for a file
-    // as found. There the numbers come as they are, and a sketch both
-    // changed is one question, as before.
+    // kept as the object ids are. Not for a file as found, nor on a branch
+    // an import went on before these were kept; and not where either has
+    // numbers the rows cannot account for (sec 31.15) -- one that took
+    // from a third file, or deleted a branch it had merged. There the
+    // numbers come as they are, and a sketch both changed is one question,
+    // as before.
     RestoreMinted::Maps minted;
-    bool mint = !gap && replayedRows(theirs, from.head).empty();
+    bool mint = !gap && numbersAccountedFor(theirs, from.head, base, store)
+        && numbersAccountedFor(store, mine.id ? mine.head : result.base, result.base, theirs)
+        && numbersAccountedFor(store, log->head(), result.base, theirs);
     if (mint && mine.id) {
         mint = kept.is_object() && kept.contains("minted");
         importMinted(kept, minted);
     }
-    else if (mint) {
-        mint = replayedRows(store, result.base).empty();
+    // The objects whose numbers where the two parted are in the maps.
+    std::set<long> seeded;
+    for (const auto& kv : minted)
+        seeded.insert(kv.first);
+
+    // Sec 31.15: nor is every other number one the copy gave to a thing it
+    // made. What the copy took from this file it holds under numbers of
+    // its own, and what this file took from the copy it holds under
+    // numbers of this file: the same thing in both, and known as the
+    // objects are (sec 30.33) -- by the row that both hold, in which each
+    // saved the one value under its own numbers. By the copy's id of the
+    // object; read when the replay first has the object, since it is the
+    // object that says which number is which.
+    std::multimap<long, SameValue> shared;
+    std::set<long> unpaired;
+    if (mint) {
+        std::map<long, long> known;
+        const std::function<long(long)> hereOf = [&](long cid) {
+            auto it = ids.find(cid);
+            if (it != ids.end())
+                return it->second;
+            auto was = known.find(cid);
+            if (was == known.end())
+                was = known.emplace(cid, atBase(cid) ? cid : 0).first;
+            return was->second;
+        };
+        sameValues(theirs, theyReplayed, store, true, hereOf, shared);
+        sameValues(store, weReplayed, theirs, false, hereOf, shared);
+        for (const auto& kv : shared)
+            unpaired.insert(kv.first);
     }
+    auto pairNumbers = [&](DocumentObject& obj, long cid) {
+        std::map<long, long> found;
+        const auto range = shared.equal_range(cid);
+        for (auto it = range.first; it != range.second; ++it) {
+            const SameValue& v = it->second;
+            // Only what the object numbers is read.
+            std::string none;
+            std::map<long, long> nothing;
+            if (!obj.importMintedIds(v.prop.c_str(), none, nothing, false))
+                continue;
+            CapturedValue there;
+            CapturedValue here;
+            if (!fork.core->readValue(v.theirs, there) || !core.readValue(v.ours, here))
+                continue;
+            if (!obj.pairMintedIds(v.prop.c_str(), there.fragment, here.fragment, found))
+                FC_WARN("import: " << obj.getNameInDocument() << "." << v.prop
+                                   << " of a row both files hold is not one value in both");
+        }
+        if (found.empty())
+            return;
+        // Behind what the branch kept, and one number here for one of the
+        // copy's.
+        auto& map = minted[obj.getID()];
+        std::set<long> given;
+        for (const auto& kv : map)
+            given.insert(kv.second);
+        for (const auto& kv : found) {
+            auto has = map.find(kv.first);
+            if (has != map.end()) {
+                if (has->second != kv.second)
+                    FC_WARN("import: " << obj.getNameInDocument() << " holds the copy's "
+                                       << kv.first << " as " << has->second << ", and a row says "
+                                       << kv.second);
+                continue;
+            }
+            if (!given.insert(kv.second).second) {
+                FC_WARN("import: " << obj.getNameInDocument() << " holds " << kv.second
+                                   << " for another of the copy's than " << kv.first);
+                continue;
+            }
+            map.emplace(kv.first, kv.second);
+        }
+    };
 
     // Named after the file, and after the copy's branch when that is not
     // its file's own (30.14).
@@ -11504,21 +11719,6 @@ Document::ImportResult Document::importFork(const std::string& path, const std::
     std::map<int64_t, int64_t> seqs;   // the copy's rows, to the rows here
     // Dynamic properties left out for having no type, by object and name.
     std::set<std::pair<long, std::string>> untyped;
-
-    // An object both copies had where they parted, under one id (sec
-    // 30.15): the newest row before the base that made or removed it is
-    // the same row in both stores. An id alone does not say so -- two
-    // copies number on from one counter, and reach for the same names.
-    auto atBase = [&](long cid) {
-        LogOp here;
-        LogOp there;
-        if (!store.lastOpOn("obj", cid, std::string(), 0, result.base, here)
-                || !theirs.lastOpOn("obj", cid, std::string(), 0, base, there))
-            return false;
-        LogRowId mine;
-        LogRowId other;
-        return store.rowId(here.txn, mine) && theirs.rowId(there.txn, other) && mine == other;
-    };
 
     // Sec 30.34: a merge of the copy's own, of rows this file holds. The
     // row is this file's rows as the copy took them, and stays a merge
@@ -11675,6 +11875,8 @@ Document::ImportResult Document::importFork(const std::string& path, const std::
                 const auto idsBefore = ids;
                 const auto namesBefore = names;
                 const auto mintedBefore = minted;
+                const auto seededBefore = seeded;
+                const auto unpairedBefore = unpaired;
 
                 // The row, as a transaction of its author's. Only the
                 // transaction is: what the commit records beside it -- a
@@ -11801,13 +12003,26 @@ Document::ImportResult Document::importFork(const std::string& path, const std::
                     // a name read below may say a number another value of
                     // the row brings.
                     if (mint) {
+                        // What the two hold of each other's first (sec
+                        // 31.15), for every object the replay has by now:
+                        // a name in a value of this row may say a number
+                        // of an object none of its values is of.
+                        for (auto it = unpaired.begin(); it != unpaired.end();) {
+                            DocumentObject* obj = replay->getObjectByID(here(*it));
+                            if (!obj) {
+                                ++it;
+                                continue;
+                            }
+                            pairNumbers(*obj, *it);
+                            it = unpaired.erase(it);
+                        }
                         for (auto& kv : values) {
                             const LogOp& o = *kv.first;
                             DocumentObject* obj =
                                 o.ckind == "obj" ? replay->getObjectByID(here(o.cid)) : nullptr;
                             if (!obj)
                                 continue;
-                            const bool seed = !minted.count(obj->getID());
+                            const bool seed = seeded.insert(obj->getID()).second;
                             obj->importMintedIds(o.prop.c_str(), kv.second.fragment,
                                                  minted[obj->getID()], seed);
                         }
@@ -11888,6 +12103,8 @@ Document::ImportResult Document::importFork(const std::string& path, const std::
                     names = namesBefore;
                     ids = idsBefore;
                     minted = mintedBefore;
+                    seeded = seededBefore;
+                    unpaired = unpairedBefore;
                     throw;
                 }
 

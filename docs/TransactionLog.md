@@ -15857,3 +15857,170 @@ RC 15, BC 30, VC 18, PC 28, FC 16, VW 14, MC 40, the two-document check
 request check 31, the share check 47 and the squash check 13. The Python
 suite was run again after one of the new tests stopped asking the binder
 for its references in the order they were given.
+
+### 31.15 The round trip: a number known by the row both files hold (2026-10-06)
+
+**Asked (user):** "Continue as planned" -- the first of 31.14's "Left", put
+to them as the next thing: a copy that took rows from this file.
+
+**Measured first** (`rt.py`). This file and a copy each draw a fifth line
+in one sketch. The copy takes this file's: 31.14 gives it the copy's next
+number, so the copy holds its own line as `g5` and this file's as `g6`,
+and hangs a sketch on each. This file draws a sixth, and takes the copy's.
+31.14 gave no numbers there -- "a copy that has itself replayed rows of
+another file" -- so the copy's rows came saying `g5` for a line this file
+has never seen and `g6` for the one this file calls `g5`, and the sketch
+was one question:
+
+| | before | now |
+| --- | --- | --- |
+| asked | one conflict, `Sketch.Geometry`, the sketch whole | nothing |
+| theirs picked | six lines: this file's sixth **gone** | |
+| ours picked | six lines: the copy's fifth **gone** | |
+| merged | | seven: `g5`, `g6` this file's, the copy's as `g7` |
+| what the copy hung on this file's line | | on `Edge5`, `;g5;SKT` |
+| what it hung on its own | | on `Edge7`, `;g7;SKT` |
+
+No answer to the one question kept both lines. Then on round: the copy
+takes this file's sixth as its `g8`, this file the copy's next as `g9`,
+each on the branch its first import made, nothing asked, no line twice.
+
+**By the row, as the objects are (30.33).** A replayed row puts each value
+back as it was saved, and keeps the row's identity (30.12). So the value a
+row set is one value in the store that wrote the row and in the store
+that replayed it, and each holds it saying its own file's numbers. The two
+read side by side say which number is which. Not from the map either copy
+kept, for 30.33's reasons, and for one more: a map says what a branch
+brought, and the copy that took a line and went on drawing has numbers no
+map of this file's knows.
+
+- every row *the copy* replayed that this store holds too: the copy's
+  number for what this file made, to this file's;
+- every row *this file* replayed that the copy holds too: the copy's
+  number for what the copy made, to the number it got here -- which the
+  branch's kept map says only while that branch is continued.
+
+`sameValues(scan, rows, other, ...)`: the rows 30.33 already finds, and of
+each the `set` ops both have on one object and property -- an object the
+import knows to be one in both: paired by 30.33, brought by this branch
+before, or made by one row behind the base. Hashes only; nothing is read
+until the replay has the object.
+
+**What an object says** (`DocumentObject`, one more):
+`pairMintedIds(prop, theirs, ours, ids)` -- one value as the two saved it,
+and what they say of each other's numbers added to `ids`. False where the
+property holds no numbers, and where the two are not one value.
+`SketchObject`'s reads the two lists geometry by geometry: the same count,
+the same kind of thing in each place, one number for one -- or it says
+nothing of that value at all.
+
+**In the import.** Before the values of a row, for every object the replay
+has by then: its shared values read and paired, behind what the branch
+kept (`pairNumbers`). For every object, not only those the row sets: a
+name in a value says a number of another object -- the copy's row that
+hangs a sketch on `;g6;SKT` has no value of the sketch the line is in.
+Then 31.14 as it was: `importMintedIds` on each value, a number the map
+has not got being one the copy made; and the names through the scope.
+
+*The seed* was "what the object holds now goes in as itself". It still
+does, except for a number the map already gives to another of the copy's:
+where the two last agreed this file's `g5` is there, and the copy's `g5`
+is not that line. Whether an object has been seeded is kept apart from
+whether it has a map (`seeded`), since the rows may say something of an
+object before any value of it comes.
+
+**When numbers are given: where the rows account for them.** 31.14 gave
+them only where neither had replayed anything. Now (`numbersAccountedFor`,
+for the copy's history, for the branch replayed on, and for this
+document's own): wherever every row a file replayed is a row the other
+holds, and no merge past the row both hold has lost the branch it merged.
+Two cases are outside that, both measured, both made the same line twice
+before the rule and are the one question now:
+
+- *A third copy* (`rt3.py`). C takes this file's line and merges it; B
+  takes C's. What B replayed is C's merge row -- a row of C's own, whose
+  value holds this file's line under C's number -- and not the row that
+  drew the line. Back here nothing pairs it: this file's `g5` came as
+  `g9`, a second line at the same place.
+- *A merged branch deleted* (`rt.py`, `RT_DELETE`). Deleting a branch
+  takes its rows (16.7), merged or not; the copy's merge row stays, its
+  second parent gone. The rows that said which number is which went with
+  the branch: the same second line.
+
+Of 31.14's three "not done", this closes the copy that replayed rows and
+the branch that starts on replayed rows, each where the rows are the
+other's own; a file as found is as it was.
+
+**A warning, not a stop.** Where a row says the copy's number is one thing
+here and the branch's map another, or two of the copy's numbers would be
+one here, the first stands and the log says so. By reading: no run made
+either.
+
+**Seen on the way: an import with no version behind the row both hold.**
+The second variant of the test lets the import's branch go on by itself,
+so the next import starts another -- from a row the first import
+replayed. `_importReplay` opened "the newest version on the row's chain",
+and behind such a row there is only the file as found, an unnamed version
+that goes when enough have come after it (16.3): "no version to reach the
+row both files hold from". The rows lead to the row from any version whose
+chain meets its chain -- back to where they meet, then forward, which is
+what `_moveAlongLog` does for a switch -- so where none is behind it, the
+version that meets it latest is opened, and of those the oldest.
+
+**Seen on the way, and worse: a branch that could not be merged after two
+saves.** The same variant then stopped in the merge: "row 6 opened a file
+that is not its history's". Alone (`mb.py`): a branch made, the file saved
+and closed, then opened, changed and saved n times, then the branch
+merged. n = 0 and 1 merge; **n = 2 is refused**, and so are 8 and 30. `openRecordJumps` reads whether an open found the file its
+history says from the version the open recorded, found by the row it is
+at -- and with the default retention that version is gone two saves
+later. With no version, "it jumped", for every open older than the
+versions kept, and `diffRows` will not walk past a jump. The open's row
+says which version it recorded and what its document was (`version`,
+`docxml`, in its script): read from there when the version is gone. No
+test had a file opened three times before a merge.
+
+**Tests**, Python, `TransactionBranchCases`, each frozen and unfrozen:
+
+- `testGeometryACopyTookComesBackUnderItsOwnId`: the measured run, four
+  imports, each with nothing asked and every imported row saying its
+  numbers are this file's: the lines by id on both sides after each, each
+  length on its own line, the two sketches hung where they were hung, the
+  file saying `;g7;SKT.Edge7` and `;g5;SKT.Edge5` and no `;g6;SKT.`.
+  Twice: on the branches the imports made, continued; and with each
+  branch gone on by itself, so that every import starts a new one and has
+  no map, only the rows.
+- `testNumbersTheRowsDoNotAccountForComeAsTheyAre`: the merged branch
+  deleted, and the third copy -- the rows not saying their numbers are
+  this file's, and `Sketch.Geometry` asked, in the file that took from a
+  third as well as back here.
+- `testABranchIsMergedAcrossOpensOlderThanTheVersionsKept`: four opens
+  and saves after the branch; the first open's version is not among those
+  held; merged, with nothing asked.
+
+**Left.**
+
+- **A third copy**, and the file in the middle of three: asked whole. The
+  rule cannot tell a file that took from a third what this file made from
+  one that took what it has never seen, where the numbers would be right
+  as 31.14 gives them; both are refused. To pair them the import would
+  have to bring the rows a merge stood on, as rows.
+- **A merged branch deleted**: asked whole. By reading, not run: the
+  objects of 30.33 are paired by the same rows, and with those gone an
+  object this file made comes back as a second one, with nothing asked.
+  Whether deleting a merged branch should keep the rows its merge stands
+  on -- as the merge base of 30.34 also wants -- is the user's to say.
+- The cost: every value of `Geometry` and `ExternalGeo` the two have
+  exchanged is read, for each sketch an import touches, at each import.
+- The two warnings: not run.
+- The version opened where none is behind the row is the one that meets
+  the row's chain latest; nothing counts the rows to walk from it.
+- 31.14's others stand: a file as found and the gap, an element name
+  whose first tag is not the sketch's, a name made of several, a geometry
+  brought back under an id the copy had deleted.
+
+**Gates**, frozen and unfrozen each: Python 3033 OK (52 skipped frozen,
+53 unfrozen; 6 expected failures; +3), ctest 881/881, and the GUI checks
+RC 15, BC 30, VC 18, PC 28, FC 16, VW 14, MC 40, the two-document check
+24, the tree check 19, the author check 36, the import check 49, the
+request check 31, the share check 47 and the squash check 13.

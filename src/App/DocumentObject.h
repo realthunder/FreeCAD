@@ -581,7 +581,8 @@ public:
      * has not got is a thing the copy made: it gets a new one here, and
      * goes into the map. With `seed` -- the first the import sees of the
      * object -- what the object holds now is put in the map as itself
-     * first, whatever `prop` is: the two were one where they parted.
+     * first, whatever `prop` is: the two were one where they parted. Not
+     * a number the map already says is another of the copy's (sec 31.15).
      * False when `prop` holds no such numbers.
      */
     virtual bool importMintedIds(const char* prop, std::string& fragment,
@@ -591,6 +592,16 @@ public:
      * when it says none the map changes.
      */
     virtual bool importMintedName(std::string& name, const std::map<long, long>& ids) const;
+    /** One value of `prop` as two copies of the file hold it, each under
+     * its own numbers (docs/TransactionLog.md sec 31.15): `theirs` as the
+     * copy saved it in a row, `ours` as this file saved it in the same
+     * row -- one of the two replayed the other's. What the two say of
+     * each other's numbers goes into `ids`, the copy's to this file's; a
+     * number `ids` has is left as it is. False, and nothing added, when
+     * `prop` holds no such numbers or the two are not one value.
+     */
+    virtual bool pairMintedIds(const char* prop, const std::string& theirs,
+                               const std::string& ours, std::map<long, long>& ids) const;
 
     /** Whether `prop` of this object is merged by the things it holds
      * (Property::splitSaved, docs/TransactionLog.md sec 31.8) where two

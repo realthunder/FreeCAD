@@ -7283,6 +7283,307 @@ class TransactionBranchCases(unittest.TestCase):
         )
         self.assertEqual(at(doc), theirs)
 
+    def testGeometryACopyTookComesBackUnderItsOwnId(self):
+        # Sec 31.15: the round trip. A copy that took a line of this file's
+        # holds it under a number of its own -- its `g6` is this file's
+        # `g5`, and its `g5` a line this file has never seen. Back here
+        # each is known by the row both files hold: this file's line is the
+        # line it was, the copy's is new, and the sketch both went on with
+        # is merged by what it holds, with nothing asked. Then round again,
+        # each way, on the branches the imports made and on new ones.
+        # Not so through a third copy, or once a merged branch is deleted:
+        # there the rows do not say, and the sketch is one question.
+        import shutil
+
+        import ArchiveMembers
+        import Part
+        import Sketcher
+        from FreeCAD import Vector as V
+
+        def lines(doc):
+            sk = doc.Sketch
+            return {
+                sk.getGeometryId(i): round(g.StartPoint.y, 6) for i, g in enumerate(sk.Geometry)
+            }
+
+        def on(doc):
+            sk = doc.Sketch
+            held = [sk.getGeometryId(i) for i in range(len(sk.Geometry))]
+            return sorted((held[c.First], round(c.Value, 6)) for c in sk.Constraints)
+
+        def hung(doc):
+            # Where the two sketches that take a line of the first take it.
+            out = {}
+            for name in ("Sketch2", "Sketch3"):
+                ext = doc.getObject(name).ExternalGeo[2]
+                out[name] = (round(ext.StartPoint.y, 6), round(ext.length(), 6))
+            return out
+
+        def add(doc, name, y, length):
+            doc.openTransaction(name)
+            sk = doc.Sketch
+            i = sk.addGeometry(Part.LineSegment(V(0, y, 0), V(length, y, 0)))
+            sk.addConstraint(Sketcher.Constraint("DistanceX", i, 1, i, 2, length))
+            doc.recompute()
+            doc.commitTransaction()
+
+        def take(doc, other, rows, stray, extends=False):
+            res = doc.importTransactionFork(other)
+            self.assertEqual((res["stopped_at"], res["rows"]), (0, rows), res)
+            self.assertEqual(res["extended"], extends and not stray, res)
+            log = [t for t in doc.getTransactionLog() if t["branch"] == res["branch"]]
+            for t in log:
+                if "imported" in t["script"]:
+                    self.assertIn('"minted":true', t["script"].replace(" ", ""), t["name"])
+            pv = doc.previewTransactionMerge(res["branch"])
+            self.assertEqual(pv["conflicts"], 0, [(c["kind"], c["key"]) for c in pv["changes"]])
+            merged = doc.mergeTransactionBranch(res["branch"])
+            self.assertEqual((merged["unresolved"], merged["failed"]), ([], []))
+            self.assertFalse(
+                [o.Name for o in doc.Objects if "Invalid" in o.State or "Touched" in o.State]
+            )
+            if stray:
+                # The branch goes on by itself, so the next import starts
+                # another: with no map kept, only the rows are left to say
+                # which number is which.
+                doc.switchTransactionBranch(res["branch"])
+                doc.openTransaction("stray")
+                doc.addObject("App::FeatureTest", "Stray")
+                doc.commitTransaction()
+                doc.switchTransactionBranch("main")
+            return res
+
+        def reopen(path):
+            doc = self.track(FreeCAD.openDocument(path))
+            doc.UndoMode = 1
+            return doc
+
+        for stray in (False, True):
+            stem = "back-stray" if stray else "back"
+            doc = self.track(FreeCAD.newDocument("RoundOurs"))
+            doc.UndoMode = 1
+            doc.openTransaction("base")
+            sk = doc.addObject("Sketcher::SketchObject", "Sketch")
+            for y in (0, 5, 10, 15):
+                sk.addGeometry(Part.LineSegment(V(0, y, 0), V(10, y, 0)))
+            sk.addConstraint(Sketcher.Constraint("DistanceX", 0, 1, 0, 2, 10))
+            doc.recompute()
+            doc.commitTransaction()
+            path = os.path.join(self.dir, stem + "-ours.FCStd")
+            copy = os.path.join(self.dir, stem + "-theirs.FCStd")
+            doc.saveAs(path)
+            shutil.copyfile(path, copy)
+
+            # Each a fifth line; the copy takes this file's, as its sixth.
+            add(doc, "ours -5", -5, 6)
+            self.assertEqual(lines(doc), {1: 0, 2: 5, 3: 10, 4: 15, 5: -5})
+            doc.save()
+            FreeCAD.closeDocument(doc.Name)
+            fork = reopen(copy)
+            add(fork, "theirs 20", 20, 8)
+            take(fork, path, 1, stray)
+            self.assertEqual(lines(fork), {1: 0, 2: 5, 3: 10, 4: 15, 5: 20, 6: -5})
+            # And hangs a sketch on each: on its own, and on the one taken.
+            fork.openTransaction("theirs refs")
+            for name, edge in (("Sketch2", "Edge5"), ("Sketch3", "Edge6")):
+                s = fork.addObject("Sketcher::SketchObject", name)
+                s.addExternal("Sketch", edge)
+                s.addGeometry(Part.LineSegment(V(0, 30, 0), V(3, 33, 0)))
+            fork.recompute()
+            fork.commitTransaction()
+            theirs = hung(fork)
+            self.assertEqual(theirs, {"Sketch2": (20.0, 8.0), "Sketch3": (-5.0, 6.0)})
+            fork.save()
+            FreeCAD.closeDocument(fork.Name)
+
+            # This file goes on, and takes the copy's: three rows, one of
+            # them the copy's merge of this file's line.
+            doc = reopen(path)
+            add(doc, "ours -10", -10, 4)
+            self.assertEqual(lines(doc)[6], -10)
+            take(doc, copy, 3, stray)
+            self.assertEqual(lines(doc), {1: 0, 2: 5, 3: 10, 4: 15, 5: -5, 6: -10, 7: 20})
+            self.assertEqual(on(doc), [(1, 10.0), (5, 6.0), (6, 4.0), (7, 8.0)])
+            # What the copy hung on a line hangs on that line: its own
+            # under the id it got here, this file's under the id it had.
+            self.assertEqual(hung(doc), theirs)
+            doc.save()
+            text = ArchiveMembers.readFile(path, "Document.xml").decode("utf-8")
+            self.assertIn('shadow=";g7;SKT.Edge7"', text)
+            self.assertIn('shadow=";g5;SKT.Edge5"', text)
+            self.assertNotIn(";g6;SKT.", text)
+            FreeCAD.closeDocument(doc.Name)
+
+            # Round again: the copy takes this file's sixth, and its own
+            # fifth -- which went there and back -- is not brought twice.
+            fork = reopen(copy)
+            add(fork, "theirs 25", 25, 3)
+            self.assertEqual(lines(fork)[7], 25)
+            take(fork, path, 2, stray, True)
+            self.assertEqual(lines(fork), {1: 0, 2: 5, 3: 10, 4: 15, 5: 20, 6: -5, 7: 25, 8: -10})
+            self.assertEqual(on(fork), [(1, 10.0), (5, 8.0), (6, 6.0), (7, 3.0), (8, 4.0)])
+            self.assertEqual(hung(fork), theirs)
+            fork.save()
+            FreeCAD.closeDocument(fork.Name)
+
+            # And back once more.
+            doc = reopen(path)
+            add(doc, "ours -15", -15, 2)
+            self.assertEqual(lines(doc)[8], -15)
+            take(doc, copy, 2, stray, True)
+            self.assertEqual(
+                lines(doc), {1: 0, 2: 5, 3: 10, 4: 15, 5: -5, 6: -10, 7: 20, 8: -15, 9: 25}
+            )
+            self.assertEqual(on(doc), [(1, 10.0), (5, 6.0), (6, 4.0), (7, 8.0), (8, 2.0), (9, 3.0)])
+            self.assertEqual(hung(doc), theirs)
+            FreeCAD.closeDocument(doc.Name)
+
+    def testNumbersTheRowsDoNotAccountForComeAsTheyAre(self):
+        # Sec 31.15: which number is which is read from the rows both files
+        # hold. Where a row is missing the copy's numbers are not guessed
+        # at -- measured, this file's own line came back as a second line
+        # -- and the sketch both changed is the one question it was: a copy
+        # that deleted the branch it had merged this file's rows from, and
+        # one that took them through a third copy.
+        import shutil
+
+        import Part
+        import Sketcher
+        from FreeCAD import Vector as V
+
+        def add(doc, name, y, length):
+            doc.openTransaction(name)
+            sk = doc.Sketch
+            i = sk.addGeometry(Part.LineSegment(V(0, y, 0), V(length, y, 0)))
+            sk.addConstraint(Sketcher.Constraint("DistanceX", i, 1, i, 2, length))
+            doc.recompute()
+            doc.commitTransaction()
+
+        def asked(doc, other):
+            # The import's rows, whether their numbers are this file's, and
+            # what a merge of them asks.
+            res = doc.importTransactionFork(other)
+            self.assertEqual(res["stopped_at"], 0, res)
+            minted = {
+                '"minted":true' in t["script"].replace(" ", "")
+                for t in doc.getTransactionLog()
+                if t["branch"] == res["branch"] and "imported" in t["script"]
+            }
+            pv = doc.previewTransactionMerge(res["branch"])
+            return res, minted, [c["key"] for c in pv["changes"] if c["kind"] == "conflict"]
+
+        def reopen(path):
+            doc = self.track(FreeCAD.openDocument(path))
+            doc.UndoMode = 1
+            return doc
+
+        def files(stem, copies):
+            doc = self.track(FreeCAD.newDocument("AskedOurs"))
+            doc.UndoMode = 1
+            doc.openTransaction("base")
+            sk = doc.addObject("Sketcher::SketchObject", "Sketch")
+            for y in (0, 5, 10, 15):
+                sk.addGeometry(Part.LineSegment(V(0, y, 0), V(10, y, 0)))
+            sk.addConstraint(Sketcher.Constraint("DistanceX", 0, 1, 0, 2, 10))
+            doc.recompute()
+            doc.commitTransaction()
+            path = os.path.join(self.dir, stem + "-ours.FCStd")
+            doc.saveAs(path)
+            others = [os.path.join(self.dir, "%s-%s.FCStd" % (stem, c)) for c in copies]
+            for other in others:
+                shutil.copyfile(path, other)
+            add(doc, "ours -5", -5, 6)
+            doc.save()
+            FreeCAD.closeDocument(doc.Name)
+            return [path] + others
+
+        # The copy merges this file's line, and deletes the branch.
+        path, copy = files("gone", ["theirs"])
+        fork = reopen(copy)
+        add(fork, "theirs 20", 20, 8)
+        res, minted, conflicts = asked(fork, path)
+        self.assertEqual((minted, conflicts), ({True}, []))
+        fork.mergeTransactionBranch(res["branch"])
+        fork.deleteTransactionBranch(res["branch"])
+        self.assertEqual(len(fork.Sketch.Geometry), 6)
+        fork.save()
+        FreeCAD.closeDocument(fork.Name)
+        doc = reopen(path)
+        add(doc, "ours -10", -10, 4)
+        res, minted, conflicts = asked(doc, copy)
+        self.assertEqual((minted, conflicts), ({False}, ["Sketch.Geometry"]))
+        FreeCAD.closeDocument(doc.Name)
+
+        # A third copy takes this file's line; the second takes the third's.
+        path, copy, third = files("third", ["theirs", "others"])
+        other = reopen(third)
+        add(other, "others 40", 40, 7)
+        res, minted, conflicts = asked(other, path)
+        self.assertEqual((minted, conflicts), ({True}, []))
+        other.mergeTransactionBranch(res["branch"])
+        other.save()
+        FreeCAD.closeDocument(other.Name)
+        fork = reopen(copy)
+        add(fork, "theirs 20", 20, 8)
+        res, minted, conflicts = asked(fork, third)
+        self.assertEqual((minted, conflicts), ({False}, ["Sketch.Geometry"]))
+        merged = fork.mergeTransactionBranch(res["branch"], {}, "theirs")
+        self.assertEqual((merged["unresolved"], merged["failed"]), ([], []))
+        fork.save()
+        FreeCAD.closeDocument(fork.Name)
+        doc = reopen(path)
+        add(doc, "ours -10", -10, 4)
+        res, minted, conflicts = asked(doc, copy)
+        self.assertEqual((minted, conflicts), ({False}, ["Sketch.Geometry"]))
+        FreeCAD.closeDocument(doc.Name)
+
+    def testABranchIsMergedAcrossOpensOlderThanTheVersionsKept(self):
+        # Sec 31.15, seen on the way: whether an open found the file its
+        # history says was read off the version the open recorded, and an
+        # unnamed version goes once enough have come after it (sec 16.3).
+        # Two saves later every such open read as a file that is not its
+        # history's, and a branch made before it could not be merged.
+        doc = self.track(FreeCAD.newDocument("OldOpens"))
+        doc.UndoMode = 1
+        doc.openTransaction("base")
+        doc.addObject("Part::Box", "Box")
+        doc.addObject("Part::Cylinder", "Cyl")
+        doc.recompute()
+        doc.commitTransaction()
+        path = os.path.join(self.dir, "old-opens.FCStd")
+        doc.saveAs(path)
+        doc.createTransactionBranch("side")
+        doc.openTransaction("side edit")
+        doc.Cyl.Height = 20
+        doc.recompute()
+        doc.commitTransaction()
+        doc.switchTransactionBranch("main")
+        doc.save()
+        FreeCAD.closeDocument(doc.Name)
+        for k in range(4):
+            doc = self.track(FreeCAD.openDocument(path))
+            doc.UndoMode = 1
+            doc.openTransaction("main %d" % k)
+            doc.Box.Length = 11 + k
+            doc.recompute()
+            doc.commitTransaction()
+            doc.save()
+            FreeCAD.closeDocument(doc.Name)
+        doc = self.track(FreeCAD.openDocument(path))
+        doc.UndoMode = 1
+        opens = [t["script"] for t in doc.getTransactionLog() if t["kind"] == "restore"]
+        self.assertEqual(len(opens), 5)
+        held = {v["num"] for v in doc.getTransactionVersions()}
+        import json
+
+        # The case: the first open's version is gone.
+        self.assertNotIn(json.loads(opens[0])["version"], held)
+        pv = doc.previewTransactionMerge("side")
+        self.assertEqual(pv["conflicts"], 0)
+        merged = doc.mergeTransactionBranch("side")
+        self.assertEqual((merged["unresolved"], merged["failed"]), ([], []))
+        self.assertEqual((doc.Cyl.Height.Value, doc.Box.Length.Value), (20.0, 14.0))
+
     def testRowsArePickedAndChangesLeftOut(self):
         # Sec 31.12 (the user's): picking by hand is not only for conflicts.
         # Rows of another branch are applied here one by one, as a step of
