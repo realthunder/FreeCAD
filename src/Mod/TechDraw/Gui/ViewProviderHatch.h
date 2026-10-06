@@ -55,6 +55,8 @@ public:
     bool useNewSelectionModel() const override {return false;}
     void onChanged(const App::Property* prop) override;
     void updateData(const App::Property*) override;
+    /// a hatch colour stored with no opacity reads as opaque
+    void finishRestoring() override;
     bool setEdit(int ModNum) override;
     bool doubleClicked() override;
     bool canDelete(App::DocumentObject* obj) const override;

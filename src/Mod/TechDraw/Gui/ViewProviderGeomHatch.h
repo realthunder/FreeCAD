@@ -54,6 +54,8 @@ public:
     App::PropertyColor       ColorPattern;
 
     void updateData(const App::Property*) override;
+    /// a hatch colour stored with no opacity reads as opaque
+    void finishRestoring() override;
     void onChanged(const App::Property *prop) override;
     bool setEdit(int ModNum) override;
     bool doubleClicked(void) override;

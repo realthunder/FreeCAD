@@ -217,6 +217,12 @@ fc_add_gui_test(GuiTechDrawLineStandardOutOfRange_tests_run
 fc_add_gui_test(GuiTechDrawPageBackendSwitch_tests_run
                 techdraw-page-backend-switch.py --timeout 180)
 
+# A TechDraw colour a document stored with no opacity -- every colour of an
+# older document -- is drawn: dimensions, balloons and hatches restored
+# from one were on the page fully transparent.
+fc_add_gui_test(GuiTechDrawColourWithoutOpacity_tests_run
+                techdraw-colour-without-opacity.py --timeout 180)
+
 # A browser's right click (docs/ThinClient.md sec 8.11b): the desktop's 3D
 # view context menu built for what the ray hits, its entries judged for the
 # connection, an edit entry entered in the client's view with no 3D view

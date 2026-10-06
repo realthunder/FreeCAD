@@ -413,6 +413,14 @@ bool Preferences::autoCorrectDimRefs()
     return getPreferenceGroup("Dimensions")->GetBool("AutoCorrectRefs", true);
 }
 
+//! true if a colour a document stored with no opacity is to be read as opaque
+//! (upstream's FixColorAlphaOnLoad). The fourth component of a colour used to
+//! be a transparency nobody looked at, saved as 0; it is an opacity now.
+bool Preferences::fixColorAlphaOnLoad()
+{
+    return getPreferenceGroup("General")->GetBool("FixColorAlphaOnLoad", true);
+}
+
 //! number of times to clean the output edges from HLR
 int Preferences::scrubCount()
 {

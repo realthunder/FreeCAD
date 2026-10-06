@@ -30,7 +30,9 @@
 
 #include <climits>
 
+#include <App/Document.h>
 #include <App/DocumentObject.h>
+#include <App/PropertyStandard.h>
 #include <Base/Console.h>
 #include <Base/Tools.h>
 #include <Gui/Application.h>
@@ -40,6 +42,7 @@
 
 #include <Mod/TechDraw/App/DrawPage.h>
 #include <Mod/TechDraw/App/DrawView.h>
+#include <Mod/TechDraw/App/Preferences.h>
 
 #include "ViewProviderDrawingView.h"
 #include "ViewProviderDrawingViewExtension.h"
@@ -206,8 +209,62 @@ void ViewProviderDrawingView::startRestoring()
     Gui::ViewProviderDocumentObject::startRestoring();
 }
 
+//! convert old style transparency values in PropertyColor to new style alpha
+//! channel values (upstream's, with the fork's own test for who wrote the file).
+//!
+//! The fourth component of a colour was a transparency nothing in TechDraw
+//! looked at, and documents hold it as 0. It is an opacity since the colour
+//! conversion started carrying it (189e3b629a), so a dimension, a balloon or a
+//! hatch restored from such a document was drawn with no opacity at all: there,
+//! selectable, and invisible.
+void ViewProviderDrawingView::fixColorAlphaValues()
+{
+    fixColorAlphaValues(this);
+}
+
+void ViewProviderDrawingView::fixColorAlphaValues(Gui::ViewProviderDocumentObject* vp)
+{
+    if (!vp || !TechDraw::Preferences::fixColorAlphaOnLoad()) {
+        return;
+    }
+    // Upstream from 1.1 on writes the opacity it means, and such a file is
+    // left alone. The fork's files are not among them whatever their number
+    // says: its releases are dated ("2025.1020"), its dev builds say 0.22,
+    // and both wrote the old form.
+    if (App::DocumentObject* obj = vp->getObject()) {
+        if (App::Document* doc = obj->getDocument()) {
+            int major = 0;
+            int minor = 0;
+            const bool dated = sscanf(doc->getProgramVersion(), "%d.%d", &major, &minor) == 2
+                && major >= 2000;
+            if (!dated && (major > 1 || (major == 1 && minor >= 1))) {
+                return;
+            }
+        }
+    }
+
+    std::vector<App::Property*> allProperties;
+    vp->getPropertyList(allProperties);
+    for (App::Property* prop : allProperties) {
+        auto colorProp = Base::freecad_dynamic_cast<App::PropertyColor>(prop);
+        if (!colorProp) {
+            continue;
+        }
+        // As upstream: a colour with no opacity at all is taken for the old
+        // form, on the assumption that nobody draws an invisible dimension
+        // on purpose. The preference is the way out for whoever does.
+        App::Color color = colorProp->getValue();
+        if (color.a == 0.0F) {
+            color.a = 1.0F;
+            colorProp->setValue(color);
+        }
+    }
+}
+
 void ViewProviderDrawingView::finishRestoring()
 {
+    fixColorAlphaValues();
+
     if (Visibility.getValue()) {
         show();
     } else {

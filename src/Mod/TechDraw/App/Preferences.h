@@ -105,6 +105,7 @@ public:
     static Base::Color getAccessibleColor(Base::Color orig);
 
     static bool autoCorrectDimRefs();
+    static bool fixColorAlphaOnLoad();
     static int scrubCount();
 
     static double svgHatchFactor();

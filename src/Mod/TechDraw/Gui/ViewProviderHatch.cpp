@@ -37,6 +37,7 @@
 #include <Mod/TechDraw/App/DrawViewPart.h>
 
 #include "TaskHatch.h"
+#include "ViewProviderDrawingView.h"
 #include "ViewProviderHatch.h"
 
 using namespace TechDrawGui;
@@ -107,6 +108,12 @@ void ViewProviderHatch::onChanged(const App::Property* prop)
             }
         }
     }
+}
+
+void ViewProviderHatch::finishRestoring()
+{
+    ViewProviderDrawingView::fixColorAlphaValues(this);
+    Gui::ViewProviderDocumentObject::finishRestoring();
 }
 
 void ViewProviderHatch::updateData(const App::Property* prop)

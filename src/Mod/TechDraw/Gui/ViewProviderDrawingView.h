@@ -99,6 +99,12 @@ public:
 
     const char* whoAmI() const;
 
+    /// A colour the document stored with no opacity reads as opaque
+    /// (upstream's): see the definition. The static form is for the view
+    /// providers of this module that are not drawing views -- the hatches.
+    void fixColorAlphaValues();
+    static void fixColorAlphaValues(Gui::ViewProviderDocumentObject* vp);
+
 private:
     void multiParentPaint(std::vector<TechDraw::DrawPage*>& pages);
     void singleParentPaint(const TechDraw::DrawView* dv);
