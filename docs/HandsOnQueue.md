@@ -33,7 +33,7 @@ report views, the reporter's own files -- is kept beside the dev tree under
 | 9 | 2026-10-06 | the 3D view lags behind the mouse: hover highlight, wheel zoom | OPEN |
 | 10 | 2026-10-06 | a 3D view is slow to take a new size | OPEN |
 | 11 | 2026-10-06 | dark theme: wrong colors (checkbox border, title bar buttons), audit asked | OPEN |
-| 12 | 2026-10-06 | TechDraw: dimensions and cosmetics are covered by the face fill | OPEN |
+| 12 | 2026-10-06 | TechDraw: dimensions and cosmetics are covered by the face fill | FIXED (they were transparent, not covered) |
 | 13 | 2026-10-06 | report view: grouped messages with an expand icon in the margin, no underscore (change request) | OPEN |
 | 14 | 2026-10-06 | a Draft with no neutral plane given turns the other way after a recompute (from entry 8) | STAGED |
 | 15 | 2026-10-06 | a Pad "up to first" gives a third result (from entry 8) | OPEN |
@@ -355,10 +355,66 @@ Two named: the checkbox border, and the maximize/minimize icons of the custom
 title bar. Asked for beyond those: an audit of the dark theme for other
 widgets with the same kind of wrong color.
 
-## 12. TechDraw: dimensions and cosmetics are covered by the face fill -- OPEN
+## 12. TechDraw: dimensions and cosmetics are covered by the face fill -- FIXED
 
 **Reported (2026-10-06 11:58):** "techdraw dimension/cosmetics is covered by
-face filling."
+face filling." And, while it was being looked at: "the qt painted page covers
+the dimension and cosmetics by face. it must be a rendering order problem",
+"they used to work fine".
+
+**Seen** in the dev tree on a copy of `scanner.FCStd` (the recompute question
+answered No): `Page004` holds 26 dimensions and 2 balloons, every one with
+`Visibility` on, and the Qt-painted page shows none of them -- nor its section
+lines, nor its centre lines.
+
+**It is not the order.** Two pictures of that page with every part view given
+an opaque yellow face fill, kept as
+`..\dl\handson\2026-10-06\entry12-page004-yellow-fill-repair-off.png` and
+`...-repair-on.png`:
+- as the staged copy has it: the dimensions that sit OUTSIDE every face (the
+  7.24 beside the front view, the 7 beside the top view) are missing just like
+  the ones inside, and so are the section arrows in the margin. Nothing is over
+  them there.
+- with the fix below: every dimension, leader and centre line is drawn over
+  the yellow, also after the views are recomputed. The order is right.
+
+**Cause.** Each of them is drawn with no opacity. A colour has four
+components, and the fourth used to be a transparency that nothing in TechDraw
+looked at; documents hold it as 0 (`Dimension005`: `Color (0, 0, 0, 0)`).
+Since `189e3b629a` (2026-08-18, "colour conversion goes through
+color_traits") `asValue<QColor>()` carries it as an opacity, so a colour
+restored from such a document is a fully transparent pen. A dimension made in
+this build has opacity 1 and was never affected, which is why a new page
+looked right. "They used to work" is the time before that commit. The
+document's faces, for what it is worth, are saved 100% transparent
+(`FaceTransparency 100`) and cover nothing either way.
+
+Upstream met the same thing and repairs it when a view provider is restored
+(`ViewProviderDrawingView::fixColorAlphaValues`, preference
+`FixColorAlphaOnLoad`); the fork did not have it.
+
+**Fix.** Upstream's repair, ported: a colour property a TechDraw view
+provider restores with no opacity at all reads as opaque. Two differences:
+- who wrote the file. Upstream skips files of 1.1 and later. The fork's
+  releases are dated (`ProgramVersion="2025.1020..."`), which reads as far
+  later than 1.1 and would have skipped every file it was needed for; a dated
+  version and 0.x are both repaired.
+- the hatches. `ViewProviderHatch` and `ViewProviderGeomHatch` are not drawing
+  views and upstream leaves them out; a geometric hatch draws its lines with
+  the same colour conversion, so they get the repair too.
+`Mod/TechDraw/General/FixColorAlphaOnLoad` (default on) is the way out for a
+colour meant to have no opacity.
+
+`tests/gui/techdraw-colour-without-opacity.py`: a dimension and a geometric
+hatch given colours with no opacity, saved, reopened -- opaque and on the
+page; with the preference off, left as stored and not drawn (which is the
+test scored against the old reading).
+
+Not looked at: cosmetic edges and centre lines of the reporter's own making.
+Their colour is saved as `#RRGGBB` and takes its opacity from the preference
+colour, which is opaque in the reporter's configuration; the centre lines of
+`Page004` came back with the fix. If a cosmetic line is still missing after
+the next stage, that is a different cause.
 
 ## 13. Report view: grouped messages (a change request) -- OPEN
 
