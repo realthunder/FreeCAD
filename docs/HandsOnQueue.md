@@ -41,7 +41,15 @@ report views, the reporter's own files -- is kept beside the dev tree under
 | 17 | 2026-10-06 | `Sketch043`, `Sketch055`: "Missing external geometry reference", seen once the binders of entry 16 are valid | OPEN |
 | 18 | 2026-10-06 | TechDraw pages do not load: "invalid vector subscript", the views loose in the tree, 320 objects restored to defaults | STAGED |
 | 19 | 2026-10-06 | TechDraw: other indexes taken on trust (an audit asked) | OPEN |
-| 20 | 2026-10-06 | TechDraw: crash when the page is switched to the backend's renderer; and what it then drew | FIXED; what "drawn by the backend" has to mean is open |
+| 20 | 2026-10-06 | TechDraw: crash when the page is switched to the backend's renderer; and what it then drew | FIXED, the double draw too |
+| 21 | 2026-10-06 | TechDraw: a click on a section line starts a section, and the line shifts at each recompute | FIXED |
+| 22 | 2026-10-06 | omni search: `/word` with no space is an object query; `/ word` forces it (change request, decided) | OPEN |
+| 23 | 2026-10-06 | omni search: every setting it collects has documentation, none of it long (an audit asked) | OPEN |
+| 24 | 2026-10-06 | every `Base::Parameter` setting behind a cog helper class so the omni search finds it, applied through delayed handlers (change request, application-wide) | OPEN |
+| 25 | 2026-10-06 | the outline of a highlighted face is jagged, MSAA on or off | OPEN |
+| 26 | 2026-10-06 | a long halt after enabling MSAA and pressing OK in the preferences | OPEN |
+| 27 | 2026-10-06 | the view cell menu: opens a spreadsheet nobody asked for, lists every TechDraw object, changes the wrong cell | OPEN |
+| 28 | 2026-10-06 | `scanner.FCStd` restores with a wrong colour, sometimes (the motor body light blue for light grey) | OPEN |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -812,127 +820,61 @@ steps crashed before the first two fixes (no DONE line), and with the arc
 and the group position put back as they were the test FAILS "no ink away
 from what Qt draws" (495 pixels), both together -- not one at a time.
 
-**Open, the reporter's to say.** With the layer on, the page is drawn
-TWICE: the backend's layer underneath, and every Qt item on top of it, as
-before. That is what `PageRendererVg` was built as ("the verification tier
-... not yet its interactive integration"). It is why text and the template
-look bolder with it on (the same strokes blended twice), and it means the
-option buys nothing on screen yet. If "drawn by the backend" is to mean the
-backend's picture alone, the Qt items have to stop painting what the layer
-covers while still taking the mouse -- not started, not designed.
-Not done either: a clip group's views (their X/Y are relative to the clip,
-and the layer does not clip), and antialiasing for the GL viewport.
+**The double draw (said by the reporter, 2026-10-06 evening).** With the
+layer on, the page was drawn TWICE: the backend's layer underneath, and
+every Qt item on top of it, as before -- what `PageRendererVg` was built as
+("the verification tier ... not yet its interactive integration"). Text and
+the template looked bolder for it (the same strokes blended twice). Asked
+what "drawn by the backend" has to mean, the reporter: "next session, fix
+the double draw first", and, to "the backend's picture is the one that
+stays; the Qt items stop painting what the layer covers while still taking
+the mouse": "yes qt no longer draw when backend takes over".
 
-## Inbox
+**Fixed** (docs/TechDrawPortAndSection.md section 37 has the design):
+- The page view takes the painting of the scene's items into its own hands
+  while the layer is on, and paints only what the layer does not hold: the
+  template's fields, a clip group and what is in it (which also settles
+  the clip group's views: Qt's, whole), a tracker. The items stay in the
+  scene, so hover, selection and drag go on as before.
+- The layer shows what only the Qt items used to: a view's frame, label,
+  caption and lock; what is preselected or selected (fed again when the
+  scene says something changed, with no geometry computed); the frame of
+  a theoretically exact dimension, a leader text's box.
+- Two differences that the Qt items had been painting over: a view's
+  frame was 0.35 mm wide, five pixels when zoomed in (Qt draws a
+  one-pixel hairline at any zoom), and lines narrower than a pixel all
+  but vanished (the 2D engine faded them with the square of their
+  width). The engine now never draws a stroke narrower than a device
+  pixel.
+- `Mod/TechDraw/General/PageRendererVgVerify` paints the Qt items over the
+  layer as before, to compare the two pictures by eye.
 
-Notes not sorted into an entry yet. Add a line here at any time, in any words;
-it is read before each entry is started and moved up into the table.
+**Measured**, the four pages of `scanner.FCStd`, a full paint in ms,
+Qt-painted / the layer alone / both as it was: 6.3 / 5.2 / 10.8,
+3.6 / 4.5 / 7.9, 3.5 / 5.6 / 6.5, 8.3 / 6.6 / 17.2. Of 162 to 872 items a
+page, Qt still paints 25 (the template's fields).
 
-- **2026-10-06 15:21, TechDraw section line.** "clicking a section line in
-  techdraw page will trigger a section operation even without moving the
-  section line. also the selection line position will be shifted each time the
-  section is recomputed". Two symptoms: (a) a plain click on a section line,
-  with no drag, starts the section operation -- a click is taken for a move;
-  (b) the section line is drawn at a shifted position after each recompute of
-  the section, so it drifts. ("selection line" in the second sentence read as
-  the section line; the reporter's word kept.) Not said yet: which document
-  and view, and which way or by how much it shifts.
-- **2026-10-06 15:24, omni search (a change request).** "omni search first
-  entry append a <space> after / to let user know to type a space." Wanted: in
-  the first entry the omni search shows, a `/` is followed by a visible
-  `<space>`, so that it is plain a space has to be typed after the slash.
-  **Revised by the reporter, 15:33, and this is the one to do:** "Maybe we can
-  make the space optional/implicit, so that if the word does not match any
-  reserved keyword (param, cmd, etc.) treat it as object. We also accept space
-  to disambiguate. how about that, in this way, no need to show <space>. also
-  check wasm viewer, I remeber it already shows <space> there". So: after `/`,
-  a word that is not a reserved keyword (`cmd`, `param`, ...) is an object
-  query without any space; `/ ` with the space stays valid and is how to force
-  an object query that would otherwise read as a keyword; nothing is shown for
-  the space.
-  Read from the source by the note-taker, nothing run: the grammar is
-  `OmniSearch::parseInput` (`src/Gui/OmniSearch.cpp`) and its mirror
-  `parseInput` in `src/Gui/Renderer/web/src/omni.tsx`, which says it follows
-  the desktop's -- both change together. Today a `/` followed by anything but
-  a full prefix (`/ `, `/cmd `, `/param `) is the chooser, so `/box` lists
-  modes, not objects. The desktop's chooser rows are titled `/`, `/cmd`,
-  `/param` (`OmniSearchEdit::setupChooser`). The browser's are titled `/ ` and
-  `/cmd ` with a real trailing space in the string (`MODE_ROWS`) and no
-  `/param` (not offered there on purpose); no literal `<space>` or other
-  visible mark for it was found in `web/src` -- what it looks like on screen
-  was not checked. Two cases the rule had to settle, **decided by the
-  reporter, 15:36** ("yes, show both for partial keyword, keyword wins"):
-  a partial keyword (`/c`, `/par`) lists both -- the matching mode rows and
-  the objects matching the word; a full keyword (`/cmd`) is the keyword, and
-  an object called `cmd` is reached with the space, `/ cmd`.
-- **2026-10-06 15:28, omni search: the settings it collects (an audit asked).**
-  "audit for all parameter/preference settings auto collected by omni search.
-  ensure all settings has documentation, but not overly long. screen for those
-  long ones that you may mistakenly added for development purposes". Asked
-  for: (a) go through every parameter/preference setting the omni search
-  collects automatically; (b) each must have documentation; (c) none of it
-  overly long; (d) pick out the long ones in particular -- text an agent wrote
-  as development notes that ended up as a setting's documentation.
-- **2026-10-06 15:44, face highlight edge is jagged.** "face highlight
-  silhouette shows jagged edge regardless whether msaa is used or not". The
-  outline of a highlighted face is aliased, and switching MSAA on or off makes
-  no difference to it. Not said yet: whether this is the hover highlight, the
-  selection highlight or both, and which document.
-- **2026-10-06 15:48, a long halt after enabling MSAA and pressing OK.**
-  "while I am testing to toggle msaa, after first enabled it and click ok in
-  preference page there is a long halt where the application is unresponsive.
-  I know for some reason ok on preference page trigger updating all view
-  provider. check if this is the cause of slow down." Asked for: find out
-  whether the halt is the update of every view provider that OK on the
-  preferences sets off, or the MSAA change itself. Not said yet: which
-  document was open, and how long the halt was.
-  Read from the source by the note-taker, nothing run or measured:
-  - OK saves EVERY page, changed or not: `DlgPreferencesImp::applyChanges`
-    calls `saveSettings()` on each page of each group
-    (`src/Gui/DlgPreferencesImp.cpp`).
-  - The update of every view provider exists and is one timer:
-    `src/Mod/Part/Gui/PartParams.cpp`, `getTimer()`, 100 ms, then
-    `ViewProviderPart::reload()` on every Part view provider of every
-    document. It is started by (a) a tessellation preference whose VALUE
-    changed -- the generated `update...` functions compare first, so a page
-    saving the same number does not start it; (b) `RespectSystemDPI` or
-    `ShapeInstancing` changing; (c) ANY notification of the `RenderCache` key
-    in `Preferences/View` or the `Type` key in `Preferences/View/Render`
-    (`InstancingGateObserver::OnChange` does not compare); (d) a renderer
-    backend attaching or going away (`Render::Renderer::addActivityObserver`).
-    So what to establish is whether OK re-notifies `RenderCache`/`Type` when
-    they are written unchanged, and whether an MSAA change makes a backend
-    detach and attach.
-  - The MSAA change itself: `applyAntiAlias` in
-    `src/Gui/PreferencePages/DlgSettings3DViewImp.cpp`, a delayed handler on
-    the `AntiAliasing` key. A view with a renderer backend takes the new
-    sample count in place (`View3DInventorViewer::applyRendererAntiAliasing`
-    -> `setMSAASamples`); a view without one is CLONED and the original
-    deleted, which rebuilds the whole view.
-- **2026-10-06 15:51, every setting behind a generated helper class, so the
-  omni search finds it (a change request, application-wide).** "audit the
-  whole application and collect every Base::Parameter based settings into cog
-  generated helper class access so that omni search can find it". And, added
-  15:53: "in the process, also change the relevant code to monitor
-  parameter/setting change and apply the change with delay handler". Asked
-  for: (a) go through the whole application for settings read or written
-  straight through the parameter system; (b) move each behind a cog-generated
-  helper class, which is what registers a setting for the omni search;
-  (c) while there, make the code that uses a setting watch it for changes and
-  apply a change through a delayed handler, instead of reading it once or
-  needing a restart or a preferences OK.
-  Goes with the 15:28 note above (documentation of the settings the omni
-  search collects): a setting moved here needs its short documentation too.
-  Read from the source by the note-taker, for the size of it, nothing changed:
-  the omni search lists settings out of `App::ParamRegistry`
-  (`src/Gui/OmniSearch.cpp`), which the classes generated by
-  `src/Tools/params_utils.py` fill -- 14 of them today (App: Document, Group,
-  Link; Gui: Expr, OpenView, Overlay, Render, ReportView, Tree, View; Mesh;
-  Part App and Part Gui; Spreadsheet). Against that, 377 source files outside
-  `3rdParty` call `GetParameterGroupByPath` or `ParamGet` directly. The delayed
-  handler asked for in (c) has a precedent in `ParamHandlers::addDelayedHandler`
-  (used by `DlgSettings3DViewImp::attachObserver`) and in the generated
-  classes' own `on...Changed` hooks.
+**The mouse**, by events sent to the page view, the same steps with the
+layer on and off: hovering an edge, clicking it, clicking the sheet,
+pressing on a face give the same selection at every step and the
+highlight colours on the page in both; the view dragged by its label ends
+at the same X/Y with its picture there.
+
+`tests/gui/techdraw-page-backend-single-draw.py`, 17 claims (the picture
+against the Qt page's both ways, the verify switch as the control that
+"drawn once" can fail, selection and preselection shown and gone pixel for
+pixel, nothing fed while idle, a moved group).
+
+**What the backend's page still does differently**, for the reporter to
+weigh when looking at it: text in a font TechDraw does not ship comes out
+in osifont; the template is a raster and stops sharpening far zoomed in; a
+frame's dashes grow with the zoom; vertex dots are a little smaller.
+Not done: antialiasing for what Qt still paints in a GL viewport.
+
+**The reporter's two earlier notes on this option, as taken** (15:56 and
+16:19; what they describe is entry 18's exception, thrown in the page's
+paint and at load, and the crash above):
+
 - **2026-10-06 15:56, TechDraw: errors without end after switching the page's
   renderer.** "when techdraw page is opened with qgraphics rendering, and then
   switching to bgfx vg renderer, there is continuous error output". A page
@@ -962,37 +904,6 @@ it is read before each entry is started and moved up into the table.
     (invalid vector subscript)". Possibly a problem of its own -- the TechDraw
     Annotation preferences page failing to load -- and possibly the same
     out-of-range read.
-- **2026-10-06 16:05, the view cell menu opens a spreadsheet nobody asked
-  for.** "where there is a spreadsheet opened, I click 'View cell menu' of the
-  spreadsheet view and change it to a 3d view. then I click 3d view again
-  without any selection, a spreadsheet view is auto created. If I have one 3d
-  view and one techdraw page, and I click 'view cell menu' of the techdraw
-  page, it auto switch to spreadsheet for that view." Two cases:
-  (a) a spreadsheet view open; its cell changed to a 3D view through the view
-  cell menu; then "3D view" chosen again with nothing selected -- a spreadsheet
-  view is created by itself;
-  (b) one 3D view and one TechDraw page open; opening the view cell menu of
-  the TechDraw page alone -- no choice made in it -- turns that cell into a
-  spreadsheet.
-  Common to both: the menu, or its 3D-view entry, falls through to "spreadsheet"
-  when it has nothing to act on. Not said yet: which document, and whether the
-  document has more than one spreadsheet.
-- **2026-10-06 16:08, the view cell menu of a TechDraw page lists every
-  TechDraw object.** "if techdraw page is on one view, and I click 'view cell
-  menu' I can see all techdraw objects listed in the menu, like 'Page',
-  'Detail', 'Dimension', etc." The menu that should offer what a cell can show
-  lists the page's own child objects -- detail views, dimensions and the like
-  -- next to the page, as if each could be shown in a cell. Same menu as the
-  16:05 note above; possibly the same list being built too widely.
-- **2026-10-06 16:09, the view cell menu changes the wrong cell.** "with two
-  3d view and one spreadsheet view side by side. I click 'view cell button' on
-  one of the 3d view and select a techdraw page, the spreadsheet view switched
-  to techdraw." Three cells side by side, two 3D views and a spreadsheet; the
-  view cell button of one of the 3D views is used to choose a TechDraw page;
-  the SPREADSHEET cell becomes the TechDraw page, not the 3D view whose button
-  was pressed. Third note on this menu (16:05, 16:08): here the choice is
-  right and the cell it lands in is wrong. Not said yet: which of the two 3D
-  views, and which cell was the active one at the time.
 - **2026-10-06 16:19, TechDraw drawn by bgfx is broken outright, not only
   after a switch** (corrects the 15:56 note above). "it seems bgfx rendering
   of techdraw is broken right now. I restarted the app with the rendering
@@ -1023,18 +934,225 @@ it is read before each entry is started and moved up into the table.
     intersect part in SectionView003", "DVS::prepareShape - failed to build
     shape SectionView003 - Bnd_Box is void". Whether the section view that
     fails to build is what the out-of-range read trips over is not known.
-- **2026-10-06 17:56, `scanner.FCStd` restores with a wrong colour,
-  sometimes.** "the scanner file restore sometimes got wrong color, I am
-  seeing the motor body light grey part is showing light blue". A part that is
-  light grey in the file -- the motor body -- comes up light blue; not on every
-  load. Not said yet: the object's name, how often, and whether the colour is
-  wrong in the 3D view only or in the property editor too.
-  Read from the session's report log by the note-taker (copy:
-  `..\dl\handson\2026-10-06\wrong-color-report-view-1756.log`; nothing run):
-  this is the copy staged 17:44 (`f7d3aa0cf2`), session started 17:50:19,
-  `scanner` loaded 17:50:31. The "deferred view provider restore aborted ...
-  320 objects fall back to defaults" line of the 16:19 note is NOT in this
-  log, and there is no caught exception in it at all -- so this wrong colour
-  is not that abort. It is a load that reports nothing wrong and still shows
-  a colour the file does not have. "Sometimes" points at something that
-  depends on order or timing in the load rather than on the file.
+
+## 21. TechDraw: a click on a section line starts a section; the line shifts -- FIXED
+
+**Reported (2026-10-06 15:21):** "clicking a section line in techdraw page
+will trigger a section operation even without moving the section line. also
+the selection line position will be shifted each time the section is
+recomputed". ("selection line" read as the section line.)
+
+**Reproduced** by `tests/gui/techdraw-section-line-click.py` on the build
+staged 17:44: a base view at 2:1, a section 4 mm off the centroid
+(`SectionOrigin` y = 14, the centroid at 10). One click on the line, the
+mouse not moved: `SectionOrigin` y = 18, and "Move section line" on the
+undo stack. A drag of 10 mm up the page: y = 36 where 19 was meant.
+
+**Two causes, both in the fork's section line dragging.**
+- *The click.* `QGISectionLine::onItemMoved` ended every release of the
+  mouse on the line in "Move section line": the section was given the
+  line's points again and the document recomputed. Nothing asked whether
+  the line had moved. The same for a change point mark ("Rotate section
+  line").
+- *The shift.* The points go to `DrawViewSection::setChangePoints` as the
+  base view draws them, times the view's scale; it took them for unscaled.
+  It also compared them with the present line's middle projected a second
+  time, which never matched, so the origin was written every time. Each
+  call therefore took a section that is not on the centroid away from it
+  by the scale again: 4 mm, 8, 16. At 1:1, or with the section through the
+  centroid, nothing showed.
+
+**Fix.**
+- A release is a move only if the mouse went as far from where its button
+  came down as starts a drag anywhere else
+  (`QApplication::startDragDistance`); short of that the line, or the
+  mark, goes back and the section is left alone.
+- `setChangePoints` divides by the base view's scale, compares with the
+  line's middle as `sectionLineEnds` gives it, and moves the origin BY
+  what the middle moved, in the base view's plane -- what the origin has
+  along the view's direction stays.
+- A line that shows no marks at its ends (`SectionLineMarks` off) has no
+  change points, and the drag read past the end of an empty vector; it
+  moves by its two ends now.
+
+`tests/gui/techdraw-section-line-click.py`: 10 PASS. On the build staged
+17:44, 6 of its first 9 claims FAIL (the two origins above). With the
+second fix alone a click moves nothing, since the points it hands over are
+the ones the section has -- and is still carried out: the claims that a
+click recomputes nothing FAIL (3 recomputes for 3 clicks) until the first
+fix is in.
+
+Not looked at: rotating the line by a mark (the direction it gives the
+section), beyond leaving a click on a mark alone.
+
+## 22. Omni search: `/word` with no space is an object query (a change request) -- OPEN
+
+**2026-10-06 15:24, omni search (a change request).** "omni search first
+entry append a <space> after / to let user know to type a space." Wanted: in
+the first entry the omni search shows, a `/` is followed by a visible
+`<space>`, so that it is plain a space has to be typed after the slash.
+**Revised by the reporter, 15:33, and this is the one to do:** "Maybe we can
+make the space optional/implicit, so that if the word does not match any
+reserved keyword (param, cmd, etc.) treat it as object. We also accept space
+to disambiguate. how about that, in this way, no need to show <space>. also
+check wasm viewer, I remeber it already shows <space> there". So: after `/`,
+a word that is not a reserved keyword (`cmd`, `param`, ...) is an object
+query without any space; `/ ` with the space stays valid and is how to force
+an object query that would otherwise read as a keyword; nothing is shown for
+the space.
+Read from the source by the note-taker, nothing run: the grammar is
+`OmniSearch::parseInput` (`src/Gui/OmniSearch.cpp`) and its mirror
+`parseInput` in `src/Gui/Renderer/web/src/omni.tsx`, which says it follows
+the desktop's -- both change together. Today a `/` followed by anything but
+a full prefix (`/ `, `/cmd `, `/param `) is the chooser, so `/box` lists
+modes, not objects. The desktop's chooser rows are titled `/`, `/cmd`,
+`/param` (`OmniSearchEdit::setupChooser`). The browser's are titled `/ ` and
+`/cmd ` with a real trailing space in the string (`MODE_ROWS`) and no
+`/param` (not offered there on purpose); no literal `<space>` or other
+visible mark for it was found in `web/src` -- what it looks like on screen
+was not checked. Two cases the rule had to settle, **decided by the
+reporter, 15:36** ("yes, show both for partial keyword, keyword wins"):
+a partial keyword (`/c`, `/par`) lists both -- the matching mode rows and
+the objects matching the word; a full keyword (`/cmd`) is the keyword, and
+an object called `cmd` is reached with the space, `/ cmd`.
+
+## 23. Omni search: the settings it collects (an audit asked) -- OPEN
+
+**2026-10-06 15:28, omni search: the settings it collects (an audit asked).**
+"audit for all parameter/preference settings auto collected by omni search.
+ensure all settings has documentation, but not overly long. screen for those
+long ones that you may mistakenly added for development purposes". Asked
+for: (a) go through every parameter/preference setting the omni search
+collects automatically; (b) each must have documentation; (c) none of it
+overly long; (d) pick out the long ones in particular -- text an agent wrote
+as development notes that ended up as a setting's documentation.
+
+## 24. Every setting behind a generated helper class, applied by delayed handlers (a change request) -- OPEN
+
+**2026-10-06 15:51, every setting behind a generated helper class, so the
+omni search finds it (a change request, application-wide).** "audit the
+whole application and collect every Base::Parameter based settings into cog
+generated helper class access so that omni search can find it". And, added
+15:53: "in the process, also change the relevant code to monitor
+parameter/setting change and apply the change with delay handler". Asked
+for: (a) go through the whole application for settings read or written
+straight through the parameter system; (b) move each behind a cog-generated
+helper class, which is what registers a setting for the omni search;
+(c) while there, make the code that uses a setting watch it for changes and
+apply a change through a delayed handler, instead of reading it once or
+needing a restart or a preferences OK.
+Goes with the 15:28 note above (documentation of the settings the omni
+search collects): a setting moved here needs its short documentation too.
+Read from the source by the note-taker, for the size of it, nothing changed:
+the omni search lists settings out of `App::ParamRegistry`
+(`src/Gui/OmniSearch.cpp`), which the classes generated by
+`src/Tools/params_utils.py` fill -- 14 of them today (App: Document, Group,
+Link; Gui: Expr, OpenView, Overlay, Render, ReportView, Tree, View; Mesh;
+Part App and Part Gui; Spreadsheet). Against that, 377 source files outside
+`3rdParty` call `GetParameterGroupByPath` or `ParamGet` directly. The delayed
+handler asked for in (c) has a precedent in `ParamHandlers::addDelayedHandler`
+(used by `DlgSettings3DViewImp::attachObserver`) and in the generated
+classes' own `on...Changed` hooks.
+
+## 25. The outline of a highlighted face is jagged, MSAA or not -- OPEN
+
+**2026-10-06 15:44, face highlight edge is jagged.** "face highlight
+silhouette shows jagged edge regardless whether msaa is used or not". The
+outline of a highlighted face is aliased, and switching MSAA on or off makes
+no difference to it. Not said yet: whether this is the hover highlight, the
+selection highlight or both, and which document.
+
+## 26. A long halt after enabling MSAA and pressing OK -- OPEN
+
+**2026-10-06 15:48, a long halt after enabling MSAA and pressing OK.**
+"while I am testing to toggle msaa, after first enabled it and click ok in
+preference page there is a long halt where the application is unresponsive.
+I know for some reason ok on preference page trigger updating all view
+provider. check if this is the cause of slow down." Asked for: find out
+whether the halt is the update of every view provider that OK on the
+preferences sets off, or the MSAA change itself. Not said yet: which
+document was open, and how long the halt was.
+Read from the source by the note-taker, nothing run or measured:
+- OK saves EVERY page, changed or not: `DlgPreferencesImp::applyChanges`
+  calls `saveSettings()` on each page of each group
+  (`src/Gui/DlgPreferencesImp.cpp`).
+- The update of every view provider exists and is one timer:
+  `src/Mod/Part/Gui/PartParams.cpp`, `getTimer()`, 100 ms, then
+  `ViewProviderPart::reload()` on every Part view provider of every
+  document. It is started by (a) a tessellation preference whose VALUE
+  changed -- the generated `update...` functions compare first, so a page
+  saving the same number does not start it; (b) `RespectSystemDPI` or
+  `ShapeInstancing` changing; (c) ANY notification of the `RenderCache` key
+  in `Preferences/View` or the `Type` key in `Preferences/View/Render`
+  (`InstancingGateObserver::OnChange` does not compare); (d) a renderer
+  backend attaching or going away (`Render::Renderer::addActivityObserver`).
+  So what to establish is whether OK re-notifies `RenderCache`/`Type` when
+  they are written unchanged, and whether an MSAA change makes a backend
+  detach and attach.
+- The MSAA change itself: `applyAntiAlias` in
+  `src/Gui/PreferencePages/DlgSettings3DViewImp.cpp`, a delayed handler on
+  the `AntiAliasing` key. A view with a renderer backend takes the new
+  sample count in place (`View3DInventorViewer::applyRendererAntiAliasing`
+  -> `setMSAASamples`); a view without one is CLONED and the original
+  deleted, which rebuilds the whole view.
+
+## 27. The view cell menu: a spreadsheet nobody asked for, every TechDraw object listed, the wrong cell changed -- OPEN
+
+**2026-10-06 16:05, the view cell menu opens a spreadsheet nobody asked
+for.** "where there is a spreadsheet opened, I click 'View cell menu' of the
+spreadsheet view and change it to a 3d view. then I click 3d view again
+without any selection, a spreadsheet view is auto created. If I have one 3d
+view and one techdraw page, and I click 'view cell menu' of the techdraw
+page, it auto switch to spreadsheet for that view." Two cases:
+(a) a spreadsheet view open; its cell changed to a 3D view through the view
+cell menu; then "3D view" chosen again with nothing selected -- a spreadsheet
+view is created by itself;
+(b) one 3D view and one TechDraw page open; opening the view cell menu of
+the TechDraw page alone -- no choice made in it -- turns that cell into a
+spreadsheet.
+Common to both: the menu, or its 3D-view entry, falls through to "spreadsheet"
+when it has nothing to act on. Not said yet: which document, and whether the
+document has more than one spreadsheet.
+
+**2026-10-06 16:08, the view cell menu of a TechDraw page lists every
+TechDraw object.** "if techdraw page is on one view, and I click 'view cell
+menu' I can see all techdraw objects listed in the menu, like 'Page',
+'Detail', 'Dimension', etc." The menu that should offer what a cell can show
+lists the page's own child objects -- detail views, dimensions and the like
+-- next to the page, as if each could be shown in a cell. Same menu as the
+16:05 note above; possibly the same list being built too widely.
+
+**2026-10-06 16:09, the view cell menu changes the wrong cell.** "with two
+3d view and one spreadsheet view side by side. I click 'view cell button' on
+one of the 3d view and select a techdraw page, the spreadsheet view switched
+to techdraw." Three cells side by side, two 3D views and a spreadsheet; the
+view cell button of one of the 3D views is used to choose a TechDraw page;
+the SPREADSHEET cell becomes the TechDraw page, not the 3D view whose button
+was pressed. Third note on this menu (16:05, 16:08): here the choice is
+right and the cell it lands in is wrong. Not said yet: which of the two 3D
+views, and which cell was the active one at the time.
+
+## 28. `scanner.FCStd` restores with a wrong colour, sometimes -- OPEN
+
+**2026-10-06 17:56, `scanner.FCStd` restores with a wrong colour,
+sometimes.** "the scanner file restore sometimes got wrong color, I am
+seeing the motor body light grey part is showing light blue". A part that is
+light grey in the file -- the motor body -- comes up light blue; not on every
+load. Not said yet: the object's name, how often, and whether the colour is
+wrong in the 3D view only or in the property editor too.
+Read from the session's report log by the note-taker (copy:
+`..\dl\handson\2026-10-06\wrong-color-report-view-1756.log`; nothing run):
+this is the copy staged 17:44 (`f7d3aa0cf2`), session started 17:50:19,
+`scanner` loaded 17:50:31. The "deferred view provider restore aborted ...
+320 objects fall back to defaults" line of the 16:19 note is NOT in this
+log, and there is no caught exception in it at all -- so this wrong colour
+is not that abort. It is a load that reports nothing wrong and still shows
+a colour the file does not have. "Sometimes" points at something that
+depends on order or timing in the load rather than on the file.
+
+## Inbox
+
+Notes not sorted into an entry yet. Add a line here at any time, in any words;
+it is read before each entry is started and moved up into the table.
+
+(empty: the notes of 2026-10-06 are entries 20 to 28)
