@@ -61,6 +61,7 @@
 #include <BRepPrimAPI_MakeSphere.hxx>
 #include <BRepPrimAPI_MakeTorus.hxx>
 #include <BRepTools.hxx>
+#include <BRepTools_ReShape.hxx>
 #include <BRep_Builder.hxx>
 #include <BRep_Tool.hxx>
 #include <Bnd_Box.hxx>
@@ -89,6 +90,7 @@
 #include <TopTools_MapOfShape.hxx>
 #include <TopoDS.hxx>
 #include <TopoDS_Compound.hxx>
+#include <TopoDS_Iterator.hxx>
 #include <TopoDS_Solid.hxx>
 #include <gp_Ax2.hxx>
 #include <gp_Ax3.hxx>
@@ -766,6 +768,61 @@ std::vector<Cap> findCaps(const TopoDS_Shape& solid,
         }
     }
     return caps;
+}
+
+// The faces of a shape without their internal edges, the history of it
+// added to the given one (made when null). Where a tool's face cuts a face of
+// the solid without splitting it, the general fuse leaves the cut in it as
+// an internal edge, and the merge, which joins faces, keeps it: 426 of the
+// sweep's 1554 valid results had them (TestDraft's ribs: the first rib's
+// sides, extended, across the plate).
+TopoDS_Shape stripInternalEdges(const TopoDS_Shape& shape, Handle(BRepTools_History) & history)
+{
+    Handle(BRepTools_ReShape) reshape = new BRepTools_ReShape;
+    bool any = false;
+    for (TopExp_Explorer fx(shape, TopAbs_FACE); fx.More(); fx.Next()) {
+        const TopoDS_Face& face = TopoDS::Face(fx.Current());
+        bool internal = false;
+        for (TopExp_Explorer ex(face, TopAbs_EDGE); ex.More() && !internal; ex.Next()) {
+            internal = ex.Current().Orientation() == TopAbs_INTERNAL;
+        }
+        if (!internal) {
+            continue;
+        }
+        TopoDS_Face fwd = TopoDS::Face(face.Oriented(TopAbs_FORWARD));
+        TopoDS_Face stripped = TopoDS::Face(fwd.EmptyCopied());
+        BRep_Builder builder;
+        for (TopoDS_Iterator wi(fwd, false); wi.More(); wi.Next()) {
+            if (wi.Value().ShapeType() != TopAbs_WIRE) {
+                continue;  // an internal vertex
+            }
+            TopoDS_Wire wire;
+            builder.MakeWire(wire);
+            int edges = 0;
+            for (TopoDS_Iterator ei(wi.Value(), false); ei.More(); ei.Next()) {
+                if (ei.Value().Orientation() != TopAbs_INTERNAL) {
+                    builder.Add(wire, ei.Value());
+                    ++edges;
+                }
+            }
+            if (edges > 0) {
+                wire.Closed(wi.Value().Closed());
+                wire.Orientation(wi.Value().Orientation());
+                builder.Add(stripped, wire);
+            }
+        }
+        reshape->Replace(face, stripped.Oriented(face.Orientation()));
+        any = true;
+    }
+    if (!any) {
+        return shape;
+    }
+    TopoDS_Shape res = reshape->Apply(shape);
+    Handle(BRepTools_History) composed = new BRepTools_History;
+    composed->Merge(history);
+    composed->Merge(reshape->History());
+    history = composed;
+    return res;
 }
 
 bool isBoundaryFace(const TopoDS_Shape& face)
@@ -1708,8 +1765,8 @@ bool CellDraftOne::attempt(double scale)
         }
     }
     unify.Build();
-    result = unify.Shape();
     Handle(BRepTools_History) mergeHistory = unify.History();
+    result = stripInternalEdges(unify.Shape(), mergeHistory);
     FC_TIME_LOG(t, "merge");
     // The faces of a result made of pieces of the solid's faces only (none
     // on a tool), merged by the given history: for the check, they are the
@@ -1784,19 +1841,23 @@ bool CellDraftOne::attempt(double scale)
             planar.KeepShape(v);
         }
         planar.Build();
-        std::string planarWrong = checkResult(planar.Shape(), inputLike(planar.History()));
+        Handle(BRepTools_History) planarHistory = planar.History();
+        TopoDS_Shape planarResult = stripInternalEdges(planar.Shape(), planarHistory);
+        std::string planarWrong = checkResult(planarResult, inputLike(planarHistory));
         if (planarWrong.empty()) {
-            result = planar.Shape();
-            mergeHistory = planar.History();
+            result = planarResult;
+            mergeHistory = planarHistory;
         }
         else {
             FC_LOG("planar merge: " << planarWrong << "; pieces kept");
-            std::string builtWrong = checkResult(built, inputLike(Handle(BRepTools_History)()));
+            Handle(BRepTools_History) builtHistory = new BRepTools_History;
+            TopoDS_Shape builtResult = stripInternalEdges(built, builtHistory);
+            std::string builtWrong = checkResult(builtResult, inputLike(builtHistory));
             if (!builtWrong.empty()) {
                 return fail(CellDraft::NotASolid, builtWrong);
             }
-            result = built;
-            mergeHistory = new BRepTools_History;
+            result = builtResult;
+            mergeHistory = builtHistory;
         }
     }
     FC_TIME_LOG(t, "check");
