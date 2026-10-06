@@ -30,8 +30,8 @@ report views, the reporter's own files -- is kept beside the dev tree under
 | 6 | 2026-10-06 | maximized with the custom title bar: sometimes no margin at the top | STAGED |
 | 7 | 2026-10-06 | crash after answering Yes to the recompute question on `scanner.FCStd` | STAGED, cause of the GL error open |
 | 8 | 2026-10-06 | `scanner.FCStd`: the migration recompute fails | FOUND in full; the helix STAGED; the rest is entries 14 to 16 |
-| 9 | 2026-10-06 | the 3D view lags behind the mouse: hover highlight, wheel zoom | OPEN |
-| 10 | 2026-10-06 | a 3D view is slow to take a new size | OPEN |
+| 9 | 2026-10-06 | the 3D view lags behind the mouse: hover highlight, wheel zoom | FOUND and measured; which fix is the reporter's to choose |
+| 10 | 2026-10-06 | a 3D view is slow to take a new size | FOUND: entry 9's cause |
 | 11 | 2026-10-06 | dark theme: wrong colors (checkbox border, title bar buttons), audit asked | OPEN |
 | 12 | 2026-10-06 | TechDraw: dimensions and cosmetics are covered by the face fill | FIXED (they were transparent, not covered) |
 | 13 | 2026-10-06 | report view: grouped messages with an expand icon in the margin, no underscore (change request) | OPEN |
@@ -315,7 +315,7 @@ Four separate things:
 4. **The four binders.** Not a regression: the old build breaks them the same
    way as soon as `Binder008` is recomputed. Entry 16.
 
-## 9. The 3D view lags behind the mouse -- OPEN
+## 9. The 3D view lags behind the mouse -- FOUND
 
 **Reported (2026-10-06 11:58):** "the 3d view seems lagging in response to
 mouse movement and wheel. a mouse over highlight is visibly delayed a few
@@ -340,7 +340,50 @@ between the two kinds of view is where to look.
 first-chance C++ exceptions for the 33 minutes of that session, not one per
 mouse move.
 
-## 10. A 3D view is slow to take a new size -- OPEN
+**Found (2026-10-07), measured, not fixed: the fix is the reporter's to
+choose.** On Windows the backend runs on Direct3D 11 and reaches the Qt
+view through a read-back (docs/DeviceAdoption.md section 10). That route is
+pipelined: a frame queues a copy of itself, the copy lands about two frames
+later, and a frame that finds nothing landed shows the previous picture
+again (`BGFXView::blitReadback`). Nothing asks for the frame that would
+show the copy. So when the redraws stop, the view is left one or two
+redraws behind, for as long as nothing else redraws it. A TechDraw page is
+not: its layer is read with a wait.
+
+The probe reads what the view's GL widget holds for the screen, with no
+paint of its own (`..\dl\handson\2026-10-07\entry9-lag10.py`, a box, the
+mouse moved by events), twice each way, the same both times:
+
+| | the mouse rests on a face, a second later | it leaves, a second later |
+|---|---|---|
+| as it is | no highlight; it comes with ONE more redraw | the highlight is still there; gone after TWO more redraws |
+| `FC_BGFX_READBACK_SYNC=1` (every frame waits for its copy) | highlighted | gone |
+
+That is (a) and (b) as reported. (c), the wheel, was not measured; it is
+what the same two frames behind would look like under a stream of wheel
+steps. `entry9-highlight-held-pipelined.png` shows the four states.
+
+What the wait costs, from the renderer's own report (`DebugTiming`, "render
+readback composite"), a box and then `scanner.FCStd` turned through 150
+frames: `wait` 0.28 to 0.43 ms a frame, the composite 0.60 to 0.86 ms in
+all against 0.36 to 0.76 pipelined. A frame took 10.0 ms either way in that
+loop (something else sets that floor).
+
+**Two ways to fix it.**
+1. Wait for the copy on every frame (what the switch does, made the
+   default; the switch kept to turn it off for benchmarks). No lag at all,
+   about a third of a millisecond a frame here. On a scene where the GPU,
+   not the CPU, is the limit it gives up what pipelining bought -- the
+   document that measured the route had 86 ms frames and paid 2.2 ms for
+   the composite; what the wait adds there is not measured.
+2. Stay pipelined, and have the host ask for one waiting frame when the
+   redraws stop (a short timer). Keeps the throughput; leaves the two
+   frames of lag while moving, and the highlight a timer's length late.
+
+My recommendation is 1: the lag is what the reporter sees on every
+document, and the cost is small where it was measured.
+
+## 10. A 3D view is slow to take a new size -- FOUND
 
 **Reported (2026-10-06 12:04):** "when I create a new document, the mdi window
 will zoom to fit. the background gradient is stuck at its old size and visibly
@@ -352,6 +395,24 @@ Two cases: (a) a new document's view growing to fill the MDI area -- the
 background stays at the old size for a second or more; (b) switching between
 view windows -- background and content both stay at the old size too long.
 Possibly one delay behind this and entry 9, in the reporter's reading.
+
+**Found (2026-10-07): it is entry 9's cause, and its fix is this one's.**
+The probe (`..\dl\handson\2026-10-07\entry10-lag11.py`) gives the main
+window a new size three times and compares what the view holds a second
+later with what it holds after four more redraws:
+
+| | samples that differ a second after the resize |
+|---|---|
+| as it is | 67181 of 129360, 18339 of 40560, 49545 of 85410 |
+| `FC_BGFX_READBACK_SYNC=1` | 0, 0, 0 |
+
+`entry10-a-second-after-resize-pipelined.png`: the old picture, at its old
+size, in a corner of the view that has grown. The frame at the new size is
+drawn and its copy queued; what is shown is the last copy that landed, the
+old one; and the staging buffers cannot be rebuilt for the new size while a
+copy is in flight (`BGFXView::ensureReadbackTarget`), which holds it one
+frame longer still. With every frame waiting for its copy none is ever in
+flight when the next begins.
 
 ## 11. Dark theme: wrong colors -- OPEN
 
