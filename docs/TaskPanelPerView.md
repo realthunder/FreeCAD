@@ -18,9 +18,9 @@ document is the survey (sec 2), the design (sec 3-7), the constraints that
 are not negotiable until other work lands (sec 8), the milestones with what
 each is tested by (sec 9), and the readings of the order that were assumed
 and want confirming (sec 10). What is built, and where it departs from the
-design, is sec 11 to 13: milestone 1, a selection per view, and milestone
-2. Milestones 3 to 5 -- the panel inside its view, the dock overlays, the
-browser -- are not started.
+design, is sec 11 to 14: milestone 1, a selection per view, milestone 2,
+and milestone 3, the panel inside its view. Milestones 4 and 5 -- the dock
+overlays, the browser -- are not started.
 
 It is step E of `docs/ThinClient.md` 8.12 ("Chrome -- process-global ... per
 client, a Control per view, which neither fork has") taken one notch: the
@@ -1223,4 +1223,263 @@ with what a fresh user home does to the gate.
 - With the test switch on and no combo view, the standalone task dock is
   still deleted with the first dialog it was made for.
 - Everything of sec 5.2 to 6: the panel in its view, the dock overlays,
-  the browser.
+  the browser. *(The panel in its view is sec 14.)*
+
+## 14. Milestone 3: the panel in its view (2026-10-07, `0c5cb84070`)
+
+View mode of sec 5.2, the switch of sec 5.5, and the scope sec 12.5 said
+view mode would need. On the stack of sec 11.4, the selection of sec 12
+and the activation of sec 13.
+
+### 14.1 What the user sees
+
+- A preference, "Task panels in their views" (`View/TaskPanelInView`, off
+  by default; Preferences > Display > UI, in the Views group).
+  The same switch is a button on the title bar of the dock that holds the
+  task view -- pressed in while the panels are in their views -- and the
+  button in the header of a panel that is in its view, which sends the
+  panels back.
+- With it on, a dialog's page stands INSIDE the view it was opened for,
+  over the picture, along the left edge: a slim header with the dialog's
+  title, a button that folds the panel down to that header and the
+  send-back button, then the dialog's buttons and boxes as the Tasks tab
+  shows them. It is as wide as the panel asks for within a third of the
+  view, and as tall as the panel needs -- a two-line panel does not cover
+  the height of the view.
+- It stays there whichever view is active. Two cells of a split, each with
+  a panel, show both at once.
+- The header is a grip: dragged across, the panel settles on the nearer
+  side of its view. The side, and whether it is folded, are remembered per
+  kind of view. A view too small for a panel keeps the header alone.
+- The Tasks tab keeps the watchers, with no busy icon. Its "Task panel in
+  another view" box names only the panels that are out of sight -- in a
+  tab behind the one shown -- since one that is in sight says where it is
+  by being there.
+- A click into a panel makes its view the active one, whatever is clicked.
+  Enter and Escape act on the panel they are pressed in.
+- Switching moves the pages and nothing else: no dialog is closed, an edit
+  stays on, what was typed and where the keyboard was are kept, and no
+  panel is told anything.
+- A dialog nobody owns stays in the Tasks tab, over everything, as before.
+
+### 14.2 What is built
+
+**The host** (`src/Gui/TaskView/TaskPanelHost.{h,cpp}`).
+
+- `TaskPanelHost` is a plain widget, the child of "the widget the view
+  fills": the view's `ViewAreaCell` when it is in one, else the `MDIView`
+  itself -- one code for both, which is sec 5.2's "by the same code". It
+  holds a header and the dialog's `TaskPage`, and lays itself out in its
+  place: an event filter on the place answers its resizes, and one on the
+  page's panel answers a box being folded or a widget shown, since the
+  host's height is the panel's.
+- It stands clear of the cell's own chrome: 4 px in from the border, 20
+  below the top (the menu button, the top right zone) and 18 above the
+  bottom (the bottom left zone).
+- Width is the panel's size hint between 240 px and a third of the place.
+  Under 360 px of width or 160 of height the place is "too small" and the
+  page is hidden, the header left.
+- **It follows its view.** A view that goes into a cell, to another, or
+  out of one is heard by its `ParentChange`, and the host stands in the
+  new place once the move is over (a queued call: the event arrives from
+  inside it).
+- **A page outlives its host.** A dialog owns the widgets in its page and
+  deletes them itself, so a page must never die as somebody's child before
+  its dialog has. The task view takes the page out before it lets a host
+  go (`release()`: hidden, never shown again, deleted from the event loop
+  -- it may be asked from one of the host's own buttons). And a host that
+  is destroyed WITH its place -- a cell collapsed, a view deleted with no
+  close -- hands the page back from its own destructor
+  (`TaskView::hostGone`); the task view then puts it in a host in the
+  view's new place, or closes the dialog of a view that is gone.
+- `ViewAreaCell::taskHost()` answers the host laid in a cell.
+
+**The task view** (`src/Gui/TaskView/TaskView.{h,cpp}`).
+
+- `TaskInfo::host` says where a page is: null in the stack. `placePage`
+  decides: in its view when the preference is on and the owner is a view
+  of this window; in the stack otherwise -- always for a dialog nobody
+  owns and for a served client's, whose view has no widget.
+  `applyHosting()` is the switch: every page to its place in one pass.
+- **Activation follows the view, not the place** (sec 4.3). `syncActivation`
+  asks which dialog the active view calls for (`infoFor`), where it asked
+  which page the stack shows; in combo mode the two were always the same.
+  So the switch activates and deactivates nothing.
+- `showPage` leaves a hosted page alone: the watchers keep the stack.
+  `isEmpty()` counts the stack's pages only, so the overlaid Tasks dock is
+  not brought up for a panel that is in its view (sec 5.3's point, taken
+  now: it is what "the Tasks tab holds only the watchers" means).
+- `pageKeyPress(page, key)` is what `keyPressEvent` was, for a named page:
+  the host forwards its keys to it, so Enter and Escape find the buttons
+  of THAT dialog. `acceptEditingKeys` is the Shift+keypad work-around of
+  `event()`, for the host as well.
+- The argument-less `accept()` / `reject()` / `removeDialog()` act on the
+  page shown, else the active view's dialog, else the only one.
+
+**A panel used while its view is not the active one**
+(`TaskPageEventScope`, opened in `GUIApplication::dispatchEvent`). Sec
+12.5 left this open: a hosted panel's widgets are in reach while another
+view is active, and their slots ran as the ACTIVE view -- selected in its
+selection, answered `TaskOwner::current()` with it.
+
+- For an event delivered to anything in a host -- a widget, or an object
+  one of them owns, a `QTimer` say -- whose view is not the active one, a
+  `ViewerScope` is open on the host's view for the delivery (a
+  `SelectionScope` on a view that is no 3D view and selects on its own).
+  So what the panel's code does it does for its own view.
+- A mouse press makes the view the active one first, and then needs no
+  scope: "a click into it makes its view the active one" (sec 5.2) is
+  done here, by name, and does not depend on the widget clicked taking
+  the keyboard focus.
+- Only for events that can run a panel's code -- input, focus, hover,
+  drops, queued calls, timers; never for painting and layout, which are
+  most of what a widget is sent. And nothing at all while no view hosts a
+  page: one test of a counter per event, the counter atomic because every
+  thread with an event loop delivers through the application object.
+
+**The switch.**
+
+- `ViewParams::TaskPanelInView`, with a change handler that moves the
+  pages and sends `Control().signalHostChanged()`. The preference is the
+  truth; the two buttons only set it.
+- `OverlayManager` has one action more, `OBTN TaskHost`, checkable, on the
+  title bar of the dock whose content holds a `TaskView`
+  (`setupTitleBar(dock, content)`: the dock window manager makes the title
+  bar before the dock has its widget). Icon `qss:overlay/taskhost.svg`.
+- `Control::showDialog` no longer brings a hidden combo view up for a
+  dialog whose page went into its view.
+- `Fw::PanelMirror`, started with a dialog already open, looks for the
+  button box in the main window when the task view has none: the page may
+  be in a view.
+
+### 14.3 Where it departs from the design
+
+1. **The cell does not lay the host out; the host does.** Sec 5.2 gives
+   `ViewAreaCell` a `taskHost()` it creates and lays out in `resizeEvent`.
+   The host instead watches whatever it stands in, so a view with no cell
+   needs no second implementation and the cell knows nothing of task
+   panels beyond the accessor.
+2. **As tall as the panel, not as the view.** Sec 5.2 says "full height
+   less a margin". The first picture of it settled that: a one-line panel
+   as a strip down the whole view. A dialog that asks for all the room
+   (`needsFullSpace()`) still gets the full height.
+3. **Opaque.** Sec 5.2 would borrow the dock overlay's translucent look.
+   That look is not a style sheet to borrow but a mode
+   (`OverlayTabWidget::_setOverlayMode`) that walks a dock's widgets and
+   switches attributes on each; it belongs with the overlays, in M4.
+4. **Left or right, nothing else.** "Dragged along the edges of its cell"
+   is built as the two sides. No top or bottom, no free place, and no
+   grip to change the width.
+5. **One icon, shown pressed, not an icon pair** for the title bar button.
+6. **The line on the watchers' page** in view mode -- not said in the
+   design -- is for the panels out of sight only.
+7. **The scope is for view-hosted pages only.** A page in the Tasks tab
+   shown for a view that merely joined its edit (13.3, point 2) is still
+   handled as the active view; there the session's selection is one for
+   both, which is what mattered.
+
+### 14.4 Found on the way
+
+- **A view made the active window was not the active cell.** Its own
+  subject and its own commit (`f86654a5b7`, `docs/SplitViews.md` sec 21):
+  `MainWindow::setActiveWindow` recorded the view and left the view
+  area's active cell, and the keyboard, where they were. Found because
+  "maximize view cell" maximized the wrong cell under the test, it turned
+  out to be why, after "create new view", the first view cannot be
+  clicked back into.
+- **A mouse event sent through Qt to a 3D view is not a click.** The
+  viewer does not take it as it takes the pointer's: the event goes up to
+  the `QMdiSubWindow`, which takes the keyboard and hands it back to
+  whatever last had it in the tab. `QTest.mouseClick` on a view therefore
+  re-activates the cell that already had the keyboard, whichever was
+  clicked. The tests click a view with the real pointer (XTEST). On
+  widgets -- a line edit, a button -- `QTest` is fine.
+- **A view in a tab behind the shown one is visible to Qt**
+  (`isVisible()` true): `QMdiArea` stacks its sub windows, it does not
+  hide them. "In sight" is asked of the tabs (`inSight`, `TaskView.cpp`).
+- **`Std_ViewUndock` does nothing for a view in a cell**, and it left the
+  test's plain view docked as well, with a dialog open for it (why was
+  not chased); that step is skipped there. The move that IS tested is a
+  plain view split, which wraps it into a cell: its host goes with it.
+- In Python, a widget fetched through a wrapper that is then dropped --
+  `host_of(view).findChild(...)` -- is "already deleted" to the binding:
+  the wrapper of a parent that goes takes its children's with it. The
+  test keeps the hosts it looks at for the length of a step.
+
+### 14.5 Measured
+
+`tests/gui/task-panel-in-view.py` (`GuiTaskPanelInView_tests_run`):
+document A with a box, a body, a sketch and a pad in two cells, a second
+document in a tab of its own, a third in a view outside any view area. 88
+checks.
+
+| | before (`26b042b7f1`) | after |
+|---|---|---|
+| as it stood when scored | 14 of the first 36, then the script stops | -- |
+| as it is | -- | 88 of 88, one step skipped |
+
+Scored on the tree before, the script was two checks shorter in the part
+that tree reaches (the host's height, the click back into the other view)
+and its later steps were reworked afterwards; the 14 that passed there are
+unchanged, name for name. It stops because on that tree Enter in one
+view's panel accepts the OTHER view's dialog, and the script then reaches
+for a widget that is gone.
+
+What moved, by what the user would see:
+
+| | before | after |
+|---|---|---|
+| the preference on, a panel open for a1 | in the Tasks tab | in a1's cell, as it was left |
+| the Tasks tab then | the panel, busy icon on | the watchers, no icon |
+| a2 active | the panel hidden | still shown in a1 |
+| a click into the panel, a2 active | -- | a1 is the active view |
+| a button of a1's panel used with a2 active, by key | selects in a2 | selects in a1 |
+| a timer of a1's panel firing with a2 active | selects in a2 | selects in a1 |
+| a panel in each cell (test switch) | one shown at a time | both |
+| Enter in a1's panel, a2 active | accepts a2's | accepts a1's |
+| the host's button, the title bar button | no such buttons | the preference flips, the page moves, the dialog is the same |
+| a sketch edited in a1, the switch flipped both ways | -- | still edited, panel in the cell, then the tab, then the cell |
+| a length typed into a pad's panel in the cell | -- | the pad's length |
+| a view outside any view area | -- | hosts in itself; split, the host is in the cell |
+| the neighbour cell maximized | -- | the panel goes with its cell, and comes back |
+| a view, and a document, closed under a panel in it | -- | the dialog closed, no host left |
+
+The readings are the real ones: the host's parent and geometry, the
+stack's current page, widgets' own visibility, keys and clicks through
+`QTest` on the panel's widgets and the real pointer on a view.
+
+NOT measured: the unified canvas (`View/UnifiedCanvas`) with a host in a
+cell -- sec 16.1 of `docs/SplitViews.md` measured that a cell's child
+widgets draw above the canvas, and nothing here was run on it; a view
+kind other than a 3D view as the owner; a dark style sheet.
+
+The suites, on the tree `f86654a5b7` and `0c5cb84070` record: Python 3379
+OK; ctest 958 of 959, 968 entries, 3878 s serial -- the one is
+`ExpressionImageBudgetTest.runawayBytecodeLoopIsStopped`, a sandbox case
+that failed inside the full run in the words it failed in once before
+(2026-10-05) and passes alone, 3 runs of 3: not this change's as far as
+anything shows, and not chased; the GUI gate 70 OK, run with the panels
+in the combo view -- the panel mirror was not run with a panel in its
+view. Rows in `docs/Testing.md`. `f86654a5b7` was not built on its own:
+the two were built and tested together.
+
+### 14.6 What it does not do
+
+- **Keep clear of the dock overlays** (M4), and look like them.
+- **The title bar button while the combo view is overlaid.** An overlaid
+  dock's title bar is the overlay's own, shared by the docks in it, and
+  does not carry the button. The preference and a host's button do. For
+  M4, with the overlays.
+- **A served client's panel** is where it was: in the stack, never shown
+  on the desktop (M5).
+- **Resize.** The width is the rule of 14.2 and no grip changes it.
+- **Popups a panel opens with no parent in it** -- a menu built
+  parentless, a dialog of its own -- are not in the host, and their
+  events are the active view's. A combo box's list has the box for its
+  parent and is found by the same walk (Qt's structure; not tested).
+- **What sec 12.5 still lists**: observers a dialog keeps outside its
+  widgets follow the active view; a Python panel cannot opt out of its
+  own selection; deferred calls made by a panel's code run with no scope
+  once the event that made them is over.
+- The new strings -- the host's tool tips, the title bar button's, the
+  preference's -- are untranslated.

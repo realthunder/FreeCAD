@@ -1440,3 +1440,64 @@ sends the main window the activation and starts an edit, and does the
 same with another document's view the active one: 11 PASS, and 8 FAIL on
 the tree before (the container as active view, the edit not bound, the
 sketch not selected on leaving -- in both cases).
+
+## 21. The active cell follows the active view (2026-10-07)
+
+Sec 20 made the main window's active view the embedded view. The
+container still has an active CELL of its own (`ViewArea::_activeCell`),
+and answers with that cell's view whenever it is the one asked
+(`activeSubView()`): "maximize view cell", the main window activated
+again (sec 20's handler), its tab come back to. A cell is made the active
+one by the keyboard focus moving into it (`onFocusChanged`, sec 5.3), and
+`setActiveCell` tells the main window.
+
+The other direction was missing. `MainWindow::setActiveWindow(view)` --
+what "create new view" comes down to, and an edit starting, the tree
+going to a view, the task view's "Go to" button, the Python
+`setActiveWindow` -- recorded the view and left the container's active
+cell, and the keyboard, where they were. Measured with two views in two
+cells (`tests/gui/active-view-active-cell.py`, real pointer clicks):
+
+| | before | after |
+|---|---|---|
+| right after "create new view", a click into the first view | nothing: the new view stays the active one | the first view is active |
+| a2 made the active window, then "maximize view cell" | a1's cell is maximized | a2's |
+| a2 made the active window, then a click back into a1 | nothing | a1 is active |
+| a2 made the active window, then the main window activated again | a1 is the active view | a2 still is |
+
+The first and third are one defect: the keyboard was still in the cell
+being clicked, the click moved no focus, and moving the focus is the only
+thing that activates a cell. So after "create new view" the user had to
+click the new view and then the old one to get back to it. 4 of 8 checks
+on the tree before, 8 of 8 after.
+
+Built:
+
+- `ViewArea::noteActiveView(view)`, called by `MainWindow::setActiveWindow`
+  before it activates the tab: the view's cell becomes the active cell,
+  without the container calling the main window back.
+- `ViewArea::setActiveCell` gives the new cell's view the keyboard WHEN
+  another cell of the container has it. Not when the cell is being made
+  active by the focus itself -- it has the keyboard then, and that call
+  runs inside Qt's own change of focus -- and not when the keyboard is
+  outside the container: in the tree, a task panel, the Python console,
+  where it stays.
+- `MainWindow::setActiveWindow` returns once the container has made the
+  view the active one itself, which the moved keyboard does.
+
+Not a click through Qt. A mouse event sent to a 3D view by
+`QTest.mouseClick` is not handled as the pointer's is: the viewer leaves
+it, it goes up to the `QMdiSubWindow`, and the sub window takes the
+keyboard and hands it back to whatever last had it in the tab. Such a
+"click" activates the cell that already had the keyboard, whichever cell
+it was aimed at; it passed the first version of this test by that
+accident and failed the second for it. A real click (XTEST on X11) moves
+the focus from one viewer straight to the other. Tests that mean "the
+user clicks into a view" use the real pointer.
+
+**The cell's chrome has one more piece**, which is not the cell's: the
+task panel of the dialog its view owns, while task panels are shown in
+their views (`docs/TaskPanelPerView.md` sec 14). `ViewAreaCell::taskHost()`
+answers it. The host is the task view's widget, lays itself out against
+the cell (clear of the border, the menu button and the two corner zones),
+and follows the view when it leaves the cell.
