@@ -572,8 +572,13 @@ void Helix::onChanged(const App::Property* prop)
 void Helix::onDocumentRestored()
 {
     // A file from before AddSubType (up to upstream 1.1) says Intersecting
-    // with Outside
+    // with Outside. Upstream's, that is, which has no _ProfileBasedVersion:
+    // in a file of this fork the type was already the authority and Outside
+    // was left over, on and doing nothing -- a thread cut with it on came
+    // back as the 17 mm3 the helix shares with its base instead of the base
+    // less that (a hands-on run, a file of FreeCAD-Link 2025.10).
     if (isDerivedFrom<SubtractiveHelix>() && Outside.getValue()
+            && _ProfileBasedVersion.getValue() <= 0
             && strcmp(AddSubType.getValueAsString(), "Subtractive") == 0) {
         Base::StateLocker guard(syncingOutside);
         AddSubType.setValue("Intersecting");
