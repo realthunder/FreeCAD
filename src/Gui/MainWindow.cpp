@@ -128,6 +128,7 @@
 #include "SpaceballEvent.h"
 #include "View3DInventor.h"
 #include "View3DInventorViewer.h"
+#include "ViewArea.h"
 #include "DlgObjectSelection.h"
 #include "Tools.h"
 #include <App/Color.h>
@@ -1728,6 +1729,21 @@ void MainWindow::setActiveWindow(MDIView* view)
         view = view->activeSubView();
     if (!view || d->activeView == view)
         return;
+    // The container follows: the view's cell becomes its active one, and
+    // takes the keyboard from another cell. Left where they were, the
+    // container went on answering with the other cell's view whenever it
+    // was the one asked -- "maximize view cell", this window activated
+    // again, its tab come back to -- drew its border round that cell, and
+    // a click into it moved no focus and so did nothing
+    // (docs/SplitViews.md sec 21).
+    if (ViewArea *area = ViewArea::areaOf(view)) {
+        area->noteActiveView(view);
+        // The keyboard went into the cell with that when it was in
+        // another, and the container then made the view the active one
+        // itself (ViewArea::onFocusChanged)
+        if (d->activeView == view)
+            return;
+    }
     // An embedded view's QMdiSubWindow is not its direct parent; walk up.
     QWidget* sub = view->parentWidget();
     while (sub && !qobject_cast<QMdiSubWindow*>(sub))

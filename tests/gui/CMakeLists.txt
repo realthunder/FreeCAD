@@ -1313,3 +1313,14 @@ fc_add_gui_test(GuiEditViewClosed_tests_run edit-view-closed.py
 # with the test-only TaskPanelAllowConcurrent, a dialog per view.
 fc_add_gui_test(GuiTaskPanelCombo_tests_run task-panel-combo.py
                 --timeout 400)
+
+# Making a view the active window makes its cell the view area's active
+# cell and brings the keyboard with it (docs/SplitViews.md sec 21): right
+# after "create new view" the first view can be clicked back into; with
+# one cell clicked into and the other then made the active window,
+# "maximize view cell" maximizes that other cell, a click back into the
+# first makes it the active view, and the main window activated again
+# keeps the active view. The clicks are the real pointer's (XTEST). On the
+# tree before, 4 of the 8 checks.
+fc_add_gui_test(GuiActiveViewActiveCell_tests_run active-view-active-cell.py
+                --timeout 200)

@@ -254,6 +254,14 @@ public:
      * ORIGINAL cell active for gesture splits.
      */
     bool activateCellOf(MDIView *view);
+    /** \a view was made the main window's active view: its cell becomes
+     * the active tile, and takes the keyboard when another cell had it.
+     * The other half of activateCellOf, for the main window itself, which
+     * is activating the window already -- so that the two never disagree
+     * about which view is the one worked in (docs/SplitViews.md sec 21).
+     * Nothing when \a view is not hosted here.
+     */
+    void noteActiveView(MDIView *view);
 
     /** The adjacent sibling cell a join from \a cell along \a axis can
      * consume (Blender's aligned-edge rule: same parent splitter, leaf

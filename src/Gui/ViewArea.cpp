@@ -978,6 +978,14 @@ bool ViewArea::activateCellOf(MDIView *view)
     return true;
 }
 
+void ViewArea::noteActiveView(MDIView *view)
+{
+    if (_closing)
+        return;
+    if (auto cell = cellOf(view))
+        setActiveCell(cell, false);
+}
+
 MDIView *ViewArea::cloneChildFor(ViewAreaCell *cell)
 {
     MDIView *child = cell->childView();
@@ -1272,6 +1280,13 @@ void ViewArea::childViewGone(ViewAreaCell *cell)
     collapseCell(cell);
 }
 
+namespace {
+/// Whether a cell is being made active because the keyboard focus moved
+/// into it (onFocusChanged). The focus is the application's, one at a
+/// time, so this is one flag for every container.
+bool focusIsMoving = false;
+} // namespace
+
 void ViewArea::setActiveCell(ViewAreaCell *cell, bool activateWindow)
 {
     if (_activeCell != cell) {
@@ -1290,6 +1305,17 @@ void ViewArea::setActiveCell(ViewAreaCell *cell, bool activateWindow)
         // user is working (docs/SplitViews.md sec 13).
         if (_canvas)
             _canvas->sync();
+        // The keyboard goes with it when it was in another cell. Left
+        // there, the keys go to a view that is no longer the one worked
+        // in, and a click back into that cell moves no focus -- which is
+        // what makes a cell the active one (onFocusChanged): after "create
+        // new view" the first view could not be clicked back into.
+        // Not for a cell made active BY the focus: it has the keyboard
+        // already, and this runs inside that change of focus.
+        QWidget *focus = focusIsMoving ? nullptr : QApplication::focusWidget();
+        if (cell && cell->childView() && focus && isAncestorOf(focus)
+                && !cell->isAncestorOf(focus))
+            cell->childView()->setFocus();
     }
     if (activateWindow && cell && cell->childView())
         getMainWindow()->setActiveWindow(cell->childView());
@@ -1302,8 +1328,12 @@ void ViewArea::onFocusChanged(QWidget *old, QWidget *now)
         return;
     for (QWidget *w = now; w && w != this; w = w->parentWidget()) {
         if (auto cell = qobject_cast<ViewAreaCell*>(w)) {
-            if (cell->area() == this && cell->childView())
+            if (cell->area() == this && cell->childView()) {
+                const bool was = focusIsMoving;
+                focusIsMoving = true;
                 setActiveCell(cell);
+                focusIsMoving = was;
+            }
             break;
         }
     }
