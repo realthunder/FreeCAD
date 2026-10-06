@@ -57,8 +57,8 @@ The fork's checks (`Draft_Modification::Perform`, and the face check in
 
 ### 2.1 Census of what is still refused
 
-The draft sweep: every planar face of 29 shapes (the fillet sweep's 25 and
-#334's four Draft inputs) drafted about each planar face beside it, the
+The draft sweep: every planar face of 29 shapes (the fillet sweep's 25
+and #334's four Draft inputs) drafted about each planar face beside it, the
 pull direction the neutral plane's normal, at 5, 15 and 60 deg -- 8982
 drafts. Classic: 3549 valid, 893 that were invalid are now refused (and
 some thousands refused before any of the fork's work, not counted here).
@@ -774,8 +774,8 @@ those parts can be slow, every retry and fallback checked (#474 Fillet002
 face 10 about 11 at 60 deg: 94 s for two recomputes).
 
 A PartDesign Draft on a base with a placement recomputes in the global
-frame the first time and in the base's own after (the suite's README,
-#474): the sweep recomputes each draft twice and measures the second.
+frame the first time and in the base's own after (the suite's
+README, #474): the sweep recomputes each draft twice and measures the second.
 
 Time, the same draft repeated (#334's Draft input, 187 faces): 1.65 s,
 of which the boolean check of the whole result is 0.84, the merge 0.25,
@@ -838,8 +838,8 @@ input's own faces are most of a full check's time -- on #334's Draft
 input (187 faces) a draft's check drops from 0.9 s to 62 ms (medians) --
 and on #474's ramp parts most of it is the B-spline ramp intersected
 with its own neighbours, which a draft elsewhere does not touch (0.8 s to
-50 ms). Where the draft does touch the ramp, that is the check's work:
-#474 Fillet003's face 3, 250 to 300 ms on a draft of 100 ms (profiled: the
+50 ms). Where the draft does touch the ramp, that is the check's
+work: #474 Fillet003's face 3, 250 to 300 ms on a draft of 100 ms (profiled: the
 ramp against its neighbours 60%, its self-intersection test 15%, the
 curve-on-surface test 10%). The large maxima are the self-intersecting #334 cases,
 which have to find the intersection.
@@ -908,7 +908,7 @@ of its own (the profile, the crossing).
 
 ### 12.1 The cones merge
 
-#876's roof (face 44, under the 2 thick lid) drafted about any of its
+Issue #876's roof (face 44, under the 2 thick lid) drafted about any of its
 walls came back in 66 to 78 faces, where the input has 44: the merge of
 section 10.1 broke the corner cones it put back together (a
 self-intersecting wire, an unorientable face), and the draft fell back to
@@ -935,8 +935,8 @@ Two things on the way, both measured:
   the axis reversed, the seam and the turn kept; v changes sign).
 
 The cylinder's tool stays as it was (`BRepPrimAPI_MakeCylinder` in the
-direct frame, from where the box starts): on the face's own surface,
-#876's bottom face drafted about face 16 at 5 deg came out 0.34 over the
+direct frame, from where the box starts): on the face's own
+surface, #876's bottom face drafted about face 16 at 5 deg came out 0.34 over the
 classic draft's volume, and no cylinder needed merging.
 
 On the sweep (the 1222 and the 500, `Method = New`, the stop on) the only
