@@ -380,6 +380,51 @@ class TestDraft(unittest.TestCase):
         self.assertIn("Invalid", draft.State)
         self.assertIn("FaceVanishes", draft.getStatusString())
 
+    def testDraftAutoCrossesRib(self):
+        # A 20x10x2 plate with two ribs 2x6x10, 3 apart. The first rib's
+        # inner face drafted outward at 20 deg about the plate's top leans
+        # 10 tan(20 deg) = 3.64 over the gap, into the second rib. The
+        # classic draft's solid is valid, but that face crosses the second
+        # rib's, and its volume counts the overlap twice. Auto checks the
+        # classic result and takes the new draft, which fuses the ribs.
+        V = App.Vector
+        shape = Part.makeBox(20, 10, 2).fuse([Part.makeBox(2, 6, 10, V(0, 2, 2)),
+                                              Part.makeBox(2, 6, 10, V(5, 2, 2))])
+        shape = shape.removeSplitter()
+        t = math.tan(math.radians(20))
+        classic = 640 + 300 * t
+        overlap = 6 * (50 * t - 30 + 4.5 / t)
+        for method, volume in (("Classic", classic), ("Auto", classic - overlap)):
+            draft = self.makeDraftOn(shape, self.planeAt("X", 2), self.planeAt("Z", 2), method,
+                                     angle=20, reversed=True)
+            self.assertNotIn("Invalid", draft.State, method)
+            self.assertTrue(draft.Shape.isValid(), method)
+            self.assertAlmostEqual(draft.Shape.Volume, volume, 6, method)
+            if method == "Classic":
+                self.assertRaises(ValueError, draft.Shape.check, True)
+            else:
+                draft.Shape.check(True)
+
+    def testDraftAutoStopAtBody(self):
+        # A 20x10x10 block stepped down to 5 over its front half. The ledge
+        # z=5 drafted about the step's wall at 60 deg rises 5 tan(60 deg) =
+        # 8.66 at its front, past the top at 10. The classic draft makes the
+        # fin; with the stop on, Auto finds the body grown past its top and
+        # takes the new draft, which stops at the top's plane.
+        V = App.Vector
+        shape = Part.makeBox(20, 10, 10).cut(Part.makeBox(20, 5, 5, V(0, 0, 5)))
+        shape = shape.removeSplitter()
+        t = math.tan(math.radians(60))
+        fin = 1500 + 250 * t
+        for method, stop, volume in (("Classic", True, fin),
+                                     ("Auto", False, fin),
+                                     ("Auto", True, fin - 20 * (5 * t - 5) ** 2 / (2 * t))):
+            draft = self.makeDraftOn(shape, self.planeAt("Z", 5), self.planeAt("Y", 5), method,
+                                     angle=60, stop=stop)
+            self.assertNotIn("Invalid", draft.State, (method, stop))
+            self.assertTrue(draft.Shape.isValid(), (method, stop))
+            self.assertAlmostEqual(draft.Shape.Volume, volume, 6, (method, stop))
+
     def tearDown(self):
         #closing doc
         FreeCAD.closeDocument("PartDesignTestDraft")

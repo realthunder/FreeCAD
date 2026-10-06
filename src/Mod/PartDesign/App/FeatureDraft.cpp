@@ -51,6 +51,7 @@
 #include <Base/Console.h>
 #include <Base/Exception.h>
 #include <Base/Tools.h>
+#include <Mod/Part/App/CellDraft.h>
 #include <Mod/Part/App/Part2DObject.h>
 #include <Mod/Part/App/TopoShape.h>
 
@@ -474,6 +475,35 @@ App::DocumentObjectExecReturn *Draft::execute()
     TopoShape result;
     if (method != MethodNew) {
         result = makeDraft(baseShape, faces, false, error);
+        if (!result.isNull() && method == MethodAuto) {
+            // The classic draft's result can be valid and still wrong: a
+            // drafted face crossing another face of the body, or the body
+            // grown past a face that bounds it where the cell draft stops
+            // (docs/NewDraft.md section 11). Then Auto takes the cell draft,
+            // or, if that refuses, keeps the classic result and says why.
+            std::vector<TopoDS_Face> draftFaces;
+            for (const auto& f : faces)
+                draftFaces.push_back(TopoDS::Face(f.getShape()));
+            std::string why;
+            try {
+                why = Part::CellDraft::CheckDraft(
+                    baseShape.getShape(), result.getShape(), draftFaces, StopAtBody.getValue());
+            } catch (Standard_Failure &) {
+                FC_WARN(getFullName() << ": the check of the classic draft failed; kept it");
+            }
+            if (!why.empty()) {
+                std::string cellError;
+                TopoShape cell = makeDraft(baseShape, faces, true, cellError);
+                if (!cell.isNull()) {
+                    FC_LOG(getFullName() << ": classic draft: " << why << "; took the cell draft");
+                    result = cell;
+                }
+                else {
+                    FC_WARN(getFullName() << ": classic draft: " << why
+                            << "; kept, the cell draft refused: " << cellError);
+                }
+            }
+        }
         if (!result.isNull() || method == MethodClassic) {
             if (result.isNull())
                 return new App::DocumentObjectExecReturn(error.c_str());
