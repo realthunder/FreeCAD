@@ -148,6 +148,10 @@ class TestDraft(unittest.TestCase):
         draft = body.newObject("PartDesign::Draft", "Draft")
         draft.Base = (plate, ["Face%d" % (top + 1)])
         draft.Angle = 11
+        # the classic draft refuses to tip the face down through the plate;
+        # the cell draft (Method Auto falls back to it) cuts the plate there
+        # instead, a wedge of 0.5 * (1 / tan(11 deg)) * 1 * 12 = 30.87
+        draft.Method = "Classic"
         self.Doc.recompute()
         if not draft.isValid():
             # about the edge the guess took the face has to tip up, not down
