@@ -20,6 +20,7 @@
  ****************************************************************************/
 
 #include <algorithm>
+#include <cfloat>
 #include <cmath>
 #include <cstdlib>
 #include <cstring>
@@ -82,6 +83,13 @@ struct Page2D::Private
         // moves), an item that references images re-records.
         bool usesImages = false;
         uint32_t imageEpoch = 0;
+        // Strokes narrower than a device pixel are recorded as they
+        // come out at the band they were recorded for (see Op::Stroke
+        // in the replay); an item that has one, or would have one at
+        // another band, re-records when the band changes.
+        bool thinStrokes = false;
+        float thinnestStroke = 0.0f; // page units; FLT_MAX with no stroke
+        float recordedBand = 0.0f;
     };
 
     std::map<ImageId, PageImage> images;
@@ -496,6 +504,13 @@ struct ReplayEnv
 {
     const std::map<Page2D::ImageId, PageImage>* images = nullptr;
     bool usedImages = false;
+    // The scale the strokes come out at (the band scale: the vg state
+    // scale of this recording) and the width of one device pixel in
+    // those units.
+    float band = 1.0f;
+    float pixel = 1.0f;
+    bool thinStrokes = false;
+    float thinnestStroke = FLT_MAX;
 };
 
 // Replay one op buffer into the currently recording vg command list.
@@ -596,6 +611,35 @@ static void replayOpsInner(vg::Context* ctx, OpReader& r, int& stateDepth,
         case Op::Stroke: {
             vg::Color c = decodeColor(r.u32());
             float w = r.f();
+            // A stroke is never narrower than a device pixel.
+            //  - Width 0 is a hairline: one device pixel at any zoom,
+            //    in full colour -- Qt's cosmetic pen, which is what a
+            //    view's frame is drawn with.
+            //  - A stroke that comes out narrower than a pixel is
+            //    drawn a pixel wide and as much lighter as it is
+            //    narrower: the coverage it would have. vg by itself
+            //    fades it with the SQUARE of its width, and the thin
+            //    lines of a drawing (dimension lines at a sheet's
+            //    width on screen are a third of a pixel) all but
+            //    disappeared.
+            // Both depend on the band, so the item says it has such
+            // strokes and is recorded again when the band changes.
+            // Just over a pixel, or vg takes it for thin and fades it.
+            const float onePixel = env.pixel * 1.01f;
+            const float scaled = w * env.band;
+            if (w > 0.0f && w < env.thinnestStroke)
+                env.thinnestStroke = w;
+            if (!(w > 0.0f)) {
+                env.thinnestStroke = 0.0f;
+                env.thinStrokes = true;
+                w = onePixel / env.band;
+            }
+            else if (scaled < onePixel) {
+                env.thinStrokes = true;
+                c = vg::colorSetAlpha(
+                    c, (uint8_t)(vg::colorGetAlpha(c) * (scaled / onePixel)));
+                w = onePixel / env.band;
+            }
             vg::strokePath(ctx, c, w, vg::StrokeFlags::ButtRoundAA);
             break;
         }
@@ -1162,6 +1206,10 @@ bool Page2D::render(uint16_t viewId, uint16_t width, uint16_t height)
 
     vg::begin(ctx, viewId, width, height, pageView.devicePixelRatio);
     vg::transformScale(ctx, band, band);
+    // one device pixel, in the units vg measures a stroke's width in
+    // once the state scale is applied (its fringe width)
+    const float pixel = 1.0f
+        / (pageView.devicePixelRatio > 0.0f ? pageView.devicePixelRatio : 1.0f);
     for (Private::Item* item : d->drawOrder) {
         // Placeholder items (a feed keeps ids contiguous by storing
         // empty content for skipped geometry) cost nothing here.
@@ -1169,6 +1217,9 @@ bool Page2D::render(uint16_t viewId, uint16_t width, uint16_t height)
             continue;
         if (item->recorded && item->usesImages
             && item->imageEpoch != d->imageEpoch)
+            item->recorded = false;
+        if (item->recorded && item->recordedBand != band
+            && (item->thinStrokes || item->thinnestStroke * band < pixel * 1.01f))
             item->recorded = false;
         vg::CommandListHandle list {item->list};
         if (!item->recorded) {
@@ -1188,11 +1239,16 @@ bool Page2D::render(uint16_t viewId, uint16_t width, uint16_t height)
             vg::beginCommandList(ctx, list);
             ReplayEnv env;
             env.images = &d->images;
+            env.band = band;
+            env.pixel = pixel;
             replayOps(ctx, item->ops, env);
             vg::endCommandList(ctx);
             item->recorded = true;
             item->usesImages = env.usedImages;
             item->imageEpoch = d->imageEpoch;
+            item->thinStrokes = env.thinStrokes;
+            item->thinnestStroke = env.thinnestStroke;
+            item->recordedBand = band;
             ++stats.itemRecords;
         }
         vg::submitCommandList(ctx, list);

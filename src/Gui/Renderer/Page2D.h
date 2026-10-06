@@ -100,6 +100,11 @@ public:
         void fillConcave(uint32_t rgba, bool evenOdd = false);
         void fillLinearGradient(float sx, float sy, float ex, float ey,
                                 uint32_t rgbaStart, uint32_t rgbaEnd);
+        /// Stroke the current path, width in page units. Never drawn
+        /// narrower than one device pixel: a width that comes out
+        /// narrower is drawn a pixel wide and as much lighter, and
+        /// width 0 is a hairline -- one device pixel at any zoom, in
+        /// full colour (a cosmetic pen).
         void stroke(uint32_t rgba, float width);
 
         /// UTF-8 text anchored at x/y. The font is a Vg2D registry
