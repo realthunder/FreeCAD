@@ -19,6 +19,18 @@ target_include_directories(ClipConvention_tests_run PRIVATE
 target_link_libraries(ClipConvention_tests_run gtest_main)
 add_test(NAME ClipConvention_tests_run COMMAND ClipConvention_tests_run)
 
+# The name of a glGetError() code. The table the renderer's check used was
+# one entry short for half the codes, and logging such an error read past
+# it. Header only, no GL: links neither the renderer nor Gui.
+add_executable(GLErrorName_tests_run
+               ${CMAKE_CURRENT_SOURCE_DIR}/GLErrorName.cpp)
+target_include_directories(GLErrorName_tests_run PRIVATE
+    ${CMAKE_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/src
+    ${CMAKE_BINARY_DIR}/src)
+target_link_libraries(GLErrorName_tests_run gtest_main)
+add_test(NAME GLErrorName_tests_run COMMAND GLErrorName_tests_run)
+
 # Qt tests
 setup_qt_test(QuantitySpinBox)
 

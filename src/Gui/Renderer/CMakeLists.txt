@@ -78,7 +78,7 @@ if(BUILD_BGFX)
         Vg2D.cpp
     )
     list(APPEND Renderer_HPP_SRCS BGFXRenderer.h BGFXRendererP.h
-                                  ClipConvention.h Vg2D.h)
+                                  ClipConvention.h GLErrorName.h Vg2D.h)
     # Private: nothing outside this library calls bgfx, and example-common
     # carries bgfx's own entry point, which asks any executable that links
     # it for a _main_ it does not have.
