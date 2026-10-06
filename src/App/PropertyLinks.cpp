@@ -2342,6 +2342,8 @@ void PropertyLinkSub::Restore(Base::XMLReader &reader)
     std::vector<std::string> values(count);
     std::vector<ShadowSub> shadows(count);
     bool restoreLabel=false;
+    // The paths are elements of this object's, where they name no other.
+    RestoreStrings::Target target(name);
     // Sub may store '.' separated object names, so be aware of the possible mapping when import
     for (int i = 0; i < count; i++) {
         reader.readElement("Sub");
@@ -3323,6 +3325,7 @@ void PropertyLinkSubList::Restore(Base::XMLReader &reader)
         // Property not in an object!
         DocumentObject* child = document ? document->getObject(name.c_str()) : nullptr;
         if (child) {
+            RestoreStrings::Target target(name);
             values.push_back(child);
             shadows.emplace_back();
             auto &shadow = shadows.back();
@@ -5252,6 +5255,10 @@ void PropertyXLink::Restore(Base::XMLReader &reader)
     std::vector<ShadowSub> shadows;
     std::vector<int> mapped;
     bool restoreLabel = false;
+    // The paths are elements of this object's, where they name no other
+    // and it is of this document.
+    static const std::string none;
+    RestoreStrings::Target target(file.empty() ? name : none);
     if(reader.hasAttribute("sub")) {
         if(reader.hasAttribute(ATTR_MAPPED))
             mapped.push_back(0);

@@ -1529,6 +1529,16 @@ bool DocumentObject::nameMergePlaces(MergeUnitState&, const std::vector<std::str
     return false;
 }
 
+bool DocumentObject::importMintedIds(const char*, std::string&, std::map<long, long>&, bool)
+{
+    return false;
+}
+
+bool DocumentObject::importMintedName(std::string&, const std::map<long, long>&) const
+{
+    return false;
+}
+
 bool DocumentObject::isMergedByElement(const Property* prop) const
 {
     if (!prop)

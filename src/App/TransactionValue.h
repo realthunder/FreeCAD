@@ -218,6 +218,23 @@ public:
     std::string element(const char* element);
     /// A sub-object path, its element part through element().
     std::string sub(const std::string& sub);
+    /** The object the sub-object paths read on this thread start from,
+     * while one of these lives: a link's target, set by the link as it
+     * reads its paths. An element's name says which thing of its object
+     * it is by a number the object gave (RestoreMinted), and a path that
+     * names no object of its own is an element of this one.
+     */
+    class AppExport Target
+    {
+    public:
+        explicit Target(const std::string& object);
+        ~Target();
+        Target(const Target&) = delete;
+        Target& operator=(const Target&) = delete;
+
+    private:
+        const std::string* _outer;
+    };
     /// The ids of `to` the text element() or sub() last returned as `text`
     /// names, which whoever keeps the text holds.
     QVector<StringIDRef> held(const std::string& text) const;
@@ -231,6 +248,38 @@ private:
     std::map<std::string, QVector<StringIDRef>> _held;
     std::vector<StringIDRef> _ids;
     RestoreStrings* _outer;
+};
+
+/** The numbers the objects of a document gave the things they hold, as
+ * another copy of the file gave them (docs/TransactionLog.md sec 31.14).
+ * Two copies of a file number on from one counter: the fifth line of a
+ * sketch is `g5` in each, and they are two lines. An import gives what the
+ * copy made numbers of this file (DocumentObject::importMintedIds); while
+ * one of these lives on the thread, the names that carry the numbers --
+ * a reference's `;g5;SKT`, the string an element name is built on -- are
+ * read the same way (DocumentObject::importMintedName).
+ */
+class AppExport RestoreMinted
+{
+public:
+    /// An object's id here, to the copy's numbers and this file's.
+    using Maps = std::map<long, std::map<long, long>>;
+    RestoreMinted(Document& doc, const Maps& maps);
+    ~RestoreMinted();
+    RestoreMinted(const RestoreMinted&) = delete;
+    RestoreMinted& operator=(const RestoreMinted&) = delete;
+    /// The innermost scope on this thread, or null.
+    static const RestoreMinted* current();
+    /// `name`, an element's name of the object with id `id` here, as this
+    /// file numbers it. False when it is as it was.
+    bool byId(long id, std::string& name) const;
+    /// The same, of the object called `object` here.
+    bool byName(const std::string& object, std::string& name) const;
+
+private:
+    Document& _doc;
+    const Maps& _maps;
+    const RestoreMinted* _outer;
 };
 
 /** The document a capture on this thread is for, or null outside one

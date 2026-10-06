@@ -1595,6 +1595,9 @@ void TransactionLogView::mergeBranch(const QString& name)
         else if (result.forwarded)
             _status->setText(tr("Merged %1: fast-forward, %2 rows taken as they are")
                                  .arg(name).arg(result.forwarded));
+        else if (result.unchanged)
+            _status->setText(tr("Merged %1 as row %2: nothing here changed, and there is "
+                                "nothing to undo").arg(name).arg(result.seq));
         else if (!result.failed.empty())
             _status->setText(tr("Merged %1 as row %2; %3 objects failed to recompute")
                                  .arg(name).arg(result.seq).arg(result.failed.size()));

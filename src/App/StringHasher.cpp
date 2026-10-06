@@ -53,6 +53,7 @@
 #include <App/MappedElement.h>
 #include <App/ElementNamingUtils.h>
 #include <App/DocumentParams.h>
+#include <App/TransactionValue.h>
 
 FC_LOG_LEVEL_INIT("App",true,true)
 
@@ -700,6 +701,57 @@ bool StringHasher::importName(const Data::MappedName& name, const StringHasher& 
 namespace {
 thread_local const std::map<long, long>* importTags = nullptr;
 
+/// The id a tag says, `;:H<hex>` at `pos` of `text`. False where none is.
+bool tagAt(const QByteArray& text, int pos, long& tag)
+{
+    static const QByteArray marker(Data::tagPostfix().c_str());
+    if (pos < 0 || text.mid(pos, marker.size()) != marker)
+        return false;
+    int digits = pos + marker.size();
+    if (digits < text.size() && text[digits] == '-')
+        ++digits;
+    int end = digits;
+    while (end < text.size() && std::isxdigit(static_cast<unsigned char>(text[end])))
+        ++end;
+    bool ok = false;
+    tag = text.mid(digits, end - digits).toLong(&ok, 16);
+    return ok;
+}
+
+/// The id here of the object another copy's tag names (ImportTags).
+long tagHere(long tag)
+{
+    if (tag < 0)
+        tag = -tag;
+    if (importTags) {
+        auto it = importTags->find(tag);
+        if (it != importTags->end())
+            return it->second;
+    }
+    return tag;
+}
+
+/** `text` where it starts with an element's own name and the tag of the
+ * object that made it -- `g5;SKT;:H24,E`, a name no string stands for --
+ * with the name as this file numbers it (RestoreMinted,
+ * docs/TransactionLog.md sec 31.14). The tag is the copy's still.
+ */
+QByteArray rewriteMinted(const QByteArray& text)
+{
+    auto minted = App::RestoreMinted::current();
+    if (!minted)
+        return text;
+    static const QByteArray marker(Data::tagPostfix().c_str());
+    const int pos = text.indexOf(marker);
+    long tag = 0;
+    if (pos <= 0 || text.left(pos).contains('#') || !tagAt(text, pos, tag))
+        return text;
+    std::string name(text.constData(), static_cast<std::size_t>(pos));
+    if (!minted->byId(tagHere(tag), name))
+        return text;
+    return QByteArray(name.c_str(), static_cast<int>(name.size())) + text.mid(pos);
+}
+
 /// `text` with the tags of ImportTags rewritten: each `;:H<hex>` whose id
 /// the map names.
 QByteArray rewriteTags(const QByteArray& text)
@@ -738,6 +790,38 @@ QByteArray rewriteTags(const QByteArray& text)
 }
 }  // namespace
 
+namespace {
+/** `#b;:H24,E`, `#b;:G;XTR;:H24:7,F` are the name `#b` -- `g5;SKT` -- as
+ * an element of the object the first tag after it says: the shape it came
+ * from (docs/TransactionLog.md sec 31.14). Where that object numbers the
+ * thing otherwise here (RestoreMinted), `said` is what the string `prefix`
+ * says here in place of its own text. `after` is what follows the
+ * reference to it. False where it comes as it is.
+ */
+bool mintedText(const App::StringIDRef& prefix, const QByteArray& after, QByteArray& said)
+{
+    const auto minted = App::RestoreMinted::current();
+    if (!minted || !prefix)
+        return false;
+    static const QByteArray marker(Data::tagPostfix().c_str());
+    long tag = 0;
+    if (!tagAt(after, after.indexOf(marker), tag))
+        return false;
+    const App::StringID& name = prefix.deref();
+    const QByteArray tail = name.postfix();
+    // A name of its own, not one built on another.
+    if (name.isBinary() || name.isHashed() || name.data().contains('#') || tail.contains('#'))
+        return false;
+    std::string text = name.dataToText(0);
+    if (!minted->byId(tagHere(tag), text) || text.size() < static_cast<std::size_t>(tail.size())
+            || text.compare(text.size() - tail.size(), std::string::npos, tail.constData(),
+                            tail.size()) != 0)
+        return false;
+    said = QByteArray(text.c_str(), static_cast<int>(text.size()) - tail.size());
+    return true;
+}
+}  // namespace
+
 StringHasher::ImportTags::ImportTags(const std::map<long, long>& tags)
     : _outer(importTags)
 {
@@ -764,7 +848,7 @@ bool StringHasher::rewriteIds(const QByteArray& text, const StringHasher& from, 
 {
     int pos = text.indexOf('#');
     if (pos < 0) {
-        out = rewriteTags(text);
+        out = rewriteTags(rewriteMinted(text));
         return true;
     }
     QByteArray res;
@@ -783,7 +867,13 @@ bool StringHasher::rewriteIds(const QByteArray& text, const StringHasher& from, 
         StringIDRef theirs = ok ? from.getID(id) : StringIDRef();
         if (!theirs)
             return false;
-        StringIDRef here = importOne(theirs, memo, take);
+        // The name the text is built on, as this file numbers the thing
+        // (sec 31.14): not the string it comes as anywhere else, so not
+        // through the memo.
+        QByteArray said;
+        StringIDRef here = pos == 0 && mintedText(theirs, text.mid(end), said)
+            ? StringIDRef(importNew(*theirs._sid, from, memo, take, &said), theirs._index)
+            : importOne(theirs, memo, take);
         if (!here)
             return false;
         if (sids && sids->indexOf(here) < 0)
@@ -821,27 +911,55 @@ StringIDRef StringHasher::importOne(const StringIDRef& foreign, ImportMemo& memo
 }
 
 StringIDRef StringHasher::importNew(const StringID& theirs, const StringHasher& from,
-                                    ImportMemo& memo, bool take)
+                                    ImportMemo& memo, bool take, const QByteArray* said)
 {
+    // The name this one is built on, as this file numbers the thing (sec
+    // 31.14, mintedText): another string than the one it comes as anywhere
+    // else, so not through the memo.
+    const StringID* builtOn = nullptr;
+    StringIDRef builtOnHere;
+    if (!said && !theirs.isBinary() && !theirs.isHashed() && theirs._data.startsWith('#')
+            && App::RestoreMinted::current()) {
+        const StringID::IndexID head = StringID::fromString(theirs._data, false);
+        StringIDRef prefix = head.id > 0 ? from.getID(head.id) : StringIDRef();
+        QByteArray data;
+        if (mintedText(prefix, theirs._postfix, data)) {
+            builtOnHere = importNew(*prefix._sid, from, memo, take, &data);
+            if (!builtOnHere)
+                return {};
+            builtOn = prefix._sid;
+        }
+    }
     QVector<StringIDRef> related;
     related.reserve(theirs._sids.size());
     for (const auto& sid : theirs._sids) {
-        StringIDRef here = importOne(sid, memo, take);
+        StringIDRef here = builtOn && sid._sid == builtOn ? StringIDRef(builtOnHere, sid._index)
+                                                          : importOne(sid, memo, take);
         if (!here)
             return {};
         related.push_back(here);
     }
-    QByteArray data = theirs._data;
+    QByteArray data = said ? *said : theirs._data;
     QByteArray postfix = theirs._postfix;
     QVector<StringIDRef> named;
     if (!theirs.isBinary() && !theirs.isHashed()) {
         // A prefix reference is its text too ("#7", "#7:"), and comes out
         // as the related id it names does; a postfix string of its own has
         // no '#' (getID(MappedName) makes one only then).
-        if (!rewriteIds(theirs._data, from, data, &named, memo, take)
-                || !rewriteIds(theirs._postfix, from, postfix, &named, memo, take)) {
+        if (builtOn) {
+            int end = 1;
+            while (end < theirs._data.size()
+                   && std::isxdigit(static_cast<unsigned char>(theirs._data[end])))
+                ++end;
+            data = "#" + QByteArray::number(static_cast<qlonglong>(builtOnHere.value()), 16)
+                 + theirs._data.mid(end);
+            named.push_back(builtOnHere);
+        }
+        else if (!said && !rewriteIds(theirs._data, from, data, &named, memo, take)) {
             return {};
         }
+        if (!rewriteIds(theirs._postfix, from, postfix, &named, memo, take))
+            return {};
     }
     StringID key;
     key._data = data;

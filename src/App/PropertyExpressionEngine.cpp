@@ -867,8 +867,18 @@ void PropertyExpressionEngine::releaseBeforeRestore()
         return;
     Base::FlagToggler<bool> flag(restoring);
     AtomicPropertyChange signaller(*this);
-    for (auto &path : gone)
-        setValue(path, std::shared_ptr<Expression>());
+    // Taken out as they stand, not through setValue(): that asks the
+    // property for the value at the path first, and what a path names may
+    // be gone already -- a constraint of a list put back before this one
+    // (docs/TransactionLog.md sec 31.14). The expression then stayed, bound
+    // to nothing.
+    for (auto &path : gone) {
+        auto it = expressions.find(path);
+        if (it == expressions.end())
+            continue;
+        expressions.erase(it);
+        expressionChanged(path);
+    }
     signaller.tryInvoke();
 }
 
@@ -897,8 +907,14 @@ void PropertyExpressionEngine::afterRestore()
                 if (!kept.count(v.first.toString()))
                     gone.push_back(v.first);
             }
-            for (auto &path : gone)
-                setValue(path, std::shared_ptr<Expression>());
+            // As releaseBeforeRestore() takes them out.
+            for (auto &path : gone) {
+                auto it = expressions.find(path);
+                if (it == expressions.end())
+                    continue;
+                expressions.erase(it);
+                expressionChanged(path);
+            }
         }
 
         for(auto &info : *restoredExpressions) {

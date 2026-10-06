@@ -620,6 +620,9 @@ public:
         /// and nothing moved (sec 28.6 Q3).
         std::vector<MergeChange> unresolved;
         std::vector<std::string> failed;   ///< objects whose recompute failed
+        /// The merge wrote its row and nothing of the document: there is
+        /// nothing to undo, and it is no undo step (sec 31.14).
+        bool unchanged {false};
         MergePreview preview;
     };
     /** What merging branch `branch` into the one this document is on would

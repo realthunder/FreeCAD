@@ -571,6 +571,27 @@ public:
      */
     virtual bool nameMergePlaces(MergeUnitState& at, const std::vector<std::string>& names) const;
 
+    /** The numbers this object gives the things it holds, where another
+     * copy of its file gave them (docs/TransactionLog.md sec 31.14). Two
+     * copies of a file number on from one counter, so a number the copy
+     * gave since they parted is not the thing this file gave it to.
+     * `fragment` is `prop` as the copy saved it, and is given back saying
+     * this file's numbers; `ids` is the copy's numbers to this file's for
+     * this object, kept by the import from row to row. A number the map
+     * has not got is a thing the copy made: it gets a new one here, and
+     * goes into the map. With `seed` -- the first the import sees of the
+     * object -- what the object holds now is put in the map as itself
+     * first, whatever `prop` is: the two were one where they parted.
+     * False when `prop` holds no such numbers.
+     */
+    virtual bool importMintedIds(const char* prop, std::string& fragment,
+                                 std::map<long, long>& ids, bool seed);
+    /** A name of an element of this object as the copy wrote it --
+     * `g5;SKT` -- with the number this file has for the thing. False
+     * when it says none the map changes.
+     */
+    virtual bool importMintedName(std::string& name, const std::map<long, long>& ids) const;
+
     /** Whether `prop` of this object is merged by the things it holds
      * (Property::splitSaved, docs/TransactionLog.md sec 31.8) where two
      * branches both changed it. A property that takes its values apart by

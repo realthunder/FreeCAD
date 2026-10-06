@@ -7451,6 +7451,10 @@ struct NetChange
         std::string ptype;
         std::string meta;
         bool derived {false};
+        /// Some row set it by hand. What a recompute wrote after that does
+        /// not make it a recompute's value (sec 31.14): a line drawn in a
+        /// sketch that a later recompute solved again is still a line drawn.
+        bool hand {false};
     };
     std::map<long, Obj> objects;
     std::vector<long> objectOrder;
@@ -7510,7 +7514,8 @@ struct NetChange
             else {
                 v.atEnd = true;
                 v.after = o.vafter;
-                v.derived = o.derived;
+                v.hand = v.hand || (o.op == "set" && !o.derived);
+                v.derived = o.derived && !v.hand;
             }
         }
     }
@@ -8935,8 +8940,9 @@ struct UnitValue
  * that is not ours' already, with what became of the things theirs
  * changed. False, and the unit is the one question it was: where the
  * object will not, where a value is more than its text, and where a side
- * has rows another copy of the file made -- a copy gives its new geometry
- * the ids this file gave other geometry (sec 31.3 P6).
+ * has rows another copy of the file made whose numbers did not come as
+ * this file's -- a copy gives its new geometry the ids this file gave
+ * other geometry (sec 31.3 P6, 31.14).
  */
 bool mergeUnitByObject(Document& doc, TransactionLog& log, const MergePlan& plan,
                        const Document::MergePreview& pv, long cid,
@@ -8951,7 +8957,11 @@ bool mergeUnitByObject(Document& doc, TransactionLog& log, const MergePlan& plan
     auto& store = log.store();
     for (const int64_t head : {pv.ours, pv.theirs}) {
         for (const auto& t : store.chain(head, pv.base + 1)) {
-            if (t.script.find("\"imported\"") != std::string::npos)
+            if (t.script.find("\"imported\"") == std::string::npos)
+                continue;
+            const auto j = nlohmann::json::parse(t.script, nullptr, false);
+            if (!j.is_object() || !j.contains("imported") || !j["imported"].is_object()
+                    || !j["imported"].value("minted", false))
                 return false;
         }
     }
@@ -9588,10 +9598,26 @@ void planWeigh(Document& doc, TransactionLog& logRef, MergePlan& plan)
     for (const auto& kv : units) {
         const long cid = kv.first.first;
         std::map<std::string, UnitValue> states;
+        // Sec 31.14: what only a recompute of a side's wrote of the unit --
+        // a sketch solved again because what it is bound to moved. Not a
+        // change to weigh, but where the unit is taken whole it is part of
+        // the side taken: constraints put on the other side's places are
+        // solved from there, to another place or to none.
+        std::map<std::string, UnitValue> solved;
         std::vector<std::string> here, there;
         bool differ = false;
         for (const auto& prop : kv.second) {
             const NetChange::Key key {"obj", cid, prop};
+            auto computed = [&](const NetChange& net) -> const NetChange::Val* {
+                auto it = net.values.find(key);
+                CapturedValue held;
+                if (it == net.values.end() || !it->second.derived || !it->second.atStart
+                        || !it->second.atEnd || it->second.before == it->second.after
+                        || !log->readValue(it->second.after, held)
+                        || !log->readValue(it->second.before, held))
+                    return nullptr;
+                return &it->second;
+            };
             auto moved = [&](const NetChange& net) -> const NetChange::Val* {
                 auto it = net.values.find(key);
                 if (it == net.values.end() || it->second.derived || !netChanged(it->second)
@@ -9601,8 +9627,20 @@ void planWeigh(Document& doc, TransactionLog& logRef, MergePlan& plan)
             };
             const NetChange::Val* t = moved(plan.theirs);
             const NetChange::Val* o = moved(plan.ours);
-            if (!t && !o)
+            if (!t && !o) {
+                const NetChange::Val* tc = computed(plan.theirs);
+                const NetChange::Val* oc = computed(plan.ours);
+                if (tc || oc) {
+                    UnitValue s;
+                    s.base = tc ? tc->before : oc->before;
+                    s.theirs = tc ? tc->after : s.base;
+                    s.ours = oc ? oc->after : s.base;
+                    s.ptype = tc ? tc->ptype : oc->ptype;
+                    if (s.theirs != s.ours)
+                        solved.emplace(prop, std::move(s));
+                }
                 continue;
+            }
             // Each side's value where it ends: its own, or the base's
             // where it left the property as it was.
             UnitValue s;
@@ -9656,23 +9694,36 @@ void planWeigh(Document& doc, TransactionLog& logRef, MergePlan& plan)
         }
         const std::string key = unit.key;
         pv.changes.push_back(std::move(unit));
-        for (const auto& st : states) {
-            if (st.second.theirs == st.second.ours)
-                continue;
-            Document::MergeChange c;
-            c.kind = "unit";
-            c.op = "set";
-            c.ckind = "obj";
-            c.cid = cid;
-            c.object = nameOf(cid);
-            c.prop = st.first;
-            c.key = key;
-            c.ptype = st.second.ptype;
-            c.base = st.second.base;
-            c.ours = st.second.ours;
-            c.theirs = st.second.theirs;
-            c.note = "goes with " + key;
-            pv.changes.push_back(std::move(c));
+        // The lines 28 made of what a recompute wrote of the unit are these
+        // now: the owner is computed again whichever side is picked.
+        pv.changes.erase(std::remove_if(pv.changes.begin(), pv.changes.end(),
+                                        [&](const Document::MergeChange& c) {
+                                            return c.ckind == "obj" && c.cid == cid && c.derived
+                                                && c.kind == "derived" && solved.count(c.prop);
+                                        }),
+                         pv.changes.end());
+        for (const auto* part : {&states, &solved}) {
+            for (const auto& st : *part) {
+                if (st.second.theirs == st.second.ours)
+                    continue;
+                Document::MergeChange c;
+                c.kind = "unit";
+                c.op = "set";
+                c.ckind = "obj";
+                c.cid = cid;
+                c.object = nameOf(cid);
+                c.prop = st.first;
+                c.key = key;
+                c.ptype = st.second.ptype;
+                c.base = st.second.base;
+                c.ours = st.second.ours;
+                c.theirs = st.second.theirs;
+                c.derived = part == &solved;
+                c.note = "goes with " + key;
+                if (c.derived)
+                    c.note += ", as its recompute left it";
+                pv.changes.push_back(std::move(c));
+            }
         }
     }
     if (!units.empty()) {
@@ -10014,8 +10065,13 @@ Document::MergeResult Document::_merge(const std::string& branch,
         }
         // A unit's properties (sec 31.5) go by the side picked for the unit.
         const bool conflict = c.kind == "conflict" || c.kind == "view" || c.kind == "unit";
-        if (c.kind != "take" && !(conflict && side[c.key] == "theirs"))
+        if (c.kind != "take" && !(conflict && side[c.key] == "theirs")) {
+            // What a recompute wrote of a unit kept as ours (sec 31.14):
+            // its owner is computed again, as for any value of the kind.
+            if (c.kind == "unit" && c.derived)
+                touch.insert(c.cid);
             continue;
+        }
         if (c.op == "unit")
             continue;   // the unit's own line: its properties are the next ones
         if (c.kind == "unit") {
@@ -10314,8 +10370,10 @@ Document::MergeResult Document::_merge(const std::string& branch,
         d->activeUndoTransaction = nullptr;
         // Rows applied that changed nothing leave nothing: there is no
         // base to move.
-        if (!picked)
+        if (!picked) {
             result.seq = log->record("merge", name, script, pv.theirs);
+            result.unchanged = true;
+        }
     }
     else {
         d->activeUndoTransaction->LogScript = script;
@@ -10418,6 +10476,36 @@ void importMaps(const nlohmann::json& kept, std::map<long, long>& ids,
                 names[it.key()] = it.value().get<std::string>();
         }
     }
+}
+
+/// The numbers an import branch kept (sec 31.14): for each object, by its
+/// id here, the copy's to this file's.
+void importMinted(const nlohmann::json& kept, RestoreMinted::Maps& minted)
+{
+    if (!kept.is_object() || !kept.contains("minted") || !kept["minted"].is_array())
+        return;
+    for (const auto& e : kept["minted"]) {
+        if (!e.is_array() || e.size() != 2 || !e[0].is_number_integer() || !e[1].is_array())
+            continue;
+        auto& map = minted[e[0].get<long>()];
+        for (const auto& p : e[1]) {
+            if (p.is_array() && p.size() == 2 && p[0].is_number_integer()
+                    && p[1].is_number_integer())
+                map[p[0].get<long>()] = p[1].get<long>();
+        }
+    }
+}
+
+nlohmann::json mintedJson(const RestoreMinted::Maps& minted)
+{
+    auto list = nlohmann::json::array();
+    for (const auto& kv : minted) {
+        auto pairs = nlohmann::json::array();
+        for (const auto& p : kv.second)
+            pairs.push_back({p.first, p.second});
+        list.push_back({kv.first, std::move(pairs)});
+    }
+    return list;
 }
 
 /// A row an import replayed (sec 30.15): its script says of which file.
@@ -11319,6 +11407,26 @@ Document::ImportResult Document::importFork(const std::string& path, const std::
             names.emplace(kv.first, kv.second);
     }
 
+    // Sec 31.14: what an object numbers -- a sketch its geometry -- the
+    // copy numbered on from where this file numbers on from, so its new
+    // numbers are not this file's. They come under numbers of this file,
+    // kept as the object ids are. Only where the two are known to have
+    // been one at the base and to have gone on apart: not where the copy
+    // has itself taken rows from another file -- what it took from this
+    // one it holds under numbers of its own, which are then not new -- nor
+    // where this branch starts on rows an import brought, nor for a file
+    // as found. There the numbers come as they are, and a sketch both
+    // changed is one question, as before.
+    RestoreMinted::Maps minted;
+    bool mint = !gap && replayedRows(theirs, from.head).empty();
+    if (mint && mine.id) {
+        mint = kept.is_object() && kept.contains("minted");
+        importMinted(kept, minted);
+    }
+    else if (mint) {
+        mint = replayedRows(store, result.base).empty();
+    }
+
     // Named after the file, and after the copy's branch when that is not
     // its file's own (30.14).
     auto& app = GetApplication();
@@ -11566,6 +11674,7 @@ Document::ImportResult Document::importFork(const std::string& path, const std::
                 const int64_t second = t.kind == "merge" ? mergedHere(t) : 0;
                 const auto idsBefore = ids;
                 const auto namesBefore = names;
+                const auto mintedBefore = minted;
 
                 // The row, as a transaction of its author's. Only the
                 // transaction is: what the commit records beside it -- a
@@ -11687,10 +11796,29 @@ Document::ImportResult Document::importFork(const std::string& path, const std::
                             c->removeDynamicProperty(o.prop.c_str());
                         }
                     }
+                    // What the objects number, under numbers of this
+                    // file (sec 31.14): every value of the row first, since
+                    // a name read below may say a number another value of
+                    // the row brings.
+                    if (mint) {
+                        for (auto& kv : values) {
+                            const LogOp& o = *kv.first;
+                            DocumentObject* obj =
+                                o.ckind == "obj" ? replay->getObjectByID(here(o.cid)) : nullptr;
+                            if (!obj)
+                                continue;
+                            const bool seed = !minted.count(obj->getID());
+                            obj->importMintedIds(o.prop.c_str(), kv.second.fragment,
+                                                 minted[obj->getID()], seed);
+                        }
+                    }
                     // 3. The values, read through the names, and their
                     // strings out of the copy's table (sec 30.16).
                     {
                         RestoreNames through(names);
+                        std::optional<RestoreMinted> numbers;
+                        if (mint)
+                            numbers.emplace(*replay, minted);
                         // An element name says which object made it by its
                         // id: the copy's, mapped like the ops'.
                         StringHasher::ImportTags tags(ids);
@@ -11759,11 +11887,16 @@ Document::ImportResult Document::importFork(const std::string& path, const std::
                     replay->_abortTransaction();
                     names = namesBefore;
                     ids = idsBefore;
+                    minted = mintedBefore;
                     throw;
                 }
 
                 nlohmann::json j;
                 j["imported"] = {{"file", fork.file}, {"seq", t.seq}};
+                // Its numbers are this file's (sec 31.14): a merge may read
+                // what it holds thing by thing.
+                if (mint)
+                    j["imported"]["minted"] = true;
                 if (txn->isEmpty()) {
                     // Nothing of it changes anything here. A merge still
                     // says what the copy holds, as one with no ops does.
@@ -11886,6 +12019,8 @@ Document::ImportResult Document::importFork(const std::string& path, const std::
         list.push_back({kv.first, kv.second});
     keep["ids"] = std::move(list);
     keep["names"] = names;
+    if (mint)
+        keep["minted"] = mintedJson(minted);
     _finishImport(replay, scratch, mine.id, fork.file, j.dump(), keep.dump(), result);
     return result;
 }

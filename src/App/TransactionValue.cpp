@@ -262,6 +262,52 @@ const char* App::RestoreNames::map(const char* name) const
 
 namespace {
 thread_local App::RestoreStrings* restoreStrings = nullptr;
+thread_local const std::string* restoreTarget = nullptr;
+thread_local const App::RestoreMinted* restoreMinted = nullptr;
+}
+
+App::RestoreStrings::Target::Target(const std::string& object)
+    : _outer(restoreTarget)
+{
+    restoreTarget = &object;
+}
+
+App::RestoreStrings::Target::~Target()
+{
+    restoreTarget = _outer;
+}
+
+App::RestoreMinted::RestoreMinted(Document& doc, const Maps& maps)
+    : _doc(doc)
+    , _maps(maps)
+    , _outer(restoreMinted)
+{
+    restoreMinted = this;
+}
+
+App::RestoreMinted::~RestoreMinted()
+{
+    restoreMinted = _outer;
+}
+
+const App::RestoreMinted* App::RestoreMinted::current()
+{
+    return restoreMinted;
+}
+
+bool App::RestoreMinted::byId(long id, std::string& name) const
+{
+    auto it = _maps.find(id);
+    if (it == _maps.end() || it->second.empty())
+        return false;
+    const DocumentObject* obj = _doc.getObjectByID(id);
+    return obj && obj->importMintedName(name, it->second);
+}
+
+bool App::RestoreMinted::byName(const std::string& object, std::string& name) const
+{
+    const DocumentObject* obj = _doc.getObject(object.c_str());
+    return obj && byId(obj->getID(), name);
 }
 
 App::RestoreStrings::RestoreStrings(StringHasherRef from, StringHasherRef to)
@@ -298,6 +344,14 @@ std::string App::RestoreStrings::element(const char* element)
     QVector<StringIDRef> sids;
     if (!_to->importText(text, *_from, res, &sids, _memo))
         return dot ? std::string(dot + 1) : std::string();
+    // An element of the object the path ends at, named by a number that
+    // object gave (sec 31.14): one built on a string says whose it is
+    // itself, and was read so as its strings were taken in.
+    if (restoreMinted && restoreTarget && !restoreTarget->empty() && res.indexOf('#') < 0) {
+        std::string name(res.constData(), res.size());
+        if (restoreMinted->byName(*restoreTarget, name))
+            res = QByteArray(name.c_str(), static_cast<int>(name.size()));
+    }
     std::string out = Data::elementMapPrefix();
     out.append(res.constData(), res.size());
     if (dot)
@@ -311,7 +365,20 @@ std::string App::RestoreStrings::sub(const std::string& sub)
     const char* element = Data::findElementName(sub.c_str());
     if (!element || !Data::isMappedElement(element))
         return sub;
+    // The object the element is of: the last the path names, or else the
+    // one the path starts from (Target).
+    std::string owner;
+    if (element > sub.c_str() + 1) {
+        const std::size_t end = static_cast<std::size_t>(element - sub.c_str()) - 1;
+        const std::size_t dot = end ? sub.rfind('.', end - 1) : std::string::npos;
+        owner = sub.substr(dot == std::string::npos ? 0 : dot + 1,
+                           end - (dot == std::string::npos ? 0 : dot + 1));
+    }
+    const std::string* outer = restoreTarget;
+    if (!owner.empty())
+        restoreTarget = &owner;
     const std::string translated = this->element(element);
+    restoreTarget = outer;
     std::string out = sub.substr(0, element - sub.c_str()) + translated;
     auto it = _held.find(translated);
     if (it != _held.end())

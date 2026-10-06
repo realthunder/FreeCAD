@@ -949,8 +949,10 @@ public:
 protected:
     StringID* insert(const StringIDRef& sid);
     StringIDRef importOne(const StringIDRef& foreign, ImportMemo& memo, bool take);
+    /// `said`, when given, is what the string says here in place of its
+    /// own text: an element's name as this file numbers it (RestoreMinted).
     StringIDRef importNew(const StringID& foreign, const StringHasher& from, ImportMemo& memo,
-                          bool take);
+                          bool take, const QByteArray* said = nullptr);
     bool rewriteIds(const QByteArray& text, const StringHasher& from, QByteArray& out,
                     QVector<StringIDRef>* sids, ImportMemo& memo, bool take);
     void saveStream(std::ostream& stream, bool all = false) const;

@@ -22,6 +22,8 @@
 
 #include "PreCompiled.h"
 
+#include <App/ElementNamingUtils.h>
+#include <App/TransactionValue.h>
 #include <Base/Reader.h>
 #include <Base/Writer.h>
 
@@ -91,6 +93,21 @@ void ExternalGeometryExtension::restoreAttributes(Base::XMLReader& reader)
     RefIndex = reader.getAttributeAsInteger("RefIndex", "-1");
     RefElement = reader.getAttribute("RefElement", "");
     Flags = FlagType(reader.getAttributeAsUnsigned("Flags", "0"));
+    // A value of another copy of the file (docs/TransactionLog.md sec
+    // 30.16, 31.14): what the reference names is read as a link's path is
+    // -- its strings out of that copy's table, and an element the copy
+    // numbered by the number it has here.
+    if (auto strings = App::RestoreStrings::current(); strings && !Ref.empty()) {
+        auto mappedOf = [](const std::string& ref) {
+            const char* element = Data::findElementName(ref.c_str());
+            const char* mapped = element ? Data::isMappedElement(element) : nullptr;
+            return mapped ? std::string(mapped) : std::string();
+        };
+        const bool whole = !RefElement.empty() && mappedOf(Ref) == RefElement;
+        Ref = strings->sub(Ref);
+        if (whole)
+            RefElement = mappedOf(Ref);
+    }
 }
 
 void ExternalGeometryExtension::saveAttributes(Base::Writer& writer) const

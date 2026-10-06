@@ -6889,6 +6889,400 @@ class TransactionBranchCases(unittest.TestCase):
         self.assertEqual(doc.Cyl.ExpressionEngine, [("Height", "Sketch.Constraints[1]")])
         self.assertEqual([n for n, _, _ in constraints(doc)], ["", "", ""])
 
+    def testAHandChangeARecomputeSolvedAgainIsMerged(self):
+        # Sec 31.14: a value a row set by hand is a change of its branch
+        # whatever a recompute wrote of it afterwards. A line drawn in a
+        # sketch, and the sketch then solved again by a recompute -- what it
+        # is bound to moved -- had its geometry down as the recompute's, and
+        # a merge left the line out.
+        import Part
+        import Sketcher
+        from FreeCAD import Vector as V
+
+        doc = self.track(FreeCAD.newDocument("MergeHandThenSolved"))
+        doc.UndoMode = 1
+        doc.openTransaction("base")
+        sk = doc.addObject("Sketcher::SketchObject", "Sketch")
+        sk.addGeometry(Part.LineSegment(V(0, 0, 0), V(10, 0, 0)))
+        sk.addGeometry(Part.LineSegment(V(0, 5, 0), V(10, 5, 0)))
+        sk.addConstraint(Sketcher.Constraint("DistanceX", 0, 1, 0, 2, 10))
+        box = doc.addObject("Part::Box", "Box")
+        doc.recompute()
+        sk.setExpression("Constraints[0]", "Box.Length")
+        doc.recompute()
+        doc.commitTransaction()
+        doc.saveAs(os.path.join(self.dir, "hand-then-solved.FCStd"))
+
+        def held():
+            s = doc.Sketch
+            return (
+                [s.getGeometryId(i) for i in range(len(s.Geometry))],
+                [round(g.length(), 6) for g in s.Geometry],
+            )
+
+        doc.createTransactionBranch("side")
+        doc.openTransaction("theirs line")
+        doc.Sketch.addGeometry(Part.LineSegment(V(0, 20, 0), V(5, 20, 0)))
+        doc.commitTransaction()
+        doc.recompute()
+        doc.openTransaction("theirs box")
+        doc.Box.Length = 14
+        doc.commitTransaction()
+        doc.recompute()
+        theirs = held()
+        self.assertEqual(theirs, ([1, 2, 3], [14.0, 10.0, 5.0]))
+        # The recompute wrote the geometry last, and is not all that did.
+        wrote = [
+            (t["kind"], o["derived"])
+            for t in doc.getTransactionLog()
+            for o in doc.getTransactionOps(t["seq"])
+            if o["prop"] == "Geometry" and t["name"] != "base"
+        ]
+        self.assertEqual(wrote[0], ("user", False), wrote)
+        self.assertTrue(wrote[-1][1], wrote)
+
+        doc.switchTransactionBranch("main")
+        doc.openTransaction("ours")
+        doc.Box.Height = 3
+        doc.commitTransaction()
+        doc.recompute()
+        pv = doc.previewTransactionMerge("side")
+        self.assertEqual(pv["conflicts"], 0)
+        self.assertIn(
+            ("take", "Sketch.Geometry"), [(c["kind"], c["key"]) for c in pv["changes"]]
+        )
+        merged = doc.mergeTransactionBranch("side")
+        self.assertEqual(merged["failed"], [])
+        self.assertEqual(held(), theirs)
+        self.assertEqual(doc.Box.Height.Value, 3)
+
+    def testAUnitTakenWholeIsAsItsSideLeftIt(self):
+        # Sec 31.14: where a sketch is one question (31.5) and theirs is
+        # picked, every property of it is put as theirs has it -- what only
+        # a recompute of a side's wrote too. Here ours' recompute solved the
+        # sketch again (the box it is bound to grew) and nobody moved its
+        # geometry by hand: the geometry is not a change to weigh, and goes
+        # with the unit all the same.
+        import Part
+        import Sketcher
+        from FreeCAD import Vector as V
+
+        def model(name):
+            doc = self.track(FreeCAD.newDocument(name))
+            doc.UndoMode = 1
+            doc.openTransaction("base")
+            sk = doc.addObject("Sketcher::SketchObject", "Sketch")
+            sk.addGeometry(Part.LineSegment(V(0, 0, 0), V(10, 0, 0)))
+            sk.addGeometry(Part.LineSegment(V(0, 5, 0), V(10, 5, 0)))
+            sk.addConstraint(Sketcher.Constraint("DistanceX", 0, 1, 0, 2, 10))
+            doc.addObject("Part::Box", "Box")
+            doc.recompute()
+            sk.setExpression("Constraints[0]", "Box.Length")
+            doc.recompute()
+            doc.commitTransaction()
+            doc.saveAs(os.path.join(self.dir, name + ".FCStd"))
+            doc.createTransactionBranch("side")
+            # Theirs: the second line is level and ten along. Nothing moves.
+            doc.openTransaction("theirs")
+            doc.Sketch.addConstraint(Sketcher.Constraint("Horizontal", 1))
+            doc.Sketch.addConstraint(Sketcher.Constraint("DistanceX", 1, 1, 1, 2, 10))
+            doc.recompute()
+            doc.commitTransaction()
+            doc.switchTransactionBranch("main")
+            # Ours: it is ten long, which with theirs' is said twice -- the
+            # sketch is not merged by what it holds -- and the box grown,
+            # which the recompute solves the first line for.
+            doc.openTransaction("ours")
+            doc.Sketch.addConstraint(Sketcher.Constraint("Distance", 1, 10))
+            doc.commitTransaction()
+            doc.recompute()
+            doc.openTransaction("ours box")
+            doc.Box.Length = 14
+            doc.commitTransaction()
+            doc.recompute()
+            return doc
+
+        def lengths(doc):
+            return [round(g.length(), 6) for g in doc.Sketch.Geometry]
+
+        doc = model("UnitWholeTheirs")
+        self.assertEqual(lengths(doc), [14.0, 10.0])
+        pv = doc.previewTransactionMerge("side")
+        self.assertEqual(
+            [(c["kind"], c["op"], c["key"]) for c in pv["changes"] if c["kind"] == "conflict"],
+            [("conflict", "unit", "Sketch.Geometry")],
+        )
+        parts = {c["prop"]: c for c in pv["changes"] if c["kind"] == "unit"}
+        self.assertEqual(sorted(parts), ["Constraints", "Geometry"])
+        self.assertTrue(parts["Geometry"]["derived"])
+        self.assertFalse(parts["Constraints"]["derived"])
+        self.assertIn("as its recompute left it", parts["Geometry"]["note"])
+        self.assertNotEqual(parts["Geometry"]["ours"], parts["Geometry"]["theirs"])
+        # The line 28 has for what a recompute wrote is that one now.
+        self.assertFalse(
+            [c for c in pv["changes"] if c["kind"] == "derived" and c["key"] == "Sketch.Geometry"]
+        )
+        merged = doc.mergeTransactionBranch("side", {"Sketch.Geometry": "theirs"})
+        self.assertEqual((merged["unresolved"], merged["failed"]), ([], []))
+        self.assertEqual(
+            sorted(c.Type for c in doc.Sketch.Constraints), ["DistanceX", "DistanceX", "Horizontal"]
+        )
+        # The box is ours' still, and the sketch is solved for it; what it
+        # is bound by is bound still, once.
+        self.assertEqual(lengths(doc), [14.0, 10.0])
+        self.assertEqual([e[1] for e in doc.Sketch.ExpressionEngine], ["Box.Length"])
+        self.assertFalse([o.Name for o in doc.Objects if "Invalid" in o.State])
+        doc.undo()
+        self.assertEqual(sorted(c.Type for c in doc.Sketch.Constraints), ["Distance", "DistanceX"])
+        self.assertEqual(lengths(doc), [14.0, 10.0])
+        self.assertEqual([e[1] for e in doc.Sketch.ExpressionEngine], ["Box.Length"])
+
+        # Ours picked: nothing of the sketch is written, and it is computed
+        # again as for any value a recompute wrote.
+        doc = model("UnitWholeOurs")
+        merged = doc.mergeTransactionBranch("side", {"Sketch.Geometry": "ours"})
+        self.assertEqual((merged["unresolved"], merged["failed"]), ([], []))
+        self.assertEqual(sorted(c.Type for c in doc.Sketch.Constraints), ["Distance", "DistanceX"])
+        self.assertEqual(lengths(doc), [14.0, 10.0])
+        self.assertFalse([o.Name for o in doc.Objects if "Invalid" in o.State])
+
+    def testAMergeThatChangesNothingSaysSo(self):
+        # Sec 31.14: a merge that finds everything of theirs here already
+        # writes its row -- the branch is merged, and nothing is asked twice
+        # -- and nothing of the document: there is nothing to undo, it is no
+        # undo step, and the result says so.
+        doc = self.track(FreeCAD.newDocument("MergeUnchanged"))
+        doc.UndoMode = 1
+        doc.openTransaction("base")
+        obj = doc.addObject("App::FeatureTest", "Obj")
+        doc.commitTransaction()
+        doc.saveAs(os.path.join(self.dir, "merge-unchanged.FCStd"))
+        doc.createTransactionBranch("side")
+        for where in ("side", "main"):
+            doc.switchTransactionBranch(where)
+            doc.openTransaction(where)
+            doc.Obj.Integer = 7
+            doc.commitTransaction()
+        steps = doc.UndoCount
+        merged = doc.mergeTransactionBranch("side")
+        self.assertGreater(merged["seq"], 0)
+        self.assertTrue(merged["unchanged"])
+        self.assertEqual(doc.UndoCount, steps)
+        self.assertEqual(doc.previewTransactionMerge("side")["changes"], [])
+        # One that writes something is a step, and does not say so.
+        doc.switchTransactionBranch("side")
+        doc.openTransaction("side again")
+        doc.Obj.Integer = 9
+        doc.commitTransaction()
+        doc.switchTransactionBranch("main")
+        steps = doc.UndoCount
+        merged = doc.mergeTransactionBranch("side")
+        self.assertFalse(merged["unchanged"])
+        self.assertEqual(doc.Obj.Integer, 9)
+        self.assertEqual(doc.UndoCount, steps + 1)
+
+    def testASwitchKeepsWhatASketchIsBoundTo(self):
+        # Sec 31.14: a constraint list put back from the log -- a switch, an
+        # undo past the hot window, a merge -- is the whole list, and not a
+        # list every constraint of which was removed: the sketch took the
+        # expressions bound to them away with it. And an expression the
+        # branch arrived on has not got goes even where the constraint it
+        # names went first.
+        import Part
+        import Sketcher
+        from FreeCAD import Vector as V
+
+        doc = self.track(FreeCAD.newDocument("SwitchBound"))
+        doc.UndoMode = 1
+        doc.openTransaction("base")
+        sk = doc.addObject("Sketcher::SketchObject", "Sketch")
+        for x in (0, 20, 40):
+            sk.addGeometry(Part.LineSegment(V(x, 0, 0), V(x + 10, 0, 0)))
+        sk.addConstraint(Sketcher.Constraint("DistanceX", 0, 1, 0, 2, 10))
+        doc.addObject("Part::Box", "Box")
+        doc.recompute()
+        sk.setExpression("Constraints[0]", "Box.Length")
+        doc.recompute()
+        doc.commitTransaction()
+        doc.saveAs(os.path.join(self.dir, "switch-bound.FCStd"))
+        bound = [("Constraints[0]", "Box.Length")]
+
+        doc.createTransactionBranch("side")
+        doc.openTransaction("side")
+        doc.Sketch.addConstraint(Sketcher.Constraint("DistanceX", 2, 1, 2, 2, 12))
+        doc.Sketch.setExpression("Constraints[1]", "6 + 6")
+        doc.recompute()
+        doc.commitTransaction()
+        both = bound + [("Constraints[1]", "6 + 6")]
+        self.assertEqual(doc.Sketch.ExpressionEngine, both)
+
+        # Back on main: one constraint, bound as it was, and nothing bound
+        # to the one that is not there.
+        doc.switchTransactionBranch("main")
+        self.assertEqual(len(doc.Sketch.Constraints), 1)
+        self.assertEqual(doc.Sketch.ExpressionEngine, bound)
+        doc.Box.Length = 14
+        doc.recompute()
+        self.assertAlmostEqual(doc.Sketch.Geometry[0].length(), 14.0, places=6)
+        self.assertFalse([o.Name for o in doc.Objects if "Invalid" in o.State])
+        doc.switchTransactionBranch("side")
+        self.assertEqual(len(doc.Sketch.Constraints), 2)
+        self.assertEqual(doc.Sketch.ExpressionEngine, both)
+        self.assertAlmostEqual(doc.Sketch.Geometry[2].length(), 12.0, places=6)
+
+    def testACopysGeometryComesUnderThisFilesIds(self):
+        # Sec 31.14 (31.3 P6): a copy of the file numbers its new geometry
+        # on from where this file numbers its own from -- the fifth line of
+        # a sketch is `g5` in each, and they are two lines. Imported, the
+        # copy's comes under an id of this file's: in the sketch, in a
+        # reference to the line, and in the name of a face made of it. The
+        # sketch both changed is then merged by what it holds, and what the
+        # copy hung on its line hangs on that line.
+        import shutil
+
+        import ArchiveMembers
+        import Part
+        import Sketcher
+        from FreeCAD import Vector as V
+
+        def ids(sk):
+            return [sk.getGeometryId(i) for i in range(len(sk.Geometry))]
+
+        def on(sk):
+            held = ids(sk)
+            return sorted((c.Type, held[c.First], round(c.Value, 6)) for c in sk.Constraints)
+
+        def at(doc):
+            # Where what the copy made lies: the binder's edge and face, and
+            # the line the second sketch takes from the first.
+            box = doc.Binder.Shape.BoundBox
+            ext = doc.Sketch2.ExternalGeo[2]
+            return (
+                [round(v, 6) for v in (box.XMin, box.YMin, box.XMax, box.YMax, box.ZMax)],
+                len(doc.Binder.Shape.Faces),
+                [round(v, 6) for v in (ext.StartPoint.y, ext.EndPoint.y, ext.length())],
+            )
+
+        def add(doc, name, y, length):
+            doc.openTransaction(name)
+            sk = doc.Sketch
+            i = sk.addGeometry(Part.LineSegment(V(0, y, 0), V(length, y, 0)))
+            sk.addConstraint(Sketcher.Constraint("DistanceX", i, 1, i, 2, length))
+            doc.recompute()
+            doc.commitTransaction()
+            return i
+
+        doc = self.track(FreeCAD.newDocument("MintOurs"))
+        doc.UndoMode = 1
+        doc.openTransaction("base")
+        sk = doc.addObject("Sketcher::SketchObject", "Sketch")
+        for y in (0, 5, 10, 15):
+            sk.addGeometry(Part.LineSegment(V(0, y, 0), V(10, y, 0)))
+        sk.addConstraint(Sketcher.Constraint("DistanceX", 0, 1, 0, 2, 10))
+        ex = doc.addObject("Part::Extrusion", "Ex")
+        ex.Base = sk
+        ex.Dir = V(0, 0, 5)
+        doc.recompute()
+        doc.commitTransaction()
+        path = os.path.join(self.dir, "mint-ours.FCStd")
+        copy = os.path.join(self.dir, "mint-theirs.FCStd")
+        doc.saveAs(path)
+        shutil.copyfile(path, copy)
+
+        fork = self.track(FreeCAD.openDocument(copy))
+        fork.UndoMode = 1
+        add(fork, "theirs line", 20, 8)
+        fork.openTransaction("theirs refs")
+        s2 = fork.addObject("Sketcher::SketchObject", "Sketch2")
+        s2.addExternal("Sketch", "Edge5")
+        s2.addGeometry(Part.LineSegment(V(0, 30, 0), V(3, 33, 0)))
+        face = [
+            "Face%d" % (i + 1)
+            for i, f in enumerate(fork.Ex.Shape.Faces)
+            if abs(f.BoundBox.YMin - 20) < 1e-6
+        ]
+        self.assertEqual(len(face), 1)
+        binder = fork.addObject("PartDesign::SubShapeBinder", "Binder")
+        binder.Support = [(fork.Sketch, ("Edge5",)), (fork.Ex, (face[0],))]
+        fork.recompute()
+        fork.commitTransaction()
+        self.assertEqual(ids(fork.Sketch), [1, 2, 3, 4, 5])
+        theirs = at(fork)
+        self.assertEqual(theirs[0], [0.0, 20.0, 8.0, 20.0, 5.0])
+        fork.save()
+        FreeCAD.closeDocument(fork.Name)
+        FreeCAD.setActiveDocument(doc.Name)
+
+        # This file's fifth line is another.
+        add(doc, "ours line", -5, 6)
+        self.assertEqual(ids(doc.Sketch), [1, 2, 3, 4, 5])
+
+        res = doc.importTransactionFork(copy)
+        self.assertEqual(res["stopped_at"], 0, res)
+        self.assertEqual(res["rows"], 2, res)
+        pv = doc.previewTransactionMerge(res["branch"])
+        self.assertEqual(pv["conflicts"], 0, [(c["kind"], c["key"]) for c in pv["changes"]])
+        kinds = {(c["kind"], c["key"], c["prop"]) for c in pv["changes"]}
+        self.assertIn(("merge", "Sketch.Geometry", "Geometry"), kinds)
+        self.assertIn(("merge", "Sketch.Geometry", "Constraints"), kinds)
+        note = [c["note"] for c in pv["changes"] if c["kind"] == "merge" and c["prop"] == "Geometry"]
+        self.assertIn("theirs: g6", note[0])
+        merged = doc.mergeTransactionBranch(res["branch"])
+        self.assertEqual((merged["unresolved"], merged["failed"]), ([], []))
+        self.assertEqual(ids(doc.Sketch), [1, 2, 3, 4, 5, 6])
+        self.assertEqual(
+            on(doc.Sketch), [("DistanceX", 1, 10.0), ("DistanceX", 5, 6.0), ("DistanceX", 6, 8.0)]
+        )
+        self.assertEqual(
+            [round(g.StartPoint.y, 6) for g in doc.Sketch.Geometry], [0, 5, 10, 15, -5, 20]
+        )
+        # What the copy hung on its line hangs on that line here: by a name
+        # that says this file's id, and so where it was.
+        self.assertEqual(doc.Sketch2.ExternalGeometry[0][1], ("Edge6",))
+        # (In the order the binder keeps them, which is not the order given.)
+        self.assertEqual(
+            {o.Name: tuple(subs) for o, subs in doc.Binder.Support},
+            {"Sketch": ("Edge6",), "Ex": ("Face6",)},
+        )
+        self.assertEqual(at(doc), theirs)
+        self.assertFalse([o.Name for o in doc.Objects if "Invalid" in o.State or "Touched" in o.State])
+        doc.save()
+        text = ArchiveMembers.readFile(path, "Document.xml").decode("utf-8")
+        self.assertIn('sub="Edge6" shadow=";g6;SKT.Edge6"', text)
+        self.assertIn('Ref="Sketch.;g6;SKT"', text)
+        self.assertNotIn(";g5;SKT.", text)
+
+        # The copy goes on, and so does this file: the branch the import
+        # made is continued, with the numbers it kept.
+        add(doc, "ours again", -10, 4)
+        self.assertEqual(ids(doc.Sketch)[-1], 7)
+        fork = self.track(FreeCAD.openDocument(copy))
+        fork.UndoMode = 1
+        add(fork, "theirs again", 25, 3)
+        self.assertEqual(ids(fork.Sketch), [1, 2, 3, 4, 5, 6])
+        fork.save()
+        FreeCAD.closeDocument(fork.Name)
+        FreeCAD.setActiveDocument(doc.Name)
+        again = doc.importTransactionFork(copy)
+        self.assertEqual((again["stopped_at"], again["rows"]), (0, 1), again)
+        self.assertTrue(again["extended"])
+        pv = doc.previewTransactionMerge(again["branch"])
+        self.assertEqual(pv["conflicts"], 0, [(c["kind"], c["key"]) for c in pv["changes"]])
+        merged = doc.mergeTransactionBranch(again["branch"])
+        self.assertEqual((merged["unresolved"], merged["failed"]), ([], []))
+        self.assertEqual(ids(doc.Sketch), [1, 2, 3, 4, 5, 6, 7, 8])
+        self.assertEqual(
+            on(doc.Sketch),
+            [
+                ("DistanceX", 1, 10.0),
+                ("DistanceX", 5, 6.0),
+                ("DistanceX", 6, 8.0),
+                ("DistanceX", 7, 4.0),
+                ("DistanceX", 8, 3.0),
+            ],
+        )
+        self.assertEqual(at(doc), theirs)
+
     def testRowsArePickedAndChangesLeftOut(self):
         # Sec 31.12 (the user's): picking by hand is not only for conflicts.
         # Rows of another branch are applied here one by one, as a step of

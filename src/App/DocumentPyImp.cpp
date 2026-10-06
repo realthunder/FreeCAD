@@ -1449,6 +1449,7 @@ Py::Dict mergeResultToPy(const App::Document::MergeResult& result)
     Py::Dict d;
     d.setItem("seq", Py::Long(static_cast<long long>(result.seq)));
     d.setItem("forwarded", Py::Long(static_cast<unsigned long long>(result.forwarded)));
+    d.setItem("unchanged", Py::Boolean(result.unchanged));
     Py::List unresolved;
     for (const auto& c : result.unresolved)
         unresolved.append(mergeChangeToPy(c));

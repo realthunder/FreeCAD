@@ -375,6 +375,15 @@ void PropertyConstraintList::Restore(Base::XMLReader& reader)
 
     reader.readEndElement("ConstraintList");
 
+    // A value read is the whole value, as one pasted is: every constraint
+    // read has a tag of its own, so against a list that was there each of
+    // its constraints would count as removed -- and the sketch takes the
+    // expressions bound to a removed constraint away. A value put back from
+    // the transaction log (a branch switched to, an undo past the hot
+    // window, a merge) then lost every binding the sketch had; what is
+    // bound is the expression engine's to say, which is put back by its own
+    // value (docs/TransactionLog.md sec 31.14).
+    Base::StateLocker lock(restoreFromTransaction, true);
     // assignment
     setValues(std::move(values));
 }

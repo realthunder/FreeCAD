@@ -118,6 +118,12 @@ public:
     bool getMergePlaces(const MergeUnitState& at, std::string& prop,
                         std::vector<MergePlace>& places) const override;
     bool nameMergePlaces(MergeUnitState& at, const std::vector<std::string>& names) const override;
+    /// `Geometry` and `ExternalGeo`: each geometry's id, the copy's new
+    /// ones given ids of this file (docs/TransactionLog.md sec 31.14).
+    bool importMintedIds(const char* prop, std::string& fragment, std::map<long, long>& ids,
+                         bool seed) override;
+    /// `g5;SKT`, `g5v1;SKT`, `e7;SKT`: the id in an element's name.
+    bool importMintedName(std::string& name, const std::map<long, long>& ids) const override;
     /// recalculate the Feature (if no recompute is needed see also solve() and solverNeedsUpdate
     /// boolean)
     App::DocumentObjectExecReturn* execute() override;

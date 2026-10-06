@@ -585,7 +585,8 @@ sec 28): one transaction of kind 'merge', undone like any. `picks` maps a
 conflict's key to 'ours' or 'theirs'; `fallback` is the side of every
 conflict not picked. Returns {'seq', 'unresolved', 'failed', 'preview'}:
 a conflict with no side refuses the merge -- 'seq' is 0, nothing moved,
-and 'unresolved' lists them. 'failed' names the objects whose recompute
+and 'unresolved' lists them. 'unchanged' says the merge wrote its row and
+nothing of the document, so is no undo step. 'failed' names the objects whose recompute
 failed on the merged state. The other branch is left as it is.</UserDocu>
       </Documentation>
     </Methode>

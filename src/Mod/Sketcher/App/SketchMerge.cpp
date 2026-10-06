@@ -27,6 +27,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdlib>
+#include <cstring>
 #include <map>
 #include <memory>
 #include <set>
@@ -671,5 +672,122 @@ bool SketchObject::nameMergePlaces(MergeUnitState& at, const std::vector<std::st
     if (!saved.ok || !saved.attachments.empty())
         return false;
     at["Constraints"] = saved.fragment;
+    return true;
+}
+
+// Another copy of the file numbers its new geometry on from the counter
+// this file numbers its own from (docs/TransactionLog.md sec 31.14): the
+// fifth line is `g5` in each, and they are two lines. What an import reads
+// of the copy's says this file's ids.
+
+namespace
+{
+
+/// The value of ` id="..."` in the opening tag that starts at `tag` of
+/// `text` and ends before `end`: where its digits are, or npos.
+std::size_t idDigits(const std::string& text, std::size_t tag, std::size_t end, std::size_t& size)
+{
+    static const std::string attr = " id=\"";
+    const std::size_t at = text.find(attr, tag);
+    if (at == std::string::npos || at >= end)
+        return std::string::npos;
+    const std::size_t from = at + attr.size();
+    const std::size_t to = text.find('"', from);
+    if (to == std::string::npos || to > end)
+        return std::string::npos;
+    size = to - from;
+    return from;
+}
+
+}  // namespace
+
+bool SketchObject::importMintedIds(const char* prop, std::string& fragment,
+                                   std::map<long, long>& ids, bool seed)
+{
+    if (seed) {
+        for (const auto* list : {&Geometry.getValues(), &ExternalGeo.getValues()}) {
+            for (const Part::Geometry* g : *list) {
+                const long id = GeometryFacade::getId(g);
+                if (id > 0)
+                    ids.emplace(id, id);
+            }
+        }
+    }
+    if (!prop || (strcmp(prop, "Geometry") != 0 && strcmp(prop, "ExternalGeo") != 0))
+        return false;
+    // A geometry says its id twice: in its own tag, and in the tag of the
+    // sketch's extension of it. Both by the same map; the axes, which are
+    // nobody's to number, are below one.
+    // A number this file has not given a thing of this sketch stays the
+    // number it is -- all of them, for a sketch the copy made; one it has
+    // given is another thing here, and the copy's gets the next.
+    auto mint = [this](long id) {
+        App::Document* doc = getDocument();
+        const long floor = std::max(geoLastId, id - 1);
+        geoLastId = doc ? doc->nextGeoId(*this, floor) : floor + 1;
+        return geoLastId;
+    };
+    static const std::string geometry = "<Geometry ";
+    static const std::string extension = "<GeoExtension type=\"Sketcher::SketchGeometryExtension\"";
+    std::string out;
+    out.reserve(fragment.size() + 16);
+    std::size_t last = 0;
+    std::size_t at = 0;
+    while (true) {
+        const std::size_t g = fragment.find(geometry, at);
+        const std::size_t e = fragment.find(extension, at);
+        const std::size_t tag = std::min(g, e);
+        if (tag == std::string::npos)
+            break;
+        const std::size_t end = fragment.find('>', tag);
+        if (end == std::string::npos)
+            break;
+        at = end;
+        std::size_t size = 0;
+        const std::size_t digits = idDigits(fragment, tag, end, size);
+        if (digits == std::string::npos)
+            continue;
+        char* stop = nullptr;
+        const std::string said = fragment.substr(digits, size);
+        const long id = std::strtol(said.c_str(), &stop, 10);
+        if (said.empty() || *stop || id <= 0)
+            continue;
+        auto known = ids.find(id);
+        if (known == ids.end())
+            known = ids.emplace(id, mint(id)).first;
+        out.append(fragment, last, digits - last);
+        out += std::to_string(known->second);
+        last = digits + size;
+    }
+    out.append(fragment, last, std::string::npos);
+    fragment = std::move(out);
+    return true;
+}
+
+bool SketchObject::importMintedName(std::string& name, const std::map<long, long>& ids) const
+{
+    // `g5`, `g5v1`, `e7`, with or without what follows it: `;SKT`.
+    if (name.size() < 2 || (name[0] != 'g' && name[0] != 'e'))
+        return false;
+    std::size_t end = 1;
+    while (end < name.size() && name[end] >= '0' && name[end] <= '9')
+        ++end;
+    if (end == 1)
+        return false;
+    std::size_t rest = end;
+    if (rest < name.size() && name[rest] == 'v') {
+        ++rest;
+        const std::size_t point = rest;
+        while (rest < name.size() && name[rest] >= '0' && name[rest] <= '9')
+            ++rest;
+        if (rest == point)
+            return false;
+    }
+    if (rest < name.size() && name[rest] != ';')
+        return false;
+    auto to = ids.find(std::strtol(name.substr(1, end - 1).c_str(), nullptr, 10));
+    if (to == ids.end() || to->first == to->second)
+        return false;
+    name.replace(1, end - 1, std::to_string(to->second));
     return true;
 }

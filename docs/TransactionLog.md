@@ -15675,3 +15675,185 @@ sent to the popup -- which no other check of the log's does.
 RC 15, BC 30, VC 18, PC 28, FC 16, VW 14, MC 40, the two-document check
 24, the tree check 19, the author check 36, the import check 49, the
 request check 31, the share check 47 and the squash check 13 (new).
+
+### 31.14 The sketch, what was left: a hand change a recompute solved again, a unit taken whole, a copy's geometry ids (user, 2026-10-06)
+
+**Asked (user):** "do the sketch merge now", of the list put to them: the
+three 31.10 and 31.11 had left of a sketch -- a copy's geometry ids
+(31.3 P6), geometry only a side's recompute moved, and a merge that
+changes nothing being no undo step. P6 was ruled in 31.10 as 31.3
+proposed it: "the copy's ids mapped as its objects' are (30.15), in its
+values and in the element names that carry them".
+
+**Found first, and worse than what was listed: a hand change lost.** 28
+does not weigh what a recompute wrote, and a value was a recompute's when
+the *last* row that wrote it was one. A sketch's geometry is written by
+hand when it is edited -- the Sketcher solves as it goes -- and by a
+recompute only when the sketch is solved again for something outside it:
+a constraint bound to another object's length, an edge it takes from a
+box that moved. Measured (`drv3.py`): theirs draws a line, then makes the
+box longer; the recompute solves the sketch and writes `Geometry` after
+the row that drew the line. Merged, with nothing in conflict: `Geometry`
+was `derived`, theirs' constraints were taken, and **the line was not
+there** -- four where theirs has five. `NetChange::Val::hand`: a value
+some row set by hand is a change of its branch whatever a recompute wrote
+of it afterwards, at the value it ends with. It is so for every property,
+and for the rows a squash or a trim's bridge write of a net change.
+
+**A unit taken whole is as its side left it.** 31.5 puts every property
+of a unit as the side picked has it; what only a recompute wrote of it
+was no change, so not among them, and theirs' constraints were then
+solved from ours' places. Where the unit is one question, each of its
+properties that neither side set by hand and a recompute of either's
+wrote is a `unit` change too (`solved`, in `planWeigh`): theirs' value
+where theirs ends, the base's where theirs left it. The line 28 had for
+it, `derived`, is that one, greyed in the dialog as the rest of the unit
+is, "as its recompute left it"; ours picked, its owner is computed again
+as before. Not for the merge by what it holds (31.10): that reads what
+each side set and lets the solver place the rest.
+
+**A merge that changes nothing is no undo step: left so.** Looked at, and
+not changed. An undo takes back what a row wrote of the document, and
+this row wrote nothing of it; the undo of any merge leaves the branch
+merged (28: the row stays in the history, an inverse after it). A step
+that takes nothing back when undone is worse than none. What was wrong is
+that nothing said so: `MergeResult::unchanged` (`'unchanged'` in Python),
+and the panel's status line, "nothing here changed, and there is nothing
+to undo". **Mine to have decided, and the user's to overrule.**
+
+**A copy's geometry ids (P6).**
+
+*What carries one*, measured (`names.py`, `table.py`, `p6.py`):
+
+- the value, twice for each geometry: `<Geometry ... id="5">` and the
+  sketch's extension of it, in `Geometry` and in `ExternalGeo`;
+- what an external geometry is of, `Ref="Sketch.;g5;SKT"`, with
+  `RefElement`;
+- a reference to an element of the sketch, in its shadow name:
+  `sub="Edge5" shadow=";g5;SKT.Edge5"`;
+- the string table: `g5;SKT` is a string, and every name built on it
+  names that string -- `#22;:G;XTR;:H24d:7,F`, a face an extrusion made
+  of the line -- in a shape's element map, in a reference's shadow, and
+  in the strings built on those in turn.
+
+*Which number.* The copy's number stays where this file has not given it
+to a thing of that object -- so all of them, for an object the copy made,
+and all of them where this file has not touched the sketch -- and is the
+next of this file's where it has. What an object held where the two
+parted is the same in both.
+
+*What an object says* (`DocumentObject`, two more):
+`importMintedIds(prop, fragment, ids, seed)` -- `prop` as the copy saved
+it, given back saying this file's numbers; `ids` the copy's to this
+file's, for that object, to which what the copy made is added; with
+`seed`, the first an import sees of the object, what it holds now goes in
+as itself. `importMintedName(name, ids)` -- `g5;SKT`, `g5v1;SKT`,
+`e7;SKT` with the number the map has. `SketchObject`'s are in
+`SketchMerge.cpp`; the value is rewritten as text, both ids of each
+geometry by the one map, the axes left.
+
+*Where the names are read* (`App::RestoreMinted`, a scope on the thread
+beside 30.16's `RestoreStrings`, set by the import round the values of a
+row):
+
+- a string built on a name -- `#b` followed by the tag of the object it
+  is an element of, the first tag after it -- is built on the name as
+  that object numbers it here (`mintedText`, in `StringHasher::importNew`
+  and `rewriteIds`): another string than `#b` comes as anywhere else, so
+  not through the import's memo. A name written out in full,
+  `g5;SKT;:H24,E`, the same;
+- a reference's shadow that is the name itself is an element of the
+  object its path ends at, or of the link's target where the path names
+  none (`RestoreStrings::Target`, set by `PropertyLinkSub`,
+  `PropertyLinkSubList` and `PropertyXLink` as they read their paths);
+- an external geometry's `Ref` is read as a link's path is. Its strings,
+  where it names any, then come out of the copy's table as well: 30.16
+  did not read it, and whether a `Ref` ever names one was not measured.
+
+*In the import* (`importFork`'s replay of a row): every value of the row
+through `importMintedIds` first, since a name read from one value may say
+a number another brings; then the values, under the scope. The maps are
+kept with the branch's others, `minted` in `import:<branch>`, and a
+second import goes on from them. A row whose numbers came so says
+`"minted": true` in its script, and `mergeUnitByObject` -- which refused
+any side with an imported row -- takes those: **a sketch this file and a
+copy both changed is merged by what it holds.**
+
+*Where it is not done*, and the numbers come as they are, the sketch one
+question as before: a file as found, and a copy read across the gap of
+30.19 G6; a copy that has itself replayed rows of another file -- what it
+took from this one it holds under numbers of its own, which are then not
+new; and a branch that starts on rows an import brought.
+
+**Seen on the way: two defects of a value put back, one hiding the
+other.**
+
+- `PropertyConstraintList::Restore` read a list as one every constraint
+  of which is new -- each read has a tag of its own -- so against the
+  list that was there every constraint counted as removed, and the sketch
+  takes the expressions bound to a removed constraint away. A switch to a
+  branch whose constraint list differs **lost every binding the sketch
+  had**, with nothing in the log to say so (`unit2.py`: bound to
+  `Box.Length` on both branches; after the switch, bound to nothing). A
+  list read is the whole list, as one pasted is: no rename and no removal
+  is signalled.
+- That had hidden this: `PropertyExpressionEngine` takes out what the
+  value put back does not hold through `setValue`, which asks the
+  property for the value at the path first -- and for `Constraints[2]` of
+  a list put back to two that is "Array out of bound", caught and logged,
+  the expression left bound to nothing. They are taken out as they stand
+  (`releaseBeforeRestore`, `afterRestore`).
+
+**Tests**, Python, `TransactionBranchCases`, each frozen and unfrozen:
+
+- `testAHandChangeARecomputeSolvedAgainIsMerged`: the measured case --
+  the row that drew the line by hand, the recompute's after it; `take`,
+  not `derived`; merged, theirs' three lines and the box ours changed.
+- `testAUnitTakenWholeIsAsItsSideLeftIt`: ours' box grown and one length
+  said, theirs the same line level and ten along -- together said twice,
+  so one question; `Geometry` a `unit` change, `derived`, and no
+  `derived` line beside it; theirs picked and ours picked, the sketch
+  solved for the box either way, bound once, undone.
+- `testAMergeThatChangesNothingSaysSo`: `unchanged`, a row, no step; and
+  a merge that writes, a step and not `unchanged`.
+- `testASwitchKeepsWhatASketchIsBoundTo`: bound on main, a constraint
+  more and bound on the branch; back and forth, each side's bindings and
+  no other, and main's still driving its line.
+- `testACopysGeometryComesUnderThisFilesIds`: a sketch and an extrusion
+  of it, copied; the copy adds a line with a length, a second sketch
+  taking that line, and a binder of the line and of the face extruded
+  from it; this file adds another fifth line. Imported and merged with
+  nothing asked: six lines, the copy's `g6`, each length on its own line,
+  the second sketch and the binder on `Edge6` and lying where they lay in
+  the copy, the file saying `;g6;SKT` and no `;g5;SKT.`; both go on, and
+  the second import continues the branch -- eight lines, this file's `g7`
+  and the copy's sixth as `g8`.
+
+Before the names were read through the scope the same run put the binder
+on this file's fifth line: the test is of that.
+
+**Left.**
+
+- **The round trip**: a copy that took rows from this file. Its numbers
+  for what it took are its own, and nothing pairs them with this file's
+  as 30.33 pairs objects by the row that made them. Not mapped, and the
+  sketch asked whole.
+- A file as found, and the gap: as before.
+- An element name whose first tag is not the sketch's -- one that came
+  through a link to the sketch, or a binder of it -- is not read: by
+  reading, not run.
+- A name made of several (`(a|b)`), and an expression's element path
+  that names an element with no object before it.
+- A geometry the copy brought back under an id it had deleted (the
+  Sketcher's history of points) comes as a new one.
+- The merge by what it holds starts from what each side set by hand, not
+  from where a recompute left a side: the solver's to place, and it does.
+- The panel's line for a merge that changed nothing has no Gui check.
+
+**Gates**, frozen and unfrozen each: Python 3030 OK (52 skipped frozen,
+53 unfrozen; 6 expected failures; +5), ctest 881/881, and the GUI checks
+RC 15, BC 30, VC 18, PC 28, FC 16, VW 14, MC 40, the two-document check
+24, the tree check 19, the author check 36, the import check 49, the
+request check 31, the share check 47 and the squash check 13. The Python
+suite was run again after one of the new tests stopped asking the binder
+for its references in the order they were given.
