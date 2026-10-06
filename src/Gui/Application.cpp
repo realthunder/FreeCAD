@@ -96,6 +96,7 @@
 #include "CommandActionPy.h"
 #include "CommandPy.h"
 #include "Control.h"
+#include "TaskOwner.h"
 #include "PreferencePages/DlgSettingsCacheDirectory.h"
 #include "DlgCheckableMessageBox.h"
 #include "DocumentPy.h"
@@ -1581,6 +1582,26 @@ void Application::viewActivated(MDIView* pcView)
         setActiveDocument(pcView->getGuiDocument());
 }
 
+
+/// Gets called if a view gets closed
+void Application::viewClosed(MDIView* pcView)
+{
+    if (!pcView)
+        return;
+    // An edit that runs in this view ends with it: LEFT, as it is when
+    // its document is closed, and not cancelled -- what was done in it is
+    // kept. Here, while the view is whole. Left to the view's
+    // destruction, the document's session outlived the viewer it was
+    // bound to, and the view's own selection, going with the view, told
+    // the edit mode to read it again through that viewer.
+    if (Gui::Document* doc = pcView->getGuiDocument()) {
+        ViewerContext* editing = doc->editingViewer();
+        if (editing && TaskOwner(editing) == TaskOwner(pcView))
+            doc->resetEdit();
+    }
+    // And a task dialog it owns goes with it (Gui::TaskView::TaskView)
+    signalCloseView(pcView);
+}
 
 void Application::updateActive()
 {

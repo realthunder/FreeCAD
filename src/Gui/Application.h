@@ -100,6 +100,9 @@ public:
     void detachView(Gui::BaseView* pcView);
     /// get called if a view gets activated, this manage the whole activation scheme
     void viewActivated(Gui::MDIView* pcView);
+    /// Gets called when a view is closed, before anything of it is taken
+    /// down: an edit that runs in it is left, and signalCloseView is sent
+    void viewClosed(Gui::MDIView* pcView);
     /// call update to all documents and all views (costly!)
     void onUpdate();
     /// call update to all views of the active document
@@ -144,6 +147,9 @@ public:
     fastsignals::signal<void (const Gui::Document&)> signalShowHidden;
     /// signal on activating view
     fastsignals::signal<void (const Gui::MDIView*)> signalActivateView;
+    /// signal on closing a view: sent while the view is whole and still
+    /// its document's (viewClosed)
+    fastsignals::signal<void (const Gui::MDIView*)> signalCloseView;
     /// signal on attaching new view
     mutable fastsignals::signal<void (const Gui::BaseView &, bool passive)> signalAttachView;
     /// signal on detaching view

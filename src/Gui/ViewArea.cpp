@@ -1567,8 +1567,18 @@ void ViewArea::closeEvent(QCloseEvent *e)
     // Accepted means the container is going away (delete on close); the
     // deletion is deferred, and the children may be torn down first by
     // the document. No cell collapsing on a dying container.
-    if (e->isAccepted())
+    if (e->isAccepted()) {
         _closing = true;
+        // The views in the cells go with it without being closed one by
+        // one: each is said to be closing here, while it is whole
+        // (MDIView::closeEvent said it of the active one).
+        if (Application::Instance) {
+            for (ViewAreaCell *cell : cells()) {
+                if (MDIView *child = cell->childView())
+                    Application::Instance->viewClosed(child);
+            }
+        }
+    }
 }
 
 void ViewArea::deleteSelf()

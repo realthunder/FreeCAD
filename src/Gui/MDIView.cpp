@@ -390,6 +390,11 @@ void MDIView::closeEvent(QCloseEvent *e)
 {
     if (canClose()) {
         e->accept();
+        // While this is whole and still its document's: an edit that runs
+        // in this view is left, and a task dialog it owns is closed
+        // (docs/TaskPanelPerView.md sec 5.4).
+        if (Application::Instance)
+            Application::Instance->viewClosed(this);
         if (!bIsPassive) {
             // must be detached so that the last view can get asked
             Document* doc = this->getGuiDocument();

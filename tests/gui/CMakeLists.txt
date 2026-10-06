@@ -1292,3 +1292,12 @@ fc_add_gui_test(GuiDraftPanelOwner_tests_run draft-panel-owner.py
 # view, and what the edit leaves selected is handed back at its end.
 fc_add_gui_test(GuiSelectionPerView_tests_run selection-per-view.py
                 --timeout 240)
+
+# Closing the view an edit runs in leaves the edit -- what was done in it
+# is kept -- instead of leaving the document's session bound to a viewer
+# that is gone (docs/TaskPanelPerView.md sec 13.4): a sketch and an edit
+# with no task dialog, with PerViewEdit on and off, and a view that is not
+# the edit's closed beside it. On the tree before, the first close was a
+# segmentation fault.
+fc_add_gui_test(GuiEditViewClosed_tests_run edit-view-closed.py
+                --timeout 300)

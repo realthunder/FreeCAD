@@ -1894,6 +1894,16 @@ View3DInventorViewer::~View3DInventorViewer()
     // and destroying it joins them before anything they name goes.
     setCyclesViewport(nullptr, nullptr);
 
+    // An edit that runs in this view ends with it. A view that is CLOSED
+    // has left it already, while it was whole (Application::viewClosed);
+    // this is for one destroyed without being closed, which would leave
+    // the document's session bound to a viewer that no longer exists --
+    // what a client's mirror guards against in its own destructor.
+    if (guiDocument && guiDocument->editingViewer() == this) {
+        ViewerScope scope(this);
+        guiDocument->resetEdit();
+    }
+
     // What this view showed on its own is no longer shown by it.
     _pimpl->visibility.clear();
 
