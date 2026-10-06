@@ -638,6 +638,10 @@ already does (`OCC_VERSION_HEX`).
 4. In FreeCAD's Part, not in OCCT (section 6).
 5. The self-intersection check after a classic draft: measure first
    (step 3), then decide.
+6. (2026-10-06, after step 3, section 11) Auto checks the classic
+   draft's result both ways -- the self-intersection check always, the
+   envelope check with the stop on -- and on a flag takes the cell draft;
+   if the cell draft refuses, Auto keeps the classic result and warns.
 
 ## 10. The implementation (2026-10-05/06)
 
@@ -775,3 +779,106 @@ of which the boolean check of the whole result is 0.84, the merge 0.25,
 the fuse 0.17; the classic draft takes 0.16. Restricting the boolean
 check to the drafted region (section 2.2's "drafted faces against the
 rest") is the next saving.
+
+## 11. Step 3: checks after the classic draft (2026-10-06)
+
+Two checks a classic draft's valid result could get before Auto takes it:
+
+- **Self-intersection** (section 2.2): the boolean check's self-intersection
+  and curve-on-surface tests, on the faces the draft made against the rest.
+  The made faces are the result's faces that are not faces of the input
+  (`BRepOffsetAPI_DraftAngle` keeps every face it does not touch), which
+  are the drafted faces and their neighbours.
+- **Envelope** (section 5.5): does a made face reach past a plane that the
+  cell draft's stop would cap at -- a plane of the second ring with the
+  whole input on its inner side (section 4.9) -- by more than its
+  tolerance? Sampled at the made faces' vertices and three points along
+  each of their edges, as the stop samples the body.
+
+Measured on the classic draft's valid results of section 5.3 (1222, clean
+inputs), through PartDesign (`Method = Classic`), with a temporary probe
+after each draft, against the cell draft (`Method = New`, the stop on) on
+the same cases:
+
+| Classic result | Cell draft | Count |
+|--------|--------|------:|
+| self-intersecting (#334's Draft input at 60 deg 10, #962's ribs 4, #474 Fillet003 face 3 at 60 deg 1) | valid, another volume | 15 |
+| past the envelope (#309, #273, #631's walls, `mini_ab_r3`, `mini_armblock2`) | valid, the stopped volume | 10 |
+| past the envelope (#876's face 1, 6, 10, 12 at 5 and 15 deg, by 0.26 and 0.80) | `TangentNeighbour` (phase 2) | 8 |
+| neither | valid, the classic draft's volume | 1096 |
+| neither | valid, another volume: split walls drafted whole (4.3) 12; #631 within 1e-8 relative (the recorded volume's precision) 9; #474's 0.0172 of 10.2 1 | 22 |
+| neither | refused (`TangentNeighbour` 49, `NotASolid` 19, `FaceVanishes` 3) | 71 |
+
+No result the cell draft reproduces is flagged, and every flagged result
+is one where the cell draft builds another body (or cannot yet). The
+split walls are the one class where the two differ unflagged; there the
+classic result is clean and only drafts the piece selected.
+
+What the checks cost, against the draft's recompute (PartDesign's whole
+recompute, less the probe):
+
+| | Sum (1222) | Median | Max |
+|--------|------:|------:|------:|
+| the draft's recompute | 418.6 s | 18.0 ms | |
+| boolean check, the whole result (what `CellDraft` ran) | 293.4 s | 14.0 ms | 1500 ms |
+| the same, on the faces whose box meets a made face | 142.0 s | 10.0 ms | 1406 ms |
+| the same, and only pairs that involve a made face | **87.2 s** | **7.1 ms** | 1279 ms |
+| envelope | **1.7 s** | **0.2 ms** | 9 ms |
+
+All three self-intersection checks agree on all 1222. The third is the one
+kept (`regionCheck` in `CellDraft.cpp`): a `BOPAlgo_CheckerSI` whose
+`BOPDS_IteratorSI` drops every pair of shapes neither of which is a made
+face or one of its edges or vertices, which also tests only made faces
+for intersecting themselves, run on the faces whose box meets a made
+face; then the curve-on-surface test on the made faces. Pairs of the
+input's own faces are most of a full check's time -- on #334's Draft
+input (187 faces) a draft's check drops from 0.9 s to 62 ms (medians) --
+and on #474's ramp parts most of it is the B-spline ramp intersected
+with its own neighbours, which a draft elsewhere does not touch (0.8 s to
+50 ms). Where the draft does touch the ramp, that is the check's work:
+#474 Fillet003's face 3, 250 to 300 ms on a draft of 100 ms (profiled: the
+ramp against its neighbours 60%, its self-intersection test 15%, the
+curve-on-surface test 10%). The large maxima are the self-intersecting #334 cases,
+which have to find the intersection.
+
+The rest of the result is taken as clean, which it is when the input is
+(the draft did not touch it). On an input that is not clean, the check
+now passes a draft that does not touch the defect, where the check of the
+whole result refused every draft of that input.
+
+### 11.1 The cell draft's own check
+
+The same check replaces the boolean check of the whole result in
+`CellDraft` (section 10.1's per-face checks, the merge's fallbacks). There
+a face of the input that the local box cuts comes back from the merge as
+a new face, whole: a draft on #334's Draft input makes 28 faces, 22 of
+them pieces of faces the box cut, put back together, and one spans the
+part, so the faces whose box meets a made face are 163 of 188. A face is
+taken as the input's when every piece it is merged from is a piece of a
+face of the input and of no tool (the fuse's origins, through the merge's
+history): pieces of the input's faces meet each other only where those
+faces did. The check of the other 6 takes 0.18 s, of all 28 0.91 s; the
+draft, 1.44 s before, 0.68 s.
+
+On the sweep (the 1222 and the 500 of section 10.2, `Method = New`, the
+stop on) every case gives what it gave before, result, volume and face
+count, in half the time: the 1222 in 1246 s against 2519 s (#474
+Fillet003's 60, most of them refusals checked at every retry, 1225 s to
+322 s), the 500 in 856 s against 1010 s.
+
+### 11.2 Auto
+
+Decided (section 9, item 6): Auto runs both checks after a classic draft
+that succeeds -- the self-intersection check always, the envelope check
+when `StopAtBody` is on -- through `CellDraft::CheckDraft(input, result,
+faces, stopAtBody)`. A flag hands the draft to the cell draft; if the cell
+draft refuses (#876's eight, `TangentNeighbour`), Auto keeps the classic
+result and warns with both reasons. On the sweep that turns the 25
+flagged classic results the cell draft can build into its bodies, and
+leaves the other 1197 as they were. A document saved with a flagged
+classic draft recomputes to the cell draft's body.
+
+`TestDraft.testDraftAutoCrossesRib`: two ribs 3 apart on a plate, the
+first one's inner face at 20 deg leaning 3.64 into the second; the
+classic result is valid and fails the boolean check, Auto's is the two
+ribs fused, `800 + 500 tan(a) - 10 (50 tan(a) - 30 + 4.5 / tan(a))`.
