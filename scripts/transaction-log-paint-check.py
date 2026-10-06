@@ -17,7 +17,7 @@ import os, re, struct, tempfile, traceback, zipfile, zlib
 import FreeCAD as App
 import FreeCADGui as Gui
 from FreeCAD import Vector as V
-from PySide import QtCore
+from PySide import QtCore, QtGui, QtWidgets
 
 OUT = os.environ["PAINTCHECK_OUT"]
 lines = []
@@ -411,6 +411,69 @@ def run():
         glossed(0.6)
         check("written again they are whole, and keep it (%r)" % sorted({gloss(x) for x in vp.ShapeAppearance}),
               sorted({gloss(x) for x in vp.ShapeAppearance}) == [0.5, 0.6] and named(doc.Box) == was)
+        App.closeDocument(doc.Name)
+
+        # The panel (sec 13.6 step 5): a face given a colour through Set
+        # Colors, then a material through its Material... button, and both
+        # kept by OK as one step.
+        doc = App.newDocument("PaintPanel")
+        doc.UndoMode = 1
+        doc.openTransaction("base")
+        doc.addObject("Part::Box", "Box")
+        doc.recompute()
+        doc.commitTransaction()
+        vp = doc.Box.ViewObject
+        top = face(doc.Box, ZMin=10)
+        own = gloss(vp.ShapeAppearance.Base)
+        mw = Gui.getMainWindow()
+
+        def modal(act):
+            # What a modal dialog is to be told once it is up; closed
+            # whatever becomes of that, or the check never comes back.
+            def go():
+                dlg = QtWidgets.QApplication.activeModalWidget()
+                try:
+                    act(dlg)
+                    dlg.accept()
+                except Exception:
+                    lines.append("FAIL in a dialog\n" + traceback.format_exc())
+                    if dlg:
+                        dlg.reject()
+            QtCore.QTimer.singleShot(200, go)
+
+        Gui.getDocument(doc.Name).setEdit(doc.Box, 3)
+        QtWidgets.QApplication.processEvents()
+        rows = mw.findChild(QtWidgets.QListWidget, "elementList")
+        button = mw.findChild(QtWidgets.QPushButton, "editMaterial")
+        check("the panel is up, with its Material button", rows is not None and button is not None
+              and not button.isHidden())
+        Gui.Selection.addSelection(doc.Name, "Box", top)
+        modal(lambda dlg: dlg.setCurrentColor(QtGui.QColor.fromRgbF(*RED)))
+        mw.findChild(QtWidgets.QPushButton, "addSelection").click()
+        check("a face coloured through the panel (%r)" % named(doc.Box), named(doc.Box) == {top: RED})
+        check("with the object's gloss (%r)" % gloss(vp.getElementAppearances()[top]),
+              gloss(vp.getElementAppearances()[top]) == own)
+        for item in rows.findItems(top, QtCore.Qt.MatchExactly):
+            item.setSelected(True)
+        modal(lambda dlg: dlg.findChild(QtWidgets.QSpinBox, "shininess").setValue(25))
+        button.click()
+        check("a material through its button: drawn (%r)" % gloss(vp.ShapeAppearance[int(top[4:]) - 1]),
+              gloss(vp.ShapeAppearance[int(top[4:]) - 1]) == 0.25)
+        check("and by name, in the colour it had (%r)" % named(doc.Box),
+              gloss(vp.getElementAppearances()[top]) == 0.25 and named(doc.Box) == {top: RED})
+        check("the object's own look left alone (%r)" % gloss(vp.ShapeAppearance.Base),
+              gloss(vp.ShapeAppearance.Base) == own)
+        for box in mw.findChildren(QtWidgets.QDialogButtonBox):
+            ok = box.button(QtWidgets.QDialogButtonBox.Ok)
+            if ok is not None and box.isVisible():
+                ok.click()
+                break
+        QtWidgets.QApplication.processEvents()
+        check("kept by OK (%r)" % named(doc.Box),
+              named(doc.Box) == {top: RED} and gloss(vp.getElementAppearances()[top]) == 0.25)
+        doc.undo()
+        check("and one step to undo (%r)" % named(doc.Box),
+              named(doc.Box) == {} and gloss(vp.ShapeAppearance[int(top[4:]) - 1]) == own)
         App.closeDocument(doc.Name)
     except Exception:
         lines.append("FAIL exception\n" + traceback.format_exc())

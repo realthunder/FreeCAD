@@ -3219,3 +3219,47 @@ drawn; one name alone keeping its material, and two with one material;
 the object given that gloss and then another, the faces keeping theirs;
 the names taken away, all of the look gone back; names out of an older
 file taking the object's gloss, and written again keeping it.
+
+**Step 5, the panel (2026-10-07).** `Gui::TaskElementColors` keeps a look
+for each row beside its colour, taken from `getElementAppearances()` when
+the row is listed, and applies through `setElementAppearances()`: a view
+provider that keeps colours takes the colour of each, as before.
+
+*Material...*, a button beside Box select: the selected faces are given a
+material. It opens `DlgMaterialPropertiesImp` on the first one's look; each
+edit there is given to all of them and applied at once, so the view
+answers while the dialog is up, and Cancel gives each its own back. An
+edge and a vertex are colours and are passed over. Shown only where the
+view provider has a `MappedAppearance` -- the others would be offered what
+they drop.
+
+`DlgMaterialPropertiesImp` edited a named property across view providers
+and nothing else. It takes a material that is nobody's property now
+(`setMaterial()`, `getMaterial()`, the signal `materialChanged()`): held as
+a list of one, so every edit is the call it already made on a list. The
+shading model is not offered there -- it is the list's the material is
+kept in.
+
+*What it offers, and does not.* The colours, the gloss, and in PBR mode
+the metallic and roughness: what that dialog has. Not a finish, a texture
+or a MaterialX set, and not an appearance card from the library
+(docs/MaterialStorage.md) -- the card picker is the Material module's and
+`Gui` does not reach it. Those can be given by `setElementAppearances()`
+and are kept; a panel for them is to come.
+
+*Closed in passing, by reading and not measured.* Every apply handed the
+object's own colour back through a `QColor`, which keeps sixteen bits a
+channel and does not give a float back as it was given: the colour
+compares unequal to what the object has, is written, and a whole-object
+write ends the object's follow of its material card. A row's look is put
+back as it was unless its colour was changed (`lookOf()`), so the object's
+own row is no write at all.
+
+`TaskFaceColors.{cpp,h,ui}` are deleted, with the `#include` of the header
+and the lines commented out of `Part/Gui/CMakeLists.txt`. Its strings stay
+in the translation files until those are next generated.
+
+Paint check, 56: the panel up with its button; a face coloured through it
+and given a material through the button, drawn and by name in the colour
+it had, the object's own look left alone; kept by OK; one step to undo.
+The check drives the two modal dialogs from a timer.

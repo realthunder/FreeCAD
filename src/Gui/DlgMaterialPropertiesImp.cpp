@@ -138,6 +138,19 @@ void DlgMaterialPropertiesImp::syncFromProperty()
         QSignalBlocker block(spin);
         spin->setValue(int(100.0f * value + 0.5f));
     };
+    if (loose) {
+        const bool pbr = loose->isPBR();
+        App::MaterialAppearance mat = loose->getMaterial(0);
+        setButton(ui->ambientColor, mat.ambientColor);
+        setButton(ui->diffuseColor, mat.diffuseColor);
+        setButton(ui->emissiveColor, mat.emissiveColor);
+        setButton(ui->specularColor, mat.specularColor);
+        setSpin(ui->shininess, loose->getPhongMaterial(0).shininess);
+        setSpin(ui->metallic, loose->getMetallic(0));
+        setSpin(ui->roughness, loose->getRoughness(0));
+        updateModeView(pbr);
+        return;
+    }
     for (auto vp : Objects) {
         if (auto* list = listProperty(vp)) {
             const bool pbr = list->isPBR();
@@ -216,6 +229,7 @@ void DlgMaterialPropertiesImp::onAmbientColorChanged()
             single->setAmbientColor(ambient);
         }
     }
+    editLoose([&](App::PropertyAppearanceList &list) { list.setAmbientColor(ambient); });
 }
 
 /**
@@ -241,6 +255,7 @@ void DlgMaterialPropertiesImp::onDiffuseColorChanged()
             single->setDiffuseColor(color);
         }
     }
+    editLoose([&](App::PropertyAppearanceList &list) { list.setDiffuseRGB(diffuse); });
 }
 
 /**
@@ -262,6 +277,7 @@ void DlgMaterialPropertiesImp::onEmissiveColorChanged()
             single->setEmissiveColor(emissive);
         }
     }
+    editLoose([&](App::PropertyAppearanceList &list) { list.setEmissiveColor(emissive); });
 }
 
 /**
@@ -288,6 +304,7 @@ void DlgMaterialPropertiesImp::onSpecularColorChanged()
             single->setSpecularColor(color);
         }
     }
+    editLoose([&](App::PropertyAppearanceList &list) { list.setSpecularRGB(specular); });
 }
 
 /**
@@ -304,6 +321,7 @@ void DlgMaterialPropertiesImp::onShininessValueChanged(int sh)
             single->setShininess(shininess);
         }
     }
+    editLoose([&](App::PropertyAppearanceList &list) { list.setShininess(shininess); });
 }
 
 /**
@@ -318,6 +336,10 @@ void DlgMaterialPropertiesImp::onMetallicValueChanged(int value)
                 list->setMetallic(metallic);
         }
     }
+    editLoose([&](App::PropertyAppearanceList &list) {
+        if (list.isPBR())
+            list.setMetallic(metallic);
+    });
 }
 
 /**
@@ -332,6 +354,36 @@ void DlgMaterialPropertiesImp::onRoughnessValueChanged(int value)
                 list->setRoughness(roughness);
         }
     }
+    editLoose([&](App::PropertyAppearanceList &list) {
+        if (list.isPBR())
+            list.setRoughness(roughness);
+    });
+}
+
+void DlgMaterialPropertiesImp::editLoose(
+        const std::function<void(App::PropertyAppearanceList &)> &edit)
+{
+    if (!loose)
+        return;
+    edit(*loose);
+    Q_EMIT materialChanged();
+}
+
+void DlgMaterialPropertiesImp::setMaterial(const App::MaterialAppearance &mat)
+{
+    loose = std::make_unique<App::PropertyAppearanceList>();
+    loose->setValue(mat);
+    looseBefore = std::make_unique<App::PropertyAppearanceList>();
+    looseBefore->setValue(mat);
+    // The mode is the list's the material is kept in, not this value's
+    ui->shadingModelLabel->hide();
+    ui->shadingModel->hide();
+    syncFromProperty();
+}
+
+App::MaterialAppearance DlgMaterialPropertiesImp::getMaterial() const
+{
+    return loose ? loose->getMaterial(0) : App::MaterialAppearance();
 }
 
 /**
@@ -367,6 +419,10 @@ void DlgMaterialPropertiesImp::reject()
     for (auto& [vp, copy] : snapshots) {
         if (App::Property* prop = vp->getPropertyByName(material.c_str()))
             prop->Paste(*copy);
+    }
+    if (loose && looseBefore) {
+        loose->Paste(*looseBefore);
+        Q_EMIT materialChanged();
     }
     QDialog::reject();
 }

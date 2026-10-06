@@ -156,7 +156,6 @@
 #include "SoBrepEdgeSet.h"
 #include "SoBrepFaceSet.h"
 #include "SoBrepPointSet.h"
-#include "TaskFaceColors.h"
 
 
 #include "ViewProviderPartExtPy.h"
@@ -4354,10 +4353,8 @@ bool ViewProviderPartExt::setEdit(int ModNum)
             return false;
         }
 
-        // TaskFaceColors is replaced by TaskElementColors, and is inited in 
-        // setEditViewer() in order to handle editing context
-        //
-        // Gui::Control().showDialog(new TaskFaceColors(this));
+        // The panel is Gui::TaskElementColors, opened by setEditViewer(),
+        // which has the editing context
         return true;
     }
     else {

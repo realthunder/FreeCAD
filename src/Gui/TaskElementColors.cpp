@@ -33,6 +33,7 @@
 #include <App/Document.h>
 #include <App/DocumentParams.h>
 #include <App/DocumentObject.h>
+#include <App/MaterialAppearance.h>
 #include <Base/Console.h>
 
 #include "TaskElementColors.h"
@@ -41,6 +42,7 @@
 #include "BitmapFactory.h"
 #include "CommandT.h"
 #include "Control.h"
+#include "DlgMaterialPropertiesImp.h"
 #include "Document.h"
 #include "FileDialog.h"
 #include "Selection.h"
@@ -63,6 +65,9 @@ public:
     Document *vpDoc;
     std::map<std::string,QListWidgetItem*> elements;
     std::vector<QListWidgetItem*> items;
+    /// The look of each element listed, by its name: what the colour of its
+    /// row is the colour of (docs/ShapeAppearanceDesign.md sec 13)
+    std::map<std::string,App::MaterialAppearance> looks;
     Connection connectDelDoc;
     Connection connectDelObj;
     Connection connParam;
@@ -224,6 +229,7 @@ public:
             return;
         }
 
+        const auto appearances = vp->getElementAppearances(sub);
         for(auto &v : vp->getElementColors(sub)) {
             auto it = elements.find(v.first.c_str());
             if(it!=elements.end()) {
@@ -243,24 +249,97 @@ public:
             if(push)
                 items.push_back(item);
             elements.emplace(v.first,item);
+            auto itLook = appearances.find(v.first);
+            if(itLook!=appearances.end())
+                looks[v.first] = itLook->second;
+        }
+    }
+
+    /** The look a row stands for
+     *
+     * The one it was listed with, in the row's colour where that is another
+     * now. Compared as the row holds it: a QColor does not give a float back
+     * as it was given, and a look handed back a rounding away is a change to
+     * what nobody changed -- the object's own row among them, on every apply.
+     */
+    App::MaterialAppearance lookOf(const std::string &sub, const QColor &color) const {
+        App::MaterialAppearance mat;
+        auto it = looks.find(sub);
+        if(it!=looks.end())
+            mat = it->second;
+        QColor own;
+        own.setRgbF(mat.diffuseColor.r,mat.diffuseColor.g,mat.diffuseColor.b,mat.diffuseColor.a);
+        if(it==looks.end() || own!=color) {
+            mat.diffuseColor = App::Color(color.redF(),color.greenF(),color.blueF(),color.alphaF());
+            mat.transparency = mat.diffuseColor.transparency();
+        }
+        return mat;
+    }
+
+    void setRow(QListWidgetItem *item, const App::MaterialAppearance &mat) {
+        QColor c;
+        c.setRgbF(mat.diffuseColor.r,mat.diffuseColor.g,mat.diffuseColor.b,mat.diffuseColor.a);
+        looks[qPrintable(item->data(Qt::UserRole+1).value<QString>())] = mat;
+        item->setData(Qt::UserRole,c);
+        px.fill(c);
+        item->setIcon(QIcon(px));
+    }
+
+    /** A material for the selected faces
+     *
+     * The first one's look is what the dialog opens on, and every edit in
+     * it is given to all of them and applied, so the view answers as the
+     * colour dialog's does not. An edge and a vertex are colours and are
+     * passed over.
+     */
+    void editMaterial(QWidget *parent) {
+        if (!vp)
+            return;
+        std::vector<QListWidgetItem*> rows;
+        for(auto item : ui->elementList->selectedItems()) {
+            std::string sub = qPrintable(item->data(Qt::UserRole+1).value<QString>());
+            if(boost::starts_with(sub,"Face") && !ViewProvider::hasHiddenMarker(sub.c_str()))
+                rows.push_back(item);
+        }
+        if(rows.empty())
+            return;
+        std::vector<App::MaterialAppearance> before;
+        for(auto item : rows)
+            before.push_back(lookOf(qPrintable(item->data(Qt::UserRole+1).value<QString>()),
+                                    item->data(Qt::UserRole).value<QColor>()));
+        Dialog::DlgMaterialPropertiesImp dlg("ShapeAppearance", parent);
+        dlg.setMaterial(before.front());
+        QObject::connect(&dlg, &Dialog::DlgMaterialPropertiesImp::materialChanged, [&]() {
+            const App::MaterialAppearance mat = dlg.getMaterial();
+            for(auto item : rows)
+                setRow(item, mat);
+            apply();
+        });
+        if(dlg.exec()!=QDialog::Accepted) {
+            // Cancel has given every row the first one's look back; each
+            // has its own
+            for(size_t i=0;i<rows.size();++i)
+                setRow(rows[i], before[i]);
+            apply();
         }
     }
 
     void apply() {
         if (!vp)
             return;
-        std::map<std::string,App::Color> info;
+        // Each row's look, not its colour alone: a view provider that keeps
+        // colours takes the colour of each (Gui::ViewProvider)
+        std::map<std::string,App::MaterialAppearance> info;
         int count = ui->elementList->count();
         for(int i=0;i<count;++i) {
             auto item = ui->elementList->item(i);
             auto color = item->data(Qt::UserRole).value<QColor>();
             std::string sub = qPrintable(item->data(Qt::UserRole+1).value<QString>());
-            info.emplace(qPrintable(item->data(Qt::UserRole+1).value<QString>()),
-                    App::Color(color.redF(),color.greenF(),color.blueF(),color.alphaF()));
+            info.emplace(sub, lookOf(sub, color));
         }
         if(!App::GetApplication().getActiveTransaction())
             App::GetApplication().setActiveTransaction("Set colors");
-        vp->setElementColors(info);
+        vp->setElementAppearances(info);
         touched = true;
         Selection().clearSelection();
     }
@@ -532,6 +611,18 @@ void ElementColors::setupConnections()
             this, &ElementColors::onHideSelectionClicked);
     connect(d->ui->boxSelect, &QPushButton::clicked,
             this, &ElementColors::onBoxSelectClicked);
+    connect(d->ui->editMaterial, &QPushButton::clicked,
+            this, &ElementColors::onEditMaterialClicked);
+    // A material where the view provider keeps one for a name
+    // (docs/ShapeAppearanceDesign.md sec 13); a colour is all the others
+    // hold, and the button would offer what they drop
+    if (!d->vp->getPropertyByName("MappedAppearance"))
+        d->ui->editMaterial->hide();
+}
+
+void ElementColors::onEditMaterialClicked()
+{
+    d->editMaterial(this);
 }
 
 void ElementColors::onTopClicked(bool checked) {

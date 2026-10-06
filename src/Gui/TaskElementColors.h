@@ -59,6 +59,7 @@ private:
     void onTopClicked(bool checked);
     void onHideSelectionClicked();
     void onBoxSelectClicked();
+    void onEditMaterialClicked();
 
 protected:
     void onSelectionChanged(const SelectionChanges& msg) override;
