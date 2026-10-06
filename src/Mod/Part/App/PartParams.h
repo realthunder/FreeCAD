@@ -317,6 +317,26 @@ public:
 
     // Auto generated code (Tools/params_utils.py:139)
     //@{
+    /// Accessor for parameter FilletCornerSetbackFallback
+    ///
+    /// How far a fillet's corner that cannot be built may be set back, as a
+    /// multiple of the largest fillet radius at the corner. Where a fillet
+    /// fails at a vertex, it is computed again with the fillets there cut back
+    /// and the opening closed by one patch tangent to them: first where the
+    /// fillets meet, then 1, 1.5, 2... times the radius, up to this multiple,
+    /// and the first valid result is kept. Only fillets that fail without it
+    /// change. 0 turns it off. Only with the OCCT fork, which has the setting;
+    /// another OCCT ignores it.
+    static const double & getFilletCornerSetbackFallback();
+    static const double & defaultFilletCornerSetbackFallback();
+    static void removeFilletCornerSetbackFallback();
+    static void setFilletCornerSetbackFallback(const double &v);
+    static const char *docFilletCornerSetbackFallback();
+    static void onFilletCornerSetbackFallbackChanged();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
     /// Accessor for parameter WarnUnnamedInput
     ///
     /// Report a shape operation whose input shapes carry no element map, so

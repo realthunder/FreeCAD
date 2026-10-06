@@ -417,7 +417,28 @@ PartExport int initOCCTExtension()
     return extVersion;
 }
 
-typedef double (*FuncSetPlateG0FallbackRatio)(double);
+/// A function of the OCCT fork's TKFillet, looked up at run time like
+/// SetFuncShowTopoShape, so that a build against upstream OCCT, or a fork from
+/// before the function, still loads; null there.
+static void *lookUpTKFillet(const char *name)
+{
+#ifdef FC_OS_WIN32
+    HMODULE hModule = GetModuleHandleA("TKFillet.dll");
+    if (!hModule)
+        hModule = LoadLibraryA("TKFillet.dll");
+    return hModule ? (void *)GetProcAddress(hModule, name) : nullptr;
+#else
+    void *f = dlsym(RTLD_DEFAULT, name);
+    if (!f) {
+        void *hModule = dlopen("libTKFillet.so", RTLD_LAZY);
+        if (hModule)
+            f = dlsym(hModule, name);
+    }
+    return f;
+#endif
+}
+
+typedef double (*FuncSetFilletSetting)(double);
 
 /// Hands PartParams FilletPlateG0FallbackRatio to the OCCT fork's fillet: a
 /// corner plate that misses its boundary by more than this fraction of the
@@ -427,30 +448,27 @@ typedef double (*FuncSetPlateG0FallbackRatio)(double);
 /// or a fork from before the ratio, still loads; returns false there.
 PartExport bool setOCCTPlateG0FallbackRatio(double ratio)
 {
-    static const FuncSetPlateG0FallbackRatio func = []() {
-        FuncSetPlateG0FallbackRatio f = nullptr;
-        const char *name = "ChFi3d_SetPlateG0FallbackRatio";
-#ifdef FC_OS_WIN32
-        HMODULE hModule = GetModuleHandleA("TKFillet.dll");
-        if (!hModule)
-            hModule = LoadLibraryA("TKFillet.dll");
-        if (hModule)
-            f = (FuncSetPlateG0FallbackRatio)GetProcAddress(hModule, name);
-#else
-        f = (FuncSetPlateG0FallbackRatio)dlsym(RTLD_DEFAULT, name);
-        if (!f) {
-            void *hModule = dlopen("libTKFillet.so", RTLD_LAZY);
-            if (hModule)
-                f = (FuncSetPlateG0FallbackRatio)dlsym(hModule, name);
-        }
-#endif
-        return f;
-    }();
+    static const auto func =
+        (FuncSetFilletSetting)lookUpTKFillet("ChFi3d_SetPlateG0FallbackRatio");
     if (!func)
         return false;
     // 0 or less turns the fallback off: every tangent plate is kept (the
     // fork's distance setting, which takes over then, defaults to off)
     func(ratio > 0.0 ? ratio : 0.0);
+    return true;
+}
+
+/// Hands PartParams FilletCornerSetbackFallback to the OCCT fork's fillet:
+/// where a fillet fails at a corner, the corner is set back, up to this many
+/// times the radius, and built again (ChFi3d_Builder::SetCornerSetbackFallback,
+/// docs/CornerBlending.md section 9). False without the fork's function.
+PartExport bool setOCCTCornerSetbackFallback(double multiple)
+{
+    static const auto func =
+        (FuncSetFilletSetting)lookUpTKFillet("ChFi3d_SetCornerSetbackFallback");
+    if (!func)
+        return false;
+    func(multiple > 0.0 ? multiple : 0.0);
     return true;
 }
 

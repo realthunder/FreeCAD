@@ -25,6 +25,8 @@
 namespace Part {
 // AppPartPy.cpp: hands FilletPlateG0FallbackRatio to the OCCT fork's fillet.
 PartExport bool setOCCTPlateG0FallbackRatio(double ratio);
+// AppPartPy.cpp: hands FilletCornerSetbackFallback to the OCCT fork's fillet.
+PartExport bool setOCCTCornerSetbackFallback(double multiple);
 }
 
 /*[[[cog
@@ -68,6 +70,7 @@ public:
     long BorrowBelowFace;
     unsigned long LoftMaxDegree;
     double FilletPlateG0FallbackRatio;
+    double FilletCornerSetbackFallback;
     long WarnUnnamedInput;
     double MinimumDeviation;
     double MeshDeviation;
@@ -123,6 +126,8 @@ public:
         funcs["LoftMaxDegree"] = &PartParamsP::updateLoftMaxDegree;
         FilletPlateG0FallbackRatio = this->handle->GetFloat("FilletPlateG0FallbackRatio", 0.01);
         funcs["FilletPlateG0FallbackRatio"] = &PartParamsP::updateFilletPlateG0FallbackRatio;
+        FilletCornerSetbackFallback = this->handle->GetFloat("FilletCornerSetbackFallback", 2.0);
+        funcs["FilletCornerSetbackFallback"] = &PartParamsP::updateFilletCornerSetbackFallback;
         WarnUnnamedInput = this->handle->GetInt("WarnUnnamedInput", 0);
         funcs["WarnUnnamedInput"] = &PartParamsP::updateWarnUnnamedInput;
         MinimumDeviation = this->handle->GetFloat("MinimumDeviation", 0.05);
@@ -241,6 +246,14 @@ public:
             PartParams::onFilletPlateG0FallbackRatioChanged();
         }
     }
+    // Auto generated code (Tools/params_utils.py:322)
+    static void updateFilletCornerSetbackFallback(PartParamsP *self) {
+        auto v = self->handle->GetFloat("FilletCornerSetbackFallback", 2.0);
+        if (self->FilletCornerSetbackFallback != v) {
+            self->FilletCornerSetbackFallback = v;
+            PartParams::onFilletCornerSetbackFallbackChanged();
+        }
+    }
     // Auto generated code (Tools/params_utils.py:314)
     static void updateWarnUnnamedInput(PartParamsP *self) {
         self->WarnUnnamedInput = self->handle->GetInt("WarnUnnamedInput", 0);
@@ -338,6 +351,17 @@ static const App::ParamRegistry::Registrar _PartParamsRegistrar({
 "positions alone and kept if it fits better: a crease along the fillet\n"
 "instead of a fold. 0 keeps every tangent patch. Only with the OCCT\n"
 "fork, which has the setting; another OCCT ignores it.")
+        .setOnChange(),
+    App::ParamInfo("Part", "PartParams", "User parameter:BaseApp/Preferences/Mod/Part", "FilletCornerSetbackFallback", "FilletCornerSetbackFallback", App::ParamInfo::Float, 2.0)
+        .setTitle("Fillet Corner Setback Fallback")
+        .setDoc("How far a fillet's corner that cannot be built may be set back, as a\n"
+"multiple of the largest fillet radius at the corner. Where a fillet\n"
+"fails at a vertex, it is computed again with the fillets there cut back\n"
+"and the opening closed by one patch tangent to them: first where the\n"
+"fillets meet, then 1, 1.5, 2... times the radius, up to this multiple,\n"
+"and the first valid result is kept. Only fillets that fail without it\n"
+"change. 0 turns it off. Only with the OCCT fork, which has the setting;\n"
+"another OCCT ignores it.")
         .setOnChange(),
     App::ParamInfo("Part", "PartParams", "User parameter:BaseApp/Preferences/Mod/Part", "WarnUnnamedInput", "WarnUnnamedInput", App::ParamInfo::Int, 0)
         .setTitle("Warn Unnamed Input")
@@ -981,6 +1005,41 @@ void PartParams::removeFilletPlateG0FallbackRatio() {
 }
 
 // Auto generated code (Tools/params_utils.py:397)
+const char *PartParams::docFilletCornerSetbackFallback() {
+    return QT_TRANSLATE_NOOP("PartParams",
+"How far a fillet's corner that cannot be built may be set back, as a\n"
+"multiple of the largest fillet radius at the corner. Where a fillet\n"
+"fails at a vertex, it is computed again with the fillets there cut back\n"
+"and the opening closed by one patch tangent to them: first where the\n"
+"fillets meet, then 1, 1.5, 2... times the radius, up to this multiple,\n"
+"and the first valid result is kept. Only fillets that fail without it\n"
+"change. 0 turns it off. Only with the OCCT fork, which has the setting;\n"
+"another OCCT ignores it.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const double & PartParams::getFilletCornerSetbackFallback() {
+    return instance()->FilletCornerSetbackFallback;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const double & PartParams::defaultFilletCornerSetbackFallback() {
+    const static double def = 2.0;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void PartParams::setFilletCornerSetbackFallback(const double &v) {
+    instance()->handle->SetFloat("FilletCornerSetbackFallback",v);
+    instance()->FilletCornerSetbackFallback = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void PartParams::removeFilletCornerSetbackFallback() {
+    instance()->handle->RemoveFloat("FilletCornerSetbackFallback");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
 const char *PartParams::docWarnUnnamedInput() {
     return QT_TRANSLATE_NOOP("PartParams",
 "Report a shape operation whose input shapes carry no element map, so\n"
@@ -1128,4 +1187,9 @@ void PartParams::removeMinimumAngularDeflection() {
 void Part::PartParams::onFilletPlateG0FallbackRatioChanged()
 {
     Part::setOCCTPlateG0FallbackRatio(getFilletPlateG0FallbackRatio());
+}
+
+void Part::PartParams::onFilletCornerSetbackFallbackChanged()
+{
+    Part::setOCCTCornerSetbackFallback(getFilletCornerSetbackFallback());
 }

@@ -100,6 +100,16 @@ Params = [
         "instead of a fold. 0 keeps every tangent patch. Only with the OCCT\n"
         "fork, which has the setting; another OCCT ignores it.",
         on_change=True),
+    ParamFloat("FilletCornerSetbackFallback", 2.0,
+        "How far a fillet's corner that cannot be built may be set back, as a\n"
+        "multiple of the largest fillet radius at the corner. Where a fillet\n"
+        "fails at a vertex, it is computed again with the fillets there cut back\n"
+        "and the opening closed by one patch tangent to them: first where the\n"
+        "fillets meet, then 1, 1.5, 2... times the radius, up to this multiple,\n"
+        "and the first valid result is kept. Only fillets that fail without it\n"
+        "change. 0 turns it off. Only with the OCCT fork, which has the setting;\n"
+        "another OCCT ignores it.",
+        on_change=True),
     ParamInt("WarnUnnamedInput", 0,
         "Report a shape operation whose input shapes carry no element map, so\n"
         "the result cannot be named either. This is off by default because an\n"

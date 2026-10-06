@@ -213,6 +213,8 @@ PyObject* Part::PartExceptionOCCDimensionError;
 namespace Part {
 // AppPartPy.cpp: hands the fillet corner plate fallback to the OCCT fork
 PartExport bool setOCCTPlateG0FallbackRatio(double ratio);
+// AppPartPy.cpp: hands the fillet corner setback fallback to the OCCT fork
+PartExport bool setOCCTCornerSetbackFallback(double multiple);
 }
 
 PyMOD_INIT_FUNC(Part)
@@ -246,6 +248,8 @@ PyMOD_INIT_FUNC(Part)
     // The fillet's corner plate fallback, where the OCCT fork has it; later
     // changes go through PartParams::onFilletPlateG0FallbackRatioChanged().
     Part::setOCCTPlateG0FallbackRatio(Part::PartParams::getFilletPlateG0FallbackRatio());
+    // The same for the setback fallback of a fillet's failed corner.
+    Part::setOCCTCornerSetbackFallback(Part::PartParams::getFilletCornerSetbackFallback());
 
     // Retained base shapes let go of a released referrer once the recompute
     // that released it is over (docs/TopoNamingEnhance.md section 7).
