@@ -4067,7 +4067,8 @@ since rows can go as well as come).
   branch forked from, which stays (named, since forking named it) with the
   deleted branch's id on it. A `trim` record.
 - **Squash** -- `Document::squashVersions(from, to)`,
-  `squashTransactionVersions`, Python only for now. The row `to` names is
+  `squashTransactionVersions`, and the panel's "Squash to version N
+  from..." (sec 31.13). The row `to` names is
   rewritten in place (`TransactionStore::replaceTransactions`) as one
   `squash` transaction whose parent is `from`'s row, and the rows between
   go, so no seq changes and whatever follows `to` -- rows, a branch forked
@@ -15608,3 +15609,69 @@ staying ours.
 RC 15, BC 30, VC 18, PC 28, FC 16, VW 14, MC 40 (+3), the two-document
 check 24, the tree check 19, the author check 36, the import check 49,
 the request check 31 and the share check 47.
+
+### 31.13 The squash, in the panel (user, 2026-10-06)
+
+Trim and delete had their place in the panel; the squash of 16.7 was a
+call and nothing else. It is on the versions list's menu now, under the
+trim: **"Squash to version N from..."**, N the version the menu is on.
+
+- **What it folds from is chosen from a list**: the versions behind N on
+  its own history, newest first, a named one with its name. The entry is
+  off where there is none. A version taken at no row -- the file as found
+  -- is in the list only for the history that starts from it: its own
+  branch's, or that of a branch made from it, and only while the rows
+  still reach back to it.
+- **Asked before it is done**, as the trim is: how many rows become one,
+  that the unnamed versions between go, that it cannot be undone.
+- **What the log refuses is said in the status line**, in the log's own
+  words, and nothing in the report view: a named version between the
+  two, a branch that forks between them. The list is not cut down to
+  what would be taken -- the refusal says why, which a missing line
+  would not.
+- Done, the status line says the rows folded and the row they are in;
+  the lists are rebuilt by `signalBranchesChanged`, as after a trim.
+
+`TransactionLogView::squashTo(version)` is the whole of it, a slot, so a
+check can call it; `versionsBehind()` beside it is the list.
+
+**Found by it: a squash from a version the rows do not reach.**
+`chainPoints()` counts no row, 0, as a point of every chain, so
+`squashVersions` took the file as found for a version behind any other.
+On a trimmed branch it is not: the rows start at the version the trim
+kept. Measured on a schema-4 file opened, edited, trimmed to its second
+version and squashed from its first to its third: taken, and the row
+written was `(seq 10, parent 0, squash)` holding the net change of rows
+6 to 10 -- the change since the version kept, in a row that says it is
+since the file as found, and the named version the trim kept left on no
+chain at all. Now the oldest row folded must hang off `from`'s
+(`path.front().parent != first.seq` is refused, "the history between
+the versions is not in the log").
+
+**Tests.** Python `testASquashStartsWhereItsRowsDo`: the case above
+refused and the log as it was, then the same squash from the version the
+trim kept, one `squash` row whose parent is that version's. The Gui
+check `scripts/transaction-log-squash-check.py`, new, 13: the entry on
+the menu, and off on the oldest version; pressed on another, the list it
+puts up, newest first; the question, with the count the status line then
+gives; the version between gone and the two ends there, one `squash` row
+where the newer one is and the rows after it still after it; the list
+following; the document what it was; the squash undone as one step and
+redone; a named version between refused in the status line with the log
+untouched; the question answered no; and no list where nothing is
+behind. It drives the menu itself -- the entry made current and Return
+sent to the popup -- which no other check of the log's does.
+
+**Left.**
+
+- A version at no row that belongs to another history that starts at no
+  row (a closed branch of 16.6) is kept out of the panel's list, and not
+  out of `squashVersions`: by reading, not reproduced.
+- The question comes before the refusal: a squash the log will not take
+  is confirmed first and refused after.
+
+**Gates**, frozen and unfrozen each: Python 3025 OK (52 skipped frozen,
+53 unfrozen; 6 expected failures; +1), ctest 881/881, and the GUI checks
+RC 15, BC 30, VC 18, PC 28, FC 16, VW 14, MC 40, the two-document check
+24, the tree check 19, the author check 36, the import check 49, the
+request check 31, the share check 47 and the squash check 13 (new).

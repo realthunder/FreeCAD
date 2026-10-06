@@ -2223,6 +2223,87 @@ void TransactionLogView::transactionMenu(QTreeWidgetItem* item, const QPoint& gl
     }
 }
 
+namespace {
+
+/// The versions a squash to `to` may start from (docs/TransactionLog.md
+/// sec 16.7): those behind it on its own history, oldest first.
+std::vector<App::LogVersion> versionsBehind(App::TransactionStore& store,
+                                            const App::LogVersion& to)
+{
+    std::vector<App::LogVersion> behind;
+    const auto chain = store.chain(to.seq);
+    if (chain.empty())
+        return behind;
+    std::set<int64_t> points;
+    for (const auto& t : chain) {
+        points.insert(t.seq);
+        points.insert(t.parent);
+    }
+    // A version taken at no row is behind only the history that starts
+    // from it: its own branch's, or that of a branch made from it.
+    App::LogBranch first;
+    store.getBranch(chain.front().branch, first);
+    for (const auto& v : store.versions()) {
+        if (v.seq >= to.seq || !points.count(v.seq))
+            continue;
+        if (v.seq == 0 && v.branch != first.id && v.num != first.fromVersion)
+            continue;
+        behind.push_back(v);
+    }
+    return behind;
+}
+
+} // namespace
+
+void TransactionLogView::squashTo(qlonglong version)
+{
+    // docs/TransactionLog.md sec 16.7: the rows between an older version
+    // and this one folded into one row, the older one chosen from those
+    // behind it. What the log refuses is said in the status line.
+    auto l = log();
+    if (!l || !_doc)
+        return;
+    try {
+        auto& store = l->store();
+        App::LogVersion to;
+        if (!store.getVersion(version, to))
+            return;
+        const auto behind = versionsBehind(store, to);
+        if (behind.empty()) {
+            _status->setText(tr("No version behind version %1 to squash from").arg(version));
+            return;
+        }
+        QStringList names;
+        for (auto it = behind.rbegin(); it != behind.rend(); ++it) {
+            names << (it->name.empty()
+                          ? tr("Version %1").arg(it->num)
+                          : tr("Version %1 (%2)").arg(it->num).arg(QString::fromStdString(it->name)));
+        }
+        bool ok = false;
+        const QString chosen =
+            QInputDialog::getItem(this, tr("Squash versions"),
+                                  tr("Squash to version %1 from:").arg(version), names, 0, false, &ok);
+        const int index = static_cast<int>(names.indexOf(chosen));
+        if (!ok || index < 0)
+            return;
+        const App::LogVersion& from = behind[behind.size() - 1 - static_cast<size_t>(index)];
+        const size_t rows = store.chain(to.seq, from.seq + 1).size();
+        if (QMessageBox::question(this, tr("Squash versions"),
+                                  tr("Fold the %1 rows from version %2 to version %3 into one? "
+                                     "The unnamed versions between them go. This cannot be undone.")
+                                      .arg(rows).arg(from.num).arg(version))
+                != QMessageBox::Yes)
+            return;
+        const int64_t first = from.num;
+        const size_t folded = _doc->squashVersions(first, version);
+        _status->setText(tr("Squashed %1 rows from version %2 into row %3")
+                             .arg(folded).arg(first).arg(to.seq));
+    }
+    catch (Base::Exception& e) {
+        _status->setText(tr("Not squashed: %1").arg(QString::fromUtf8(e.what())));
+    }
+}
+
 void TransactionLogView::onVersionContextMenu(const QPoint& pos)
 {
     auto item = _versions->itemAt(pos);
@@ -2250,9 +2331,25 @@ void TransactionLogView::onVersionContextMenu(const QPoint& pos)
     trimTo->setToolTip(tr("Remove the history of the branch before this version, but what "
                           "another branch holds and the named versions (sec 16.7)"));
     trimTo->setEnabled(!branchName.isEmpty());
+    auto squash = menu.addAction(tr("Squash to version %1 from...").arg(num));
+    squash->setToolTip(tr("Fold the rows between an older version and this one into one "
+                          "row of their net change; both versions stay (sec 16.7)"));
+    bool anyBehind = false;
+    try {
+        App::LogVersion to;
+        if (auto l = log())
+            anyBehind = l->store().getVersion(num, to) && !versionsBehind(l->store(), to).empty();
+    }
+    catch (Base::Exception&) {
+    }
+    squash->setEnabled(anyBehind);
     auto chosen = menu.exec(_versions->viewport()->mapToGlobal(pos));
     if (!chosen)
         return;
+    if (chosen == squash) {
+        squashTo(num);
+        return;
+    }
     if (chosen == branchFrom) {
         createBranch(num, 0);
         return;

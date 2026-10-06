@@ -4277,6 +4277,49 @@ class TransactionBranchCases(unittest.TestCase):
         for i in range(steps + 1):
             doc.undo()
 
+    def testASquashStartsWhereItsRowsDo(self):
+        # Sec 16.7, 31.13: a version taken at no row -- the file as found --
+        # is behind a history only while its rows reach back to it. After a
+        # trim they do not, and a squash from it is refused: its row would
+        # say the net change is since the file as found, and hold the change
+        # since the version the trim kept.
+        doc = self.track(FreeCAD.newDocument("SquashStart"))
+        obj = doc.addObject("App::FeatureTest", "Obj")
+        doc.recompute()
+        doc.SaveSchemaVersion = 4  # no history in the file: found as it is
+        path = os.path.join(self.dir, "squashstart.FCStd")
+        doc.saveAs(path)
+        FreeCAD.closeDocument(doc.Name)
+        doc = self.track(FreeCAD.openDocument(path))
+        doc.UndoMode = 1
+        obj = doc.getObject("Obj")
+        found = [v["num"] for v in doc.getTransactionVersions() if v["seq"] == 0]
+        self.assertEqual(len(found), 1)
+
+        def step(value):
+            doc.openTransaction("set %d" % value)
+            obj.Integer = value
+            doc.commitTransaction()
+
+        step(2)
+        step(3)
+        kept = doc.snapshotTransactionLog()
+        step(4)
+        step(5)
+        last = doc.snapshotTransactionLog()
+        doc.nameTransactionVersion(found[0], "found")
+        self.assertGreater(doc.trimTransactionBranch("main", kept), 0)
+        rows = [(t["seq"], t["parent"], t["kind"]) for t in doc.getTransactionLog()]
+        with self.assertRaises(Exception):
+            doc.squashTransactionVersions(found[0], last)
+        self.assertEqual(rows, [(t["seq"], t["parent"], t["kind"]) for t in doc.getTransactionLog()])
+        # From the version the trim kept it is a squash like any.
+        self.assertGreater(doc.squashTransactionVersions(kept, last), 1)
+        squashed = [t for t in doc.getTransactionLog() if t["kind"] == "squash"]
+        at = {v["num"]: v["seq"] for v in doc.getTransactionVersions()}
+        self.assertEqual([(t["seq"], t["parent"]) for t in squashed], [(at[last], at[kept])])
+        self.assertEqual(obj.Integer, 5)
+
     def testColdUndoBringsBackACopyOnChangeLink(self):
         # Sec 27.67: a copy-on-change link removed with its private copy
         # comes back whole from the row -- the values the transaction began

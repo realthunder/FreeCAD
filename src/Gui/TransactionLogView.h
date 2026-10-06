@@ -112,6 +112,12 @@ public Q_SLOTS:
     /// own (docs/TransactionLog.md sec 31.12): `seqs` is their numbers,
     /// comma-separated. The preview, a side for each conflict, the pick.
     void applyRows(const QString& seqs);
+    /** Squash the rows up to version `version` (docs/TransactionLog.md
+     * sec 16.7): the version to squash from is chosen from those behind it
+     * on its history, and after a confirmation the rows between the two
+     * become one. A refusal of the log's is shown in the status line.
+     */
+    void squashTo(qlonglong version);
     /** Bring another copy of this file in as a branch, then merge it
      * (docs/TransactionLog.md sec 30.13, 30.14): the copy's rows since the
      * two parted are imported as a branch named after it, and that branch

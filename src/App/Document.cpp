@@ -7900,8 +7900,12 @@ size_t Document::squashVersions(int64_t from, int64_t to)
     if (first.seq >= last.seq || !chainPoints(store, last.seq).count(first.seq))
         THROWM(Base::ValueError, "version " + std::to_string(from) + " is not behind version "
                                      + std::to_string(to) + " on one history");
+    // The oldest row folded hangs off `from`'s: a version taken at no row
+    // is on every chain by chainPoints(), and a trimmed chain's rows do not
+    // reach back to it -- the net change would be since the version the
+    // trim kept, in a row that says it is since the file as found.
     const auto path = store.chain(last.seq, first.seq + 1);
-    if (path.empty() || path.back().seq != last.seq)
+    if (path.empty() || path.back().seq != last.seq || path.front().parent != first.seq)
         THROWM(Base::ValueError, "the history between the versions is not in the log");
     std::set<int64_t> inside;
     for (const auto& t : path) {
