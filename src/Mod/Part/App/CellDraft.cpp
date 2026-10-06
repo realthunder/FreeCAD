@@ -38,9 +38,13 @@
 #include <set>
 #include <sstream>
 
+#include <BOPAlgo_Alerts.hxx>
 #include <BOPAlgo_ArgumentAnalyzer.hxx>
 #include <BOPAlgo_Builder.hxx>
+#include <BOPAlgo_CheckerSI.hxx>
 #include <BOPAlgo_ShellSplitter.hxx>
+#include <BOPDS_DS.hxx>
+#include <BOPDS_IteratorSI.hxx>
 #include <BRepAdaptor_Surface.hxx>
 #include <BRepAlgoAPI_Common.hxx>
 #include <BRepBndLib.hxx>
@@ -68,8 +72,11 @@
 #include <Geom_RectangularTrimmedSurface.hxx>
 #include <Geom_Surface.hxx>
 #include <IntAna_QuadQuadGeo.hxx>
+#include <IntTools_Context.hxx>
+#include <IntTools_FaceFace.hxx>
 #include <Precision.hxx>
 #include <ShapeUpgrade_UnifySameDomain.hxx>
+#include <Standard_ErrorHandler.hxx>
 #include <Standard_Failure.hxx>
 #include <TopExp.hxx>
 #include <TopExp_Explorer.hxx>
@@ -78,6 +85,7 @@
 #include <TopTools_ListOfShape.hxx>
 #include <TopTools_MapOfShape.hxx>
 #include <TopoDS.hxx>
+#include <TopoDS_Compound.hxx>
 #include <TopoDS_Solid.hxx>
 #include <gp_Ax2.hxx>
 #include <gp_Ax3.hxx>
@@ -352,48 +360,355 @@ bool interiorPoint(const TopoDS_Shape& cell, gp_Pnt& p)
     return false;
 }
 
+// The self-intersection test of the boolean check, on the pairs of shapes
+// that involve a set of faces (the faces a draft made, with their edges and
+// vertices) only. The rest of the shape is the draft's input, clean already:
+// intersecting its faces with each other again is most of the full check's
+// time (and testing its B-spline faces for intersecting themselves).
+class RegionIteratorSI: public BOPDS_IteratorSI
+{
+public:
+    explicit RegionIteratorSI(const Handle(NCollection_BaseAllocator) & allocator)
+        : BOPDS_IteratorSI(allocator)
+    {}
+
+    void restrict(const std::vector<char>& keep)
+    {
+        std::vector<BOPDS_Pair> kept;
+        for (int t = 0; t < myLists.Length(); ++t) {
+            auto& pairs = myLists(t);
+            kept.clear();
+            for (int i = 0; i < pairs.Length(); ++i) {
+                int n1, n2;
+                pairs(i).Indices(n1, n2);
+                if (keep[n1] || keep[n2]) {
+                    kept.push_back(pairs(i));
+                }
+            }
+            pairs.Clear();
+            for (const auto& pair : kept) {
+                pairs.Append(pair);
+            }
+        }
+    }
+};
+
+class RegionCheckerSI: public BOPAlgo_CheckerSI
+{
+public:
+    explicit RegionCheckerSI(const TopTools_MapOfShape& region)
+        : region(region)
+    {}
+
+    void Perform(const Message_ProgressRange& range = Message_ProgressRange()) override
+    {
+        try {
+            OCC_CATCH_SIGNALS
+            BOPAlgo_PaveFiller::Perform(range);
+            checkFaces();
+            if (!HasErrors()) {
+                PerformVZ(Message_ProgressRange());
+            }
+            if (!HasErrors()) {
+                PerformEZ(Message_ProgressRange());
+            }
+            if (!HasErrors()) {
+                PerformFZ(Message_ProgressRange());
+            }
+            if (!HasErrors()) {
+                PerformZZ(Message_ProgressRange());
+            }
+            if (!HasErrors()) {
+                PostTreat();
+            }
+        }
+        catch (Standard_Failure&) {
+            AddError(new BOPAlgo_AlertIntersectionFailed);
+        }
+    }
+
+protected:
+    void Init(const Message_ProgressRange& /*range*/) override
+    {
+        Clear();
+        myDS = new BOPDS_DS(myAllocator);
+        myDS->SetArguments(myArguments);
+        myDS->Init(myFuzzyValue);
+        myContext = new IntTools_Context;
+        auto iterator = new RegionIteratorSI(myAllocator);
+        iterator->SetDS(myDS);
+        iterator->Prepare(myContext, myUseOBB, myFuzzyValue);
+        iterator->UpdateByLevelOfCheck(myLevelOfCheck);
+        std::vector<char> keep(myDS->NbSourceShapes(), 0);
+        for (int i = 0; i < myDS->NbSourceShapes(); ++i) {
+            keep[i] = region.Contains(myDS->Shape(i)) ? 1 : 0;
+        }
+        iterator->restrict(keep);
+        myIterator = iterator;
+    }
+
+    // BOPAlgo_CheckerSI::CheckFaceSelfIntersection on the region's faces
+    void checkFaces()
+    {
+        auto& interferences = const_cast<NCollection_Map<BOPDS_Pair>&>(myDS->Interferences());
+        interferences.Clear();
+        for (int i = 0; i < myDS->NbSourceShapes(); ++i) {
+            const BOPDS_ShapeInfo& info = myDS->ShapeInfo(i);
+            if (info.ShapeType() != TopAbs_FACE || !region.Contains(info.Shape())) {
+                continue;
+            }
+            const TopoDS_Face& face = TopoDS::Face(info.Shape());
+            BRepAdaptor_Surface surface(face, false);
+            switch (surface.GetType()) {
+                case GeomAbs_Plane:
+                case GeomAbs_Cylinder:
+                case GeomAbs_Cone:
+                case GeomAbs_Sphere:
+                    continue;
+                case GeomAbs_Torus:
+                    if (surface.Torus().MajorRadius()
+                        > surface.Torus().MinorRadius() + Precision::Confusion()) {
+                        continue;
+                    }
+                    break;
+                default:
+                    break;
+            }
+            IntTools_FaceFace self;
+            self.Perform(face, face);
+            if (self.IsDone() && (self.Lines().Length() || self.Points().Length())) {
+                interferences.Add(BOPDS_Pair(i, i));
+            }
+        }
+    }
+
+private:
+    const TopTools_MapOfShape& region;
+};
+
+// The boolean argument check's self-intersection and curve-on-surface tests
+// (BOPAlgo_ArgumentAnalyzer) of the given faces against a region of a shape,
+// without checking the rest of the region against itself.
+std::string regionCheck(const TopoDS_Shape& shape, const std::vector<TopoDS_Shape>& faces)
+{
+    BRepBuilderAPI_Copy copy(shape, true, false);
+    TopTools_MapOfShape region;
+    BRep_Builder builder;
+    TopoDS_Compound made;
+    builder.MakeCompound(made);
+    for (const auto& f : faces) {
+        TopoDS_Shape face = copy.ModifiedShape(f);
+        builder.Add(made, face);
+        TopTools_IndexedMapOfShape sub;
+        TopExp::MapShapes(face, sub);
+        for (int i = 1; i <= sub.Extent(); ++i) {
+            region.Add(sub(i));
+        }
+    }
+    RegionCheckerSI checker(region);
+    NCollection_List<TopoDS_Shape> args;
+    args.Append(copy.Shape());
+    checker.SetArguments(args);
+    checker.SetNonDestructive(true);
+    checker.SetRunParallel(true);
+    checker.Perform();
+    bool selfInter = false;
+    if (checker.HasErrors()) {
+        return "the result fails the boolean check (other)";
+    }
+    const BOPDS_DS& ds = *checker.PDS();
+    for (NCollection_Map<BOPDS_Pair>::Iterator it(ds.Interferences()); it.More(); it.Next()) {
+        int n1, n2;
+        it.Value().Indices(n1, n2);
+        if (!ds.IsNewShape(n1) && !ds.IsNewShape(n2)) {
+            selfInter = true;
+            if (FC_LOG_INSTANCE.isEnabled(FC_LOGLEVEL_LOG)) {
+                for (int n : {n1, n2}) {
+                    Bnd_Box fb;
+                    BRepBndLib::Add(ds.Shape(n), fb, false);
+                    double a0, b0, c0, a1, b1, c1;
+                    fb.Get(a0, b0, c0, a1, b1, c1);
+                    FC_LOG("self-intersection: shape type "
+                           << int(ds.Shape(n).ShapeType()) << " bb (" << a0 << ", " << b0
+                           << ", " << c0 << ")-(" << a1 << ", " << b1 << ", " << c1 << ")");
+                }
+            }
+        }
+    }
+    BOPAlgo_ArgumentAnalyzer check;
+    check.SetShape1(made);
+    check.CurveOnSurfaceMode() = true;
+    check.Perform();
+    bool curveOnSurface = check.HasFaulty();
+    if (!selfInter && !curveOnSurface) {
+        return std::string();
+    }
+    std::string what = selfInter && curveOnSurface
+        ? "self-intersection, an edge off its face"
+        : (selfInter ? "self-intersection" : "an edge off its face");
+    return "the result fails the boolean check (" + what + ")";
+}
+
+// The faces of a draft's result that are not (pieces of) faces of its input
+// -- the ones the draft made -- and the region around them: those faces and
+// every face whose box meets one of theirs.
+TopoDS_Compound draftRegion(const TopoDS_Shape& result,
+                            const TopTools_MapOfShape& inputFaces,
+                            std::vector<TopoDS_Shape>& made)
+{
+    TopTools_IndexedMapOfShape faces;
+    TopExp::MapShapes(result, TopAbs_FACE, faces);
+    std::vector<Bnd_Box> boxes(faces.Extent());
+    std::vector<int> madeIdx;
+    for (int i = 1; i <= faces.Extent(); ++i) {
+        BRepBndLib::Add(faces(i), boxes[i - 1], false);
+        boxes[i - 1].Enlarge(Precision::Confusion());
+        if (!inputFaces.Contains(faces(i))) {
+            madeIdx.push_back(i);
+            made.push_back(faces(i));
+        }
+    }
+    BRep_Builder builder;
+    TopoDS_Compound region;
+    builder.MakeCompound(region);
+    for (int i = 1; i <= faces.Extent(); ++i) {
+        if (std::any_of(madeIdx.begin(), madeIdx.end(), [&](int m) {
+                return m == i || !boxes[m - 1].IsOut(boxes[i - 1]);
+            })) {
+            builder.Add(region, faces(i));
+        }
+    }
+    return region;
+}
+
 // What is wrong with a draft's result, or nothing: BRepCheck, and the
-// boolean argument check, which also sees faces crossing each other
-// (section 2.2 of docs/NewDraft.md).
-std::string checkResult(const TopoDS_Shape& shape)
+// boolean check, which also sees faces crossing each other (section 2.2 of
+// docs/NewDraft.md), of the faces the draft made against the rest. The rest
+// is the input's faces or pieces of them, which meet each other only where
+// the input's faces did: the input is taken as clean.
+std::string checkResult(const TopoDS_Shape& shape, const TopTools_MapOfShape& inputFaces)
 {
     if (!BRepCheck_Analyzer(shape).IsValid()) {
         return "the result is not a valid solid";
     }
-    BOPAlgo_ArgumentAnalyzer check;
-    check.SetShape1(BRepBuilderAPI_Copy(shape).Shape());
-    check.SelfInterMode() = true;
-    check.CurveOnSurfaceMode() = true;
-    check.SetRunParallel(true);
-    check.Perform();
-    if (!check.HasFaulty()) {
+    std::vector<TopoDS_Shape> made;
+    TopoDS_Compound region = draftRegion(shape, inputFaces, made);
+    FC_LOG("check: " << made.size() << " faces made");
+    if (made.empty()) {
         return std::string();
     }
-    bool selfInter = false, curveOnSurface = false;
-    for (const auto& r : check.GetCheckResult()) {
-        if (FC_LOG_INSTANCE.isEnabled(FC_LOGLEVEL_LOG)) {
-            for (const auto& fs : r.GetFaultyShapes1()) {
-                Bnd_Box fb;
-                BRepBndLib::Add(fs, fb, false);
-                double a0, b0, c0, a1, b1, c1;
-                fb.Get(a0, b0, c0, a1, b1, c1);
-                int st = -1;
-                if (fs.ShapeType() == TopAbs_FACE) {
-                    st = int(BRepAdaptor_Surface(TopoDS::Face(fs), false).GetType());
+    return regionCheck(region, made);
+}
+
+// Sample points of a shape: its vertices and points along its edges.
+std::vector<gp_Pnt> samplePoints(const TopoDS_Shape& shape)
+{
+    std::vector<gp_Pnt> samples;
+    TopTools_IndexedMapOfShape vertices;
+    TopExp::MapShapes(shape, TopAbs_VERTEX, vertices);
+    for (int i = 1; i <= vertices.Extent(); ++i) {
+        samples.push_back(BRep_Tool::Pnt(TopoDS::Vertex(vertices(i))));
+    }
+    TopTools_IndexedMapOfShape edges;
+    TopExp::MapShapes(shape, TopAbs_EDGE, edges);
+    for (int i = 1; i <= edges.Extent(); ++i) {
+        const TopoDS_Edge& e = TopoDS::Edge(edges(i));
+        if (BRep_Tool::Degenerated(e)) {
+            continue;
+        }
+        TopLoc_Location loc;
+        double first, last;
+        Handle(Geom_Curve) curve = BRep_Tool::Curve(e, loc, first, last);
+        if (curve.IsNull()) {
+            continue;
+        }
+        for (double t : {0.25, 0.5, 0.75}) {
+            samples.push_back(
+                curve->Value(first + t * (last - first)).Transformed(loc.Transformation()));
+        }
+    }
+    return samples;
+}
+
+// A plane of the second ring that caps the added side (section 4.9).
+struct Cap
+{
+    TopoDS_Face face;
+    int group;
+    gp_Pln plane;
+    gp_Dir outward;
+    double tol;
+};
+
+// The caps of a drafted face's set: the planes of the faces beside its
+// neighbours (not the set, not a neighbour, not on the set's plane or a
+// planar neighbour's) that have the whole solid on their inner side.
+std::vector<Cap> findCaps(const TopoDS_Shape& solid,
+                          const TopTools_IndexedMapOfShape& solidFaces,
+                          const TopTools_IndexedDataMapOfShapeListOfShape& edgeFaces,
+                          const TopTools_MapOfShape& fsetMap,
+                          const std::vector<TopoDS_Face>& neighbours,
+                          const gp_Pln& plane,
+                          const gp_Dir& normal)
+{
+    std::vector<Cap> caps;
+    std::vector<gp_Pnt> samples = samplePoints(solid);
+    TopTools_MapOfShape neighbourMap, ring;
+    std::vector<std::pair<gp_Pln, gp_Dir>> neighbourPlanes;
+    for (const auto& nb : neighbours) {
+        neighbourMap.Add(nb);
+        gp_Pln pn;
+        gp_Dir nn;
+        if (facePlane(nb, pn, nn)) {
+            neighbourPlanes.emplace_back(pn, nn);
+        }
+    }
+    for (const auto& nb : neighbours) {
+        for (TopExp_Explorer exp(nb, TopAbs_EDGE); exp.More(); exp.Next()) {
+            const TopoDS_Edge& e = TopoDS::Edge(exp.Current());
+            if (BRep_Tool::Degenerated(e)) {
+                continue;
+            }
+            for (const auto& s : edgeFaces.FindFromKey(e)) {
+                int idx = solidFaces.FindIndex(s);
+                TopoDS_Face h = TopoDS::Face(solidFaces.FindKey(idx));
+                if (fsetMap.Contains(h) || neighbourMap.Contains(h) || !ring.Add(h)) {
+                    continue;
                 }
-                FC_LOG("faulty " << int(r.GetCheckStatus()) << " shape type "
-                                 << int(fs.ShapeType()) << " surface " << st << " bb (" << a0
-                                 << ", " << b0 << ", " << c0 << ")-(" << a1 << ", " << b1 << ", "
-                                 << c1 << ")");
+                gp_Pln ph;
+                gp_Dir nh;
+                if (!facePlane(h, ph, nh)) {
+                    continue;  // curved faces do not cap (yet)
+                }
+                if (std::abs(std::abs(nh.Dot(normal)) - 1) < 1e-9
+                    && plane.Distance(ph.Location()) < CoplanarTol) {
+                    continue;
+                }
+                // a plane that bounds the region already
+                auto samePlane = [&ph, &nh](const gp_Pln& other, const gp_Dir& on) {
+                    return on.Dot(nh) > 1 - 1e-9 && other.Distance(ph.Location()) < CoplanarTol;
+                };
+                if (std::any_of(neighbourPlanes.begin(), neighbourPlanes.end(), [&](const auto& n) {
+                        return samePlane(n.first, n.second);
+                    })) {
+                    continue;
+                }
+                if (std::any_of(caps.begin(), caps.end(), [&](const Cap& c) {
+                        return samePlane(c.plane, c.outward);
+                    })) {
+                    continue;
+                }
+                double tol = std::max(1e-6, BRep_Tool::Tolerance(h));
+                bool bounds = std::none_of(samples.begin(), samples.end(), [&](const gp_Pnt& p) {
+                    return gp_Vec(ph.Location(), p).Dot(gp_Vec(nh)) > tol;
+                });
+                if (bounds) {
+                    caps.push_back({h, idx, ph, nh, tol});
+                }
             }
         }
-        selfInter = selfInter || r.GetCheckStatus() == BOPAlgo_SelfIntersect;
-        curveOnSurface = curveOnSurface || r.GetCheckStatus() == BOPAlgo_InvalidCurveOnSurface;
     }
-    std::string what = selfInter && curveOnSurface
-        ? "self-intersection, an edge off its face"
-        : (selfInter ? "self-intersection" : (curveOnSurface ? "an edge off its face" : "other"));
-    return "the result fails the boolean check (" + what + ")";
+    return caps;
 }
 
 bool isBoundaryFace(const TopoDS_Shape& face)
@@ -459,14 +774,6 @@ private:
         // how far the face's plane must reach past its own face
         double reach = 0.0;
         bool grazing = false;
-    };
-
-    struct Cap
-    {
-        TopoDS_Face face;
-        int group;
-        gp_Pln plane;
-        gp_Dir outward;
     };
 
     const TopoDS_Shape& solid;
@@ -686,80 +993,11 @@ bool CellDraftOne::prepare()
     // The second ring caps the added side: a drafted face stops at a plane
     // of the body that has the whole body on its inner side (section 4.9).
     if (stopAtBody) {
-        // sample points of the body: its vertices and points along its edges
-        std::vector<gp_Pnt> samples;
-        for (TopExp_Explorer exp(solid, TopAbs_VERTEX); exp.More(); exp.Next()) {
-            samples.push_back(BRep_Tool::Pnt(TopoDS::Vertex(exp.Current())));
-        }
-        TopTools_IndexedMapOfShape edges;
-        TopExp::MapShapes(solid, TopAbs_EDGE, edges);
-        for (int i = 1; i <= edges.Extent(); ++i) {
-            const TopoDS_Edge& e = TopoDS::Edge(edges(i));
-            if (BRep_Tool::Degenerated(e)) {
-                continue;
-            }
-            TopLoc_Location loc;
-            double first, last;
-            Handle(Geom_Curve) curve = BRep_Tool::Curve(e, loc, first, last);
-            if (curve.IsNull()) {
-                continue;
-            }
-            for (double t : {0.25, 0.5, 0.75}) {
-                samples.push_back(
-                    curve->Value(first + t * (last - first)).Transformed(loc.Transformation()));
-            }
-        }
-        TopTools_MapOfShape ring;
+        std::vector<TopoDS_Face> nbFaces;
         for (const auto& nb : neighbours) {
-            for (TopExp_Explorer exp(nb.face, TopAbs_EDGE); exp.More(); exp.Next()) {
-                const TopoDS_Edge& e = TopoDS::Edge(exp.Current());
-                if (BRep_Tool::Degenerated(e)) {
-                    continue;
-                }
-                for (const auto& s : edgeFaces.FindFromKey(e)) {
-                    int idx = solidFaces.FindIndex(s);
-                    TopoDS_Face h = TopoDS::Face(solidFaces.FindKey(idx));
-                    if (fsetMap.Contains(h) || !ring.Add(h)) {
-                        continue;
-                    }
-                    if (std::any_of(neighbours.begin(), neighbours.end(), [&h](const Neighbour& n) {
-                            return n.face.IsSame(h);
-                        })) {
-                        continue;
-                    }
-                    gp_Pln ph;
-                    gp_Dir nh;
-                    if (!facePlane(h, ph, nh)) {
-                        continue;  // curved faces do not cap (yet)
-                    }
-                    if (std::abs(std::abs(nh.Dot(normal)) - 1) < 1e-9
-                        && plane.Distance(ph.Location()) < CoplanarTol) {
-                        continue;
-                    }
-                    // a plane that bounds the region already
-                    auto samePlane = [&ph, &nh](const gp_Pln& other, const gp_Dir& on) {
-                        return on.Dot(nh) > 1 - 1e-9 && other.Distance(ph.Location()) < CoplanarTol;
-                    };
-                    if (std::any_of(neighbours.begin(), neighbours.end(), [&](const Neighbour& n) {
-                            return n.planar && samePlane(n.plane, n.outward);
-                        })) {
-                        continue;
-                    }
-                    if (std::any_of(caps.begin(), caps.end(), [&](const Cap& c) {
-                            return samePlane(c.plane, c.outward);
-                        })) {
-                        continue;
-                    }
-                    double tol = std::max(1e-6, BRep_Tool::Tolerance(h));
-                    bool bounds = std::none_of(samples.begin(), samples.end(), [&](const gp_Pnt& p) {
-                        return gp_Vec(ph.Location(), p).Dot(gp_Vec(nh)) > tol;
-                    });
-                    if (bounds) {
-                        caps.push_back({h, idx, ph, nh});
-                    }
-                }
-            }
+            nbFaces.push_back(nb.face);
         }
+        caps = findCaps(solid, solidFaces, edgeFaces, fsetMap, nbFaces, plane, normal);
     }
     return true;
 }
@@ -1408,13 +1646,56 @@ bool CellDraftOne::attempt(double scale)
     result = unify.Shape();
     Handle(BRepTools_History) mergeHistory = unify.History();
     FC_TIME_LOG(t, "merge");
+    // The faces of a result made of pieces of the solid's faces only (none
+    // on a tool), merged by the given history: for the check, they are the
+    // solid's. A draft on #334's Draft input makes 28 faces, 22 of them
+    // pieces of faces the box cut, put back together: the check of the
+    // other 6 takes 0.18 s, of all 28 0.91 s.
+    TopTools_IndexedMapOfShape builtFaces;
+    TopExp::MapShapes(built, TopAbs_FACE, builtFaces);
+    auto inputLike = [&](const Handle(BRepTools_History)& merge) {
+        NCollection_DataMap<TopoDS_Shape, bool, TopTools_ShapeMapHasher> piece;
+        for (int i = 1; i <= builtFaces.Extent(); ++i) {
+            const TopoDS_Shape& b = builtFaces(i);
+            TopTools_ListOfShape from = origins(b);
+            bool isPiece = !from.IsEmpty();
+            for (const auto& o : from) {
+                isPiece = isPiece && solidFaces.Contains(o);
+            }
+            TopTools_ListOfShape to;
+            if (merge.IsNull() || (!merge->IsRemoved(b) && merge->Modified(b).IsEmpty())) {
+                to.Append(b);
+            }
+            else if (!merge->IsRemoved(b)) {
+                to = merge->Modified(b);
+            }
+            for (const auto& r : to) {
+                if (bool* p = piece.ChangeSeek(r)) {
+                    *p = *p && isPiece;
+                }
+                else {
+                    piece.Bind(r, isPiece);
+                }
+            }
+        }
+        TopTools_MapOfShape res;
+        for (int i = 1; i <= solidFaces.Extent(); ++i) {
+            res.Add(solidFaces(i));
+        }
+        for (decltype(piece)::Iterator it(piece); it.More(); it.Next()) {
+            if (it.Value()) {
+                res.Add(it.Key());
+            }
+        }
+        return res;
+    };
     // Every result is checked both ways before it is used: here, so that a
     // failure is tried again with a fuzzy fuse. UnifySameDomain can break
     // what it merges -- a curved face (#876's cones: self-intersecting
     // wires), or an edge joined on one face and not on the next (#474's
     // ramp parts: two collinear edges overlapping). Then the planar pieces
     // only are merged, else none: the chosen cells' solid as it is.
-    std::string wrong = checkResult(result);
+    std::string wrong = checkResult(result, inputLike(mergeHistory));
     if (!wrong.empty()) {
         FC_LOG("merge: " << wrong << "; planar pieces only");
         ShapeUpgrade_UnifySameDomain planar(built, true, true, false);
@@ -1438,14 +1719,14 @@ bool CellDraftOne::attempt(double scale)
             planar.KeepShape(v);
         }
         planar.Build();
-        std::string planarWrong = checkResult(planar.Shape());
+        std::string planarWrong = checkResult(planar.Shape(), inputLike(planar.History()));
         if (planarWrong.empty()) {
             result = planar.Shape();
             mergeHistory = planar.History();
         }
         else {
             FC_LOG("planar merge: " << planarWrong << "; pieces kept");
-            std::string builtWrong = checkResult(built);
+            std::string builtWrong = checkResult(built, inputLike(Handle(BRepTools_History)()));
             if (!builtWrong.empty()) {
                 return fail(CellDraft::NotASolid, builtWrong);
             }
@@ -1811,4 +2092,103 @@ const TopTools_ListOfShape& CellDraft::Generated(const TopoDS_Shape& shape)
 bool CellDraft::IsDeleted(const TopoDS_Shape& shape)
 {
     return !myHistory.IsNull() && myHistory->IsRemoved(shape);
+}
+
+std::string CellDraft::CheckDraft(const TopoDS_Shape& input,
+                                  const TopoDS_Shape& result,
+                                  const std::vector<TopoDS_Face>& faces,
+                                  bool stopAtBody)
+{
+    TopTools_IndexedMapOfShape inputFaces;
+    TopExp::MapShapes(input, TopAbs_FACE, inputFaces);
+    TopTools_MapOfShape inputMap;
+    for (int i = 1; i <= inputFaces.Extent(); ++i) {
+        inputMap.Add(inputFaces(i));
+    }
+    std::vector<TopoDS_Shape> made;
+    TopoDS_Compound region = draftRegion(result, inputMap, made);
+    if (made.empty()) {
+        return std::string();
+    }
+    std::string wrong = regionCheck(region, made);
+    if (!wrong.empty() || !stopAtBody) {
+        return wrong;
+    }
+
+    // The stop of section 4.9: does a face the draft made reach past a
+    // plane the cell draft would cap the added side at?
+    TopTools_IndexedDataMapOfShapeListOfShape edgeFaces;
+    TopExp::MapShapesAndUniqueAncestors(input, TopAbs_EDGE, TopAbs_FACE, edgeFaces);
+    auto adjacent = [&](const TopoDS_Face& f, std::vector<TopoDS_Face>& to) {
+        for (TopExp_Explorer exp(f, TopAbs_EDGE); exp.More(); exp.Next()) {
+            if (BRep_Tool::Degenerated(TopoDS::Edge(exp.Current()))) {
+                continue;
+            }
+            for (const auto& s : edgeFaces.FindFromKey(exp.Current())) {
+                to.push_back(TopoDS::Face(inputFaces.FindKey(inputFaces.FindIndex(s))));
+            }
+        }
+    };
+    std::vector<Cap> caps;
+    for (const auto& d : faces) {
+        int idx = inputFaces.FindIndex(d);
+        if (idx == 0) {
+            continue;
+        }
+        TopoDS_Face f = TopoDS::Face(inputFaces.FindKey(idx));
+        gp_Pln pf;
+        gp_Dir nf;
+        if (!facePlane(f, pf, nf)) {
+            continue;
+        }
+        // the face and the faces coplanar with it beside it, as the cell
+        // draft drafts them (CellDraftOne::prepare)
+        TopTools_MapOfShape fset;
+        std::vector<TopoDS_Face> todo {f};
+        while (!todo.empty()) {
+            TopoDS_Face g = todo.back();
+            todo.pop_back();
+            if (!fset.Add(g)) {
+                continue;
+            }
+            std::vector<TopoDS_Face> adj;
+            adjacent(g, adj);
+            for (const auto& h : adj) {
+                gp_Pln ph;
+                gp_Dir nh;
+                if (!fset.Contains(h) && facePlane(h, ph, nh) && nh.Dot(nf) > 1 - 1e-9
+                    && pf.Distance(ph.Location()) < CoplanarTol) {
+                    todo.push_back(h);
+                }
+            }
+        }
+        std::vector<TopoDS_Face> neighbours;
+        TopTools_MapOfShape seen;
+        for (TopTools_MapOfShape::Iterator it(fset); it.More(); it.Next()) {
+            std::vector<TopoDS_Face> adj;
+            adjacent(TopoDS::Face(it.Key()), adj);
+            for (const auto& h : adj) {
+                if (!fset.Contains(h) && seen.Add(h)) {
+                    neighbours.push_back(h);
+                }
+            }
+        }
+        for (auto& c : findCaps(input, inputFaces, edgeFaces, fset, neighbours, pf, nf)) {
+            caps.push_back(c);
+        }
+    }
+    double past = 0.0;
+    for (const auto& m : made) {
+        for (const auto& p : samplePoints(m)) {
+            for (const auto& c : caps) {
+                past = std::max(past, gp_Vec(c.plane.Location(), p).Dot(gp_Vec(c.outward)) - c.tol);
+            }
+        }
+    }
+    if (past > Precision::Confusion()) {
+        std::ostringstream ss;
+        ss << "the body grows past a face that bounds it (by " << past << ")";
+        return ss.str();
+    }
+    return std::string();
 }

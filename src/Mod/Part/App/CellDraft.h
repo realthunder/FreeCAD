@@ -29,6 +29,7 @@
 #include <BRepBuilderAPI_MakeShape.hxx>
 #include <BRepTools_History.hxx>
 #include <TopTools_IndexedMapOfShape.hxx>
+#include <TopTools_ListOfShape.hxx>
 #include <TopoDS_Face.hxx>
 #include <gp_Dir.hxx>
 #include <gp_Pln.hxx>
@@ -124,6 +125,18 @@ public:
     {
         return myHistory;
     }
+
+    /** Checks the result of another draft of the same faces on the same
+     * shape (BRepOffsetAPI_DraftAngle) for what the cell draft builds
+     * otherwise (docs/NewDraft.md section 11): a face the draft made that
+     * crosses another face of the body, and, with \a stopAtBody, the body
+     * grown past a plane that bounds it. The faces the draft did not touch
+     * are taken as clean. Returns what is wrong, or an empty string.
+     */
+    static std::string CheckDraft(const TopoDS_Shape& input,
+                                  const TopoDS_Shape& result,
+                                  const std::vector<TopoDS_Face>& faces,
+                                  bool stopAtBody);
 
     struct FaceDraft
     {
