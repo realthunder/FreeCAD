@@ -103,9 +103,17 @@ public:
      * appearance stores as empty means the default material's colour
      * instead. Both null until the owner wires them, and the property is a
      * plain colour list until then.
+     *
+     * \a perEntry says what the list's length means. DiffuseColor's is a
+     * face count that one colour may stand in for -- a single colour is
+     * every face's, and none is "back to the object's". A list that holds a
+     * colour for each of some things it counts (MappedColors, a colour for
+     * each named element) is as long as it has colours, one included, and
+     * empty is none of them.
      */
     void setAppearance(App::PropertyAppearanceList *appearance,
-                       const App::PropertyColor *shapeColor);
+                       const App::PropertyColor *shapeColor,
+                       bool perEntry = false);
 
     /** @name Reads, overriding or hiding the base ones
      *
@@ -168,6 +176,7 @@ protected:
 private:
     App::PropertyAppearanceList *_appearance {nullptr};
     const App::PropertyColor *_shapeColor {nullptr};
+    bool _perEntry {false};
     /** Where getValues() resolves the appearance into
      *
      * The appearance stores a base and the faces that override it, so there
@@ -231,7 +240,17 @@ public:
     /// A name over ShapeAppearance's diffuse field, not a second store
     PropertyDiffuseColor DiffuseColor;
 
-    App::PropertyColorList MappedColors;    
+    /** The look of each element ColoredElements names, in its order
+     *
+     * The names are the object's and their looks are here, one entry for
+     * each (docs/ShapeAppearanceDesign.md sec 13). An entry is a whole
+     * material.
+     */
+    App::PropertyAppearanceList MappedAppearance;
+    /// A name over MappedAppearance's diffuse field, as DiffuseColor is
+    /// over ShapeAppearance's: what a file older than MappedAppearance
+    /// holds, and what an older reader is given
+    PropertyDiffuseColor MappedColors;
     App::PropertyBool MapFaceColor;    
     App::PropertyBool MapLineColor;    
     App::PropertyBool MapPointColor;    

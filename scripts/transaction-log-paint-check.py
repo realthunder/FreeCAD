@@ -2,7 +2,9 @@
 # painted by name -- the names on the object (ColoredElements), their
 # colours on its view provider (MappedColors) -- put back whole by what
 # puts a value back: an undo, a branch switched to, a merge that takes
-# them. One GUI run in a fresh user home, given this script at startup:
+# them. And docs/ShapeAppearanceDesign.md sec 13.6, the store those colours
+# are kept in (MappedAppearance, a material for each name). One GUI run in a
+# fresh user home, given this script at startup:
 #
 #   cd build/conda-relwithdebinfo-801
 #   QT_QPA_PLATFORM=offscreen FREECAD_USER_HOME=/tmp/fchome-pt \
@@ -11,7 +13,7 @@
 #
 # It writes PASS/FAIL lines to $PAINTCHECK_OUT and exits. The log setting
 # is put back before it exits.
-import os, tempfile, traceback
+import os, re, struct, tempfile, traceback, zipfile, zlib
 import FreeCAD as App
 import FreeCADGui as Gui
 from FreeCAD import Vector as V
@@ -37,6 +39,52 @@ def named(obj):
     if len(subs) != len(colors):
         return {"subs": list(subs), "colors": colors}
     return dict(zip(subs, colors))
+
+
+def stored(obj):
+    # The same out of the store itself: the colour of each name's material.
+    subs = obj.ColoredElements[1] if obj.ColoredElements else []
+    colors = [rgb(m.DiffuseColor) for m in obj.ViewObject.MappedAppearance]
+    if len(subs) != len(colors):
+        return {"subs": list(subs), "colors": colors}
+    return dict(zip(subs, colors))
+
+
+def older(path, to):
+    # The file as a build older than MappedAppearance wrote it: the colours
+    # in MappedColors, a plain colour list, and nowhere else. The entries are
+    # copied as they are stored -- the blobs are zstd, which this Python's
+    # zipfile does not read -- and GuiDocument.xml alone is written again.
+    done = [0, 0]
+    with zipfile.ZipFile(path) as zin, open(path, "rb") as fp, open(to, "wb") as out:
+        central = []
+        for item in zin.infolist():
+            if item.filename == "GuiDocument.xml":
+                xml = zin.read(item).decode()
+                xml, done[0] = re.subn(r'\s*<Property name="MappedAppearance"[^>]*>.*?</Property>',
+                                       "", xml, flags=re.S)
+                xml, done[1] = re.subn(r'(<Property name="MappedColors" type=")[^"]*"',
+                                       r'\1App::PropertyColorList"', xml)
+                data = xml.encode()
+                packer = zlib.compressobj(6, zlib.DEFLATED, -15)
+                raw = packer.compress(data) + packer.flush()
+                method, crc, size = 8, zlib.crc32(data), len(data)
+            else:
+                fp.seek(item.header_offset)
+                head = fp.read(30)
+                fp.seek(sum(struct.unpack("<HH", head[26:30])), 1)
+                raw = fp.read(item.compress_size)
+                method, crc, size = item.compress_type, item.CRC, item.file_size
+            name = item.filename.encode()
+            fields = (item.extract_version, 0x800, method, 0, 0x21, crc, len(raw), size, len(name), 0)
+            central.append(struct.pack("<4sHHHHHHIIIHHHHHII", b"PK\x01\x02", 20, *fields,
+                                       0, 0, 0, 0, out.tell()) + name)
+            out.write(struct.pack("<4sHHHHHIIIHH", b"PK\x03\x04", *fields) + name + raw)
+        start = out.tell()
+        out.write(b"".join(central))
+        out.write(struct.pack("<4sHHHHIIH", b"PK\x05\x06", 0, 0, len(central), len(central),
+                              out.tell() - start, start, 0))
+    return done
 
 
 def shown(obj):
@@ -177,6 +225,33 @@ def run():
         check("and drawn on that face alone (%r)" % shown(doc2.Cut), shown(doc2.Cut) == there)
         App.closeDocument(doc.Name)
         App.closeDocument(doc2.Name)
+
+        # The store. A material for each name, its colour what was painted;
+        # saved and read back; and read out of a file that has the colours
+        # and no materials.
+        doc = App.newDocument("PaintStore")
+        doc.addObject("Part::Box", "Box")
+        doc.recompute()
+        top, bottom = face(doc.Box, ZMin=10), face(doc.Box, ZMax=0)
+        both = {top: RED, bottom: GREEN}
+        paint(doc, "two", "Box", both)
+        check("a material for each name (%r)" % stored(doc.Box), stored(doc.Box) == both)
+        there = shown(doc.Box)
+        path = os.path.join(folder, "PaintStore.FCStd")
+        doc.saveAs(path)
+        App.closeDocument(doc.Name)
+        doc = App.openDocument(path)
+        check("saved and read: by name (%r)" % named(doc.Box),
+              named(doc.Box) == both and stored(doc.Box) == both)
+        check("and drawn where they were", shown(doc.Box) == there)
+        App.closeDocument(doc.Name)
+        old = os.path.join(folder, "PaintOlder.FCStd")
+        check("an older file made of it", older(path, old) == [1, 1])
+        doc = App.openDocument(old)
+        check("an older file read: by name (%r)" % named(doc.Box), named(doc.Box) == both)
+        check("its colours in the store (%r)" % stored(doc.Box), stored(doc.Box) == both)
+        check("and drawn where they were", shown(doc.Box) == there)
+        App.closeDocument(doc.Name)
     except Exception:
         lines.append("FAIL exception\n" + traceback.format_exc())
     finally:

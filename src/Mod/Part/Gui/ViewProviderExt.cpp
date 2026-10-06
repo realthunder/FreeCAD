@@ -1596,7 +1596,8 @@ void PartGui::PropertyDiffuseColor::init()
 }
 
 void PropertyDiffuseColor::setAppearance(App::PropertyAppearanceList *appearance,
-                                         const App::PropertyColor *shapeColor)
+                                         const App::PropertyColor *shapeColor,
+                                         bool perEntry)
 {
     // The base list is empty from the constructor's ADD_PROPERTY on (its
     // default is written before the container is attached, so it signals
@@ -1605,6 +1606,7 @@ void PropertyDiffuseColor::setAppearance(App::PropertyAppearanceList *appearance
     // nodes exist. From here on the colours are the appearance's.
     _appearance = appearance;
     _shapeColor = shapeColor;
+    _perEntry = perEntry;
 }
 
 const std::vector<Base::Color> &PropertyDiffuseColor::getValues() const
@@ -1631,6 +1633,17 @@ void PropertyDiffuseColor::setValues(std::vector<Base::Color> &&colors)
 {
     if (!_appearance) {
         App::PropertyColorList::setValues(std::move(colors));
+        return;
+    }
+    if (_perEntry) {
+        // As many entries as colours, and each entry its colour. The whole
+        // field write below reads a single colour as every entry's and an
+        // empty list as the default's, and resizes for neither.
+        _appearance->editList([&colors](App::AppearanceList &list) {
+            list.setSize(static_cast<int>(colors.size()));
+            for (std::size_t i = 0; i < colors.size(); ++i)
+                list.setDiffuseColor(static_cast<int>(i), colors[i]);
+        });
         return;
     }
     if (colors.empty() && _shapeColor) {
@@ -2023,8 +2036,12 @@ ViewProviderPartExt::ViewProviderPartExt()
     ADD_PROPERTY_TYPE(DrawStyle,((long int)0), osgroup, App::Prop_None, "Defines the style of the edges in the 3D view.");
     DrawStyle.setEnums(DrawStyleEnums);
 
-    ADD_PROPERTY_TYPE(MappedColors,(),"",
+    ADD_PROPERTY_TYPE(MappedAppearance,(std::vector<App::MaterialAppearance>()),"",
             (App::PropertyType)(App::Prop_Hidden|App::Prop_ReadOnly),"");
+    // Empty and wired after, as DiffuseColor is above and for its reason
+    ADD_PROPERTY_TYPE(MappedColors,(std::vector<Base::Color>()),"",
+            (App::PropertyType)(App::Prop_Hidden|App::Prop_ReadOnly),"");
+    MappedColors.setAppearance(&MappedAppearance, nullptr, true);
 
     ADD_PROPERTY(MapFaceColor,(PartParams::getMapFaceColor()));
     ADD_PROPERTY(MapLineColor,(PartParams::getMapLineColor()));
@@ -2141,6 +2158,13 @@ void ViewProviderPartExt::handleChangedPropertyType(Base::XMLReader &reader,
         DiffuseColor.Restore(reader);
         return;
     }
+    // MappedColors the same: a document older than MappedAppearance has the
+    // named elements' colours here and nowhere else.
+    if (prop == &MappedColors
+            && strcmp(TypeName, App::PropertyColorList::getClassTypeId().getName()) == 0) {
+        MappedColors.Restore(reader);
+        return;
+    }
     inherited::handleChangedPropertyType(reader, TypeName, prop);
 }
 
@@ -2148,7 +2172,10 @@ void ViewProviderPartExt::onChanged(const App::Property* prop)
 {
     Gui::ColorUpdater colorUpdater;
 
-    if (prop == &MappedColors ||
+    // A write to MappedColors lands in MappedAppearance and is announced
+    // there; only a touch() arrives under its own name.
+    if (prop == &MappedAppearance ||
+        prop == &MappedColors ||
         prop == &MapFaceColor ||
         prop == &MapLineColor ||
         prop == &MapPointColor ||
@@ -2318,7 +2345,7 @@ void ViewProviderPartExt::onChanged(const App::Property* prop)
             // the duplication that store paid for, and the reason it is gone.
             ShapeAppearance.setTransparency(trans);
             if(!prop->testStatus(App::Property::User3)
-                    && (MapTransparency.getValue() || MappedColors.getSize()))
+                    && (MapTransparency.getValue() || MappedAppearance.getSize()))
                 updateColors();
         }
     }
@@ -3208,7 +3235,7 @@ std::map<std::string,App::Color> ViewProviderPartExt::getElementColors(const cha
         auto prop = getColoredElements(pcObject);
         if(prop && prop->getValue()==pcObject) {
             const auto &subs = prop->getSubValues();
-            const auto &colors = MappedColors.getValues();
+            const auto colors = MappedAppearance.getDiffuseColors();
             if(subs.size()==colors.size()) {
                 for(size_t i=0;i<subs.size();++i)
                     ret.emplace(subs[i],colors[i]);
@@ -3341,10 +3368,11 @@ void ViewProviderPartExt::setElementColors(const std::map<std::string,App::Color
             colors.push_back(v.second);
         }
     }
-    if(colors!=MappedColors.getValues()) {
+    if(colors!=MappedAppearance.getDiffuseColors()) {
         touched = true;
+        // On the appearance: that is where the write lands and is announced
         Base::ObjectStatusLocker<App::Property::Status,App::Property> guard(
-                App::Property::User3, &MappedColors);
+                App::Property::User3, &MappedAppearance);
         MappedColors.setValues(colors);
     }
     if(subs.empty())
@@ -3861,8 +3889,9 @@ void ViewProviderPartExt::updateColors(App::Document *sourceDoc, bool forceColor
     // for good whenever the list put back was longer than the one there
     // (docs/TransactionLog.md sec 31.16). The other half is on its way, and
     // its change comes back here.
-    if(prop && prop->getSubValues().size()!=(size_t)MappedColors.getSize())
+    if(prop && prop->getSubValues().size()!=(size_t)MappedAppearance.getSize())
         return;
+    const std::vector<App::Color> mappedColors = MappedAppearance.getDiffuseColors();
 
     auto shape = getShape();
     if(shape.isNull())
@@ -3895,7 +3924,7 @@ void ViewProviderPartExt::updateColors(App::Document *sourceDoc, bool forceColor
             element = Data::IndexedName(v.second.c_str());
         auto idx = shape.shapeTypeAndIndex(element);
         if(idx.second) {
-            infos[idx.first].colors[idx.second-1] = MappedColors[i];
+            infos[idx.first].colors[idx.second-1] = mappedColors[i];
             continue;
         }else if(v.first.empty())
             continue;
@@ -3905,7 +3934,7 @@ void ViewProviderPartExt::updateColors(App::Document *sourceDoc, bool forceColor
                 continue;
             auto idx = Part::TopoShape::shapeTypeAndIndex(names.index);
             if(idx.second>0)
-                infos[idx.first].colors[idx.second-1] = MappedColors[i];
+                infos[idx.first].colors[idx.second-1] = mappedColors[i];
         }
     }
     std::map<App::DocumentObject*,ElementCache> caches;

@@ -2819,7 +2819,8 @@ object's look" and spelled it `getMaterial(0)` or `getTransparency(0)` reads
 > has to be held by the face's name before two branches that each painted
 > one can be merged. The user ruled the order: this first, made to work,
 > the merge on top of it. **13.2's first item is built. 13.4 is ruled:
-> 13.6 has the rulings and the build order, which replaces 13.5's.**
+> 13.6 has the rulings and the build order, which replaces 13.5's. 13.7 is
+> what is built of it, step by step.**
 
 ### 13.1 What is there
 
@@ -3017,3 +3018,56 @@ frozen and unfrozen.
 
 After 7 the merge by name (docs/TransactionLog.md sec 31.16-31.18), then
 the shape diff (sec 32).
+
+### 13.7 Built
+
+**Step 2, the store (2026-10-06).** `MappedAppearance`, an
+`App::PropertyAppearanceList` on `ViewProviderPartExt`, hidden and read
+only: one entry for each name of `ColoredElements`, in its order.
+
+`MappedColors` is a `PartGui::PropertyDiffuseColor` now, the class
+`DiffuseColor` is, wired to `MappedAppearance`. The class served, told one
+thing (`setAppearance(appearance, shapeColor, perEntry)`): what the list's
+length means. `DiffuseColor`'s is a face count that one colour may stand in
+for -- a single colour is every face's, and none is "back to the object's".
+`MappedColors` has a colour for each name: one name is one colour, and
+empty is no names. Written so, N colours are N entries and each entry its
+colour, in one change.
+
+From the class, with nothing written for it:
+
+- saved with its values while the store says nothing a colour list cannot,
+  under the type name an older reader knows where the file's schema is one
+  it reads; `<ColorList file=""/>` once the store says more;
+- a file older than the store has `MappedColors` as a plain colour list and
+  nothing else: `handleChangedPropertyType` hands it to the property, which
+  reads it into the store;
+- a write to it is the store's change, announced as `MappedAppearance`'s.
+  `onChanged()` and the guard `setElementColors()` holds are on that.
+
+`updateColors()`, `getElementColors()` and `setElementColors()` read the
+store's colours. Nothing is drawn that was not.
+
+**The base, weighed** (13.6 left it open, and proposed keeping it the
+object's). *Not kept.* Keeping it is a write to a saved property whenever
+the object's look changes and names exist: a row in the log nobody made,
+and two branches' stores differing where neither painted. It also loses
+something. A field is a named face's own while it differs from the base;
+kept in step, a face whose gloss the object's came to match for a while
+would stop holding it, and follow the object from then on.
+
+So the store is read over the object's base as that is when it is read,
+and nothing is stored for it: a copy -- the list is shared until written,
+it costs a pointer -- its base set to the object's, each entry's colour
+put back as it was. That is step 4's `namedAppearances()`. The stored base
+is the object's as it was when the names were last written, which is what
+the entries were sparse against then. What a named face has of its own:
+**its colour always; of the rest, what it was given that the object did
+not have.** The rest of 13.6's description stands -- the fields are held
+by array, so once one named face has a gloss of its own the others hold
+the one they had.
+
+`scripts/transaction-log-paint-check.py`, 26: the seven new are a material
+for each name, the two read back from a saved file by name and as drawn,
+and the same from a file made as an older build wrote it -- the store
+taken out of GuiDocument.xml and `MappedColors` typed a plain colour list.
