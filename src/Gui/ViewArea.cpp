@@ -46,6 +46,7 @@
 #include "Application.h"
 #include "Document.h"
 #include "MainWindow.h"
+#include "TaskView/TaskPanelHost.h"
 #include "View3DInventor.h"
 #include "ViewProviderDocumentObject.h"
 
@@ -376,6 +377,11 @@ void ViewAreaCell::updateHighlight()
     // resize this cell never saw would leave it cut for the old size.
     _highlight->refit();
     _highlight->update();
+}
+
+TaskView::TaskPanelHost *ViewAreaCell::taskHost() const
+{
+    return TaskView::TaskPanelHost::hostIn(this);
 }
 
 void ViewAreaCell::showZoneHint(bool on)

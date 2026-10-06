@@ -36,6 +36,7 @@ SET(Overlay_Stylesheets_Files
     "overlay/autohide.svg"
     "overlay/editshow.svg"
     "overlay/taskshow.svg"
+    "overlay/taskhost.svg"
     "overlay/edithide.svg"
     "overlay/mode.svg"
     "overlay/transparent.svg"

@@ -38,6 +38,9 @@ class ViewAreaCell;
 class ViewAreaZone;
 class ViewAreaMenuButton;
 class ViewAreaHighlight;
+namespace TaskView {
+class TaskPanelHost;
+}
 
 /** The splitter used inside a ViewArea.
  *
@@ -104,6 +107,12 @@ public:
     /// Repaint the active-cell border. It lives on a raised child
     /// widget, so update() on the cell does not reach it.
     void updateHighlight();
+    /// The task panel laid over this cell, or null: the page of the
+    /// dialog the child view owns, while task panels are shown in their
+    /// views (docs/TaskPanelPerView.md sec 5.2). The host is the task
+    /// view's, stands clear of the cell's own chrome, and follows the
+    /// view when it leaves the cell.
+    TaskView::TaskPanelHost *taskHost() const;
 
 protected:
     void paintEvent(QPaintEvent *) override;

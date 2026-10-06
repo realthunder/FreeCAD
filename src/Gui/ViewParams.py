@@ -297,6 +297,12 @@ Params = [
         "one selection, and a view selects on its own only while it is in an\n"
         "edit or has a task panel open. Takes effect for views opened\n"
         "afterwards."),
+    ParamBool('TaskPanelInView', False, on_change=True,
+        title='Task panels in their views', doc=
+        "Show a task panel inside the view it belongs to, over the picture,\n"
+        "where it stays whichever view is active. When off, task panels are\n"
+        "shown in the Tasks tab of the combo view, which follows the active\n"
+        "view. The button on the combo view's title bar is this switch."),
     ParamFloat('DraggerScale', 0.03,
         title='Transform dragger scale',
         doc="Size of the transform dragger relative to the viewport."),

@@ -67,6 +67,7 @@
 #include "TreeParams.h"
 #include "View3DInventor.h"
 #include "View3DInventorViewer.h"
+#include "ViewParams.h"
 
 FC_LOG_LEVEL_INIT("Dock", true, true);
 
@@ -409,7 +410,11 @@ public:
     QAction _actClose;
     QAction _actFloat;
     QAction _actOverlay;
+    /// Where task panels are shown: checked while they are in their views
+    QAction _actTaskHost;
     QList<QAction*> _actions;
+    /// The title bar of the dock that holds the task view
+    QList<QAction*> _taskActions;
 
     QPointer<QWidget> _trackingWidget;
     OverlayTabWidget *_trackingOverlay = nullptr;
@@ -466,6 +471,16 @@ public:
         _actOverlay.setData(QStringLiteral("OBTN Overlay"));
         _actFloat.setData(QStringLiteral("OBTN Float"));
         _actClose.setData(QStringLiteral("OBTN Close"));
+        _actTaskHost.setData(QStringLiteral("OBTN TaskHost"));
+        _actTaskHost.setCheckable(true);
+        _taskActions = _actions;
+        _taskActions.prepend(&_actTaskHost);
+        QObject::connect(&_actTaskHost, &QAction::triggered, host, &OverlayManager::onAction);
+        // The preference is the truth: whoever switched it, the button
+        // shows it
+        Control().signalHostChanged.connect([this]() {
+            syncTaskHostAction();
+        });
 
         retranslate();
         refreshIcons();
@@ -489,6 +504,7 @@ public:
         _actFloat.setIcon(BitmapFactory().pixmap("qss:overlay/float.svg"));
         _actOverlay.setIcon(BitmapFactory().pixmap("qss:overlay/overlay.svg"));
         _actClose.setIcon(BitmapFactory().pixmap("qss:overlay/close.svg"));
+        _actTaskHost.setIcon(BitmapFactory().pixmap("qss:overlay/taskhost.svg"));
         for (OverlayTabWidget *tabWidget : _Overlays) {
             tabWidget->refreshIcons();
             for (auto handle : tabWidget->findChildren<OverlaySplitterHandle*>())
@@ -1008,13 +1024,18 @@ public:
         refresh();
     }
 
-    void setupTitleBar(QDockWidget *dock)
+    void setupTitleBar(QDockWidget *dock, QWidget *content = nullptr)
     {
-        if(!dock->titleBarWidget())
-            dock->setTitleBarWidget(createTitleBar(dock));
+        if(!dock->titleBarWidget()) {
+            if (!content)
+                content = dock->widget();
+            bool task = content && (qobject_cast<TaskView::TaskView*>(content)
+                                    || content->findChild<TaskView::TaskView*>());
+            dock->setTitleBarWidget(createTitleBar(dock, task));
+        }
     }
 
-    QWidget *createTitleBar(QWidget *parent)
+    QWidget *createTitleBar(QWidget *parent, bool task = false)
     {
         OverlayTitleBar *widget = new OverlayTitleBar(parent);
         widget->setObjectName(QStringLiteral("OverlayTitle"));
@@ -1022,13 +1043,25 @@ public:
         if (auto tabWidget = qobject_cast<OverlayTabWidget*>(parent))
             actions = tabWidget->actions();
         else
-            actions = _actions;
+            actions = task ? _taskActions : _actions;
         widget->setTitleItem(OverlayTabWidget::prepareTitleWidget(widget, actions));
         return widget;
     }
 
+    void syncTaskHostAction()
+    {
+        const bool inView = ViewParams::getTaskPanelInView();
+        _actTaskHost.setChecked(inView);
+        _actTaskHost.setToolTip(inView ? QObject::tr("Show task panels in the combo view")
+                                       : QObject::tr("Show task panels in their views"));
+    }
+
     void onAction(QAction *action) {
-        if(action == &_actOverlay) {
+        if(action == &_actTaskHost) {
+            // The change handler moves the pages and sends
+            // Control().signalHostChanged, which comes back here
+            ViewParams::setTaskPanelInView(action->isChecked());
+        } else if(action == &_actOverlay) {
             OverlayManager::instance()->setOverlayMode(OverlayManager::OverlayMode::ToggleActive);
         } else if(action == &_actFloat || action == &_actClose) {
             for(auto w=qApp->widgetAt(QCursor::pos());w;w=w->parentWidget()) {
@@ -1064,6 +1097,7 @@ public:
         _actOverlay.setToolTip(QObject::tr("Toggle overlay"));
         _actFloat.setToolTip(QObject::tr("Toggle floating window"));
         _actClose.setToolTip(QObject::tr("Close dock window"));
+        syncTaskHostAction();
     }
 
     void floatDockWidget(QDockWidget *dock)
@@ -2066,9 +2100,9 @@ void OverlayManager::restore()
                 this, &OverlayManager::onTaskViewUpdate);
 }
 
-void OverlayManager::setupTitleBar(QDockWidget *dock)
+void OverlayManager::setupTitleBar(QDockWidget *dock, QWidget *content)
 {
-    d->setupTitleBar(dock);
+    d->setupTitleBar(dock, content);
 }
 
 void OverlayManager::onFocusChanged(QWidget *old, QWidget *now)

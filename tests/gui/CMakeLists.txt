@@ -1314,6 +1314,19 @@ fc_add_gui_test(GuiEditViewClosed_tests_run edit-view-closed.py
 fc_add_gui_test(GuiTaskPanelCombo_tests_run task-panel-combo.py
                 --timeout 400)
 
+# A task panel sits inside the view it belongs to (docs/TaskPanelPerView.md
+# sec 5.2, milestone 3): with the preference TaskPanelInView on, a dialog's
+# page is a child of its owner view's cell and stays there whichever view
+# is active, while the Tasks tab keeps the watchers. A click into it makes
+# its view the active one; used without one, it still acts for its own
+# view. Enter and Escape act on the panel they are pressed in. The host's
+# button and the combo view's title bar button both flip the preference
+# and move the page without closing the dialog. A sketch and a pad edited
+# with their panel in the view, a view outside any view area, a maximized
+# neighbour, and a view and a document closed under a hosted panel.
+fc_add_gui_test(GuiTaskPanelInView_tests_run task-panel-in-view.py
+                --timeout 400)
+
 # Making a view the active window makes its cell the view area's active
 # cell and brings the keyboard with it (docs/SplitViews.md sec 21): right
 # after "create new view" the first view can be clicked back into; with

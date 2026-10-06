@@ -81,6 +81,7 @@ private:
     Gui::PrefCheckBox *UseViewArea = nullptr;
     Gui::PrefCheckBox *PerViewEdit = nullptr;
     Gui::PrefCheckBox *PerViewSelection = nullptr;
+    Gui::PrefCheckBox *TaskPanelInView = nullptr;
     QLabel *labelDocumentTarget = nullptr;
     Gui::PrefComboBox *DocumentTarget = nullptr;
     QLabel *labelDocViewTarget = nullptr;

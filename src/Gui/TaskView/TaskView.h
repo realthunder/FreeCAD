@@ -55,6 +55,7 @@ namespace TaskView {
 using Connection = fastsignals::connection;
 class TaskEditControl;
 class TaskDialog;
+class TaskPanelHost;
 
 /// Father class of all content in TaskView
 class GuiExport TaskContent 
@@ -182,6 +183,9 @@ struct TaskInfo
     bool active {false};
     /// Its page has been shown: the Tasks tab is raised the first time
     bool raised {false};
+    /// Where the page is while it is not in the task view's stack: in its
+    /// owner view (docs/TaskPanelPerView.md sec 5.2). Null in the stack.
+    TaskPanelHost *host {nullptr};
 };
 
 /** TaskView class
@@ -238,6 +242,31 @@ public:
      */
     void ownerClosed(const TaskOwner &owner);
 
+    /// Whether task panels are shown in their views rather than here: the
+    /// preference TaskPanelInView (docs/TaskPanelPerView.md sec 5.5)
+    static bool inViewMode();
+    /// The host \a dlg's page is in, or null while this task view has it
+    TaskPanelHost *hostOf(const TaskDialog *dlg) const;
+    /** Put every page where the preference says it belongs.
+     *
+     * In its owner view for a dialog a view of this window owns, while
+     * the preference is on; in the stack here otherwise -- always for a
+     * dialog nobody owns, which is shown over everything, and for a served
+     * client's, whose view has no widget. No dialog is closed or opened
+     * and none is told anything: the view being worked in did not change.
+     */
+    void applyHosting();
+    /** A key pressed in \a page, wherever the page is.
+     *
+     * Enter presses the default button of that page's dialog and Escape
+     * the one its dialog names; a dialog with no such button leaves its
+     * edit. Any other key ends here.
+     */
+    void pageKeyPress(TaskPage *page, QKeyEvent *ke);
+    /// The work-around event() applies to a shortcut override, for
+    /// whatever else holds a page
+    static void acceptEditingKeys(QEvent *event);
+
 Q_SIGNALS:
     void taskUpdate();
     /// A dialog's page is shown for the first time, or the dialog was
@@ -282,6 +311,13 @@ private:
     void syncActivation();
     /// The lines on the watchers' page that say where the panels are
     void updateHint();
+    /// Put \a info's page where it belongs now: in a host in its view, or
+    /// in the stack
+    void placePage(TaskInfo &info);
+    /// \a host is being destroyed with the place it stood in, and hands
+    /// back the page it held
+    void hostGone(TaskPanelHost *host, TaskPage *page);
+    friend class TaskPanelHost;
     /// Remove a dialog whose view is gone, telling or rejecting it
     void closeLost(TaskDialog *dlg);
     /// The same for every dialog whose view died without a word

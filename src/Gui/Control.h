@@ -160,6 +160,10 @@ public:
     /// The page the task view shows changed: to the dialog of this owner,
     /// or to the watchers' page (nobody).
     fastsignals::signal<void (const TaskOwner &)> signalDialogActivated;
+    /// Where task panels are shown was switched: in their views, or in
+    /// the task view (the preference TaskPanelInView). Sent once the
+    /// pages have been moved.
+    fastsignals::signal<void ()> signalHostChanged;
 
 public Q_SLOTS:
     /// These three act on the dialog activeDialog() answers.

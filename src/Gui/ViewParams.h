@@ -34,7 +34,7 @@ import ViewParams
 ViewParams.declare_begin()
 ]]]*/
 
-// Auto generated code (Gui/ViewParams.py:639)
+// Auto generated code (Gui/ViewParams.py:645)
 #include <QString>
 
 // Auto generated code (Tools/params_utils.py:82)
@@ -850,6 +850,22 @@ public:
     static void removePerViewSelection();
     static void setPerViewSelection(const bool &v);
     static const char *docPerViewSelection();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter TaskPanelInView
+    ///
+    /// Show a task panel inside the view it belongs to, over the picture,
+    /// where it stays whichever view is active. When off, task panels are
+    /// shown in the Tasks tab of the combo view, which follows the active
+    /// view. The button on the combo view's title bar is this switch.
+    static const bool & getTaskPanelInView();
+    static const bool & defaultTaskPanelInView();
+    static void removeTaskPanelInView();
+    static void setTaskPanelInView(const bool &v);
+    static const char *docTaskPanelInView();
+    static void onTaskPanelInViewChanged();
     //@}
 
     // Auto generated code (Tools/params_utils.py:139)
@@ -2373,7 +2389,7 @@ public:
     static const char *docDatumTemporaryScaleFactor();
     //@}
 
-    // Auto generated code (Gui/ViewParams.py:645)
+    // Auto generated code (Gui/ViewParams.py:651)
     static const std::vector<QString> AnimationCurveTypes;
 
     static void onViewParamChanged(const char *sReason);
@@ -2404,7 +2420,7 @@ ViewParams.declare_end()
 }; // class ViewParams
 } // namespace Gui
 
-// Auto generated code (Gui/ViewParams.py:658)
+// Auto generated code (Gui/ViewParams.py:664)
 namespace Gui {
 /// Obtain all display style names, terminated by nullptr entry.
 GuiExport const char **drawStyleNames();

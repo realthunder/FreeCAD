@@ -76,7 +76,11 @@ public:
     void refresh(QWidget *widget=nullptr, bool refreshStyle=false);
 
     /// Setup title bar for a QDockWidget
-    void setupTitleBar(QDockWidget *);
+    /// Give \a dock the overlay title bar. \a content is what the dock is
+    /// about to hold, when it is not set yet: the dock that holds the task
+    /// view carries one button more, the switch between task panels in the
+    /// combo view and in their views (docs/TaskPanelPerView.md sec 5.5).
+    void setupTitleBar(QDockWidget *, QWidget *content = nullptr);
 
     /// Overlay mode
     enum class OverlayMode {

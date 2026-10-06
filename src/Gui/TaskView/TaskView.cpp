@@ -29,6 +29,7 @@
 # include <QCursor>
 # include <QLabel>
 # include <QLineEdit>
+# include <QMdiSubWindow>
 # include <QPointer>
 # include <QPushButton>
 # include <QStackedWidget>
@@ -54,6 +55,7 @@
 #include "TaskView.h"
 #include "TaskDialog.h"
 #include "TaskEditControl.h"
+#include "TaskPanelHost.h"
 #include <Gui/Control.h>
 
 #include <Gui/QSint/actionpanel/taskgroup_p.h>
@@ -72,6 +74,41 @@ Gui::TaskOwner activeOwner()
 {
     Gui::MainWindow *mw = Gui::getMainWindow();
     return Gui::TaskOwner(mw ? mw->activeWindow() : nullptr);
+}
+
+/// Whether \a view is in the tab the main window shows -- the active
+/// view's -- or stands in a window of its own. Not asked of the widgets:
+/// a view in a tab behind the shown one is as visible as any to Qt.
+bool inSight(const Gui::MDIView *view)
+{
+    auto tabOf = [](const QWidget *w) -> const QWidget* {
+        for (; w; w = w->parentWidget()) {
+            if (qobject_cast<const QMdiSubWindow*>(w))
+                return w;
+        }
+        return nullptr;
+    };
+    const QWidget *its = tabOf(view);
+    if (!its)
+        return true;
+    Gui::MainWindow *mw = Gui::getMainWindow();
+    Gui::MDIView *active = mw ? mw->activeWindow() : nullptr;
+    return active && tabOf(active) == its;
+}
+
+/// What a dialog is called where its page stands apart from the task
+/// view: the title of the first of its boxes that has one.
+QString titleOf(const Gui::TaskView::TaskInfo &info)
+{
+    for (QWidget *widget : info.contents) {
+        if (auto group = qobject_cast<QSint::ActionGroup*>(widget)) {
+            if (!group->headerText().isEmpty())
+                return group->headerText();
+        }
+        if (!widget->windowTitle().isEmpty())
+            return widget->windowTitle();
+    }
+    return Gui::TaskView::TaskView::tr("Task panel");
 }
 } // namespace
 
@@ -444,6 +481,17 @@ TaskView::~TaskView()
     connectGuiDeleteDocument.disconnect();
     Gui::SelectionRoom().Detach(this);
 
+    // The pages in the views come back first: they go with this task
+    // view, as the ones in its stack do.
+    for (TaskInfo &info : taskInfos) {
+        if (TaskPanelHost *host = info.host) {
+            info.host = nullptr;
+            if (TaskPage *page = host->takePage())
+                page->setParent(parking);
+            delete host;
+        }
+    }
+
     if (ActiveWatcher.size()) {
         auto panel = Gui::Control().taskPanel();
         if (panel && panel != this)
@@ -454,8 +502,12 @@ TaskView::~TaskView()
 
 bool TaskView::isEmpty(bool includeWatcher) const
 {
-    if (!taskInfos.empty())
-        return false;
+    // A dialog whose page is in its view is not this task view's content
+    // (docs/TaskPanelPerView.md sec 5.3)
+    for (const TaskInfo &info : taskInfos) {
+        if (!info.host)
+            return false;
+    }
     // A contextual panel counts while it is shown, which is while a view
     // of its document is the active one
     for (const ContextualPanel &panel : contextualPanels) {
@@ -472,7 +524,7 @@ bool TaskView::isEmpty(bool includeWatcher) const
     return true;
 }
 
-bool TaskView::event(QEvent* event)
+void TaskView::acceptEditingKeys(QEvent* event)
 {
     // Workaround for a limitation in Qt (#0003794)
     // Line edits and spin boxes don't handle the key combination
@@ -503,17 +555,34 @@ bool TaskView::event(QEvent* event)
             }
         }
     }
+}
+
+bool TaskView::event(QEvent* event)
+{
+    acceptEditingKeys(event);
     return QWidget::event(event);
 }
 
 void TaskView::keyPressEvent(QKeyEvent* ke)
 {
-    // The page that is shown, by its own pointers: a click below may
+    // The page that is shown
+    if (TaskInfo *info = currentTaskInfo())
+        pageKeyPress(info->page, ke);
+    else
+        QWidget::keyPressEvent(ke);
+}
+
+void TaskView::pageKeyPress(TaskPage *page, QKeyEvent* ke)
+{
+    // The dialog of THAT page, by its own pointers: a click below may
     // close the dialog and take its entry with it.
-    TaskInfo *info = currentTaskInfo();
+    TaskInfo *info = nullptr;
+    for (TaskInfo &it : taskInfos) {
+        if (it.page == page)
+            info = &it;
+    }
     TaskDialog *ActiveDialog = info ? info->ActiveDialog : nullptr;
     TaskEditControl *ActiveCtrl = info ? info->ActiveCtrl : nullptr;
-    QWidget *page = info ? info->page : nullptr;
     if (ActiveCtrl && ActiveDialog) {
         if (ke->key() == Qt::Key_Return || ke->key() == Qt::Key_Enter) {
             // spin box uses Key_Return to signal finish editing. At least for
@@ -578,9 +647,6 @@ void TaskView::keyPressEvent(QKeyEvent* ke)
                 func->singleShot(0);
             }
         }
-    }
-    else {
-        QWidget::keyPressEvent(ke);
     }
 }
 
@@ -815,6 +881,10 @@ TaskInfo *TaskView::theTaskInfo()
 {
     if (TaskInfo *info = currentTaskInfo())
         return info;
+    // None in the stack: the one the view being worked in calls for,
+    // whose page may be in that view
+    if (TaskInfo *info = infoFor(activeOwner()))
+        return info;
     return taskInfos.empty() ? nullptr : &taskInfos.front();
 }
 
@@ -925,6 +995,10 @@ void TaskView::updateHint()
     for (const TaskInfo &info : taskInfos) {
         if (&info == shown)
             continue;
+        // A panel in its view says where it is by being there, while the
+        // view is in the tab that is shown
+        if (info.host && inSight(info.host->view()))
+            continue;
         ++rows;
         MDIView *view = info.owner.mdiView();
         if (!view) {
@@ -958,6 +1032,10 @@ void TaskView::updateHint()
 
 void TaskView::showPage(TaskInfo *info)
 {
+    // A page that is in its view is not this task view's to show: the
+    // watchers keep the Tasks tab (docs/TaskPanelPerView.md sec 5.2)
+    if (info && info->host)
+        info = nullptr;
     QWidget *page = info ? static_cast<QWidget*>(info->page) : scrollarea;
     QSint::ActionPanel *panel = info ? static_cast<QSint::ActionPanel*>(info->page->panel)
                                      : taskPanel;
@@ -989,11 +1067,15 @@ void TaskView::showPage(TaskInfo *info)
 
 void TaskView::syncActivation()
 {
-    // A dialog is active while its page is the one shown, and a client's
-    // from open() to closed(): its view is the only one its client has.
+    // A dialog is active while it is the one the view being worked in
+    // calls for -- which in the Tasks tab is while its page is the one
+    // shown, and in a view is whatever is drawn where: activation follows
+    // the view, not the place (docs/TaskPanelPerView.md sec 4.3). A
+    // client's is active from open() to closed(): its view is the only
+    // one its client has.
     // By the dialogs' own pointers, and looked up again each time: what a
     // dialog does when it is told may close one.
-    const TaskInfo *shownInfo = currentTaskInfo();
+    const TaskInfo *shownInfo = infoFor(activeOwner());
     const TaskDialog *shown = shownInfo ? shownInfo->ActiveDialog : nullptr;
     std::vector<TaskDialog*> ending, starting;
     for (const TaskInfo &info : taskInfos) {
@@ -1028,6 +1110,98 @@ void TaskView::setShownTaskInfo(TaskInfo *info)
 void TaskView::showForActiveView()
 {
     setShownTaskInfo(infoFor(activeOwner()));
+}
+
+bool TaskView::inViewMode()
+{
+    return ViewParams::getTaskPanelInView();
+}
+
+TaskPanelHost *TaskView::hostOf(const TaskDialog *dlg) const
+{
+    for (const TaskInfo &info : taskInfos) {
+        if (info.ActiveDialog == dlg)
+            return info.host;
+    }
+    return nullptr;
+}
+
+void TaskView::placePage(TaskInfo &info)
+{
+    // In its view while the preference says so and the view is one of
+    // this window's. A served client's view has no widget to stand in,
+    // and a dialog nobody owns is shown over everything: both stay here.
+    MDIView *view = inViewMode() ? info.owner.mdiView() : nullptr;
+    if (view) {
+        if (info.host && info.host->view() == view)
+            return;
+        if (stack->indexOf(info.page) >= 0) {
+            // The watchers get their page back before this one leaves
+            if (stack->currentWidget() == info.page)
+                showPage(nullptr);
+            stack->removeWidget(info.page);
+        }
+        if (TaskPanelHost *old = info.host) {
+            info.host = nullptr;
+            old->release();
+        }
+        auto host = new TaskPanelHost(this, view);
+        host->setTitle(titleOf(info));
+        host->setFillsHeight(info.ActiveDialog->needsFullSpace());
+        host->setPage(info.page);
+        info.host = host;
+        return;
+    }
+    if (TaskPanelHost *host = info.host) {
+        info.host = nullptr;
+        host->release();
+    }
+    if (stack->indexOf(info.page) < 0) {
+        // As narrow as the watchers' page may be now, as when it came up
+        info.page->scrollarea->setMinimumWidth(scrollarea->minimumWidth());
+        stack->addWidget(info.page);
+    }
+}
+
+void TaskView::applyHosting()
+{
+    // Focus inside a page that moves is put back where it was
+    QPointer<QWidget> focus = QApplication::focusWidget();
+    bool focusMoves = false;
+    bool lost = false;
+    for (TaskInfo &info : taskInfos) {
+        if (focus && info.page->isAncestorOf(focus))
+            focusMoves = true;
+        placePage(info);
+        lost = lost || (!info.owner.isNull() && !info.owner.isValid());
+    }
+    // What the stack shows for the view being worked in. Which dialog is
+    // the active one does not depend on where its page is, so nothing is
+    // activated or deactivated by this.
+    showForActiveView();
+    if (focusMoves && focus && focus != QApplication::focusWidget())
+        focus->setFocus();
+    if (lost) {
+        // NOLINTNEXTLINE
+        QTimer::singleShot(0, this, &TaskView::closeOrphans);
+    }
+    triggerMinimumSizeHint();
+    Q_EMIT taskUpdate();
+}
+
+void TaskView::hostGone(TaskPanelHost *host, TaskPage *page)
+{
+    // Out of the dying host at once, whoever it is
+    page->setParent(parking);
+    for (TaskInfo &info : taskInfos) {
+        if (info.host == host)
+            info.host = nullptr;
+    }
+    // Not from here: this is inside the destruction of whatever the host
+    // stood in. The page goes into a host in the view's new place, or
+    // back into the stack; a view that is gone takes its dialog with it.
+    // NOLINTNEXTLINE
+    QTimer::singleShot(0, this, &TaskView::applyHosting);
 }
 
 void TaskView::showDialog(TaskDialog *dlg)
@@ -1123,8 +1297,9 @@ void TaskView::showDialog(TaskDialog *dlg)
     // its page waits for that view, and the watchers' page says where it
     // is (docs/TaskPanelPerView.md sec 5.1).
     TaskPage *page = info.page;
-    stack->addWidget(page);
     taskInfos.push_back(std::move(info));
+    // In the stack, or in its view (docs/TaskPanelPerView.md sec 5.2)
+    placePage(taskInfos.back());
     showPage(infoFor(activeOwner()));
 
     dlg->open();
@@ -1209,7 +1384,14 @@ void TaskView::removeDialog(TaskDialog *dlg)
         remove = dlg;
         page = info->page;
         wasShown = info->raised;
+        TaskPanelHost *host = info->host;
         taskInfos.erase(taskInfos.begin() + (info - taskInfos.data()));
+        if (host) {
+            // The page comes out of its view before the host goes: it
+            // waits here for the dialog, which owns what is in it
+            if (host->release() == page)
+                page->setParent(parking);
+        }
         // What the active view calls for comes up: another dialog's page,
         // else the watchers', which get their place back with it
         showForActiveView();

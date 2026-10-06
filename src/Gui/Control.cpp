@@ -360,9 +360,11 @@ void ControlSingleton::showDialogFor(Gui::TaskView::TaskDialog *dlg, const TaskO
         pcComboView->showDialog(dlg);
         handed = true;
 
-        // make sure that the combo view is shown
+        // make sure that the combo view is shown -- for a page it shows:
+        // a page that went into its view needs no dock brought up for it
         auto dw = qobject_cast<QDockWidget*>(pcComboView->parentWidget());
-        if (dw && !dw->toggleViewAction()->isChecked()) {
+        if (dw && !dw->toggleViewAction()->isChecked()
+                && !pcComboView->getTaskPanel()->hostOf(dlg)) {
             aboutToShowDialog(dw);
             dw->toggleViewAction()->activate(QAction::Trigger);
             dw->setFeatures(QDockWidget::DockWidgetMovable|QDockWidget::DockWidgetFloatable);

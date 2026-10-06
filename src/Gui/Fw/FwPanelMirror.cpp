@@ -398,6 +398,10 @@ void PanelMirror::start()
             if (buttons)
                 break;
         }
+        // The page may be in its view, not under the task view
+        // (docs/TaskPanelPerView.md sec 5.2)
+        if (!buttons)
+            buttons = buttonBoxOf(getMainWindow());
         show(QString::fromUtf8(dlg->metaObject()->className()), contents, buttons);
     }
 }

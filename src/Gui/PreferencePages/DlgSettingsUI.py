@@ -52,7 +52,7 @@ ParamGroup = (
     )]),
 
     ('Views', [_ViewParams['UseViewArea'], _ViewParams['PerViewEdit'],
-               _ViewParams['PerViewSelection']]
+               _ViewParams['PerViewSelection'], _ViewParams['TaskPanelInView']]
               + [_OpenViewParams[name] for name in (
         'DocumentTarget',
         'DocViewTarget',

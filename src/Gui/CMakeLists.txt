@@ -878,6 +878,8 @@ SET(Task_View_SRCS
     TaskView/TaskSolverMessages.ui
     TaskView/TaskView.cpp
     TaskView/TaskView.h
+    TaskView/TaskPanelHost.cpp
+    TaskView/TaskPanelHost.h
     TaskView/TaskDialog.cpp
     TaskView/TaskDialog.h
     TaskView/TaskDialogPython.cpp
@@ -1598,6 +1600,7 @@ if(MSVC)
         TaskView/TaskSelectLinkProperty.cpp
         TaskView/TaskEditControl.cpp
         TaskView/TaskView.cpp
+        TaskView/TaskPanelHost.cpp
         ${Command_CPP_SRCS}
         ${Dialog_CPP_SRCS}
         ${Dialog_Customize_CPP_SRCS}

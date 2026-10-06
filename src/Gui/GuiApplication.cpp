@@ -70,6 +70,7 @@
 #include "MainWindow.h"
 #include "RenderParams.h"
 #include "SpaceballEvent.h"
+#include "TaskView/TaskPanelHost.h"
 
 
 using namespace Gui;
@@ -429,6 +430,10 @@ bool GUIApplication::dispatchEvent(QObject * receiver, QEvent * event)
     if (event->type() == Spaceball::ButtonEvent::ButtonEventType ||
         event->type() == Spaceball::MotionEvent::MotionEventType)
         return processSpaceballEvent(receiver, event);
+    // A task panel in its view, used while another view is the active
+    // one, is handled as its own view (docs/TaskPanelPerView.md sec 12.5).
+    // One test of a counter while no view hosts a panel.
+    TaskView::TaskPageEventScope pageScope(receiver, event);
     return QApplication::notify(receiver, event);
 }
 

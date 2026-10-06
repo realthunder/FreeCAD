@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<svg
+   xmlns:svg="http://www.w3.org/2000/svg"
+   xmlns="http://www.w3.org/2000/svg"
+   id="svgTaskHost"
+   height="12"
+   width="12"
+   version="1.1">
+  <rect
+     style="fill:none;stroke:#000000;stroke-width:1;stroke-linecap:round;stroke-linejoin:miter;stroke-opacity:0.50196078"
+     id="view"
+     width="10"
+     height="9"
+     x="1"
+     y="1.5" />
+  <rect
+     style="fill:#000000;fill-opacity:0.50196078;stroke:none"
+     id="panel"
+     width="3"
+     height="6"
+     x="2.5"
+     y="3" />
+  <path
+     style="fill:none;stroke:#000000;stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;stroke-opacity:0.50196078"
+     d="m 7,5 2.5,0 M 7,7 9.5,7"
+     id="lines" />
+</svg>
