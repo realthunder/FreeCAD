@@ -3263,3 +3263,34 @@ Paint check, 56: the panel up with its button; a face coloured through it
 and given a material through the button, drawn and by name in the colour
 it had, the object's own look left alone; kept by OK; one step to undo.
 The check drives the two modal dialogs from a timer.
+
+**Step 6, handed on from a source (2026-10-07).** Q5. `getElementColor()`,
+which finds the colour a face has from the face it came from, hands on
+that face's whole look too where it has more of its own than a colour
+(`ownLook()`: an overriding face of the source's `ShapeAppearance` that
+differs from the source's base in something other than its colour). A
+source face that was only painted hands on its colour, as it always has,
+and the face made from it keeps its own object's gloss.
+
+`updateColors()`, where it maps the faces from their sources
+(`MapFaceColor`, an object with something to map from), gives such a face
+the look, in the colour the mapping settled on -- `MapTransparency` has
+its say there as before. A name still comes first.
+
+In that mode a face no name paints is what its source makes it and no
+more: every such face is worked out again on each run. So a look handed
+on before and not now is taken back -- nothing remembers it across a
+document read, which is why it is asked of the list (the faces that hold
+more than a colour, and are neither named nor handed a look now) and not
+kept in a set as the names' are. A colour given by number was already
+written over in this mode; a look given by number now is too.
+
+`ShapeAppearance` takes its hold on the content a look names
+(`holdStoredBlobs()`) after the faces are written, for a named look and a
+handed-on one alike. *Written, not run*, as at step 4: nothing here gives
+a face a texture.
+
+Paint check, 60: a cut whose faces are a box's -- the box's face given a
+material by name, the cut's face made from it has it and no other face
+of the cut; the box's face only painted, the cut's has its colour and
+its own gloss; the name taken away, nothing of it left on the cut.

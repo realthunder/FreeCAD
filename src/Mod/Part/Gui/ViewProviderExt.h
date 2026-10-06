@@ -838,7 +838,8 @@ protected:
     void setFaceColors(const std::vector<App::Color> &colors, int faceCount,
                        const std::vector<int> &unpainted,
                        const std::map<int,int> &named,
-                       const App::AppearanceList &looks);
+                       const App::AppearanceList &looks,
+                       const std::map<int,App::MaterialAppearance> *handedOn = nullptr);
     /// Write the names and a look for each, the tail of both setters
     void setNamedElements(App::PropertyLinkSub *names,
                           const std::vector<std::string> &subs,

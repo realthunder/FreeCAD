@@ -475,6 +475,34 @@ def run():
         check("and one step to undo (%r)" % named(doc.Box),
               named(doc.Box) == {} and gloss(vp.ShapeAppearance[int(top[4:]) - 1]) == own)
         App.closeDocument(doc.Name)
+
+        # A face takes its source face's material (sec 13.6 step 6): the cut
+        # is the box here, the cylinder below it, and each of its faces is
+        # one of the box's.
+        doc = cut("PaintHand", folder)
+        vpb, vpc = doc.Box.ViewObject, doc.Cut.ViewObject
+        side = face(doc.Box, XMin=10)
+        iside = int(face(doc.Cut, XMin=10)[4:]) - 1
+        own = gloss(vpc.ShapeAppearance.Base)
+        vpb.setElementAppearances({side: App.Material(DiffuseColor=RED, Shininess=0.25)})
+        doc.recompute()
+        check("a face made from one with a material has it (%r, %r)"
+              % (gloss(vpc.ShapeAppearance[iside]), rgb(vpc.DiffuseColor[iside])),
+              gloss(vpc.ShapeAppearance[iside]) == 0.25 and rgb(vpc.DiffuseColor[iside]) == RED)
+        check("and no other face of it (%r)" % sorted({gloss(x) for x in vpc.ShapeAppearance}),
+              sorted({gloss(x) for x in vpc.ShapeAppearance}) == sorted({0.25, own}))
+        vpb.setElementAppearances({})
+        doc.recompute()
+        vpb.setElementColors({side: BLUE})
+        doc.recompute()
+        check("from one that was only painted: its colour, and the gloss its own (%r, %r)"
+              % (gloss(vpc.ShapeAppearance[iside]), rgb(vpc.DiffuseColor[iside])),
+              gloss(vpc.ShapeAppearance[iside]) == own and rgb(vpc.DiffuseColor[iside]) == BLUE)
+        vpb.setElementColors({})
+        doc.recompute()
+        check("the source's name taken away: nothing of it left (%r)" % shown(doc.Cut),
+              {gloss(x) for x in vpc.ShapeAppearance} == {own} and shown(doc.Cut) == {})
+        App.closeDocument(doc.Name)
     except Exception:
         lines.append("FAIL exception\n" + traceback.format_exc())
     finally:
