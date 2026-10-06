@@ -663,3 +663,83 @@ On `68f95d11fd` (milestone 1 on the merge of PartDesignPort `84c14e12d5`):
 Python 3379 tests OK; ctest 953 of 953 (962 entries, 3819 s serial); the
 GUI gate 70 tests OK, the panel mirror's module among them. Rows in
 `docs/Testing.md`.
+
+### 11.4 Milestone 2, first half: the stack (2026-10-06, `c503f2a1a0`)
+
+`TaskView` holds a page per open dialog, as sec 4.2 has it, and still
+shows the dialog's page whenever there is one: the structure of milestone
+2 with none of its behaviour. Following the active view, `activate()` /
+`deactivate()`, the auto-close switches and the hint on page 0 are the
+second half.
+
+- `TaskView` stays a `QWidget` with its layout and margins; a
+  `QStackedWidget` stands where its one scroll area stood. Page 0 is that
+  scroll area with the watchers' panel. `TaskPage` is a dialog's page:
+  its own scroll area and `TaskPanel`, and the button box in the panel or
+  pinned outside the scrolling (`StickyTaskControl`) -- content and
+  buttons in one widget, which is what sec 5 moves between hosts.
+- `TaskInfo { page, ActiveDialog, ActiveCtrl, owner, contents }`, a vector
+  of them (`taskInfos`), found by dialog; `ActiveDialog`, `ActiveCtrl` and
+  `contents` are gone from the class. The button wiring is a lambda per
+  dialog. `dialog(owner)` and `currentTaskInfo()` are public.
+- The argument-less `accept()` / `reject()` / `removeDialog()` act on the
+  shown page's dialog, else the only one.
+- `Control().signalShowDialog` / `signalRemoveDialog` hand listeners the
+  dialog's PAGE where they handed the task view. Both listeners want
+  exactly that: the panel mirror looks in it for the button box, and
+  PartDesign's monitor parents a widget to it.
+- **Contextual panels** (`addContextualPanel`; Assembly's solver panel is
+  the one user) sit in the panel of the page that is SHOWN and are carried
+  over when the shown page changes, at the top as before. Per owner is the
+  second half's.
+- A removed page is deleted when its dialog has been: the dialog owns its
+  content widgets and deletes them, and until then they are the page's
+  children, as they were the one shared panel's.
+
+**Nothing visible changed -- measured, and it nearly had.** A probe took
+the place and size of every visible widget in the task view, and the task
+view's picture, in seven states (the watchers, a Pad's dialog with the
+button box in the panel and pinned, a sketch's, a Python panel's, the
+watchers again twice) on the tree before and after. First run: the
+watchers identical, but every dialog WIDER -- the task view 420 px for the
+Pad where it had been 146, the dock grown to fit the content instead of
+scrolling it. Cause: `QScrollArea::sizeHint()` takes its widget's size
+hint the first time it is asked and keeps it. The one shared scroll area
+was first asked at start-up, empty, so its hint stayed 18 x 18 for good
+and no dialog ever asked the dock for room; a new page's was first asked
+with the dialog in it. "The task view scrolls what does not fit and never
+widens its dock" was an accident of that cache. A page now asks while it
+is empty, and takes the watchers' current minimum width. Second run: all
+seven states the same, widget for widget, 0 pixels differing. Compared in
+the test session's narrow dock only (146 px); a wide dock was not.
+
+Letting the dock follow the content, as upstream does (with a width it
+restores afterwards), is a choice now, where before it was not possible;
+not made here.
+
+Run on it: every GUI and widget entry of ctest (`-R '^Gui|FormWidgets|
+QuantitySpinBox'`), 172 of 172, 3267 s; the GUI gate, 70 tests OK; both
+owner tests. NOT run on it: the Python suite and the rest of ctest, which
+do not build a task view.
+
+### 11.5 Put to the user before the second half
+
+The second half of milestone 2 is where behaviour changes, and one point
+of sec 4.3 does not survive contact with the fork as written:
+
+- **The selection gate.** Upstream removes the gate when a dialog's page
+  is left and expects the dialog's `activate()` to put it back. No dialog
+  in this fork does: 32 files add a gate, once, and every one of them
+  would lose it the first time the user looked at another view. Proposed
+  instead: the task view TAKES the gate out of the selection when the
+  page is left and puts the same gate back when it is returned to
+  (`SelectionSingleton` has one `ActiveGate` per instance,
+  `Selection/Selection.cpp`; it needs a take and a restore beside add
+  and remove). `activate()` / `deactivate()` stay, empty, for the state a
+  dialog holds that the framework cannot see.
+- **While the gate is out**, what the dialog's own selection observers
+  were promised never to see can arrive: a sketch's panel hearing of a
+  selection in another view. That is the audit of sec 5.1 ("nothing in it
+  may assume it is visible"), and it is the larger part of the work.
+- There is no view-closed signal in `Gui::Application` yet (upstream's
+  `slotViewClosed` listens to one); auto-close on a closed view needs it.
