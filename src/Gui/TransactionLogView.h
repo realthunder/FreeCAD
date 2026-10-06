@@ -108,6 +108,10 @@ public Q_SLOTS:
     /// (docs/TransactionLog.md sec 28): the preview in a dialog where each
     /// conflict gets a side, then the merge.
     void mergeBranch(const QString& name);
+    /// Apply log rows to the branch the document is on, as a step of its
+    /// own (docs/TransactionLog.md sec 31.12): `seqs` is their numbers,
+    /// comma-separated. The preview, a side for each conflict, the pick.
+    void applyRows(const QString& seqs);
     /** Bring another copy of this file in as a branch, then merge it
      * (docs/TransactionLog.md sec 30.13, 30.14): the copy's rows since the
      * two parted are imported as a branch named after it, and that branch

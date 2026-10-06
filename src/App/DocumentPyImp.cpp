@@ -1443,6 +1443,39 @@ PyObject* DocumentPy::getTransactionBranchState(PyObject *args)
     } PY_CATCH;
 }
 
+namespace {
+Py::Dict mergeResultToPy(const App::Document::MergeResult& result)
+{
+    Py::Dict d;
+    d.setItem("seq", Py::Long(static_cast<long long>(result.seq)));
+    d.setItem("forwarded", Py::Long(static_cast<unsigned long long>(result.forwarded)));
+    Py::List unresolved;
+    for (const auto& c : result.unresolved)
+        unresolved.append(mergeChangeToPy(c));
+    d.setItem("unresolved", unresolved);
+    Py::List failed;
+    for (const auto& name : result.failed)
+        failed.append(Py::String(name));
+    d.setItem("failed", failed);
+    d.setItem("preview", mergePreviewToPy(result.preview));
+    return d;
+}
+
+/// One row, or a sequence of them.
+std::vector<int64_t> pickedRows(PyObject* pyRows)
+{
+    std::vector<int64_t> rows;
+    if (PyLong_Check(pyRows)) {
+        rows.push_back(static_cast<int64_t>(PyLong_AsLongLong(pyRows)));
+        return rows;
+    }
+    Py::Sequence seq(pyRows);
+    for (auto it = seq.begin(); it != seq.end(); ++it)
+        rows.push_back(static_cast<int64_t>(static_cast<long long>(Py::Long(*it))));
+    return rows;
+}
+}  // namespace
+
 PyObject* DocumentPy::previewTransactionMerge(PyObject *args)
 {
     const char* branch;
@@ -1473,20 +1506,41 @@ PyObject* DocumentPy::mergeTransactionBranch(PyObject *args)
                     = Py::String(item.second).as_std_string("utf-8");
             }
         }
-        const auto result = getDocumentPtr()->mergeBranch(branch, picks, fallback, version);
-        Py::Dict d;
-        d.setItem("seq", Py::Long(static_cast<long long>(result.seq)));
-        d.setItem("forwarded", Py::Long(static_cast<unsigned long long>(result.forwarded)));
-        Py::List unresolved;
-        for (const auto& c : result.unresolved)
-            unresolved.append(mergeChangeToPy(c));
-        d.setItem("unresolved", unresolved);
-        Py::List failed;
-        for (const auto& name : result.failed)
-            failed.append(Py::String(name));
-        d.setItem("failed", failed);
-        d.setItem("preview", mergePreviewToPy(result.preview));
-        return Py::new_reference_to(d);
+        return Py::new_reference_to(
+            mergeResultToPy(getDocumentPtr()->mergeBranch(branch, picks, fallback, version)));
+    } PY_CATCH;
+}
+
+PyObject* DocumentPy::previewTransactionPick(PyObject *args)
+{
+    PyObject* pyRows = nullptr;
+    if (!PyArg_ParseTuple(args, "O", &pyRows))
+        return nullptr;
+    PY_TRY {
+        return Py::new_reference_to(
+            mergePreviewToPy(getDocumentPtr()->previewPick(pickedRows(pyRows))));
+    } PY_CATCH;
+}
+
+PyObject* DocumentPy::pickTransactions(PyObject *args)
+{
+    PyObject* pyRows = nullptr;
+    PyObject* pyPicks = nullptr;
+    const char* fallback = "";
+    if (!PyArg_ParseTuple(args, "O|O!s", &pyRows, &PyDict_Type, &pyPicks, &fallback))
+        return nullptr;
+    PY_TRY {
+        std::map<std::string, std::string> picks;
+        if (pyPicks) {
+            Py::Dict dict(pyPicks);
+            for (auto it = dict.begin(); it != dict.end(); ++it) {
+                const auto item = *it;
+                picks[Py::String(item.first).as_std_string("utf-8")]
+                    = Py::String(item.second).as_std_string("utf-8");
+            }
+        }
+        return Py::new_reference_to(
+            mergeResultToPy(getDocumentPtr()->pickRows(pickedRows(pyRows), picks, fallback)));
     } PY_CATCH;
 }
 

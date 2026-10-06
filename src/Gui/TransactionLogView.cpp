@@ -463,7 +463,8 @@ TransactionLogView::TransactionLogView(Gui::Document* pcDocument, QWidget* paren
     _transactions->setRootIsDecorated(false);
     _transactions->setAlternatingRowColors(true);
     _transactions->setUniformRowHeights(true);
-    _transactions->setSelectionMode(QAbstractItemView::SingleSelection);
+    // Several rows may be picked to be applied together (sec 31.12).
+    _transactions->setSelectionMode(QAbstractItemView::ExtendedSelection);
     _transactions->setContextMenuPolicy(Qt::CustomContextMenu);
     _transactions->header()->setStretchLastSection(false);
     _transactions->header()->setSectionResizeMode(TxnName, QHeaderView::Stretch);
@@ -1340,19 +1341,28 @@ class MergeDialog: public QDialog
 public:
     enum Column { Kind, Object, Property, Base, Ours, Theirs, Takes, Columns };
 
+    /// `rows`: the preview is of rows picked out of the log (sec 31.12),
+    /// applied here, and not of a branch merged.
     MergeDialog(const App::Document::MergePreview& preview, const QString& ours,
-                App::TransactionLog* log, QWidget* parent)
+                App::TransactionLog* log, QWidget* parent, bool rows = false)
         : QDialog(parent)
     {
         setObjectName(QStringLiteral("TransactionMergeDialog"));
-        setWindowTitle(QObject::tr("Merge %1 into %2")
+        setWindowTitle((rows ? QObject::tr("Apply %1 to %2") : QObject::tr("Merge %1 into %2"))
                            .arg(QString::fromStdString(preview.branch), ours));
         auto layout = new QVBoxLayout(this);
-        QString summary = QObject::tr("%1 changes since row %2, %3 conflicts.")
-                              .arg(preview.changes.size())
-                              .arg(preview.base)
-                              .arg(preview.conflicts);
-        if (!preview.forward.empty())
+        QString summary = rows ? QObject::tr("%1 changes, %2 conflicts.")
+                                     .arg(preview.changes.size())
+                                     .arg(preview.conflicts)
+                               : QObject::tr("%1 changes since row %2, %3 conflicts.")
+                                     .arg(preview.changes.size())
+                                     .arg(preview.base)
+                                     .arg(preview.conflicts);
+        if (rows)
+            summary += QLatin1Char(' ')
+                     + QObject::tr("The rows stay their branch's; what they set is written "
+                                   "here as one step, and recomputed.");
+        else if (!preview.forward.empty())
             summary += QLatin1Char(' ')
                      + QObject::tr("This branch has not moved since: a fast-forward, the "
                                    "other's %1 rows taken as they are. What they changed "
@@ -1365,6 +1375,9 @@ public:
         else
             summary += QLatin1Char(' ')
                      + QObject::tr("Derived values are not merged; the result is recomputed.");
+        // Sec 31.12: what asks nothing may be left out all the same.
+        summary += QLatin1Char(' ')
+                 + QObject::tr("Untick a change to leave it out.");
         layout->addWidget(new QLabel(summary, this));
 
         _tree = new QTreeWidget(this);
@@ -1423,12 +1436,18 @@ public:
             }
             else if (c->kind == "take") {
                 item->setText(Takes, QStringLiteral("theirs"));
+                item->setFlags(item->flags() | Qt::ItemIsUserCheckable);
+                item->setCheckState(Kind, Qt::Checked);
+                _taken.push_back(item);
             }
             else if (c->kind == "merge") {
                 // Merged by what it holds (sec 31.8): nothing to pick, and
                 // the note says what of theirs goes in.
                 item->setText(Takes, QObject::tr("both"));
                 item->setToolTip(Takes, QString::fromStdString(c->note));
+                item->setFlags(item->flags() | Qt::ItemIsUserCheckable);
+                item->setCheckState(Kind, Qt::Checked);
+                _taken.push_back(item);
             }
             else if (c->kind == "name") {
                 // What an expression named by its place is named before
@@ -1457,8 +1476,25 @@ public:
         for (int col : {Base, Ours, Theirs})
             _tree->setColumnWidth(col, std::min(_tree->columnWidth(col), 260));
 
+        // The properties of one sketch merged together have one key (sec
+        // 31.10): left out, they are all left out.
+        QObject::connect(_tree, &QTreeWidget::itemChanged, this,
+                         [this](QTreeWidgetItem* changed, int column) {
+                             if (column != Kind || _linking)
+                                 return;
+                             _linking = true;
+                             const QString key = changed->data(Kind, Qt::UserRole).toString();
+                             for (auto item : _taken) {
+                                 if (item != changed
+                                         && item->data(Kind, Qt::UserRole).toString() == key)
+                                     item->setCheckState(Kind, changed->checkState(Kind));
+                             }
+                             _linking = false;
+                         });
+
         auto buttons = new QDialogButtonBox(this);
-        auto merge = buttons->addButton(QObject::tr("Merge"), QDialogButtonBox::AcceptRole);
+        auto merge = buttons->addButton(rows ? QObject::tr("Apply") : QObject::tr("Merge"),
+                                        QDialogButtonBox::AcceptRole);
         merge->setObjectName(QStringLiteral("merge"));
         buttons->addButton(QDialogButtonBox::Cancel);
         auto allOurs = buttons->addButton(QObject::tr("All ours"), QDialogButtonBox::ActionRole);
@@ -1473,12 +1509,17 @@ public:
         resize(900, 480);
     }
 
-    /// The side of every conflict, by its key.
+    /// The side of every conflict, by its key; and `ours` for every change
+    /// that asks nothing and was unticked (sec 31.12).
     std::map<std::string, std::string> picks() const
     {
         std::map<std::string, std::string> out;
         for (const auto& kv : _sides)
             out[kv.first] = kv.second->currentText().toStdString();
+        for (auto item : _taken) {
+            if (item->checkState(Kind) == Qt::Unchecked)
+                out[item->data(Kind, Qt::UserRole).toString().toStdString()] = "ours";
+        }
         return out;
     }
 
@@ -1492,6 +1533,9 @@ private:
     QTreeWidget* _tree {nullptr};
     std::vector<std::pair<std::string, QComboBox*>> _sides;
     std::vector<QComboBox*> _conflicts;
+    /// The rows that go in with nothing asked: each may be unticked.
+    std::vector<QTreeWidgetItem*> _taken;
+    bool _linking {false};
 };
 
 } // namespace
@@ -1560,6 +1604,46 @@ void TransactionLogView::mergeBranch(const QString& name)
     catch (Base::Exception& e) {
         FC_ERR("merge of branch " << name.toStdString() << ": " << e.what());
         _status->setText(tr("Branch not merged -- the report view says why"));
+    }
+}
+
+void TransactionLogView::applyRows(const QString& seqs)
+{
+    // docs/TransactionLog.md sec 31.12: rows of another branch, picked in
+    // the list, applied to this one as a step of its own.
+    auto l = log();
+    if (!l || !_doc)
+        return;
+    std::vector<int64_t> rows;
+    for (const QString& part : seqs.split(QLatin1Char(','), Qt::SkipEmptyParts))
+        rows.push_back(part.trimmed().toLongLong());
+    try {
+        const auto preview = _doc->previewPick(rows);
+        const QString what = QString::fromStdString(preview.branch);
+        if (preview.changes.empty()) {
+            _status->setText(tr("Nothing of %1 to apply").arg(what));
+            return;
+        }
+        App::LogBranch mine;
+        l->store().getBranch(l->branch(), mine);
+        MergeDialog dialog(preview, QString::fromStdString(mine.name), l, this, true);
+        if (dialog.exec() != QDialog::Accepted)
+            return;
+        const auto result = _doc->pickRows(rows, dialog.picks());
+        if (!result.unresolved.empty())
+            _status->setText(tr("%1 not applied: %2 conflicts have no side")
+                                 .arg(what).arg(result.unresolved.size()));
+        else if (!result.seq)
+            _status->setText(tr("%1 applied: nothing changed").arg(what));
+        else if (!result.failed.empty())
+            _status->setText(tr("Applied %1 as row %2; %3 objects failed to recompute")
+                                 .arg(what).arg(result.seq).arg(result.failed.size()));
+        else
+            _status->setText(tr("Applied %1 as row %2").arg(what).arg(result.seq));
+    }
+    catch (Base::Exception& e) {
+        FC_ERR("apply of row(s) " << seqs.toStdString() << ": " << e.what());
+        _status->setText(tr("Rows not applied -- the report view says why"));
     }
 }
 
@@ -2087,13 +2171,35 @@ void TransactionLogView::transactionMenu(QTreeWidgetItem* item, const QPoint& gl
                            "anything since changed what it touched (sec 24.4)"));
     undoRow->setEnabled(_doc
                         && (kind == QLatin1String("user") || kind == QLatin1String("implicit")
-                            || kind == QLatin1String("undo") || kind == QLatin1String("redo")));
+                            || kind == QLatin1String("undo") || kind == QLatin1String("redo")
+                            || kind == QLatin1String("pick")));
+    // Sec 31.12: the rows selected, or this one, applied here -- rows of
+    // another branch; this branch's own are what undo and redo are for.
+    QStringList picked;
+    for (auto selected : _transactions->selectedItems())
+        picked << QString::number(selected->data(TxnSeq, Qt::UserRole).toLongLong());
+    if (!picked.contains(QString::number(seq)))
+        picked = QStringList {QString::number(seq)};
+    bool mine = false;
+    if (auto l = log()) {
+        for (const auto& t : l->store().history(l->head()))
+            mine = mine || picked.contains(QString::number(t.seq));
+    }
+    auto applyHere = menu.addAction(picked.size() == 1 ? tr("Apply row %1 here...").arg(seq)
+                                                       : tr("Apply %1 rows here...").arg(picked.size()));
+    applyHere->setToolTip(tr("What the row set, written to this branch as a step of its own; "
+                             "its branch is not merged by it (sec 31.12)"));
+    applyHere->setEnabled(_doc && !mine);
     auto branchHere = menu.addAction(tr("Branch from here..."));
     branchHere->setToolTip(tr("A new branch whose history ends at this row, switched to (sec 26)"));
     branchHere->setEnabled(_doc != nullptr);
     auto chosen = menu.exec(global);
     if (chosen == branchHere) {
         createBranch(0, seq);
+        return;
+    }
+    if (chosen == applyHere) {
+        applyRows(picked.join(QLatin1Char(',')));
         return;
     }
     if (chosen == undoRow) {

@@ -589,6 +589,30 @@ and 'unresolved' lists them. 'failed' names the objects whose recompute
 failed on the merged state. The other branch is left as it is.</UserDocu>
       </Documentation>
     </Methode>
+    <Methode Name="previewTransactionPick">
+      <Documentation>
+        <UserDocu>previewTransactionPick(rows) -> dict
+
+What applying `rows` -- a log row's seq, or a sequence of them -- to this
+document would do (docs/TransactionLog.md sec 31.12), read only, as
+previewTransactionMerge() says it: a value the rows set is 'take' where
+the document still has what it had before them, 'same' where it has what
+they made it, and otherwise a 'conflict', or a 'merge' by what it holds.
+Raises for a row of this branch's own history, and for rows that change
+an object this document does not have.</UserDocu>
+      </Documentation>
+    </Methode>
+    <Methode Name="pickTransactions">
+      <Documentation>
+        <UserDocu>pickTransactions(rows, picks={}, fallback='') -> dict
+
+Apply `rows` of the log here (docs/TransactionLog.md sec 31.12): one
+transaction of kind 'pick', undone like any. No branch is merged by it.
+`picks`, `fallback` and the result as mergeTransactionBranch() has them.
+For both, `picks` may also give 'ours' to the key of a change that asks
+nothing -- a 'take', a 'merge' -- and it is left out.</UserDocu>
+      </Documentation>
+    </Methode>
     <Methode Name="getTransactionForkBranches">
       <Documentation>
         <UserDocu>getTransactionForkBranches(path) -> list of dict

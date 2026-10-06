@@ -15525,3 +15525,86 @@ and the cylinder after.
 RC 15, BC 30, VC 18, PC 28, FC 16, VW 14, MC 37 (+2), the two-document
 check 24, the tree check 19, the author check 36, the import check 49,
 the request check 31 and the share check 47.
+
+### 31.12 Picking by hand, as an operation of its own (user, 2026-10-06)
+
+**Asked (user):** "i want a feature in the transaction panel to allow
+user manual picking records not only for resolving conflicts but as a
+general operation." Two things it could be were put to them -- rows of
+another branch applied here, and a merge that leaves out what it is told
+to -- and the answer was "I meant both."
+
+**Rows applied.** `Document::previewPick(rows)` and `pickRows(rows,
+picks, fallback)`; Python `previewTransactionPick`, `pickTransactions`;
+in the panel, "Apply row N here..." on a row of the list, or "Apply N
+rows here..." with several selected -- the list takes a selection of
+more than one row now.
+
+- It is a merge's plan with another first half (`planRows`,
+  `pickedOurs`; the weighing, `planWeigh`, is the merge's own). Theirs
+  is the net of the rows picked, oldest first: what each value was
+  before them, and what they made it. Ours is the document: a value
+  still what it was before the rows is **taken**; one that is what they
+  made it is **the same**; anything else is two changes of one value and
+  goes as it does in a merge -- by what it holds where it can be (31.8,
+  31.10), else a conflict with a side to pick. What a recompute wrote is
+  recomputed.
+- An object comes with the row that made it. Rows that change an object
+  the document has not are **refused**: the row that made it was not
+  picked. A row of this branch's own history is refused too -- undo and
+  redo are for those.
+- What it writes is one transaction of kind **`pick`**, "Apply row 12",
+  undone like any, its annotation `pick` with the `rows`. **No branch is
+  merged**: the row has no second parent, the base of a later merge is
+  where it was, and that merge finds what was applied the same on both
+  sides. Rows that change nothing here write nothing.
+- The mirror of 24.7's "Undo row", which applies one row of this branch
+  reversed; a `pick` row can be undone that way too.
+
+**A change left out.** For a merge and for a pick alike, `picks` may
+name the key of a change that asks nothing -- one taken, one merged by
+what it holds -- with `ours`, and it does not go in. In the dialog those
+rows have a tick.
+
+- A merge that leaves something out is **never a fast-forward** (30.4
+  P1): it writes its row, with what was left under `left`.
+- **The branch is merged all the same.** What was left out is not
+  offered again: said to the user before they asked for it, and in the
+  dialog's first line only as "Untick a change to leave it out" -- to be
+  said better there.
+- A sketch merged by what it holds (31.10) is several properties and
+  one thing: its changes have one key now, the unit's
+  (`Sketch.Geometry`, as 31.5's rows have), so one tick is all of them,
+  and the row's `later` and `dropped` say the property beside the key.
+
+**Tests.** Python `testRowsArePickedAndChangesLeftOut`: one row applied
+-- its change and no other, a `pick` row, undone and redone, applied
+again writing nothing, and the branch merged afterwards with what was
+applied not offered; a row whose value ours changed, a conflict, refused
+unpicked and applied picked; a row that changes an object not here
+refused, and with the row that made it applied; a row of ours' own
+refused; a merge with a change left out -- the rest in, `left` in the
+row, nothing offered again, one undo; and the same where the merge would
+have been a fast-forward, which writes a row instead. The Gui merge
+check (+3, 40): a row applied from the panel through the dialog,
+"Apply", its `take` row ticked and the derived one not; the row's kind
+and no branch merged by it; a change unticked in a merge's dialog
+staying ours.
+
+**Left.**
+
+- Nothing checks that what is left out is not needed by what goes in:
+  an object's creation unticked, and a link to it taken, is a link to
+  nothing and an object in `failed`.
+- The rows picked are weighed as one net change. Rows from two branches
+  that set one value: the later row's is theirs'.
+- 31.11's naming runs for a pick as for a merge, and has no test of its
+  own there.
+- Who wrote a thing last (31.8), for a pick, reads theirs' whole chain
+  since the two parted and not only the rows picked.
+
+**Gates**, frozen and unfrozen each: Python 3024 OK (52 skipped frozen,
+53 unfrozen; 6 expected failures; +1), ctest 881/881, and the GUI checks
+RC 15, BC 30, VC 18, PC 28, FC 16, VW 14, MC 40 (+3), the two-document
+check 24, the tree check 19, the author check 36, the import check 49,
+the request check 31 and the share check 47.

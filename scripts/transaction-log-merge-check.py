@@ -532,6 +532,95 @@ def run():
               and not [o.Name for o in cdoc.Objects if "Invalid" in o.State])
         App.closeDocument(cdoc.Name)
         settle()
+
+        # Sec 31.12: picking by hand, as an operation of its own. A change
+        # that asks nothing is unticked in the dialog and left out; and a
+        # row of another branch is applied here from the panel.
+        pdoc = App.newDocument("MergePicked")
+        pdoc.UndoMode = 1
+        pdoc.openTransaction("base")
+        pdoc.addObject("Part::Box", "Box")
+        pdoc.recompute()
+        pdoc.commitTransaction()
+        settle()
+        pdoc.saveAs(os.path.join(tempfile.mkdtemp(prefix="mergepicked-"), "picked.FCStd"))
+        pdoc.createTransactionBranch("side")
+        seqs = {}
+        for name, prop, value in (("long", "Length", 20), ("narrow", "Width", 5),
+                                  ("high", "Height", 30)):
+            pdoc.openTransaction(name)
+            setattr(pdoc.Box, prop, value)
+            pdoc.recompute()
+            pdoc.commitTransaction()
+            settle()
+            seqs[name] = [t["seq"] for t in pdoc.getTransactionLog() if t["name"] == name][-1]
+        pdoc.createTransactionBranch("other", 0, seqs["narrow"])
+        pdoc.switchTransactionBranch("main")
+        pdoc.openTransaction("ours")
+        pdoc.Box.Label = "Ours"
+        pdoc.commitTransaction()
+        settle()
+        App.setActiveDocument(pdoc.Name)
+        settle()
+        pdock, _ = panel()
+
+        def drivePick(seen, untick=None):
+            dialog = QtWidgets.QApplication.activeModalWidget()
+            if dialog is None or dialog.objectName() != "TransactionMergeDialog":
+                seen["found"] = False
+                if dialog is not None:
+                    dialog.reject()
+                return
+            seen["found"] = True
+            seen["title"] = dialog.windowTitle()
+            tree = dialog.findChild(QtWidgets.QTreeWidget)
+            rows = []
+            for i in range(tree.topLevelItemCount()):
+                item = tree.topLevelItem(i)
+                ticked = item.data(0, QtCore.Qt.CheckStateRole) is not None
+                rows.append((item.text(0), item.text(2), ticked))
+                if ticked and item.text(2) == untick:
+                    item.setCheckState(0, QtCore.Qt.Unchecked)
+            seen["rows"] = rows
+            for b in dialog.findChildren(QtWidgets.QPushButton):
+                if b.objectName() == "merge":
+                    seen["button"] = b.text().replace("&", "")
+                    b.click()
+                    return
+            dialog.reject()
+
+        box = lambda: (pdoc.Box.Length.Value, pdoc.Box.Width.Value, pdoc.Box.Height.Value)
+        # The row that made the box high, of `side`, applied here alone.
+        seen = {}
+        QtCore.QTimer.singleShot(300, lambda: drivePick(seen))
+        QtCore.QMetaObject.invokeMethod(pdock, "applyRows", QtCore.Qt.DirectConnection,
+                                        QtCore.Q_ARG(str, str(seqs["high"])))
+        settle()
+        check("picked: a row applied from the panel (%r, %r, %r)"
+              % (seen.get("title"), seen.get("button"), seen.get("rows")),
+              seen.get("found") is True and seen.get("button") == "Apply"
+              and sorted(seen.get("rows") or [])
+              == [("derived set", "Shape", False), ("take set", "Height", True)]
+              and box() == (10.0, 10.0, 30.0))
+        kinds = [t["kind"] for t in pdoc.getTransactionLog()]
+        check("picked: a row of its own kind, and no branch merged (%r)" % kinds[-3:],
+              "pick" in kinds and "merge" not in kinds
+              and ("take", "Box.Length") in [(c["kind"], c["key"])
+                                              for c in pdoc.previewTransactionMerge("other")["changes"]])
+        # `other` merged with its width unticked: the length goes in.
+        seen = {}
+        QtCore.QTimer.singleShot(300, lambda: drivePick(seen, untick="Width"))
+        QtCore.QMetaObject.invokeMethod(pdock, "mergeBranch", QtCore.Qt.DirectConnection,
+                                        QtCore.Q_ARG(str, "other"))
+        settle()
+        check("left out: a change unticked in the dialog stays ours (%r, %r)"
+              % (seen.get("rows"), box()),
+              seen.get("found") is True and seen.get("button") == "Merge"
+              and ("take set", "Width", True) in (seen.get("rows") or [])
+              and box() == (20.0, 10.0, 30.0)
+              and not [o.Name for o in pdoc.Objects if "Invalid" in o.State])
+        App.closeDocument(pdoc.Name)
+        settle()
     except Exception:
         lines.append("FAIL exception\n" + traceback.format_exc())
     finally:

@@ -8180,6 +8180,11 @@ struct MergePlan
     /// The two share no base (sec 30.22): theirs is a branch from nothing,
     /// and ours is weighed by what it holds.
     bool independent {false};
+    /// Sec 31.12: theirs is not a branch but rows picked out of the log,
+    /// oldest first, and ours is the document, weighed against what each
+    /// value was before them.
+    bool picked {false};
+    std::vector<int64_t> rows;
 
     /// Sec 31.11: the places of one list of one object that expressions
     /// named by number, and what each is called on each side.
@@ -8668,6 +8673,97 @@ void independentOurs(Document& doc, TransactionLog& log, MergePlan& plan)
     }
 }
 
+/** Ours, for rows picked out of the log (docs/TransactionLog.md sec 31.12).
+ * The rows say what each value was before them and what they made it; the
+ * document says what it is here. Where it is still what it was before the
+ * rows, they are taken; where it is what they made it, there is nothing to
+ * do; anything else is two changes of one value, and goes as a merge's do.
+ * An object the rows change and the document does not have is refused: the
+ * row that made it was not picked.
+ */
+void pickedOurs(Document& doc, TransactionLog& log, MergePlan& plan)
+{
+    auto& store = log.store();
+    TransactionLogCore& core = TransactionLogCore::of(doc.getFileHistory());
+    const CaptureConfig config(doc);
+    const int64_t head = log.head();
+    for (auto it = plan.theirs.objects.begin(); it != plan.theirs.objects.end();) {
+        const long cid = it->first;
+        const NetChange::Obj& o = it->second;
+        const bool here = doc.getObjectByID(cid) != nullptr;
+        if (!o.born && o.alive && !here)
+            THROWM(Base::ValueError, "the rows change object #" + std::to_string(cid)
+                                         + ", which is not in this document: the row that "
+                                           "made it is not among them");
+        if (!here && !o.alive) {
+            // Made and removed in the rows, or removed there and gone here.
+            auto& order = plan.theirs.objectOrder;
+            order.erase(std::remove(order.begin(), order.end(), cid), order.end());
+            auto& values = plan.theirs.valueOrder;
+            values.erase(std::remove_if(values.begin(), values.end(),
+                                        [&](const NetChange::Key& key) {
+                                            if (std::get<0>(key) == "doc"
+                                                    || std::get<1>(key) != cid)
+                                                return false;
+                                            plan.theirs.values.erase(key);
+                                            return true;
+                                        }),
+                         values.end());
+            it = plan.theirs.objects.erase(it);
+            continue;
+        }
+        ++it;
+    }
+    auto same = [](const CapturedValue& a, const CapturedValue& b) {
+        return a.fragment == b.fragment && a.attachments.size() == b.attachments.size()
+            && std::equal(a.attachments.begin(), a.attachments.end(), b.attachments.begin(),
+                          [](const auto& x, const auto& y) {
+                              return x.name == y.name && x.bytes == y.bytes;
+                          });
+    };
+    for (const auto& key : plan.theirs.valueOrder) {
+        const NetChange::Val& v = plan.theirs.values[key];
+        LogOp at;
+        at.ckind = std::get<0>(key);
+        at.cid = std::get<1>(key);
+        PropertyContainer* container = opContainer(doc, at);
+        if (!container)
+            continue;   // made by the rows: it comes with them
+        NetChange::Val mine;
+        mine.ptype = v.ptype;
+        mine.atStart = v.atStart;
+        mine.before = v.before;
+        Property* prop = container->getPropertyByName(std::get<2>(key).c_str());
+        if (prop) {
+            const CapturedValue now = captureValue(config, *prop);
+            if (!now.ok)
+                continue;
+            mine.atEnd = true;
+            LogOp last;
+            const bool logged = store.lastOpOn(at.ckind, at.cid, std::get<2>(key), 0, head, last);
+            mine.derived = (logged && last.derived)
+                || (container->getPropertyType(prop) & Prop_Output) != 0;
+            CapturedValue other;
+            if (!v.after.empty() && log.readValue(v.after, other) && same(now, other)) {
+                mine.after = v.after;
+            }
+            else if (!v.before.empty() && log.readValue(v.before, other) && same(now, other)) {
+                mine.after = v.before;
+            }
+            else if (logged && last.op == "set" && !last.vafter.empty()
+                     && last.vafter != v.after && last.vafter != v.before) {
+                mine.after = last.vafter;
+            }
+            else {
+                log.flush();
+                mine.after = core.putValue(now, "durable");
+            }
+        }
+        plan.ours.valueOrder.push_back(key);
+        plan.ours.values.emplace(key, std::move(mine));
+    }
+}
+
 /** A property both sides changed, merged by the things it holds
  * (docs/TransactionLog.md sec 31.8). `c` is the conflict: its base, ours
  * and theirs. Each value is taken apart by the property (splitSaved), and
@@ -9003,7 +9099,8 @@ bool mergeUnitByObject(Document& doc, TransactionLog& log, const MergePlan& plan
         c.cid = cid;
         c.object = objectName;
         c.prop = name;
-        c.key = objectName + "." + name;
+        // The unit's key, as 31.5's rows have: left out, it is all left out.
+        c.key = objectName + "." + props.front();
         auto st = states.find(name);
         if (st != states.end()) {
             c.ptype = st->second.ptype;
@@ -9038,7 +9135,48 @@ bool mergeUnitByObject(Document& doc, TransactionLog& log, const MergePlan& plan
     return true;
 }
 
-void planMerge(Document& doc, const std::string& name, int64_t version, MergePlan& plan)
+/// The second half of a plan: theirs' changes weighed against ours'.
+void planWeigh(Document& doc, TransactionLog& logRef, MergePlan& plan);
+
+/// The first half of a merge's plan where theirs is rows picked out of the
+/// log (sec 31.12): what they did, and the document against it.
+void planRows(Document& doc, TransactionLog& log, const std::string& name,
+              const std::vector<int64_t>& rows, MergePlan& plan)
+{
+    auto& store = log.store();
+    log.resolvePending();
+    LogBranch mine;
+    store.getBranch(log.branch(), mine);
+    plan.oursName = mine.name;
+    auto& pv = plan.preview;
+    pv.branch = name;
+    pv.ours = log.head();
+    std::set<int64_t> held;
+    for (const auto& t : store.history(pv.ours))
+        held.insert(t.seq);
+    plan.rows = rows;
+    std::sort(plan.rows.begin(), plan.rows.end());
+    plan.rows.erase(std::unique(plan.rows.begin(), plan.rows.end()), plan.rows.end());
+    if (plan.rows.empty())
+        THROWM(Base::ValueError, "no rows to apply");
+    for (int64_t seq : plan.rows) {
+        if (held.count(seq))
+            THROWM(Base::ValueError, "row " + std::to_string(seq)
+                                         + " is in this branch's history already");
+        const auto found = store.transactions(seq, 1);
+        if (found.empty() || found.front().seq != seq)
+            THROWM(Base::ValueError, "no row " + std::to_string(seq) + " in the log");
+        plan.theirs.add(store.ops(seq));
+    }
+    pv.theirs = plan.rows.back();
+    // For who wrote a thing last (sec 31.8): ours' rows since the two parted.
+    pv.base = std::max<int64_t>(0, mergeBaseOf(store, store.versions(), pv.ours, pv.theirs));
+    plan.picked = true;
+    pickedOurs(doc, log, plan);
+}
+
+void planMerge(Document& doc, const std::string& name, int64_t version, MergePlan& plan,
+               const std::vector<int64_t>* rows = nullptr)
 {
     TransactionLog* log = doc.getTransactionLog();
     if (!log)
@@ -9046,6 +9184,11 @@ void planMerge(Document& doc, const std::string& name, int64_t version, MergePla
     if (log->detached())
         THROWM(Base::RuntimeError, "the document is a version with no branch of its own yet");
     auto& store = log->store();
+    if (rows) {
+        planRows(doc, *log, name, *rows, plan);
+        planWeigh(doc, *log, plan);
+        return;
+    }
     LogBranch theirs;
     if (!store.findBranch(name, theirs))
         THROWM(Base::ValueError, "no branch '" + name + "'");
@@ -9112,6 +9255,15 @@ void planMerge(Document& doc, const std::string& name, int64_t version, MergePla
             THROWM(Base::ValueError, "cannot merge branch '" + name + "': " + why);
     }
 
+    planWeigh(doc, *log, plan);
+}
+
+void planWeigh(Document& doc, TransactionLog& logRef, MergePlan& plan)
+{
+    TransactionLog* log = &logRef;
+    auto& store = log->store();
+    auto& pv = plan.preview;
+    const std::string& name = pv.branch;
     // What ours changed: view state and what its own recomputes wrote are
     // not changes a merge weighs (sec 28.6 Q1, Q2).
     std::set<long> oursChanged;
@@ -9133,12 +9285,13 @@ void planMerge(Document& doc, const std::string& name, int64_t version, MergePla
         if (ckind == "obj")
             oursChanged.insert(std::get<1>(kv.first));
     }
-    // With no base nothing of theirs is ours moved on: it is all weighed.
-    pv.fastForward = !changed && !plan.independent;
+    // With no base nothing of theirs is ours moved on: it is all weighed;
+    // and rows picked are weighed one value at a time.
+    pv.fastForward = !changed && !plan.independent && !plan.picked;
     // Sec 30.4 P1: ours has not moved since the base at all -- records, a
     // save or a snapshot, are all it has -- and the base is on both chains:
     // theirs' rows can be taken as they are.
-    {
+    if (!plan.picked) {
         const auto oursAfter = store.chain(pv.ours, pv.base + 1);
         const auto theirsAfter = store.chain(pv.theirs, pv.base + 1);
         bool direct = !theirsAfter.empty() && theirsAfter.front().parent == pv.base
@@ -9555,9 +9708,46 @@ Document::MergePreview Document::previewMerge(const std::string& branch, int64_t
     return plan.preview;
 }
 
+namespace {
+std::string pickLabel(const std::vector<int64_t>& rows)
+{
+    std::vector<int64_t> order(rows);
+    std::sort(order.begin(), order.end());
+    order.erase(std::unique(order.begin(), order.end()), order.end());
+    std::string out = order.size() == 1 ? "row" : "rows";
+    for (std::size_t i = 0; i < order.size(); ++i)
+        out += (i ? ", " : " ") + std::to_string(order[i]);
+    return out;
+}
+}  // namespace
+
+Document::MergePreview Document::previewPick(const std::vector<int64_t>& rows)
+{
+    if (d->activeUndoTransaction)
+        commitImplicitTransaction();
+    MergePlan plan;
+    planMerge(*this, pickLabel(rows), 0, plan, &rows);
+    return plan.preview;
+}
+
+Document::MergeResult Document::pickRows(const std::vector<int64_t>& rows,
+                                         const std::map<std::string, std::string>& picks,
+                                         const std::string& fallback)
+{
+    return _merge(pickLabel(rows), picks, fallback, 0, &rows);
+}
+
 Document::MergeResult Document::mergeBranch(const std::string& branch,
                                             const std::map<std::string, std::string>& picks,
                                             const std::string& fallback, int64_t version)
+{
+    return _merge(branch, picks, fallback, version, nullptr);
+}
+
+Document::MergeResult Document::_merge(const std::string& branch,
+                                       const std::map<std::string, std::string>& picks,
+                                       const std::string& fallback, int64_t version,
+                                       const std::vector<int64_t>* rows)
 {
     OperationScope scope;   // sec 27.38
     // docs/TransactionLog.md sec 28: theirs' changes since the base, less
@@ -9594,12 +9784,33 @@ Document::MergeResult Document::mergeBranch(const std::string& branch,
     }
 
     MergePlan plan;
-    planMerge(*this, branch, version, plan);
+    if (rows && d->activeUndoTransaction)
+        commitImplicitTransaction();
+    planMerge(*this, branch, version, plan, rows);
+    const bool picked = plan.picked;
+    // Sec 31.12: a change that asks nothing may be left out all the same --
+    // its key picked `ours`. One of a unit's goes with the rest of it, which
+    // have its key.
+    auto leftOut = [&](const MergeChange& c) {
+        if (c.kind == "conflict" || c.kind == "view" || c.kind == "unit" || c.kind == "name"
+                || c.kind == "same")
+            return false;
+        auto it = picks.find(c.key);
+        return it != picks.end() && it->second == "ours";
+    };
+    bool anyLeft = false;
+    for (const auto& c : plan.preview.changes)
+        anyLeft = anyLeft || leftOut(c);
+    // What is taken in part is not taken as it is: the merge writes its row.
+    if (anyLeft)
+        plan.preview.forward.clear();
     result.preview = plan.preview;
     const MergePreview& pv = plan.preview;
     // The version at the head merged in is what was merged (sec 17.3): it
     // is named, so it outlives eviction and says where a merge was.
     auto nameMerged = [&]() {
+        if (picked)
+            return;   // rows were applied; no branch was merged
         const LogVersion* at = nullptr;
         const auto versions = log->store().versions();
         for (const auto& v : versions) {
@@ -9622,7 +9833,7 @@ Document::MergeResult Document::mergeBranch(const std::string& branch,
     auto touchChanged = [&](bool all) {
         std::set<long> ids;
         for (const auto& c : pv.changes) {
-            if (c.ckind != "obj")
+            if (c.ckind != "obj" || leftOut(c))
                 continue;
             const bool conflict = c.kind == "conflict" || c.kind == "unit";
             if (all || c.kind == "take" || c.kind == "derived" || c.kind == "merge"
@@ -9776,7 +9987,13 @@ Document::MergeResult Document::mergeBranch(const std::string& branch,
         if (!v.after.empty())
             sets[key] = v.after;
     };
+    std::vector<std::string> left;
     for (const auto& c : pv.changes) {
+        if (leftOut(c)) {
+            if (std::find(left.begin(), left.end(), c.key) == left.end())
+                left.push_back(c.key);
+            continue;
+        }
         if (c.kind == "derived") {
             touch.insert(c.cid);
             continue;
@@ -9883,16 +10100,16 @@ Document::MergeResult Document::mergeBranch(const std::string& branch,
 
     _clearMyRedos();
     d->activeUndoTransaction = new Transaction(0);
-    d->activeUndoTransaction->Name = "Merge " + branch;
-    d->activeUndoTransaction->LogKind = "merge";
-    d->activeUndoTransaction->MergeFrom = pv.theirs;
+    d->activeUndoTransaction->Name = (picked ? "Apply " : "Merge ") + branch;
+    d->activeUndoTransaction->LogKind = picked ? "pick" : "merge";
+    d->activeUndoTransaction->MergeFrom = picked ? 0 : pv.theirs;
     mUndoMap[d->activeUndoTransaction->getID()] = d->activeUndoTransaction;
 
     // Ours unchanged since the base: the document moved to theirs' state
     // through the rows, derived values and touched state with it -- and
     // what changed is computed again below all the same (sec 31.7, in
     // place of 28.6 Q1). View state is left to the rule below.
-    const bool moved = pv.fastForward && _moveAlongLog(pv.ours, pv.theirs, false);
+    const bool moved = pv.fastForward && !anyLeft && _moveAlongLog(pv.ours, pv.theirs, false);
 
     std::vector<std::string> relabelled;
     auto guarded = [&](const char* what, const std::string& name, const std::function<void()>& fn) {
@@ -10059,9 +10276,11 @@ Document::MergeResult Document::mergeBranch(const std::string& branch,
     for (const auto& c : pv.changes) {
         for (const auto& e : c.elements) {
             if (e.change == "dropped")
-                dropped.push_back({{"key", c.key}, {"element", e.key}, {"side", e.side}});
+                dropped.push_back({{"key", c.key}, {"prop", c.prop}, {"element", e.key},
+                                   {"side", e.side}});
             else if (e.byTime)
-                decided.push_back({{"key", c.key}, {"element", e.key}, {"side", e.side}});
+                decided.push_back({{"key", c.key}, {"prop", c.prop}, {"element", e.key},
+                                   {"side", e.side}});
         }
     }
     if (!decided.empty())
@@ -10072,7 +10291,12 @@ Document::MergeResult Document::mergeBranch(const std::string& branch,
         m["relabelled"] = relabelled;
     if (!result.failed.empty())
         m["failed"] = result.failed;
-    j["merge"] = std::move(m);
+    // Sec 31.12: what was left out by hand, and the rows a pick applied.
+    if (!left.empty())
+        m["left"] = left;
+    if (picked)
+        m["rows"] = plan.rows;
+    j[picked ? "pick" : "merge"] = std::move(m);
     const std::string script = j.dump();
 
     const std::string name = d->activeUndoTransaction->Name;
@@ -10084,13 +10308,16 @@ Document::MergeResult Document::mergeBranch(const std::string& branch,
         mUndoMap.erase(d->activeUndoTransaction->getID());
         delete d->activeUndoTransaction;
         d->activeUndoTransaction = nullptr;
-        result.seq = log->record("merge", name, script, pv.theirs);
+        // Rows applied that changed nothing leave nothing: there is no
+        // base to move.
+        if (!picked)
+            result.seq = log->record("merge", name, script, pv.theirs);
     }
     else {
         d->activeUndoTransaction->LogScript = script;
         _commitTransaction(false);
         for (const auto& t : log->store().chain(log->head(), headBefore + 1)) {
-            if (t.kind == "merge" && t.mergeFrom == pv.theirs)
+            if (picked ? t.kind == "pick" : (t.kind == "merge" && t.mergeFrom == pv.theirs))
                 result.seq = t.seq;
         }
     }

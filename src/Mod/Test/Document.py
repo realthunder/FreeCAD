@@ -6590,7 +6590,14 @@ class TransactionBranchCases(unittest.TestCase):
         said = json.loads(row["script"])["merge"]
         self.assertEqual(
             said.get("dropped"),
-            [{"key": "Sketch.Constraints", "element": "DistanceX,g3.1,g3.2,", "side": "theirs"}],
+            [
+                {
+                    "key": "Sketch.Geometry",
+                    "prop": "Constraints",
+                    "element": "DistanceX,g3.1,g3.2,",
+                    "side": "theirs",
+                }
+            ],
         )
 
         # Both drag one end of the fourth line, to two places: it is where
@@ -6607,7 +6614,7 @@ class TransactionBranchCases(unittest.TestCase):
         self.assertAlmostEqual(doc.Sketch.Geometry[3].StartPoint.y, -9.0, places=6)
         row = [t for t in doc.getTransactionLog() if t["seq"] == merged["seq"]][0]
         self.assertIn(
-            {"key": "Sketch.Geometry", "element": "g4", "side": "theirs"},
+            {"key": "Sketch.Geometry", "prop": "Geometry", "element": "g4", "side": "theirs"},
             json.loads(row["script"])["merge"].get("later"),
         )
 
@@ -6838,6 +6845,153 @@ class TransactionBranchCases(unittest.TestCase):
         merge(doc)
         self.assertEqual(doc.Cyl.ExpressionEngine, [("Height", "Sketch.Constraints[1]")])
         self.assertEqual([n for n, _, _ in constraints(doc)], ["", "", ""])
+
+    def testRowsArePickedAndChangesLeftOut(self):
+        # Sec 31.12 (the user's): picking by hand is not only for conflicts.
+        # Rows of another branch are applied here one by one, as a step of
+        # this branch's own, with no branch merged; and a merge leaves out
+        # a change that asks nothing where it is told to.
+        import json
+
+        def model(name):
+            doc = self.track(FreeCAD.newDocument(name))
+            doc.UndoMode = 1
+            doc.openTransaction("base")
+            box = doc.addObject("Part::Box", "Box")
+            doc.addObject("Part::Cylinder", "Cyl")
+            doc.recompute()
+            doc.commitTransaction()
+            doc.saveAs(os.path.join(self.dir, name + ".FCStd"))
+            doc.createTransactionBranch("side")   # and the document is on it
+
+            def row(name, edit):
+                doc.openTransaction(name)
+                edit()
+                doc.recompute()
+                doc.commitTransaction()
+                return [t["seq"] for t in doc.getTransactionLog() if t["name"] == name][-1]
+
+            rows = {
+                "long": row("long", lambda: setattr(doc.Box, "Length", 20)),
+                "narrow": row("narrow", lambda: setattr(doc.Box, "Width", 5)),
+                "cone": row("cone", lambda: doc.addObject("Part::Cone", "Cone")),
+                "tall": row("tall", lambda: setattr(doc.Cone, "Height", 7)),
+            }
+            doc.switchTransactionBranch("main")
+            rows["high"] = row("high", lambda: setattr(doc.Box, "Height", 30))
+            return doc, rows
+
+        def box(doc):
+            b = doc.Box
+            return (b.Length.Value, b.Width.Value, b.Height.Value)
+
+        def shown(preview):
+            return sorted((c["kind"], c["op"], c["key"]) for c in preview["changes"] if not c["derived"])
+
+        # One row of the other branch, applied: its change and no other.
+        doc, rows = model("PickOne")
+        preview = doc.previewTransactionPick(rows["narrow"])
+        self.assertEqual(shown(preview), [("take", "set", "Box.Width")])
+        self.assertEqual(preview["conflicts"], 0)
+        applied = doc.pickTransactions([rows["narrow"]])
+        self.assertGreater(applied["seq"], 0)
+        self.assertEqual(applied["unresolved"], [])
+        self.assertEqual(box(doc), (10.0, 5.0, 30.0))
+        self.assertAlmostEqual(doc.Box.Shape.Volume, 10 * 5 * 30, places=6)
+        row = [t for t in doc.getTransactionLog() if t["seq"] == applied["seq"]][0]
+        self.assertEqual(row["kind"], "pick")
+        self.assertEqual(json.loads(row["script"])["pick"]["rows"], [rows["narrow"]])
+        # A step like any.
+        doc.undo()
+        self.assertEqual(box(doc), (10.0, 10.0, 30.0))
+        doc.redo()
+        self.assertEqual(box(doc), (10.0, 5.0, 30.0))
+        # Applied again there is nothing to do, and nothing is written.
+        again = doc.pickTransactions(rows["narrow"])
+        self.assertEqual(again["seq"], 0)
+        self.assertEqual(box(doc), (10.0, 5.0, 30.0))
+        # The branch was not merged by it: its other rows are still to
+        # come, and what was applied is the same on both sides by then.
+        preview = doc.previewTransactionMerge("side")
+        self.assertEqual(preview["conflicts"], 0, preview["changes"])
+        self.assertIn(("take", "set", "Box.Length"), shown(preview))
+        self.assertNotIn(("take", "set", "Box.Width"), shown(preview))
+        merged = doc.mergeTransactionBranch("side")
+        self.assertEqual(merged["unresolved"], [])
+        self.assertEqual(box(doc), (20.0, 5.0, 30.0))
+        self.assertAlmostEqual(doc.Cone.Height.Value, 7.0, places=6)
+
+        # A row whose value ours changed too is a conflict, picked as a
+        # merge's is.
+        doc, rows = model("PickConflict")
+        doc.openTransaction("ours")
+        doc.Box.Length = 15
+        doc.recompute()
+        doc.commitTransaction()
+        preview = doc.previewTransactionPick([rows["long"]])
+        self.assertEqual(shown(preview), [("conflict", "set", "Box.Length")])
+        refused = doc.pickTransactions([rows["long"]])
+        self.assertEqual([c["key"] for c in refused["unresolved"]], ["Box.Length"])
+        self.assertEqual(box(doc), (15.0, 10.0, 30.0))
+        applied = doc.pickTransactions([rows["long"]], {"Box.Length": "theirs"})
+        self.assertEqual(applied["unresolved"], [])
+        self.assertEqual(box(doc), (20.0, 10.0, 30.0))
+
+        # An object comes with the row that made it; a row that changes
+        # one this document has not is refused, and the two together go.
+        doc, rows = model("PickObject")
+        with self.assertRaises(ValueError):
+            doc.previewTransactionPick([rows["tall"]])
+        with self.assertRaises(ValueError):
+            doc.pickTransactions([rows["tall"]])
+        self.assertIsNone(doc.getObject("Cone"))
+        applied = doc.pickTransactions([rows["tall"], rows["cone"]])
+        self.assertEqual(applied["failed"], [])
+        self.assertAlmostEqual(doc.Cone.Height.Value, 7.0, places=6)
+        self.assertEqual(box(doc), (10.0, 10.0, 30.0))
+        doc.undo()
+        self.assertIsNone(doc.getObject("Cone"))
+        # A row of this branch's own is not one to apply: undo and redo
+        # are for those.
+        with self.assertRaises(ValueError):
+            doc.pickTransactions([rows["high"]])
+
+        # A merge with a change left out: the width stays ours, the rest
+        # goes in, the row says what was left -- and the branch is merged,
+        # so it is not offered again.
+        doc, rows = model("MergeLeftOut")
+        merged = doc.mergeTransactionBranch("side", {"Box.Width": "ours"})
+        self.assertEqual(merged["unresolved"], [])
+        self.assertEqual(box(doc), (20.0, 10.0, 30.0))
+        self.assertAlmostEqual(doc.Cone.Height.Value, 7.0, places=6)
+        row = [t for t in doc.getTransactionLog() if t["seq"] == merged["seq"]][0]
+        self.assertEqual(json.loads(row["script"])["merge"]["left"], ["Box.Width"])
+        self.assertEqual(doc.previewTransactionMerge("side")["changes"], [])
+        doc.undo()
+        self.assertEqual(box(doc), (10.0, 10.0, 30.0))
+
+        # Left out where the merge would have taken the other's rows as
+        # they are: it writes a row of its own instead.
+        doc = self.track(FreeCAD.newDocument("MergeLeftOutForward"))
+        doc.UndoMode = 1
+        doc.openTransaction("base")
+        doc.addObject("Part::Box", "Box")
+        doc.recompute()
+        doc.commitTransaction()
+        doc.saveAs(os.path.join(self.dir, "MergeLeftOutForward.FCStd"))
+        doc.createTransactionBranch("side")
+        for name, prop, value in (("long", "Length", 20), ("narrow", "Width", 5)):
+            doc.openTransaction(name)
+            setattr(doc.Box, prop, value)
+            doc.recompute()
+            doc.commitTransaction()
+        doc.switchTransactionBranch("main")
+        self.assertTrue(doc.previewTransactionMerge("side")["fast_forward"])
+        merged = doc.mergeTransactionBranch("side", {"Box.Width": "ours"})
+        self.assertEqual(merged["forwarded"], 0)
+        self.assertGreater(merged["seq"], 0)
+        self.assertEqual(box(doc), (20.0, 10.0, 10.0))
+        self.assertAlmostEqual(doc.Box.Shape.Volume, 20 * 10 * 10, places=6)
 
     def testASheetsCellsFollowTheBranch(self):
         # Sec 31.1: a value put back from the log is the whole of what the

@@ -647,6 +647,35 @@ public:
     MergeResult mergeBranch(const std::string& branch,
                             const std::map<std::string, std::string>& picks = {},
                             const std::string& fallback = std::string(), int64_t version = 0);
+    /** What applying rows `rows` of the log to this document would do
+     * (docs/TransactionLog.md sec 31.12): rows of another branch, picked
+     * one by one. Read as a merge's preview is: each value the rows set
+     * is taken where the document still has what it had before them, is
+     * `same` where it has what they made it, and is otherwise for a side
+     * to be picked, or merged by what it holds. Throws for a row of this
+     * branch's own history, and for rows that change an object this
+     * document has not: the row that made it was not picked.
+     */
+    MergePreview previewPick(const std::vector<int64_t>& rows);
+    /** Apply rows `rows` here: one transaction of kind `pick`, undone like
+     * any. No branch is merged by it -- the rows stay their branch's, and
+     * a merge of it later finds what was applied the same on both sides.
+     * `picks` and `fallback` as for mergeBranch().
+     *
+     * For this and for mergeBranch(): `picks` may also name the key of a
+     * change that asks nothing -- one taken, or merged by what it holds --
+     * with `ours`, and it is left out. A merge that leaves something out
+     * is never a fast-forward, and the branch is merged all the same:
+     * what was left out is not asked again.
+     */
+    MergeResult pickRows(const std::vector<int64_t>& rows,
+                         const std::map<std::string, std::string>& picks = {},
+                         const std::string& fallback = std::string());
+    /// mergeBranch() and pickRows(): `rows` for the second.
+    MergeResult _merge(const std::string& branch,
+                       const std::map<std::string, std::string>& picks,
+                       const std::string& fallback, int64_t version,
+                       const std::vector<int64_t>* rows);
 
     /// A branch of another copy of the file, as importFork() can take it.
     struct ForkBranch
