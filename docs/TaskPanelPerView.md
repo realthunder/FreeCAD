@@ -1401,6 +1401,12 @@ selection, answered `TaskOwner::current()` with it.
   test's plain view docked as well, with a dialog open for it (why was
   not chased); that step is skipped there. The move that IS tested is a
   plain view split, which wraps it into a cell: its host goes with it.
+- **The header named a box that was not shown** (`58968bd13b`). Titled by
+  the dialog's first box, a sketch being edited was headed "Tool
+  Parameters" -- its tool's box, hidden until a tool has something to ask
+  -- above a panel that began with "Sketch Edit". Seen in the first
+  picture taken of a sketch; the title is now the first box's that is not
+  hidden.
 - In Python, a widget fetched through a wrapper that is then dropped --
   `host_of(view).findChild(...)` -- is "already deleted" to the binding:
   the wrapper of a parent that goes takes its children's with it. The
@@ -1410,18 +1416,19 @@ selection, answered `TaskOwner::current()` with it.
 
 `tests/gui/task-panel-in-view.py` (`GuiTaskPanelInView_tests_run`):
 document A with a box, a body, a sketch and a pad in two cells, a second
-document in a tab of its own, a third in a view outside any view area. 88
+document in a tab of its own, a third in a view outside any view area. 89
 checks.
 
 | | before (`26b042b7f1`) | after |
 |---|---|---|
 | as it stood when scored | 14 of the first 36, then the script stops | -- |
-| as it is | -- | 88 of 88, one step skipped |
+| as it is | -- | 89 of 89, one step skipped |
 
 Scored on the tree before, the script was two checks shorter in the part
 that tree reaches (the host's height, the click back into the other view)
-and its later steps were reworked afterwards; the 14 that passed there are
-unchanged, name for name. It stops because on that tree Enter in one
+and its later steps were reworked afterwards, one check added to them
+(the header's title); the 14 that passed there are unchanged, name for
+name. It stops because on that tree Enter in one
 view's panel accepts the OTHER view's dialog, and the script then reaches
 for a widget that is gone.
 
@@ -1461,7 +1468,10 @@ that failed inside the full run in the words it failed in once before
 anything shows, and not chased; the GUI gate 70 OK, run with the panels
 in the combo view -- the panel mirror was not run with a panel in its
 view. Rows in `docs/Testing.md`. `f86654a5b7` was not built on its own:
-the two were built and tested together.
+the two were built and tested together. `58968bd13b`, after them, was
+given the nine GUI entries nearest it (the task panel tests, the active
+cell, the selection per view, the edit per view and its two neighbours),
+9 of 9, and no full run.
 
 ### 14.6 What it does not do
 
@@ -1472,7 +1482,12 @@ the two were built and tested together.
   M4, with the overlays.
 - **A served client's panel** is where it was: in the stack, never shown
   on the desktop (M5).
-- **Resize.** The width is the rule of 14.2 and no grip changes it.
+- **Resize.** The width is the rule of 14.2 and no grip changes it. In a
+  narrow view that rule is hard on the picture: in the test session's
+  cells, some 425 px wide, a panel at its least width of 240 px covers
+  more than half the cell and still scrolls sideways.
+- **Move the picture aside.** The panel is over the view, and "fit all"
+  centres in the whole of it: part of what is fitted is under the panel.
 - **Popups a panel opens with no parent in it** -- a menu built
   parentless, a dialog of its own -- are not in the host, and their
   events are the active view's. A combo box's list has the box for its
