@@ -97,16 +97,22 @@ bool inSight(const Gui::MDIView *view)
 }
 
 /// What a dialog is called where its page stands apart from the task
-/// view: the title of the first of its boxes that has one.
+/// view: the title of the first of its boxes that has one -- of those it
+/// shows, when it shows any. A sketch's first box is its tool's, hidden
+/// until a tool has something to ask.
 QString titleOf(const Gui::TaskView::TaskInfo &info)
 {
-    for (QWidget *widget : info.contents) {
-        if (auto group = qobject_cast<QSint::ActionGroup*>(widget)) {
-            if (!group->headerText().isEmpty())
-                return group->headerText();
+    for (bool shownOnly : {true, false}) {
+        for (QWidget *widget : info.contents) {
+            if (shownOnly && widget->isHidden())
+                continue;
+            if (auto group = qobject_cast<QSint::ActionGroup*>(widget)) {
+                if (!group->headerText().isEmpty())
+                    return group->headerText();
+            }
+            if (!widget->windowTitle().isEmpty())
+                return widget->windowTitle();
         }
-        if (!widget->windowTitle().isEmpty())
-            return widget->windowTitle();
     }
     return Gui::TaskView::TaskView::tr("Task panel");
 }

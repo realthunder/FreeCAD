@@ -697,6 +697,16 @@ def the_sketch_panel_is_in_its_cell():
                    and len(sketch_widgets(host_of("a1"))) > 0,
                    len(sketch_widgets(host_of("a1")))))
     check("the Tasks tab shows the watchers", shown() == "watchers", shown())
+
+    def titled():
+        host = host_of("a1")
+        title = host.findChild(QtWidgets.QLabel, "taskPanelHostTitle").text()
+        boxes = [w for w in sketch_widgets(host) if w.property("headerText")]
+        seen = [w.property("headerText") for w in boxes if not w.isHidden()]
+        unseen = [w.property("headerText") for w in boxes if w.isHidden()]
+        return title in seen and title not in unseen, (title, seen, unseen)
+
+    claim("its header carries the title of a box it shows, not of one it hides", titled)
     activate("a2")
     claim("with a2 active it is still shown there",
           lambda: any(on_screen(w) for w in sketch_widgets(host_of("a1"))))
