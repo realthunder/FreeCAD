@@ -2513,6 +2513,7 @@ covered in the next section.
 | `configure-fcad.ps1` / `build-fcad.ps1` | the stall-watchdog forms, for a box with the endpoint-security problem |
 | `ctest-fcad.cmd` | `cd` to the build tree and `ctest` through `run.cmd` |
 | `ctest-fcad-cleantmp.cmd` / `pytest-fcad-pty.cmd` | the same with `TMP` redirected, and the Python suite under a ConPTY -- see `docs/Testing.md` |
+| `install-user.ps1` / `fcad-user.cmd` | stage the built binaries into `.conda\user-app`, and run them on the cloned env `.conda\user` -- see [A second env for hands-on testing](#a-second-env-for-hands-on-testing) |
 
 **`build-fcad.cmd`** exists because `run.cmd` alone hid cmake failures -- it
 propagates the exit code, printing `BUILD-FCAD: CONFIGURE FAILED` or
@@ -2558,6 +2559,108 @@ To press a task panel's OK from a script, click the `QDialogButtonBox` under
 `DlgPropertyLink`'s inside the panel, and `Gui.Control.activeTaskDialog().accept()`
 does not reach the C++ dialog. The `-M <dir>` startup hook (an `InitGui.py` that
 `runpy`s a driver on a QTimer) is the fallback when the console cannot start.
+
+### A second env for hands-on testing
+
+One build tree, two places it runs from. Tests and measurements run in
+`build\win-relwithdebinfo-801` on `.conda\freecad`, as everywhere above; a person
+testing by hand runs a **staged copy** of the same binaries on a **cloned env**,
+so a build relinking `FreeCADGui.dll`, a `pip install` into the dev env or a
+rebuilt OCCT cannot reach a session that is open. It is not a second build.
+
+| What | Path | On disk |
+|---|---|---|
+| the user's env | `.conda\user` | 0.18 GB |
+| the staged FreeCAD | `.conda\user-app` (`bin`, `Mod`, `Ext`, `data`, `doc`) | 0.5 GB + PDBs |
+| private OCCT and Coin DLLs | `.conda\user-app\deps\occt`, `deps\coin` | in the above |
+| stage it | `..\tools\install-user.ps1 [-NoPdb] [-Force]` | |
+| run it | `..\tools\fcad-user.cmd [FreeCAD arguments]` | |
+
+Measured 2026-10-06 with 32 GB free on the drive: both together cost **2.8 GB**,
+where a second `conda create` plus a plain copy would have been 12.8 GB.
+
+**The env is a clone, and a clone is hard links.** Every file conda installs is a
+hard link into `..\miniforge3\pkgs` (`fsutil hardlink list <file>` shows the
+names), so a second env on the same volume costs only what cannot be linked --
+files conda rewrites the prefix into, and the untracked ones (pivy, the pip
+packages), which it copies:
+
+```bat
+conda create -y -p .conda\user --clone .conda\freecad --offline
+copy .conda\freecad\conda-meta\pinned .conda\user\conda-meta\pinned
+```
+
+`--offline` makes a package missing from the cache an error instead of a
+download from a channel this box may not reach. `conda-meta\pinned` is not
+cloned, hence the copy. The clone took eleven minutes, nearly all of it this
+box's per-file cost over 71 000 links. **`conda clean --packages` would not free
+the cache while either env uses it, and must not be run to "make room"**: the
+cache is what makes the next clone free, and what an `--offline` clone needs.
+Re-clone after the dev env gains a package the user's run needs (delete
+`.conda\user` first); the staged copy does not have to be redone for that.
+
+**Staging is a mirror of the build tree, not `cmake --install`.** The cache holds
+an ABSOLUTE `CMAKE_INSTALL_LIBDIR` (`.conda/freecad/Library/lib`, from the conda
+preset), so `cmake --install --prefix X` moves everything except the 51 module
+`.pyd` files, the gtest and bgfx libraries -- 120 destinations in all -- which
+it would write into the **dev env**. Check before trusting `--prefix` on any
+tree:
+
+```
+grep -rhoE 'DESTINATION "[A-Za-z]:[^"]*"' --include=cmake_install.cmake . | sort | uniq -c
+```
+
+The build tree is already a runnable layout, and it is the one every test runs
+in, so `install-user.ps1` mirrors that (`robocopy /MIR`) and what is tested by
+hand is file for file what the suites ran. It leaves out what only a link
+needs (`.ilk`, `.lib`, `.exp`), keeps `__pycache__` out on both sides, copies
+the OCCT and Coin DLLs to `deps\`, rewrites the user env's
+`fcad-dev-dlls.pth` to point there (the [`PATH` is not enough](#python-cannot-find-the-occtcoin-dlls--path-is-not-enough)
+rule applies to the copy too), and writes `INSTALLED.txt` -- the commits of
+fcad, occt and coin and the age of `FreeCADGui.dll` -- which the launcher
+prints, so a report can say what it was made on. First run 120 s; a run with
+nothing changed 32 s.
+
+It refuses in two cases. `BUSY`: a process is running from `.conda\user-app`,
+whose DLLs are open and would be half replaced -- there is no override. `BUILD
+RUNNING`: `ninja`, `cl` or `link` is alive, and a DLL caught mid-link is a
+truncated file; `-Force` overrides. **Stage only when the person testing asks
+for it** (the user, 2026-10-06), never as the tail of a build: the point of the
+copy is that it does not change under them.
+
+**The PDBs go along, compressed.** They are 8.1 GB of the 8.65 GB staged, and
+they are what turns `crash.log` and a `crash.dmp` from the user's session into
+names -- the build tree's PDBs stop matching as soon as the DLL is relinked.
+`compact /c /EXE:XPRESS16K` stores them in 2.1 GB, and is transparent to
+`dbghelp` and `cdb`. Measured on `FreeCADApp.pdb` (494 MB):
+
+| | stored | time |
+|---|---|---|
+| `compact /c` (LZNT1) | 164 MB, 3.0:1 | 6.8 s |
+| `/EXE:XPRESS16K` | 98 MB, 5.1:1 | 0.8 s |
+| `/EXE:LZX` | 75 MB, 6.6:1 | 8.2 s |
+
+A file written over a compressed one is plain again, so the script compresses
+after every stage. Do not carry this into the build tree: the linker rewrites
+every PDB it touches, so there the saving does not last past the next link.
+`-NoPdb` stages without them and deletes the ones already there.
+
+**The launcher** activates `.conda\user`, puts `deps\occt` and `deps\coin` first
+on `PATH`, and starts `bin\FreeCAD.exe` with the arguments it was given. The
+user's FreeCAD keeps the default user directory (`%APPDATA%\FreeCAD`) -- that is
+their configuration; a test in the dev tree passes its own `--user-cfg` /
+`--system-cfg` and never the default. Two settings keep the MCP console from
+crossing over: `FC_MCP_ENDPOINT_DIR=%USERPROFILE%\.freecad-mcp-user`, because
+`scripts\mcp_run.py` drives the *newest live FreeCAD* it finds in the endpoint
+directory and would otherwise pick the user's session for a test script; and
+`FC_MCP_PORT=8790`, clear of the 8765 range the dev launches walk. To look into
+the user's session on purpose, set the same `FC_MCP_ENDPOINT_DIR` for
+`mcp_run.py`; `FC_MCP_PORT=0` before the launcher turns the console off.
+
+Verified on the first stage (2026-10-06): the launched process had 240 modules
+from `.conda\user` and `.conda\user-app` and none from `.conda\freecad`,
+`build\`, `..\occt` or `..\install`; a `Part::Box` recomputed on OCCT 8.0.1 with
+pivy on Coin 4.0.6rt; `mcp_run.py --list` without the variable saw nothing.
 
 ### Cycles on Windows -- where OptiX and HIP can actually be tested
 
