@@ -334,6 +334,9 @@ struct MainWindowP
     bool _restoring = false;
     bool _closingAll = false;
     QTime _showNormal;
+    /// Set while the title bar is being switched on a window that was
+    /// maximized, see MainWindow::applyTitleBarParams().
+    bool titleBarRemaximize = false;
 
     /// The button the title bar's menu folds behind. Outlives every switch
     /// between the two title bars, so it is built once and handed back.
@@ -2216,9 +2219,40 @@ bool MainWindow::titleBarToolBars() const
     return d->hGrp->GetBool("TitleBarToolBars", true);
 }
 
+namespace
+{
+// How long a window is given to arrive in a state it was just asked into,
+// before the next step of a title bar switch is taken. See
+// MainWindow::applyTitleBarParams().
+constexpr int TitleBarSwitchSettle = 100;
+}  // namespace
+
 void MainWindow::applyTitleBarParams()
 {
     const bool custom = d->hGrp->GetBool("CustomTitleBar", false);
+
+#ifdef FC_OS_WIN32
+    // The frame of a maximized window is not changed in place. On Windows the
+    // switch recreates the window, and one recreated while maximized is left
+    // with two accounts of where its client area is: Windows has it on the
+    // work area, (0,0) 1920x1040, and Qt keeps it at (-8,8) 1936x1040.
+    // Sixteen pixels of title bar hang off the right edge with the window
+    // buttons, every widget answers the pointer 8px from where it is drawn --
+    // the folded menu does not open under it -- and the normal placement the
+    // window later returns to is above the top of the screen, further up
+    // with every switch. Nothing asked of the window afterwards reconciles
+    // the two short of leaving the maximized state, so it is left first: the
+    // switch runs on a window in the normal state, a turn of the event loop
+    // later so that Qt has heard where that is, and the window is maximized
+    // again once the new frame has settled. A theme or a preference pack is
+    // what usually gets here, with the window maximized more often than not.
+    if (custom != isCustomTitleBar() && isVisible() && isMaximized()) {
+        d->titleBarRemaximize = true;
+        showNormal();
+        d->titleBarTimer.start(TitleBarSwitchSettle);
+        return;
+    }
+#endif
     // Only ever asked of the title bar that exists: with the platform's there
     // is nowhere to put the toolbar, and false is also what puts it back.
     const bool inTitleBar = custom && titleBarToolBars();
@@ -2245,6 +2279,22 @@ void MainWindow::applyTitleBarParams()
     setCustomTitleBar(custom);
     if (toolBars && inTitleBar) {
         toolBars->setTitleBarToolBars(true);
+    }
+
+    // Std_ViewTitleBar asks through the parameter, and shows what came of it.
+    if (auto cmd = Application::Instance->commandManager().getCommandByName("Std_ViewTitleBar")) {
+        if (auto action = cmd->getAction()) {
+            action->setChecked(isCustomTitleBar(), true);
+        }
+    }
+
+    if (d->titleBarRemaximize) {
+        d->titleBarRemaximize = false;
+        QTimer::singleShot(TitleBarSwitchSettle, this, [this]() {
+            if (isVisible() && !isMinimized()) {
+                showMaximized();
+            }
+        });
     }
 }
 

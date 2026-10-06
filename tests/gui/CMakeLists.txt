@@ -1291,3 +1291,10 @@ fc_add_gui_test(GuiStatusDimensionText_tests_run
 fc_add_gui_test(GuiToolTipIconAndImages_tests_run
                 tooltip-icon-and-images.py
                 --timeout 180)
+
+# Switching the custom title bar on a maximized window leaves it in one
+# place: on Windows the frame change left Qt 8 px away from where the
+# system had the client area, and the normal placement crept off the screen.
+fc_add_gui_test(GuiTitleBarSwitchMaximized_tests_run
+                titlebar-switch-maximized.py
+                --timeout 180)
