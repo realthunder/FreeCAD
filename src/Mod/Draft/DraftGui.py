@@ -860,11 +860,6 @@ class DraftToolBar:
         # owner: the view the panel was asked in (docs/TaskPanelPerView.md).
         # This runs from the todo queue, where no view is being handled.
         task = FreeCADGui.Control.showDialog(panel, view=owner)
-        # this fork's Control.showDialog returns None rather than a task dialog
-        # wrapper, and that wrapper has neither setter, so the dialog is not
-        # tied to a document here and does not close with it
-        if task is None:
-            return
         task.setDocumentName(FreeCADGui.ActiveDocument.Document.Name)
         task.setAutoCloseOnDeletedDocument(True)
 
