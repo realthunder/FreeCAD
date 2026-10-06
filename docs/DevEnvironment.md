@@ -2657,6 +2657,22 @@ directory and would otherwise pick the user's session for a test script; and
 the user's session on purpose, set the same `FC_MCP_ENDPOINT_DIR` for
 `mcp_run.py`; `FC_MCP_PORT=0` before the launcher turns the console off.
 
+**Under a debugger: `..\tools\fcad-user-cdb.cmd`.** The same launcher with
+`FCAD_USER_CDB` set, which starts `bin\FreeCAD.exe` as a child of
+`..\tools\dbg\cdb.exe` in a console of its own -- a crash stops there at a
+prompt, and closing that window kills FreeCAD. It sets `_NO_DEBUG_HEAP=1`
+([why](#four-things-that-will-waste-your-time)), and carries `-server
+tcp:port=9311` so a second client can attach (`cdb -remote
+tcp:server=localhost,port=9311`), `-G`, `-lines`, `-logo dbg\cdb_fcad_user.log`
+and `-cf ..\tools\fcad-user-arm.cdb`. The arm file prints two self-checks into
+the log at every start -- `NtGlobalFlag` (0 = no debug heap) and where
+`FreeCADBase`'s symbols came from (`private pdb symbols`, out of
+`.conda\user-app`, read straight through the compression) -- then traps an
+access violation on first chance, logs registers and 60 frames, and passes it
+on with `gn`. It writes ONE full dump per session
+(`dbg\dumps\fcad_user_av*.dmp`, 1-2 GB each): a fault that repeats would
+otherwise fill the drive.
+
 Verified on the first stage (2026-10-06): the launched process had 240 modules
 from `.conda\user` and `.conda\user-app` and none from `.conda\freecad`,
 `build\`, `..\occt` or `..\install`; a `Part::Box` recomputed on OCCT 8.0.1 with
