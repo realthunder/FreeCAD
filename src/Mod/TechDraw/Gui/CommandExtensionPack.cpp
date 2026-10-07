@@ -1950,8 +1950,7 @@ void CmdTechDrawExtensionArcLengthAnnotation::activated(int iMsg)
     balloon->Text.setValue("◠ " + valueStr);
 
     // Set balloon format to be referencing dimension-like
-    int stdStyle = Preferences::getPreferenceGroup("Dimensions")->GetInt("StandardAndStyle",
-                       ViewProviderDimension::STD_STYLE_ISO_ORIENTED);
+    int stdStyle = Preferences::getPreferenceGroup("Dimensions")->GetInt("StandardAndStyle", TechDraw::TechDrawParams::defaultStandardAndStyle());
     bool asmeStyle = stdStyle == ViewProviderDimension::STD_STYLE_ASME_INLINED
                      || stdStyle == ViewProviderDimension::STD_STYLE_ASME_REFERENCING;
     balloon->BubbleShape.setValue(asmeStyle ? "None" : "Line");

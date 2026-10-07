@@ -131,7 +131,8 @@ public:
     static int LineCapStyle();
     static int LineCapIndex();
 
-    static int LineSpacingISO();
+    static double LineSpacingISO();
+    static bool coarseView();
 
     static std::string currentLineDefFile();
     static std::string currentElementDefFile();

@@ -123,13 +123,60 @@ public:
     bool allowCrazyEdge;
     bool debugDetail;
     bool debugSection;
+    unsigned long Background;
+    unsigned long CutSurfaceColor;
+    unsigned long FaceColor;
+    unsigned long GeomHatch;
+    unsigned long Hatch;
+    unsigned long HiddenColor;
+    unsigned long LightTextColor;
+    unsigned long NormalColor;
+    unsigned long PageColor;
+    unsigned long TemplateUnderlineColor;
+    unsigned long gridColor;
+    unsigned long BreaklineColor;
+    unsigned long CenterColor;
+    unsigned long HighlightColor;
+    unsigned long SectionColor;
+    unsigned long VertexColor;
+    unsigned long DimensionColor;
+    unsigned long LeaderLineColor;
+    unsigned long TrackerColor;
+    long LineGroup;
+    long LineStyleCenter;
+    long LineStyleHidden;
+    long LineStyleBreak;
+    long BreakType;
+    long SectionLine;
+    long HighlightStyle;
+    long CenterLine;
+    long CenterLineStyle;
+    long HiddenLine;
+    long EdgeCapStyle;
+    long LineStandard;
+    long SectionLineStandard;
+    long IsoCount;
+    bool CoarseView;
+    double LineSpacingFactorISO;
+    long SectionUpdateDelay;
+    double ArrowSize;
+    double FontSize;
+    long StandardAndStyle;
+    std::string TemplateFile;
+    std::string TemplateDir;
+    std::string LineGroupFile;
+    std::string FileHatch;
+    std::string WeldingDir;
+    std::string LineDefLocation;
+    std::string LineElementLocation;
+    std::string FilePattern;
 
     // Auto generated code (Tools/params_utils.py:254)
     TechDrawParamsP() {
         handle = App::GetApplication().GetParameterGroupByPath("User parameter:BaseApp/Preferences/Mod/TechDraw");
         handle->Attach(this);
 
-        subHandles.resize(11);
+        subHandles.resize(13);
         subHandles[0] = handle->GetGroup("General");
         subHandles[0]->Attach(this);
         subHandles[1] = handle->GetGroup("Decorations");
@@ -152,6 +199,10 @@ public:
         subHandles[9]->Attach(this);
         subHandles[10] = handle->GetGroup("debug");
         subHandles[10]->Attach(this);
+        subHandles[11] = handle->GetGroup("Standards");
+        subHandles[11]->Attach(this);
+        subHandles[12] = handle->GetGroup("Files");
+        subHandles[12]->Attach(this);
         AllowPageOverride = this->subHandles[0]->GetBool("AllowPageOverride", true);
         funcs["AllowPageOverride"] = &TechDrawParamsP::updateAllowPageOverride;
         AutoDist = this->subHandles[0]->GetBool("AutoDist", true);
@@ -314,6 +365,100 @@ public:
         funcs["debugDetail"] = &TechDrawParamsP::updatedebugDetail;
         debugSection = this->subHandles[10]->GetBool("debugSection", false);
         funcs["debugSection"] = &TechDrawParamsP::updatedebugSection;
+        Background = this->subHandles[5]->GetUnsigned("Background", 0x707070FF);
+        funcs["Background"] = &TechDrawParamsP::updateBackground;
+        CutSurfaceColor = this->subHandles[5]->GetUnsigned("CutSurfaceColor", 0xD3D3D3FF);
+        funcs["CutSurfaceColor"] = &TechDrawParamsP::updateCutSurfaceColor;
+        FaceColor = this->subHandles[5]->GetUnsigned("FaceColor", 0xFFFFFFFF);
+        funcs["FaceColor"] = &TechDrawParamsP::updateFaceColor;
+        GeomHatch = this->subHandles[5]->GetUnsigned("GeomHatch", 0x00FF00FF);
+        funcs["GeomHatch"] = &TechDrawParamsP::updateGeomHatch;
+        Hatch = this->subHandles[5]->GetUnsigned("Hatch", 0x00FF00FF);
+        funcs["Hatch"] = &TechDrawParamsP::updateHatch;
+        HiddenColor = this->subHandles[5]->GetUnsigned("HiddenColor", 0x000000FF);
+        funcs["HiddenColor"] = &TechDrawParamsP::updateHiddenColor;
+        LightTextColor = this->subHandles[5]->GetUnsigned("LightTextColor", 0xFFFFFFFF);
+        funcs["LightTextColor"] = &TechDrawParamsP::updateLightTextColor;
+        NormalColor = this->subHandles[5]->GetUnsigned("NormalColor", 0x000000FF);
+        funcs["NormalColor"] = &TechDrawParamsP::updateNormalColor;
+        PageColor = this->subHandles[5]->GetUnsigned("PageColor", 0xFFFFFFFF);
+        funcs["PageColor"] = &TechDrawParamsP::updatePageColor;
+        TemplateUnderlineColor = this->subHandles[5]->GetUnsigned("TemplateUnderlineColor", 0x0000FFFF);
+        funcs["TemplateUnderlineColor"] = &TechDrawParamsP::updateTemplateUnderlineColor;
+        gridColor = this->subHandles[5]->GetUnsigned("gridColor", 0x000000FF);
+        funcs["gridColor"] = &TechDrawParamsP::updategridColor;
+        BreaklineColor = this->subHandles[1]->GetUnsigned("BreaklineColor", 0x000000FF);
+        funcs["BreaklineColor"] = &TechDrawParamsP::updateBreaklineColor;
+        CenterColor = this->subHandles[1]->GetUnsigned("CenterColor", 0x000000FF);
+        funcs["CenterColor"] = &TechDrawParamsP::updateCenterColor;
+        HighlightColor = this->subHandles[1]->GetUnsigned("HighlightColor", 0x000000FF);
+        funcs["HighlightColor"] = &TechDrawParamsP::updateHighlightColor;
+        SectionColor = this->subHandles[1]->GetUnsigned("SectionColor", 0x000000FF);
+        funcs["SectionColor"] = &TechDrawParamsP::updateSectionColor;
+        VertexColor = this->subHandles[1]->GetUnsigned("VertexColor", 0x000000FF);
+        funcs["VertexColor"] = &TechDrawParamsP::updateVertexColor;
+        DimensionColor = this->subHandles[2]->GetUnsigned("Color", 0x000000FF);
+        funcs["Color"] = &TechDrawParamsP::updateDimensionColor;
+        LeaderLineColor = this->subHandles[7]->GetUnsigned("Color", 0x000000FF);
+        funcs["Color"] = &TechDrawParamsP::updateLeaderLineColor;
+        TrackerColor = this->subHandles[9]->GetUnsigned("TrackerColor", 0xFF0000FF);
+        funcs["TrackerColor"] = &TechDrawParamsP::updateTrackerColor;
+        LineGroup = this->subHandles[1]->GetInt("LineGroup", 3);
+        funcs["LineGroup"] = &TechDrawParamsP::updateLineGroup;
+        LineStyleCenter = this->subHandles[1]->GetInt("LineStyleCenter", 4);
+        funcs["LineStyleCenter"] = &TechDrawParamsP::updateLineStyleCenter;
+        LineStyleHidden = this->subHandles[1]->GetInt("LineStyleHidden", 1);
+        funcs["LineStyleHidden"] = &TechDrawParamsP::updateLineStyleHidden;
+        LineStyleBreak = this->subHandles[1]->GetInt("LineStyleBreak", 0);
+        funcs["LineStyleBreak"] = &TechDrawParamsP::updateLineStyleBreak;
+        BreakType = this->subHandles[1]->GetInt("BreakType", 2);
+        funcs["BreakType"] = &TechDrawParamsP::updateBreakType;
+        SectionLine = this->subHandles[1]->GetInt("SectionLine", 2);
+        funcs["SectionLine"] = &TechDrawParamsP::updateSectionLine;
+        HighlightStyle = this->subHandles[1]->GetInt("HighlightStyle", 2);
+        funcs["HighlightStyle"] = &TechDrawParamsP::updateHighlightStyle;
+        CenterLine = this->subHandles[1]->GetInt("CenterLine", 2);
+        funcs["CenterLine"] = &TechDrawParamsP::updateCenterLine;
+        CenterLineStyle = this->subHandles[1]->GetInt("CenterLineStyle", 2);
+        funcs["CenterLineStyle"] = &TechDrawParamsP::updateCenterLineStyle;
+        HiddenLine = this->subHandles[0]->GetInt("HiddenLine", 0);
+        funcs["HiddenLine"] = &TechDrawParamsP::updateHiddenLine;
+        EdgeCapStyle = this->subHandles[0]->GetInt("EdgeCapStyle", 0);
+        funcs["EdgeCapStyle"] = &TechDrawParamsP::updateEdgeCapStyle;
+        LineStandard = this->subHandles[11]->GetInt("LineStandard", 1);
+        funcs["LineStandard"] = &TechDrawParamsP::updateLineStandard;
+        SectionLineStandard = this->subHandles[11]->GetInt("SectionLineStandard", 1);
+        funcs["SectionLineStandard"] = &TechDrawParamsP::updateSectionLineStandard;
+        IsoCount = this->subHandles[3]->GetInt("IsoCount", 0);
+        funcs["IsoCount"] = &TechDrawParamsP::updateIsoCount;
+        CoarseView = this->subHandles[0]->GetBool("CoarseView", false);
+        funcs["CoarseView"] = &TechDrawParamsP::updateCoarseView;
+        LineSpacingFactorISO = this->subHandles[2]->GetFloat("LineSpacingFactorISO", 2.0);
+        funcs["LineSpacingFactorISO"] = &TechDrawParamsP::updateLineSpacingFactorISO;
+        SectionUpdateDelay = this->subHandles[0]->GetInt("SectionUpdateDelay", 300);
+        funcs["SectionUpdateDelay"] = &TechDrawParamsP::updateSectionUpdateDelay;
+        ArrowSize = this->subHandles[2]->GetFloat("ArrowSize", 3.5);
+        funcs["ArrowSize"] = &TechDrawParamsP::updateArrowSize;
+        FontSize = this->subHandles[2]->GetFloat("FontSize", 5.0);
+        funcs["FontSize"] = &TechDrawParamsP::updateFontSize;
+        StandardAndStyle = this->subHandles[2]->GetInt("StandardAndStyle", 0);
+        funcs["StandardAndStyle"] = &TechDrawParamsP::updateStandardAndStyle;
+        TemplateFile = this->subHandles[12]->GetASCII("TemplateFile", "");
+        funcs["TemplateFile"] = &TechDrawParamsP::updateTemplateFile;
+        TemplateDir = this->subHandles[12]->GetASCII("TemplateDir", "");
+        funcs["TemplateDir"] = &TechDrawParamsP::updateTemplateDir;
+        LineGroupFile = this->subHandles[12]->GetASCII("LineGroupFile", "");
+        funcs["LineGroupFile"] = &TechDrawParamsP::updateLineGroupFile;
+        FileHatch = this->subHandles[12]->GetASCII("FileHatch", "");
+        funcs["FileHatch"] = &TechDrawParamsP::updateFileHatch;
+        WeldingDir = this->subHandles[12]->GetASCII("WeldingDir", "");
+        funcs["WeldingDir"] = &TechDrawParamsP::updateWeldingDir;
+        LineDefLocation = this->subHandles[12]->GetASCII("LineDefLocation", "");
+        funcs["LineDefLocation"] = &TechDrawParamsP::updateLineDefLocation;
+        LineElementLocation = this->subHandles[12]->GetASCII("LineElementLocation", "");
+        funcs["LineElementLocation"] = &TechDrawParamsP::updateLineElementLocation;
+        FilePattern = this->subHandles[4]->GetASCII("FilePattern", "");
+        funcs["FilePattern"] = &TechDrawParamsP::updateFilePattern;
     }
 
     // Auto generated code (Tools/params_utils.py:284)
@@ -653,6 +798,194 @@ public:
     // Auto generated code (Tools/params_utils.py:314)
     static void updatedebugSection(TechDrawParamsP *self) {
         self->debugSection = self->subHandles[10]->GetBool("debugSection", false);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateBackground(TechDrawParamsP *self) {
+        self->Background = self->subHandles[5]->GetUnsigned("Background", 0x707070FF);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateCutSurfaceColor(TechDrawParamsP *self) {
+        self->CutSurfaceColor = self->subHandles[5]->GetUnsigned("CutSurfaceColor", 0xD3D3D3FF);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateFaceColor(TechDrawParamsP *self) {
+        self->FaceColor = self->subHandles[5]->GetUnsigned("FaceColor", 0xFFFFFFFF);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateGeomHatch(TechDrawParamsP *self) {
+        self->GeomHatch = self->subHandles[5]->GetUnsigned("GeomHatch", 0x00FF00FF);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateHatch(TechDrawParamsP *self) {
+        self->Hatch = self->subHandles[5]->GetUnsigned("Hatch", 0x00FF00FF);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateHiddenColor(TechDrawParamsP *self) {
+        self->HiddenColor = self->subHandles[5]->GetUnsigned("HiddenColor", 0x000000FF);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateLightTextColor(TechDrawParamsP *self) {
+        self->LightTextColor = self->subHandles[5]->GetUnsigned("LightTextColor", 0xFFFFFFFF);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateNormalColor(TechDrawParamsP *self) {
+        self->NormalColor = self->subHandles[5]->GetUnsigned("NormalColor", 0x000000FF);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updatePageColor(TechDrawParamsP *self) {
+        self->PageColor = self->subHandles[5]->GetUnsigned("PageColor", 0xFFFFFFFF);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateTemplateUnderlineColor(TechDrawParamsP *self) {
+        self->TemplateUnderlineColor = self->subHandles[5]->GetUnsigned("TemplateUnderlineColor", 0x0000FFFF);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updategridColor(TechDrawParamsP *self) {
+        self->gridColor = self->subHandles[5]->GetUnsigned("gridColor", 0x000000FF);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateBreaklineColor(TechDrawParamsP *self) {
+        self->BreaklineColor = self->subHandles[1]->GetUnsigned("BreaklineColor", 0x000000FF);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateCenterColor(TechDrawParamsP *self) {
+        self->CenterColor = self->subHandles[1]->GetUnsigned("CenterColor", 0x000000FF);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateHighlightColor(TechDrawParamsP *self) {
+        self->HighlightColor = self->subHandles[1]->GetUnsigned("HighlightColor", 0x000000FF);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateSectionColor(TechDrawParamsP *self) {
+        self->SectionColor = self->subHandles[1]->GetUnsigned("SectionColor", 0x000000FF);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateVertexColor(TechDrawParamsP *self) {
+        self->VertexColor = self->subHandles[1]->GetUnsigned("VertexColor", 0x000000FF);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateDimensionColor(TechDrawParamsP *self) {
+        self->DimensionColor = self->subHandles[2]->GetUnsigned("Color", 0x000000FF);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateLeaderLineColor(TechDrawParamsP *self) {
+        self->LeaderLineColor = self->subHandles[7]->GetUnsigned("Color", 0x000000FF);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateTrackerColor(TechDrawParamsP *self) {
+        self->TrackerColor = self->subHandles[9]->GetUnsigned("TrackerColor", 0xFF0000FF);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateLineGroup(TechDrawParamsP *self) {
+        self->LineGroup = self->subHandles[1]->GetInt("LineGroup", 3);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateLineStyleCenter(TechDrawParamsP *self) {
+        self->LineStyleCenter = self->subHandles[1]->GetInt("LineStyleCenter", 4);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateLineStyleHidden(TechDrawParamsP *self) {
+        self->LineStyleHidden = self->subHandles[1]->GetInt("LineStyleHidden", 1);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateLineStyleBreak(TechDrawParamsP *self) {
+        self->LineStyleBreak = self->subHandles[1]->GetInt("LineStyleBreak", 0);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateBreakType(TechDrawParamsP *self) {
+        self->BreakType = self->subHandles[1]->GetInt("BreakType", 2);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateSectionLine(TechDrawParamsP *self) {
+        self->SectionLine = self->subHandles[1]->GetInt("SectionLine", 2);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateHighlightStyle(TechDrawParamsP *self) {
+        self->HighlightStyle = self->subHandles[1]->GetInt("HighlightStyle", 2);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateCenterLine(TechDrawParamsP *self) {
+        self->CenterLine = self->subHandles[1]->GetInt("CenterLine", 2);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateCenterLineStyle(TechDrawParamsP *self) {
+        self->CenterLineStyle = self->subHandles[1]->GetInt("CenterLineStyle", 2);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateHiddenLine(TechDrawParamsP *self) {
+        self->HiddenLine = self->subHandles[0]->GetInt("HiddenLine", 0);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateEdgeCapStyle(TechDrawParamsP *self) {
+        self->EdgeCapStyle = self->subHandles[0]->GetInt("EdgeCapStyle", 0);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateLineStandard(TechDrawParamsP *self) {
+        self->LineStandard = self->subHandles[11]->GetInt("LineStandard", 1);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateSectionLineStandard(TechDrawParamsP *self) {
+        self->SectionLineStandard = self->subHandles[11]->GetInt("SectionLineStandard", 1);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateIsoCount(TechDrawParamsP *self) {
+        self->IsoCount = self->subHandles[3]->GetInt("IsoCount", 0);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateCoarseView(TechDrawParamsP *self) {
+        self->CoarseView = self->subHandles[0]->GetBool("CoarseView", false);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateLineSpacingFactorISO(TechDrawParamsP *self) {
+        self->LineSpacingFactorISO = self->subHandles[2]->GetFloat("LineSpacingFactorISO", 2.0);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateSectionUpdateDelay(TechDrawParamsP *self) {
+        self->SectionUpdateDelay = self->subHandles[0]->GetInt("SectionUpdateDelay", 300);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateArrowSize(TechDrawParamsP *self) {
+        self->ArrowSize = self->subHandles[2]->GetFloat("ArrowSize", 3.5);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateFontSize(TechDrawParamsP *self) {
+        self->FontSize = self->subHandles[2]->GetFloat("FontSize", 5.0);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateStandardAndStyle(TechDrawParamsP *self) {
+        self->StandardAndStyle = self->subHandles[2]->GetInt("StandardAndStyle", 0);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateTemplateFile(TechDrawParamsP *self) {
+        self->TemplateFile = self->subHandles[12]->GetASCII("TemplateFile", "");
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateTemplateDir(TechDrawParamsP *self) {
+        self->TemplateDir = self->subHandles[12]->GetASCII("TemplateDir", "");
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateLineGroupFile(TechDrawParamsP *self) {
+        self->LineGroupFile = self->subHandles[12]->GetASCII("LineGroupFile", "");
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateFileHatch(TechDrawParamsP *self) {
+        self->FileHatch = self->subHandles[12]->GetASCII("FileHatch", "");
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateWeldingDir(TechDrawParamsP *self) {
+        self->WeldingDir = self->subHandles[12]->GetASCII("WeldingDir", "");
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateLineDefLocation(TechDrawParamsP *self) {
+        self->LineDefLocation = self->subHandles[12]->GetASCII("LineDefLocation", "");
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateLineElementLocation(TechDrawParamsP *self) {
+        self->LineElementLocation = self->subHandles[12]->GetASCII("LineElementLocation", "");
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateFilePattern(TechDrawParamsP *self) {
+        self->FilePattern = self->subHandles[4]->GetASCII("FilePattern", "");
     }
 };
 
@@ -1013,6 +1346,241 @@ static const App::ParamRegistry::Registrar _TechDrawParamsRegistrar({
         .setTitle("Debug section views")
         .setDoc("Write the intermediate shapes of a section view to files while it\n"
 "is recomputed. For developers."),
+    App::ParamInfo("TechDraw", "TechDrawParams", "User parameter:BaseApp/Preferences/Mod/TechDraw/Colors", "Background", "Background", App::ParamInfo::Hex, 0x707070FF)
+        .setTitle("Page view background")
+        .setDoc("Colour of the area around the sheet in a page view. Read when a\n"
+"page view is opened.")
+        .setProxy("Color")
+        .setTransparency(false),
+    App::ParamInfo("TechDraw", "TechDrawParams", "User parameter:BaseApp/Preferences/Mod/TechDraw/Colors", "CutSurfaceColor", "CutSurfaceColor", App::ParamInfo::Hex, 0xD3D3D3FF)
+        .setTitle("Cut surface colour")
+        .setDoc("Colour of the cut surface of new sections that show it as a solid\n"
+"colour. Applies to sections created afterwards.")
+        .setProxy("Color")
+        .setTransparency(false),
+    App::ParamInfo("TechDraw", "TechDrawParams", "User parameter:BaseApp/Preferences/Mod/TechDraw/Colors", "FaceColor", "FaceColor", App::ParamInfo::Hex, 0xFFFFFFFF)
+        .setTitle("Face colour")
+        .setDoc("Fill colour of the faces of new views. Applies to views created\n"
+"afterwards; each view has its own Face Color property.")
+        .setProxy("Color")
+        .setTransparency(false),
+    App::ParamInfo("TechDraw", "TechDrawParams", "User parameter:BaseApp/Preferences/Mod/TechDraw/Colors", "GeomHatch", "GeomHatch", App::ParamInfo::Hex, 0x00FF00FF)
+        .setTitle("Geometric hatch colour")
+        .setDoc("Line colour of new geometric (PAT) hatches. Applies to hatches\n"
+"created afterwards.")
+        .setProxy("Color")
+        .setTransparency(false),
+    App::ParamInfo("TechDraw", "TechDrawParams", "User parameter:BaseApp/Preferences/Mod/TechDraw/Colors", "Hatch", "Hatch", App::ParamInfo::Hex, 0x00FF00FF)
+        .setTitle("Hatch colour")
+        .setDoc("Colour of new SVG hatches. Applies to hatches created afterwards.")
+        .setProxy("Color")
+        .setTransparency(false),
+    App::ParamInfo("TechDraw", "TechDrawParams", "User parameter:BaseApp/Preferences/Mod/TechDraw/Colors", "HiddenColor", "HiddenColor", App::ParamInfo::Hex, 0x000000FF)
+        .setTitle("Hidden line colour")
+        .setDoc("Colour of hidden lines. Takes effect when a view is redrawn.")
+        .setProxy("Color")
+        .setTransparency(false),
+    App::ParamInfo("TechDraw", "TechDrawParams", "User parameter:BaseApp/Preferences/Mod/TechDraw/Colors", "LightTextColor", "LightTextColor", App::ParamInfo::Hex, 0xFFFFFFFF)
+        .setTitle("Light text colour")
+        .setDoc("The one colour everything is drawn in while Light on dark and\n"
+"Monochrome are both on.")
+        .setProxy("Color")
+        .setTransparency(false),
+    App::ParamInfo("TechDraw", "TechDrawParams", "User parameter:BaseApp/Preferences/Mod/TechDraw/Colors", "NormalColor", "NormalColor", App::ParamInfo::Hex, 0x000000FF)
+        .setTitle("Normal colour")
+        .setDoc("Colour of lines and text that are not selected, and the colour new\n"
+"cosmetic lines and annotations start with.")
+        .setProxy("Color")
+        .setTransparency(false),
+    App::ParamInfo("TechDraw", "TechDrawParams", "User parameter:BaseApp/Preferences/Mod/TechDraw/Colors", "PageColor", "PageColor", App::ParamInfo::Hex, 0xFFFFFFFF)
+        .setTitle("Sheet colour")
+        .setDoc("Colour of the sheet in a page view.")
+        .setProxy("Color")
+        .setTransparency(false),
+    App::ParamInfo("TechDraw", "TechDrawParams", "User parameter:BaseApp/Preferences/Mod/TechDraw/Colors", "TemplateUnderlineColor", "TemplateUnderlineColor", App::ParamInfo::Hex, 0x0000FFFF)
+        .setTitle("Template click box colour")
+        .setDoc("Colour of the click boxes on the editable texts of a template.\n"
+"Read when a template is loaded.")
+        .setProxy("Color")
+        .setTransparency(false),
+    App::ParamInfo("TechDraw", "TechDrawParams", "User parameter:BaseApp/Preferences/Mod/TechDraw/Colors", "gridColor", "gridColor", App::ParamInfo::Hex, 0x000000FF)
+        .setTitle("Grid colour")
+        .setDoc("Colour of the page grid.")
+        .setProxy("Color")
+        .setTransparency(false),
+    App::ParamInfo("TechDraw", "TechDrawParams", "User parameter:BaseApp/Preferences/Mod/TechDraw/Decorations", "BreaklineColor", "BreaklineColor", App::ParamInfo::Hex, 0x000000FF)
+        .setTitle("Break line colour")
+        .setDoc("Colour of the break lines of broken views.")
+        .setProxy("Color")
+        .setTransparency(false),
+    App::ParamInfo("TechDraw", "TechDrawParams", "User parameter:BaseApp/Preferences/Mod/TechDraw/Decorations", "CenterColor", "CenterColor", App::ParamInfo::Hex, 0x000000FF)
+        .setTitle("Centre line colour")
+        .setDoc("Colour of centre lines and centre marks.")
+        .setProxy("Color")
+        .setTransparency(false),
+    App::ParamInfo("TechDraw", "TechDrawParams", "User parameter:BaseApp/Preferences/Mod/TechDraw/Decorations", "HighlightColor", "HighlightColor", App::ParamInfo::Hex, 0x000000FF)
+        .setTitle("Detail highlight colour")
+        .setDoc("Colour of the detail highlight in new views. Applies to views\n"
+"created afterwards.")
+        .setProxy("Color")
+        .setTransparency(false),
+    App::ParamInfo("TechDraw", "TechDrawParams", "User parameter:BaseApp/Preferences/Mod/TechDraw/Decorations", "SectionColor", "SectionColor", App::ParamInfo::Hex, 0x000000FF)
+        .setTitle("Section line colour")
+        .setDoc("Colour of section lines.")
+        .setProxy("Color")
+        .setTransparency(false),
+    App::ParamInfo("TechDraw", "TechDrawParams", "User parameter:BaseApp/Preferences/Mod/TechDraw/Decorations", "VertexColor", "VertexColor", App::ParamInfo::Hex, 0x000000FF)
+        .setTitle("Vertex colour")
+        .setDoc("Colour of vertex dots, and the colour new cosmetic vertices start\n"
+"with.")
+        .setProxy("Color")
+        .setTransparency(false),
+    App::ParamInfo("TechDraw", "TechDrawParams", "User parameter:BaseApp/Preferences/Mod/TechDraw/Dimensions", "DimensionColor", "Color", App::ParamInfo::Hex, 0x000000FF)
+        .setTitle("Dimension colour")
+        .setDoc("Colour of dimensions and balloons.")
+        .setProxy("Color")
+        .setTransparency(false),
+    App::ParamInfo("TechDraw", "TechDrawParams", "User parameter:BaseApp/Preferences/Mod/TechDraw/LeaderLine", "LeaderLineColor", "Color", App::ParamInfo::Hex, 0x000000FF)
+        .setTitle("Leader line colour")
+        .setDoc("Colour of leader lines; new leaders and rich annotations start\n"
+"with it.")
+        .setProxy("Color")
+        .setTransparency(false),
+    App::ParamInfo("TechDraw", "TechDrawParams", "User parameter:BaseApp/Preferences/Mod/TechDraw/Tracker", "TrackerColor", "TrackerColor", App::ParamInfo::Hex, 0xFF0000FF)
+        .setTitle("Tracker colour")
+        .setDoc("Colour of the rubber band lines drawn while a tool tracks the\n"
+"mouse on a page.")
+        .setProxy("Color")
+        .setTransparency(false),
+    App::ParamInfo("TechDraw", "TechDrawParams", "User parameter:BaseApp/Preferences/Mod/TechDraw/Decorations", "LineGroup", "LineGroup", App::ParamInfo::Int, 3)
+        .setTitle("Line group")
+        .setDoc("Index of the line group -- a set of thin, graphic and thick line\n"
+"widths -- in the line group file. Read at each width lookup."),
+    App::ParamInfo("TechDraw", "TechDrawParams", "User parameter:BaseApp/Preferences/Mod/TechDraw/Decorations", "LineStyleCenter", "LineStyleCenter", App::ParamInfo::Int, 4)
+        .setTitle("Centre line style")
+        .setDoc("Line style of centre lines, as an index into the lines of the\n"
+"active line standard, counted from 0. Takes effect when views are\n"
+"redrawn."),
+    App::ParamInfo("TechDraw", "TechDrawParams", "User parameter:BaseApp/Preferences/Mod/TechDraw/Decorations", "LineStyleHidden", "LineStyleHidden", App::ParamInfo::Int, 1)
+        .setTitle("Hidden line style")
+        .setDoc("Line style of hidden lines, as an index into the lines of the\n"
+"active line standard, counted from 0. Takes effect when views are\n"
+"redrawn."),
+    App::ParamInfo("TechDraw", "TechDrawParams", "User parameter:BaseApp/Preferences/Mod/TechDraw/Decorations", "LineStyleBreak", "LineStyleBreak", App::ParamInfo::Int, 0)
+        .setTitle("Break line style")
+        .setDoc("Line style of the break lines of new broken views, as an index\n"
+"into the lines of the active line standard, counted from 0.\n"
+"Applies to views created afterwards."),
+    App::ParamInfo("TechDraw", "TechDrawParams", "User parameter:BaseApp/Preferences/Mod/TechDraw/Decorations", "BreakType", "BreakType", App::ParamInfo::Int, 2)
+        .setTitle("Break type")
+        .setDoc("How breaks are drawn in new broken views: 0 not at all, 1 zig-zag,\n"
+"2 simple. Applies to views created afterwards."),
+    App::ParamInfo("TechDraw", "TechDrawParams", "User parameter:BaseApp/Preferences/Mod/TechDraw/Decorations", "SectionLine", "SectionLine", App::ParamInfo::Int, 2)
+        .setTitle("Section line style")
+        .setDoc("Line style of section lines: for a new view the number of a line\n"
+"of the active line standard, where a section line or a highlight\n"
+"is drawn a pen style -- 1 solid, 2 dashed, 3 dotted, 4 dash-dot.\n"
+"The Section Line Style list of the Annotation page stores another\n"
+"key, which nothing that draws reads."),
+    App::ParamInfo("TechDraw", "TechDrawParams", "User parameter:BaseApp/Preferences/Mod/TechDraw/Decorations", "HighlightStyle", "HighlightStyle", App::ParamInfo::Int, 2)
+        .setTitle("Detail highlight style")
+        .setDoc("Line style of the detail highlight in new views, as the number of\n"
+"a line of the active line standard. Applies to views created\n"
+"afterwards. The Detail Highlight Style list of the Annotation page\n"
+"stores another key, which nothing that draws reads."),
+    App::ParamInfo("TechDraw", "TechDrawParams", "User parameter:BaseApp/Preferences/Mod/TechDraw/Decorations", "CenterLine", "CenterLine", App::ParamInfo::Int, 2)
+        .setTitle("Centre line pen style")
+        .setDoc("Pen style of centre line items: 1 solid, 2 dashed, 3 dotted, 4\n"
+"dash-dot, 5 dash-dot-dot. Read as each centre line item is made."),
+    App::ParamInfo("TechDraw", "TechDrawParams", "User parameter:BaseApp/Preferences/Mod/TechDraw/Decorations", "CenterLineStyle", "CenterLineStyle", App::ParamInfo::Int, 2)
+        .setTitle("Cosmetic line style")
+        .setDoc("Line style new cosmetic edges and centre lines start with, as the\n"
+"number of a line of the active line standard. Applies to lines\n"
+"created afterwards."),
+    App::ParamInfo("TechDraw", "TechDrawParams", "User parameter:BaseApp/Preferences/Mod/TechDraw/General", "HiddenLine", "HiddenLine", App::ParamInfo::Int, 0)
+        .setTitle("Hidden edge pen style")
+        .setDoc("Pen style of an edge marked hidden: 0 solid, 1 dashed, 2 dotted, 3\n"
+"dash-dot, 4 dash-dot-dot. Read when an edge is marked hidden."),
+    App::ParamInfo("TechDraw", "TechDrawParams", "User parameter:BaseApp/Preferences/Mod/TechDraw/General", "EdgeCapStyle", "EdgeCapStyle", App::ParamInfo::Int, 0)
+        .setTitle("Line end shape")
+        .setDoc("Shape of line ends: 0 round, 1 square, 2 flat. Flat or square ends\n"
+"suit drawings printed 1:1 as cutting guides. Read as pens are\n"
+"made."),
+    App::ParamInfo("TechDraw", "TechDrawParams", "User parameter:BaseApp/Preferences/Mod/TechDraw/Standards", "LineStandard", "LineStandard", App::ParamInfo::Int, 1)
+        .setTitle("Line standard")
+        .setDoc("Line standard in use, as an index into the standards found in the\n"
+"line definition folder. Read each time line definitions are\n"
+"loaded."),
+    App::ParamInfo("TechDraw", "TechDrawParams", "User parameter:BaseApp/Preferences/Mod/TechDraw/Standards", "SectionLineStandard", "SectionLineStandard", App::ParamInfo::Int, 1)
+        .setTitle("Section line standard")
+        .setDoc("Where the arrows and letters of a section line sit: 0 as ANSI and\n"
+"ASME have them, 1 as ISO has them. Read each time a section line\n"
+"is drawn."),
+    App::ParamInfo("TechDraw", "TechDrawParams", "User parameter:BaseApp/Preferences/Mod/TechDraw/HLR", "IsoCount", "IsoCount", App::ParamInfo::Int, 0)
+        .setTitle("Iso-parameter line count")
+        .setDoc("Number of iso-parameter lines per face in new views. Applies to\n"
+"views created afterwards."),
+    App::ParamInfo("TechDraw", "TechDrawParams", "User parameter:BaseApp/Preferences/Mod/TechDraw/General", "CoarseView", "CoarseView", App::ParamInfo::Bool, false)
+        .setTitle("Use polygon approximation")
+        .setDoc("New views use the fast polygon approximation for hidden lines:\n"
+"quicker, but curves become short straight segments and faces are\n"
+"not found. Applies to views created afterwards; each view has its\n"
+"own Coarse View property."),
+    App::ParamInfo("TechDraw", "TechDrawParams", "User parameter:BaseApp/Preferences/Mod/TechDraw/Dimensions", "LineSpacingFactorISO", "LineSpacingFactorISO", App::ParamInfo::Float, 2.0)
+        .setTitle("Line spacing, ISO")
+        .setDoc("Space between the dimension line and the text of new ISO\n"
+"dimensions, as a multiple of the line width. Applies to dimensions\n"
+"created afterwards."),
+    App::ParamInfo("TechDraw", "TechDrawParams", "User parameter:BaseApp/Preferences/Mod/TechDraw/General", "SectionUpdateDelay", "SectionUpdateDelay", App::ParamInfo::Int, 300)
+        .setTitle("Section update delay")
+        .setDoc("Time in milliseconds between a change in the section view dialog\n"
+"and the update of the section while live update is on. At least\n"
+"100."),
+    App::ParamInfo("TechDraw", "TechDrawParams", "User parameter:BaseApp/Preferences/Mod/TechDraw/Dimensions", "ArrowSize", "ArrowSize", App::ParamInfo::Float, 3.5)
+        .setTitle("Arrow size")
+        .setDoc("Size in mm of dimension arrowheads. Applies to dimensions created\n"
+"afterwards; each dimension has its own Arrow Size property."),
+    App::ParamInfo("TechDraw", "TechDrawParams", "User parameter:BaseApp/Preferences/Mod/TechDraw/Dimensions", "FontSize", "FontSize", App::ParamInfo::Float, 5.0)
+        .setTitle("Dimension font size")
+        .setDoc("Text size in mm of dimensions and of other annotation text that\n"
+"follows it. Applies to dimensions created afterwards."),
+    App::ParamInfo("TechDraw", "TechDrawParams", "User parameter:BaseApp/Preferences/Mod/TechDraw/Dimensions", "StandardAndStyle", "StandardAndStyle", App::ParamInfo::Int, 0)
+        .setTitle("Dimension standard and style")
+        .setDoc("Standard and text placement of new dimensions: 0 ISO oriented, 1\n"
+"ISO referencing, 2 ASME inlined, 3 ASME referencing. Applies to\n"
+"dimensions created afterwards."),
+    App::ParamInfo("TechDraw", "TechDrawParams", "User parameter:BaseApp/Preferences/Mod/TechDraw/Files", "TemplateFile", "TemplateFile", App::ParamInfo::String, "")
+        .setTitle("Template file")
+        .setDoc("Template of a new page. Empty uses A4_LandscapeTD.svg, supplied\n"
+"with the program."),
+    App::ParamInfo("TechDraw", "TechDrawParams", "User parameter:BaseApp/Preferences/Mod/TechDraw/Files", "TemplateDir", "TemplateDir", App::ParamInfo::String, "")
+        .setTitle("Template folder")
+        .setDoc("Folder the template chooser opens in. Empty uses the one supplied\n"
+"with the program."),
+    App::ParamInfo("TechDraw", "TechDrawParams", "User parameter:BaseApp/Preferences/Mod/TechDraw/Files", "LineGroupFile", "LineGroupFile", App::ParamInfo::String, "")
+        .setTitle("Line group file")
+        .setDoc("File of line groups -- sets of line widths. Empty uses the one\n"
+"supplied with the program."),
+    App::ParamInfo("TechDraw", "TechDrawParams", "User parameter:BaseApp/Preferences/Mod/TechDraw/Files", "FileHatch", "FileHatch", App::ParamInfo::String, "")
+        .setTitle("Hatch file")
+        .setDoc("SVG file new hatches take their pattern from. Empty uses\n"
+"simple.svg, supplied with the program."),
+    App::ParamInfo("TechDraw", "TechDrawParams", "User parameter:BaseApp/Preferences/Mod/TechDraw/Files", "WeldingDir", "WeldingDir", App::ParamInfo::String, "")
+        .setTitle("Welding symbol folder")
+        .setDoc("Folder of welding symbols. Empty uses the AWS symbols supplied\n"
+"with the program."),
+    App::ParamInfo("TechDraw", "TechDrawParams", "User parameter:BaseApp/Preferences/Mod/TechDraw/Files", "LineDefLocation", "LineDefLocation", App::ParamInfo::String, "")
+        .setTitle("Line definition folder")
+        .setDoc("Folder of the line standard definitions. Empty uses the one\n"
+"supplied with the program."),
+    App::ParamInfo("TechDraw", "TechDrawParams", "User parameter:BaseApp/Preferences/Mod/TechDraw/Files", "LineElementLocation", "LineElementLocation", App::ParamInfo::String, "")
+        .setTitle("Line element folder")
+        .setDoc("Folder of the line element definitions of the line standards.\n"
+"Empty uses the one supplied with the program."),
+    App::ParamInfo("TechDraw", "TechDrawParams", "User parameter:BaseApp/Preferences/Mod/TechDraw/PAT", "FilePattern", "FilePattern", App::ParamInfo::String, "")
+        .setTitle("PAT file")
+        .setDoc("PAT file new geometric hatches take their pattern from. Empty uses\n"
+"FCPAT.pat, supplied with the program."),
 });
 
 // Auto generated code (Tools/params_utils.py:368)
@@ -3390,5 +3958,1377 @@ void TechDrawParams::setdebugSection(const bool &v) {
 // Auto generated code (Tools/params_utils.py:431)
 void TechDrawParams::removedebugSection() {
     instance()->subHandles[10]->RemoveBool("debugSection");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *TechDrawParams::docBackground() {
+    return QT_TRANSLATE_NOOP("TechDrawParams",
+"Colour of the area around the sheet in a page view. Read when a\n"
+"page view is opened.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const unsigned long & TechDrawParams::getBackground() {
+    return instance()->Background;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const unsigned long & TechDrawParams::defaultBackground() {
+    const static unsigned long def = 0x707070FF;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void TechDrawParams::setBackground(const unsigned long &v) {
+    instance()->subHandles[5]->SetUnsigned("Background",v);
+    instance()->Background = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void TechDrawParams::removeBackground() {
+    instance()->subHandles[5]->RemoveUnsigned("Background");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *TechDrawParams::docCutSurfaceColor() {
+    return QT_TRANSLATE_NOOP("TechDrawParams",
+"Colour of the cut surface of new sections that show it as a solid\n"
+"colour. Applies to sections created afterwards.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const unsigned long & TechDrawParams::getCutSurfaceColor() {
+    return instance()->CutSurfaceColor;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const unsigned long & TechDrawParams::defaultCutSurfaceColor() {
+    const static unsigned long def = 0xD3D3D3FF;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void TechDrawParams::setCutSurfaceColor(const unsigned long &v) {
+    instance()->subHandles[5]->SetUnsigned("CutSurfaceColor",v);
+    instance()->CutSurfaceColor = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void TechDrawParams::removeCutSurfaceColor() {
+    instance()->subHandles[5]->RemoveUnsigned("CutSurfaceColor");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *TechDrawParams::docFaceColor() {
+    return QT_TRANSLATE_NOOP("TechDrawParams",
+"Fill colour of the faces of new views. Applies to views created\n"
+"afterwards; each view has its own Face Color property.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const unsigned long & TechDrawParams::getFaceColor() {
+    return instance()->FaceColor;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const unsigned long & TechDrawParams::defaultFaceColor() {
+    const static unsigned long def = 0xFFFFFFFF;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void TechDrawParams::setFaceColor(const unsigned long &v) {
+    instance()->subHandles[5]->SetUnsigned("FaceColor",v);
+    instance()->FaceColor = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void TechDrawParams::removeFaceColor() {
+    instance()->subHandles[5]->RemoveUnsigned("FaceColor");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *TechDrawParams::docGeomHatch() {
+    return QT_TRANSLATE_NOOP("TechDrawParams",
+"Line colour of new geometric (PAT) hatches. Applies to hatches\n"
+"created afterwards.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const unsigned long & TechDrawParams::getGeomHatch() {
+    return instance()->GeomHatch;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const unsigned long & TechDrawParams::defaultGeomHatch() {
+    const static unsigned long def = 0x00FF00FF;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void TechDrawParams::setGeomHatch(const unsigned long &v) {
+    instance()->subHandles[5]->SetUnsigned("GeomHatch",v);
+    instance()->GeomHatch = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void TechDrawParams::removeGeomHatch() {
+    instance()->subHandles[5]->RemoveUnsigned("GeomHatch");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *TechDrawParams::docHatch() {
+    return QT_TRANSLATE_NOOP("TechDrawParams",
+"Colour of new SVG hatches. Applies to hatches created afterwards.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const unsigned long & TechDrawParams::getHatch() {
+    return instance()->Hatch;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const unsigned long & TechDrawParams::defaultHatch() {
+    const static unsigned long def = 0x00FF00FF;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void TechDrawParams::setHatch(const unsigned long &v) {
+    instance()->subHandles[5]->SetUnsigned("Hatch",v);
+    instance()->Hatch = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void TechDrawParams::removeHatch() {
+    instance()->subHandles[5]->RemoveUnsigned("Hatch");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *TechDrawParams::docHiddenColor() {
+    return QT_TRANSLATE_NOOP("TechDrawParams",
+"Colour of hidden lines. Takes effect when a view is redrawn.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const unsigned long & TechDrawParams::getHiddenColor() {
+    return instance()->HiddenColor;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const unsigned long & TechDrawParams::defaultHiddenColor() {
+    const static unsigned long def = 0x000000FF;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void TechDrawParams::setHiddenColor(const unsigned long &v) {
+    instance()->subHandles[5]->SetUnsigned("HiddenColor",v);
+    instance()->HiddenColor = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void TechDrawParams::removeHiddenColor() {
+    instance()->subHandles[5]->RemoveUnsigned("HiddenColor");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *TechDrawParams::docLightTextColor() {
+    return QT_TRANSLATE_NOOP("TechDrawParams",
+"The one colour everything is drawn in while Light on dark and\n"
+"Monochrome are both on.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const unsigned long & TechDrawParams::getLightTextColor() {
+    return instance()->LightTextColor;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const unsigned long & TechDrawParams::defaultLightTextColor() {
+    const static unsigned long def = 0xFFFFFFFF;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void TechDrawParams::setLightTextColor(const unsigned long &v) {
+    instance()->subHandles[5]->SetUnsigned("LightTextColor",v);
+    instance()->LightTextColor = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void TechDrawParams::removeLightTextColor() {
+    instance()->subHandles[5]->RemoveUnsigned("LightTextColor");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *TechDrawParams::docNormalColor() {
+    return QT_TRANSLATE_NOOP("TechDrawParams",
+"Colour of lines and text that are not selected, and the colour new\n"
+"cosmetic lines and annotations start with.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const unsigned long & TechDrawParams::getNormalColor() {
+    return instance()->NormalColor;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const unsigned long & TechDrawParams::defaultNormalColor() {
+    const static unsigned long def = 0x000000FF;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void TechDrawParams::setNormalColor(const unsigned long &v) {
+    instance()->subHandles[5]->SetUnsigned("NormalColor",v);
+    instance()->NormalColor = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void TechDrawParams::removeNormalColor() {
+    instance()->subHandles[5]->RemoveUnsigned("NormalColor");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *TechDrawParams::docPageColor() {
+    return QT_TRANSLATE_NOOP("TechDrawParams",
+"Colour of the sheet in a page view.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const unsigned long & TechDrawParams::getPageColor() {
+    return instance()->PageColor;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const unsigned long & TechDrawParams::defaultPageColor() {
+    const static unsigned long def = 0xFFFFFFFF;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void TechDrawParams::setPageColor(const unsigned long &v) {
+    instance()->subHandles[5]->SetUnsigned("PageColor",v);
+    instance()->PageColor = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void TechDrawParams::removePageColor() {
+    instance()->subHandles[5]->RemoveUnsigned("PageColor");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *TechDrawParams::docTemplateUnderlineColor() {
+    return QT_TRANSLATE_NOOP("TechDrawParams",
+"Colour of the click boxes on the editable texts of a template.\n"
+"Read when a template is loaded.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const unsigned long & TechDrawParams::getTemplateUnderlineColor() {
+    return instance()->TemplateUnderlineColor;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const unsigned long & TechDrawParams::defaultTemplateUnderlineColor() {
+    const static unsigned long def = 0x0000FFFF;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void TechDrawParams::setTemplateUnderlineColor(const unsigned long &v) {
+    instance()->subHandles[5]->SetUnsigned("TemplateUnderlineColor",v);
+    instance()->TemplateUnderlineColor = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void TechDrawParams::removeTemplateUnderlineColor() {
+    instance()->subHandles[5]->RemoveUnsigned("TemplateUnderlineColor");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *TechDrawParams::docgridColor() {
+    return QT_TRANSLATE_NOOP("TechDrawParams",
+"Colour of the page grid.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const unsigned long & TechDrawParams::getgridColor() {
+    return instance()->gridColor;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const unsigned long & TechDrawParams::defaultgridColor() {
+    const static unsigned long def = 0x000000FF;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void TechDrawParams::setgridColor(const unsigned long &v) {
+    instance()->subHandles[5]->SetUnsigned("gridColor",v);
+    instance()->gridColor = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void TechDrawParams::removegridColor() {
+    instance()->subHandles[5]->RemoveUnsigned("gridColor");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *TechDrawParams::docBreaklineColor() {
+    return QT_TRANSLATE_NOOP("TechDrawParams",
+"Colour of the break lines of broken views.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const unsigned long & TechDrawParams::getBreaklineColor() {
+    return instance()->BreaklineColor;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const unsigned long & TechDrawParams::defaultBreaklineColor() {
+    const static unsigned long def = 0x000000FF;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void TechDrawParams::setBreaklineColor(const unsigned long &v) {
+    instance()->subHandles[1]->SetUnsigned("BreaklineColor",v);
+    instance()->BreaklineColor = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void TechDrawParams::removeBreaklineColor() {
+    instance()->subHandles[1]->RemoveUnsigned("BreaklineColor");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *TechDrawParams::docCenterColor() {
+    return QT_TRANSLATE_NOOP("TechDrawParams",
+"Colour of centre lines and centre marks.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const unsigned long & TechDrawParams::getCenterColor() {
+    return instance()->CenterColor;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const unsigned long & TechDrawParams::defaultCenterColor() {
+    const static unsigned long def = 0x000000FF;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void TechDrawParams::setCenterColor(const unsigned long &v) {
+    instance()->subHandles[1]->SetUnsigned("CenterColor",v);
+    instance()->CenterColor = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void TechDrawParams::removeCenterColor() {
+    instance()->subHandles[1]->RemoveUnsigned("CenterColor");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *TechDrawParams::docHighlightColor() {
+    return QT_TRANSLATE_NOOP("TechDrawParams",
+"Colour of the detail highlight in new views. Applies to views\n"
+"created afterwards.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const unsigned long & TechDrawParams::getHighlightColor() {
+    return instance()->HighlightColor;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const unsigned long & TechDrawParams::defaultHighlightColor() {
+    const static unsigned long def = 0x000000FF;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void TechDrawParams::setHighlightColor(const unsigned long &v) {
+    instance()->subHandles[1]->SetUnsigned("HighlightColor",v);
+    instance()->HighlightColor = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void TechDrawParams::removeHighlightColor() {
+    instance()->subHandles[1]->RemoveUnsigned("HighlightColor");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *TechDrawParams::docSectionColor() {
+    return QT_TRANSLATE_NOOP("TechDrawParams",
+"Colour of section lines.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const unsigned long & TechDrawParams::getSectionColor() {
+    return instance()->SectionColor;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const unsigned long & TechDrawParams::defaultSectionColor() {
+    const static unsigned long def = 0x000000FF;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void TechDrawParams::setSectionColor(const unsigned long &v) {
+    instance()->subHandles[1]->SetUnsigned("SectionColor",v);
+    instance()->SectionColor = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void TechDrawParams::removeSectionColor() {
+    instance()->subHandles[1]->RemoveUnsigned("SectionColor");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *TechDrawParams::docVertexColor() {
+    return QT_TRANSLATE_NOOP("TechDrawParams",
+"Colour of vertex dots, and the colour new cosmetic vertices start\n"
+"with.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const unsigned long & TechDrawParams::getVertexColor() {
+    return instance()->VertexColor;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const unsigned long & TechDrawParams::defaultVertexColor() {
+    const static unsigned long def = 0x000000FF;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void TechDrawParams::setVertexColor(const unsigned long &v) {
+    instance()->subHandles[1]->SetUnsigned("VertexColor",v);
+    instance()->VertexColor = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void TechDrawParams::removeVertexColor() {
+    instance()->subHandles[1]->RemoveUnsigned("VertexColor");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *TechDrawParams::docDimensionColor() {
+    return QT_TRANSLATE_NOOP("TechDrawParams",
+"Colour of dimensions and balloons.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const unsigned long & TechDrawParams::getDimensionColor() {
+    return instance()->DimensionColor;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const unsigned long & TechDrawParams::defaultDimensionColor() {
+    const static unsigned long def = 0x000000FF;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void TechDrawParams::setDimensionColor(const unsigned long &v) {
+    instance()->subHandles[2]->SetUnsigned("Color",v);
+    instance()->DimensionColor = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void TechDrawParams::removeDimensionColor() {
+    instance()->subHandles[2]->RemoveUnsigned("Color");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *TechDrawParams::docLeaderLineColor() {
+    return QT_TRANSLATE_NOOP("TechDrawParams",
+"Colour of leader lines; new leaders and rich annotations start\n"
+"with it.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const unsigned long & TechDrawParams::getLeaderLineColor() {
+    return instance()->LeaderLineColor;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const unsigned long & TechDrawParams::defaultLeaderLineColor() {
+    const static unsigned long def = 0x000000FF;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void TechDrawParams::setLeaderLineColor(const unsigned long &v) {
+    instance()->subHandles[7]->SetUnsigned("Color",v);
+    instance()->LeaderLineColor = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void TechDrawParams::removeLeaderLineColor() {
+    instance()->subHandles[7]->RemoveUnsigned("Color");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *TechDrawParams::docTrackerColor() {
+    return QT_TRANSLATE_NOOP("TechDrawParams",
+"Colour of the rubber band lines drawn while a tool tracks the\n"
+"mouse on a page.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const unsigned long & TechDrawParams::getTrackerColor() {
+    return instance()->TrackerColor;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const unsigned long & TechDrawParams::defaultTrackerColor() {
+    const static unsigned long def = 0xFF0000FF;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void TechDrawParams::setTrackerColor(const unsigned long &v) {
+    instance()->subHandles[9]->SetUnsigned("TrackerColor",v);
+    instance()->TrackerColor = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void TechDrawParams::removeTrackerColor() {
+    instance()->subHandles[9]->RemoveUnsigned("TrackerColor");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *TechDrawParams::docLineGroup() {
+    return QT_TRANSLATE_NOOP("TechDrawParams",
+"Index of the line group -- a set of thin, graphic and thick line\n"
+"widths -- in the line group file. Read at each width lookup.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const long & TechDrawParams::getLineGroup() {
+    return instance()->LineGroup;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const long & TechDrawParams::defaultLineGroup() {
+    const static long def = 3;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void TechDrawParams::setLineGroup(const long &v) {
+    instance()->subHandles[1]->SetInt("LineGroup",v);
+    instance()->LineGroup = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void TechDrawParams::removeLineGroup() {
+    instance()->subHandles[1]->RemoveInt("LineGroup");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *TechDrawParams::docLineStyleCenter() {
+    return QT_TRANSLATE_NOOP("TechDrawParams",
+"Line style of centre lines, as an index into the lines of the\n"
+"active line standard, counted from 0. Takes effect when views are\n"
+"redrawn.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const long & TechDrawParams::getLineStyleCenter() {
+    return instance()->LineStyleCenter;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const long & TechDrawParams::defaultLineStyleCenter() {
+    const static long def = 4;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void TechDrawParams::setLineStyleCenter(const long &v) {
+    instance()->subHandles[1]->SetInt("LineStyleCenter",v);
+    instance()->LineStyleCenter = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void TechDrawParams::removeLineStyleCenter() {
+    instance()->subHandles[1]->RemoveInt("LineStyleCenter");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *TechDrawParams::docLineStyleHidden() {
+    return QT_TRANSLATE_NOOP("TechDrawParams",
+"Line style of hidden lines, as an index into the lines of the\n"
+"active line standard, counted from 0. Takes effect when views are\n"
+"redrawn.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const long & TechDrawParams::getLineStyleHidden() {
+    return instance()->LineStyleHidden;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const long & TechDrawParams::defaultLineStyleHidden() {
+    const static long def = 1;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void TechDrawParams::setLineStyleHidden(const long &v) {
+    instance()->subHandles[1]->SetInt("LineStyleHidden",v);
+    instance()->LineStyleHidden = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void TechDrawParams::removeLineStyleHidden() {
+    instance()->subHandles[1]->RemoveInt("LineStyleHidden");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *TechDrawParams::docLineStyleBreak() {
+    return QT_TRANSLATE_NOOP("TechDrawParams",
+"Line style of the break lines of new broken views, as an index\n"
+"into the lines of the active line standard, counted from 0.\n"
+"Applies to views created afterwards.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const long & TechDrawParams::getLineStyleBreak() {
+    return instance()->LineStyleBreak;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const long & TechDrawParams::defaultLineStyleBreak() {
+    const static long def = 0;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void TechDrawParams::setLineStyleBreak(const long &v) {
+    instance()->subHandles[1]->SetInt("LineStyleBreak",v);
+    instance()->LineStyleBreak = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void TechDrawParams::removeLineStyleBreak() {
+    instance()->subHandles[1]->RemoveInt("LineStyleBreak");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *TechDrawParams::docBreakType() {
+    return QT_TRANSLATE_NOOP("TechDrawParams",
+"How breaks are drawn in new broken views: 0 not at all, 1 zig-zag,\n"
+"2 simple. Applies to views created afterwards.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const long & TechDrawParams::getBreakType() {
+    return instance()->BreakType;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const long & TechDrawParams::defaultBreakType() {
+    const static long def = 2;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void TechDrawParams::setBreakType(const long &v) {
+    instance()->subHandles[1]->SetInt("BreakType",v);
+    instance()->BreakType = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void TechDrawParams::removeBreakType() {
+    instance()->subHandles[1]->RemoveInt("BreakType");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *TechDrawParams::docSectionLine() {
+    return QT_TRANSLATE_NOOP("TechDrawParams",
+"Line style of section lines: for a new view the number of a line\n"
+"of the active line standard, where a section line or a highlight\n"
+"is drawn a pen style -- 1 solid, 2 dashed, 3 dotted, 4 dash-dot.\n"
+"The Section Line Style list of the Annotation page stores another\n"
+"key, which nothing that draws reads.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const long & TechDrawParams::getSectionLine() {
+    return instance()->SectionLine;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const long & TechDrawParams::defaultSectionLine() {
+    const static long def = 2;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void TechDrawParams::setSectionLine(const long &v) {
+    instance()->subHandles[1]->SetInt("SectionLine",v);
+    instance()->SectionLine = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void TechDrawParams::removeSectionLine() {
+    instance()->subHandles[1]->RemoveInt("SectionLine");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *TechDrawParams::docHighlightStyle() {
+    return QT_TRANSLATE_NOOP("TechDrawParams",
+"Line style of the detail highlight in new views, as the number of\n"
+"a line of the active line standard. Applies to views created\n"
+"afterwards. The Detail Highlight Style list of the Annotation page\n"
+"stores another key, which nothing that draws reads.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const long & TechDrawParams::getHighlightStyle() {
+    return instance()->HighlightStyle;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const long & TechDrawParams::defaultHighlightStyle() {
+    const static long def = 2;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void TechDrawParams::setHighlightStyle(const long &v) {
+    instance()->subHandles[1]->SetInt("HighlightStyle",v);
+    instance()->HighlightStyle = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void TechDrawParams::removeHighlightStyle() {
+    instance()->subHandles[1]->RemoveInt("HighlightStyle");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *TechDrawParams::docCenterLine() {
+    return QT_TRANSLATE_NOOP("TechDrawParams",
+"Pen style of centre line items: 1 solid, 2 dashed, 3 dotted, 4\n"
+"dash-dot, 5 dash-dot-dot. Read as each centre line item is made.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const long & TechDrawParams::getCenterLine() {
+    return instance()->CenterLine;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const long & TechDrawParams::defaultCenterLine() {
+    const static long def = 2;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void TechDrawParams::setCenterLine(const long &v) {
+    instance()->subHandles[1]->SetInt("CenterLine",v);
+    instance()->CenterLine = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void TechDrawParams::removeCenterLine() {
+    instance()->subHandles[1]->RemoveInt("CenterLine");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *TechDrawParams::docCenterLineStyle() {
+    return QT_TRANSLATE_NOOP("TechDrawParams",
+"Line style new cosmetic edges and centre lines start with, as the\n"
+"number of a line of the active line standard. Applies to lines\n"
+"created afterwards.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const long & TechDrawParams::getCenterLineStyle() {
+    return instance()->CenterLineStyle;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const long & TechDrawParams::defaultCenterLineStyle() {
+    const static long def = 2;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void TechDrawParams::setCenterLineStyle(const long &v) {
+    instance()->subHandles[1]->SetInt("CenterLineStyle",v);
+    instance()->CenterLineStyle = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void TechDrawParams::removeCenterLineStyle() {
+    instance()->subHandles[1]->RemoveInt("CenterLineStyle");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *TechDrawParams::docHiddenLine() {
+    return QT_TRANSLATE_NOOP("TechDrawParams",
+"Pen style of an edge marked hidden: 0 solid, 1 dashed, 2 dotted, 3\n"
+"dash-dot, 4 dash-dot-dot. Read when an edge is marked hidden.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const long & TechDrawParams::getHiddenLine() {
+    return instance()->HiddenLine;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const long & TechDrawParams::defaultHiddenLine() {
+    const static long def = 0;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void TechDrawParams::setHiddenLine(const long &v) {
+    instance()->subHandles[0]->SetInt("HiddenLine",v);
+    instance()->HiddenLine = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void TechDrawParams::removeHiddenLine() {
+    instance()->subHandles[0]->RemoveInt("HiddenLine");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *TechDrawParams::docEdgeCapStyle() {
+    return QT_TRANSLATE_NOOP("TechDrawParams",
+"Shape of line ends: 0 round, 1 square, 2 flat. Flat or square ends\n"
+"suit drawings printed 1:1 as cutting guides. Read as pens are\n"
+"made.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const long & TechDrawParams::getEdgeCapStyle() {
+    return instance()->EdgeCapStyle;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const long & TechDrawParams::defaultEdgeCapStyle() {
+    const static long def = 0;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void TechDrawParams::setEdgeCapStyle(const long &v) {
+    instance()->subHandles[0]->SetInt("EdgeCapStyle",v);
+    instance()->EdgeCapStyle = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void TechDrawParams::removeEdgeCapStyle() {
+    instance()->subHandles[0]->RemoveInt("EdgeCapStyle");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *TechDrawParams::docLineStandard() {
+    return QT_TRANSLATE_NOOP("TechDrawParams",
+"Line standard in use, as an index into the standards found in the\n"
+"line definition folder. Read each time line definitions are\n"
+"loaded.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const long & TechDrawParams::getLineStandard() {
+    return instance()->LineStandard;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const long & TechDrawParams::defaultLineStandard() {
+    const static long def = 1;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void TechDrawParams::setLineStandard(const long &v) {
+    instance()->subHandles[11]->SetInt("LineStandard",v);
+    instance()->LineStandard = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void TechDrawParams::removeLineStandard() {
+    instance()->subHandles[11]->RemoveInt("LineStandard");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *TechDrawParams::docSectionLineStandard() {
+    return QT_TRANSLATE_NOOP("TechDrawParams",
+"Where the arrows and letters of a section line sit: 0 as ANSI and\n"
+"ASME have them, 1 as ISO has them. Read each time a section line\n"
+"is drawn.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const long & TechDrawParams::getSectionLineStandard() {
+    return instance()->SectionLineStandard;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const long & TechDrawParams::defaultSectionLineStandard() {
+    const static long def = 1;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void TechDrawParams::setSectionLineStandard(const long &v) {
+    instance()->subHandles[11]->SetInt("SectionLineStandard",v);
+    instance()->SectionLineStandard = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void TechDrawParams::removeSectionLineStandard() {
+    instance()->subHandles[11]->RemoveInt("SectionLineStandard");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *TechDrawParams::docIsoCount() {
+    return QT_TRANSLATE_NOOP("TechDrawParams",
+"Number of iso-parameter lines per face in new views. Applies to\n"
+"views created afterwards.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const long & TechDrawParams::getIsoCount() {
+    return instance()->IsoCount;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const long & TechDrawParams::defaultIsoCount() {
+    const static long def = 0;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void TechDrawParams::setIsoCount(const long &v) {
+    instance()->subHandles[3]->SetInt("IsoCount",v);
+    instance()->IsoCount = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void TechDrawParams::removeIsoCount() {
+    instance()->subHandles[3]->RemoveInt("IsoCount");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *TechDrawParams::docCoarseView() {
+    return QT_TRANSLATE_NOOP("TechDrawParams",
+"New views use the fast polygon approximation for hidden lines:\n"
+"quicker, but curves become short straight segments and faces are\n"
+"not found. Applies to views created afterwards; each view has its\n"
+"own Coarse View property.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const bool & TechDrawParams::getCoarseView() {
+    return instance()->CoarseView;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const bool & TechDrawParams::defaultCoarseView() {
+    const static bool def = false;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void TechDrawParams::setCoarseView(const bool &v) {
+    instance()->subHandles[0]->SetBool("CoarseView",v);
+    instance()->CoarseView = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void TechDrawParams::removeCoarseView() {
+    instance()->subHandles[0]->RemoveBool("CoarseView");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *TechDrawParams::docLineSpacingFactorISO() {
+    return QT_TRANSLATE_NOOP("TechDrawParams",
+"Space between the dimension line and the text of new ISO\n"
+"dimensions, as a multiple of the line width. Applies to dimensions\n"
+"created afterwards.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const double & TechDrawParams::getLineSpacingFactorISO() {
+    return instance()->LineSpacingFactorISO;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const double & TechDrawParams::defaultLineSpacingFactorISO() {
+    const static double def = 2.0;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void TechDrawParams::setLineSpacingFactorISO(const double &v) {
+    instance()->subHandles[2]->SetFloat("LineSpacingFactorISO",v);
+    instance()->LineSpacingFactorISO = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void TechDrawParams::removeLineSpacingFactorISO() {
+    instance()->subHandles[2]->RemoveFloat("LineSpacingFactorISO");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *TechDrawParams::docSectionUpdateDelay() {
+    return QT_TRANSLATE_NOOP("TechDrawParams",
+"Time in milliseconds between a change in the section view dialog\n"
+"and the update of the section while live update is on. At least\n"
+"100.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const long & TechDrawParams::getSectionUpdateDelay() {
+    return instance()->SectionUpdateDelay;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const long & TechDrawParams::defaultSectionUpdateDelay() {
+    const static long def = 300;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void TechDrawParams::setSectionUpdateDelay(const long &v) {
+    instance()->subHandles[0]->SetInt("SectionUpdateDelay",v);
+    instance()->SectionUpdateDelay = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void TechDrawParams::removeSectionUpdateDelay() {
+    instance()->subHandles[0]->RemoveInt("SectionUpdateDelay");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *TechDrawParams::docArrowSize() {
+    return QT_TRANSLATE_NOOP("TechDrawParams",
+"Size in mm of dimension arrowheads. Applies to dimensions created\n"
+"afterwards; each dimension has its own Arrow Size property.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const double & TechDrawParams::getArrowSize() {
+    return instance()->ArrowSize;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const double & TechDrawParams::defaultArrowSize() {
+    const static double def = 3.5;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void TechDrawParams::setArrowSize(const double &v) {
+    instance()->subHandles[2]->SetFloat("ArrowSize",v);
+    instance()->ArrowSize = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void TechDrawParams::removeArrowSize() {
+    instance()->subHandles[2]->RemoveFloat("ArrowSize");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *TechDrawParams::docFontSize() {
+    return QT_TRANSLATE_NOOP("TechDrawParams",
+"Text size in mm of dimensions and of other annotation text that\n"
+"follows it. Applies to dimensions created afterwards.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const double & TechDrawParams::getFontSize() {
+    return instance()->FontSize;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const double & TechDrawParams::defaultFontSize() {
+    const static double def = 5.0;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void TechDrawParams::setFontSize(const double &v) {
+    instance()->subHandles[2]->SetFloat("FontSize",v);
+    instance()->FontSize = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void TechDrawParams::removeFontSize() {
+    instance()->subHandles[2]->RemoveFloat("FontSize");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *TechDrawParams::docStandardAndStyle() {
+    return QT_TRANSLATE_NOOP("TechDrawParams",
+"Standard and text placement of new dimensions: 0 ISO oriented, 1\n"
+"ISO referencing, 2 ASME inlined, 3 ASME referencing. Applies to\n"
+"dimensions created afterwards.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const long & TechDrawParams::getStandardAndStyle() {
+    return instance()->StandardAndStyle;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const long & TechDrawParams::defaultStandardAndStyle() {
+    const static long def = 0;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void TechDrawParams::setStandardAndStyle(const long &v) {
+    instance()->subHandles[2]->SetInt("StandardAndStyle",v);
+    instance()->StandardAndStyle = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void TechDrawParams::removeStandardAndStyle() {
+    instance()->subHandles[2]->RemoveInt("StandardAndStyle");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *TechDrawParams::docTemplateFile() {
+    return QT_TRANSLATE_NOOP("TechDrawParams",
+"Template of a new page. Empty uses A4_LandscapeTD.svg, supplied\n"
+"with the program.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const std::string & TechDrawParams::getTemplateFile() {
+    return instance()->TemplateFile;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const std::string & TechDrawParams::defaultTemplateFile() {
+    const static std::string def = "";
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void TechDrawParams::setTemplateFile(const std::string &v) {
+    instance()->subHandles[12]->SetASCII("TemplateFile",v);
+    instance()->TemplateFile = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void TechDrawParams::removeTemplateFile() {
+    instance()->subHandles[12]->RemoveASCII("TemplateFile");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *TechDrawParams::docTemplateDir() {
+    return QT_TRANSLATE_NOOP("TechDrawParams",
+"Folder the template chooser opens in. Empty uses the one supplied\n"
+"with the program.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const std::string & TechDrawParams::getTemplateDir() {
+    return instance()->TemplateDir;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const std::string & TechDrawParams::defaultTemplateDir() {
+    const static std::string def = "";
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void TechDrawParams::setTemplateDir(const std::string &v) {
+    instance()->subHandles[12]->SetASCII("TemplateDir",v);
+    instance()->TemplateDir = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void TechDrawParams::removeTemplateDir() {
+    instance()->subHandles[12]->RemoveASCII("TemplateDir");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *TechDrawParams::docLineGroupFile() {
+    return QT_TRANSLATE_NOOP("TechDrawParams",
+"File of line groups -- sets of line widths. Empty uses the one\n"
+"supplied with the program.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const std::string & TechDrawParams::getLineGroupFile() {
+    return instance()->LineGroupFile;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const std::string & TechDrawParams::defaultLineGroupFile() {
+    const static std::string def = "";
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void TechDrawParams::setLineGroupFile(const std::string &v) {
+    instance()->subHandles[12]->SetASCII("LineGroupFile",v);
+    instance()->LineGroupFile = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void TechDrawParams::removeLineGroupFile() {
+    instance()->subHandles[12]->RemoveASCII("LineGroupFile");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *TechDrawParams::docFileHatch() {
+    return QT_TRANSLATE_NOOP("TechDrawParams",
+"SVG file new hatches take their pattern from. Empty uses\n"
+"simple.svg, supplied with the program.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const std::string & TechDrawParams::getFileHatch() {
+    return instance()->FileHatch;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const std::string & TechDrawParams::defaultFileHatch() {
+    const static std::string def = "";
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void TechDrawParams::setFileHatch(const std::string &v) {
+    instance()->subHandles[12]->SetASCII("FileHatch",v);
+    instance()->FileHatch = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void TechDrawParams::removeFileHatch() {
+    instance()->subHandles[12]->RemoveASCII("FileHatch");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *TechDrawParams::docWeldingDir() {
+    return QT_TRANSLATE_NOOP("TechDrawParams",
+"Folder of welding symbols. Empty uses the AWS symbols supplied\n"
+"with the program.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const std::string & TechDrawParams::getWeldingDir() {
+    return instance()->WeldingDir;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const std::string & TechDrawParams::defaultWeldingDir() {
+    const static std::string def = "";
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void TechDrawParams::setWeldingDir(const std::string &v) {
+    instance()->subHandles[12]->SetASCII("WeldingDir",v);
+    instance()->WeldingDir = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void TechDrawParams::removeWeldingDir() {
+    instance()->subHandles[12]->RemoveASCII("WeldingDir");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *TechDrawParams::docLineDefLocation() {
+    return QT_TRANSLATE_NOOP("TechDrawParams",
+"Folder of the line standard definitions. Empty uses the one\n"
+"supplied with the program.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const std::string & TechDrawParams::getLineDefLocation() {
+    return instance()->LineDefLocation;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const std::string & TechDrawParams::defaultLineDefLocation() {
+    const static std::string def = "";
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void TechDrawParams::setLineDefLocation(const std::string &v) {
+    instance()->subHandles[12]->SetASCII("LineDefLocation",v);
+    instance()->LineDefLocation = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void TechDrawParams::removeLineDefLocation() {
+    instance()->subHandles[12]->RemoveASCII("LineDefLocation");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *TechDrawParams::docLineElementLocation() {
+    return QT_TRANSLATE_NOOP("TechDrawParams",
+"Folder of the line element definitions of the line standards.\n"
+"Empty uses the one supplied with the program.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const std::string & TechDrawParams::getLineElementLocation() {
+    return instance()->LineElementLocation;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const std::string & TechDrawParams::defaultLineElementLocation() {
+    const static std::string def = "";
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void TechDrawParams::setLineElementLocation(const std::string &v) {
+    instance()->subHandles[12]->SetASCII("LineElementLocation",v);
+    instance()->LineElementLocation = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void TechDrawParams::removeLineElementLocation() {
+    instance()->subHandles[12]->RemoveASCII("LineElementLocation");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *TechDrawParams::docFilePattern() {
+    return QT_TRANSLATE_NOOP("TechDrawParams",
+"PAT file new geometric hatches take their pattern from. Empty uses\n"
+"FCPAT.pat, supplied with the program.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const std::string & TechDrawParams::getFilePattern() {
+    return instance()->FilePattern;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const std::string & TechDrawParams::defaultFilePattern() {
+    const static std::string def = "";
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void TechDrawParams::setFilePattern(const std::string &v) {
+    instance()->subHandles[4]->SetASCII("FilePattern",v);
+    instance()->FilePattern = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void TechDrawParams::removeFilePattern() {
+    instance()->subHandles[4]->RemoveASCII("FilePattern");
 }
 //[[[end]]]

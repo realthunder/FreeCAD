@@ -105,7 +105,7 @@ App::Color LineFormat::getDefEdgeColor()
 
 int LineFormat::getDefEdgeStyle()
 {
-    return Preferences::getPreferenceGroup("Decorations")->GetInt("CenterLineStyle", 2);   //dashed
+    return Preferences::getPreferenceGroup("Decorations")->GetInt("CenterLineStyle", TechDraw::TechDrawParams::defaultCenterLineStyle());   //dashed
 }
 
 //******************************************

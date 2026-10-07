@@ -21,6 +21,8 @@
  ***************************************************************************/
 
 #include "PreCompiled.h"
+
+#include <Mod/TechDraw/App/TechDrawParams.h>
 #ifndef _PreComp_
 # include <cassert>
 
@@ -89,7 +91,7 @@ void QGIEdge::setPrettyNormal() {
 
 QColor QGIEdge::getHiddenColor()
 {
-    App::Color fcColor = App::Color((uint32_t) Preferences::getPreferenceGroup("Colors")->GetUnsigned("HiddenColor", 0x000000FF));
+    App::Color fcColor = App::Color((uint32_t) Preferences::getPreferenceGroup("Colors")->GetUnsigned("HiddenColor", TechDraw::TechDrawParams::defaultHiddenColor()));
     return PreferencesGui::getAccessibleQColor(fcColor.asValue<QColor>());
 }
 
@@ -98,7 +100,7 @@ Qt::PenStyle QGIEdge::getHiddenStyle()
     //Qt::PenStyle - NoPen, Solid, Dashed, ...
     //Preferences::General - Solid, Dashed
     // Dashed lines should use ISO Line #2 instead of Qt::DashedLine
-    Qt::PenStyle hidStyle = static_cast<Qt::PenStyle> (Preferences::getPreferenceGroup("General")->GetInt("HiddenLine", 0) + 1);
+    Qt::PenStyle hidStyle = static_cast<Qt::PenStyle> (Preferences::getPreferenceGroup("General")->GetInt("HiddenLine", TechDraw::TechDrawParams::defaultHiddenLine()) + 1);
     return hidStyle;
 }
 

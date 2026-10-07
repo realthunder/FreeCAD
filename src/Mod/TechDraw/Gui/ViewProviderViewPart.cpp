@@ -162,7 +162,7 @@ ViewProviderViewPart::ViewProviderViewPart()
     ADD_PROPERTY_TYPE(ShowAllEdges ,(false)    ,dgroup, App::Prop_None, "Temporarily show invisible lines");
 
     // Faces related properties
-    ADD_PROPERTY_TYPE(FaceColor, (Preferences::getPreferenceGroup("Colors")->GetUnsigned("FaceColor", 0xFFFFFF)),
+    ADD_PROPERTY_TYPE(FaceColor, (Preferences::getPreferenceGroup("Colors")->GetUnsigned("FaceColor", TechDraw::TechDrawParams::defaultFaceColor())),
                       fgroup, App::Prop_None, "Set color of faces");
     ADD_PROPERTY_TYPE(FaceTransparency, (Preferences::getPreferenceGroup("Colors")->GetBool("ClearFace", TechDraw::TechDrawParams::defaultClearFace()) ? 100 : 0),
                       fgroup, App::Prop_None, "Set transparency of faces");
@@ -461,13 +461,13 @@ App::Color ViewProviderViewPart::prefSectionColor()
 App::Color ViewProviderViewPart::prefHighlightColor()
 {
     App::Color fcColor;
-    fcColor.setPackedValue(Preferences::getPreferenceGroup("Decorations")->GetUnsigned("HighlightColor", 0x000000FF));
+    fcColor.setPackedValue(Preferences::getPreferenceGroup("Decorations")->GetUnsigned("HighlightColor", TechDraw::TechDrawParams::defaultHighlightColor()));
     return fcColor;
 }
 
 int ViewProviderViewPart::prefHighlightStyle()
 {
-    return Preferences::getPreferenceGroup("Decorations")->GetInt("HighlightStyle", 2);
+    return Preferences::getPreferenceGroup("Decorations")->GetInt("HighlightStyle", TechDraw::TechDrawParams::defaultHighlightStyle());
 }
 
 // it can happen that Dimensions/Balloons/etc can lose their parent item if the

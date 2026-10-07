@@ -26,6 +26,7 @@
 
 #include "DlgPrefsTechDrawColorsImp.h"
 #include "ui_DlgPrefsTechDrawColors.h"
+#include "PreferencesGui.h"
 
 
 using namespace TechDrawGui;
@@ -84,6 +85,8 @@ void DlgPrefsTechDrawColorsImp::loadSettings()
     ui->pcbSectionLine->onRestore();
     ui->pcbCenterColor->onRestore();
     ui->pcbVertexColor->onRestore();
+    // what the page stored as Markups/Color before it stored the key that is read
+    ui->pcbMarkup->setColor(PreferencesGui::leaderQColor());
     ui->pcbMarkup->onRestore();
     ui->pcbHighlight->onRestore();
     ui->pcb_Grid->onRestore();

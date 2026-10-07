@@ -1138,7 +1138,7 @@ TechDraw::DrawPage* QGVPage::getDrawPage() { return m_vpPage->getDrawPage(); }
 QColor QGVPage::getBackgroundColor()
 {
     App::Color fcColor;
-    fcColor.setPackedValue(Preferences::getPreferenceGroup("Colors")->GetUnsigned("Background", 0x707070FF));
+    fcColor.setPackedValue(Preferences::getPreferenceGroup("Colors")->GetUnsigned("Background", TechDraw::TechDrawParams::defaultBackground()));
     return fcColor.asValue<QColor>();
 }
 

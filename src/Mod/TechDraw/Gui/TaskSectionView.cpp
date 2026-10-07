@@ -21,6 +21,8 @@
  ***************************************************************************/
 
 #include "PreCompiled.h"
+
+#include <Mod/TechDraw/App/TechDrawParams.h>
 #ifndef _PreComp_
 #include <QMessageBox>
 #include <cmath>
@@ -127,7 +129,7 @@ TaskSectionView::TaskSectionView(TechDraw::DrawViewSection* section) :
 
 void TaskSectionView::init()
 {
-    m_param = App::GetApplication().GetParameterGroupByPath("User parameter::BaseApp/Preferences/Mod/TechDraw/General");
+    m_param = App::GetApplication().GetParameterGroupByPath("User parameter:BaseApp/Preferences/Mod/TechDraw/General");
     ui->cbLiveUpdate->setChecked(m_param->GetBool("SectionLiveUpdate", true));
     setupTransaction();
     m_timer.setSingleShot(true);
@@ -418,7 +420,7 @@ bool TaskSectionView::apply(bool forceUpdate)
     //                            ui->cbLiveUpdate->isChecked(), forceUpdate, m_applyDeferred);
     if (!forceUpdate) {
         if (ui->cbLiveUpdate->isChecked()) {
-            m_timer.start(std::max(100L, m_param->GetInt("SectionUpdateDelay", 300)));
+            m_timer.start(std::max(100L, m_param->GetInt("SectionUpdateDelay", TechDraw::TechDrawParams::defaultSectionUpdateDelay())));
             return false;
         }
         //nothing to do

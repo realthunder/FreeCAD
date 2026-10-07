@@ -22,6 +22,8 @@
 
 #include "PreCompiled.h"
 
+#include "TechDrawParams.h"
+
 #ifndef _PreComp_
 # include <algorithm>
 # include <iomanip>
@@ -256,7 +258,7 @@ std::string DrawHatch::prefSvgHatch(void)
 App::Color DrawHatch::prefSvgHatchColor(void)
 {
     App::Color fcColor;
-    fcColor.setPackedValue(Preferences::getPreferenceGroup("Colors")->GetUnsigned("Hatch", 0x00FF00FF));
+    fcColor.setPackedValue(Preferences::getPreferenceGroup("Colors")->GetUnsigned("Hatch", TechDraw::TechDrawParams::defaultHatch()));
     return fcColor;
 }
 

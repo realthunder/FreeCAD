@@ -37,6 +37,8 @@
 
 #include "DlgPrefsTechDrawAnnotationImp.h"
 #include "ui_DlgPrefsTechDrawAnnotation.h"
+
+#include <Mod/TechDraw/App/TechDrawParams.h>
 #include "DrawGuiUtil.h"
 
 using namespace TechDrawGui;
@@ -124,6 +126,8 @@ void DlgPrefsTechDrawAnnotationImp::loadSettings()
     for (auto it = lgNames.begin(); it < lgNames.end(); ++it) {
         ui->pcbLineGroup->addItem(tr((*it).c_str()));
     }
+    // the list is filled here, so its first entry would be the page's default
+    ui->pcbLineGroup->setCurrentIndex(TechDraw::TechDrawParams::defaultLineGroup());
 
     ui->cbAutoHoriz->onRestore();
     ui->cbPrintCenterMarks->onRestore();

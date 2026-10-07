@@ -81,18 +81,18 @@ double Preferences::labelFontSizeMM()
 
 double Preferences::dimFontSizeMM()
 {
-    return getPreferenceGroup("Dimensions")->GetFloat("FontSize", DefaultFontSizeInMM);
+    return getPreferenceGroup("Dimensions")->GetFloat("FontSize", TechDraw::TechDrawParams::defaultFontSize());
 }
 
 double Preferences::dimArrowSize()
 {
-    return getPreferenceGroup("Dimensions")->GetFloat("ArrowSize", DefaultArrowSize);
+    return getPreferenceGroup("Dimensions")->GetFloat("ArrowSize", TechDraw::TechDrawParams::defaultArrowSize());
 }
 
 App::Color Preferences::normalColor()
 {
     App::Color fcColor;
-    fcColor.setPackedValue(getPreferenceGroup("Colors")->GetUnsigned("NormalColor", 0x000000FF));//#000000 black
+    fcColor.setPackedValue(getPreferenceGroup("Colors")->GetUnsigned("NormalColor", TechDraw::TechDrawParams::defaultNormalColor()));//#000000 black
     return fcColor;
 }
 
@@ -127,7 +127,7 @@ App::Color Preferences::preselectColor()
 App::Color Preferences::vertexColor()
 {
     App::Color fcColor;
-    fcColor.setPackedValue(getPreferenceGroup("Decorations")->GetUnsigned("VertexColor", 0x000000FF));//#000000 black
+    fcColor.setPackedValue(getPreferenceGroup("Decorations")->GetUnsigned("VertexColor", TechDraw::TechDrawParams::defaultVertexColor()));//#000000 black
     return fcColor;
 }
 
@@ -172,7 +172,7 @@ int Preferences::projectionAngle()
 
 int Preferences::lineGroup()
 {
-    return getPreferenceGroup("Decorations")->GetInt("LineGroup", 3);  // FC 0.70mm
+    return getPreferenceGroup("Decorations")->GetInt("LineGroup", TechDraw::TechDrawParams::defaultLineGroup());  // FC 0.70mm
 }
 
 int Preferences::balloonArrow()
@@ -195,7 +195,7 @@ QString Preferences::defaultTemplate()
 {
     std::string defaultDir = App::Application::getResourceDir() + "Mod/TechDraw/Templates/";
     std::string defaultFileName = defaultDir + "A4_LandscapeTD.svg";
-    std::string prefFileName = getPreferenceGroup("Files")->GetASCII("TemplateFile", defaultFileName.c_str());
+    std::string prefFileName = getPreferenceGroup("Files")->GetASCII("TemplateFile", TechDraw::TechDrawParams::defaultTemplateFile().c_str());
     if (prefFileName.empty()) {
         prefFileName = defaultFileName;
     }
@@ -211,7 +211,7 @@ QString Preferences::defaultTemplate()
 QString Preferences::defaultTemplateDir()
 {
     std::string defaultDir = App::Application::getResourceDir() + "Mod/TechDraw/Templates";
-    std::string prefTemplateDir = getPreferenceGroup("Files")->GetASCII("TemplateDir", defaultDir.c_str());
+    std::string prefTemplateDir = getPreferenceGroup("Files")->GetASCII("TemplateDir", TechDraw::TechDrawParams::defaultTemplateDir().c_str());
     if (prefTemplateDir.empty()) {
         prefTemplateDir = defaultDir;
     }
@@ -229,7 +229,7 @@ std::string Preferences::lineGroupFile()
 {
     std::string defaultDir = App::Application::getResourceDir() + "Mod/TechDraw/LineGroup/";
     std::string defaultFileName = defaultDir + "LineGroup.csv";
-    std::string lgFileName = getPreferenceGroup("Files")->GetASCII("LineGroupFile", defaultFileName.c_str());
+    std::string lgFileName = getPreferenceGroup("Files")->GetASCII("LineGroupFile", TechDraw::TechDrawParams::defaultLineGroupFile().c_str());
     if (lgFileName.empty()) {
         lgFileName = defaultFileName;
     }
@@ -270,7 +270,7 @@ std::string Preferences::svgFile()
 {
     std::string defaultDir = App::Application::getResourceDir() + "Mod/TechDraw/Patterns/";
     std::string defaultFileName = defaultDir + "simple.svg";
-    std::string prefHatchFile = getPreferenceGroup("Files")->GetASCII("FileHatch", defaultFileName.c_str());
+    std::string prefHatchFile = getPreferenceGroup("Files")->GetASCII("FileHatch", TechDraw::TechDrawParams::defaultFileHatch().c_str());
     if (prefHatchFile.empty()) {
         prefHatchFile = defaultFileName;
     }
@@ -286,7 +286,7 @@ std::string Preferences::patFile()
 {
     std::string defaultDir = App::Application::getResourceDir() + "Mod/TechDraw/PAT/";
     std::string defaultFileName = defaultDir + "FCPAT.pat";
-    std::string prefHatchFile = getPreferenceGroup("PAT")->GetASCII("FilePattern", defaultFileName.c_str());
+    std::string prefHatchFile = getPreferenceGroup("PAT")->GetASCII("FilePattern", TechDraw::TechDrawParams::defaultFilePattern().c_str());
     if (prefHatchFile.empty()) {
         prefHatchFile = defaultFileName;
     }
@@ -361,7 +361,7 @@ void Preferences::monochrome(bool state)
 App::Color Preferences::lightTextColor()
 {
     App::Color result;
-    result.setPackedValue(getPreferenceGroup("Colors")->GetUnsigned("LightTextColor", 0xFFFFFFFF));//#FFFFFFFF white
+    result.setPackedValue(getPreferenceGroup("Colors")->GetUnsigned("LightTextColor", TechDraw::TechDrawParams::defaultLightTextColor()));//#FFFFFFFF white
     return result;
 }
 
@@ -462,7 +462,7 @@ bool Preferences::storeProjectedGeometry()
 //! the standards it finds, which may be fewer than the parameter says.
 int Preferences::lineStandard()
 {
-    const int defaultStandard = 1;
+    const int defaultStandard = TechDraw::TechDrawParams::defaultLineStandard();
     int index = getPreferenceGroup("Standards")->GetInt("LineStandard", defaultStandard);
     return index < 0 ? defaultStandard : index;
 }
@@ -492,15 +492,15 @@ static std::string activeLineStandard()
 std::string Preferences::lineDefinitionLocation()
 {
     std::string defaultDir = App::Application::getResourceDir() + "Mod/TechDraw/LineGroup/";
-    std::string prefDir = getPreferenceGroup("Files")->GetASCII("LineDefLocation", defaultDir.c_str());
-    return prefDir;
+    std::string prefDir = getPreferenceGroup("Files")->GetASCII("LineDefLocation", TechDraw::TechDrawParams::defaultLineDefLocation().c_str());
+    return prefDir.empty() ? defaultDir : prefDir;
 }
 
 std::string Preferences::lineElementsLocation()
 {
     std::string defaultDir = App::Application::getResourceDir() + "Mod/TechDraw/LineGroup/";
-    std::string prefDir = getPreferenceGroup("Files")->GetASCII("LineElementLocation", defaultDir.c_str());
-    return prefDir;
+    std::string prefDir = getPreferenceGroup("Files")->GetASCII("LineElementLocation", TechDraw::TechDrawParams::defaultLineElementLocation().c_str());
+    return prefDir.empty() ? defaultDir : prefDir;
 }
 
 // Note: line numbering starts at 1, but the saved parameter is the position of the
@@ -515,7 +515,7 @@ int Preferences::SectionLineStyle()
 int Preferences::CenterLineStyle()
 {
     // default is line #5 long dash double dotted, which is index 4
-    return getPreferenceGroup("Decorations")->GetInt("LineStyleCenter", 4) + 1;
+    return getPreferenceGroup("Decorations")->GetInt("LineStyleCenter", TechDraw::TechDrawParams::defaultLineStyleCenter()) + 1;
 }
 
 int Preferences::HighlightLineStyle()
@@ -529,23 +529,43 @@ int Preferences::HighlightLineStyle()
 int Preferences::HiddenLineStyle()
 {
     // default is line #2 dashed, which is index 1
-    return getPreferenceGroup("Decorations")->GetInt("LineStyleHidden", 1) + 1;
+    return getPreferenceGroup("Decorations")->GetInt("LineStyleHidden", TechDraw::TechDrawParams::defaultLineStyleHidden()) + 1;
 }
 
 int Preferences::BreakLineStyle()
 {
-    return getPreferenceGroup("Decorations")->GetInt("LineStyleBreak", 0) + 1;
+    return getPreferenceGroup("Decorations")->GetInt("LineStyleBreak", TechDraw::TechDrawParams::defaultLineStyleBreak()) + 1;
 }
 
 int Preferences::BreakType()
 {
     // 2 = DrawBrokenView::BreakType::SIMPLE
-    return getPreferenceGroup("Decorations")->GetInt("BreakType", 2);
+    return getPreferenceGroup("Decorations")->GetInt("BreakType", TechDraw::TechDrawParams::defaultBreakType());
 }
 
-int Preferences::LineSpacingISO()
+//! The Dimensions page stores this with a spin box of real numbers, a Float.
+//! It was read as an Int, which is another entry of the group, so what the
+//! page said never arrived. An Int put there by hand is still honoured while
+//! the page's entry is not stored.
+double Preferences::LineSpacingISO()
 {
-    return getPreferenceGroup("Dimensions")->GetInt("LineSpacingFactorISO", 2);
+    auto group = getPreferenceGroup("Dimensions");
+    const long byHand = group->GetInt("LineSpacingFactorISO", -1);  // -1: none stored
+    const double preset = byHand < 0 ? TechDraw::TechDrawParams::defaultLineSpacingFactorISO()
+                                     : static_cast<double>(byHand);
+    return group->GetFloat("LineSpacingFactorISO", preset);
+}
+
+//! Whether a new view uses the polygon approximation. "Use Polygon
+//! Approximation" of the HLR page stored HLR/UsePolygon, which nothing read,
+//! while new views read General/CoarseView, which nothing stored. The page
+//! stores General/CoarseView now; what it stored before is still honoured
+//! while that is not stored.
+bool Preferences::coarseView()
+{
+    const bool before = getPreferenceGroup("HLR")->GetBool("UsePolygon",
+                                                           TechDraw::TechDrawParams::defaultCoarseView());
+    return getPreferenceGroup("General")->GetBool("CoarseView", before);
 }
 
 std::string Preferences::currentLineDefFile()
@@ -588,6 +608,6 @@ int Preferences::LineCapStyle()
 //! returns the line cap index without conversion to a Qt::PenCapStyle
 int Preferences::LineCapIndex()
 {
-    return getPreferenceGroup("General")->GetInt("EdgeCapStyle", 0x20);
+    return getPreferenceGroup("General")->GetInt("EdgeCapStyle", TechDraw::TechDrawParams::defaultEdgeCapStyle());
 }
 

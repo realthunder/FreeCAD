@@ -28,7 +28,7 @@ from os import sys, path
 sys.path.append(path.join(path.dirname(path.dirname(path.dirname(path.dirname(path.abspath(__file__))))), 'Tools'))
 import params_utils
 
-from params_utils import ParamBool, ParamInt, ParamFloat, ParamString
+from params_utils import ParamBool, ParamInt, ParamFloat, ParamString, ParamHex, ParamColor
 
 NameSpace = 'TechDraw'
 ClassName = 'TechDrawParams'
@@ -209,12 +209,8 @@ Params = [
     # the reader's: ShowCenterMarks (off; the page showed it on) and
     # TolSizeAdjust (0.5; the page showed 0.8).
     #
-    # Not listed yet: the colours; the line widths, styles and standards;
-    # the file names of the Files group and PAT/FilePattern, whose defaults
-    # are built from where the program is installed; Dimensions/ArrowSize,
-    # FontSize, StandardAndStyle and DiameterSymbol, whose defaults are
-    # constants of TechDraw's own or a character outside ASCII. HLR/HardViz
-    # and HLR/UsePolygon are stored by the page and read by nothing.
+    # Not listed: Dimensions/DiameterSymbol, whose default is a character
+    # outside ASCII, and HLR/HardViz, which the page stores and nothing reads.
 
     # --- Decorations
     ParamInt('BalloonArrow', 0, subpath='Decorations',
@@ -430,6 +426,229 @@ Params = [
         title = "Debug section views",
         doc = "Write the intermediate shapes of a section view to files while it\n"
               "is recomputed. For developers."),
+
+    # --- Colours. PreSelectColor and SelectColor of the Colors group are not listed:
+    # while they are not stored TechDraw follows the highlight and selection
+    # colours of the 3D view, which is no constant. FaceColor was read with
+    # 0xFFFFFF, which as a packed colour is 0x00FFFFFF, cyan: a new view on a
+    # profile that never stored the key had cyan faces. White is what the
+    # Colors page shows and what was meant. Background, Hatch and GeomHatch
+    # are the readers' (grey 112; green), where the page showed 211 and black.
+    ParamHex('Background', 0x707070FF, subpath='Colors', proxy=ParamColor(transparency=False),
+        title = "Page view background",
+        doc = "Colour of the area around the sheet in a page view. Read when a\n"
+              "page view is opened."),
+    ParamHex('CutSurfaceColor', 0xD3D3D3FF, subpath='Colors', proxy=ParamColor(transparency=False),
+        title = "Cut surface colour",
+        doc = "Colour of the cut surface of new sections that show it as a solid\n"
+              "colour. Applies to sections created afterwards."),
+    ParamHex('FaceColor', 0xFFFFFFFF, subpath='Colors', proxy=ParamColor(transparency=False),
+        title = "Face colour",
+        doc = "Fill colour of the faces of new views. Applies to views created\n"
+              "afterwards; each view has its own Face Color property."),
+    ParamHex('GeomHatch', 0x00FF00FF, subpath='Colors', proxy=ParamColor(transparency=False),
+        title = "Geometric hatch colour",
+        doc = "Line colour of new geometric (PAT) hatches. Applies to hatches\n"
+              "created afterwards."),
+    ParamHex('Hatch', 0x00FF00FF, subpath='Colors', proxy=ParamColor(transparency=False),
+        title = "Hatch colour",
+        doc = "Colour of new SVG hatches. Applies to hatches created afterwards."),
+    ParamHex('HiddenColor', 0x000000FF, subpath='Colors', proxy=ParamColor(transparency=False),
+        title = "Hidden line colour",
+        doc = "Colour of hidden lines. Takes effect when a view is redrawn."),
+    ParamHex('LightTextColor', 0xFFFFFFFF, subpath='Colors', proxy=ParamColor(transparency=False),
+        title = "Light text colour",
+        doc = "The one colour everything is drawn in while Light on dark and\n"
+              "Monochrome are both on."),
+    ParamHex('NormalColor', 0x000000FF, subpath='Colors', proxy=ParamColor(transparency=False),
+        title = "Normal colour",
+        doc = "Colour of lines and text that are not selected, and the colour new\n"
+              "cosmetic lines and annotations start with."),
+    ParamHex('PageColor', 0xFFFFFFFF, subpath='Colors', proxy=ParamColor(transparency=False),
+        title = "Sheet colour",
+        doc = "Colour of the sheet in a page view."),
+    ParamHex('TemplateUnderlineColor', 0x0000FFFF, subpath='Colors', proxy=ParamColor(transparency=False),
+        title = "Template click box colour",
+        doc = "Colour of the click boxes on the editable texts of a template.\n"
+              "Read when a template is loaded."),
+    ParamHex('gridColor', 0x000000FF, subpath='Colors', proxy=ParamColor(transparency=False),
+        title = "Grid colour",
+        doc = "Colour of the page grid."),
+    ParamHex('BreaklineColor', 0x000000FF, subpath='Decorations', proxy=ParamColor(transparency=False),
+        title = "Break line colour",
+        doc = "Colour of the break lines of broken views."),
+    ParamHex('CenterColor', 0x000000FF, subpath='Decorations', proxy=ParamColor(transparency=False),
+        title = "Centre line colour",
+        doc = "Colour of centre lines and centre marks."),
+    ParamHex('HighlightColor', 0x000000FF, subpath='Decorations', proxy=ParamColor(transparency=False),
+        title = "Detail highlight colour",
+        doc = "Colour of the detail highlight in new views. Applies to views\n"
+              "created afterwards."),
+    ParamHex('SectionColor', 0x000000FF, subpath='Decorations', proxy=ParamColor(transparency=False),
+        title = "Section line colour",
+        doc = "Colour of section lines."),
+    ParamHex('VertexColor', 0x000000FF, subpath='Decorations', proxy=ParamColor(transparency=False),
+        title = "Vertex colour",
+        doc = "Colour of vertex dots, and the colour new cosmetic vertices start\n"
+              "with."),
+    ParamHex('DimensionColor', 0x000000FF, subpath='Dimensions', param_name='Color', proxy=ParamColor(transparency=False),
+        title = "Dimension colour",
+        doc = "Colour of dimensions and balloons."),
+    ParamHex('LeaderLineColor', 0x000000FF, subpath='LeaderLine', param_name='Color', proxy=ParamColor(transparency=False),
+        title = "Leader line colour",
+        doc = "Colour of leader lines; new leaders and rich annotations start\n"
+              "with it."),
+    ParamHex('TrackerColor', 0xFF0000FF, subpath='Tracker', proxy=ParamColor(transparency=False),
+        title = "Tracker colour",
+        doc = "Colour of the rubber band lines drawn while a tool tracks the\n"
+              "mouse on a page."),
+
+    # --- Line widths, styles and standards. Decorations/LineStyleSection and
+    # LineStyleHighlight are not listed: the Annotation page stores them and
+    # nothing that draws reads them. What draws reads SectionLine and
+    # HighlightStyle, which no page stores. General/EdgeCapStyle was read with
+    # 0x20, which is none of its three values and was taken as round, as 0 is.
+    ParamInt('LineGroup', 3, subpath='Decorations',
+        title = "Line group",
+        doc = "Index of the line group -- a set of thin, graphic and thick line\n"
+              "widths -- in the line group file. Read at each width lookup."),
+    ParamInt('LineStyleCenter', 4, subpath='Decorations',
+        title = "Centre line style",
+        doc = "Line style of centre lines, as an index into the lines of the\n"
+              "active line standard, counted from 0. Takes effect when views are\n"
+              "redrawn."),
+    ParamInt('LineStyleHidden', 1, subpath='Decorations',
+        title = "Hidden line style",
+        doc = "Line style of hidden lines, as an index into the lines of the\n"
+              "active line standard, counted from 0. Takes effect when views are\n"
+              "redrawn."),
+    ParamInt('LineStyleBreak', 0, subpath='Decorations',
+        title = "Break line style",
+        doc = "Line style of the break lines of new broken views, as an index\n"
+              "into the lines of the active line standard, counted from 0.\n"
+              "Applies to views created afterwards."),
+    ParamInt('BreakType', 2, subpath='Decorations',
+        title = "Break type",
+        doc = "How breaks are drawn in new broken views: 0 not at all, 1 zig-zag,\n"
+              "2 simple. Applies to views created afterwards."),
+    ParamInt('SectionLine', 2, subpath='Decorations',
+        title = "Section line style",
+        doc = "Line style of section lines: for a new view the number of a line\n"
+              "of the active line standard, where a section line or a highlight\n"
+              "is drawn a pen style -- 1 solid, 2 dashed, 3 dotted, 4 dash-dot.\n"
+              "The Section Line Style list of the Annotation page stores another\n"
+              "key, which nothing that draws reads."),
+    ParamInt('HighlightStyle', 2, subpath='Decorations',
+        title = "Detail highlight style",
+        doc = "Line style of the detail highlight in new views, as the number of\n"
+              "a line of the active line standard. Applies to views created\n"
+              "afterwards. The Detail Highlight Style list of the Annotation page\n"
+              "stores another key, which nothing that draws reads."),
+    ParamInt('CenterLine', 2, subpath='Decorations',
+        title = "Centre line pen style",
+        doc = "Pen style of centre line items: 1 solid, 2 dashed, 3 dotted, 4\n"
+              "dash-dot, 5 dash-dot-dot. Read as each centre line item is made."),
+    ParamInt('CenterLineStyle', 2, subpath='Decorations',
+        title = "Cosmetic line style",
+        doc = "Line style new cosmetic edges and centre lines start with, as the\n"
+              "number of a line of the active line standard. Applies to lines\n"
+              "created afterwards."),
+    ParamInt('HiddenLine', 0, subpath='General',
+        title = "Hidden edge pen style",
+        doc = "Pen style of an edge marked hidden: 0 solid, 1 dashed, 2 dotted, 3\n"
+              "dash-dot, 4 dash-dot-dot. Read when an edge is marked hidden."),
+    ParamInt('EdgeCapStyle', 0, subpath='General',
+        title = "Line end shape",
+        doc = "Shape of line ends: 0 round, 1 square, 2 flat. Flat or square ends\n"
+              "suit drawings printed 1:1 as cutting guides. Read as pens are\n"
+              "made."),
+    ParamInt('LineStandard', 1, subpath='Standards',
+        title = "Line standard",
+        doc = "Line standard in use, as an index into the standards found in the\n"
+              "line definition folder. Read each time line definitions are\n"
+              "loaded."),
+    ParamInt('SectionLineStandard', 1, subpath='Standards',
+        title = "Section line standard",
+        doc = "Where the arrows and letters of a section line sit: 0 as ANSI and\n"
+              "ASME have them, 1 as ISO has them. Read each time a section line\n"
+              "is drawn."),
+
+    # --- What was read as another type, or under another name, than its page
+    # stored. IsoCount was read as a Bool and LineSpacingFactorISO as an Int;
+    # their spin boxes store an Int and a Float. "Use Polygon Approximation" of
+    # the HLR page stored HLR/UsePolygon while new views read
+    # General/CoarseView; the page stores CoarseView now. SectionUpdateDelay was
+    # read from a group of its own, through a path with two colons.
+    ParamInt('IsoCount', 0, subpath='HLR',
+        title = "Iso-parameter line count",
+        doc = "Number of iso-parameter lines per face in new views. Applies to\n"
+              "views created afterwards."),
+    ParamBool('CoarseView', False, subpath='General',
+        title = "Use polygon approximation",
+        doc = "New views use the fast polygon approximation for hidden lines:\n"
+              "quicker, but curves become short straight segments and faces are\n"
+              "not found. Applies to views created afterwards; each view has its\n"
+              "own Coarse View property."),
+    ParamFloat('LineSpacingFactorISO', 2.0, subpath='Dimensions',
+        title = "Line spacing, ISO",
+        doc = "Space between the dimension line and the text of new ISO\n"
+              "dimensions, as a multiple of the line width. Applies to dimensions\n"
+              "created afterwards."),
+    ParamInt('SectionUpdateDelay', 300, subpath='General',
+        title = "Section update delay",
+        doc = "Time in milliseconds between a change in the section view dialog\n"
+              "and the update of the section while live update is on. At least\n"
+              "100."),
+
+    # --- The four of Dimensions whose default was a constant elsewhere.
+    ParamFloat('ArrowSize', 3.5, subpath='Dimensions',
+        title = "Arrow size",
+        doc = "Size in mm of dimension arrowheads. Applies to dimensions created\n"
+              "afterwards; each dimension has its own Arrow Size property."),
+    ParamFloat('FontSize', 5.0, subpath='Dimensions',
+        title = "Dimension font size",
+        doc = "Text size in mm of dimensions and of other annotation text that\n"
+              "follows it. Applies to dimensions created afterwards."),
+    ParamInt('StandardAndStyle', 0, subpath='Dimensions',
+        title = "Dimension standard and style",
+        doc = "Standard and text placement of new dimensions: 0 ISO oriented, 1\n"
+              "ISO referencing, 2 ASME inlined, 3 ASME referencing. Applies to\n"
+              "dimensions created afterwards."),
+
+    # --- File names. Each is empty until one is chosen, and empty means the file
+    # or folder supplied with the program, wherever that is installed.
+    ParamString('TemplateFile', '', subpath='Files',
+        title = "Template file",
+        doc = "Template of a new page. Empty uses A4_LandscapeTD.svg, supplied\n"
+              "with the program."),
+    ParamString('TemplateDir', '', subpath='Files',
+        title = "Template folder",
+        doc = "Folder the template chooser opens in. Empty uses the one supplied\n"
+              "with the program."),
+    ParamString('LineGroupFile', '', subpath='Files',
+        title = "Line group file",
+        doc = "File of line groups -- sets of line widths. Empty uses the one\n"
+              "supplied with the program."),
+    ParamString('FileHatch', '', subpath='Files',
+        title = "Hatch file",
+        doc = "SVG file new hatches take their pattern from. Empty uses\n"
+              "simple.svg, supplied with the program."),
+    ParamString('WeldingDir', '', subpath='Files',
+        title = "Welding symbol folder",
+        doc = "Folder of welding symbols. Empty uses the AWS symbols supplied\n"
+              "with the program."),
+    ParamString('LineDefLocation', '', subpath='Files',
+        title = "Line definition folder",
+        doc = "Folder of the line standard definitions. Empty uses the one\n"
+              "supplied with the program."),
+    ParamString('LineElementLocation', '', subpath='Files',
+        title = "Line element folder",
+        doc = "Folder of the line element definitions of the line standards.\n"
+              "Empty uses the one supplied with the program."),
+    ParamString('FilePattern', '', subpath='PAT',
+        title = "PAT file",
+        doc = "PAT file new geometric hatches take their pattern from. Empty uses\n"
+              "FCPAT.pat, supplied with the program."),
 ]
 
 def declare():

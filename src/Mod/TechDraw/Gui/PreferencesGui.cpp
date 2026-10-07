@@ -86,7 +86,7 @@ QColor PreferencesGui::preselectQColor()
 App::Color PreferencesGui::sectionLineColor()
 {
     App::Color fcColor;
-    fcColor.setPackedValue(Preferences::getPreferenceGroup("Decorations")->GetUnsigned("SectionColor", 0x000000FF));
+    fcColor.setPackedValue(Preferences::getPreferenceGroup("Decorations")->GetUnsigned("SectionColor", TechDraw::TechDrawParams::defaultSectionColor()));
     return fcColor;
 }
 
@@ -94,32 +94,32 @@ QColor PreferencesGui::sectionLineQColor()
 {
 //if the App::Color version has already lightened the color, we don't want to do it again
     App::Color fcColor;
-    fcColor.setPackedValue(Preferences::getPreferenceGroup("Decorations")->GetUnsigned("SectionColor", 0x000000FF));
+    fcColor.setPackedValue(Preferences::getPreferenceGroup("Decorations")->GetUnsigned("SectionColor", TechDraw::TechDrawParams::defaultSectionColor()));
     return fcColor.asValue<QColor>();
 }
 
 App::Color PreferencesGui::breaklineColor()
 {
     App::Color fcColor;
-    fcColor.setPackedValue(Preferences::getPreferenceGroup("Decorations")->GetUnsigned("BreaklineColor", 0x000000FF));
+    fcColor.setPackedValue(Preferences::getPreferenceGroup("Decorations")->GetUnsigned("BreaklineColor", TechDraw::TechDrawParams::defaultBreaklineColor()));
     return fcColor;
 }
 
 QColor PreferencesGui::breaklineQColor()
 {
     App::Color fcColor;
-    fcColor.setPackedValue(Preferences::getPreferenceGroup("Decorations")->GetUnsigned("BreaklineColor", 0x000000FF));
+    fcColor.setPackedValue(Preferences::getPreferenceGroup("Decorations")->GetUnsigned("BreaklineColor", TechDraw::TechDrawParams::defaultBreaklineColor()));
     return fcColor.asValue<QColor>();
 }
 
 App::Color PreferencesGui::centerColor()
 {
-    return App::Color((uint32_t) Preferences::getPreferenceGroup("Decorations")->GetUnsigned("CenterColor", 0x000000FF));
+    return App::Color((uint32_t) Preferences::getPreferenceGroup("Decorations")->GetUnsigned("CenterColor", TechDraw::TechDrawParams::defaultCenterColor()));
 }
 
 QColor PreferencesGui::centerQColor()
 {
-    App::Color fcColor = App::Color((uint32_t) Preferences::getPreferenceGroup("Decorations")->GetUnsigned("CenterColor", 0x000000FF));
+    App::Color fcColor = App::Color((uint32_t) Preferences::getPreferenceGroup("Decorations")->GetUnsigned("CenterColor", TechDraw::TechDrawParams::defaultCenterColor()));
     return fcColor.asValue<QColor>();
 }
 
@@ -131,28 +131,39 @@ QColor PreferencesGui::vertexQColor()
 App::Color PreferencesGui::dimColor()
 {
     App::Color fcColor;
-    fcColor.setPackedValue(Preferences::getPreferenceGroup("Dimensions")->GetUnsigned("Color", 0x000000FF));  //#000000 black
+    fcColor.setPackedValue(Preferences::getPreferenceGroup("Dimensions")->GetUnsigned("Color", TechDraw::TechDrawParams::defaultDimensionColor()));
     return fcColor;
 }
 
 QColor PreferencesGui::dimQColor()
 {
     App::Color fcColor;
-    fcColor.setPackedValue(Preferences::getPreferenceGroup("Dimensions")->GetUnsigned("Color", 0x000000FF));  //#000000 black
+    fcColor.setPackedValue(Preferences::getPreferenceGroup("Dimensions")->GetUnsigned("Color", TechDraw::TechDrawParams::defaultDimensionColor()));
     return fcColor.asValue<QColor>();
+}
+
+//! The colour of leader lines. The Colors page stored its "Leaderline" colour
+//! as Markups/Color, which nothing read, while this read LeaderLine/Color,
+//! which nothing stored. The page stores LeaderLine/Color now; a colour it
+//! stored before is still honoured while that is not stored.
+static unsigned long leaderPackedColor()
+{
+    const unsigned long before = Preferences::getPreferenceGroup("Markups")->GetUnsigned(
+        "Color", TechDraw::TechDrawParams::defaultLeaderLineColor());
+    return Preferences::getPreferenceGroup("LeaderLine")->GetUnsigned("Color", before);
 }
 
 App::Color PreferencesGui::leaderColor()
 {
     App::Color fcColor;
-    fcColor.setPackedValue(Preferences::getPreferenceGroup("LeaderLine")->GetUnsigned("Color", 0x000000FF));  //#000000 black
+    fcColor.setPackedValue(leaderPackedColor());
     return fcColor;
 }
 
 QColor PreferencesGui::leaderQColor()
 {
     App::Color fcColor;
-    fcColor.setPackedValue(Preferences::getPreferenceGroup("LeaderLine")->GetUnsigned("Color", 0x000000FF));  //#000000 black
+    fcColor.setPackedValue(leaderPackedColor());
     return fcColor.asValue<QColor>();
 }
 
@@ -163,7 +174,7 @@ int PreferencesGui::dimArrowStyle()
 
 double PreferencesGui::dimArrowSize()
 {
-    return Preferences::getPreferenceGroup("Dimensions")->GetFloat("ArrowSize", Preferences::dimArrowSize());
+    return Preferences::getPreferenceGroup("Dimensions")->GetFloat("ArrowSize", TechDraw::TechDrawParams::defaultArrowSize());
 }
 
 
@@ -176,7 +187,7 @@ double PreferencesGui::edgeFuzz()
 // this is for the iso vs ansi positioning of arrows and text.  rename to sectionLineConvention?
 Qt::PenStyle PreferencesGui::sectionLineStyle()
 {
-    Qt::PenStyle sectStyle = static_cast<Qt::PenStyle> (Preferences::getPreferenceGroup("Decorations")->GetInt("SectionLine", 2));
+    Qt::PenStyle sectStyle = static_cast<Qt::PenStyle> (Preferences::getPreferenceGroup("Decorations")->GetInt("SectionLine", TechDraw::TechDrawParams::defaultSectionLine()));
     return sectStyle;
 }
 
@@ -189,7 +200,7 @@ QString PreferencesGui::weldingDirectory()
 {
     std::string defaultDir = App::Application::getResourceDir() + "Mod/TechDraw/Symbols/Welding/AWS/";
 
-    std::string symbolDir = Preferences::getPreferenceGroup("Files")->GetASCII("WeldingDir", defaultDir.c_str());
+    std::string symbolDir = Preferences::getPreferenceGroup("Files")->GetASCII("WeldingDir", TechDraw::TechDrawParams::defaultWeldingDir().c_str());
     if (symbolDir.empty()) {
         symbolDir = defaultDir;
     }
@@ -205,14 +216,14 @@ QString PreferencesGui::weldingDirectory()
 App::Color PreferencesGui::gridColor()
 {
     App::Color fcColor;
-    fcColor.setPackedValue(Preferences::getPreferenceGroup("Colors")->GetUnsigned("gridColor", 0x000000FF));  //#000000 black
+    fcColor.setPackedValue(Preferences::getPreferenceGroup("Colors")->GetUnsigned("gridColor", TechDraw::TechDrawParams::defaultgridColor()));  //#000000 black
     return fcColor;
 }
 
 QColor PreferencesGui::gridQColor()
 {
     App::Color fcColor;
-    fcColor.setPackedValue(Preferences::getPreferenceGroup("Colors")->GetUnsigned("gridColor", 0x000000FF));  //#000000 black
+    fcColor.setPackedValue(Preferences::getPreferenceGroup("Colors")->GetUnsigned("gridColor", TechDraw::TechDrawParams::defaultgridColor()));  //#000000 black
     return fcColor.asValue<QColor>();
 }
 
@@ -234,7 +245,7 @@ bool PreferencesGui::multiSelection()
 App::Color PreferencesGui::pageColor()
 {
     App::Color result;
-    result.setPackedValue(Preferences::getPreferenceGroup("Colors")->GetUnsigned("PageColor", 0xFFFFFFFF));  //#FFFFFFFF white
+    result.setPackedValue(Preferences::getPreferenceGroup("Colors")->GetUnsigned("PageColor", TechDraw::TechDrawParams::defaultPageColor()));  //#FFFFFFFF white
     return result;
 }
 
@@ -305,6 +316,6 @@ double PreferencesGui::templateClickBoxSize()
 QColor PreferencesGui::templateClickBoxColor()
 {
     App::Color fcColor;
-    fcColor.setPackedValue(Preferences::getPreferenceGroup("Colors")->GetUnsigned("TemplateUnderlineColor", 0x0000FFFF));  //#0000FF blue
+    fcColor.setPackedValue(Preferences::getPreferenceGroup("Colors")->GetUnsigned("TemplateUnderlineColor", TechDraw::TechDrawParams::defaultTemplateUnderlineColor()));  //#0000FF blue
     return fcColor.asValue<QColor>();
 }

@@ -82,7 +82,7 @@ QGIFace::QGIFace(int index) :
     getParameters();
 
     // set up style & colour defaults
-    m_colDefFill = App::Color(static_cast<uint32_t>(Preferences::getPreferenceGroup("Colors")->GetUnsigned("FaceColor", 0xFFFFFF)))
+    m_colDefFill = App::Color(static_cast<uint32_t>(Preferences::getPreferenceGroup("Colors")->GetUnsigned("FaceColor", TechDraw::TechDrawParams::defaultFaceColor())))
                    .asValue<QColor>();
     m_colDefFill.setAlpha(Preferences::getPreferenceGroup("Colors")->GetBool("ClearFace", TechDraw::TechDrawParams::defaultClearFace()) ? 0 : 255);
 

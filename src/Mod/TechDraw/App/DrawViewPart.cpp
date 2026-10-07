@@ -125,7 +125,7 @@ DrawViewPart::DrawViewPart(void)
                     group, App::Prop_None, "Perspective view focus distance");
 
     //properties that control HLR algo
-    ADD_PROPERTY_TYPE(CoarseView, (Preferences::getPreferenceGroup("General")->GetBool("CoarseView", false)),
+    ADD_PROPERTY_TYPE(CoarseView, (Preferences::coarseView()),
         sgroup, App::Prop_None, "Coarse View on/off");
     ADD_PROPERTY_TYPE(SmoothVisible, (Preferences::getPreferenceGroup("HLR")->GetBool("SmoothViz", TechDraw::TechDrawParams::defaultSmoothViz())),
         sgroup, App::Prop_None, "Show Visible Smooth lines");
@@ -142,7 +142,9 @@ DrawViewPart::DrawViewPart(void)
         sgroup, App::Prop_None, "Show Hidden Seam lines");
     ADD_PROPERTY_TYPE(IsoHidden, (Preferences::getPreferenceGroup("HLR")->GetBool("IsoHid", TechDraw::TechDrawParams::defaultIsoHid())),
         sgroup, App::Prop_None, "Show Hidden Iso u, v lines");
-    ADD_PROPERTY_TYPE(IsoCount, (Preferences::getPreferenceGroup("HLR")->GetBool("IsoCount", 0)),
+    // the HLR page stores the count with a spin box, an Int; this read a Bool, which is
+    // another entry of the group, so a new view had no iso lines whatever the page said
+    ADD_PROPERTY_TYPE(IsoCount, (Preferences::getPreferenceGroup("HLR")->GetInt("IsoCount", TechDraw::TechDrawParams::defaultIsoCount())),
         sgroup, App::Prop_None, "Number of iso parameters lines");
 
     ADD_PROPERTY_TYPE(ScrubCount, (Preferences::scrubCount()), sgroup, App::Prop_None,

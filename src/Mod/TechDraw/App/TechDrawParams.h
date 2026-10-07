@@ -1146,6 +1146,626 @@ public:
     static const char *docdebugSection();
     //@}
 
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter Background
+    ///
+    /// Colour of the area around the sheet in a page view. Read when a
+    /// page view is opened.
+    static const unsigned long & getBackground();
+    static const unsigned long & defaultBackground();
+    static void removeBackground();
+    static void setBackground(const unsigned long &v);
+    static const char *docBackground();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter CutSurfaceColor
+    ///
+    /// Colour of the cut surface of new sections that show it as a solid
+    /// colour. Applies to sections created afterwards.
+    static const unsigned long & getCutSurfaceColor();
+    static const unsigned long & defaultCutSurfaceColor();
+    static void removeCutSurfaceColor();
+    static void setCutSurfaceColor(const unsigned long &v);
+    static const char *docCutSurfaceColor();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter FaceColor
+    ///
+    /// Fill colour of the faces of new views. Applies to views created
+    /// afterwards; each view has its own Face Color property.
+    static const unsigned long & getFaceColor();
+    static const unsigned long & defaultFaceColor();
+    static void removeFaceColor();
+    static void setFaceColor(const unsigned long &v);
+    static const char *docFaceColor();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter GeomHatch
+    ///
+    /// Line colour of new geometric (PAT) hatches. Applies to hatches
+    /// created afterwards.
+    static const unsigned long & getGeomHatch();
+    static const unsigned long & defaultGeomHatch();
+    static void removeGeomHatch();
+    static void setGeomHatch(const unsigned long &v);
+    static const char *docGeomHatch();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter Hatch
+    ///
+    /// Colour of new SVG hatches. Applies to hatches created afterwards.
+    static const unsigned long & getHatch();
+    static const unsigned long & defaultHatch();
+    static void removeHatch();
+    static void setHatch(const unsigned long &v);
+    static const char *docHatch();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter HiddenColor
+    ///
+    /// Colour of hidden lines. Takes effect when a view is redrawn.
+    static const unsigned long & getHiddenColor();
+    static const unsigned long & defaultHiddenColor();
+    static void removeHiddenColor();
+    static void setHiddenColor(const unsigned long &v);
+    static const char *docHiddenColor();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter LightTextColor
+    ///
+    /// The one colour everything is drawn in while Light on dark and
+    /// Monochrome are both on.
+    static const unsigned long & getLightTextColor();
+    static const unsigned long & defaultLightTextColor();
+    static void removeLightTextColor();
+    static void setLightTextColor(const unsigned long &v);
+    static const char *docLightTextColor();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter NormalColor
+    ///
+    /// Colour of lines and text that are not selected, and the colour new
+    /// cosmetic lines and annotations start with.
+    static const unsigned long & getNormalColor();
+    static const unsigned long & defaultNormalColor();
+    static void removeNormalColor();
+    static void setNormalColor(const unsigned long &v);
+    static const char *docNormalColor();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter PageColor
+    ///
+    /// Colour of the sheet in a page view.
+    static const unsigned long & getPageColor();
+    static const unsigned long & defaultPageColor();
+    static void removePageColor();
+    static void setPageColor(const unsigned long &v);
+    static const char *docPageColor();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter TemplateUnderlineColor
+    ///
+    /// Colour of the click boxes on the editable texts of a template.
+    /// Read when a template is loaded.
+    static const unsigned long & getTemplateUnderlineColor();
+    static const unsigned long & defaultTemplateUnderlineColor();
+    static void removeTemplateUnderlineColor();
+    static void setTemplateUnderlineColor(const unsigned long &v);
+    static const char *docTemplateUnderlineColor();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter gridColor
+    ///
+    /// Colour of the page grid.
+    static const unsigned long & getgridColor();
+    static const unsigned long & defaultgridColor();
+    static void removegridColor();
+    static void setgridColor(const unsigned long &v);
+    static const char *docgridColor();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter BreaklineColor
+    ///
+    /// Colour of the break lines of broken views.
+    static const unsigned long & getBreaklineColor();
+    static const unsigned long & defaultBreaklineColor();
+    static void removeBreaklineColor();
+    static void setBreaklineColor(const unsigned long &v);
+    static const char *docBreaklineColor();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter CenterColor
+    ///
+    /// Colour of centre lines and centre marks.
+    static const unsigned long & getCenterColor();
+    static const unsigned long & defaultCenterColor();
+    static void removeCenterColor();
+    static void setCenterColor(const unsigned long &v);
+    static const char *docCenterColor();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter HighlightColor
+    ///
+    /// Colour of the detail highlight in new views. Applies to views
+    /// created afterwards.
+    static const unsigned long & getHighlightColor();
+    static const unsigned long & defaultHighlightColor();
+    static void removeHighlightColor();
+    static void setHighlightColor(const unsigned long &v);
+    static const char *docHighlightColor();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter SectionColor
+    ///
+    /// Colour of section lines.
+    static const unsigned long & getSectionColor();
+    static const unsigned long & defaultSectionColor();
+    static void removeSectionColor();
+    static void setSectionColor(const unsigned long &v);
+    static const char *docSectionColor();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter VertexColor
+    ///
+    /// Colour of vertex dots, and the colour new cosmetic vertices start
+    /// with.
+    static const unsigned long & getVertexColor();
+    static const unsigned long & defaultVertexColor();
+    static void removeVertexColor();
+    static void setVertexColor(const unsigned long &v);
+    static const char *docVertexColor();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter DimensionColor
+    ///
+    /// Colour of dimensions and balloons.
+    static const unsigned long & getDimensionColor();
+    static const unsigned long & defaultDimensionColor();
+    static void removeDimensionColor();
+    static void setDimensionColor(const unsigned long &v);
+    static const char *docDimensionColor();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter LeaderLineColor
+    ///
+    /// Colour of leader lines; new leaders and rich annotations start
+    /// with it.
+    static const unsigned long & getLeaderLineColor();
+    static const unsigned long & defaultLeaderLineColor();
+    static void removeLeaderLineColor();
+    static void setLeaderLineColor(const unsigned long &v);
+    static const char *docLeaderLineColor();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter TrackerColor
+    ///
+    /// Colour of the rubber band lines drawn while a tool tracks the
+    /// mouse on a page.
+    static const unsigned long & getTrackerColor();
+    static const unsigned long & defaultTrackerColor();
+    static void removeTrackerColor();
+    static void setTrackerColor(const unsigned long &v);
+    static const char *docTrackerColor();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter LineGroup
+    ///
+    /// Index of the line group -- a set of thin, graphic and thick line
+    /// widths -- in the line group file. Read at each width lookup.
+    static const long & getLineGroup();
+    static const long & defaultLineGroup();
+    static void removeLineGroup();
+    static void setLineGroup(const long &v);
+    static const char *docLineGroup();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter LineStyleCenter
+    ///
+    /// Line style of centre lines, as an index into the lines of the
+    /// active line standard, counted from 0. Takes effect when views are
+    /// redrawn.
+    static const long & getLineStyleCenter();
+    static const long & defaultLineStyleCenter();
+    static void removeLineStyleCenter();
+    static void setLineStyleCenter(const long &v);
+    static const char *docLineStyleCenter();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter LineStyleHidden
+    ///
+    /// Line style of hidden lines, as an index into the lines of the
+    /// active line standard, counted from 0. Takes effect when views are
+    /// redrawn.
+    static const long & getLineStyleHidden();
+    static const long & defaultLineStyleHidden();
+    static void removeLineStyleHidden();
+    static void setLineStyleHidden(const long &v);
+    static const char *docLineStyleHidden();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter LineStyleBreak
+    ///
+    /// Line style of the break lines of new broken views, as an index
+    /// into the lines of the active line standard, counted from 0.
+    /// Applies to views created afterwards.
+    static const long & getLineStyleBreak();
+    static const long & defaultLineStyleBreak();
+    static void removeLineStyleBreak();
+    static void setLineStyleBreak(const long &v);
+    static const char *docLineStyleBreak();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter BreakType
+    ///
+    /// How breaks are drawn in new broken views: 0 not at all, 1 zig-zag,
+    /// 2 simple. Applies to views created afterwards.
+    static const long & getBreakType();
+    static const long & defaultBreakType();
+    static void removeBreakType();
+    static void setBreakType(const long &v);
+    static const char *docBreakType();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter SectionLine
+    ///
+    /// Line style of section lines: for a new view the number of a line
+    /// of the active line standard, where a section line or a highlight
+    /// is drawn a pen style -- 1 solid, 2 dashed, 3 dotted, 4 dash-dot.
+    /// The Section Line Style list of the Annotation page stores another
+    /// key, which nothing that draws reads.
+    static const long & getSectionLine();
+    static const long & defaultSectionLine();
+    static void removeSectionLine();
+    static void setSectionLine(const long &v);
+    static const char *docSectionLine();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter HighlightStyle
+    ///
+    /// Line style of the detail highlight in new views, as the number of
+    /// a line of the active line standard. Applies to views created
+    /// afterwards. The Detail Highlight Style list of the Annotation page
+    /// stores another key, which nothing that draws reads.
+    static const long & getHighlightStyle();
+    static const long & defaultHighlightStyle();
+    static void removeHighlightStyle();
+    static void setHighlightStyle(const long &v);
+    static const char *docHighlightStyle();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter CenterLine
+    ///
+    /// Pen style of centre line items: 1 solid, 2 dashed, 3 dotted, 4
+    /// dash-dot, 5 dash-dot-dot. Read as each centre line item is made.
+    static const long & getCenterLine();
+    static const long & defaultCenterLine();
+    static void removeCenterLine();
+    static void setCenterLine(const long &v);
+    static const char *docCenterLine();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter CenterLineStyle
+    ///
+    /// Line style new cosmetic edges and centre lines start with, as the
+    /// number of a line of the active line standard. Applies to lines
+    /// created afterwards.
+    static const long & getCenterLineStyle();
+    static const long & defaultCenterLineStyle();
+    static void removeCenterLineStyle();
+    static void setCenterLineStyle(const long &v);
+    static const char *docCenterLineStyle();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter HiddenLine
+    ///
+    /// Pen style of an edge marked hidden: 0 solid, 1 dashed, 2 dotted, 3
+    /// dash-dot, 4 dash-dot-dot. Read when an edge is marked hidden.
+    static const long & getHiddenLine();
+    static const long & defaultHiddenLine();
+    static void removeHiddenLine();
+    static void setHiddenLine(const long &v);
+    static const char *docHiddenLine();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter EdgeCapStyle
+    ///
+    /// Shape of line ends: 0 round, 1 square, 2 flat. Flat or square ends
+    /// suit drawings printed 1:1 as cutting guides. Read as pens are
+    /// made.
+    static const long & getEdgeCapStyle();
+    static const long & defaultEdgeCapStyle();
+    static void removeEdgeCapStyle();
+    static void setEdgeCapStyle(const long &v);
+    static const char *docEdgeCapStyle();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter LineStandard
+    ///
+    /// Line standard in use, as an index into the standards found in the
+    /// line definition folder. Read each time line definitions are
+    /// loaded.
+    static const long & getLineStandard();
+    static const long & defaultLineStandard();
+    static void removeLineStandard();
+    static void setLineStandard(const long &v);
+    static const char *docLineStandard();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter SectionLineStandard
+    ///
+    /// Where the arrows and letters of a section line sit: 0 as ANSI and
+    /// ASME have them, 1 as ISO has them. Read each time a section line
+    /// is drawn.
+    static const long & getSectionLineStandard();
+    static const long & defaultSectionLineStandard();
+    static void removeSectionLineStandard();
+    static void setSectionLineStandard(const long &v);
+    static const char *docSectionLineStandard();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter IsoCount
+    ///
+    /// Number of iso-parameter lines per face in new views. Applies to
+    /// views created afterwards.
+    static const long & getIsoCount();
+    static const long & defaultIsoCount();
+    static void removeIsoCount();
+    static void setIsoCount(const long &v);
+    static const char *docIsoCount();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter CoarseView
+    ///
+    /// New views use the fast polygon approximation for hidden lines:
+    /// quicker, but curves become short straight segments and faces are
+    /// not found. Applies to views created afterwards; each view has its
+    /// own Coarse View property.
+    static const bool & getCoarseView();
+    static const bool & defaultCoarseView();
+    static void removeCoarseView();
+    static void setCoarseView(const bool &v);
+    static const char *docCoarseView();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter LineSpacingFactorISO
+    ///
+    /// Space between the dimension line and the text of new ISO
+    /// dimensions, as a multiple of the line width. Applies to dimensions
+    /// created afterwards.
+    static const double & getLineSpacingFactorISO();
+    static const double & defaultLineSpacingFactorISO();
+    static void removeLineSpacingFactorISO();
+    static void setLineSpacingFactorISO(const double &v);
+    static const char *docLineSpacingFactorISO();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter SectionUpdateDelay
+    ///
+    /// Time in milliseconds between a change in the section view dialog
+    /// and the update of the section while live update is on. At least
+    /// 100.
+    static const long & getSectionUpdateDelay();
+    static const long & defaultSectionUpdateDelay();
+    static void removeSectionUpdateDelay();
+    static void setSectionUpdateDelay(const long &v);
+    static const char *docSectionUpdateDelay();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter ArrowSize
+    ///
+    /// Size in mm of dimension arrowheads. Applies to dimensions created
+    /// afterwards; each dimension has its own Arrow Size property.
+    static const double & getArrowSize();
+    static const double & defaultArrowSize();
+    static void removeArrowSize();
+    static void setArrowSize(const double &v);
+    static const char *docArrowSize();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter FontSize
+    ///
+    /// Text size in mm of dimensions and of other annotation text that
+    /// follows it. Applies to dimensions created afterwards.
+    static const double & getFontSize();
+    static const double & defaultFontSize();
+    static void removeFontSize();
+    static void setFontSize(const double &v);
+    static const char *docFontSize();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter StandardAndStyle
+    ///
+    /// Standard and text placement of new dimensions: 0 ISO oriented, 1
+    /// ISO referencing, 2 ASME inlined, 3 ASME referencing. Applies to
+    /// dimensions created afterwards.
+    static const long & getStandardAndStyle();
+    static const long & defaultStandardAndStyle();
+    static void removeStandardAndStyle();
+    static void setStandardAndStyle(const long &v);
+    static const char *docStandardAndStyle();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter TemplateFile
+    ///
+    /// Template of a new page. Empty uses A4_LandscapeTD.svg, supplied
+    /// with the program.
+    static const std::string & getTemplateFile();
+    static const std::string & defaultTemplateFile();
+    static void removeTemplateFile();
+    static void setTemplateFile(const std::string &v);
+    static const char *docTemplateFile();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter TemplateDir
+    ///
+    /// Folder the template chooser opens in. Empty uses the one supplied
+    /// with the program.
+    static const std::string & getTemplateDir();
+    static const std::string & defaultTemplateDir();
+    static void removeTemplateDir();
+    static void setTemplateDir(const std::string &v);
+    static const char *docTemplateDir();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter LineGroupFile
+    ///
+    /// File of line groups -- sets of line widths. Empty uses the one
+    /// supplied with the program.
+    static const std::string & getLineGroupFile();
+    static const std::string & defaultLineGroupFile();
+    static void removeLineGroupFile();
+    static void setLineGroupFile(const std::string &v);
+    static const char *docLineGroupFile();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter FileHatch
+    ///
+    /// SVG file new hatches take their pattern from. Empty uses
+    /// simple.svg, supplied with the program.
+    static const std::string & getFileHatch();
+    static const std::string & defaultFileHatch();
+    static void removeFileHatch();
+    static void setFileHatch(const std::string &v);
+    static const char *docFileHatch();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter WeldingDir
+    ///
+    /// Folder of welding symbols. Empty uses the AWS symbols supplied
+    /// with the program.
+    static const std::string & getWeldingDir();
+    static const std::string & defaultWeldingDir();
+    static void removeWeldingDir();
+    static void setWeldingDir(const std::string &v);
+    static const char *docWeldingDir();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter LineDefLocation
+    ///
+    /// Folder of the line standard definitions. Empty uses the one
+    /// supplied with the program.
+    static const std::string & getLineDefLocation();
+    static const std::string & defaultLineDefLocation();
+    static void removeLineDefLocation();
+    static void setLineDefLocation(const std::string &v);
+    static const char *docLineDefLocation();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter LineElementLocation
+    ///
+    /// Folder of the line element definitions of the line standards.
+    /// Empty uses the one supplied with the program.
+    static const std::string & getLineElementLocation();
+    static const std::string & defaultLineElementLocation();
+    static void removeLineElementLocation();
+    static void setLineElementLocation(const std::string &v);
+    static const char *docLineElementLocation();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter FilePattern
+    ///
+    /// PAT file new geometric hatches take their pattern from. Empty uses
+    /// FCPAT.pat, supplied with the program.
+    static const std::string & getFilePattern();
+    static const std::string & defaultFilePattern();
+    static void removeFilePattern();
+    static void setFilePattern(const std::string &v);
+    static const char *docFilePattern();
+    //@}
+
 // Auto generated code (Tools/params_utils.py:179)
 }; // class TechDrawParams
 } // namespace TechDraw

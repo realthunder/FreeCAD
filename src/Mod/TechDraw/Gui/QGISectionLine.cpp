@@ -21,6 +21,8 @@
  ***************************************************************************/
 
 #include "PreCompiled.h"
+
+#include <Mod/TechDraw/App/TechDrawParams.h>
 #ifndef _PreComp_
 # include <QApplication>
 # include <QGraphicsScene>
@@ -567,7 +569,7 @@ Qt::PenStyle QGISectionLine::getSectionStyle()
 //ASME("traditional") vs ISO("reference arrow method") arrows
 int QGISectionLine::getPrefSectionStandard()
 {
-    return Preferences::getPreferenceGroup("Standards")->GetInt("SectionLineStandard", ISOSTANDARD);
+    return Preferences::getPreferenceGroup("Standards")->GetInt("SectionLineStandard", TechDraw::TechDrawParams::defaultSectionLineStandard());
 }
 
 
