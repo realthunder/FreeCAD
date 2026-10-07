@@ -852,7 +852,7 @@ its own thing, and not started.
 
 Evidence: `..\dl\handson\2026-10-07\msaa-*`, `entry26-first-ok-with-msaa-*`.
 
-## 24. Every setting behind a generated class -- STARTED, seventeen groups done
+## 24. Every setting behind a generated class -- STARTED, eighteen groups done
 
 The reporter, 2026-10-07, asked which entry "do entry 23 next" meant: "I
 meant entry 24". Not staged.
@@ -1130,6 +1130,16 @@ The GUI tests registered in `tests/gui/CMakeLists.txt` are not part of that
   switch; the Snap command's cached state is wrong until the key changes.
   All from reading, none measured yet.
 - TechDraw: 141 keys in 14 groups, 176 sites in 38 files, 103 on pages.
+
+**Done, first step: the Sketcher** (`Preferences/Mod/Sketcher`, the group
+itself), 23 settings, `97444426c5`: a new class in its App library,
+`Sketcher::SketcherParams`; 61 reads and 5 writes in 12 files ask it. Put
+right: "Use system decimals" is on to the program and was shown off, and
+stored off on OK, by the Display page. Scored:
+`tests/gui/sketcher-settings.py` (`GuiSketcherSettings_tests_run`) 4 PASS;
+2 PASS, 2 FAIL staged; the Sketcher's own suites pass (ctest 111, Python
+145). NOT DONE: its sub-groups and the keys it keeps in `Preferences/View`,
+about 150 keys, with the inventory's findings in them.
 
 **The generator,** `0a94fb63c9`: a setting stored under another name than
 its own (`param_name`) was read and written under its key, but a CHANGE was
