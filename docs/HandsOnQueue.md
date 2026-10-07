@@ -70,6 +70,7 @@ report views, the reporter's own files -- is kept beside the dev tree under
 | 30 | 2026-10-07 | the dark and light overlay stylesheets integrated into the Dark and Light preference packs (a task asked; what "integrated" covers to confirm); and the long freeze when an overlay stylesheet is applied, to investigate; the Python console's background in both packs, so a theme can take an overlay preset's away again | OPEN |
 | 31 | 2026-10-07 | report view: "Go to end" on by default (change request) | see `docs/HandsOnLog.md` |
 | 32 | 2026-10-07 | some sub menus are transparent with blue text (Tools > Command history): find out why; transparent menus off by default | see `docs/HandsOnLog.md` |
+| 33 | 2026-10-07 | a cmd window pops up briefly at the first document opened after start | OPEN |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -1951,10 +1952,39 @@ Read from the source by the note-taker, nothing changed:
 - There is no switch for it today: the function always applies a sheet.
   (b) needs one -- off unless asked for -- or the default sheet made opaque.
 
+## 33. A cmd window pops up briefly at the first document opened after start -- OPEN
+
+**2026-10-07 14:43, a defect.** "when the application starts, the first open
+of a document briefly pops a cmd window. subsequent opening of document does
+not have this". Once per session, at the first document opened: a console
+(cmd) window appears for a moment and goes. Not said yet: whether it is every
+start, which document, and whether a NEW document does it as well as an
+opened one.
+Read from the source by the note-taker for where to look, nothing run -- a
+candidate, not a finding:
+- A process with no console that runs a command through the C runtime's
+  shell -- `_popen()`, `system()` -- gets a visible `cmd.exe` window for as
+  long as the command runs. FreeCAD's own launches go through `QProcess`,
+  which asks for no window; the vendored path tracer does not.
+- `src/3rdParty/cycles/third_party/cuew/src/cuew.c` looks for the CUDA
+  compiler with `popen("where nvcc", "r")` (`popen` is `_popen` on Windows)
+  and asks its version with another `popen`; `.../hipew/src/hipew.c` does the
+  same for `hipcc`. Both run when the path tracer's devices are first probed,
+  and the answer is kept, so it happens once in a session.
+- The devices are probed when the first 3D view comes up: the report view of
+  the 2026-10-06 runs has "HIPEW initialization failed: Error opening HIP
+  dynamic library" at exactly that point (`..\dl\gt-open-A-usercfg-command\`
+  `run.log`, between two "bgfx: view init" lines). A first document is what
+  brings the first 3D view.
+To establish: that it is this and not something else started at a first
+open (which call, by watching for a `cmd.exe` child of `FreeCAD.exe`), and
+whether a session with no 3D view opened -- a TechDraw page or a spreadsheet
+alone -- shows it.
+
 ## Inbox
 
 Notes not sorted into an entry yet. Add a line here at any time, in any words;
 it is read before each entry is started and moved up into the table.
 
 (empty: the notes of 2026-10-06 are entries 20 to 28, those of 2026-10-07 so far
-entries 29 to 32)
+entries 29 to 33)
