@@ -818,10 +818,76 @@ read, and meshes; its volume change agrees with its mesh's to 0.0013
 
 ![Two fillets and a sharp edge](pictures/CornerBlending/box_sharp_edge.png)
 
-### 9.9 Next: a depth per face (planned)
+### 9.9 A depth per face (2026-10-07)
 
-How far a face's curve bows into the face, at its middle, stored per face
-on a corner beside the edges' setbacks (`Corners` keeps its value open for
-it), with a drag handle at the curve's midpoint in the task panel. With
-9.8 the curve's shape is fixed by its ends; a depth is what lets a user
-make the bulb fuller or flatter than the batten's.
+With 9.8 a face curve's shape is fixed by its ends; a depth is what lets a
+user make the bulb fuller or flatter: how far the patch's boundary on a
+face bows into it, away from the vertex, at its middle, measured from the
+straight line between its ends.
+
+- **OCCT.** `ChFiDS_FilSpine::SetFaceDepth(isFirst, F, D)` keeps a map of
+  face to depth at each end, over `Reset()` as the setbacks are; every
+  spine ending at the vertex holds it, so a face between two sharp edges,
+  which no stripe borders, can have one too.
+  `BRepFilletAPI_MakeFillet::SetFaceDepth(V, F, D)` and `FaceDepth(V, F)`,
+  and `extern "C" BRepFilletAPI_SetFaceDepth` for the run-time lookup. 0 or
+  less: none, the batten of 9.8.
+- **The curve.** A face with a depth gets a cubic in its parameters in
+  place of the batten. Its ends leave in the directions the batten's would
+  (section, else contact line, 9.8), and each arm is as long as puts the
+  curve's middle on the point the depth from the chord's middle, square to
+  the chord in the face (in space; exact on a plane). A depth the ends
+  cannot reach -- an arm would have to point back -- or one that runs the
+  curve off the face fails the corner, as an unplaceable setback does.
+- **Part.** In `makeFillet(corners=)` a face in place of an edge takes a
+  depth: `{vertex: (4, {"Face6": 1.5, "Edge3": 3})}`.
+  `TopoShape::FilletCorner::faces`; checked before OCCT sees it: the face
+  belongs to the shape and touches the vertex, and the corner is set back
+  ("a face depth needs the corner set back").
+- **PartDesign.** `Corners` takes face names beside edge names, the value a
+  depth (`Corners.Vertex7.Face6` as a path); saved as `<Face id depth>`
+  after the edges under their own count, so a build without depths reads
+  the rest. A face cannot go in `Base` as the vertex does (9.5): a face
+  there is filleted all round. The faces go in a hidden link,
+  `CornerFaces`, to the same object, which the fillet keeps in step with
+  `Corners`; `connectFaceLinkProperty` follows their names and the
+  expressions on them as the topology changes, and drops a depth whose face
+  leaves the link.
+- **Task panel.** A corner's rows list the faces at its vertex after its
+  fillets; a face row's value is its depth, empty for none (0 clears it).
+  The current corner gets a depth handle per face, from the middle of the
+  chord of the patch's boundary on that face, square to it and out into the
+  face, its length the depth or, without one, the boundary's own bow;
+  dragging it sets the depth. A pool of four, as the setback handles have
+  six.
+
+Measured on the box corner, r 1, set back 4, a depth on the top face (the
+other two left to the batten, whose bow there is 0.91):
+
+| Top face depth | Volume | Tolerance |
+|---|---|---|
+| none (the batten) | 986.1474 | 8.7e-3 |
+| 0.5 | 986.1140 | 7.7e-3 |
+| 1 | 986.1815 | 7.5e-3 |
+| 2 | 986.8944 | 8.6e-3 |
+
+Every one is valid, its boundary passing the depth from its chord to 2e-3
+(`FilletCornerTest.testFaceDepth`), its curvature of one sign (the least,
+-0.07, a sample at its boundary on a plane, as in 9.8). The patch covers
+more of the top face as the depth grows (area 30.1 at 0.5, 33.7 at 2) and
+yet takes less: held tangent to the face along a longer boundary, it stays
+nearer it. At 2 the cubic's long arms make a nose of the boundary; at 5
+the depth cannot be reached on the face and the corner fails. Without a
+depth nothing moves: the box corners of 9.8 to the last digit, the suite
+result for result, both sweeps byte for byte.
+
+Tests: `FilletCornerTest` (Part, 8: the depth by shape and by name, beside
+setbacks, and its errors), `TestFillet.TestFilletCorners` (PD, the depth
+against `makeFillet`, `CornerFaces`, an expression, save and restore,
+removal, and a face renamed by a cut ahead of the fillet: `Face8`
+following), `TestFilletPanel` (GUI, 6: the face rows, an edit, a depth
+handle driving `Corners`, 0 clearing it).
+
+![A face's depth](pictures/CornerBlending/box_depth.png)
+
+![The depth handles in the task panel](pictures/CornerBlending/task_panel_depth.png)
