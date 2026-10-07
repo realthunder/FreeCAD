@@ -838,7 +838,22 @@ ViewProviderSketch::ViewProviderSketch()
 
         // well it is not visibility automation but a good place nevertheless
         this->ShowGrid.setValue(hGrp->GetBool("ShowGrid", Sketcher::SketcherParams::defaultShowGrid()));
-        this->GridSize.setValue(Base::Quantity::parse(hGrp->GetGroup("GridSize")->GetASCII("Hist0", "10.0")).getValue());
+        // The Grid page stores the spacing as the number GridSize of this
+        // sub-group. What was read here is Hist0, a text nothing writes any
+        // more, so a spacing set on the page never reached a new sketch.
+        // The Hist0 of an old profile still counts while the page's key is
+        // not stored.
+        auto hGridSize = hGrp->GetGroup("GridSize");
+        double gridSize = Sketcher::SketcherParams::defaultGridSize();
+        const std::string oldGridSize = hGridSize->GetASCII("Hist0", "");
+        if (!oldGridSize.empty()) {
+            try {
+                gridSize = Base::Quantity::parse(oldGridSize).getValue();
+            }
+            catch (const Base::Exception&) {
+            }
+        }
+        this->GridSize.setValue(hGridSize->GetFloat("GridSize", gridSize));
         this->GridAuto.setValue(hGrp->GetBool("GridAuto", Sketcher::SketcherParams::defaultGridAuto()));
         this->Autoconstraints.setValue(hGrp->GetBool("AutoConstraints", Sketcher::SketcherParams::defaultAutoConstraints()));
         this->AvoidRedundant.setValue(hGrp->GetBool("AvoidRedundantAutoconstraints", Sketcher::SketcherParams::defaultAvoidRedundantAutoconstraints()));

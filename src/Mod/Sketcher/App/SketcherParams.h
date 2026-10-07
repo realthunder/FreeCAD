@@ -612,6 +612,20 @@ public:
 
     // Auto generated code (Tools/params_utils.py:139)
     //@{
+    /// Accessor for parameter GridSize
+    ///
+    /// Distance in millimetres between two grid lines of a new sketch;
+    /// with automatic spacing, the spacing it starts from. A sketch that
+    /// exists keeps its own.
+    static const double & getGridSize();
+    static const double & defaultGridSize();
+    static void removeGridSize();
+    static void setGridSize(const double &v);
+    static const char *docGridSize();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
     /// Accessor for parameter GridAuto
     ///
     /// Let the grid spacing of new sketches adapt to the zoom level.

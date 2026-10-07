@@ -26,7 +26,10 @@ Claims:
   - "/param snap to grid" lists the snap switch of the sub-group Snap, and
     "/param grid transparency" the grid's of the sub-group General;
   - a sketch made with "show grid" stored off shows none, one made without
-    the key shows it.
+    the key shows it;
+  - a sketch made with the Grid page's spacing stored as 25 mm has a grid
+    of 25 mm (the page stores the number GridSize; a new sketch read the
+    text Hist0, which nothing writes any more, and stayed at 10 mm).
 
 Scored against the tree before the change: see the commit message.
 """
@@ -135,9 +138,20 @@ def run():
         shown = doc.addObject("Sketcher::SketchObject", "SketchGrid").ViewObject.ShowGrid
         check("a sketch made with the grid stored off shows none, one made without the key shows it",
               hidden is False and shown is True, (hidden, shown))
+
+        spacing = FreeCAD.ParamGet(PREFS + "Mod/Sketcher/General/GridSize")
+        spacing.SetFloat("GridSize", 25.0)
+        settle(0.2)
+        wide = doc.addObject("Sketcher::SketchObject", "SketchGrid25").ViewObject.GridSize.Value
+        spacing.RemFloat("GridSize")
+        settle(0.2)
+        usual = doc.addObject("Sketcher::SketchObject", "SketchGrid10").ViewObject.GridSize.Value
+        check("a sketch made with the page's grid spacing stored as 25 has 25, one made without the key 10",
+              abs(wide - 25.0) < 1e-9 and abs(usual - 10.0) < 1e-9, (wide, usual))
     except Exception:
         note("FAIL the test ran | " + traceback.format_exc().replace("\n", " | "))
     finally:
+        FreeCAD.ParamGet(PREFS + "Mod/Sketcher/General/GridSize").RemFloat("GridSize")
         general.RemBool("ShowGrid")
         group.RemBool("MakeInternals")
         group.RemInt("ExternalBSplineMaxDegree")

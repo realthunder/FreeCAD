@@ -148,9 +148,8 @@ Params = [
     # DEFAULTS from here. Not listed, because the program keeps them for
     # itself: which B-spline overlays are on, the filters of the
     # constraint and element lists, the picking mode a constraint tool
-    # was left in. Not listed, because their readers and writers do not
-    # meet: General/GridSize (the page stores GridSize, a new sketch reads
-    # Hist0), SnapTolerance and ArcCircleHelperVisible (no reader).
+    # was left in. Not listed, because nothing reads them: SnapTolerance
+    # and ArcCircleHelperVisible.
 
     # --- General
     ParamBool('AllowFaceExternalPick', True, subpath='General',
@@ -228,6 +227,11 @@ Params = [
         title = "Show grid in new sketches",
         doc = "Show a grid in new sketches while they are edited. An existing\n"
               "sketch keeps its own setting."),
+    ParamFloat('GridSize', 10.0, subpath='General/GridSize',
+        title = "Grid spacing",
+        doc = "Distance in millimetres between two grid lines of a new sketch;\n"
+              "with automatic spacing, the spacing it starts from. A sketch that\n"
+              "exists keeps its own."),
     ParamBool('GridAuto', True, subpath='General',
         title = "Automatic grid spacing",
         doc = "Let the grid spacing of new sketches adapt to the zoom level."),
