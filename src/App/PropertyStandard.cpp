@@ -3162,7 +3162,13 @@ void PropertyAppearanceList::setHolder(Property *holder, const char *name)
     _holder = holder;
     setNameInHolder(name);
     setContainer(holder ? holder->getContainer() : nullptr);
-    _list.setBlobManager(&blobManager());
+    // Only for a list that names stored content. Asking for the document's
+    // blob store makes it, and the file's history with it: every object
+    // that keeps the looks of its elements would have one made as soon as
+    // it was -- from when a removed object's name is not given again.
+    if (_list.hasTexture() || _list.hasMaterialX()) {
+        _list.setBlobManager(&blobManager());
+    }
 }
 
 void PropertyAppearanceList::aboutToSetValue()
@@ -3192,7 +3198,9 @@ void PropertyAppearanceList::mirrorList(const AppearanceList &list)
     const bool same = _list.isSame(list);
     // The same storage, whether or not it says anything new
     _list = list;
-    _list.setBlobManager(&blobManager());
+    if (_list.hasTexture() || _list.hasMaterialX()) {
+        _list.setBlobManager(&blobManager());
+    }
     if (same) {
         return;
     }
