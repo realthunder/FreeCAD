@@ -3928,7 +3928,7 @@ asked now, and the function stays for a link that draws through a view
 provider of its own.
 
 **D. In and out without a view provider** (14.6.7), with a STEP file read
-and written in `FreeCADCmd` as its check.
+and written in `FreeCADCmd` as its check. *Built* (14.6.10).
 
 **E. Files below schema 5 against upstream and an older build**, each
 opened in the other; and the costs of 14.1 measured again on what was
@@ -4421,3 +4421,39 @@ the object's; an undo and a redo; a link the log makes again on a branch
 switch has what it held; the object's name written; saved and read; a
 file with no store read into one. `scripts/appearance-parity-check.py`,
 76: the link's look by the object's names, the cut made from it following.
+
+**Step D, in and out without a view provider (2026-10-07).** 14.6.7.
+
+*In.* What a file says of looks is given to the objects by
+`Import::ImportOCAF2` itself, and `ImportOCAFGui` overrides none of it:
+one colour is the object's (`ShapeColor`, `Transparency`), a colour for
+each face is the faces' by number (`ShapeAppearance`, taken apart by
+`writeFaces()` as any write to it is), an edge colour is `LineColor`, a
+colour for each edge is the edges'; what a link is given is the link's
+(`OverrideMaterial` and `ShapeAppearance`, or the look of one of an
+array). A list of whole materials, which a glTF file has, is `setBaseList()`
+and `setNumbered()` as 14.6.7 says: the material most of the surface wears
+is the object's own look and the rest are the faces'. *That had been lost
+since step B* (*found here*): the Gui importer chose the base in its view
+provider's list, which was a name by then, so the object's own look stayed
+the grey it was made with and every face stated its material. What the Gui
+importer keeps is the view's: the `Render_*` properties.
+
+`Import.insert()` in `FreeCADCmd` used an importer that gathered the
+colours for the script and gave them to nothing; it gives them to the
+objects too.
+
+*Out.* `ExportOCAF2::objectColors()` and `objectAppearance()` are what the
+Gui exporter asks a view provider for, asked of the objects: a shape's
+faces and edges as the object draws them, and for a link or an `App::Part`
+what it lays over what it shows, through links to links and the elements
+of an array. `Import.export()` uses them for an object no colours were
+given for. The Gui exporter goes on asking the view providers, which
+answer the same from the same store and know a link that draws through a
+view provider of its own.
+
+Checks. Python `parttests.ElementAppearanceTest.ElementAppearanceFileTest`,
+2, in `FreeCADCmd`: a red box with one blue face and a green cylinder with
+blue edges written to a STEP file and read back, each object its colour
+and the face its own; a link's own look beside the colour of what it
+shows.

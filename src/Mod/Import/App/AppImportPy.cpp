@@ -328,7 +328,13 @@ private:
             auto getShapeColors = [partColor](App::DocumentObject* obj, const char* subname) {
                 std::map<std::string, App::Color> cols;
                 auto it = partColor.find(dynamic_cast<Part::Feature*>(obj));
-                if (it != partColor.end() && boost::starts_with(subname, "Face")) {
+                if (it == partColor.end()) {
+                    // No colours given for it: the object's own, which it
+                    // has with no view provider
+                    // (docs/ShapeAppearanceDesign.md sec 14.6.7)
+                    return Import::ExportOCAF2::objectColors(obj, subname);
+                }
+                if (boost::starts_with(subname, "Face")) {
                     const auto& colors = it->second;
                     std::string face("Face");
                     for (const auto& element : colors | boost::adaptors::indexed(1)) {
@@ -339,6 +345,16 @@ private:
             };
 
             Import::ExportOCAF2 ocaf(hDoc, getShapeColors);
+            ocaf.setGetShapeAppearance(
+                [partColor](App::DocumentObject* obj,
+                            std::vector<App::MaterialAppearance>& mats,
+                            bool& pbr) {
+                    // Colours given for it are all that is said of it
+                    if (partColor.count(dynamic_cast<Part::Feature*>(obj))) {
+                        return false;
+                    }
+                    return Import::ExportOCAF2::objectAppearance(obj, mats, pbr);
+                });
             if (!legacyExport || !ocaf.canFallback(objs)) {
                 ocaf.setExportOptions(ExportOCAF2::customExportOptions());
                 ocaf.setExportHiddenObject(exportHidden);

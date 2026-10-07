@@ -428,6 +428,80 @@ class ElementAppearanceLinkTest(unittest.TestCase):
         self.assertEqual(ea.keys(), ["Box.Face6"])
 
 
+class ElementAppearanceFileTest(unittest.TestCase):
+    """The looks through a STEP file, written and read with no view provider
+    (docs/ShapeAppearanceDesign.md sec 14.6.7)."""
+
+    def setUp(self):
+        try:
+            import Import  # noqa: F401
+        except ImportError:
+            self.skipTest("no Import module")
+        self.doc = App.newDocument("ElementAppearanceFile")
+        self.read = None
+
+    def tearDown(self):
+        App.closeDocument(self.doc.Name)
+        if self.read:
+            App.closeDocument(self.read.Name)
+
+    def through(self, objs, name):
+        import Import
+
+        path = os.path.join(tempfile.mkdtemp(prefix="fc-ea-"), name)
+        Import.export(objs, path)
+        self.read = App.newDocument("ElementAppearanceRead")
+        Import.insert(path, self.read.Name)
+        self.read.recompute()
+        return [o for o in self.read.Objects if o.isDerivedFrom("Part::Feature")]
+
+    def testAShapesColoursGoThroughAStepFile(self):
+        box = self.doc.addObject("Part::Box", "Box")
+        cyl = self.doc.addObject("Part::Cylinder", "Cyl")
+        cyl.Placement.Base = App.Vector(30, 0, 0)
+        self.doc.recompute()
+        box.ShapeColor = RED[:3]
+        faces = box.ShapeAppearance.copy()
+        faces.setSize(6)
+        faces[2] = material(BLUE)
+        box.ShapeAppearance = faces
+        cyl.ShapeColor = GREEN[:3]
+        cyl.LineColor = BLUE[:3]
+        parts = self.through([box, cyl], "shapes.step")
+        self.assertEqual(len(parts), 2)
+        looks = sorted(colors(p) for p in parts)
+        self.assertEqual(looks, sorted([sorted([RED[:3], BLUE[:3]]), [GREEN[:3]]]))
+        for part in parts:
+            if colors(part) == [GREEN[:3]]:
+                self.assertEqual(rgb(part.ShapeColor), GREEN[:3])
+                self.assertEqual(rgb(part.LineColor), BLUE[:3])
+            else:
+                # The object is red and one face of it is blue
+                self.assertEqual(rgb(part.ShapeColor), RED[:3])
+                self.assertEqual(len(part.ElementAppearance.keys()), 1)
+
+    def testWhatALinkLaysOverGoesThroughAStepFile(self):
+        box = self.doc.addObject("Part::Box", "Box")
+        link = self.doc.addObject("App::Link", "Link")
+        link.LinkedObject = box
+        link.Placement.Base = App.Vector(30, 0, 0)
+        self.doc.recompute()
+        box.ShapeColor = RED[:3]
+        link.OverrideMaterial = True
+        look = link.ShapeAppearance.Base
+        look.DiffuseColor = GREEN
+        link.ShapeAppearance.Base = look
+        self.through([box, link], "link.step")
+        seen = set()
+        for obj in self.read.Objects:
+            if obj.isDerivedFrom("Part::Feature"):
+                seen.add(rgb(obj.ShapeColor))
+            elif obj.isDerivedFrom("App::Link") and obj.OverrideMaterial:
+                seen.add(rgb(obj.ElementAppearance.Face.DiffuseColor))
+        self.assertIn(RED[:3], seen)
+        self.assertIn(GREEN[:3], seen)
+
+
 def face(obj, **at):
     """The face of the object whose bounding box is so, as the shape counts it."""
     for i, f in enumerate(obj.Shape.Faces):

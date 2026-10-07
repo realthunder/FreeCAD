@@ -54,6 +54,7 @@
 #include <App/DocumentObject.h>
 #include <App/GeoFeatureGroupExtension.h>
 #include <App/Link.h>
+#include <App/LinkAppearance.h>
 #include <Base/Console.h>
 #include <Base/Parameter.h>
 #include <Mod/Part/App/PartFeature.h>
@@ -828,4 +829,160 @@ bool ExportOCAF2::canFallback(std::vector<App::DocumentObject*> objs)
         }
     }
     return true;
+}
+
+// ----------------------------------------------------------------------------
+// The looks, asked of the objects (docs/ShapeAppearanceDesign.md sec 14.6.7)
+
+std::map<std::string, App::Color> ExportOCAF2::objectColors(App::DocumentObject* obj,
+                                                            const char* subname)
+{
+    using Store = App::PropertyElementAppearance;
+    using Looks = App::LinkAppearance;
+    std::map<std::string, App::Color> ret;
+    if (!obj || !subname || !obj->getNameInDocument()) {
+        return ret;
+    }
+    // Every element of a kind is all that is asked here
+    std::string wildcard(subname);
+    if (wildcard.empty() || wildcard.back() != '*') {
+        return ret;
+    }
+    wildcard.pop_back();
+    const bool hidden = wildcard == App::DocumentObject::hiddenMarker();
+    if (!hidden && wildcard != "Face" && wildcard != "Edge") {
+        return ret;
+    }
+
+    const Looks::Names names = Looks::namesOf(obj);
+    if (names.store) {
+        // A link, an App::Part: what it lays over what it shows, as
+        // ViewProviderLink::getElementColorsFrom() answers the same
+        const Store& store = *names.store;
+        std::vector<std::string> subs;
+        std::vector<App::Color> colors;
+        Looks::getColored(store, subs, colors);
+        for (std::size_t i = 0; i < subs.size(); ++i) {
+            auto pos = subs[i].rfind('.');
+            pos = pos == std::string::npos ? 0 : pos + 1;
+            const char* element = subs[i].c_str() + pos;
+            if (boost::starts_with(element, wildcard)) {
+                ret[subs[i]] = colors[i];
+            }
+            else if (!element[0] && wildcard == "Face") {
+                ret[subs[i].substr(0, pos) + wildcard] = colors[i];
+            }
+        }
+        bool overridden = false;
+        auto own = [](const Store& s) {
+            return App::AppearanceList::storedDiffuse(s.getBase(Store::Face));
+        };
+        if (!hidden && Looks::hasOverride(store)) {
+            ret.emplace(wildcard, own(store));
+            overridden = true;
+        }
+        // Links to links: each level's, the nearer one's first
+        App::DocumentObject* at = obj;
+        for (int depth = 0; depth < 100; ++depth) {
+            App::DocumentObject* linked = at->getLinkedObject(false);
+            if (!linked || linked == at) {
+                break;
+            }
+            const Looks::Names next = Looks::namesOf(linked);
+            if (!next.store || !linked->getExtensionByType<App::LinkBaseExtension>(true)) {
+                break;
+            }
+            if (!overridden && !hidden && Looks::hasOverride(*next.store)) {
+                ret.emplace(wildcard, own(*next.store));
+                overridden = true;
+            }
+            for (const auto& v : objectColors(linked, subname)) {
+                ret.insert(v);
+            }
+            at = linked;
+        }
+        if (!hidden) {
+            // The elements of an array that is not shown as objects
+            auto link = obj->getExtensionByType<App::LinkBaseExtension>(true);
+            if (link && link->getElementCountValue() && !link->getShowElementValue()) {
+                std::vector<App::MaterialAppearance> looks;
+                boost::dynamic_bitset<> given;
+                Looks::getArrayLooks(store, looks, given);
+                for (std::size_t i = 0; i < looks.size(); ++i) {
+                    if (given[i]) {
+                        ret.emplace(std::to_string(i) + "." + wildcard,
+                                    App::AppearanceList::storedDiffuse(looks[i]));
+                    }
+                }
+            }
+        }
+        return ret;
+    }
+
+    auto part = dynamic_cast<Part::Feature*>(obj);
+    if (!part || hidden) {
+        return ret;
+    }
+    // A shape: what the object draws, as ViewProviderPartExt::getElementColors()
+    // answers the same
+    const Store::Kind kind = wildcard == "Face" ? Store::Face : Store::Edge;
+    App::AppearanceList drawn;
+    if (!part->getDrawnAppearance(kind, drawn)) {
+        return ret;
+    }
+    App::Color color = App::AppearanceList::storedDiffuse(part->ElementAppearance.getBase(kind));
+    const float transparency = color.transparency();
+    const std::vector<App::Color> colors = drawn.getDiffuseColors();
+    bool single = true;
+    for (std::size_t i = 0; i < colors.size(); ++i) {
+        if (colors[i] != color) {
+            ret[wildcard + std::to_string(i + 1)] = colors[i];
+        }
+        single = single && colors[0] == colors[i];
+    }
+    if (!colors.empty() && single) {
+        color = colors[0];
+        if (kind == Store::Face) {
+            color.setTransparency(transparency);
+        }
+        ret.clear();
+    }
+    ret[wildcard] = color;
+    return ret;
+}
+
+bool ExportOCAF2::objectAppearance(App::DocumentObject* obj,
+                                   std::vector<App::MaterialAppearance>& mats,
+                                   bool& pbr)
+{
+    // Whole materials, only when the appearance says something the colour
+    // labels cannot: a field beyond diffuse varying across the faces, or a
+    // uniform emissive that is lit at all (no other export channel carries
+    // emissive) -- or the PBR mode at all, whose metallic and roughness
+    // have no colour-label channel.
+    auto part = dynamic_cast<Part::Feature*>(obj);
+    if (!part || App::LinkAppearance::storeOf(obj)) {
+        return false;
+    }
+    App::AppearanceList drawn;
+    if (!part->getDrawnAppearance(App::PropertyElementAppearance::Face, drawn)
+        || drawn.getSize() == 0) {
+        return false;
+    }
+    pbr = drawn.isPBR();
+    if (!pbr) {
+        const App::Color e = drawn.getEmissiveColor(0);
+        const bool emissive = e.r > 0.004F || e.g > 0.004F || e.b > 0.004F;
+        if (drawn.variesOnlyInDiffuse() && !emissive) {
+            return false;
+        }
+    }
+    const int count = drawn.getSize();
+    mats.reserve(static_cast<std::size_t>(count));
+    for (int i = 0; i < count; ++i) {
+        // Raw slots either way; a PBR list's conversion happens at the
+        // writer, which needs both readings.
+        mats.push_back(drawn.getMaterial(i));
+    }
+    return !mats.empty();
 }

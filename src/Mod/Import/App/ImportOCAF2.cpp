@@ -37,6 +37,9 @@
 # include <TDF_Label.hxx>
 # include <TDF_LabelSequence.hxx>
 # include <TDF_Tool.hxx>
+# include <BRepGProp.hxx>
+# include <GProp_GProps.hxx>
+# include <Standard_Failure.hxx>
 # include <TopExp.hxx>
 # include <TopExp_Explorer.hxx>
 # include <TopoDS_Compound.hxx>
@@ -51,6 +54,7 @@
 #endif
 
 #include <algorithm>
+#include <cmath>
 
 #include <boost/algorithm/string.hpp>
 #include <boost/range/algorithm/replace_if.hpp>
@@ -63,6 +67,7 @@
 #include <App/DocumentObserver.h>
 #include <App/GroupExtension.h>
 #include <App/Link.h>
+#include <App/LinkAppearance.h>
 #include <App/Part.h>
 #include <Base/Console.h>
 #include <Base/Base64.h>
@@ -2501,5 +2506,154 @@ ImportOCAFExt::ImportOCAFExt(Handle(TDocStd_Document) hStdDoc,
 void ImportOCAFExt::applyFaceColors(Part::Feature* part, const std::vector<App::Color>& colors)
 {
     partColors[part] = colors;
+    ImportOCAF2::applyFaceColors(part, colors);
+}
+
+// ----------------------------------------------------------------------------
+// What a file says of looks, given to the objects
+// (docs/ShapeAppearanceDesign.md sec 14.6.7)
+
+void ImportOCAF2::applyFaceColors(Part::Feature* part, const std::vector<App::Color>& colors)
+{
+    if (!part || colors.empty()) {
+        return;
+    }
+    if (colors.size() == 1) {
+        part->ShapeColor.setValue(colors.front());
+        // The alpha component is an opacity (Base/Color.h), and Transparency
+        // is a percentage of the other kind: an opaque STEP colour used to
+        // import as Transparency 100 -- a fully transparent part.
+        part->Transparency.setValue(std::lround(100 * colors.front().transparency()));
+    }
+    else {
+        // Each face what it says, held by its number: an import's faces
+        // have no names
+        part->ShapeAppearance.setDiffuseColors(colors);
+    }
+}
+
+void ImportOCAF2::applyEdgeColors(Part::Feature* part, const std::vector<App::Color>& colors)
+{
+    if (!part || colors.empty()) {
+        return;
+    }
+    if (colors.size() == 1) {
+        part->LineColor.setValue(colors.front());
+    }
+    else {
+        part->writeColors(App::PropertyElementAppearance::Edge, colors);
+    }
+}
+
+void ImportOCAF2::applyFaceMaterials(Part::Feature* part,
+                                     const std::vector<App::MaterialAppearance>& mats,
+                                     bool pbr)
+{
+    if (!part || mats.empty()) {
+        return;
+    }
+    using Store = App::PropertyElementAppearance;
+    Store& store = part->ElementAppearance;
+    Store::Edit edit(store);
+    App::AppearanceList own;
+    own.setPBR(pbr);
+    // A uniform list is the object's own look and no face's
+    if (std::all_of(mats.begin() + 1, mats.end(), [&](const App::MaterialAppearance& m) {
+            return m == mats[0];
+        })) {
+        own.setValue(mats[0]);
+        store.setBaseList(Store::Face, own);
+        store.setNumbered(Store::Face, App::AppearanceList());
+        return;
+    }
+    App::AppearanceList list;
+    list.setPBR(pbr);
+    list.setValues(mats);
+    // Which of those materials the object IS, decided here where the shape
+    // is in hand: an imported list states one per face and nothing about
+    // the body colour (docs/ShapeAppearanceDesign.md 12.4). Area, not
+    // count: a green board with five hundred gold pads is decided the
+    // wrong way by count.
+    std::vector<double> areas;
+    try {
+        for (TopExp_Explorer it(part->Shape.getValue(), TopAbs_FACE); it.More(); it.Next()) {
+            GProp_GProps props;
+            BRepGProp::SurfaceProperties(it.Current(), props);
+            areas.push_back(props.Mass());
+        }
+    }
+    catch (const Standard_Failure&) {
+        // A face OCCT cannot measure is not a reason to lose the whole
+        // heuristic; the entry count decides instead
+        areas.clear();
+    }
+    if (static_cast<int>(areas.size()) == list.getSize()) {
+        list.deriveBase(nullptr, &areas);
+    }
+    else {
+        list.deriveBase();
+    }
+    own.setValue(list.getBase());
+    store.setBaseList(Store::Face, own);
+    // The faces by number, which is what an import has: one that is the
+    // object's own look states nothing
+    store.setNumbered(Store::Face, list);
+}
+
+void ImportOCAF2::applyLinkColor(App::DocumentObject* obj, int index, App::Color color)
+{
+    if (!obj || !obj->getExtensionByType<App::LinkBaseExtension>(true)) {
+        return;
+    }
+    using Looks = App::LinkAppearance;
+    const Looks::Names names = Looks::namesOf(obj);
+    if (!names.store) {
+        return;
+    }
+    if (index < 0) {
+        if (names.overrideMaterial && names.shapeAppearance) {
+            names.overrideMaterial->setValue(true);
+            names.shapeAppearance->setDiffuseColor(color);
+        }
+        return;
+    }
+    std::vector<App::MaterialAppearance> looks;
+    boost::dynamic_bitset<> given;
+    Looks::getArrayLooks(*names.store, looks, given);
+    const auto at = static_cast<std::size_t>(index);
+    App::MaterialAppearance mat(App::MaterialAppearance::DEFAULT);
+    if (looks.size() <= at) {
+        looks.resize(at + 1, mat);
+        given.resize(at + 1, false);
+    }
+    mat.diffuseColor = color;
+    looks[at] = mat;
+    given[at] = true;
+    Looks::setArrayLooks(*names.store, looks, given);
+}
+
+void ImportOCAF2::applyRenderMaterial(Part::Feature* part, const RenderMaterial& mat)
+{
+    if (!part || !mat.valid) {
+        return;
+    }
+    // applyFaceMaterials has normally put the exact per-face factors on
+    // the appearance already, and a whole-object value must not flatten
+    // them -- so this is the fallback for a shape whose faces did NOT all
+    // resolve to a PBR material, where the appearance is still Phong and
+    // these two are the only PBR data the file gave us.
+    App::PropertyAppearanceList& looks = part->ShapeAppearance;
+    if (!looks.isPBR() && (mat.metallic >= 0.0 || mat.roughness >= 0.0)) {
+        // convertPBR rather than setPBR: it carries the Phong reading's
+        // look across the mode change instead of re-reading the same
+        // slots as PBR values, which would restate colour as metalness.
+        looks.convertPBR(true);
+        if (mat.metallic >= 0.0) {
+            looks.setMetallic(float(mat.metallic));
+        }
+        if (mat.roughness >= 0.0) {
+            looks.setRoughness(float(mat.roughness));
+        }
+    }
 }
 
