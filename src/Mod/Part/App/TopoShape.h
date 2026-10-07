@@ -2112,6 +2112,11 @@ public:
          * beside it, and cannot be given a setback of its own.
          */
         std::vector<std::pair<TopoDS_Shape, double>> edges;
+        /** Skip, with a warning, what cannot be placed -- the vertex ends no
+         * fillet, an edge is not filleted or its fillet does not end at the
+         * vertex -- instead of throwing
+         */
+        bool optional = false;
     };
     typedef std::vector<FilletCorner> FilletCorners;
 

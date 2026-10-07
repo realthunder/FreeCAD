@@ -37,6 +37,8 @@
 #include <App/DocumentObject.h>
 #include <App/ObjectIdentifier.h>
 
+#include <boost/algorithm/string/predicate.hpp>
+
 #include "PropertyDressUp.h"
 
 using namespace Part;
@@ -481,6 +483,444 @@ bool PropertyFilletSegments::isSame(const Property &other) const
     if (!other.isDerivedFrom(getClassTypeId()))
         return false;
     return segmentsMap == static_cast<const PropertyFilletSegments&>(other).segmentsMap;
+}
+
+// -------------------------------------------------------------------------
+
+TYPESYSTEM_SOURCE(Part::PropertyFilletCorners , App::Property)
+
+namespace {
+
+typedef PropertyFilletCorners::Corner FilletCorner;
+
+// A setback from Python: a number, or a quantity taken in mm
+double setbackFromPy(const Py::Object &value)
+{
+    if (PyObject_TypeCheck(value.ptr(), &Base::QuantityPy::Type))
+        return static_cast<Base::QuantityPy*>(value.ptr())->getQuantityPtr()->getValue();
+    return static_cast<double>(Py::Float(value));
+}
+
+Py::Object setbackToPy(double setback)
+{
+    return Py::asObject(new Base::QuantityPy(new Base::Quantity(setback, Base::Unit::Length)));
+}
+
+// The edge setbacks of a corner from Python: {edge: setback} or a sequence of
+// (edge, setback)
+void edgesFromPy(const Py::Object &value, FilletCorner &corner)
+{
+    if (PyDict_Check(value.ptr())) {
+        PyObject *key, *item;
+        Py_ssize_t pos = 0;
+        while (PyDict_Next(value.ptr(), &pos, &key, &item))
+            corner.edges[Py::String(key).as_std_string()] = setbackFromPy(Py::Object(item));
+        return;
+    }
+    Py::Sequence seq(value);
+    for (int i=0; i<seq.size(); ++i) {
+        Py::Sequence pair(seq[i]);
+        if (pair.size() != 2)
+            throw Py::TypeError("expect a pair of (edge, setback)");
+        corner.edges[Py::String(pair[0]).as_std_string()] = setbackFromPy(pair[1]);
+    }
+}
+
+// A corner from Python: a setback, its edge setbacks, or (setback, edge setbacks)
+FilletCorner cornerFromPy(const Py::Object &value)
+{
+    FilletCorner corner;
+    if (PyDict_Check(value.ptr()))
+        edgesFromPy(value, corner);
+    else if (PySequence_Check(value.ptr()) && !PyUnicode_Check(value.ptr())) {
+        Py::Sequence seq(value);
+        if (seq.size() == 2 && PyNumber_Check(Py::Object(seq[0]).ptr())) {
+            corner.setback = setbackFromPy(seq[0]);
+            edgesFromPy(seq[1], corner);
+        }
+        else
+            edgesFromPy(value, corner);
+    }
+    else
+        corner.setback = setbackFromPy(value);
+    return corner;
+}
+
+Py::Object cornerToPy(const FilletCorner &corner)
+{
+    Py::Dict edges;
+    for (const auto &v : corner.edges)
+        edges.setItem(v.first, Py::Float(v.second));
+    return Py::TupleN(Py::Float(corner.setback), edges);
+}
+
+} // anonymous namespace
+
+PropertyFilletCorners::PropertyFilletCorners()
+{
+}
+
+PropertyFilletCorners::~PropertyFilletCorners()
+{
+}
+
+void PropertyFilletCorners::setValue(std::map<std::string, Corner> &&values)
+{
+    aboutToSetValue();
+    cornerMap = std::move(values);
+    hasSetValue();
+}
+
+void PropertyFilletCorners::setValue(const std::map<std::string, Corner> &values)
+{
+    aboutToSetValue();
+    cornerMap = values;
+    hasSetValue();
+}
+
+void PropertyFilletCorners::setValue(const std::string &vertex, const Corner &corner)
+{
+    auto it = cornerMap.find(vertex);
+    if (it != cornerMap.end() && it->second == corner)
+        return;
+    aboutToSetValue();
+    cornerMap[vertex] = corner;
+    hasSetValue();
+}
+
+void PropertyFilletCorners::setValue(const std::string &vertex, double setback)
+{
+    auto it = cornerMap.find(vertex);
+    if (it != cornerMap.end() && it->second.setback == setback)
+        return;
+    aboutToSetValue();
+    cornerMap[vertex].setback = setback;
+    hasSetValue();
+}
+
+void PropertyFilletCorners::setValue(const std::string &vertex, const std::string &edge, double setback)
+{
+    auto it = cornerMap.find(vertex);
+    if (it != cornerMap.end()) {
+        auto iter = it->second.edges.find(edge);
+        if (iter != it->second.edges.end() && iter->second == setback)
+            return;
+    }
+    aboutToSetValue();
+    cornerMap[vertex].edges[edge] = setback;
+    hasSetValue();
+}
+
+void PropertyFilletCorners::removeValue(const std::string &vertex)
+{
+    auto it = cornerMap.find(vertex);
+    if (it == cornerMap.end())
+        return;
+    aboutToSetValue();
+    cornerMap.erase(it);
+    hasSetValue();
+}
+
+void PropertyFilletCorners::removeValue(const std::string &vertex, const std::string &edge)
+{
+    auto it = cornerMap.find(vertex);
+    if (it == cornerMap.end())
+        return;
+    auto iter = it->second.edges.find(edge);
+    if (iter == it->second.edges.end())
+        return;
+    aboutToSetValue();
+    it->second.edges.erase(iter);
+    hasSetValue();
+}
+
+const PropertyFilletCorners::Corner *PropertyFilletCorners::getValue(const std::string &vertex) const
+{
+    auto it = cornerMap.find(vertex);
+    if (it == cornerMap.end())
+        return nullptr;
+    return &it->second;
+}
+
+const std::map<std::string, PropertyFilletCorners::Corner> &PropertyFilletCorners::getValue() const
+{
+    return cornerMap;
+}
+
+void PropertyFilletCorners::connectLinkProperty(App::PropertyLinkSub &links)
+{
+    connChanged = links.signalChanged.connect(
+        [this](const App::Property &prop) {
+            // old name -> new name
+            std::map<std::string, std::string> renamed;
+            for (const auto &v : referenceUpdates)
+                renamed[v.second] = v.first;
+            referenceUpdates.clear();
+            auto rename = [&](const std::string &name) -> const std::string & {
+                auto it = renamed.find(name);
+                return it == renamed.end() ? name : it->second;
+            };
+            auto subs = static_cast<const App::PropertyLinkSub&>(prop).getSubValues(false);
+            std::set<std::string> subSet(subs.begin(), subs.end());
+
+            std::map<std::string, Corner> value;
+            std::map<App::ObjectIdentifier, App::ObjectIdentifier> renames;
+            for (const auto &v : cornerMap) {
+                const auto &vertex = rename(v.first);
+                // dropped with its vertex from the link
+                if (!subSet.count(vertex))
+                    continue;
+                auto &corner = value[vertex];
+                corner.setback = v.second.setback;
+                App::ObjectIdentifier path(*this);
+                path << App::ObjectIdentifier::SimpleComponent(v.first);
+                App::ObjectIdentifier pathNew(*this);
+                pathNew << App::ObjectIdentifier::SimpleComponent(vertex);
+                if (vertex != v.first) {
+                    renames.emplace(path, pathNew);
+                    renames.emplace(App::ObjectIdentifier(path) << App::ObjectIdentifier::SimpleComponent("Setback"),
+                                    App::ObjectIdentifier(pathNew) << App::ObjectIdentifier::SimpleComponent("Setback"));
+                }
+                for (const auto &e : v.second.edges) {
+                    const auto &edge = rename(e.first);
+                    corner.edges[edge] = e.second;
+                    if (vertex != v.first || edge != e.first)
+                        renames.emplace(App::ObjectIdentifier(path) << App::ObjectIdentifier::SimpleComponent(e.first),
+                                        App::ObjectIdentifier(pathNew) << App::ObjectIdentifier::SimpleComponent(edge));
+                }
+            }
+            if (value != cornerMap)
+                setValue(std::move(value));
+            auto obj = Base::freecad_dynamic_cast<App::DocumentObject>(getContainer());
+            if (obj && !renames.empty()) {
+                obj->ExpressionEngine.renameExpressions(renames);
+                for (auto doc : App::GetApplication().getDocuments())
+                    doc->renameObjectIdentifiers(renames);
+            }
+        });
+
+    connUpdateReference = links.signalUpdateElementReference.connect(
+        [this](const std::string &sub, const std::string &newSub) {
+            referenceUpdates.emplace(newSub, sub);
+        });
+}
+
+PyObject *PropertyFilletCorners::getPyObject(void)
+{
+    Py::Dict dict;
+    for (const auto &v : cornerMap)
+        dict.setItem(v.first, cornerToPy(v.second));
+    return Py::new_reference_to(dict);
+}
+
+void PropertyFilletCorners::setPyObject(PyObject *pyobj)
+{
+    const char *msg = "Expect the input to be a dict, or a sequence of pairs, from a vertex name"
+                      " to a setback, {edge name: setback}, or (setback, {edge name: setback})";
+    try {
+        std::map<std::string, Corner> value;
+        if (PyDict_Check(pyobj)) {
+            PyObject *key, *item;
+            Py_ssize_t pos = 0;
+            while (PyDict_Next(pyobj, &pos, &key, &item))
+                value[Py::String(key).as_std_string()] = cornerFromPy(Py::Object(item));
+        }
+        else {
+            Py::Sequence seq(pyobj);
+            for (int i=0; i<seq.size(); ++i) {
+                Py::Sequence item(seq[i]);
+                if (item.size() != 2)
+                    THROWM(Base::TypeError, msg)
+                value[Py::String(item[0]).as_std_string()] = cornerFromPy(item[1]);
+            }
+        }
+        if (value != cornerMap)
+            setValue(std::move(value));
+    } catch (Py::Exception &e) {
+        e.clear();
+        THROWM(Base::TypeError, msg)
+    }
+}
+
+void PropertyFilletCorners::Save(Base::Writer &writer) const
+{
+    if (cornerMap.empty()) {
+        writer.Stream() << writer.ind() << "<FilletCorners/>\n";
+        return;
+    }
+
+    writer.Stream() << writer.ind() << "<FilletCorners count=\"" << cornerMap.size() << "\">\n";
+    writer.incInd();
+    for (const auto &v : cornerMap) {
+        const auto &corner = v.second;
+        writer.Stream() << writer.ind() << "<Corner id=\"" << encodeAttribute(v.first)
+                        << "\" setback=\"" << corner.setback;
+        if (corner.edges.empty()) {
+            writer.Stream() << "\"/>\n";
+            continue;
+        }
+        writer.Stream() << "\" count=\"" << corner.edges.size() << "\">\n";
+        writer.incInd();
+        for (const auto &e : corner.edges)
+            writer.Stream() << writer.ind() << "<Edge id=\"" << encodeAttribute(e.first)
+                            << "\" setback=\"" << e.second << "\"/>\n";
+        writer.decInd();
+        writer.Stream() << writer.ind() << "</Corner>\n";
+    }
+    writer.decInd();
+    writer.Stream() << writer.ind() << "</FilletCorners>\n";
+}
+
+void PropertyFilletCorners::Restore(Base::XMLReader &reader)
+{
+    reader.readElement("FilletCorners");
+    unsigned count = reader.getAttributeAsUnsigned("count", "0");
+    std::map<std::string, Corner> value;
+    for (unsigned i=0; i<count; ++i) {
+        reader.readElement("Corner");
+        Corner corner;
+        std::string id = reader.getAttribute("id");
+        corner.setback = reader.getAttributeAsFloat("setback", "-1");
+        unsigned ecount = reader.getAttributeAsUnsigned("count", "0");
+        for (unsigned j=0; j<ecount; ++j) {
+            reader.readElement("Edge");
+            std::string edge = reader.getAttribute("id");
+            corner.edges[edge] = reader.getAttributeAsFloat("setback");
+        }
+        reader.readEndElement("Corner");
+        if (!id.empty())
+            value[id] = std::move(corner);
+    }
+    reader.readEndElement("FilletCorners");
+    setValue(std::move(value));
+}
+
+void PropertyFilletCorners::getPaths(std::vector<App::ObjectIdentifier> &paths) const
+{
+    for (const auto &v : cornerMap) {
+        App::ObjectIdentifier path(*this);
+        path << App::ObjectIdentifier::SimpleComponent(v.first);
+        paths.push_back(App::ObjectIdentifier(path) << App::ObjectIdentifier::SimpleComponent("Setback"));
+        for (const auto &e : v.second.edges)
+            paths.push_back(App::ObjectIdentifier(path) << App::ObjectIdentifier::SimpleComponent(e.first));
+    }
+}
+
+bool PropertyFilletCorners::setPyPathValue(const App::ObjectIdentifier &path, const Py::Object &value)
+{
+    if (path.numSubComponents() < 2
+            || path.numSubComponents() > 3
+            || path.getPropertyComponent(0).getName() != getName())
+        FC_THROWM(Base::ValueError, "invalid path " << path.toString());
+
+    const App::ObjectIdentifier::Component &c1 = path.getPropertyComponent(1);
+    if (!c1.isSimple())
+        FC_THROWM(Base::ValueError, "invalid path " << path.toString());
+    const std::string &vertex = c1.getName();
+
+    try {
+        if (path.numSubComponents() == 2) {
+            if (value.isNone())
+                removeValue(vertex);
+            else
+                setValue(vertex, cornerFromPy(value));
+            return true;
+        }
+        const App::ObjectIdentifier::Component &c2 = path.getPropertyComponent(2);
+        if (!c2.isSimple())
+            FC_THROWM(Base::ValueError, "invalid path " << path.toString());
+        const std::string &name = c2.getName();
+        if (name == "Setback")
+            setValue(vertex, value.isNone() ? -1.0 : setbackFromPy(value));
+        else if (boost::starts_with(name, "Edge")) {
+            if (value.isNone())
+                removeValue(vertex, name);
+            else
+                setValue(vertex, name, setbackFromPy(value));
+        }
+        else
+            FC_THROWM(Base::ValueError, "invalid path " << path.toString());
+    } catch (Py::Exception &e) {
+        e.clear();
+        FC_THROWM(Base::TypeError, "invalid value for " << path.toString());
+    }
+    return true;
+}
+
+bool PropertyFilletCorners::getPyPathValue(const App::ObjectIdentifier &path, Py::Object &res) const
+{
+    auto components = path.getPropertyComponents(1);
+    if (components.size() < 1 || components.size() > 2)
+        return false;
+
+    const App::ObjectIdentifier::Component &c1 = components[0];
+    if (!c1.isSimple())
+        return false;
+    const Corner *corner = getValue(c1.getName());
+    if (!corner)
+        return false;
+
+    if (components.size() == 1) {
+        res = cornerToPy(*corner);
+        return true;
+    }
+
+    const App::ObjectIdentifier::Component &c2 = components[1];
+    if (!c2.isSimple())
+        return false;
+    if (c2.getName() == "Setback") {
+        res = setbackToPy(corner->setback);
+        return true;
+    }
+    auto it = corner->edges.find(c2.getName());
+    if (it == corner->edges.end())
+        return false;
+    res = setbackToPy(it->second);
+    return true;
+}
+
+void PropertyFilletCorners::setPathValue(const App::ObjectIdentifier &path, const App::any &value)
+{
+    Base::PyGILStateLocker lock;
+    setPyPathValue(path, pyObjectFromAny(value));
+}
+
+App::any PropertyFilletCorners::getPathValue(const App::ObjectIdentifier &path) const
+{
+    Base::PyGILStateLocker lock;
+    Py::Object pyObj;
+    if (!getPyPathValue(path, pyObj))
+        return App::any();
+    return App::pyObjectToAny(pyObj);
+}
+
+App::Property *PropertyFilletCorners::Copy() const
+{
+    PropertyFilletCorners *p = new PropertyFilletCorners();
+    p->cornerMap = cornerMap;
+    return p;
+}
+
+void PropertyFilletCorners::Paste(const Property &from)
+{
+    setValue(dynamic_cast<const PropertyFilletCorners&>(from).cornerMap);
+}
+
+unsigned int PropertyFilletCorners::getMemSize() const
+{
+    unsigned int size = 0;
+    for (const auto &v : cornerMap)
+        size += sizeof(Corner) + v.first.size() + v.second.edges.size() * (sizeof(double) + 8);
+    return size;
+}
+
+bool PropertyFilletCorners::isSame(const Property &other) const
+{
+    if (this == &other)
+        return true;
+    if (!other.isDerivedFrom(getClassTypeId()))
+        return false;
+    return cornerMap == static_cast<const PropertyFilletCorners&>(other).cornerMap;
 }
 
 // -------------------------------------------------------------------------

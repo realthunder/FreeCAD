@@ -447,6 +447,7 @@ PyMOD_INIT_FUNC(Part)
     Part::PropertyShapeHistory  ::init();
     Part::PropertyFilletEdges   ::init();
     Part::PropertyFilletSegments::init();
+    Part::PropertyFilletCorners::init();
     Part::PropertyChamferEdges  ::init();
     Part::PropertyShapeCache    ::init();
     Part::PropertyTopoShapeList ::init();

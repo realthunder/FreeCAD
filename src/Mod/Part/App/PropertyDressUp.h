@@ -84,6 +84,83 @@ protected:
 };
 
 
+/** A property class to store fillet setback corners (docs/CornerBlending.md),
+ * keyed by vertex sub-name. Path values: Corners.Vertex7 for the whole
+ * corner, Corners.Vertex7.Setback and Corners.Vertex7.Edge3.
+ */
+class PartExport PropertyFilletCorners : public App::Property
+                                       , private App::AtomicPropertyChangeInterface<PropertyFilletCorners>
+{
+    TYPESYSTEM_HEADER_WITH_OVERRIDE();
+
+    friend class AtomicPropertyChange;
+public:
+    PropertyFilletCorners();
+    ~PropertyFilletCorners();
+
+    /// The setbacks at one vertex. @sa TopoShape::FilletCorner
+    struct Corner {
+        /// The setback of every fillet ending at the vertex, less than 0 for none
+        double setback = -1.0;
+        /// The setbacks of single fillets by edge sub-name, over 'setback'
+        std::map<std::string, double> edges;
+
+        bool operator==(const Corner &other) const {
+            return setback == other.setback && edges == other.edges;
+        }
+        bool operator!=(const Corner &other) const {
+            return !(*this == other);
+        }
+    };
+
+    void setValue(std::map<std::string, Corner> &&v);
+    void setValue(const std::map<std::string, Corner> &v={});
+    void setValue(const std::string &vertex, const Corner &corner);
+    /// Sets the setback of every fillet at the vertex
+    void setValue(const std::string &vertex, double setback);
+    /// Sets the setback of the fillet of one edge at the vertex
+    void setValue(const std::string &vertex, const std::string &edge, double setback);
+    void removeValue(const std::string &vertex);
+    void removeValue(const std::string &vertex, const std::string &edge);
+
+    /// The corner at the vertex, null if none
+    const Corner *getValue(const std::string &vertex) const;
+    const std::map<std::string, Corner> &getValue() const;
+
+    /** Follows the vertex and edge names as the link's sub-names change; a
+     * corner is dropped with its vertex from the link
+     */
+    void connectLinkProperty(App::PropertyLinkSub &);
+
+    virtual PyObject *getPyObject(void) override;
+    virtual void setPyObject(PyObject *) override;
+
+    virtual void Save (Base::Writer &writer) const override;
+    virtual void Restore(Base::XMLReader &reader) override;
+
+    virtual Property *Copy(void) const override;
+    virtual void Paste(const Property &from) override;
+
+    virtual bool getPyPathValue(const App::ObjectIdentifier &path, Py::Object &res) const override;
+    virtual void getPaths(std::vector<App::ObjectIdentifier> &paths) const override;
+
+    virtual bool setPyPathValue(const App::ObjectIdentifier & path, const Py::Object &value) override;
+
+    virtual void setPathValue(const App::ObjectIdentifier &path, const App::any &value) override;
+    virtual App::any getPathValue(const App::ObjectIdentifier &path) const override;
+
+    virtual unsigned int getMemSize (void) const override;
+
+    virtual bool isSame(const Property &other) const override;
+
+protected:
+    std::map<std::string, Corner> cornerMap;
+    std::map<std::string, std::string> referenceUpdates;
+    fastsignals::scoped_connection connUpdateReference;
+    fastsignals::scoped_connection connChanged;
+};
+
+
 /// A property class to store edge chamfer information
 class PartExport PropertyChamferEdges : public App::Property
                                       , private App::AtomicPropertyChangeInterface<PropertyChamferEdges>

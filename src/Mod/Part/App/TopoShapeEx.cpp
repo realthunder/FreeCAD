@@ -5093,8 +5093,13 @@ void setFilletCorners(BRepFilletAPI_MakeFillet &mkFillet,
         int vindex = shape.findShape(vertex);
         if (!vindex)
             FC_THROWM(Base::CADKernelError, "fillet corner vertex does not belong to the shape");
-        if (!filletEndsAt(mkFillet, vertex))
+        if (!filletEndsAt(mkFillet, vertex)) {
+            if (corner.optional) {
+                FC_WARN("fillet corner Vertex" << vindex << " skipped: no fillet ends there");
+                continue;
+            }
             FC_THROWM(Base::CADKernelError, "no fillet ends at corner Vertex" << vindex);
+        }
         if (corner.setback >= 0.0)
             setSetback(mkFillet, TopoDS::Vertex(vertex), nullptr, corner.setback);
         for (const auto &v : corner.edges) {
@@ -5107,12 +5112,18 @@ void setFilletCorners(BRepFilletAPI_MakeFillet &mkFillet,
             if (!eindex)
                 FC_THROWM(Base::CADKernelError, "fillet corner edge does not belong to the shape");
             const TopoDS_Edge &edge = TopoDS::Edge(shapeEdge);
+            std::ostringstream error;
             if (!mkFillet.Contour(edge))
-                FC_THROWM(Base::CADKernelError, "fillet corner Vertex" << vindex
-                        << ": Edge" << eindex << " is not filleted");
-            if (!filletEndsAt(mkFillet, vertex, &edge))
-                FC_THROWM(Base::CADKernelError, "fillet corner Vertex" << vindex
-                        << ": the fillet of Edge" << eindex << " does not end there");
+                error << "Edge" << eindex << " is not filleted";
+            else if (!filletEndsAt(mkFillet, vertex, &edge))
+                error << "the fillet of Edge" << eindex << " does not end there";
+            if (!error.str().empty()) {
+                if (!corner.optional)
+                    FC_THROWM(Base::CADKernelError, "fillet corner Vertex" << vindex
+                            << ": " << error.str());
+                FC_WARN("fillet corner Vertex" << vindex << ": " << error.str() << ", skipped");
+                continue;
+            }
             setSetback(mkFillet, TopoDS::Vertex(vertex), &edge, v.second);
         }
     }
