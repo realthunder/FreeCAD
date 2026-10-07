@@ -6450,7 +6450,7 @@ void ViewProviderPartExt::updateVisual()
     // sequence bumped, so an early exit here leaves the same state
     // every other early exit does.
     if (preMeshEnabled() && !cachedShape.getShape().IsNull()
-            && preMeshInFlight(cachedShape.getShape().TShape().get())) {
+            && preMeshInFlight(cachedShape.getShape())) {
         // ...unless there is no drain to park it TO. A load with
         // ProgressiveLoad off builds inside the restore, and parking
         // there would hand the open back with the document still
@@ -6466,7 +6466,7 @@ void ViewProviderPartExt::updateVisual()
         const bool parks = Gui::RenderParams::getProgressiveLoad()
             && !testStatus(Gui::SecondaryView);
         if (parks
-                || !waitPreMesh(cachedShape.getShape().TShape().get(), 120.0)) {
+                || !waitPreMesh(cachedShape.getShape(), 120.0)) {
             VisualTouched = true;
             if (auto obj = getObject()) {
                 if (auto doc = obj->getDocument())
@@ -8353,6 +8353,15 @@ ViewProviderPartExt::_getBoundingBox(const char *subname,
                     if (transform && !shape.Location().IsIdentity())
                         bounds = bounds.Transformed(
                             shape.Location().Transformation());
+                }
+                // No claim of its own, but made of faces a worker is
+                // still writing -- a compound over claimed shapes, a
+                // boolean's result: there is no box measured for it, and
+                // measuring reads those faces. The answer waits for the
+                // workers, which is the rest of a batch at most, and is
+                // none at all if they never finish.
+                else if (preMeshInFlight(shape) && !waitPreMesh(shape, 120.0)) {
+                    return Base::BoundBox3d();
                 }
                 else {
                     if (!transform)

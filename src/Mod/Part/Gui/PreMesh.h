@@ -90,7 +90,23 @@ PartGuiExport void submitPreMesh(std::vector<PreMeshItem> &&items);
 
 /// Is a pre-mesh of \a tshape still running? A build must leave the
 /// shape alone while it is.
+///
+/// This asks about a claim's own shape. A build asks the other one: a
+/// shape that was never in a batch can be made of the faces of one that
+/// is.
 PartGuiExport bool preMeshInFlight(const void *tshape);
+
+/// Is \a shape, or any face or edge it is made of, still being meshed?
+/// What a build asks, and anything else that is about to read or mesh a
+/// shape: the mesher writes into faces and edges, and a compound over
+/// claimed shapes, a boolean's result, a shell of their faces is made of
+/// faces a worker owns without being claimed itself. Costs nothing when
+/// no batch runs.
+PartGuiExport bool preMeshInFlight(const TopoDS_Shape &shape);
+
+/// Block until nothing \a shape is made of is still being meshed, at
+/// most \a seconds; false on the timeout.
+PartGuiExport bool waitPreMesh(const TopoDS_Shape &shape, double seconds);
 
 /// Block until \a tshape's pre-mesh has published, at most \a seconds.
 /// True once the shape is safe to read, false on the timeout -- where

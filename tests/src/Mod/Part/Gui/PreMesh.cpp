@@ -20,13 +20,16 @@
 #include <vector>
 
 #include <BRepBndLib.hxx>
+#include <BRepPrimAPI_MakeBox.hxx>
 #include <BRepPrimAPI_MakeSphere.hxx>
+#include <BRep_Builder.hxx>
 #include <BRep_Tool.hxx>
 #include <Bnd_Box.hxx>
 #include <Poly_Triangulation.hxx>
 #include <TopExp_Explorer.hxx>
 #include <TopLoc_Location.hxx>
 #include <TopoDS.hxx>
+#include <TopoDS_Compound.hxx>
 #include <TopoDS_Shape.hxx>
 
 #include <Mod/Part/Gui/PreMesh.h>
@@ -236,4 +239,57 @@ TEST_F(PreMeshTest, aStopWaitsForTheWorkersAndStartsNoOtherShape)
     EXPECT_TRUE(meshed(item.shape));
     ASSERT_TRUE(batchCounted(1, 30.0));
     EXPECT_EQ(stats().meshed, 1U);
+}
+
+TEST_F(PreMeshTest, aShapeMadeOfAClaimedOnesFacesIsInFlightToo)
+{
+    PartGui::PreMeshItem item = slowItem();
+    // What a compound feature over that object holds, and a boolean's
+    // result where it keeps the object's faces: another shape, never in
+    // the batch, made of faces that are
+    TopoDS_Compound compound;
+    BRep_Builder builder;
+    builder.MakeCompound(compound);
+    builder.Add(compound, item.shape);
+    builder.Add(compound, BRepPrimAPI_MakeBox(10.0, 10.0, 10.0).Shape());
+    TopExp_Explorer xp(item.shape, TopAbs_FACE);
+    const TopoDS_Shape face = xp.Current();
+    const TopoDS_Shape apart = BRepPrimAPI_MakeBox(5.0, 5.0, 5.0).Shape();
+    EXPECT_FALSE(PartGui::preMeshInFlight(compound));
+
+    PartGui::submitPreMesh(batchOf(item));
+    ASSERT_TRUE(PartGui::preMeshInFlight(keyOf(item))) << "meshed before it could be asked about";
+
+    // Not claimed itself...
+    EXPECT_FALSE(PartGui::preMeshInFlight(compound.TShape().get()));
+    // ...and not to be read or meshed all the same
+    EXPECT_TRUE(PartGui::preMeshInFlight(compound))
+        << "a compound over a shape a worker is meshing answered as free to build";
+    EXPECT_TRUE(PartGui::preMeshInFlight(face));
+    EXPECT_TRUE(PartGui::preMeshInFlight(item.shape));
+    EXPECT_FALSE(PartGui::preMeshInFlight(apart));
+
+    // Nor is it handed to a worker of its own
+    PartGui::PreMeshItem second;
+    second.shape = compound;
+    second.geomBox = item.geomBox;
+    second.deflection = item.deflection;
+    second.angle = item.angle;
+    PartGui::submitPreMesh(batchOf(second));
+    EXPECT_EQ(stats().claimed, 1U) << "a second worker was given the faces of the first";
+
+    // The wait for it ends when the worker of its faces publishes
+    ASSERT_TRUE(PartGui::waitPreMesh(compound, 120.0));
+    EXPECT_TRUE(meshed(item.shape)) << "the wait returned with the worker still meshing";
+    EXPECT_FALSE(PartGui::preMeshInFlight(compound));
+    EXPECT_FALSE(PartGui::preMeshInFlight(face));
+    ASSERT_TRUE(batchCounted(1, 30.0));
+
+    // Published, the compound can be claimed, and its faces are in flight
+    // through it
+    PartGui::submitPreMesh(batchOf(second));
+    EXPECT_EQ(stats().claimed, 2U);
+    ASSERT_TRUE(PartGui::waitPreMesh(compound, 120.0));
+    ASSERT_TRUE(batchCounted(2, 30.0));
+    EXPECT_FALSE(PartGui::preMeshInFlight(item.shape));
 }

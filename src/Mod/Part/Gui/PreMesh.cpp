@@ -35,6 +35,7 @@
 
 #include <BRepMesh_IncrementalMesh.hxx>
 #include <IMeshTools_Parameters.hxx>
+#include <TopExp_Explorer.hxx>
 #include <OSD_Parallel.hxx>
 #include <Standard_Failure.hxx>
 
@@ -48,6 +49,15 @@ namespace PartGui
 namespace
 {
 
+/// The faces and edges of \a shape, by TShape.
+void partsOf(const TopoDS_Shape &shape, std::vector<const void *> &parts)
+{
+    for (TopExp_Explorer xp(shape, TopAbs_FACE); xp.More(); xp.Next())
+        parts.push_back(xp.Current().TShape().get());
+    for (TopExp_Explorer xp(shape, TopAbs_EDGE); xp.More(); xp.Next())
+        parts.push_back(xp.Current().TShape().get());
+}
+
 struct Claim
 {
     /// Pins the TShape this claim is KEYED on. Without it a document
@@ -59,6 +69,9 @@ struct Claim
     /// then, by the worker that publishes it.
     TopoDS_Shape shape;
     Bnd_Box geomBox;
+    /// The faces and edges of the shape, by TShape: what a mesher
+    /// writes, and what this claim holds in s_parts while in flight.
+    std::vector<const void *> parts;
     /// False while a worker is still writing this TShape's
     /// triangulation. Read by the GUI thread on every build of the
     /// shape, so it is the one field that must be cheap and atomic.
@@ -83,6 +96,25 @@ struct Claim
 /// queues before the batch was done (docs/DocumentLoad.md sec 18.7).
 std::mutex s_mutex;
 std::unordered_map<const void *, std::shared_ptr<Claim>> s_claims;
+/// The faces and edges of every claim IN FLIGHT, to their claim.
+///
+/// A claim is keyed on its shape's own TShape, and for a long time that
+/// was all a build asked about. But a mesher writes into faces and
+/// edges, and a shape that is not in the batch can be made of the faces
+/// of one that is: a compound over other objects, the result of a cut or
+/// a fuse, a shell put together from their faces. The collector lets
+/// such a pair through whenever it has to pass the second shape over
+/// before its sharing test -- a compound under instancing, a shape it may
+/// not read yet -- and the drain then meshed that shape on the GUI thread
+/// with its faces claimed: once in every load of a 3000-object document
+/// holding a compound, 80 ms into a batch of one second, and in five of
+/// six kinds of such objects once the batch was long (docs/DocumentLoad.md
+/// sec 18.8). Entries are put in at the submit and taken out at the
+/// publish, both under s_mutex.
+std::unordered_map<const void *, Claim *> s_parts;
+/// How many claims are in flight: what lets a build's question about a
+/// whole shape cost nothing when no batch runs.
+std::atomic<std::size_t> s_flying {0};
 std::size_t s_claimed = 0;
 std::size_t s_meshed = 0;
 std::size_t s_failed = 0;
@@ -138,6 +170,12 @@ void publishLocked(Batch *batch, std::size_t index)
 {
     Claim *claim = batch->claims[index].get();
     claim->done.store(true, std::memory_order_release);
+    for (const void *part : claim->parts) {
+        auto it = s_parts.find(part);
+        if (it != s_parts.end() && it->second == claim)
+            s_parts.erase(it);
+    }
+    s_flying.fetch_sub(1, std::memory_order_acq_rel);
     if (batch->generation == s_generation.load(std::memory_order_acquire))
         return;
     auto it = s_claims.find(batch->items[index].shape.TShape().get());
@@ -248,25 +286,40 @@ void submitPreMesh(std::vector<PreMeshItem> &&items)
     auto *batch = new Batch();
     batch->items.reserve(items.size());
     batch->claims.reserve(items.size());
+    // Walked before the lock is taken: the shapes are this thread's.
+    std::vector<std::vector<const void *>> parts(items.size());
+    for (std::size_t index = 0; index < items.size(); ++index)
+        partsOf(items[index].shape, parts[index]);
     {
         std::lock_guard<std::mutex> guard(s_mutex);
         batch->generation = s_generation.load(std::memory_order_acquire);
-        for (PreMeshItem &item : items) {
+        for (std::size_t index = 0; index < items.size(); ++index) {
+            PreMeshItem &item = items[index];
             const void *tshape = item.shape.TShape().get();
-            auto &slot = s_claims[tshape];
             // Already being meshed -- by a batch a clear left in flight,
-            // or one a second parking of the same shape ran into. A
-            // second worker on one TShape is two writers of one
-            // triangulation, and the first to publish would release the
-            // shape with the other still writing it. The claim in
-            // flight covers it: whoever builds the shape waits on that.
-            if (slot && !slot->done.load(std::memory_order_acquire))
+            // or one a second parking of the same shape ran into -- or
+            // made of faces and edges that are: a second worker would be
+            // a second writer of one triangulation, and the first to
+            // publish would release the shape with the other still
+            // writing it. The claim in flight covers it: whoever builds
+            // the shape waits on that.
+            auto found = s_claims.find(tshape);
+            bool flying = found != s_claims.end()
+                && !found->second->done.load(std::memory_order_acquire);
+            for (std::size_t i = 0; !flying && i < parts[index].size(); ++i)
+                flying = s_parts.count(parts[index][i]) != 0;
+            if (flying)
                 continue;
             // A new claim, never the old one made in flight again: a
             // claim belongs to one batch.
+            auto &slot = s_claims[tshape];
             slot = std::make_shared<Claim>();
             slot->shape = item.shape;
             slot->geomBox = item.geomBox;
+            slot->parts = std::move(parts[index]);
+            for (const void *part : slot->parts)
+                s_parts.emplace(part, slot.get());
+            s_flying.fetch_add(1, std::memory_order_acq_rel);
             batch->claims.push_back(slot);
             batch->items.push_back(std::move(item));
             ++s_claimed;
@@ -302,6 +355,49 @@ bool preMeshInFlight(const void *tshape)
     auto it = s_claims.find(tshape);
     return it != s_claims.end()
         && !it->second->done.load(std::memory_order_acquire);
+}
+
+bool preMeshInFlight(const TopoDS_Shape &shape)
+{
+    if (shape.IsNull() || s_flying.load(std::memory_order_acquire) == 0)
+        return false;
+    std::vector<const void *> parts;
+    partsOf(shape, parts);
+    std::lock_guard<std::mutex> guard(s_mutex);
+    auto it = s_claims.find(shape.TShape().get());
+    if (it != s_claims.end() && !it->second->done.load(std::memory_order_acquire))
+        return true;
+    for (const void *part : parts) {
+        if (s_parts.count(part))
+            return true;
+    }
+    return false;
+}
+
+bool waitPreMesh(const TopoDS_Shape &shape, double seconds)
+{
+    if (shape.IsNull() || s_flying.load(std::memory_order_acquire) == 0)
+        return true;
+    std::vector<const void *> parts;
+    partsOf(shape, parts);
+    const void *tshape = shape.TShape().get();
+    const auto deadline = std::chrono::steady_clock::now()
+        + std::chrono::duration_cast<std::chrono::steady_clock::duration>(
+                std::chrono::duration<double>(std::max(0.0, seconds)));
+    std::unique_lock<std::mutex> lock(s_mutex);
+    // Every publish takes its claim's faces and edges out of s_parts and
+    // signals, so the wait ends at the last of the claims this shape is
+    // made of.
+    return s_published.wait_until(lock, deadline, [tshape, &parts]() {
+        auto it = s_claims.find(tshape);
+        if (it != s_claims.end() && !it->second->done.load(std::memory_order_acquire))
+            return false;
+        for (const void *part : parts) {
+            if (s_parts.count(part))
+                return false;
+        }
+        return true;
+    });
 }
 
 bool waitPreMesh(const void *tshape, double seconds)
