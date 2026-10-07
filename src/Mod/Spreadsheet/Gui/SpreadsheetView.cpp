@@ -69,6 +69,12 @@ SheetView::SheetView(Gui::Document* pcDocument, App::DocumentObject* docObj, QWi
     : MDIView(pcDocument, parent)
     , sheet(static_cast<Sheet*>(docObj))
 {
+    // An object's view carries the object's name as its own, as a TechDraw
+    // page's does: it is how a view is told which object it is of without
+    // asking the view provider, whose answer here is to make one.
+    if (docObj && docObj->getNameInDocument())
+        setObjectName(QString::fromUtf8(docObj->getNameInDocument()));
+
     // Set up ui
 
     model = new SheetModel(static_cast<Sheet*>(docObj));

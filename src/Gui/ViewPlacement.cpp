@@ -24,6 +24,7 @@
 
 #ifndef _PreComp_
 # include <QGuiApplication>
+# include <QPointer>
 #endif
 
 #include <App/Application.h>
@@ -50,6 +51,10 @@ bool useViewArea()
 }
 
 bool inversionSuppressed = false;
+
+// The cell a view is being opened for (ViewPlacement::IntoCell), if any
+QPointer<ViewArea> intoArea;
+QPointer<ViewAreaCell> intoCell;
 
 // The escape hatch of docs/ViewPlacement.md sec 4.2. The PHYSICAL key
 // state at request time is what counts, not the modifiers carried by
@@ -276,11 +281,28 @@ void ViewPlacement::place(MDIView *view, Category cat, Gui::Document *doc)
     place(view, cat, doc, {});
 }
 
+ViewPlacement::IntoCell::IntoCell(ViewArea *area, ViewAreaCell *cell)
+{
+    intoArea = area;
+    intoCell = cell;
+}
+
+ViewPlacement::IntoCell::~IntoCell()
+{
+    intoArea.clear();
+    intoCell.clear();
+}
+
 void ViewPlacement::place(MDIView *view, Category cat, Gui::Document *doc,
                           const std::function<bool(MDIView *)> &keep)
 {
     if (!view)
         return;
+    if (intoArea && intoCell) {
+        // Opened for a cell: that cell, whatever the policy would say
+        if (intoArea->setCellView(intoCell, view))
+            return;
+    }
     Target target = targetFor(cat);
     if (altInversion())
         target = invert(target);

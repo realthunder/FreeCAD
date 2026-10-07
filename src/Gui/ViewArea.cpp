@@ -24,6 +24,8 @@
 
 #ifndef _PreComp_
 # include <cctype>
+# include <map>
+# include <string>
 # include <QApplication>
 # include <QCloseEvent>
 # include <QContextMenuEvent>
@@ -47,6 +49,7 @@
 #include "Document.h"
 #include "MainWindow.h"
 #include "View3DInventor.h"
+#include "ViewPlacement.h"
 #include "ViewProviderDocumentObject.h"
 
 using namespace Gui;
@@ -508,25 +511,48 @@ void ViewAreaCell::showCellMenu(const QPoint &globalPos)
     // Content selector first (docs/SplitViews.md sec 5.5): the 3D
     // view, then one entry per object-provided view -- objects whose
     // view is already materialized wherever it lives, plus TechDraw
-    // pages by type. The page type resolves by NAME so Gui keeps no
-    // TechDraw link dependency; with the module not loaded there are
-    // no pages to list anyway.
+    // pages and spreadsheets by type, open or not.
     Gui::Document *doc = area->getGuiDocument();
     MDIView *child = _child;
     QAction *act3d = nullptr;
+    // The object views that are open, by the object each one is of. Read
+    // off the views, which carry their object's name as their own, and
+    // NOT by asking every view provider for its view: a spreadsheet's
+    // answers by making one, so that opening this menu opened a
+    // spreadsheet -- into the nearest non-3D cell, closing what was
+    // there -- and every TechDraw view object answers with its page's,
+    // which listed dimensions and details as if a cell could show them.
+    std::map<std::string, MDIView*> objectViews;
     if (doc) {
+        for (auto view : doc->getMDIViews()) {
+            if (qobject_cast<View3DInventor*>(view) || qobject_cast<ViewArea*>(view))
+                continue;
+            const QByteArray name = view->objectName().toUtf8();
+            if (!name.isEmpty() && doc->getDocument()->getObject(name.constData()))
+                objectViews.emplace(name.constData(), view);
+        }
         act3d = menu.addAction(tr("3D view"));
         act3d->setCheckable(true);
         act3d->setChecked(qobject_cast<View3DInventor*>(child) != nullptr);
-        const Base::Type pageType = Base::Type::fromName("TechDraw::DrawPage");
+        // The kinds of object that have a view of their own to show, open
+        // or not: by NAME, so that Gui links to neither module, and a
+        // module not loaded has no objects to list anyway.
+        std::vector<Base::Type> viewTypes;
+        for (const char *typeName : {"TechDraw::DrawPage", "Spreadsheet::Sheet"}) {
+            const Base::Type type = Base::Type::fromName(typeName);
+            if (type != Base::Type::badType())
+                viewTypes.push_back(type);
+        }
         for (auto obj : doc->getDocument()->getObjects()) {
             auto vp = dynamic_cast<ViewProviderDocumentObject*>(
                     Application::Instance->getViewProvider(obj));
             if (!vp)
                 continue;
-            MDIView *objView = vp->getMDIView();
-            const bool typed = pageType != Base::Type::badType()
-                && obj->getTypeId().isDerivedFrom(pageType);
+            auto found = objectViews.find(obj->getNameInDocument());
+            MDIView *objView = found == objectViews.end() ? nullptr : found->second;
+            bool typed = false;
+            for (const auto &type : viewTypes)
+                typed = typed || obj->getTypeId().isDerivedFrom(type);
             if (!objView && !typed)
                 continue;
             QAction *act = menu.addAction(
@@ -606,13 +632,25 @@ void ViewAreaCell::showCellMenu(const QPoint &globalPos)
                 Application::Instance->getViewProvider(obj));
         if (!vp)
             return;
-        MDIView *view = vp->getMDIView();
+        auto found = objectViews.find(objName.constData());
+        MDIView *view = found == objectViews.end() ? nullptr : found->second;
         if (!view) {
-            vp->show();
+            // Not open yet: opened for THIS cell. Left to the placement
+            // policy it went into the last non-3D cell instead, and the
+            // cell asked could not have it any more.
+            ViewPlacement::IntoCell here(area, this);
             view = vp->getMDIView();
+            if (!view) {
+                vp->show();
+                view = vp->getMDIView();
+            }
         }
-        if (view && view != childView())
-            area->setCellView(this, view);
+        if (!view || view == childView())
+            return;
+        if (!area->setCellView(this, view)) {
+            // It sits in another cell, which keeps it: go there
+            getMainWindow()->setActiveWindow(view);
+        }
     }
 }
 

@@ -105,6 +105,7 @@
 #include "ViewArea.h"
 #include "View3DInventorViewer.h"
 #include "ViewParams.h"
+#include "ViewPlacement.h"
 #include "ViewProviderMeasureDistance.h"
 #include "ViewProviderGeometryObject.h"
 #include "WaitCursor.h"
@@ -2924,6 +2925,8 @@ void StdCmdViewCellShowObject::activated(int iMsg)
     if (!cell)
         return;
 
+    // Opened for the active cell (see ViewAreaCell::showCellMenu)
+    ViewPlacement::IntoCell here(area, cell);
     MDIView *view = vp->getMDIView();
     if (!view) {
         vp->show();

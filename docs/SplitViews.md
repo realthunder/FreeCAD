@@ -220,6 +220,15 @@ Each cell carries a content menu listing what the document can show:
   cast. A page can be shown in a cell and later re-opened as a plain MDI tab;
   whichever host exists adopts the one scene. First revision: one host per
   page at a time (the scene's item parenting is single-view).
+- One entry per spreadsheet, open or not.
+
+Which views are open is read off the views -- an object's view carries the
+object's name as its own (`MDIViewPage`, `SheetView`) -- and never by asking
+each view provider for its view: `ViewProviderSheet::getMDIView()` answers by
+making one, and every TechDraw view object answers with its page's. A view
+opened by a pick is opened for that cell (`ViewPlacement::IntoCell`); left to
+the placement policy it went into the last non-3D cell and closed what was
+there.
 - Future editors slot in by type: spreadsheet views, the Python console, the
   start page, a second document's 3D view -- anything that is an MDIView.
 
@@ -698,8 +707,8 @@ smokes re-run as regression.
   in ViewArea.cpp without Q_OBJECT, so the name is what tests and
   stylesheets find it by), subtle until hovered. Its menu is the
   content selector -- "3D view" plus one entry per object-provided
-  view (materialized views anywhere, TechDraw pages by type name, no
-  Gui->TechDraw dependency) -- then Split horizontal/vertical,
+  view (materialized views anywhere, TechDraw pages and spreadsheets by
+  type name, no Gui->module dependency) -- then Split horizontal/vertical,
   Maximize/Restore, Close. The 3D entry clones a sibling 3D cell
   first (its camera is the area's context), any document 3D view
   second, bare createView3D last.
