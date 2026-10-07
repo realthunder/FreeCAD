@@ -61,7 +61,7 @@ report views, the reporter's own files -- is kept beside the dev tree under
 | 21 | 2026-10-06 | TechDraw: a click on a section line starts a section, and the line shifts at each recompute | STAGED |
 | 22 | 2026-10-06 | omni search: `/word` with no space is an object query; `/ word` forces it (change request, decided) | STAGED 2026-10-07 14:23, fixed `5aedd5cf83`: "/word" is an object query, "/ word" forces it, a keyword in full is the keyword, the beginning of one lists modes and objects together; the browser viewer's grammar follows (its bundle not rebuilt) |
 | 23 | 2026-10-06 | omni search: every setting it collects has documentation, none of it long (an audit asked) | STAGED 2026-10-07 14:23, fixed `c7a27b5a85` (and `08b8f009aa`): 574 settings audited, 221 had no documentation and 94 ran past 400 characters; all have a short text now and a test keeps it so. Side findings for the reporter in `docs/HandsOnLog.md`. The defaults FIXED `02cab053df`, not staged: OK on a fresh profile changed 23 settings and stored 2 under a wrong type, 14 of them a generated page's spin box clamping its default to 99; a test keeps it so |
-| 24 | 2026-10-06 | every `Base::Parameter` setting behind a cog helper class so the omni search finds it, applied through delayed handlers (change request, application-wide) | STARTED, three groups done, none staged: the report view's 12 keys `a6ed59e824`, Part's measurements' 7 `014dc501f8`, the General group's 29 `e0a8a17e23`; the build session works it to its end and then pauses, at the reporter's word. Three questions for the reporter still open (`docs/HandsOnLog.md`) |
+| 24 | 2026-10-06 | every `Base::Parameter` setting behind a cog helper class so the omni search finds it, applied through delayed handlers (change request, application-wide) | STARTED, ten groups done as of 2026-10-07 21:35, none staged or pushed (report view, Part's measurements, General, MainWindow and Themes, NotificationArea, PythonConsole, Macro, Dialog, Units; and three faults of the preferences dialog itself). To do: Editor, View, Document, NaviCube, Part's rest, PartDesign, Sketcher, TechDraw, Fem, CAM, the Python-only modules. Three questions and two decisions for the reporter (`docs/HandsOnLog.md`) |
 | 25 | 2026-10-06 | the outline of a highlighted face is jagged, MSAA on or off | OPEN |
 | 26 | 2026-10-06 | a long halt after enabling MSAA and pressing OK in the preferences | FIXED `175ffce199`, not staged: the FIRST OK of a profile held the program 11 to 15 s (780 keys stored for the first time and taken for changes: stylesheet set again 4.2 s, every Part view provider re-meshed 3.2 s, language activated again about 2 s); 0.9 s now (`docs/HandsOnLog.md`) |
 | 27 | 2026-10-06 | the view cell menu: opens a spreadsheet nobody asked for, lists every TechDraw object, changes the wrong cell | STAGED 2026-10-07 14:23, fixed `fa2ada985c`: the menu made a spreadsheet view by asking for it, listed a page's views, and placed a pick by the general policy instead of into its cell; all three gone, spreadsheets now listed by type like pages (`docs/HandsOnLog.md`) |
@@ -1631,7 +1631,7 @@ collects automatically; (b) each must have documentation; (c) none of it
 overly long; (d) pick out the long ones in particular -- text an agent wrote
 as development notes that ended up as a setting's documentation.
 
-## 24. Every setting behind a generated helper class, applied by delayed handlers (a change request) -- STARTED, three groups done; three questions for the reporter (see `docs/HandsOnLog.md`)
+## 24. Every setting behind a generated helper class, applied by delayed handlers (a change request) -- STARTED, ten groups done; three questions and two decisions for the reporter (see `docs/HandsOnLog.md`)
 
 **From the build session, started** (passed on 2026-10-07 18:10; its log,
 entry 24, has the method and the inventory):
@@ -1668,6 +1668,36 @@ entry 24, has the method and the inventory):
     theme accent colours have four different defaults; the report view's
     line limit is overridden at every start; `Editor/Spaces` is off to the
     text editor and on to the Python editor.
+- **Passed on 2026-10-07 21:35, ten groups done and committed, nothing
+  staged or pushed** (the log's entry 24 has each; its commit `146803c2da`).
+  Since the last report:
+  - `7b28d267df` MainWindow (18 settings) and Themes (3 accent colours). The
+    second and third accent had four different defaults, now one;
+    `GlobalToolBarArea` alone moved nothing.
+  - `5bf21a2f43` NotificationArea (11). Nothing found wrong.
+  - `d5ade41454` PythonConsole (5), Macro (8), Dialog (2). A macro path
+    stored empty was taken for the path; Draft's ShapeString panel reset
+    "use Qt file dialog" to off at every use.
+  - `7d728d7e77` Units (5), a new `App::UnitsParams`. A change of unit
+    system, decimals or inch fraction is in force when made; it used to wait
+    for a start, a document switch or OK.
+  - `2022b69697` three faults in the preferences dialog itself, found by
+    these tests: (1) Cancel asked "revert back to previous settings?" on a
+    dialog nobody had touched -- on the reporter's staged copy too, at the
+    first Cancel of a session (the dock windows save their layout when the
+    dialog takes the focus); (2) the same on every Cancel, brought in by the
+    build session's own measure-page change of `014dc501f8`, fixed; (3)
+    "Apply preferences at once" switched off did nothing for a dialog opened
+    afterwards.
+  - Still to do: Editor (25 keys), View (113 not yet defined) and Document
+    (14), NaviCube, then Part's rest, PartDesign, Sketcher, TechDraw, Fem,
+    CAM, and the Python-only modules.
+  - **Two decisions the build session is taking in the Editor group, for the
+    reporter to overrule, NOT ANSWERED YET:**
+    (a) `Editor/Spaces` defaults to ON for both readers -- Tab inserted a tab
+    while Enter indented with spaces in the same Python editor;
+    (b) the editor font's default is the system's fixed-pitch font -- the
+    readers said "Courier" while the page showed and stored the system's.
 - **Three questions for the reporter, NOT ANSWERED YET** (log, entry 24, "To
   decide"):
   1. Modules written in Python only -- BIM, Draft, AddonManager, parts of CAM
