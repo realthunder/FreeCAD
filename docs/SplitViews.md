@@ -1574,12 +1574,33 @@ were asked: the placement policy's reuse of a cell that holds no 3D view
 would account for it, which was not looked into). Read from the code and
 not run: the same sweep would list a page's template, and every view and
 hatch on it, as entries of their own, their providers answering with the
-page's view. Two ways to put it right,
-neither taken: the menu lists what is open by walking the document's
-views and reading their objects off their names, which this section
-makes possible for a sheet and which drops the template and hatch
-entries with it; or the sheet's `getMDIView()` becomes the query every
-other provider's is, and what makes a view moves to the callers that
-mean to make one (`Gui::Document::setActiveView` relies on it today).
-`Gui::ExpressionEditorView` asks the providers of the objects it edits
-the same way when it places itself (read from the code, not run).
+page's view.
+
+Two more places ask the same question, measured the same evening with a
+second scratch probe (a box, two sheets):
+
+| where | what the user does | what happens |
+|---|---|---|
+| the tree, sync view on (its default) | selects a sheet with one click | its view opens in a new cell; selecting the box opens nothing |
+| "show object in view cell" | the first sheet open beside the 3D view, the 3D cell active, the second sheet selected | the second sheet takes the FIRST sheet's cell and that view is closed; the active cell is untouched |
+
+The second is the placement policy at work inside the question: the view
+is made, placed by the policy -- which reuses the nearest cell that holds
+no 3D view and closes what sits there -- and only then handed to the
+caller. Why it then stayed out of the active cell was not looked into.
+Read from the code and not run: the menu's own pick has the command's
+shape; `Gui::ExpressionEditorView` asks the providers of the objects it
+edits when it places itself; `Gui::DlgPropertyLink` asks for an object's
+view and discards whatever is no 3D view.
+
+**Ruled 2026-10-07, not built:** `getMDIView()` becomes the question it
+is for every other provider -- the sheet's answers its view or nothing --
+and a separate virtual on `ViewProviderDocumentObject` is what a caller
+uses that means to host the view: by default the ask, `show()`, ask again
+that such callers write by hand today, and for a sheet a view made bare,
+with no placement, since the caller is about to host it. Its users: the
+layout restore, "show object in view cell", the menu's pick. The sheet's
+own double click, edit and "Show spreadsheet" go on making and placing
+as they do. **A single click on a sheet in the tree then selects it and
+opens nothing**, as for a drawing page (the user: "single click
+selects"); the double click opens.
