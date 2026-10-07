@@ -15,24 +15,39 @@ States, as in the queue: `OPEN` (not looked at), `FOUND` (cause known, no
 fix yet), `FIXED` (committed and tested in the dev tree, not staged),
 `STAGED` (in the copy under test, waiting for the reporter), `CLOSED`.
 
-Stages since the split: none yet. The copy under test is still the one of
-2026-10-07 10:37 (`7e94bff8d0`).
+Stages since the split: 2026-10-07 14:23 (`1c8781a7e1`, the code of
+`c7a27b5a85`: entries 15, 17, 19, 22, 23 and 27), on the reporter's word
+("stage it"). Smoke-tested on the staged copy right after: the omni search,
+view cell menu and line style GUI tests, 41 PASS of 41, and the ring of
+entry 15 valid after the refine.
 
 The tree at the pause of 2026-10-07 (`c7a27b5a85` and the log after it): ctest 782 of 782 passing, `DeferredLoad_tests_run` left out (its known
-timeout, `docs/Testing.md`). Nothing of this is pushed or staged.
+timeout, `docs/Testing.md`). Staged 14:23; not pushed.
 
 Evidence that does not belong in the repository is under
 `..\dl\handson\<date>\`, as before.
 
 | # | State | In one line |
 |---|---|---|
-| 15 | FIXED `1047cc0647`; one question for the reporter | a refine wrote into the feature underneath. Left: `Pocket040` is 12 mm where the file has 13 -- its negative `Fit` grew in the old build, on one oddly made face |
-| 17 | FIXED `3c8cd63032`; what it uncovers is a question for the reporter | the two sketches refer to edges of a binder that moved with another binder; found again now. Then `Pad033` loses its profile, because the sketch really changes |
-| 19 | FIXED `805b5afb25` | every place the audit listed that runs at load, recompute or paint, the three wrong results, and the writer of -1; what is left is listed |
-| 22 | FIXED `5aedd5cf83` | `/word` is an object query; the beginning of a keyword lists modes and objects |
-| 23 | FIXED `c7a27b5a85`, and `08b8f009aa` | 574 settings: 221 had no documentation, 94 ran past 400 characters; all have a short text now, and a test keeps it so. What the audit turned up besides is listed |
+| 15 | STAGED `1047cc0647`; one question for the reporter | a refine wrote into the feature underneath. Left: `Pocket040` is 12 mm where the file has 13 -- its negative `Fit` grew in the old build, on one oddly made face |
+| 17 | STAGED `3c8cd63032`; what it uncovers is a question for the reporter | the two sketches refer to edges of a binder that moved with another binder; found again now. Then `Pad033` loses its profile, because the sketch really changes |
+| 19 | STAGED `805b5afb25` | every place the audit listed that runs at load, recompute or paint, the three wrong results, and the writer of -1; what is left is listed |
+| 22 | STAGED `5aedd5cf83` | `/word` is an object query; the beginning of a keyword lists modes and objects |
+| 23 | STAGED `c7a27b5a85`, and `08b8f009aa` | 574 settings: 221 had no documentation, 94 ran past 400 characters; all have a short text now, and a test keeps it so. What the audit turned up besides is listed |
 | 26 | FOUND in part, nothing changed | an unchanged write of the renderer `Type` reloads every Part view provider: 1.07 s on `scanner.FCStd`; the anti-aliasing change itself 0.15 s. OK in the dialog not measured yet |
-| 27 | FIXED `fa2ada985c` | the cell menu made a spreadsheet view by asking for it, listed a page's views, and a pick was placed by the general policy |
+| 27 | STAGED `fa2ada985c` | the cell menu made a spreadsheet view by asking for it, listed a page's views, and a pick was placed by the general policy |
+
+**The reporter, 2026-10-07 14:20, on what is open** (said to the build
+session; the queue has the reporter's own entries):
+- entries 15 and 17: "skip entry 15 and 17 for now" -- their open questions
+  rest;
+- entry 23: "yes fixed the defaults, leave the unused ones" -- the defaults
+  that disagree between a definition and its preference page are to be made
+  to agree; the settings nothing reads stay. Not done yet;
+- entry 26: "probably not the view provider, because the delay I experience
+  is longer. most likely related to stylesheet re-apply" -- so the second
+  measured on `scanner.FCStd` is not the halt; what OK does to the
+  stylesheets is where to look (entry 30's freeze is the same family).
 
 ## 15. A Pad "up to first" gives a third result -- FIXED, one question left
 
