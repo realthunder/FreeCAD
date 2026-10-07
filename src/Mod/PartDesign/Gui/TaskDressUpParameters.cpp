@@ -313,7 +313,8 @@ void TaskDressUpParameters::onSelectionChanged(const Gui::SelectionChanges& msg)
                 continue;
 
             char type = pcDressUp->Shape.getShape().elementType(hist.element);
-            if ((!allowFaces && (type == 'F' || type == 'W')) || (!allowEdges && type == 'E'))
+            if ((!allowFaces && (type == 'F' || type == 'W')) || (!allowEdges && type == 'E')
+                    || (!allowVertexes && type == 'V'))
                 continue;
             if(element) {
                 showMessage("Ambiguous selection");
@@ -442,6 +443,7 @@ void TaskDressUpParameters::onButtonRefAdd(bool checked)
     AllowSelectionFlags allow;
     allow.setFlag(AllowSelection::EDGE, allowEdges);
     allow.setFlag(AllowSelection::FACE, allowFaces);
+    allow.setFlag(AllowSelection::POINT, allowVertexes);
     allow.setFlag(AllowSelection::PLANAR, false);
     Gui::Selection().addSelectionGate(new ReferenceSelection(this->getBase(), allow));
 }
@@ -484,7 +486,8 @@ bool TaskDressUpParameters::syncItems(const std::vector<App::SubObjectT> &sels) 
                 continue;
             if((allowEdges && boost::starts_with(element,"Edge"))
                     || (allowFaces && (boost::starts_with(element,"Face")
-                                       || boost::starts_with(element, "Wire"))))
+                                       || boost::starts_with(element, "Wire")))
+                    || (allowVertexes && boost::starts_with(element, "Vertex")))
             {
                 subset.insert(element);
                 auto item = new QTreeWidgetItem(treeWidget);

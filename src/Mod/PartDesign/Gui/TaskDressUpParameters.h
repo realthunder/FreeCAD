@@ -102,6 +102,8 @@ protected:
     QWidget* proxy;
 
     bool allowFaces, allowEdges;
+    /// Whether a vertex can be picked, for a fillet's corners
+    bool allowVertexes = false;
     selectionModes selectionMode;    
 
     QAction* deleteAction = nullptr;

@@ -27,7 +27,9 @@
 #include <QStandardItemModel>
 #include <QItemDelegate>
 
+#include <App/ObjectIdentifier.h>
 #include <Gui/Inventor/Draggers/Gizmo.h>
+#include <Mod/Part/App/TopoShape.h>
 
 #include "TaskDressUpParameters.h"
 #include "ViewProviderFillet.h"
@@ -36,6 +38,7 @@ class Ui_TaskFilletParameters;
 
 namespace Gui {
 class ExpressionBinding;
+class QuantitySpinBox;
 }
 
 namespace PartDesignGui {
@@ -86,6 +89,25 @@ protected:
     void setSegment(QTreeWidgetItem *item, double param, double radius, double length=0.0);
     double getRadius() const;
 
+    /** @name Setback corners (docs/CornerBlending.md)
+     * A vertex in the references is a corner of the fillet; its row holds the
+     * setback of all its fillets and its children the fillets ending there,
+     * each with an optional setback of its own.
+     */
+    //@{
+    /// The vertex row of a corner, from its row or one of its edges'
+    static QTreeWidgetItem *getCornerItem(QTreeWidgetItem *item);
+    /// A fillet edge at a corner, by name
+    typedef std::vector<std::pair<std::string, Part::TopoShape>> CornerEdges;
+    /// The fillet edges ending at each corner vertex of the references
+    std::map<std::string, CornerEdges> getCornerEdges() const;
+    void refreshCorner(QTreeWidgetItem *item, const CornerEdges &edges);
+    void updateCorner(QTreeWidgetItem *item);
+    /// Clears the setbacks of single fillets of the corners of the items
+    void clearCornerEdges(const std::vector<QTreeWidgetItem*> &items);
+    App::ObjectIdentifier getCornerPath(QTreeWidgetItem *item) const;
+    //@}
+
     friend class FilletSegmentDelegate;
 
 private:
@@ -96,6 +118,19 @@ private:
     Gui::LinearGizmo* radiusGizmo2 = nullptr;
     void setupGizmos(ViewProviderDressUp* vp);
     void setGizmoPositions();
+
+    /// One handle per fillet of the current corner, at most this many
+    static constexpr int CornerGizmoCount = 6;
+    struct CornerGizmo {
+        Gui::LinearGizmo *gizmo = nullptr;
+        /// Hidden; the gizmo drives a spin box
+        Gui::QuantitySpinBox *spinBox = nullptr;
+        std::string vertex;
+        std::string edge;
+    };
+    std::vector<CornerGizmo> cornerGizmos;
+    bool cornerRecomputePending = false;
+    void setCornerGizmoPositions();
 };
 
 /// simulation dialog for the TaskView

@@ -25,7 +25,13 @@
 
 #ifndef _PreComp_
 # include <QAction>
+# include <BRepAdaptor_Curve.hxx>
+# include <BRep_Tool.hxx>
+# include <TopoDS.hxx>
+# include <gp.hxx>
 #endif
+
+#include <boost/algorithm/string/predicate.hpp>
 
 #include "ui_TaskFilletParameters.h"
 #include "TaskFilletParameters.h"
@@ -53,6 +59,11 @@
 using namespace PartDesignGui;
 using namespace Gui;
 
+namespace {
+// The column of a corner's setbacks
+constexpr int SetbackColumn = 4;
+}
+
 /* TRANSLATOR PartDesignGui::TaskFilletParameters */
 
 FilletSegmentDelegate::FilletSegmentDelegate(QObject *parent) : QItemDelegate(parent)
@@ -62,6 +73,20 @@ FilletSegmentDelegate::FilletSegmentDelegate(QObject *parent) : QItemDelegate(pa
 QWidget *FilletSegmentDelegate::createEditor(QWidget *parent, const QStyleOptionViewItem &/* option */,
                                              const QModelIndex & index) const
 {
+    // A corner takes setbacks, an edge segments
+    auto item = static_cast<QTreeWidgetItem*>(index.internalPointer());
+    if (TaskFilletParameters::getCornerItem(item)) {
+        if (index.column() != SetbackColumn)
+            return nullptr;
+        Gui::QuantitySpinBox *editor = new Gui::QuantitySpinBox(parent);
+        editor->setUnit(Base::Unit::Length);
+        editor->setMinimum(0.0);
+        editor->setMaximum(INT_MAX);
+        editor->setSingleStep(0.1);
+        if (auto owner = qobject_cast<TaskFilletParameters*>(this->parent()))
+            owner->setBinding(editor, index);
+        return editor;
+    }
     if (index.column() < 1 || index.column() > 3)
         return nullptr;
     if (!index.parent().isValid()) {
@@ -125,6 +150,8 @@ TaskFilletParameters::TaskFilletParameters(ViewProviderDressUp *DressUpView,QWid
     Base::connect(ui->filletRadius, qOverload<double>(&Gui::QuantitySpinBox::valueChanged),
         this, &TaskFilletParameters::onLengthChanged);
 
+    // a vertex is a corner (Fillet::Corners)
+    allowVertexes = true;
     setup(ui->message, ui->treeWidgetReferences, ui->buttonRefAdd);
 
     ui->treeWidgetReferences->setItemDelegate(new FilletSegmentDelegate(this));
@@ -141,7 +168,12 @@ TaskFilletParameters::TaskFilletParameters(ViewProviderDressUp *DressUpView,QWid
 "You can use 'Parameter' (0 ~ 1) as an ratio to the Edge\n"
 "length from to specify a point to morph from one radius\n"
 "value to another. Or, you can use 'Length' to specify the\n"
-"point with absolute distance along the edge."));
+"point with absolute distance along the edge.\n\n"
+"A vertex sets back the corner there: each fillet ending at\n"
+"the vertex stops 'Setback' away from it, and one smooth patch\n"
+"closes the opening. The rows under the vertex are its fillets;\n"
+"one given a setback of its own stops there instead. 'Clear'\n"
+"removes the setbacks of single fillets."));
 
     static const char *_ParamPath = "User parameter:BaseApp/Preferences/General/Widgets/TaskFilletParameters";
     auto hParam = App::GetApplication().GetParameterGroupByPath(_ParamPath);
@@ -165,6 +197,9 @@ TaskFilletParameters::TaskFilletParameters(ViewProviderDressUp *DressUpView,QWid
     Base::connect(ui->checkBoxUseAllEdges, &QCheckBox::toggled,
         this, &TaskFilletParameters::onCheckBoxUseAllEdgesToggled);
 
+    Base::connect(ui->treeWidgetReferences, &QTreeWidget::currentItemChanged,
+        [this](QTreeWidgetItem *, QTreeWidgetItem *) { setCornerGizmoPositions(); });
+
     refresh();
     ui->filletRadius->selectAll();
 
@@ -180,7 +215,35 @@ void TaskFilletParameters::setupGizmos(ViewProviderDressUp* vp)
     radiusGizmo = new Gui::LinearGizmo(ui->filletRadius);
     radiusGizmo2 = new Gui::LinearGizmo(ui->filletRadius);
 
-    gizmoContainer = GizmoContainer::create({radiusGizmo, radiusGizmo2}, vp);
+    // The handles of the current corner, one per fillet, each driving a
+    // hidden spin box. The container takes a fixed list, so there is a pool.
+    cornerGizmos.resize(CornerGizmoCount);
+    for (int i=0; i<CornerGizmoCount; ++i) {
+        auto &cornerGizmo = cornerGizmos[i];
+        auto spinBox = new Gui::QuantitySpinBox(this);
+        spinBox->hide();
+        spinBox->setUnit(Base::Unit::Length);
+        spinBox->setMinimum(0.0);
+        spinBox->setMaximum(INT_MAX);
+        cornerGizmo.spinBox = spinBox;
+        cornerGizmo.gizmo = new Gui::LinearGizmo(spinBox);
+        Base::connect(spinBox, qOverload<double>(&Gui::QuantitySpinBox::valueChanged),
+            [this, i](double value) {
+                auto DressUpView = getDressUpView();
+                const auto &target = cornerGizmos[i];
+                if (!DressUpView || target.vertex.empty())
+                    return;
+                auto pcFillet = static_cast<PartDesign::Fillet*>(DressUpView->getObject());
+                setupTransaction();
+                pcFillet->Corners.setValue(target.vertex, target.edge, value);
+                recompute();
+            });
+    }
+    static_assert(CornerGizmoCount == 6, "the container below lists every corner gizmo");
+    gizmoContainer = GizmoContainer::create({radiusGizmo, radiusGizmo2,
+                                             cornerGizmos[0].gizmo, cornerGizmos[1].gizmo,
+                                             cornerGizmos[2].gizmo, cornerGizmos[3].gizmo,
+                                             cornerGizmos[4].gizmo, cornerGizmos[5].gizmo}, vp);
 
     setGizmoPositions();
     showDraggerHints();
@@ -224,11 +287,94 @@ void TaskFilletParameters::setGizmoPositions()
 
     radiusGizmo->setMultFactor(correction);
     radiusGizmo2->setMultFactor(correction);
+
+    setCornerGizmoPositions();
+}
+
+void TaskFilletParameters::setCornerGizmoPositions()
+{
+    if (!gizmoContainer || cornerGizmos.empty())
+        return;
+    for (auto &cornerGizmo : cornerGizmos) {
+        cornerGizmo.gizmo->setVisibility(false);
+        cornerGizmo.vertex.clear();
+        cornerGizmo.edge.clear();
+    }
+
+    auto DressUpView = getDressUpView();
+    auto fillet = DressUpView ? dynamic_cast<PartDesign::Fillet*>(DressUpView->getObject()) : nullptr;
+    auto item = getCornerItem(ui->treeWidgetReferences->currentItem());
+    if (!fillet || !item)
+        return;
+    std::string vertexName = getGeometryItemText(item).constData();
+    Part::TopoShape baseShape = fillet->getBaseShape(true);
+    TopoDS_Shape vertex = baseShape.getSubShape(vertexName.c_str(), true);
+    if (vertex.IsNull() || vertex.ShapeType() != TopAbs_VERTEX)
+        return;
+    gp_Pnt point = BRep_Tool::Pnt(TopoDS::Vertex(vertex));
+    const auto *corner = fillet->Corners.getValue(vertexName);
+
+    auto cornerEdges = getCornerEdges();
+    int i = 0;
+    for (const auto &edge : cornerEdges[vertexName]) {
+        if (i >= CornerGizmoCount)
+            break;
+        // along the edge, away from the vertex
+        BRepAdaptor_Curve curve(TopoDS::Edge(edge.second.getShape()));
+        double first = curve.FirstParameter();
+        double last = curve.LastParameter();
+        bool atLast = curve.Value(last).SquareDistance(point)
+            < curve.Value(first).SquareDistance(point);
+        gp_Pnt pos;
+        gp_Vec dir;
+        curve.D1(atLast ? last : first, pos, dir);
+        if (dir.Magnitude() < gp::Resolution())
+            continue;
+        if (atLast)
+            dir.Reverse();
+        dir.Normalize();
+
+        double value = 0.0;
+        bool own = false;
+        if (corner) {
+            auto it = corner->edges.find(edge.first);
+            own = it != corner->edges.end();
+            if (own)
+                value = it->second;
+            else if (corner->setback > 0.0)
+                value = corner->setback;
+        }
+        // no handle for a setback an expression drives
+        App::ObjectIdentifier path(fillet->Corners);
+        path << App::ObjectIdentifier::SimpleComponent(vertexName)
+             << App::ObjectIdentifier::SimpleComponent(own ? edge.first : std::string("Setback"));
+        if (fillet->getExpression(path).expression)
+            continue;
+
+        auto &cornerGizmo = cornerGizmos[i++];
+        cornerGizmo.vertex = vertexName;
+        cornerGizmo.edge = edge.first;
+        {
+            QSignalBlocker blocker(cornerGizmo.spinBox);
+            cornerGizmo.spinBox->setValue(value);
+        }
+        cornerGizmo.gizmo->Gizmo::setDraggerPlacement(Base::Vector3d(point.X(), point.Y(), point.Z()),
+                                                      Base::Vector3d(dir.X(), dir.Y(), dir.Z()));
+        cornerGizmo.gizmo->setDragLength(value);
+        cornerGizmo.gizmo->setVisibility(true);
+    }
 }
 
 void TaskFilletParameters::finishedRecomputeFeature()
 {
     TaskDressUpParameters::finishedRecomputeFeature();
+    // A corner's fillets follow the edge list
+    auto cornerEdges = getCornerEdges();
+    for (int i=0; i<ui->treeWidgetReferences->topLevelItemCount(); ++i) {
+        auto item = ui->treeWidgetReferences->topLevelItem(i);
+        if (getCornerItem(item))
+            refreshCorner(item, cornerEdges[getGeometryItemText(item).constData()]);
+    }
     // The edge list or the base may have changed; the radius alone does not
     // move the gizmos, but reading the placement again is cheap.
     setGizmoPositions();
@@ -248,6 +394,10 @@ void TaskFilletParameters::setBinding(Gui::ExpressionBinding *binding,
     auto item = static_cast<QTreeWidgetItem*>(index.internalPointer());
     if (!item)
         return;
+    if (getCornerItem(item)) {
+        binding->bind(getCornerPath(item));
+        return;
+    }
     auto parent = item->parent();
     if (!parent)
         return;
@@ -274,9 +424,14 @@ void TaskFilletParameters::refresh()
         ui->filletRadius->setValue(r);
     }
     QSignalBlocker blocker(ui->treeWidgetReferences);
+    auto cornerEdges = getCornerEdges();
     for (int i=0; i<ui->treeWidgetReferences->topLevelItemCount(); ++i) {
         auto item = ui->treeWidgetReferences->topLevelItem(i);
         item->setFlags(item->flags() | Qt::ItemIsEditable);
+        if (getCornerItem(item)) {
+            refreshCorner(item, cornerEdges[getGeometryItemText(item).constData()]);
+            continue;
+        }
         int j = 0;
         for (const auto &segment : pcFillet->Segments.getValue(getGeometryItemText(item).constData())) {
             setSegment(j<item->childCount() ? item->child(j) : new QTreeWidgetItem(item),
@@ -290,6 +445,11 @@ void TaskFilletParameters::refresh()
 
 void TaskFilletParameters::updateSegment(QTreeWidgetItem *item, int column)
 {
+    if (getCornerItem(item)) {
+        if (column == SetbackColumn)
+            updateCorner(item);
+        return;
+    }
     if (column<1 || column>3)
         return;
     QSignalBlocker blocker(ui->treeWidgetReferences);
@@ -340,12 +500,18 @@ void TaskFilletParameters::clearSegments()
     if(!DressUpView)
         return;
     std::set<QTreeWidgetItem*> items;
+    std::vector<QTreeWidgetItem*> corners;
     for (auto item : ui->treeWidgetReferences->selectedItems()) {
+        if (getCornerItem(item)) {
+            corners.push_back(item);
+            continue;
+        }
         if (auto parent = item->parent())
             item = parent;
         items.insert(item);
     }
     setupTransaction();
+    clearCornerEdges(corners);
     PartDesign::Fillet* pcFillet = static_cast<PartDesign::Fillet*>(DressUpView->getObject());
     for (auto item : items) {
         for (auto child : item->takeChildren())
@@ -362,14 +528,22 @@ void TaskFilletParameters::removeSegments()
         return;
     setupTransaction();
     PartDesign::Fillet* pcFillet = static_cast<PartDesign::Fillet*>(DressUpView->getObject());
+    std::vector<QTreeWidgetItem*> cornerEdges;
     for (auto item : ui->treeWidgetReferences->selectedItems()) {
         auto parent = item->parent();
         if (!parent)
             continue;
+        // the fillet of a corner stays; it loses its own setback
+        if (getCornerItem(item)) {
+            cornerEdges.push_back(item);
+            item->setSelected(false);
+            continue;
+        }
         pcFillet->Segments.removeValue(getGeometryItemText(parent).constData(),
                                        parent->indexOfChild(item));
         delete item;
     }
+    clearCornerEdges(cornerEdges);
     TaskDressUpParameters::onRefDeleted();
     recompute();
 }
@@ -411,7 +585,7 @@ void TaskFilletParameters::setSegment(QTreeWidgetItem *item, double param, doubl
 void TaskFilletParameters::newSegment(int editColumn)
 {
     auto current = getCurrentItem();
-    if (!current)
+    if (!current || getCornerItem(current))
         return;
     auto parent = current->parent();
     QSignalBlocker blocker(ui->treeWidgetReferences);
@@ -480,6 +654,204 @@ void TaskFilletParameters::onLengthChanged(double len)
 void TaskFilletParameters::onNewItem(QTreeWidgetItem *item)
 {
     item->setFlags(item->flags() | Qt::ItemIsEditable);
+    // A picked vertex is a corner, set back by the radius to begin with
+    auto DressUpView = getDressUpView();
+    if (!DressUpView || !getCornerItem(item))
+        return;
+    auto pcFillet = static_cast<PartDesign::Fillet*>(DressUpView->getObject());
+    std::string vertex = getGeometryItemText(item).constData();
+    if (pcFillet->Corners.getValue(vertex))
+        return;
+    setupTransaction();
+    pcFillet->Corners.setValue(vertex, getRadius());
+    // Setting the corner put its vertex in Base already, so the reference
+    // sync that called here finds nothing changed and does not recompute
+    if (!cornerRecomputePending) {
+        cornerRecomputePending = true;
+        QMetaObject::invokeMethod(this, [this]() {
+            cornerRecomputePending = false;
+            recompute();
+        }, Qt::QueuedConnection);
+    }
+}
+
+QTreeWidgetItem *TaskFilletParameters::getCornerItem(QTreeWidgetItem *item)
+{
+    if (!item)
+        return nullptr;
+    if (auto parent = item->parent())
+        item = parent;
+    if (!boost::starts_with(getGeometryItemText(item).constData(), "Vertex"))
+        return nullptr;
+    return item;
+}
+
+std::map<std::string, TaskFilletParameters::CornerEdges> TaskFilletParameters::getCornerEdges() const
+{
+    std::map<std::string, CornerEdges> res;
+    auto DressUpView = getDressUpView();
+    if (!DressUpView)
+        return res;
+    auto pcFillet = static_cast<PartDesign::Fillet*>(DressUpView->getObject());
+    std::vector<std::string> vertexes;
+    for (int i=0; i<ui->treeWidgetReferences->topLevelItemCount(); ++i) {
+        auto item = ui->treeWidgetReferences->topLevelItem(i);
+        if (getCornerItem(item))
+            vertexes.emplace_back(getGeometryItemText(item).constData());
+    }
+    if (vertexes.empty())
+        return res;
+    try {
+        Part::TopoShape baseShape = pcFillet->getBaseShape(true);
+        if (baseShape.isNull())
+            return res;
+        auto edges = pcFillet->UseAllEdges.getValue() ? baseShape.getSubTopoShapes(TopAbs_EDGE)
+                                                      : pcFillet->getContinuousEdges(baseShape);
+        for (const auto &name : vertexes) {
+            TopoDS_Shape vertex = baseShape.getSubShape(name.c_str(), true);
+            if (vertex.IsNull())
+                continue;
+            auto &cornerEdges = res[name];
+            for (const auto &edge : edges) {
+                for (const auto &v : edge.getSubShapes(TopAbs_VERTEX)) {
+                    if (v.IsSame(vertex)) {
+                        int index = baseShape.findShape(edge.getShape());
+                        if (index)
+                            cornerEdges.emplace_back("Edge" + std::to_string(index), edge);
+                        break;
+                    }
+                }
+            }
+        }
+    }
+    // a bad reference is the recompute's to report
+    catch (Base::Exception &) {
+    }
+    catch (Standard_Failure &) {
+    }
+    return res;
+}
+
+App::ObjectIdentifier TaskFilletParameters::getCornerPath(QTreeWidgetItem *item) const
+{
+    auto DressUpView = getDressUpView();
+    auto corner = getCornerItem(item);
+    if (!DressUpView || !corner)
+        return App::ObjectIdentifier();
+    auto pcFillet = static_cast<PartDesign::Fillet*>(DressUpView->getObject());
+    App::ObjectIdentifier path(pcFillet->Corners);
+    path << App::ObjectIdentifier::SimpleComponent(std::string(getGeometryItemText(corner).constData()))
+         << App::ObjectIdentifier::SimpleComponent(item == corner ? std::string("Setback")
+                                                                 : item->text(0).toStdString());
+    return path;
+}
+
+void TaskFilletParameters::refreshCorner(QTreeWidgetItem *item, const CornerEdges &edges)
+{
+    auto DressUpView = getDressUpView();
+    if (!DressUpView)
+        return;
+    auto pcFillet = static_cast<PartDesign::Fillet*>(DressUpView->getObject());
+    QSignalBlocker blocker(ui->treeWidgetReferences);
+    std::string vertex = getGeometryItemText(item).constData();
+    const auto *corner = pcFillet->Corners.getValue(vertex);
+    double setback = corner ? corner->setback : -1.0;
+
+    auto linkColor = QVariant::fromValue(QApplication::palette().color(QPalette::Link));
+    auto inherited = QVariant::fromValue(QApplication::palette().color(QPalette::PlaceholderText));
+    // own: the setback is the item's, not the corner's
+    auto setupItem = [&](QTreeWidgetItem *child, double value, bool own) {
+        child->setFlags(child->flags() | Qt::ItemIsEditable);
+        child->setData(SetbackColumn, Qt::UserRole, std::max(value, 0.0));
+        QString text;
+        if (value >= 0.0) {
+            text = QString::fromStdString(Base::Quantity(value, Base::Unit::Length).getUserString());
+            if (!own)
+                text = QStringLiteral("(%1)").arg(text);
+        }
+        child->setText(SetbackColumn, text);
+        auto expr = pcFillet->getExpression(getCornerPath(child)).expression;
+        if (expr) {
+            child->setData(SetbackColumn, Qt::ToolTipRole, QString::fromUtf8(expr->toString().c_str()));
+            child->setData(SetbackColumn, Qt::ForegroundRole, linkColor);
+        }
+        else {
+            child->setData(SetbackColumn, Qt::ToolTipRole, QVariant());
+            child->setData(SetbackColumn, Qt::ForegroundRole, own ? QVariant() : inherited);
+        }
+    };
+    setupItem(item, setback, true);
+
+    // The fillets ending at the vertex, then any other edge given a setback
+    // (a tangent chain names its contour by any of its edges)
+    std::vector<std::string> names;
+    for (const auto &edge : edges)
+        names.push_back(edge.first);
+    if (corner) {
+        for (const auto &v : corner->edges) {
+            if (std::find(names.begin(), names.end(), v.first) == names.end())
+                names.push_back(v.first);
+        }
+    }
+    int j = 0;
+    for (const auto &name : names) {
+        auto child = j < item->childCount() ? item->child(j) : new QTreeWidgetItem(item);
+        ++j;
+        child->setText(0, QString::fromStdString(name));
+        const double *own = nullptr;
+        if (corner) {
+            auto it = corner->edges.find(name);
+            if (it != corner->edges.end())
+                own = &it->second;
+        }
+        if (own)
+            setupItem(child, *own, true);
+        else
+            setupItem(child, setback, false);
+    }
+    while (item->childCount() > j)
+        delete item->child(item->childCount()-1);
+    item->setExpanded(true);
+}
+
+void TaskFilletParameters::updateCorner(QTreeWidgetItem *item)
+{
+    auto DressUpView = getDressUpView();
+    auto corner = getCornerItem(item);
+    if (!DressUpView || !corner)
+        return;
+    auto pcFillet = static_cast<PartDesign::Fillet*>(DressUpView->getObject());
+    std::string vertex = getGeometryItemText(corner).constData();
+    double value = item->data(SetbackColumn, Qt::UserRole).toDouble();
+    setupTransaction();
+    if (item == corner)
+        pcFillet->Corners.setValue(vertex, value);
+    else
+        pcFillet->Corners.setValue(vertex, item->text(0).toStdString(), value);
+    recompute();
+}
+
+void TaskFilletParameters::clearCornerEdges(const std::vector<QTreeWidgetItem*> &items)
+{
+    auto DressUpView = getDressUpView();
+    if (!DressUpView || items.empty())
+        return;
+    auto pcFillet = static_cast<PartDesign::Fillet*>(DressUpView->getObject());
+    for (auto item : items) {
+        auto corner = getCornerItem(item);
+        if (!corner)
+            continue;
+        std::string vertex = getGeometryItemText(corner).constData();
+        if (item != corner) {
+            pcFillet->Corners.removeValue(vertex, item->text(0).toStdString());
+            continue;
+        }
+        if (const auto *value = pcFillet->Corners.getValue(vertex)) {
+            Part::PropertyFilletCorners::Corner cleared;
+            cleared.setback = value->setback;
+            pcFillet->Corners.setValue(vertex, cleared);
+        }
+    }
 }
 
 double TaskFilletParameters::getRadius() const
