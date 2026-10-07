@@ -1372,7 +1372,9 @@ void PrefUnitSpinBox::restorePreferences()
     if (!m_Restored)
       m_Default = rawValue();
 
-    double fVal = (double)getWindowParameter()->GetFloat( entryName() ,m_Default.toUInt() );
+    // the default as it is: toUInt() made 4 of an arrow size of 3.5 and 0 of
+    // anything below a half, and OK then stored that
+    double fVal = (double)getWindowParameter()->GetFloat( entryName() ,m_Default.toDouble() );
     setValue(fVal);
 }
 
