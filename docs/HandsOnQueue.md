@@ -10,7 +10,8 @@ the next stage, and each entry says which stage has it.
 Stages so far: 2026-10-06 07:56 (`84c14e12d5`, the first), 2026-10-06 11:23
 (`c1028260e3`: entries 1, 2, 4, 7), 2026-10-06 13:59 (`489c64799c`: entries 3, 5, 6, and
 the helix of entry 8), 2026-10-06 14:44 (`6b1bd3f434`: entry 14), 2026-10-06 17:44
-(`f7d3aa0cf2`: entries 16 and 18).
+(`f7d3aa0cf2`: entries 16 and 18), 2026-10-07 10:37 (`7e94bff8d0`: entries 9 to 13, 20
+and 21).
 
 States: `OPEN` (not looked at), `FOUND` (cause known, no fix yet), `FIXED`
 (committed and tested in the dev tree, not staged yet), `STAGED` (in the copy
@@ -30,19 +31,19 @@ report views, the reporter's own files -- is kept beside the dev tree under
 | 6 | 2026-10-06 | maximized with the custom title bar: sometimes no margin at the top | STAGED |
 | 7 | 2026-10-06 | crash after answering Yes to the recompute question on `scanner.FCStd` | STAGED, cause of the GL error open |
 | 8 | 2026-10-06 | `scanner.FCStd`: the migration recompute fails | FOUND in full; the helix STAGED; the rest is entries 14 to 16 |
-| 9 | 2026-10-06 | the 3D view lags behind the mouse: hover highlight, wheel zoom | FIXED |
-| 10 | 2026-10-06 | a 3D view is slow to take a new size | FIXED with entry 9 |
-| 11 | 2026-10-06 | dark theme: wrong colors (checkbox border, title bar buttons), audit asked | FIXED: the two named and four the audit found |
-| 12 | 2026-10-06 | TechDraw: dimensions and cosmetics are covered by the face fill | FIXED (they were transparent, not covered) |
-| 13 | 2026-10-06 | report view: grouped messages with an expand icon in the margin, no underscore (change request) | FIXED |
+| 9 | 2026-10-06 | the 3D view lags behind the mouse: hover highlight, wheel zoom | STAGED |
+| 10 | 2026-10-06 | a 3D view is slow to take a new size | STAGED with entry 9 |
+| 11 | 2026-10-06 | dark theme: wrong colors (checkbox border, title bar buttons), audit asked | STAGED: the two named and four the audit found |
+| 12 | 2026-10-06 | TechDraw: dimensions and cosmetics are covered by the face fill | STAGED (they were transparent, not covered) |
+| 13 | 2026-10-06 | report view: grouped messages with an expand icon in the margin, no underscore (change request) | STAGED |
 | 14 | 2026-10-06 | a Draft with no neutral plane given turns the other way after a recompute (from entry 8) | STAGED |
 | 15 | 2026-10-06 | a Pad "up to first" gives a third result (from entry 8) | FOUND in part: not the pad; a pocket goes wrong only in a recompute of everything |
 | 16 | 2026-10-06 | faces of a "Mutated" copy-on-change binder are renamed by every recompute in a new session (from entry 8; the old build too) | STAGED |
 | 17 | 2026-10-06 | `Sketch043`, `Sketch055`: "Missing external geometry reference", seen once the binders of entry 16 are valid | OPEN |
 | 18 | 2026-10-06 | TechDraw pages do not load: "invalid vector subscript", the views loose in the tree, 320 objects restored to defaults | STAGED |
 | 19 | 2026-10-06 | TechDraw: other indexes taken on trust (an audit asked) | OPEN |
-| 20 | 2026-10-06 | TechDraw: crash when the page is switched to the backend's renderer; and what it then drew | FIXED, the double draw too |
-| 21 | 2026-10-06 | TechDraw: a click on a section line starts a section, and the line shifts at each recompute | FIXED |
+| 20 | 2026-10-06 | TechDraw: crash when the page is switched to the backend's renderer; and what it then drew | STAGED, the double draw too |
+| 21 | 2026-10-06 | TechDraw: a click on a section line starts a section, and the line shifts at each recompute | STAGED |
 | 22 | 2026-10-06 | omni search: `/word` with no space is an object query; `/ word` forces it (change request, decided) | OPEN |
 | 23 | 2026-10-06 | omni search: every setting it collects has documentation, none of it long (an audit asked) | OPEN |
 | 24 | 2026-10-06 | every `Base::Parameter` setting behind a cog helper class so the omni search finds it, applied through delayed handlers (change request, application-wide) | OPEN |
@@ -50,6 +51,7 @@ report views, the reporter's own files -- is kept beside the dev tree under
 | 26 | 2026-10-06 | a long halt after enabling MSAA and pressing OK in the preferences | OPEN |
 | 27 | 2026-10-06 | the view cell menu: opens a spreadsheet nobody asked for, lists every TechDraw object, changes the wrong cell | OPEN |
 | 28 | 2026-10-06 | `scanner.FCStd` restores with a wrong colour, sometimes (the motor body light blue for light grey) | OPEN |
+| 29 | 2026-10-07 | view cells: transparent frames that show a split, a join and a resize while dragged (every cell the drag changes); a minimum cell size setting, default 200 (change request, decided) | OPEN |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -315,7 +317,7 @@ Four separate things:
 4. **The four binders.** Not a regression: the old build breaks them the same
    way as soon as `Binder008` is recomputed. Entry 16.
 
-## 9. The 3D view lags behind the mouse -- FIXED
+## 9. The 3D view lags behind the mouse -- STAGED
 
 **Reported (2026-10-06 11:58):** "the 3d view seems lagging in response to
 mouse movement and wheel. a mouse over highlight is visibly delayed a few
@@ -394,10 +396,9 @@ lists it), read before every frame, so a change shows at the next one:
 | `Pipelined while animating` (the default) | unless the view is redrawing by itself: a camera animation, a spin, the backend's animated content |
 | `Pipelined` | never; one waiting frame follows when the redraws stop |
 
-"Turn it on for animation" is read as the second row, and that reading is
-mine: in a run of frames the next one shows this one anyway, and the wait
-buys nothing there. If something else was meant, the setting has the other
-two.
+"Turn it on for animation" is read as the second row: in a run of frames
+the next one shows this one anyway, and the wait buys nothing there.
+Confirmed by the reporter, 2026-10-07: "default is right".
 
 How it is built (docs/DeviceAdoption.md section 10 has it in full): the
 host says before each frame whether it may be pipelined
@@ -480,7 +481,7 @@ right behind the frame, which makes the race common. Fixed in the fork's
 bgfx (`TimerQueryD3D11::update` asks the disjoint query first and leaves
 the last result standing when a query has nothing to say).
 
-## 10. A 3D view is slow to take a new size -- FIXED
+## 10. A 3D view is slow to take a new size -- STAGED
 
 **Reported (2026-10-06 12:04):** "when I create a new document, the mdi window
 will zoom to fit. the background gradient is stuck at its old size and visibly
@@ -517,7 +518,7 @@ copy is in flight (`BGFXView::ensureReadbackTarget`), which holds it one
 frame longer still. With every frame waiting for its copy none is ever in
 flight when the next begins.
 
-## 11. Dark theme: wrong colors -- FIXED
+## 11. Dark theme: wrong colors -- STAGED
 
 **Reported (2026-10-06 11:58):** "checkbox border and customized toolbar
 maximize/minimize icon got bad color in dark theme. audit for other similar UI
@@ -609,7 +610,7 @@ colour, so it had nothing to follow; it showed once the packs set it
 ctest on the tree with this entry and entry 13 in it: 781 of 782, the one
 being `DeferredLoad_tests_run`'s timeout, as it was before them.
 
-## 12. TechDraw: dimensions and cosmetics are covered by the face fill -- FIXED
+## 12. TechDraw: dimensions and cosmetics are covered by the face fill -- STAGED
 
 **Reported (2026-10-06 11:58):** "techdraw dimension/cosmetics is covered by
 face filling." And, while it was being looked at: "the qt painted page covers
@@ -670,7 +671,7 @@ colour, which is opaque in the reporter's configuration; the centre lines of
 `Page004` came back with the fix. If a cosmetic line is still missing after
 the next stage, that is a different cause.
 
-## 13. Report view: grouped messages (a change request) -- FIXED
+## 13. Report view: grouped messages (a change request) -- STAGED
 
 **Asked (2026-10-06 11:58):** "do not use underscore in console grouped
 message, intead, put a clickable expansion icon before the message (note,
@@ -1063,7 +1064,7 @@ dimension helpers, the restore of cosmetics and centre lines, broken and
 complex sections, details, templates, weld symbols, hatch and PAT parsing,
 the command files and the Python.
 
-## 20. TechDraw: crash when the page is switched to the backend -- FIXED
+## 20. TechDraw: crash when the page is switched to the backend -- STAGED
 
 **Reported (2026-10-06 17:53, under cdb):** "there is a crash when I started
 bgfx rendering of techdraw". The copy staged 17:44, a page open and painted
@@ -1259,7 +1260,7 @@ paint and at load, and the crash above):
     shape SectionView003 - Bnd_Box is void". Whether the section view that
     fails to build is what the out-of-range read trips over is not known.
 
-## 21. TechDraw: a click on a section line starts a section; the line shifts -- FIXED
+## 21. TechDraw: a click on a section line starts a section; the line shifts -- STAGED
 
 **Reported (2026-10-06 15:21):** "clicking a section line in techdraw page
 will trigger a section operation even without moving the section line. also
@@ -1474,69 +1475,72 @@ is not that abort. It is a load that reports nothing wrong and still shows
 a colour the file does not have. "Sometimes" points at something that
 depends on order or timing in the load rather than on the file.
 
+## 29. View cells: frames that show a split, a join and a resize while it is dragged; a minimum cell size (a change request) -- OPEN
+
+**2026-10-07 09:32, the view cell's handles, resizing and a minimum size (a
+change request).** "I want change the view cell UI. replace the top right
+corner handle to a close button for closing the view. keep the bottom right
+handle for resizing. when resizing (either dragging the corner or the split
+handle) show transparent box of the involved cell to track the resizing in
+real time, just like how overlay widget does it. add a setting for minimum
+size (for both width and height) default to 200, if creating a new view will
+result in any existing (or the new) view fall below the limit, the view
+creation is refused, show an message in console (don't flood it)." Asked
+for, four things:
+(a) the handle in a cell's top right corner becomes a close button that
+closes the view;
+(b) the bottom right handle stays, for resizing;
+(c) while resizing -- by the corner or by the splitter between cells -- a
+transparent box over each cell involved follows the new size live, the way
+the overlay dock widgets show a drag;
+(d) a setting for the minimum cell size, one for width and height both,
+default 200; a new view that would leave ANY cell under it, an existing one
+or the new one, is refused, with a message in the report view that does not
+repeat itself into a flood.
+Read from the source by the note-taker, nothing changed: the cell's corner
+zones are `ViewAreaZone` in `src/Gui/ViewArea.cpp`, and its enum has two
+corners, `TopRight` and `BottomLeft` -- there is no bottom RIGHT zone today.
+To ask the reporter: is the one to keep the existing bottom left zone, or is
+it to move to the bottom right? The overlay's live box is `OverlayDragFrame`
+in `src/Gui/OverlayWidgets.cpp`, and its size floor is the setting
+`DockOverlayMinimumSize` (`OverlayParams`) -- the precedent for (c) and (d).
+**Revised by the reporter after the facts below were put to them, 10:19,
+and this is the one to do:** "that's not very intutive without the
+transparent frame I propose. so leave the close button I requested. just
+make the frames right to hint the operation is enough I think".
+The facts: the two corner zones, top right and bottom left, are identical
+and neither is a resize handle. A drag INWARD from either splits the cell
+-- a new view, beside or stacked by the drag's dominant axis -- and the rest
+of the drag sizes the new border. A drag OUTWARD into a neighbour arms a
+join: the neighbour dims with an arrow and is closed on release. A view is
+closed from its own cell only through the cell menu ("Close view") or the
+border's right-click menu; resizing is the border alone
+(docs/SplitViews.md sec 5.4).
+What is asked now:
+- (a) and (b) are WITHDRAWN: no close button, the corner zones stay where
+  they are and keep doing what they do (the note-taker reads "leave the
+  close button" as "leave it out"; to confirm).
+- (c) is the heart of it, and wider than resizing: every drag of a corner
+  zone or of a border shows transparent frames over the cells involved, live,
+  and the frames have to SAY which operation is under way -- a split shows
+  the two cells the one will become, a join shows the neighbour going and
+  the cell that takes its room, a resize shows the cells either side of the
+  border at their new sizes. Made exact by the reporter, 10:22: "border
+  resize shall track the sizes of all involved cells" -- EVERY cell whose
+  size the drag changes gets its frame, not only the two that touch the
+  border where the cursor is: a border with several cells stacked along one
+  side moves them all, and so does one that pushes on further cells once a
+  neighbour has reached its limit. It is the frames that make the gestures
+  readable; today a split or a join announces itself only once it has
+  happened or by a dim and an arrow.
+- (d) stands: the minimum cell size setting, default 200 for width and
+  height, a view creation that would put any cell under it refused, one
+  quiet line in the report view.
+
 ## Inbox
 
 Notes not sorted into an entry yet. Add a line here at any time, in any words;
 it is read before each entry is started and moved up into the table.
 
-(empty: the notes of 2026-10-06 are entries 20 to 28)
-
-- **2026-10-07 09:32, the view cell's handles, resizing and a minimum size (a
-  change request).** "I want change the view cell UI. replace the top right
-  corner handle to a close button for closing the view. keep the bottom right
-  handle for resizing. when resizing (either dragging the corner or the split
-  handle) show transparent box of the involved cell to track the resizing in
-  real time, just like how overlay widget does it. add a setting for minimum
-  size (for both width and height) default to 200, if creating a new view will
-  result in any existing (or the new) view fall below the limit, the view
-  creation is refused, show an message in console (don't flood it)." Asked
-  for, four things:
-  (a) the handle in a cell's top right corner becomes a close button that
-  closes the view;
-  (b) the bottom right handle stays, for resizing;
-  (c) while resizing -- by the corner or by the splitter between cells -- a
-  transparent box over each cell involved follows the new size live, the way
-  the overlay dock widgets show a drag;
-  (d) a setting for the minimum cell size, one for width and height both,
-  default 200; a new view that would leave ANY cell under it, an existing one
-  or the new one, is refused, with a message in the report view that does not
-  repeat itself into a flood.
-  Read from the source by the note-taker, nothing changed: the cell's corner
-  zones are `ViewAreaZone` in `src/Gui/ViewArea.cpp`, and its enum has two
-  corners, `TopRight` and `BottomLeft` -- there is no bottom RIGHT zone today.
-  To ask the reporter: is the one to keep the existing bottom left zone, or is
-  it to move to the bottom right? The overlay's live box is `OverlayDragFrame`
-  in `src/Gui/OverlayWidgets.cpp`, and its size floor is the setting
-  `DockOverlayMinimumSize` (`OverlayParams`) -- the precedent for (c) and (d).
-  **Revised by the reporter after the facts below were put to them, 10:19,
-  and this is the one to do:** "that's not very intutive without the
-  transparent frame I propose. so leave the close button I requested. just
-  make the frames right to hint the operation is enough I think".
-  The facts: the two corner zones, top right and bottom left, are identical
-  and neither is a resize handle. A drag INWARD from either splits the cell
-  -- a new view, beside or stacked by the drag's dominant axis -- and the rest
-  of the drag sizes the new border. A drag OUTWARD into a neighbour arms a
-  join: the neighbour dims with an arrow and is closed on release. A view is
-  closed from its own cell only through the cell menu ("Close view") or the
-  border's right-click menu; resizing is the border alone
-  (docs/SplitViews.md sec 5.4).
-  What is asked now:
-  - (a) and (b) are WITHDRAWN: no close button, the corner zones stay where
-    they are and keep doing what they do (the note-taker reads "leave the
-    close button" as "leave it out"; to confirm).
-  - (c) is the heart of it, and wider than resizing: every drag of a corner
-    zone or of a border shows transparent frames over the cells involved, live,
-    and the frames have to SAY which operation is under way -- a split shows
-    the two cells the one will become, a join shows the neighbour going and
-    the cell that takes its room, a resize shows the cells either side of the
-    border at their new sizes. Made exact by the reporter, 10:22: "border
-    resize shall track the sizes of all involved cells" -- EVERY cell whose
-    size the drag changes gets its frame, not only the two that touch the
-    border where the cursor is: a border with several cells stacked along one
-    side moves them all, and so does one that pushes on further cells once a
-    neighbour has reached its limit. It is the frames that make the gestures
-    readable; today a split or a join announces itself only once it has
-    happened or by a dim and an arrow.
-  - (d) stands: the minimum cell size setting, default 200 for width and
-    height, a view creation that would put any cell under it refused, one
-    quiet line in the report view.
+(empty: the notes of 2026-10-06 are entries 20 to 28, the note of 2026-10-07
+09:32 is entry 29)
