@@ -16346,13 +16346,17 @@ are a unit, and merges it (`PartFeatureMerge.cpp`):
   ruling;
 - ours' order, then what theirs added.
 
-It refuses, and the unit is one question, where one side's is a list of
-colours and no more and the other's of whole looks (an older file's
-names against names written since: "the object in this colour" needs the
-object's look, which is the view provider's and not in the unit), where
-the names and the looks of a state are not of one length, and where the
-object has no view provider to hold the looks -- a merge run without the
-Gui.
+A side whose list is colours and no more -- names nobody has given a
+material (docs/ShapeAppearanceDesign.md sec 13.7) -- is read as what it
+stands for, the object in each colour: over the object's own look as the
+document has it, asked of the view provider's `ShapeAppearance`. Ours'
+look, for theirs' colours too: it is ours' object they are merged onto.
+The merged list is colours where neither side gave more, and the faces go
+on taking the object's finish.
+
+It refuses, and the unit is one question, where the names and the looks
+of a state are not of one length, and where the object has no view
+provider to hold the looks -- a merge run without the Gui.
 
 **Not done here.**
 
@@ -16373,7 +16377,7 @@ Gui.
 - `App::Part`'s and a link's `ColoredElements` keep their own rule.
 
 **Checked** in the Gui, where the view provider is
-(`scripts/transaction-log-paint-check.py`, 78; +13): theirs gives a face a
+(`scripts/transaction-log-paint-check.py`, 79 with what 13.7 added after; +13): theirs gives a face a
 material and ours paints another -- nothing asked, both by name, theirs'
 with its gloss, both drawn, undone and redone; one face painted by both
 and another's name taken away by theirs -- nothing asked, asked where the

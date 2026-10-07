@@ -103,7 +103,10 @@ struct Paint
     bool coloursOnly {false};
     App::AppearanceList list;
 
-    bool read(const State& state)
+    /// `object` is the object's own look where it can be had: a list of
+    /// colours and no more is then read as what it stands for, the object
+    /// in each colour.
+    bool read(const State& state, const App::MaterialAppearance* object)
     {
         auto names = state.find(Names);
         auto looks = state.find(Looks);
@@ -142,6 +145,12 @@ struct Paint
             p.tag = subs[i].second;
             p.shown = subs[i].first;
             p.look = list.getMaterial(static_cast<int>(i));
+            if (coloursOnly && object) {
+                const App::Color colour = p.look.diffuseColor;
+                p.look = *object;
+                p.look.diffuseColor = colour;
+                p.look.transparency = colour.transparency();
+            }
             std::string key = attribute(p.tag, "shadowed");
             if (key.empty())
                 key = attribute(p.tag, "shadow");
@@ -180,13 +189,27 @@ bool Feature::mergeUnit(const MergeUnitState& baseAt, const MergeUnitSide& oursS
 {
     if (!baseAt.count(Names))
         return inherited::mergeUnit(baseAt, oursSide, theirsSide, merged, notes);
+    // The object's own look, which a list of colours and no more is read
+    // over: its view provider's, as the document has it. Ours', that is,
+    // for theirs' colours too -- it is ours' object they are merged onto.
+    App::MaterialAppearance object;
+    bool known = false;
+    if (auto view = App::Document::viewOf(this)) {
+        if (auto appearance = dynamic_cast<App::PropertyAppearanceList*>(
+                    view->getPropertyByName("ShapeAppearance"))) {
+            object = appearance->getBase();
+            known = true;
+        }
+    }
     Paint base, ours, theirs;
-    if (!base.read(baseAt) || !ours.read(oursSide.at) || !theirs.read(theirsSide.at))
+    if (!base.read(baseAt, known ? &object : nullptr)
+            || !ours.read(oursSide.at, known ? &object : nullptr)
+            || !theirs.read(theirsSide.at, known ? &object : nullptr))
         return false;
-    // One side's a list of colours and the other's of whole looks: the
-    // colours are "the object in this colour", and the object is not here
-    // to be asked.
-    if (!ours.at.empty() && !theirs.at.empty() && ours.coloursOnly != theirs.coloursOnly)
+    // One side's a list of colours and the other's of whole looks, and no
+    // object's look to read the colours over.
+    if (!known && !ours.at.empty() && !theirs.at.empty()
+            && ours.coloursOnly != theirs.coloursOnly)
         return false;
 
     const std::string rule = facePaint();
@@ -310,9 +333,12 @@ bool Feature::mergeUnit(const MergeUnitState& baseAt, const MergeUnitSide& oursS
     }
 
     // The looks, in that order.
+    // Colours and no more where neither side has given a look more than a
+    // colour: the merged faces go on taking the object's finish.
     App::AppearanceList list;
     if (!out.empty()) {
-        const bool coloursOnly = ours.at.empty() ? theirs.coloursOnly : ours.coloursOnly;
+        const bool coloursOnly = (ours.at.empty() || ours.coloursOnly)
+                              && (theirs.at.empty() || theirs.coloursOnly);
         const int count = static_cast<int>(out.size());
         if (coloursOnly) {
             list.setSize(count);

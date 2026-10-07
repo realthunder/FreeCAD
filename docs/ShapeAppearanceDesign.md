@@ -3150,7 +3150,9 @@ it is the face as drawn.
 **An entry is a whole material and nothing of it follows the object** --
 Q1 as it was ruled, the loss 13.4 named with it. A face that is painted is
 the object as it was when it was painted, in that colour; a gloss the
-object is given after is not the face's.
+object is given after is not the face's. *(Changed the same day, by a
+ruling: a painted face follows until a name is given a material. See the
+end of this section.)*
 
 *Withdrawn, having been built and committed with this step:* 13.6's way
 of keeping a painted face following the object's finish -- the store
@@ -3343,3 +3345,43 @@ version's value, the second left. Paint check, 65: a box with a painted
 face and a face given a material, a version, the names taken away, the
 version restored -- the names with their colours, the material with its
 name, and drawn as the version had them.
+
+**A painted face follows the object until a name is given a material
+(user, 2026-10-07).** Asked of step 4's "nothing of it follows the
+object": "the type of shapeapperance/mappedapperance is lazy right? It can
+tell if a materil/finish has ever been assigned. If not, the named face
+can still follow others".
+
+The list is lazy, and of itself it cannot tell: that is what was
+withdrawn. A field no entry states is an empty array -- but so is a field
+every entry states alike, which the list keeps as its base (the fold), so
+one named face given a gloss leaves the same arrays as none given any.
+What can tell is the flag step 4 put on the list for an older file's
+colours, and it is the same question: *has any name been given more than
+a colour.* So it is asked when the names are written
+(`setNamedElements()`), of every look against the object's:
+
+- **none has**: the list holds colours and no more, its follow flag set,
+  and each element is the object as it comes to be, in its colour. A
+  painted face takes a finish, a gloss or a card the object is given
+  after -- what worked before the store, and what 13.4 named as the loss.
+  Set Colors alone never ends it;
+- **one has**: every look is stored whole, as it is then, and the flag is
+  cleared. The faces that were only painted hold the object's look as it
+  was at that moment -- 13.6's "once one named face has a finish of its
+  own the others hold the one they had". Take the material away again and
+  the list is colours once more.
+
+It is one flag for the list and not one for each face or field: a face
+that is only painted beside one that has a material does not follow.
+Finer than that is the "one more stored value" above, and is not built.
+
+In the merge (docs/TransactionLog.md sec 31.20) a side whose list is
+colours is read over the object's look as the document has it, so a
+branch that painted and a branch that gave a material merge with nothing
+asked; the merged list is colours where neither side gave more.
+
+Paint check, 79: a face given a colour takes the object's new gloss and
+its name says so; one name given a material and the painted face no
+longer follows; names out of an older file written again as colours
+follow still.

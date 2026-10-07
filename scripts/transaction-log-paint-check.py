@@ -322,14 +322,15 @@ def run():
             doc.recompute()
 
         own = gloss(vp.ShapeAppearance.Base)
-        # A face given a colour is the object as it is then, in that
-        # colour, whole: a gloss the object is given after is not the face's.
+        # While no name has been given more than a colour, a painted face
+        # is the object in that colour and takes a gloss the object is given
+        # after.
         paint(doc, "green bottom", "Box", {bottom: GREEN})
         glossed(0.5)
-        check("a face given a colour keeps the gloss the object had (%r)" % gloss(vp.ShapeAppearance[ibottom]),
-              gloss(vp.ShapeAppearance[ibottom]) == own and rgb(vp.DiffuseColor[ibottom]) == GREEN)
+        check("a face given a colour takes the object's new gloss (%r)" % gloss(vp.ShapeAppearance[ibottom]),
+              gloss(vp.ShapeAppearance[ibottom]) == 0.5 and rgb(vp.DiffuseColor[ibottom]) == GREEN)
         check("and so its name says (%r)" % gloss(vp.getElementAppearances()[bottom]),
-              gloss(vp.getElementAppearances()[bottom]) == own)
+              gloss(vp.getElementAppearances()[bottom]) == 0.5)
         glossed(own)
 
         doc.openTransaction("matte red top")
@@ -353,6 +354,14 @@ def run():
         doc.redo()
         check("redone (%r)" % gloss(vp.ShapeAppearance[itop]),
               gloss(vp.ShapeAppearance[itop]) == 0.25 and named(doc.Box) == {top: RED, bottom: GREEN})
+        # One name given a material, and every look is whole from then on:
+        # the face that was only painted holds what it had.
+        glossed(0.5)
+        check("a material given to one name: the painted face no longer follows (%r)"
+              % gloss(vp.ShapeAppearance[ibottom]),
+              gloss(vp.ShapeAppearance[ibottom]) == own and gloss(vp.ShapeAppearance[itop]) == 0.25
+              and rgb(vp.DiffuseColor[ibottom]) == GREEN)
+        glossed(own)
         # A colour given to a name that has a material changes its colour.
         paint(doc, "blue top", "Box", {top: BLUE})
         check("a colour by name keeps the name's material (%r)" % gloss(vp.ShapeAppearance[itop]),
@@ -409,8 +418,8 @@ def run():
         vp.setElementColors(dict(was))
         doc.recompute()
         glossed(0.6)
-        check("written again they are whole, and keep it (%r)" % sorted({gloss(x) for x in vp.ShapeAppearance}),
-              sorted({gloss(x) for x in vp.ShapeAppearance}) == [0.5, 0.6] and named(doc.Box) == was)
+        check("written again as colours they follow still (%r)" % sorted({gloss(x) for x in vp.ShapeAppearance}),
+              {gloss(x) for x in vp.ShapeAppearance} == {0.6} and named(doc.Box) == was)
         App.closeDocument(doc.Name)
 
         # The panel (sec 13.6 step 5): a face given a colour through Set

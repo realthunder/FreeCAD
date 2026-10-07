@@ -3343,6 +3343,8 @@ std::map<std::string,App::Color> ViewProviderPartExt::getElementColors(const cha
     return ret;
 }
 
+static bool sameLook(const App::MaterialAppearance &a, const App::MaterialAppearance &b);
+
 App::AppearanceList ViewProviderPartExt::namedAppearances() const
 {
     const App::AppearanceList &list = MappedAppearance.getList();
@@ -3502,10 +3504,30 @@ void ViewProviderPartExt::setNamedElements(App::PropertyLinkSub *names,
                                            const std::vector<App::MaterialAppearance> &looks,
                                            bool touched)
 {
-    // The whole of each look, and said to be so: the follow flag is what
-    // marks a list of colours and no more (namedAppearances()).
+    // While no element has been given more than a colour -- each look is
+    // the object's but for that -- the list holds colours and no more, which
+    // its follow flag says: each element is then the object as it comes to
+    // be, in its colour (namedAppearances()), and a painted face goes on
+    // taking the object's finish. The first look that is more than a colour
+    // ends that for all of them: the list holds the whole of each, as it is
+    // now, and the flag is cleared.
+    App::MaterialAppearance object = ShapeAppearance.getBase();
+    bool coloursOnly = true;
+    for(const auto &look : looks) {
+        object.diffuseColor = look.diffuseColor;
+        object.transparency = look.transparency;
+        if(!sameLook(look, object)) {
+            coloursOnly = false;
+            break;
+        }
+    }
     App::AppearanceList list;
-    if(!looks.empty()) {
+    if(!looks.empty() && coloursOnly) {
+        list.setSize(static_cast<int>(looks.size()));
+        for(size_t i=0;i<looks.size();++i)
+            list.setDiffuseColor(static_cast<int>(i), App::AppearanceList::storedDiffuse(looks[i]));
+    }
+    else if(!looks.empty()) {
         list.setPBR(ShapeAppearance.isPBR());
         list.setSize(static_cast<int>(looks.size()), ShapeAppearance.getBase());
         for(size_t i=0;i<looks.size();++i)
