@@ -41,6 +41,8 @@
 #include <Base/ServiceProvider.h>
 #include <Base/Tools.h>
 #include <Gui/Document.h>
+
+#include <Gui/MiscParams.h>
 #include <Gui/Inventor/Draggers/GizmoStyleParameters.h>
 #include <Gui/Inventor/So3DAnnotation.h>
 #include <Gui/Inventor/SoToggleSwitch.h>
@@ -76,7 +78,7 @@ Base::Reference<ParameterGrp> getGizmoParameterGroup()
 int getCoarseLinearSnapMultiplier()
 {
     int multiplier = static_cast<int>(
-        getGizmoParameterGroup()->GetInt("CoarseLinearSnapMultiplier", 5)
+        MiscParams::getCoarseLinearSnapMultiplier()
     );
     return std::max(1, multiplier);
 }
@@ -84,7 +86,7 @@ int getCoarseLinearSnapMultiplier()
 int getCoarseRotationSnapMultiplier()
 {
     int multiplier = static_cast<int>(
-        getGizmoParameterGroup()->GetInt("CoarseRotationSnapMultiplier", 5)
+        MiscParams::getCoarseRotationSnapMultiplier()
     );
     return std::max(1, multiplier);
 }

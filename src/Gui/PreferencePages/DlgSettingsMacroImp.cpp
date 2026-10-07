@@ -22,6 +22,8 @@
 
 #include "PreCompiled.h"
 
+#include "MiscParams.h"
+
 #include <Gui/Action.h>
 #include <Gui/Application.h>
 #include <Gui/MainWindow.h>
@@ -67,7 +69,7 @@ void DlgSettingsMacroImp::setRecentMacroSize()
     auto recent = getMainWindow()->findChild<RecentMacrosAction *>(QStringLiteral("recentMacros"));
     if (recent) {
         ParameterGrp::handle hGrp = WindowParameter::getDefaultParameter()->GetGroup("RecentMacros");
-        recent->resizeList(hGrp->GetInt("RecentMacros", 4));
+        recent->resizeList(MiscParams::getRecentMacros());
     }
 }
 
@@ -98,7 +100,7 @@ void DlgSettingsMacroImp::loadSettings()
     ui->MacroPath_2->onRestore();
     ui->RecentMacros->onRestore();
     ParameterGrp::handle hGrp = WindowParameter::getDefaultParameter()->GetGroup("RecentMacros");
-    ui->ShortcutModifiers->setText(QString::fromStdString(hGrp->GetASCII("ShortcutModifiers", "Ctrl+Shift+")));
+    ui->ShortcutModifiers->setText(QString::fromStdString(MiscParams::getShortcutModifiers()));
     ui->ShortcutCount->onRestore();
 }
 

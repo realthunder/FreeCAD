@@ -114,6 +114,7 @@
 #include "DlgDocumentPermissions.h"
 #include "MainWindow.h"
 #include "MainWindowParams.h"
+#include "MiscParams.h"
 #include "Macro.h"
 #include "MDIViewWithCamera.h"
 #include "PreferencePackManager.h"
@@ -2743,7 +2744,7 @@ void preAppSetup()
     // Automatic scaling for legacy apps (disable once all parts of GUI are aware of HiDpi)
     ParameterGrp::handle hDPI =
         App::GetApplication().GetParameterGroupByPath("User parameter:BaseApp/Preferences/HighDPI");
-    bool disableDpiScaling = hDPI->GetBool("DisableDpiScaling", false);
+    bool disableDpiScaling = MiscParams::getDisableDpiScaling();
     if (disableDpiScaling) {
 #ifdef FC_OS_WIN32
         SetProcessDPIAware(); // call before the main event loop
@@ -2770,7 +2771,7 @@ void preAppSetup()
     // Use software rendering for OpenGL
     ParameterGrp::handle hOpenGL =
         App::GetApplication().GetParameterGroupByPath("User parameter:BaseApp/Preferences/OpenGL");
-    bool useSoftwareOpenGL = hOpenGL->GetBool("UseSoftwareOpenGL", false);
+    bool useSoftwareOpenGL = MiscParams::getUseSoftwareOpenGL();
     if (useSoftwareOpenGL) {
         QApplication::setAttribute(Qt::AA_UseSoftwareOpenGL);
     }

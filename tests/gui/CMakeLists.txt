@@ -1501,3 +1501,10 @@ fc_add_gui_test(GuiPartDesignSettings_tests_run
 fc_add_gui_test(GuiPartOptionsSettings_tests_run
                 part-options-settings.py
                 --timeout 180)
+
+# Fourteen settings of small parameter groups (recent macros, gizmos, cache
+# directory, shortcut timeout, workbench tab bar, the start-up switches,
+# the dependency graph) are behind MiscParams, each under its own group.
+fc_add_gui_test(GuiMiscSettings_tests_run
+                misc-settings.py
+                --timeout 180)
