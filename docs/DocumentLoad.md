@@ -1291,6 +1291,13 @@ outliving its load is a bounding box keyed on a TShape address that a
 closed document may free and a later allocation reuse; until then each
 claim also pins its own shape.
 
+**The PUBLISHED claims, that is. One still in flight stays** (sec 18.7,
+2026-10-07): "every queue is empty" says that no build will ask again,
+and says nothing about whether the batch is done. Such a claim goes on
+answering as in flight, is held by its batch as well as by the map, and
+is taken out by its worker when it publishes. A TShape in flight is not
+given to a second worker either.
+
 ### 18.4 Result
 
 MiSTer, 17058 solids, the DEFAULT path (`ProgressiveLoad` on, coarse rung
@@ -1421,13 +1428,14 @@ a face or an edge TShape with another root -- so the GUI thread goes on
 tessellating everything the collector would not claim. That remainder is
 the next thing to attack here, not the hook.
 
-### 18.7 OPEN: the heap is corrupted while a live import is meshed (found 2026-10-07)
+### 18.7 The heap corrupted while a live import is meshed (found and fixed 2026-10-07)
 
-Not fixed, and not understood to the bottom. Written down so that it is
-not found a second time from nothing.
+FIXED, `ba4a70c6a5`. The first half of this section is as it was written
+the day the fault was found and not understood; what it turned out to be
+follows it.
 
-**What is seen.** `tests/gui/live-import-nested-loop.py`
-(`GuiLiveImportNestedLoop_tests_run`) dies in about one run of twenty,
+**What was seen.** `tests/gui/live-import-nested-loop.py`
+(`GuiLiveImportNestedLoop_tests_run`) died in about one run of twenty,
 after passing its checks or before it has made one, at a different place
 each time: `QRegion::cleanUp` under `QWidgetPrivate::getOpaqueChildren`,
 `QRegion::operator+=` in `QWidgetRepaintManager::paintAndFlush`,
@@ -1448,7 +1456,7 @@ set's scale.
 
 **Where it comes from.** With glibc's malloc checker on the FreeCAD
 process the run stops at the fault and not at a victim, on the FIRST run,
-every time (2 of 2), on a pre-mesh worker:
+every time, on a pre-mesh worker:
 
     PartGui::BatchFunctor::operator()        src/Mod/Part/Gui/PreMesh.cpp:123
     BRepMesh_IncrementalMesh::Perform        BRepMesh_IncrementalMesh.cxx:80
@@ -1460,31 +1468,107 @@ with seven other workers inside `BRepMesh_IncrementalMesh` at that
 instant. The second capture stopped in the same destructor on a
 segmentation fault, the context's algorithm objects already holding heap
 addresses where their vtables belong. With `Render/PreMeshOnLoad` off the
-same test passes 4 runs of 4 under the checker, eight checks each. So it
-is the parallel pre-mesh, on this load; whether on every load was not
-run.
+same test passes 4 runs of 4 under the checker, eight checks each.
 
-**What is not known.** Who breaks the rule of sec 18.3. The collector
-already refuses two roots that share a face or an edge. What this test
-adds is a GUI thread that keeps working while the batch runs -- the
-import still filling the document, the tree populating inside the
-command's nested loop, the import's animated fit asking for bounds -- and
-any of them touching a shape a worker owns would do it; so would a
-sharing below the face, a triangulation two faces hold. That wants a
-sanitizer build of OCCT and Part (address, or thread), which was not
-made: it is a day's building on this box and was not asked for.
+**What it was: a claim freed under its worker.** The six doubles were the
+answer all along -- a `Claim` holds a `Bnd_Box`, and the damaged free
+chunk was a freed claim. `clearPreMeshClaims` said in its own comment
+that "the entries themselves are not freed here", an in-flight batch
+still pointing at them, and then cleared a map of `unique_ptr<Claim>`,
+which frees every one. Each worker went on to publish: `claim->done =
+true`, one byte, 88 bytes into a 96-byte block the allocator had by then
+given to somebody else. Who that is was not traced. My reading of the two
+pictures: under the checker, which keeps no per-thread cache, the block
+is handed straight to another worker for one of the mesher's own small
+objects, and that is where it stopped; without it the block goes back to
+the thread that freed it, the GUI thread, and the victim is whatever Qt
+or the renderer allocates next in that size.
 
-**To make it on demand** (twenty seconds, no rebuild):
+Measured with three lines of `fprintf` in `PreMesh.cpp` (not kept), 4
+runs of 4, the same every time:
 
-    gdb -q -batch \
-      -ex 'set environment LD_PRELOAD /lib/x86_64-linux-gnu/libc_malloc_debug.so.0' \
-      -ex 'set environment MALLOC_CHECK_ 3' \
-      -ex run -ex 'thread apply all bt 30' \
-      --args build/conda-relwithdebinfo-801/bin/FreeCAD --user-cfg <dir>/user.cfg \
-             tests/gui/live-import-nested-loop.py
+    15 asks, "no claim"            the import builds the 15 shapes itself
+    submit: 15 items               the drain's first slice hands the same 15 over
+    clear: 15 claims, 15 IN FLIGHT the same slice, its queue popped empty
+    15 publishes after the clear   each into a freed claim
+    15 asks, "no claim"            later rebuilds, told the shapes are free
+
+So it was not a rare interleaving. Every run of this test wrote fifteen
+stray bytes, and one run in twenty something died of one. **The drain
+clears when "no build is going to ask again", and that is not "the batch
+is done"**: these fifteen were parked and then built before the drain's
+first slice, so the slice submitted them, popped each one as
+parked-but-no-longer-touched without building it, and found its queues
+empty with every worker still running. Who built them, from a breakpoint
+on the first of those asks: `ImportGui.insert` itself. It creates its
+objects under the `Restoring` guard, which parks their visuals, and when
+the guard is gone runs `finishRestoring` on each new object
+(`AppImportGuiPy.cpp:643`), which builds it on the spot and leaves it on
+the drain's queue. **Not the import's view fit**, which is what I wrote
+in the two commit messages (`ba4a70c6a5`, `fbd65293ac`) before looking;
+the code comments say it right since the commit after them.
+
+**Ruled out on the way: two threads on one shape.** That was this
+section's own guess (a sharing below the root, a GUI thread reading what
+a worker writes). A preloaded wrapper round the two
+`BRepMesh_IncrementalMesh` constructors that mesh -- it records the face
+and edge TShapes each call owns while it runs and reports an overlap
+between threads -- saw 45 mesh calls and 0 overlaps, 3 runs of 3, and
+again after the fix. It answers for meshing against meshing only: a
+reader of a shape a worker writes is not something it sees. **No
+sanitizer build was made**; nothing here needed one.
+
+**What is changed.**
+
+- A claim is shared between the map and the batch that publishes it
+  (`shared_ptr`), so no clear can free one under a worker.
+- `clearPreMeshClaims` drops the PUBLISHED claims. One still in flight
+  stays in the map and answers as in flight -- `preMeshInFlight`,
+  `preMeshBox`, `waitPreMesh` -- until its worker publishes it, and that
+  worker takes it out then if a clear has passed since its batch was
+  submitted (`publishLocked`). Before, the shape answered "not claimed"
+  from the clear on, and the GUI thread was free to build a shape a
+  worker was writing: the second of the two rules of sec 18.3, broken
+  whenever a clear met a batch.
+- `submitPreMesh` leaves a TShape that is already in flight to the worker
+  that has it. Two batches on one TShape were two writers of one
+  triangulation, and the first to publish released the shape with the
+  other still writing it.
+- The drain submits a parked shape only if it is still to be built
+  (`fbd65293ac`): "15 of 15 parked shapes submitted" and then "0 of 15
+  visuals" built became "0 of 15 parked shapes submitted". A plain
+  progressive reopen of twelve solids is as it was, "12 of 12 parked
+  shapes submitted", twelve meshed, the drain builds them (read from the
+  log lines; it has no test of its own).
+
+**Measured.**
+
+| | before | after |
+|---|---|---|
+| `PreMesh_tests_run` (new: `tests/src/Mod/Part/Gui/PreMesh.cpp`, three cases) | 1 of 3 | 3 of 3 |
+| a shape still being meshed, asked about after a clear | "not claimed", and the wait returns with the worker still meshing | in flight, its box from the claim, the wait ends at the publish |
+| the same TShape submitted while in flight | claimed twice, two workers | claimed once |
+| the live-import test under the malloc checker | 3 runs of 3 dead on a pre-mesh worker inside BRepMesh, no check made | 5 of 5 clean, eight checks each, and 3 of 3 with `fbd65293ac` |
+| the live-import test, plain | about 1 run in 20 dead | 20 of 20 |
+| claims in flight at the clear, publishes into freed claims | 15 and 15, every run | none freed |
+
+**Not covered.** The unit test pins what a clear and a second submit do
+to a claim in flight; the write into freed memory itself is seen only
+under the checker, which no test runs. A GUI thread READING a shape a
+worker writes, other than through a build or a bounds question, was not
+looked for. And the batch is still a detached thread: a process that
+exits under one was not looked at.
+
+**To run the checker** (twenty seconds, no rebuild):
+
+    env LD_PRELOAD=/lib/x86_64-linux-gnu/libc_malloc_debug.so.0 MALLOC_CHECK_=3 \
+      build/conda-relwithdebinfo-801/bin/FreeCAD --user-cfg <dir>/user.cfg \
+      tests/gui/live-import-nested-loop.py
 
 under `xvfb-run` with `QT_QPA_PLATFORM=xcb`, `GT_OUT` and `GT_RESULT` set
-as `scripts/gui-test.sh` sets them, and the conda wrapper around gdb.
+as `scripts/gui-test.sh` sets them, and the conda wrapper in FRONT of
+`env`, so that FreeCAD alone gets the checker. Under gdb the two are `set
+environment` lines.
 
 ## 19. Progressive load against eager (2026-09-29)
 
