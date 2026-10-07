@@ -792,3 +792,59 @@ there, because the bring-up had made them all, and 229 ms here.
 `omni-search-slash-word.py` 10 PASS, `OmniSearch_Tests_run` passes.
 
 Evidence: `..\dl\handson\2026-10-07\omni-bring-up-*`, `omni1.py`.
+
+## MSAA does not reach the view -- FIXED (found under entry 26; no entry number yet)
+
+`c7d115e576`. Not staged. The reporter, 2026-10-07, on entry 26: "have you
+tested with scanner open and then change the msaa setting". The halt had
+been tested that way; whether the anti-aliasing TOOK had not, and it did
+not -- anywhere, since 2026-09-07.
+
+**Seen** (the backend's own lines, a box in a fresh profile, Direct3D 11,
+"MSAA 4x" chosen):
+
+    bgfx: view init 1500x678 msaa 4
+    bgfx: 4x MSAA scene targets could not be created on this backend --
+          rebuilding without multisampling
+    bgfx: view init 1500x678 msaa 1
+
+and from then on the session draws without multisampling whatever the
+preferences say: "MSAA 2x" builds 1 sample, "MSAA 8x" does not rebuild at
+all. Nothing on screen says so.
+
+**Cause.** `fd5a9a5aa6` built the scene depth readable as a texture at
+every sample count, so that a frame capture need not rebuild the targets.
+A MULTISAMPLED depth cannot be resolved, and bgfx refuses the framebuffer
+("Frame buffer depth MSAA texture cannot be resolved"): colour made, depth
+made, framebuffer refused. The view then took the fallback that exists for
+backends which cannot multisample at all. The rule is bgfx's own, not
+Direct3D's, so this was every backend.
+
+**Fix.** The depth is readable without multisampling (the default) and
+write-only with it. A capture of a multisampled view returns its picture
+and reports `geometryPixels` as -1, unknown, instead of a count read off a
+target nothing drew into. `getRenderStats()` has `msaaSamples` now: what
+the targets were BUILT with. The fallback's console line names which of the
+three objects was refused.
+
+**Scored.** `tests/gui/msaa-reaches-the-view.py`
+(`GuiMsaaReachesTheView_tests_run`): none, 4x, 2x, none, 4x again -- 11
+PASS; 5 FAIL on the staged binaries. The reporter's case on the fixed
+tree: their configuration, `scanner.FCStd` open, the anti-aliasing changed
+in the dialog, OK -- 0.35 s in the click, 0.40 s held after, and both views
+rebuilt at 4 samples with no fallback. `image-pixels-mode3.py` 16 PASS.
+`readback-frame-mode.py`: 24 PASS and 1 FAIL ("mode1: the highlight is gone
+when the mouse has left"), the same one on the staged binaries -- there
+before this, not looked at.
+
+Run on Direct3D 11 only. OpenGL, Vulkan and Metal were not.
+
+**For entry 25** (the outline of a highlighted face is jagged, "MSAA or
+not"): part of "or not" is this -- MSAA was never on. But with MSAA really
+at 4 samples the outline's inner edge is jagged still
+(`..\dl\handson\2026-10-07\entry25-outline\`, a cylinder's face hovered,
+enlarged eight times, without and with): the outline is cut by a stencil
+mark in a pass drawn after the resolve, one sample per pixel. Entry 25 is
+its own thing, and not started.
+
+Evidence: `..\dl\handson\2026-10-07\msaa-*`, `entry26-first-ok-with-msaa-*`.
