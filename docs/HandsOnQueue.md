@@ -72,6 +72,7 @@ report views, the reporter's own files -- is kept beside the dev tree under
 | 32 | 2026-10-07 | some sub menus are transparent with blue text (Tools > Command history): find out why; transparent menus off by default | see `docs/HandsOnLog.md` |
 | 33 | 2026-10-07 | a cmd window pops up briefly at the first document opened after start | OPEN |
 | 34 | 2026-10-07 | TechDraw's preselection colour sometimes does not follow the theme (stays yellow after classic, or is blue) | OPEN; decided 15:19: the Dark and Light packs set TechDraw's `PreSelectColor` too |
+| 35 | 2026-10-07 | TechDraw (`scanner.FCStd`, Page003): a single click starts a recompute; a dimension (Dimension134) cannot be selected; selecting it in the tree can recompute and clear the selection | OPEN |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -2023,10 +2024,58 @@ for it -- the blue they give the 3D view, unless the reporter says another --
 and Classic keeps its own. Every theme then owns the key and a switch in
 either direction changes it.
 
+## 35. TechDraw: a click starts a recompute, and a dimension that cannot be selected -- OPEN
+
+**2026-10-07 15:21, a defect, three symptoms the reporter thinks are one.**
+"I open scanner file and click recompute, which has some recomputation error.
+that's expected. then when I single click anything in some techdraw page
+(Page003), it triggers recompute for some reason. also, click some dimension
+does not register as a selection (e.g. Dimension134). I think these two might
+be related. because when I select in the tree of this Dimension134 item, it
+can also sometimes trigger recompute and then clear my selection."
+The steps: open `scanner.FCStd`; Recompute, which ends in errors (expected:
+entry 17's `Pad033` and the fillet). Then, in the TechDraw page `Page003`:
+(a) a single click on anything starts a recompute;
+(b) a click on some dimensions, `Dimension134` for one, does not select it;
+(c) selecting `Dimension134` in the TREE sometimes starts a recompute too,
+and the selection is then gone.
+The reporter's reading: (a) and (b) are related, (c) being why.
+Read by the note-taker from that session's report log (copy:
+`..\dl\handson\2026-10-07\entry35-report-view.log`, the copy staged 14:23,
+session started 14:36) and from the source; nothing run:
+- The log has seven "Recompute failed!" between 15:07:55 and 15:20:16 --
+  15:15:15, 15:15:32, 15:15:36, 15:16:34, 15:20:08, 15:20:16 after the first
+  -- and each fails the same way: "FeatureDressUp.cpp(143): Invalid edge
+  link: ?Edge93" and "Failed to recompute scanner#Pad033: Sub shape not
+  found: scanner#Sketch043.?InternalFace2". So the clicks do run a recompute
+  of the document, and since the two objects in error stay to be recomputed,
+  each one is the whole failing recompute again. In a document without
+  errors the same recompute would find nothing to do and pass unnoticed --
+  the errors make an existing recompute-on-click visible rather than cause
+  it.
+- Where a click in a page can end in a recompute, in the source
+  (`Gui::Command::updateActive()`): `QGIViewDimension::datumLabelDragFinished`
+  (`src/Mod/TechDraw/Gui/QGIViewDimension.cpp` 700-714) writes the label's X
+  and Y and recomputes when a drag of a dimension's label "finishes";
+  `QGIViewBalloon.cpp` 516 the same for a balloon; `QGISectionLine.cpp` 685
+  for a section line. Entry 21 was this very thing for the section line -- a
+  click taken for a finished drag -- and was fixed there; the dimension label
+  and the balloon are the same shape and were not part of it.
+- That would give (a) for clicks on dimensions and balloons, and (b) with
+  it: a recompute redraws the page's items, and a selection made by the same
+  click does not survive the item being rebuilt. It does not by itself
+  explain a click on "anything", nor (c), where nothing in the page is
+  clicked: for those, what the page does when the SELECTION changes is the
+  place to look (a selected dimension's label being positioned, or its
+  references being repaired -- the log has 220 "no exact match for changed
+  2d reference" lines from the dimensions).
+Not said yet: whether (a) happens on an empty spot of the page or only on
+items, and whether it happens in a page of a document with no errors.
+
 ## Inbox
 
 Notes not sorted into an entry yet. Add a line here at any time, in any words;
 it is read before each entry is started and moved up into the table.
 
 (empty: the notes of 2026-10-06 are entries 20 to 28, those of 2026-10-07 so far
-entries 29 to 34)
+entries 29 to 35)
