@@ -38,8 +38,10 @@
 #include <QMouseEvent>
 #include <QPainter>
 #include <QScrollArea>
+#include <QScrollBar>
 #include <QSplitter>
 #include <QStyle>
+#include <QStyleOption>
 #include <QThread>
 #include <QToolButton>
 #endif
@@ -54,6 +56,8 @@
 #include <Gui/Document.h>
 #include <Gui/MDIView.h>
 #include <Gui/MainWindow.h>
+#include <Gui/OverlayManager.h>
+#include <Gui/OverlayWidgets.h>
 #include <Gui/Selection.h>
 #include <Gui/View3DInventor.h>
 #include <Gui/View3DInventorViewer.h>
@@ -83,6 +87,14 @@ constexpr int TopMargin = 20;
 constexpr int BottomMargin = 18;
 /// The least height a place must have for a panel to be shown open
 constexpr int MinHeight = 160;
+/// The grip along the inner edge of an overlay (Gui::OverlaySizeGrip)
+constexpr int GripSize = 6;
+
+/// What of its place an overlay may stand in
+QRect roomIn(const QWidget* place)
+{
+    return place->rect().adjusted(Margin, TopMargin, -Margin, -BottomMargin);
+}
 
 /// The properties a view holds its panel's place in (TaskPlacement)
 constexpr const char* PropPlace = "Task_Place";
@@ -227,22 +239,42 @@ void activate(Gui::MDIView* view)
     }
 }
 
-/// The host's header: the title, the buttons, and the grip the host is
-/// dragged by.
-class HostHeader: public QWidget
+/// The host's title bar: the title, the buttons, and the grip the host is
+/// dragged by. The dock overlay's title bar by class, which is what its
+/// style sheets style (Gui--OverlayTitleBar); its handling of the mouse
+/// drags docks and is not used.
+class HostHeader: public Gui::OverlayTitleBar
 {
 public:
     explicit HostHeader(TaskPanelHost* host)
-        : QWidget(host)
+        : Gui::OverlayTitleBar(host)
         , host(host)
     {
         // No Q_OBJECT here (the class lives in this .cpp), so the object
-        // name is what tests and style sheets can find it by.
+        // name is what tests can find it by.
         setObjectName(QStringLiteral("taskPanelHostHeader"));
+        // Not the keyboard: Enter and Escape typed with it here would be
+        // the dialog's
+        setFocusPolicy(Qt::NoFocus);
         setCursor(Qt::OpenHandCursor);
     }
 
 protected:
+    void paintEvent(QPaintEvent*) override
+    {
+        // The ground a style sheet gives a title bar; the title is the
+        // label's to draw
+        QStyleOption opt;
+        opt.initFrom(this);
+        QPainter p(this);
+        style()->drawPrimitive(QStyle::PE_Widget, &opt, &p, this);
+    }
+    void keyPressEvent(QKeyEvent* ev) override
+    {
+        ev->ignore();
+    }
+    void timerEvent(QTimerEvent*) override
+    {}
     void mousePressEvent(QMouseEvent* ev) override
     {
         // Beside its view it is moved by choosing a side, not dragged
@@ -252,8 +284,8 @@ protected:
         }
         pressed = true;
         dragging = false;
-        pressX = ev->globalPosition().toPoint().x();
-        startX = host->x();
+        pressAt = ev->globalPosition().toPoint();
+        startAt = host->pos();
         ev->accept();
     }
     void mouseMoveEvent(QMouseEvent* ev) override
@@ -262,28 +294,30 @@ protected:
             QWidget::mouseMoveEvent(ev);
             return;
         }
-        const int dx = ev->globalPosition().toPoint().x() - pressX;
-        if (!dragging && qAbs(dx) < QApplication::startDragDistance()) {
+        const QPoint moved = ev->globalPosition().toPoint() - pressAt;
+        if (!dragging && moved.manhattanLength() < QApplication::startDragDistance()) {
             return;
         }
         dragging = true;
-        host->dragTo(startX + dx);
+        host->dragTo(startAt + moved);
     }
     void mouseReleaseEvent(QMouseEvent* ev) override
     {
         const bool dragged = pressed && dragging;
         pressed = dragging = false;
         if (dragged) {
-            host->dragEnded();
+            const QPoint at = ev->globalPosition().toPoint();
+            host->dragEnded(at, at - pressAt);
         }
         ev->accept();
     }
+
 private:
     TaskPanelHost* host;
     bool pressed {false};
     bool dragging {false};
-    int pressX {0};
-    int startX {0};
+    QPoint pressAt;
+    QPoint startAt;
 };
 
 }  // namespace
@@ -348,6 +382,13 @@ void TaskPlacement::setMode(MDIView* view, Mode mode)
 
 void TaskPlacement::setSide(MDIView* view, Side side)
 {
+    // A size is across the panel: one chosen for a panel beside the
+    // picture is not one for a panel above it. Turned from the one to the
+    // other, the view gives its size up and the panel asks again.
+    if (view && acrossIsWidth(TaskPlacement::side(view)) != acrossIsWidth(side)
+        && size(view) > 0) {
+        setSize(view, 0);
+    }
     lastChosen()->SetASCII("Side", textOf(side));
     setOwnText(view,
                PropSide,
@@ -436,34 +477,29 @@ TaskPanelHost::TaskPanelHost(TaskView* taskView, MDIView* view)
     setAutoFillBackground(true);
 
     _layout = new QVBoxLayout(this);
-    // The frame paintEvent draws
     _layout->setContentsMargins(1, 1, 1, 1);
     _layout->setSpacing(0);
 
     _header = new HostHeader(this);
     auto row = new QHBoxLayout(_header);
-    row->setContentsMargins(6, 2, 2, 2);
-    row->setSpacing(2);
+    row->setContentsMargins(6, 1, 1, 1);
+    row->setSpacing(1);
     _title = new QLabel(_header);
     _title->setObjectName(QStringLiteral("taskPanelHostTitle"));
-    // The header is the grip: a press on the title is a press on it. And
-    // a long title is cut short rather than widening the host.
+    // The title bar is the grip: a press on the title is a press on it.
+    // And a long title is cut short rather than widening the host.
     _title->setAttribute(Qt::WA_TransparentForMouseEvents);
     _title->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
     row->addWidget(_title, 1);
 
+    // The buttons of an overlaid dock's title bar, by class and by make
+    // (OverlayTabWidget::createTitleButton names one after its action's
+    // data)
+    const int buttonSize = qMax(18, fontMetrics().height() + 4);
+
     // How this panel stands in its view, and on which side: its own
     // view's, kept there (TaskPlacement)
-    _menu = new QToolButton(_header);
-    _menu->setObjectName(QStringLiteral("taskPanelHostMenu"));
-    _menu->setAutoRaise(true);
-    _menu->setCursor(Qt::ArrowCursor);
-    _menu->setFocusPolicy(Qt::NoFocus);
-    _menu->setArrowType(Qt::DownArrow);
-    _menu->setPopupMode(QToolButton::InstantPopup);
-    _menu->setStyleSheet(QStringLiteral("QToolButton::menu-indicator { image: none; }"));
-    _menu->setToolTip(tr("Where this task panel stands in its view"));
-    auto menu = new QMenu(_menu);
+    auto menu = new QMenu(this);
     auto modes = new QActionGroup(menu);
     _actOverlay = menu->addAction(tr("Over the view"));
     _actOverlay->setObjectName(QStringLiteral("taskPanelHostOverlay"));
@@ -501,8 +537,6 @@ TaskPanelHost::TaskPanelHost(TaskView* taskView, MDIView* view)
             placementChanged();
         });
     }
-    _menu->setMenu(menu);
-    row->addWidget(_menu);
     connect(_actOverlay, &QAction::triggered, this, [this] {
         if (MDIView* own = _view) {
             TaskPlacement::setMode(own, TaskPlacement::Mode::Overlay);
@@ -515,26 +549,35 @@ TaskPanelHost::TaskPanelHost(TaskView* taskView, MDIView* view)
         }
         placementChanged();
     });
-
-    _toCombo = new QToolButton(_header);
-    _toCombo->setObjectName(QStringLiteral("taskPanelHostToCombo"));
-    _toCombo->setAutoRaise(true);
-    _toCombo->setCursor(Qt::ArrowCursor);
-    _toCombo->setFocusPolicy(Qt::NoFocus);
-    _toCombo->setIcon(BitmapFactory().pixmap("qss:overlay/taskhost.svg"));
-    _toCombo->setToolTip(tr("Show this task panel in the combo view"));
-    row->addWidget(_toCombo);
-
-    _layout->addWidget(_header);
+    auto actMenu = new QAction(this);
+    actMenu->setData(QStringLiteral("taskPanelHostMenu"));
+    actMenu->setIcon(BitmapFactory().pixmap("qss:overlay/mode.svg"));
+    actMenu->setToolTip(tr("Where this task panel stands in its view"));
+    _menu = static_cast<QToolButton*>(OverlayTabWidget::createTitleButton(actMenu, buttonSize));
+    _menu->setFocusPolicy(Qt::NoFocus);
+    _menu->setMenu(menu);
+    _menu->setPopupMode(QToolButton::InstantPopup);
+    _menu->setStyleSheet(QStringLiteral("QToolButton::menu-indicator { image: none; }"));
+    row->addWidget(_menu);
 
     // The button acts on its own panel and view (sec 15.1): the view keeps
     // the place, the task view hears it change, moves this page and lets
     // the host go.
-    connect(_toCombo, &QToolButton::clicked, this, [this] {
+    auto actToCombo = new QAction(this);
+    actToCombo->setData(QStringLiteral("taskPanelHostToCombo"));
+    actToCombo->setIcon(BitmapFactory().pixmap("qss:overlay/taskhost.svg"));
+    actToCombo->setToolTip(tr("Show this task panel in the combo view"));
+    _toCombo = static_cast<QToolButton*>(
+        OverlayTabWidget::createTitleButton(actToCombo, buttonSize));
+    _toCombo->setFocusPolicy(Qt::NoFocus);
+    row->addWidget(_toCombo);
+    connect(actToCombo, &QAction::triggered, this, [this] {
         if (MDIView* own = _view) {
             TaskPlacement::setPlace(own, TaskPlacement::Place::ComboView);
         }
     });
+
+    _layout->addWidget(_header);
 
     // As the view has it now, and until the view changes it: what is
     // chosen in another view meanwhile is for the panels opened after
@@ -619,9 +662,9 @@ int TaskPanelHost::wantedExtent() const
     if (acrossIsWidth(_side)) {
         return qMax(MinWidth,
                     _page->panel->sizeHint().width()
-                        + style()->pixelMetric(QStyle::PM_ScrollBarExtent) + 6);
+                        + style()->pixelMetric(QStyle::PM_ScrollBarExtent) + 6 + GripSize);
     }
-    return _header->sizeHint().height() + 2 + pageHeight();
+    return _header->sizeHint().height() + 2 + pageHeight() + GripSize;
 }
 
 QWidget* TaskPanelHost::besidePlace(MDIView* view)
@@ -664,6 +707,22 @@ void TaskPanelHost::attach()
     if (!where) {
         where = placeFor(view);
     }
+    // The keyboard, when it is in the panel, goes with the panel. Left to
+    // itself it would be dropped as the host changes parents and picked
+    // up by whatever Qt finds next -- a neighbouring view, which would
+    // then be the active one, and this panel's dialog deactivated for a
+    // panel that only changed its place. So it waits in the panel's own
+    // view while the host moves.
+    QPointer<QWidget> focus;
+    if (where != _place) {
+        focus = QApplication::focusWidget();
+        if (focus && !(focus == this || isAncestorOf(focus))) {
+            focus = nullptr;
+        }
+        if (focus) {
+            view->setFocus();
+        }
+    }
     if (where != _place) {
         if (_place && _place != view) {
             _place->removeEventFilter(this);
@@ -696,9 +755,178 @@ void TaskPanelHost::attach()
             area->removePanelCell(hadCell);
         }
     }
+    applyLook();
     place();
     show();
     raise();
+    if (focus && focus != QApplication::focusWidget()) {
+        focus->setFocus();
+    }
+}
+
+void TaskPanelHost::applyLook()
+{
+    const bool overlay = !_besideCell;
+    if (!_lookSet || overlay != _overlayLook) {
+        _lookSet = true;
+        _overlayLook = overlay;
+        // Over the picture, an overlaid dock's look (sec 15.5): its style
+        // sheet, and no ground of the host's own. In a cell of its own, a
+        // plain widget's.
+        setAutoFillBackground(!overlay);
+        setAttribute(Qt::WA_NoSystemBackground, overlay);
+        setAttribute(Qt::WA_TranslucentBackground, overlay);
+        setStyleSheet(overlay ? OverlayManager::instance()->getStyleSheet() : QString());
+    }
+    if (_page) {
+        OverlayTabWidget::applyOverlayLook(_page, overlay);
+    }
+    updateGrip();
+    if (!overlay) {
+        clearMask();
+    }
+}
+
+void TaskPanelHost::updateGrip()
+{
+    const bool overlay = _overlayLook && !_retired;
+    const bool down = acrossIsWidth(_side);
+    if (_grip && _gripDown != down) {
+        _grip->hide();
+        _grip->deleteLater();
+        _grip = nullptr;
+    }
+    if (overlay && !_grip) {
+        // The dock overlay's own grip, which only says where it is dragged
+        auto grip = new OverlaySizeGrip(this, !down);
+        grip->setObjectName(QStringLiteral("taskPanelHostGrip"));
+        grip->installEventFilter(this);
+        connect(grip, &OverlaySizeGrip::dragMove, this, &TaskPanelHost::gripMoved);
+        _grip = grip;
+        _gripDown = down;
+    }
+    if (_grip) {
+        _grip->setVisible(overlay);
+    }
+    // The layout leaves the grip its edge; a host with a ground of its
+    // own leaves room for the frame paintEvent draws
+    int left = 1;
+    int top = 1;
+    int right = 1;
+    int bottom = 1;
+    if (overlay) {
+        left = top = right = bottom = 0;
+        switch (_side) {
+            case TaskPlacement::Side::Right:
+                left = GripSize;
+                break;
+            case TaskPlacement::Side::Top:
+                bottom = GripSize;
+                break;
+            case TaskPlacement::Side::Bottom:
+                top = GripSize;
+                break;
+            default:
+                right = GripSize;
+                break;
+        }
+    }
+    _layout->setContentsMargins(left, top, right, bottom);
+    placeGrip();
+}
+
+void TaskPanelHost::placeGrip()
+{
+    if (!_grip) {
+        return;
+    }
+    switch (_side) {
+        case TaskPlacement::Side::Right:
+            _grip->setGeometry(0, 0, GripSize, height());
+            break;
+        case TaskPlacement::Side::Top:
+            _grip->setGeometry(0, height() - GripSize, width(), GripSize);
+            break;
+        case TaskPlacement::Side::Bottom:
+            _grip->setGeometry(0, 0, width(), GripSize);
+            break;
+        default:
+            _grip->setGeometry(width() - GripSize, 0, GripSize, height());
+            break;
+    }
+    _grip->raise();
+}
+
+void TaskPanelHost::gripMoved(const QPoint& globalPos)
+{
+    QWidget* in = parentWidget();
+    if (!in || !_overlayLook || _retired) {
+        return;
+    }
+    const QRect room = roomIn(in);
+    const QPoint at = in->mapFromGlobal(globalPos);
+    switch (_side) {
+        case TaskPlacement::Side::Right:
+            _extent = room.right() + 1 - at.x();
+            break;
+        case TaskPlacement::Side::Top:
+            _extent = at.y() - room.top();
+            break;
+        case TaskPlacement::Side::Bottom:
+            _extent = room.bottom() + 1 - at.y();
+            break;
+        default:
+            _extent = at.x() - room.left();
+            break;
+    }
+    _extent = qMax(1, _extent);
+    place();
+}
+
+void TaskPanelHost::updateMask()
+{
+    if (!_overlayLook || _retired) {
+        clearMask();
+        return;
+    }
+    // What has a ground: the title bar, the grip, and in the page the
+    // boxes of the panel and what stands beside the scrolling. Between
+    // and around them there is nothing, to the eye or to the pointer: a
+    // press or a turn of the wheel there goes to the view beneath.
+    const QPoint origin(0, 0);
+    QRegion region(_header->geometry());
+    if (_grip && !_grip->isHidden()) {
+        region += _grip->geometry();
+    }
+    if (_page && !_page->isHidden()) {
+        for (int i = 0; i < _page->layout->count(); ++i) {
+            QWidget* w = _page->layout->itemAt(i)->widget();
+            if (!w || w->isHidden()) {
+                continue;
+            }
+            if (w != _page->scrollarea) {
+                region += QRect(w->mapTo(this, origin), w->size());
+                continue;
+            }
+            QWidget* port = _page->scrollarea->viewport();
+            const QRect clip(port->mapTo(this, origin), port->size());
+            for (QObject* child : _page->panel->children()) {
+                auto box = qobject_cast<QWidget*>(child);
+                if (!box || box->isHidden()) {
+                    continue;
+                }
+                const QRect rect(box->mapTo(this, origin), box->size());
+                region += rect.adjusted(-1, -1, 1, 1).intersected(clip);
+            }
+            for (QScrollBar* bar : {_page->scrollarea->verticalScrollBar(),
+                                    _page->scrollarea->horizontalScrollBar()}) {
+                if (bar && bar->isVisible()) {
+                    region += QRect(bar->mapTo(this, origin), bar->size());
+                }
+            }
+        }
+    }
+    setMask(region);
 }
 
 void TaskPanelHost::pairMoved()
@@ -732,13 +960,20 @@ void TaskPanelHost::setPage(TaskPage* page)
     }
     if (_page) {
         _page->panel->removeEventFilter(this);
+        disconnect(_page->scrollarea->verticalScrollBar(), nullptr, this, nullptr);
+        OverlayTabWidget::applyOverlayLook(_page, false);
         _layout->removeWidget(_page);
     }
     _page = page;
     if (page) {
         // What the panel holds changes under the host: a box folded or
-        // opened, a widget shown. The host is as tall as it asks.
+        // opened, a widget shown, the panel scrolled. What of the host is
+        // widget follows it (updateMask).
         page->panel->installEventFilter(this);
+        connect(page->scrollarea->verticalScrollBar(),
+                &QScrollBar::valueChanged,
+                this,
+                &TaskPanelHost::placeLater);
         // A page is as narrow as its host here, and scrolls what does not
         // fit: the least width it was given was the dock's
         page->scrollarea->setMinimumWidth(qMin(page->scrollarea->minimumWidth(), MinWidth - 8));
@@ -753,6 +988,7 @@ void TaskPanelHost::setPage(TaskPage* page)
             }
         }
     }
+    applyLook();
     place();
 }
 
@@ -762,6 +998,10 @@ TaskPage* TaskPanelHost::takePage()
     _page = nullptr;
     if (page) {
         page->panel->removeEventFilter(this);
+        disconnect(page->scrollarea->verticalScrollBar(), nullptr, this, nullptr);
+        // As it was before it came here: where it goes next it is a plain
+        // page again
+        OverlayTabWidget::applyOverlayLook(page, false);
         _layout->removeWidget(page);
         page->hide();
     }
@@ -770,6 +1010,16 @@ TaskPage* TaskPanelHost::takePage()
 
 TaskPage* TaskPanelHost::release()
 {
+    // The keyboard, when it is in the panel, goes home to the panel's view
+    // rather than to whatever Qt finds next when the host is hidden
+    // (attach() says why). The task view puts it back into a page it
+    // moves; after a dialog that closed, the view is where it belongs.
+    if (MDIView* view = _view) {
+        QWidget* focus = QApplication::focusWidget();
+        if (focus && (focus == this || isAncestorOf(focus))) {
+            view->setFocus();
+        }
+    }
     TaskPage* page = takePage();
     _retired = true;
     hide();
@@ -800,6 +1050,8 @@ void TaskPanelHost::placementChanged()
     const TaskPlacement::Side was = _side;
     _mode = TaskPlacement::mode(view);
     _side = TaskPlacement::side(view);
+    // The view's size, not what the grip was last dragged to
+    _extent = 0;
     updateMenu();
     if (_besideCell && _mode == TaskPlacement::Mode::Side) {
         // The same panel cell, on its new side or at its new size: what
@@ -871,62 +1123,88 @@ void TaskPanelHost::place()
         }
         return;
     }
-    const QRect room = in->rect().adjusted(Margin, TopMargin, -Margin, -BottomMargin);
+    const QRect room = roomIn(in);
     if (room.width() <= 0 || room.height() <= 0) {
         return;
     }
     const int header = _header->sizeHint().height() + 2;
-    // As wide as the panel asks for, within a third of the place. What
-    // does not fit is scrolled, as it is in a narrow dock.
-    int want = MinWidth;
-    if (_page) {
-        want = _page->panel->sizeHint().width()
-            + style()->pixelMetric(QStyle::PM_ScrollBarExtent) + 6;
-    }
-    int width = qBound(MinWidth, want, qMax(MinWidth, room.width() / 3));
-    width = qMin(width, room.width());
-    // A place too small for a panel keeps the header alone, rather than
+    // A place too small for a panel keeps the title bar alone, rather than
     // have the panel cover the view.
     const bool small = room.width() < MinWidth * 3 / 2 || room.height() < MinHeight;
-    const bool folded = small;
     if (_page) {
-        _page->setVisible(!folded);
+        _page->setVisible(!small);
     }
-    int height = room.height();
-    if (folded) {
-        height = qMin(header, height);
+    // Across: what the grip is being dragged to, else what the view holds,
+    // else what the panel asks for -- that last within a third of the
+    // place across the view and half of it down, which a size the user
+    // gave is not held to.
+    MDIView* view = _view;
+    int extent = _extent;
+    if (extent <= 0 && view) {
+        extent = TaskPlacement::size(view);
     }
-    else if (!_fill && _page) {
-        // As tall as the panel needs, and no taller
-        height = qMin(height, qMax(MinHeight, header + pageHeight()));
+    const bool chosen = extent > 0;
+    if (!chosen) {
+        extent = wantedExtent();
     }
-    // Left or right, over the picture: top and bottom are for the look
-    // that can stand there (sec 15.7), and are the left until then
-    const int x = isOnRight() ? room.right() + 1 - width : room.left();
-    setGeometry(x, room.top(), width, height);
+    QRect g;
+    if (acrossIsWidth(_side)) {
+        const int most = chosen ? qMax(MinWidth, room.width() - MinWidth / 2)
+                                : qMax(MinWidth, room.width() / 3);
+        extent = qMin(qBound(MinWidth, extent, most), room.width());
+        // The whole length of its side, as a dock overlay is (sec 15.8)
+        const int height = small ? qMin(header, room.height()) : room.height();
+        const int x = isOnRight() ? room.right() + 1 - extent : room.left();
+        g = QRect(x, room.top(), extent, height);
+    }
+    else {
+        const int least = header + 40;
+        const int most = chosen ? qMax(least, room.height() - MinHeight / 2)
+                                : qMax(least, room.height() / 2);
+        extent = small ? qMin(header, room.height())
+                       : qMin(qBound(least, extent, most), room.height());
+        const int y = _side == TaskPlacement::Side::Bottom ? room.bottom() + 1 - extent
+                                                          : room.top();
+        g = QRect(room.left(), y, room.width(), extent);
+    }
+    setGeometry(g);
     raise();
+    placeGrip();
+    updateMask();
 }
 
-void TaskPanelHost::dragTo(int x)
+void TaskPanelHost::dragTo(const QPoint& pos)
 {
     QWidget* in = parentWidget();
     if (!in) {
         return;
     }
     _dragging = true;
-    const int most = qMax(Margin, in->width() - Margin - width());
-    move(qBound(Margin, x, most), y());
+    const int mostX = qMax(Margin, in->width() - Margin - width());
+    const int mostY = qMax(Margin, in->height() - Margin - height());
+    move(qBound(Margin, pos.x(), mostX), qBound(Margin, pos.y(), mostY));
 }
 
-void TaskPanelHost::dragEnded()
+void TaskPanelHost::dragEnded(const QPoint& globalPos, const QPoint& moved)
 {
     _dragging = false;
     QWidget* in = parentWidget();
-    const bool right = in && geometry().center().x() > in->width() / 2;
+    TaskPlacement::Side side = _side;
+    if (in) {
+        const QPoint at = in->mapFromGlobal(globalPos);
+        if (qAbs(moved.x()) >= qAbs(moved.y())) {
+            side = at.x() > in->width() / 2 ? TaskPlacement::Side::Right
+                                            : TaskPlacement::Side::Left;
+        }
+        else {
+            side = at.y() > in->height() / 2 ? TaskPlacement::Side::Bottom
+                                             : TaskPlacement::Side::Top;
+        }
+    }
     if (MDIView* view = _view) {
         // Kept in the view, and what a view with no side of its own starts
         // from. The task view hears it and tells this host, when it changed
-        TaskPlacement::setSide(view, right ? TaskPlacement::Side::Right : TaskPlacement::Side::Left);
+        TaskPlacement::setSide(view, side);
     }
     // Settled where the view says, also when that is where it was
     placementChanged();
@@ -937,9 +1215,18 @@ bool TaskPanelHost::eventFilter(QObject* watched, QEvent* event)
     if (watched == _place.data() && event->type() == QEvent::Resize) {
         place();
     }
-    else if (_page && watched == _page->panel && event->type() == QEvent::LayoutRequest) {
+    else if (_page && watched == _page->panel
+             && (event->type() == QEvent::LayoutRequest || event->type() == QEvent::Resize)) {
         // Not from inside the panel's own layout pass
         placeLater();
+    }
+    else if (_grip && watched == _grip && event->type() == QEvent::MouseButtonRelease) {
+        // The grip let go: the view keeps the size, for this panel and
+        // its next
+        MDIView* view = _view;
+        if (view && _extent > 0 && _overlayLook) {
+            TaskPlacement::setSize(view, acrossIsWidth(_side) ? width() : height());
+        }
     }
     else if (watched == _view.data() && event->type() == QEvent::ParentChange) {
         // The view went into a cell, to another, or out on its own. Follow
@@ -973,9 +1260,20 @@ void TaskPanelHost::keyPressEvent(QKeyEvent* event)
 void TaskPanelHost::paintEvent(QPaintEvent* event)
 {
     QWidget::paintEvent(event);
+    if (_overlayLook) {
+        // Over the picture the host has no ground and no frame
+        return;
+    }
     QPainter p(this);
     p.setPen(palette().color(QPalette::Mid));
     p.drawRect(rect().adjusted(0, 0, -1, -1));
+}
+
+void TaskPanelHost::resizeEvent(QResizeEvent* event)
+{
+    QWidget::resizeEvent(event);
+    placeGrip();
+    updateMask();
 }
 
 // ----------------------------------------------------------------------------

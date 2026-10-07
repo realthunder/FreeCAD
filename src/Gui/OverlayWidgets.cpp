@@ -1174,6 +1174,21 @@ void OverlayTabWidget::setOverlayMode(QWidget *widget, OverlayOption option)
         setOverlayMode(qobject_cast<QWidget*>(child), option);
 }
 
+void OverlayTabWidget::applyOverlayLook(QWidget *widget, bool enable)
+{
+    if(!widget || (qobject_cast<QDialog*>(widget)
+                        && !qobject_cast<Dialog::Clipping*>(widget))
+               || qobject_cast<TaskView::TaskBox*>(widget))
+        return;
+
+    _setOverlayMode(widget, enable ? OverlayOption::Enable : OverlayOption::Disable);
+
+    if(qobject_cast<QComboBox*>(widget))
+        return;
+    for(auto child : widget->children())
+        applyOverlayLook(qobject_cast<QWidget*>(child), enable);
+}
+
 void OverlayTabWidget::setTransparent(bool enable)
 {
     if(actTransparent.isChecked() == enable)

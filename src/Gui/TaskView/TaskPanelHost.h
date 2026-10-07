@@ -136,19 +136,26 @@ public:
  *
  * - OVERLAY: a child of the widget the view fills -- its
  *   Gui::ViewAreaCell when it is in one, else the view itself -- laid over
- *   the picture along one side.
+ *   the picture along one of its four sides, the whole length of it, and
+ *   looking as an overlaid dock does (docs/TaskPanelPerView.md sec 15.5):
+ *   the dock overlay's style sheet and its switch of attributes, so that
+ *   only the title bar and the task boxes have a ground; a grip along its
+ *   inner edge that resizes it. What is between and beside the boxes is
+ *   not part of the widget at all (a mask): a click or a turn of the wheel
+ *   there is the view's.
  * - SIDE: the one child of a Gui::ViewAreaPanelCell, a cell of its own
  *   split out beside the view's on any of the four sides, with the view
  *   area's own handle between the two (docs/TaskPanelPerView.md sec
  *   15.4). A view in no view area is put into one for it; one that cannot
  *   be -- a floating window -- gets the overlay.
  *
- * A slim header above the page carries the dialog's title, a menu that
- * chooses the mode and the side, and a button that sends this panel back
- * to the combo view. Dragging the header of an overlay moves it to the
- * other side of its view. All of it acts on this panel's view and is
- * kept there (TaskPlacement); the host takes it when it is made and again
- * when its own view's changes, not when another view's does.
+ * A title bar above the page -- the dock overlay's, by class, with its
+ * kind of buttons -- carries the dialog's title, a menu that chooses the
+ * mode and the side, and a button that sends this panel back to the combo
+ * view. Dragging the title bar of an overlay moves it to another side of
+ * its view. All of it acts on this panel's view and is kept there
+ * (TaskPlacement); the host takes it when it is made and again when its
+ * own view's changes, not when another view's does.
  *
  * The task view makes a host when a page is to be shown in a view and
  * takes the page back before it lets the host go. A host whose place is
@@ -199,22 +206,22 @@ public:
     /// were changed there. A host does not follow what is chosen in
     /// another view while its panel is open.
     void placementChanged();
-    /// Whether the host takes the whole height of its place. Off, which
-    /// is the default, it is as tall as its panel needs and no taller: a
-    /// two-line panel does not cover the height of the view. A dialog
-    /// that asks for all the room there is (TaskDialog::needsFullSpace)
-    /// is given it.
+    /// A dialog that asks for all the room there is
+    /// (TaskDialog::needsFullSpace). An overlay is the whole length of
+    /// its side whatever this says; kept for the task view, which tells.
     void setFillsHeight(bool fill);
 
     /// Lay the host out in its place: along its side, clear of the
     /// place's own chrome, down to its header when the place is too small
     /// for a panel.
     void place();
-    /// Move with the cursor while the header is dragged (\a x is the
-    /// host's wanted left edge in its place), and settle on the nearer
-    /// side when the drag ends.
-    void dragTo(int x);
-    void dragEnded();
+    /// Move with the cursor while the title bar is dragged (\a pos is the
+    /// host's wanted top left corner in its place), and settle on a side
+    /// when the drag ends: left or right for a drag that went across, top
+    /// or bottom for one that went up or down, by the half of the place
+    /// the pointer was let go in (\a globalPos).
+    void dragTo(const QPoint& pos);
+    void dragEnded(const QPoint& globalPos, const QPoint& moved);
 
     /// The least width a host is given, and the least its place must
     /// have for a panel to be shown open in it.
@@ -225,6 +232,7 @@ protected:
     bool event(QEvent* event) override;
     void keyPressEvent(QKeyEvent* event) override;
     void paintEvent(QPaintEvent* event) override;
+    void resizeEvent(QResizeEvent* event) override;
 
 private:
     /// Stand in the widget the view fills now.
@@ -242,6 +250,17 @@ private:
     /// The handle between the panel cell and the view's was dragged
     void pairMoved();
     void updateMenu();
+    /// The look of an overlaid dock over the picture, a plain widget's in
+    /// a cell of its own
+    void applyLook();
+    /// The grip along the inner edge of an overlay, and the room the
+    /// layout leaves it
+    void updateGrip();
+    void placeGrip();
+    void gripMoved(const QPoint& globalPos);
+    /// What of an overlay is the widget: its title bar, its grip, the
+    /// boxes of its panel. The rest is the view's
+    void updateMask();
 
     QPointer<TaskView> _taskView;
     QPointer<MDIView> _view;
@@ -261,6 +280,14 @@ private:
     QPointer<ViewAreaCell> _besideCell;
     /// A panel cell made before the page was there has yet to be fitted
     bool _fitBeside {false};
+    /// The grip an overlay is resized by, and whether it runs down the
+    /// host (left, right) or along it (top, bottom)
+    QWidget* _grip {nullptr};
+    bool _gripDown {true};
+    /// Across, while the grip is dragged; the view's size otherwise
+    int _extent {0};
+    bool _overlayLook {false};
+    bool _lookSet {false};
     bool _dragging {false};
     bool _fill {false};
     bool _placePending {false};

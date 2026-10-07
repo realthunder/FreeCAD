@@ -1348,6 +1348,17 @@ fc_add_gui_test(GuiTaskPanelPlace_tests_run task-panel-place.py
 fc_add_gui_test(GuiTaskPanelSide_tests_run task-panel-side.py
                 --timeout 300)
 
+# A task panel over its view looks and behaves as an overlaid dock does
+# (docs/TaskPanelPerView.md sec 15.5, milestone 3): the overlay's style
+# sheet, title bar and buttons, no ground of its own, the whole length of
+# any of the four sides, a grip that resizes it and a title bar that
+# drags it to another side. What is clear of its boxes is the view's:
+# nothing drawn, the view under the pointer, the wheel zooming (a real
+# wheel, XTEST). A plain panel again beside its view and in the combo
+# view. Scored against the tree before, where it is an opaque box.
+fc_add_gui_test(GuiTaskPanelOverlay_tests_run task-panel-overlay.py
+                --timeout 300)
+
 # Making a view the active window makes its cell the view area's active
 # cell and brings the keyboard with it (docs/SplitViews.md sec 21): right
 # after "create new view" the first view can be clicked back into; with

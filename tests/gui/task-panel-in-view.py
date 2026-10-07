@@ -496,10 +496,12 @@ def the_page_moves_into_its_view():
     def fitted():
         host, cell = host_of("a1"), cell_of("a1")
         form = QtCore.QRect(one.form.mapTo(host, QtCore.QPoint(0, 0)), one.form.size())
-        ok = host.rect().contains(form) and host.height() < cell.height() - 100
+        ok = host.rect().contains(form) and host.height() >= cell.height() - 50
         return ok, (host.height(), cell.height(), form.getRect())
 
-    claim("and is as tall as its panel needs, not as the view", fitted)
+    # Since sec 15.8: the whole length of its side, as a dock overlay is,
+    # where it was as tall as its panel needed
+    claim("and is the whole height of its view", fitted)
 
     activate("a2")
     claim("with a2 active the panel is still shown in a1",

@@ -294,6 +294,17 @@ public:
 
     /// Helper function to create title bar for a dock widget
     static QWidget *createTitleButton(QAction *action, int size);
+    /** Give \a widget and what is in it the look of an overlaid dock, or
+     * take it away.
+     *
+     * The walk setOverlayMode() makes over a dock -- each widget
+     * frameless and with a translucent ground, a task box and a dialog
+     * left as they are -- for a widget that is in no overlay tab widget:
+     * a task panel laid over its own view (Gui::TaskView::TaskPanelHost,
+     * docs/TaskPanelPerView.md sec 15.5). The style sheet is the
+     * caller's to set (OverlayManager::getStyleSheet).
+     */
+    static void applyOverlayLook(QWidget *widget, bool enable);
     /// Helper function to prepare a widget as a title widget
     static QLayoutItem *prepareTitleWidget(QWidget *widget, const QList<QAction*> &actions);
 
