@@ -26,6 +26,7 @@
 #include <QAbstractTableModel>
 
 #include <App/Range.h>
+#include <Gui/ParamHandler.h>
 
 
 namespace Spreadsheet
@@ -61,6 +62,11 @@ private:
     void cellUpdated(App::CellAddress address);
     void rangeUpdated(const App::Range &range);
     QColor getForeground(const Spreadsheet::Cell *cell, int number = 0) const;
+    /// Takes the colors of the preferences as they are now.
+    void readColors();
+
+    /// An open sheet follows its color preferences, see the constructor.
+    Gui::ParamHandlers paramHandlers;
 
     fastsignals::scoped_connection cellUpdatedConnection;
     fastsignals::scoped_connection rangeUpdatedConnection;

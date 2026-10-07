@@ -1337,3 +1337,10 @@ fc_add_gui_test(GuiTitleBarSwitchMaximized_tests_run
 fc_add_gui_test(GuiReadbackFrameMode_tests_run
                 readback-frame-mode.py
                 --timeout 300)
+
+# What a theme leaves dark on dark: the custom title bar's buttons, a check
+# box's edge, the navigation icon, a spreadsheet's text, the report view's
+# older lines -- in Dark, in Light after it and in Dark again.
+fc_add_gui_test(GuiThemeSwitchContrast_tests_run
+                theme-switch-contrast.py
+                --timeout 240)

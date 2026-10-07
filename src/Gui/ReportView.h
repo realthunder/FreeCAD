@@ -121,8 +121,17 @@ public:
 private:
     /** @name for internal use only */
     //@{
+    /** Gives the lines already written the colors as they are now. A line
+     * keeps the format it was written with, so a color changed afterwards --
+     * a theme applied to a running session -- left what was there in the old
+     * one: black text on a view that had turned dark.
+     */
+    void recolor();
+
     Paragraph type;
     QColor txtCol, logCol, warnCol, errCol, criticalCol;
+    /// highlightBlock() is running for recolor(), not for a line being written
+    bool recoloring = false;
     //@}
 };
 

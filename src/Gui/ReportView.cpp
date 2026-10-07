@@ -170,8 +170,11 @@ void ReportHighlighter::highlightBlock (const QString & text)
     //a block is highlighted again whenever an edit touches it, and a state
     //repeating the one before it spans nothing, so keep it out rather than let
     //the vector grow by one on every rehighlight
-    if (ud->block.isEmpty() || ud->block.last().length != b.length
-        || ud->block.last().type != b.type) {
+    //and recoloring writes nothing: the type current then belongs to whatever
+    //line came last, not to this block
+    if (ud->block.isEmpty()
+        || (!recoloring
+            && (ud->block.last().length != b.length || ud->block.last().type != b.type))) {
         ud->block.append(b);
     }
 
@@ -223,29 +226,54 @@ void ReportHighlighter::setParagraphType(ReportHighlighter::Paragraph t)
     type = t;
 }
 
+void ReportHighlighter::recolor()
+{
+    if (!document() || document()->isEmpty()) {
+        return;
+    }
+    recoloring = true;
+    rehighlight();
+    recoloring = false;
+}
+
 void ReportHighlighter::setTextColor( const QColor& col )
 {
-    txtCol = col;
+    if (txtCol != col) {
+        txtCol = col;
+        recolor();
+    }
 }
 
 void ReportHighlighter::setLogColor( const QColor& col )
 {
-    logCol = col;
+    if (logCol != col) {
+        logCol = col;
+        recolor();
+    }
 }
 
 void ReportHighlighter::setWarningColor( const QColor& col )
 {
-    warnCol = col;
+    if (warnCol != col) {
+        warnCol = col;
+        recolor();
+    }
 }
 
 void ReportHighlighter::setErrorColor( const QColor& col )
 {
-    errCol = col;
+    if (errCol != col) {
+        errCol = col;
+        recolor();
+    }
 }
 
 void ReportHighlighter::setCriticalColor( const QColor& col )
 {
-    criticalCol = col;
+    if (criticalCol != col) {
+        criticalCol = col;
+        recolor();
+    }
 }
 
 namespace {
