@@ -31,6 +31,10 @@
 # include <QTime>
 # include <QTimer>
 # include <QMouseEvent>
+# include <QAbstractTextDocumentLayout>
+# include <QPainter>
+# include <QPainterPath>
+# include <QScrollBar>
 # include <QTextBlock>
 # include <QTextCharFormat>
 # include <deque>
@@ -178,9 +182,8 @@ void ReportHighlighter::highlightBlock (const QString & text)
         ud->block.append(b);
     }
 
-    //a line standing in for others is underlined, so that it reads as something
-    //to click before the reader has hovered it
-    const bool foldable = !ud->folded.isEmpty();
+    //a line standing in for others is not marked here: its mark is drawn in
+    //the margin, by the view (ReportOutput::paintEvent)
 
     QVector<TextBlockData::State> block = ud->block;
     int start = 0;
@@ -209,10 +212,6 @@ void ReportHighlighter::highlightBlock (const QString & text)
             break;
         }
 
-        if (foldable) {
-            fmt.setFontUnderline(true);
-            formatted = true;
-        }
         if (formatted) {
             setFormat(start, it.length-start, fmt);
         }
@@ -509,6 +508,7 @@ ReportOutput::ReportOutput(QWidget* parent)
     restoreFont();
     setReadOnly(true);
     clear();
+    fitFoldMargin();
     setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
 
     Base::Console().AttachObserver(this);
@@ -727,23 +727,98 @@ void ReportOutput::keepFolded(const QTextBlock& block,
     }
     data->folded = folded;
     data->foldedType = type;
-    //the underline says the line is foldable, and the highlighter draws it from
-    //this data, which was not there yet when the block was first highlighted
-    reportHl->rehighlightBlock(block);
+    //the mark says the line is foldable, and it is drawn from this data, which
+    //was not there yet when the line was painted
+    viewport()->update();
 }
 
-//! the collapsed line under this point, invalid when there is none
+//! the margin the marks are drawn in
+//!
+//! The document's own margin, on purpose: it is the one indent every line gets
+//! alike, so a line with a mark and a line without start in the same column,
+//! and it survives the document being cleared, which a format put on the root
+//! frame or on the blocks does not.
+void ReportOutput::fitFoldMargin()
+{
+    const qreal margin = fontMetrics().height() + 2;
+    if (!qFuzzyCompare(document()->documentMargin(), margin)) {
+        document()->setDocumentMargin(margin);
+    }
+}
+
+QRectF ReportOutput::foldMarkRect(const QTextBlock& block) const
+{
+    const QRectF line = document()->documentLayout()->blockBoundingRect(block);
+    const qreal row = fontMetrics().height();
+    const qreal side = qMin(row, document()->documentMargin()) - 4;
+    const qreal x = (document()->documentMargin() - side) / 2 - horizontalScrollBar()->value();
+    const qreal y = line.top() + (row - side) / 2 - verticalScrollBar()->value();
+    return {x, y, side, side};
+}
+
+//! the collapsed line whose mark is under this point, invalid when there is none
+//!
+//! Only the mark answers. The line's text used to, with an underline to say
+//! so, which made a line that could not be clicked into for a selection.
 QTextBlock ReportOutput::foldedBlockAt(const QPoint& pos) const
 {
-    QTextBlock block = cursorForPosition(pos).block();
+    if (pos.x() + horizontalScrollBar()->value() >= document()->documentMargin()) {
+        return {};
+    }
+    //whatever line is at this height; the cursor is asked inside the text
+    QTextBlock block =
+        cursorForPosition(QPoint(qRound(document()->documentMargin()) + 1, pos.y())).block();
     if (!block.isValid()) {
         return {};
     }
     auto* data = static_cast<TextBlockData*>(block.userData());
-    if (data && !data->folded.isEmpty()) {
+    if (data && !data->folded.isEmpty()
+        && foldMarkRect(block).adjusted(-2, -2, 2, 2).contains(pos)) {
         return block;
     }
     return {};
+}
+
+//! the text, and in the margin a mark for each line that stands in for others
+//!
+//! A triangle pointing at the line while it is closed and down while its
+//! messages are shown, in the colour of the text, so that it follows a theme.
+void ReportOutput::paintEvent(QPaintEvent* ev)
+{
+    QTextEdit::paintEvent(ev);
+
+    QPainter painter(viewport());
+    painter.setRenderHint(QPainter::Antialiasing);
+    painter.setPen(Qt::NoPen);
+    painter.setBrush(palette().color(QPalette::Text));
+
+    const QRect exposed = ev->rect();
+    QTextBlock block =
+        cursorForPosition(QPoint(qRound(document()->documentMargin()) + 1, exposed.top())).block();
+    for (; block.isValid(); block = block.next()) {
+        const QRectF mark = foldMarkRect(block);
+        if (mark.top() > exposed.bottom()) {
+            break;
+        }
+        auto* data = static_cast<TextBlockData*>(block.userData());
+        if (!data || data->folded.isEmpty()) {
+            continue;
+        }
+        const QRectF r = mark.adjusted(1, 1, -1, -1);
+        QPainterPath path;
+        if (data->expanded > 0) {
+            path.moveTo(r.left(), r.top() + r.height() * 0.25);
+            path.lineTo(r.right(), r.top() + r.height() * 0.25);
+            path.lineTo(r.center().x(), r.bottom() - r.height() * 0.1);
+        }
+        else {
+            path.moveTo(r.left() + r.width() * 0.25, r.top());
+            path.lineTo(r.right() - r.width() * 0.1, r.center().y());
+            path.lineTo(r.left() + r.width() * 0.25, r.bottom());
+        }
+        path.closeSubpath();
+        painter.drawPath(path);
+    }
 }
 
 //! open the fold on this line, or close it again
@@ -773,6 +848,7 @@ void ReportOutput::toggleFold(const QTextBlock& block)
         cursor.setPosition(last.position() + last.length() - 1, QTextCursor::KeepAnchor);
         cursor.removeSelectedText();
         cursor.endEditBlock();
+        viewport()->update();
         return;
     }
 
@@ -795,6 +871,8 @@ void ReportOutput::toggleFold(const QTextBlock& block)
     cursor.setPosition(start);
     cursor.insertText(QStringLiteral("\n") + lines.join(QStringLiteral("\n")));
     cursor.endEditBlock();
+    //the line itself did not change, and its mark has to turn
+    viewport()->update();
 }
 
 void ReportOutput::appendReport(ReportHighlighter::Paragraph messageType, const QString& message,
@@ -892,7 +970,7 @@ void ReportOutput::appendReport(ReportHighlighter::Paragraph messageType, const 
 }
 
 
-//! open or close the fold on the collapsed line that was clicked
+//! open or close the fold whose mark was clicked
 void ReportOutput::mousePressEvent(QMouseEvent* ev)
 {
     if (ev->button() == Qt::LeftButton) {
@@ -905,7 +983,7 @@ void ReportOutput::mousePressEvent(QMouseEvent* ev)
     QTextEdit::mousePressEvent(ev);
 }
 
-//! point at a collapsed line, so it reads as something to click
+//! point at the mark of a collapsed line, so it reads as something to click
 void ReportOutput::mouseMoveEvent(QMouseEvent* ev)
 {
     viewport()->setCursor(foldedBlockAt(ev->pos()).isValid() ? Qt::PointingHandCursor
@@ -1231,6 +1309,7 @@ void ReportOutput::OnChange(Base::Subject<const char*> &rCaller, const char * sR
 
         QFont font(fontFamily, fontSize);
         setFont(font);
+        fitFoldMargin();
         QFontMetrics metric(font);
         int width = QtTools::horizontalAdvance(metric, QStringLiteral("0000"));
 #if QT_VERSION < QT_VERSION_CHECK(5, 10, 0)

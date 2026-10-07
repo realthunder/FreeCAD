@@ -1344,3 +1344,10 @@ fc_add_gui_test(GuiReadbackFrameMode_tests_run
 fc_add_gui_test(GuiThemeSwitchContrast_tests_run
                 theme-switch-contrast.py
                 --timeout 240)
+
+# A report view line that stands in for repeats has its mark in the margin:
+# no underline, the text in line with the others, and the mark -- not the
+# line -- is what a click unfolds.
+fc_add_gui_test(GuiReportFoldMark_tests_run
+                report-fold-mark.py
+                --timeout 120)
