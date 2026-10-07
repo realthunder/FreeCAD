@@ -1407,6 +1407,16 @@ fc_add_gui_test(GuiSheetViewReopen_tests_run sheet-view-reopen.py
 fc_add_gui_test(GuiCloseDuringVisualDrain_tests_run close-during-visual-drain.py
                 --timeout 240)
 
+# The application left with documents open: QCoreApplication.exit ends the
+# event loop without the main window being asked to close, and the main
+# window then went with the documents' views in it, the last view of each
+# closing its document through a main window half destroyed -- a
+# segmentation fault on the way out. The verdict is the status the process
+# leaves with, which the driver holds a test that wrote DONE to. Scored
+# against the tree before: three runs of three exited with status 1.
+fc_add_gui_test(GuiExitWithOpenDocument_tests_run exit-with-open-document.py
+                --timeout 120)
+
 # Making a view the active window makes its cell the view area's active
 # cell and brings the keyboard with it (docs/SplitViews.md sec 21): right
 # after "create new view" the first view can be clicked back into; with

@@ -3531,6 +3531,27 @@ void Application::runApplication(void)
         Base::Console().Log("Init: Executing event loop...\n");
         mainApp.exec();
 
+        // The loop can end without the main window ever having been
+        // asked to close -- QCoreApplication::exit from a script -- and
+        // then nobody has closed the documents. The main window is a
+        // local of this function: it went with their views still in it,
+        // the last view of a document closed that document from its own
+        // destructor (onLastWindowClosed), and closing a document asks
+        // the main window for its active view, the main window that is
+        // being destroyed. A segmentation fault on the way out, three
+        // runs of three with a box in a document and nothing else
+        // (docs/DocumentLoad.md sec 18.8). What a closing main window
+        // does first (tryClose) is done here, while it is still whole.
+        if (Instance && !Instance->d->isClosing) {
+            Instance->d->isClosing = true;
+            try {
+                App::GetApplication().closeAllDocuments();
+            }
+            catch (const Base::Exception& e) {
+                e.ReportException();
+            }
+        }
+
         // Qt can't handle exceptions thrown from event handlers, so we need
         // to manually rethrow SystemExitExceptions.
         if (mainApp.caughtException.get())
