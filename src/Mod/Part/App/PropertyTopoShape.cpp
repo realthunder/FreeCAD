@@ -1281,11 +1281,7 @@ void PropertyPartShape::Restore(Base::XMLReader &reader)
     } else if(owner && !owner->getDocument()->testStatus(App::Document::PartialDoc)) {
         static int buildElementMap = -1;
         if(buildElementMap<0) {
-            static ParameterGrp::handle hGrp;
-            if (!hGrp)
-               hGrp = App::GetApplication().GetParameterGroupByPath(
-                    "User parameter:BaseApp/Preferences/Mod/Part/General");
-            buildElementMap = hGrp->GetBool("AutoElementMap",true)?1:0;
+            buildElementMap = PartParams::getAutoElementMap()?1:0;
         }
         if(buildElementMap) {
             FC_WARN("Pending recompute for generating element map: " << owner->getFullName());

@@ -21,6 +21,8 @@
  ***************************************************************************/
 
 #include "PreCompiled.h"
+
+#include "PartParams.h"
 #ifndef _PreComp_
 # include <BRepAdaptor_Curve.hxx>
 # include <BRep_Tool.hxx>
@@ -208,9 +210,7 @@ void DlgScale::apply()
         }
         activeDoc->openTransaction("Scale");
 
-        Base::Reference<ParameterGrp> hGrp = App::GetApplication().GetUserParameter()
-            .GetGroup("BaseApp")->GetGroup("Preferences")->GetGroup("Mod/Part");
-        bool addBaseName = hGrp->GetBool("AddBaseObjectName", false);
+        bool addBaseName = PartGui::PartParams::getAddBaseObjectName();
 
         std::vector<App::DocumentObject*> objects = this->getShapesToScale();
         for (App::DocumentObject* sourceObj: objects) {

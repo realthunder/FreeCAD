@@ -22,6 +22,8 @@
 
 
 #include "PreCompiled.h"
+
+#include "PartParams.h"
 #ifndef _PreComp_
 # include <QInputDialog>
 #endif
@@ -371,8 +373,7 @@ CmdPartRefineShape::CmdPartRefineShape()
 void CmdPartRefineShape::activated(int iMsg)
 {
     Q_UNUSED(iMsg);
-    ParameterGrp::handle hGrp = App::GetApplication().GetParameterGroupByPath("User parameter:BaseApp/Preferences/Mod/Part");
-    bool parametric = hGrp->GetBool("ParametricRefine", true);
+    bool parametric = PartGui::PartParams::getParametricRefine();
     if (parametric) {
         Gui::WaitCursor wc;
         Base::Type partid = Base::Type::fromName("Part::Feature");

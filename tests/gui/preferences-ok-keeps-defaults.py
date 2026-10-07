@@ -115,7 +115,14 @@ def definitions():
                 if not group.startswith(PREFIX):
                     continue
                 for prm in getattr(mod, "Params", []):
-                    found[(group[len(PREFIX):], prm.name)] = (mod.ClassName, prm._default, KIND.get(prm.Type))
+                    # A setting may be kept in a sub-group, under a key that
+                    # is not its name (CheckGeometry/AutoRun).
+                    where = group[len(PREFIX):]
+                    sub = getattr(prm, "subpath", "")
+                    if sub and not sub.startswith("User parameter:"):
+                        where += "/" + sub
+                    key = getattr(prm, "param_name", "") or prm.name
+                    found[(where, key)] = (mod.ClassName, prm._default, KIND.get(prm.Type))
     finally:
         if had is None:
             del sys.modules["cog"]

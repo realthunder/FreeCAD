@@ -557,6 +557,218 @@ public:
     static void onDimensionsFontStyleItalicChanged();
     //@}
 
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter CheckGeometryAutoRun
+    ///
+    /// Run the geometry check as soon as its panel opens, without the Run
+    /// Check button.
+    static const bool & getCheckGeometryAutoRun();
+    static const bool & defaultCheckGeometryAutoRun();
+    static void removeCheckGeometryAutoRun();
+    static void setCheckGeometryAutoRun(const bool &v);
+    static const char *docCheckGeometryAutoRun();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter CheckGeometryRunBOPCheck
+    ///
+    /// Run the Boolean operation check on shapes the basic check finds
+    /// valid. It finds more, and can be very slow.
+    static const bool & getCheckGeometryRunBOPCheck();
+    static const bool & defaultCheckGeometryRunBOPCheck();
+    static void removeCheckGeometryRunBOPCheck();
+    static void setCheckGeometryRunBOPCheck(const bool &v);
+    static const char *docCheckGeometryRunBOPCheck();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter CheckGeometryRunSingleThreaded
+    ///
+    /// Run the Boolean operation check of the geometry check in a single
+    /// thread: slower, and more stable.
+    static const bool & getCheckGeometryRunSingleThreaded();
+    static const bool & defaultCheckGeometryRunSingleThreaded();
+    static void removeCheckGeometryRunSingleThreaded();
+    static void setCheckGeometryRunSingleThreaded(const bool &v);
+    static const char *docCheckGeometryRunSingleThreaded();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter CheckGeometryLogErrors
+    ///
+    /// Write the errors the geometry check finds to the report view.
+    static const bool & getCheckGeometryLogErrors();
+    static const bool & defaultCheckGeometryLogErrors();
+    static void removeCheckGeometryLogErrors();
+    static void setCheckGeometryLogErrors(const bool &v);
+    static const char *docCheckGeometryLogErrors();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter CheckGeometryExpandShapeContent
+    ///
+    /// Open the shape content of the geometry check's result when it is
+    /// shown.
+    static const bool & getCheckGeometryExpandShapeContent();
+    static const bool & defaultCheckGeometryExpandShapeContent();
+    static void removeCheckGeometryExpandShapeContent();
+    static void setCheckGeometryExpandShapeContent(const bool &v);
+    static const char *docCheckGeometryExpandShapeContent();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter CheckGeometryAdvancedShapeContent
+    ///
+    /// Show more about the shape in the geometry check's shape content.
+    static const bool & getCheckGeometryAdvancedShapeContent();
+    static const bool & defaultCheckGeometryAdvancedShapeContent();
+    static void removeCheckGeometryAdvancedShapeContent();
+    static void setCheckGeometryAdvancedShapeContent(const bool &v);
+    static const char *docCheckGeometryAdvancedShapeContent();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter CheckGeometryArgumentTypeMode
+    ///
+    /// Boolean operation check: look for shapes of a kind the operation
+    /// cannot take.
+    static const bool & getCheckGeometryArgumentTypeMode();
+    static const bool & defaultCheckGeometryArgumentTypeMode();
+    static void removeCheckGeometryArgumentTypeMode();
+    static void setCheckGeometryArgumentTypeMode(const bool &v);
+    static const char *docCheckGeometryArgumentTypeMode();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter CheckGeometrySelfInterMode
+    ///
+    /// Boolean operation check: look for shapes that intersect themselves.
+    static const bool & getCheckGeometrySelfInterMode();
+    static const bool & defaultCheckGeometrySelfInterMode();
+    static void removeCheckGeometrySelfInterMode();
+    static void setCheckGeometrySelfInterMode(const bool &v);
+    static const char *docCheckGeometrySelfInterMode();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter CheckGeometrySmallEdgeMode
+    ///
+    /// Boolean operation check: look for edges that are too small.
+    static const bool & getCheckGeometrySmallEdgeMode();
+    static const bool & defaultCheckGeometrySmallEdgeMode();
+    static void removeCheckGeometrySmallEdgeMode();
+    static void setCheckGeometrySmallEdgeMode(const bool &v);
+    static const char *docCheckGeometrySmallEdgeMode();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter CheckGeometryRebuildFaceMode
+    ///
+    /// Boolean operation check: look for faces that cannot be rebuilt.
+    static const bool & getCheckGeometryRebuildFaceMode();
+    static const bool & defaultCheckGeometryRebuildFaceMode();
+    static void removeCheckGeometryRebuildFaceMode();
+    static void setCheckGeometryRebuildFaceMode(const bool &v);
+    static const char *docCheckGeometryRebuildFaceMode();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter CheckGeometryContinuityMode
+    ///
+    /// Boolean operation check: look for edges that are not continuous.
+    static const bool & getCheckGeometryContinuityMode();
+    static const bool & defaultCheckGeometryContinuityMode();
+    static void removeCheckGeometryContinuityMode();
+    static void setCheckGeometryContinuityMode(const bool &v);
+    static const char *docCheckGeometryContinuityMode();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter CheckGeometryTangentMode
+    ///
+    /// Boolean operation check: look for shapes that only touch.
+    static const bool & getCheckGeometryTangentMode();
+    static const bool & defaultCheckGeometryTangentMode();
+    static void removeCheckGeometryTangentMode();
+    static void setCheckGeometryTangentMode(const bool &v);
+    static const char *docCheckGeometryTangentMode();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter CheckGeometryMergeVertexMode
+    ///
+    /// Boolean operation check: look for vertices that should be one.
+    static const bool & getCheckGeometryMergeVertexMode();
+    static const bool & defaultCheckGeometryMergeVertexMode();
+    static void removeCheckGeometryMergeVertexMode();
+    static void setCheckGeometryMergeVertexMode(const bool &v);
+    static const char *docCheckGeometryMergeVertexMode();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter CheckGeometryMergeEdgeMode
+    ///
+    /// Boolean operation check: look for edges that should be one.
+    static const bool & getCheckGeometryMergeEdgeMode();
+    static const bool & defaultCheckGeometryMergeEdgeMode();
+    static void removeCheckGeometryMergeEdgeMode();
+    static void setCheckGeometryMergeEdgeMode(const bool &v);
+    static const char *docCheckGeometryMergeEdgeMode();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter CheckGeometryCurveOnSurfaceMode
+    ///
+    /// Boolean operation check: look for edges whose curve on a face does
+    /// not follow the edge.
+    static const bool & getCheckGeometryCurveOnSurfaceMode();
+    static const bool & defaultCheckGeometryCurveOnSurfaceMode();
+    static void removeCheckGeometryCurveOnSurfaceMode();
+    static void setCheckGeometryCurveOnSurfaceMode(const bool &v);
+    static const char *docCheckGeometryCurveOnSurfaceMode();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter ParametricRefine
+    ///
+    /// Refine Shape makes a parametric Refine feature that follows its
+    /// source. When off it makes a plain copy of the refined shape.
+    static const bool & getParametricRefine();
+    static const bool & defaultParametricRefine();
+    static void removeParametricRefine();
+    static void setParametricRefine(const bool &v);
+    static const char *docParametricRefine();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter AddBaseObjectName
+    ///
+    /// Extrude and Scale label their result with the name of the object
+    /// it was made from.
+    static const bool & getAddBaseObjectName();
+    static const bool & defaultAddBaseObjectName();
+    static void removeAddBaseObjectName();
+    static void setAddBaseObjectName(const bool &v);
+    static const char *docAddBaseObjectName();
+    //@}
+
 // Auto generated code (Tools/params_utils.py:179)
 }; // class PartParams
 } // namespace PartGui

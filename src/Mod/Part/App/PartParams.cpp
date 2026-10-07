@@ -41,6 +41,7 @@ class PartParamsP: public ParameterGrp::ObserverType {
 public:
     ParameterGrp::handle handle;
     std::unordered_map<const char *,void(*)(PartParamsP*),App::CStringHasher,App::CStringHasher> funcs;
+    std::vector<ParameterGrp::handle> subHandles;
     bool ShapePropertyCopy;
     bool DisableShapeCache;
     long CommandOverride;
@@ -67,12 +68,21 @@ public:
     double MeshDeviation;
     double MeshAngularDeflection;
     double MinimumAngularDeflection;
+    bool BooleanRefineModel;
+    bool BooleanCheckModel;
+    double BooleanFuzzy;
+    bool AutoElementMap;
 
     // Auto generated code (Tools/params_utils.py:254)
     PartParamsP() {
         handle = App::GetApplication().GetParameterGroupByPath("User parameter:BaseApp/Preferences/Mod/Part");
         handle->Attach(this);
 
+        subHandles.resize(2);
+        subHandles[0] = handle->GetGroup("Boolean");
+        subHandles[0]->Attach(this);
+        subHandles[1] = handle->GetGroup("General");
+        subHandles[1]->Attach(this);
         ShapePropertyCopy = this->handle->GetBool("ShapePropertyCopy", false);
         funcs["ShapePropertyCopy"] = &PartParamsP::updateShapePropertyCopy;
         DisableShapeCache = this->handle->GetBool("DisableShapeCache", false);
@@ -125,6 +135,14 @@ public:
         funcs["MeshAngularDeflection"] = &PartParamsP::updateMeshAngularDeflection;
         MinimumAngularDeflection = this->handle->GetFloat("MinimumAngularDeflection", 5.0);
         funcs["MinimumAngularDeflection"] = &PartParamsP::updateMinimumAngularDeflection;
+        BooleanRefineModel = this->subHandles[0]->GetBool("RefineModel", false);
+        funcs["RefineModel"] = &PartParamsP::updateBooleanRefineModel;
+        BooleanCheckModel = this->subHandles[0]->GetBool("CheckModel", false);
+        funcs["CheckModel"] = &PartParamsP::updateBooleanCheckModel;
+        BooleanFuzzy = this->subHandles[0]->GetFloat("BooleanFuzzy", 10.0);
+        funcs["BooleanFuzzy"] = &PartParamsP::updateBooleanFuzzy;
+        AutoElementMap = this->subHandles[1]->GetBool("AutoElementMap", true);
+        funcs["AutoElementMap"] = &PartParamsP::updateAutoElementMap;
     }
 
     // Auto generated code (Tools/params_utils.py:284)
@@ -244,6 +262,22 @@ public:
     // Auto generated code (Tools/params_utils.py:314)
     static void updateMinimumAngularDeflection(PartParamsP *self) {
         self->MinimumAngularDeflection = self->handle->GetFloat("MinimumAngularDeflection", 5.0);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateBooleanRefineModel(PartParamsP *self) {
+        self->BooleanRefineModel = self->subHandles[0]->GetBool("RefineModel", false);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateBooleanCheckModel(PartParamsP *self) {
+        self->BooleanCheckModel = self->subHandles[0]->GetBool("CheckModel", false);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateBooleanFuzzy(PartParamsP *self) {
+        self->BooleanFuzzy = self->subHandles[0]->GetFloat("BooleanFuzzy", 10.0);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateAutoElementMap(PartParamsP *self) {
+        self->AutoElementMap = self->subHandles[1]->GetBool("AutoElementMap", true);
     }
 };
 
@@ -382,6 +416,25 @@ static const App::ParamRegistry::Registrar _PartParamsRegistrar({
         .setDoc("Lower limit of the angular deflection used to mesh shapes, in\n"
 "degrees. Objects asking for a smaller angle are drawn with this\n"
 "value instead."),
+    App::ParamInfo("Part", "PartParams", "User parameter:BaseApp/Preferences/Mod/Part/Boolean", "BooleanRefineModel", "RefineModel", App::ParamInfo::Bool, false)
+        .setTitle("Refine model after Boolean operation")
+        .setDoc("New Part Boolean features get Refine switched on: faces that lie\n"
+"on the same surface are merged after the operation. Read when a\n"
+"feature is created."),
+    App::ParamInfo("Part", "PartParams", "User parameter:BaseApp/Preferences/Mod/Part/Boolean", "BooleanCheckModel", "CheckModel", App::ParamInfo::Bool, false)
+        .setTitle("Check model after Boolean operation")
+        .setDoc("Check the result of every Part Boolean operation for validity,\n"
+"and fail the feature when it is not valid."),
+    App::ParamInfo("Part", "PartParams", "User parameter:BaseApp/Preferences/Mod/Part/Boolean", "BooleanFuzzy", "BooleanFuzzy", App::ParamInfo::Float, 10.0)
+        .setTitle("Automatic Boolean fuzzy factor")
+        .setDoc("Factor of the tolerance a Boolean operation is given when it is\n"
+"told to choose one itself: this times the size of the shapes times\n"
+"the kernel's precision."),
+    App::ParamInfo("Part", "PartParams", "User parameter:BaseApp/Preferences/Mod/Part/General", "AutoElementMap", "AutoElementMap", App::ParamInfo::Bool, true)
+        .setTitle("Build element names for imported shapes")
+        .setDoc("Give a shape that arrives without element names -- read from a\n"
+"file, set by a script -- names of its own. Read once, at the first\n"
+"such shape of a session."),
 });
 
 // Auto generated code (Tools/params_utils.py:368)
@@ -1162,5 +1215,124 @@ void PartParams::setMinimumAngularDeflection(const double &v) {
 // Auto generated code (Tools/params_utils.py:431)
 void PartParams::removeMinimumAngularDeflection() {
     instance()->handle->RemoveFloat("MinimumAngularDeflection");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *PartParams::docBooleanRefineModel() {
+    return QT_TRANSLATE_NOOP("PartParams",
+"New Part Boolean features get Refine switched on: faces that lie\n"
+"on the same surface are merged after the operation. Read when a\n"
+"feature is created.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const bool & PartParams::getBooleanRefineModel() {
+    return instance()->BooleanRefineModel;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const bool & PartParams::defaultBooleanRefineModel() {
+    const static bool def = false;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void PartParams::setBooleanRefineModel(const bool &v) {
+    instance()->subHandles[0]->SetBool("RefineModel",v);
+    instance()->BooleanRefineModel = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void PartParams::removeBooleanRefineModel() {
+    instance()->subHandles[0]->RemoveBool("RefineModel");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *PartParams::docBooleanCheckModel() {
+    return QT_TRANSLATE_NOOP("PartParams",
+"Check the result of every Part Boolean operation for validity,\n"
+"and fail the feature when it is not valid.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const bool & PartParams::getBooleanCheckModel() {
+    return instance()->BooleanCheckModel;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const bool & PartParams::defaultBooleanCheckModel() {
+    const static bool def = false;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void PartParams::setBooleanCheckModel(const bool &v) {
+    instance()->subHandles[0]->SetBool("CheckModel",v);
+    instance()->BooleanCheckModel = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void PartParams::removeBooleanCheckModel() {
+    instance()->subHandles[0]->RemoveBool("CheckModel");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *PartParams::docBooleanFuzzy() {
+    return QT_TRANSLATE_NOOP("PartParams",
+"Factor of the tolerance a Boolean operation is given when it is\n"
+"told to choose one itself: this times the size of the shapes times\n"
+"the kernel's precision.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const double & PartParams::getBooleanFuzzy() {
+    return instance()->BooleanFuzzy;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const double & PartParams::defaultBooleanFuzzy() {
+    const static double def = 10.0;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void PartParams::setBooleanFuzzy(const double &v) {
+    instance()->subHandles[0]->SetFloat("BooleanFuzzy",v);
+    instance()->BooleanFuzzy = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void PartParams::removeBooleanFuzzy() {
+    instance()->subHandles[0]->RemoveFloat("BooleanFuzzy");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *PartParams::docAutoElementMap() {
+    return QT_TRANSLATE_NOOP("PartParams",
+"Give a shape that arrives without element names -- read from a\n"
+"file, set by a script -- names of its own. Read once, at the first\n"
+"such shape of a session.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const bool & PartParams::getAutoElementMap() {
+    return instance()->AutoElementMap;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const bool & PartParams::defaultAutoElementMap() {
+    const static bool def = true;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void PartParams::setAutoElementMap(const bool &v) {
+    instance()->subHandles[1]->SetBool("AutoElementMap",v);
+    instance()->AutoElementMap = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void PartParams::removeAutoElementMap() {
+    instance()->subHandles[1]->RemoveBool("AutoElementMap");
 }
 //[[[end]]]

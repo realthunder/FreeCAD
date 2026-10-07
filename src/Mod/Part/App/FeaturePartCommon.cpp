@@ -21,6 +21,8 @@
  ***************************************************************************/
 
 #include "PreCompiled.h"
+
+#include "PartParams.h"
 #ifndef _PreComp_
 # include <BRepAlgoAPI_Common.hxx>
 # include <BRepCheck_Analyzer.hxx>
@@ -74,7 +76,7 @@ MultiCommon::MultiCommon()
     //init Refine property
     Base::Reference<ParameterGrp> hGrp = App::GetApplication().GetUserParameter()
         .GetGroup("BaseApp")->GetGroup("Preferences")->GetGroup("Mod/Part/Boolean");
-    this->Refine.setValue(hGrp->GetBool("RefineModel", false));
+    this->Refine.setValue(PartParams::getBooleanRefineModel());
 }
 
 short MultiCommon::mustExecute() const
@@ -149,7 +151,7 @@ App::DocumentObjectExecReturn *MultiCommon::execute()
 
             Base::Reference<ParameterGrp> hGrp = App::GetApplication().GetUserParameter()
                 .GetGroup("BaseApp")->GetGroup("Preferences")->GetGroup("Mod/Part/Boolean");
-            if (hGrp->GetBool("CheckModel", false)) {
+            if (PartParams::getBooleanCheckModel()) {
                  BRepCheck_Analyzer aChecker(resShape);
                  if (! aChecker.IsValid() ) {
                      return new App::DocumentObjectExecReturn("Resulting shape is invalid");
@@ -218,7 +220,7 @@ App::DocumentObjectExecReturn *MultiCommon::execute()
 
     Base::Reference<ParameterGrp> hGrp = App::GetApplication().GetUserParameter()
         .GetGroup("BaseApp")->GetGroup("Preferences")->GetGroup("Mod/Part/Boolean");
-    if (hGrp->GetBool("CheckModel", false)) {
+    if (PartParams::getBooleanCheckModel()) {
         BRepCheck_Analyzer aChecker(res.getShape());
         if (! aChecker.IsValid() ) {
             return new App::DocumentObjectExecReturn("Resulting shape is invalid");

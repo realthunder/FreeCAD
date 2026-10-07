@@ -1494,3 +1494,10 @@ fc_add_gui_test(GuiNaviCubeSettings_tests_run
 fc_add_gui_test(GuiPartDesignSettings_tests_run
                 partdesign-settings.py
                 --timeout 180)
+
+# Part's Boolean and geometry check options are behind the two PartParams
+# classes, in their sub-groups: listed by the omni search, and a new Boolean
+# still takes its refine switch.
+fc_add_gui_test(GuiPartOptionsSettings_tests_run
+                part-options-settings.py
+                --timeout 180)

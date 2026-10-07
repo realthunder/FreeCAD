@@ -104,6 +104,7 @@ class PartParamsP: public ParameterGrp::ObserverType {
 public:
     ParameterGrp::handle handle;
     std::unordered_map<const char *,void(*)(PartParamsP*),App::CStringHasher,App::CStringHasher> funcs;
+    std::vector<ParameterGrp::handle> subHandles;
     bool NormalsFromUVNodes;
     bool TwoSideRendering;
     double MinimumDeviation;
@@ -139,12 +140,32 @@ public:
     std::string DimensionsFontName;
     bool DimensionsFontStyleBold;
     bool DimensionsFontStyleItalic;
+    bool CheckGeometryAutoRun;
+    bool CheckGeometryRunBOPCheck;
+    bool CheckGeometryRunSingleThreaded;
+    bool CheckGeometryLogErrors;
+    bool CheckGeometryExpandShapeContent;
+    bool CheckGeometryAdvancedShapeContent;
+    bool CheckGeometryArgumentTypeMode;
+    bool CheckGeometrySelfInterMode;
+    bool CheckGeometrySmallEdgeMode;
+    bool CheckGeometryRebuildFaceMode;
+    bool CheckGeometryContinuityMode;
+    bool CheckGeometryTangentMode;
+    bool CheckGeometryMergeVertexMode;
+    bool CheckGeometryMergeEdgeMode;
+    bool CheckGeometryCurveOnSurfaceMode;
+    bool ParametricRefine;
+    bool AddBaseObjectName;
 
     // Auto generated code (Tools/params_utils.py:254)
     PartParamsP() {
         handle = App::GetApplication().GetParameterGroupByPath("User parameter:BaseApp/Preferences/Mod/Part");
         handle->Attach(this);
 
+        subHandles.resize(1);
+        subHandles[0] = handle->GetGroup("CheckGeometry");
+        subHandles[0]->Attach(this);
         NormalsFromUVNodes = this->handle->GetBool("NormalsFromUVNodes", true);
         funcs["NormalsFromUVNodes"] = &PartParamsP::updateNormalsFromUVNodes;
         TwoSideRendering = this->handle->GetBool("TwoSideRendering", true);
@@ -215,6 +236,40 @@ public:
         funcs["DimensionsFontStyleBold"] = &PartParamsP::updateDimensionsFontStyleBold;
         DimensionsFontStyleItalic = this->handle->GetBool("DimensionsFontStyleItalic", false);
         funcs["DimensionsFontStyleItalic"] = &PartParamsP::updateDimensionsFontStyleItalic;
+        CheckGeometryAutoRun = this->subHandles[0]->GetBool("AutoRun", false);
+        funcs["AutoRun"] = &PartParamsP::updateCheckGeometryAutoRun;
+        CheckGeometryRunBOPCheck = this->subHandles[0]->GetBool("RunBOPCheck", false);
+        funcs["RunBOPCheck"] = &PartParamsP::updateCheckGeometryRunBOPCheck;
+        CheckGeometryRunSingleThreaded = this->subHandles[0]->GetBool("RunSingleThreaded", false);
+        funcs["RunSingleThreaded"] = &PartParamsP::updateCheckGeometryRunSingleThreaded;
+        CheckGeometryLogErrors = this->subHandles[0]->GetBool("LogErrors", true);
+        funcs["LogErrors"] = &PartParamsP::updateCheckGeometryLogErrors;
+        CheckGeometryExpandShapeContent = this->subHandles[0]->GetBool("ExpandShapeContent", false);
+        funcs["ExpandShapeContent"] = &PartParamsP::updateCheckGeometryExpandShapeContent;
+        CheckGeometryAdvancedShapeContent = this->subHandles[0]->GetBool("AdvancedShapeContent", true);
+        funcs["AdvancedShapeContent"] = &PartParamsP::updateCheckGeometryAdvancedShapeContent;
+        CheckGeometryArgumentTypeMode = this->subHandles[0]->GetBool("ArgumentTypeMode", true);
+        funcs["ArgumentTypeMode"] = &PartParamsP::updateCheckGeometryArgumentTypeMode;
+        CheckGeometrySelfInterMode = this->subHandles[0]->GetBool("SelfInterMode", true);
+        funcs["SelfInterMode"] = &PartParamsP::updateCheckGeometrySelfInterMode;
+        CheckGeometrySmallEdgeMode = this->subHandles[0]->GetBool("SmallEdgeMode", true);
+        funcs["SmallEdgeMode"] = &PartParamsP::updateCheckGeometrySmallEdgeMode;
+        CheckGeometryRebuildFaceMode = this->subHandles[0]->GetBool("RebuildFaceMode", true);
+        funcs["RebuildFaceMode"] = &PartParamsP::updateCheckGeometryRebuildFaceMode;
+        CheckGeometryContinuityMode = this->subHandles[0]->GetBool("ContinuityMode", true);
+        funcs["ContinuityMode"] = &PartParamsP::updateCheckGeometryContinuityMode;
+        CheckGeometryTangentMode = this->subHandles[0]->GetBool("TangentMode", true);
+        funcs["TangentMode"] = &PartParamsP::updateCheckGeometryTangentMode;
+        CheckGeometryMergeVertexMode = this->subHandles[0]->GetBool("MergeVertexMode", true);
+        funcs["MergeVertexMode"] = &PartParamsP::updateCheckGeometryMergeVertexMode;
+        CheckGeometryMergeEdgeMode = this->subHandles[0]->GetBool("MergeEdgeMode", true);
+        funcs["MergeEdgeMode"] = &PartParamsP::updateCheckGeometryMergeEdgeMode;
+        CheckGeometryCurveOnSurfaceMode = this->subHandles[0]->GetBool("CurveOnSurfaceMode", true);
+        funcs["CurveOnSurfaceMode"] = &PartParamsP::updateCheckGeometryCurveOnSurfaceMode;
+        ParametricRefine = this->handle->GetBool("ParametricRefine", true);
+        funcs["ParametricRefine"] = &PartParamsP::updateParametricRefine;
+        AddBaseObjectName = this->handle->GetBool("AddBaseObjectName", false);
+        funcs["AddBaseObjectName"] = &PartParamsP::updateAddBaseObjectName;
     }
 
     // Auto generated code (Tools/params_utils.py:284)
@@ -427,6 +482,74 @@ public:
             PartParams::onDimensionsFontStyleItalicChanged();
         }
     }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateCheckGeometryAutoRun(PartParamsP *self) {
+        self->CheckGeometryAutoRun = self->subHandles[0]->GetBool("AutoRun", false);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateCheckGeometryRunBOPCheck(PartParamsP *self) {
+        self->CheckGeometryRunBOPCheck = self->subHandles[0]->GetBool("RunBOPCheck", false);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateCheckGeometryRunSingleThreaded(PartParamsP *self) {
+        self->CheckGeometryRunSingleThreaded = self->subHandles[0]->GetBool("RunSingleThreaded", false);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateCheckGeometryLogErrors(PartParamsP *self) {
+        self->CheckGeometryLogErrors = self->subHandles[0]->GetBool("LogErrors", true);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateCheckGeometryExpandShapeContent(PartParamsP *self) {
+        self->CheckGeometryExpandShapeContent = self->subHandles[0]->GetBool("ExpandShapeContent", false);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateCheckGeometryAdvancedShapeContent(PartParamsP *self) {
+        self->CheckGeometryAdvancedShapeContent = self->subHandles[0]->GetBool("AdvancedShapeContent", true);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateCheckGeometryArgumentTypeMode(PartParamsP *self) {
+        self->CheckGeometryArgumentTypeMode = self->subHandles[0]->GetBool("ArgumentTypeMode", true);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateCheckGeometrySelfInterMode(PartParamsP *self) {
+        self->CheckGeometrySelfInterMode = self->subHandles[0]->GetBool("SelfInterMode", true);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateCheckGeometrySmallEdgeMode(PartParamsP *self) {
+        self->CheckGeometrySmallEdgeMode = self->subHandles[0]->GetBool("SmallEdgeMode", true);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateCheckGeometryRebuildFaceMode(PartParamsP *self) {
+        self->CheckGeometryRebuildFaceMode = self->subHandles[0]->GetBool("RebuildFaceMode", true);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateCheckGeometryContinuityMode(PartParamsP *self) {
+        self->CheckGeometryContinuityMode = self->subHandles[0]->GetBool("ContinuityMode", true);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateCheckGeometryTangentMode(PartParamsP *self) {
+        self->CheckGeometryTangentMode = self->subHandles[0]->GetBool("TangentMode", true);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateCheckGeometryMergeVertexMode(PartParamsP *self) {
+        self->CheckGeometryMergeVertexMode = self->subHandles[0]->GetBool("MergeVertexMode", true);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateCheckGeometryMergeEdgeMode(PartParamsP *self) {
+        self->CheckGeometryMergeEdgeMode = self->subHandles[0]->GetBool("MergeEdgeMode", true);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateCheckGeometryCurveOnSurfaceMode(PartParamsP *self) {
+        self->CheckGeometryCurveOnSurfaceMode = self->subHandles[0]->GetBool("CurveOnSurfaceMode", true);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateParametricRefine(PartParamsP *self) {
+        self->ParametricRefine = self->handle->GetBool("ParametricRefine", true);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateAddBaseObjectName(PartParamsP *self) {
+        self->AddBaseObjectName = self->handle->GetBool("AddBaseObjectName", false);
+    }
 };
 
 // Auto generated code (Tools/params_utils.py:336)
@@ -629,6 +752,65 @@ static const App::ParamRegistry::Registrar _PartParamsRegistrar({
         .setTitle("Measurement font italic")
         .setDoc("Draw the text of Part measurements in the 3D view in italic.")
         .setOnChange(),
+    App::ParamInfo("PartGui", "PartParams", "User parameter:BaseApp/Preferences/Mod/Part/CheckGeometry", "CheckGeometryAutoRun", "AutoRun", App::ParamInfo::Bool, false)
+        .setTitle("Run the geometry check at once")
+        .setDoc("Run the geometry check as soon as its panel opens, without the Run\n"
+"Check button."),
+    App::ParamInfo("PartGui", "PartParams", "User parameter:BaseApp/Preferences/Mod/Part/CheckGeometry", "CheckGeometryRunBOPCheck", "RunBOPCheck", App::ParamInfo::Bool, false)
+        .setTitle("Run the Boolean operation check")
+        .setDoc("Run the Boolean operation check on shapes the basic check finds\n"
+"valid. It finds more, and can be very slow."),
+    App::ParamInfo("PartGui", "PartParams", "User parameter:BaseApp/Preferences/Mod/Part/CheckGeometry", "CheckGeometryRunSingleThreaded", "RunSingleThreaded", App::ParamInfo::Bool, false)
+        .setTitle("Geometry check in a single thread")
+        .setDoc("Run the Boolean operation check of the geometry check in a single\n"
+"thread: slower, and more stable."),
+    App::ParamInfo("PartGui", "PartParams", "User parameter:BaseApp/Preferences/Mod/Part/CheckGeometry", "CheckGeometryLogErrors", "LogErrors", App::ParamInfo::Bool, true)
+        .setTitle("Log geometry check errors")
+        .setDoc("Write the errors the geometry check finds to the report view."),
+    App::ParamInfo("PartGui", "PartParams", "User parameter:BaseApp/Preferences/Mod/Part/CheckGeometry", "CheckGeometryExpandShapeContent", "ExpandShapeContent", App::ParamInfo::Bool, false)
+        .setTitle("Expand shape content")
+        .setDoc("Open the shape content of the geometry check's result when it is\n"
+"shown."),
+    App::ParamInfo("PartGui", "PartParams", "User parameter:BaseApp/Preferences/Mod/Part/CheckGeometry", "CheckGeometryAdvancedShapeContent", "AdvancedShapeContent", App::ParamInfo::Bool, true)
+        .setTitle("Advanced shape content")
+        .setDoc("Show more about the shape in the geometry check's shape content."),
+    App::ParamInfo("PartGui", "PartParams", "User parameter:BaseApp/Preferences/Mod/Part/CheckGeometry", "CheckGeometryArgumentTypeMode", "ArgumentTypeMode", App::ParamInfo::Bool, true)
+        .setTitle("Check for bad argument types")
+        .setDoc("Boolean operation check: look for shapes of a kind the operation\n"
+"cannot take."),
+    App::ParamInfo("PartGui", "PartParams", "User parameter:BaseApp/Preferences/Mod/Part/CheckGeometry", "CheckGeometrySelfInterMode", "SelfInterMode", App::ParamInfo::Bool, true)
+        .setTitle("Check for self-intersections")
+        .setDoc("Boolean operation check: look for shapes that intersect themselves."),
+    App::ParamInfo("PartGui", "PartParams", "User parameter:BaseApp/Preferences/Mod/Part/CheckGeometry", "CheckGeometrySmallEdgeMode", "SmallEdgeMode", App::ParamInfo::Bool, true)
+        .setTitle("Check for small edges")
+        .setDoc("Boolean operation check: look for edges that are too small."),
+    App::ParamInfo("PartGui", "PartParams", "User parameter:BaseApp/Preferences/Mod/Part/CheckGeometry", "CheckGeometryRebuildFaceMode", "RebuildFaceMode", App::ParamInfo::Bool, true)
+        .setTitle("Check for faces that cannot be rebuilt")
+        .setDoc("Boolean operation check: look for faces that cannot be rebuilt."),
+    App::ParamInfo("PartGui", "PartParams", "User parameter:BaseApp/Preferences/Mod/Part/CheckGeometry", "CheckGeometryContinuityMode", "ContinuityMode", App::ParamInfo::Bool, true)
+        .setTitle("Check for continuity")
+        .setDoc("Boolean operation check: look for edges that are not continuous."),
+    App::ParamInfo("PartGui", "PartParams", "User parameter:BaseApp/Preferences/Mod/Part/CheckGeometry", "CheckGeometryTangentMode", "TangentMode", App::ParamInfo::Bool, true)
+        .setTitle("Check for tangency")
+        .setDoc("Boolean operation check: look for shapes that only touch."),
+    App::ParamInfo("PartGui", "PartParams", "User parameter:BaseApp/Preferences/Mod/Part/CheckGeometry", "CheckGeometryMergeVertexMode", "MergeVertexMode", App::ParamInfo::Bool, true)
+        .setTitle("Check for mergeable vertices")
+        .setDoc("Boolean operation check: look for vertices that should be one."),
+    App::ParamInfo("PartGui", "PartParams", "User parameter:BaseApp/Preferences/Mod/Part/CheckGeometry", "CheckGeometryMergeEdgeMode", "MergeEdgeMode", App::ParamInfo::Bool, true)
+        .setTitle("Check for mergeable edges")
+        .setDoc("Boolean operation check: look for edges that should be one."),
+    App::ParamInfo("PartGui", "PartParams", "User parameter:BaseApp/Preferences/Mod/Part/CheckGeometry", "CheckGeometryCurveOnSurfaceMode", "CurveOnSurfaceMode", App::ParamInfo::Bool, true)
+        .setTitle("Check curves on surfaces")
+        .setDoc("Boolean operation check: look for edges whose curve on a face does\n"
+"not follow the edge."),
+    App::ParamInfo("PartGui", "PartParams", "User parameter:BaseApp/Preferences/Mod/Part", "ParametricRefine", "ParametricRefine", App::ParamInfo::Bool, true)
+        .setTitle("Refine shape makes a feature")
+        .setDoc("Refine Shape makes a parametric Refine feature that follows its\n"
+"source. When off it makes a plain copy of the refined shape."),
+    App::ParamInfo("PartGui", "PartParams", "User parameter:BaseApp/Preferences/Mod/Part", "AddBaseObjectName", "AddBaseObjectName", App::ParamInfo::Bool, false)
+        .setTitle("Add the base object's name")
+        .setDoc("Extrude and Scale label their result with the name of the object\n"
+"it was made from."),
 });
 
 // Auto generated code (Tools/params_utils.py:368)
@@ -1667,6 +1849,490 @@ void PartParams::setDimensionsFontStyleItalic(const bool &v) {
 // Auto generated code (Tools/params_utils.py:431)
 void PartParams::removeDimensionsFontStyleItalic() {
     instance()->handle->RemoveBool("DimensionsFontStyleItalic");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *PartParams::docCheckGeometryAutoRun() {
+    return QT_TRANSLATE_NOOP("PartParams",
+"Run the geometry check as soon as its panel opens, without the Run\n"
+"Check button.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const bool & PartParams::getCheckGeometryAutoRun() {
+    return instance()->CheckGeometryAutoRun;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const bool & PartParams::defaultCheckGeometryAutoRun() {
+    const static bool def = false;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void PartParams::setCheckGeometryAutoRun(const bool &v) {
+    instance()->subHandles[0]->SetBool("AutoRun",v);
+    instance()->CheckGeometryAutoRun = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void PartParams::removeCheckGeometryAutoRun() {
+    instance()->subHandles[0]->RemoveBool("AutoRun");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *PartParams::docCheckGeometryRunBOPCheck() {
+    return QT_TRANSLATE_NOOP("PartParams",
+"Run the Boolean operation check on shapes the basic check finds\n"
+"valid. It finds more, and can be very slow.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const bool & PartParams::getCheckGeometryRunBOPCheck() {
+    return instance()->CheckGeometryRunBOPCheck;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const bool & PartParams::defaultCheckGeometryRunBOPCheck() {
+    const static bool def = false;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void PartParams::setCheckGeometryRunBOPCheck(const bool &v) {
+    instance()->subHandles[0]->SetBool("RunBOPCheck",v);
+    instance()->CheckGeometryRunBOPCheck = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void PartParams::removeCheckGeometryRunBOPCheck() {
+    instance()->subHandles[0]->RemoveBool("RunBOPCheck");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *PartParams::docCheckGeometryRunSingleThreaded() {
+    return QT_TRANSLATE_NOOP("PartParams",
+"Run the Boolean operation check of the geometry check in a single\n"
+"thread: slower, and more stable.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const bool & PartParams::getCheckGeometryRunSingleThreaded() {
+    return instance()->CheckGeometryRunSingleThreaded;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const bool & PartParams::defaultCheckGeometryRunSingleThreaded() {
+    const static bool def = false;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void PartParams::setCheckGeometryRunSingleThreaded(const bool &v) {
+    instance()->subHandles[0]->SetBool("RunSingleThreaded",v);
+    instance()->CheckGeometryRunSingleThreaded = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void PartParams::removeCheckGeometryRunSingleThreaded() {
+    instance()->subHandles[0]->RemoveBool("RunSingleThreaded");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *PartParams::docCheckGeometryLogErrors() {
+    return QT_TRANSLATE_NOOP("PartParams",
+"Write the errors the geometry check finds to the report view.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const bool & PartParams::getCheckGeometryLogErrors() {
+    return instance()->CheckGeometryLogErrors;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const bool & PartParams::defaultCheckGeometryLogErrors() {
+    const static bool def = true;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void PartParams::setCheckGeometryLogErrors(const bool &v) {
+    instance()->subHandles[0]->SetBool("LogErrors",v);
+    instance()->CheckGeometryLogErrors = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void PartParams::removeCheckGeometryLogErrors() {
+    instance()->subHandles[0]->RemoveBool("LogErrors");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *PartParams::docCheckGeometryExpandShapeContent() {
+    return QT_TRANSLATE_NOOP("PartParams",
+"Open the shape content of the geometry check's result when it is\n"
+"shown.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const bool & PartParams::getCheckGeometryExpandShapeContent() {
+    return instance()->CheckGeometryExpandShapeContent;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const bool & PartParams::defaultCheckGeometryExpandShapeContent() {
+    const static bool def = false;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void PartParams::setCheckGeometryExpandShapeContent(const bool &v) {
+    instance()->subHandles[0]->SetBool("ExpandShapeContent",v);
+    instance()->CheckGeometryExpandShapeContent = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void PartParams::removeCheckGeometryExpandShapeContent() {
+    instance()->subHandles[0]->RemoveBool("ExpandShapeContent");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *PartParams::docCheckGeometryAdvancedShapeContent() {
+    return QT_TRANSLATE_NOOP("PartParams",
+"Show more about the shape in the geometry check's shape content.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const bool & PartParams::getCheckGeometryAdvancedShapeContent() {
+    return instance()->CheckGeometryAdvancedShapeContent;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const bool & PartParams::defaultCheckGeometryAdvancedShapeContent() {
+    const static bool def = true;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void PartParams::setCheckGeometryAdvancedShapeContent(const bool &v) {
+    instance()->subHandles[0]->SetBool("AdvancedShapeContent",v);
+    instance()->CheckGeometryAdvancedShapeContent = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void PartParams::removeCheckGeometryAdvancedShapeContent() {
+    instance()->subHandles[0]->RemoveBool("AdvancedShapeContent");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *PartParams::docCheckGeometryArgumentTypeMode() {
+    return QT_TRANSLATE_NOOP("PartParams",
+"Boolean operation check: look for shapes of a kind the operation\n"
+"cannot take.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const bool & PartParams::getCheckGeometryArgumentTypeMode() {
+    return instance()->CheckGeometryArgumentTypeMode;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const bool & PartParams::defaultCheckGeometryArgumentTypeMode() {
+    const static bool def = true;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void PartParams::setCheckGeometryArgumentTypeMode(const bool &v) {
+    instance()->subHandles[0]->SetBool("ArgumentTypeMode",v);
+    instance()->CheckGeometryArgumentTypeMode = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void PartParams::removeCheckGeometryArgumentTypeMode() {
+    instance()->subHandles[0]->RemoveBool("ArgumentTypeMode");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *PartParams::docCheckGeometrySelfInterMode() {
+    return QT_TRANSLATE_NOOP("PartParams",
+"Boolean operation check: look for shapes that intersect themselves.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const bool & PartParams::getCheckGeometrySelfInterMode() {
+    return instance()->CheckGeometrySelfInterMode;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const bool & PartParams::defaultCheckGeometrySelfInterMode() {
+    const static bool def = true;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void PartParams::setCheckGeometrySelfInterMode(const bool &v) {
+    instance()->subHandles[0]->SetBool("SelfInterMode",v);
+    instance()->CheckGeometrySelfInterMode = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void PartParams::removeCheckGeometrySelfInterMode() {
+    instance()->subHandles[0]->RemoveBool("SelfInterMode");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *PartParams::docCheckGeometrySmallEdgeMode() {
+    return QT_TRANSLATE_NOOP("PartParams",
+"Boolean operation check: look for edges that are too small.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const bool & PartParams::getCheckGeometrySmallEdgeMode() {
+    return instance()->CheckGeometrySmallEdgeMode;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const bool & PartParams::defaultCheckGeometrySmallEdgeMode() {
+    const static bool def = true;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void PartParams::setCheckGeometrySmallEdgeMode(const bool &v) {
+    instance()->subHandles[0]->SetBool("SmallEdgeMode",v);
+    instance()->CheckGeometrySmallEdgeMode = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void PartParams::removeCheckGeometrySmallEdgeMode() {
+    instance()->subHandles[0]->RemoveBool("SmallEdgeMode");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *PartParams::docCheckGeometryRebuildFaceMode() {
+    return QT_TRANSLATE_NOOP("PartParams",
+"Boolean operation check: look for faces that cannot be rebuilt.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const bool & PartParams::getCheckGeometryRebuildFaceMode() {
+    return instance()->CheckGeometryRebuildFaceMode;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const bool & PartParams::defaultCheckGeometryRebuildFaceMode() {
+    const static bool def = true;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void PartParams::setCheckGeometryRebuildFaceMode(const bool &v) {
+    instance()->subHandles[0]->SetBool("RebuildFaceMode",v);
+    instance()->CheckGeometryRebuildFaceMode = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void PartParams::removeCheckGeometryRebuildFaceMode() {
+    instance()->subHandles[0]->RemoveBool("RebuildFaceMode");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *PartParams::docCheckGeometryContinuityMode() {
+    return QT_TRANSLATE_NOOP("PartParams",
+"Boolean operation check: look for edges that are not continuous.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const bool & PartParams::getCheckGeometryContinuityMode() {
+    return instance()->CheckGeometryContinuityMode;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const bool & PartParams::defaultCheckGeometryContinuityMode() {
+    const static bool def = true;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void PartParams::setCheckGeometryContinuityMode(const bool &v) {
+    instance()->subHandles[0]->SetBool("ContinuityMode",v);
+    instance()->CheckGeometryContinuityMode = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void PartParams::removeCheckGeometryContinuityMode() {
+    instance()->subHandles[0]->RemoveBool("ContinuityMode");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *PartParams::docCheckGeometryTangentMode() {
+    return QT_TRANSLATE_NOOP("PartParams",
+"Boolean operation check: look for shapes that only touch.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const bool & PartParams::getCheckGeometryTangentMode() {
+    return instance()->CheckGeometryTangentMode;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const bool & PartParams::defaultCheckGeometryTangentMode() {
+    const static bool def = true;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void PartParams::setCheckGeometryTangentMode(const bool &v) {
+    instance()->subHandles[0]->SetBool("TangentMode",v);
+    instance()->CheckGeometryTangentMode = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void PartParams::removeCheckGeometryTangentMode() {
+    instance()->subHandles[0]->RemoveBool("TangentMode");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *PartParams::docCheckGeometryMergeVertexMode() {
+    return QT_TRANSLATE_NOOP("PartParams",
+"Boolean operation check: look for vertices that should be one.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const bool & PartParams::getCheckGeometryMergeVertexMode() {
+    return instance()->CheckGeometryMergeVertexMode;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const bool & PartParams::defaultCheckGeometryMergeVertexMode() {
+    const static bool def = true;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void PartParams::setCheckGeometryMergeVertexMode(const bool &v) {
+    instance()->subHandles[0]->SetBool("MergeVertexMode",v);
+    instance()->CheckGeometryMergeVertexMode = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void PartParams::removeCheckGeometryMergeVertexMode() {
+    instance()->subHandles[0]->RemoveBool("MergeVertexMode");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *PartParams::docCheckGeometryMergeEdgeMode() {
+    return QT_TRANSLATE_NOOP("PartParams",
+"Boolean operation check: look for edges that should be one.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const bool & PartParams::getCheckGeometryMergeEdgeMode() {
+    return instance()->CheckGeometryMergeEdgeMode;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const bool & PartParams::defaultCheckGeometryMergeEdgeMode() {
+    const static bool def = true;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void PartParams::setCheckGeometryMergeEdgeMode(const bool &v) {
+    instance()->subHandles[0]->SetBool("MergeEdgeMode",v);
+    instance()->CheckGeometryMergeEdgeMode = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void PartParams::removeCheckGeometryMergeEdgeMode() {
+    instance()->subHandles[0]->RemoveBool("MergeEdgeMode");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *PartParams::docCheckGeometryCurveOnSurfaceMode() {
+    return QT_TRANSLATE_NOOP("PartParams",
+"Boolean operation check: look for edges whose curve on a face does\n"
+"not follow the edge.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const bool & PartParams::getCheckGeometryCurveOnSurfaceMode() {
+    return instance()->CheckGeometryCurveOnSurfaceMode;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const bool & PartParams::defaultCheckGeometryCurveOnSurfaceMode() {
+    const static bool def = true;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void PartParams::setCheckGeometryCurveOnSurfaceMode(const bool &v) {
+    instance()->subHandles[0]->SetBool("CurveOnSurfaceMode",v);
+    instance()->CheckGeometryCurveOnSurfaceMode = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void PartParams::removeCheckGeometryCurveOnSurfaceMode() {
+    instance()->subHandles[0]->RemoveBool("CurveOnSurfaceMode");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *PartParams::docParametricRefine() {
+    return QT_TRANSLATE_NOOP("PartParams",
+"Refine Shape makes a parametric Refine feature that follows its\n"
+"source. When off it makes a plain copy of the refined shape.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const bool & PartParams::getParametricRefine() {
+    return instance()->ParametricRefine;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const bool & PartParams::defaultParametricRefine() {
+    const static bool def = true;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void PartParams::setParametricRefine(const bool &v) {
+    instance()->handle->SetBool("ParametricRefine",v);
+    instance()->ParametricRefine = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void PartParams::removeParametricRefine() {
+    instance()->handle->RemoveBool("ParametricRefine");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *PartParams::docAddBaseObjectName() {
+    return QT_TRANSLATE_NOOP("PartParams",
+"Extrude and Scale label their result with the name of the object\n"
+"it was made from.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const bool & PartParams::getAddBaseObjectName() {
+    return instance()->AddBaseObjectName;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const bool & PartParams::defaultAddBaseObjectName() {
+    const static bool def = false;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void PartParams::setAddBaseObjectName(const bool &v) {
+    instance()->handle->SetBool("AddBaseObjectName",v);
+    instance()->AddBaseObjectName = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void PartParams::removeAddBaseObjectName() {
+    instance()->handle->RemoveBool("AddBaseObjectName");
 }
 //[[[end]]]
 

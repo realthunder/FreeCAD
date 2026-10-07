@@ -429,6 +429,61 @@ public:
     static const char *docMinimumAngularDeflection();
     //@}
 
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter BooleanRefineModel
+    ///
+    /// New Part Boolean features get Refine switched on: faces that lie
+    /// on the same surface are merged after the operation. Read when a
+    /// feature is created.
+    static const bool & getBooleanRefineModel();
+    static const bool & defaultBooleanRefineModel();
+    static void removeBooleanRefineModel();
+    static void setBooleanRefineModel(const bool &v);
+    static const char *docBooleanRefineModel();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter BooleanCheckModel
+    ///
+    /// Check the result of every Part Boolean operation for validity,
+    /// and fail the feature when it is not valid.
+    static const bool & getBooleanCheckModel();
+    static const bool & defaultBooleanCheckModel();
+    static void removeBooleanCheckModel();
+    static void setBooleanCheckModel(const bool &v);
+    static const char *docBooleanCheckModel();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter BooleanFuzzy
+    ///
+    /// Factor of the tolerance a Boolean operation is given when it is
+    /// told to choose one itself: this times the size of the shapes times
+    /// the kernel's precision.
+    static const double & getBooleanFuzzy();
+    static const double & defaultBooleanFuzzy();
+    static void removeBooleanFuzzy();
+    static void setBooleanFuzzy(const double &v);
+    static const char *docBooleanFuzzy();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter AutoElementMap
+    ///
+    /// Give a shape that arrives without element names -- read from a
+    /// file, set by a script -- names of its own. Read once, at the first
+    /// such shape of a session.
+    static const bool & getAutoElementMap();
+    static const bool & defaultAutoElementMap();
+    static void removeAutoElementMap();
+    static void setAutoElementMap(const bool &v);
+    static const char *docAutoElementMap();
+    //@}
+
 // Auto generated code (Tools/params_utils.py:179)
 }; // class PartParams
 } // namespace Part

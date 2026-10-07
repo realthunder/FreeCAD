@@ -3831,8 +3831,7 @@ TopoShape &TopoShape::makEBoolean(const char *maker,
             if (!shape.isNull())
                 BRepBndLib::Add(shape.getShape(), bounds);
         }
-        double factor = App::GetApplication().GetParameterGroupByPath(
-                "User parameter:BaseApp/Preferences/Mod/Part/Boolean")->GetFloat("BooleanFuzzy", 10.0);
+        double factor = PartParams::getBooleanFuzzy();
         tol = bounds.IsVoid() ? 0.0
             : factor * std::sqrt(bounds.SquareExtent()) * Precision::Confusion();
     }

@@ -159,6 +159,27 @@ Params = [
     _MeshDeviation,
     _MeshAngularDeflection,
     _MinimumAngularDeflection,
+    # --- the sub-group Boolean
+    ParamBool("BooleanRefineModel", False, subpath='Boolean', param_name='RefineModel',
+        title = "Refine model after Boolean operation",
+        doc = "New Part Boolean features get Refine switched on: faces that lie\n"
+              "on the same surface are merged after the operation. Read when a\n"
+              "feature is created."),
+    ParamBool("BooleanCheckModel", False, subpath='Boolean', param_name='CheckModel',
+        title = "Check model after Boolean operation",
+        doc = "Check the result of every Part Boolean operation for validity,\n"
+              "and fail the feature when it is not valid."),
+    ParamFloat("BooleanFuzzy", 10.0, subpath='Boolean',
+        title = "Automatic Boolean fuzzy factor",
+        doc = "Factor of the tolerance a Boolean operation is given when it is\n"
+              "told to choose one itself: this times the size of the shapes times\n"
+              "the kernel's precision."),
+    # --- the sub-group General
+    ParamBool("AutoElementMap", True, subpath='General',
+        title = "Build element names for imported shapes",
+        doc = "Give a shape that arrives without element names -- read from a\n"
+              "file, set by a script -- names of its own. Read once, at the first\n"
+              "such shape of a session."),
 ]
 
 def declare():
