@@ -1460,9 +1460,15 @@ static const App::ParamRegistry::Registrar _ViewParamsRegistrar({
 "can share one tab side by side. Off, every view gets its own tab\n"
 "and the split placement choices below do not apply."),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "UseNewSelection", "UseNewSelection", App::ParamInfo::Bool, true)
-        .setTitle("Use New Selection"),
+        .setTitle("Use New Selection")
+        .setDoc("Highlight selection and preselection through the selection root of\n"
+"the 3D view, which allows picking sub-elements and objects inside\n"
+"links. When off, only objects that ask for it are handled that way."),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "UseSelectionRoot", "UseSelectionRoot", App::ParamInfo::Bool, true)
-        .setTitle("Use Selection Root"),
+        .setTitle("Use Selection Root")
+        .setDoc("Give the visual copy a link makes of its linked object a selection\n"
+"root of its own, so that each link is highlighted separately. When\n"
+"off, a plain group without render caching is used."),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "EnableSelection", "EnableSelection", App::ParamInfo::Bool, true)
         .setTitle("Enable selection")
         .setDoc("Enable selection, highlighted with specified color"),
@@ -1487,11 +1493,16 @@ static const App::ParamRegistry::Registrar _ViewParamsRegistrar({
 "mode 3). See docs/SplitViews.md sec 13.")
         .setOnChange(),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "RandomColor", "RandomColor", App::ParamInfo::Bool, false)
-        .setTitle("Random Color"),
+        .setTitle("Random Color")
+        .setDoc("Give every new object a random shape colour instead of the default\n"
+"shape colour."),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "BoundingBoxColor", "BoundingBoxColor", App::ParamInfo::Hex, 0xFFFFFFFF)
-        .setTitle("Bounding Box Color"),
+        .setTitle("Bounding Box Color")
+        .setDoc("Colour of the bounding box drawn for an object that has its bounding\n"
+"box display turned on."),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "AnnotationTextColor", "AnnotationTextColor", App::ParamInfo::Hex, 0xFFFFFFFF)
-        .setTitle("Annotation Text Color"),
+        .setTitle("Annotation Text Color")
+        .setDoc("Default text colour of new annotation objects."),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "HighlightColor", "HighlightColor", App::ParamInfo::Hex, 0xE1E114FF)
         .setTitle("Pre-selection highlight color")
         .setDoc("Pre-selection highlight color"),
@@ -1499,25 +1510,43 @@ static const App::ParamRegistry::Registrar _ViewParamsRegistrar({
         .setTitle("Selection highlight color")
         .setDoc("Selection highlight color"),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "MarkerSize", "MarkerSize", App::ParamInfo::Int, 9)
-        .setTitle("Marker Size"),
+        .setTitle("Marker Size")
+        .setDoc("Size in pixels of the point markers drawn in the 3D view, such as\n"
+"sketch vertices and the end points of a measurement."),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "DefaultLinkColor", "DefaultLinkColor", App::ParamInfo::Hex, 0x66FFFFFF)
-        .setTitle("Default Link Color"),
+        .setTitle("Default Link Color")
+        .setDoc("Default colour of the material of a new link, which is used when the\n"
+"link overrides the material of its linked object."),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "DefaultShapeLineColor", "DefaultShapeLineColor", App::ParamInfo::Hex, 0x191919FF)
-        .setTitle("Default Shape Line Color"),
+        .setTitle("Default Shape Line Color")
+        .setDoc("Default line colour of new shapes."),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "DefaultShapeVertexColor", "DefaultShapeVertexColor", App::ParamInfo::Hex, 0x191919FF)
-        .setTitle("Default Shape Vertex Color"),
+        .setTitle("Default Shape Vertex Color")
+        .setDoc("Default vertex colour of new shapes."),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "DefaultShapeColor", "DefaultShapeColor", App::ParamInfo::Hex, 0xCCCCE6FF)
-        .setTitle("Default Shape Color"),
+        .setTitle("Default Shape Color")
+        .setDoc("Default face colour of new shapes. Not used while random colours are\n"
+"turned on."),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "DefaultShapeTransparency", "DefaultShapeTransparency", App::ParamInfo::Int, 0)
-        .setTitle("Default Shape Transparency"),
+        .setTitle("Default Shape Transparency")
+        .setDoc("Default transparency of new shapes in percent. 0 is opaque, 100 is\n"
+"fully transparent."),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "DefaultShapeLineWidth", "DefaultShapeLineWidth", App::ParamInfo::Int, 2)
-        .setTitle("Default Shape Line Width"),
+        .setTitle("Default Shape Line Width")
+        .setDoc("Default line width of new shapes, in pixels."),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "DefaultShapePointSize", "DefaultShapePointSize", App::ParamInfo::Int, 2)
-        .setTitle("Default Shape Point Size"),
+        .setTitle("Default Shape Point Size")
+        .setDoc("Default vertex size of new shapes, in pixels."),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "CoinCycleCheck", "CoinCycleCheck", App::ParamInfo::Bool, true)
-        .setTitle("Coin Cycle Check"),
+        .setTitle("Coin Cycle Check")
+        .setDoc("Check the 3D scene for an object that contains itself while the\n"
+"scene is traversed. A cycle is reported and skipped instead of being\n"
+"followed without end."),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "EnablePropertyViewForInactiveDocument", "EnablePropertyViewForInactiveDocument", App::ParamInfo::Bool, true)
-        .setTitle("Enable Property View For Inactive Document"),
+        .setTitle("Enable Property View For Inactive Document")
+        .setDoc("Keep the property view usable when the selected objects belong to a\n"
+"document other than the active one. When off, the property view is\n"
+"disabled for such a selection."),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "ShowSelectionBoundingBox", "ShowSelectionBoundingBox", App::ParamInfo::Bool, false)
         .setTitle("Show selection bounding box instead of highlight")
         .setDoc("Show selection bounding box instead of highlight"),
@@ -1525,9 +1554,14 @@ static const App::ParamRegistry::Registrar _ViewParamsRegistrar({
         .setTitle("Threshold for showing bounding box instead of selection highlight")
         .setDoc("Threshold for showing bounding box instead of selection highlight"),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "UpdateSelectionVisual", "UpdateSelectionVisual", App::ParamInfo::Bool, true)
-        .setTitle("Update Selection Visual"),
+        .setTitle("Update Selection Visual")
+        .setDoc("Bring back the selection highlight of a selected object when it is\n"
+"shown again after being hidden."),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "LinkChildrenDirect", "LinkChildrenDirect", App::ParamInfo::Bool, true)
-        .setTitle("Link Children Direct"),
+        .setTitle("Link Children Direct")
+        .setDoc("Show the children of a group with its own coordinate system, such as\n"
+"a part or body, through a link view. A link to the group then shows\n"
+"the children's visuals directly."),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "ShowSelectionOnTop", "ShowSelectionOnTop", App::ParamInfo::Bool, true)
         .setTitle("Show selection always on top")
         .setDoc("Show selection always on top")
@@ -1597,33 +1631,56 @@ static const App::ParamRegistry::Registrar _ViewParamsRegistrar({
         .setProxy("SpinBox")
         .setRange(0.0, 200.0, 1.0, 1),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "SelectionTransparency", "SelectionTransparency", App::ParamInfo::Float, 0.5)
-        .setTitle("Selection Transparency"),
+        .setTitle("Selection Transparency")
+        .setDoc("Transparency given to a selected face so that what lies behind it\n"
+"stays visible, used when picking through objects and when the\n"
+"highlight is drawn on top. 0 is opaque, 1 is invisible."),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "SelectionLinePattern", "SelectionLinePattern", App::ParamInfo::Int, 0)
         .setTitle("Selected hidden line pattern")
+        .setDoc("Dash pattern of the hidden part of a selected line that is shown on\n"
+"top of the scene, as a 16 bit mask. 0 draws it solid.")
         .setProxy("LinePattern"),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "SelectionLinePatternScale", "SelectionLinePatternScale", App::ParamInfo::Int, 1)
-        .setTitle("Selected line pattern scale"),
+        .setTitle("Selected line pattern scale")
+        .setDoc("Number of times each bit of the dash pattern of a selected hidden\n"
+"line is repeated. Larger values give longer dashes. 1 or less uses\n"
+"the pattern as it is."),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "SelectionHiddenLineWidth", "SelectionHiddenLineWidth", App::ParamInfo::Float, 1.0)
         .setTitle("Selected hidden line width")
         .setDoc("Width of the hidden line."),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "SelectionBBoxLineWidth", "SelectionBBoxLineWidth", App::ParamInfo::Float, 3.0)
-        .setTitle("Selection BBox Line Width"),
+        .setTitle("Selection BBox Line Width")
+        .setDoc("Line width in pixels of the bounding box drawn around a selected\n"
+"object when selection is shown by bounding box."),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "ShowHighlightEdgeOnly", "ShowHighlightEdgeOnly", App::ParamInfo::Bool, false)
         .setTitle("Show pre-selection highlight edge only")
         .setDoc("Show pre-selection highlight edge only"),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "PreSelectionDelay", "PreSelectionDelay", App::ParamInfo::Float, 0.1)
-        .setTitle("Pre Selection Delay"),
+        .setTitle("Pre Selection Delay")
+        .setDoc("Shortest time in seconds between two preselection picks in the 3D\n"
+"view while the mouse moves. 0 picks on every mouse move."),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "PickBackFaceDelay", "PickBackFaceDelay", App::ParamInfo::Int, 2)
-        .setTitle("Pick Back Face Delay"),
+        .setTitle("Pick Back Face Delay")
+        .setDoc("Number of mouse wheel steps, with Shift and Ctrl held, that it takes\n"
+"to move the pick one object further behind or back toward the\n"
+"front."),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "UseNewRayPick", "UseNewRayPick", App::ParamInfo::Bool, true)
-        .setTitle("Use New Ray Pick"),
+        .setTitle("Use New Ray Pick")
+        .setDoc("Stop a single pick in the 3D view at the nearest hit instead of\n"
+"collecting everything along the pick ray. Off is the older and\n"
+"slower way."),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "ViewSelectionExtendFactor", "ViewSelectionExtendFactor", App::ParamInfo::Float, 0.5)
-        .setTitle("View Selection Extend Factor"),
+        .setTitle("View Selection Extend Factor")
+        .setDoc("Scale applied to the bounding box of the selection when testing\n"
+"whether it is already in view, before the view is extended to\n"
+"include it. Currently has no effect."),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "UseTightBoundingBox", "UseTightBoundingBox", App::ParamInfo::Bool, true)
         .setTitle("Show more accurate bounds when using bounding box selection style")
         .setDoc("Show more accurate bounds when using bounding box selection style"),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "UseBoundingBoxCache", "UseBoundingBoxCache", App::ParamInfo::Bool, true)
-        .setTitle("Use Bounding Box Cache"),
+        .setTitle("Use Bounding Box Cache")
+        .setDoc("Remember the bounding boxes of objects instead of computing them\n"
+"again on every request."),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "RenderProjectedBBox", "RenderProjectedBBox", App::ParamInfo::Bool, true)
         .setTitle("Render Projected BBox")
         .setDoc("Show projected bounding box that is aligned to axes of\n"
@@ -1632,13 +1689,24 @@ static const App::ParamRegistry::Registrar _ViewParamsRegistrar({
         .setTitle("Show hidden tirangulation wires for selected face")
         .setDoc("Show hidden tirangulation wires for selected face"),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "NewDocumentCameraScale", "NewDocumentCameraScale", App::ParamInfo::Float, 100.0)
-        .setTitle("New Document Camera Scale"),
+        .setTitle("New Document Camera Scale")
+        .setDoc("Camera zoom of a new document, as the diameter of the sphere that\n"
+"fits on the screen. A quarter of it is the default size of a new\n"
+"coordinate system."),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "MaxOnTopSelections", "MaxOnTopSelections", App::ParamInfo::Int, 100)
-        .setTitle("Max On Top Selections"),
+        .setTitle("Max On Top Selections")
+        .setDoc("Largest number of selected objects that are drawn on top of the\n"
+"scene. A larger selection is highlighted in place, and the tree view\n"
+"does not expand to show its items."),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "MaxViewSelections", "MaxViewSelections", App::ParamInfo::Int, 100)
-        .setTitle("Max View Selections"),
+        .setTitle("Max View Selections")
+        .setDoc("Largest number of selected objects taken into account when the view\n"
+"is fitted or aligned to the selection."),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "MaxSelectionNotification", "MaxSelectionNotification", App::ParamInfo::Int, 100)
-        .setTitle("Max Selection Notification"),
+        .setTitle("Max Selection Notification")
+        .setDoc("Number of pending add and remove selection notices after which they\n"
+"are replaced by one notice that the whole selection changed. 0 sets\n"
+"no limit."),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "MapChildrenPlacement", "MapChildrenPlacement", App::ParamInfo::Bool, false)
         .setTitle("Map Children Placement")
         .setDoc("Map child object into parent's coordinate space when showing on top.\n"
@@ -1667,6 +1735,8 @@ static const App::ParamRegistry::Registrar _ViewParamsRegistrar({
         .setDoc("Whether to override transparency of all objects in the scene."),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "HiddenLineFaceColor", "HiddenLineFaceColor", App::ParamInfo::Hex, 0xFFFFFFFF)
         .setTitle("Hidden Line Face Color")
+        .setDoc("Colour all faces are drawn in by the hidden line display style when\n"
+"it overrides the face colour.")
         .setProxy("Color")
         .setTransparency(true),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "HiddenLineOverrideFaceColor", "HiddenLineOverrideFaceColor", App::ParamInfo::Bool, true)
@@ -1674,6 +1744,8 @@ static const App::ParamRegistry::Registrar _ViewParamsRegistrar({
         .setDoc("Enable preselection and highlight by specified color."),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "HiddenLineColor", "HiddenLineColor", App::ParamInfo::Hex, 0x000000FF)
         .setTitle("Hidden Line Color")
+        .setDoc("Colour all lines and outlines are drawn in by the hidden line\n"
+"display style when it overrides the line colour.")
         .setProxy("Color")
         .setTransparency(true),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "HiddenLineOverrideColor", "HiddenLineOverrideColor", App::ParamInfo::Bool, true)
@@ -1681,10 +1753,14 @@ static const App::ParamRegistry::Registrar _ViewParamsRegistrar({
         .setDoc("Enable selection highlighting and use specified color"),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "HiddenLineBackground", "HiddenLineBackground", App::ParamInfo::Hex, 0xFFFFFFFF)
         .setTitle("Hidden Line Background")
+        .setDoc("Background colour of a 3D view in the hidden line display style,\n"
+"used when overriding the background is turned on.")
         .setProxy("Color")
         .setTransparency(true),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "HiddenLineOverrideBackground", "HiddenLineOverrideBackground", App::ParamInfo::Bool, true)
-        .setTitle("Override background color"),
+        .setTitle("Override background color")
+        .setDoc("Replace the background of a 3D view with the hidden line background\n"
+"colour while the hidden line display style is active."),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "HiddenLineShaded", "HiddenLineShaded", App::ParamInfo::Bool, false)
         .setTitle("Shaded")
         .setDoc("Whether to enable shading in hidden line display style"),
@@ -1699,12 +1775,18 @@ static const App::ParamRegistry::Registrar _ViewParamsRegistrar({
         .setDoc("Render outline of the whole scene."),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "HiddenLineOutlineWidth", "HiddenLineOutlineWidth", App::ParamInfo::Float, 0.0)
         .setTitle("Outline width")
+        .setDoc("Width in pixels of the outlines drawn by the hidden line display\n"
+"style. 0 uses the default width.")
         .setProxy("SpinBox")
         .setRange(0.0, 100.0, 0.5, 0),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "HiddenLineWidth", "HiddenLineWidth", App::ParamInfo::Float, 1.5)
-        .setTitle("Line width"),
+        .setTitle("Line width")
+        .setDoc("Width in pixels of the lines of all objects in the hidden line\n"
+"display style. A value below 1 keeps each object's own line width."),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "HiddenLinePointSize", "HiddenLinePointSize", App::ParamInfo::Float, 2)
-        .setTitle("Point size"),
+        .setTitle("Point size")
+        .setDoc("Size in pixels of the vertices of all objects in the hidden line\n"
+"display style. A value below 1 keeps each object's own point size."),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "HiddenLineHideSeam", "HiddenLineHideSeam", App::ParamInfo::Bool, true)
         .setTitle("Hide seam edge")
         .setDoc("Hide seam edges in hidden line display style."),
@@ -1715,7 +1797,10 @@ static const App::ParamRegistry::Registrar _ViewParamsRegistrar({
         .setTitle("Hide face")
         .setDoc("Hide face in hidden line display style."),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "StatusMessageTimeout", "StatusMessageTimeout", App::ParamInfo::Int, 5000)
-        .setTitle("Status Message Timeout"),
+        .setTitle("Status Message Timeout")
+        .setDoc("Milliseconds a message stays in the status bar when the command\n"
+"showing it gives no time of its own. 0 keeps it until the next\n"
+"message."),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "ShadowSync", "ShadowSync", App::ParamInfo::Int, 1)
         .setTitle("Synchronize")
         .setDoc("Specifies how to sync shadow display style settings to opened document")
@@ -1733,15 +1818,20 @@ static const App::ParamRegistry::Registrar _ViewParamsRegistrar({
         .setTitle("Use spot light")
         .setDoc("Whether to use spot light or directional light."),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "ShadowLightIntensity", "ShadowLightIntensity", App::ParamInfo::Float, 0.8)
-        .setTitle("Light intensity"),
+        .setTitle("Light intensity")
+        .setDoc("Brightness of the light that casts the shadow."),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "ShadowLightDirectionX", "ShadowLightDirectionX", App::ParamInfo::Float, -1.0)
-        .setTitle("Shadow Light Direction X"),
+        .setTitle("Shadow Light Direction X")
+        .setDoc("X component of the direction of the light that casts the shadow."),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "ShadowLightDirectionY", "ShadowLightDirectionY", App::ParamInfo::Float, -1.0)
-        .setTitle("Shadow Light Direction Y"),
+        .setTitle("Shadow Light Direction Y")
+        .setDoc("Y component of the direction of the light that casts the shadow."),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "ShadowLightDirectionZ", "ShadowLightDirectionZ", App::ParamInfo::Float, -1.0)
-        .setTitle("Shadow Light Direction Z"),
+        .setTitle("Shadow Light Direction Z")
+        .setDoc("Z component of the direction of the light that casts the shadow."),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "ShadowLightColor", "ShadowLightColor", App::ParamInfo::Hex, 0xF0FDFFFF)
         .setTitle("Light color")
+        .setDoc("Colour of the light that casts the shadow.")
         .setProxy("Color")
         .setTransparency(true),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "ShadowShowGround", "ShadowShowGround", App::ParamInfo::Bool, true)
@@ -1760,13 +1850,18 @@ static const App::ParamRegistry::Registrar _ViewParamsRegistrar({
         .setRange(0.0, 10000000.0, 0.5, 0),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "ShadowGroundColor", "ShadowGroundColor", App::ParamInfo::Hex, 0x7D7D7DFF)
         .setTitle("Ground color")
+        .setDoc("Colour of the ground that receives the shadow.")
         .setProxy("Color")
         .setTransparency(true),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "ShadowGroundBumpMap", "ShadowGroundBumpMap", App::ParamInfo::String, "")
         .setTitle("Ground bump map")
+        .setDoc("Image file used as a bump map that gives the shadow ground a surface\n"
+"relief. Empty for a flat ground.")
         .setProxy("File"),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "ShadowGroundTexture", "ShadowGroundTexture", App::ParamInfo::String, "")
         .setTitle("Ground texture")
+        .setDoc("Image file drawn as a texture on the ground that receives the\n"
+"shadow. Empty for a ground of plain colour.")
         .setProxy("File"),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "ShadowGroundTextureSize", "ShadowGroundTextureSize", App::ParamInfo::Float, 100.0)
         .setTitle("Ground texture size")
@@ -1788,18 +1883,10 @@ static const App::ParamRegistry::Registrar _ViewParamsRegistrar({
         .setRange(0.0, 1.0, 0.1, 0),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "ShadowGroundTransparency", "ShadowGroundTransparency", App::ParamInfo::Float, 1.0)
         .setTitle("Ground transparency")
-        .setDoc("How much of the shadow receiver plane is drawn beside the shadow\n"
-"itself.\n"
-"\n"
-"1 (the default) is the receiver a view of a part usually wants: the\n"
-"ground carries the shadow and nothing else, so there is no plane in\n"
-"the frame and no horizon behind the model -- only the shadow, at a\n"
-"fixed 0.8 opacity where it is fully dark. Anything below 1 draws a\n"
-"solid ground of that transparency and shades it, which is what a\n"
-"presentation image of a whole scene wants.\n"
-"\n"
-"A ground reflection needs a surface to blend onto, so it keeps the\n"
-"solid ground whatever this says.")
+        .setDoc("Transparency of the ground that receives the shadow. 1 (the default)\n"
+"draws the shadow only, with no ground plane; lower values draw a\n"
+"shaded ground of that transparency. A ground reflection always draws\n"
+"the ground.")
         .setProxy("SpinBox")
         .setRange(0.0, 1.0, 0.1, 0),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "ShadowGroundShading", "ShadowGroundShading", App::ParamInfo::Bool, true)
@@ -1807,7 +1894,10 @@ static const App::ParamRegistry::Registrar _ViewParamsRegistrar({
         .setDoc("Render ground with shading. If disabled, the ground and the shadow casted\n"
 "on ground will not change shading when viewing in different angle."),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "ShadowExtraRedraw", "ShadowExtraRedraw", App::ParamInfo::Bool, true)
-        .setTitle("Shadow Extra Redraw"),
+        .setTitle("Shadow Extra Redraw")
+        .setDoc("Redraw the 3D view once more after a change while shadows are shown,\n"
+"so that the shadow catches up with the scene. Currently has no\n"
+"effect."),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "ShadowSmoothBorder", "ShadowSmoothBorder", App::ParamInfo::Int, 40)
         .setTitle("Smooth border")
         .setDoc("Specifies the blur raidus of the shadow edge. Higher number will result in\n"
@@ -1875,7 +1965,9 @@ static const App::ParamRegistry::Registrar _ViewParamsRegistrar({
         .setDoc("Auto update shadow ground on scene changes. You can manually\n"
 "update the ground by using the 'Fit view' command"),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "PropertyViewTimer", "PropertyViewTimer", App::ParamInfo::UInt, 100)
-        .setTitle("Property View Timer"),
+        .setTitle("Property View Timer")
+        .setDoc("Milliseconds the property view waits before it refreshes after the\n"
+"selection or a property changes."),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "HierarchyAscend", "HierarchyAscend", App::ParamInfo::Bool, false)
         .setTitle("Hierarchy Ascend")
         .setDoc("Enable selection of upper hierarchy by repeatedly click some already\n"
@@ -2014,7 +2106,9 @@ static const App::ParamRegistry::Registrar _ViewParamsRegistrar({
         .setTitle("Clip plane line width")
         .setDoc("Clip plane line width"),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "TransformOnTop", "TransformOnTop", App::ParamInfo::Bool, true)
-        .setTitle("Transform On Top"),
+        .setTitle("Transform On Top")
+        .setDoc("Show an object on top of the scene while it is moved with the\n"
+"transform dragger. Currently has no effect."),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "SelectionColorDifference", "SelectionColorDifference", App::ParamInfo::Float, 25.0)
         .setTitle("Selection Color Difference")
         .setDoc("Color difference threshold for auto making distinct\n"
@@ -2040,37 +2134,20 @@ static const App::ParamRegistry::Registrar _ViewParamsRegistrar({
         .setDoc("Minimum hierarchy depth that the cache merge can happen."),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "RenderCacheKeepMax", "RenderCacheKeepMax", App::ParamInfo::Int, 32)
         .setTitle("Render Cache Keep Max")
-        .setDoc("Largest vertex cache map, in entries, that an object keeps after\n"
-"its parent has copied it up. A parent flattens its children into\n"
-"one map and then drops theirs, so the next frame re-derives the\n"
-"map of every object in the scene however little moved; keeping the\n"
-"small ones costs a few entries of memory each and is what stops\n"
-"that. The large ones are the copies of whole subtrees, which is the\n"
-"memory this bounds. Set zero to keep none."),
+        .setDoc("Largest render cache, in entries, an object keeps after its parent has\n"
+"merged it. Keeping the small ones avoids rebuilding them every frame.\n"
+"0 keeps none."),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "RenderCacheIncremental", "RenderCacheIncremental", App::ParamInfo::Int, 1)
         .setTitle("Render Cache Incremental")
-        .setDoc("Splice a rebuilt object's flattened vertex cache map from the map\n"
-"of the publish before it, instead of merging every child again. A\n"
-"container holding thousands of objects re-derives all of them on\n"
-"every publish however few moved, and the merge is priced per child\n"
-"rather than per entry. It costs memory, because the map of the\n"
-"previous publish has to survive the traversal that replaces it:\n"
-"on a 17800-object assembly, 49MB against 45% off the flatten.\n"
-"0 rebuilds (the old behaviour), 1 splices, 2 splices and also\n"
-"rebuilds wholesale to compare the two, logging any disagreement\n"
-"-- slow, for checking the splice, not for use."),
+        .setDoc("Update a container's render cache from its previous one instead of\n"
+"merging all its children again. Faster on large assemblies, at the\n"
+"cost of some memory. 0 off, 1 on, 2 does both and logs any difference\n"
+"(slow, for checking)."),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "RenderCacheMeshReuse", "RenderCacheMeshReuse", App::ParamInfo::Int, 1)
         .setTitle("Render Cache Mesh Reuse")
-        .setDoc("Reuse the mesh a vertex cache was translated into for the backend,\n"
-"instead of translating it again on every publish. A vertex cache is\n"
-"built once and never changed afterwards -- a shape whose geometry\n"
-"moves gets a new cache -- so the translation is the same work every\n"
-"time, and on a large assembly it is the largest single cost of a\n"
-"publish. Meshes are held only for as long as some draw list still\n"
-"refers to them. 0 translates every publish (the old behaviour), 1\n"
-"reuses, 2 reuses and also translates afresh to compare the two,\n"
-"logging any disagreement -- slow, for checking the reuse, not for\n"
-"use."),
+        .setDoc("Reuse the mesh a render cache was converted to for the render backend\n"
+"instead of converting it at every update. 0 off, 1 on, 2 does both and\n"
+"logs any difference (slow, for checking)."),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "LiveImportRedrawInterval", "LiveImportRedrawInterval", App::ParamInfo::Int, 200)
         .setTitle("Live Import Redraw Interval")
         .setDoc("Minimum interval in milliseconds between 3D view redraws while a\n"
@@ -2079,30 +2156,25 @@ static const App::ParamRegistry::Registrar _ViewParamsRegistrar({
 "to redraw on every change."),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "LiveImportRedrawBudget", "LiveImportRedrawBudget", App::ParamInfo::Int, 10)
         .setTitle("Live Import Redraw Budget")
-        .setDoc("Percentage of the time the 3D view may spend redrawing while a\n"
-"progressive import is filling the document. Each new object makes\n"
-"the next frame rebuild the render cache of the whole scene, so on a\n"
-"large import a single frame costs far more than the objects drawn\n"
-"in it; keeping frames to a share of the time is what bounds that\n"
-"cost. The resulting wait scales with the measured frame cost, is\n"
-"never shorter than LiveImportRedrawInterval nor longer than ten\n"
-"times it, and mouse input renders immediately regardless. Set zero\n"
-"to budget nothing and use the plain interval."),
+        .setDoc("Percentage of time the 3D view may spend redrawing while a progressive\n"
+"import fills the document. The wait between frames is never shorter\n"
+"than LiveImportRedrawInterval nor longer than ten times it. 0 uses the\n"
+"plain interval."),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "LiveImportPumpInterval", "LiveImportPumpInterval", App::ParamInfo::Int, 50)
         .setTitle("Live Import Pump Interval")
-        .setDoc("Minimum interval in milliseconds between two turns of the event\n"
-"loop while a live import fills the document. The import holds the\n"
-"main thread, so the view only sees input and paints where the\n"
-"import hands the loop a slice, and on its own the progress bar\n"
-"does that on a 200 ms update throttle -- a slideshow to someone\n"
-"orbiting the model. Offering the loop a turn costs nothing when\n"
-"nothing is queued, and what a frame costs is bounded by\n"
-"LiveImportRedrawBudget rather than by how often a turn is\n"
-"offered. Set zero to pump at every offer."),
+        .setDoc("Minimum milliseconds between two chances for the window to process\n"
+"input and repaint while a live import fills the document. 0 offers one\n"
+"at every opportunity."),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "RenderHighlightPolygonOffsetFactor", "RenderHighlightPolygonOffsetFactor", App::ParamInfo::Float, 1)
-        .setTitle("Render Highlight Polygon Offset Factor"),
+        .setTitle("Render Highlight Polygon Offset Factor")
+        .setDoc("Slope scaled depth offset that pulls selection and preselection\n"
+"highlights toward the viewer, so that the faces under them do not\n"
+"hide them. Preselection gets twice the offset."),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "RenderHighlightPolygonOffsetUnits", "RenderHighlightPolygonOffsetUnits", App::ParamInfo::Float, 1)
-        .setTitle("Render Highlight Polygon Offset Units"),
+        .setTitle("Render Highlight Polygon Offset Units")
+        .setDoc("Constant depth offset, in depth buffer units, that pulls selection\n"
+"and preselection highlights toward the viewer, so that the faces\n"
+"under them do not hide them. Preselection gets twice the offset."),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "ForceSolidSingleSideLighting", "ForceSolidSingleSideLighting", App::ParamInfo::Bool, true)
         .setTitle("Force single side lighting on solid")
         .setDoc("Force single side lighting on solid. This can help visualizing invalid\n"
@@ -2110,16 +2182,27 @@ static const App::ParamRegistry::Registrar _ViewParamsRegistrar({
         .setOnChange(),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "DefaultFontSize", "DefaultFontSize", App::ParamInfo::Int, 0)
         .setTitle("Default Font Size")
+        .setDoc("Point size of the application font. 0 uses the system default.\n"
+"Sizes from 1 to 7 are raised to 8.")
         .setOnChange(),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "EnableTaskPanelKeyTranslate", "EnableTaskPanelKeyTranslate", App::ParamInfo::Bool, false)
         .setTitle("Enable Task Panel Key Translate")
+        .setDoc("Let the Up and Down arrow keys move the keyboard focus through the\n"
+"task panel, the way Shift+Tab and Tab do.")
         .setOnChange(),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "EnableMenuBarCheckBox", "EnableMenuBarCheckBox", App::ParamInfo::Bool, FC_ENABLE_MENUBAR_CHECKBOX)
-        .setTitle("Enable Menu Bar Check Box"),
+        .setTitle("Enable Menu Bar Check Box")
+        .setDoc("Show the entries of the toolbar and dock window menus of the menu\n"
+"bar as checkboxes, the way the right-click menu of the main window\n"
+"shows them. Off by default on macOS."),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "EnableBacklight", "EnableBacklight", App::ParamInfo::Bool, false)
-        .setTitle("Enable Backlight"),
+        .setTitle("Enable Backlight")
+        .setDoc("Turn on the backlight of the 3D view, a second light that shines on\n"
+"the faces turned away from the viewer."),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "BacklightColor", "BacklightColor", App::ParamInfo::Hex, 0xFFFFFFFF)
-        .setTitle("Backlight Color"),
+        .setTitle("Backlight Color")
+        .setDoc("Colour of the backlight, the light that shines on the faces turned\n"
+"away from the viewer."),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "BacklightIntensity", "BacklightIntensity", App::ParamInfo::Int, 100)
         .setTitle("Backlight Intensity")
         .setDoc("Backlight intensity, as a percentage. An integer because that is the\n"
@@ -2146,13 +2229,21 @@ static const App::ParamRegistry::Registrar _ViewParamsRegistrar({
         .setProxy("SpinBox")
         .setRange(0, 512, 10, 0),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "ToolTipDisable", "ToolTipDisable", App::ParamInfo::Bool, false)
-        .setTitle("Tool Tip Disable"),
+        .setTitle("Tool Tip Disable")
+        .setDoc("Turn off the tool tips of the application. Tips shown as an overlay\n"
+"in the 3D view, such as the preselection tip, still appear."),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "AxisXColor", "AxisXColor", App::ParamInfo::Hex, 0xCC333300)
-        .setTitle("Axis XColor"),
+        .setTitle("Axis X color")
+        .setDoc("Colour of the X axis of the transform dragger and of other axis\n"
+"markers in the 3D view."),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "AxisYColor", "AxisYColor", App::ParamInfo::Hex, 0x33CC3300)
-        .setTitle("Axis YColor"),
+        .setTitle("Axis Y color")
+        .setDoc("Colour of the Y axis of the transform dragger and of other axis\n"
+"markers in the 3D view."),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "AxisZColor", "AxisZColor", App::ParamInfo::Hex, 0x3333CC00)
-        .setTitle("Axis ZColor"),
+        .setTitle("Axis Z color")
+        .setDoc("Colour of the Z axis of the transform dragger and of other axis\n"
+"markers in the 3D view."),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "DatumScreenSize", "DatumScreenSize", App::ParamInfo::Bool, true)
         .setTitle("Constant datum size on screen")
         .setDoc("Draw origins, coordinate systems and datum elements at a constant size on\n"
@@ -2218,7 +2309,10 @@ void ViewParams::removeUseViewArea() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *ViewParams::docUseNewSelection() {
-    return "";
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Highlight selection and preselection through the selection root of\n"
+"the 3D view, which allows picking sub-elements and objects inside\n"
+"links. When off, only objects that ask for it are handled that way.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -2245,7 +2339,10 @@ void ViewParams::removeUseNewSelection() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *ViewParams::docUseSelectionRoot() {
-    return "";
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Give the visual copy a link makes of its linked object a selection\n"
+"root of its own, so that each link is highlighted separately. When\n"
+"off, a plain group without render caching is used.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -2393,7 +2490,9 @@ void ViewParams::removeUnifiedCanvas() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *ViewParams::docRandomColor() {
-    return "";
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Give every new object a random shape colour instead of the default\n"
+"shape colour.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -2420,7 +2519,9 @@ void ViewParams::removeRandomColor() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *ViewParams::docBoundingBoxColor() {
-    return "";
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Colour of the bounding box drawn for an object that has its bounding\n"
+"box display turned on.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -2447,7 +2548,8 @@ void ViewParams::removeBoundingBoxColor() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *ViewParams::docAnnotationTextColor() {
-    return "";
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Default text colour of new annotation objects.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -2530,7 +2632,9 @@ void ViewParams::removeSelectionColor() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *ViewParams::docMarkerSize() {
-    return "";
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Size in pixels of the point markers drawn in the 3D view, such as\n"
+"sketch vertices and the end points of a measurement.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -2557,7 +2661,9 @@ void ViewParams::removeMarkerSize() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *ViewParams::docDefaultLinkColor() {
-    return "";
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Default colour of the material of a new link, which is used when the\n"
+"link overrides the material of its linked object.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -2584,7 +2690,8 @@ void ViewParams::removeDefaultLinkColor() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *ViewParams::docDefaultShapeLineColor() {
-    return "";
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Default line colour of new shapes.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -2611,7 +2718,8 @@ void ViewParams::removeDefaultShapeLineColor() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *ViewParams::docDefaultShapeVertexColor() {
-    return "";
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Default vertex colour of new shapes.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -2638,7 +2746,9 @@ void ViewParams::removeDefaultShapeVertexColor() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *ViewParams::docDefaultShapeColor() {
-    return "";
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Default face colour of new shapes. Not used while random colours are\n"
+"turned on.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -2665,7 +2775,9 @@ void ViewParams::removeDefaultShapeColor() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *ViewParams::docDefaultShapeTransparency() {
-    return "";
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Default transparency of new shapes in percent. 0 is opaque, 100 is\n"
+"fully transparent.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -2692,7 +2804,8 @@ void ViewParams::removeDefaultShapeTransparency() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *ViewParams::docDefaultShapeLineWidth() {
-    return "";
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Default line width of new shapes, in pixels.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -2719,7 +2832,8 @@ void ViewParams::removeDefaultShapeLineWidth() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *ViewParams::docDefaultShapePointSize() {
-    return "";
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Default vertex size of new shapes, in pixels.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -2746,7 +2860,10 @@ void ViewParams::removeDefaultShapePointSize() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *ViewParams::docCoinCycleCheck() {
-    return "";
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Check the 3D scene for an object that contains itself while the\n"
+"scene is traversed. A cycle is reported and skipped instead of being\n"
+"followed without end.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -2773,7 +2890,10 @@ void ViewParams::removeCoinCycleCheck() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *ViewParams::docEnablePropertyViewForInactiveDocument() {
-    return "";
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Keep the property view usable when the selected objects belong to a\n"
+"document other than the active one. When off, the property view is\n"
+"disabled for such a selection.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -2856,7 +2976,9 @@ void ViewParams::removeShowSelectionBoundingBoxThreshold() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *ViewParams::docUpdateSelectionVisual() {
-    return "";
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Bring back the selection highlight of a selected object when it is\n"
+"shown again after being hidden.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -2883,7 +3005,10 @@ void ViewParams::removeUpdateSelectionVisual() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *ViewParams::docLinkChildrenDirect() {
-    return "";
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Show the children of a group with its own coordinate system, such as\n"
+"a part or body, through a link view. A link to the group then shows\n"
+"the children's visuals directly.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -3446,7 +3571,10 @@ void ViewParams::removeTouchLoupeLift() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *ViewParams::docSelectionTransparency() {
-    return "";
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Transparency given to a selected face so that what lies behind it\n"
+"stays visible, used when picking through objects and when the\n"
+"highlight is drawn on top. 0 is opaque, 1 is invisible.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -3473,7 +3601,9 @@ void ViewParams::removeSelectionTransparency() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *ViewParams::docSelectionLinePattern() {
-    return "";
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Dash pattern of the hidden part of a selected line that is shown on\n"
+"top of the scene, as a 16 bit mask. 0 draws it solid.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -3500,7 +3630,10 @@ void ViewParams::removeSelectionLinePattern() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *ViewParams::docSelectionLinePatternScale() {
-    return "";
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Number of times each bit of the dash pattern of a selected hidden\n"
+"line is repeated. Larger values give longer dashes. 1 or less uses\n"
+"the pattern as it is.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -3555,7 +3688,9 @@ void ViewParams::removeSelectionHiddenLineWidth() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *ViewParams::docSelectionBBoxLineWidth() {
-    return "";
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Line width in pixels of the bounding box drawn around a selected\n"
+"object when selection is shown by bounding box.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -3610,7 +3745,9 @@ void ViewParams::removeShowHighlightEdgeOnly() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *ViewParams::docPreSelectionDelay() {
-    return "";
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Shortest time in seconds between two preselection picks in the 3D\n"
+"view while the mouse moves. 0 picks on every mouse move.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -3637,7 +3774,10 @@ void ViewParams::removePreSelectionDelay() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *ViewParams::docPickBackFaceDelay() {
-    return "";
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Number of mouse wheel steps, with Shift and Ctrl held, that it takes\n"
+"to move the pick one object further behind or back toward the\n"
+"front.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -3664,7 +3804,10 @@ void ViewParams::removePickBackFaceDelay() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *ViewParams::docUseNewRayPick() {
-    return "";
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Stop a single pick in the 3D view at the nearest hit instead of\n"
+"collecting everything along the pick ray. Off is the older and\n"
+"slower way.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -3691,7 +3834,10 @@ void ViewParams::removeUseNewRayPick() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *ViewParams::docViewSelectionExtendFactor() {
-    return "";
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Scale applied to the bounding box of the selection when testing\n"
+"whether it is already in view, before the view is extended to\n"
+"include it. Currently has no effect.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -3746,7 +3892,9 @@ void ViewParams::removeUseTightBoundingBox() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *ViewParams::docUseBoundingBoxCache() {
-    return "";
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Remember the bounding boxes of objects instead of computing them\n"
+"again on every request.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -3830,7 +3978,10 @@ void ViewParams::removeSelectionFaceWire() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *ViewParams::docNewDocumentCameraScale() {
-    return "";
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Camera zoom of a new document, as the diameter of the sphere that\n"
+"fits on the screen. A quarter of it is the default size of a new\n"
+"coordinate system.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -3857,7 +4008,10 @@ void ViewParams::removeNewDocumentCameraScale() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *ViewParams::docMaxOnTopSelections() {
-    return "";
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Largest number of selected objects that are drawn on top of the\n"
+"scene. A larger selection is highlighted in place, and the tree view\n"
+"does not expand to show its items.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -3884,7 +4038,9 @@ void ViewParams::removeMaxOnTopSelections() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *ViewParams::docMaxViewSelections() {
-    return "";
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Largest number of selected objects taken into account when the view\n"
+"is fitted or aligned to the selection.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -3911,7 +4067,10 @@ void ViewParams::removeMaxViewSelections() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *ViewParams::docMaxSelectionNotification() {
-    return "";
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Number of pending add and remove selection notices after which they\n"
+"are replaced by one notice that the whole selection changed. 0 sets\n"
+"no limit.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -4112,7 +4271,9 @@ void ViewParams::removeHiddenLineOverrideTransparency() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *ViewParams::docHiddenLineFaceColor() {
-    return "";
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Colour all faces are drawn in by the hidden line display style when\n"
+"it overrides the face colour.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -4167,7 +4328,9 @@ void ViewParams::removeHiddenLineOverrideFaceColor() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *ViewParams::docHiddenLineColor() {
-    return "";
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Colour all lines and outlines are drawn in by the hidden line\n"
+"display style when it overrides the line colour.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -4222,7 +4385,9 @@ void ViewParams::removeHiddenLineOverrideColor() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *ViewParams::docHiddenLineBackground() {
-    return "";
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Background colour of a 3D view in the hidden line display style,\n"
+"used when overriding the background is turned on.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -4249,7 +4414,9 @@ void ViewParams::removeHiddenLineBackground() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *ViewParams::docHiddenLineOverrideBackground() {
-    return "";
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Replace the background of a 3D view with the hidden line background\n"
+"colour while the hidden line display style is active.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -4388,7 +4555,9 @@ void ViewParams::removeHiddenLineSceneOutline() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *ViewParams::docHiddenLineOutlineWidth() {
-    return "";
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Width in pixels of the outlines drawn by the hidden line display\n"
+"style. 0 uses the default width.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -4415,7 +4584,9 @@ void ViewParams::removeHiddenLineOutlineWidth() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *ViewParams::docHiddenLineWidth() {
-    return "";
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Width in pixels of the lines of all objects in the hidden line\n"
+"display style. A value below 1 keeps each object's own line width.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -4442,7 +4613,9 @@ void ViewParams::removeHiddenLineWidth() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *ViewParams::docHiddenLinePointSize() {
-    return "";
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Size in pixels of the vertices of all objects in the hidden line\n"
+"display style. A value below 1 keeps each object's own point size.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -4553,7 +4726,10 @@ void ViewParams::removeHiddenLineHideFace() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *ViewParams::docStatusMessageTimeout() {
-    return "";
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Milliseconds a message stays in the status bar when the command\n"
+"showing it gives no time of its own. 0 keeps it until the next\n"
+"message.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -4692,7 +4868,8 @@ void ViewParams::removeShadowSpotLight() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *ViewParams::docShadowLightIntensity() {
-    return "";
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Brightness of the light that casts the shadow.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -4719,7 +4896,8 @@ void ViewParams::removeShadowLightIntensity() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *ViewParams::docShadowLightDirectionX() {
-    return "";
+    return QT_TRANSLATE_NOOP("ViewParams",
+"X component of the direction of the light that casts the shadow.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -4746,7 +4924,8 @@ void ViewParams::removeShadowLightDirectionX() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *ViewParams::docShadowLightDirectionY() {
-    return "";
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Y component of the direction of the light that casts the shadow.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -4773,7 +4952,8 @@ void ViewParams::removeShadowLightDirectionY() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *ViewParams::docShadowLightDirectionZ() {
-    return "";
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Z component of the direction of the light that casts the shadow.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -4800,7 +4980,8 @@ void ViewParams::removeShadowLightDirectionZ() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *ViewParams::docShadowLightColor() {
-    return "";
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Colour of the light that casts the shadow.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -4914,7 +5095,8 @@ void ViewParams::removeShadowGroundScale() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *ViewParams::docShadowGroundColor() {
-    return "";
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Colour of the ground that receives the shadow.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -4941,7 +5123,9 @@ void ViewParams::removeShadowGroundColor() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *ViewParams::docShadowGroundBumpMap() {
-    return "";
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Image file used as a bump map that gives the shadow ground a surface\n"
+"relief. Empty for a flat ground.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -4968,7 +5152,9 @@ void ViewParams::removeShadowGroundBumpMap() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *ViewParams::docShadowGroundTexture() {
-    return "";
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Image file drawn as a texture on the ground that receives the\n"
+"shadow. Empty for a ground of plain colour.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -5060,18 +5246,10 @@ void ViewParams::removeShadowTransparency() {
 // Auto generated code (Tools/params_utils.py:397)
 const char *ViewParams::docShadowGroundTransparency() {
     return QT_TRANSLATE_NOOP("ViewParams",
-"How much of the shadow receiver plane is drawn beside the shadow\n"
-"itself.\n"
-"\n"
-"1 (the default) is the receiver a view of a part usually wants: the\n"
-"ground carries the shadow and nothing else, so there is no plane in\n"
-"the frame and no horizon behind the model -- only the shadow, at a\n"
-"fixed 0.8 opacity where it is fully dark. Anything below 1 draws a\n"
-"solid ground of that transparency and shades it, which is what a\n"
-"presentation image of a whole scene wants.\n"
-"\n"
-"A ground reflection needs a surface to blend onto, so it keeps the\n"
-"solid ground whatever this says.");
+"Transparency of the ground that receives the shadow. 1 (the default)\n"
+"draws the shadow only, with no ground plane; lower values draw a\n"
+"shaded ground of that transparency. A ground reflection always draws\n"
+"the ground.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -5127,7 +5305,10 @@ void ViewParams::removeShadowGroundShading() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *ViewParams::docShadowExtraRedraw() {
-    return "";
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Redraw the 3D view once more after a change while shadows are shown,\n"
+"so that the shadow catches up with the scene. Currently has no\n"
+"effect.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -5481,7 +5662,9 @@ void ViewParams::removeShadowUpdateGround() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *ViewParams::docPropertyViewTimer() {
-    return "";
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Milliseconds the property view waits before it refreshes after the\n"
+"selection or a property changes.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -6518,7 +6701,9 @@ void ViewParams::removeClipPlaneLineWidth() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *ViewParams::docTransformOnTop() {
-    return "";
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Show an object on top of the scene while it is moved with the\n"
+"transform dragger. Currently has no effect.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -6717,13 +6902,9 @@ void ViewParams::removeRenderCacheMergeDepthMin() {
 // Auto generated code (Tools/params_utils.py:397)
 const char *ViewParams::docRenderCacheKeepMax() {
     return QT_TRANSLATE_NOOP("ViewParams",
-"Largest vertex cache map, in entries, that an object keeps after\n"
-"its parent has copied it up. A parent flattens its children into\n"
-"one map and then drops theirs, so the next frame re-derives the\n"
-"map of every object in the scene however little moved; keeping the\n"
-"small ones costs a few entries of memory each and is what stops\n"
-"that. The large ones are the copies of whole subtrees, which is the\n"
-"memory this bounds. Set zero to keep none.");
+"Largest render cache, in entries, an object keeps after its parent has\n"
+"merged it. Keeping the small ones avoids rebuilding them every frame.\n"
+"0 keeps none.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -6751,16 +6932,10 @@ void ViewParams::removeRenderCacheKeepMax() {
 // Auto generated code (Tools/params_utils.py:397)
 const char *ViewParams::docRenderCacheIncremental() {
     return QT_TRANSLATE_NOOP("ViewParams",
-"Splice a rebuilt object's flattened vertex cache map from the map\n"
-"of the publish before it, instead of merging every child again. A\n"
-"container holding thousands of objects re-derives all of them on\n"
-"every publish however few moved, and the merge is priced per child\n"
-"rather than per entry. It costs memory, because the map of the\n"
-"previous publish has to survive the traversal that replaces it:\n"
-"on a 17800-object assembly, 49MB against 45% off the flatten.\n"
-"0 rebuilds (the old behaviour), 1 splices, 2 splices and also\n"
-"rebuilds wholesale to compare the two, logging any disagreement\n"
-"-- slow, for checking the splice, not for use.");
+"Update a container's render cache from its previous one instead of\n"
+"merging all its children again. Faster on large assemblies, at the\n"
+"cost of some memory. 0 off, 1 on, 2 does both and logs any difference\n"
+"(slow, for checking).");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -6788,16 +6963,9 @@ void ViewParams::removeRenderCacheIncremental() {
 // Auto generated code (Tools/params_utils.py:397)
 const char *ViewParams::docRenderCacheMeshReuse() {
     return QT_TRANSLATE_NOOP("ViewParams",
-"Reuse the mesh a vertex cache was translated into for the backend,\n"
-"instead of translating it again on every publish. A vertex cache is\n"
-"built once and never changed afterwards -- a shape whose geometry\n"
-"moves gets a new cache -- so the translation is the same work every\n"
-"time, and on a large assembly it is the largest single cost of a\n"
-"publish. Meshes are held only for as long as some draw list still\n"
-"refers to them. 0 translates every publish (the old behaviour), 1\n"
-"reuses, 2 reuses and also translates afresh to compare the two,\n"
-"logging any disagreement -- slow, for checking the reuse, not for\n"
-"use.");
+"Reuse the mesh a render cache was converted to for the render backend\n"
+"instead of converting it at every update. 0 off, 1 on, 2 does both and\n"
+"logs any difference (slow, for checking).");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -6856,15 +7024,10 @@ void ViewParams::removeLiveImportRedrawInterval() {
 // Auto generated code (Tools/params_utils.py:397)
 const char *ViewParams::docLiveImportRedrawBudget() {
     return QT_TRANSLATE_NOOP("ViewParams",
-"Percentage of the time the 3D view may spend redrawing while a\n"
-"progressive import is filling the document. Each new object makes\n"
-"the next frame rebuild the render cache of the whole scene, so on a\n"
-"large import a single frame costs far more than the objects drawn\n"
-"in it; keeping frames to a share of the time is what bounds that\n"
-"cost. The resulting wait scales with the measured frame cost, is\n"
-"never shorter than LiveImportRedrawInterval nor longer than ten\n"
-"times it, and mouse input renders immediately regardless. Set zero\n"
-"to budget nothing and use the plain interval.");
+"Percentage of time the 3D view may spend redrawing while a progressive\n"
+"import fills the document. The wait between frames is never shorter\n"
+"than LiveImportRedrawInterval nor longer than ten times it. 0 uses the\n"
+"plain interval.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -6892,15 +7055,9 @@ void ViewParams::removeLiveImportRedrawBudget() {
 // Auto generated code (Tools/params_utils.py:397)
 const char *ViewParams::docLiveImportPumpInterval() {
     return QT_TRANSLATE_NOOP("ViewParams",
-"Minimum interval in milliseconds between two turns of the event\n"
-"loop while a live import fills the document. The import holds the\n"
-"main thread, so the view only sees input and paints where the\n"
-"import hands the loop a slice, and on its own the progress bar\n"
-"does that on a 200 ms update throttle -- a slideshow to someone\n"
-"orbiting the model. Offering the loop a turn costs nothing when\n"
-"nothing is queued, and what a frame costs is bounded by\n"
-"LiveImportRedrawBudget rather than by how often a turn is\n"
-"offered. Set zero to pump at every offer.");
+"Minimum milliseconds between two chances for the window to process\n"
+"input and repaint while a live import fills the document. 0 offers one\n"
+"at every opportunity.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -6927,7 +7084,10 @@ void ViewParams::removeLiveImportPumpInterval() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *ViewParams::docRenderHighlightPolygonOffsetFactor() {
-    return "";
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Slope scaled depth offset that pulls selection and preselection\n"
+"highlights toward the viewer, so that the faces under them do not\n"
+"hide them. Preselection gets twice the offset.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -6954,7 +7114,10 @@ void ViewParams::removeRenderHighlightPolygonOffsetFactor() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *ViewParams::docRenderHighlightPolygonOffsetUnits() {
-    return "";
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Constant depth offset, in depth buffer units, that pulls selection\n"
+"and preselection highlights toward the viewer, so that the faces\n"
+"under them do not hide them. Preselection gets twice the offset.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -7010,7 +7173,9 @@ void ViewParams::removeForceSolidSingleSideLighting() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *ViewParams::docDefaultFontSize() {
-    return "";
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Point size of the application font. 0 uses the system default.\n"
+"Sizes from 1 to 7 are raised to 8.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -7037,7 +7202,9 @@ void ViewParams::removeDefaultFontSize() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *ViewParams::docEnableTaskPanelKeyTranslate() {
-    return "";
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Let the Up and Down arrow keys move the keyboard focus through the\n"
+"task panel, the way Shift+Tab and Tab do.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -7064,7 +7231,10 @@ void ViewParams::removeEnableTaskPanelKeyTranslate() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *ViewParams::docEnableMenuBarCheckBox() {
-    return "";
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Show the entries of the toolbar and dock window menus of the menu\n"
+"bar as checkboxes, the way the right-click menu of the main window\n"
+"shows them. Off by default on macOS.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -7091,7 +7261,9 @@ void ViewParams::removeEnableMenuBarCheckBox() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *ViewParams::docEnableBacklight() {
-    return "";
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Turn on the backlight of the 3D view, a second light that shines on\n"
+"the faces turned away from the viewer.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -7118,7 +7290,9 @@ void ViewParams::removeEnableBacklight() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *ViewParams::docBacklightColor() {
-    return "";
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Colour of the backlight, the light that shines on the faces turned\n"
+"away from the viewer.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -7291,7 +7465,9 @@ void ViewParams::removeToolTipIconSize() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *ViewParams::docToolTipDisable() {
-    return "";
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Turn off the tool tips of the application. Tips shown as an overlay\n"
+"in the 3D view, such as the preselection tip, still appear.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -7318,7 +7494,9 @@ void ViewParams::removeToolTipDisable() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *ViewParams::docAxisXColor() {
-    return "";
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Colour of the X axis of the transform dragger and of other axis\n"
+"markers in the 3D view.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -7345,7 +7523,9 @@ void ViewParams::removeAxisXColor() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *ViewParams::docAxisYColor() {
-    return "";
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Colour of the Y axis of the transform dragger and of other axis\n"
+"markers in the 3D view.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -7372,7 +7552,9 @@ void ViewParams::removeAxisYColor() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *ViewParams::docAxisZColor() {
-    return "";
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Colour of the Z axis of the transform dragger and of other axis\n"
+"markers in the 3D view.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -7540,7 +7722,7 @@ void ViewParams::removeDatumTemporaryScaleFactor() {
     instance()->handle->RemoveFloat("DatumTemporaryScaleFactor");
 }
 
-// Auto generated code (Gui/ViewParams.py:667)
+// Auto generated code (Gui/ViewParams.py:832)
 const std::vector<QString> ViewParams::AnimationCurveTypes = {
     QStringLiteral("Linear"),
     QStringLiteral("InQuad"),
@@ -7585,7 +7767,7 @@ const std::vector<QString> ViewParams::AnimationCurveTypes = {
     QStringLiteral("OutInBounce"),
 };
 
-// Auto generated code (Gui/ViewParams.py:675)
+// Auto generated code (Gui/ViewParams.py:840)
 static const char *DrawStyleNames[] = {
     QT_TRANSLATE_NOOP("DrawStyle", "As Is"),
     QT_TRANSLATE_NOOP("DrawStyle", "Points"),
@@ -7598,7 +7780,7 @@ static const char *DrawStyleNames[] = {
     nullptr,
 };
 
-// Auto generated code (Gui/ViewParams.py:685)
+// Auto generated code (Gui/ViewParams.py:850)
 static const char *DrawStyleDocs[] = {
     QT_TRANSLATE_NOOP("DrawStyle", "Display style, normal display mode"),
     QT_TRANSLATE_NOOP("DrawStyle", "Display style, show points only"),
@@ -7611,13 +7793,13 @@ static const char *DrawStyleDocs[] = {
 };
 
 namespace Gui {
-// Auto generated code (Gui/ViewParams.py:695)
+// Auto generated code (Gui/ViewParams.py:860)
 const char **drawStyleNames()
 {
     return DrawStyleNames;
 }
 
-// Auto generated code (Gui/ViewParams.py:702)
+// Auto generated code (Gui/ViewParams.py:867)
 const char *drawStyleNameFromIndex(int i)
 {
     if (i < 0 || i>= 8)
@@ -7625,7 +7807,7 @@ const char *drawStyleNameFromIndex(int i)
     return DrawStyleNames[i];
 }
 
-// Auto generated code (Gui/ViewParams.py:711)
+// Auto generated code (Gui/ViewParams.py:876)
 int drawStyleIndexFromName(const char *name)
 {
     if (!name)
@@ -7637,7 +7819,7 @@ int drawStyleIndexFromName(const char *name)
     return -1;
 }
 
-// Auto generated code (Gui/ViewParams.py:724)
+// Auto generated code (Gui/ViewParams.py:889)
 const char *drawStyleDocumentation(int i)
 {
     if (i < 0 || i>= 8)

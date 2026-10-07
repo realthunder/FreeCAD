@@ -516,7 +516,7 @@ DlgSettingsUI::DlgSettingsUI(QWidget* parent)
     layoutRow->addWidget(PieMenuAnimationCurve);
     PieMenuAnimationCurve->setEntryName("PieMenuAnimationCurve");
     PieMenuAnimationCurve->setParamGrpPath("View");
-    // Auto generated code (Gui/ViewParams.py:150)
+    // Auto generated code (Gui/ViewParams.py:152)
     for (const auto &item : ViewParams::AnimationCurveTypes)
         PieMenuAnimationCurve->addItem(item);
     PieMenuAnimationCurve->setCurrentIndex(Gui::ViewParams::defaultPieMenuAnimationCurve());

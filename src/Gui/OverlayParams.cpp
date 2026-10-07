@@ -294,9 +294,15 @@ OverlayParamsP *instance() {
 static const App::ParamRegistry::Registrar _OverlayParamsRegistrar({
     App::ParamInfo("Gui", "OverlayParams", "User parameter:BaseApp/Preferences/View", "CornerNaviCube", "CornerNaviCube", App::ParamInfo::Int, 1)
         .setTitle("Corner Navi Cube")
+        .setDoc("Corner of the 3D view where the navigation cube is shown. 0 top left,\n"
+"1 top right, 2 bottom left, 3 bottom right. Overlay dock panels\n"
+"leave room for the cube in that corner.")
         .setOnChange(),
     App::ParamInfo("Gui", "OverlayParams", "User parameter:BaseApp/Preferences/View", "DockOverlayAutoView", "DockOverlayAutoView", App::ParamInfo::Bool, true)
         .setTitle("Auto hide in non 3D view")
+        .setDoc("Hide overlay dock panels automatically while the active view is not\n"
+"a 3D view. Transparent panels also turn opaque over a maximized\n"
+"view that cannot be panned.")
         .setOnChange(),
     App::ParamInfo("Gui", "OverlayParams", "User parameter:BaseApp/Preferences/View", "DockOverlayDelay", "DockOverlayDelay", App::ParamInfo::Int, 200)
         .setTitle("Layout delay (ms)")
@@ -304,7 +310,9 @@ static const App::ParamRegistry::Registrar _OverlayParamsRegistrar({
         .setProxy("SpinBox")
         .setRange(0, 5000, 100, 0),
     App::ParamInfo("Gui", "OverlayParams", "User parameter:BaseApp/Preferences/View", "DockOverlayRevealDelay", "DockOverlayRevealDelay", App::ParamInfo::Int, 2000)
-        .setTitle("Dock Overlay Reveal Delay"),
+        .setTitle("Dock Overlay Reveal Delay")
+        .setDoc("Milliseconds an overlay dock panel stays fully shown after one of\n"
+"its widgets is switched on or a widget is dropped into it."),
     App::ParamInfo("Gui", "OverlayParams", "User parameter:BaseApp/Preferences/View", "DockOverlaySplitterHandleTimeout", "DockOverlaySplitterHandleTimeout", App::ParamInfo::Int, 0)
         .setTitle("Splitter auto hide delay (ms)")
         .setDoc("Overlay splitter handle auto hide delay. Set zero to disable auto hiding.")
@@ -425,7 +433,10 @@ ParameterGrp::handle OverlayParams::getHandle() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *OverlayParams::docCornerNaviCube() {
-    return "";
+    return QT_TRANSLATE_NOOP("OverlayParams",
+"Corner of the 3D view where the navigation cube is shown. 0 top left,\n"
+"1 top right, 2 bottom left, 3 bottom right. Overlay dock panels\n"
+"leave room for the cube in that corner.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -452,7 +463,10 @@ void OverlayParams::removeCornerNaviCube() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *OverlayParams::docDockOverlayAutoView() {
-    return "";
+    return QT_TRANSLATE_NOOP("OverlayParams",
+"Hide overlay dock panels automatically while the active view is not\n"
+"a 3D view. Transparent panels also turn opaque over a maximized\n"
+"view that cannot be panned.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -507,7 +521,9 @@ void OverlayParams::removeDockOverlayDelay() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *OverlayParams::docDockOverlayRevealDelay() {
-    return "";
+    return QT_TRANSLATE_NOOP("OverlayParams",
+"Milliseconds an overlay dock panel stays fully shown after one of\n"
+"its widgets is switched on or a widget is dropped into it.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -1209,7 +1225,7 @@ void OverlayParams::removeDockOverlayMinimumSize() {
     instance()->handle->RemoveInt("DockOverlayMinimumSize");
 }
 
-// Auto generated code (Gui/OverlayParams.py:172)
+// Auto generated code (Gui/OverlayParams.py:180)
 const std::vector<QString> OverlayParams::AnimationCurveTypes = {
     QStringLiteral("Linear"),
     QStringLiteral("InQuad"),

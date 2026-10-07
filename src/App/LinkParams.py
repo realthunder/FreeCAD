@@ -38,10 +38,20 @@ ParamPath = 'User parameter:BaseApp/Preferences/Link'
 ClassDoc = 'Convenient class to obtain App::Link related parameters'
 
 Params = [
-    ParamBool('HideScaleVector', True),
-    ParamBool('CreateInPlace', True),
-    ParamBool('CreateInContainer', bool, False),
-    ParamString('ActiveContainerKey', ""),
+    ParamBool('HideScaleVector', True,
+        doc = "Hide the per-axis ScaleVector property of links in the property\n"
+              "view, leaving the single Scale value. Applies to links created\n"
+              "afterwards."),
+    ParamBool('CreateInPlace', True,
+        doc = "Place a new link where the selected object appears in the 3D view,\n"
+              "counting the placements of its parents. When off the link is left\n"
+              "with no placement of its own."),
+    ParamBool('CreateInContainer', True,
+        doc = "Create new links inside the active container, such as the active\n"
+              "part, instead of at the top level of the document."),
+    ParamString('ActiveContainerKey', "",
+        doc = "Name of the active object slot searched for the container that new\n"
+              "links are created in. Empty uses the active part."),
     ParamBool('CopyOnChangeApplyToAll', True, doc='''\
 Stores the last user choice of whether to apply CopyOnChange setup to all link
 that links to the same configurable object'''),

@@ -217,42 +217,83 @@ MeshParamsP *instance() {
 static const App::ParamRegistry::Registrar _MeshParamsRegistrar({
     App::ParamInfo("Mesh", "MeshParams", "User parameter:BaseApp/Preferences/Mod/Mesh/Asymptote", "AsymptoteWidth", "Width", App::ParamInfo::String, "500")
         .setTitle("Asymptote Width")
+        .setDoc("Width of the picture in an exported Asymptote (.asy) file, as\n"
+"written to its size() command, in points. Leave empty to write no\n"
+"size at all.")
         .setOnChange(),
     App::ParamInfo("Mesh", "MeshParams", "User parameter:BaseApp/Preferences/Mod/Mesh/Asymptote", "AsymptoteHeight", "Height", App::ParamInfo::String, "500")
         .setTitle("Asymptote Height")
+        .setDoc("Height of the picture in an exported Asymptote (.asy) file, in\n"
+"points. Only written when a width is set; leave empty to give the\n"
+"width alone.")
         .setOnChange(),
     App::ParamInfo("Mesh", "MeshParams", "User parameter:BaseApp/Preferences/Mod/Mesh", "DefaultShapeType", "DefaultShapeType", App::ParamInfo::Int, 0)
-        .setTitle("Default Shape Type"),
+        .setTitle("Default Shape Type")
+        .setDoc("Shape type hint given to new mesh objects. 0 unknown, 1 solid.\n"
+"Filling the cut of a clip plane only works on a solid mesh."),
     App::ParamInfo("Mesh", "MeshParams", "User parameter:BaseApp/Preferences/Mod/Mesh", "MeshColor", "MeshColor", App::ParamInfo::UInt, 0)
-        .setTitle("Mesh Color"),
+        .setTitle("Mesh Color")
+        .setDoc("Default face colour of new mesh objects, as a packed RGBA value.\n"
+"0 keeps the built-in colour."),
     App::ParamInfo("Mesh", "MeshParams", "User parameter:BaseApp/Preferences/Mod/Mesh", "LineColor", "LineColor", App::ParamInfo::UInt, 0)
-        .setTitle("Line Color"),
+        .setTitle("Line Color")
+        .setDoc("Default line colour of new mesh objects, as a packed RGBA value.\n"
+"0 keeps the built-in colour."),
     App::ParamInfo("Mesh", "MeshParams", "User parameter:BaseApp/Preferences/Mod/Mesh", "MeshTransparency", "MeshTransparency", App::ParamInfo::Int, 0)
-        .setTitle("Mesh Transparency"),
+        .setTitle("Mesh Transparency")
+        .setDoc("Default transparency of the faces of new mesh objects, in percent."),
     App::ParamInfo("Mesh", "MeshParams", "User parameter:BaseApp/Preferences/Mod/Mesh", "LineTransparency", "LineTransparency", App::ParamInfo::Int, 0)
-        .setTitle("Line Transparency"),
+        .setTitle("Line Transparency")
+        .setDoc("Default transparency of the lines of new mesh objects, in percent."),
     App::ParamInfo("Mesh", "MeshParams", "User parameter:BaseApp/Preferences/Mod/Mesh", "TwoSideRendering", "TwoSideRendering", App::ParamInfo::Bool, false)
-        .setTitle("Two Side Rendering"),
+        .setTitle("Two Side Rendering")
+        .setDoc("Light new mesh objects from both sides, so the back of a surface\n"
+"looks like the front. When off the back shows the backlight colour\n"
+"or black."),
     App::ParamInfo("Mesh", "MeshParams", "User parameter:BaseApp/Preferences/Mod/Mesh", "VertexPerNormals", "VertexPerNormals", App::ParamInfo::Bool, false)
-        .setTitle("Vertex Per Normals"),
+        .setTitle("Vertex Per Normals")
+        .setDoc("Give new mesh objects the default crease angle, which shades them\n"
+"smoothly across edges flatter than that angle. When off new meshes\n"
+"are shaded flat, one normal per triangle."),
     App::ParamInfo("Mesh", "MeshParams", "User parameter:BaseApp/Preferences/Mod/Mesh", "CreaseAngle", "CreaseAngle", App::ParamInfo::Float, 0.0)
-        .setTitle("Crease Angle"),
+        .setTitle("Crease Angle")
+        .setDoc("Crease angle given to new mesh objects, in degrees. Faces meeting\n"
+"at less than this angle are shaded smoothly across their edge.\n"
+"Only used when normals per vertex are turned on."),
     App::ParamInfo("Mesh", "MeshParams", "User parameter:BaseApp/Preferences/Mod/Mesh", "DisplayAliasFormatString", "DisplayAliasFormatString", App::ParamInfo::String, "%V = %A")
-        .setTitle("Display Alias Format String"),
+        .setTitle("Display Alias Format String")
+        .setDoc("Not used by the Mesh workbench. The spreadsheet setting of the\n"
+"same name controls how a cell with an alias is shown."),
     App::ParamInfo("Mesh", "MeshParams", "User parameter:BaseApp/Preferences/Mod/Mesh", "ShowBoundingBox", "ShowBoundingBox", App::ParamInfo::Bool, false)
-        .setTitle("Show Bounding Box"),
+        .setTitle("Show Bounding Box")
+        .setDoc("Mark a highlighted or selected mesh with its bounding box instead\n"
+"of colouring the mesh. Applies to new mesh objects."),
     App::ParamInfo("Mesh", "MeshParams", "User parameter:BaseApp/Preferences/Mod/Mesh", "MaxDeviationExport", "MaxDeviationExport", App::ParamInfo::Float, 0.1)
-        .setTitle("Max Deviation Export"),
+        .setTitle("Max Deviation Export")
+        .setDoc("Maximum deviation between a shape and the mesh made from it when\n"
+"exporting to a mesh file, in mm. Smaller values give finer meshes\n"
+"and larger files."),
     App::ParamInfo("Mesh", "MeshParams", "User parameter:BaseApp/Preferences/Mod/Mesh", "RenderTriangleLimit", "RenderTriangleLimit", App::ParamInfo::Int, -1)
-        .setTitle("Render Triangle Limit"),
+        .setTitle("Render Triangle Limit")
+        .setDoc("Draw large meshes as points while the view is being moved. The\n"
+"value is a power of ten: 5 means meshes of more than 100000\n"
+"triangles. 0 or less always draws the triangles."),
     App::ParamInfo("Mesh", "MeshParams", "User parameter:BaseApp/Preferences/Mod/Mesh/Evaluation", "CheckNonManifoldPoints", "CheckNonManifoldPoints", App::ParamInfo::Bool, false)
-        .setTitle("Check Non Manifold Points"),
+        .setTitle("Check Non Manifold Points")
+        .setDoc("Also look for non-manifold points when the mesh evaluation dialog\n"
+"checks for non-manifolds, and remove them on repair."),
     App::ParamInfo("Mesh", "MeshParams", "User parameter:BaseApp/Preferences/Mod/Mesh/Evaluation", "EnableFoldsCheck", "EnableFoldsCheck", App::ParamInfo::Bool, false)
-        .setTitle("Enable Folds Check"),
+        .setTitle("Enable Folds Check")
+        .setDoc("Offer the check for folds on the surface in the mesh evaluation\n"
+"dialog, and include it when everything is analysed."),
     App::ParamInfo("Mesh", "MeshParams", "User parameter:BaseApp/Preferences/Mod/Mesh/Evaluation", "StrictlyDegenerated", "StrictlyDegenerated", App::ParamInfo::Bool, true)
-        .setTitle("Strictly Degenerated"),
+        .setTitle("Strictly Degenerated")
+        .setDoc("Count only faces of zero area as degenerated in the mesh\n"
+"evaluation dialog. When off, nearly degenerated faces count too."),
     App::ParamInfo("Mesh", "MeshParams", "User parameter:BaseApp/Preferences/Mod/Mesh", "SubElementSelection", "SubElementSelection", App::ParamInfo::Bool, false)
-        .setTitle("Sub Element Selection"),
+        .setTitle("Sub Element Selection")
+        .setDoc("Select single facets of a mesh when clicking in the 3D view,\n"
+"instead of the whole mesh object."),
 });
 
 // Auto generated code (Tools/params_utils.py:368)
@@ -262,7 +303,10 @@ ParameterGrp::handle MeshParams::getHandle() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *MeshParams::docAsymptoteWidth() {
-    return "";
+    return QT_TRANSLATE_NOOP("MeshParams",
+"Width of the picture in an exported Asymptote (.asy) file, as\n"
+"written to its size() command, in points. Leave empty to write no\n"
+"size at all.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -289,7 +333,10 @@ void MeshParams::removeAsymptoteWidth() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *MeshParams::docAsymptoteHeight() {
-    return "";
+    return QT_TRANSLATE_NOOP("MeshParams",
+"Height of the picture in an exported Asymptote (.asy) file, in\n"
+"points. Only written when a width is set; leave empty to give the\n"
+"width alone.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -316,7 +363,9 @@ void MeshParams::removeAsymptoteHeight() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *MeshParams::docDefaultShapeType() {
-    return "";
+    return QT_TRANSLATE_NOOP("MeshParams",
+"Shape type hint given to new mesh objects. 0 unknown, 1 solid.\n"
+"Filling the cut of a clip plane only works on a solid mesh.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -343,7 +392,9 @@ void MeshParams::removeDefaultShapeType() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *MeshParams::docMeshColor() {
-    return "";
+    return QT_TRANSLATE_NOOP("MeshParams",
+"Default face colour of new mesh objects, as a packed RGBA value.\n"
+"0 keeps the built-in colour.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -370,7 +421,9 @@ void MeshParams::removeMeshColor() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *MeshParams::docLineColor() {
-    return "";
+    return QT_TRANSLATE_NOOP("MeshParams",
+"Default line colour of new mesh objects, as a packed RGBA value.\n"
+"0 keeps the built-in colour.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -397,7 +450,8 @@ void MeshParams::removeLineColor() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *MeshParams::docMeshTransparency() {
-    return "";
+    return QT_TRANSLATE_NOOP("MeshParams",
+"Default transparency of the faces of new mesh objects, in percent.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -424,7 +478,8 @@ void MeshParams::removeMeshTransparency() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *MeshParams::docLineTransparency() {
-    return "";
+    return QT_TRANSLATE_NOOP("MeshParams",
+"Default transparency of the lines of new mesh objects, in percent.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -451,7 +506,10 @@ void MeshParams::removeLineTransparency() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *MeshParams::docTwoSideRendering() {
-    return "";
+    return QT_TRANSLATE_NOOP("MeshParams",
+"Light new mesh objects from both sides, so the back of a surface\n"
+"looks like the front. When off the back shows the backlight colour\n"
+"or black.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -478,7 +536,10 @@ void MeshParams::removeTwoSideRendering() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *MeshParams::docVertexPerNormals() {
-    return "";
+    return QT_TRANSLATE_NOOP("MeshParams",
+"Give new mesh objects the default crease angle, which shades them\n"
+"smoothly across edges flatter than that angle. When off new meshes\n"
+"are shaded flat, one normal per triangle.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -505,7 +566,10 @@ void MeshParams::removeVertexPerNormals() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *MeshParams::docCreaseAngle() {
-    return "";
+    return QT_TRANSLATE_NOOP("MeshParams",
+"Crease angle given to new mesh objects, in degrees. Faces meeting\n"
+"at less than this angle are shaded smoothly across their edge.\n"
+"Only used when normals per vertex are turned on.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -532,7 +596,9 @@ void MeshParams::removeCreaseAngle() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *MeshParams::docDisplayAliasFormatString() {
-    return "";
+    return QT_TRANSLATE_NOOP("MeshParams",
+"Not used by the Mesh workbench. The spreadsheet setting of the\n"
+"same name controls how a cell with an alias is shown.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -559,7 +625,9 @@ void MeshParams::removeDisplayAliasFormatString() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *MeshParams::docShowBoundingBox() {
-    return "";
+    return QT_TRANSLATE_NOOP("MeshParams",
+"Mark a highlighted or selected mesh with its bounding box instead\n"
+"of colouring the mesh. Applies to new mesh objects.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -586,7 +654,10 @@ void MeshParams::removeShowBoundingBox() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *MeshParams::docMaxDeviationExport() {
-    return "";
+    return QT_TRANSLATE_NOOP("MeshParams",
+"Maximum deviation between a shape and the mesh made from it when\n"
+"exporting to a mesh file, in mm. Smaller values give finer meshes\n"
+"and larger files.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -613,7 +684,10 @@ void MeshParams::removeMaxDeviationExport() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *MeshParams::docRenderTriangleLimit() {
-    return "";
+    return QT_TRANSLATE_NOOP("MeshParams",
+"Draw large meshes as points while the view is being moved. The\n"
+"value is a power of ten: 5 means meshes of more than 100000\n"
+"triangles. 0 or less always draws the triangles.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -640,7 +714,9 @@ void MeshParams::removeRenderTriangleLimit() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *MeshParams::docCheckNonManifoldPoints() {
-    return "";
+    return QT_TRANSLATE_NOOP("MeshParams",
+"Also look for non-manifold points when the mesh evaluation dialog\n"
+"checks for non-manifolds, and remove them on repair.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -667,7 +743,9 @@ void MeshParams::removeCheckNonManifoldPoints() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *MeshParams::docEnableFoldsCheck() {
-    return "";
+    return QT_TRANSLATE_NOOP("MeshParams",
+"Offer the check for folds on the surface in the mesh evaluation\n"
+"dialog, and include it when everything is analysed.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -694,7 +772,9 @@ void MeshParams::removeEnableFoldsCheck() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *MeshParams::docStrictlyDegenerated() {
-    return "";
+    return QT_TRANSLATE_NOOP("MeshParams",
+"Count only faces of zero area as degenerated in the mesh\n"
+"evaluation dialog. When off, nearly degenerated faces count too.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -721,7 +801,9 @@ void MeshParams::removeStrictlyDegenerated() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *MeshParams::docSubElementSelection() {
-    return "";
+    return QT_TRANSLATE_NOOP("MeshParams",
+"Select single facets of a mesh when clicking in the 3D view,\n"
+"instead of the whole mesh object.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)

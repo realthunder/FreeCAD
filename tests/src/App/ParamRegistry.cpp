@@ -119,6 +119,23 @@ TEST_F(ParamRegistryTest, searchRunsOverPathNameAndDoc)
     EXPECT_TRUE(reg.search({"no-such-keyword-anywhere"}).empty());
 }
 
+// A setting's documentation is what the omni search lists beside it, and its
+// tool tip. Every setting has some, and none of it is a page: what belongs
+// in a design document stays out of here (or above the setting, as a comment
+// in its definition file). The Gui test asks the same of the Gui classes.
+TEST_F(ParamRegistryTest, everySettingIsDocumentedBriefly)
+{
+    constexpr std::size_t maxLength = 400;
+    const auto& entries = ParamRegistry::instance().entries();
+    ASSERT_FALSE(entries.empty());
+    for (const ParamInfo* info : entries) {
+        const std::string doc = info->doc ? info->doc : "";
+        EXPECT_FALSE(doc.empty()) << info->fullName() << " has no documentation";
+        EXPECT_LE(doc.size(), maxLength)
+            << info->fullName() << ": " << doc.size() << " characters of documentation";
+    }
+}
+
 TEST_F(ParamRegistryTest, valuesRoundTripThroughTheParameterGroup)
 {
     auto& reg = ParamRegistry::instance();

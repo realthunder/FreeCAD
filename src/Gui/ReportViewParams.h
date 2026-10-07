@@ -74,6 +74,8 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter checkShowReportViewOnWarning
+    ///
+    /// Bring the report view on screen when a warning arrives.
     static const bool & getcheckShowReportViewOnWarning();
     static const bool & defaultcheckShowReportViewOnWarning();
     static void removecheckShowReportViewOnWarning();
@@ -84,6 +86,8 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter checkShowReportViewOnError
+    ///
+    /// Bring the report view on screen when an error arrives.
     static const bool & getcheckShowReportViewOnError();
     static const bool & defaultcheckShowReportViewOnError();
     static void removecheckShowReportViewOnError();
@@ -94,6 +98,8 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter checkShowReportViewOnNormalMessage
+    ///
+    /// Bring the report view on screen when a normal message arrives.
     static const bool & getcheckShowReportViewOnNormalMessage();
     static const bool & defaultcheckShowReportViewOnNormalMessage();
     static void removecheckShowReportViewOnNormalMessage();
@@ -104,6 +110,8 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter checkShowReportViewOnLogMessage
+    ///
+    /// Bring the report view on screen when a log message arrives.
     static const bool & getcheckShowReportViewOnLogMessage();
     static const bool & defaultcheckShowReportViewOnLogMessage();
     static void removecheckShowReportViewOnLogMessage();
@@ -114,6 +122,8 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter checkShowReportViewOnCritical
+    ///
+    /// Bring the report view on screen when a critical message arrives.
     static const bool & getcheckShowReportViewOnCritical();
     static const bool & defaultcheckShowReportViewOnCritical();
     static void removecheckShowReportViewOnCritical();
@@ -124,6 +134,9 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter checkShowReportTimecode
+    ///
+    /// Put the time a message arrived in front of each line of the report
+    /// view.
     static const bool & getcheckShowReportTimecode();
     static const bool & defaultcheckShowReportTimecode();
     static void removecheckShowReportTimecode();
@@ -134,6 +147,10 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter LogMessageSize
+    ///
+    /// Largest number of characters of one log message shown in the report
+    /// view. A longer message is cut off. 0 uses the built-in limit of 2048
+    /// characters.
     static const long & getLogMessageSize();
     static const long & defaultLogMessageSize();
     static void removeLogMessageSize();
@@ -145,14 +162,10 @@ public:
     //@{
     /// Accessor for parameter DuplicateWindow
     ///
-    /// How many of the most recently shown lines a new line is compared against
-    /// before it is shown. A line that repeats any of them is held back instead,
-    /// and shown once - the first one held, carrying (xN) for the number it
-    /// stands in for, and clickable to expand the ones that were kept back -
-    /// when a different line has to be shown or DuplicateTimeout expires.
-    /// Set to 0 to show every line as it arrives.
-    /// This affects the Report view only. The log file, the Python console and
-    /// every other console observer still receive every message.
+    /// How many of the most recent lines a new line is compared with. A line
+    /// that repeats one of them is held back and shown once with a count (xN)
+    /// that can be clicked to expand. 0 shows every line. Affects the Report
+    /// view only; the log file and other consoles get every message.
     static const long & getDuplicateWindow();
     static const long & defaultDuplicateWindow();
     static void removeDuplicateWindow();

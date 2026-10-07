@@ -342,62 +342,120 @@ PartParamsP *instance() {
 // Auto generated code (Tools/params_utils.py:352)
 static const App::ParamRegistry::Registrar _PartParamsRegistrar({
     App::ParamInfo("PartGui", "PartParams", "User parameter:BaseApp/Preferences/Mod/Part", "NormalsFromUVNodes", "NormalsFromUVNodes", App::ParamInfo::Bool, true)
-        .setTitle("Normals From UV Nodes"),
+        .setTitle("Normals From UV Nodes")
+        .setDoc("Take the shading normals of a shape from its exact surface instead\n"
+"of from the display triangles. Gives smoother shading of curved\n"
+"faces."),
     App::ParamInfo("PartGui", "PartParams", "User parameter:BaseApp/Preferences/Mod/Part", "TwoSideRendering", "TwoSideRendering", App::ParamInfo::Bool, true)
-        .setTitle("Two Side Rendering"),
+        .setTitle("Two Side Rendering")
+        .setDoc("Light new shapes from both sides, so the back of a face looks like\n"
+"the front. When off the back shows the backlight colour or black."),
     App::ParamInfo("PartGui", "PartParams", "User parameter:BaseApp/Preferences/Mod/Part", "MinimumDeviation", "MinimumDeviation", App::ParamInfo::Float, 0.05)
         .setTitle("Minimum Deviation")
+        .setDoc("Lower limit of the tessellation deviation of shapes, in percent of\n"
+"the object size. Objects asking for a finer mesh are drawn with\n"
+"this value instead.")
         .setOnChange(),
     App::ParamInfo("PartGui", "PartParams", "User parameter:BaseApp/Preferences/Mod/Part", "MeshDeviation", "MeshDeviation", App::ParamInfo::Float, 0.2)
         .setTitle("Mesh Deviation")
+        .setDoc("Accuracy of the mesh that shapes are drawn with, as the largest\n"
+"deviation in percent of the object size. Lower is finer and\n"
+"slower. Sets the Deviation of new objects; a change is applied to\n"
+"all open objects.")
         .setOnChange(),
     App::ParamInfo("PartGui", "PartParams", "User parameter:BaseApp/Preferences/Mod/Part", "MeshAngularDeflection", "MeshAngularDeflection", App::ParamInfo::Float, 28.65)
         .setTitle("Mesh Angular Deflection")
+        .setDoc("Largest angle between neighbouring segments of the mesh that\n"
+"shapes are drawn with, in degrees. Lower is smoother and slower.\n"
+"Sets the Angular Deflection of new objects; a change is applied to\n"
+"all open objects.")
         .setOnChange(),
     App::ParamInfo("PartGui", "PartParams", "User parameter:BaseApp/Preferences/Mod/Part", "MinimumAngularDeflection", "MinimumAngularDeflection", App::ParamInfo::Float, 5.0)
         .setTitle("Minimum Angular Deflection")
+        .setDoc("Lower limit of the angular deflection used to mesh shapes, in\n"
+"degrees. Objects asking for a smaller angle are drawn with this\n"
+"value instead.")
         .setOnChange(),
     App::ParamInfo("PartGui", "PartParams", "User parameter:BaseApp/Preferences/Mod/Part", "OverrideTessellation", "OverrideTessellation", App::ParamInfo::Bool, false)
         .setTitle("Override Tessellation")
+        .setDoc("Draw every shape with the deviation and angular deflection set\n"
+"here, ignoring the values stored in each object. When off a change\n"
+"of those two settings is written into the open objects instead.")
         .setOnChange(),
     App::ParamInfo("PartGui", "PartParams", "User parameter:BaseApp/Preferences/Mod/Part", "MapFaceColor", "MapFaceColor", App::ParamInfo::Bool, true)
-        .setTitle("Map Face Color"),
+        .setTitle("Map Face Color")
+        .setDoc("Let new shapes take their face colours from the shapes they were\n"
+"made from. Turn off to give all faces of an object one colour."),
     App::ParamInfo("PartGui", "PartParams", "User parameter:BaseApp/Preferences/Mod/Part", "MapLineColor", "MapLineColor", App::ParamInfo::Bool, false)
-        .setTitle("Map Line Color"),
+        .setTitle("Map Line Color")
+        .setDoc("Let new shapes take their edge colours from the shapes they were\n"
+"made from. Turn off to give all edges of an object one colour."),
     App::ParamInfo("PartGui", "PartParams", "User parameter:BaseApp/Preferences/Mod/Part", "MapPointColor", "MapPointColor", App::ParamInfo::Bool, false)
-        .setTitle("Map Point Color"),
+        .setTitle("Map Point Color")
+        .setDoc("Let new shapes take their vertex colours from the shapes they were\n"
+"made from. Turn off to give all vertices of an object one colour."),
     App::ParamInfo("PartGui", "PartParams", "User parameter:BaseApp/Preferences/Mod/Part", "MapTransparency", "MapTransparency", App::ParamInfo::Bool, false)
-        .setTitle("Map Transparency"),
+        .setTitle("Map Transparency")
+        .setDoc("Let new shapes take the transparency of their faces from the\n"
+"shapes they were made from. Turn off for one transparency per\n"
+"object."),
     App::ParamInfo("PartGui", "PartParams", "User parameter:BaseApp/Preferences/Mod/Part", "AutoGridScale", "AutoGridScale", App::ParamInfo::Bool, false)
-        .setTitle("Auto Grid Scale"),
+        .setTitle("Auto Grid Scale")
+        .setDoc("Double or halve the grid size of a sketch being edited as the view\n"
+"is zoomed, so that the grid keeps a similar spacing on screen."),
     App::ParamInfo("PartGui", "PartParams", "User parameter:BaseApp/Preferences/Mod/Part", "PreviewAddColor", "PreviewAddColor", App::ParamInfo::Hex, 0x64FFFF30)
         .setTitle("Preview Add Color")
+        .setDoc("Colour of the preview of a feature that adds material. Its alpha\n"
+"part sets how transparent the preview is.")
         .setProxy("Color")
         .setTransparency(true),
     App::ParamInfo("PartGui", "PartParams", "User parameter:BaseApp/Preferences/Mod/Part", "PreviewSubColor", "PreviewSubColor", App::ParamInfo::Hex, 0xFF646430)
         .setTitle("Preview Sub Color")
+        .setDoc("Colour of the preview of a feature that removes material. Its\n"
+"alpha part sets how transparent the preview is.")
         .setProxy("Color")
         .setTransparency(true),
     App::ParamInfo("PartGui", "PartParams", "User parameter:BaseApp/Preferences/Mod/Part", "PreviewDressColor", "PreviewDressColor", App::ParamInfo::Hex, 0xFF64FF30)
         .setTitle("Preview Dress Color")
+        .setDoc("Colour of the preview of a dress-up feature such as a fillet or a\n"
+"chamfer. Its alpha part sets how transparent the preview is.")
         .setProxy("Color")
         .setTransparency(true),
     App::ParamInfo("PartGui", "PartParams", "User parameter:BaseApp/Preferences/Mod/Part", "PreviewIntersectColor", "PreviewIntersectColor", App::ParamInfo::Hex, 0x6464FF30)
         .setTitle("Preview Intersect Color")
+        .setDoc("Colour of the preview of a feature that keeps what it has in\n"
+"common with the body. Its alpha part sets how transparent the\n"
+"preview is.")
         .setProxy("Color")
         .setTransparency(true),
     App::ParamInfo("PartGui", "PartParams", "User parameter:BaseApp/Preferences/Mod/Part", "PreviewOnEdit", "PreviewOnEdit", App::ParamInfo::Bool, true)
-        .setTitle("Preview On Edit"),
+        .setTitle("Preview On Edit")
+        .setDoc("Show a preview of the result while a PartDesign feature is edited,\n"
+"and hold back the recompute of the feature until the preview is\n"
+"turned off or the edit ends."),
     App::ParamInfo("PartGui", "PartParams", "User parameter:BaseApp/Preferences/Mod/Part", "PreviewWithTransparency", "PreviewWithTransparency", App::ParamInfo::Bool, true)
-        .setTitle("Preview With Transparency"),
+        .setTitle("Preview With Transparency")
+        .setDoc("Draw the preview of an edited PartDesign feature transparent. When\n"
+"off it is drawn opaque."),
     App::ParamInfo("PartGui", "PartParams", "User parameter:BaseApp/Preferences/Mod/Part", "EditOnTop", "EditOnTop", App::ParamInfo::Bool, false)
-        .setTitle("Edit On Top"),
+        .setTitle("Edit On Top")
+        .setDoc("Draw the PartDesign feature being edited on top of everything else\n"
+"in the 3D view."),
     App::ParamInfo("PartGui", "PartParams", "User parameter:BaseApp/Preferences/Mod/Part", "EditRecomputeWait", "EditRecomputeWait", App::ParamInfo::Int, 300)
-        .setTitle("Edit Recompute Wait"),
+        .setTitle("Edit Recompute Wait")
+        .setDoc("Delay between a change in a PartDesign task panel and the update\n"
+"of the feature, in milliseconds. A third of it is used while the\n"
+"preview is shown."),
     App::ParamInfo("PartGui", "PartParams", "User parameter:BaseApp/Preferences/Mod/Part", "AdjustCameraForNewFeature", "AdjustCameraForNewFeature", App::ParamInfo::Bool, true)
-        .setTitle("Adjust Camera For New Feature"),
+        .setTitle("Adjust Camera For New Feature")
+        .setDoc("Move the camera to bring a newly created feature into view. Used\n"
+"by Part offset and thickness, by PartDesign features made from a\n"
+"selected profile, and by new bodies."),
     App::ParamInfo("PartGui", "PartParams", "User parameter:BaseApp/Preferences/Mod/Part", "DefaultDatumColor", "DefaultDatumColor", App::ParamInfo::Hex, 0xFFD70066)
         .setTitle("Default Datum Color")
+        .setDoc("Default face colour of shape binders, of sub-shape binders shown\n"
+"in binder style, and of PartDesign extrusions. Datum planes, lines\n"
+"and points take theirs from the PartDesign settings.")
         .setProxy("Color")
         .setTransparency(true),
     App::ParamInfo("PartGui", "PartParams", "User parameter:BaseApp/Preferences/Mod/Part", "DefaultDatumLineColor", "DefaultDatumLineColor", App::ParamInfo::Hex, 0xFA9600FF)
@@ -407,7 +465,9 @@ static const App::ParamRegistry::Registrar _PartParamsRegistrar({
         .setProxy("Color")
         .setTransparency(true),
     App::ParamInfo("PartGui", "PartParams", "User parameter:BaseApp/Preferences/Mod/Part", "RespectSystemDPI", "RespectSystemDPI", App::ParamInfo::Bool, false)
-        .setTitle("Respect System DP I")
+        .setTitle("Respect system DPI")
+        .setDoc("Scale the line width and point size of shapes by the pixel ratio\n"
+"of the display. May look wrong with monitors of different scaling.")
         .setOnChange(),
     App::ParamInfo("PartGui", "PartParams", "User parameter:BaseApp/Preferences/Mod/Part", "ShapeInstancing", "ShapeInstancing", App::ParamInfo::Bool, true)
         .setTitle("Shape Instancing")
@@ -417,21 +477,21 @@ static const App::ParamRegistry::Registrar _PartParamsRegistrar({
 "geometry is flattened as before.")
         .setOnChange(),
     App::ParamInfo("PartGui", "PartParams", "User parameter:BaseApp/Preferences/Mod/Part", "SelectionPickThreshold", "SelectionPickThreshold", App::ParamInfo::Int, 1000)
-        .setTitle("Selection Pick Threshold"),
+        .setTitle("Selection Pick Threshold")
+        .setDoc("Size of a shape above which picking first narrows the search with\n"
+"bounding boxes, counted in face, edge or point indices. Smaller\n"
+"shapes are tested whole. 0 or less always tests everything."),
     App::ParamInfo("PartGui", "PartParams", "User parameter:BaseApp/Preferences/Mod/Part", "SelectionPickThreshold2", "SelectionPickThreshold2", App::ParamInfo::Int, 500)
-        .setTitle("Selection Pick Threshold2"),
+        .setTitle("Selection Pick Threshold2")
+        .setDoc("Size above which a single face or edge gets a search structure of\n"
+"its own for picking: the triangles of a face, the points of an\n"
+"edge. 0 or less turns it off for faces."),
     App::ParamInfo("PartGui", "PartParams", "User parameter:BaseApp/Preferences/Mod/Part", "SelectionPickRTree", "SelectionPickRTree", App::ParamInfo::Bool, true)
         .setTitle("Selection Pick RTree")
-        .setDoc("Pick with a per-triangle R-tree instead of walking every\n"
-"triangle of a part. Without it the only spatial filter is the\n"
-"per-part bounding box, so a ray that reaches a dense part\n"
-"sends all of its triangles through Coin's primitive callbacks:\n"
-"on an imported mesh (one part carrying everything) a selecting\n"
-"click cost 116 ms, and 18 ms with this on. The tree is built\n"
-"lazily, per part, on the first pick that reaches it -- that\n"
-"first pick pays about 15 ms more, every one after it is the\n"
-"cheap one. Parts smaller than SelectionPickThreshold2 are\n"
-"picked directly either way."),
+        .setDoc("Pick with a spatial index of a part's triangles instead of testing\n"
+"every triangle. Much faster on dense parts; the index is built on the\n"
+"first pick that reaches a part. Parts smaller than\n"
+"SelectionPickThreshold2 are picked directly."),
 });
 
 // Auto generated code (Tools/params_utils.py:368)
@@ -441,7 +501,10 @@ ParameterGrp::handle PartParams::getHandle() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *PartParams::docNormalsFromUVNodes() {
-    return "";
+    return QT_TRANSLATE_NOOP("PartParams",
+"Take the shading normals of a shape from its exact surface instead\n"
+"of from the display triangles. Gives smoother shading of curved\n"
+"faces.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -468,7 +531,9 @@ void PartParams::removeNormalsFromUVNodes() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *PartParams::docTwoSideRendering() {
-    return "";
+    return QT_TRANSLATE_NOOP("PartParams",
+"Light new shapes from both sides, so the back of a face looks like\n"
+"the front. When off the back shows the backlight colour or black.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -495,7 +560,10 @@ void PartParams::removeTwoSideRendering() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *PartParams::docMinimumDeviation() {
-    return "";
+    return QT_TRANSLATE_NOOP("PartParams",
+"Lower limit of the tessellation deviation of shapes, in percent of\n"
+"the object size. Objects asking for a finer mesh are drawn with\n"
+"this value instead.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -522,7 +590,11 @@ void PartParams::removeMinimumDeviation() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *PartParams::docMeshDeviation() {
-    return "";
+    return QT_TRANSLATE_NOOP("PartParams",
+"Accuracy of the mesh that shapes are drawn with, as the largest\n"
+"deviation in percent of the object size. Lower is finer and\n"
+"slower. Sets the Deviation of new objects; a change is applied to\n"
+"all open objects.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -549,7 +621,11 @@ void PartParams::removeMeshDeviation() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *PartParams::docMeshAngularDeflection() {
-    return "";
+    return QT_TRANSLATE_NOOP("PartParams",
+"Largest angle between neighbouring segments of the mesh that\n"
+"shapes are drawn with, in degrees. Lower is smoother and slower.\n"
+"Sets the Angular Deflection of new objects; a change is applied to\n"
+"all open objects.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -576,7 +652,10 @@ void PartParams::removeMeshAngularDeflection() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *PartParams::docMinimumAngularDeflection() {
-    return "";
+    return QT_TRANSLATE_NOOP("PartParams",
+"Lower limit of the angular deflection used to mesh shapes, in\n"
+"degrees. Objects asking for a smaller angle are drawn with this\n"
+"value instead.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -603,7 +682,10 @@ void PartParams::removeMinimumAngularDeflection() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *PartParams::docOverrideTessellation() {
-    return "";
+    return QT_TRANSLATE_NOOP("PartParams",
+"Draw every shape with the deviation and angular deflection set\n"
+"here, ignoring the values stored in each object. When off a change\n"
+"of those two settings is written into the open objects instead.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -630,7 +712,9 @@ void PartParams::removeOverrideTessellation() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *PartParams::docMapFaceColor() {
-    return "";
+    return QT_TRANSLATE_NOOP("PartParams",
+"Let new shapes take their face colours from the shapes they were\n"
+"made from. Turn off to give all faces of an object one colour.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -657,7 +741,9 @@ void PartParams::removeMapFaceColor() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *PartParams::docMapLineColor() {
-    return "";
+    return QT_TRANSLATE_NOOP("PartParams",
+"Let new shapes take their edge colours from the shapes they were\n"
+"made from. Turn off to give all edges of an object one colour.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -684,7 +770,9 @@ void PartParams::removeMapLineColor() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *PartParams::docMapPointColor() {
-    return "";
+    return QT_TRANSLATE_NOOP("PartParams",
+"Let new shapes take their vertex colours from the shapes they were\n"
+"made from. Turn off to give all vertices of an object one colour.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -711,7 +799,10 @@ void PartParams::removeMapPointColor() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *PartParams::docMapTransparency() {
-    return "";
+    return QT_TRANSLATE_NOOP("PartParams",
+"Let new shapes take the transparency of their faces from the\n"
+"shapes they were made from. Turn off for one transparency per\n"
+"object.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -738,7 +829,9 @@ void PartParams::removeMapTransparency() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *PartParams::docAutoGridScale() {
-    return "";
+    return QT_TRANSLATE_NOOP("PartParams",
+"Double or halve the grid size of a sketch being edited as the view\n"
+"is zoomed, so that the grid keeps a similar spacing on screen.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -765,7 +858,9 @@ void PartParams::removeAutoGridScale() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *PartParams::docPreviewAddColor() {
-    return "";
+    return QT_TRANSLATE_NOOP("PartParams",
+"Colour of the preview of a feature that adds material. Its alpha\n"
+"part sets how transparent the preview is.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -792,7 +887,9 @@ void PartParams::removePreviewAddColor() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *PartParams::docPreviewSubColor() {
-    return "";
+    return QT_TRANSLATE_NOOP("PartParams",
+"Colour of the preview of a feature that removes material. Its\n"
+"alpha part sets how transparent the preview is.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -819,7 +916,9 @@ void PartParams::removePreviewSubColor() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *PartParams::docPreviewDressColor() {
-    return "";
+    return QT_TRANSLATE_NOOP("PartParams",
+"Colour of the preview of a dress-up feature such as a fillet or a\n"
+"chamfer. Its alpha part sets how transparent the preview is.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -846,7 +945,10 @@ void PartParams::removePreviewDressColor() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *PartParams::docPreviewIntersectColor() {
-    return "";
+    return QT_TRANSLATE_NOOP("PartParams",
+"Colour of the preview of a feature that keeps what it has in\n"
+"common with the body. Its alpha part sets how transparent the\n"
+"preview is.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -873,7 +975,10 @@ void PartParams::removePreviewIntersectColor() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *PartParams::docPreviewOnEdit() {
-    return "";
+    return QT_TRANSLATE_NOOP("PartParams",
+"Show a preview of the result while a PartDesign feature is edited,\n"
+"and hold back the recompute of the feature until the preview is\n"
+"turned off or the edit ends.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -900,7 +1005,9 @@ void PartParams::removePreviewOnEdit() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *PartParams::docPreviewWithTransparency() {
-    return "";
+    return QT_TRANSLATE_NOOP("PartParams",
+"Draw the preview of an edited PartDesign feature transparent. When\n"
+"off it is drawn opaque.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -927,7 +1034,9 @@ void PartParams::removePreviewWithTransparency() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *PartParams::docEditOnTop() {
-    return "";
+    return QT_TRANSLATE_NOOP("PartParams",
+"Draw the PartDesign feature being edited on top of everything else\n"
+"in the 3D view.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -954,7 +1063,10 @@ void PartParams::removeEditOnTop() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *PartParams::docEditRecomputeWait() {
-    return "";
+    return QT_TRANSLATE_NOOP("PartParams",
+"Delay between a change in a PartDesign task panel and the update\n"
+"of the feature, in milliseconds. A third of it is used while the\n"
+"preview is shown.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -981,7 +1093,10 @@ void PartParams::removeEditRecomputeWait() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *PartParams::docAdjustCameraForNewFeature() {
-    return "";
+    return QT_TRANSLATE_NOOP("PartParams",
+"Move the camera to bring a newly created feature into view. Used\n"
+"by Part offset and thickness, by PartDesign features made from a\n"
+"selected profile, and by new bodies.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -1008,7 +1123,10 @@ void PartParams::removeAdjustCameraForNewFeature() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *PartParams::docDefaultDatumColor() {
-    return "";
+    return QT_TRANSLATE_NOOP("PartParams",
+"Default face colour of shape binders, of sub-shape binders shown\n"
+"in binder style, and of PartDesign extrusions. Datum planes, lines\n"
+"and points take theirs from the PartDesign settings.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -1064,7 +1182,9 @@ void PartParams::removeDefaultDatumLineColor() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *PartParams::docRespectSystemDPI() {
-    return "";
+    return QT_TRANSLATE_NOOP("PartParams",
+"Scale the line width and point size of shapes by the pixel ratio\n"
+"of the display. May look wrong with monitors of different scaling.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -1122,7 +1242,10 @@ void PartParams::removeShapeInstancing() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *PartParams::docSelectionPickThreshold() {
-    return "";
+    return QT_TRANSLATE_NOOP("PartParams",
+"Size of a shape above which picking first narrows the search with\n"
+"bounding boxes, counted in face, edge or point indices. Smaller\n"
+"shapes are tested whole. 0 or less always tests everything.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -1149,7 +1272,10 @@ void PartParams::removeSelectionPickThreshold() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *PartParams::docSelectionPickThreshold2() {
-    return "";
+    return QT_TRANSLATE_NOOP("PartParams",
+"Size above which a single face or edge gets a search structure of\n"
+"its own for picking: the triangles of a face, the points of an\n"
+"edge. 0 or less turns it off for faces.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -1177,16 +1303,10 @@ void PartParams::removeSelectionPickThreshold2() {
 // Auto generated code (Tools/params_utils.py:397)
 const char *PartParams::docSelectionPickRTree() {
     return QT_TRANSLATE_NOOP("PartParams",
-"Pick with a per-triangle R-tree instead of walking every\n"
-"triangle of a part. Without it the only spatial filter is the\n"
-"per-part bounding box, so a ray that reaches a dense part\n"
-"sends all of its triangles through Coin's primitive callbacks:\n"
-"on an imported mesh (one part carrying everything) a selecting\n"
-"click cost 116 ms, and 18 ms with this on. The tree is built\n"
-"lazily, per part, on the first pick that reaches it -- that\n"
-"first pick pays about 15 ms more, every one after it is the\n"
-"cheap one. Parts smaller than SelectionPickThreshold2 are\n"
-"picked directly either way.");
+"Pick with a spatial index of a part's triangles instead of testing\n"
+"every triangle. Much faster on dense parts; the index is built on the\n"
+"first pick that reaches a part. Parts smaller than\n"
+"SelectionPickThreshold2 are picked directly.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)

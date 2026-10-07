@@ -196,11 +196,18 @@ static const App::ParamRegistry::Registrar _ExprParamsRegistrar({
         .setTitle("Auto evaluate function call when editing expression")
         .setDoc("Auto evaluate function call when editing expression"),
     App::ParamInfo("Gui", "ExprParams", "User parameter:BaseApp/Preferences/Expression", "EditDialogWidth", "EditDialogWidth", App::ParamInfo::Int, 0)
-        .setTitle("Edit Dialog Width"),
+        .setTitle("Edit Dialog Width")
+        .setDoc("Width in pixels the expression editor dialog had when it was last\n"
+"closed. The dialog opens at least this wide. 0 uses the default."),
     App::ParamInfo("Gui", "ExprParams", "User parameter:BaseApp/Preferences/Expression", "EditDialogHeight", "EditDialogHeight", App::ParamInfo::Int, 0)
-        .setTitle("Edit Dialog Height"),
+        .setTitle("Edit Dialog Height")
+        .setDoc("Height in pixels the expression editor dialog had when it was last\n"
+"closed. The dialog opens at least this tall. 0 uses the default."),
     App::ParamInfo("Gui", "ExprParams", "User parameter:BaseApp/Preferences/Expression", "EditDialogTextHeight", "EditDialogTextHeight", App::ParamInfo::Int, 0)
-        .setTitle("Edit Dialog Text Height"),
+        .setTitle("Edit Dialog Text Height")
+        .setDoc("Height in pixels the text box of the expression editor dialog had\n"
+"when it was last closed. The box opens at least this tall. 0 sizes\n"
+"it to the text, between four and eight lines."),
     App::ParamInfo("Gui", "ExprParams", "User parameter:BaseApp/Preferences/Expression", "EditDialogBGAlpha", "EditDialogBGAlpha", App::ParamInfo::Int, FC_EXPR_PARAM_EDIT_BG_ALPHA)
         .setTitle("Background opacity")
         .setDoc("Expression editor background opacity value when using in place editing")
@@ -439,7 +446,9 @@ void ExprParams::removeEvalFuncOnEdit() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *ExprParams::docEditDialogWidth() {
-    return "";
+    return QT_TRANSLATE_NOOP("ExprParams",
+"Width in pixels the expression editor dialog had when it was last\n"
+"closed. The dialog opens at least this wide. 0 uses the default.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -466,7 +475,9 @@ void ExprParams::removeEditDialogWidth() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *ExprParams::docEditDialogHeight() {
-    return "";
+    return QT_TRANSLATE_NOOP("ExprParams",
+"Height in pixels the expression editor dialog had when it was last\n"
+"closed. The dialog opens at least this tall. 0 uses the default.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -493,7 +504,10 @@ void ExprParams::removeEditDialogHeight() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *ExprParams::docEditDialogTextHeight() {
-    return "";
+    return QT_TRANSLATE_NOOP("ExprParams",
+"Height in pixels the text box of the expression editor dialog had\n"
+"when it was last closed. The box opens at least this tall. 0 sizes\n"
+"it to the text, between four and eight lines.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)

@@ -73,6 +73,10 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter ShapePropertyCopy
+    ///
+    /// Make a full geometric copy whenever a shape property is copied,
+    /// instead of sharing the shape. Uses much more memory on complex
+    /// models.
     static const bool & getShapePropertyCopy();
     static const bool & defaultShapePropertyCopy();
     static void removeShapePropertyCopy();
@@ -83,6 +87,10 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter DisableShapeCache
+    ///
+    /// Do not keep the shapes computed for an object and its sub-objects
+    /// for reuse. They are rebuilt on every request, which is slower;
+    /// meant for troubleshooting.
     static const bool & getDisableShapeCache();
     static const bool & defaultDisableShapeCache();
     static void removeDisableShapeCache();
@@ -93,6 +101,10 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter CommandOverride
+    ///
+    /// Run the PartDesign equivalent when a Part command is used with a
+    /// PartDesign body active or one of its features selected. 0 never,
+    /// 1 always, 2 ask each time.
     static const long & getCommandOverride();
     static const long & defaultCommandOverride();
     static void removeCommandOverride();
@@ -103,6 +115,10 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter EnableWrapFeature
+    ///
+    /// Bring a non-PartDesign object that references features of the
+    /// active body into that body through a wrap feature. 0 never,
+    /// 1 always, 2 ask each time.
     static const long & getEnableWrapFeature();
     static const long & defaultEnableWrapFeature();
     static void removeEnableWrapFeature();
@@ -113,6 +129,10 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter CopySubShape
+    ///
+    /// Copy the geometry when a placed sub-shape of an object is handed
+    /// to Python, instead of only moving it. Slower, but avoids kernel
+    /// errors on some transformed shapes.
     static const bool & getCopySubShape();
     static const bool & defaultCopySubShape();
     static void removeCopySubShape();
@@ -123,6 +143,10 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter UseBrepToolsOuterWire
+    ///
+    /// Find the outer wire of a face in Python (Face.OuterWire) with the
+    /// kernel's BRepTools. When off its ShapeAnalysis is used; the two
+    /// can differ on unusual faces.
     static const bool & getUseBrepToolsOuterWire();
     static const bool & defaultUseBrepToolsOuterWire();
     static void removeUseBrepToolsOuterWire();
@@ -133,6 +157,9 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter UseBaseObjectName
+    ///
+    /// Label a new body after the object selected as its base feature.
+    /// The question asked when the body is created has the same checkbox.
     static const bool & getUseBaseObjectName();
     static const bool & defaultUseBaseObjectName();
     static void removeUseBaseObjectName();
@@ -143,6 +170,9 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter AutoGroupSolids
+    ///
+    /// Turn on Auto Group Solids in new bodies, which groups the features
+    /// of each solid under its latest feature.
     static const bool & getAutoGroupSolids();
     static const bool & defaultAutoGroupSolids();
     static void removeAutoGroupSolids();
@@ -153,6 +183,9 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter SingleSolid
+    ///
+    /// Turn on Single Solid in new bodies, so that every feature must
+    /// result in one solid.
     static const bool & getSingleSolid();
     static const bool & defaultSingleSolid();
     static void removeSingleSolid();
@@ -163,6 +196,9 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter UsePipeForExtrusionDraft
+    ///
+    /// Build the draft angle of new pads, pockets and Part extrusions
+    /// with a sweep instead of a loft. Each object keeps its own switch.
     static const bool & getUsePipeForExtrusionDraft();
     static const bool & defaultUsePipeForExtrusionDraft();
     static void removeUsePipeForExtrusionDraft();
@@ -173,6 +209,10 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter LinearizeExtrusionDraft
+    ///
+    /// Turn flat spline faces into planes and straight spline edges into
+    /// lines in new lofts, sweeps and drafted extrusions, in Part and
+    /// PartDesign. Each object keeps its own switch.
     static const bool & getLinearizeExtrusionDraft();
     static const bool & defaultLinearizeExtrusionDraft();
     static void removeLinearizeExtrusionDraft();
@@ -183,6 +223,9 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter AutoCorrectLink
+    ///
+    /// While a PartDesign feature is edited, replace a reference it is
+    /// given by a sub-shape binder imported into the body automatically.
     static const bool & getAutoCorrectLink();
     static const bool & defaultAutoCorrectLink();
     static void removeAutoCorrectLink();
@@ -193,6 +236,10 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter RefineModel
+    ///
+    /// Turn on Refine in new sub-shape binders, which merges faces lying
+    /// on the same surface. Part booleans and PartDesign features have
+    /// their own settings.
     static const bool & getRefineModel();
     static const bool & defaultRefineModel();
     static void removeRefineModel();
@@ -203,6 +250,10 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter AuxGroupUniqueLabel
+    ///
+    /// Give the Sketches, Datums and Misc groups of each body a unique
+    /// label such as Datums001. When off they can all carry the same
+    /// label.
     static const bool & getAuxGroupUniqueLabel();
     static const bool & defaultAuxGroupUniqueLabel();
     static void removeAuxGroupUniqueLabel();
@@ -213,6 +264,9 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter SplitEllipsoid
+    ///
+    /// Turn on Split in new ellipsoids, which cuts the surface in the
+    /// middle to avoid errors in later boolean operations.
     static const bool & getSplitEllipsoid();
     static const bool & defaultSplitEllipsoid();
     static void removeSplitEllipsoid();
@@ -223,6 +277,9 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter ParallelRunThreshold
+    ///
+    /// Run boolean operations on several processor threads. Any value
+    /// above 0 turns this on, 0 or less turns it off.
     static const long & getParallelRunThreshold();
     static const long & defaultParallelRunThreshold();
     static void removeParallelRunThreshold();
@@ -233,6 +290,10 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter AutoValidateShape
+    ///
+    /// Turn on Validate Shape in new PartDesign features. An invalid
+    /// result then gets a warning icon in the tree. Can slow down complex
+    /// models.
     static const bool & getAutoValidateShape();
     static const bool & defaultAutoValidateShape();
     static void removeAutoValidateShape();
@@ -243,6 +304,10 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter FixShape
+    ///
+    /// Set Fix Shape to Enabled in new Part objects, so that a result
+    /// found invalid is repaired. When off new objects are left as they
+    /// are computed.
     static const bool & getFixShape();
     static const bool & defaultFixShape();
     static void removeFixShape();
@@ -269,13 +334,9 @@ public:
     //@{
     /// Accessor for parameter BorrowBelowFace
     ///
-    /// Which sub-shapes may be borrowed below a shell, as a sum
-    /// (docs/SharedShapeStorage.md sec 12.15): 0 none, which is what ships,
-    /// 1 a face inside a shell, 2 an edge inside a face or a wire, 4 a vertex
-    /// inside an edge. Each of those associations is keyed on the identity of
-    /// a geometry object -- a face's edges hold their 2D curve against the
-    /// surface the face carries -- so this is sound only where the geometry is
-    /// shared too, and it is off wherever DedupCrossFileGeometry is.
+    /// Which sub-shapes a shape file may borrow from another below the level
+    /// of a shell, as a sum: 1 a face in a shell, 2 an edge in a face or
+    /// wire, 4 a vertex in an edge. 0, the default, none.
     static const long & getBorrowBelowFace();
     static const long & defaultBorrowBelowFace();
     static void removeBorrowBelowFace();
@@ -286,6 +347,9 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter LoftMaxDegree
+    ///
+    /// Maximum surface degree given to new PartDesign lofts. Kept between
+    /// 2 and the highest degree the kernel supports.
     static const unsigned long & getLoftMaxDegree();
     static const unsigned long & defaultLoftMaxDegree();
     static void removeLoftMaxDegree();
@@ -297,15 +361,9 @@ public:
     //@{
     /// Accessor for parameter WarnUnnamedInput
     ///
-    /// Report a shape operation whose input shapes carry no element map, so
-    /// the result cannot be named either. This is off by default because an
-    /// absent element map is frequently correct -- program generated and
-    /// imported geometry has none -- and because a genuine naming failure is
-    /// developer information that an end user cannot act on. Turn it on when
-    /// writing a workbench that builds shapes and wants its element names to
-    /// survive a recompute. 0 off, 1 report each operation once per document
-    /// recompute, 2 report every occurrence. Raising the Part module's log
-    /// level to LOG reports every occurrence too, without this preference.
+    /// Report shape operations whose inputs carry no element names, so the
+    /// result cannot be named either. For workbench developers. 0 off, 1 once
+    /// per operation and recompute, 2 every occurrence.
     static const long & getWarnUnnamedInput();
     static const long & defaultWarnUnnamedInput();
     static void removeWarnUnnamedInput();
@@ -316,6 +374,10 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter MinimumDeviation
+    ///
+    /// Lower limit of the tessellation deviation of shapes, in percent of
+    /// the object size. Objects asking for a finer mesh are drawn with
+    /// this value instead.
     static const double & getMinimumDeviation();
     static const double & defaultMinimumDeviation();
     static void removeMinimumDeviation();
@@ -326,6 +388,11 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter MeshDeviation
+    ///
+    /// Accuracy of the mesh that shapes are drawn with, as the largest
+    /// deviation in percent of the object size. Lower is finer and
+    /// slower. Sets the Deviation of new objects; a change is applied to
+    /// all open objects.
     static const double & getMeshDeviation();
     static const double & defaultMeshDeviation();
     static void removeMeshDeviation();
@@ -336,6 +403,11 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter MeshAngularDeflection
+    ///
+    /// Largest angle between neighbouring segments of the mesh that
+    /// shapes are drawn with, in degrees. Lower is smoother and slower.
+    /// Sets the Angular Deflection of new objects; a change is applied to
+    /// all open objects.
     static const double & getMeshAngularDeflection();
     static const double & defaultMeshAngularDeflection();
     static void removeMeshAngularDeflection();
@@ -346,6 +418,10 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter MinimumAngularDeflection
+    ///
+    /// Lower limit of the angular deflection used to mesh shapes, in
+    /// degrees. Objects asking for a smaller angle are drawn with this
+    /// value instead.
     static const double & getMinimumAngularDeflection();
     static const double & defaultMinimumAngularDeflection();
     static void removeMinimumAngularDeflection();

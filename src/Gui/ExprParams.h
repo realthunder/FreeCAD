@@ -167,6 +167,9 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter EditDialogWidth
+    ///
+    /// Width in pixels the expression editor dialog had when it was last
+    /// closed. The dialog opens at least this wide. 0 uses the default.
     static const long & getEditDialogWidth();
     static const long & defaultEditDialogWidth();
     static void removeEditDialogWidth();
@@ -177,6 +180,9 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter EditDialogHeight
+    ///
+    /// Height in pixels the expression editor dialog had when it was last
+    /// closed. The dialog opens at least this tall. 0 uses the default.
     static const long & getEditDialogHeight();
     static const long & defaultEditDialogHeight();
     static void removeEditDialogHeight();
@@ -187,6 +193,10 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter EditDialogTextHeight
+    ///
+    /// Height in pixels the text box of the expression editor dialog had
+    /// when it was last closed. The box opens at least this tall. 0 sizes
+    /// it to the text, between four and eight lines.
     static const long & getEditDialogTextHeight();
     static const long & defaultEditDialogTextHeight();
     static void removeEditDialogTextHeight();

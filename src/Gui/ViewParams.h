@@ -34,7 +34,7 @@ import ViewParams
 ViewParams.declare_begin()
 ]]]*/
 
-// Auto generated code (Gui/ViewParams.py:632)
+// Auto generated code (Gui/ViewParams.py:797)
 #include <QString>
 
 // Auto generated code (Tools/params_utils.py:82)
@@ -94,6 +94,10 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter UseNewSelection
+    ///
+    /// Highlight selection and preselection through the selection root of
+    /// the 3D view, which allows picking sub-elements and objects inside
+    /// links. When off, only objects that ask for it are handled that way.
     static const bool & getUseNewSelection();
     static const bool & defaultUseNewSelection();
     static void removeUseNewSelection();
@@ -104,6 +108,10 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter UseSelectionRoot
+    ///
+    /// Give the visual copy a link makes of its linked object a selection
+    /// root of its own, so that each link is highlighted separately. When
+    /// off, a plain group without render caching is used.
     static const bool & getUseSelectionRoot();
     static const bool & defaultUseSelectionRoot();
     static void removeUseSelectionRoot();
@@ -173,6 +181,9 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter RandomColor
+    ///
+    /// Give every new object a random shape colour instead of the default
+    /// shape colour.
     static const bool & getRandomColor();
     static const bool & defaultRandomColor();
     static void removeRandomColor();
@@ -183,6 +194,9 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter BoundingBoxColor
+    ///
+    /// Colour of the bounding box drawn for an object that has its bounding
+    /// box display turned on.
     static const unsigned long & getBoundingBoxColor();
     static const unsigned long & defaultBoundingBoxColor();
     static void removeBoundingBoxColor();
@@ -193,6 +207,8 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter AnnotationTextColor
+    ///
+    /// Default text colour of new annotation objects.
     static const unsigned long & getAnnotationTextColor();
     static const unsigned long & defaultAnnotationTextColor();
     static void removeAnnotationTextColor();
@@ -227,6 +243,9 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter MarkerSize
+    ///
+    /// Size in pixels of the point markers drawn in the 3D view, such as
+    /// sketch vertices and the end points of a measurement.
     static const long & getMarkerSize();
     static const long & defaultMarkerSize();
     static void removeMarkerSize();
@@ -237,6 +256,9 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter DefaultLinkColor
+    ///
+    /// Default colour of the material of a new link, which is used when the
+    /// link overrides the material of its linked object.
     static const unsigned long & getDefaultLinkColor();
     static const unsigned long & defaultDefaultLinkColor();
     static void removeDefaultLinkColor();
@@ -247,6 +269,8 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter DefaultShapeLineColor
+    ///
+    /// Default line colour of new shapes.
     static const unsigned long & getDefaultShapeLineColor();
     static const unsigned long & defaultDefaultShapeLineColor();
     static void removeDefaultShapeLineColor();
@@ -257,6 +281,8 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter DefaultShapeVertexColor
+    ///
+    /// Default vertex colour of new shapes.
     static const unsigned long & getDefaultShapeVertexColor();
     static const unsigned long & defaultDefaultShapeVertexColor();
     static void removeDefaultShapeVertexColor();
@@ -267,6 +293,9 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter DefaultShapeColor
+    ///
+    /// Default face colour of new shapes. Not used while random colours are
+    /// turned on.
     static const unsigned long & getDefaultShapeColor();
     static const unsigned long & defaultDefaultShapeColor();
     static void removeDefaultShapeColor();
@@ -277,6 +306,9 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter DefaultShapeTransparency
+    ///
+    /// Default transparency of new shapes in percent. 0 is opaque, 100 is
+    /// fully transparent.
     static const long & getDefaultShapeTransparency();
     static const long & defaultDefaultShapeTransparency();
     static void removeDefaultShapeTransparency();
@@ -287,6 +319,8 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter DefaultShapeLineWidth
+    ///
+    /// Default line width of new shapes, in pixels.
     static const long & getDefaultShapeLineWidth();
     static const long & defaultDefaultShapeLineWidth();
     static void removeDefaultShapeLineWidth();
@@ -297,6 +331,8 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter DefaultShapePointSize
+    ///
+    /// Default vertex size of new shapes, in pixels.
     static const long & getDefaultShapePointSize();
     static const long & defaultDefaultShapePointSize();
     static void removeDefaultShapePointSize();
@@ -307,6 +343,10 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter CoinCycleCheck
+    ///
+    /// Check the 3D scene for an object that contains itself while the
+    /// scene is traversed. A cycle is reported and skipped instead of being
+    /// followed without end.
     static const bool & getCoinCycleCheck();
     static const bool & defaultCoinCycleCheck();
     static void removeCoinCycleCheck();
@@ -317,6 +357,10 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter EnablePropertyViewForInactiveDocument
+    ///
+    /// Keep the property view usable when the selected objects belong to a
+    /// document other than the active one. When off, the property view is
+    /// disabled for such a selection.
     static const bool & getEnablePropertyViewForInactiveDocument();
     static const bool & defaultEnablePropertyViewForInactiveDocument();
     static void removeEnablePropertyViewForInactiveDocument();
@@ -351,6 +395,9 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter UpdateSelectionVisual
+    ///
+    /// Bring back the selection highlight of a selected object when it is
+    /// shown again after being hidden.
     static const bool & getUpdateSelectionVisual();
     static const bool & defaultUpdateSelectionVisual();
     static void removeUpdateSelectionVisual();
@@ -361,6 +408,10 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter LinkChildrenDirect
+    ///
+    /// Show the children of a group with its own coordinate system, such as
+    /// a part or body, through a link view. A link to the group then shows
+    /// the children's visuals directly.
     static const bool & getLinkChildrenDirect();
     static const bool & defaultLinkChildrenDirect();
     static void removeLinkChildrenDirect();
@@ -604,6 +655,10 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter SelectionTransparency
+    ///
+    /// Transparency given to a selected face so that what lies behind it
+    /// stays visible, used when picking through objects and when the
+    /// highlight is drawn on top. 0 is opaque, 1 is invisible.
     static const double & getSelectionTransparency();
     static const double & defaultSelectionTransparency();
     static void removeSelectionTransparency();
@@ -614,6 +669,9 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter SelectionLinePattern
+    ///
+    /// Dash pattern of the hidden part of a selected line that is shown on
+    /// top of the scene, as a 16 bit mask. 0 draws it solid.
     static const long & getSelectionLinePattern();
     static const long & defaultSelectionLinePattern();
     static void removeSelectionLinePattern();
@@ -624,6 +682,10 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter SelectionLinePatternScale
+    ///
+    /// Number of times each bit of the dash pattern of a selected hidden
+    /// line is repeated. Larger values give longer dashes. 1 or less uses
+    /// the pattern as it is.
     static const long & getSelectionLinePatternScale();
     static const long & defaultSelectionLinePatternScale();
     static void removeSelectionLinePatternScale();
@@ -646,6 +708,9 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter SelectionBBoxLineWidth
+    ///
+    /// Line width in pixels of the bounding box drawn around a selected
+    /// object when selection is shown by bounding box.
     static const double & getSelectionBBoxLineWidth();
     static const double & defaultSelectionBBoxLineWidth();
     static void removeSelectionBBoxLineWidth();
@@ -668,6 +733,9 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter PreSelectionDelay
+    ///
+    /// Shortest time in seconds between two preselection picks in the 3D
+    /// view while the mouse moves. 0 picks on every mouse move.
     static const double & getPreSelectionDelay();
     static const double & defaultPreSelectionDelay();
     static void removePreSelectionDelay();
@@ -678,6 +746,10 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter PickBackFaceDelay
+    ///
+    /// Number of mouse wheel steps, with Shift and Ctrl held, that it takes
+    /// to move the pick one object further behind or back toward the
+    /// front.
     static const long & getPickBackFaceDelay();
     static const long & defaultPickBackFaceDelay();
     static void removePickBackFaceDelay();
@@ -688,6 +760,10 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter UseNewRayPick
+    ///
+    /// Stop a single pick in the 3D view at the nearest hit instead of
+    /// collecting everything along the pick ray. Off is the older and
+    /// slower way.
     static const bool & getUseNewRayPick();
     static const bool & defaultUseNewRayPick();
     static void removeUseNewRayPick();
@@ -698,6 +774,10 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter ViewSelectionExtendFactor
+    ///
+    /// Scale applied to the bounding box of the selection when testing
+    /// whether it is already in view, before the view is extended to
+    /// include it. Currently has no effect.
     static const double & getViewSelectionExtendFactor();
     static const double & defaultViewSelectionExtendFactor();
     static void removeViewSelectionExtendFactor();
@@ -720,6 +800,9 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter UseBoundingBoxCache
+    ///
+    /// Remember the bounding boxes of objects instead of computing them
+    /// again on every request.
     static const bool & getUseBoundingBoxCache();
     static const bool & defaultUseBoundingBoxCache();
     static void removeUseBoundingBoxCache();
@@ -755,6 +838,10 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter NewDocumentCameraScale
+    ///
+    /// Camera zoom of a new document, as the diameter of the sphere that
+    /// fits on the screen. A quarter of it is the default size of a new
+    /// coordinate system.
     static const double & getNewDocumentCameraScale();
     static const double & defaultNewDocumentCameraScale();
     static void removeNewDocumentCameraScale();
@@ -765,6 +852,10 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter MaxOnTopSelections
+    ///
+    /// Largest number of selected objects that are drawn on top of the
+    /// scene. A larger selection is highlighted in place, and the tree view
+    /// does not expand to show its items.
     static const long & getMaxOnTopSelections();
     static const long & defaultMaxOnTopSelections();
     static void removeMaxOnTopSelections();
@@ -775,6 +866,9 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter MaxViewSelections
+    ///
+    /// Largest number of selected objects taken into account when the view
+    /// is fitted or aligned to the selection.
     static const long & getMaxViewSelections();
     static const long & defaultMaxViewSelections();
     static void removeMaxViewSelections();
@@ -785,6 +879,10 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter MaxSelectionNotification
+    ///
+    /// Number of pending add and remove selection notices after which they
+    /// are replaced by one notice that the whole selection changed. 0 sets
+    /// no limit.
     static const long & getMaxSelectionNotification();
     static const long & defaultMaxSelectionNotification();
     static void removeMaxSelectionNotification();
@@ -874,6 +972,9 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter HiddenLineFaceColor
+    ///
+    /// Colour all faces are drawn in by the hidden line display style when
+    /// it overrides the face colour.
     static const unsigned long & getHiddenLineFaceColor();
     static const unsigned long & defaultHiddenLineFaceColor();
     static void removeHiddenLineFaceColor();
@@ -896,6 +997,9 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter HiddenLineColor
+    ///
+    /// Colour all lines and outlines are drawn in by the hidden line
+    /// display style when it overrides the line colour.
     static const unsigned long & getHiddenLineColor();
     static const unsigned long & defaultHiddenLineColor();
     static void removeHiddenLineColor();
@@ -918,6 +1022,9 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter HiddenLineBackground
+    ///
+    /// Background colour of a 3D view in the hidden line display style,
+    /// used when overriding the background is turned on.
     static const unsigned long & getHiddenLineBackground();
     static const unsigned long & defaultHiddenLineBackground();
     static void removeHiddenLineBackground();
@@ -928,6 +1035,9 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter HiddenLineOverrideBackground
+    ///
+    /// Replace the background of a 3D view with the hidden line background
+    /// colour while the hidden line display style is active.
     static const bool & getHiddenLineOverrideBackground();
     static const bool & defaultHiddenLineOverrideBackground();
     static void removeHiddenLineOverrideBackground();
@@ -986,6 +1096,9 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter HiddenLineOutlineWidth
+    ///
+    /// Width in pixels of the outlines drawn by the hidden line display
+    /// style. 0 uses the default width.
     static const double & getHiddenLineOutlineWidth();
     static const double & defaultHiddenLineOutlineWidth();
     static void removeHiddenLineOutlineWidth();
@@ -996,6 +1109,9 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter HiddenLineWidth
+    ///
+    /// Width in pixels of the lines of all objects in the hidden line
+    /// display style. A value below 1 keeps each object's own line width.
     static const double & getHiddenLineWidth();
     static const double & defaultHiddenLineWidth();
     static void removeHiddenLineWidth();
@@ -1006,6 +1122,9 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter HiddenLinePointSize
+    ///
+    /// Size in pixels of the vertices of all objects in the hidden line
+    /// display style. A value below 1 keeps each object's own point size.
     static const double & getHiddenLinePointSize();
     static const double & defaultHiddenLinePointSize();
     static void removeHiddenLinePointSize();
@@ -1052,6 +1171,10 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter StatusMessageTimeout
+    ///
+    /// Milliseconds a message stays in the status bar when the command
+    /// showing it gives no time of its own. 0 keeps it until the next
+    /// message.
     static const long & getStatusMessageTimeout();
     static const long & defaultStatusMessageTimeout();
     static void removeStatusMessageTimeout();
@@ -1110,6 +1233,8 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter ShadowLightIntensity
+    ///
+    /// Brightness of the light that casts the shadow.
     static const double & getShadowLightIntensity();
     static const double & defaultShadowLightIntensity();
     static void removeShadowLightIntensity();
@@ -1120,6 +1245,8 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter ShadowLightDirectionX
+    ///
+    /// X component of the direction of the light that casts the shadow.
     static const double & getShadowLightDirectionX();
     static const double & defaultShadowLightDirectionX();
     static void removeShadowLightDirectionX();
@@ -1130,6 +1257,8 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter ShadowLightDirectionY
+    ///
+    /// Y component of the direction of the light that casts the shadow.
     static const double & getShadowLightDirectionY();
     static const double & defaultShadowLightDirectionY();
     static void removeShadowLightDirectionY();
@@ -1140,6 +1269,8 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter ShadowLightDirectionZ
+    ///
+    /// Z component of the direction of the light that casts the shadow.
     static const double & getShadowLightDirectionZ();
     static const double & defaultShadowLightDirectionZ();
     static void removeShadowLightDirectionZ();
@@ -1150,6 +1281,8 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter ShadowLightColor
+    ///
+    /// Colour of the light that casts the shadow.
     static const unsigned long & getShadowLightColor();
     static const unsigned long & defaultShadowLightColor();
     static void removeShadowLightColor();
@@ -1199,6 +1332,8 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter ShadowGroundColor
+    ///
+    /// Colour of the ground that receives the shadow.
     static const unsigned long & getShadowGroundColor();
     static const unsigned long & defaultShadowGroundColor();
     static void removeShadowGroundColor();
@@ -1209,6 +1344,9 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter ShadowGroundBumpMap
+    ///
+    /// Image file used as a bump map that gives the shadow ground a surface
+    /// relief. Empty for a flat ground.
     static const std::string & getShadowGroundBumpMap();
     static const std::string & defaultShadowGroundBumpMap();
     static void removeShadowGroundBumpMap();
@@ -1219,6 +1357,9 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter ShadowGroundTexture
+    ///
+    /// Image file drawn as a texture on the ground that receives the
+    /// shadow. Empty for a ground of plain colour.
     static const std::string & getShadowGroundTexture();
     static const std::string & defaultShadowGroundTexture();
     static void removeShadowGroundTexture();
@@ -1262,18 +1403,10 @@ public:
     //@{
     /// Accessor for parameter ShadowGroundTransparency
     ///
-    /// How much of the shadow receiver plane is drawn beside the shadow
-    /// itself.
-    /// 
-    /// 1 (the default) is the receiver a view of a part usually wants: the
-    /// ground carries the shadow and nothing else, so there is no plane in
-    /// the frame and no horizon behind the model -- only the shadow, at a
-    /// fixed 0.8 opacity where it is fully dark. Anything below 1 draws a
-    /// solid ground of that transparency and shades it, which is what a
-    /// presentation image of a whole scene wants.
-    /// 
-    /// A ground reflection needs a surface to blend onto, so it keeps the
-    /// solid ground whatever this says.
+    /// Transparency of the ground that receives the shadow. 1 (the default)
+    /// draws the shadow only, with no ground plane; lower values draw a
+    /// shaded ground of that transparency. A ground reflection always draws
+    /// the ground.
     static const double & getShadowGroundTransparency();
     static const double & defaultShadowGroundTransparency();
     static void removeShadowGroundTransparency();
@@ -1297,6 +1430,10 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter ShadowExtraRedraw
+    ///
+    /// Redraw the 3D view once more after a change while shadows are shown,
+    /// so that the shadow catches up with the scene. Currently has no
+    /// effect.
     static const bool & getShadowExtraRedraw();
     static const bool & defaultShadowExtraRedraw();
     static void removeShadowExtraRedraw();
@@ -1458,6 +1595,9 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter PropertyViewTimer
+    ///
+    /// Milliseconds the property view waits before it refreshes after the
+    /// selection or a property changes.
     static const unsigned long & getPropertyViewTimer();
     static const unsigned long & defaultPropertyViewTimer();
     static void removePropertyViewTimer();
@@ -1904,6 +2044,9 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter TransformOnTop
+    ///
+    /// Show an object on top of the scene while it is moved with the
+    /// transform dragger. Currently has no effect.
     static const bool & getTransformOnTop();
     static const bool & defaultTransformOnTop();
     static void removeTransformOnTop();
@@ -1990,13 +2133,9 @@ public:
     //@{
     /// Accessor for parameter RenderCacheKeepMax
     ///
-    /// Largest vertex cache map, in entries, that an object keeps after
-    /// its parent has copied it up. A parent flattens its children into
-    /// one map and then drops theirs, so the next frame re-derives the
-    /// map of every object in the scene however little moved; keeping the
-    /// small ones costs a few entries of memory each and is what stops
-    /// that. The large ones are the copies of whole subtrees, which is the
-    /// memory this bounds. Set zero to keep none.
+    /// Largest render cache, in entries, an object keeps after its parent has
+    /// merged it. Keeping the small ones avoids rebuilding them every frame.
+    /// 0 keeps none.
     static const long & getRenderCacheKeepMax();
     static const long & defaultRenderCacheKeepMax();
     static void removeRenderCacheKeepMax();
@@ -2008,16 +2147,10 @@ public:
     //@{
     /// Accessor for parameter RenderCacheIncremental
     ///
-    /// Splice a rebuilt object's flattened vertex cache map from the map
-    /// of the publish before it, instead of merging every child again. A
-    /// container holding thousands of objects re-derives all of them on
-    /// every publish however few moved, and the merge is priced per child
-    /// rather than per entry. It costs memory, because the map of the
-    /// previous publish has to survive the traversal that replaces it:
-    /// on a 17800-object assembly, 49MB against 45% off the flatten.
-    /// 0 rebuilds (the old behaviour), 1 splices, 2 splices and also
-    /// rebuilds wholesale to compare the two, logging any disagreement
-    /// -- slow, for checking the splice, not for use.
+    /// Update a container's render cache from its previous one instead of
+    /// merging all its children again. Faster on large assemblies, at the
+    /// cost of some memory. 0 off, 1 on, 2 does both and logs any difference
+    /// (slow, for checking).
     static const long & getRenderCacheIncremental();
     static const long & defaultRenderCacheIncremental();
     static void removeRenderCacheIncremental();
@@ -2029,16 +2162,9 @@ public:
     //@{
     /// Accessor for parameter RenderCacheMeshReuse
     ///
-    /// Reuse the mesh a vertex cache was translated into for the backend,
-    /// instead of translating it again on every publish. A vertex cache is
-    /// built once and never changed afterwards -- a shape whose geometry
-    /// moves gets a new cache -- so the translation is the same work every
-    /// time, and on a large assembly it is the largest single cost of a
-    /// publish. Meshes are held only for as long as some draw list still
-    /// refers to them. 0 translates every publish (the old behaviour), 1
-    /// reuses, 2 reuses and also translates afresh to compare the two,
-    /// logging any disagreement -- slow, for checking the reuse, not for
-    /// use.
+    /// Reuse the mesh a render cache was converted to for the render backend
+    /// instead of converting it at every update. 0 off, 1 on, 2 does both and
+    /// logs any difference (slow, for checking).
     static const long & getRenderCacheMeshReuse();
     static const long & defaultRenderCacheMeshReuse();
     static void removeRenderCacheMeshReuse();
@@ -2065,15 +2191,10 @@ public:
     //@{
     /// Accessor for parameter LiveImportRedrawBudget
     ///
-    /// Percentage of the time the 3D view may spend redrawing while a
-    /// progressive import is filling the document. Each new object makes
-    /// the next frame rebuild the render cache of the whole scene, so on a
-    /// large import a single frame costs far more than the objects drawn
-    /// in it; keeping frames to a share of the time is what bounds that
-    /// cost. The resulting wait scales with the measured frame cost, is
-    /// never shorter than LiveImportRedrawInterval nor longer than ten
-    /// times it, and mouse input renders immediately regardless. Set zero
-    /// to budget nothing and use the plain interval.
+    /// Percentage of time the 3D view may spend redrawing while a progressive
+    /// import fills the document. The wait between frames is never shorter
+    /// than LiveImportRedrawInterval nor longer than ten times it. 0 uses the
+    /// plain interval.
     static const long & getLiveImportRedrawBudget();
     static const long & defaultLiveImportRedrawBudget();
     static void removeLiveImportRedrawBudget();
@@ -2085,15 +2206,9 @@ public:
     //@{
     /// Accessor for parameter LiveImportPumpInterval
     ///
-    /// Minimum interval in milliseconds between two turns of the event
-    /// loop while a live import fills the document. The import holds the
-    /// main thread, so the view only sees input and paints where the
-    /// import hands the loop a slice, and on its own the progress bar
-    /// does that on a 200 ms update throttle -- a slideshow to someone
-    /// orbiting the model. Offering the loop a turn costs nothing when
-    /// nothing is queued, and what a frame costs is bounded by
-    /// LiveImportRedrawBudget rather than by how often a turn is
-    /// offered. Set zero to pump at every offer.
+    /// Minimum milliseconds between two chances for the window to process
+    /// input and repaint while a live import fills the document. 0 offers one
+    /// at every opportunity.
     static const long & getLiveImportPumpInterval();
     static const long & defaultLiveImportPumpInterval();
     static void removeLiveImportPumpInterval();
@@ -2104,6 +2219,10 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter RenderHighlightPolygonOffsetFactor
+    ///
+    /// Slope scaled depth offset that pulls selection and preselection
+    /// highlights toward the viewer, so that the faces under them do not
+    /// hide them. Preselection gets twice the offset.
     static const double & getRenderHighlightPolygonOffsetFactor();
     static const double & defaultRenderHighlightPolygonOffsetFactor();
     static void removeRenderHighlightPolygonOffsetFactor();
@@ -2114,6 +2233,10 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter RenderHighlightPolygonOffsetUnits
+    ///
+    /// Constant depth offset, in depth buffer units, that pulls selection
+    /// and preselection highlights toward the viewer, so that the faces
+    /// under them do not hide them. Preselection gets twice the offset.
     static const double & getRenderHighlightPolygonOffsetUnits();
     static const double & defaultRenderHighlightPolygonOffsetUnits();
     static void removeRenderHighlightPolygonOffsetUnits();
@@ -2138,6 +2261,9 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter DefaultFontSize
+    ///
+    /// Point size of the application font. 0 uses the system default.
+    /// Sizes from 1 to 7 are raised to 8.
     static const long & getDefaultFontSize();
     static const long & defaultDefaultFontSize();
     static void removeDefaultFontSize();
@@ -2149,6 +2275,9 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter EnableTaskPanelKeyTranslate
+    ///
+    /// Let the Up and Down arrow keys move the keyboard focus through the
+    /// task panel, the way Shift+Tab and Tab do.
     static const bool & getEnableTaskPanelKeyTranslate();
     static const bool & defaultEnableTaskPanelKeyTranslate();
     static void removeEnableTaskPanelKeyTranslate();
@@ -2160,6 +2289,10 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter EnableMenuBarCheckBox
+    ///
+    /// Show the entries of the toolbar and dock window menus of the menu
+    /// bar as checkboxes, the way the right-click menu of the main window
+    /// shows them. Off by default on macOS.
     static const bool & getEnableMenuBarCheckBox();
     static const bool & defaultEnableMenuBarCheckBox();
     static void removeEnableMenuBarCheckBox();
@@ -2170,6 +2303,9 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter EnableBacklight
+    ///
+    /// Turn on the backlight of the 3D view, a second light that shines on
+    /// the faces turned away from the viewer.
     static const bool & getEnableBacklight();
     static const bool & defaultEnableBacklight();
     static void removeEnableBacklight();
@@ -2180,6 +2316,9 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter BacklightColor
+    ///
+    /// Colour of the backlight, the light that shines on the faces turned
+    /// away from the viewer.
     static const unsigned long & getBacklightColor();
     static const unsigned long & defaultBacklightColor();
     static void removeBacklightColor();
@@ -2256,6 +2395,9 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter ToolTipDisable
+    ///
+    /// Turn off the tool tips of the application. Tips shown as an overlay
+    /// in the 3D view, such as the preselection tip, still appear.
     static const bool & getToolTipDisable();
     static const bool & defaultToolTipDisable();
     static void removeToolTipDisable();
@@ -2266,6 +2408,9 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter AxisXColor
+    ///
+    /// Colour of the X axis of the transform dragger and of other axis
+    /// markers in the 3D view.
     static const unsigned long & getAxisXColor();
     static const unsigned long & defaultAxisXColor();
     static void removeAxisXColor();
@@ -2276,6 +2421,9 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter AxisYColor
+    ///
+    /// Colour of the Y axis of the transform dragger and of other axis
+    /// markers in the 3D view.
     static const unsigned long & getAxisYColor();
     static const unsigned long & defaultAxisYColor();
     static void removeAxisYColor();
@@ -2286,6 +2434,9 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter AxisZColor
+    ///
+    /// Colour of the Z axis of the transform dragger and of other axis
+    /// markers in the 3D view.
     static const unsigned long & getAxisZColor();
     static const unsigned long & defaultAxisZColor();
     static void removeAxisZColor();
@@ -2356,7 +2507,7 @@ public:
     static const char *docDatumTemporaryScaleFactor();
     //@}
 
-    // Auto generated code (Gui/ViewParams.py:638)
+    // Auto generated code (Gui/ViewParams.py:803)
     static const std::vector<QString> AnimationCurveTypes;
 
     static void onViewParamChanged(const char *sReason);
@@ -2387,7 +2538,7 @@ ViewParams.declare_end()
 }; // class ViewParams
 } // namespace Gui
 
-// Auto generated code (Gui/ViewParams.py:651)
+// Auto generated code (Gui/ViewParams.py:816)
 namespace Gui {
 /// Obtain all display style names, terminated by nullptr entry.
 GuiExport const char **drawStyleNames();

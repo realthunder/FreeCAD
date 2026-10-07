@@ -274,6 +274,31 @@ private Q_SLOTS:
         QVERIFY(searchParams(QString()).size() == ParamRegistry::instance().entries().size());
     }
 
+    // As ParamRegistryTest.everySettingIsDocumentedBriefly, with the Gui
+    // classes registered: every setting says what it is, in a few lines.
+    void test_everySettingIsDocumentedBriefly()  // NOLINT
+    {
+        const std::size_t maxLength = 400;
+        QStringList undocumented;
+        QStringList tooLong;
+        for (const ParamInfo* info : ParamRegistry::instance().entries()) {
+            const std::string doc = info->doc ? info->doc : "";
+            if (doc.empty()) {
+                undocumented << QString::fromStdString(info->fullName());
+            }
+            else if (doc.size() > maxLength) {
+                tooLong << QStringLiteral("%1 (%2)")
+                               .arg(QString::fromStdString(info->fullName()))
+                               .arg(doc.size());
+            }
+        }
+        QVERIFY2(undocumented.isEmpty(),
+                 qPrintable(QStringLiteral("no documentation: ") + undocumented.join(QStringLiteral(", "))));
+        QVERIFY2(tooLong.isEmpty(),
+                 qPrintable(QStringLiteral("over %1 characters: ").arg(maxLength)
+                            + tooLong.join(QStringLiteral(", "))));
+    }
+
     void test_paramListModelAndFilter()  // NOLINT
     {
         Gui::ParamListModel model;

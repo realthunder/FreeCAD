@@ -37,23 +37,44 @@ ClassDoc = 'Convenient class to obtain ReportView related parameters'
 Signal = True
 
 Params = [
-    ParamBool('checkShowReportViewOnWarning', True),
-    ParamBool('checkShowReportViewOnError', True),
-    ParamBool('checkShowReportViewOnNormalMessage', False),
-    ParamBool('checkShowReportViewOnLogMessage', False),
-    ParamBool('checkShowReportViewOnCritical', False),
-    ParamBool("checkShowReportTimecode", True),
+    ParamBool('checkShowReportViewOnWarning', True,
+        title = 'Show report view on warning',
+        doc = "Bring the report view on screen when a warning arrives."),
+    ParamBool('checkShowReportViewOnError', True,
+        title = 'Show report view on error',
+        doc = "Bring the report view on screen when an error arrives."),
+    ParamBool('checkShowReportViewOnNormalMessage', False,
+        title = 'Show report view on normal message',
+        doc = "Bring the report view on screen when a normal message arrives."),
+    ParamBool('checkShowReportViewOnLogMessage', False,
+        title = 'Show report view on log message',
+        doc = "Bring the report view on screen when a log message arrives."),
+    ParamBool('checkShowReportViewOnCritical', False,
+        title = 'Show report view on critical message',
+        doc = "Bring the report view on screen when a critical message arrives."),
+    ParamBool("checkShowReportTimecode", True,
+        title = 'Show time code',
+        doc = "Put the time a message arrived in front of each line of the report\n"
+              "view."),
 
-    ParamInt("LogMessageSize", 0),
+    ParamInt("LogMessageSize", 0,
+        doc = "Largest number of characters of one log message shown in the report\n"
+              "view. A longer message is cut off. 0 uses the built-in limit of 2048\n"
+              "characters."),
+    # The long form, kept here; the documentation shown is the short one below.
+    # How many of the most recently shown lines a new line is compared against
+    # before it is shown. A line that repeats any of them is held back instead,
+    # and shown once - the first one held, carrying (xN) for the number it
+    # stands in for, and clickable to expand the ones that were kept back -
+    # when a different line has to be shown or DuplicateTimeout expires.
+    # Set to 0 to show every line as it arrives.
+    # This affects the Report view only. The log file, the Python console and
+    # every other console observer still receive every message.
     ParamInt("DuplicateWindow", 3,
-        doc='How many of the most recently shown lines a new line is compared against\n'
-            'before it is shown. A line that repeats any of them is held back instead,\n'
-            'and shown once - the first one held, carrying (xN) for the number it\n'
-            'stands in for, and clickable to expand the ones that were kept back -\n'
-            'when a different line has to be shown or DuplicateTimeout expires.\n'
-            'Set to 0 to show every line as it arrives.\n'
-            'This affects the Report view only. The log file, the Python console and\n'
-            'every other console observer still receive every message.'),
+        doc="How many of the most recent lines a new line is compared with. A line\n"
+            "that repeats one of them is held back and shown once with a count (xN)\n"
+            "that can be clicked to expand. 0 shows every line. Affects the Report\n"
+            "view only; the log file and other consoles get every message."),
     ParamInt("DuplicateKeyLength", 100,
         doc='How many leading non-digit characters two messages must share to count\n'
             'as the same message. Digits are skipped rather than compared, so the same\n'

@@ -74,6 +74,10 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter prefAuthor
+    ///
+    /// Author name given to new documents as their creator. Also written as
+    /// the last modifier on save when that option is on. Leave empty to stay
+    /// anonymous.
     static const std::string & getprefAuthor();
     static const std::string & defaultprefAuthor();
     static void removeprefAuthor();
@@ -84,6 +88,9 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter prefSetAuthorOnSave
+    ///
+    /// Write the author name from the preferences into a document's 'Last
+    /// modified by' field each time it is saved.
     static const bool & getprefSetAuthorOnSave();
     static const bool & defaultprefSetAuthorOnSave();
     static void removeprefSetAuthorOnSave();
@@ -94,6 +101,8 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter prefCompany
+    ///
+    /// Company name given to new documents.
     static const std::string & getprefCompany();
     static const std::string & defaultprefCompany();
     static void removeprefCompany();
@@ -104,6 +113,11 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter prefLicenseType
+    ///
+    /// License given to new documents, as a position in the license list.
+    /// 0 is All rights reserved, 1 to 12 the Creative Commons licenses,
+    /// 13 Public Domain, 14 FreeArt, 15 to 17 the CERN hardware licences;
+    /// 18 (Other) leaves the license empty.
     static const long & getprefLicenseType();
     static const long & defaultprefLicenseType();
     static void removeprefLicenseType();
@@ -114,6 +128,9 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter prefLicenseUrl
+    ///
+    /// Address of the license text given to new documents. Empty uses the
+    /// address that belongs to the license chosen from the list.
     static const std::string & getprefLicenseUrl();
     static const std::string & defaultprefLicenseUrl();
     static void removeprefLicenseUrl();
@@ -124,6 +141,10 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter CompressionLevel
+    ///
+    /// How hard a document file is compressed when saved, from 0 (none,
+    /// fastest) to 9 (smallest, slowest). Has no effect on a document saved
+    /// as a directory.
     static const long & getCompressionLevel();
     static const long & defaultCompressionLevel();
     static void removeCompressionLevel();
@@ -134,6 +155,10 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter CheckExtension
+    ///
+    /// Add .FCStd to the file name when a document is saved under a name
+    /// without that extension, so that a save cannot overwrite an unrelated
+    /// file by accident.
     static const bool & getCheckExtension();
     static const bool & defaultCheckExtension();
     static void removeCheckExtension();
@@ -144,6 +169,10 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter ForceXML
+    ///
+    /// How much object data new documents keep inside the XML when saved
+    /// as a directory. 0 none, 1 lists, 2 also meshes, points and text
+    /// shapes, 3 also binary shapes, 4 and up also included files.
     static const long & getForceXML();
     static const long & defaultForceXML();
     static void removeForceXML();
@@ -154,6 +183,10 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter SplitXML
+    ///
+    /// Give each object an XML file of its own in new documents saved as a
+    /// directory, instead of one file for the whole document. Has no effect
+    /// on a document saved as a single file.
     static const bool & getSplitXML();
     static const bool & defaultSplitXML();
     static void removeSplitXML();
@@ -164,6 +197,10 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter PreferBinary
+    ///
+    /// Save the object data of new documents in binary instead of text
+    /// form. Files get smaller but compare poorly under version control.
+    /// Each document carries its own copy of this choice.
     static const bool & getPreferBinary();
     static const bool & defaultPreferBinary();
     static void removePreferBinary();
@@ -175,14 +212,9 @@ public:
     //@{
     /// Accessor for parameter InlineListSize
     ///
-    /// Largest list property, in bytes of values, still written inline
-    /// in the XML instead of taking an archive entry of its own. An
-    /// entry costs around 190 bytes of zip headers before any content,
-    /// and one more thing for the reader to open, which a one-element
-    /// colour list has no way of paying back. Written in the same form
-    /// the reader has always used for lists that cannot be streamed, so
-    /// the file stays readable by FreeCAD versions without this option.
-    /// Set to 0 to give every list an entry, as before.
+    /// Largest list property, in bytes, still written inside the document
+    /// XML instead of as a separate entry of the file. Small lists are
+    /// cheaper inline. 0 gives every list its own entry.
     static const long & getInlineListSize();
     static const long & defaultInlineListSize();
     static void removeInlineListSize();
@@ -228,14 +260,10 @@ public:
     //@{
     /// Accessor for parameter DeferShapeLoad
     ///
-    /// Park shape archive entries during restore and read each one on
-    /// first real use instead of before the document opens, so the
-    /// window is up while shapes stream in with the progressive visual
-    /// fill. Requires ArchiveRandomAccess. An entry not yet served is
-    /// read when anything asks for the shape -- visual build, script,
-    /// save -- so the value is never observably missing; the trade is
-    /// that the document must not be rewritten externally while loads
-    /// are pending. Off by default until gated on the large references.
+    /// When opening a document, read each shape on first use instead of
+    /// before the window comes up. Requires ArchiveRandomAccess. The file
+    /// must not be rewritten by another program while shapes are still to be
+    /// read. Off by default.
     static const bool & getDeferShapeLoad();
     static const bool & defaultDeferShapeLoad();
     static void removeDeferShapeLoad();
@@ -247,25 +275,10 @@ public:
     //@{
     /// Accessor for parameter SaveMaterialCards
     ///
-    /// Write every material card into the document, including the
-    /// stock ones.
-    /// 
-    /// A stock card used to be left out: the hash says which card it
-    /// was, and any installation holding the same library can produce
-    /// the content again. That holds only while the library does not
-    /// move. It moved -- retuning the default appearance changed the
-    /// Default card, and every document written before it then named a
-    /// hash no installed card answers to, losing the material outright
-    /// rather than degrading to the uuid. A shipped library is not a
-    /// fixed point, so a document cannot be built on the assumption
-    /// that it is.
-    /// 
-    /// Carrying the content costs almost nothing now that identical
-    /// cards are stored once per document: a model whose objects all
-    /// share one card writes that card once, whatever the object
-    /// count. Turn off to write only the hash of a stock card, which
-    /// is smaller by that one card and readable only by an
-    /// installation whose library still matches.
+    /// Write every material card used into the document, including the
+    /// stock ones, so the document does not depend on the installed material
+    /// library. Off writes only a reference to a stock card, which is lost
+    /// if the library changes.
     static const bool & getSaveMaterialCards();
     static const bool & defaultSaveMaterialCards();
     static void removeSaveMaterialCards();
@@ -277,20 +290,9 @@ public:
     //@{
     /// Accessor for parameter DedupShapePCurves
     ///
-    /// Store each 2D curve of a shape once, and leave out the ones
-    /// reading the file back computes again anyway.
-    /// 
-    /// Two things, because they are the same bargain. A pcurve computed
-    /// twice used to be written twice, which on a real project is the
-    /// largest single duplication inside a shape file; and a pcurve on a
-    /// planar face need not be stored at all, since the kernel projects
-    /// the 3D curve onto the plane when it finds none. Neither changes
-    /// the geometry that comes back: a merged pcurve is the identical
-    /// curve, and a dropped one is checked against the projection that
-    /// will replace it before it is dropped.
-    /// 
-    /// Applies to shapes written as ASCII BRep. Turn off to write what
-    /// the kernel holds, entry for entry.
+    /// Write each 2D curve of a shape once, and leave out those on planar
+    /// faces, which are computed again on reading. The geometry read back is
+    /// the same. Applies to shapes written as ASCII BRep.
     static const bool & getDedupShapePCurves();
     static const bool & defaultDedupShapePCurves();
     static void removeDedupShapePCurves();
@@ -302,17 +304,9 @@ public:
     //@{
     /// Accessor for parameter DedupCongruentShapes
     ///
-    /// Store one file for parts that are the same shape in different
-    /// places, and record the motion between them instead of writing the
-    /// geometry again.
-    /// 
-    /// Content addressing already shares parts whose bytes match, which
-    /// an exporter that bakes each placement into the coordinates
-    /// defeats: the same part at twenty positions is twenty distinct
-    /// contents. Two instances are only merged once the rigid motion
-    /// between them has been recovered and checked sub-shape by
-    /// sub-shape, so a mirrored instance or a near-miss is written out
-    /// in full rather than merged.
+    /// Store one shape file for parts that are the same shape in different
+    /// places, and record the motion between them. Parts are merged only
+    /// after the motion has been checked sub-shape by sub-shape.
     static const bool & getDedupCongruentShapes();
     static const bool & defaultDedupCongruentShapes();
     static void removeDedupCongruentShapes();
@@ -324,20 +318,10 @@ public:
     //@{
     /// Accessor for parameter DedupCrossFileGeometry
     ///
-    /// Let a shape file name the surfaces and curves another shape file
-    /// already holds instead of writing its own copy of them.
-    /// 
-    /// Each shape file carries its own table of surfaces, 3D curves and
-    /// 2D curves, so a face two parts have in common is written once per
-    /// part. On a real project those tables are most of the bytes and
-    /// about half of what they hold repeats between files. An entry may
-    /// instead name a file and a position in its table, and the reader
-    /// then puts the entry it parsed there into this file.
-    /// 
-    /// Off by default: it makes a shape file depend on another one for
-    /// its geometry, not only for whole sub-shapes, so a file that goes
-    /// missing costs more than it did. Applies to shapes written as
-    /// ASCII BRep inside a document; an exported file names nothing.
+    /// Let a shape file refer to surfaces and curves another shape file of
+    /// the same document already holds instead of writing them again.
+    /// Smaller files, but a shape file then depends on another for its
+    /// geometry. Off by default.
     static const bool & getDedupCrossFileGeometry();
     static const bool & defaultDedupCrossFileGeometry();
     static void removeDedupCrossFileGeometry();
@@ -348,6 +332,10 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter AutoRemoveFile
+    ///
+    /// Delete the files a document no longer uses from its directory when
+    /// it is saved as a directory. Turn off to leave the files of removed
+    /// objects in place.
     static const bool & getAutoRemoveFile();
     static const bool & defaultAutoRemoveFile();
     static void removeAutoRemoveFile();
@@ -358,6 +346,10 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter AutoNameDynamicProperty
+    ///
+    /// Rename a property added to an object when its name is empty, not a
+    /// valid name or already taken, instead of refusing to add it. A
+    /// warning reports the name chosen.
     static const bool & getAutoNameDynamicProperty();
     static const bool & defaultAutoNameDynamicProperty();
     static void removeAutoNameDynamicProperty();
@@ -368,6 +360,10 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter BackupPolicy
+    ///
+    /// Save a document to a temporary file first and move it over the old
+    /// file only once the write succeeded, keeping backups as configured.
+    /// Turn off to write straight over the file, with no backup.
     static const bool & getBackupPolicy();
     static const bool & defaultBackupPolicy();
     static void removeBackupPolicy();
@@ -378,6 +374,10 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter CreateBackupFiles
+    ///
+    /// Keep the previous version of a document file as a backup each time
+    /// it is saved. When off the old file is deleted once the new one is
+    /// written.
     static const bool & getCreateBackupFiles();
     static const bool & defaultCreateBackupFiles();
     static void removeCreateBackupFiles();
@@ -388,6 +388,10 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter UseFCBakExtension
+    ///
+    /// Name a backup after the document, with the date of the replaced
+    /// file and the extension .FCBak. When off a backup is the document
+    /// file name followed by a number, as in Part.FCStd1.
     static const bool & getUseFCBakExtension();
     static const bool & defaultUseFCBakExtension();
     static void removeUseFCBakExtension();
@@ -398,6 +402,9 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter SaveBackupDateFormat
+    ///
+    /// Date format used in the names of .FCBak backup files, in strftime
+    /// notation. A dot in the format is written as a dash.
     static const std::string & getSaveBackupDateFormat();
     static const std::string & defaultSaveBackupDateFormat();
     static void removeSaveBackupDateFormat();
@@ -408,6 +415,9 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter CountBackupFiles
+    ///
+    /// How many backup files are kept for one document. The oldest are
+    /// deleted when a save would exceed the number. 0 keeps none.
     static const long & getCountBackupFiles();
     static const long & defaultCountBackupFiles();
     static void removeCountBackupFiles();
@@ -418,6 +428,10 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter OptimizeRecompute
+    ///
+    /// Recompute an object only when one of its properties really changed.
+    /// Writing a property the value it already has then leaves the object
+    /// untouched. Turn off to recompute on every write.
     static const bool & getOptimizeRecompute();
     static const bool & defaultOptimizeRecompute();
     static void removeOptimizeRecompute();
@@ -428,6 +442,9 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter CanAbortRecompute
+    ///
+    /// Show progress while a document recomputes and let Esc abort it.
+    /// Costs a little recompute time.
     static const bool & getCanAbortRecompute();
     static const bool & defaultCanAbortRecompute();
     static void removeCanAbortRecompute();
@@ -438,6 +455,10 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter UseHasher
+    ///
+    /// Store the generated element names of new documents as short
+    /// references into a string table of the document instead of in full.
+    /// Each document carries its own copy of this choice.
     static const bool & getUseHasher();
     static const bool & defaultUseHasher();
     static void removeUseHasher();
@@ -448,6 +469,10 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter ViewObjectTransaction
+    ///
+    /// Let a change to a view property alone, such as colour or visibility,
+    /// create an undo step whatever command made it. When off only the
+    /// commands that ask for it do.
     static const bool & getViewObjectTransaction();
     static const bool & defaultViewObjectTransaction();
     static void removeViewObjectTransaction();
@@ -458,6 +483,10 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter WarnRecomputeOnRestore
+    ///
+    /// Ask to recompute after opening a document that needs it to be
+    /// brought up to date with this version. When off the document opens
+    /// without the question and is left as it is.
     static const bool & getWarnRecomputeOnRestore();
     static const bool & defaultWarnRecomputeOnRestore();
     static void removeWarnRecomputeOnRestore();
@@ -468,6 +497,11 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter NoPartialLoading
+    ///
+    /// Load every externally linked document in full. When off a document
+    /// opened only because another links to it loads just the linked
+    /// objects and what they depend on, and cannot be edited until
+    /// reloaded.
     static const bool & getNoPartialLoading();
     static const bool & defaultNoPartialLoading();
     static void removeNoPartialLoading();
@@ -478,6 +512,9 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter SaveThumbnail
+    ///
+    /// Save a preview picture of the 3D view into new documents each time
+    /// they are saved. Each document carries its own copy of this choice.
     static const bool & getSaveThumbnail();
     static const bool & defaultSaveThumbnail();
     static void removeSaveThumbnail();
@@ -488,6 +525,9 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter ThumbnailNoBackground
+    ///
+    /// Leave the view background out of the thumbnail saved with a
+    /// document, so the picture has a transparent background.
     static const bool & getThumbnailNoBackground();
     static const bool & defaultThumbnailNoBackground();
     static void removeThumbnailNoBackground();
@@ -498,6 +538,9 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter AddThumbnailLogo
+    ///
+    /// Put the application icon in the bottom right corner of the thumbnail
+    /// saved with a document.
     static const bool & getAddThumbnailLogo();
     static const bool & defaultAddThumbnailLogo();
     static void removeAddThumbnailLogo();
@@ -508,6 +551,9 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter ThumbnailSampleSize
+    ///
+    /// Number of antialiasing samples used to render the thumbnail saved
+    /// with a document. 0 renders without antialiasing.
     static const long & getThumbnailSampleSize();
     static const long & defaultThumbnailSampleSize();
     static void removeThumbnailSampleSize();
@@ -518,6 +564,9 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter ThumbnailSize
+    ///
+    /// Width and height, in pixels, of the thumbnail saved with a document.
+    /// Values outside 64 to 1024 are brought into that range.
     static const long & getThumbnailSize();
     static const long & defaultThumbnailSize();
     static void removeThumbnailSize();
@@ -528,6 +577,9 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter DuplicateLabels
+    ///
+    /// Allow several objects of one document to carry the same label. When
+    /// off a label already in use gets a number added to make it unique.
     static const bool & getDuplicateLabels();
     static const bool & defaultDuplicateLabels();
     static void removeDuplicateLabels();
@@ -538,6 +590,9 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter TransactionOnRecompute
+    ///
+    /// Record a recompute started with the Refresh command as an undo step.
+    /// When off, refreshing leaves the undo and redo history alone.
     static const bool & getTransactionOnRecompute();
     static const bool & defaultTransactionOnRecompute();
     static void removeTransactionOnRecompute();
@@ -548,6 +603,10 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter RelativeStringID
+    ///
+    /// Write the ids in a document's string table as differences from the
+    /// id before, which makes the saved file smaller. Turn off to write
+    /// every id in full.
     static const bool & getRelativeStringID();
     static const bool & defaultRelativeStringID();
     static void removeRelativeStringID();
@@ -573,6 +632,10 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter EnableMaterialEdit
+    ///
+    /// Show appearance properties in the property view with an editor for
+    /// their colours, shininess and transparency. When off they are not
+    /// listed. Applies to objects created or loaded afterwards.
     static const bool & getEnableMaterialEdit();
     static const bool & defaultEnableMaterialEdit();
     static void removeEnableMaterialEdit();

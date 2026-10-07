@@ -73,6 +73,10 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter AsymptoteWidth
+    ///
+    /// Width of the picture in an exported Asymptote (.asy) file, as
+    /// written to its size() command, in points. Leave empty to write no
+    /// size at all.
     static const std::string & getAsymptoteWidth();
     static const std::string & defaultAsymptoteWidth();
     static void removeAsymptoteWidth();
@@ -84,6 +88,10 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter AsymptoteHeight
+    ///
+    /// Height of the picture in an exported Asymptote (.asy) file, in
+    /// points. Only written when a width is set; leave empty to give the
+    /// width alone.
     static const std::string & getAsymptoteHeight();
     static const std::string & defaultAsymptoteHeight();
     static void removeAsymptoteHeight();
@@ -95,6 +103,9 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter DefaultShapeType
+    ///
+    /// Shape type hint given to new mesh objects. 0 unknown, 1 solid.
+    /// Filling the cut of a clip plane only works on a solid mesh.
     static const long & getDefaultShapeType();
     static const long & defaultDefaultShapeType();
     static void removeDefaultShapeType();
@@ -105,6 +116,9 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter MeshColor
+    ///
+    /// Default face colour of new mesh objects, as a packed RGBA value.
+    /// 0 keeps the built-in colour.
     static const unsigned long & getMeshColor();
     static const unsigned long & defaultMeshColor();
     static void removeMeshColor();
@@ -115,6 +129,9 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter LineColor
+    ///
+    /// Default line colour of new mesh objects, as a packed RGBA value.
+    /// 0 keeps the built-in colour.
     static const unsigned long & getLineColor();
     static const unsigned long & defaultLineColor();
     static void removeLineColor();
@@ -125,6 +142,8 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter MeshTransparency
+    ///
+    /// Default transparency of the faces of new mesh objects, in percent.
     static const long & getMeshTransparency();
     static const long & defaultMeshTransparency();
     static void removeMeshTransparency();
@@ -135,6 +154,8 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter LineTransparency
+    ///
+    /// Default transparency of the lines of new mesh objects, in percent.
     static const long & getLineTransparency();
     static const long & defaultLineTransparency();
     static void removeLineTransparency();
@@ -145,6 +166,10 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter TwoSideRendering
+    ///
+    /// Light new mesh objects from both sides, so the back of a surface
+    /// looks like the front. When off the back shows the backlight colour
+    /// or black.
     static const bool & getTwoSideRendering();
     static const bool & defaultTwoSideRendering();
     static void removeTwoSideRendering();
@@ -155,6 +180,10 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter VertexPerNormals
+    ///
+    /// Give new mesh objects the default crease angle, which shades them
+    /// smoothly across edges flatter than that angle. When off new meshes
+    /// are shaded flat, one normal per triangle.
     static const bool & getVertexPerNormals();
     static const bool & defaultVertexPerNormals();
     static void removeVertexPerNormals();
@@ -165,6 +194,10 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter CreaseAngle
+    ///
+    /// Crease angle given to new mesh objects, in degrees. Faces meeting
+    /// at less than this angle are shaded smoothly across their edge.
+    /// Only used when normals per vertex are turned on.
     static const double & getCreaseAngle();
     static const double & defaultCreaseAngle();
     static void removeCreaseAngle();
@@ -175,6 +208,9 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter DisplayAliasFormatString
+    ///
+    /// Not used by the Mesh workbench. The spreadsheet setting of the
+    /// same name controls how a cell with an alias is shown.
     static const std::string & getDisplayAliasFormatString();
     static const std::string & defaultDisplayAliasFormatString();
     static void removeDisplayAliasFormatString();
@@ -185,6 +221,9 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter ShowBoundingBox
+    ///
+    /// Mark a highlighted or selected mesh with its bounding box instead
+    /// of colouring the mesh. Applies to new mesh objects.
     static const bool & getShowBoundingBox();
     static const bool & defaultShowBoundingBox();
     static void removeShowBoundingBox();
@@ -195,6 +234,10 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter MaxDeviationExport
+    ///
+    /// Maximum deviation between a shape and the mesh made from it when
+    /// exporting to a mesh file, in mm. Smaller values give finer meshes
+    /// and larger files.
     static const double & getMaxDeviationExport();
     static const double & defaultMaxDeviationExport();
     static void removeMaxDeviationExport();
@@ -205,6 +248,10 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter RenderTriangleLimit
+    ///
+    /// Draw large meshes as points while the view is being moved. The
+    /// value is a power of ten: 5 means meshes of more than 100000
+    /// triangles. 0 or less always draws the triangles.
     static const long & getRenderTriangleLimit();
     static const long & defaultRenderTriangleLimit();
     static void removeRenderTriangleLimit();
@@ -215,6 +262,9 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter CheckNonManifoldPoints
+    ///
+    /// Also look for non-manifold points when the mesh evaluation dialog
+    /// checks for non-manifolds, and remove them on repair.
     static const bool & getCheckNonManifoldPoints();
     static const bool & defaultCheckNonManifoldPoints();
     static void removeCheckNonManifoldPoints();
@@ -225,6 +275,9 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter EnableFoldsCheck
+    ///
+    /// Offer the check for folds on the surface in the mesh evaluation
+    /// dialog, and include it when everything is analysed.
     static const bool & getEnableFoldsCheck();
     static const bool & defaultEnableFoldsCheck();
     static void removeEnableFoldsCheck();
@@ -235,6 +288,9 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter StrictlyDegenerated
+    ///
+    /// Count only faces of zero area as degenerated in the mesh
+    /// evaluation dialog. When off, nearly degenerated faces count too.
     static const bool & getStrictlyDegenerated();
     static const bool & defaultStrictlyDegenerated();
     static void removeStrictlyDegenerated();
@@ -245,6 +301,9 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter SubElementSelection
+    ///
+    /// Select single facets of a mesh when clicking in the 3D view,
+    /// instead of the whole mesh object.
     static const bool & getSubElementSelection();
     static const bool & defaultSubElementSelection();
     static void removeSubElementSelection();

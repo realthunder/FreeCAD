@@ -172,29 +172,35 @@ ReportViewParamsP *instance() {
 // Auto generated code (Tools/params_utils.py:352)
 static const App::ParamRegistry::Registrar _ReportViewParamsRegistrar({
     App::ParamInfo("Gui", "ReportViewParams", "User parameter:BaseApp/Preferences/OutputWindow", "checkShowReportViewOnWarning", "checkShowReportViewOnWarning", App::ParamInfo::Bool, true)
-        .setTitle("check Show Report View On Warning"),
+        .setTitle("Show report view on warning")
+        .setDoc("Bring the report view on screen when a warning arrives."),
     App::ParamInfo("Gui", "ReportViewParams", "User parameter:BaseApp/Preferences/OutputWindow", "checkShowReportViewOnError", "checkShowReportViewOnError", App::ParamInfo::Bool, true)
-        .setTitle("check Show Report View On Error"),
+        .setTitle("Show report view on error")
+        .setDoc("Bring the report view on screen when an error arrives."),
     App::ParamInfo("Gui", "ReportViewParams", "User parameter:BaseApp/Preferences/OutputWindow", "checkShowReportViewOnNormalMessage", "checkShowReportViewOnNormalMessage", App::ParamInfo::Bool, false)
-        .setTitle("check Show Report View On Normal Message"),
+        .setTitle("Show report view on normal message")
+        .setDoc("Bring the report view on screen when a normal message arrives."),
     App::ParamInfo("Gui", "ReportViewParams", "User parameter:BaseApp/Preferences/OutputWindow", "checkShowReportViewOnLogMessage", "checkShowReportViewOnLogMessage", App::ParamInfo::Bool, false)
-        .setTitle("check Show Report View On Log Message"),
+        .setTitle("Show report view on log message")
+        .setDoc("Bring the report view on screen when a log message arrives."),
     App::ParamInfo("Gui", "ReportViewParams", "User parameter:BaseApp/Preferences/OutputWindow", "checkShowReportViewOnCritical", "checkShowReportViewOnCritical", App::ParamInfo::Bool, false)
-        .setTitle("check Show Report View On Critical"),
+        .setTitle("Show report view on critical message")
+        .setDoc("Bring the report view on screen when a critical message arrives."),
     App::ParamInfo("Gui", "ReportViewParams", "User parameter:BaseApp/Preferences/OutputWindow", "checkShowReportTimecode", "checkShowReportTimecode", App::ParamInfo::Bool, true)
-        .setTitle("check Show Report Timecode"),
+        .setTitle("Show time code")
+        .setDoc("Put the time a message arrived in front of each line of the report\n"
+"view."),
     App::ParamInfo("Gui", "ReportViewParams", "User parameter:BaseApp/Preferences/OutputWindow", "LogMessageSize", "LogMessageSize", App::ParamInfo::Int, 0)
-        .setTitle("Log Message Size"),
+        .setTitle("Log Message Size")
+        .setDoc("Largest number of characters of one log message shown in the report\n"
+"view. A longer message is cut off. 0 uses the built-in limit of 2048\n"
+"characters."),
     App::ParamInfo("Gui", "ReportViewParams", "User parameter:BaseApp/Preferences/OutputWindow", "DuplicateWindow", "DuplicateWindow", App::ParamInfo::Int, 3)
         .setTitle("Duplicate Window")
-        .setDoc("How many of the most recently shown lines a new line is compared against\n"
-"before it is shown. A line that repeats any of them is held back instead,\n"
-"and shown once - the first one held, carrying (xN) for the number it\n"
-"stands in for, and clickable to expand the ones that were kept back -\n"
-"when a different line has to be shown or DuplicateTimeout expires.\n"
-"Set to 0 to show every line as it arrives.\n"
-"This affects the Report view only. The log file, the Python console and\n"
-"every other console observer still receive every message."),
+        .setDoc("How many of the most recent lines a new line is compared with. A line\n"
+"that repeats one of them is held back and shown once with a count (xN)\n"
+"that can be clicked to expand. 0 shows every line. Affects the Report\n"
+"view only; the log file and other consoles get every message."),
     App::ParamInfo("Gui", "ReportViewParams", "User parameter:BaseApp/Preferences/OutputWindow", "DuplicateKeyLength", "DuplicateKeyLength", App::ParamInfo::Int, 100)
         .setTitle("Duplicate Key Length")
         .setDoc("How many leading non-digit characters two messages must share to count\n"
@@ -230,7 +236,8 @@ void signalAll() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *ReportViewParams::doccheckShowReportViewOnWarning() {
-    return "";
+    return QT_TRANSLATE_NOOP("ReportViewParams",
+"Bring the report view on screen when a warning arrives.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -257,7 +264,8 @@ void ReportViewParams::removecheckShowReportViewOnWarning() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *ReportViewParams::doccheckShowReportViewOnError() {
-    return "";
+    return QT_TRANSLATE_NOOP("ReportViewParams",
+"Bring the report view on screen when an error arrives.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -284,7 +292,8 @@ void ReportViewParams::removecheckShowReportViewOnError() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *ReportViewParams::doccheckShowReportViewOnNormalMessage() {
-    return "";
+    return QT_TRANSLATE_NOOP("ReportViewParams",
+"Bring the report view on screen when a normal message arrives.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -311,7 +320,8 @@ void ReportViewParams::removecheckShowReportViewOnNormalMessage() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *ReportViewParams::doccheckShowReportViewOnLogMessage() {
-    return "";
+    return QT_TRANSLATE_NOOP("ReportViewParams",
+"Bring the report view on screen when a log message arrives.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -338,7 +348,8 @@ void ReportViewParams::removecheckShowReportViewOnLogMessage() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *ReportViewParams::doccheckShowReportViewOnCritical() {
-    return "";
+    return QT_TRANSLATE_NOOP("ReportViewParams",
+"Bring the report view on screen when a critical message arrives.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -365,7 +376,9 @@ void ReportViewParams::removecheckShowReportViewOnCritical() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *ReportViewParams::doccheckShowReportTimecode() {
-    return "";
+    return QT_TRANSLATE_NOOP("ReportViewParams",
+"Put the time a message arrived in front of each line of the report\n"
+"view.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -392,7 +405,10 @@ void ReportViewParams::removecheckShowReportTimecode() {
 
 // Auto generated code (Tools/params_utils.py:397)
 const char *ReportViewParams::docLogMessageSize() {
-    return "";
+    return QT_TRANSLATE_NOOP("ReportViewParams",
+"Largest number of characters of one log message shown in the report\n"
+"view. A longer message is cut off. 0 uses the built-in limit of 2048\n"
+"characters.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -420,14 +436,10 @@ void ReportViewParams::removeLogMessageSize() {
 // Auto generated code (Tools/params_utils.py:397)
 const char *ReportViewParams::docDuplicateWindow() {
     return QT_TRANSLATE_NOOP("ReportViewParams",
-"How many of the most recently shown lines a new line is compared against\n"
-"before it is shown. A line that repeats any of them is held back instead,\n"
-"and shown once - the first one held, carrying (xN) for the number it\n"
-"stands in for, and clickable to expand the ones that were kept back -\n"
-"when a different line has to be shown or DuplicateTimeout expires.\n"
-"Set to 0 to show every line as it arrives.\n"
-"This affects the Report view only. The log file, the Python console and\n"
-"every other console observer still receive every message.");
+"How many of the most recent lines a new line is compared with. A line\n"
+"that repeats one of them is held back and shown once with a count (xN)\n"
+"that can be clicked to expand. 0 shows every line. Affects the Report\n"
+"view only; the log file and other consoles get every message.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
