@@ -22,6 +22,8 @@
 
 
 #include "PreCompiled.h"
+
+#include <Mod/Sketcher/App/SketcherParams.h>
 #ifndef _PreComp_
 # include <boost/core/ignore_unused.hpp>
 # include <QContextMenuEvent>
@@ -722,7 +724,7 @@ TaskSketcherElements::TaskSketcherElements(ViewProviderSketch* sketchView)
         int size = App::GetApplication()
                        .GetParameterGroupByPath(
                            "User parameter:BaseApp/Preferences/Mod/Sketcher/Elements")
-                       ->GetInt("ElementIconSize", 32);
+                       ->GetInt("ElementIconSize", Sketcher::SketcherParams::defaultElementIconSize());
         size = std::clamp(size, 16, 128);
         ui->elementsWidget->setIconSize(
             QSize(size + ElementIconDelegate::arrowStrip(size), size));

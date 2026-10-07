@@ -22,6 +22,8 @@
 
 #include "PreCompiled.h"
 
+#include <Mod/Sketcher/App/SketcherParams.h>
+
 #include <Gui/ViewParams.h>
 #ifndef _PreComp_
 #include <QApplication>
@@ -155,9 +157,9 @@ struct ToolBarOptions
             "User parameter:BaseApp/Preferences/Mod/Sketcher/Constraints");
         ParameterGrp::handle commands = App::GetApplication().GetParameterGroupByPath(
             "User parameter:BaseApp/Preferences/Mod/Sketcher/Commands");
-        return {constraints->GetBool("UnifiedCoincident", true),
-                constraints->GetBool("AutoHorVer", true),
-                commands->GetBool("UnifiedLineCommands", true)};
+        return {constraints->GetBool("UnifiedCoincident", Sketcher::SketcherParams::defaultUnifiedCoincident()),
+                constraints->GetBool("AutoHorVer", Sketcher::SketcherParams::defaultAutoHorVer()),
+                commands->GetBool("UnifiedLineCommands", Sketcher::SketcherParams::defaultUnifiedLineCommands())};
     }
 
     bool operator==(const ToolBarOptions& other) const
@@ -213,8 +215,8 @@ void SketcherSettings::saveSettings()
     // Dimensioning constraints mode
     ParameterGrp::handle hGrp = App::GetApplication().GetParameterGroupByPath(
         "User parameter:BaseApp/Preferences/Mod/Sketcher/dimensioning");
-    const bool previousSingleTool = hGrp->GetBool("SingleDimensioningTool", true);
-    const bool previousSeparatedTools = hGrp->GetBool("SeparatedDimensioningTools", false);
+    const bool previousSingleTool = hGrp->GetBool("SingleDimensioningTool", Sketcher::SketcherParams::defaultSingleDimensioningTool());
+    const bool previousSeparatedTools = hGrp->GetBool("SeparatedDimensioningTools", Sketcher::SketcherParams::defaultSeparatedDimensioningTools());
     bool singleTool = true;
     bool SeparatedTools = false;
     int index = ui->dimensioningMode->currentIndex();
@@ -306,8 +308,8 @@ void SketcherSettings::loadSettings()
 
     ParameterGrp::handle hGrp = App::GetApplication().GetParameterGroupByPath(
         "User parameter:BaseApp/Preferences/Mod/Sketcher/dimensioning");
-    bool singleTool = hGrp->GetBool("SingleDimensioningTool", true);
-    bool SeparatedTools = hGrp->GetBool("SeparatedDimensioningTools", false);
+    bool singleTool = hGrp->GetBool("SingleDimensioningTool", Sketcher::SketcherParams::defaultSingleDimensioningTool());
+    bool SeparatedTools = hGrp->GetBool("SeparatedDimensioningTools", Sketcher::SketcherParams::defaultSeparatedDimensioningTools());
     int index = SeparatedTools ? (singleTool ? 2 : 1) : 0;
     {
         QSignalBlocker sigblk(ui->dimensioningMode);
@@ -327,8 +329,8 @@ void SketcherSettings::loadSettings()
     ui->radiusDiameterMode->addItem(tr("Diameter"));
     ui->radiusDiameterMode->addItem(tr("Radius"));
 
-    bool Diameter = hGrp->GetBool("DimensioningDiameter", true);
-    bool Radius = hGrp->GetBool("DimensioningRadius", true);
+    bool Diameter = hGrp->GetBool("DimensioningDiameter", Sketcher::SketcherParams::defaultDimensioningDiameter());
+    bool Radius = hGrp->GetBool("DimensioningRadius", Sketcher::SketcherParams::defaultDimensioningRadius());
     index = Diameter ? (Radius ? 0 : 1) : 2;
     ui->radiusDiameterMode->setCurrentIndex(index);
 
@@ -337,8 +339,7 @@ void SketcherSettings::loadSettings()
     ui->autoScaleMode->addItem(tr("Always"));
     ui->autoScaleMode->addItem(tr("Never"));
     ui->autoScaleMode->addItem(tr("When no scale feature is visible"));
-    index = hGrp->GetInt("AutoScaleMode",
-                         static_cast<int>(AutoScaleMode::WhenNoScaleFeatureIsVisible));
+    index = hGrp->GetInt("AutoScaleMode", Sketcher::SketcherParams::defaultAutoScaleMode());
     ui->autoScaleMode->setCurrentIndex(index);
 
     hGrp = App::GetApplication().GetParameterGroupByPath(
@@ -348,7 +349,7 @@ void SketcherSettings::loadSettings()
     ui->ovpVisibility->addItem(tr("Dimensions only"));
     ui->ovpVisibility->addItem(tr("Position and dimensions"));
 
-    index = hGrp->GetInt("OnViewParameterVisibility", 1);
+    index = hGrp->GetInt("OnViewParameterVisibility", Sketcher::SketcherParams::defaultOnViewParameterVisibility());
     ui->ovpVisibility->setCurrentIndex(index);
 }
 
@@ -377,8 +378,8 @@ void SketcherSettings::resetSettingsToDefaults()
     ParameterGrp::handle hGrp = App::GetApplication().GetParameterGroupByPath(
         "User parameter:BaseApp/Preferences/Mod/Sketcher/dimensioning");
     const ToolBarOptions previousToolBars = ToolBarOptions::read();
-    const bool previousSingleTool = hGrp->GetBool("SingleDimensioningTool", true);
-    const bool previousSeparatedTools = hGrp->GetBool("SeparatedDimensioningTools", false);
+    const bool previousSingleTool = hGrp->GetBool("SingleDimensioningTool", Sketcher::SketcherParams::defaultSingleDimensioningTool());
+    const bool previousSeparatedTools = hGrp->GetBool("SeparatedDimensioningTools", Sketcher::SketcherParams::defaultSeparatedDimensioningTools());
 
     // the dimensioning tools on the tool bar
     hGrp->RemoveBool("SingleDimensioningTool");
@@ -401,8 +402,8 @@ void SketcherSettings::resetSettingsToDefaults()
     // the tool bars follow here
     hGrp = App::GetApplication().GetParameterGroupByPath(
         "User parameter:BaseApp/Preferences/Mod/Sketcher/dimensioning");
-    if (previousSingleTool != hGrp->GetBool("SingleDimensioningTool", true)
-        || previousSeparatedTools != hGrp->GetBool("SeparatedDimensioningTools", false)
+    if (previousSingleTool != hGrp->GetBool("SingleDimensioningTool", Sketcher::SketcherParams::defaultSingleDimensioningTool())
+        || previousSeparatedTools != hGrp->GetBool("SeparatedDimensioningTools", Sketcher::SketcherParams::defaultSeparatedDimensioningTools())
         || !(ToolBarOptions::read() == previousToolBars)) {
         reinstallToolBars();
     }
@@ -492,13 +493,13 @@ void SketcherSettingsGrid::loadSettings()
 
     ParameterGrp::handle hGrp = App::GetApplication().GetParameterGroupByPath(
         "User parameter:BaseApp/Preferences/Mod/Sketcher/General");
-    int pattern = hGrp->GetInt("GridLinePattern", 0xffff);
+    int pattern = hGrp->GetInt("GridLinePattern", Sketcher::SketcherParams::defaultGridLinePattern());
     int index = ui->gridLinePattern->findData(QVariant(pattern));
     if (index < 0) {
         index = 1;
     }
     ui->gridLinePattern->setCurrentIndex(index);
-    pattern = hGrp->GetInt("GridDivLinePattern", 0xffff);
+    pattern = hGrp->GetInt("GridDivLinePattern", Sketcher::SketcherParams::defaultGridDivLinePattern());
     index = ui->gridDivLinePattern->findData(QVariant(pattern));
     if (index < 0) {
         index = 0;

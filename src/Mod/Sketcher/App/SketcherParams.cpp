@@ -41,6 +41,7 @@ class SketcherParamsP: public ParameterGrp::ObserverType {
 public:
     ParameterGrp::handle handle;
     std::unordered_map<const char *,void(*)(SketcherParamsP*),App::CStringHasher,App::CStringHasher> funcs;
+    std::vector<ParameterGrp::handle> subHandles;
     bool AutoRecompute;
     bool AutoRemoveRedundants;
     bool ContinuousCreationMode;
@@ -64,12 +65,96 @@ public:
     std::string DimensionalStringFormat;
     bool ShowCursorCoords;
     bool UseSystemDecimals;
+    bool AllowFaceExternalPick;
+    bool ViewBottomOnEdit;
+    bool AdjustCamera;
+    bool FitSketchOnEdit;
+    bool HideDependent;
+    bool ShowLinks;
+    bool ShowSupport;
+    bool RestoreCamera;
+    bool ForceOrtho;
+    bool SectionView;
+    bool AutoConstraints;
+    bool AvoidRedundantAutoconstraints;
+    bool ShowOriginalColor;
+    bool SketchAutoTransparentPick;
+    double ZHeight;
+    long AxisTransparency;
+    unsigned long FaceColor;
+    bool ShowGrid;
+    bool GridAuto;
+    long GridSizePixelThreshold;
+    long GridNumberSubdivision;
+    long GridLinePattern;
+    long GridDivLinePattern;
+    long GridLineWidth;
+    long GridDivLineWidth;
+    unsigned long GridLineColor;
+    unsigned long GridDivLineColor;
+    long GridTransparency;
+    long TopRenderGeometryId;
+    long MidRenderGeometryId;
+    long LowRenderGeometryId;
+    bool BSplineExternalVisible;
+    bool EditDatumInPlace;
+    bool DatumEscapeTakesBack;
+    bool ShowDirectionalAutoConstraintHints;
+    long DragAutoConstraintDelay;
+    bool NotifyConstraintSubstitutions;
+    long EdgeWidth;
+    long EdgePattern;
+    long ConstructionWidth;
+    long ConstructionPattern;
+    long InternalWidth;
+    long InternalPattern;
+    long ExternalWidth;
+    long ExternalPattern;
+    long ExternalDefiningWidth;
+    long ExternalDefiningPattern;
+    long InformationWidth;
+    long InformationPattern;
+    long DimensionalConstraintLineWidth;
+    long DimensionalConstraintLinePattern;
+    long AxisLineWidth;
+    long AxisLinePattern;
+    bool SingleDimensioningTool;
+    bool SeparatedDimensioningTools;
+    bool DimensioningDiameter;
+    bool DimensioningRadius;
+    long AutoScaleMode;
+    long OnViewParameterVisibility;
+    bool UnifiedCoincident;
+    bool AutoHorVer;
+    bool UnifiedLineCommands;
+    bool Snap;
+    bool SnapToObjects;
+    bool SnapToGrid;
+    double SnapAngle;
+    long ElementIconSize;
 
     // Auto generated code (Tools/params_utils.py:254)
     SketcherParamsP() {
         handle = App::GetApplication().GetParameterGroupByPath("User parameter:BaseApp/Preferences/Mod/Sketcher");
         handle->Attach(this);
 
+        subHandles.resize(8);
+        subHandles[0] = handle->GetGroup("General");
+        subHandles[0]->Attach(this);
+        subHandles[1] = handle->GetGroup("View");
+        subHandles[1]->Attach(this);
+        subHandles[2] = handle->GetGroup("dimensioning");
+        subHandles[2]->Attach(this);
+        subHandles[3] = handle->GetGroup("Tools");
+        subHandles[3]->Attach(this);
+        subHandles[4] = handle->GetGroup("Constraints");
+        subHandles[4]->Attach(this);
+        subHandles[5] = handle->GetGroup("Commands");
+        subHandles[5]->Attach(this);
+        subHandles[6] = handle->GetGroup("Snap");
+        subHandles[6]->Attach(this);
+        subHandles[7] = handle->GetGroup("Elements");
+        subHandles[7]->Attach(this);
         AutoRecompute = this->handle->GetBool("AutoRecompute", false);
         funcs["AutoRecompute"] = &SketcherParamsP::updateAutoRecompute;
         AutoRemoveRedundants = this->handle->GetBool("AutoRemoveRedundants", false);
@@ -116,6 +201,140 @@ public:
         funcs["ShowCursorCoords"] = &SketcherParamsP::updateShowCursorCoords;
         UseSystemDecimals = this->handle->GetBool("UseSystemDecimals", true);
         funcs["UseSystemDecimals"] = &SketcherParamsP::updateUseSystemDecimals;
+        AllowFaceExternalPick = this->subHandles[0]->GetBool("AllowFaceExternalPick", true);
+        funcs["AllowFaceExternalPick"] = &SketcherParamsP::updateAllowFaceExternalPick;
+        ViewBottomOnEdit = this->subHandles[0]->GetBool("ViewBottomOnEdit", false);
+        funcs["ViewBottomOnEdit"] = &SketcherParamsP::updateViewBottomOnEdit;
+        AdjustCamera = this->subHandles[0]->GetBool("AdjustCamera", true);
+        funcs["AdjustCamera"] = &SketcherParamsP::updateAdjustCamera;
+        FitSketchOnEdit = this->subHandles[0]->GetBool("FitSketchOnEdit", true);
+        funcs["FitSketchOnEdit"] = &SketcherParamsP::updateFitSketchOnEdit;
+        HideDependent = this->subHandles[0]->GetBool("HideDependent", true);
+        funcs["HideDependent"] = &SketcherParamsP::updateHideDependent;
+        ShowLinks = this->subHandles[0]->GetBool("ShowLinks", true);
+        funcs["ShowLinks"] = &SketcherParamsP::updateShowLinks;
+        ShowSupport = this->subHandles[0]->GetBool("ShowSupport", true);
+        funcs["ShowSupport"] = &SketcherParamsP::updateShowSupport;
+        RestoreCamera = this->subHandles[0]->GetBool("RestoreCamera", true);
+        funcs["RestoreCamera"] = &SketcherParamsP::updateRestoreCamera;
+        ForceOrtho = this->subHandles[0]->GetBool("ForceOrtho", false);
+        funcs["ForceOrtho"] = &SketcherParamsP::updateForceOrtho;
+        SectionView = this->subHandles[0]->GetBool("SectionView", false);
+        funcs["SectionView"] = &SketcherParamsP::updateSectionView;
+        AutoConstraints = this->subHandles[0]->GetBool("AutoConstraints", true);
+        funcs["AutoConstraints"] = &SketcherParamsP::updateAutoConstraints;
+        AvoidRedundantAutoconstraints = this->subHandles[0]->GetBool("AvoidRedundantAutoconstraints", true);
+        funcs["AvoidRedundantAutoconstraints"] = &SketcherParamsP::updateAvoidRedundantAutoconstraints;
+        ShowOriginalColor = this->subHandles[0]->GetBool("ShowOriginalColor", false);
+        funcs["ShowOriginalColor"] = &SketcherParamsP::updateShowOriginalColor;
+        SketchAutoTransparentPick = this->subHandles[0]->GetBool("SketchAutoTransparentPick", false);
+        funcs["SketchAutoTransparentPick"] = &SketcherParamsP::updateSketchAutoTransparentPick;
+        ZHeight = this->subHandles[0]->GetFloat("ZHeight", 1e-06);
+        funcs["ZHeight"] = &SketcherParamsP::updateZHeight;
+        AxisTransparency = this->subHandles[0]->GetInt("AxisTransparency", 30);
+        funcs["AxisTransparency"] = &SketcherParamsP::updateAxisTransparency;
+        FaceColor = this->subHandles[0]->GetUnsigned("FaceColor", 0x54ABFF7F);
+        funcs["FaceColor"] = &SketcherParamsP::updateFaceColor;
+        ShowGrid = this->subHandles[0]->GetBool("ShowGrid", true);
+        funcs["ShowGrid"] = &SketcherParamsP::updateShowGrid;
+        GridAuto = this->subHandles[0]->GetBool("GridAuto", true);
+        funcs["GridAuto"] = &SketcherParamsP::updateGridAuto;
+        GridSizePixelThreshold = this->subHandles[0]->GetInt("GridSizePixelThreshold", 15);
+        funcs["GridSizePixelThreshold"] = &SketcherParamsP::updateGridSizePixelThreshold;
+        GridNumberSubdivision = this->subHandles[0]->GetInt("GridNumberSubdivision", 10);
+        funcs["GridNumberSubdivision"] = &SketcherParamsP::updateGridNumberSubdivision;
+        GridLinePattern = this->subHandles[0]->GetInt("GridLinePattern", 65535);
+        funcs["GridLinePattern"] = &SketcherParamsP::updateGridLinePattern;
+        GridDivLinePattern = this->subHandles[0]->GetInt("GridDivLinePattern", 65535);
+        funcs["GridDivLinePattern"] = &SketcherParamsP::updateGridDivLinePattern;
+        GridLineWidth = this->subHandles[0]->GetInt("GridLineWidth", 1);
+        funcs["GridLineWidth"] = &SketcherParamsP::updateGridLineWidth;
+        GridDivLineWidth = this->subHandles[0]->GetInt("GridDivLineWidth", 2);
+        funcs["GridDivLineWidth"] = &SketcherParamsP::updateGridDivLineWidth;
+        GridLineColor = this->subHandles[0]->GetUnsigned("GridLineColor", 0xB2B2B2FF);
+        funcs["GridLineColor"] = &SketcherParamsP::updateGridLineColor;
+        GridDivLineColor = this->subHandles[0]->GetUnsigned("GridDivLineColor", 0xB2B2B2FF);
+        funcs["GridDivLineColor"] = &SketcherParamsP::updateGridDivLineColor;
+        GridTransparency = this->subHandles[0]->GetInt("GridTransparency", 60);
+        funcs["GridTransparency"] = &SketcherParamsP::updateGridTransparency;
+        TopRenderGeometryId = this->subHandles[0]->GetInt("TopRenderGeometryId", 1);
+        funcs["TopRenderGeometryId"] = &SketcherParamsP::updateTopRenderGeometryId;
+        MidRenderGeometryId = this->subHandles[0]->GetInt("MidRenderGeometryId", 2);
+        funcs["MidRenderGeometryId"] = &SketcherParamsP::updateMidRenderGeometryId;
+        LowRenderGeometryId = this->subHandles[0]->GetInt("LowRenderGeometryId", 3);
+        funcs["LowRenderGeometryId"] = &SketcherParamsP::updateLowRenderGeometryId;
+        BSplineExternalVisible = this->subHandles[0]->GetBool("BSplineExternalVisible", false);
+        funcs["BSplineExternalVisible"] = &SketcherParamsP::updateBSplineExternalVisible;
+        EditDatumInPlace = this->subHandles[0]->GetBool("EditDatumInPlace", true);
+        funcs["EditDatumInPlace"] = &SketcherParamsP::updateEditDatumInPlace;
+        DatumEscapeTakesBack = this->subHandles[0]->GetBool("DatumEscapeTakesBack", false);
+        funcs["DatumEscapeTakesBack"] = &SketcherParamsP::updateDatumEscapeTakesBack;
+        ShowDirectionalAutoConstraintHints = this->subHandles[0]->GetBool("ShowDirectionalAutoConstraintHints", true);
+        funcs["ShowDirectionalAutoConstraintHints"] = &SketcherParamsP::updateShowDirectionalAutoConstraintHints;
+        DragAutoConstraintDelay = this->subHandles[0]->GetInt("DragAutoConstraintDelay", 400);
+        funcs["DragAutoConstraintDelay"] = &SketcherParamsP::updateDragAutoConstraintDelay;
+        NotifyConstraintSubstitutions = this->subHandles[0]->GetBool("NotifyConstraintSubstitutions", true);
+        funcs["NotifyConstraintSubstitutions"] = &SketcherParamsP::updateNotifyConstraintSubstitutions;
+        EdgeWidth = this->subHandles[1]->GetInt("EdgeWidth", 2);
+        funcs["EdgeWidth"] = &SketcherParamsP::updateEdgeWidth;
+        EdgePattern = this->subHandles[1]->GetInt("EdgePattern", 65535);
+        funcs["EdgePattern"] = &SketcherParamsP::updateEdgePattern;
+        ConstructionWidth = this->subHandles[1]->GetInt("ConstructionWidth", 2);
+        funcs["ConstructionWidth"] = &SketcherParamsP::updateConstructionWidth;
+        ConstructionPattern = this->subHandles[1]->GetInt("ConstructionPattern", 64764);
+        funcs["ConstructionPattern"] = &SketcherParamsP::updateConstructionPattern;
+        InternalWidth = this->subHandles[1]->GetInt("InternalWidth", 2);
+        funcs["InternalWidth"] = &SketcherParamsP::updateInternalWidth;
+        InternalPattern = this->subHandles[1]->GetInt("InternalPattern", 64764);
+        funcs["InternalPattern"] = &SketcherParamsP::updateInternalPattern;
+        ExternalWidth = this->subHandles[1]->GetInt("ExternalWidth", 2);
+        funcs["ExternalWidth"] = &SketcherParamsP::updateExternalWidth;
+        ExternalPattern = this->subHandles[1]->GetInt("ExternalPattern", 64764);
+        funcs["ExternalPattern"] = &SketcherParamsP::updateExternalPattern;
+        ExternalDefiningWidth = this->subHandles[1]->GetInt("ExternalDefiningWidth", 2);
+        funcs["ExternalDefiningWidth"] = &SketcherParamsP::updateExternalDefiningWidth;
+        ExternalDefiningPattern = this->subHandles[1]->GetInt("ExternalDefiningPattern", 65535);
+        funcs["ExternalDefiningPattern"] = &SketcherParamsP::updateExternalDefiningPattern;
+        InformationWidth = this->subHandles[1]->GetInt("InformationWidth", 1);
+        funcs["InformationWidth"] = &SketcherParamsP::updateInformationWidth;
+        InformationPattern = this->subHandles[1]->GetInt("InformationPattern", 64764);
+        funcs["InformationPattern"] = &SketcherParamsP::updateInformationPattern;
+        DimensionalConstraintLineWidth = this->subHandles[1]->GetInt("DimensionalConstraintLineWidth", 2);
+        funcs["DimensionalConstraintLineWidth"] = &SketcherParamsP::updateDimensionalConstraintLineWidth;
+        DimensionalConstraintLinePattern = this->subHandles[1]->GetInt("DimensionalConstraintLinePattern", 65535);
+        funcs["DimensionalConstraintLinePattern"] = &SketcherParamsP::updateDimensionalConstraintLinePattern;
+        AxisLineWidth = this->subHandles[1]->GetInt("AxisLineWidth", 2);
+        funcs["AxisLineWidth"] = &SketcherParamsP::updateAxisLineWidth;
+        AxisLinePattern = this->subHandles[1]->GetInt("AxisLinePattern", 65535);
+        funcs["AxisLinePattern"] = &SketcherParamsP::updateAxisLinePattern;
+        SingleDimensioningTool = this->subHandles[2]->GetBool("SingleDimensioningTool", true);
+        funcs["SingleDimensioningTool"] = &SketcherParamsP::updateSingleDimensioningTool;
+        SeparatedDimensioningTools = this->subHandles[2]->GetBool("SeparatedDimensioningTools", false);
+        funcs["SeparatedDimensioningTools"] = &SketcherParamsP::updateSeparatedDimensioningTools;
+        DimensioningDiameter = this->subHandles[2]->GetBool("DimensioningDiameter", true);
+        funcs["DimensioningDiameter"] = &SketcherParamsP::updateDimensioningDiameter;
+        DimensioningRadius = this->subHandles[2]->GetBool("DimensioningRadius", true);
+        funcs["DimensioningRadius"] = &SketcherParamsP::updateDimensioningRadius;
+        AutoScaleMode = this->subHandles[2]->GetInt("AutoScaleMode", 2);
+        funcs["AutoScaleMode"] = &SketcherParamsP::updateAutoScaleMode;
+        OnViewParameterVisibility = this->subHandles[3]->GetInt("OnViewParameterVisibility", 1);
+        funcs["OnViewParameterVisibility"] = &SketcherParamsP::updateOnViewParameterVisibility;
+        UnifiedCoincident = this->subHandles[4]->GetBool("UnifiedCoincident", true);
+        funcs["UnifiedCoincident"] = &SketcherParamsP::updateUnifiedCoincident;
+        AutoHorVer = this->subHandles[4]->GetBool("AutoHorVer", true);
+        funcs["AutoHorVer"] = &SketcherParamsP::updateAutoHorVer;
+        UnifiedLineCommands = this->subHandles[5]->GetBool("UnifiedLineCommands", true);
+        funcs["UnifiedLineCommands"] = &SketcherParamsP::updateUnifiedLineCommands;
+        Snap = this->subHandles[6]->GetBool("Snap", true);
+        funcs["Snap"] = &SketcherParamsP::updateSnap;
+        SnapToObjects = this->subHandles[6]->GetBool("SnapToObjects", true);
+        funcs["SnapToObjects"] = &SketcherParamsP::updateSnapToObjects;
+        SnapToGrid = this->subHandles[6]->GetBool("SnapToGrid", false);
+        funcs["SnapToGrid"] = &SketcherParamsP::updateSnapToGrid;
+        SnapAngle = this->subHandles[6]->GetFloat("SnapAngle", 5.0);
+        funcs["SnapAngle"] = &SketcherParamsP::updateSnapAngle;
+        ElementIconSize = this->subHandles[7]->GetInt("ElementIconSize", 32);
+        funcs["ElementIconSize"] = &SketcherParamsP::updateElementIconSize;
     }
 
     // Auto generated code (Tools/params_utils.py:284)
@@ -223,6 +442,274 @@ public:
     // Auto generated code (Tools/params_utils.py:314)
     static void updateUseSystemDecimals(SketcherParamsP *self) {
         self->UseSystemDecimals = self->handle->GetBool("UseSystemDecimals", true);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateAllowFaceExternalPick(SketcherParamsP *self) {
+        self->AllowFaceExternalPick = self->subHandles[0]->GetBool("AllowFaceExternalPick", true);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateViewBottomOnEdit(SketcherParamsP *self) {
+        self->ViewBottomOnEdit = self->subHandles[0]->GetBool("ViewBottomOnEdit", false);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateAdjustCamera(SketcherParamsP *self) {
+        self->AdjustCamera = self->subHandles[0]->GetBool("AdjustCamera", true);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateFitSketchOnEdit(SketcherParamsP *self) {
+        self->FitSketchOnEdit = self->subHandles[0]->GetBool("FitSketchOnEdit", true);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateHideDependent(SketcherParamsP *self) {
+        self->HideDependent = self->subHandles[0]->GetBool("HideDependent", true);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateShowLinks(SketcherParamsP *self) {
+        self->ShowLinks = self->subHandles[0]->GetBool("ShowLinks", true);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateShowSupport(SketcherParamsP *self) {
+        self->ShowSupport = self->subHandles[0]->GetBool("ShowSupport", true);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateRestoreCamera(SketcherParamsP *self) {
+        self->RestoreCamera = self->subHandles[0]->GetBool("RestoreCamera", true);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateForceOrtho(SketcherParamsP *self) {
+        self->ForceOrtho = self->subHandles[0]->GetBool("ForceOrtho", false);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateSectionView(SketcherParamsP *self) {
+        self->SectionView = self->subHandles[0]->GetBool("SectionView", false);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateAutoConstraints(SketcherParamsP *self) {
+        self->AutoConstraints = self->subHandles[0]->GetBool("AutoConstraints", true);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateAvoidRedundantAutoconstraints(SketcherParamsP *self) {
+        self->AvoidRedundantAutoconstraints = self->subHandles[0]->GetBool("AvoidRedundantAutoconstraints", true);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateShowOriginalColor(SketcherParamsP *self) {
+        self->ShowOriginalColor = self->subHandles[0]->GetBool("ShowOriginalColor", false);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateSketchAutoTransparentPick(SketcherParamsP *self) {
+        self->SketchAutoTransparentPick = self->subHandles[0]->GetBool("SketchAutoTransparentPick", false);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateZHeight(SketcherParamsP *self) {
+        self->ZHeight = self->subHandles[0]->GetFloat("ZHeight", 1e-06);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateAxisTransparency(SketcherParamsP *self) {
+        self->AxisTransparency = self->subHandles[0]->GetInt("AxisTransparency", 30);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateFaceColor(SketcherParamsP *self) {
+        self->FaceColor = self->subHandles[0]->GetUnsigned("FaceColor", 0x54ABFF7F);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateShowGrid(SketcherParamsP *self) {
+        self->ShowGrid = self->subHandles[0]->GetBool("ShowGrid", true);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateGridAuto(SketcherParamsP *self) {
+        self->GridAuto = self->subHandles[0]->GetBool("GridAuto", true);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateGridSizePixelThreshold(SketcherParamsP *self) {
+        self->GridSizePixelThreshold = self->subHandles[0]->GetInt("GridSizePixelThreshold", 15);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateGridNumberSubdivision(SketcherParamsP *self) {
+        self->GridNumberSubdivision = self->subHandles[0]->GetInt("GridNumberSubdivision", 10);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateGridLinePattern(SketcherParamsP *self) {
+        self->GridLinePattern = self->subHandles[0]->GetInt("GridLinePattern", 65535);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateGridDivLinePattern(SketcherParamsP *self) {
+        self->GridDivLinePattern = self->subHandles[0]->GetInt("GridDivLinePattern", 65535);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateGridLineWidth(SketcherParamsP *self) {
+        self->GridLineWidth = self->subHandles[0]->GetInt("GridLineWidth", 1);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateGridDivLineWidth(SketcherParamsP *self) {
+        self->GridDivLineWidth = self->subHandles[0]->GetInt("GridDivLineWidth", 2);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateGridLineColor(SketcherParamsP *self) {
+        self->GridLineColor = self->subHandles[0]->GetUnsigned("GridLineColor", 0xB2B2B2FF);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateGridDivLineColor(SketcherParamsP *self) {
+        self->GridDivLineColor = self->subHandles[0]->GetUnsigned("GridDivLineColor", 0xB2B2B2FF);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateGridTransparency(SketcherParamsP *self) {
+        self->GridTransparency = self->subHandles[0]->GetInt("GridTransparency", 60);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateTopRenderGeometryId(SketcherParamsP *self) {
+        self->TopRenderGeometryId = self->subHandles[0]->GetInt("TopRenderGeometryId", 1);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateMidRenderGeometryId(SketcherParamsP *self) {
+        self->MidRenderGeometryId = self->subHandles[0]->GetInt("MidRenderGeometryId", 2);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateLowRenderGeometryId(SketcherParamsP *self) {
+        self->LowRenderGeometryId = self->subHandles[0]->GetInt("LowRenderGeometryId", 3);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateBSplineExternalVisible(SketcherParamsP *self) {
+        self->BSplineExternalVisible = self->subHandles[0]->GetBool("BSplineExternalVisible", false);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateEditDatumInPlace(SketcherParamsP *self) {
+        self->EditDatumInPlace = self->subHandles[0]->GetBool("EditDatumInPlace", true);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateDatumEscapeTakesBack(SketcherParamsP *self) {
+        self->DatumEscapeTakesBack = self->subHandles[0]->GetBool("DatumEscapeTakesBack", false);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateShowDirectionalAutoConstraintHints(SketcherParamsP *self) {
+        self->ShowDirectionalAutoConstraintHints = self->subHandles[0]->GetBool("ShowDirectionalAutoConstraintHints", true);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateDragAutoConstraintDelay(SketcherParamsP *self) {
+        self->DragAutoConstraintDelay = self->subHandles[0]->GetInt("DragAutoConstraintDelay", 400);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateNotifyConstraintSubstitutions(SketcherParamsP *self) {
+        self->NotifyConstraintSubstitutions = self->subHandles[0]->GetBool("NotifyConstraintSubstitutions", true);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateEdgeWidth(SketcherParamsP *self) {
+        self->EdgeWidth = self->subHandles[1]->GetInt("EdgeWidth", 2);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateEdgePattern(SketcherParamsP *self) {
+        self->EdgePattern = self->subHandles[1]->GetInt("EdgePattern", 65535);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateConstructionWidth(SketcherParamsP *self) {
+        self->ConstructionWidth = self->subHandles[1]->GetInt("ConstructionWidth", 2);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateConstructionPattern(SketcherParamsP *self) {
+        self->ConstructionPattern = self->subHandles[1]->GetInt("ConstructionPattern", 64764);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateInternalWidth(SketcherParamsP *self) {
+        self->InternalWidth = self->subHandles[1]->GetInt("InternalWidth", 2);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateInternalPattern(SketcherParamsP *self) {
+        self->InternalPattern = self->subHandles[1]->GetInt("InternalPattern", 64764);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateExternalWidth(SketcherParamsP *self) {
+        self->ExternalWidth = self->subHandles[1]->GetInt("ExternalWidth", 2);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateExternalPattern(SketcherParamsP *self) {
+        self->ExternalPattern = self->subHandles[1]->GetInt("ExternalPattern", 64764);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateExternalDefiningWidth(SketcherParamsP *self) {
+        self->ExternalDefiningWidth = self->subHandles[1]->GetInt("ExternalDefiningWidth", 2);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateExternalDefiningPattern(SketcherParamsP *self) {
+        self->ExternalDefiningPattern = self->subHandles[1]->GetInt("ExternalDefiningPattern", 65535);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateInformationWidth(SketcherParamsP *self) {
+        self->InformationWidth = self->subHandles[1]->GetInt("InformationWidth", 1);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateInformationPattern(SketcherParamsP *self) {
+        self->InformationPattern = self->subHandles[1]->GetInt("InformationPattern", 64764);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateDimensionalConstraintLineWidth(SketcherParamsP *self) {
+        self->DimensionalConstraintLineWidth = self->subHandles[1]->GetInt("DimensionalConstraintLineWidth", 2);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateDimensionalConstraintLinePattern(SketcherParamsP *self) {
+        self->DimensionalConstraintLinePattern = self->subHandles[1]->GetInt("DimensionalConstraintLinePattern", 65535);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateAxisLineWidth(SketcherParamsP *self) {
+        self->AxisLineWidth = self->subHandles[1]->GetInt("AxisLineWidth", 2);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateAxisLinePattern(SketcherParamsP *self) {
+        self->AxisLinePattern = self->subHandles[1]->GetInt("AxisLinePattern", 65535);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateSingleDimensioningTool(SketcherParamsP *self) {
+        self->SingleDimensioningTool = self->subHandles[2]->GetBool("SingleDimensioningTool", true);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateSeparatedDimensioningTools(SketcherParamsP *self) {
+        self->SeparatedDimensioningTools = self->subHandles[2]->GetBool("SeparatedDimensioningTools", false);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateDimensioningDiameter(SketcherParamsP *self) {
+        self->DimensioningDiameter = self->subHandles[2]->GetBool("DimensioningDiameter", true);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateDimensioningRadius(SketcherParamsP *self) {
+        self->DimensioningRadius = self->subHandles[2]->GetBool("DimensioningRadius", true);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateAutoScaleMode(SketcherParamsP *self) {
+        self->AutoScaleMode = self->subHandles[2]->GetInt("AutoScaleMode", 2);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateOnViewParameterVisibility(SketcherParamsP *self) {
+        self->OnViewParameterVisibility = self->subHandles[3]->GetInt("OnViewParameterVisibility", 1);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateUnifiedCoincident(SketcherParamsP *self) {
+        self->UnifiedCoincident = self->subHandles[4]->GetBool("UnifiedCoincident", true);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateAutoHorVer(SketcherParamsP *self) {
+        self->AutoHorVer = self->subHandles[4]->GetBool("AutoHorVer", true);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateUnifiedLineCommands(SketcherParamsP *self) {
+        self->UnifiedLineCommands = self->subHandles[5]->GetBool("UnifiedLineCommands", true);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateSnap(SketcherParamsP *self) {
+        self->Snap = self->subHandles[6]->GetBool("Snap", true);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateSnapToObjects(SketcherParamsP *self) {
+        self->SnapToObjects = self->subHandles[6]->GetBool("SnapToObjects", true);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateSnapToGrid(SketcherParamsP *self) {
+        self->SnapToGrid = self->subHandles[6]->GetBool("SnapToGrid", false);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateSnapAngle(SketcherParamsP *self) {
+        self->SnapAngle = self->subHandles[6]->GetFloat("SnapAngle", 5.0);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateElementIconSize(SketcherParamsP *self) {
+        self->ElementIconSize = self->subHandles[7]->GetInt("ElementIconSize", 32);
     }
 };
 
@@ -332,6 +819,274 @@ static const App::ParamRegistry::Registrar _SketcherParamsRegistrar({
         .setTitle("Use system decimals for cursor coordinates")
         .setDoc("Show cursor coordinates with the number of decimals of the unit\n"
 "settings instead of a short form. Applies at once."),
+    App::ParamInfo("Sketcher", "SketcherParams", "User parameter:BaseApp/Preferences/Mod/Sketcher/General", "AllowFaceExternalPick", "AllowFaceExternalPick", App::ParamInfo::Bool, true)
+        .setTitle("Allow picking faces as external geometry")
+        .setDoc("Allow picking a face as external geometry. Set in the Edit\n"
+"controls of the sketch task panel; applies at once."),
+    App::ParamInfo("Sketcher", "SketcherParams", "User parameter:BaseApp/Preferences/Mod/Sketcher/General", "ViewBottomOnEdit", "ViewBottomOnEdit", App::ParamInfo::Bool, false)
+        .setTitle("View sketch from bottom")
+        .setDoc("Look at the sketch from below instead of from above when it is\n"
+"edited. Set by the view-sketch-from-bottom commands."),
+    App::ParamInfo("Sketcher", "SketcherParams", "User parameter:BaseApp/Preferences/Mod/Sketcher/General", "AdjustCamera", "AdjustCamera", App::ParamInfo::Bool, true)
+        .setTitle("Adjust camera when a sketch is edited")
+        .setDoc("Turn the camera to face the sketch plane when a sketch is opened\n"
+"for editing. Applies the next time a sketch is edited."),
+    App::ParamInfo("Sketcher", "SketcherParams", "User parameter:BaseApp/Preferences/Mod/Sketcher/General", "FitSketchOnEdit", "FitSketchOnEdit", App::ParamInfo::Bool, true)
+        .setTitle("Fit sketch when it is edited")
+        .setDoc("Fit the view to the sketch's geometry when it is opened for\n"
+"editing. Applies the next time a sketch is edited."),
+    App::ParamInfo("Sketcher", "SketcherParams", "User parameter:BaseApp/Preferences/Mod/Sketcher/General", "HideDependent", "HideDependent", App::ParamInfo::Bool, true)
+        .setTitle("Hide objects depending on the sketch")
+        .setDoc("Hide the objects that depend on a sketch while it is edited, for\n"
+"new sketches."),
+    App::ParamInfo("Sketcher", "SketcherParams", "User parameter:BaseApp/Preferences/Mod/Sketcher/General", "ShowLinks", "ShowLinks", App::ParamInfo::Bool, true)
+        .setTitle("Show objects the sketch links to")
+        .setDoc("Keep the objects a sketch links to visible while it is edited, for\n"
+"new sketches."),
+    App::ParamInfo("Sketcher", "SketcherParams", "User parameter:BaseApp/Preferences/Mod/Sketcher/General", "ShowSupport", "ShowSupport", App::ParamInfo::Bool, true)
+        .setTitle("Show the sketch's support")
+        .setDoc("Keep the object a sketch is attached to visible while it is\n"
+"edited, for new sketches."),
+    App::ParamInfo("Sketcher", "SketcherParams", "User parameter:BaseApp/Preferences/Mod/Sketcher/General", "RestoreCamera", "RestoreCamera", App::ParamInfo::Bool, true)
+        .setTitle("Restore camera when leaving a sketch")
+        .setDoc("Put the camera back where it was when editing of a sketch ends,\n"
+"for new sketches."),
+    App::ParamInfo("Sketcher", "SketcherParams", "User parameter:BaseApp/Preferences/Mod/Sketcher/General", "ForceOrtho", "ForceOrtho", App::ParamInfo::Bool, false)
+        .setTitle("Force orthographic camera in a sketch")
+        .setDoc("Switch the view to an orthographic camera while a sketch is\n"
+"edited, and back afterwards, for new sketches. Needs\n"
+"RestoreCamera."),
+    App::ParamInfo("Sketcher", "SketcherParams", "User parameter:BaseApp/Preferences/Mod/Sketcher/General", "SectionView", "SectionView", App::ParamInfo::Bool, false)
+        .setTitle("Section view in a sketch")
+        .setDoc("Clip everything in front of the sketch plane while a sketch is\n"
+"edited, for new sketches."),
+    App::ParamInfo("Sketcher", "SketcherParams", "User parameter:BaseApp/Preferences/Mod/Sketcher/General", "AutoConstraints", "AutoConstraints", App::ParamInfo::Bool, true)
+        .setTitle("Automatic constraints")
+        .setDoc("Suggest and apply automatic constraints while drawing, for new\n"
+"sketches."),
+    App::ParamInfo("Sketcher", "SketcherParams", "User parameter:BaseApp/Preferences/Mod/Sketcher/General", "AvoidRedundantAutoconstraints", "AvoidRedundantAutoconstraints", App::ParamInfo::Bool, true)
+        .setTitle("Avoid redundant automatic constraints")
+        .setDoc("Do not create automatic constraints that would be redundant, for\n"
+"new sketches."),
+    App::ParamInfo("Sketcher", "SketcherParams", "User parameter:BaseApp/Preferences/Mod/Sketcher/General", "ShowOriginalColor", "ShowOriginalColor", App::ParamInfo::Bool, false)
+        .setTitle("Show original colours while editing")
+        .setDoc("Draw the sketch in its original colours instead of the constraint-\n"
+"status colours while editing. Applies at once."),
+    App::ParamInfo("Sketcher", "SketcherParams", "User parameter:BaseApp/Preferences/Mod/Sketcher/General", "SketchAutoTransparentPick", "SketchAutoTransparentPick", App::ParamInfo::Bool, false)
+        .setTitle("Transparent picking of external geometry")
+        .setDoc("While picking external geometry, make objects transparent to\n"
+"picking so hidden edges can be chosen. Applies at once while the\n"
+"tool is active."),
+    App::ParamInfo("Sketcher", "SketcherParams", "User parameter:BaseApp/Preferences/Mod/Sketcher/General", "ZHeight", "ZHeight", App::ParamInfo::Float, 1e-06)
+        .setTitle("Height step between sketch layers")
+        .setDoc("Height step between the drawing layers of a sketch in edit mode\n"
+"(lines, constraints, points). Raise it if elements flicker through\n"
+"each other. Applies at once."),
+    App::ParamInfo("Sketcher", "SketcherParams", "User parameter:BaseApp/Preferences/Mod/Sketcher/General", "AxisTransparency", "AxisTransparency", App::ParamInfo::Int, 30)
+        .setTitle("Sketch axes transparency")
+        .setDoc("Transparency of the sketch axes in edit mode, in percent. 0 to\n"
+"100. Applies at once."),
+    App::ParamInfo("Sketcher", "SketcherParams", "User parameter:BaseApp/Preferences/Mod/Sketcher/General", "FaceColor", "FaceColor", App::ParamInfo::Hex, 0x54ABFF7F)
+        .setTitle("Internal face colour")
+        .setDoc("Colour and opacity of the faces shown inside a sketch's closed\n"
+"regions. Applies at once to sketches that use automatic colours.")
+        .setProxy("Color")
+        .setTransparency(true),
+    App::ParamInfo("Sketcher", "SketcherParams", "User parameter:BaseApp/Preferences/Mod/Sketcher/General", "ShowGrid", "ShowGrid", App::ParamInfo::Bool, true)
+        .setTitle("Show grid in new sketches")
+        .setDoc("Show a grid in new sketches while they are edited. An existing\n"
+"sketch keeps its own setting."),
+    App::ParamInfo("Sketcher", "SketcherParams", "User parameter:BaseApp/Preferences/Mod/Sketcher/General", "GridAuto", "GridAuto", App::ParamInfo::Bool, true)
+        .setTitle("Automatic grid spacing")
+        .setDoc("Let the grid spacing of new sketches adapt to the zoom level."),
+    App::ParamInfo("Sketcher", "SketcherParams", "User parameter:BaseApp/Preferences/Mod/Sketcher/General", "GridSizePixelThreshold", "GridSizePixelThreshold", App::ParamInfo::Int, 15)
+        .setTitle("Grid pixel threshold")
+        .setDoc("With auto spacing, the smallest distance in pixels between two\n"
+"grid lines before the grid switches to a coarser spacing. 3 to\n"
+"10000. Applies at once."),
+    App::ParamInfo("Sketcher", "SketcherParams", "User parameter:BaseApp/Preferences/Mod/Sketcher/General", "GridNumberSubdivision", "GridNumberSubdivision", App::ParamInfo::Int, 10)
+        .setTitle("Grid subdivisions")
+        .setDoc("Number of grid cells between two major (division) lines. 1 to\n"
+"10000. Applies at once."),
+    App::ParamInfo("Sketcher", "SketcherParams", "User parameter:BaseApp/Preferences/Mod/Sketcher/General", "GridLinePattern", "GridLinePattern", App::ParamInfo::Int, 65535)
+        .setTitle("Minor grid line pattern")
+        .setDoc("Line pattern of the minor grid lines, as a 16 bit stipple mask.\n"
+"Applies at once."),
+    App::ParamInfo("Sketcher", "SketcherParams", "User parameter:BaseApp/Preferences/Mod/Sketcher/General", "GridDivLinePattern", "GridDivLinePattern", App::ParamInfo::Int, 65535)
+        .setTitle("Major grid line pattern")
+        .setDoc("Line pattern of the major grid lines, as a 16 bit stipple mask.\n"
+"Applies at once."),
+    App::ParamInfo("Sketcher", "SketcherParams", "User parameter:BaseApp/Preferences/Mod/Sketcher/General", "GridLineWidth", "GridLineWidth", App::ParamInfo::Int, 1)
+        .setTitle("Minor grid line width")
+        .setDoc("Width of the minor grid lines in pixels. 1 to 99. Applies at once."),
+    App::ParamInfo("Sketcher", "SketcherParams", "User parameter:BaseApp/Preferences/Mod/Sketcher/General", "GridDivLineWidth", "GridDivLineWidth", App::ParamInfo::Int, 2)
+        .setTitle("Major grid line width")
+        .setDoc("Width of the major grid lines in pixels. 1 to 99. Applies at once."),
+    App::ParamInfo("Sketcher", "SketcherParams", "User parameter:BaseApp/Preferences/Mod/Sketcher/General", "GridLineColor", "GridLineColor", App::ParamInfo::Hex, 0xB2B2B2FF)
+        .setTitle("Minor grid line colour")
+        .setDoc("Colour of the minor grid lines. Applies at once.")
+        .setProxy("Color")
+        .setTransparency(true),
+    App::ParamInfo("Sketcher", "SketcherParams", "User parameter:BaseApp/Preferences/Mod/Sketcher/General", "GridDivLineColor", "GridDivLineColor", App::ParamInfo::Hex, 0xB2B2B2FF)
+        .setTitle("Major grid line colour")
+        .setDoc("Colour of the major grid lines. Applies at once.")
+        .setProxy("Color")
+        .setTransparency(true),
+    App::ParamInfo("Sketcher", "SketcherParams", "User parameter:BaseApp/Preferences/Mod/Sketcher/General", "GridTransparency", "GridTransparency", App::ParamInfo::Int, 60)
+        .setTitle("Grid transparency")
+        .setDoc("Transparency of the grid lines in percent, 0 is opaque. 0 to 100.\n"
+"Applies at once."),
+    App::ParamInfo("Sketcher", "SketcherParams", "User parameter:BaseApp/Preferences/Mod/Sketcher/General", "TopRenderGeometryId", "TopRenderGeometryId", App::ParamInfo::Int, 1)
+        .setTitle("Geometry drawn on top")
+        .setDoc("Which kind of geometry is drawn on top in sketch edit mode: 1\n"
+"normal, 2 construction, 3 external. Set by dragging in the\n"
+"Rendering order list; applies at once."),
+    App::ParamInfo("Sketcher", "SketcherParams", "User parameter:BaseApp/Preferences/Mod/Sketcher/General", "MidRenderGeometryId", "MidRenderGeometryId", App::ParamInfo::Int, 2)
+        .setTitle("Geometry drawn in the middle")
+        .setDoc("Which kind of geometry is drawn in the middle: 1 normal, 2\n"
+"construction, 3 external."),
+    App::ParamInfo("Sketcher", "SketcherParams", "User parameter:BaseApp/Preferences/Mod/Sketcher/General", "LowRenderGeometryId", "LowRenderGeometryId", App::ParamInfo::Int, 3)
+        .setTitle("Geometry drawn at the bottom")
+        .setDoc("Which kind of geometry is drawn at the bottom: 1 normal, 2\n"
+"construction, 3 external."),
+    App::ParamInfo("Sketcher", "SketcherParams", "User parameter:BaseApp/Preferences/Mod/Sketcher/General", "BSplineExternalVisible", "BSplineExternalVisible", App::ParamInfo::Bool, false)
+        .setTitle("B-spline information of external geometry")
+        .setDoc("Show the B-spline information overlays for external B-splines too."),
+    App::ParamInfo("Sketcher", "SketcherParams", "User parameter:BaseApp/Preferences/Mod/Sketcher/General", "EditDatumInPlace", "EditDatumInPlace", App::ParamInfo::Bool, true)
+        .setTitle("Edit dimensions at their label")
+        .setDoc("Edit a dimension's value in a field at its label instead of in a\n"
+"dialog. Applies to the next edit."),
+    App::ParamInfo("Sketcher", "SketcherParams", "User parameter:BaseApp/Preferences/Mod/Sketcher/General", "DatumEscapeTakesBack", "DatumEscapeTakesBack", App::ParamInfo::Bool, false)
+        .setTitle("Esc cancels a dimension being typed")
+        .setDoc("Esc cancels the dimension value being typed at a label instead of\n"
+"leaving the field with the value entered."),
+    App::ParamInfo("Sketcher", "SketcherParams", "User parameter:BaseApp/Preferences/Mod/Sketcher/General", "ShowDirectionalAutoConstraintHints", "ShowDirectionalAutoConstraintHints", App::ParamInfo::Bool, true)
+        .setTitle("Show hints for direction constraints")
+        .setDoc("Show helper lines for direction based automatic constraints (line\n"
+"extension, parallel, perpendicular) while drawing. Applies at\n"
+"once."),
+    App::ParamInfo("Sketcher", "SketcherParams", "User parameter:BaseApp/Preferences/Mod/Sketcher/General", "DragAutoConstraintDelay", "DragAutoConstraintDelay", App::ParamInfo::Int, 400)
+        .setTitle("Delay of automatic constraints while dragging")
+        .setDoc("Time in milliseconds the pointer must rest while dragging before\n"
+"an automatic constraint is offered. 0 to 5000."),
+    App::ParamInfo("Sketcher", "SketcherParams", "User parameter:BaseApp/Preferences/Mod/Sketcher/General", "NotifyConstraintSubstitutions", "NotifyConstraintSubstitutions", App::ParamInfo::Bool, true)
+        .setTitle("Notify automatic constraint substitutions")
+        .setDoc("Show a message when the Sketcher replaces constraints\n"
+"automatically, for example a coincident and a tangent by an\n"
+"endpoint tangency."),
+    App::ParamInfo("Sketcher", "SketcherParams", "User parameter:BaseApp/Preferences/Mod/Sketcher/View", "EdgeWidth", "EdgeWidth", App::ParamInfo::Int, 2)
+        .setTitle("Normal geometry line width")
+        .setDoc("Line width of normal geometry in edit mode, in pixels. 1 to 99.\n"
+"Applies at once."),
+    App::ParamInfo("Sketcher", "SketcherParams", "User parameter:BaseApp/Preferences/Mod/Sketcher/View", "EdgePattern", "EdgePattern", App::ParamInfo::Int, 65535)
+        .setTitle("Normal geometry line pattern")
+        .setDoc("Line pattern of normal geometry in edit mode, a 16 bit stipple\n"
+"mask."),
+    App::ParamInfo("Sketcher", "SketcherParams", "User parameter:BaseApp/Preferences/Mod/Sketcher/View", "ConstructionWidth", "ConstructionWidth", App::ParamInfo::Int, 2)
+        .setTitle("Construction geometry line width")
+        .setDoc("Line width of construction geometry in edit mode, in pixels."),
+    App::ParamInfo("Sketcher", "SketcherParams", "User parameter:BaseApp/Preferences/Mod/Sketcher/View", "ConstructionPattern", "ConstructionPattern", App::ParamInfo::Int, 64764)
+        .setTitle("Construction geometry line pattern")
+        .setDoc("Line pattern of construction geometry in edit mode."),
+    App::ParamInfo("Sketcher", "SketcherParams", "User parameter:BaseApp/Preferences/Mod/Sketcher/View", "InternalWidth", "InternalWidth", App::ParamInfo::Int, 2)
+        .setTitle("Internal alignment line width")
+        .setDoc("Line width of internal alignment geometry in edit mode, in pixels."),
+    App::ParamInfo("Sketcher", "SketcherParams", "User parameter:BaseApp/Preferences/Mod/Sketcher/View", "InternalPattern", "InternalPattern", App::ParamInfo::Int, 64764)
+        .setTitle("Internal alignment line pattern")
+        .setDoc("Line pattern of internal alignment geometry in edit mode."),
+    App::ParamInfo("Sketcher", "SketcherParams", "User parameter:BaseApp/Preferences/Mod/Sketcher/View", "ExternalWidth", "ExternalWidth", App::ParamInfo::Int, 2)
+        .setTitle("External geometry line width")
+        .setDoc("Line width of external geometry in edit mode, in pixels."),
+    App::ParamInfo("Sketcher", "SketcherParams", "User parameter:BaseApp/Preferences/Mod/Sketcher/View", "ExternalPattern", "ExternalPattern", App::ParamInfo::Int, 64764)
+        .setTitle("External geometry line pattern")
+        .setDoc("Line pattern of external geometry in edit mode."),
+    App::ParamInfo("Sketcher", "SketcherParams", "User parameter:BaseApp/Preferences/Mod/Sketcher/View", "ExternalDefiningWidth", "ExternalDefiningWidth", App::ParamInfo::Int, 2)
+        .setTitle("Defining external geometry line width")
+        .setDoc("Line width of defining external geometry in edit mode, in pixels."),
+    App::ParamInfo("Sketcher", "SketcherParams", "User parameter:BaseApp/Preferences/Mod/Sketcher/View", "ExternalDefiningPattern", "ExternalDefiningPattern", App::ParamInfo::Int, 65535)
+        .setTitle("Defining external geometry line pattern")
+        .setDoc("Line pattern of defining external geometry in edit mode."),
+    App::ParamInfo("Sketcher", "SketcherParams", "User parameter:BaseApp/Preferences/Mod/Sketcher/View", "InformationWidth", "InformationWidth", App::ParamInfo::Int, 1)
+        .setTitle("Information layer line width")
+        .setDoc("Line width of the information layer (B-spline polygons, combs,\n"
+"hints), in pixels."),
+    App::ParamInfo("Sketcher", "SketcherParams", "User parameter:BaseApp/Preferences/Mod/Sketcher/View", "InformationPattern", "InformationPattern", App::ParamInfo::Int, 64764)
+        .setTitle("Information layer line pattern")
+        .setDoc("Line pattern of the information layer."),
+    App::ParamInfo("Sketcher", "SketcherParams", "User parameter:BaseApp/Preferences/Mod/Sketcher/View", "DimensionalConstraintLineWidth", "DimensionalConstraintLineWidth", App::ParamInfo::Int, 2)
+        .setTitle("Dimensional constraint line width")
+        .setDoc("Line width of dimensional constraints, in pixels. 1 to 4."),
+    App::ParamInfo("Sketcher", "SketcherParams", "User parameter:BaseApp/Preferences/Mod/Sketcher/View", "DimensionalConstraintLinePattern", "DimensionalConstraintLinePattern", App::ParamInfo::Int, 65535)
+        .setTitle("Dimensional constraint line pattern")
+        .setDoc("Line pattern of dimensional constraints."),
+    App::ParamInfo("Sketcher", "SketcherParams", "User parameter:BaseApp/Preferences/Mod/Sketcher/View", "AxisLineWidth", "AxisLineWidth", App::ParamInfo::Int, 2)
+        .setTitle("Sketch axes line width")
+        .setDoc("Line width of the sketch axes in edit mode, in pixels."),
+    App::ParamInfo("Sketcher", "SketcherParams", "User parameter:BaseApp/Preferences/Mod/Sketcher/View", "AxisLinePattern", "AxisLinePattern", App::ParamInfo::Int, 65535)
+        .setTitle("Sketch axes line pattern")
+        .setDoc("Line pattern of the sketch axes in edit mode."),
+    App::ParamInfo("Sketcher", "SketcherParams", "User parameter:BaseApp/Preferences/Mod/Sketcher/dimensioning", "SingleDimensioningTool", "SingleDimensioningTool", App::ParamInfo::Bool, true)
+        .setTitle("Single dimension tool")
+        .setDoc("Put the single Dimension tool on the Sketcher tool bar. Together\n"
+"with the separated tools option this gives the modes Single tool,\n"
+"Separated tools, Both. Tool bars are rebuilt when the page is\n"
+"saved."),
+    App::ParamInfo("Sketcher", "SketcherParams", "User parameter:BaseApp/Preferences/Mod/Sketcher/dimensioning", "SeparatedDimensioningTools", "SeparatedDimensioningTools", App::ParamInfo::Bool, false)
+        .setTitle("Separated dimension tools")
+        .setDoc("Put the separate dimension tools (horizontal, vertical, distance,\n"
+"radius/diameter, angle, lock) on the Sketcher tool bar."),
+    App::ParamInfo("Sketcher", "SketcherParams", "User parameter:BaseApp/Preferences/Mod/Sketcher/dimensioning", "DimensioningDiameter", "DimensioningDiameter", App::ParamInfo::Bool, true)
+        .setTitle("Dimension tool makes diameters")
+        .setDoc("Let the Dimension tool create diameters. With radius also on the\n"
+"tool picks: diameter for circles, radius for arcs."),
+    App::ParamInfo("Sketcher", "SketcherParams", "User parameter:BaseApp/Preferences/Mod/Sketcher/dimensioning", "DimensioningRadius", "DimensioningRadius", App::ParamInfo::Bool, true)
+        .setTitle("Dimension tool makes radii")
+        .setDoc("Let the Dimension tool create radii. With diameter also on the\n"
+"tool picks: diameter for circles, radius for arcs."),
+    App::ParamInfo("Sketcher", "SketcherParams", "User parameter:BaseApp/Preferences/Mod/Sketcher/dimensioning", "AutoScaleMode", "AutoScaleMode", App::ParamInfo::Int, 2)
+        .setTitle("Scale sketch to first dimension")
+        .setDoc("Scale the whole sketch to the value of its first dimension: 0\n"
+"always, 1 never, 2 only when no feature that fixes the scale is\n"
+"visible. Applies to the next dimension."),
+    App::ParamInfo("Sketcher", "SketcherParams", "User parameter:BaseApp/Preferences/Mod/Sketcher/Tools", "OnViewParameterVisibility", "OnViewParameterVisibility", App::ParamInfo::Int, 1)
+        .setTitle("On-view parameters")
+        .setDoc("Which on-view parameters a drawing tool shows at the cursor: 0\n"
+"none, 1 dimensions only, 2 position and dimensions. Applies to the\n"
+"next tool started."),
+    App::ParamInfo("Sketcher", "SketcherParams", "User parameter:BaseApp/Preferences/Mod/Sketcher/Constraints", "UnifiedCoincident", "UnifiedCoincident", App::ParamInfo::Bool, true)
+        .setTitle("Unify coincident and point-on-object")
+        .setDoc("Use one tool for coincident and point-on-object constraints. Tool\n"
+"bars and menus follow when the page is saved; the shortcuts follow\n"
+"after a restart."),
+    App::ParamInfo("Sketcher", "SketcherParams", "User parameter:BaseApp/Preferences/Mod/Sketcher/Constraints", "AutoHorVer", "AutoHorVer", App::ParamInfo::Bool, true)
+        .setTitle("Automatic horizontal or vertical tool")
+        .setDoc("Use one tool that chooses between a horizontal and a vertical\n"
+"constraint. Tool bars follow when the page is saved."),
+    App::ParamInfo("Sketcher", "SketcherParams", "User parameter:BaseApp/Preferences/Mod/Sketcher/Commands", "UnifiedLineCommands", "UnifiedLineCommands", App::ParamInfo::Bool, true)
+        .setTitle("Group line and polyline")
+        .setDoc("Group the polyline and line commands under one tool bar button.\n"
+"Tool bars follow when the page is saved."),
+    App::ParamInfo("Sketcher", "SketcherParams", "User parameter:BaseApp/Preferences/Mod/Sketcher/Snap", "Snap", "Snap", App::ParamInfo::Bool, true)
+        .setTitle("Snap")
+        .setDoc("Master switch for snapping in sketch edit mode. Toggled by the\n"
+"Snap tool bar button; applies at once."),
+    App::ParamInfo("Sketcher", "SketcherParams", "User parameter:BaseApp/Preferences/Mod/Sketcher/Snap", "SnapToObjects", "SnapToObjects", App::ParamInfo::Bool, true)
+        .setTitle("Snap to objects")
+        .setDoc("Snap new points to the preselected object, and to the middle of\n"
+"lines and arcs. Applies at once."),
+    App::ParamInfo("Sketcher", "SketcherParams", "User parameter:BaseApp/Preferences/Mod/Sketcher/Snap", "SnapToGrid", "SnapToGrid", App::ParamInfo::Bool, false)
+        .setTitle("Snap to grid")
+        .setDoc("Snap new points to the nearest grid line when closer than a fifth\n"
+"of the grid spacing. Applies at once."),
+    App::ParamInfo("Sketcher", "SketcherParams", "User parameter:BaseApp/Preferences/Mod/Sketcher/Snap", "SnapAngle", "SnapAngle", App::ParamInfo::Float, 5.0)
+        .setTitle("Snap angle")
+        .setDoc("Angular step in degrees for tools that snap at an angle while Ctrl\n"
+"is held, measured from the sketch's positive X axis. Applies at\n"
+"once."),
+    App::ParamInfo("Sketcher", "SketcherParams", "User parameter:BaseApp/Preferences/Mod/Sketcher/Elements", "ElementIconSize", "ElementIconSize", App::ParamInfo::Int, 32)
+        .setTitle("Element list icon size")
+        .setDoc("Size in pixels of the icons in the element list of the sketch task\n"
+"panel. 16 to 128. Takes effect the next time a sketch is edited."),
 });
 
 // Auto generated code (Tools/params_utils.py:368)
@@ -1008,5 +1763,1942 @@ void SketcherParams::setUseSystemDecimals(const bool &v) {
 // Auto generated code (Tools/params_utils.py:431)
 void SketcherParams::removeUseSystemDecimals() {
     instance()->handle->RemoveBool("UseSystemDecimals");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *SketcherParams::docAllowFaceExternalPick() {
+    return QT_TRANSLATE_NOOP("SketcherParams",
+"Allow picking a face as external geometry. Set in the Edit\n"
+"controls of the sketch task panel; applies at once.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const bool & SketcherParams::getAllowFaceExternalPick() {
+    return instance()->AllowFaceExternalPick;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const bool & SketcherParams::defaultAllowFaceExternalPick() {
+    const static bool def = true;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void SketcherParams::setAllowFaceExternalPick(const bool &v) {
+    instance()->subHandles[0]->SetBool("AllowFaceExternalPick",v);
+    instance()->AllowFaceExternalPick = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void SketcherParams::removeAllowFaceExternalPick() {
+    instance()->subHandles[0]->RemoveBool("AllowFaceExternalPick");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *SketcherParams::docViewBottomOnEdit() {
+    return QT_TRANSLATE_NOOP("SketcherParams",
+"Look at the sketch from below instead of from above when it is\n"
+"edited. Set by the view-sketch-from-bottom commands.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const bool & SketcherParams::getViewBottomOnEdit() {
+    return instance()->ViewBottomOnEdit;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const bool & SketcherParams::defaultViewBottomOnEdit() {
+    const static bool def = false;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void SketcherParams::setViewBottomOnEdit(const bool &v) {
+    instance()->subHandles[0]->SetBool("ViewBottomOnEdit",v);
+    instance()->ViewBottomOnEdit = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void SketcherParams::removeViewBottomOnEdit() {
+    instance()->subHandles[0]->RemoveBool("ViewBottomOnEdit");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *SketcherParams::docAdjustCamera() {
+    return QT_TRANSLATE_NOOP("SketcherParams",
+"Turn the camera to face the sketch plane when a sketch is opened\n"
+"for editing. Applies the next time a sketch is edited.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const bool & SketcherParams::getAdjustCamera() {
+    return instance()->AdjustCamera;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const bool & SketcherParams::defaultAdjustCamera() {
+    const static bool def = true;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void SketcherParams::setAdjustCamera(const bool &v) {
+    instance()->subHandles[0]->SetBool("AdjustCamera",v);
+    instance()->AdjustCamera = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void SketcherParams::removeAdjustCamera() {
+    instance()->subHandles[0]->RemoveBool("AdjustCamera");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *SketcherParams::docFitSketchOnEdit() {
+    return QT_TRANSLATE_NOOP("SketcherParams",
+"Fit the view to the sketch's geometry when it is opened for\n"
+"editing. Applies the next time a sketch is edited.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const bool & SketcherParams::getFitSketchOnEdit() {
+    return instance()->FitSketchOnEdit;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const bool & SketcherParams::defaultFitSketchOnEdit() {
+    const static bool def = true;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void SketcherParams::setFitSketchOnEdit(const bool &v) {
+    instance()->subHandles[0]->SetBool("FitSketchOnEdit",v);
+    instance()->FitSketchOnEdit = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void SketcherParams::removeFitSketchOnEdit() {
+    instance()->subHandles[0]->RemoveBool("FitSketchOnEdit");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *SketcherParams::docHideDependent() {
+    return QT_TRANSLATE_NOOP("SketcherParams",
+"Hide the objects that depend on a sketch while it is edited, for\n"
+"new sketches.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const bool & SketcherParams::getHideDependent() {
+    return instance()->HideDependent;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const bool & SketcherParams::defaultHideDependent() {
+    const static bool def = true;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void SketcherParams::setHideDependent(const bool &v) {
+    instance()->subHandles[0]->SetBool("HideDependent",v);
+    instance()->HideDependent = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void SketcherParams::removeHideDependent() {
+    instance()->subHandles[0]->RemoveBool("HideDependent");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *SketcherParams::docShowLinks() {
+    return QT_TRANSLATE_NOOP("SketcherParams",
+"Keep the objects a sketch links to visible while it is edited, for\n"
+"new sketches.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const bool & SketcherParams::getShowLinks() {
+    return instance()->ShowLinks;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const bool & SketcherParams::defaultShowLinks() {
+    const static bool def = true;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void SketcherParams::setShowLinks(const bool &v) {
+    instance()->subHandles[0]->SetBool("ShowLinks",v);
+    instance()->ShowLinks = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void SketcherParams::removeShowLinks() {
+    instance()->subHandles[0]->RemoveBool("ShowLinks");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *SketcherParams::docShowSupport() {
+    return QT_TRANSLATE_NOOP("SketcherParams",
+"Keep the object a sketch is attached to visible while it is\n"
+"edited, for new sketches.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const bool & SketcherParams::getShowSupport() {
+    return instance()->ShowSupport;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const bool & SketcherParams::defaultShowSupport() {
+    const static bool def = true;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void SketcherParams::setShowSupport(const bool &v) {
+    instance()->subHandles[0]->SetBool("ShowSupport",v);
+    instance()->ShowSupport = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void SketcherParams::removeShowSupport() {
+    instance()->subHandles[0]->RemoveBool("ShowSupport");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *SketcherParams::docRestoreCamera() {
+    return QT_TRANSLATE_NOOP("SketcherParams",
+"Put the camera back where it was when editing of a sketch ends,\n"
+"for new sketches.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const bool & SketcherParams::getRestoreCamera() {
+    return instance()->RestoreCamera;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const bool & SketcherParams::defaultRestoreCamera() {
+    const static bool def = true;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void SketcherParams::setRestoreCamera(const bool &v) {
+    instance()->subHandles[0]->SetBool("RestoreCamera",v);
+    instance()->RestoreCamera = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void SketcherParams::removeRestoreCamera() {
+    instance()->subHandles[0]->RemoveBool("RestoreCamera");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *SketcherParams::docForceOrtho() {
+    return QT_TRANSLATE_NOOP("SketcherParams",
+"Switch the view to an orthographic camera while a sketch is\n"
+"edited, and back afterwards, for new sketches. Needs\n"
+"RestoreCamera.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const bool & SketcherParams::getForceOrtho() {
+    return instance()->ForceOrtho;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const bool & SketcherParams::defaultForceOrtho() {
+    const static bool def = false;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void SketcherParams::setForceOrtho(const bool &v) {
+    instance()->subHandles[0]->SetBool("ForceOrtho",v);
+    instance()->ForceOrtho = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void SketcherParams::removeForceOrtho() {
+    instance()->subHandles[0]->RemoveBool("ForceOrtho");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *SketcherParams::docSectionView() {
+    return QT_TRANSLATE_NOOP("SketcherParams",
+"Clip everything in front of the sketch plane while a sketch is\n"
+"edited, for new sketches.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const bool & SketcherParams::getSectionView() {
+    return instance()->SectionView;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const bool & SketcherParams::defaultSectionView() {
+    const static bool def = false;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void SketcherParams::setSectionView(const bool &v) {
+    instance()->subHandles[0]->SetBool("SectionView",v);
+    instance()->SectionView = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void SketcherParams::removeSectionView() {
+    instance()->subHandles[0]->RemoveBool("SectionView");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *SketcherParams::docAutoConstraints() {
+    return QT_TRANSLATE_NOOP("SketcherParams",
+"Suggest and apply automatic constraints while drawing, for new\n"
+"sketches.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const bool & SketcherParams::getAutoConstraints() {
+    return instance()->AutoConstraints;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const bool & SketcherParams::defaultAutoConstraints() {
+    const static bool def = true;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void SketcherParams::setAutoConstraints(const bool &v) {
+    instance()->subHandles[0]->SetBool("AutoConstraints",v);
+    instance()->AutoConstraints = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void SketcherParams::removeAutoConstraints() {
+    instance()->subHandles[0]->RemoveBool("AutoConstraints");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *SketcherParams::docAvoidRedundantAutoconstraints() {
+    return QT_TRANSLATE_NOOP("SketcherParams",
+"Do not create automatic constraints that would be redundant, for\n"
+"new sketches.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const bool & SketcherParams::getAvoidRedundantAutoconstraints() {
+    return instance()->AvoidRedundantAutoconstraints;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const bool & SketcherParams::defaultAvoidRedundantAutoconstraints() {
+    const static bool def = true;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void SketcherParams::setAvoidRedundantAutoconstraints(const bool &v) {
+    instance()->subHandles[0]->SetBool("AvoidRedundantAutoconstraints",v);
+    instance()->AvoidRedundantAutoconstraints = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void SketcherParams::removeAvoidRedundantAutoconstraints() {
+    instance()->subHandles[0]->RemoveBool("AvoidRedundantAutoconstraints");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *SketcherParams::docShowOriginalColor() {
+    return QT_TRANSLATE_NOOP("SketcherParams",
+"Draw the sketch in its original colours instead of the constraint-\n"
+"status colours while editing. Applies at once.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const bool & SketcherParams::getShowOriginalColor() {
+    return instance()->ShowOriginalColor;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const bool & SketcherParams::defaultShowOriginalColor() {
+    const static bool def = false;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void SketcherParams::setShowOriginalColor(const bool &v) {
+    instance()->subHandles[0]->SetBool("ShowOriginalColor",v);
+    instance()->ShowOriginalColor = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void SketcherParams::removeShowOriginalColor() {
+    instance()->subHandles[0]->RemoveBool("ShowOriginalColor");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *SketcherParams::docSketchAutoTransparentPick() {
+    return QT_TRANSLATE_NOOP("SketcherParams",
+"While picking external geometry, make objects transparent to\n"
+"picking so hidden edges can be chosen. Applies at once while the\n"
+"tool is active.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const bool & SketcherParams::getSketchAutoTransparentPick() {
+    return instance()->SketchAutoTransparentPick;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const bool & SketcherParams::defaultSketchAutoTransparentPick() {
+    const static bool def = false;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void SketcherParams::setSketchAutoTransparentPick(const bool &v) {
+    instance()->subHandles[0]->SetBool("SketchAutoTransparentPick",v);
+    instance()->SketchAutoTransparentPick = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void SketcherParams::removeSketchAutoTransparentPick() {
+    instance()->subHandles[0]->RemoveBool("SketchAutoTransparentPick");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *SketcherParams::docZHeight() {
+    return QT_TRANSLATE_NOOP("SketcherParams",
+"Height step between the drawing layers of a sketch in edit mode\n"
+"(lines, constraints, points). Raise it if elements flicker through\n"
+"each other. Applies at once.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const double & SketcherParams::getZHeight() {
+    return instance()->ZHeight;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const double & SketcherParams::defaultZHeight() {
+    const static double def = 1e-06;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void SketcherParams::setZHeight(const double &v) {
+    instance()->subHandles[0]->SetFloat("ZHeight",v);
+    instance()->ZHeight = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void SketcherParams::removeZHeight() {
+    instance()->subHandles[0]->RemoveFloat("ZHeight");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *SketcherParams::docAxisTransparency() {
+    return QT_TRANSLATE_NOOP("SketcherParams",
+"Transparency of the sketch axes in edit mode, in percent. 0 to\n"
+"100. Applies at once.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const long & SketcherParams::getAxisTransparency() {
+    return instance()->AxisTransparency;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const long & SketcherParams::defaultAxisTransparency() {
+    const static long def = 30;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void SketcherParams::setAxisTransparency(const long &v) {
+    instance()->subHandles[0]->SetInt("AxisTransparency",v);
+    instance()->AxisTransparency = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void SketcherParams::removeAxisTransparency() {
+    instance()->subHandles[0]->RemoveInt("AxisTransparency");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *SketcherParams::docFaceColor() {
+    return QT_TRANSLATE_NOOP("SketcherParams",
+"Colour and opacity of the faces shown inside a sketch's closed\n"
+"regions. Applies at once to sketches that use automatic colours.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const unsigned long & SketcherParams::getFaceColor() {
+    return instance()->FaceColor;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const unsigned long & SketcherParams::defaultFaceColor() {
+    const static unsigned long def = 0x54ABFF7F;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void SketcherParams::setFaceColor(const unsigned long &v) {
+    instance()->subHandles[0]->SetUnsigned("FaceColor",v);
+    instance()->FaceColor = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void SketcherParams::removeFaceColor() {
+    instance()->subHandles[0]->RemoveUnsigned("FaceColor");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *SketcherParams::docShowGrid() {
+    return QT_TRANSLATE_NOOP("SketcherParams",
+"Show a grid in new sketches while they are edited. An existing\n"
+"sketch keeps its own setting.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const bool & SketcherParams::getShowGrid() {
+    return instance()->ShowGrid;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const bool & SketcherParams::defaultShowGrid() {
+    const static bool def = true;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void SketcherParams::setShowGrid(const bool &v) {
+    instance()->subHandles[0]->SetBool("ShowGrid",v);
+    instance()->ShowGrid = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void SketcherParams::removeShowGrid() {
+    instance()->subHandles[0]->RemoveBool("ShowGrid");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *SketcherParams::docGridAuto() {
+    return QT_TRANSLATE_NOOP("SketcherParams",
+"Let the grid spacing of new sketches adapt to the zoom level.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const bool & SketcherParams::getGridAuto() {
+    return instance()->GridAuto;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const bool & SketcherParams::defaultGridAuto() {
+    const static bool def = true;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void SketcherParams::setGridAuto(const bool &v) {
+    instance()->subHandles[0]->SetBool("GridAuto",v);
+    instance()->GridAuto = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void SketcherParams::removeGridAuto() {
+    instance()->subHandles[0]->RemoveBool("GridAuto");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *SketcherParams::docGridSizePixelThreshold() {
+    return QT_TRANSLATE_NOOP("SketcherParams",
+"With auto spacing, the smallest distance in pixels between two\n"
+"grid lines before the grid switches to a coarser spacing. 3 to\n"
+"10000. Applies at once.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const long & SketcherParams::getGridSizePixelThreshold() {
+    return instance()->GridSizePixelThreshold;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const long & SketcherParams::defaultGridSizePixelThreshold() {
+    const static long def = 15;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void SketcherParams::setGridSizePixelThreshold(const long &v) {
+    instance()->subHandles[0]->SetInt("GridSizePixelThreshold",v);
+    instance()->GridSizePixelThreshold = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void SketcherParams::removeGridSizePixelThreshold() {
+    instance()->subHandles[0]->RemoveInt("GridSizePixelThreshold");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *SketcherParams::docGridNumberSubdivision() {
+    return QT_TRANSLATE_NOOP("SketcherParams",
+"Number of grid cells between two major (division) lines. 1 to\n"
+"10000. Applies at once.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const long & SketcherParams::getGridNumberSubdivision() {
+    return instance()->GridNumberSubdivision;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const long & SketcherParams::defaultGridNumberSubdivision() {
+    const static long def = 10;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void SketcherParams::setGridNumberSubdivision(const long &v) {
+    instance()->subHandles[0]->SetInt("GridNumberSubdivision",v);
+    instance()->GridNumberSubdivision = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void SketcherParams::removeGridNumberSubdivision() {
+    instance()->subHandles[0]->RemoveInt("GridNumberSubdivision");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *SketcherParams::docGridLinePattern() {
+    return QT_TRANSLATE_NOOP("SketcherParams",
+"Line pattern of the minor grid lines, as a 16 bit stipple mask.\n"
+"Applies at once.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const long & SketcherParams::getGridLinePattern() {
+    return instance()->GridLinePattern;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const long & SketcherParams::defaultGridLinePattern() {
+    const static long def = 65535;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void SketcherParams::setGridLinePattern(const long &v) {
+    instance()->subHandles[0]->SetInt("GridLinePattern",v);
+    instance()->GridLinePattern = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void SketcherParams::removeGridLinePattern() {
+    instance()->subHandles[0]->RemoveInt("GridLinePattern");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *SketcherParams::docGridDivLinePattern() {
+    return QT_TRANSLATE_NOOP("SketcherParams",
+"Line pattern of the major grid lines, as a 16 bit stipple mask.\n"
+"Applies at once.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const long & SketcherParams::getGridDivLinePattern() {
+    return instance()->GridDivLinePattern;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const long & SketcherParams::defaultGridDivLinePattern() {
+    const static long def = 65535;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void SketcherParams::setGridDivLinePattern(const long &v) {
+    instance()->subHandles[0]->SetInt("GridDivLinePattern",v);
+    instance()->GridDivLinePattern = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void SketcherParams::removeGridDivLinePattern() {
+    instance()->subHandles[0]->RemoveInt("GridDivLinePattern");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *SketcherParams::docGridLineWidth() {
+    return QT_TRANSLATE_NOOP("SketcherParams",
+"Width of the minor grid lines in pixels. 1 to 99. Applies at once.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const long & SketcherParams::getGridLineWidth() {
+    return instance()->GridLineWidth;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const long & SketcherParams::defaultGridLineWidth() {
+    const static long def = 1;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void SketcherParams::setGridLineWidth(const long &v) {
+    instance()->subHandles[0]->SetInt("GridLineWidth",v);
+    instance()->GridLineWidth = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void SketcherParams::removeGridLineWidth() {
+    instance()->subHandles[0]->RemoveInt("GridLineWidth");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *SketcherParams::docGridDivLineWidth() {
+    return QT_TRANSLATE_NOOP("SketcherParams",
+"Width of the major grid lines in pixels. 1 to 99. Applies at once.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const long & SketcherParams::getGridDivLineWidth() {
+    return instance()->GridDivLineWidth;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const long & SketcherParams::defaultGridDivLineWidth() {
+    const static long def = 2;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void SketcherParams::setGridDivLineWidth(const long &v) {
+    instance()->subHandles[0]->SetInt("GridDivLineWidth",v);
+    instance()->GridDivLineWidth = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void SketcherParams::removeGridDivLineWidth() {
+    instance()->subHandles[0]->RemoveInt("GridDivLineWidth");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *SketcherParams::docGridLineColor() {
+    return QT_TRANSLATE_NOOP("SketcherParams",
+"Colour of the minor grid lines. Applies at once.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const unsigned long & SketcherParams::getGridLineColor() {
+    return instance()->GridLineColor;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const unsigned long & SketcherParams::defaultGridLineColor() {
+    const static unsigned long def = 0xB2B2B2FF;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void SketcherParams::setGridLineColor(const unsigned long &v) {
+    instance()->subHandles[0]->SetUnsigned("GridLineColor",v);
+    instance()->GridLineColor = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void SketcherParams::removeGridLineColor() {
+    instance()->subHandles[0]->RemoveUnsigned("GridLineColor");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *SketcherParams::docGridDivLineColor() {
+    return QT_TRANSLATE_NOOP("SketcherParams",
+"Colour of the major grid lines. Applies at once.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const unsigned long & SketcherParams::getGridDivLineColor() {
+    return instance()->GridDivLineColor;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const unsigned long & SketcherParams::defaultGridDivLineColor() {
+    const static unsigned long def = 0xB2B2B2FF;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void SketcherParams::setGridDivLineColor(const unsigned long &v) {
+    instance()->subHandles[0]->SetUnsigned("GridDivLineColor",v);
+    instance()->GridDivLineColor = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void SketcherParams::removeGridDivLineColor() {
+    instance()->subHandles[0]->RemoveUnsigned("GridDivLineColor");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *SketcherParams::docGridTransparency() {
+    return QT_TRANSLATE_NOOP("SketcherParams",
+"Transparency of the grid lines in percent, 0 is opaque. 0 to 100.\n"
+"Applies at once.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const long & SketcherParams::getGridTransparency() {
+    return instance()->GridTransparency;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const long & SketcherParams::defaultGridTransparency() {
+    const static long def = 60;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void SketcherParams::setGridTransparency(const long &v) {
+    instance()->subHandles[0]->SetInt("GridTransparency",v);
+    instance()->GridTransparency = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void SketcherParams::removeGridTransparency() {
+    instance()->subHandles[0]->RemoveInt("GridTransparency");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *SketcherParams::docTopRenderGeometryId() {
+    return QT_TRANSLATE_NOOP("SketcherParams",
+"Which kind of geometry is drawn on top in sketch edit mode: 1\n"
+"normal, 2 construction, 3 external. Set by dragging in the\n"
+"Rendering order list; applies at once.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const long & SketcherParams::getTopRenderGeometryId() {
+    return instance()->TopRenderGeometryId;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const long & SketcherParams::defaultTopRenderGeometryId() {
+    const static long def = 1;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void SketcherParams::setTopRenderGeometryId(const long &v) {
+    instance()->subHandles[0]->SetInt("TopRenderGeometryId",v);
+    instance()->TopRenderGeometryId = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void SketcherParams::removeTopRenderGeometryId() {
+    instance()->subHandles[0]->RemoveInt("TopRenderGeometryId");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *SketcherParams::docMidRenderGeometryId() {
+    return QT_TRANSLATE_NOOP("SketcherParams",
+"Which kind of geometry is drawn in the middle: 1 normal, 2\n"
+"construction, 3 external.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const long & SketcherParams::getMidRenderGeometryId() {
+    return instance()->MidRenderGeometryId;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const long & SketcherParams::defaultMidRenderGeometryId() {
+    const static long def = 2;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void SketcherParams::setMidRenderGeometryId(const long &v) {
+    instance()->subHandles[0]->SetInt("MidRenderGeometryId",v);
+    instance()->MidRenderGeometryId = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void SketcherParams::removeMidRenderGeometryId() {
+    instance()->subHandles[0]->RemoveInt("MidRenderGeometryId");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *SketcherParams::docLowRenderGeometryId() {
+    return QT_TRANSLATE_NOOP("SketcherParams",
+"Which kind of geometry is drawn at the bottom: 1 normal, 2\n"
+"construction, 3 external.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const long & SketcherParams::getLowRenderGeometryId() {
+    return instance()->LowRenderGeometryId;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const long & SketcherParams::defaultLowRenderGeometryId() {
+    const static long def = 3;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void SketcherParams::setLowRenderGeometryId(const long &v) {
+    instance()->subHandles[0]->SetInt("LowRenderGeometryId",v);
+    instance()->LowRenderGeometryId = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void SketcherParams::removeLowRenderGeometryId() {
+    instance()->subHandles[0]->RemoveInt("LowRenderGeometryId");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *SketcherParams::docBSplineExternalVisible() {
+    return QT_TRANSLATE_NOOP("SketcherParams",
+"Show the B-spline information overlays for external B-splines too.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const bool & SketcherParams::getBSplineExternalVisible() {
+    return instance()->BSplineExternalVisible;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const bool & SketcherParams::defaultBSplineExternalVisible() {
+    const static bool def = false;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void SketcherParams::setBSplineExternalVisible(const bool &v) {
+    instance()->subHandles[0]->SetBool("BSplineExternalVisible",v);
+    instance()->BSplineExternalVisible = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void SketcherParams::removeBSplineExternalVisible() {
+    instance()->subHandles[0]->RemoveBool("BSplineExternalVisible");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *SketcherParams::docEditDatumInPlace() {
+    return QT_TRANSLATE_NOOP("SketcherParams",
+"Edit a dimension's value in a field at its label instead of in a\n"
+"dialog. Applies to the next edit.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const bool & SketcherParams::getEditDatumInPlace() {
+    return instance()->EditDatumInPlace;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const bool & SketcherParams::defaultEditDatumInPlace() {
+    const static bool def = true;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void SketcherParams::setEditDatumInPlace(const bool &v) {
+    instance()->subHandles[0]->SetBool("EditDatumInPlace",v);
+    instance()->EditDatumInPlace = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void SketcherParams::removeEditDatumInPlace() {
+    instance()->subHandles[0]->RemoveBool("EditDatumInPlace");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *SketcherParams::docDatumEscapeTakesBack() {
+    return QT_TRANSLATE_NOOP("SketcherParams",
+"Esc cancels the dimension value being typed at a label instead of\n"
+"leaving the field with the value entered.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const bool & SketcherParams::getDatumEscapeTakesBack() {
+    return instance()->DatumEscapeTakesBack;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const bool & SketcherParams::defaultDatumEscapeTakesBack() {
+    const static bool def = false;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void SketcherParams::setDatumEscapeTakesBack(const bool &v) {
+    instance()->subHandles[0]->SetBool("DatumEscapeTakesBack",v);
+    instance()->DatumEscapeTakesBack = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void SketcherParams::removeDatumEscapeTakesBack() {
+    instance()->subHandles[0]->RemoveBool("DatumEscapeTakesBack");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *SketcherParams::docShowDirectionalAutoConstraintHints() {
+    return QT_TRANSLATE_NOOP("SketcherParams",
+"Show helper lines for direction based automatic constraints (line\n"
+"extension, parallel, perpendicular) while drawing. Applies at\n"
+"once.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const bool & SketcherParams::getShowDirectionalAutoConstraintHints() {
+    return instance()->ShowDirectionalAutoConstraintHints;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const bool & SketcherParams::defaultShowDirectionalAutoConstraintHints() {
+    const static bool def = true;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void SketcherParams::setShowDirectionalAutoConstraintHints(const bool &v) {
+    instance()->subHandles[0]->SetBool("ShowDirectionalAutoConstraintHints",v);
+    instance()->ShowDirectionalAutoConstraintHints = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void SketcherParams::removeShowDirectionalAutoConstraintHints() {
+    instance()->subHandles[0]->RemoveBool("ShowDirectionalAutoConstraintHints");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *SketcherParams::docDragAutoConstraintDelay() {
+    return QT_TRANSLATE_NOOP("SketcherParams",
+"Time in milliseconds the pointer must rest while dragging before\n"
+"an automatic constraint is offered. 0 to 5000.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const long & SketcherParams::getDragAutoConstraintDelay() {
+    return instance()->DragAutoConstraintDelay;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const long & SketcherParams::defaultDragAutoConstraintDelay() {
+    const static long def = 400;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void SketcherParams::setDragAutoConstraintDelay(const long &v) {
+    instance()->subHandles[0]->SetInt("DragAutoConstraintDelay",v);
+    instance()->DragAutoConstraintDelay = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void SketcherParams::removeDragAutoConstraintDelay() {
+    instance()->subHandles[0]->RemoveInt("DragAutoConstraintDelay");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *SketcherParams::docNotifyConstraintSubstitutions() {
+    return QT_TRANSLATE_NOOP("SketcherParams",
+"Show a message when the Sketcher replaces constraints\n"
+"automatically, for example a coincident and a tangent by an\n"
+"endpoint tangency.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const bool & SketcherParams::getNotifyConstraintSubstitutions() {
+    return instance()->NotifyConstraintSubstitutions;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const bool & SketcherParams::defaultNotifyConstraintSubstitutions() {
+    const static bool def = true;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void SketcherParams::setNotifyConstraintSubstitutions(const bool &v) {
+    instance()->subHandles[0]->SetBool("NotifyConstraintSubstitutions",v);
+    instance()->NotifyConstraintSubstitutions = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void SketcherParams::removeNotifyConstraintSubstitutions() {
+    instance()->subHandles[0]->RemoveBool("NotifyConstraintSubstitutions");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *SketcherParams::docEdgeWidth() {
+    return QT_TRANSLATE_NOOP("SketcherParams",
+"Line width of normal geometry in edit mode, in pixels. 1 to 99.\n"
+"Applies at once.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const long & SketcherParams::getEdgeWidth() {
+    return instance()->EdgeWidth;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const long & SketcherParams::defaultEdgeWidth() {
+    const static long def = 2;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void SketcherParams::setEdgeWidth(const long &v) {
+    instance()->subHandles[1]->SetInt("EdgeWidth",v);
+    instance()->EdgeWidth = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void SketcherParams::removeEdgeWidth() {
+    instance()->subHandles[1]->RemoveInt("EdgeWidth");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *SketcherParams::docEdgePattern() {
+    return QT_TRANSLATE_NOOP("SketcherParams",
+"Line pattern of normal geometry in edit mode, a 16 bit stipple\n"
+"mask.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const long & SketcherParams::getEdgePattern() {
+    return instance()->EdgePattern;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const long & SketcherParams::defaultEdgePattern() {
+    const static long def = 65535;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void SketcherParams::setEdgePattern(const long &v) {
+    instance()->subHandles[1]->SetInt("EdgePattern",v);
+    instance()->EdgePattern = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void SketcherParams::removeEdgePattern() {
+    instance()->subHandles[1]->RemoveInt("EdgePattern");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *SketcherParams::docConstructionWidth() {
+    return QT_TRANSLATE_NOOP("SketcherParams",
+"Line width of construction geometry in edit mode, in pixels.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const long & SketcherParams::getConstructionWidth() {
+    return instance()->ConstructionWidth;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const long & SketcherParams::defaultConstructionWidth() {
+    const static long def = 2;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void SketcherParams::setConstructionWidth(const long &v) {
+    instance()->subHandles[1]->SetInt("ConstructionWidth",v);
+    instance()->ConstructionWidth = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void SketcherParams::removeConstructionWidth() {
+    instance()->subHandles[1]->RemoveInt("ConstructionWidth");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *SketcherParams::docConstructionPattern() {
+    return QT_TRANSLATE_NOOP("SketcherParams",
+"Line pattern of construction geometry in edit mode.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const long & SketcherParams::getConstructionPattern() {
+    return instance()->ConstructionPattern;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const long & SketcherParams::defaultConstructionPattern() {
+    const static long def = 64764;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void SketcherParams::setConstructionPattern(const long &v) {
+    instance()->subHandles[1]->SetInt("ConstructionPattern",v);
+    instance()->ConstructionPattern = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void SketcherParams::removeConstructionPattern() {
+    instance()->subHandles[1]->RemoveInt("ConstructionPattern");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *SketcherParams::docInternalWidth() {
+    return QT_TRANSLATE_NOOP("SketcherParams",
+"Line width of internal alignment geometry in edit mode, in pixels.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const long & SketcherParams::getInternalWidth() {
+    return instance()->InternalWidth;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const long & SketcherParams::defaultInternalWidth() {
+    const static long def = 2;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void SketcherParams::setInternalWidth(const long &v) {
+    instance()->subHandles[1]->SetInt("InternalWidth",v);
+    instance()->InternalWidth = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void SketcherParams::removeInternalWidth() {
+    instance()->subHandles[1]->RemoveInt("InternalWidth");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *SketcherParams::docInternalPattern() {
+    return QT_TRANSLATE_NOOP("SketcherParams",
+"Line pattern of internal alignment geometry in edit mode.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const long & SketcherParams::getInternalPattern() {
+    return instance()->InternalPattern;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const long & SketcherParams::defaultInternalPattern() {
+    const static long def = 64764;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void SketcherParams::setInternalPattern(const long &v) {
+    instance()->subHandles[1]->SetInt("InternalPattern",v);
+    instance()->InternalPattern = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void SketcherParams::removeInternalPattern() {
+    instance()->subHandles[1]->RemoveInt("InternalPattern");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *SketcherParams::docExternalWidth() {
+    return QT_TRANSLATE_NOOP("SketcherParams",
+"Line width of external geometry in edit mode, in pixels.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const long & SketcherParams::getExternalWidth() {
+    return instance()->ExternalWidth;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const long & SketcherParams::defaultExternalWidth() {
+    const static long def = 2;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void SketcherParams::setExternalWidth(const long &v) {
+    instance()->subHandles[1]->SetInt("ExternalWidth",v);
+    instance()->ExternalWidth = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void SketcherParams::removeExternalWidth() {
+    instance()->subHandles[1]->RemoveInt("ExternalWidth");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *SketcherParams::docExternalPattern() {
+    return QT_TRANSLATE_NOOP("SketcherParams",
+"Line pattern of external geometry in edit mode.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const long & SketcherParams::getExternalPattern() {
+    return instance()->ExternalPattern;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const long & SketcherParams::defaultExternalPattern() {
+    const static long def = 64764;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void SketcherParams::setExternalPattern(const long &v) {
+    instance()->subHandles[1]->SetInt("ExternalPattern",v);
+    instance()->ExternalPattern = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void SketcherParams::removeExternalPattern() {
+    instance()->subHandles[1]->RemoveInt("ExternalPattern");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *SketcherParams::docExternalDefiningWidth() {
+    return QT_TRANSLATE_NOOP("SketcherParams",
+"Line width of defining external geometry in edit mode, in pixels.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const long & SketcherParams::getExternalDefiningWidth() {
+    return instance()->ExternalDefiningWidth;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const long & SketcherParams::defaultExternalDefiningWidth() {
+    const static long def = 2;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void SketcherParams::setExternalDefiningWidth(const long &v) {
+    instance()->subHandles[1]->SetInt("ExternalDefiningWidth",v);
+    instance()->ExternalDefiningWidth = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void SketcherParams::removeExternalDefiningWidth() {
+    instance()->subHandles[1]->RemoveInt("ExternalDefiningWidth");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *SketcherParams::docExternalDefiningPattern() {
+    return QT_TRANSLATE_NOOP("SketcherParams",
+"Line pattern of defining external geometry in edit mode.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const long & SketcherParams::getExternalDefiningPattern() {
+    return instance()->ExternalDefiningPattern;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const long & SketcherParams::defaultExternalDefiningPattern() {
+    const static long def = 65535;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void SketcherParams::setExternalDefiningPattern(const long &v) {
+    instance()->subHandles[1]->SetInt("ExternalDefiningPattern",v);
+    instance()->ExternalDefiningPattern = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void SketcherParams::removeExternalDefiningPattern() {
+    instance()->subHandles[1]->RemoveInt("ExternalDefiningPattern");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *SketcherParams::docInformationWidth() {
+    return QT_TRANSLATE_NOOP("SketcherParams",
+"Line width of the information layer (B-spline polygons, combs,\n"
+"hints), in pixels.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const long & SketcherParams::getInformationWidth() {
+    return instance()->InformationWidth;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const long & SketcherParams::defaultInformationWidth() {
+    const static long def = 1;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void SketcherParams::setInformationWidth(const long &v) {
+    instance()->subHandles[1]->SetInt("InformationWidth",v);
+    instance()->InformationWidth = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void SketcherParams::removeInformationWidth() {
+    instance()->subHandles[1]->RemoveInt("InformationWidth");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *SketcherParams::docInformationPattern() {
+    return QT_TRANSLATE_NOOP("SketcherParams",
+"Line pattern of the information layer.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const long & SketcherParams::getInformationPattern() {
+    return instance()->InformationPattern;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const long & SketcherParams::defaultInformationPattern() {
+    const static long def = 64764;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void SketcherParams::setInformationPattern(const long &v) {
+    instance()->subHandles[1]->SetInt("InformationPattern",v);
+    instance()->InformationPattern = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void SketcherParams::removeInformationPattern() {
+    instance()->subHandles[1]->RemoveInt("InformationPattern");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *SketcherParams::docDimensionalConstraintLineWidth() {
+    return QT_TRANSLATE_NOOP("SketcherParams",
+"Line width of dimensional constraints, in pixels. 1 to 4.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const long & SketcherParams::getDimensionalConstraintLineWidth() {
+    return instance()->DimensionalConstraintLineWidth;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const long & SketcherParams::defaultDimensionalConstraintLineWidth() {
+    const static long def = 2;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void SketcherParams::setDimensionalConstraintLineWidth(const long &v) {
+    instance()->subHandles[1]->SetInt("DimensionalConstraintLineWidth",v);
+    instance()->DimensionalConstraintLineWidth = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void SketcherParams::removeDimensionalConstraintLineWidth() {
+    instance()->subHandles[1]->RemoveInt("DimensionalConstraintLineWidth");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *SketcherParams::docDimensionalConstraintLinePattern() {
+    return QT_TRANSLATE_NOOP("SketcherParams",
+"Line pattern of dimensional constraints.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const long & SketcherParams::getDimensionalConstraintLinePattern() {
+    return instance()->DimensionalConstraintLinePattern;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const long & SketcherParams::defaultDimensionalConstraintLinePattern() {
+    const static long def = 65535;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void SketcherParams::setDimensionalConstraintLinePattern(const long &v) {
+    instance()->subHandles[1]->SetInt("DimensionalConstraintLinePattern",v);
+    instance()->DimensionalConstraintLinePattern = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void SketcherParams::removeDimensionalConstraintLinePattern() {
+    instance()->subHandles[1]->RemoveInt("DimensionalConstraintLinePattern");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *SketcherParams::docAxisLineWidth() {
+    return QT_TRANSLATE_NOOP("SketcherParams",
+"Line width of the sketch axes in edit mode, in pixels.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const long & SketcherParams::getAxisLineWidth() {
+    return instance()->AxisLineWidth;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const long & SketcherParams::defaultAxisLineWidth() {
+    const static long def = 2;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void SketcherParams::setAxisLineWidth(const long &v) {
+    instance()->subHandles[1]->SetInt("AxisLineWidth",v);
+    instance()->AxisLineWidth = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void SketcherParams::removeAxisLineWidth() {
+    instance()->subHandles[1]->RemoveInt("AxisLineWidth");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *SketcherParams::docAxisLinePattern() {
+    return QT_TRANSLATE_NOOP("SketcherParams",
+"Line pattern of the sketch axes in edit mode.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const long & SketcherParams::getAxisLinePattern() {
+    return instance()->AxisLinePattern;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const long & SketcherParams::defaultAxisLinePattern() {
+    const static long def = 65535;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void SketcherParams::setAxisLinePattern(const long &v) {
+    instance()->subHandles[1]->SetInt("AxisLinePattern",v);
+    instance()->AxisLinePattern = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void SketcherParams::removeAxisLinePattern() {
+    instance()->subHandles[1]->RemoveInt("AxisLinePattern");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *SketcherParams::docSingleDimensioningTool() {
+    return QT_TRANSLATE_NOOP("SketcherParams",
+"Put the single Dimension tool on the Sketcher tool bar. Together\n"
+"with the separated tools option this gives the modes Single tool,\n"
+"Separated tools, Both. Tool bars are rebuilt when the page is\n"
+"saved.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const bool & SketcherParams::getSingleDimensioningTool() {
+    return instance()->SingleDimensioningTool;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const bool & SketcherParams::defaultSingleDimensioningTool() {
+    const static bool def = true;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void SketcherParams::setSingleDimensioningTool(const bool &v) {
+    instance()->subHandles[2]->SetBool("SingleDimensioningTool",v);
+    instance()->SingleDimensioningTool = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void SketcherParams::removeSingleDimensioningTool() {
+    instance()->subHandles[2]->RemoveBool("SingleDimensioningTool");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *SketcherParams::docSeparatedDimensioningTools() {
+    return QT_TRANSLATE_NOOP("SketcherParams",
+"Put the separate dimension tools (horizontal, vertical, distance,\n"
+"radius/diameter, angle, lock) on the Sketcher tool bar.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const bool & SketcherParams::getSeparatedDimensioningTools() {
+    return instance()->SeparatedDimensioningTools;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const bool & SketcherParams::defaultSeparatedDimensioningTools() {
+    const static bool def = false;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void SketcherParams::setSeparatedDimensioningTools(const bool &v) {
+    instance()->subHandles[2]->SetBool("SeparatedDimensioningTools",v);
+    instance()->SeparatedDimensioningTools = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void SketcherParams::removeSeparatedDimensioningTools() {
+    instance()->subHandles[2]->RemoveBool("SeparatedDimensioningTools");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *SketcherParams::docDimensioningDiameter() {
+    return QT_TRANSLATE_NOOP("SketcherParams",
+"Let the Dimension tool create diameters. With radius also on the\n"
+"tool picks: diameter for circles, radius for arcs.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const bool & SketcherParams::getDimensioningDiameter() {
+    return instance()->DimensioningDiameter;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const bool & SketcherParams::defaultDimensioningDiameter() {
+    const static bool def = true;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void SketcherParams::setDimensioningDiameter(const bool &v) {
+    instance()->subHandles[2]->SetBool("DimensioningDiameter",v);
+    instance()->DimensioningDiameter = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void SketcherParams::removeDimensioningDiameter() {
+    instance()->subHandles[2]->RemoveBool("DimensioningDiameter");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *SketcherParams::docDimensioningRadius() {
+    return QT_TRANSLATE_NOOP("SketcherParams",
+"Let the Dimension tool create radii. With diameter also on the\n"
+"tool picks: diameter for circles, radius for arcs.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const bool & SketcherParams::getDimensioningRadius() {
+    return instance()->DimensioningRadius;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const bool & SketcherParams::defaultDimensioningRadius() {
+    const static bool def = true;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void SketcherParams::setDimensioningRadius(const bool &v) {
+    instance()->subHandles[2]->SetBool("DimensioningRadius",v);
+    instance()->DimensioningRadius = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void SketcherParams::removeDimensioningRadius() {
+    instance()->subHandles[2]->RemoveBool("DimensioningRadius");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *SketcherParams::docAutoScaleMode() {
+    return QT_TRANSLATE_NOOP("SketcherParams",
+"Scale the whole sketch to the value of its first dimension: 0\n"
+"always, 1 never, 2 only when no feature that fixes the scale is\n"
+"visible. Applies to the next dimension.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const long & SketcherParams::getAutoScaleMode() {
+    return instance()->AutoScaleMode;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const long & SketcherParams::defaultAutoScaleMode() {
+    const static long def = 2;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void SketcherParams::setAutoScaleMode(const long &v) {
+    instance()->subHandles[2]->SetInt("AutoScaleMode",v);
+    instance()->AutoScaleMode = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void SketcherParams::removeAutoScaleMode() {
+    instance()->subHandles[2]->RemoveInt("AutoScaleMode");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *SketcherParams::docOnViewParameterVisibility() {
+    return QT_TRANSLATE_NOOP("SketcherParams",
+"Which on-view parameters a drawing tool shows at the cursor: 0\n"
+"none, 1 dimensions only, 2 position and dimensions. Applies to the\n"
+"next tool started.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const long & SketcherParams::getOnViewParameterVisibility() {
+    return instance()->OnViewParameterVisibility;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const long & SketcherParams::defaultOnViewParameterVisibility() {
+    const static long def = 1;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void SketcherParams::setOnViewParameterVisibility(const long &v) {
+    instance()->subHandles[3]->SetInt("OnViewParameterVisibility",v);
+    instance()->OnViewParameterVisibility = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void SketcherParams::removeOnViewParameterVisibility() {
+    instance()->subHandles[3]->RemoveInt("OnViewParameterVisibility");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *SketcherParams::docUnifiedCoincident() {
+    return QT_TRANSLATE_NOOP("SketcherParams",
+"Use one tool for coincident and point-on-object constraints. Tool\n"
+"bars and menus follow when the page is saved; the shortcuts follow\n"
+"after a restart.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const bool & SketcherParams::getUnifiedCoincident() {
+    return instance()->UnifiedCoincident;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const bool & SketcherParams::defaultUnifiedCoincident() {
+    const static bool def = true;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void SketcherParams::setUnifiedCoincident(const bool &v) {
+    instance()->subHandles[4]->SetBool("UnifiedCoincident",v);
+    instance()->UnifiedCoincident = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void SketcherParams::removeUnifiedCoincident() {
+    instance()->subHandles[4]->RemoveBool("UnifiedCoincident");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *SketcherParams::docAutoHorVer() {
+    return QT_TRANSLATE_NOOP("SketcherParams",
+"Use one tool that chooses between a horizontal and a vertical\n"
+"constraint. Tool bars follow when the page is saved.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const bool & SketcherParams::getAutoHorVer() {
+    return instance()->AutoHorVer;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const bool & SketcherParams::defaultAutoHorVer() {
+    const static bool def = true;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void SketcherParams::setAutoHorVer(const bool &v) {
+    instance()->subHandles[4]->SetBool("AutoHorVer",v);
+    instance()->AutoHorVer = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void SketcherParams::removeAutoHorVer() {
+    instance()->subHandles[4]->RemoveBool("AutoHorVer");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *SketcherParams::docUnifiedLineCommands() {
+    return QT_TRANSLATE_NOOP("SketcherParams",
+"Group the polyline and line commands under one tool bar button.\n"
+"Tool bars follow when the page is saved.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const bool & SketcherParams::getUnifiedLineCommands() {
+    return instance()->UnifiedLineCommands;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const bool & SketcherParams::defaultUnifiedLineCommands() {
+    const static bool def = true;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void SketcherParams::setUnifiedLineCommands(const bool &v) {
+    instance()->subHandles[5]->SetBool("UnifiedLineCommands",v);
+    instance()->UnifiedLineCommands = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void SketcherParams::removeUnifiedLineCommands() {
+    instance()->subHandles[5]->RemoveBool("UnifiedLineCommands");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *SketcherParams::docSnap() {
+    return QT_TRANSLATE_NOOP("SketcherParams",
+"Master switch for snapping in sketch edit mode. Toggled by the\n"
+"Snap tool bar button; applies at once.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const bool & SketcherParams::getSnap() {
+    return instance()->Snap;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const bool & SketcherParams::defaultSnap() {
+    const static bool def = true;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void SketcherParams::setSnap(const bool &v) {
+    instance()->subHandles[6]->SetBool("Snap",v);
+    instance()->Snap = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void SketcherParams::removeSnap() {
+    instance()->subHandles[6]->RemoveBool("Snap");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *SketcherParams::docSnapToObjects() {
+    return QT_TRANSLATE_NOOP("SketcherParams",
+"Snap new points to the preselected object, and to the middle of\n"
+"lines and arcs. Applies at once.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const bool & SketcherParams::getSnapToObjects() {
+    return instance()->SnapToObjects;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const bool & SketcherParams::defaultSnapToObjects() {
+    const static bool def = true;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void SketcherParams::setSnapToObjects(const bool &v) {
+    instance()->subHandles[6]->SetBool("SnapToObjects",v);
+    instance()->SnapToObjects = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void SketcherParams::removeSnapToObjects() {
+    instance()->subHandles[6]->RemoveBool("SnapToObjects");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *SketcherParams::docSnapToGrid() {
+    return QT_TRANSLATE_NOOP("SketcherParams",
+"Snap new points to the nearest grid line when closer than a fifth\n"
+"of the grid spacing. Applies at once.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const bool & SketcherParams::getSnapToGrid() {
+    return instance()->SnapToGrid;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const bool & SketcherParams::defaultSnapToGrid() {
+    const static bool def = false;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void SketcherParams::setSnapToGrid(const bool &v) {
+    instance()->subHandles[6]->SetBool("SnapToGrid",v);
+    instance()->SnapToGrid = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void SketcherParams::removeSnapToGrid() {
+    instance()->subHandles[6]->RemoveBool("SnapToGrid");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *SketcherParams::docSnapAngle() {
+    return QT_TRANSLATE_NOOP("SketcherParams",
+"Angular step in degrees for tools that snap at an angle while Ctrl\n"
+"is held, measured from the sketch's positive X axis. Applies at\n"
+"once.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const double & SketcherParams::getSnapAngle() {
+    return instance()->SnapAngle;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const double & SketcherParams::defaultSnapAngle() {
+    const static double def = 5.0;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void SketcherParams::setSnapAngle(const double &v) {
+    instance()->subHandles[6]->SetFloat("SnapAngle",v);
+    instance()->SnapAngle = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void SketcherParams::removeSnapAngle() {
+    instance()->subHandles[6]->RemoveFloat("SnapAngle");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *SketcherParams::docElementIconSize() {
+    return QT_TRANSLATE_NOOP("SketcherParams",
+"Size in pixels of the icons in the element list of the sketch task\n"
+"panel. 16 to 128. Takes effect the next time a sketch is edited.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const long & SketcherParams::getElementIconSize() {
+    return instance()->ElementIconSize;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const long & SketcherParams::defaultElementIconSize() {
+    const static long def = 32;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void SketcherParams::setElementIconSize(const long &v) {
+    instance()->subHandles[7]->SetInt("ElementIconSize",v);
+    instance()->ElementIconSize = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void SketcherParams::removeElementIconSize() {
+    instance()->subHandles[7]->RemoveInt("ElementIconSize");
 }
 //[[[end]]]

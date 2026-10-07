@@ -1,15 +1,18 @@
 """The settings of the Sketcher's own group are listed, and a new sketch still takes them.
 
-Twenty-three keys of Preferences/Mod/Sketcher are behind
-Sketcher::SketcherParams (docs/HandsOnQueue.md entry 24): the continue
-modes, the dialog after a dimension, what a new sketch starts with (internal
-faces, arc fitting, B-splines of external geometry, the history level), the
-constraint list's switches, and how dimensions and cursor coordinates are
-written. Its sub-groups (General, View, Snap, SolverAdvanced, ...) are not
-done yet. The Sketcher's pages are held to the definitions by
-preferences-ok-keeps-defaults.py, which named one of them: "Use system
-decimals" is on to the program and was shown off by the Display page, and
-OK stored off.
+Ninety keys of Preferences/Mod/Sketcher and its sub-groups are behind
+Sketcher::SketcherParams (docs/HandsOnQueue.md entry 24). Of the group
+itself: the continue modes, the dialog after a dimension, what a new sketch
+starts with (internal faces, arc fitting, B-splines of external geometry,
+the history level), the constraint list's switches, and how dimensions and
+cursor coordinates are written. Of the sub-groups: the edit view and the
+grid (General), the line styles (View), the dimension tools, the tool bar
+choices, snapping. SolverAdvanced and the keys the Sketcher keeps in
+Preferences/View are not done yet. The Sketcher's pages are held to the
+definitions by preferences-ok-keeps-defaults.py, which named two of them:
+"Use system decimals" is on to the program and was shown off by the
+Display page, and OK stored off; the internal face colour was one step
+more opaque on the Appearance page than the program draws it.
 
 Claims:
 
@@ -19,7 +22,11 @@ Claims:
   - a sketch made with "generate internal faces" stored off has
     MakeInternals off, one made without the key has it on;
   - a sketch made with the external B-spline degree stored as 3 has that
-    degree, one made without the key has 5.
+    degree, one made without the key has 5;
+  - "/param snap to grid" lists the snap switch of the sub-group Snap, and
+    "/param grid transparency" the grid's of the sub-group General;
+  - a sketch made with "show grid" stored off shows none, one made without
+    the key shows it.
 
 Scored against the tree before the change: see the commit message.
 """
@@ -80,9 +87,11 @@ def param_rows(query):
 
 def run():
     group = FreeCAD.ParamGet(PREFS + "Mod/Sketcher")
+    general = FreeCAD.ParamGet(PREFS + "Mod/Sketcher/General")
     doc = None
     try:
         import Sketcher  # noqa: F401  the module registers its settings when it is loaded
+        import SketcherGui  # noqa: F401
         settle(0.5)
 
         rows = param_rows("geometry creation continue mode")
@@ -110,9 +119,26 @@ def run():
         five = doc.addObject("Sketcher::SketchObject", "SketchDegree5").ExternalBSplineMaxDegree
         check("a sketch made with the external B-spline degree stored as 3 has 3, one made without the key 5",
               three == 3 and five == 5, (three, five))
+
+        rows = param_rows("snap to grid")
+        check("the omni search lists the snap to grid switch",
+              any(r.endswith("Mod/Sketcher/Snap/SnapToGrid") for r in rows), rows[:6])
+        rows = param_rows("grid transparency")
+        check("and the grid's transparency", any(r.endswith("Mod/Sketcher/General/GridTransparency") for r in rows),
+              rows[:6])
+
+        general.SetBool("ShowGrid", False)
+        settle(0.2)
+        hidden = doc.addObject("Sketcher::SketchObject", "SketchNoGrid").ViewObject.ShowGrid
+        general.RemBool("ShowGrid")
+        settle(0.2)
+        shown = doc.addObject("Sketcher::SketchObject", "SketchGrid").ViewObject.ShowGrid
+        check("a sketch made with the grid stored off shows none, one made without the key shows it",
+              hidden is False and shown is True, (hidden, shown))
     except Exception:
         note("FAIL the test ran | " + traceback.format_exc().replace("\n", " | "))
     finally:
+        general.RemBool("ShowGrid")
         group.RemBool("MakeInternals")
         group.RemInt("ExternalBSplineMaxDegree")
         if doc is not None:

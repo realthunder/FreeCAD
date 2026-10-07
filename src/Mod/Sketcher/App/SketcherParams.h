@@ -373,6 +373,871 @@ public:
     static const char *docUseSystemDecimals();
     //@}
 
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter AllowFaceExternalPick
+    ///
+    /// Allow picking a face as external geometry. Set in the Edit
+    /// controls of the sketch task panel; applies at once.
+    static const bool & getAllowFaceExternalPick();
+    static const bool & defaultAllowFaceExternalPick();
+    static void removeAllowFaceExternalPick();
+    static void setAllowFaceExternalPick(const bool &v);
+    static const char *docAllowFaceExternalPick();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter ViewBottomOnEdit
+    ///
+    /// Look at the sketch from below instead of from above when it is
+    /// edited. Set by the view-sketch-from-bottom commands.
+    static const bool & getViewBottomOnEdit();
+    static const bool & defaultViewBottomOnEdit();
+    static void removeViewBottomOnEdit();
+    static void setViewBottomOnEdit(const bool &v);
+    static const char *docViewBottomOnEdit();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter AdjustCamera
+    ///
+    /// Turn the camera to face the sketch plane when a sketch is opened
+    /// for editing. Applies the next time a sketch is edited.
+    static const bool & getAdjustCamera();
+    static const bool & defaultAdjustCamera();
+    static void removeAdjustCamera();
+    static void setAdjustCamera(const bool &v);
+    static const char *docAdjustCamera();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter FitSketchOnEdit
+    ///
+    /// Fit the view to the sketch's geometry when it is opened for
+    /// editing. Applies the next time a sketch is edited.
+    static const bool & getFitSketchOnEdit();
+    static const bool & defaultFitSketchOnEdit();
+    static void removeFitSketchOnEdit();
+    static void setFitSketchOnEdit(const bool &v);
+    static const char *docFitSketchOnEdit();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter HideDependent
+    ///
+    /// Hide the objects that depend on a sketch while it is edited, for
+    /// new sketches.
+    static const bool & getHideDependent();
+    static const bool & defaultHideDependent();
+    static void removeHideDependent();
+    static void setHideDependent(const bool &v);
+    static const char *docHideDependent();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter ShowLinks
+    ///
+    /// Keep the objects a sketch links to visible while it is edited, for
+    /// new sketches.
+    static const bool & getShowLinks();
+    static const bool & defaultShowLinks();
+    static void removeShowLinks();
+    static void setShowLinks(const bool &v);
+    static const char *docShowLinks();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter ShowSupport
+    ///
+    /// Keep the object a sketch is attached to visible while it is
+    /// edited, for new sketches.
+    static const bool & getShowSupport();
+    static const bool & defaultShowSupport();
+    static void removeShowSupport();
+    static void setShowSupport(const bool &v);
+    static const char *docShowSupport();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter RestoreCamera
+    ///
+    /// Put the camera back where it was when editing of a sketch ends,
+    /// for new sketches.
+    static const bool & getRestoreCamera();
+    static const bool & defaultRestoreCamera();
+    static void removeRestoreCamera();
+    static void setRestoreCamera(const bool &v);
+    static const char *docRestoreCamera();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter ForceOrtho
+    ///
+    /// Switch the view to an orthographic camera while a sketch is
+    /// edited, and back afterwards, for new sketches. Needs
+    /// RestoreCamera.
+    static const bool & getForceOrtho();
+    static const bool & defaultForceOrtho();
+    static void removeForceOrtho();
+    static void setForceOrtho(const bool &v);
+    static const char *docForceOrtho();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter SectionView
+    ///
+    /// Clip everything in front of the sketch plane while a sketch is
+    /// edited, for new sketches.
+    static const bool & getSectionView();
+    static const bool & defaultSectionView();
+    static void removeSectionView();
+    static void setSectionView(const bool &v);
+    static const char *docSectionView();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter AutoConstraints
+    ///
+    /// Suggest and apply automatic constraints while drawing, for new
+    /// sketches.
+    static const bool & getAutoConstraints();
+    static const bool & defaultAutoConstraints();
+    static void removeAutoConstraints();
+    static void setAutoConstraints(const bool &v);
+    static const char *docAutoConstraints();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter AvoidRedundantAutoconstraints
+    ///
+    /// Do not create automatic constraints that would be redundant, for
+    /// new sketches.
+    static const bool & getAvoidRedundantAutoconstraints();
+    static const bool & defaultAvoidRedundantAutoconstraints();
+    static void removeAvoidRedundantAutoconstraints();
+    static void setAvoidRedundantAutoconstraints(const bool &v);
+    static const char *docAvoidRedundantAutoconstraints();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter ShowOriginalColor
+    ///
+    /// Draw the sketch in its original colours instead of the constraint-
+    /// status colours while editing. Applies at once.
+    static const bool & getShowOriginalColor();
+    static const bool & defaultShowOriginalColor();
+    static void removeShowOriginalColor();
+    static void setShowOriginalColor(const bool &v);
+    static const char *docShowOriginalColor();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter SketchAutoTransparentPick
+    ///
+    /// While picking external geometry, make objects transparent to
+    /// picking so hidden edges can be chosen. Applies at once while the
+    /// tool is active.
+    static const bool & getSketchAutoTransparentPick();
+    static const bool & defaultSketchAutoTransparentPick();
+    static void removeSketchAutoTransparentPick();
+    static void setSketchAutoTransparentPick(const bool &v);
+    static const char *docSketchAutoTransparentPick();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter ZHeight
+    ///
+    /// Height step between the drawing layers of a sketch in edit mode
+    /// (lines, constraints, points). Raise it if elements flicker through
+    /// each other. Applies at once.
+    static const double & getZHeight();
+    static const double & defaultZHeight();
+    static void removeZHeight();
+    static void setZHeight(const double &v);
+    static const char *docZHeight();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter AxisTransparency
+    ///
+    /// Transparency of the sketch axes in edit mode, in percent. 0 to
+    /// 100. Applies at once.
+    static const long & getAxisTransparency();
+    static const long & defaultAxisTransparency();
+    static void removeAxisTransparency();
+    static void setAxisTransparency(const long &v);
+    static const char *docAxisTransparency();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter FaceColor
+    ///
+    /// Colour and opacity of the faces shown inside a sketch's closed
+    /// regions. Applies at once to sketches that use automatic colours.
+    static const unsigned long & getFaceColor();
+    static const unsigned long & defaultFaceColor();
+    static void removeFaceColor();
+    static void setFaceColor(const unsigned long &v);
+    static const char *docFaceColor();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter ShowGrid
+    ///
+    /// Show a grid in new sketches while they are edited. An existing
+    /// sketch keeps its own setting.
+    static const bool & getShowGrid();
+    static const bool & defaultShowGrid();
+    static void removeShowGrid();
+    static void setShowGrid(const bool &v);
+    static const char *docShowGrid();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter GridAuto
+    ///
+    /// Let the grid spacing of new sketches adapt to the zoom level.
+    static const bool & getGridAuto();
+    static const bool & defaultGridAuto();
+    static void removeGridAuto();
+    static void setGridAuto(const bool &v);
+    static const char *docGridAuto();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter GridSizePixelThreshold
+    ///
+    /// With auto spacing, the smallest distance in pixels between two
+    /// grid lines before the grid switches to a coarser spacing. 3 to
+    /// 10000. Applies at once.
+    static const long & getGridSizePixelThreshold();
+    static const long & defaultGridSizePixelThreshold();
+    static void removeGridSizePixelThreshold();
+    static void setGridSizePixelThreshold(const long &v);
+    static const char *docGridSizePixelThreshold();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter GridNumberSubdivision
+    ///
+    /// Number of grid cells between two major (division) lines. 1 to
+    /// 10000. Applies at once.
+    static const long & getGridNumberSubdivision();
+    static const long & defaultGridNumberSubdivision();
+    static void removeGridNumberSubdivision();
+    static void setGridNumberSubdivision(const long &v);
+    static const char *docGridNumberSubdivision();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter GridLinePattern
+    ///
+    /// Line pattern of the minor grid lines, as a 16 bit stipple mask.
+    /// Applies at once.
+    static const long & getGridLinePattern();
+    static const long & defaultGridLinePattern();
+    static void removeGridLinePattern();
+    static void setGridLinePattern(const long &v);
+    static const char *docGridLinePattern();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter GridDivLinePattern
+    ///
+    /// Line pattern of the major grid lines, as a 16 bit stipple mask.
+    /// Applies at once.
+    static const long & getGridDivLinePattern();
+    static const long & defaultGridDivLinePattern();
+    static void removeGridDivLinePattern();
+    static void setGridDivLinePattern(const long &v);
+    static const char *docGridDivLinePattern();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter GridLineWidth
+    ///
+    /// Width of the minor grid lines in pixels. 1 to 99. Applies at once.
+    static const long & getGridLineWidth();
+    static const long & defaultGridLineWidth();
+    static void removeGridLineWidth();
+    static void setGridLineWidth(const long &v);
+    static const char *docGridLineWidth();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter GridDivLineWidth
+    ///
+    /// Width of the major grid lines in pixels. 1 to 99. Applies at once.
+    static const long & getGridDivLineWidth();
+    static const long & defaultGridDivLineWidth();
+    static void removeGridDivLineWidth();
+    static void setGridDivLineWidth(const long &v);
+    static const char *docGridDivLineWidth();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter GridLineColor
+    ///
+    /// Colour of the minor grid lines. Applies at once.
+    static const unsigned long & getGridLineColor();
+    static const unsigned long & defaultGridLineColor();
+    static void removeGridLineColor();
+    static void setGridLineColor(const unsigned long &v);
+    static const char *docGridLineColor();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter GridDivLineColor
+    ///
+    /// Colour of the major grid lines. Applies at once.
+    static const unsigned long & getGridDivLineColor();
+    static const unsigned long & defaultGridDivLineColor();
+    static void removeGridDivLineColor();
+    static void setGridDivLineColor(const unsigned long &v);
+    static const char *docGridDivLineColor();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter GridTransparency
+    ///
+    /// Transparency of the grid lines in percent, 0 is opaque. 0 to 100.
+    /// Applies at once.
+    static const long & getGridTransparency();
+    static const long & defaultGridTransparency();
+    static void removeGridTransparency();
+    static void setGridTransparency(const long &v);
+    static const char *docGridTransparency();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter TopRenderGeometryId
+    ///
+    /// Which kind of geometry is drawn on top in sketch edit mode: 1
+    /// normal, 2 construction, 3 external. Set by dragging in the
+    /// Rendering order list; applies at once.
+    static const long & getTopRenderGeometryId();
+    static const long & defaultTopRenderGeometryId();
+    static void removeTopRenderGeometryId();
+    static void setTopRenderGeometryId(const long &v);
+    static const char *docTopRenderGeometryId();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter MidRenderGeometryId
+    ///
+    /// Which kind of geometry is drawn in the middle: 1 normal, 2
+    /// construction, 3 external.
+    static const long & getMidRenderGeometryId();
+    static const long & defaultMidRenderGeometryId();
+    static void removeMidRenderGeometryId();
+    static void setMidRenderGeometryId(const long &v);
+    static const char *docMidRenderGeometryId();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter LowRenderGeometryId
+    ///
+    /// Which kind of geometry is drawn at the bottom: 1 normal, 2
+    /// construction, 3 external.
+    static const long & getLowRenderGeometryId();
+    static const long & defaultLowRenderGeometryId();
+    static void removeLowRenderGeometryId();
+    static void setLowRenderGeometryId(const long &v);
+    static const char *docLowRenderGeometryId();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter BSplineExternalVisible
+    ///
+    /// Show the B-spline information overlays for external B-splines too.
+    static const bool & getBSplineExternalVisible();
+    static const bool & defaultBSplineExternalVisible();
+    static void removeBSplineExternalVisible();
+    static void setBSplineExternalVisible(const bool &v);
+    static const char *docBSplineExternalVisible();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter EditDatumInPlace
+    ///
+    /// Edit a dimension's value in a field at its label instead of in a
+    /// dialog. Applies to the next edit.
+    static const bool & getEditDatumInPlace();
+    static const bool & defaultEditDatumInPlace();
+    static void removeEditDatumInPlace();
+    static void setEditDatumInPlace(const bool &v);
+    static const char *docEditDatumInPlace();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter DatumEscapeTakesBack
+    ///
+    /// Esc cancels the dimension value being typed at a label instead of
+    /// leaving the field with the value entered.
+    static const bool & getDatumEscapeTakesBack();
+    static const bool & defaultDatumEscapeTakesBack();
+    static void removeDatumEscapeTakesBack();
+    static void setDatumEscapeTakesBack(const bool &v);
+    static const char *docDatumEscapeTakesBack();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter ShowDirectionalAutoConstraintHints
+    ///
+    /// Show helper lines for direction based automatic constraints (line
+    /// extension, parallel, perpendicular) while drawing. Applies at
+    /// once.
+    static const bool & getShowDirectionalAutoConstraintHints();
+    static const bool & defaultShowDirectionalAutoConstraintHints();
+    static void removeShowDirectionalAutoConstraintHints();
+    static void setShowDirectionalAutoConstraintHints(const bool &v);
+    static const char *docShowDirectionalAutoConstraintHints();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter DragAutoConstraintDelay
+    ///
+    /// Time in milliseconds the pointer must rest while dragging before
+    /// an automatic constraint is offered. 0 to 5000.
+    static const long & getDragAutoConstraintDelay();
+    static const long & defaultDragAutoConstraintDelay();
+    static void removeDragAutoConstraintDelay();
+    static void setDragAutoConstraintDelay(const long &v);
+    static const char *docDragAutoConstraintDelay();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter NotifyConstraintSubstitutions
+    ///
+    /// Show a message when the Sketcher replaces constraints
+    /// automatically, for example a coincident and a tangent by an
+    /// endpoint tangency.
+    static const bool & getNotifyConstraintSubstitutions();
+    static const bool & defaultNotifyConstraintSubstitutions();
+    static void removeNotifyConstraintSubstitutions();
+    static void setNotifyConstraintSubstitutions(const bool &v);
+    static const char *docNotifyConstraintSubstitutions();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter EdgeWidth
+    ///
+    /// Line width of normal geometry in edit mode, in pixels. 1 to 99.
+    /// Applies at once.
+    static const long & getEdgeWidth();
+    static const long & defaultEdgeWidth();
+    static void removeEdgeWidth();
+    static void setEdgeWidth(const long &v);
+    static const char *docEdgeWidth();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter EdgePattern
+    ///
+    /// Line pattern of normal geometry in edit mode, a 16 bit stipple
+    /// mask.
+    static const long & getEdgePattern();
+    static const long & defaultEdgePattern();
+    static void removeEdgePattern();
+    static void setEdgePattern(const long &v);
+    static const char *docEdgePattern();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter ConstructionWidth
+    ///
+    /// Line width of construction geometry in edit mode, in pixels.
+    static const long & getConstructionWidth();
+    static const long & defaultConstructionWidth();
+    static void removeConstructionWidth();
+    static void setConstructionWidth(const long &v);
+    static const char *docConstructionWidth();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter ConstructionPattern
+    ///
+    /// Line pattern of construction geometry in edit mode.
+    static const long & getConstructionPattern();
+    static const long & defaultConstructionPattern();
+    static void removeConstructionPattern();
+    static void setConstructionPattern(const long &v);
+    static const char *docConstructionPattern();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter InternalWidth
+    ///
+    /// Line width of internal alignment geometry in edit mode, in pixels.
+    static const long & getInternalWidth();
+    static const long & defaultInternalWidth();
+    static void removeInternalWidth();
+    static void setInternalWidth(const long &v);
+    static const char *docInternalWidth();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter InternalPattern
+    ///
+    /// Line pattern of internal alignment geometry in edit mode.
+    static const long & getInternalPattern();
+    static const long & defaultInternalPattern();
+    static void removeInternalPattern();
+    static void setInternalPattern(const long &v);
+    static const char *docInternalPattern();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter ExternalWidth
+    ///
+    /// Line width of external geometry in edit mode, in pixels.
+    static const long & getExternalWidth();
+    static const long & defaultExternalWidth();
+    static void removeExternalWidth();
+    static void setExternalWidth(const long &v);
+    static const char *docExternalWidth();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter ExternalPattern
+    ///
+    /// Line pattern of external geometry in edit mode.
+    static const long & getExternalPattern();
+    static const long & defaultExternalPattern();
+    static void removeExternalPattern();
+    static void setExternalPattern(const long &v);
+    static const char *docExternalPattern();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter ExternalDefiningWidth
+    ///
+    /// Line width of defining external geometry in edit mode, in pixels.
+    static const long & getExternalDefiningWidth();
+    static const long & defaultExternalDefiningWidth();
+    static void removeExternalDefiningWidth();
+    static void setExternalDefiningWidth(const long &v);
+    static const char *docExternalDefiningWidth();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter ExternalDefiningPattern
+    ///
+    /// Line pattern of defining external geometry in edit mode.
+    static const long & getExternalDefiningPattern();
+    static const long & defaultExternalDefiningPattern();
+    static void removeExternalDefiningPattern();
+    static void setExternalDefiningPattern(const long &v);
+    static const char *docExternalDefiningPattern();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter InformationWidth
+    ///
+    /// Line width of the information layer (B-spline polygons, combs,
+    /// hints), in pixels.
+    static const long & getInformationWidth();
+    static const long & defaultInformationWidth();
+    static void removeInformationWidth();
+    static void setInformationWidth(const long &v);
+    static const char *docInformationWidth();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter InformationPattern
+    ///
+    /// Line pattern of the information layer.
+    static const long & getInformationPattern();
+    static const long & defaultInformationPattern();
+    static void removeInformationPattern();
+    static void setInformationPattern(const long &v);
+    static const char *docInformationPattern();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter DimensionalConstraintLineWidth
+    ///
+    /// Line width of dimensional constraints, in pixels. 1 to 4.
+    static const long & getDimensionalConstraintLineWidth();
+    static const long & defaultDimensionalConstraintLineWidth();
+    static void removeDimensionalConstraintLineWidth();
+    static void setDimensionalConstraintLineWidth(const long &v);
+    static const char *docDimensionalConstraintLineWidth();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter DimensionalConstraintLinePattern
+    ///
+    /// Line pattern of dimensional constraints.
+    static const long & getDimensionalConstraintLinePattern();
+    static const long & defaultDimensionalConstraintLinePattern();
+    static void removeDimensionalConstraintLinePattern();
+    static void setDimensionalConstraintLinePattern(const long &v);
+    static const char *docDimensionalConstraintLinePattern();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter AxisLineWidth
+    ///
+    /// Line width of the sketch axes in edit mode, in pixels.
+    static const long & getAxisLineWidth();
+    static const long & defaultAxisLineWidth();
+    static void removeAxisLineWidth();
+    static void setAxisLineWidth(const long &v);
+    static const char *docAxisLineWidth();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter AxisLinePattern
+    ///
+    /// Line pattern of the sketch axes in edit mode.
+    static const long & getAxisLinePattern();
+    static const long & defaultAxisLinePattern();
+    static void removeAxisLinePattern();
+    static void setAxisLinePattern(const long &v);
+    static const char *docAxisLinePattern();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter SingleDimensioningTool
+    ///
+    /// Put the single Dimension tool on the Sketcher tool bar. Together
+    /// with the separated tools option this gives the modes Single tool,
+    /// Separated tools, Both. Tool bars are rebuilt when the page is
+    /// saved.
+    static const bool & getSingleDimensioningTool();
+    static const bool & defaultSingleDimensioningTool();
+    static void removeSingleDimensioningTool();
+    static void setSingleDimensioningTool(const bool &v);
+    static const char *docSingleDimensioningTool();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter SeparatedDimensioningTools
+    ///
+    /// Put the separate dimension tools (horizontal, vertical, distance,
+    /// radius/diameter, angle, lock) on the Sketcher tool bar.
+    static const bool & getSeparatedDimensioningTools();
+    static const bool & defaultSeparatedDimensioningTools();
+    static void removeSeparatedDimensioningTools();
+    static void setSeparatedDimensioningTools(const bool &v);
+    static const char *docSeparatedDimensioningTools();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter DimensioningDiameter
+    ///
+    /// Let the Dimension tool create diameters. With radius also on the
+    /// tool picks: diameter for circles, radius for arcs.
+    static const bool & getDimensioningDiameter();
+    static const bool & defaultDimensioningDiameter();
+    static void removeDimensioningDiameter();
+    static void setDimensioningDiameter(const bool &v);
+    static const char *docDimensioningDiameter();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter DimensioningRadius
+    ///
+    /// Let the Dimension tool create radii. With diameter also on the
+    /// tool picks: diameter for circles, radius for arcs.
+    static const bool & getDimensioningRadius();
+    static const bool & defaultDimensioningRadius();
+    static void removeDimensioningRadius();
+    static void setDimensioningRadius(const bool &v);
+    static const char *docDimensioningRadius();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter AutoScaleMode
+    ///
+    /// Scale the whole sketch to the value of its first dimension: 0
+    /// always, 1 never, 2 only when no feature that fixes the scale is
+    /// visible. Applies to the next dimension.
+    static const long & getAutoScaleMode();
+    static const long & defaultAutoScaleMode();
+    static void removeAutoScaleMode();
+    static void setAutoScaleMode(const long &v);
+    static const char *docAutoScaleMode();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter OnViewParameterVisibility
+    ///
+    /// Which on-view parameters a drawing tool shows at the cursor: 0
+    /// none, 1 dimensions only, 2 position and dimensions. Applies to the
+    /// next tool started.
+    static const long & getOnViewParameterVisibility();
+    static const long & defaultOnViewParameterVisibility();
+    static void removeOnViewParameterVisibility();
+    static void setOnViewParameterVisibility(const long &v);
+    static const char *docOnViewParameterVisibility();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter UnifiedCoincident
+    ///
+    /// Use one tool for coincident and point-on-object constraints. Tool
+    /// bars and menus follow when the page is saved; the shortcuts follow
+    /// after a restart.
+    static const bool & getUnifiedCoincident();
+    static const bool & defaultUnifiedCoincident();
+    static void removeUnifiedCoincident();
+    static void setUnifiedCoincident(const bool &v);
+    static const char *docUnifiedCoincident();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter AutoHorVer
+    ///
+    /// Use one tool that chooses between a horizontal and a vertical
+    /// constraint. Tool bars follow when the page is saved.
+    static const bool & getAutoHorVer();
+    static const bool & defaultAutoHorVer();
+    static void removeAutoHorVer();
+    static void setAutoHorVer(const bool &v);
+    static const char *docAutoHorVer();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter UnifiedLineCommands
+    ///
+    /// Group the polyline and line commands under one tool bar button.
+    /// Tool bars follow when the page is saved.
+    static const bool & getUnifiedLineCommands();
+    static const bool & defaultUnifiedLineCommands();
+    static void removeUnifiedLineCommands();
+    static void setUnifiedLineCommands(const bool &v);
+    static const char *docUnifiedLineCommands();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter Snap
+    ///
+    /// Master switch for snapping in sketch edit mode. Toggled by the
+    /// Snap tool bar button; applies at once.
+    static const bool & getSnap();
+    static const bool & defaultSnap();
+    static void removeSnap();
+    static void setSnap(const bool &v);
+    static const char *docSnap();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter SnapToObjects
+    ///
+    /// Snap new points to the preselected object, and to the middle of
+    /// lines and arcs. Applies at once.
+    static const bool & getSnapToObjects();
+    static const bool & defaultSnapToObjects();
+    static void removeSnapToObjects();
+    static void setSnapToObjects(const bool &v);
+    static const char *docSnapToObjects();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter SnapToGrid
+    ///
+    /// Snap new points to the nearest grid line when closer than a fifth
+    /// of the grid spacing. Applies at once.
+    static const bool & getSnapToGrid();
+    static const bool & defaultSnapToGrid();
+    static void removeSnapToGrid();
+    static void setSnapToGrid(const bool &v);
+    static const char *docSnapToGrid();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter SnapAngle
+    ///
+    /// Angular step in degrees for tools that snap at an angle while Ctrl
+    /// is held, measured from the sketch's positive X axis. Applies at
+    /// once.
+    static const double & getSnapAngle();
+    static const double & defaultSnapAngle();
+    static void removeSnapAngle();
+    static void setSnapAngle(const double &v);
+    static const char *docSnapAngle();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter ElementIconSize
+    ///
+    /// Size in pixels of the icons in the element list of the sketch task
+    /// panel. 16 to 128. Takes effect the next time a sketch is edited.
+    static const long & getElementIconSize();
+    static const long & defaultElementIconSize();
+    static void removeElementIconSize();
+    static void setElementIconSize(const long &v);
+    static const char *docElementIconSize();
+    //@}
+
 // Auto generated code (Tools/params_utils.py:179)
 }; // class SketcherParams
 } // namespace Sketcher

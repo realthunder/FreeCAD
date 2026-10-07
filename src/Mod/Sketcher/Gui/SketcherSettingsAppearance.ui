@@ -1290,7 +1290,7 @@
          <string>Color of a sketch's faces; every sketch with AutoColor on follows it</string>
         </property>
         <property name="color" stdset="0">
-         <color alpha="128">
+         <color alpha="127">
           <red>84</red>
           <green>171</green>
           <blue>255</blue>

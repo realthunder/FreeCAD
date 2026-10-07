@@ -22,6 +22,8 @@
 
 #include "PreCompiled.h"
 
+#include <Mod/Sketcher/App/SketcherParams.h>
+
 #include "Utils.h"
 #include "Workbench.h"
 #include <Base/Console.h>
@@ -301,7 +303,7 @@ inline void SketcherAddWorkspaceLines<Gui::ToolBarItem>(Gui::ToolBarItem& geom)
     ParameterGrp::handle hGrp = App::GetApplication().GetParameterGroupByPath(
         "User parameter:BaseApp/Preferences/Mod/Sketcher/Commands");
 
-    if (hGrp->GetBool("UnifiedLineCommands", true)) {
+    if (hGrp->GetBool("UnifiedLineCommands", Sketcher::SketcherParams::defaultUnifiedLineCommands())) {
         geom << "Sketcher_CompLine";
     }
     else {
@@ -456,7 +458,7 @@ inline void SketcherAddWorkbenchConstraints<Gui::MenuItem>(Gui::MenuItem& cons)
     ParameterGrp::handle hGrp = App::GetApplication().GetParameterGroupByPath(
         "User parameter:BaseApp/Preferences/Mod/Sketcher/Constraints");
 
-    if (hGrp->GetBool("UnifiedCoincident", true)) {
+    if (hGrp->GetBool("UnifiedCoincident", Sketcher::SketcherParams::defaultUnifiedCoincident())) {
         cons << "Sketcher_ConstrainCoincidentUnified";
     }
     else {
@@ -495,15 +497,15 @@ inline void SketcherAddWorkbenchConstraints<Gui::ToolBarItem>(Gui::ToolBarItem& 
     ParameterGrp::handle hGrp = App::GetApplication().GetParameterGroupByPath(
         "User parameter:BaseApp/Preferences/Mod/Sketcher/dimensioning");
 
-    if (hGrp->GetBool("SingleDimensioningTool", true)) {
-        if (!hGrp->GetBool("SeparatedDimensioningTools", false)) {
+    if (hGrp->GetBool("SingleDimensioningTool", Sketcher::SketcherParams::defaultSingleDimensioningTool())) {
+        if (!hGrp->GetBool("SeparatedDimensioningTools", Sketcher::SketcherParams::defaultSeparatedDimensioningTools())) {
             cons << "Sketcher_CompDimensionTools";
         }
         else {
             cons << "Sketcher_Dimension";
         }
     }
-    if (hGrp->GetBool("SeparatedDimensioningTools", false)) {
+    if (hGrp->GetBool("SeparatedDimensioningTools", Sketcher::SketcherParams::defaultSeparatedDimensioningTools())) {
         cons << "Sketcher_ConstrainDistanceX"
              << "Sketcher_ConstrainDistanceY"
              << "Sketcher_ConstrainDistance"
@@ -518,14 +520,14 @@ inline void SketcherAddWorkbenchConstraints<Gui::ToolBarItem>(Gui::ToolBarItem& 
     hGrp = App::GetApplication().GetParameterGroupByPath(
         "User parameter:BaseApp/Preferences/Mod/Sketcher/Constraints");
 
-    if (hGrp->GetBool("UnifiedCoincident", true)) {
+    if (hGrp->GetBool("UnifiedCoincident", Sketcher::SketcherParams::defaultUnifiedCoincident())) {
         cons << "Sketcher_ConstrainCoincidentUnified";
     }
     else {
         cons << "Sketcher_ConstrainCoincident"
              << "Sketcher_ConstrainPointOnObject";
     }
-    if (hGrp->GetBool("AutoHorVer", true)) {
+    if (hGrp->GetBool("AutoHorVer", Sketcher::SketcherParams::defaultAutoHorVer())) {
         cons << "Sketcher_CompHorVer";
     }
     else {

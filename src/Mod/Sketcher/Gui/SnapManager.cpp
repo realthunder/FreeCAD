@@ -21,6 +21,8 @@
  ***************************************************************************/
 
 #include "PreCompiled.h"
+
+#include <Mod/Sketcher/App/SketcherParams.h>
 #ifndef _PreComp_
 #include <QApplication>
 #endif  // #ifndef _PreComp_
@@ -101,28 +103,28 @@ void SnapManager::ParameterObserver::updateSnapParameter(const std::string& para
 {
     ParameterGrp::handle hGrp = getParameterGrpHandle();
 
-    client.snapRequested = hGrp->GetBool(parametername.c_str(), true);
+    client.snapRequested = hGrp->GetBool(parametername.c_str(), Sketcher::SketcherParams::defaultSnap());
 }
 
 void SnapManager::ParameterObserver::updateSnapToObjectParameter(const std::string& parametername)
 {
     ParameterGrp::handle hGrp = getParameterGrpHandle();
 
-    client.snapToObjectsRequested = hGrp->GetBool(parametername.c_str(), true);
+    client.snapToObjectsRequested = hGrp->GetBool(parametername.c_str(), Sketcher::SketcherParams::defaultSnapToObjects());
 }
 
 void SnapManager::ParameterObserver::updateSnapToGridParameter(const std::string& parametername)
 {
     ParameterGrp::handle hGrp = getParameterGrpHandle();
 
-    client.snapToGridRequested = hGrp->GetBool(parametername.c_str(), false);
+    client.snapToGridRequested = hGrp->GetBool(parametername.c_str(), Sketcher::SketcherParams::defaultSnapToGrid());
 }
 
 void SnapManager::ParameterObserver::updateSnapAngleParameter(const std::string& parametername)
 {
     ParameterGrp::handle hGrp = getParameterGrpHandle();
 
-    client.snapAngle = fmod(hGrp->GetFloat(parametername.c_str(), 5.) * M_PI / 180, 2 * M_PI);
+    client.snapAngle = fmod(hGrp->GetFloat(parametername.c_str(), Sketcher::SketcherParams::defaultSnapAngle()) * M_PI / 180, 2 * M_PI);
 }
 
 void SnapManager::ParameterObserver::subscribeToParameters()

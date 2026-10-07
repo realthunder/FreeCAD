@@ -145,6 +145,11 @@ def stored(group="", into=None):
 def same(value, default):
     if isinstance(default, bool) or isinstance(value, bool):
         return bool(value) == bool(default)
+    if isinstance(default, int) and isinstance(value, int):
+        # Whole numbers are the same or they are not. They used to be given
+        # the tolerance of the fractions below, which for a packed colour
+        # -- a number of ten digits -- let a neighbouring colour pass.
+        return value == default
     if isinstance(default, (int, float)) and isinstance(value, (int, float)):
         return abs(float(value) - float(default)) <= 1e-9 * max(1.0, abs(float(default)))
     return str(value) == str(default)

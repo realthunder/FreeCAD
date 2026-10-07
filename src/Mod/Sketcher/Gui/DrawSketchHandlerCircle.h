@@ -25,6 +25,7 @@
 
 #pragma once
 
+#include <Mod/Sketcher/App/SketcherParams.h>
 #include <Gui/BitmapFactory.h>
 #include <Gui/Notifications.h>
 #include <Gui/Command.h>
@@ -446,8 +447,8 @@ void DSHCircleController::configureToolWidget()
         ParameterGrp::handle hGrp = App::GetApplication().GetParameterGroupByPath(
             "User parameter:BaseApp/Preferences/Mod/Sketcher/dimensioning"
         );
-        bool dimensioningDiameter = hGrp->GetBool("DimensioningDiameter", true);
-        bool dimensioningRadius = hGrp->GetBool("DimensioningRadius", true);
+        bool dimensioningDiameter = hGrp->GetBool("DimensioningDiameter", Sketcher::SketcherParams::defaultDimensioningDiameter());
+        bool dimensioningRadius = hGrp->GetBool("DimensioningRadius", Sketcher::SketcherParams::defaultDimensioningRadius());
 
         if (dimensioningRadius && !dimensioningDiameter) {
             handler->isDiameter = false;
@@ -468,8 +469,8 @@ void DSHCircleController::configureToolWidget()
         ParameterGrp::handle hGrp = App::GetApplication().GetParameterGroupByPath(
             "User parameter:BaseApp/Preferences/Mod/Sketcher/dimensioning"
         );
-        bool dimensioningDiameter = hGrp->GetBool("DimensioningDiameter", true);
-        bool dimensioningRadius = hGrp->GetBool("DimensioningRadius", true);
+        bool dimensioningDiameter = hGrp->GetBool("DimensioningDiameter", Sketcher::SketcherParams::defaultDimensioningDiameter());
+        bool dimensioningRadius = hGrp->GetBool("DimensioningRadius", Sketcher::SketcherParams::defaultDimensioningRadius());
 
         if (dimensioningRadius && !dimensioningDiameter) {
             onViewParameters[OnViewParameter::Third]->setLabelType(
@@ -590,8 +591,8 @@ void DSHCircleController::adaptParameters(Base::Vector2d onSketchPos)
                 ParameterGrp::handle hGrp = App::GetApplication().GetParameterGroupByPath(
                     "User parameter:BaseApp/Preferences/Mod/Sketcher/dimensioning"
                 );
-                bool dimDiameter = hGrp->GetBool("DimensioningDiameter", true);
-                bool dimRadius = hGrp->GetBool("DimensioningRadius", true);
+                bool dimDiameter = hGrp->GetBool("DimensioningDiameter", Sketcher::SketcherParams::defaultDimensioningDiameter());
+                bool dimRadius = hGrp->GetBool("DimensioningRadius", Sketcher::SketcherParams::defaultDimensioningRadius());
                 bool useRadius = dimRadius && !dimDiameter;
 
                 if (!thirdParam->isSet) {

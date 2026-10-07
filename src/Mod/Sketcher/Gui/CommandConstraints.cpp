@@ -3721,8 +3721,8 @@ protected:
         }
         else {
             ParameterGrp::handle hGrp = App::GetApplication().GetParameterGroupByPath("User parameter:BaseApp/Preferences/Mod/Sketcher/dimensioning");
-            bool dimensioningDiameter = hGrp->GetBool("DimensioningDiameter", true);
-            bool dimensioningRadius = hGrp->GetBool("DimensioningRadius", true);
+            bool dimensioningDiameter = hGrp->GetBool("DimensioningDiameter", Sketcher::SketcherParams::defaultDimensioningDiameter());
+            bool dimensioningRadius = hGrp->GetBool("DimensioningRadius", Sketcher::SketcherParams::defaultDimensioningRadius());
 
             if ((firstCstr && dimensioningRadius && !dimensioningDiameter) ||
                 (!firstCstr && !dimensioningRadius && dimensioningDiameter) ||
@@ -4293,8 +4293,8 @@ protected:
 
         ParameterGrp::handle hGrp = App::GetApplication().GetParameterGroupByPath(
             "User parameter:BaseApp/Preferences/Mod/Sketcher/dimensioning");
-        const bool dimensioningDiameter = hGrp->GetBool("DimensioningDiameter", true);
-        const bool dimensioningRadius = hGrp->GetBool("DimensioningRadius", true);
+        const bool dimensioningDiameter = hGrp->GetBool("DimensioningDiameter", Sketcher::SketcherParams::defaultDimensioningDiameter());
+        const bool dimensioningRadius = hGrp->GetBool("DimensioningRadius", Sketcher::SketcherParams::defaultDimensioningRadius());
         const bool isCircleGeom = !isArcOfCircle(*geom);
 
         if ((firstCstr && dimensioningRadius && !dimensioningDiameter)
@@ -5380,7 +5380,7 @@ CmdSketcherConstrainCoincidentUnified::CmdSketcherConstrainCoincidentUnified(con
 
     ParameterGrp::handle hGrp = App::GetApplication().GetParameterGroupByPath(
         "User parameter:BaseApp/Preferences/Mod/Sketcher/Constraints");
-    sAccel = hGrp->GetBool("UnifiedCoincident", true) ? "C" :"C,O";
+    sAccel = hGrp->GetBool("UnifiedCoincident", Sketcher::SketcherParams::defaultUnifiedCoincident()) ? "C" :"C,O";
 
     eType = ForEdit;
 
@@ -5919,7 +5919,7 @@ CmdSketcherConstrainCoincident::CmdSketcherConstrainCoincident()
     sPixmap = "Constraint_PointOnPoint";
     ParameterGrp::handle hGrp = App::GetApplication().GetParameterGroupByPath(
         "User parameter:BaseApp/Preferences/Mod/Sketcher/Constraints");
-    sAccel = hGrp->GetBool("UnifiedCoincident", true) ? "C,C" : "C";
+    sAccel = hGrp->GetBool("UnifiedCoincident", Sketcher::SketcherParams::defaultUnifiedCoincident()) ? "C,C" : "C";
     eType = ForEdit;
 
     allowedSelSequences = {{SelVertex, SelVertexOrRoot},

@@ -23,6 +23,8 @@
  ***************************************************************************/
 
 #include "PreCompiled.h"
+
+#include <Mod/Sketcher/App/SketcherParams.h>
 #ifndef _PreComp_
 #include <algorithm>
 #include <cmath>
@@ -1916,7 +1918,7 @@ bool DrawSketchHandler::areDirectionalAutoConstraintHintsVisible() const
     ParameterGrp::handle hGrp = App::GetApplication().GetParameterGroupByPath(
         "User parameter:BaseApp/Preferences/Mod/Sketcher/General"
     );
-    return hGrp->GetBool("ShowDirectionalAutoConstraintHints", true);
+    return hGrp->GetBool("ShowDirectionalAutoConstraintHints", Sketcher::SketcherParams::defaultShowDirectionalAutoConstraintHints());
 }
 
 void DrawSketchHandler::resetParallelPerpendicularHint()

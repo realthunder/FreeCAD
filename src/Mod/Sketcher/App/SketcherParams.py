@@ -28,16 +28,17 @@ from os import sys, path
 sys.path.append(path.join(path.dirname(path.dirname(path.dirname(path.dirname(path.abspath(__file__))))), 'Tools'))
 import params_utils
 
-from params_utils import ParamBool, ParamInt, ParamFloat, ParamString
+from params_utils import ParamBool, ParamInt, ParamFloat, ParamString, ParamHex, ParamColor
 
 NameSpace = 'Sketcher'
 ClassName = 'SketcherParams'
 ParamPath = 'User parameter:BaseApp/Preferences/Mod/Sketcher'
 ClassDoc = 'Convenient class to obtain the settings of the Sketcher'
 
-# The settings of the group itself. Its sub-groups (General, View, Snap,
-# SolverAdvanced, ...) and the keys the Sketcher keeps in Preferences/View
-# are not here yet. Not listed, because the program keeps them for itself:
+# The settings of the group itself, and below them those of its
+# sub-groups. SolverAdvanced and the keys the Sketcher keeps in
+# Preferences/View are not here yet. Not listed, because the program keeps
+# them for itself:
 # which sections of the task panel are expanded, the last values of the
 # polygon and array dialogs, the width of the datum dialog. The class lives
 # in the App library because a new sketch reads some of these; the settings
@@ -139,6 +140,295 @@ Params = [
         title = "Use system decimals for cursor coordinates",
         doc = "Show cursor coordinates with the number of decimals of the unit\n"
               "settings instead of a short form. Applies at once."),
+
+    # ------------------------------------------------------------------
+    # The sub-groups. Most of General and all of View reach a sketch in
+    # edit through ViewProviderSketch, which is told of a change by the
+    # parameter groups themselves: it keeps reading them and takes its
+    # DEFAULTS from here. Not listed, because the program keeps them for
+    # itself: which B-spline overlays are on, the filters of the
+    # constraint and element lists, the picking mode a constraint tool
+    # was left in. Not listed, because their readers and writers do not
+    # meet: General/GridSize (the page stores GridSize, a new sketch reads
+    # Hist0), SnapTolerance and ArcCircleHelperVisible (no reader).
+
+    # --- General
+    ParamBool('AllowFaceExternalPick', True, subpath='General',
+        title = "Allow picking faces as external geometry",
+        doc = "Allow picking a face as external geometry. Set in the Edit\n"
+              "controls of the sketch task panel; applies at once."),
+    ParamBool('ViewBottomOnEdit', False, subpath='General',
+        title = "View sketch from bottom",
+        doc = "Look at the sketch from below instead of from above when it is\n"
+              "edited. Set by the view-sketch-from-bottom commands."),
+    ParamBool('AdjustCamera', True, subpath='General',
+        title = "Adjust camera when a sketch is edited",
+        doc = "Turn the camera to face the sketch plane when a sketch is opened\n"
+              "for editing. Applies the next time a sketch is edited."),
+    ParamBool('FitSketchOnEdit', True, subpath='General',
+        title = "Fit sketch when it is edited",
+        doc = "Fit the view to the sketch's geometry when it is opened for\n"
+              "editing. Applies the next time a sketch is edited."),
+    ParamBool('HideDependent', True, subpath='General',
+        title = "Hide objects depending on the sketch",
+        doc = "Hide the objects that depend on a sketch while it is edited, for\n"
+              "new sketches."),
+    ParamBool('ShowLinks', True, subpath='General',
+        title = "Show objects the sketch links to",
+        doc = "Keep the objects a sketch links to visible while it is edited, for\n"
+              "new sketches."),
+    ParamBool('ShowSupport', True, subpath='General',
+        title = "Show the sketch's support",
+        doc = "Keep the object a sketch is attached to visible while it is\n"
+              "edited, for new sketches."),
+    ParamBool('RestoreCamera', True, subpath='General',
+        title = "Restore camera when leaving a sketch",
+        doc = "Put the camera back where it was when editing of a sketch ends,\n"
+              "for new sketches."),
+    ParamBool('ForceOrtho', False, subpath='General',
+        title = "Force orthographic camera in a sketch",
+        doc = "Switch the view to an orthographic camera while a sketch is\n"
+              "edited, and back afterwards, for new sketches. Needs\n"
+              "RestoreCamera."),
+    ParamBool('SectionView', False, subpath='General',
+        title = "Section view in a sketch",
+        doc = "Clip everything in front of the sketch plane while a sketch is\n"
+              "edited, for new sketches."),
+    ParamBool('AutoConstraints', True, subpath='General',
+        title = "Automatic constraints",
+        doc = "Suggest and apply automatic constraints while drawing, for new\n"
+              "sketches."),
+    ParamBool('AvoidRedundantAutoconstraints', True, subpath='General',
+        title = "Avoid redundant automatic constraints",
+        doc = "Do not create automatic constraints that would be redundant, for\n"
+              "new sketches."),
+    ParamBool('ShowOriginalColor', False, subpath='General',
+        title = "Show original colours while editing",
+        doc = "Draw the sketch in its original colours instead of the constraint-\n"
+              "status colours while editing. Applies at once."),
+    ParamBool('SketchAutoTransparentPick', False, subpath='General',
+        title = "Transparent picking of external geometry",
+        doc = "While picking external geometry, make objects transparent to\n"
+              "picking so hidden edges can be chosen. Applies at once while the\n"
+              "tool is active."),
+    ParamFloat('ZHeight', 1e-6, subpath='General',
+        title = "Height step between sketch layers",
+        doc = "Height step between the drawing layers of a sketch in edit mode\n"
+              "(lines, constraints, points). Raise it if elements flicker through\n"
+              "each other. Applies at once."),
+    ParamInt('AxisTransparency', 30, subpath='General',
+        title = "Sketch axes transparency",
+        doc = "Transparency of the sketch axes in edit mode, in percent. 0 to\n"
+              "100. Applies at once."),
+    ParamHex('FaceColor', 0x54ABFF7F, subpath='General', proxy=ParamColor(),
+        title = "Internal face colour",
+        doc = "Colour and opacity of the faces shown inside a sketch's closed\n"
+              "regions. Applies at once to sketches that use automatic colours."),
+    ParamBool('ShowGrid', True, subpath='General',
+        title = "Show grid in new sketches",
+        doc = "Show a grid in new sketches while they are edited. An existing\n"
+              "sketch keeps its own setting."),
+    ParamBool('GridAuto', True, subpath='General',
+        title = "Automatic grid spacing",
+        doc = "Let the grid spacing of new sketches adapt to the zoom level."),
+    ParamInt('GridSizePixelThreshold', 15, subpath='General',
+        title = "Grid pixel threshold",
+        doc = "With auto spacing, the smallest distance in pixels between two\n"
+              "grid lines before the grid switches to a coarser spacing. 3 to\n"
+              "10000. Applies at once."),
+    ParamInt('GridNumberSubdivision', 10, subpath='General',
+        title = "Grid subdivisions",
+        doc = "Number of grid cells between two major (division) lines. 1 to\n"
+              "10000. Applies at once."),
+    ParamInt('GridLinePattern', 0xFFFF, subpath='General',
+        title = "Minor grid line pattern",
+        doc = "Line pattern of the minor grid lines, as a 16 bit stipple mask.\n"
+              "Applies at once."),
+    ParamInt('GridDivLinePattern', 0xFFFF, subpath='General',
+        title = "Major grid line pattern",
+        doc = "Line pattern of the major grid lines, as a 16 bit stipple mask.\n"
+              "Applies at once."),
+    ParamInt('GridLineWidth', 1, subpath='General',
+        title = "Minor grid line width",
+        doc = "Width of the minor grid lines in pixels. 1 to 99. Applies at once."),
+    ParamInt('GridDivLineWidth', 2, subpath='General',
+        title = "Major grid line width",
+        doc = "Width of the major grid lines in pixels. 1 to 99. Applies at once."),
+    ParamHex('GridLineColor', 0xB2B2B2FF, subpath='General', proxy=ParamColor(),
+        title = "Minor grid line colour",
+        doc = "Colour of the minor grid lines. Applies at once."),
+    ParamHex('GridDivLineColor', 0xB2B2B2FF, subpath='General', proxy=ParamColor(),
+        title = "Major grid line colour",
+        doc = "Colour of the major grid lines. Applies at once."),
+    ParamInt('GridTransparency', 60, subpath='General',
+        title = "Grid transparency",
+        doc = "Transparency of the grid lines in percent, 0 is opaque. 0 to 100.\n"
+              "Applies at once."),
+    ParamInt('TopRenderGeometryId', 1, subpath='General',
+        title = "Geometry drawn on top",
+        doc = "Which kind of geometry is drawn on top in sketch edit mode: 1\n"
+              "normal, 2 construction, 3 external. Set by dragging in the\n"
+              "Rendering order list; applies at once."),
+    ParamInt('MidRenderGeometryId', 2, subpath='General',
+        title = "Geometry drawn in the middle",
+        doc = "Which kind of geometry is drawn in the middle: 1 normal, 2\n"
+              "construction, 3 external."),
+    ParamInt('LowRenderGeometryId', 3, subpath='General',
+        title = "Geometry drawn at the bottom",
+        doc = "Which kind of geometry is drawn at the bottom: 1 normal, 2\n"
+              "construction, 3 external."),
+    ParamBool('BSplineExternalVisible', False, subpath='General',
+        title = "B-spline information of external geometry",
+        doc = "Show the B-spline information overlays for external B-splines too."),
+    ParamBool('EditDatumInPlace', True, subpath='General',
+        title = "Edit dimensions at their label",
+        doc = "Edit a dimension's value in a field at its label instead of in a\n"
+              "dialog. Applies to the next edit."),
+    ParamBool('DatumEscapeTakesBack', False, subpath='General',
+        title = "Esc cancels a dimension being typed",
+        doc = "Esc cancels the dimension value being typed at a label instead of\n"
+              "leaving the field with the value entered."),
+    ParamBool('ShowDirectionalAutoConstraintHints', True, subpath='General',
+        title = "Show hints for direction constraints",
+        doc = "Show helper lines for direction based automatic constraints (line\n"
+              "extension, parallel, perpendicular) while drawing. Applies at\n"
+              "once."),
+    ParamInt('DragAutoConstraintDelay', 400, subpath='General',
+        title = "Delay of automatic constraints while dragging",
+        doc = "Time in milliseconds the pointer must rest while dragging before\n"
+              "an automatic constraint is offered. 0 to 5000."),
+    ParamBool('NotifyConstraintSubstitutions', True, subpath='General',
+        title = "Notify automatic constraint substitutions",
+        doc = "Show a message when the Sketcher replaces constraints\n"
+              "automatically, for example a coincident and a tangent by an\n"
+              "endpoint tangency."),
+
+    # --- View
+    ParamInt('EdgeWidth', 2, subpath='View',
+        title = "Normal geometry line width",
+        doc = "Line width of normal geometry in edit mode, in pixels. 1 to 99.\n"
+              "Applies at once."),
+    ParamInt('EdgePattern', 0xFFFF, subpath='View',
+        title = "Normal geometry line pattern",
+        doc = "Line pattern of normal geometry in edit mode, a 16 bit stipple\n"
+              "mask."),
+    ParamInt('ConstructionWidth', 2, subpath='View',
+        title = "Construction geometry line width",
+        doc = "Line width of construction geometry in edit mode, in pixels."),
+    ParamInt('ConstructionPattern', 0xFCFC, subpath='View',
+        title = "Construction geometry line pattern",
+        doc = "Line pattern of construction geometry in edit mode."),
+    ParamInt('InternalWidth', 2, subpath='View',
+        title = "Internal alignment line width",
+        doc = "Line width of internal alignment geometry in edit mode, in pixels."),
+    ParamInt('InternalPattern', 0xFCFC, subpath='View',
+        title = "Internal alignment line pattern",
+        doc = "Line pattern of internal alignment geometry in edit mode."),
+    ParamInt('ExternalWidth', 2, subpath='View',
+        title = "External geometry line width",
+        doc = "Line width of external geometry in edit mode, in pixels."),
+    ParamInt('ExternalPattern', 0xFCFC, subpath='View',
+        title = "External geometry line pattern",
+        doc = "Line pattern of external geometry in edit mode."),
+    ParamInt('ExternalDefiningWidth', 2, subpath='View',
+        title = "Defining external geometry line width",
+        doc = "Line width of defining external geometry in edit mode, in pixels."),
+    ParamInt('ExternalDefiningPattern', 0xFFFF, subpath='View',
+        title = "Defining external geometry line pattern",
+        doc = "Line pattern of defining external geometry in edit mode."),
+    ParamInt('InformationWidth', 1, subpath='View',
+        title = "Information layer line width",
+        doc = "Line width of the information layer (B-spline polygons, combs,\n"
+              "hints), in pixels."),
+    ParamInt('InformationPattern', 0xFCFC, subpath='View',
+        title = "Information layer line pattern",
+        doc = "Line pattern of the information layer."),
+    ParamInt('DimensionalConstraintLineWidth', 2, subpath='View',
+        title = "Dimensional constraint line width",
+        doc = "Line width of dimensional constraints, in pixels. 1 to 4."),
+    ParamInt('DimensionalConstraintLinePattern', 0xFFFF, subpath='View',
+        title = "Dimensional constraint line pattern",
+        doc = "Line pattern of dimensional constraints."),
+    ParamInt('AxisLineWidth', 2, subpath='View',
+        title = "Sketch axes line width",
+        doc = "Line width of the sketch axes in edit mode, in pixels."),
+    ParamInt('AxisLinePattern', 0xFFFF, subpath='View',
+        title = "Sketch axes line pattern",
+        doc = "Line pattern of the sketch axes in edit mode."),
+
+    # --- dimensioning
+    ParamBool('SingleDimensioningTool', True, subpath='dimensioning',
+        title = "Single dimension tool",
+        doc = "Put the single Dimension tool on the Sketcher tool bar. Together\n"
+              "with the separated tools option this gives the modes Single tool,\n"
+              "Separated tools, Both. Tool bars are rebuilt when the page is\n"
+              "saved."),
+    ParamBool('SeparatedDimensioningTools', False, subpath='dimensioning',
+        title = "Separated dimension tools",
+        doc = "Put the separate dimension tools (horizontal, vertical, distance,\n"
+              "radius/diameter, angle, lock) on the Sketcher tool bar."),
+    ParamBool('DimensioningDiameter', True, subpath='dimensioning',
+        title = "Dimension tool makes diameters",
+        doc = "Let the Dimension tool create diameters. With radius also on the\n"
+              "tool picks: diameter for circles, radius for arcs."),
+    ParamBool('DimensioningRadius', True, subpath='dimensioning',
+        title = "Dimension tool makes radii",
+        doc = "Let the Dimension tool create radii. With diameter also on the\n"
+              "tool picks: diameter for circles, radius for arcs."),
+    ParamInt('AutoScaleMode', 2, subpath='dimensioning',
+        title = "Scale sketch to first dimension",
+        doc = "Scale the whole sketch to the value of its first dimension: 0\n"
+              "always, 1 never, 2 only when no feature that fixes the scale is\n"
+              "visible. Applies to the next dimension."),
+
+    # --- Tools
+    ParamInt('OnViewParameterVisibility', 1, subpath='Tools',
+        title = "On-view parameters",
+        doc = "Which on-view parameters a drawing tool shows at the cursor: 0\n"
+              "none, 1 dimensions only, 2 position and dimensions. Applies to the\n"
+              "next tool started."),
+
+    # --- Constraints
+    ParamBool('UnifiedCoincident', True, subpath='Constraints',
+        title = "Unify coincident and point-on-object",
+        doc = "Use one tool for coincident and point-on-object constraints. Tool\n"
+              "bars and menus follow when the page is saved; the shortcuts follow\n"
+              "after a restart."),
+    ParamBool('AutoHorVer', True, subpath='Constraints',
+        title = "Automatic horizontal or vertical tool",
+        doc = "Use one tool that chooses between a horizontal and a vertical\n"
+              "constraint. Tool bars follow when the page is saved."),
+
+    # --- Commands
+    ParamBool('UnifiedLineCommands', True, subpath='Commands',
+        title = "Group line and polyline",
+        doc = "Group the polyline and line commands under one tool bar button.\n"
+              "Tool bars follow when the page is saved."),
+
+    # --- Snap
+    ParamBool('Snap', True, subpath='Snap',
+        title = "Snap",
+        doc = "Master switch for snapping in sketch edit mode. Toggled by the\n"
+              "Snap tool bar button; applies at once."),
+    ParamBool('SnapToObjects', True, subpath='Snap',
+        title = "Snap to objects",
+        doc = "Snap new points to the preselected object, and to the middle of\n"
+              "lines and arcs. Applies at once."),
+    ParamBool('SnapToGrid', False, subpath='Snap',
+        title = "Snap to grid",
+        doc = "Snap new points to the nearest grid line when closer than a fifth\n"
+              "of the grid spacing. Applies at once."),
+    ParamFloat('SnapAngle', 5.0, subpath='Snap',
+        title = "Snap angle",
+        doc = "Angular step in degrees for tools that snap at an angle while Ctrl\n"
+              "is held, measured from the sketch's positive X axis. Applies at\n"
+              "once."),
+
+    # --- Elements
+    ParamInt('ElementIconSize', 32, subpath='Elements',
+        title = "Element list icon size",
+        doc = "Size in pixels of the icons in the element list of the sketch task\n"
+              "panel. 16 to 128. Takes effect the next time a sketch is edited."),
 ]
 
 def declare():
