@@ -3404,8 +3404,10 @@ follow still.
 > a internal reference to this new property. they can share the same
 > internal storage."
 >
-> **14.4 step 1 is built. The rest is the plan.** What is filled in beyond
-> the ruling is marked *mine*, and is the user's to overrule.
+> **14.4 step 1 is built. 14.6 is ruled after it, the same day, and
+> replaces the rest of 14.4: everything that makes a look is the object's.
+> 14.6.9 is the build order from here.** What is filled in beyond the
+> rulings is marked *mine*, and is the user's to overrule.
 
 ### 14.1 What was measured
 
@@ -3550,6 +3552,10 @@ Python, `App.ElementAppearance`, a view of the property and not a copy:
 
 ### 14.4 Build order
 
+*Steps 2 to 7 are as they were planned before 14.6 was ruled, and are kept
+for what they say of the name and of the file. The order to build in is
+14.6.9.*
+
 1. **The property, in App** (*built*, 14.5): the class, its file form, its
    Python object, tests. Nothing uses it.
 2. **`Part::Feature` has it**, named `ElementAppearance`, beside
@@ -3659,3 +3665,264 @@ on a cut, whose faces have mapped names: a look given by `Face1` or by
 number held by the name, found by the mapped name, and still its face
 after the shape is made again. Python `Document.ElementAppearanceCases`,
 5.
+
+### 14.6 Everything that makes a look is the object's
+
+> Ruled 2026-10-07, on 14.4's open point -- who makes the drawn list when
+> both the object and its view provider can. The user: "I lean on migrate
+> all appearance generating code to object along with all relevant
+> properties, group them under name 'Appearances'." And, to what was put
+> back: "1 move for the links too. 2 yes [the object's group is what is
+> shown, the view provider's names hidden]. 3 yes [painting is a change of
+> the model: always undone, always merged]. finish the design and start in
+> next session".
+
+**The rule.** What an object looks like is a value of the object and is
+made by the object. A view provider draws it. There is one writer of the
+drawn list, the same with a view provider and without.
+
+#### 14.6.1 What is whose
+
+On the object, in the property group `Appearances`:
+
+| | |
+| --- | --- |
+| `ElementAppearance` | the store of 14.2. Hidden: it is edited through the names below and through Set Colors |
+| `MapFaceColor`, `MapLineColor`, `MapPointColor`, `MapTransparency`, `ForceMapColors` | what a face takes from the face it was made from: read where the looks are made, so they are the object's |
+| `ShapeAppearance`, `ShapeColor`, `Transparency`, `LineColor`, `PointColor` (*mine*) | names over the store -- the faces as drawn, and the kinds' own looks -- with no storage of their own and not written to a file. What the property editor shows and a script without a view provider writes: `obj.ShapeColor = (1, 0, 0)` in `FreeCADCmd` |
+| `ShapeMaterial` | the material card. The object's already; moved into the group (*mine*) so that one place has all of it |
+
+On the view provider, **hidden, and kept**: `ShapeAppearance`,
+`ShapeColor`, `Transparency`, `ShapeMaterial`, `DiffuseColor`, `LineColor`,
+`PointColor`, `LineMaterial`, `PointMaterial`, `LineColorArray`,
+`PointColorArray`, `MappedColors`, and the five `Map*` flags. Each is a
+name over the object's value, as `DiffuseColor` has been a name over
+`ShapeAppearance` since sec 1.1: a read is the object's, a write goes to
+the object. They stay because upstream's scripts and this fork's say
+`vp.ShapeColor`, because a file below schema 5 is read by builds that look
+for them there, and because `ShapeAppearance` is declared on
+`Gui::ViewProviderGeometryObject`, which a mesh and a point cloud have too.
+`MappedAppearance` goes: it was never in a release.
+
+On the view provider and **the view's own**: `LineWidth`, `PointSize`,
+`DrawStyle`, `Lighting`, `Deviation`, `AngularDeflection`, the display
+mode, visibility, selection. And the `Render_*` properties -- glass, water,
+metallic -- which are how a renderer shades what it is given and take no
+part in making a face's look (*mine, and the user's to rule if they are
+meant too*).
+
+*A view provider that is not its object's.* PartDesign's preview of what
+a feature adds or cuts (`pAddSubView`), its view of a suppressed feature,
+and a sketch's internal view are `ViewProviderPartExt` on another shape
+property of an object that has its own view provider
+(`setShapePropertyName`). They are painted by the code that makes them and
+map nothing. Such a view provider keeps values of its own, as today: the
+names above are names over the object only where the view provider shows
+the object's own geometry.
+
+#### 14.6.2 Where the looks are made
+
+`Part::Feature`, from what is in `ViewProviderPartExt::updateColors()` and
+below it now:
+
+1. *the names* -- which elements each name is, through what a name became
+   where the shape no longer has it (`namedElements()`,
+   `Part::Feature::getRelatedElements`);
+2. *what is handed on* -- for a face no name paints, with `MapFaceColor`,
+   the look of the face it was made from (`getElementColor()`): the
+   shape's history walked back to an object that has a store, and that
+   object's drawn list read. Today it reads the source's view provider;
+   the walk itself is the shape's already;
+3. *a link in the way* -- the override a link puts on what it shows
+   (`getLinkColor()`), read from the link's store (14.6.4);
+4. `compose()` and `setDrawn()`, for faces, edges and vertices.
+
+*When.* After the shape is set; when the store, a flag or the card
+changes; and when the drawn list of an object this one was made from
+changes. The last is the walk `ViewProviderDocumentObject` does now
+(`_ColorChangedObjects`: the objects that depend on a changed one, in
+dependency order, those about to be recomputed left out) and moves to
+`App::Document` with it, run once when the change that set it off is done.
+None of it is a recompute: the properties do not touch the object
+(`Prop_Output`), and painting a face rebuilds no shape.
+
+*Not when a document is read.* The drawn list is in the file. An object
+whose sources are in a document that is not loaded keeps what it had.
+
+*The card.* `ViewProviderGeometryObject::applyMaterialAppearance()` and its
+three companions -- the own look taking the card's while it follows, the
+follow ended by a look somebody chose, "reset to material" -- move to the
+object: the card and the look are both its. The follow is the flag the own
+look's list has for it (docs/MaterialStorage.md sec 15.3). What a card
+says of rendering (`applyMaterialRenderProperties`, the `Render_*`
+properties) stays where those are.
+
+*Other objects.* `App::GeoFeature` gets the question as a virtual -- the
+drawn list of a kind, or none -- so that the walk in 2 asks any source and
+does not know Part. A mesh and a point cloud answer none and keep their
+view provider's `ShapeAppearance` as it is; they are not in this.
+
+#### 14.6.3 The view provider, after
+
+`ViewProviderPartExt::updateData()` of `ElementAppearance`: the drawn
+faces are taken as `ShapeAppearance`'s value -- the same storage, 14.2 --
+and drawn (`applyShapeAppearance()`); the same for the edges' and the
+vertices' arrays. No `updateColors()`, no `paintedByName`, no waiting for
+the other half of a pair.
+
+A write to one of its names is taken apart and given to the object. To
+`ShapeAppearance`, which has some sixty setters ending in one place
+(`editList()`): the write is made on a copy, and the copy compared with
+what was there -- the base to `Face`, each face that differs to its name or
+its number (14.3), with the fields that differ as its own. So every setter
+is translated by one piece of code, and a whole list assigned is each face
+given what it says. Which of the entries of such a list is the object's
+own look is 12.4's question still, asked there and nowhere else.
+
+`getElementColors()` / `setElementColors()` and the two `Appearances`
+calls stay the way in for the panel, and read and write the store.
+
+#### 14.6.4 A link, `App::Part`, a body
+
+A link has no shape of its own and nothing is made for it: what it holds
+is laid over what it shows when that is drawn (`applyColorsTo()`, a scene
+action along a path). What moves is what it holds.
+
+| today | in the link's `ElementAppearance` |
+| --- | --- |
+| `OverrideMaterial` and the view provider's `ShapeAppearance` | the own look of `Face`; given at all is the override on |
+| `ColoredElements` + `OverrideColorList`, a colour for `Face3` of the linked object, or of one of an array (`2.Face3`), or of an object below (`Pad.Face3`) | a name each -- the names of this property are paths as a link's are -- with its look; a colour is a look whose own field is the colour, and a material is now possible |
+| `MaterialList` + `OverrideMaterialList`, a material for one of an array | the name of that one, `2.`, with a look that is all its own |
+| a name ending in the hidden marker | a name that states nothing |
+
+The numbered and the drawn lists stay empty for a link.
+
+*What upstream knows a link by is kept, as names over the store.*
+`ColoredElements` stays on a link and on `App::Part` as an
+`App::PropertyLinkSubHidden` -- `(obj, [names])` to Python, written to a
+file as it always was -- because upstream has it there, Draft reads
+`obj.ColoredElements[1]` beside `ViewObject.OverrideColorList`
+(`draftutils/gui_utils.py`), and `LinkBaseExtension::getHiddenSubnames`
+walks it. The view provider's `OverrideColorList`, `OverrideMaterial`,
+`ShapeAppearance`, `MaterialList` and `OverrideMaterialList` likewise,
+hidden. (On `Part::Feature`, which upstream gives no `ColoredElements`, it
+goes: 14.4 step 2.)
+
+`App::Part` holds the same through `ViewProviderLink`'s two static
+functions and moves with it. A body is a `Part::Feature` and has the store
+by that; `ViewProviderBody` turns its features' `Map*` flags off while the
+body draws for them (`ViewProviderBody.cpp`, from line 598) and has its
+own `getElementColors()` -- *both to be read before they are moved, not
+designed here.*
+
+*What the property needs for it:* names that are paths, which it has by
+being a link property and steps over when it reads a kind
+(`parseElement()`); and a name with no element at all, `2.`, which is
+nobody's kind -- found by its string, given a look, never laid into a
+list.
+
+#### 14.6.5 Painting is a change of the model
+
+Ruled. It follows from where the value is, and it is a change from today,
+where a view provider's values are put back only under
+`ViewObjectTransaction` (docs/TransactionLog.md sec 24.9):
+
+- an undo takes a painted face back, always;
+- the log has it as the object's row and no view row; `Prop_OwnerValue`
+  was made for `MappedAppearance` and `MappedColors` (13.7 step 7) and is
+  not needed for them;
+- a merge has one value to merge and not a pair (sec 31.20): the names by
+  name with their looks and own fields, the numbers by number, the kinds'
+  own looks and the flags each as a value three ways. `ShapeAppearance`
+  "still one value, ours wins" and the lookup of a face by its number at
+  the merge (31.17) are gone, since a face written by number has its name
+  from the moment it was written.
+
+*The drawn list is in the value and is not a change.* It is saved; it is
+not what an undo takes back, not what two branches are compared by, and
+its being made again opens no transaction. `isSame()` compares it today:
+what is compared for a merge and for "did this change" is what is stated
+(*to build*: one comparison without it), and how the log takes a write
+that is made and not chosen is 31.17's item 4, met again here and settled
+at this step with the log's code in hand.
+
+#### 14.6.6 Files
+
+The store is written with the object at every schema: it is what a build
+without a view provider has, and a reader that does not know the property
+steps over it. Below schema 5 the view provider's names are written
+beside it as they are today, for upstream and for older builds; at 5 they
+are not.
+
+Read: where the object has a store the view provider's values in the file
+are not taken. Where it has none -- upstream's file, an older one of this
+fork -- they are taken into it as a script's write would be, when the view
+provider has finished restoring: `ShapeAppearance` and the arrays, then
+`ColoredElements` with `MappedColors`, then the `Map*` flags to the
+object's.
+
+*A limit, as today.* An older file opened in `FreeCADCmd` has no view
+provider to read its looks from, shows none, and saved from there loses
+them with the rest of its view data. A file this build wrote does not
+depend on that for its looks, which is what was asked. Reading the looks
+out of `GuiDocument.xml` without a Gui is possible and is not planned.
+
+#### 14.6.7 In and out
+
+`ImportOCAF2::applyFaceColors()` and `applyFaceMaterials()` write the
+store in App, and `ImportOCAFGui` overrides nothing for them: a STEP
+file's colours are there in `FreeCADCmd`. An import's faces are numbered
+(14.1), so it is `setBase()` and `setNumbered()`. The exporters read
+`getDrawn()` through the object and need no view provider.
+
+#### 14.6.8 What is not in this
+
+- `Render_*` (14.6.1), unless ruled in.
+- A mesh's, a point cloud's and FEM's view providers.
+- The second accident of 14.1 goes with `setNamedElements()` and
+  `setFaceColors()`, which go.
+- The primitives' names (the user, 2026-10-07: a box's and a cylinder's
+  elements to have mapped names, their kind and number; recorded, later).
+  It changes which of 14.3's two ways a primitive's face is held, and
+  nothing here.
+
+#### 14.6.9 Build order from here
+
+Each with the gates, shape freezing on and off.
+
+**A. The object makes the looks, and nothing reads them.** On
+`Part::Feature`: `ElementAppearance`, the five flags, the group. The
+making of 14.6.2 -- names, what is handed on from sources that have a
+store, the card -- and the walk in `App::Document`. `App::GeoFeature`'s
+virtual. The view provider is as it is and still draws from its own.
+*Checked by a probe, not by the eye:* the store given what the view
+provider holds, the object's drawn faces compared with the view
+provider's `ShapeAppearance`, entry by entry, over the paint check's
+documents and a boolean of painted boxes. This is the step that proves
+the code moved whole, before anything depends on it.
+
+**B. The view provider draws what the object made** -- one piece, since
+the merge and the paint check read by name what goes (14.4 step 3).
+`ShapeAppearance` and the rest as names over the object (14.6.3), the
+write taken apart; `setElementColors()` and its kin on the store;
+`MappedAppearance`, `updateColors()`, `paintedByName` and
+`Part::Feature`'s `ColoredElements` gone; an older file read into the
+store (14.6.6); the merge on one value and the log's side (14.6.5); the
+object's names `ShapeColor` and the rest, the view provider's hidden; the
+display dialog, Set Colors and `CommandFeat` writing the object's; the
+`Map*` defaults PartDesign's and the sketcher's view providers set, set
+where the object is made; the view providers that are not their object's
+(14.6.1) left with values of their own. The paint check written again for
+the store.
+
+**C. A link, `App::Part`, a body** (14.6.4). Until it is built, what a
+link lays over a face made from what it shows is asked of its view
+provider through one function the Gui gives App, which goes with this
+step.
+
+**D. In and out without a view provider** (14.6.7), with a STEP file read
+and written in `FreeCADCmd` as its check.
+
+**E. Files below schema 5 against upstream and an older build**, each
+opened in the other; and the costs of 14.1 measured again on what was
+built.
