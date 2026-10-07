@@ -52,6 +52,7 @@
 #include "Application.h"
 #include "Command.h"
 #include "MainWindow.h"
+#include "MainWindowParams.h"
 #include "OverlayWidgets.h"
 #include "WidgetFactory.h"
 
@@ -527,14 +528,14 @@ ToolBarManager::ToolBarManager()
 
     globalArea = defaultArea = Qt::TopToolBarArea;
     hMainWindow = App::GetApplication().GetUserParameter().GetGroup("BaseApp/Preferences/MainWindow");
-    std::string defarea = hMainWindow->GetASCII("DefaultToolBarArea");
+    std::string defarea = MainWindowParams::getDefaultToolBarArea();
     if (defarea == "Bottom")
         defaultArea = Qt::BottomToolBarArea;
     else if (defarea == "Left")
         defaultArea = Qt::LeftToolBarArea;
     else if (defarea == "Right")
         defaultArea = Qt::RightToolBarArea;
-    defarea = hMainWindow->GetASCII("GlobalToolBarArea");
+    defarea = MainWindowParams::getGlobalToolBarArea();
     if (defarea == "Bottom")
         globalArea = Qt::BottomToolBarArea;
     else if (defarea == "Left")
@@ -568,7 +569,8 @@ ToolBarManager::ToolBarManager()
                     || Param == hMenuBarLeft
                     || (Param == hMainWindow
                         && Name
-                        && boost::equals(Name, "DefaultToolBarArea"))) {
+                        && (boost::equals(Name, "DefaultToolBarArea")
+                            || boost::equals(Name, "GlobalToolBarArea")))) {
                 timer.start(100);
             }
             else if (Param == hGlobal)
@@ -792,7 +794,9 @@ static bool isToolBarEmpty(QToolBar *toolbar)
 void ToolBarManager::onTimer()
 {
     Base::StateLocker guard(relocating);
-    std::string defarea = hMainWindow->GetASCII("DefaultToolBarArea");
+    // Asked of the class: this runs from the timer the change starts, by
+    // which time the class has the new value.
+    std::string defarea = MainWindowParams::getDefaultToolBarArea();
     auto area = Qt::TopToolBarArea;
     if (defarea == "Bottom")
         area = Qt::BottomToolBarArea;
@@ -800,7 +804,7 @@ void ToolBarManager::onTimer()
         area = Qt::LeftToolBarArea;
     else if (defarea == "Right")
         area = Qt::RightToolBarArea;
-    defarea = hMainWindow->GetASCII("GlobalToolBarArea");
+    defarea = MainWindowParams::getGlobalToolBarArea();
     auto gArea = Qt::TopToolBarArea;
     if (defarea == "Bottom")
         gArea = Qt::BottomToolBarArea;

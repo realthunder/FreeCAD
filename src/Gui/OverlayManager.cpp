@@ -58,6 +58,7 @@
 #include "BitmapFactory.h"
 #include "Control.h"
 #include "MainWindow.h"
+#include "MainWindowParams.h"
 #include "MDIView.h"
 #include "NaviCube.h"
 #include "OverlayParams.h"
@@ -139,7 +140,7 @@ public:
     std::array<std::string, 3> choice() const {
         return {handle->GetASCII("StyleSheet"),
                 handle->GetASCII("OverlayActiveStyleSheet"),
-                handle->GetASCII("ColorScheme", "Light")};
+                handle->GetASCII("ColorScheme", MainWindowParams::defaultColorScheme().c_str())};
     }
 
     void update() {

@@ -26,6 +26,7 @@
 
 
 #include "UserSettings.h"
+#include "MainWindowParams.h"
 #include <App/Application.h>
 
 
@@ -42,7 +43,7 @@ ParameterGrp::handle getWSParameter()
 
 std::string WorkbenchSwitcher::getValue()
 {
-    return getWSParameter()->GetASCII("WSPosition", "WSToolbar");
+    return MainWindowParams::getWSPosition();
 }
 
 bool WorkbenchSwitcher::isLeftCorner(const std::string& value)
@@ -69,8 +70,7 @@ QVector<std::string> WorkbenchSwitcher::values()
 
 int WorkbenchSwitcher::getIndex()
 {
-    auto hGrp = getWSParameter();
-    std::string pos = hGrp->GetASCII("WSPosition", "WSToolbar");
+    std::string pos = MainWindowParams::getWSPosition();
     auto wsPositions = values();
     int index = std::max(0, static_cast<int>(wsPositions.indexOf(pos)));
     return index;

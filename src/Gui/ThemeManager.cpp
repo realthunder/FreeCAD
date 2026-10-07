@@ -30,6 +30,7 @@
 #include <App/Application.h>
 
 #include "Application.h"
+#include "MainWindowParams.h"
 #include "PreferencePackManager.h"
 #include "ThemeManager.h"
 
@@ -191,8 +192,13 @@ bool keyMatches(const ParameterGrp::handle& user,
     }
 
     if (type == ParameterGrp::ParamType::FCBool) {
-        const bool declared = pack.isValid() && pack->GetBool(key.c_str(), false);
-        return user->GetBool(key.c_str(), false) == declared;
+        // A switch neither side stores is its DEFAULT, which is not "off"
+        // for every one: the window reads an unset TitleBarToolBars as on,
+        // and comparing it as off called an untouched theme customised.
+        const bool fallback = key == "TitleBarToolBars"
+            ? MainWindowParams::defaultTitleBarToolBars() : false;
+        const bool declared = pack.isValid() ? pack->GetBool(key.c_str(), fallback) : fallback;
+        return user->GetBool(key.c_str(), fallback) == declared;
     }
 
     const std::string declared = pack.isValid() ? pack->GetASCII(key.c_str()) : std::string();
@@ -230,7 +236,7 @@ bool ThemeManager::isCustomised()
 
 ThemeManager::IconSetPolicy ThemeManager::iconSetPolicy()
 {
-    const std::string policy = userMainWindow()->GetASCII("ThemeIconSetPolicy", "Reset");
+    const std::string policy = MainWindowParams::getThemeIconSetPolicy();
     if (policy == "Merge") {
         return IconSetPolicy::Merge;
     }

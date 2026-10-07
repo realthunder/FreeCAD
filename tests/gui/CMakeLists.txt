@@ -1430,3 +1430,11 @@ fc_add_gui_test(GuiGeneralSettings_tests_run
 fc_add_gui_test(GuiPreferencesCancelAsksNothing_tests_run
                 preferences-cancel-asks-nothing.py
                 --timeout 180)
+
+# The main window's and the theme's settings are behind MainWindowParams
+# and ThemeParams: listed by the omni search, the accent colours with one
+# default each wherever one is needed, and the global tool bar area
+# followed when it alone changes.
+fc_add_gui_test(GuiMainWindowSettings_tests_run
+                mainwindow-settings.py
+                --timeout 180)

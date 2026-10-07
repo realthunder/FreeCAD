@@ -91,6 +91,7 @@
 #include <customtitlebarkit/MenuIntegration.h>
 
 #include "MainWindow.h"
+#include "MainWindowParams.h"
 #include "GeneralParams.h"
 #include "InputHintWidget.h"
 #include "Action.h"
@@ -449,9 +450,7 @@ protected:
 
 MainWindow::MainWindow(QWidget * parent, Qt::WindowFlags f)
   : CustomTitleBarWindow(
-        App::GetApplication()
-                .GetParameterGroupByPath("User parameter:BaseApp/Preferences/MainWindow")
-                ->GetBool("CustomTitleBar", false)
+        MainWindowParams::getCustomTitleBar()
             ? Mode::Custom
             : Mode::Native,
         parent)
@@ -1855,7 +1854,7 @@ void MainWindow::onDockWindowMenuAboutToShow()
 {
     auto menu = static_cast<QMenu*>(sender());
     menu->clear();
-    QString shortcutPrefix = QString::fromUtf8(d->hGrp->GetASCII("DockableWindowShortcut", "D, D").c_str());
+    QString shortcutPrefix = QString::fromUtf8(MainWindowParams::getDockableWindowShortcut().c_str());
     shortcutPrefix = shortcutPrefix.trimmed();
     if (!shortcutPrefix.isEmpty()) {
         if (!shortcutPrefix.endsWith(QLatin1Char(',')))
@@ -2086,9 +2085,7 @@ private:
      */
     static int clickGuardInterval()
     {
-        auto hGrp = App::GetApplication().GetParameterGroupByPath(
-            "User parameter:BaseApp/Preferences/MainWindow");
-        return static_cast<int>(hGrp->GetInt("TitleBarMenuClickGuard", 1000));  // NOLINT
+        return static_cast<int>(MainWindowParams::getTitleBarMenuClickGuard());  // NOLINT
     }
 
     static constexpr int logoSize = 24;
@@ -2146,7 +2143,7 @@ void MainWindow::setupTitleBarMenu()
 
 bool MainWindow::foldTitleBarMenu() const
 {
-    return d->hGrp->GetBool("FoldTitleBarMenu", true);
+    return MainWindowParams::getFoldTitleBarMenu();
 }
 
 void MainWindow::setFoldTitleBarMenu(bool enable)
@@ -2154,7 +2151,7 @@ void MainWindow::setFoldTitleBarMenu(bool enable)
     if (enable == foldTitleBarMenu()) {
         return;
     }
-    d->hGrp->SetBool("FoldTitleBarMenu", enable);
+    MainWindowParams::setFoldTitleBarMenu(enable);
     setupTitleBarMenu();
 }
 
@@ -2218,7 +2215,7 @@ bool MainWindow::activateMenuBar()
 
 bool MainWindow::titleBarToolBars() const
 {
-    return d->hGrp->GetBool("TitleBarToolBars", true);
+    return MainWindowParams::getTitleBarToolBars();
 }
 
 namespace
@@ -2231,7 +2228,7 @@ constexpr int TitleBarSwitchSettle = 100;
 
 void MainWindow::applyTitleBarParams()
 {
-    const bool custom = d->hGrp->GetBool("CustomTitleBar", false);
+    const bool custom = MainWindowParams::getCustomTitleBar();
 
 #ifdef FC_OS_WIN32
     // The frame of a maximized window is not changed in place. On Windows the

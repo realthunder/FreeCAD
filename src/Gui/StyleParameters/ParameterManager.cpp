@@ -36,6 +36,7 @@
 #include <variant>
 
 #include <Base/Console.h>
+#include <Gui/ThemeParams.h>
 
 FC_LOG_LEVEL_INIT("Gui", true, true)
 
@@ -161,7 +162,20 @@ std::list<Parameter> BuiltInParameterSource::all() const
 std::optional<Parameter> BuiltInParameterSource::get(const std::string& name) const
 {
     if (params.contains(name)) {
-        unsigned long color = params.at(name)->GetUnsigned(name.c_str(), 0);
+        // An accent colour that is not stored is its default, not black:
+        // the style sheet's own substitution says so, and the two have to
+        // agree.
+        unsigned long fallback = 0;
+        if (name == "ThemeAccentColor1") {
+            fallback = ThemeParams::defaultThemeAccentColor1();
+        }
+        else if (name == "ThemeAccentColor2") {
+            fallback = ThemeParams::defaultThemeAccentColor2();
+        }
+        else if (name == "ThemeAccentColor3") {
+            fallback = ThemeParams::defaultThemeAccentColor3();
+        }
+        unsigned long color = params.at(name)->GetUnsigned(name.c_str(), fallback);
 
         return Parameter {
             .name = name,

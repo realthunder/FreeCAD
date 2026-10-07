@@ -50,6 +50,7 @@
 #include "Document.h"
 #include "MetaTypes.h"
 #include "MainWindow.h"
+#include "MainWindowParams.h"
 #include "PieMenu.h"
 #include "SelectionView.h"
 #include "Tree.h"
@@ -568,11 +569,9 @@ void setupMenuStyle(QWidget *menu)
 {
     LineEditStyle::setupChildren(menu);
 
-    auto hGrp = App::GetApplication().GetParameterGroupByPath(
-                    "User parameter:BaseApp/Preferences/MainWindow");
     static QString _Name;
     static QString _Stylesheet;
-    QString name = QString::fromUtf8(hGrp->GetASCII("MenuStyleSheet").c_str());
+    QString name = QString::fromUtf8(MainWindowParams::getMenuStyleSheet().c_str());
     if(name.isEmpty()) {
         // No menu sheet chosen: a menu like every other, drawn by the theme.
         // The see-through sheets (Dark.qss, Light.qss) are for whoever picks

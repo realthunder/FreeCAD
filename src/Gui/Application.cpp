@@ -112,6 +112,7 @@
 #include "LiveViewInteraction.h"
 #include "DlgDocumentPermissions.h"
 #include "MainWindow.h"
+#include "MainWindowParams.h"
 #include "Macro.h"
 #include "MDIViewWithCamera.h"
 #include "PreferencePackManager.h"
@@ -3658,7 +3659,8 @@ void Application::applyColorScheme()
     // nothing is pinned, so leaving this unset came up black on a dark Windows.
     // An explicit empty value still means "follow the desktop" -- that is what
     // the Match desktop entry writes.
-    const std::string scheme = hGrp->GetASCII("ColorScheme", "Light");
+    const std::string scheme
+        = hGrp->GetASCII("ColorScheme", MainWindowParams::defaultColorScheme().c_str());
 
     if (scheme == "Light") {
         qGuiApp->styleHints()->setColorScheme(Qt::ColorScheme::Light);

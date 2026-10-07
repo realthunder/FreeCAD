@@ -13,8 +13,10 @@
 #include <App/ParamRegistry.h>
 #include <App/PropertyStandard.h>
 
+#include "Gui/Application.h"
 #include "Gui/OmniSearch.h"
 #include "Gui/PrefWidgets.h"
+#include "Gui/ThemeParams.h"
 #include <src/App/InitApplication.h>
 
 using namespace Gui::OmniSearch;
@@ -272,6 +274,17 @@ private Q_SLOTS:
 
         QVERIFY(searchParams(QStringLiteral("nothing-matches-this-anywhere")).empty());
         QVERIFY(searchParams(QString()).size() == ParamRegistry::instance().entries().size());
+    }
+
+    // The accent colours' defaults are written twice: in ThemeParams, which
+    // the omni search and the Theme page show, and as constants of
+    // Gui::Application, which the style sheet substitution and the Start
+    // page use. They used to be four different answers.
+    void test_accentDefaultsAreOne()  // NOLINT
+    {
+        QCOMPARE(Gui::ThemeParams::defaultThemeAccentColor1(), Gui::Application::DefaultAccentColor1);
+        QCOMPARE(Gui::ThemeParams::defaultThemeAccentColor2(), Gui::Application::DefaultAccentColor2);
+        QCOMPARE(Gui::ThemeParams::defaultThemeAccentColor3(), Gui::Application::DefaultAccentColor3);
     }
 
     // As ParamRegistryTest.everySettingIsDocumentedBriefly, with the Gui
