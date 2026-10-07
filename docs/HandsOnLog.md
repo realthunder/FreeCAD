@@ -26,6 +26,10 @@ Evidence that does not belong in the repository is under
 | 15 | FIXED `1047cc0647`; one question for the reporter | a refine wrote into the feature underneath. Left: `Pocket040` is 12 mm where the file has 13 -- its negative `Fit` grew in the old build, on one oddly made face |
 | 17 | FIXED `3c8cd63032`; what it uncovers is a question for the reporter | the two sketches refer to edges of a binder that moved with another binder; found again now. Then `Pad033` loses its profile, because the sketch really changes |
 | 19 | FIXED `805b5afb25` | every place the audit listed that runs at load, recompute or paint, the three wrong results, and the writer of -1; what is left is listed |
+| 22 | FIXED `5aedd5cf83` | `/word` is an object query; the beginning of a keyword lists modes and objects |
+| 23 | FIXED `c7a27b5a85`, and `08b8f009aa` | 574 settings: 221 had no documentation, 94 ran past 400 characters; all have a short text now, and a test keeps it so. What the audit turned up besides is listed |
+| 26 | FOUND in part, nothing changed | an unchanged write of the renderer `Type` reloads every Part view provider: 1.07 s on `scanner.FCStd`; the anti-aliasing change itself 0.15 s. OK in the dialog not measured yet |
+| 27 | FIXED `fa2ada985c` | the cell menu made a spreadsheet view by asking for it, listed a page's views, and a pick was placed by the general policy |
 
 ## 15. A Pad "up to first" gives a third result -- FIXED, one question left
 
@@ -272,3 +276,201 @@ still. Evidence: `..\dl\handson\2026-10-07\entry19-*`.
   broken and complex sections, details, templates, weld symbols, hatch and
   PAT parsing, the command files and the Python;
 - `DrawTemplate`'s one enumeration, which nothing asks for its text.
+
+## 22. Omni search: `/word` with no space is an object query -- FIXED
+
+`5aedd5cf83`. The rule as the queue has it decided:
+
+| typed | is |
+|---|---|
+| `/` | the chooser, three modes |
+| `/Box.Length` | an object query, as `/ Box.Length` |
+| `/ cmd` | an object query for something called `cmd` |
+| `/cmd`, `/param` | the keyword: the chooser shows that one mode |
+| `/cmd `, `/param ` | the mode, as before |
+| `/c`, `/par` | the chooser: the modes it could be, then the objects it matches |
+
+`OmniSearch::parseInput` (the grammar, `Input::withObjects`), and
+`OmniSearchEdit::fillChooser` (the list). The chooser's rows are made for the
+text as it stands instead of filtered from a fixed three. Its object rows
+come from a second expression completer asked through `completionsFor()`,
+which shows nothing; they are kept to what the box can resolve, because that
+completer offers units and functions as well (`/c` listed `cm`, `cd`, `acos(`
+on the first try). Picking an object row picks the object, as a row of the
+object list does. The browser viewer's `parseInput` (`web/src/omni.tsx`)
+follows; its only keyword is `cmd`. `docs/OmniSearch.md` sec 1.
+
+One thing seen on the way and kept as it was: an unfiltered completer spends
+the first Down key on selecting the row that is already current. The chooser
+became unfiltered with this change, so its first row is selected when the
+list comes up; the command and parameter lists have always behaved the other
+way and were left alone.
+
+Scored: `OmniSearch_Tests_run` `test_parseInput` (the table above);
+`tests/gui/omni-search-slash-word.py` 10 PASS, 7 on the staged binaries (no
+Crate row for `/c`, nothing to pick, `/Pillar.Height` resolves nothing). The
+web side type-checks (`tsc --noEmit`, emsdk's node); the bundle is built with
+the WASM viewer and was NOT rebuilt.
+
+"Also check wasm viewer, I remember it already shows `<space>` there": its
+two mode rows are titled `/ ` and `/cmd ` with a real trailing space, which
+is not visible; there is no literal `<space>` anywhere in `web/src`. Left as
+it is.
+
+## 23. Omni search: the settings it collects -- FIXED
+
+**The audit.** The omni search lists what the generated parameter classes
+register: 574 settings in 13 classes (`audit23.py`, which imports the
+definition files as they are). The row shows the title and the first line of
+the documentation, the tool tip all of it.
+
+| | settings | no documentation | over 400 characters |
+|---|---|---|---|
+| RenderParams | 157 | 6 | 78 (longest 2248) |
+| ViewParams | 189 | 60 | 6 |
+| PartParams (App and Gui) | 54 | 48 | 3 |
+| DocumentParams | 43 | 32 | 6 |
+| TreeParams | 36 | 30 | 0 |
+| MeshParams | 18 | 18 | 0 |
+| ReportViewParams | 11 | 7 | 1 |
+| SheetParams | 10 | 10 | 0 |
+| Expr, Overlay, Link, Group, OpenView | 56 | 10 | 0 |
+| all | 574 | 221 | 94 |
+
+The long ones are what the entry suspected: the design note of the change
+that added the setting, used as its documentation -- measurements, history,
+"RE-MEASURED 2026-08-15", references to documents.
+
+**Done,** `c7a27b5a85`.
+- The 94 say what the setting does, its values and when it applies, in at
+  most 400 characters (mean 215). The long form is kept, as a comment above
+  the setting in its definition file.
+- The 221 have a text, each written from the code that reads the setting
+  (three read-only helper agents did the reading; every text was read back,
+  and what they could not verify is in their notes beside the evidence).
+- 18 settings whose generated title was broken have one of their own:
+  "Force XM L", "Respect System DP I", "Axis XColor", the five `pref...` and
+  the six `check...`.
+- The generated `.h`/`.cpp` of the twelve classes are regenerated from the
+  definitions, nothing by hand; line endings put back to what each file had.
+- `ParamRegistryTest.everySettingIsDocumentedBriefly`, and the same check in
+  `OmniSearch_Tests_run` with the Gui classes registered, fail on a setting
+  with no documentation or with more than 400 characters. (The Gui one
+  caught a 401st byte my own count had missed: a section sign is two.)
+  Part, Mesh and Spreadsheet register only when their modules load, which
+  neither test does; their settings are covered by the audit script, not by
+  a test.
+
+Evidence: `..\dl\handson\2026-10-07\entry23-*` (the audit before and after,
+the three lists of new texts with their "unverified" notes).
+
+**What the audit turned up besides.** One fixed, the rest listed for the
+reporter; none of it was in what was asked.
+- FIXED `08b8f009aa`: `prefLicenseUrl` was used only when it was EMPTY
+  (`App/Document.cpp`), so a new document never got the address from the
+  preferences.
+- FIXED with the texts: `LinkParams.CreateInContainer` was defined
+  `ParamBool('CreateInContainer', bool, False)`, the type in the default's
+  place. The generated default was `true` and still is.
+- Read by nothing: `ViewParams` `ShadowLightDirectionX/Y/Z`,
+  `ShadowExtraRedraw`, `TransformOnTop`; `ViewSelectionExtendFactor` (its one
+  use is inside `#if 0`); `MeshParams.DisplayAliasFormatString` (a copy of
+  the spreadsheet's). Their text says "currently has no effect" where that
+  is so. `ShadowLightColor` and `ShadowLightIntensity` reach no renderer:
+  the page that syncs them writes view properties that were renamed to
+  `Render_Light*`.
+- Defaults that disagree between a definition and its preference page:
+  `UseFCBakExtension` (False; the page and a second reader say true),
+  `SaveThumbnail` (False; checked), `ThumbnailSize` (128; 256),
+  `CompressionLevel` (3; 7, beside a label saying "3 = default"),
+  `AutoValidateShape` (False; checked -- and OK on that page writes True),
+  `checkShowReportViewOnWarning` (True; unchecked -- and saving writes
+  False), `TreeEditColor`.
+- The draw style page writes `HiddenLine_Color` and `HiddenLine_Width`; the
+  view's properties are `HiddenLine_LineColor` and `HiddenLine_LineWidth`,
+  so a change of those two never reaches an open view.
+- `NoPartialLoading`: the page's tool tip says the opposite of its label.
+- `ParallelRunThreshold` is no threshold on this kernel: any value above 0
+  turns parallel booleans on.
+- `Part` `MeshDeviation` and `MeshAngularDeflection`, the App copies: read
+  only as the fallback of `TopoShape::meshShape`, which takes the percentage
+  as an absolute deflection and the degrees with no conversion to radians.
+- `DefaultDatumColor` (Mod/Part) colours binders and extrusions; datums read
+  a key of the same name under Mod/PartDesign.
+- The documentation of `HiddenLineOverrideFaceColor` and
+  `HiddenLineOverrideColor` talks about selection highlighting: a copy and
+  paste, left as it was.
+
+## 26. A long halt after enabling MSAA and pressing OK -- FOUND in part
+
+Nothing changed. What was asked: is the halt the update of every view
+provider that OK sets off, or the anti-aliasing change itself?
+
+**From the code.** OK saves every page, and a page saving a key writes it
+whether it changed or not. `ParameterGrp::_SetAttribute` tells its typed
+observers only of a changed value -- and then, "for backward compatibility",
+notifies the old observers every time (`Notify(Name)`). Part's
+`InstancingGateObserver` (`Mod/Part/Gui/PartParams.cpp`) is an old observer,
+and on any notice named `RenderCache` or `Type` it starts the timer that
+reloads every Part view provider of every document. So the reporter's guess
+is right in kind: OK reloads all of them without anything having changed.
+
+**Measured** (`e26.py`, the event loop held, `scanner.FCStd`, 686 objects, a
+fresh configuration, Direct3D 11):
+
+| step | event loop held |
+|---|---|
+| nothing written | 0.00 s |
+| renderer `Type` written UNCHANGED | 1.07 s |
+| `AntiAliasing` 0 -> 3 | 0.16 s |
+| `AntiAliasing` 3 -> 0 | 0.15 s |
+
+The anti-aliasing change is not the halt. An unchanged write of one key
+costs a second on this document; what the dialog's OK costs in all -- every
+page, every observer -- was not measured, and one second is not yet the
+"long halt" reported.
+
+**Next:** time OK in the preferences dialog itself on the reporter's kind of
+session; make `InstancingGateObserver` act on a changed value only; look for
+the other old-style observers that do work on an unchanged write.
+
+## 27. The view cell menu -- FIXED
+
+`fa2ada985c`. Three notes, one cause and a half.
+
+**The cause.** To list what a cell can show, the menu asked every object's
+view provider for its view (`getMDIView()`).
+- `ViewProviderSheet::getMDIView()` answers by MAKING the view. So opening
+  the menu opened a view for every spreadsheet of the document, placed by
+  the general policy: into the last non-3D cell, closing what was there --
+  the TechDraw page that "auto switched to spreadsheet" -- or, with no such
+  cell, into a new split, the spreadsheet that was "auto created".
+- A TechDraw view object answers with its PAGE's view, so every dimension,
+  view and template of an open page was listed.
+- And a pick: the page was opened by its view provider, placed by the same
+  policy into the last non-3D cell -- the spreadsheet's, which it closed --
+  and the menu's own "put it in this cell" then found it hosted already and
+  did nothing. The choice was right and the cell wrong.
+
+**Fix.**
+- The open object views are read off the views, which carry their object's
+  name as their own (`MDIViewPage` did; `SheetView` does now). Nothing is
+  asked of a view provider to build the menu.
+- Pages and spreadsheets are listed by type, open or not; a spreadsheet
+  used to be listed only because listing it opened it.
+- A view opened by a pick is opened FOR that cell
+  (`ViewPlacement::IntoCell`); `Std_ViewCellShowObject` likewise. A view
+  that sits in another cell is activated there, where the pick used to do
+  nothing.
+- `ViewProviderSheet::getMDIView()` still makes the view: selecting a sheet
+  with "sync view" on relies on it, and changing that was not asked.
+
+Scored: `tests/gui/view-cell-menu.py` 15 PASS. On the staged binaries the
+menu of a lone 3D cell leaves a spreadsheet cell behind, and the menu of an
+open page lists `Template`, `Front` and `Width`. `docs/SplitViews.md`
+sec 5.5.
+
+Not looked at: a spreadsheet's view closed from its cell ("Close view")
+seems to stay alive hidden, and a double click on the sheet then shows
+nothing -- seen once while writing the test, on the staged binaries, not
+pinned down.
