@@ -13,6 +13,16 @@ the helix of entry 8), 2026-10-06 14:44 (`6b1bd3f434`: entry 14), 2026-10-06 17:
 (`f7d3aa0cf2`: entries 16 and 18), 2026-10-07 10:37 (`7e94bff8d0`: entries 9 to 13, 20
 and 21).
 
+**Two documents since 2026-10-07 11:15, one writer each** (asked for by the
+reporter, agreed between the two sessions). This one is the REQUEST side and
+the note-taking session alone writes it: the table, what was reported in the
+reporter's words, what they added or decided later, and the Inbox. The WORK
+side -- per entry number its state, cause, fix commit, tests, measurements and
+the stage that has it -- is `docs/HandsOnLog.md`, written by the build and
+test session alone. The State column below and the findings inside entries 1
+to 28 are as they stood at that time and are NOT kept up from here on; the log
+is where to read a state. A new stage is recorded there too.
+
 States: `OPEN` (not looked at), `FOUND` (cause known, no fix yet), `FIXED`
 (committed and tested in the dev tree, not staged yet), `STAGED` (in the copy
 under test, waiting for the reporter to confirm), `CLOSED`.
@@ -51,7 +61,8 @@ report views, the reporter's own files -- is kept beside the dev tree under
 | 26 | 2026-10-06 | a long halt after enabling MSAA and pressing OK in the preferences | OPEN |
 | 27 | 2026-10-06 | the view cell menu: opens a spreadsheet nobody asked for, lists every TechDraw object, changes the wrong cell | OPEN |
 | 28 | 2026-10-06 | `scanner.FCStd` restores with a wrong colour, sometimes (the motor body light blue for light grey) | OPEN |
-| 29 | 2026-10-07 | view cells: transparent frames that show a split, a join and a resize while dragged (every cell the drag changes); a minimum cell size setting, default 200 (change request, decided) | OPEN |
+| 29 | 2026-10-07 | view cells: transparent frames that show a split, a join and a resize while dragged (every cell the drag changes); corner handles on an opaque background; a minimum cell size setting, default 200 (change request, decided) | OPEN |
+| 30 | 2026-10-07 | the dark and light overlay stylesheets integrated into the Dark and Light preference packs (a task asked; what "integrated" covers to confirm); and the long freeze when an overlay stylesheet is applied, to investigate | OPEN |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -1536,11 +1547,77 @@ What is asked now:
 - (d) stands: the minimum cell size setting, default 200 for width and
   height, a view creation that would put any cell under it refused, one
   quiet line in the report view.
+- (e), added by the reporter 11:01: "view cell handle should draw with opaque
+  background otherwise they are practically invisible in many cases". The
+  corner handles are drawn as a few strokes straight onto whatever the cell
+  shows; over a busy or like-coloured view they cannot be seen. They get an
+  opaque background. From the source (`ViewAreaZone::paintEvent`,
+  `src/Gui/ViewArea.cpp`): two diagonal lines in the palette's highlight
+  colour, at alpha 130 when only hinted, nothing behind them, and nothing at
+  all until the zone is hovered or hinted. Whether the menu button in the
+  top left corner (`ViewAreaMenuButton`) is meant too was not said.
+
+## 30. The dark and light overlay stylesheets integrated into the Dark and Light preference packs (a task asked) -- OPEN
+
+**2026-10-07 10:58, a task.** "add task to integrate dark and light overlay
+stylesheet into dark and light preference pack".
+Read from the source by the note-taker, nothing changed, and it leaves a
+question open:
+- The two packs are one file each, `src/Gui/PreferencePacks/Light/Light.cfg`
+  and `.../Dark/Dark.cfg`, and each ALREADY names an overlay stylesheet:
+  `OverlayActiveStyleSheet` is `Light_overlay.qss` in the one and
+  `Dark_overlay.qss` in the other, next to `StyleSheet` = `FreeCAD.qss` (the
+  parameterized sheet both themes share).
+- The overlay sheets are separate files in `src/Gui/Stylesheets/overlay/`,
+  and there are more of them than the packs use: `Light_overlay.qss`,
+  `Dark_overlay.qss`, `Darker_overlay.qss`, `Light-Modern_overlay.qss`,
+  `Dark-Modern_overlay.qss`, and beside them `Light.qss`, `Dark.qss`,
+  `Light-off.qss`, `Dark-off.qss`, `Light-Outline.qss`, `Dark-Outline.qss`,
+  `SplitDark.qss`.
+- With no `OverlayActiveStyleSheet` set, the overlay picks
+  `Light-Outline.qss` or `Dark-Outline.qss` by the look of the main sheet
+  (`detectOverlayStyleSheetFileName` in `src/Gui/OverlayManager.cpp`).
+To confirm with the reporter, since a pack naming an overlay sheet is there
+already: is the task (1) to have the packs name a DIFFERENT pair of overlay
+sheets -- which? -- or (2) to fold the overlay styling into the theme itself,
+so that the overlay takes its colours from the pack's style parameters like
+the rest of `FreeCAD.qss` instead of from a qss file of its own, or (3)
+something seen on screen that is wrong with the overlay under the two themes?
+
+**Added by the reporter, 11:02, a second task under this entry:** "also about
+entry 30, investigate the application long freeze time when applying overlay
+stylesheet". Applying an overlay stylesheet freezes the application for a
+long time; find out where the time goes. How long, from the reporter
+(11:04): "freeze for about several tens of seconds". How it was applied
+(11:09): "the stylesheet is applied through Tools -> Preset configurations ->
+Overlay dark theme". Not said yet: how many documents, views and docked
+panels were open.
+So it is a PRESET, not one stylesheet setting: `Std_CmdPresets` ->
+`PresetsAction::applyPreset` (`src/Gui/Action.cpp`) takes the parameter set
+`data/settings/OverlayDark.FCParam` and inserts the whole of it into the user
+parameters in one call (`param->insertTo(manager)`). Every key in that file
+is written one after another, and every observer of every one of them reacts
+on the spot -- the overlay refresh above among them, once per key it watches.
+The file is the list of what gets written; counting its keys against the
+observers is where to start.
+Read from the source by the note-taker, nothing run or timed -- where to
+start: a change of `OverlayActiveStyleSheet`, of `StyleSheet` or of
+`ColorScheme` in `Preferences/MainWindow` each calls
+`OverlayManager::instance()->refresh(nullptr, true)`
+(`OverlayStyleSheet::OnChange`, `src/Gui/OverlayManager.cpp`), with no delay
+and no merging of the three -- a theme switch writes all three, so the
+refresh may run three times in a row. A preference pack being applied writes
+them one after another the same way. The sheet is read from its file each
+time (`OverlayStyleSheet::update` -> `loadFromFile`), then set on the overlay
+widgets, and a `setStyleSheet` re-polishes every child of the widget it lands
+on -- tree, property editor, report view with all their rows. Entry 26 (the
+halt after OK in the preferences) and entry 24 (apply a changed setting
+through a delayed handler) are the same family.
 
 ## Inbox
 
 Notes not sorted into an entry yet. Add a line here at any time, in any words;
 it is read before each entry is started and moved up into the table.
 
-(empty: the notes of 2026-10-06 are entries 20 to 28, the note of 2026-10-07
-09:32 is entry 29)
+(empty: the notes of 2026-10-06 are entries 20 to 28, those of 2026-10-07 so far
+entries 29 and 30)
