@@ -852,7 +852,7 @@ its own thing, and not started.
 
 Evidence: `..\dl\handson\2026-10-07\msaa-*`, `entry26-first-ok-with-msaa-*`.
 
-## 24. Every setting behind a generated class -- STARTED, nineteen groups done
+## 24. Every setting behind a generated class -- STARTED, twenty groups done
 
 The reporter, 2026-10-07, asked which entry "do entry 23 next" meant: "I
 meant entry 24". Not staged.
@@ -1159,9 +1159,19 @@ Measured on the staged binaries: a spacing of 25 stored the page's way gives
 10. Fixed, the old profile's `Hist0` still counting while the page's key is
 not stored; `sketcher-settings.py` holds it (8 PASS; 3 PASS, 5 FAIL staged).
 
-NOT DONE in the Sketcher: `SolverAdvanced` (28 keys), the 11 keys it keeps
-in `Preferences/View`, and the inventory's other findings that need more
-than a default -- the external geometry colour, the solver box's wrong
+**Done, third step: the Sketcher's keys in the 3D view's group,** 27
+settings, `5ba1afc503`: its label font, a few sizes and the colours of a
+sketch in and out of edit, in the same class under `Preferences/View`. A
+sketch in edit took each colour from a constant of its own; it takes the
+class's now, which is what the Appearance page shows. Put right: external
+geometry is drawn in 204,51,153 while its key is not stored and the page
+showed, and OK stored, 204,51,115. The defaults test did not follow a
+setting kept in another group than its class's; it does, and names that
+colour on the staged binaries. `sketcher-settings.py` 9 PASS; 3 PASS, 6
+FAIL staged.
+
+NOT DONE in the Sketcher: `SolverAdvanced` (28 keys) and the inventory's
+other findings that need more than a default -- the solver box's wrong
 keys, the Snap command's cached state, the Dimension tool's continue mode,
 the key for radius or diameter that is never stored. Each is from reading
 and wants measuring first.
