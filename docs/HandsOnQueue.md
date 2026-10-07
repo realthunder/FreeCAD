@@ -36,7 +36,7 @@ report views, the reporter's own files -- is kept beside the dev tree under
 | 12 | 2026-10-06 | TechDraw: dimensions and cosmetics are covered by the face fill | FIXED (they were transparent, not covered) |
 | 13 | 2026-10-06 | report view: grouped messages with an expand icon in the margin, no underscore (change request) | FIXED |
 | 14 | 2026-10-06 | a Draft with no neutral plane given turns the other way after a recompute (from entry 8) | STAGED |
-| 15 | 2026-10-06 | a Pad "up to first" gives a third result (from entry 8) | OPEN |
+| 15 | 2026-10-06 | a Pad "up to first" gives a third result (from entry 8) | FOUND in part: not the pad; a pocket goes wrong only in a recompute of everything |
 | 16 | 2026-10-06 | faces of a "Mutated" copy-on-change binder are renamed by every recompute in a new session (from entry 8; the old build too) | STAGED |
 | 17 | 2026-10-06 | `Sketch043`, `Sketch055`: "Missing external geometry reference", seen once the binders of entry 16 are valid | OPEN |
 | 18 | 2026-10-06 | TechDraw pages do not load: "invalid vector subscript", the views loose in the tree, 320 objects restored to defaults | STAGED |
@@ -606,7 +606,8 @@ those sixteen -- the staged copy's packs never changed the sheet's text
 colour, so it had nothing to follow; it showed once the packs set it
 (`entry11-before\open-sheet-after-switch-to-light.png`).
 
-Not rerun for this entry: ctest (781 of 782 before it, entry 9).
+ctest on the tree with this entry and entry 13 in it: 781 of 782, the one
+being `DeferredLoad_tests_run`'s timeout, as it was before them.
 
 ## 12. TechDraw: dimensions and cosmetics are covered by the face fill -- FIXED
 
@@ -740,7 +741,7 @@ follows the edge from `Edge4` to `Edge10` across the pad's recompute and
 `Draft` comes out valid at 285.76 with `Reversed` on, as saved.
 `TestDraft.testGuessedNeutralPlaneKeepsItsEdge`; TestDraft 4 OK.
 
-## 15. A Pad "up to first" gives a third result -- OPEN
+## 15. A Pad "up to first" gives a third result -- FOUND in part
 
 **From entry 8.** `Pad051`: `Type` UpToFirst, `Reversed`, profile `Binder033`,
 base `Pocket039`. Volume as saved 3256.82; old build recomputed 3400.82; this
@@ -751,6 +752,58 @@ either, so the file does not say which is right. `Hole007` and `Pocket040` to
 the old build and read here as `Length` with `SideType` "Two sides", with the
 same tool volume where the base is the same (`Pocket042`: 577.27 in both).
 Not looked at further.
+
+**Looked at (2026-10-07), this build, headless; not fixed.** It is not
+`Pad051` and not "up to first" (`..\dl\handson\2026-10-07\entry15-*`,
+the probes `pad15c.py` to `pad15f.py` beside their outputs):
+
+- *The pad alone is right.* Recomputed by itself on its base as saved,
+  `Pad051` comes out as saved to the last digit: tool 1792.5166, pad
+  3256.8230 (`entry15-fuse-new.txt`). The old build's 3400.82 and this
+  build's 3282.67 are both from a recompute of EVERYTHING, where the pad's
+  base, `Pocket039`, has already gone wrong: same volume, 1464.3064, but
+  no longer valid, four of its cylinder faces bounded as full circles.
+- *67 of the file's 405 shapes differ from what was saved* after a
+  recompute of everything (`entry15-first-invalid-new.txt`), most of them
+  in face bounds only. Eight are no longer valid: `Pocket017`,
+  `Boolean003` and `Reference003` on it, `Pocket037`, and `Pocket039`,
+  `Pad051`, `Hole007`, `Pocket040`. The first is `Pocket017`: 352.2463 as
+  saved, 444.8578 recomputed -- more than its own base, 361.0674, which a
+  cut cannot give. `Pocket037` reads the same two numbers. THE OLD BUILD
+  GIVES THE SAME 444.8578 for both (`2026-10-06\entry8-vol-old.txt`), so
+  this is not the new kernel.
+- *What is wrong in it:* two cylinder faces, of radius 7 and 5.75, run
+  1.23 turns where they ran 0.23: the arc they should be, plus a whole
+  turn (`u` 0 to 7.7466 for 0 to 1.4634; area 37.959 for 7.171).
+  "Unorientable shape" to the kernel's check. The `Pad051` faces "a full
+  turn too long" (66.787 for 3.492) are the same thing further down.
+- *The same inputs give the right pocket every other way*
+  (`entry15-pocket017-new.txt`, `entry15-pocket017-full-new.txt`).
+  `Pocket017` is a 1 mm pocket of `Sketch041` out of `Pocket008`.
+  Recomputed alone: right. Its five base features and its sketch
+  recomputed one after the other, then it: right. And after a recompute of
+  everything has left it wrong, its base, its sketch and its tool are what
+  they were as saved (valid, same volumes, same bounds); a plain cut of
+  that base by that tool, by hand, is right (352.2463, valid); and the
+  pocket recomputed alone once more, on exactly what the full recompute
+  left, is right again.
+
+So the wrong pocket needs the recompute of everything AROUND it, with
+inputs that measure the same. It is the same wrong number in two runs here
+and in the old build's run, so it is not a race. What that leaves is state:
+something an earlier feature of the full recompute leaves behind that this
+cut then reads -- in the shapes it shares with them (a copy taken for the
+hand cut does not carry it, and the hand cut is right), or in a cache.
+`Pocket037` goes wrong by the same two numbers, so a second feature built
+the same way is in it; whether it is a copy of the first was not looked
+at.
+
+**Next:** catch `Pocket017`'s cut inside the full recompute, with the
+shapes as they are at that moment and not copies of them
+(`SHOW_TOPO_SHAPE`, the way the kernel's other cases were taken apart),
+and compare with the same cut when it is run alone. There is no case for
+the kernel's issue list yet: two BREP files and a cut do not reproduce
+it.
 
 ## 16. Faces of a "Mutated" binder are renamed by every recompute in a new session -- STAGED
 
@@ -1455,3 +1508,35 @@ it is read before each entry is started and moved up into the table.
   it to move to the bottom right? The overlay's live box is `OverlayDragFrame`
   in `src/Gui/OverlayWidgets.cpp`, and its size floor is the setting
   `DockOverlayMinimumSize` (`OverlayParams`) -- the precedent for (c) and (d).
+  **Revised by the reporter after the facts below were put to them, 10:19,
+  and this is the one to do:** "that's not very intutive without the
+  transparent frame I propose. so leave the close button I requested. just
+  make the frames right to hint the operation is enough I think".
+  The facts: the two corner zones, top right and bottom left, are identical
+  and neither is a resize handle. A drag INWARD from either splits the cell
+  -- a new view, beside or stacked by the drag's dominant axis -- and the rest
+  of the drag sizes the new border. A drag OUTWARD into a neighbour arms a
+  join: the neighbour dims with an arrow and is closed on release. A view is
+  closed from its own cell only through the cell menu ("Close view") or the
+  border's right-click menu; resizing is the border alone
+  (docs/SplitViews.md sec 5.4).
+  What is asked now:
+  - (a) and (b) are WITHDRAWN: no close button, the corner zones stay where
+    they are and keep doing what they do (the note-taker reads "leave the
+    close button" as "leave it out"; to confirm).
+  - (c) is the heart of it, and wider than resizing: every drag of a corner
+    zone or of a border shows transparent frames over the cells involved, live,
+    and the frames have to SAY which operation is under way -- a split shows
+    the two cells the one will become, a join shows the neighbour going and
+    the cell that takes its room, a resize shows the cells either side of the
+    border at their new sizes. Made exact by the reporter, 10:22: "border
+    resize shall track the sizes of all involved cells" -- EVERY cell whose
+    size the drag changes gets its frame, not only the two that touch the
+    border where the cursor is: a border with several cells stacked along one
+    side moves them all, and so does one that pushes on further cells once a
+    neighbour has reached its limit. It is the frames that make the gestures
+    readable; today a split or a join announces itself only once it has
+    happened or by a dim and an arrow.
+  - (d) stands: the minimum cell size setting, default 200 for width and
+    height, a view creation that would put any cell under it refused, one
+    quiet line in the report view.
