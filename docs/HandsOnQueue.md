@@ -64,6 +64,7 @@ report views, the reporter's own files -- is kept beside the dev tree under
 | 29 | 2026-10-07 | view cells: transparent frames that show a split, a join and a resize while dragged (every cell the drag changes); corner handles on an opaque background; a minimum cell size setting, default 200 (change request, decided) | OPEN |
 | 30 | 2026-10-07 | the dark and light overlay stylesheets integrated into the Dark and Light preference packs (a task asked; what "integrated" covers to confirm); and the long freeze when an overlay stylesheet is applied, to investigate | OPEN |
 | 31 | 2026-10-07 | report view: "Go to end" on by default (change request) | see `docs/HandsOnLog.md` |
+| 32 | 2026-10-07 | some sub menus are transparent with blue text (Tools > Command history): find out why; transparent menus off by default | see `docs/HandsOnLog.md` |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -1629,10 +1630,38 @@ the default only reaches a profile that never toggled it. The key is read
 straight from the parameter group, not through `ReportViewParams`, so the
 omni search does not list it (entry 24).
 
+## 32. Sub menus that are transparent with blue text; transparent menus off by default
+
+**2026-10-07 11:24, a check asked and a change request.** "check why some sub
+menu a transparent with blue text, e.g. Tools -> Command history. I remember
+only 3d view context menu is supposed to have that property. Anyway, disable
+transparent menu by default". Two things: (a) find out why sub menus such as
+Tools > Command history are transparent with blue text, when the reporter's
+memory is that only the 3D view's context menu was meant to be; (b) whatever
+(a) turns out to be, transparent menus are OFF by default.
+Read from the source by the note-taker, nothing changed:
+- The look is one function, `setupMenuStyle(QWidget*)`
+  (`src/Gui/Selection/SelectionView.cpp`): it sets a menu stylesheet on the
+  widget it is given, taken from the `MenuStyleSheet` key in
+  `Preferences/MainWindow`, or, the key being empty, `qssm:Dark.qss` or
+  `qssm:Light.qss` by the colour scheme in effect (`qssm:Default.qss` with no
+  main stylesheet at all). The files are `src/Gui/Stylesheets/menu/`. Both
+  preference packs set `MenuStyleSheet` to an empty string, so a themed
+  profile gets the Dark or Light menu sheet.
+- A menu has it because the code calls that function on it, twelve calls in
+  all: three in `SelectionView.cpp` (the 3D view's pick and context menus --
+  the ones remembered), one in `OmniSearchBox.cpp`, and eight in
+  `src/Gui/Action.cpp`, among them the command history's menu
+  (`CmdHistoryAction::addTo`). So Tools > Command history is transparent
+  because it was given the style on purpose, not by a stylesheet leaking;
+  which of the eight are wanted is for (a) to list.
+- There is no switch for it today: the function always applies a sheet.
+  (b) needs one -- off unless asked for -- or the default sheet made opaque.
+
 ## Inbox
 
 Notes not sorted into an entry yet. Add a line here at any time, in any words;
 it is read before each entry is started and moved up into the table.
 
 (empty: the notes of 2026-10-06 are entries 20 to 28, those of 2026-10-07 so far
-entries 29 to 31)
+entries 29 to 32)
