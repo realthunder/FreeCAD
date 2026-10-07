@@ -183,13 +183,18 @@ int LineGenerator::fromQtStyle(Qt::PenStyle style)
     int dotted = 7;
     int dashDot = 10;
     int dashDotDot = 12;
-    if (Preferences::lineStandard() == ANSI) {
+    // By the body's name. The preference is a place in the sorted list of
+    // the files found -- ANSI, ASME, ISO with the ones shipped -- and was
+    // compared with the enum's ANSI, ISO, ASME: ASME was taken for ISO and
+    // ISO for ASME.
+    const std::string body = getLineStandardsBody();
+    if (body == "ANSI") {
         dashed = 2;
         dotted = 2;  // no dotted line in Ansi Y14.2?
         dashDot = 2;
         dashDotDot = 2;
     }
-    if (Preferences::lineStandard() == ASME) {
+    if (body == "ASME") {
         dashed = 2;
         dotted = 16;
         dashDot = 17;
@@ -250,7 +255,15 @@ std::map<std::string, int> LineGenerator::loadElements()
         }
         std::vector<std::string> tokens = DU::tokenize(line, ",");
         // should be 2 tokens: elementName, elementLength
-        result[tokens.front()] = std::stoi(tokens.back(), nullptr);
+        if (tokens.size() < 2) {
+            continue;
+        }
+        try {
+            result[tokens.front()] = std::stoi(tokens.back(), nullptr);
+        }
+        catch (const std::exception&) {
+            // a length that is not a number: the element is not defined
+        }
     }
     inFile.close();
     return result;
@@ -284,8 +297,12 @@ std::vector< std::vector<std::string> > LineGenerator::getLineDefinitions()
                 validTokens.emplace_back(token);
             }
         }
+        // a row too short to hold a pattern still counts: the rows are
+        // looked up by their place
         std::vector<std::string> lineDefRow;
-        lineDefRow.insert(lineDefRow.end(), validTokens.begin()+2, validTokens.end());
+        if (validTokens.size() > 2) {
+            lineDefRow.insert(lineDefRow.end(), validTokens.begin()+2, validTokens.end());
+        }
         lineDefs.push_back(lineDefRow);
     }
 
@@ -348,7 +365,7 @@ std::vector<std::string> LineGenerator::getLineDescriptions()
                 validTokens.emplace_back(token);
             }
         }
-        lineDescs.push_back(validTokens.at(1));
+        lineDescs.push_back(validTokens.size() > 1 ? validTokens[1] : std::string());
     }
 
     inFile.close();

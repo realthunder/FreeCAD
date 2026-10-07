@@ -58,6 +58,8 @@
 #include <gp_Vec.hxx>
 #endif
 
+#include <App/DocumentObject.h>
+#include <App/PropertyStandard.h>
 #include <Base/Console.h>
 #include <Base/FileInfo.h>
 #include <Base/Parameter.h>
@@ -1969,4 +1971,42 @@ void DrawUtil::dumpCS3(const char* text, const gp_Ax3& CS)
                             DrawUtil::formatVector(baseAxis).c_str(),
                             DrawUtil::formatVector(baseX).c_str(),
                             DrawUtil::formatVector(baseY).c_str());
+}
+
+//==============================================================================
+// RestoredEnumerations
+//==============================================================================
+
+RestoredEnumerations::RestoredEnumerations(App::DocumentObject& owner)
+    : m_owner(owner)
+{
+    std::vector<App::Property*> props;
+    owner.getPropertyList(props);
+    for (auto prop : props) {
+        auto enumeration = dynamic_cast<App::PropertyEnumeration*>(prop);
+        if (enumeration && enumeration->getEnum().isValid()) {
+            m_before.emplace_back(enumeration->getName(), enumeration->getValue());
+        }
+    }
+}
+
+int RestoredEnumerations::repair()
+{
+    int repaired = 0;
+    for (const auto& entry : m_before) {
+        auto enumeration =
+            dynamic_cast<App::PropertyEnumeration*>(m_owner.getPropertyByName(entry.first.c_str()));
+        // a list the restore emptied is not for us to fill
+        if (!enumeration || !enumeration->getEnum().hasEnums() || enumeration->getEnum().isValid()) {
+            continue;
+        }
+        Base::Console().Warning(
+            "%s.%s: the file holds a value this enumeration does not have; reset to '%s'\n",
+            m_owner.getNameInDocument() ? m_owner.getNameInDocument() : "?",
+            entry.first.c_str(),
+            enumeration->getEnumVector().at(static_cast<size_t>(entry.second)).c_str());
+        enumeration->setValue(entry.second);
+        ++repaired;
+    }
+    return repaired;
 }

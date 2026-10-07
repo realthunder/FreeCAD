@@ -262,6 +262,13 @@ QRectF DrawView::getRectAligned() const
     return {left, top, getRect().width(), - getRect().height()};
 }
 
+void DrawView::Restore(Base::XMLReader& reader)
+{
+    RestoredEnumerations enumerations(*this);
+    App::DocumentObject::Restore(reader);
+    enumerations.repair();
+}
+
 void DrawView::onDocumentRestored()
 {
     handleXYLock();

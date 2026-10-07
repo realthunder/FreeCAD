@@ -303,6 +303,13 @@ int DrawPage::removeView(App::DocumentObject* docObj)
 void DrawPage::requestPaint(void) { signalGuiPaint(this); }
 
 //this doesn't work right because there is no guaranteed of the restoration order
+void DrawPage::Restore(Base::XMLReader& reader)
+{
+    RestoredEnumerations enumerations(*this);
+    App::DocumentObject::Restore(reader);
+    enumerations.repair();
+}
+
 void DrawPage::onDocumentRestored()
 {
     if (canUpdate()) {

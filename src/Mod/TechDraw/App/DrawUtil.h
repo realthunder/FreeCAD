@@ -317,5 +317,24 @@ public:
     static void dumpEdges(const char* text, const TopoDS_Shape& s);
 };
 
+//! The enumerations of an object across a restore.
+//!
+//! A file can hold an index its enumeration does not have -- written by
+//! another version, or by hand -- and the property keeps it as it is; asked
+//! for its text it then throws, which here happens at load, at a recompute
+//! and in a paint. Made before the restore; repair() after it puts each
+//! enumeration the file left outside its list back to what it held.
+class TechDrawExport RestoredEnumerations
+{
+public:
+    explicit RestoredEnumerations(App::DocumentObject& owner);
+    //! how many were put back
+    int repair();
+
+private:
+    App::DocumentObject& m_owner;
+    std::vector<std::pair<std::string, long>> m_before;
+};
+
 }//end namespace TechDraw
 #endif

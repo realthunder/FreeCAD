@@ -118,13 +118,25 @@ App::DocumentObjectExecReturn *LandmarkDimension::execute()
         ReferenceTags.setValues(reprs);
     } else {
         //update dvp referenceverts locations
-        int index = 0;
+        size_t index = 0;
+        bool added = false;
         for (auto& f: features) {
             Base::Vector3d loc3d = ShapeExtractor::getLocation3dFromFeat(f);
             Base::Vector3d loc2d = projectPoint(loc3d, dvp) * dvp->getScale();
             points.push_back(loc2d);
-            dvp->updateReferenceVert(reprs.at(index), loc2d);  //sb by tag
+            if (index < reprs.size()) {
+                dvp->updateReferenceVert(reprs.at(index), loc2d);  //sb by tag
+            }
+            else {
+                // a file with fewer tags than references: this one gets its
+                // vertex now
+                reprs.push_back(dvp->addReferenceVertex(loc2d));
+                added = true;
+            }
             index++;
+        }
+        if (added) {
+            ReferenceTags.setValues(reprs);
         }
     }
     // Base::Console().Message("LD::execute - front: %s back: %s\n",

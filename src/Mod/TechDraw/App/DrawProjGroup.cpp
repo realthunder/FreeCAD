@@ -917,8 +917,12 @@ void DrawProjGroup::arrangeViewPointers(
             Base::Console().Warning(
                 "DPG:arrangeViewPointers - using system default Projection Type\n",
                 getNameInDocument());
+            // 0 or 1, First or Third Angle: the preference is an index
+            // into the two a page has, as the same fallback reads it in
+            // getViewIndex(). Read one further it gave Third Angle for
+            // First, and "Default" for Third, which the check below throws on.
             int projConv = getDefProjConv();
-            projType = ProjectionTypeEnums[projConv + 1];
+            projType = ProjectionTypeEnums[projConv];
         }
     }
     else {

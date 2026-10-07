@@ -1047,7 +1047,11 @@ void PrefComboBox::savePreferences()
     getWindowParameter()->SetASCII(entryName(), currentData().toByteArray().constData());
     break;
   default:
-    getWindowParameter()->SetInt(entryName(), currentIndex());
+    // No current item -- an empty list, or an index that named none of
+    // it -- is nothing to store: -1 written here is read back later as an
+    // index by code that trusts it.
+    if (currentIndex() >= 0)
+      getWindowParameter()->SetInt(entryName(), currentIndex());
     break;
   }
 }

@@ -187,6 +187,7 @@ SET(TDTest_SRCS
     TDTest/DrawViewBalloonTest.py
     TDTest/DrawViewDetailTest.py
     TDTest/DrawStoredGeometryTest.py
+    TDTest/RestoredEnumerationTest.py
     TDTest/TechDrawTestUtilities.py
 )
 

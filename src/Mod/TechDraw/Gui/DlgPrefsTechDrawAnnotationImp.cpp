@@ -237,25 +237,26 @@ void DlgPrefsTechDrawAnnotationImp::loadLineStyleBoxes()
     // note: line numbering starts at 1, not 0.  we set the preference to the
     // currentIndex in saveSettings, Preferences returns the actual line number,
     // so we need to subtract 1 here to get the index.
+    // A line number runs from 1 to the count of the list. The test was
+    // "count > number", so the last style of a list was never selected
+    // again, and the next Apply stored the first in its place.
+    auto select = [](QComboBox* box, int lineNumber) {
+        if (lineNumber >= 1 && lineNumber <= box->count()) {
+            box->setCurrentIndex(lineNumber - 1);
+        }
+    };
+
     DrawGuiUtil::loadLineStyleChoices(ui->pcbSectionStyle, m_lineGenerator);
-    if (ui->pcbSectionStyle->count() > Preferences::SectionLineStyle()) {
-        ui->pcbSectionStyle->setCurrentIndex(Preferences::SectionLineStyle() - 1);
-    }
+    select(ui->pcbSectionStyle, Preferences::SectionLineStyle());
 
     DrawGuiUtil::loadLineStyleChoices(ui->pcbCenterStyle, m_lineGenerator);
-    if (ui->pcbCenterStyle->count() > Preferences::CenterLineStyle()) {
-        ui->pcbCenterStyle->setCurrentIndex(Preferences::CenterLineStyle() - 1);
-    }
+    select(ui->pcbCenterStyle, Preferences::CenterLineStyle());
 
     DrawGuiUtil::loadLineStyleChoices(ui->pcbHighlightStyle, m_lineGenerator);
-    if (ui->pcbHighlightStyle->count() > Preferences::HighlightLineStyle()) {
-        ui->pcbHighlightStyle->setCurrentIndex(Preferences::HighlightLineStyle() - 1);
-    }
+    select(ui->pcbHighlightStyle, Preferences::HighlightLineStyle());
 
     DrawGuiUtil::loadLineStyleChoices(ui->pcbHiddenStyle, m_lineGenerator);
-    if (ui->pcbHiddenStyle->count() > Preferences::HiddenLineStyle()) {
-        ui->pcbHiddenStyle->setCurrentIndex(Preferences::HiddenLineStyle() - 1);
-    }
+    select(ui->pcbHiddenStyle, Preferences::HiddenLineStyle());
 }
 
 #include <Mod/TechDraw/Gui/moc_DlgPrefsTechDrawAnnotationImp.cpp>
