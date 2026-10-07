@@ -78,6 +78,7 @@
 #include "TaskOwner.h"
 #include "Thumbnail.h"
 #include "Tree.h"
+#include "TaskView/TaskPanelHost.h"
 #include "View3DInventor.h"
 #include "ViewArea.h"
 #include "ViewPlacement.h"
@@ -154,6 +155,10 @@ struct DocumentP
     std::vector<std::pair<std::string, std::string>> _viewAreaLayouts;
     /// The name each of them was saved under, see Gui::BaseView.
     std::map<int, std::string>  _view3DNames;
+    /// Where the task panel of a view that is no 3D view goes, by the
+    /// token the layouts name such a view by (O:<object>); see
+    /// Document::savedViewTaskState.
+    std::map<std::string, Document::ViewTaskState> _viewTaskStates;
 
     Application*    _pcAppWnd;
     // the doc/Document
@@ -2847,6 +2852,10 @@ void Document::RestoreDocFile(Base::Reader &reader)
         int cameraId = xmlReader.getAttributeAsInteger("id", "0");
         int view3dCount = xmlReader.getAttributeAsInteger("view3d", "0");
         int viewAreaCount = xmlReader.getAttributeAsInteger("viewareas", "0");
+        // Absent from every file written before 2026-10-07, and passed
+        // over by every reader from before it: they take their counts
+        // from the attributes they know and skip to the end
+        int viewStateCount = xmlReader.getAttributeAsInteger("viewstates", "0");
 
         cameraSettings.clear();
         if(xmlReader.hasAttribute("settings"))
@@ -2886,6 +2895,19 @@ void Document::RestoreDocFile(Base::Reader &reader)
             d->_viewAreaLayouts.emplace_back(
                     xmlReader.getAttribute("layout", ""),
                     xmlReader.getAttribute("maximized", ""));
+        }
+
+        d->_viewTaskStates.clear();
+        for (int i=0; i<viewStateCount; ++i) {
+            xmlReader.readElement("ViewTaskState");
+            std::string token = xmlReader.getAttribute("view", "");
+            ViewTaskState state;
+            state.place = xmlReader.getAttribute("place", "");
+            state.mode = xmlReader.getAttribute("mode", "");
+            state.side = xmlReader.getAttribute("side", "");
+            state.size = xmlReader.getAttributeAsInteger("size", "0");
+            if (!token.empty())
+                d->_viewTaskStates[token] = std::move(state);
         }
     }
 
@@ -4179,12 +4201,40 @@ void Document::SaveDocFile (Base::Writer &writer) const
         areaLayouts.emplace_back(std::move(layout), std::move(maximized));
     }
 
+    // Where the task panels of the views that are no 3D views go
+    // (savedViewTaskState): what the open ones hold now, and what was
+    // read for the ones that are not open -- a page nobody looked at this
+    // session keeps what it was saved with.
+    std::map<std::string, ViewTaskState> taskStates;
+    for (const auto &entry : d->_viewTaskStates) {
+        if (entry.first.size() > 2 && getDocument()->getObject(entry.first.c_str() + 2))
+            taskStates.insert(entry);
+    }
+    for (const auto & v : d->baseViews) {
+        auto view = dynamic_cast<MDIView*>(v);
+        if (!view || view->isDerivedFrom(View3DInventor::getClassTypeId())
+                || qobject_cast<ViewArea*>(view))
+            continue;
+        std::string token = objectViewToken(view);
+        if (token.empty())
+            continue;
+        ViewTaskState state;
+        TaskView::TaskPlacement::ownState(view, state.place, state.mode,
+                                          state.side, state.size);
+        if (state.place.empty() && state.mode.empty() && state.side.empty()
+                && state.size <= 0)
+            taskStates.erase(token);
+        else
+            taskStates[token] = std::move(state);
+    }
+
     writer.Stream() << writer.ind() << "<Camera";
     if(cameraInfo.size())
         writer.Stream() << " extra=\"" << cameraInfo.size()-1 << "\" id=\""
             << cameraInfo[0].id << "\" binding=\"" << cameraInfo[0].binding << "\""
             << " view3d=\"" << view3Ds.size() << "\""
-            << " viewareas=\"" << areaLayouts.size() << "\"";
+            << " viewareas=\"" << areaLayouts.size() << "\""
+            << " viewstates=\"" << taskStates.size() << "\"";
     if(writer.getFileVersion() > 1) {
         writer.Stream() << ">\n";
         writer.beginCharStream() << '\n' << getCameraSettings();
@@ -4238,6 +4288,16 @@ void Document::SaveDocFile (Base::Writer &writer) const
                 << encodeAttribute(layout.second) << "\"";
         writer.Stream() << "/>\n";
     }
+
+    for (const auto &entry : taskStates) {
+        writer.Stream() << writer.ind() << "<ViewTaskState view=\""
+            << encodeAttribute(entry.first) << "\" place=\""
+            << encodeAttribute(entry.second.place) << "\" mode=\""
+            << encodeAttribute(entry.second.mode) << "\" side=\""
+            << encodeAttribute(entry.second.side) << "\" size=\""
+            << entry.second.size << "\"/>\n";
+    }
+    d->_viewTaskStates = taskStates;
 
     writer.decInd(); // indentation for camera settings
 
@@ -4491,6 +4551,34 @@ MDIView *Document::createView(const Base::Type& typeId)
         return view3D;
     }
     return nullptr;
+}
+
+std::string Document::objectViewToken(const MDIView *view) const
+{
+    // What the layouts name such a view by (see Document::Save): an
+    // object view carries its object's name as its widget's
+    // (MDIViewPage::setDocumentObject), and the object's view provider
+    // answers with it.
+    if (!view)
+        return {};
+    QByteArray objName = view->objectName().toUtf8();
+    if (objName.isEmpty())
+        return {};
+    auto obj = getDocument()->getObject(objName.constData());
+    if (!obj)
+        return {};
+    auto vp = getViewProvider(obj);
+    if (!vp || vp->getMDIView() != view)
+        return {};
+    return std::string("O:") + objName.constData();
+}
+
+const Document::ViewTaskState *Document::savedViewTaskState(const MDIView *view) const
+{
+    if (d->_viewTaskStates.empty())
+        return nullptr;
+    auto it = d->_viewTaskStates.find(objectViewToken(view));
+    return it == d->_viewTaskStates.end() ? nullptr : &it->second;
 }
 
 Gui::MDIView* Document::cloneView(Gui::MDIView* oldview, bool transferEdit)

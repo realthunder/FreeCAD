@@ -1368,6 +1368,15 @@ fc_add_gui_test(GuiTaskPanelOverlay_tests_run task-panel-overlay.py
 fc_add_gui_test(GuiTaskPanelClearOfDocks_tests_run task-panel-clear-of-docks.py
                 --timeout 300)
 
+# Where a task panel goes is kept for every kind of view
+# (docs/TaskPanelPerView.md sec 15.6): a spreadsheet's view saves nothing
+# and is made again from its object, so the document keeps the place for
+# it, by the object, in an entry of GuiDocument.xml older readers pass
+# over. Saved and reopened twice. Scored against the tree before, where
+# the view's properties die with the view.
+fc_add_gui_test(GuiTaskPanelKeptAnyView_tests_run task-panel-kept-any-view.py
+                --timeout 300)
+
 # Making a view the active window makes its cell the view area's active
 # cell and brings the keyboard with it (docs/SplitViews.md sec 21): right
 # after "create new view" the first view can be clicked back into; with

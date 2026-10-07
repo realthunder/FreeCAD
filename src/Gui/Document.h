@@ -301,6 +301,26 @@ public:
     std::list<MDIView*> getMDIViews() const;
     /// returns a list of all MDI views of a certain type
     std::list<MDIView*> getMDIViewsOfType(const Base::Type& typeId) const;
+    /** Where a view's task panel goes, as texts, for a view that is no 3D
+     * view (docs/TaskPanelPerView.md sec 15.6).
+     *
+     * A 3D view saves its own properties with the document, the place of
+     * its task panel among them. A view that an object provides -- a
+     * drawing page, a spreadsheet -- saves nothing and is made again from
+     * its object, so the document keeps these for it, by the object's
+     * name, and Gui::TaskView::TaskPlacement asks here for a view that
+     * holds none of its own.
+     */
+    struct ViewTaskState
+    {
+        std::string place;
+        std::string mode;
+        std::string side;
+        long size = 0;
+    };
+    /// What this document was saved with for \a view; null when nothing,
+    /// and for a view that no object of this document provides
+    const ViewTaskState *savedViewTaskState(const MDIView *view) const;
     /// return all non-passive views
     const std::list<BaseView*> &getViews() const;
     /// convenience function to iterate views of a give type
@@ -489,6 +509,9 @@ private:
     /// Rebuild the saved split view containers on restore, placing the
     /// (bare-created) 3D views and object views into cells
     void applyViewAreaLayouts(const std::list<MDIView*> &views);
+    /// The token the saved layouts name an object's view by (O:<object>);
+    /// empty for a view no object of this document provides
+    std::string objectViewToken(const MDIView *view) const;
 
     /// Put every 3D view's OnTopObjects property back in step with its
     /// viewer's on-top group (docs/CoinRetirement.md 5.12). Connected

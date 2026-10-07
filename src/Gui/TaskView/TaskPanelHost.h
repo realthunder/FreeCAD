@@ -24,6 +24,7 @@
 #define GUI_TASKVIEW_TASKPANELHOST_H
 
 #include <memory>
+#include <string>
 
 #include <QPointer>
 #include <QWidget>
@@ -68,6 +69,13 @@ class TaskView;
  * what is general -- the preference View/TaskPanelInView for where, and
  * for how what was last chosen in any view, which the user parameters
  * remember across runs.
+ *
+ * A 3D view saves its properties with the document. A view an object
+ * provides -- a drawing page, a spreadsheet -- saves nothing and is made
+ * again from its object, so the document keeps the four for it
+ * (Gui::Document::savedViewTaskState, sec 15.6): such a view with no
+ * property of its own answers with what its document was saved with, and
+ * the document writes what the view holds when it is saved.
  *
  * Setting one moves the panel of that view and no other
  * (Application::signalChangedView, heard by the task view).
@@ -116,6 +124,13 @@ public:
 
     /// Whether \a prop is one of the four
     static bool isProperty(const App::Property& prop);
+    /// What \a view holds of its own, as it is kept: empty texts and 0
+    /// where it holds nothing. For the document that saves it.
+    static void ownState(const MDIView* view,
+                         std::string& place,
+                         std::string& mode,
+                         std::string& side,
+                         long& size);
 
     /** Every view there is follows the preference from now.
      *

@@ -162,14 +162,41 @@ ParameterGrp::handle lastChosen()
         "User parameter:BaseApp/Preferences/TaskView/Host");
 }
 
-/// The text \a view holds under \a name; empty when it holds none
+/// What the document of a view that is no 3D view was saved with for it
+/// (Gui::Document::savedViewTaskState); null for a 3D view, whose own
+/// properties are saved with it
+const Gui::Document::ViewTaskState* savedState(const Gui::MDIView* view)
+{
+    if (!view || view->isDerivedFrom(Gui::View3DInventor::getClassTypeId())) {
+        return nullptr;
+    }
+    Gui::Document* doc = view->getGuiDocument();
+    return doc ? doc->savedViewTaskState(view) : nullptr;
+}
+
+/// The text \a view holds under \a name; empty when it holds none. A
+/// property of its own, even an emptied one, is what it holds; without
+/// one, what its document was saved with.
 std::string ownText(const Gui::MDIView* view, const char* name)
 {
     if (!view) {
         return {};
     }
-    auto prop = Base::freecad_dynamic_cast<App::PropertyString>(view->getPropertyByName(name));
-    return prop ? prop->getStrValue() : std::string();
+    if (auto prop = Base::freecad_dynamic_cast<App::PropertyString>(view->getPropertyByName(name))) {
+        return prop->getStrValue();
+    }
+    if (const Gui::Document::ViewTaskState* saved = savedState(view)) {
+        if (std::strcmp(name, PropPlace) == 0) {
+            return saved->place;
+        }
+        if (std::strcmp(name, PropMode) == 0) {
+            return saved->mode;
+        }
+        if (std::strcmp(name, PropSide) == 0) {
+            return saved->side;
+        }
+    }
+    return {};
 }
 
 /// Keep \a value in \a view under \a name. The property is made the
@@ -183,8 +210,10 @@ void setOwnText(Gui::MDIView* view, const char* name, const char* doc, const std
     App::Property* prop = view->getPropertyByName(name);
     auto text = Base::freecad_dynamic_cast<App::PropertyString>(prop);
     if (!text) {
-        if (prop || value.empty()) {
-            // Somebody else's property of that name, or nothing to keep
+        // Somebody else's property of that name; or nothing to keep, and
+        // nothing saved for the view that an emptied property would have
+        // to stand in front of
+        if (prop || (value.empty() && ownText(view, name).empty())) {
             return;
         }
         text = Base::freecad_dynamic_cast<App::PropertyString>(
@@ -452,8 +481,12 @@ int TaskPlacement::size(const MDIView* view)
     if (!view) {
         return 0;
     }
-    auto prop = Base::freecad_dynamic_cast<App::PropertyInteger>(view->getPropertyByName(PropSize));
-    return prop ? static_cast<int>(prop->getValue()) : 0;
+    if (auto prop = Base::freecad_dynamic_cast<App::PropertyInteger>(
+            view->getPropertyByName(PropSize))) {
+        return static_cast<int>(prop->getValue());
+    }
+    const Gui::Document::ViewTaskState* saved = savedState(view);
+    return saved ? static_cast<int>(saved->size) : 0;
 }
 
 void TaskPlacement::setSize(MDIView* view, int size)
@@ -464,7 +497,7 @@ void TaskPlacement::setSize(MDIView* view, int size)
     App::Property* prop = view->getPropertyByName(PropSize);
     auto number = Base::freecad_dynamic_cast<App::PropertyInteger>(prop);
     if (!number) {
-        if (prop || size <= 0) {
+        if (prop || (size <= 0 && TaskPlacement::size(view) <= 0)) {
             return;
         }
         number = Base::freecad_dynamic_cast<App::PropertyInteger>(
@@ -480,6 +513,18 @@ void TaskPlacement::setSize(MDIView* view, int size)
     if (number->getValue() != size) {
         number->setValue(size);
     }
+}
+
+void TaskPlacement::ownState(const MDIView* view,
+                             std::string& place,
+                             std::string& mode,
+                             std::string& side,
+                             long& size)
+{
+    place = ownText(view, PropPlace);
+    mode = ownText(view, PropMode);
+    side = ownText(view, PropSide);
+    size = TaskPlacement::size(view);
 }
 
 bool TaskPlacement::isProperty(const App::Property& prop)
