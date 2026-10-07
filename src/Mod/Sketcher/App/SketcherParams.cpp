@@ -160,13 +160,40 @@ public:
     unsigned long FrozenColor;
     unsigned long DetachedColor;
     unsigned long MissingColor;
+    long DefaultSolver;
+    long DogLegGaussStep;
+    long MaxIter;
+    bool SketchSizeMultiplier;
+    std::string Convergence;
+    long QRMethod;
+    std::string QRPivotThreshold;
+    long RedundantDefaultSolver;
+    long RedundantSolverMaxIterations;
+    bool RedundantSketchSizeMultiplier;
+    std::string RedundantConvergence;
+    long DebugMode;
+    std::string LM_eps;
+    std::string LM_eps1;
+    std::string LM_tau;
+    std::string DL_tolg;
+    std::string DL_tolx;
+    std::string DL_tolf;
+    std::string Redundant_LM_eps;
+    std::string Redundant_LM_eps1;
+    std::string Redundant_LM_tau;
+    std::string Redundant_DL_tolg;
+    std::string Redundant_DL_tolx;
+    std::string Redundant_DL_tolf;
+    bool ParameterQRKeepsColumnOrder;
+    bool SkipUnneededConstraintQR;
+    bool FillJacobianFromConstraintParams;
 
     // Auto generated code (Tools/params_utils.py:254)
     SketcherParamsP() {
         handle = App::GetApplication().GetParameterGroupByPath("User parameter:BaseApp/Preferences/Mod/Sketcher");
         handle->Attach(this);
 
-        subHandles.resize(10);
+        subHandles.resize(11);
         subHandles[0] = handle->GetGroup("General");
         subHandles[0]->Attach(this);
         subHandles[1] = handle->GetGroup("General/GridSize");
@@ -187,6 +214,8 @@ public:
         subHandles[8]->Attach(this);
         subHandles[9] = App::GetApplication().GetParameterGroupByPath("User parameter:BaseApp/Preferences/View");
         subHandles[9]->Attach(this);
+        subHandles[10] = handle->GetGroup("SolverAdvanced");
+        subHandles[10]->Attach(this);
         AutoRecompute = this->handle->GetBool("AutoRecompute", false);
         funcs["AutoRecompute"] = &SketcherParamsP::updateAutoRecompute;
         AutoRemoveRedundants = this->handle->GetBool("AutoRemoveRedundants", false);
@@ -423,6 +452,60 @@ public:
         funcs["DetachedColor"] = &SketcherParamsP::updateDetachedColor;
         MissingColor = this->subHandles[9]->GetUnsigned("MissingColor", 0x7F00FFFF);
         funcs["MissingColor"] = &SketcherParamsP::updateMissingColor;
+        DefaultSolver = this->subHandles[10]->GetInt("DefaultSolver", 2);
+        funcs["DefaultSolver"] = &SketcherParamsP::updateDefaultSolver;
+        DogLegGaussStep = this->subHandles[10]->GetInt("DogLegGaussStep", 0);
+        funcs["DogLegGaussStep"] = &SketcherParamsP::updateDogLegGaussStep;
+        MaxIter = this->subHandles[10]->GetInt("MaxIter", 100);
+        funcs["MaxIter"] = &SketcherParamsP::updateMaxIter;
+        SketchSizeMultiplier = this->subHandles[10]->GetBool("SketchSizeMultiplier", false);
+        funcs["SketchSizeMultiplier"] = &SketcherParamsP::updateSketchSizeMultiplier;
+        Convergence = this->subHandles[10]->GetASCII("Convergence", "1E-10");
+        funcs["Convergence"] = &SketcherParamsP::updateConvergence;
+        QRMethod = this->subHandles[10]->GetInt("QRMethod", 1);
+        funcs["QRMethod"] = &SketcherParamsP::updateQRMethod;
+        QRPivotThreshold = this->subHandles[10]->GetASCII("QRPivotThreshold", "1E-13");
+        funcs["QRPivotThreshold"] = &SketcherParamsP::updateQRPivotThreshold;
+        RedundantDefaultSolver = this->subHandles[10]->GetInt("RedundantDefaultSolver", 2);
+        funcs["RedundantDefaultSolver"] = &SketcherParamsP::updateRedundantDefaultSolver;
+        RedundantSolverMaxIterations = this->subHandles[10]->GetInt("RedundantSolverMaxIterations", 100);
+        funcs["RedundantSolverMaxIterations"] = &SketcherParamsP::updateRedundantSolverMaxIterations;
+        RedundantSketchSizeMultiplier = this->subHandles[10]->GetBool("RedundantSketchSizeMultiplier", false);
+        funcs["RedundantSketchSizeMultiplier"] = &SketcherParamsP::updateRedundantSketchSizeMultiplier;
+        RedundantConvergence = this->subHandles[10]->GetASCII("RedundantConvergence", "1E-10");
+        funcs["RedundantConvergence"] = &SketcherParamsP::updateRedundantConvergence;
+        DebugMode = this->subHandles[10]->GetInt("DebugMode", 1);
+        funcs["DebugMode"] = &SketcherParamsP::updateDebugMode;
+        LM_eps = this->subHandles[10]->GetASCII("LM_eps", "1e-10");
+        funcs["LM_eps"] = &SketcherParamsP::updateLM_eps;
+        LM_eps1 = this->subHandles[10]->GetASCII("LM_eps1", "1e-80");
+        funcs["LM_eps1"] = &SketcherParamsP::updateLM_eps1;
+        LM_tau = this->subHandles[10]->GetASCII("LM_tau", "0.001");
+        funcs["LM_tau"] = &SketcherParamsP::updateLM_tau;
+        DL_tolg = this->subHandles[10]->GetASCII("DL_tolg", "1e-80");
+        funcs["DL_tolg"] = &SketcherParamsP::updateDL_tolg;
+        DL_tolx = this->subHandles[10]->GetASCII("DL_tolx", "1e-80");
+        funcs["DL_tolx"] = &SketcherParamsP::updateDL_tolx;
+        DL_tolf = this->subHandles[10]->GetASCII("DL_tolf", "1e-10");
+        funcs["DL_tolf"] = &SketcherParamsP::updateDL_tolf;
+        Redundant_LM_eps = this->subHandles[10]->GetASCII("Redundant_LM_eps", "1e-10");
+        funcs["Redundant_LM_eps"] = &SketcherParamsP::updateRedundant_LM_eps;
+        Redundant_LM_eps1 = this->subHandles[10]->GetASCII("Redundant_LM_eps1", "1e-80");
+        funcs["Redundant_LM_eps1"] = &SketcherParamsP::updateRedundant_LM_eps1;
+        Redundant_LM_tau = this->subHandles[10]->GetASCII("Redundant_LM_tau", "0.001");
+        funcs["Redundant_LM_tau"] = &SketcherParamsP::updateRedundant_LM_tau;
+        Redundant_DL_tolg = this->subHandles[10]->GetASCII("Redundant_DL_tolg", "1e-80");
+        funcs["Redundant_DL_tolg"] = &SketcherParamsP::updateRedundant_DL_tolg;
+        Redundant_DL_tolx = this->subHandles[10]->GetASCII("Redundant_DL_tolx", "1e-80");
+        funcs["Redundant_DL_tolx"] = &SketcherParamsP::updateRedundant_DL_tolx;
+        Redundant_DL_tolf = this->subHandles[10]->GetASCII("Redundant_DL_tolf", "1e-10");
+        funcs["Redundant_DL_tolf"] = &SketcherParamsP::updateRedundant_DL_tolf;
+        ParameterQRKeepsColumnOrder = this->subHandles[10]->GetBool("ParameterQRKeepsColumnOrder", false);
+        funcs["ParameterQRKeepsColumnOrder"] = &SketcherParamsP::updateParameterQRKeepsColumnOrder;
+        SkipUnneededConstraintQR = this->subHandles[10]->GetBool("SkipUnneededConstraintQR", true);
+        funcs["SkipUnneededConstraintQR"] = &SketcherParamsP::updateSkipUnneededConstraintQR;
+        FillJacobianFromConstraintParams = this->subHandles[10]->GetBool("FillJacobianFromConstraintParams", true);
+        funcs["FillJacobianFromConstraintParams"] = &SketcherParamsP::updateFillJacobianFromConstraintParams;
     }
 
     // Auto generated code (Tools/params_utils.py:284)
@@ -910,6 +993,114 @@ public:
     // Auto generated code (Tools/params_utils.py:314)
     static void updateMissingColor(SketcherParamsP *self) {
         self->MissingColor = self->subHandles[9]->GetUnsigned("MissingColor", 0x7F00FFFF);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateDefaultSolver(SketcherParamsP *self) {
+        self->DefaultSolver = self->subHandles[10]->GetInt("DefaultSolver", 2);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateDogLegGaussStep(SketcherParamsP *self) {
+        self->DogLegGaussStep = self->subHandles[10]->GetInt("DogLegGaussStep", 0);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateMaxIter(SketcherParamsP *self) {
+        self->MaxIter = self->subHandles[10]->GetInt("MaxIter", 100);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateSketchSizeMultiplier(SketcherParamsP *self) {
+        self->SketchSizeMultiplier = self->subHandles[10]->GetBool("SketchSizeMultiplier", false);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateConvergence(SketcherParamsP *self) {
+        self->Convergence = self->subHandles[10]->GetASCII("Convergence", "1E-10");
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateQRMethod(SketcherParamsP *self) {
+        self->QRMethod = self->subHandles[10]->GetInt("QRMethod", 1);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateQRPivotThreshold(SketcherParamsP *self) {
+        self->QRPivotThreshold = self->subHandles[10]->GetASCII("QRPivotThreshold", "1E-13");
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateRedundantDefaultSolver(SketcherParamsP *self) {
+        self->RedundantDefaultSolver = self->subHandles[10]->GetInt("RedundantDefaultSolver", 2);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateRedundantSolverMaxIterations(SketcherParamsP *self) {
+        self->RedundantSolverMaxIterations = self->subHandles[10]->GetInt("RedundantSolverMaxIterations", 100);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateRedundantSketchSizeMultiplier(SketcherParamsP *self) {
+        self->RedundantSketchSizeMultiplier = self->subHandles[10]->GetBool("RedundantSketchSizeMultiplier", false);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateRedundantConvergence(SketcherParamsP *self) {
+        self->RedundantConvergence = self->subHandles[10]->GetASCII("RedundantConvergence", "1E-10");
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateDebugMode(SketcherParamsP *self) {
+        self->DebugMode = self->subHandles[10]->GetInt("DebugMode", 1);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateLM_eps(SketcherParamsP *self) {
+        self->LM_eps = self->subHandles[10]->GetASCII("LM_eps", "1e-10");
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateLM_eps1(SketcherParamsP *self) {
+        self->LM_eps1 = self->subHandles[10]->GetASCII("LM_eps1", "1e-80");
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateLM_tau(SketcherParamsP *self) {
+        self->LM_tau = self->subHandles[10]->GetASCII("LM_tau", "0.001");
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateDL_tolg(SketcherParamsP *self) {
+        self->DL_tolg = self->subHandles[10]->GetASCII("DL_tolg", "1e-80");
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateDL_tolx(SketcherParamsP *self) {
+        self->DL_tolx = self->subHandles[10]->GetASCII("DL_tolx", "1e-80");
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateDL_tolf(SketcherParamsP *self) {
+        self->DL_tolf = self->subHandles[10]->GetASCII("DL_tolf", "1e-10");
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateRedundant_LM_eps(SketcherParamsP *self) {
+        self->Redundant_LM_eps = self->subHandles[10]->GetASCII("Redundant_LM_eps", "1e-10");
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateRedundant_LM_eps1(SketcherParamsP *self) {
+        self->Redundant_LM_eps1 = self->subHandles[10]->GetASCII("Redundant_LM_eps1", "1e-80");
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateRedundant_LM_tau(SketcherParamsP *self) {
+        self->Redundant_LM_tau = self->subHandles[10]->GetASCII("Redundant_LM_tau", "0.001");
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateRedundant_DL_tolg(SketcherParamsP *self) {
+        self->Redundant_DL_tolg = self->subHandles[10]->GetASCII("Redundant_DL_tolg", "1e-80");
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateRedundant_DL_tolx(SketcherParamsP *self) {
+        self->Redundant_DL_tolx = self->subHandles[10]->GetASCII("Redundant_DL_tolx", "1e-80");
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateRedundant_DL_tolf(SketcherParamsP *self) {
+        self->Redundant_DL_tolf = self->subHandles[10]->GetASCII("Redundant_DL_tolf", "1e-10");
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateParameterQRKeepsColumnOrder(SketcherParamsP *self) {
+        self->ParameterQRKeepsColumnOrder = self->subHandles[10]->GetBool("ParameterQRKeepsColumnOrder", false);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateSkipUnneededConstraintQR(SketcherParamsP *self) {
+        self->SkipUnneededConstraintQR = self->subHandles[10]->GetBool("SkipUnneededConstraintQR", true);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateFillJacobianFromConstraintParams(SketcherParamsP *self) {
+        self->FillJacobianFromConstraintParams = self->subHandles[10]->GetBool("FillJacobianFromConstraintParams", true);
     }
 };
 
@@ -1441,6 +1632,109 @@ static const App::ParamRegistry::Registrar _SketcherParamsRegistrar({
 "mode. Applies at once.")
         .setProxy("Color")
         .setTransparency(false),
+    App::ParamInfo("Sketcher", "SketcherParams", "User parameter:BaseApp/Preferences/Mod/Sketcher/SolverAdvanced", "DefaultSolver", "DefaultSolver", App::ParamInfo::Int, 2)
+        .setTitle("Sketch solver")
+        .setDoc("Algorithm a sketch is solved with: 0 BFGS, 1 Levenberg-Marquardt,\n"
+"2 DogLeg. Used at the next solve."),
+    App::ParamInfo("Sketcher", "SketcherParams", "User parameter:BaseApp/Preferences/Mod/Sketcher/SolverAdvanced", "DogLegGaussStep", "DogLegGaussStep", App::ParamInfo::Int, 0)
+        .setTitle("DogLeg Gauss step")
+        .setDoc("Gauss step of the DogLeg solver: 0 FullPivLU, 1\n"
+"LeastNormFullPivLU, 2 LeastNormLdlt."),
+    App::ParamInfo("Sketcher", "SketcherParams", "User parameter:BaseApp/Preferences/Mod/Sketcher/SolverAdvanced", "MaxIter", "MaxIter", App::ParamInfo::Int, 100)
+        .setTitle("Solver iterations")
+        .setDoc("Largest number of iterations of the sketch solver, up to 999."),
+    App::ParamInfo("Sketcher", "SketcherParams", "User parameter:BaseApp/Preferences/Mod/Sketcher/SolverAdvanced", "SketchSizeMultiplier", "SketchSizeMultiplier", App::ParamInfo::Bool, false)
+        .setTitle("Sketch size multiplier")
+        .setDoc("Multiply the iteration limit of the sketch solver by the number of\n"
+"parameters of the sketch."),
+    App::ParamInfo("Sketcher", "SketcherParams", "User parameter:BaseApp/Preferences/Mod/Sketcher/SolverAdvanced", "Convergence", "Convergence", App::ParamInfo::String, "1E-10")
+        .setTitle("Solver convergence")
+        .setDoc("Squared error below which a solution of the sketch solver counts\n"
+"as converged. Text, read as a number."),
+    App::ParamInfo("Sketcher", "SketcherParams", "User parameter:BaseApp/Preferences/Mod/Sketcher/SolverAdvanced", "QRMethod", "QRMethod", App::ParamInfo::Int, 1)
+        .setTitle("QR method")
+        .setDoc("QR decomposition used to diagnose a sketch: 0 dense, 1 sparse."),
+    App::ParamInfo("Sketcher", "SketcherParams", "User parameter:BaseApp/Preferences/Mod/Sketcher/SolverAdvanced", "QRPivotThreshold", "QRPivotThreshold", App::ParamInfo::String, "1E-13")
+        .setTitle("QR pivot threshold")
+        .setDoc("Values below this are taken for zero while a sketch is diagnosed\n"
+"by QR decomposition. Text, read as a number."),
+    App::ParamInfo("Sketcher", "SketcherParams", "User parameter:BaseApp/Preferences/Mod/Sketcher/SolverAdvanced", "RedundantDefaultSolver", "RedundantDefaultSolver", App::ParamInfo::Int, 2)
+        .setTitle("Redundant solver")
+        .setDoc("Algorithm used to find redundant constraints: 0 BFGS, 1 Levenberg-\n"
+"Marquardt, 2 DogLeg."),
+    App::ParamInfo("Sketcher", "SketcherParams", "User parameter:BaseApp/Preferences/Mod/Sketcher/SolverAdvanced", "RedundantSolverMaxIterations", "RedundantSolverMaxIterations", App::ParamInfo::Int, 100)
+        .setTitle("Redundant solver iterations")
+        .setDoc("Largest number of iterations of the solver that finds redundant\n"
+"constraints, up to 999."),
+    App::ParamInfo("Sketcher", "SketcherParams", "User parameter:BaseApp/Preferences/Mod/Sketcher/SolverAdvanced", "RedundantSketchSizeMultiplier", "RedundantSketchSizeMultiplier", App::ParamInfo::Bool, false)
+        .setTitle("Redundant sketch size multiplier")
+        .setDoc("Multiply the iteration limit of the solver that finds redundant\n"
+"constraints by the number of parameters of the sketch."),
+    App::ParamInfo("Sketcher", "SketcherParams", "User parameter:BaseApp/Preferences/Mod/Sketcher/SolverAdvanced", "RedundantConvergence", "RedundantConvergence", App::ParamInfo::String, "1E-10")
+        .setTitle("Redundant solver convergence")
+        .setDoc("Squared error below which a solution counts as converged, for the\n"
+"solver that finds redundant constraints. Text, read as a number."),
+    App::ParamInfo("Sketcher", "SketcherParams", "User parameter:BaseApp/Preferences/Mod/Sketcher/SolverAdvanced", "DebugMode", "DebugMode", App::ParamInfo::Int, 1)
+        .setTitle("Solver console mode")
+        .setDoc("Messages of the sketch solver in the report view: 0 none, 1\n"
+"minimal, 2 at every iteration."),
+    App::ParamInfo("Sketcher", "SketcherParams", "User parameter:BaseApp/Preferences/Mod/Sketcher/SolverAdvanced", "LM_eps", "LM_eps", App::ParamInfo::String, "1e-10")
+        .setTitle("Levenberg-Marquardt eps")
+        .setDoc("Tolerance eps of the Levenberg-Marquardt solver. Text, read as a\n"
+"number."),
+    App::ParamInfo("Sketcher", "SketcherParams", "User parameter:BaseApp/Preferences/Mod/Sketcher/SolverAdvanced", "LM_eps1", "LM_eps1", App::ParamInfo::String, "1e-80")
+        .setTitle("Levenberg-Marquardt eps1")
+        .setDoc("Tolerance eps1 of the Levenberg-Marquardt solver. Text, read as a\n"
+"number."),
+    App::ParamInfo("Sketcher", "SketcherParams", "User parameter:BaseApp/Preferences/Mod/Sketcher/SolverAdvanced", "LM_tau", "LM_tau", App::ParamInfo::String, "0.001")
+        .setTitle("Levenberg-Marquardt tau")
+        .setDoc("Factor tau of the Levenberg-Marquardt solver. Text, read as a\n"
+"number."),
+    App::ParamInfo("Sketcher", "SketcherParams", "User parameter:BaseApp/Preferences/Mod/Sketcher/SolverAdvanced", "DL_tolg", "DL_tolg", App::ParamInfo::String, "1e-80")
+        .setTitle("DogLeg tolg")
+        .setDoc("Tolerance tolg of the DogLeg solver. Text, read as a number."),
+    App::ParamInfo("Sketcher", "SketcherParams", "User parameter:BaseApp/Preferences/Mod/Sketcher/SolverAdvanced", "DL_tolx", "DL_tolx", App::ParamInfo::String, "1e-80")
+        .setTitle("DogLeg tolx")
+        .setDoc("Tolerance tolx of the DogLeg solver. Text, read as a number."),
+    App::ParamInfo("Sketcher", "SketcherParams", "User parameter:BaseApp/Preferences/Mod/Sketcher/SolverAdvanced", "DL_tolf", "DL_tolf", App::ParamInfo::String, "1e-10")
+        .setTitle("DogLeg tolf")
+        .setDoc("Tolerance tolf of the DogLeg solver. Text, read as a number."),
+    App::ParamInfo("Sketcher", "SketcherParams", "User parameter:BaseApp/Preferences/Mod/Sketcher/SolverAdvanced", "Redundant_LM_eps", "Redundant_LM_eps", App::ParamInfo::String, "1e-10")
+        .setTitle("Redundant Levenberg-Marquardt eps")
+        .setDoc("Tolerance eps of Levenberg-Marquardt when it looks for redundant\n"
+"constraints. Text, read as a number."),
+    App::ParamInfo("Sketcher", "SketcherParams", "User parameter:BaseApp/Preferences/Mod/Sketcher/SolverAdvanced", "Redundant_LM_eps1", "Redundant_LM_eps1", App::ParamInfo::String, "1e-80")
+        .setTitle("Redundant Levenberg-Marquardt eps1")
+        .setDoc("Tolerance eps1 of Levenberg-Marquardt when it looks for redundant\n"
+"constraints. Text, read as a number."),
+    App::ParamInfo("Sketcher", "SketcherParams", "User parameter:BaseApp/Preferences/Mod/Sketcher/SolverAdvanced", "Redundant_LM_tau", "Redundant_LM_tau", App::ParamInfo::String, "0.001")
+        .setTitle("Redundant Levenberg-Marquardt tau")
+        .setDoc("Factor tau of Levenberg-Marquardt when it looks for redundant\n"
+"constraints. Text, read as a number."),
+    App::ParamInfo("Sketcher", "SketcherParams", "User parameter:BaseApp/Preferences/Mod/Sketcher/SolverAdvanced", "Redundant_DL_tolg", "Redundant_DL_tolg", App::ParamInfo::String, "1e-80")
+        .setTitle("Redundant DogLeg tolg")
+        .setDoc("Tolerance tolg of DogLeg when it looks for redundant constraints.\n"
+"Text, read as a number."),
+    App::ParamInfo("Sketcher", "SketcherParams", "User parameter:BaseApp/Preferences/Mod/Sketcher/SolverAdvanced", "Redundant_DL_tolx", "Redundant_DL_tolx", App::ParamInfo::String, "1e-80")
+        .setTitle("Redundant DogLeg tolx")
+        .setDoc("Tolerance tolx of DogLeg when it looks for redundant constraints.\n"
+"Text, read as a number."),
+    App::ParamInfo("Sketcher", "SketcherParams", "User parameter:BaseApp/Preferences/Mod/Sketcher/SolverAdvanced", "Redundant_DL_tolf", "Redundant_DL_tolf", App::ParamInfo::String, "1e-10")
+        .setTitle("Redundant DogLeg tolf")
+        .setDoc("Tolerance tolf of DogLeg when it looks for redundant constraints.\n"
+"Text, read as a number."),
+    App::ParamInfo("Sketcher", "SketcherParams", "User parameter:BaseApp/Preferences/Mod/Sketcher/SolverAdvanced", "ParameterQRKeepsColumnOrder", "ParameterQRKeepsColumnOrder", App::ParamInfo::Bool, false)
+        .setTitle("QR keeps the column order")
+        .setDoc("Keep the order of the columns when a sketch's parameters are\n"
+"diagnosed by QR decomposition. For comparing results."),
+    App::ParamInfo("Sketcher", "SketcherParams", "User parameter:BaseApp/Preferences/Mod/Sketcher/SolverAdvanced", "SkipUnneededConstraintQR", "SkipUnneededConstraintQR", App::ParamInfo::Bool, true)
+        .setTitle("Skip unneeded constraint QR")
+        .setDoc("Skip the QR decomposition of the constraints when a sketch is\n"
+"diagnosed and it is not needed. For comparing results."),
+    App::ParamInfo("Sketcher", "SketcherParams", "User parameter:BaseApp/Preferences/Mod/Sketcher/SolverAdvanced", "FillJacobianFromConstraintParams", "FillJacobianFromConstraintParams", App::ParamInfo::Bool, true)
+        .setTitle("Fill Jacobian from constraint parameters")
+        .setDoc("Fill the Jacobian of a sketch from the parameters each constraint\n"
+"names instead of from all of them. For comparing results."),
 });
 
 // Auto generated code (Tools/params_utils.py:368)
@@ -4864,5 +5158,783 @@ void SketcherParams::setMissingColor(const unsigned long &v) {
 // Auto generated code (Tools/params_utils.py:431)
 void SketcherParams::removeMissingColor() {
     instance()->subHandles[9]->RemoveUnsigned("MissingColor");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *SketcherParams::docDefaultSolver() {
+    return QT_TRANSLATE_NOOP("SketcherParams",
+"Algorithm a sketch is solved with: 0 BFGS, 1 Levenberg-Marquardt,\n"
+"2 DogLeg. Used at the next solve.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const long & SketcherParams::getDefaultSolver() {
+    return instance()->DefaultSolver;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const long & SketcherParams::defaultDefaultSolver() {
+    const static long def = 2;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void SketcherParams::setDefaultSolver(const long &v) {
+    instance()->subHandles[10]->SetInt("DefaultSolver",v);
+    instance()->DefaultSolver = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void SketcherParams::removeDefaultSolver() {
+    instance()->subHandles[10]->RemoveInt("DefaultSolver");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *SketcherParams::docDogLegGaussStep() {
+    return QT_TRANSLATE_NOOP("SketcherParams",
+"Gauss step of the DogLeg solver: 0 FullPivLU, 1\n"
+"LeastNormFullPivLU, 2 LeastNormLdlt.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const long & SketcherParams::getDogLegGaussStep() {
+    return instance()->DogLegGaussStep;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const long & SketcherParams::defaultDogLegGaussStep() {
+    const static long def = 0;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void SketcherParams::setDogLegGaussStep(const long &v) {
+    instance()->subHandles[10]->SetInt("DogLegGaussStep",v);
+    instance()->DogLegGaussStep = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void SketcherParams::removeDogLegGaussStep() {
+    instance()->subHandles[10]->RemoveInt("DogLegGaussStep");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *SketcherParams::docMaxIter() {
+    return QT_TRANSLATE_NOOP("SketcherParams",
+"Largest number of iterations of the sketch solver, up to 999.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const long & SketcherParams::getMaxIter() {
+    return instance()->MaxIter;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const long & SketcherParams::defaultMaxIter() {
+    const static long def = 100;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void SketcherParams::setMaxIter(const long &v) {
+    instance()->subHandles[10]->SetInt("MaxIter",v);
+    instance()->MaxIter = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void SketcherParams::removeMaxIter() {
+    instance()->subHandles[10]->RemoveInt("MaxIter");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *SketcherParams::docSketchSizeMultiplier() {
+    return QT_TRANSLATE_NOOP("SketcherParams",
+"Multiply the iteration limit of the sketch solver by the number of\n"
+"parameters of the sketch.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const bool & SketcherParams::getSketchSizeMultiplier() {
+    return instance()->SketchSizeMultiplier;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const bool & SketcherParams::defaultSketchSizeMultiplier() {
+    const static bool def = false;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void SketcherParams::setSketchSizeMultiplier(const bool &v) {
+    instance()->subHandles[10]->SetBool("SketchSizeMultiplier",v);
+    instance()->SketchSizeMultiplier = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void SketcherParams::removeSketchSizeMultiplier() {
+    instance()->subHandles[10]->RemoveBool("SketchSizeMultiplier");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *SketcherParams::docConvergence() {
+    return QT_TRANSLATE_NOOP("SketcherParams",
+"Squared error below which a solution of the sketch solver counts\n"
+"as converged. Text, read as a number.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const std::string & SketcherParams::getConvergence() {
+    return instance()->Convergence;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const std::string & SketcherParams::defaultConvergence() {
+    const static std::string def = "1E-10";
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void SketcherParams::setConvergence(const std::string &v) {
+    instance()->subHandles[10]->SetASCII("Convergence",v);
+    instance()->Convergence = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void SketcherParams::removeConvergence() {
+    instance()->subHandles[10]->RemoveASCII("Convergence");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *SketcherParams::docQRMethod() {
+    return QT_TRANSLATE_NOOP("SketcherParams",
+"QR decomposition used to diagnose a sketch: 0 dense, 1 sparse.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const long & SketcherParams::getQRMethod() {
+    return instance()->QRMethod;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const long & SketcherParams::defaultQRMethod() {
+    const static long def = 1;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void SketcherParams::setQRMethod(const long &v) {
+    instance()->subHandles[10]->SetInt("QRMethod",v);
+    instance()->QRMethod = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void SketcherParams::removeQRMethod() {
+    instance()->subHandles[10]->RemoveInt("QRMethod");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *SketcherParams::docQRPivotThreshold() {
+    return QT_TRANSLATE_NOOP("SketcherParams",
+"Values below this are taken for zero while a sketch is diagnosed\n"
+"by QR decomposition. Text, read as a number.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const std::string & SketcherParams::getQRPivotThreshold() {
+    return instance()->QRPivotThreshold;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const std::string & SketcherParams::defaultQRPivotThreshold() {
+    const static std::string def = "1E-13";
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void SketcherParams::setQRPivotThreshold(const std::string &v) {
+    instance()->subHandles[10]->SetASCII("QRPivotThreshold",v);
+    instance()->QRPivotThreshold = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void SketcherParams::removeQRPivotThreshold() {
+    instance()->subHandles[10]->RemoveASCII("QRPivotThreshold");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *SketcherParams::docRedundantDefaultSolver() {
+    return QT_TRANSLATE_NOOP("SketcherParams",
+"Algorithm used to find redundant constraints: 0 BFGS, 1 Levenberg-\n"
+"Marquardt, 2 DogLeg.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const long & SketcherParams::getRedundantDefaultSolver() {
+    return instance()->RedundantDefaultSolver;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const long & SketcherParams::defaultRedundantDefaultSolver() {
+    const static long def = 2;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void SketcherParams::setRedundantDefaultSolver(const long &v) {
+    instance()->subHandles[10]->SetInt("RedundantDefaultSolver",v);
+    instance()->RedundantDefaultSolver = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void SketcherParams::removeRedundantDefaultSolver() {
+    instance()->subHandles[10]->RemoveInt("RedundantDefaultSolver");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *SketcherParams::docRedundantSolverMaxIterations() {
+    return QT_TRANSLATE_NOOP("SketcherParams",
+"Largest number of iterations of the solver that finds redundant\n"
+"constraints, up to 999.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const long & SketcherParams::getRedundantSolverMaxIterations() {
+    return instance()->RedundantSolverMaxIterations;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const long & SketcherParams::defaultRedundantSolverMaxIterations() {
+    const static long def = 100;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void SketcherParams::setRedundantSolverMaxIterations(const long &v) {
+    instance()->subHandles[10]->SetInt("RedundantSolverMaxIterations",v);
+    instance()->RedundantSolverMaxIterations = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void SketcherParams::removeRedundantSolverMaxIterations() {
+    instance()->subHandles[10]->RemoveInt("RedundantSolverMaxIterations");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *SketcherParams::docRedundantSketchSizeMultiplier() {
+    return QT_TRANSLATE_NOOP("SketcherParams",
+"Multiply the iteration limit of the solver that finds redundant\n"
+"constraints by the number of parameters of the sketch.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const bool & SketcherParams::getRedundantSketchSizeMultiplier() {
+    return instance()->RedundantSketchSizeMultiplier;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const bool & SketcherParams::defaultRedundantSketchSizeMultiplier() {
+    const static bool def = false;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void SketcherParams::setRedundantSketchSizeMultiplier(const bool &v) {
+    instance()->subHandles[10]->SetBool("RedundantSketchSizeMultiplier",v);
+    instance()->RedundantSketchSizeMultiplier = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void SketcherParams::removeRedundantSketchSizeMultiplier() {
+    instance()->subHandles[10]->RemoveBool("RedundantSketchSizeMultiplier");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *SketcherParams::docRedundantConvergence() {
+    return QT_TRANSLATE_NOOP("SketcherParams",
+"Squared error below which a solution counts as converged, for the\n"
+"solver that finds redundant constraints. Text, read as a number.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const std::string & SketcherParams::getRedundantConvergence() {
+    return instance()->RedundantConvergence;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const std::string & SketcherParams::defaultRedundantConvergence() {
+    const static std::string def = "1E-10";
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void SketcherParams::setRedundantConvergence(const std::string &v) {
+    instance()->subHandles[10]->SetASCII("RedundantConvergence",v);
+    instance()->RedundantConvergence = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void SketcherParams::removeRedundantConvergence() {
+    instance()->subHandles[10]->RemoveASCII("RedundantConvergence");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *SketcherParams::docDebugMode() {
+    return QT_TRANSLATE_NOOP("SketcherParams",
+"Messages of the sketch solver in the report view: 0 none, 1\n"
+"minimal, 2 at every iteration.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const long & SketcherParams::getDebugMode() {
+    return instance()->DebugMode;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const long & SketcherParams::defaultDebugMode() {
+    const static long def = 1;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void SketcherParams::setDebugMode(const long &v) {
+    instance()->subHandles[10]->SetInt("DebugMode",v);
+    instance()->DebugMode = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void SketcherParams::removeDebugMode() {
+    instance()->subHandles[10]->RemoveInt("DebugMode");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *SketcherParams::docLM_eps() {
+    return QT_TRANSLATE_NOOP("SketcherParams",
+"Tolerance eps of the Levenberg-Marquardt solver. Text, read as a\n"
+"number.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const std::string & SketcherParams::getLM_eps() {
+    return instance()->LM_eps;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const std::string & SketcherParams::defaultLM_eps() {
+    const static std::string def = "1e-10";
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void SketcherParams::setLM_eps(const std::string &v) {
+    instance()->subHandles[10]->SetASCII("LM_eps",v);
+    instance()->LM_eps = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void SketcherParams::removeLM_eps() {
+    instance()->subHandles[10]->RemoveASCII("LM_eps");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *SketcherParams::docLM_eps1() {
+    return QT_TRANSLATE_NOOP("SketcherParams",
+"Tolerance eps1 of the Levenberg-Marquardt solver. Text, read as a\n"
+"number.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const std::string & SketcherParams::getLM_eps1() {
+    return instance()->LM_eps1;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const std::string & SketcherParams::defaultLM_eps1() {
+    const static std::string def = "1e-80";
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void SketcherParams::setLM_eps1(const std::string &v) {
+    instance()->subHandles[10]->SetASCII("LM_eps1",v);
+    instance()->LM_eps1 = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void SketcherParams::removeLM_eps1() {
+    instance()->subHandles[10]->RemoveASCII("LM_eps1");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *SketcherParams::docLM_tau() {
+    return QT_TRANSLATE_NOOP("SketcherParams",
+"Factor tau of the Levenberg-Marquardt solver. Text, read as a\n"
+"number.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const std::string & SketcherParams::getLM_tau() {
+    return instance()->LM_tau;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const std::string & SketcherParams::defaultLM_tau() {
+    const static std::string def = "0.001";
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void SketcherParams::setLM_tau(const std::string &v) {
+    instance()->subHandles[10]->SetASCII("LM_tau",v);
+    instance()->LM_tau = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void SketcherParams::removeLM_tau() {
+    instance()->subHandles[10]->RemoveASCII("LM_tau");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *SketcherParams::docDL_tolg() {
+    return QT_TRANSLATE_NOOP("SketcherParams",
+"Tolerance tolg of the DogLeg solver. Text, read as a number.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const std::string & SketcherParams::getDL_tolg() {
+    return instance()->DL_tolg;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const std::string & SketcherParams::defaultDL_tolg() {
+    const static std::string def = "1e-80";
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void SketcherParams::setDL_tolg(const std::string &v) {
+    instance()->subHandles[10]->SetASCII("DL_tolg",v);
+    instance()->DL_tolg = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void SketcherParams::removeDL_tolg() {
+    instance()->subHandles[10]->RemoveASCII("DL_tolg");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *SketcherParams::docDL_tolx() {
+    return QT_TRANSLATE_NOOP("SketcherParams",
+"Tolerance tolx of the DogLeg solver. Text, read as a number.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const std::string & SketcherParams::getDL_tolx() {
+    return instance()->DL_tolx;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const std::string & SketcherParams::defaultDL_tolx() {
+    const static std::string def = "1e-80";
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void SketcherParams::setDL_tolx(const std::string &v) {
+    instance()->subHandles[10]->SetASCII("DL_tolx",v);
+    instance()->DL_tolx = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void SketcherParams::removeDL_tolx() {
+    instance()->subHandles[10]->RemoveASCII("DL_tolx");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *SketcherParams::docDL_tolf() {
+    return QT_TRANSLATE_NOOP("SketcherParams",
+"Tolerance tolf of the DogLeg solver. Text, read as a number.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const std::string & SketcherParams::getDL_tolf() {
+    return instance()->DL_tolf;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const std::string & SketcherParams::defaultDL_tolf() {
+    const static std::string def = "1e-10";
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void SketcherParams::setDL_tolf(const std::string &v) {
+    instance()->subHandles[10]->SetASCII("DL_tolf",v);
+    instance()->DL_tolf = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void SketcherParams::removeDL_tolf() {
+    instance()->subHandles[10]->RemoveASCII("DL_tolf");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *SketcherParams::docRedundant_LM_eps() {
+    return QT_TRANSLATE_NOOP("SketcherParams",
+"Tolerance eps of Levenberg-Marquardt when it looks for redundant\n"
+"constraints. Text, read as a number.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const std::string & SketcherParams::getRedundant_LM_eps() {
+    return instance()->Redundant_LM_eps;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const std::string & SketcherParams::defaultRedundant_LM_eps() {
+    const static std::string def = "1e-10";
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void SketcherParams::setRedundant_LM_eps(const std::string &v) {
+    instance()->subHandles[10]->SetASCII("Redundant_LM_eps",v);
+    instance()->Redundant_LM_eps = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void SketcherParams::removeRedundant_LM_eps() {
+    instance()->subHandles[10]->RemoveASCII("Redundant_LM_eps");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *SketcherParams::docRedundant_LM_eps1() {
+    return QT_TRANSLATE_NOOP("SketcherParams",
+"Tolerance eps1 of Levenberg-Marquardt when it looks for redundant\n"
+"constraints. Text, read as a number.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const std::string & SketcherParams::getRedundant_LM_eps1() {
+    return instance()->Redundant_LM_eps1;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const std::string & SketcherParams::defaultRedundant_LM_eps1() {
+    const static std::string def = "1e-80";
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void SketcherParams::setRedundant_LM_eps1(const std::string &v) {
+    instance()->subHandles[10]->SetASCII("Redundant_LM_eps1",v);
+    instance()->Redundant_LM_eps1 = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void SketcherParams::removeRedundant_LM_eps1() {
+    instance()->subHandles[10]->RemoveASCII("Redundant_LM_eps1");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *SketcherParams::docRedundant_LM_tau() {
+    return QT_TRANSLATE_NOOP("SketcherParams",
+"Factor tau of Levenberg-Marquardt when it looks for redundant\n"
+"constraints. Text, read as a number.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const std::string & SketcherParams::getRedundant_LM_tau() {
+    return instance()->Redundant_LM_tau;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const std::string & SketcherParams::defaultRedundant_LM_tau() {
+    const static std::string def = "0.001";
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void SketcherParams::setRedundant_LM_tau(const std::string &v) {
+    instance()->subHandles[10]->SetASCII("Redundant_LM_tau",v);
+    instance()->Redundant_LM_tau = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void SketcherParams::removeRedundant_LM_tau() {
+    instance()->subHandles[10]->RemoveASCII("Redundant_LM_tau");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *SketcherParams::docRedundant_DL_tolg() {
+    return QT_TRANSLATE_NOOP("SketcherParams",
+"Tolerance tolg of DogLeg when it looks for redundant constraints.\n"
+"Text, read as a number.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const std::string & SketcherParams::getRedundant_DL_tolg() {
+    return instance()->Redundant_DL_tolg;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const std::string & SketcherParams::defaultRedundant_DL_tolg() {
+    const static std::string def = "1e-80";
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void SketcherParams::setRedundant_DL_tolg(const std::string &v) {
+    instance()->subHandles[10]->SetASCII("Redundant_DL_tolg",v);
+    instance()->Redundant_DL_tolg = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void SketcherParams::removeRedundant_DL_tolg() {
+    instance()->subHandles[10]->RemoveASCII("Redundant_DL_tolg");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *SketcherParams::docRedundant_DL_tolx() {
+    return QT_TRANSLATE_NOOP("SketcherParams",
+"Tolerance tolx of DogLeg when it looks for redundant constraints.\n"
+"Text, read as a number.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const std::string & SketcherParams::getRedundant_DL_tolx() {
+    return instance()->Redundant_DL_tolx;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const std::string & SketcherParams::defaultRedundant_DL_tolx() {
+    const static std::string def = "1e-80";
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void SketcherParams::setRedundant_DL_tolx(const std::string &v) {
+    instance()->subHandles[10]->SetASCII("Redundant_DL_tolx",v);
+    instance()->Redundant_DL_tolx = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void SketcherParams::removeRedundant_DL_tolx() {
+    instance()->subHandles[10]->RemoveASCII("Redundant_DL_tolx");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *SketcherParams::docRedundant_DL_tolf() {
+    return QT_TRANSLATE_NOOP("SketcherParams",
+"Tolerance tolf of DogLeg when it looks for redundant constraints.\n"
+"Text, read as a number.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const std::string & SketcherParams::getRedundant_DL_tolf() {
+    return instance()->Redundant_DL_tolf;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const std::string & SketcherParams::defaultRedundant_DL_tolf() {
+    const static std::string def = "1e-10";
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void SketcherParams::setRedundant_DL_tolf(const std::string &v) {
+    instance()->subHandles[10]->SetASCII("Redundant_DL_tolf",v);
+    instance()->Redundant_DL_tolf = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void SketcherParams::removeRedundant_DL_tolf() {
+    instance()->subHandles[10]->RemoveASCII("Redundant_DL_tolf");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *SketcherParams::docParameterQRKeepsColumnOrder() {
+    return QT_TRANSLATE_NOOP("SketcherParams",
+"Keep the order of the columns when a sketch's parameters are\n"
+"diagnosed by QR decomposition. For comparing results.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const bool & SketcherParams::getParameterQRKeepsColumnOrder() {
+    return instance()->ParameterQRKeepsColumnOrder;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const bool & SketcherParams::defaultParameterQRKeepsColumnOrder() {
+    const static bool def = false;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void SketcherParams::setParameterQRKeepsColumnOrder(const bool &v) {
+    instance()->subHandles[10]->SetBool("ParameterQRKeepsColumnOrder",v);
+    instance()->ParameterQRKeepsColumnOrder = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void SketcherParams::removeParameterQRKeepsColumnOrder() {
+    instance()->subHandles[10]->RemoveBool("ParameterQRKeepsColumnOrder");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *SketcherParams::docSkipUnneededConstraintQR() {
+    return QT_TRANSLATE_NOOP("SketcherParams",
+"Skip the QR decomposition of the constraints when a sketch is\n"
+"diagnosed and it is not needed. For comparing results.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const bool & SketcherParams::getSkipUnneededConstraintQR() {
+    return instance()->SkipUnneededConstraintQR;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const bool & SketcherParams::defaultSkipUnneededConstraintQR() {
+    const static bool def = true;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void SketcherParams::setSkipUnneededConstraintQR(const bool &v) {
+    instance()->subHandles[10]->SetBool("SkipUnneededConstraintQR",v);
+    instance()->SkipUnneededConstraintQR = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void SketcherParams::removeSkipUnneededConstraintQR() {
+    instance()->subHandles[10]->RemoveBool("SkipUnneededConstraintQR");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *SketcherParams::docFillJacobianFromConstraintParams() {
+    return QT_TRANSLATE_NOOP("SketcherParams",
+"Fill the Jacobian of a sketch from the parameters each constraint\n"
+"names instead of from all of them. For comparing results.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const bool & SketcherParams::getFillJacobianFromConstraintParams() {
+    return instance()->FillJacobianFromConstraintParams;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const bool & SketcherParams::defaultFillJacobianFromConstraintParams() {
+    const static bool def = true;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void SketcherParams::setFillJacobianFromConstraintParams(const bool &v) {
+    instance()->subHandles[10]->SetBool("FillJacobianFromConstraintParams",v);
+    instance()->FillJacobianFromConstraintParams = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void SketcherParams::removeFillJacobianFromConstraintParams() {
+    instance()->subHandles[10]->RemoveBool("FillJacobianFromConstraintParams");
 }
 //[[[end]]]

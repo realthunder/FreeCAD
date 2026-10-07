@@ -273,7 +273,7 @@ GCS::Algorithm getDefaultSolver()
 {
     auto preferences = App::GetApplication().GetParameterGroupByPath(
         "User parameter:BaseApp/Preferences/Mod/Sketcher/SolverAdvanced");
-    int solver = preferences->GetInt("DefaultSolver", GCS::DogLeg);
+    int solver = static_cast<int>(SketcherParams::getDefaultSolver());
     if (solver < GCS::BFGS || solver > GCS::DogLeg) {
         throw Base::ValueError("Invalid Sketcher DefaultSolver preference: expected a value from 0 to 2");
     }

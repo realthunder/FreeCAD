@@ -1600,6 +1600,352 @@ public:
     static const char *docMissingColor();
     //@}
 
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter DefaultSolver
+    ///
+    /// Algorithm a sketch is solved with: 0 BFGS, 1 Levenberg-Marquardt,
+    /// 2 DogLeg. Used at the next solve.
+    static const long & getDefaultSolver();
+    static const long & defaultDefaultSolver();
+    static void removeDefaultSolver();
+    static void setDefaultSolver(const long &v);
+    static const char *docDefaultSolver();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter DogLegGaussStep
+    ///
+    /// Gauss step of the DogLeg solver: 0 FullPivLU, 1
+    /// LeastNormFullPivLU, 2 LeastNormLdlt.
+    static const long & getDogLegGaussStep();
+    static const long & defaultDogLegGaussStep();
+    static void removeDogLegGaussStep();
+    static void setDogLegGaussStep(const long &v);
+    static const char *docDogLegGaussStep();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter MaxIter
+    ///
+    /// Largest number of iterations of the sketch solver, up to 999.
+    static const long & getMaxIter();
+    static const long & defaultMaxIter();
+    static void removeMaxIter();
+    static void setMaxIter(const long &v);
+    static const char *docMaxIter();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter SketchSizeMultiplier
+    ///
+    /// Multiply the iteration limit of the sketch solver by the number of
+    /// parameters of the sketch.
+    static const bool & getSketchSizeMultiplier();
+    static const bool & defaultSketchSizeMultiplier();
+    static void removeSketchSizeMultiplier();
+    static void setSketchSizeMultiplier(const bool &v);
+    static const char *docSketchSizeMultiplier();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter Convergence
+    ///
+    /// Squared error below which a solution of the sketch solver counts
+    /// as converged. Text, read as a number.
+    static const std::string & getConvergence();
+    static const std::string & defaultConvergence();
+    static void removeConvergence();
+    static void setConvergence(const std::string &v);
+    static const char *docConvergence();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter QRMethod
+    ///
+    /// QR decomposition used to diagnose a sketch: 0 dense, 1 sparse.
+    static const long & getQRMethod();
+    static const long & defaultQRMethod();
+    static void removeQRMethod();
+    static void setQRMethod(const long &v);
+    static const char *docQRMethod();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter QRPivotThreshold
+    ///
+    /// Values below this are taken for zero while a sketch is diagnosed
+    /// by QR decomposition. Text, read as a number.
+    static const std::string & getQRPivotThreshold();
+    static const std::string & defaultQRPivotThreshold();
+    static void removeQRPivotThreshold();
+    static void setQRPivotThreshold(const std::string &v);
+    static const char *docQRPivotThreshold();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter RedundantDefaultSolver
+    ///
+    /// Algorithm used to find redundant constraints: 0 BFGS, 1 Levenberg-
+    /// Marquardt, 2 DogLeg.
+    static const long & getRedundantDefaultSolver();
+    static const long & defaultRedundantDefaultSolver();
+    static void removeRedundantDefaultSolver();
+    static void setRedundantDefaultSolver(const long &v);
+    static const char *docRedundantDefaultSolver();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter RedundantSolverMaxIterations
+    ///
+    /// Largest number of iterations of the solver that finds redundant
+    /// constraints, up to 999.
+    static const long & getRedundantSolverMaxIterations();
+    static const long & defaultRedundantSolverMaxIterations();
+    static void removeRedundantSolverMaxIterations();
+    static void setRedundantSolverMaxIterations(const long &v);
+    static const char *docRedundantSolverMaxIterations();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter RedundantSketchSizeMultiplier
+    ///
+    /// Multiply the iteration limit of the solver that finds redundant
+    /// constraints by the number of parameters of the sketch.
+    static const bool & getRedundantSketchSizeMultiplier();
+    static const bool & defaultRedundantSketchSizeMultiplier();
+    static void removeRedundantSketchSizeMultiplier();
+    static void setRedundantSketchSizeMultiplier(const bool &v);
+    static const char *docRedundantSketchSizeMultiplier();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter RedundantConvergence
+    ///
+    /// Squared error below which a solution counts as converged, for the
+    /// solver that finds redundant constraints. Text, read as a number.
+    static const std::string & getRedundantConvergence();
+    static const std::string & defaultRedundantConvergence();
+    static void removeRedundantConvergence();
+    static void setRedundantConvergence(const std::string &v);
+    static const char *docRedundantConvergence();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter DebugMode
+    ///
+    /// Messages of the sketch solver in the report view: 0 none, 1
+    /// minimal, 2 at every iteration.
+    static const long & getDebugMode();
+    static const long & defaultDebugMode();
+    static void removeDebugMode();
+    static void setDebugMode(const long &v);
+    static const char *docDebugMode();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter LM_eps
+    ///
+    /// Tolerance eps of the Levenberg-Marquardt solver. Text, read as a
+    /// number.
+    static const std::string & getLM_eps();
+    static const std::string & defaultLM_eps();
+    static void removeLM_eps();
+    static void setLM_eps(const std::string &v);
+    static const char *docLM_eps();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter LM_eps1
+    ///
+    /// Tolerance eps1 of the Levenberg-Marquardt solver. Text, read as a
+    /// number.
+    static const std::string & getLM_eps1();
+    static const std::string & defaultLM_eps1();
+    static void removeLM_eps1();
+    static void setLM_eps1(const std::string &v);
+    static const char *docLM_eps1();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter LM_tau
+    ///
+    /// Factor tau of the Levenberg-Marquardt solver. Text, read as a
+    /// number.
+    static const std::string & getLM_tau();
+    static const std::string & defaultLM_tau();
+    static void removeLM_tau();
+    static void setLM_tau(const std::string &v);
+    static const char *docLM_tau();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter DL_tolg
+    ///
+    /// Tolerance tolg of the DogLeg solver. Text, read as a number.
+    static const std::string & getDL_tolg();
+    static const std::string & defaultDL_tolg();
+    static void removeDL_tolg();
+    static void setDL_tolg(const std::string &v);
+    static const char *docDL_tolg();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter DL_tolx
+    ///
+    /// Tolerance tolx of the DogLeg solver. Text, read as a number.
+    static const std::string & getDL_tolx();
+    static const std::string & defaultDL_tolx();
+    static void removeDL_tolx();
+    static void setDL_tolx(const std::string &v);
+    static const char *docDL_tolx();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter DL_tolf
+    ///
+    /// Tolerance tolf of the DogLeg solver. Text, read as a number.
+    static const std::string & getDL_tolf();
+    static const std::string & defaultDL_tolf();
+    static void removeDL_tolf();
+    static void setDL_tolf(const std::string &v);
+    static const char *docDL_tolf();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter Redundant_LM_eps
+    ///
+    /// Tolerance eps of Levenberg-Marquardt when it looks for redundant
+    /// constraints. Text, read as a number.
+    static const std::string & getRedundant_LM_eps();
+    static const std::string & defaultRedundant_LM_eps();
+    static void removeRedundant_LM_eps();
+    static void setRedundant_LM_eps(const std::string &v);
+    static const char *docRedundant_LM_eps();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter Redundant_LM_eps1
+    ///
+    /// Tolerance eps1 of Levenberg-Marquardt when it looks for redundant
+    /// constraints. Text, read as a number.
+    static const std::string & getRedundant_LM_eps1();
+    static const std::string & defaultRedundant_LM_eps1();
+    static void removeRedundant_LM_eps1();
+    static void setRedundant_LM_eps1(const std::string &v);
+    static const char *docRedundant_LM_eps1();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter Redundant_LM_tau
+    ///
+    /// Factor tau of Levenberg-Marquardt when it looks for redundant
+    /// constraints. Text, read as a number.
+    static const std::string & getRedundant_LM_tau();
+    static const std::string & defaultRedundant_LM_tau();
+    static void removeRedundant_LM_tau();
+    static void setRedundant_LM_tau(const std::string &v);
+    static const char *docRedundant_LM_tau();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter Redundant_DL_tolg
+    ///
+    /// Tolerance tolg of DogLeg when it looks for redundant constraints.
+    /// Text, read as a number.
+    static const std::string & getRedundant_DL_tolg();
+    static const std::string & defaultRedundant_DL_tolg();
+    static void removeRedundant_DL_tolg();
+    static void setRedundant_DL_tolg(const std::string &v);
+    static const char *docRedundant_DL_tolg();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter Redundant_DL_tolx
+    ///
+    /// Tolerance tolx of DogLeg when it looks for redundant constraints.
+    /// Text, read as a number.
+    static const std::string & getRedundant_DL_tolx();
+    static const std::string & defaultRedundant_DL_tolx();
+    static void removeRedundant_DL_tolx();
+    static void setRedundant_DL_tolx(const std::string &v);
+    static const char *docRedundant_DL_tolx();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter Redundant_DL_tolf
+    ///
+    /// Tolerance tolf of DogLeg when it looks for redundant constraints.
+    /// Text, read as a number.
+    static const std::string & getRedundant_DL_tolf();
+    static const std::string & defaultRedundant_DL_tolf();
+    static void removeRedundant_DL_tolf();
+    static void setRedundant_DL_tolf(const std::string &v);
+    static const char *docRedundant_DL_tolf();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter ParameterQRKeepsColumnOrder
+    ///
+    /// Keep the order of the columns when a sketch's parameters are
+    /// diagnosed by QR decomposition. For comparing results.
+    static const bool & getParameterQRKeepsColumnOrder();
+    static const bool & defaultParameterQRKeepsColumnOrder();
+    static void removeParameterQRKeepsColumnOrder();
+    static void setParameterQRKeepsColumnOrder(const bool &v);
+    static const char *docParameterQRKeepsColumnOrder();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter SkipUnneededConstraintQR
+    ///
+    /// Skip the QR decomposition of the constraints when a sketch is
+    /// diagnosed and it is not needed. For comparing results.
+    static const bool & getSkipUnneededConstraintQR();
+    static const bool & defaultSkipUnneededConstraintQR();
+    static void removeSkipUnneededConstraintQR();
+    static void setSkipUnneededConstraintQR(const bool &v);
+    static const char *docSkipUnneededConstraintQR();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter FillJacobianFromConstraintParams
+    ///
+    /// Fill the Jacobian of a sketch from the parameters each constraint
+    /// names instead of from all of them. For comparing results.
+    static const bool & getFillJacobianFromConstraintParams();
+    static const bool & defaultFillJacobianFromConstraintParams();
+    static void removeFillJacobianFromConstraintParams();
+    static void setFillJacobianFromConstraintParams(const bool &v);
+    static const char *docFillJacobianFromConstraintParams();
+    //@}
+
 // Auto generated code (Tools/params_utils.py:179)
 }; // class SketcherParams
 } // namespace Sketcher

@@ -1515,3 +1515,10 @@ fc_add_gui_test(GuiMiscSettings_tests_run
 fc_add_gui_test(GuiSketcherSettings_tests_run
                 sketcher-settings.py
                 --timeout 180)
+
+# The Sketcher's solver settings are behind Sketcher::SketcherParams, and
+# the solver box of the task panel stores a parameter of the redundant
+# solver under that solver's key.
+fc_add_gui_test(GuiSketcherSolverSettings_tests_run
+                sketcher-solver-settings.py
+                --timeout 180)

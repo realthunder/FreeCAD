@@ -36,8 +36,7 @@ ParamPath = 'User parameter:BaseApp/Preferences/Mod/Sketcher'
 ClassDoc = 'Convenient class to obtain the settings of the Sketcher'
 
 # The settings of the group itself, and below them those of its
-# sub-groups and those the Sketcher keeps in Preferences/View.
-# SolverAdvanced is not here yet. Not listed, because the program keeps
+# sub-groups and those the Sketcher keeps in Preferences/View. Not listed, because the program keeps
 # them for itself:
 # which sections of the task panel are expanded, the last values of the
 # polygon and array dialogs, the width of the datum dialog. The class lives
@@ -548,6 +547,114 @@ Params = [
         title = "Missing external geometry colour",
         doc = "Colour of external geometry whose source is missing in sketch edit\n"
               "mode. Applies at once."),
+
+    # ------------------------------------------------------------------
+    # The solver, sub-group SolverAdvanced: set in the "Advanced solver
+    # control" box of the sketch task panel, which gives them to the
+    # solver of the sketch in edit. The tolerances are kept as text.
+    ParamInt('DefaultSolver', 2, subpath='SolverAdvanced',
+        title = "Sketch solver",
+        doc = "Algorithm a sketch is solved with: 0 BFGS, 1 Levenberg-Marquardt,\n"
+              "2 DogLeg. Used at the next solve."),
+    ParamInt('DogLegGaussStep', 0, subpath='SolverAdvanced',
+        title = "DogLeg Gauss step",
+        doc = "Gauss step of the DogLeg solver: 0 FullPivLU, 1\n"
+              "LeastNormFullPivLU, 2 LeastNormLdlt."),
+    ParamInt('MaxIter', 100, subpath='SolverAdvanced',
+        title = "Solver iterations",
+        doc = "Largest number of iterations of the sketch solver, up to 999."),
+    ParamBool('SketchSizeMultiplier', False, subpath='SolverAdvanced',
+        title = "Sketch size multiplier",
+        doc = "Multiply the iteration limit of the sketch solver by the number of\n"
+              "parameters of the sketch."),
+    ParamString('Convergence', '1E-10', subpath='SolverAdvanced',
+        title = "Solver convergence",
+        doc = "Squared error below which a solution of the sketch solver counts\n"
+              "as converged. Text, read as a number."),
+    ParamInt('QRMethod', 1, subpath='SolverAdvanced',
+        title = "QR method",
+        doc = "QR decomposition used to diagnose a sketch: 0 dense, 1 sparse."),
+    ParamString('QRPivotThreshold', '1E-13', subpath='SolverAdvanced',
+        title = "QR pivot threshold",
+        doc = "Values below this are taken for zero while a sketch is diagnosed\n"
+              "by QR decomposition. Text, read as a number."),
+    ParamInt('RedundantDefaultSolver', 2, subpath='SolverAdvanced',
+        title = "Redundant solver",
+        doc = "Algorithm used to find redundant constraints: 0 BFGS, 1 Levenberg-\n"
+              "Marquardt, 2 DogLeg."),
+    ParamInt('RedundantSolverMaxIterations', 100, subpath='SolverAdvanced',
+        title = "Redundant solver iterations",
+        doc = "Largest number of iterations of the solver that finds redundant\n"
+              "constraints, up to 999."),
+    ParamBool('RedundantSketchSizeMultiplier', False, subpath='SolverAdvanced',
+        title = "Redundant sketch size multiplier",
+        doc = "Multiply the iteration limit of the solver that finds redundant\n"
+              "constraints by the number of parameters of the sketch."),
+    ParamString('RedundantConvergence', '1E-10', subpath='SolverAdvanced',
+        title = "Redundant solver convergence",
+        doc = "Squared error below which a solution counts as converged, for the\n"
+              "solver that finds redundant constraints. Text, read as a number."),
+    ParamInt('DebugMode', 1, subpath='SolverAdvanced',
+        title = "Solver console mode",
+        doc = "Messages of the sketch solver in the report view: 0 none, 1\n"
+              "minimal, 2 at every iteration."),
+    ParamString('LM_eps', '1e-10', subpath='SolverAdvanced',
+        title = "Levenberg-Marquardt eps",
+        doc = "Tolerance eps of the Levenberg-Marquardt solver. Text, read as a\n"
+              "number."),
+    ParamString('LM_eps1', '1e-80', subpath='SolverAdvanced',
+        title = "Levenberg-Marquardt eps1",
+        doc = "Tolerance eps1 of the Levenberg-Marquardt solver. Text, read as a\n"
+              "number."),
+    ParamString('LM_tau', '0.001', subpath='SolverAdvanced',
+        title = "Levenberg-Marquardt tau",
+        doc = "Factor tau of the Levenberg-Marquardt solver. Text, read as a\n"
+              "number."),
+    ParamString('DL_tolg', '1e-80', subpath='SolverAdvanced',
+        title = "DogLeg tolg",
+        doc = "Tolerance tolg of the DogLeg solver. Text, read as a number."),
+    ParamString('DL_tolx', '1e-80', subpath='SolverAdvanced',
+        title = "DogLeg tolx",
+        doc = "Tolerance tolx of the DogLeg solver. Text, read as a number."),
+    ParamString('DL_tolf', '1e-10', subpath='SolverAdvanced',
+        title = "DogLeg tolf",
+        doc = "Tolerance tolf of the DogLeg solver. Text, read as a number."),
+    ParamString('Redundant_LM_eps', '1e-10', subpath='SolverAdvanced',
+        title = "Redundant Levenberg-Marquardt eps",
+        doc = "Tolerance eps of Levenberg-Marquardt when it looks for redundant\n"
+              "constraints. Text, read as a number."),
+    ParamString('Redundant_LM_eps1', '1e-80', subpath='SolverAdvanced',
+        title = "Redundant Levenberg-Marquardt eps1",
+        doc = "Tolerance eps1 of Levenberg-Marquardt when it looks for redundant\n"
+              "constraints. Text, read as a number."),
+    ParamString('Redundant_LM_tau', '0.001', subpath='SolverAdvanced',
+        title = "Redundant Levenberg-Marquardt tau",
+        doc = "Factor tau of Levenberg-Marquardt when it looks for redundant\n"
+              "constraints. Text, read as a number."),
+    ParamString('Redundant_DL_tolg', '1e-80', subpath='SolverAdvanced',
+        title = "Redundant DogLeg tolg",
+        doc = "Tolerance tolg of DogLeg when it looks for redundant constraints.\n"
+              "Text, read as a number."),
+    ParamString('Redundant_DL_tolx', '1e-80', subpath='SolverAdvanced',
+        title = "Redundant DogLeg tolx",
+        doc = "Tolerance tolx of DogLeg when it looks for redundant constraints.\n"
+              "Text, read as a number."),
+    ParamString('Redundant_DL_tolf', '1e-10', subpath='SolverAdvanced',
+        title = "Redundant DogLeg tolf",
+        doc = "Tolerance tolf of DogLeg when it looks for redundant constraints.\n"
+              "Text, read as a number."),
+    ParamBool('ParameterQRKeepsColumnOrder', False, subpath='SolverAdvanced',
+        title = "QR keeps the column order",
+        doc = "Keep the order of the columns when a sketch's parameters are\n"
+              "diagnosed by QR decomposition. For comparing results."),
+    ParamBool('SkipUnneededConstraintQR', True, subpath='SolverAdvanced',
+        title = "Skip unneeded constraint QR",
+        doc = "Skip the QR decomposition of the constraints when a sketch is\n"
+              "diagnosed and it is not needed. For comparing results."),
+    ParamBool('FillJacobianFromConstraintParams', True, subpath='SolverAdvanced',
+        title = "Fill Jacobian from constraint parameters",
+        doc = "Fill the Jacobian of a sketch from the parameters each constraint\n"
+              "names instead of from all of them. For comparing results."),
 ]
 
 def declare():

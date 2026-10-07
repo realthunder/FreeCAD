@@ -21,6 +21,8 @@
  ***************************************************************************/
 
 #include "PreCompiled.h"
+
+#include "SketcherParams.h"
 #include <memory>
 #include <optional>
 #ifndef _PreComp_
@@ -165,12 +167,12 @@ void applyDiagnosePreferences(Sketcher::Sketch& sketch)
     );
 
     sketch.setParameterQRKeepsColumnOrder(
-        preferences->GetBool("ParameterQRKeepsColumnOrder", false)
+        SketcherParams::getParameterQRKeepsColumnOrder()
     );
-    sketch.setSkipUnneededConstraintQR(preferences->GetBool("SkipUnneededConstraintQR", true));
+    sketch.setSkipUnneededConstraintQR(SketcherParams::getSkipUnneededConstraintQR());
 
     sketch.setFillJacobianFromConstraintParams(
-        preferences->GetBool("FillJacobianFromConstraintParams", true)
+        SketcherParams::getFillJacobianFromConstraintParams()
     );
 }
 }  // namespace

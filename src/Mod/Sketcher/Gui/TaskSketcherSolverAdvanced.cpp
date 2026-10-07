@@ -21,6 +21,8 @@
  ***************************************************************************/
 
 #include "PreCompiled.h"
+
+#include <Mod/Sketcher/App/SketcherParams.h>
 #ifndef _PreComp_
 #include <QString>
 #endif
@@ -220,10 +222,10 @@ void TaskSketcherSolverAdvanced::updateDefaultMethodParameters()
             ui->lineEditSolverParam1->setEnabled(true);
             ui->lineEditSolverParam2->setEnabled(true);
             ui->lineEditSolverParam3->setEnabled(true);
-            double eps = ::atof(hGrp->GetASCII("LM_eps", QString::number(LM_EPS).toUtf8()).c_str());
+            double eps = ::atof(hGrp->GetASCII("LM_eps", Sketcher::SketcherParams::defaultLM_eps().c_str()).c_str());
             double eps1 =
-                ::atof(hGrp->GetASCII("LM_eps1", QString::number(LM_EPS1).toUtf8()).c_str());
-            double tau = ::atof(hGrp->GetASCII("LM_tau", QString::number(LM_TAU).toUtf8()).c_str());
+                ::atof(hGrp->GetASCII("LM_eps1", Sketcher::SketcherParams::defaultLM_eps1().c_str()).c_str());
+            double tau = ::atof(hGrp->GetASCII("LM_tau", Sketcher::SketcherParams::defaultLM_tau().c_str()).c_str());
             ui->lineEditSolverParam1->setText(QString::number(eps).remove(
                 QStringLiteral("+")
                     .replace(QStringLiteral("e0"), QStringLiteral("E"))
@@ -258,11 +260,11 @@ void TaskSketcherSolverAdvanced::updateDefaultMethodParameters()
             ui->lineEditSolverParam2->setEnabled(true);
             ui->lineEditSolverParam3->setEnabled(true);
             double tolg =
-                ::atof(hGrp->GetASCII("DL_tolg", QString::number(DL_TOLG).toUtf8()).c_str());
+                ::atof(hGrp->GetASCII("DL_tolg", Sketcher::SketcherParams::defaultDL_tolg().c_str()).c_str());
             double tolx =
-                ::atof(hGrp->GetASCII("DL_tolx", QString::number(DL_TOLX).toUtf8()).c_str());
+                ::atof(hGrp->GetASCII("DL_tolx", Sketcher::SketcherParams::defaultDL_tolx().c_str()).c_str());
             double tolf =
-                ::atof(hGrp->GetASCII("DL_tolf", QString::number(DL_TOLF).toUtf8()).c_str());
+                ::atof(hGrp->GetASCII("DL_tolf", Sketcher::SketcherParams::defaultDL_tolf().c_str()).c_str());
             ui->lineEditSolverParam1->setText(QString::number(tolg).remove(
                 QStringLiteral("+")
                     .replace(QStringLiteral("e0"), QStringLiteral("E"))
@@ -322,11 +324,11 @@ void TaskSketcherSolverAdvanced::updateRedundantMethodParameters()
             ui->lineEditRedundantSolverParam2->setEnabled(true);
             ui->lineEditRedundantSolverParam3->setEnabled(true);
             double eps = ::atof(
-                hGrp->GetASCII("Redundant_LM_eps", QString::number(LM_EPS).toUtf8()).c_str());
+                hGrp->GetASCII("Redundant_LM_eps", Sketcher::SketcherParams::defaultRedundant_LM_eps().c_str()).c_str());
             double eps1 = ::atof(
-                hGrp->GetASCII("Redundant_LM_eps1", QString::number(LM_EPS1).toUtf8()).c_str());
+                hGrp->GetASCII("Redundant_LM_eps1", Sketcher::SketcherParams::defaultRedundant_LM_eps1().c_str()).c_str());
             double tau = ::atof(
-                hGrp->GetASCII("Redundant_LM_tau", QString::number(LM_TAU).toUtf8()).c_str());
+                hGrp->GetASCII("Redundant_LM_tau", Sketcher::SketcherParams::defaultRedundant_LM_tau().c_str()).c_str());
             ui->lineEditRedundantSolverParam1->setText(QString::number(eps).remove(
                 QStringLiteral("+")
                     .replace(QStringLiteral("e0"), QStringLiteral("E"))
@@ -344,7 +346,7 @@ void TaskSketcherSolverAdvanced::updateRedundantMethodParameters()
             const_cast<Sketcher::Sketch&>(sketchView->getSketchObject()->getSolvedSketch())
                 .setLM_eps1Redundant(eps1);
             const_cast<Sketcher::Sketch&>(sketchView->getSketchObject()->getSolvedSketch())
-                .setLM_tauRedundant(eps1);
+                .setLM_tauRedundant(tau);
             break;
         }
         case 2:  // DogLeg
@@ -356,11 +358,11 @@ void TaskSketcherSolverAdvanced::updateRedundantMethodParameters()
             ui->lineEditRedundantSolverParam2->setEnabled(true);
             ui->lineEditRedundantSolverParam3->setEnabled(true);
             double tolg = ::atof(
-                hGrp->GetASCII("Redundant_DL_tolg", QString::number(DL_TOLG).toUtf8()).c_str());
+                hGrp->GetASCII("Redundant_DL_tolg", Sketcher::SketcherParams::defaultRedundant_DL_tolg().c_str()).c_str());
             double tolx = ::atof(
-                hGrp->GetASCII("Redundant_DL_tolx", QString::number(DL_TOLX).toUtf8()).c_str());
+                hGrp->GetASCII("Redundant_DL_tolx", Sketcher::SketcherParams::defaultRedundant_DL_tolx().c_str()).c_str());
             double tolf = ::atof(
-                hGrp->GetASCII("Redundant_DL_tolf", QString::number(DL_TOLF).toUtf8()).c_str());
+                hGrp->GetASCII("Redundant_DL_tolf", Sketcher::SketcherParams::defaultRedundant_DL_tolf().c_str()).c_str());
             ui->lineEditRedundantSolverParam1->setText(QString::number(tolg).remove(
                 QStringLiteral("+")
                     .replace(QStringLiteral("e0"), QStringLiteral("E"))
@@ -413,6 +415,10 @@ void TaskSketcherSolverAdvanced::onLineEditSolverParam1EditingFinished()
     }
 }
 
+// The three parameters of the solver that looks for redundant constraints
+// belong to the solver ITS combo box names. These three handlers looked at
+// the main solver's box, so with different solvers a value typed into a
+// DogLeg field was given to, and stored as, the Levenberg-Marquardt one.
 void TaskSketcherSolverAdvanced::onLineEditRedundantSolverParam1EditingFinished()
 {
     QString text = ui->lineEditRedundantSolverParam1->text();
@@ -422,7 +428,7 @@ void TaskSketcherSolverAdvanced::onLineEditRedundantSolverParam1EditingFinished(
     sci.replace(QStringLiteral("e0"), QStringLiteral("E"));
     ui->lineEditRedundantSolverParam1->setText(sci.toUpper());
 
-    switch (ui->comboBoxDefaultSolver->currentIndex()) {
+    switch (ui->comboBoxRedundantDefaultSolver->currentIndex()) {
         case 1:  // LM
         {
             const_cast<Sketcher::Sketch&>(sketchView->getSketchObject()->getSolvedSketch())
@@ -480,7 +486,7 @@ void TaskSketcherSolverAdvanced::onLineEditRedundantSolverParam2EditingFinished(
     sci.replace(QStringLiteral("e0"), QStringLiteral("E"));
     ui->lineEditRedundantSolverParam2->setText(sci.toUpper());
 
-    switch (ui->comboBoxDefaultSolver->currentIndex()) {
+    switch (ui->comboBoxRedundantDefaultSolver->currentIndex()) {
         case 1:  // LM
         {
             const_cast<Sketcher::Sketch&>(sketchView->getSketchObject()->getSolvedSketch())
@@ -538,7 +544,7 @@ void TaskSketcherSolverAdvanced::onLineEditRedundantSolverParam3EditingFinished(
     sci.replace(QStringLiteral("e0"), QStringLiteral("E"));
     ui->lineEditRedundantSolverParam3->setText(sci.toUpper());
 
-    switch (ui->comboBoxDefaultSolver->currentIndex()) {
+    switch (ui->comboBoxRedundantDefaultSolver->currentIndex()) {
         case 1:  // LM
         {
             const_cast<Sketcher::Sketch&>(sketchView->getSketchObject()->getSolvedSketch())
@@ -671,7 +677,7 @@ void TaskSketcherSolverAdvanced::onCheckBoxRedundantSketchSizeMultiplierStateCha
     else if (state == Qt::Unchecked) {
         ui->checkBoxRedundantSketchSizeMultiplier->onSave();
         const_cast<Sketcher::Sketch&>(sketchView->getSketchObject()->getSolvedSketch())
-            .setSketchSizeMultiplierRedundant(true);
+            .setSketchSizeMultiplierRedundant(false);
     }
 }
 
