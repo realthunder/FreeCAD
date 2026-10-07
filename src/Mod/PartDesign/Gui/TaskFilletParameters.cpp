@@ -26,7 +26,13 @@
 #ifndef _PreComp_
 # include <QAction>
 # include <BRepAdaptor_Curve.hxx>
+# include <BRepExtrema_DistShapeShape.hxx>
+# include <BRepLProp_SLProps.hxx>
+# include <BRepAdaptor_Surface.hxx>
 # include <BRep_Tool.hxx>
+# include <BRepBuilderAPI_MakeVertex.hxx>
+# include <GeomAPI_ProjectPointOnSurf.hxx>
+# include <TopExp_Explorer.hxx>
 # include <TopoDS.hxx>
 # include <gp.hxx>
 #endif
@@ -239,11 +245,37 @@ void TaskFilletParameters::setupGizmos(ViewProviderDressUp* vp)
                 recompute();
             });
     }
-    static_assert(CornerGizmoCount == 6, "the container below lists every corner gizmo");
+    // and its faces' depth handles, the same way
+    faceGizmos.resize(CornerFaceGizmoCount);
+    for (int i=0; i<CornerFaceGizmoCount; ++i) {
+        auto &faceGizmo = faceGizmos[i];
+        auto spinBox = new Gui::QuantitySpinBox(this);
+        spinBox->hide();
+        spinBox->setUnit(Base::Unit::Length);
+        spinBox->setMinimum(0.0);
+        spinBox->setMaximum(INT_MAX);
+        faceGizmo.spinBox = spinBox;
+        faceGizmo.gizmo = new Gui::LinearGizmo(spinBox);
+        Base::connect(spinBox, qOverload<double>(&Gui::QuantitySpinBox::valueChanged),
+            [this, i](double value) {
+                auto DressUpView = getDressUpView();
+                const auto &target = faceGizmos[i];
+                if (!DressUpView || target.vertex.empty() || value <= 0.0)
+                    return;
+                auto pcFillet = static_cast<PartDesign::Fillet*>(DressUpView->getObject());
+                setupTransaction();
+                pcFillet->Corners.setValue(target.vertex, target.edge, value);
+                recompute();
+            });
+    }
+    static_assert(CornerGizmoCount == 6 && CornerFaceGizmoCount == 4,
+                  "the container below lists every corner gizmo");
     gizmoContainer = GizmoContainer::create({radiusGizmo, radiusGizmo2,
                                              cornerGizmos[0].gizmo, cornerGizmos[1].gizmo,
                                              cornerGizmos[2].gizmo, cornerGizmos[3].gizmo,
-                                             cornerGizmos[4].gizmo, cornerGizmos[5].gizmo}, vp);
+                                             cornerGizmos[4].gizmo, cornerGizmos[5].gizmo,
+                                             faceGizmos[0].gizmo, faceGizmos[1].gizmo,
+                                             faceGizmos[2].gizmo, faceGizmos[3].gizmo}, vp);
 
     setGizmoPositions();
     showDraggerHints();
@@ -295,10 +327,12 @@ void TaskFilletParameters::setCornerGizmoPositions()
 {
     if (!gizmoContainer || cornerGizmos.empty())
         return;
-    for (auto &cornerGizmo : cornerGizmos) {
-        cornerGizmo.gizmo->setVisibility(false);
-        cornerGizmo.vertex.clear();
-        cornerGizmo.edge.clear();
+    for (auto *pool : {&cornerGizmos, &faceGizmos}) {
+        for (auto &cornerGizmo : *pool) {
+            cornerGizmo.gizmo->setVisibility(false);
+            cornerGizmo.vertex.clear();
+            cornerGizmo.edge.clear();
+        }
     }
 
     auto DressUpView = getDressUpView();
@@ -315,10 +349,13 @@ void TaskFilletParameters::setCornerGizmoPositions()
     const auto *corner = fillet->Corners.getValue(vertexName);
 
     auto cornerEdges = getCornerEdges();
+    setCornerFaceGizmoPositions(fillet, vertexName, point, cornerEdges[vertexName]);
     int i = 0;
     for (const auto &edge : cornerEdges[vertexName]) {
         if (i >= CornerGizmoCount)
             break;
+        if (Part::PropertyFilletCorners::isFaceName(edge.first))
+            continue;
         // along the edge, away from the vertex
         BRepAdaptor_Curve curve(TopoDS::Edge(edge.second.getShape()));
         double first = curve.FirstParameter();
@@ -362,6 +399,117 @@ void TaskFilletParameters::setCornerGizmoPositions()
                                                       Base::Vector3d(dir.X(), dir.Y(), dir.Z()));
         cornerGizmo.gizmo->setDragLength(value);
         cornerGizmo.gizmo->setVisibility(true);
+    }
+}
+
+void TaskFilletParameters::setCornerFaceGizmoPositions(PartDesign::Fillet *fillet,
+                                                       const std::string &vertexName,
+                                                       const gp_Pnt &point,
+                                                       const CornerEdges &faces)
+{
+    if (faceGizmos.empty() || fillet->isError())
+        return;
+    // The corner's patch in the result: its face nearest the vertex that is
+    // not one of the base's kinds (planes, cylinders... ; the patch is a
+    // B-spline)
+    Part::TopoShape result = fillet->Shape.getShape();
+    result.setTransform(Base::Matrix4D());
+    TopoDS_Shape vertex = BRepBuilderAPI_MakeVertex(point).Vertex();
+    TopoDS_Face patch;
+    double nearest = DBL_MAX;
+    for (TopExp_Explorer xp(result.getShape(), TopAbs_FACE); xp.More(); xp.Next()) {
+        const TopoDS_Face &face = TopoDS::Face(xp.Current());
+        if (BRepAdaptor_Surface(face).GetType() != GeomAbs_BSplineSurface)
+            continue;
+        BRepExtrema_DistShapeShape dist(vertex, face);
+        if (dist.IsDone() && dist.Value() < nearest) {
+            nearest = dist.Value();
+            patch = face;
+        }
+    }
+    if (patch.IsNull())
+        return;
+    const auto *corner = fillet->Corners.getValue(vertexName);
+
+    int i = 0;
+    for (const auto &entry : faces) {
+        if (i >= CornerFaceGizmoCount)
+            break;
+        if (!Part::PropertyFilletCorners::isFaceName(entry.first))
+            continue;
+        const TopoDS_Face &face = TopoDS::Face(entry.second.getShape());
+        Handle(Geom_Surface) surface = BRep_Tool::Surface(face);
+        // the patch's boundary on the face: an edge of the patch lying on
+        // the face's surface (its middle too, which a fillet's cut does not)
+        auto onFace = [&](const gp_Pnt &p) {
+            GeomAPI_ProjectPointOnSurf proj(p, surface);
+            return proj.NbPoints() > 0 && proj.LowerDistance() < 1e-3;
+        };
+        bool found = false;
+        gp_Pnt a, b, far;
+        double bow = 0.0;
+        for (TopExp_Explorer xp(patch, TopAbs_EDGE); xp.More() && !found; xp.Next()) {
+            BRepAdaptor_Curve curve(TopoDS::Edge(xp.Current()));
+            double first = curve.FirstParameter(), last = curve.LastParameter();
+            a = curve.Value(first);
+            b = curve.Value(last);
+            if (a.Distance(b) < Precision::Confusion() || !onFace(a) || !onFace(b)
+                    || !onFace(curve.Value((first + last) / 2)))
+                continue;
+            found = true;
+            gp_Lin chord(a, gp_Dir(gp_Vec(a, b)));
+            for (int k = 1; k < 32; ++k) {
+                gp_Pnt p = curve.Value(first + (last - first) * k / 32);
+                double d = chord.Distance(p);
+                if (d > bow) {
+                    bow = d;
+                    far = p;
+                }
+            }
+        }
+        if (!found)
+            continue;
+        // from the chord's middle, square to it in the face, away from the
+        // vertex
+        gp_Pnt mid((a.XYZ() + b.XYZ()) / 2);
+        GeomAPI_ProjectPointOnSurf proj(mid, surface);
+        double u, v;
+        proj.LowerDistanceParameters(u, v);
+        BRepAdaptor_Surface adaptor(face, false);
+        BRepLProp_SLProps props(adaptor, u, v, 1, Precision::Confusion());
+        if (!props.IsNormalDefined())
+            continue;
+        gp_Vec dir = gp_Vec(props.Normal()).Crossed(gp_Vec(a, b));
+        if (dir.Magnitude() < gp::Resolution())
+            continue;
+        if (dir.Dot(gp_Vec(point, mid)) < 0)
+            dir.Reverse();
+        dir.Normalize();
+
+        double value = bow;
+        if (corner) {
+            auto it = corner->edges.find(entry.first);
+            if (it != corner->edges.end())
+                value = it->second;
+        }
+        // no handle for a depth an expression drives
+        App::ObjectIdentifier path(fillet->Corners);
+        path << App::ObjectIdentifier::SimpleComponent(vertexName)
+             << App::ObjectIdentifier::SimpleComponent(entry.first);
+        if (fillet->getExpression(path).expression)
+            continue;
+
+        auto &faceGizmo = faceGizmos[i++];
+        faceGizmo.vertex = vertexName;
+        faceGizmo.edge = entry.first;
+        {
+            QSignalBlocker blocker(faceGizmo.spinBox);
+            faceGizmo.spinBox->setValue(value);
+        }
+        faceGizmo.gizmo->Gizmo::setDraggerPlacement(Base::Vector3d(mid.X(), mid.Y(), mid.Z()),
+                                                    Base::Vector3d(dir.X(), dir.Y(), dir.Z()));
+        faceGizmo.gizmo->setDragLength(value);
+        faceGizmo.gizmo->setVisibility(true);
     }
 }
 
@@ -722,6 +870,17 @@ std::map<std::string, TaskFilletParameters::CornerEdges> TaskFilletParameters::g
                     }
                 }
             }
+            // then the faces at the vertex, which can be given depths
+            int index = 0;
+            for (const auto &face : baseShape.getSubTopoShapes(TopAbs_FACE)) {
+                ++index;
+                for (const auto &v : face.getSubShapes(TopAbs_VERTEX)) {
+                    if (v.IsSame(vertex)) {
+                        cornerEdges.emplace_back("Face" + std::to_string(index), face);
+                        break;
+                    }
+                }
+            }
         }
     }
     // a bad reference is the recompute's to report
@@ -804,10 +963,16 @@ void TaskFilletParameters::refreshCorner(QTreeWidgetItem *item, const CornerEdge
             if (it != corner->edges.end())
                 own = &it->second;
         }
+        bool isFace = Part::PropertyFilletCorners::isFaceName(name);
         if (own)
             setupItem(child, *own, true);
         else
-            setupItem(child, setback, false);
+            // a face without a depth: the fairest curve, nothing to show
+            setupItem(child, isFace ? -1.0 : setback, false);
+        if (isFace && !child->data(SetbackColumn, Qt::ToolTipRole).isValid())
+            child->setData(SetbackColumn, Qt::ToolTipRole,
+                tr("Depth: how far the corner patch's boundary bows into this face,\n"
+                   "away from the vertex, at its middle. Empty: the fairest curve."));
     }
     while (item->childCount() > j)
         delete item->child(item->childCount()-1);
@@ -824,10 +989,14 @@ void TaskFilletParameters::updateCorner(QTreeWidgetItem *item)
     std::string vertex = getGeometryItemText(corner).constData();
     double value = item->data(SetbackColumn, Qt::UserRole).toDouble();
     setupTransaction();
+    std::string name = item->text(0).toStdString();
     if (item == corner)
         pcFillet->Corners.setValue(vertex, value);
+    else if (value <= 0.0 && Part::PropertyFilletCorners::isFaceName(name))
+        // a depth of 0 is none: the fairest curve
+        pcFillet->Corners.removeValue(vertex, name);
     else
-        pcFillet->Corners.setValue(vertex, item->text(0).toStdString(), value);
+        pcFillet->Corners.setValue(vertex, name, value);
     recompute();
 }
 

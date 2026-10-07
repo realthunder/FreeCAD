@@ -47,6 +47,12 @@ class TestFilletPanel(unittest.TestCase):
         self.Doc.recompute()
         self.Vertex = _nameAt(self.Box.Shape, "Vertex", App.Vector(10, 10, 10))
         self.Edges = _nameAt(self.Box.Shape, "Edge", App.Vector(10, 10, 10))
+        vertex = self.Box.Shape.getElement(self.Vertex)
+        self.Faces = [
+            "Face%d" % (i + 1)
+            for i, f in enumerate(self.Box.Shape.Faces)
+            if any(v.isSame(vertex) for v in f.Vertexes)
+        ]
         try:
             shape = self.Box.Shape
             shape.makeFillet(1, [shape.getElement(e) for e in self.Edges], corners={self.Vertex: 0})
@@ -117,8 +123,11 @@ class TestFilletPanel(unittest.TestCase):
         self.assertEqual(corner.text(4), "2.00 mm")
         # a fillet's own setback, and the corner's it inherits in brackets
         e = self.Edges
+        # then the faces at the vertex, no depth given: nothing shown
         self.assertEqual(
-            self.rows(corner), [(e[0], "3.00 mm"), (e[1], "(2.00 mm)"), (e[2], "(2.00 mm)")]
+            self.rows(corner),
+            [(e[0], "3.00 mm"), (e[1], "(2.00 mm)"), (e[2], "(2.00 mm)")]
+            + [(f, "") for f in self.Faces],
         )
         # an edge row takes no setback
         self.assertEqual(self.row(e[0]).text(4), "")
@@ -139,11 +148,9 @@ class TestFilletPanel(unittest.TestCase):
         self.assertEqual(self.Fillet.Corners[self.Vertex][0], 2.5)
         self.assertTrue(self.waitFor(lambda: self.rows(self.row(self.Vertex))[2][1] == "(2.50 mm)"))
 
-    def testHandle(self):
-        # the current corner's handles drive hidden spin boxes, one per fillet
-        corner = self.row(self.Vertex)
-        self.Tree.setCurrentItem(corner.child(0))
-        self.process()
+    def handleBoxes(self):
+        """The hidden spin boxes the handles drive: six for the fillets of the
+        current corner, then four for its faces' depths"""
         panel = [
             w
             for w in self.Gui.getMainWindow().findChildren(self.QtWidgets.QWidget)
@@ -155,6 +162,15 @@ class TestFilletPanel(unittest.TestCase):
             for w in panel.findChildren(self.QtWidgets.QWidget)
             if w.metaObject().className() == "Gui::QuantitySpinBox" and not w.isVisible()
         ]
+        self.assertEqual(len(boxes), 10)
+        return boxes[:6], boxes[6:]
+
+    def testHandle(self):
+        # the current corner's handles drive hidden spin boxes, one per fillet
+        corner = self.row(self.Vertex)
+        self.Tree.setCurrentItem(corner.child(0))
+        self.process()
+        boxes = self.handleBoxes()[0]
         values = sorted(w.property("rawValue") for w in boxes)
         # three fillets, the pool's other three unused
         self.assertEqual(values, [0.0, 0.0, 0.0, 2.0, 2.0, 3.0])
@@ -163,6 +179,45 @@ class TestFilletPanel(unittest.TestCase):
         self.assertEqual(self.Fillet.Corners, corners)
         self.assertTrue(self.waitFor(lambda: self.rows(self.row(self.Vertex))[0][1] == "4.00 mm"))
         self.assertAlmostEqual(self.Fillet.Shape.Volume, self.expected(corners), places=6)
+
+    def testFaceDepth(self):
+        from PySide import QtCore
+
+        face = self.Faces[0]
+        corner = self.row(self.Vertex)
+        child = [
+            corner.child(i) for i in range(corner.childCount()) if corner.child(i).text(0) == face
+        ][0]
+        child.setData(4, QtCore.Qt.UserRole, 1.0)
+        corners = {self.Vertex: (2.0, {self.Edges[0]: 3.0, face: 1.0})}
+        self.assertEqual(self.Fillet.Corners, corners)
+        self.assertEqual(self.Fillet.CornerFaces[1], [face])
+        self.assertTrue(
+            self.waitFor(lambda: dict(self.rows(self.row(self.Vertex)))[face] == "1.00 mm")
+        )
+        self.assertAlmostEqual(self.Fillet.Shape.Volume, self.expected(corners), places=6)
+        # a depth handle per face, at the patch's boundary: the given depth,
+        # or the curve's own bow for the faces without one
+        self.Tree.setCurrentItem(self.row(self.Vertex))
+        self.process()
+        faceBoxes = self.handleBoxes()[1]
+        values = [w.property("rawValue") for w in faceBoxes]
+        self.assertIn(1.0, values)
+        self.assertEqual(sum(1 for v in values if v > 0.0), 3)
+        [w for w in faceBoxes if w.property("rawValue") == 1.0][0].setProperty("rawValue", 0.5)
+        corners[self.Vertex][1][face] = 0.5
+        self.assertEqual(self.Fillet.Corners, corners)
+        self.assertTrue(
+            self.waitFor(lambda: dict(self.rows(self.row(self.Vertex)))[face] == "0.50 mm")
+        )
+        self.assertAlmostEqual(self.Fillet.Shape.Volume, self.expected(corners), places=6)
+        # 0 is no depth: the fairest curve again
+        corner = self.row(self.Vertex)
+        child = [
+            corner.child(i) for i in range(corner.childCount()) if corner.child(i).text(0) == face
+        ][0]
+        child.setData(4, QtCore.Qt.UserRole, 0.0)
+        self.assertEqual(self.Fillet.Corners, {self.Vertex: (2.0, {self.Edges[0]: 3.0})})
 
     def testClear(self):
         self.Tree.clearSelection()

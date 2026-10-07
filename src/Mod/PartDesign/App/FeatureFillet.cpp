@@ -63,8 +63,13 @@ Fillet::Fillet()
       "Setback corners, by vertex: each fillet ending at the vertex stops a distance from it,\n"
       "measured along its edge, and one patch tangent to them closes the opening.\n"
       "A corner holds the setback of all its fillets (less than 0 for none) and the setbacks\n"
-      "of single fillets by edge. Needs the OCCT fork.");
+      "of single fillets by edge, and the depths of faces by face: the patch's boundary on\n"
+      "the face bows into it, away from the vertex, that far at its middle. Needs the OCCT fork.");
     Corners.connectLinkProperty(Base);
+
+    ADD_PROPERTY_TYPE(CornerFaces, (nullptr), "Fillet", App::Prop_Hidden,
+      "The faces Corners gives depths, kept by the fillet so that their names follow the topology");
+    Corners.connectFaceLinkProperty(CornerFaces);
 
     ADD_PROPERTY_TYPE(UseAllEdges, (false), "Fillet", App::Prop_None,
       "Fillet all edges if true, else use only those edges in Base property.\n"
@@ -168,12 +173,14 @@ Part::TopoShape::FilletCorners Fillet::getCorners(const Part::TopoShape &baseSha
     if (Corners.getValue().empty())
         return corners;
 
-    // The names of Corners are Base's; resolve them by their mapped names
+    // The names of Corners are Base's, its faces CornerFaces'; resolve them
+    // by their mapped names
     std::map<std::string, std::string> mappedNames;
-    const auto &shadows = Base.getShadowSubs();
-    for (const auto &shadow : shadows) {
-        if (!shadow.first.empty())
-            mappedNames[shadow.second] = shadow.first;
+    for (const auto *link : {&Base, &CornerFaces}) {
+        for (const auto &shadow : link->getShadowSubs()) {
+            if (!shadow.first.empty())
+                mappedNames[shadow.second] = shadow.first;
+        }
     }
     auto find = [&](const std::string &name, TopAbs_ShapeEnum type) {
         auto it = mappedNames.find(name);
@@ -200,6 +207,12 @@ Part::TopoShape::FilletCorners Fillet::getCorners(const Part::TopoShape &baseSha
         // A corner that no longer ends a fillet is kept, and skipped
         corner.optional = true;
         for (const auto &e : setting.edges) {
+            if (Part::PropertyFilletCorners::isFaceName(e.first)) {
+                TopoDS_Shape face = find(e.first, TopAbs_FACE);
+                if (!face.IsNull())
+                    corner.faces.emplace_back(face, e.second);
+                continue;
+            }
             TopoDS_Shape edge = find(e.first, TopAbs_EDGE);
             if (!edge.IsNull())
                 corner.edges.emplace_back(edge, e.second);
@@ -233,7 +246,38 @@ void Fillet::onChanged(const App::Property *prop)
         if (added)
             Base.setValue(Base.getValue(), std::move(subs));
     }
+    // ... and the faces it gives depths go in CornerFaces, for the same
+    if ((prop == &Corners || prop == &Base) && getDocument()
+            && !isRestoring() && !getDocument()->isPerformingTransaction())
+        syncCornerFaces();
     DressUp::onChanged(prop);
+}
+
+void Fillet::syncCornerFaces()
+{
+    std::vector<std::string> faces;
+    for (const auto &v : Corners.getValue()) {
+        for (const auto &e : v.second.edges) {
+            if (Part::PropertyFilletCorners::isFaceName(e.first)
+                    && std::find(faces.begin(), faces.end(), e.first) == faces.end())
+                faces.push_back(e.first);
+        }
+    }
+    // with no base the faces are left as they are: unlinking them would drop
+    // their depths
+    App::DocumentObject *base = Base.getValue();
+    if (!base)
+        return;
+    if (faces.empty())
+        base = nullptr;
+    // the faces already linked keep their mapped names
+    auto subs = CornerFaces.getSubValues(false);
+    std::vector<std::string> sortedSubs(subs), sortedFaces(faces);
+    std::sort(sortedSubs.begin(), sortedSubs.end());
+    std::sort(sortedFaces.begin(), sortedFaces.end());
+    if (CornerFaces.getValue() == base && sortedSubs == sortedFaces)
+        return;
+    CornerFaces.setValue(base, std::move(faces));
 }
 
 void Fillet::handleChangedPropertyType(Base::XMLReader &reader, const char * TypeName, App::Property * prop)

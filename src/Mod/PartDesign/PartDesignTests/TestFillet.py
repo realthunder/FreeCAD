@@ -140,6 +140,16 @@ def _nameAt(shape, kind, point):
             if any(v.isSame(vertexes[0]) for v in e.Vertexes)]
 
 
+def _faceAt(shape, point, normal):
+    """The name of the face through point whose normal there is normal"""
+    for i, f in enumerate(shape.Faces):
+        if f.isInside(point, 1e-7, True):
+            u, v = f.Surface.parameter(point)
+            if f.normalAt(u, v).isEqual(normal, 1e-7):
+                return 'Face%d' % (i + 1)
+    raise ValueError('no face at %s' % point)
+
+
 class TestFilletCorners(unittest.TestCase):
     """The Corners of a fillet: its setback corners (docs/CornerBlending.md)"""
 
@@ -234,6 +244,45 @@ class TestFilletCorners(unittest.TestCase):
         finally:
             shutil.rmtree(path, ignore_errors=True)
 
+    def testFaceDepth(self):
+        top = _faceAt(self.Box.Shape, self.Corner, FreeCAD.Vector(0, 0, 1))
+        corners = {self.Vertex: (4.0, {top: 1.0})}
+        self.Fillet.Corners = corners
+        self.assertEqual(self.Fillet.Corners, corners)
+        # the face is kept in CornerFaces, not Base (it would be filleted)
+        self.assertEqual(self.Fillet.CornerFaces, (self.Box, [top]))
+        self.assertNotIn(top, self.Fillet.Base[1])
+        volume = self.recompute()
+        self.assertAlmostEqual(volume, self.expected(corners), places=6)
+        self.assertNotAlmostEqual(volume, self.expected({self.Vertex: 4}), places=4)
+        # a path, and an expression on it
+        self.Fillet.setExpression('.Corners.%s.%s' % (self.Vertex, top), '0.5 mm')
+        self.recompute()
+        self.assertEqual(self.Fillet.Corners, {self.Vertex: (4.0, {top: 0.5})})
+        self.assertAlmostEqual(self.Fillet.Shape.Volume,
+                               self.expected({self.Vertex: (4, {top: 0.5})}), places=6)
+        self.Fillet.setExpression('.Corners.%s.%s' % (self.Vertex, top), None)
+        # saved and restored
+        path = tempfile.mkdtemp(prefix='FilletCorners')
+        try:
+            name = os.path.join(path, 'depth.FCStd')
+            self.Doc.saveAs(name)
+            FreeCAD.closeDocument(self.Doc.Name)
+            self.Doc = FreeCAD.openDocument(name)
+            self.Fillet = self.Doc.getObject('Fillet')
+            self.Box = self.Doc.getObject('Box')
+            self.assertEqual(self.Fillet.Corners, {self.Vertex: (4.0, {top: 0.5})})
+            self.assertEqual(self.Fillet.CornerFaces[1], [top])
+            self.Fillet.touch()
+            self.assertAlmostEqual(self.recompute(),
+                                   self.expected({self.Vertex: (4, {top: 0.5})}), places=6)
+        finally:
+            shutil.rmtree(path, ignore_errors=True)
+        # removing the depth unlinks the face
+        self.Fillet.Corners = {self.Vertex: 4}
+        self.assertEqual(self.Fillet.CornerFaces, None)
+        self.assertAlmostEqual(self.recompute(), self.expected({self.Vertex: 4}), places=6)
+
     def testStaleCorner(self):
         # a corner that ends no fillet is kept, and skipped
         far = _nameAt(self.Box.Shape, 'Vertex', FreeCAD.Vector(0, 0, 0))
@@ -274,7 +323,8 @@ class TestFilletCorners(unittest.TestCase):
         fillet = body.newObject('PartDesign::Fillet', 'PadFillet')
         fillet.Base = (cut, edges)
         fillet.Radius = 1
-        fillet.Corners = {vertex: (2, {edges[0]: 3})}
+        side = _faceAt(cut.Shape, self.Corner, FreeCAD.Vector(1, 0, 0))
+        fillet.Corners = {vertex: (2, {edges[0]: 3, side: 1})}
         fillet.setExpression('.Corners.%s.%s' % (vertex, edges[0]), '3 mm')
         self.Doc.recompute()
         self.assertTrue(fillet.isValid())
@@ -287,8 +337,10 @@ class TestFilletCorners(unittest.TestCase):
         newEdge = [n for n in _nameAt(cut.Shape, 'Edge', self.Corner)
                    if cut.Shape.getElement(n).CenterOfMass.isEqual(point, 1e-7)][0]
         self.assertNotEqual((newVertex, newEdge), (vertex, edges[0]))
+        newSide = _faceAt(cut.Shape, self.Corner, FreeCAD.Vector(1, 0, 0))
         self.assertTrue(fillet.isValid())
-        self.assertEqual(fillet.Corners, {newVertex: (2.0, {newEdge: 3.0})})
+        self.assertEqual(fillet.Corners, {newVertex: (2.0, {newEdge: 3.0, newSide: 1.0})})
+        self.assertEqual(fillet.CornerFaces[1], [newSide])
         self.assertEqual([p for p, _ in fillet.ExpressionEngine],
                          ['.Corners.%s.%s' % (newVertex, newEdge)])
         # the cut, through the pad's 10 before, now takes 2 x 2 x 5 less;

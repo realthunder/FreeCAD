@@ -34,6 +34,12 @@
 #include "TaskDressUpParameters.h"
 #include "ViewProviderFillet.h"
 
+#include <gp_Pnt.hxx>
+
+namespace PartDesign {
+class Fillet;
+}
+
 class Ui_TaskFilletParameters;
 
 namespace Gui {
@@ -92,14 +98,16 @@ protected:
     /** @name Setback corners (docs/CornerBlending.md)
      * A vertex in the references is a corner of the fillet; its row holds the
      * setback of all its fillets and its children the fillets ending there,
-     * each with an optional setback of its own.
+     * each with an optional setback of its own, then the faces at the vertex,
+     * each with an optional depth (how far the patch's boundary bows into it).
      */
     //@{
     /// The vertex row of a corner, from its row or one of its edges'
     static QTreeWidgetItem *getCornerItem(QTreeWidgetItem *item);
-    /// A fillet edge at a corner, by name
+    /// A fillet edge or a face at a corner, by name
     typedef std::vector<std::pair<std::string, Part::TopoShape>> CornerEdges;
-    /// The fillet edges ending at each corner vertex of the references
+    /// The fillet edges ending at each corner vertex of the references, then
+    /// the faces there
     std::map<std::string, CornerEdges> getCornerEdges() const;
     void refreshCorner(QTreeWidgetItem *item, const CornerEdges &edges);
     void updateCorner(QTreeWidgetItem *item);
@@ -129,8 +137,16 @@ private:
         std::string edge;
     };
     std::vector<CornerGizmo> cornerGizmos;
+    /// One depth handle per face of the current corner, at most this many;
+    /// 'edge' is the face's name
+    static constexpr int CornerFaceGizmoCount = 4;
+    std::vector<CornerGizmo> faceGizmos;
     bool cornerRecomputePending = false;
     void setCornerGizmoPositions();
+    void setCornerFaceGizmoPositions(PartDesign::Fillet *fillet,
+                                     const std::string &vertexName,
+                                     const gp_Pnt &point,
+                                     const CornerEdges &faces);
 };
 
 /// simulation dialog for the TaskView
