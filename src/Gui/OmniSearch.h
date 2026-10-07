@@ -268,7 +268,7 @@ class GuiExport ParamListModel : public QAbstractListModel
 public:
     explicit ParamListModel(QObject *parent = nullptr);
 
-    /// Re-read the registry, after a library loaded more parameters
+    /// Re-read the registry if a library has added parameters since
     void refresh();
 
     const App::ParamInfo *info(const QModelIndex &index) const;

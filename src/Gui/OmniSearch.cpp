@@ -707,8 +707,13 @@ ParamListModel::ParamListModel(QObject *parent)
 
 void ParamListModel::refresh()
 {
+    // The registry only grows, so its size says whether there is anything new.
+    // Called at every key stroke of a "/param" query: nothing to do is the rule.
+    const auto &now = ParamRegistry::instance().entries();
+    if (now.size() == entries.size())
+        return;
     beginResetModel();
-    entries = ParamRegistry::instance().entries();
+    entries = now;
     endResetModel();
 }
 

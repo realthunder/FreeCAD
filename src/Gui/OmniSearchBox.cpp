@@ -1026,6 +1026,9 @@ void OmniSearchEdit::onTextEdited(const QString &text)
             cmdCompleter->popup()->hide();
         break;
     case Mode::Param:
+        // A module adds its settings when it is loaded, which may be after
+        // this box was made: without this they were never listed.
+        paramModel->refresh();
         paramFilter->setKeywords(input.query);
         if (paramFilter->rowCount())
             showListPopup(paramCompleter, popupRect());
