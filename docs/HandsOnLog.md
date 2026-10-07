@@ -37,6 +37,8 @@ Evidence that does not belong in the repository is under
 | 26 | FIXED `175ffce199`, not staged | the first OK of a profile held the program 11 to 15 s on the reporter's configuration with `scanner.FCStd` open: 780 keys stored for the first time and taken for changes -- stylesheet set again 4.2 s, every Part view provider re-meshed 3.2 s, language activated again 2 s. 0.9 s now |
 | 27 | STAGED `fa2ada985c` | the cell menu made a spreadsheet view by asking for it, listed a page's views, and a pick was placed by the general policy |
 | 31 | FIXED `47b5e72c79`, not staged | "Go to end" is on for a profile that never stored it |
+| 32 | FIXED `b960092ea5`, not staged | the menus styled see-through are single objects shared between a pop-up over the 3D view and the main menu; the blue is the palette's bright text, the desktop's accent. No sheet chosen is an ordinary menu now |
+| 34 | FIXED `3d7b4c30fd`, not staged | Dark and Light store TechDraw's preselection colour, the blue of the 3D view's |
 
 **The reporter, 2026-10-07 14:20, on what is open** (said to the build
 session; the queue has the reporter's own entries):
@@ -667,3 +669,59 @@ profile's report view leave it at 0 of 4359: 1 FAIL, 5 PASS.
 
 Not done, and entry 24's: the key is still read straight from the
 parameter group, so the omni search does not list it.
+
+## 32. Sub menus that are see-through with blue text -- FIXED
+
+`b960092ea5`. Not staged.
+
+**(a) Why.** `setupMenuStyle()` gives a menu the "menu style sheet" of the
+Theme preferences, and with none chosen -- which is what every theme pack
+sets -- it took `Dark.qss` or `Light.qss` of `Stylesheets/menu` whenever a
+theme with a stylesheet was active; only a session with no stylesheet at all
+got plain menus. It is called on purpose, on twelve menus: the 3D view's
+pick menus (the ones remembered), the omni search's group menu, and four
+action menus -- command history, select-up, the tool bar menu, the camera
+binding. Each of those four is ONE menu object: shown over the 3D view by
+its shortcut, and hanging in the main menu as a sub menu. So the style
+meant for the pop-up over the view is what Tools > Command history showed.
+Nothing leaks; the reporter's memory of what it was FOR is right.
+
+The blue text is the sheet's `color: palette(bright-text)`. Under a dark
+colour scheme on Windows that palette role is the desktop's accent:
+`#a6d8ff` in the test session, against `#ffffff` for ordinary text.
+
+**(b) Off by default.** With no menu sheet chosen a menu is an ordinary one,
+drawn by the theme. The see-through sheets are for whoever picks one
+(Preferences > Theme > "View menu style sheet", whose entry for none reads
+"None" where it read "Auto"). A sheet taken away again makes the menus
+opaque again in the same session; the pick menu's sub menus follow their
+menu; the dark sheet's text is a fixed light grey instead of the accent.
+
+Scored: `tests/gui/menu-see-through-is-a-choice.py`
+(`GuiMenuSeeThroughIsAChoice_tests_run`), 7 PASS; 4 FAIL on the staged
+binaries. `theme-switch-contrast.py` 39 PASS.
+
+Not done: a profile that wants the old look has to choose the sheet; no
+theme does it for them. Whether the 3D view's pick menus alone should stay
+see-through by default was not what was asked ("disable transparent menu by
+default"), so they are opaque too.
+
+## 34. TechDraw's preselection colour and the themes -- FIXED
+
+`3d7b4c30fd`. Not staged. As decided ("dark and light set techdraw"): both
+packs store `Mod/TechDraw/Colors/PreSelectColor`, the blue (`0x0004FFFF`)
+they give the 3D view's highlight. Classic keeps its yellow.
+
+Scored: `tests/gui/theme-owns-techdraw-preselect.py`
+(`GuiThemeOwnsTechDrawPreselect_tests_run`) -- Classic, Dark, Light, Classic
+again, and what TechDraw would highlight with after each: 7 PASS; 4 FAIL on
+the staged binaries (yellow after Dark and after Light). An open page
+follows without being reopened: the colour is read at each hover
+(`QGIView::getPreColor`). From the code, not run on a page.
+
+One more way the key gets set, found under entry 26: OK in the preferences
+stores it too, with whatever the TechDraw page shows. With every theme
+owning the key that no longer matters for a theme switch.
+
+The other packs in the tree (Dark behave, Dark contrast, Dark modern,
+Darker, Light modern, ProDark) are not offered as themes and were left.
