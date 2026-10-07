@@ -30,8 +30,8 @@ report views, the reporter's own files -- is kept beside the dev tree under
 | 6 | 2026-10-06 | maximized with the custom title bar: sometimes no margin at the top | STAGED |
 | 7 | 2026-10-06 | crash after answering Yes to the recompute question on `scanner.FCStd` | STAGED, cause of the GL error open |
 | 8 | 2026-10-06 | `scanner.FCStd`: the migration recompute fails | FOUND in full; the helix STAGED; the rest is entries 14 to 16 |
-| 9 | 2026-10-06 | the 3D view lags behind the mouse: hover highlight, wheel zoom | FOUND and measured; which fix is the reporter's to choose |
-| 10 | 2026-10-06 | a 3D view is slow to take a new size | FOUND: entry 9's cause |
+| 9 | 2026-10-06 | the 3D view lags behind the mouse: hover highlight, wheel zoom | FIXED |
+| 10 | 2026-10-06 | a 3D view is slow to take a new size | FIXED with entry 9 |
 | 11 | 2026-10-06 | dark theme: wrong colors (checkbox border, title bar buttons), audit asked | OPEN |
 | 12 | 2026-10-06 | TechDraw: dimensions and cosmetics are covered by the face fill | FIXED (they were transparent, not covered) |
 | 13 | 2026-10-06 | report view: grouped messages with an expand icon in the margin, no underscore (change request) | OPEN |
@@ -315,7 +315,7 @@ Four separate things:
 4. **The four binders.** Not a regression: the old build breaks them the same
    way as soon as `Binder008` is recomputed. Entry 16.
 
-## 9. The 3D view lags behind the mouse -- FOUND
+## 9. The 3D view lags behind the mouse -- FIXED
 
 **Reported (2026-10-06 11:58):** "the 3d view seems lagging in response to
 mouse movement and wheel. a mouse over highlight is visibly delayed a few
@@ -340,8 +340,7 @@ between the two kinds of view is where to look.
 first-chance C++ exceptions for the 33 minutes of that session, not one per
 mouse move.
 
-**Found (2026-10-07), measured, not fixed: the fix is the reporter's to
-choose.** On Windows the backend runs on Direct3D 11 and reaches the Qt
+**Found (2026-10-07), measured.** On Windows the backend runs on Direct3D 11 and reaches the Qt
 view through a read-back (docs/DeviceAdoption.md section 10). That route is
 pipelined: a frame queues a copy of itself, the copy lands about two frames
 later, and a frame that finds nothing landed shows the previous picture
@@ -369,7 +368,7 @@ frames: `wait` 0.28 to 0.43 ms a frame, the composite 0.60 to 0.86 ms in
 all against 0.36 to 0.76 pipelined. A frame took 10.0 ms either way in that
 loop (something else sets that floor).
 
-**Two ways to fix it.**
+**Two ways to fix it, as they were put to the reporter.**
 1. Wait for the copy on every frame (what the switch does, made the
    default; the switch kept to turn it off for benchmarks). No lag at all,
    about a third of a millisecond a frame here. On a scene where the GPU,
@@ -383,7 +382,105 @@ loop (something else sets that floor).
 My recommendation is 1: the lag is what the reporter sees on every
 document, and the cost is small where it was measured.
 
-## 10. A 3D view is slow to take a new size -- FOUND
+**Decided (the reporter, 2026-10-07):** "Make the frame mode a setting.
+Default to wait. Turn it on for animation."
+
+**Fix.** `Render/ReadbackFrameMode`, a generated setting (the omni search
+lists it), read before every frame, so a change shows at the next one:
+
+| value | a frame waits for its copy |
+|---|---|
+| `Wait` | always |
+| `Pipelined while animating` (the default) | unless the view is redrawing by itself: a camera animation, a spin, the backend's animated content |
+| `Pipelined` | never; one waiting frame follows when the redraws stop |
+
+"Turn it on for animation" is read as the second row, and that reading is
+mine: in a run of frames the next one shows this one anyway, and the wait
+buys nothing there. If something else was meant, the setting has the other
+two.
+
+How it is built (docs/DeviceAdoption.md section 10 has it in full): the
+host says before each frame whether it may be pipelined
+(`Renderer::setFramePipelined`), and after a pipelined frame it owes the
+backend one frame that waits (`Renderer::frameTrails`). The 3D view does
+it through a helper, `Gui::ReadbackFramePacer`
+(`View3DInventorViewer::renderScene`). The owed frame is asked for by a 50 ms
+timer that every further frame puts off, so it comes once, when the run
+has stopped -- which is what makes `Pipelined` a mode that can be chosen,
+and what brings the screen up to date after an animation's last frame. A
+capture waits as before. `FC_BGFX_READBACK_SYNC` still holds one form for
+a benchmark leg, whatever the setting: 1 every frame waits, 0 none does
+and nothing settles (`scripts/composite-cost.sh` sets it for both legs
+now).
+
+The other host, the shared canvas of a split view (`View/UnifiedCanvas`,
+off by default), is left as it was, and the setting does not reach it: it
+draws each cell as a capture, which has always waited. A probe of it --
+two cells, three resizes, each mode -- holds the settled picture a second
+later on this build and on the copy staged 17:44 alike. Its cells are
+therefore never pipelined, in an animation either; making them so is a
+change to a path that has only ever run serialized, and it was not asked
+for.
+
+**Scored.** `tests/gui/readback-frame-mode.py`, 25 claims: in each of the
+three modes the face the mouse rests on is highlighted a second later and
+plain again a second after the mouse has left, the view holds its settled
+picture a second after eight wheel steps, after each of three resizes and
+after a spin is stopped; and, from the renderer's own report, no frame of
+a spin waits in the two pipelined modes and every one does in `Wait`.
+25 PASS; on the copy staged 17:44, 22 FAIL (everything but the two "no
+frame of a spin waits" and the default's name). The wheel is symptom (c),
+which had not been measured: 365 to 852 samples of the view differ a
+second after the last step there, 0 here.
+
+The two probes that found it, at the default
+(`..\dl\handson\2026-10-07\`): the highlight samples over plain read
+402 a second after the mouse came to rest and 0 a second after it left,
+both rounds; the three resizes differ in 0 samples.
+
+**What the wait costs**, measured by switching the setting in one process,
+legs alternated and the first discarded (`entry9-modecost.py`,
+`entry9-gpubound.py`; swap interval 0, Direct3D 11). The camera is turned
+a degree and the view redrawn, which is not an animation, so `Wait` waits
+on every frame and `Pipelined` on none:
+
+| scene | `Wait` | `Pipelined` | the wait costs |
+|---|---|---|---|
+| a box | 3.45 ms | 2.90 ms | +0.56 ms |
+| `scanner.FCStd` (47 to 68 draws in view) | 2.70 | 2.51 | +0.20 |
+| 300 transparent planes face-on, 1280 x 638 (GPU 5 to 6 ms a frame) | 10.10 | 9.57 | +0.53, 5.5% |
+| the same, run again | 9.20 | 8.89 | +0.31, 3.5% |
+| 1200 of them (GPU 5 to 7 ms) | 14.02 | 13.31 | +0.71, 5.3% |
+
+And what the default gives back in an animation, the view's own spin, in
+frames a second: 47.0 against 46.3 with `Wait` on the 300 planes (+1.4%;
+run again, 48.4 against 47.4, +2.1%), 39.8 against 38.8 on the 1200
+(+2.6%).
+
+The renderer's own account of the wait is 0.2 to 0.5 ms a frame in all of
+them, and it does not grow with what the GPU has to do. Read from bgfx,
+that is how Direct3D 11 has to behave: the copy is read with a blocking
+map inside the frame boundary after the one that queued it
+(`RendererContextD3D11::readTexture`), pipelined or not, so the GPU is
+caught up with once a frame either way and waiting adds only the two
+nearly empty frame boundaries bgfx wants before it hands the buffer over.
+The worry of option 1 -- a scene the GPU limits -- does not arise on this
+backend. It was not measured on Direct3D 12, Vulkan or Metal, and no scene
+here had the GPU as its limit (5 to 7 ms of GPU in a 10 to 14 ms frame was
+the most the planes gave).
+
+**Found on the way: the timing report's `gpu` figure was garbage once
+frames waited** (`render frame: ... gpu 84274584.65ms`). bgfx's Direct3D 11
+timer took a frame's two timestamps as soon as the END one had a result and
+then read the frequency from the disjoint query without looking at whether
+THAT had one -- it is ended last, and when it had none the frequency
+published was whatever the stack held (1, or 2250096623200, for the real
+1000000000; a probe printed them). A frame that waits reads the timer
+right behind the frame, which makes the race common. Fixed in the fork's
+bgfx (`TimerQueryD3D11::update` asks the disjoint query first and leaves
+the last result standing when a query has nothing to say).
+
+## 10. A 3D view is slow to take a new size -- FIXED
 
 **Reported (2026-10-06 12:04):** "when I create a new document, the mdi window
 will zoom to fit. the background gradient is stuck at its old size and visibly
@@ -405,6 +502,12 @@ later with what it holds after four more redraws:
 |---|---|
 | as it is | 67181 of 129360, 18339 of 40560, 49545 of 85410 |
 | `FC_BGFX_READBACK_SYNC=1` | 0, 0, 0 |
+
+**Fixed with entry 9** (`Render/ReadbackFrameMode`): a view that takes a
+new size is not animating, so its frame waits for its copy at the default,
+and in `Pipelined` the frame that waits follows 50 ms later. The three
+resizes of the probe differ in 0 samples in every mode
+(`tests/gui/readback-frame-mode.py`).
 
 `entry10-a-second-after-resize-pipelined.png`: the old picture, at its old
 size, in a corner of the view that has grown. The frame at the new size is
