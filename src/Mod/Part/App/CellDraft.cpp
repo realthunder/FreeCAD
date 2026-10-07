@@ -30,6 +30,12 @@
 // result is the cells of S not in K plus the cells of K on P's inner side,
 // the faces put back together by origin (UnifySameDomain restricted to
 // pieces of one input face). Several faces are drafted one after the other.
+//
+// Phase 2 (section 13): F is drafted with its tangent chain, each surface of
+// it a member (a plane, or a cylinder or cone about the pull direction, which
+// turns into a cone); P' is then a sheet of the members' new surfaces sewn
+// along the chain's tangent edges, and a cell is judged by the member whose
+// region (between the planes through its tangent edges) holds it.
 
 #include "PreCompiled.h"
 
@@ -49,7 +55,10 @@
 #include <BRepAlgoAPI_Common.hxx>
 #include <BRepBndLib.hxx>
 #include <BRepBuilderAPI_Copy.hxx>
+#include <BRepAdaptor_Curve.hxx>
 #include <BRepBuilderAPI_MakeFace.hxx>
+#include <BRepBuilderAPI_MakePolygon.hxx>
+#include <BRepBuilderAPI_Sewing.hxx>
 #include <BRepBuilderAPI_MakeWire.hxx>
 #include <BRepCheck_Analyzer.hxx>
 #include <BRepClass3d_SolidClassifier.hxx>
@@ -65,6 +74,7 @@
 #include <BRep_Builder.hxx>
 #include <BRep_Tool.hxx>
 #include <Bnd_Box.hxx>
+#include <ElCLib.hxx>
 #include <ElSLib.hxx>
 #include <GProp_GProps.hxx>
 #include <GeomAPI_ProjectPointOnSurf.hxx>
@@ -73,6 +83,7 @@
 #include <Geom_BSplineSurface.hxx>
 #include <Geom_ConicalSurface.hxx>
 #include <Geom_CylindricalSurface.hxx>
+#include <Geom_Plane.hxx>
 #include <Geom_RectangularTrimmedSurface.hxx>
 #include <Geom_Surface.hxx>
 #include <IntAna_QuadQuadGeo.hxx>
@@ -224,6 +235,214 @@ CellDraft::ErrorType findRotation(const gp_Pln& pl,
     }
     axe = li.Position();
     return CellDraft::NoError;
+}
+
+// Draft_Modification's NewSurface for a cylinder or a cone (TKOffset,
+// Draft_Modification_1.cxx, private there): the cone through the surface's
+// circle in the neutral plane, at the angle with the pull direction; the
+// surface itself if the angle is none; null if the surface cannot be drafted
+// (its axis, or the neutral plane's normal, not the pull direction).
+Handle(Geom_Surface) newRevolution(const Handle(Geom_Surface) & surface,
+                                   TopAbs_Orientation oris,
+                                   const gp_Dir& direction,
+                                   double angle,
+                                   const gp_Pln& neutralPlane)
+{
+    if (std::abs(direction.Dot(neutralPlane.Axis().Direction())) <= 1. - Precision::Angular()) {
+        return nullptr;
+    }
+    auto cyl = Handle(Geom_CylindricalSurface)::DownCast(surface);
+    auto cone = Handle(Geom_ConicalSurface)::DownCast(surface);
+    gp_Ax3 axcone;
+    gp_Pnt center;
+    double radius;
+    double testdir;
+    IntAna_QuadQuadGeo i2s;
+    if (!cyl.IsNull()) {
+        gp_Cylinder cy = cyl->Cylinder();
+        testdir = direction.Dot(cy.Axis().Direction());
+        if (std::abs(testdir) <= 1. - Precision::Angular()) {
+            return nullptr;
+        }
+        if (std::abs(angle) <= Precision::Angular()) {
+            return surface;
+        }
+        i2s.Perform(neutralPlane, cy, Precision::Angular(), Precision::Confusion());
+        if (!i2s.IsDone() || i2s.TypeInter() != IntAna_Circle) {
+            return nullptr;
+        }
+        axcone = cy.Position();
+        radius = cy.Radius();
+    }
+    else if (!cone.IsNull()) {
+        gp_Cone co = cone->Cone();
+        testdir = direction.Dot(co.Axis().Direction());
+        if (std::abs(testdir) <= 1. - Precision::Angular()) {
+            return nullptr;
+        }
+        i2s.Perform(neutralPlane, co, Precision::Angular(), Precision::Confusion());
+        if (!i2s.IsDone() || i2s.TypeInter() != IntAna_Circle) {
+            return nullptr;
+        }
+        axcone = co.Position();
+        radius = i2s.Circle(1).Radius();
+        if (std::abs(angle) <= Precision::Angular()) {
+            return new Geom_CylindricalSurface(gp_Cylinder(axcone, radius));
+        }
+    }
+    else {
+        return nullptr;
+    }
+    center = i2s.Circle(1).Location();
+    double alpha = angle;
+    bool direct(axcone.Direct());
+    if ((direct && oris == TopAbs_REVERSED) || (!direct && oris == TopAbs_FORWARD)) {
+        alpha = -alpha;
+    }
+    if (testdir < 0.) {
+        alpha = -alpha;
+    }
+    double z = ElCLib::LineParameter(axcone.Axis(), center);
+    double rad = radius + z * std::tan(alpha);
+    if (rad < 0.) {
+        rad = -rad;
+    }
+    else {
+        alpha = -alpha;
+    }
+    if (!cone.IsNull() && std::abs(alpha - cone->SemiAngle()) < Precision::Angular()) {
+        return surface;
+    }
+    return new Geom_ConicalSurface(gp_Cone(axcone, alpha, rad));
+}
+
+// A cylinder or a cone about an axis, for signed distances: positive on the
+// side the face's outward normal points to.
+struct Axial
+{
+    gp_Ax1 axis;
+    // the radius at the axis's location, and its change along the axis
+    double r0 = 0.0;
+    double tanS = 0.0;
+    double cosS = 1.0;
+    int sign = 1;
+
+    static Axial of(const Handle(Geom_Surface) & surface)
+    {
+        Axial a;
+        if (auto cyl = Handle(Geom_CylindricalSurface)::DownCast(surface)) {
+            a.axis = cyl->Cylinder().Axis();
+            a.r0 = cyl->Radius();
+        }
+        else if (auto cone = Handle(Geom_ConicalSurface)::DownCast(surface)) {
+            a.axis = cone->Cone().Axis();
+            a.r0 = cone->RefRadius();
+            a.tanS = std::tan(cone->SemiAngle());
+            a.cosS = std::cos(cone->SemiAngle());
+        }
+        return a;
+    }
+    double z(const gp_Pnt& p) const
+    {
+        return gp_Vec(axis.Location(), p).Dot(gp_Vec(axis.Direction()));
+    }
+    double radius(double at) const
+    {
+        return r0 + at * tanS;
+    }
+    // where the radius is none, along the axis (infinite for a cylinder)
+    double apex() const
+    {
+        return tanS == 0.0 ? Precision::Infinite() : -r0 / tanS;
+    }
+    double dist(const gp_Pnt& p) const
+    {
+        return sign * (gp_Lin(axis).Distance(p) - std::abs(radius(z(p)))) * cosS;
+    }
+    // the outward normal at (or near) the point
+    gp_Vec normal(const gp_Pnt& p) const
+    {
+        double h = z(p);
+        gp_Pnt foot = axis.Location().Translated(h * gp_Vec(axis.Direction()));
+        gp_Vec radial(foot, p);
+        if (radial.Magnitude() < gp::Resolution()) {
+            return gp_Vec(axis.Direction());
+        }
+        radial.Normalize();
+        double slope = radius(h) < 0 ? -tanS : tanS;
+        gp_Vec n = radial - slope * gp_Vec(axis.Direction());
+        n.Normalize();
+        return sign * n;
+    }
+};
+
+// Whether two faces are tangent all along an edge they share, the same side
+// out (sampled at three points).
+bool tangentAlong(const TopoDS_Edge& e, const TopoDS_Face& f, const TopoDS_Face& g)
+{
+    TopLoc_Location loc;
+    double first, last;
+    Handle(Geom_Curve) curve = BRep_Tool::Curve(e, loc, first, last);
+    if (curve.IsNull()) {
+        return false;
+    }
+    for (double t : {0.25, 0.5, 0.75}) {
+        gp_Pnt p = curve->Value(first + t * (last - first)).Transformed(loc.Transformation());
+        gp_Dir nf, ng;
+        if (!faceNormal(f, p, nf) || !faceNormal(g, p, ng) || nf.Dot(ng) <= 0
+            || gp_Vec(nf).Crossed(gp_Vec(ng)).Magnitude() >= TangentTol) {
+            return false;
+        }
+    }
+    return true;
+}
+
+// The faces drafted with a face: the faces coplanar with it beside it, same
+// side out (a face split in pieces), and the faces joined to those along
+// tangent edges, and so on (a tangent chain: walls and the fillets between
+// them). Neither its geometry nor whether it can be drafted is looked at.
+std::vector<TopoDS_Face> draftChain(const TopoDS_Face& face,
+                                    const TopTools_IndexedMapOfShape& solidFaces,
+                                    const TopTools_IndexedDataMapOfShapeListOfShape& edgeFaces)
+{
+    std::vector<TopoDS_Face> chain;
+    TopTools_MapOfShape seen;
+    std::vector<TopoDS_Face> todo {face};
+    while (!todo.empty()) {
+        TopoDS_Face f = todo.back();
+        todo.pop_back();
+        if (!seen.Add(f)) {
+            continue;
+        }
+        chain.push_back(f);
+        gp_Pln pf;
+        gp_Dir nf;
+        bool planar = facePlane(f, pf, nf);
+        for (TopExp_Explorer exp(f, TopAbs_EDGE); exp.More(); exp.Next()) {
+            const TopoDS_Edge& e = TopoDS::Edge(exp.Current());
+            if (BRep_Tool::Degenerated(e)) {
+                continue;
+            }
+            for (const auto& s : edgeFaces.FindFromKey(e)) {
+                TopoDS_Face g = TopoDS::Face(solidFaces.FindKey(solidFaces.FindIndex(s)));
+                if (seen.Contains(g)) {
+                    continue;
+                }
+                gp_Pln pg;
+                gp_Dir ng;
+                bool gPlanar = facePlane(g, pg, ng);
+                if (planar && gPlanar) {
+                    if (ng.Dot(nf) > 1 - 1e-9 && pf.Distance(pg.Location()) < CoplanarTol) {
+                        todo.push_back(g);
+                    }
+                }
+                else if (tangentAlong(e, f, g)) {
+                    todo.push_back(g);
+                }
+            }
+        }
+    }
+    return chain;
 }
 
 // The position of a surface of revolution made direct, turning the same way
@@ -700,15 +919,14 @@ struct Cap
 };
 
 // The caps of a drafted face's set: the planes of the faces beside its
-// neighbours (not the set, not a neighbour, not on the set's plane or a
+// neighbours (not the set, not a neighbour, not on a plane of the set or a
 // planar neighbour's) that have the whole solid on their inner side.
 std::vector<Cap> findCaps(const TopoDS_Shape& solid,
                           const TopTools_IndexedMapOfShape& solidFaces,
                           const TopTools_IndexedDataMapOfShapeListOfShape& edgeFaces,
                           const TopTools_MapOfShape& fsetMap,
                           const std::vector<TopoDS_Face>& neighbours,
-                          const gp_Pln& plane,
-                          const gp_Dir& normal)
+                          const std::vector<std::pair<gp_Pln, gp_Dir>>& setPlanes)
 {
     std::vector<Cap> caps;
     std::vector<gp_Pnt> samples = samplePoints(solid);
@@ -739,8 +957,10 @@ std::vector<Cap> findCaps(const TopoDS_Shape& solid,
                 if (!facePlane(h, ph, nh)) {
                     continue;  // curved faces do not cap (yet)
                 }
-                if (std::abs(std::abs(nh.Dot(normal)) - 1) < 1e-9
-                    && plane.Distance(ph.Location()) < CoplanarTol) {
+                if (std::any_of(setPlanes.begin(), setPlanes.end(), [&](const auto& sp) {
+                        return std::abs(std::abs(nh.Dot(sp.second)) - 1) < 1e-9
+                            && sp.first.Distance(ph.Location()) < CoplanarTol;
+                    })) {
                     continue;
                 }
                 // a plane that bounds the region already
@@ -845,14 +1065,18 @@ public:
                  const std::vector<TopoDS_Face>& faces,
                  const CellDraft::FaceDraft& draft,
                  bool stopAtBody)
-        : solid(solid)
-        , faces(faces)
+        : faces(faces)
+        , solid(solid)
         , draft(draft)
         , stopAtBody(stopAtBody)
     {}
 
     bool run();
 
+    std::vector<TopoDS_Face> faces;
+    // every face drafted: the faces, the faces coplanar with them, the
+    // tangent chain
+    std::vector<TopoDS_Face> fset;
     TopoDS_Shape result;
     Handle(BRepTools_History) history;
 
@@ -875,8 +1099,14 @@ private:
     }
 
     bool prepare();
+    // the drafted set: the face, the faces coplanar with it, its tangent chain
+    bool addMember(const TopoDS_Face& f);
+    bool collectMembers(const TopTools_IndexedDataMapOfShapeListOfShape& edgeFaces);
+    bool makeSeams();
     // false with error == NoClosure when the swept region leaks to the box
     bool attempt(double scale);
+    // the new surfaces of a tangent chain, as faces joined along the seams
+    bool makeSheet(const std::vector<gp_Pnt>& corners, TopoDS_Shape& sheet);
 
     struct Neighbour
     {
@@ -888,28 +1118,462 @@ private:
         // how far the face's plane must reach past its own face
         double reach = 0.0;
         bool grazing = false;
+        // whether it meets the drafted set only where it does not move: on
+        // the hinge, it does not bound the region the set sweeps
+        bool onHinge = true;
     };
 
+    // One surface of the drafted set (section 4.7): a plane with the faces
+    // coplanar with it, turned about its line with the neutral plane; or a
+    // cylinder or cone about the pull direction, to the cone through its
+    // circle in the neutral plane. A tangent chain has several.
+    struct Member
+    {
+        std::vector<TopoDS_Face> faces;
+        int group = 0;
+        bool planar = true;
+        bool changed = false;
+        double turn = 0.0;
+        gp_Pln plane, newPlane;
+        gp_Dir normal, newNormal;
+        gp_Ax1 hinge;
+        double theta = 0.0;
+        Axial oldAxial, newAxial;
+        // a point inside its first face
+        gp_Pnt inside;
+        Handle(Geom_Surface) newSurface;
+        // the seams it is on, and on which side: +1 if the seam's direction
+        // across points into this member
+        std::vector<std::pair<int, int>> seams;
+    };
+
+    // A tangent edge between two members: a straight line that meets the
+    // neutral plane at a point, which stays; the edge turns about it onto a
+    // line of both new surfaces.
+    struct Seam
+    {
+        int m1, m2;
+        TopoDS_Edge edge;
+        gp_Pnt p;
+        // the new line's direction (along the pull direction), and the
+        // direction across the seam, into m1, square to both lines
+        gp_Dir g, across;
+    };
+
+    double oldDist(const Member& m, const gp_Pnt& p) const
+    {
+        return m.planar ? gp_Vec(m.plane.Location(), p).Dot(gp_Vec(m.normal)) : m.oldAxial.dist(p);
+    }
+    double newDist(const Member& m, const gp_Pnt& p) const
+    {
+        return m.planar ? gp_Vec(m.newPlane.Location(), p).Dot(gp_Vec(m.newNormal))
+                        : m.newAxial.dist(p);
+    }
+    gp_Vec newNormalAt(const Member& m, const gp_Pnt& p) const
+    {
+        return m.planar ? gp_Vec(m.newNormal) : m.newAxial.normal(p);
+    }
+    // Whether a point is on the member's side of each of its seams. The
+    // region a member's face sweeps lies between the planes through its
+    // seams square to them.
+    bool inSlab(const Member& m, const gp_Pnt& p) const
+    {
+        for (const auto& [j, side] : m.seams) {
+            const Seam& seam = seams[j];
+            if (side * gp_Vec(seam.p, p).Dot(gp_Vec(seam.across)) < -Precision::Confusion()) {
+                return false;
+            }
+        }
+        return true;
+    }
+    // The distances of a point to the old and the new surface of the member
+    // whose region it is in; false if none.
+    bool sweptDists(const gp_Pnt& p, double& sp, double& sn) const
+    {
+        bool found = false;
+        for (const auto& m : members) {
+            if (!inSlab(m, p)) {
+                continue;
+            }
+            double a = oldDist(m, p);
+            double b = newDist(m, p);
+            if (!found || (a < 0) != (b < 0)) {
+                sp = a;
+                sn = b;
+                found = true;
+                if ((a < 0) != (b < 0)) {
+                    break;
+                }
+            }
+        }
+        return found;
+    }
+
     const TopoDS_Shape& solid;
-    std::vector<TopoDS_Face> faces;
     const CellDraft::FaceDraft& draft;
     bool stopAtBody;
     // the general fuse's fuzzy value: none, then a little on a second try
     double fuzzy = 0.0;
 
     TopTools_IndexedMapOfShape solidFaces;
-    std::vector<TopoDS_Face> fset;
     TopTools_MapOfShape fsetMap;
+    // drafted face -> member
+    ShapeIntMap faceMember;
+    std::vector<Member> members;
+    std::vector<Seam> seams;
     std::vector<Neighbour> neighbours;
     std::vector<Cap> caps;
-    gp_Pln plane, newPlane;
-    gp_Dir normal, newNormal;
-    gp_Ax1 hinge;
-    double turn = 0.0;
     double disp = 0.0;
     double reachLimit = 0.0;
     Bnd_Box band;
 };
+
+bool CellDraftOne::addMember(const TopoDS_Face& f)
+{
+    bool first = members.empty();
+    // an error on another face of the chain names it as the neighbour
+    TopoDS_Face other = first ? TopoDS_Face() : f;
+    std::string what = first ? "the face" : "a face tangent to the drafted face";
+    Member m;
+    m.faces.push_back(f);
+    m.group = first ? 0 : solidFaces.FindIndex(f);
+    if (facePlane(f, m.plane, m.normal)) {
+        double theta = 0.0;
+        auto err = findRotation(m.plane,
+                                f.Orientation(),
+                                draft.direction,
+                                draft.angle,
+                                draft.neutralPlane,
+                                m.hinge,
+                                theta);
+        if (err == CellDraft::ParallelToNeutral) {
+            return fail(err, what + " is parallel to the neutral plane", TopoDS_Face(), other);
+        }
+        if (err == CellDraft::AngleTooSteep) {
+            return fail(err,
+                        "no plane through the line of " + what
+                            + " with the neutral plane makes the angle with the pull direction",
+                        TopoDS_Face(),
+                        other);
+        }
+        m.theta = theta;
+        m.changed = std::abs(theta) > Precision::Angular();
+        if (m.changed) {
+            m.newPlane = m.plane.Rotated(m.hinge, theta);
+            m.newNormal = m.normal.Rotated(m.hinge, theta);
+        }
+        else {
+            m.newPlane = m.plane;
+            m.newNormal = m.normal;
+        }
+        m.turn = m.normal.Angle(m.newNormal);
+        if (m.turn >= TurnLimit) {
+            std::ostringstream ss;
+            ss << what << " would turn over (by " << m.turn * 180 / M_PI << " deg)";
+            return fail(CellDraft::TurnsOver, ss.str(), TopoDS_Face(), other);
+        }
+        m.newSurface = new Geom_Plane(m.newPlane);
+    }
+    else {
+        BRepAdaptor_Surface surf(f);
+        Handle(Geom_Surface) old;
+        if (surf.GetType() == GeomAbs_Cylinder) {
+            old = new Geom_CylindricalSurface(surf.Cylinder());
+        }
+        else if (surf.GetType() == GeomAbs_Cone) {
+            old = new Geom_ConicalSurface(surf.Cone());
+        }
+        else {
+            return fail(CellDraft::UnsupportedSurface,
+                        what + " is neither a plane, a cylinder nor a cone",
+                        TopoDS_Face(),
+                        other);
+        }
+        m.newSurface =
+            newRevolution(old, f.Orientation(), draft.direction, draft.angle, draft.neutralPlane);
+        if (m.newSurface.IsNull()) {
+            return fail(CellDraft::UnsupportedSurface,
+                        what
+                            + " is a cylinder or cone that does not turn about the pull "
+                              "direction square to the neutral plane",
+                        TopoDS_Face(),
+                        other);
+        }
+        m.planar = false;
+        m.changed = m.newSurface != old;
+        m.oldAxial = Axial::of(old);
+        m.newAxial = Axial::of(m.newSurface);
+        m.turn = std::abs(std::atan(m.newAxial.tanS) - std::atan(m.oldAxial.tanS));
+        gp_Pnt q;
+        gp_Dir n;
+        if (!BRepClass3d_SolidExplorer::FindAPointInTheFace(f, q) || !faceNormal(f, q, n)) {
+            return fail(CellDraft::UnsupportedSurface,
+                        "no point inside " + what,
+                        TopoDS_Face(),
+                        other);
+        }
+        // which side is out: the face's normal against the surface's
+        int sign = m.oldAxial.normal(q).Dot(gp_Vec(n)) > 0 ? 1 : -1;
+        m.oldAxial.sign = sign;
+        m.newAxial.sign = sign;
+        m.inside = q;
+    }
+    faceMember.Bind(f, static_cast<int>(members.size()));
+    members.push_back(m);
+    fsetMap.Add(f);
+    fset.push_back(f);
+    return true;
+}
+
+bool CellDraftOne::collectMembers(const TopTools_IndexedDataMapOfShapeListOfShape& edgeFaces)
+{
+    // the face, in one piece or several
+    if (!addMember(faces.front())) {
+        return false;
+    }
+    for (size_t i = 1; i < faces.size(); ++i) {
+        if (fsetMap.Add(faces[i])) {
+            members.front().faces.push_back(faces[i]);
+            faceMember.Bind(faces[i], 0);
+            fset.push_back(faces[i]);
+        }
+    }
+    auto addSeam = [&](const TopoDS_Edge& e, int m1, int m2) {
+        for (const auto& seam : seams) {
+            if (seam.edge.IsSame(e)) {
+                return;
+            }
+        }
+        Seam seam;
+        seam.m1 = m1;
+        seam.m2 = m2;
+        seam.edge = e;
+        seams.push_back(seam);
+    };
+    // The faces beside it that are coplanar with it, same side out (a face
+    // split in pieces), are drafted as one face with it (section 4.3); the
+    // faces tangent to it, and the faces tangent to those, as one sheet
+    // (section 4.7).
+    std::vector<TopoDS_Face> todo(fset);
+    while (!todo.empty()) {
+        TopoDS_Face f = todo.back();
+        todo.pop_back();
+        int m = faceMember.Find(f);
+        for (TopExp_Explorer exp(f, TopAbs_EDGE); exp.More(); exp.Next()) {
+            const TopoDS_Edge& e = TopoDS::Edge(exp.Current());
+            if (BRep_Tool::Degenerated(e)) {
+                continue;
+            }
+            for (const auto& s : edgeFaces.FindFromKey(e)) {
+                TopoDS_Face g = TopoDS::Face(solidFaces.FindKey(solidFaces.FindIndex(s)));
+                if (g.IsSame(f)) {
+                    continue;
+                }
+                if (const int* k = faceMember.Seek(g)) {
+                    if (*k == m) {
+                        continue;
+                    }
+                    if (!tangentAlong(e, f, g)) {
+                        // (a chain that closes on itself at a sharp corner)
+                        return fail(CellDraft::UnsupportedSurface,
+                                    "two faces of the drafted set's tangent chain meet at a "
+                                    "sharp edge",
+                                    TopoDS_Face(),
+                                    g);
+                    }
+                    addSeam(e, m, *k);
+                    continue;
+                }
+                gp_Pln pg;
+                gp_Dir ng;
+                bool planar = facePlane(g, pg, ng);
+                auto coplanar = [&](int k) {
+                    const Member& mk = members[k];
+                    return planar && mk.planar && ng.Dot(mk.normal) > 1 - 1e-9
+                        && mk.plane.Distance(pg.Location()) < CoplanarTol;
+                };
+                // a curved face on a curved member's surface (a fillet in
+                // pieces, split by slots across it)
+                auto cosurface = [&](int k) {
+                    const Member& mk = members[k];
+                    if (planar || mk.planar) {
+                        return false;
+                    }
+                    std::vector<gp_Pnt> pts;
+                    gp_Pnt q;
+                    if (BRepClass3d_SolidExplorer::FindAPointInTheFace(g, q)) {
+                        pts.push_back(q);
+                    }
+                    for (TopExp_Explorer vx(g, TopAbs_VERTEX); vx.More(); vx.Next()) {
+                        pts.push_back(BRep_Tool::Pnt(TopoDS::Vertex(vx.Current())));
+                    }
+                    double tol = 1e-7 * reachLimit + Precision::Confusion();
+                    auto on = [&](const gp_Pnt& p) {
+                        return std::abs(mk.oldAxial.dist(p)) < tol;
+                    };
+                    return pts.size() > 1 && std::all_of(pts.begin(), pts.end(), on);
+                };
+                int join = -1;
+                if (coplanar(m)) {
+                    join = m;
+                }
+                else if (!(planar && members[m].planar) && tangentAlong(e, f, g)) {
+                    // (two planes tangent along an edge and not coplanar are
+                    // all but coplanar: a neighbour, as in phase 1)
+                    for (int k = 0; k < static_cast<int>(members.size()) && join < 0; ++k) {
+                        if (coplanar(k) || cosurface(k)) {
+                            join = k;
+                        }
+                    }
+                    if (join < 0) {
+                        if (!addMember(g)) {
+                            return false;
+                        }
+                        join = static_cast<int>(members.size()) - 1;
+                    }
+                    if (join != m) {
+                        addSeam(e, m, join);
+                    }
+                }
+                else {
+                    continue;  // a neighbour
+                }
+                if (fsetMap.Add(g)) {
+                    members[join].faces.push_back(g);
+                    faceMember.Bind(g, join);
+                    fset.push_back(g);
+                }
+                todo.push_back(g);
+            }
+        }
+    }
+    return true;
+}
+
+bool CellDraftOne::makeSeams()
+{
+    const gp_Dir& nn = draft.neutralPlane.Axis().Direction();
+    std::vector<Seam> kept;
+    for (auto& seam : seams) {
+        const Member& a = members[seam.m1];
+        const Member& b = members[seam.m2];
+        const TopoDS_Face& bFace = b.faces.front();
+        BRepAdaptor_Curve curve(seam.edge);
+        double first = curve.FirstParameter(), last = curve.LastParameter();
+        double mid = (first + last) / 2;
+        gp_Pnt e0 = curve.Value(first), e1 = curve.Value(last), em;
+        gp_Vec tangent;
+        curve.D1(mid, em, tangent);
+        gp_Vec dir(e0, e1);
+        double len = dir.Magnitude();
+        if (len < Precision::Confusion()
+            || gp_Lin(e0, gp_Dir(dir)).Distance(em)
+                > 1e-7 * len + BRep_Tool::Tolerance(seam.edge)) {
+            return fail(CellDraft::UnsupportedSurface,
+                        "an edge between tangent faces of the drafted set is not straight",
+                        TopoDS_Face(),
+                        bFace);
+        }
+        dir /= len;
+        if (std::abs(dir.Dot(gp_Vec(nn))) < 1e-9) {
+            return fail(CellDraft::UnsupportedSurface,
+                        "an edge between tangent faces of the drafted set runs along the "
+                        "neutral plane",
+                        TopoDS_Face(),
+                        bFace);
+        }
+        // the point that stays
+        double t = gp_Vec(e0, draft.neutralPlane.Location()).Dot(gp_Vec(nn)) / dir.Dot(gp_Vec(nn));
+        seam.p = e0.Translated(t * dir);
+        // one seam per line: a line split in several edges
+        double tol = 1e-7 * reachLimit + Precision::Confusion();
+        if (std::any_of(kept.begin(), kept.end(), [&](const Seam& k) {
+                return ((k.m1 == seam.m1 && k.m2 == seam.m2)
+                        || (k.m1 == seam.m2 && k.m2 == seam.m1))
+                    && k.p.Distance(seam.p) < tol;
+            })) {
+            continue;
+        }
+        // The new line: the line of the new cone through the point.
+        const Member& c = a.planar ? b : a;
+        if (c.planar) {
+            return fail(CellDraft::UnsupportedSurface,
+                        "two planes of the drafted set meet tangentially",
+                        TopoDS_Face(),
+                        bFace);
+        }
+        gp_Vec g;
+        const gp_Ax1& axis = c.newAxial.axis;
+        if (c.newAxial.tanS == 0.0) {
+            g = gp_Vec(axis.Direction());
+        }
+        else {
+            gp_Pnt apex = axis.Location().Translated(c.newAxial.apex() * gp_Vec(axis.Direction()));
+            g = gp_Vec(apex, seam.p);
+        }
+        if (g.Magnitude() < gp::Resolution()) {
+            return fail(CellDraft::FaceVanishes,
+                        "a drafted face of the tangent chain shrinks to a point",
+                        TopoDS_Face(),
+                        c.faces.front());
+        }
+        if (g.Dot(gp_Vec(draft.direction)) < 0) {
+            g.Reverse();
+        }
+        seam.g = gp_Dir(g);
+        // The faces stay tangent: the line is on both new surfaces.
+        double size = std::max(reachLimit, len);
+        for (const Member* m : {&a, &b}) {
+            for (double s : {-0.5, 0.0, 0.5}) {
+                gp_Pnt x = seam.p.Translated(s * size * gp_Vec(seam.g));
+                if (std::abs(newDist(*m, x)) > 1e-6 * size + Precision::Confusion()) {
+                    return fail(CellDraft::UnsupportedSurface,
+                                "the drafted faces of the tangent chain would not stay tangent",
+                                TopoDS_Face(),
+                                bFace);
+                }
+            }
+        }
+        // Across the seam into m1: the side its face lies on, which is on the
+        // left of the edge as the face runs it, seen from outside.
+        TopAbs_Orientation ori = TopAbs_EXTERNAL;
+        TopoDS_Face aFace;
+        for (const auto& f : a.faces) {
+            for (TopExp_Explorer exp(f, TopAbs_EDGE); exp.More() && aFace.IsNull(); exp.Next()) {
+                if (exp.Current().IsSame(seam.edge)) {
+                    ori = exp.Current().Orientation();
+                    aFace = f;
+                }
+            }
+        }
+        gp_Dir n;
+        if (aFace.IsNull() || (ori != TopAbs_FORWARD && ori != TopAbs_REVERSED)
+            || !faceNormal(aFace, em, n) || tangent.Magnitude() < gp::Resolution()) {
+            return fail(CellDraft::UnsupportedSurface,
+                        "a tangent edge of the drafted set has no side",
+                        TopoDS_Face(),
+                        bFace);
+        }
+        if (ori == TopAbs_REVERSED) {
+            tangent.Reverse();
+        }
+        gp_Vec across = gp_Vec(n).Crossed(tangent);
+        if (across.Magnitude() < gp::Resolution()) {
+            return fail(CellDraft::UnsupportedSurface,
+                        "a tangent edge of the drafted set has no side",
+                        TopoDS_Face(),
+                        bFace);
+        }
+        seam.across = gp_Dir(across);
+        kept.push_back(seam);
+    }
+    seams = kept;
+    for (int j = 0; j < static_cast<int>(seams.size()); ++j) {
+        members[seams[j].m1].seams.emplace_back(j, 1);
+        members[seams[j].m2].seams.emplace_back(j, -1);
+    }
+    return true;
+}
 
 bool CellDraftOne::prepare()
 {
@@ -926,69 +1590,6 @@ bool CellDraftOne::prepare()
         f = TopoDS::Face(solidFaces.FindKey(idx));
     }
     const TopoDS_Face& face = faces.front();
-    if (!facePlane(face, plane, normal)) {
-        return fail(CellDraft::UnsupportedSurface, "the face is not planar");
-    }
-
-    double theta = 0.0;
-    auto err = findRotation(plane,
-                            face.Orientation(),
-                            draft.direction,
-                            draft.angle,
-                            draft.neutralPlane,
-                            hinge,
-                            theta);
-    if (err == CellDraft::ParallelToNeutral) {
-        return fail(err, "the face is parallel to the neutral plane");
-    }
-    if (err == CellDraft::AngleTooSteep) {
-        return fail(err,
-                    "no plane through the face's line with the neutral plane "
-                    "makes the angle with the pull direction");
-    }
-    if (std::abs(theta) <= Precision::Angular()) {
-        // the face makes the angle already
-        result = solid;
-        return true;
-    }
-    newPlane = plane.Rotated(hinge, theta);
-    newNormal = normal.Rotated(hinge, theta);
-    turn = normal.Angle(newNormal);
-    if (turn >= TurnLimit) {
-        std::ostringstream ss;
-        ss << "the face would turn over (by " << turn * 180 / M_PI << " deg)";
-        return fail(CellDraft::TurnsOver, ss.str());
-    }
-
-    // The drafted set: the faces and every neighbour coplanar with them,
-    // same side out (a face split in pieces), drafted as one face.
-    std::vector<TopoDS_Face> todo(faces.begin(), faces.end());
-    while (!todo.empty()) {
-        TopoDS_Face f = todo.back();
-        todo.pop_back();
-        if (!fsetMap.Add(f)) {
-            continue;
-        }
-        fset.push_back(f);
-        for (TopExp_Explorer exp(f, TopAbs_EDGE); exp.More(); exp.Next()) {
-            const TopoDS_Edge& e = TopoDS::Edge(exp.Current());
-            if (BRep_Tool::Degenerated(e)) {
-                continue;
-            }
-            for (const auto& s : edgeFaces.FindFromKey(e)) {
-                TopoDS_Face g = TopoDS::Face(solidFaces.FindKey(solidFaces.FindIndex(s)));
-                if (fsetMap.Contains(g)) {
-                    continue;
-                }
-                gp_Pln pg;
-                gp_Dir ng;
-                if (facePlane(g, pg, ng) && ng.Dot(normal) > 1 - 1e-9
-                    && plane.Distance(pg.Location()) < CoplanarTol) {
-                    todo.push_back(g);
-                }
-            }
-        }
-    }
 
     // How far a neighbour is extended at most: across the whole solid. A
     // neighbour nearly parallel to the new plane meets it far away (#474's
@@ -999,9 +1600,42 @@ bool CellDraftOne::prepare()
     BRepBndLib::Add(solid, solidBox, false);
     reachLimit = boxDiagonal(solidBox);
 
+    if (!collectMembers(edgeFaces) || !makeSeams()) {
+        return false;
+    }
+    // A cone drafted to its apex: the face would shrink to a point and turn
+    // inside out past it (a fillet in a corner drafted inwards).
+    for (const auto& m : members) {
+        if (m.planar || !m.changed) {
+            continue;
+        }
+        double rq = m.newAxial.radius(m.newAxial.z(m.inside));
+        for (const auto& f : m.faces) {
+            for (TopExp_Explorer exp(f, TopAbs_VERTEX); exp.More(); exp.Next()) {
+                gp_Pnt v = BRep_Tool::Pnt(TopoDS::Vertex(exp.Current()));
+                if (m.newAxial.radius(m.newAxial.z(v)) * rq <= 0) {
+                    bool first = &m == &members.front();
+                    std::string what = first ? "the face" : "a face tangent to the drafted face";
+                    return fail(CellDraft::FaceVanishes,
+                                what + ", drafted, would shrink to a point",
+                                TopoDS_Face(),
+                                first ? TopoDS_Face() : m.faces.front());
+                }
+            }
+        }
+    }
+    if (std::none_of(members.begin(), members.end(), [](const Member& m) {
+            return m.changed;
+        })) {
+        // the faces make the angle already
+        result = solid;
+        return true;
+    }
+
     // The neighbours: faces sharing an edge with the drafted set.
     TopTools_MapOfShape seen;
     for (const auto& f : fset) {
+        const Member& fm = members[faceMember.Find(f)];
         for (TopExp_Explorer exp(f, TopAbs_EDGE); exp.More(); exp.Next()) {
             const TopoDS_Edge& e = TopoDS::Edge(exp.Current());
             if (BRep_Tool::Degenerated(e)) {
@@ -1038,42 +1672,79 @@ bool CellDraftOne::prepare()
                 TopLoc_Location loc;
                 curve = BRep_Tool::Curve(e, loc, first, last);
                 gp_Trsf trsf = loc.Transformation();
+                for (double t : {0.0, 0.5, 1.0}) {
+                    gp_Pnt p = curve->Value(first + t * (last - first)).Transformed(trsf);
+                    double tol = 1e-7 * reachLimit + 2 * BRep_Tool::Tolerance(e);
+                    if (fm.changed && std::abs(newDist(fm, p)) > tol) {
+                        nb->onHinge = false;
+                    }
+                }
                 if (!nb->planar) {
-                    // tangent to the drafted face anywhere along the edge
+                    // tangent to the drafted face anywhere along the edge (the
+                    // faces tangent all along it are in the drafted set)
                     for (double t : {0.25, 0.5, 0.75}) {
                         gp_Pnt p = curve->Value(first + t * (last - first)).Transformed(trsf);
+                        gp_Dir nf = fm.normal;
                         gp_Dir ng;
-                        if (faceNormal(g, p, ng) && gp_Vec(ng).Crossed(gp_Vec(normal)).Magnitude() < TangentTol) {
+                        if ((fm.planar || faceNormal(f, p, nf)) && faceNormal(g, p, ng)
+                            && gp_Vec(ng).Crossed(gp_Vec(nf)).Magnitude() < TangentTol) {
                             return fail(CellDraft::TangentNeighbour,
                                         "a neighbour is tangent to the face",
                                         face,
                                         g);
                         }
+                        // how far it must reach to meet the new surface (for
+                        // a tangent chain, whose band is too large to size
+                        // the extension of a curved neighbour by)
+                        if (fm.changed && faceNormal(g, p, ng)) {
+                            double sine = gp_Vec(ng).Crossed(newNormalAt(fm, p)).Magnitude();
+                            double t = std::abs(newDist(fm, p)) / std::max(sine, 0.05);
+                            nb->reach = std::max(nb->reach, std::min(t, reachLimit));
+                        }
                     }
                     continue;
                 }
+                if (!fm.changed) {
+                    continue;
+                }
                 // How far the neighbour's plane must reach across the edge to
-                // meet the new plane: along the neighbour's plane, square to
-                // the edge, from each end of the edge.
-                gp_Pnt p0 = curve->Value(first).Transformed(trsf);
-                gp_Pnt p1 = curve->Value(last).Transformed(trsf);
-                gp_Vec along(p0, p1);
-                if (along.Magnitude() < Precision::Confusion()) {
-                    continue;
+                // meet the new surface: along the neighbour's plane, square to
+                // the edge, from each end of the edge (and, on a curved
+                // face, from points along it).
+                std::vector<std::pair<gp_Pnt, gp_Vec>> samples;
+                if (fm.planar) {
+                    gp_Pnt p0 = curve->Value(first).Transformed(trsf);
+                    gp_Pnt p1 = curve->Value(last).Transformed(trsf);
+                    gp_Vec along(p0, p1);
+                    if (along.Magnitude() < Precision::Confusion()) {
+                        continue;
+                    }
+                    samples.emplace_back(p0, along);
+                    samples.emplace_back(p1, along);
                 }
-                gp_Vec w = gp_Vec(nb->outward).Crossed(along);
-                if (w.Magnitude() < gp::Resolution()) {
-                    continue;
+                else {
+                    for (double t : {0.0, 0.25, 0.5, 0.75, 1.0}) {
+                        gp_Pnt p;
+                        gp_Vec along;
+                        curve->D1(first + t * (last - first), p, along);
+                        if (along.Magnitude() < gp::Resolution()) {
+                            continue;
+                        }
+                        samples.emplace_back(p.Transformed(trsf), along.Transformed(trsf));
+                    }
                 }
-                w.Normalize();
-                double slope = w.Dot(gp_Vec(newNormal));
-                if (std::abs(slope) < 1e-3) {
-                    nb->grazing = true;
-                    continue;
-                }
-                for (const auto& p : {p0, p1}) {
-                    double d = gp_Vec(newPlane.Location(), p).Dot(gp_Vec(newNormal));
-                    double t = -d / slope;
+                for (const auto& [p, along] : samples) {
+                    gp_Vec w = gp_Vec(nb->outward).Crossed(along);
+                    if (w.Magnitude() < gp::Resolution()) {
+                        continue;
+                    }
+                    w.Normalize();
+                    double slope = w.Dot(newNormalAt(fm, p));
+                    if (std::abs(slope) < 1e-3) {
+                        nb->grazing = true;
+                        continue;
+                    }
+                    double t = -newDist(fm, p) / slope;
                     if (std::abs(t) > reachLimit) {
                         t = t > 0 ? reachLimit : -reachLimit;
                     }
@@ -1085,23 +1756,29 @@ bool CellDraftOne::prepare()
     }
 
     // The swept band: the drafted faces, where they turn to, and where the
-    // neighbours meet the new plane.
-    gp_Lin hingeLine(hinge);
-    double far = 0.0;
+    // neighbours meet the new surfaces.
     for (const auto& f : fset) {
+        const Member& m = members[faceMember.Find(f)];
         BRepBndLib::Add(f, band, false);
         for (TopExp_Explorer exp(f, TopAbs_VERTEX); exp.More(); exp.Next()) {
             gp_Pnt p = BRep_Tool::Pnt(TopoDS::Vertex(exp.Current()));
-            far = std::max(far, hingeLine.Distance(p));
-            band.Add(p.Rotated(hinge, theta));
+            if (m.planar) {
+                disp = std::max(disp, gp_Lin(m.hinge).Distance(p) * std::tan(m.turn));
+                band.Add(p.Rotated(m.hinge, m.theta));
+            }
+            else {
+                double d = newDist(m, p);
+                disp = std::max(disp, std::abs(d) / std::cos(m.turn));
+                band.Add(p.Translated(-d * newNormalAt(m, p)));
+            }
         }
     }
-    disp = far * std::tan(turn);
-    FC_LOG("faces " << fset.size() << ", neighbours " << neighbours.size() << ", theta "
-                    << theta * 180 / M_PI << ", turn " << turn * 180 / M_PI << ", disp " << disp);
+    FC_LOG("faces " << fset.size() << ", members " << members.size() << ", seams "
+                    << seams.size() << ", theta " << members.front().theta * 180 / M_PI
+                    << ", turn " << members.front().turn * 180 / M_PI << ", disp " << disp);
     for (const auto& nb : neighbours) {
         FC_LOG("neighbour " << nb.group << " planar " << nb.planar << " reach " << nb.reach
-                            << " grazing " << nb.grazing);
+                            << " grazing " << nb.grazing << " on the hinge " << nb.onHinge);
     }
 
     // The second ring caps the added side: a drafted face stops at a plane
@@ -1111,7 +1788,13 @@ bool CellDraftOne::prepare()
         for (const auto& nb : neighbours) {
             nbFaces.push_back(nb.face);
         }
-        caps = findCaps(solid, solidFaces, edgeFaces, fsetMap, nbFaces, plane, normal);
+        std::vector<std::pair<gp_Pln, gp_Dir>> setPlanes;
+        for (const auto& m : members) {
+            if (m.planar) {
+                setPlanes.emplace_back(m.plane, m.normal);
+            }
+        }
+        caps = findCaps(solid, solidFaces, edgeFaces, fsetMap, nbFaces, setPlanes);
     }
     return true;
 }
@@ -1140,31 +1823,85 @@ bool CellDraftOne::attempt(double scale)
 
     // The splitting tools, each with the group its faces belong to.
     ShapeIntMap groups;      // argument face -> group
-    TopTools_MapOfShape newPlaneFaces, blocking, capFaces, boxFaces;
+    TopTools_MapOfShape blocking, capFaces, boxFaces;
+    ShapeIntMap sheetMember;  // a face of the new surfaces -> its member
     for (TopExp_Explorer exp(box, TopAbs_FACE); exp.More(); exp.Next()) {
         boxFaces.Add(exp.Current());
         groups.Bind(exp.Current(), NoGroup);
     }
     for (int i = 1; i <= solidFaces.Extent(); ++i) {
-        groups.Bind(solidFaces(i), fsetMap.Contains(solidFaces(i)) ? FGroup : i);
+        const int* k = faceMember.Seek(solidFaces(i));
+        groups.Bind(solidFaces(i), k ? members[*k].group : i);
     }
     for (const auto& f : fset) {
         blocking.Add(f);
     }
     std::vector<std::pair<TopoDS_Shape, const TopoDS_Face*>> tools;  // tool, owner
 
-    // the new plane
-    TopoDS_Shape pn = clipToBox(planeRect(newPlane, corners, 0.0), box);
+    // the new plane, or the new surfaces of a tangent chain
+    TopoDS_Shape pn;
+    if (members.size() == 1 && members.front().planar) {
+        pn = clipToBox(planeRect(members.front().newPlane, corners, 0.0), box);
+    }
+    else {
+        if (!makeSheet(corners, pn)) {
+            return false;
+        }
+        pn = clipToBox(pn, box);
+    }
     for (TopExp_Explorer exp(pn, TopAbs_FACE); exp.More(); exp.Next()) {
-        newPlaneFaces.Add(exp.Current());
+        int k = 0;
+        if (members.size() > 1 || !members.front().planar) {
+            // the member whose new surface the piece is on
+            Handle(Geom_Surface) s = BRep_Tool::Surface(TopoDS::Face(exp.Current()));
+            k = -1;
+            for (int i = 0; i < static_cast<int>(members.size()) && k < 0; ++i) {
+                if (members[i].newSurface == s) {
+                    k = i;
+                }
+            }
+            gp_Pnt q;
+            if (k < 0 && BRepClass3d_SolidExplorer::FindAPointInTheFace(
+                             TopoDS::Face(exp.Current()), q)) {
+                double best = Precision::Infinite();
+                for (int i = 0; i < static_cast<int>(members.size()); ++i) {
+                    double d = std::abs(newDist(members[i], q));
+                    if (d < best) {
+                        best = d;
+                        k = i;
+                    }
+                }
+            }
+            if (k < 0) {
+                return fail(CellDraft::Boolean, "a piece of the new surfaces has no face");
+            }
+            if (FC_LOG_INSTANCE.isEnabled(FC_LOGLEVEL_LOG)) {
+                Bnd_Box fb;
+                BRepBndLib::Add(exp.Current(), fb, false);
+                double a0, b0, c0, a1, b1, c1;
+                fb.Get(a0, b0, c0, a1, b1, c1);
+                FC_LOG("sheet piece of member " << k << " (Face" << members[k].group << ") by "
+                       << (members[k].newSurface == s ? "surface" : "distance") << " bb (" << a0
+                       << ", " << b0 << ", " << c0 << ")-(" << a1 << ", " << b1 << ", " << c1
+                       << ")");
+            }
+        }
+        sheetMember.Bind(exp.Current(), k);
         blocking.Add(exp.Current());
-        groups.Bind(exp.Current(), FGroup);
+        groups.Bind(exp.Current(), members[k].group);
     }
     tools.emplace_back(pn, &fset.front());
 
     // the neighbours, extended
     for (const auto& nb : neighbours) {
         blocking.Add(nb.face);
+        if (nb.onHinge && (members.size() > 1 || !members.front().planar)) {
+            // Its extension past the hinge would only cut through the region
+            // on the other side: #876's upper walls stand on its plate's
+            // walls at the neutral plane with a crease of 1 deg, and their
+            // extensions down closed off the region the plate's walls sweep.
+            continue;
+        }
         TopoDS_Shape tool;
         bool solidTool = false;
         if (nb.planar) {
@@ -1271,6 +2008,15 @@ bool CellDraftOne::attempt(double scale)
                     Handle(Geom_BoundedSurface) bs = GeomConvert::SurfaceToBSplineSurface(
                         new Geom_RectangularTrimmedSurface(s, u0, u1, v0, v1));
                     double length = scale * move;
+                    if (members.size() > 1 || !members.front().planar) {
+                        // A tangent chain's band spans the chain: by it, #876's
+                        // B-spline corners over the plate's fillets grew 18
+                        // and ran through the region the next wall sweeps.
+                        Bnd_Box fb;
+                        BRepBndLib::Add(nb.face, fb, false);
+                        length = scale * (1.5 * nb.reach + std::min(disp, reachLimit))
+                            + 0.05 * boxDiagonal(fb);
+                    }
                     bool closedU = s->IsUPeriodic() && u1 - u0 >= s->UPeriod() - 1e-9;
                     bool closedV = s->IsVPeriodic() && v1 - v0 >= s->VPeriod() - 1e-9;
                     for (bool inU : {true, false}) {
@@ -1373,6 +2119,7 @@ bool CellDraftOne::attempt(double scale)
     const int ncells = static_cast<int>(cells.size());
     std::vector<char> inBox(ncells), inS(ncells), between(ncells), inner(ncells);
     std::vector<gp_Pnt> points(ncells);
+    std::vector<double> sps(ncells, 0.0), sns(ncells, 0.0);
     std::vector<char> hasPoint(ncells, 0);
     for (int i = 0; i < ncells; ++i) {
         inBox[i] = boxCells.Contains(cells[i]);
@@ -1386,10 +2133,15 @@ bool CellDraftOne::attempt(double scale)
             FC_LOG("no point inside cell " << i);
         }
         points[i] = p;
-        double sp = gp_Vec(plane.Location(), p).Dot(gp_Vec(normal));
-        double sn = gp_Vec(newPlane.Location(), p).Dot(gp_Vec(newNormal));
-        between[i] = (sp < 0) != (sn < 0);
-        inner[i] = sn < 0;
+        // between the old and the new surface of the member whose region
+        // the point is in, and on which side of the new one
+        double sp = 0.0, sn = 0.0;
+        if (sweptDists(p, sp, sn)) {
+            between[i] = (sp < 0) != (sn < 0);
+            inner[i] = sn < 0;
+        }
+        sps[i] = sp;
+        sns[i] = sn;
     }
 
     FC_TIME_LOG(t, "cell points");
@@ -1461,8 +2213,8 @@ bool CellDraftOne::attempt(double scale)
                 continue;
             }
             const gp_Pnt& p = points[i];
-            double sp = gp_Vec(plane.Location(), p).Dot(gp_Vec(normal));
-            double sn = gp_Vec(newPlane.Location(), p).Dot(gp_Vec(newNormal));
+            double sp = sps[i];
+            double sn = sns[i];
             GProp_GProps props;
             BRepGProp::VolumeProperties(cells[i], props);
             int nf = 0;
@@ -1544,11 +2296,19 @@ bool CellDraftOne::attempt(double scale)
         if (!info(piece).fromF) {
             continue;
         }
+        // the member the piece is of
+        const Member* m = nullptr;
+        for (const auto& o : origins(piece)) {
+            if (const int* k = faceMember.Seek(o)) {
+                m = &members[*k];
+            }
+        }
         gp_Pnt q;
-        if (!BRepClass3d_SolidExplorer::FindAPointInTheFace(piece, q)) {
+        if (!m || !BRepClass3d_SolidExplorer::FindAPointInTheFace(piece, q)) {
             continue;
         }
-        double sn = gp_Vec(newPlane.Location(), q).Dot(gp_Vec(newNormal));
+        gp_Vec outward = m->planar ? gp_Vec(m->normal) : m->oldAxial.normal(q);
+        double sn = newDist(*m, q);
         double tol = 10 * std::max(Precision::Confusion(), BRep_Tool::Tolerance(piece));
         if (std::abs(sn) <= tol) {
             continue;
@@ -1568,7 +2328,7 @@ bool CellDraftOne::attempt(double scale)
                 if (!faceNormal(TopoDS::Face(exp.Current()), q, nc)) {
                     break;
                 }
-                bool outside = nc.Dot(normal) < 0;
+                bool outside = gp_Vec(nc).Dot(outward) < 0;
                 if (outside == wantOutside) {
                     FC_LOG("seed " << i);
                     if (!enter(i)) {
@@ -1696,7 +2456,8 @@ bool CellDraftOne::attempt(double scale)
         }
     }
     BOPAlgo_ShellSplitter splitter;
-    bool hasNewFace = false;
+    // every member's new surface must be in the result
+    std::vector<char> hasNewFace(members.size(), 0);
     for (int i = 1; i <= keptFaces.Extent(); ++i) {
         const auto& lst = keptFaces(i);
         if (lst.Extent() != 1) {
@@ -1704,14 +2465,19 @@ bool CellDraftOne::attempt(double scale)
         }
         splitter.AddStartElement(lst.First());
         for (const auto& o : origins(lst.First())) {
-            if (newPlaneFaces.Contains(o)) {
-                hasNewFace = true;
+            if (const int* k = sheetMember.Seek(o)) {
+                hasNewFace[*k] = 1;
             }
         }
     }
-    if (!hasNewFace) {
-        return fail(CellDraft::FaceVanishes,
-                    "the face is not in the result: its neighbours meet across it");
+    for (size_t k = 0; k < members.size(); ++k) {
+        if (!hasNewFace[k]) {
+            return fail(CellDraft::FaceVanishes,
+                        k == 0 ? "the face is not in the result: its neighbours meet across it"
+                               : "a face tangent to the drafted face is not in the result",
+                        TopoDS_Face(),
+                        k == 0 ? TopoDS_Face() : members[k].faces.front());
+        }
     }
     splitter.Perform();
     if (splitter.HasErrors() || splitter.Shells().IsEmpty()) {
@@ -1918,8 +2684,8 @@ bool CellDraftOne::attempt(double scale)
                 if (!g || *g == NoGroup) {
                     continue;
                 }
-                if (newPlaneFaces.Contains(exp.Current())) {
-                    for (const auto& f : fset) {
+                if (const int* k = sheetMember.Seek(exp.Current())) {
+                    for (const auto& f : members[*k].faces) {
                         addFrom(exp.Current(), f);
                     }
                 }
@@ -1951,6 +2717,204 @@ bool CellDraftOne::attempt(double scale)
     h1->Merge(*mergeHistory);
     history = h1;
     FC_TIME_LOG(t, "history");
+    return true;
+}
+
+// The new surfaces of a drafted set that is not one plane: on each member's
+// new surface a face between the new lines of its seams, along them past the
+// box (short of a cone's apex), a plane at an open end of the chain across
+// the box too, all sewn into one sheet along the seams. A lone cylinder or
+// cone turns into the whole cone.
+bool CellDraftOne::makeSheet(const std::vector<gp_Pnt>& corners, TopoDS_Shape& sheet)
+{
+    // the range along the seams' new lines, from the neutral plane
+    double s0 = Precision::Infinite(), s1 = -Precision::Infinite();
+    for (const auto& seam : seams) {
+        for (const auto& c : corners) {
+            double s = gp_Vec(seam.p, c).Dot(gp_Vec(seam.g));
+            s0 = std::min(s0, s);
+            s1 = std::max(s1, s);
+        }
+    }
+    auto apexOf = [](const Member& m) {
+        const gp_Ax1& axis = m.newAxial.axis;
+        return axis.Location().Translated(m.newAxial.apex() * gp_Vec(axis.Direction()));
+    };
+    if (!seams.empty()) {
+        double pad = 0.1 * (s1 - s0);
+        s0 -= pad;
+        s1 += pad;
+        for (const auto& m : members) {
+            if (m.planar || m.newAxial.tanS == 0.0) {
+                continue;
+            }
+            gp_Pnt apex = apexOf(m);
+            for (const auto& js : m.seams) {
+                const Seam& seam = seams[js.first];
+                double sa = gp_Vec(seam.p, apex).Dot(gp_Vec(seam.g));
+                double gap = 1e-3 * std::abs(sa) + Precision::Confusion();
+                if (sa > 0) {
+                    s1 = std::min(s1, sa - gap);
+                }
+                else {
+                    s0 = std::max(s0, sa + gap);
+                }
+            }
+        }
+        if (s1 - s0 < Precision::Confusion()) {
+            return fail(CellDraft::FaceVanishes,
+                        "a drafted face of the tangent chain shrinks to a point");
+        }
+    }
+
+    BRepBuilderAPI_Sewing sewing(1e-6);
+    TopoDS_Face patch;
+    for (const auto& m : members) {
+        if (m.planar) {
+            std::vector<gp_Pnt> pts;
+            if (m.seams.size() == 2) {
+                const Seam& a = seams[m.seams[0].first];
+                const Seam& b = seams[m.seams[1].first];
+                if (a.g.Dot(b.g) < 1 - 1e-9) {
+                    return fail(CellDraft::UnsupportedSurface,
+                                "the tangent edges of a plane of the drafted set do not stay "
+                                "parallel",
+                                TopoDS_Face(),
+                                m.faces.front());
+                }
+                pts = {a.p.Translated(s0 * gp_Vec(a.g)),
+                       a.p.Translated(s1 * gp_Vec(a.g)),
+                       b.p.Translated(s1 * gp_Vec(b.g)),
+                       b.p.Translated(s0 * gp_Vec(b.g))};
+            }
+            else if (m.seams.size() == 1) {
+                // an open end of the chain: across the box from the seam, the
+                // way the face lies
+                const Seam& a = seams[m.seams[0].first];
+                gp_Vec w = m.seams[0].second * gp_Vec(a.across);
+                double reach = 0.0;
+                for (const auto& c : corners) {
+                    reach = std::max(reach, gp_Vec(a.p, c).Dot(w));
+                }
+                reach = 1.1 * reach + Precision::Confusion();
+                pts = {a.p.Translated(s0 * gp_Vec(a.g)),
+                       a.p.Translated(s1 * gp_Vec(a.g)),
+                       a.p.Translated(s1 * gp_Vec(a.g) + reach * w),
+                       a.p.Translated(s0 * gp_Vec(a.g) + reach * w)};
+            }
+            else {
+                return fail(CellDraft::UnsupportedSurface,
+                            "a plane of the drafted set meets more than two tangent faces",
+                            TopoDS_Face(),
+                            m.faces.front());
+            }
+            BRepBuilderAPI_MakePolygon poly;
+            for (const auto& p : pts) {
+                poly.Add(p);
+            }
+            poly.Close();
+            BRepBuilderAPI_MakeFace mk(m.newSurface, poly.Wire(), true);
+            if (!mk.IsDone()) {
+                return fail(CellDraft::Boolean, "no face on a new plane of the drafted set");
+            }
+            patch = mk.Face();
+        }
+        else {
+            auto cone = Handle(Geom_ConicalSurface)::DownCast(m.newSurface);
+            auto cyl = Handle(Geom_CylindricalSurface)::DownCast(m.newSurface);
+            auto params = [&](const gp_Pnt& p, double& u, double& v) {
+                if (!cone.IsNull()) {
+                    ElSLib::Parameters(cone->Cone(), p, u, v);
+                }
+                else {
+                    ElSLib::Parameters(cyl->Cylinder(), p, u, v);
+                }
+            };
+            gp_Pnt q;
+            if (!BRepClass3d_SolidExplorer::FindAPointInTheFace(m.faces.front(), q)) {
+                return fail(CellDraft::UnsupportedSurface,
+                            "no point inside a face of the drafted set",
+                            TopoDS_Face(),
+                            m.faces.front());
+            }
+            double uq, vq;
+            params(q, uq, vq);
+            double u0, u1, v0, v1;
+            if (m.seams.size() == 2) {
+                const Seam& a = seams[m.seams[0].first];
+                const Seam& b = seams[m.seams[1].first];
+                double ua, ub, va0, va1, dummy;
+                params(a.p, ua, dummy);
+                params(b.p, ub, dummy);
+                params(a.p.Translated(s0 * gp_Vec(a.g)), dummy, va0);
+                params(a.p.Translated(s1 * gp_Vec(a.g)), dummy, va1);
+                // the way round from one seam to the other that the face takes
+                auto wrap = [](double x) {
+                    return x - 2 * M_PI * std::floor(x / (2 * M_PI));
+                };
+                double db = wrap(ub - ua);
+                if (wrap(uq - ua) <= db) {
+                    u0 = ua;
+                    u1 = ua + db;
+                }
+                else {
+                    u0 = ub;
+                    u1 = ub + wrap(ua - ub);
+                }
+                v0 = std::min(va0, va1);
+                v1 = std::max(va0, va1);
+            }
+            else if (m.seams.empty()) {
+                // the whole turn, along the axis past the box, short of the apex
+                u0 = 0.0;
+                u1 = 2 * M_PI;
+                double z0 = Precision::Infinite(), z1 = -Precision::Infinite();
+                for (const auto& c : corners) {
+                    double z = m.newAxial.z(c);
+                    z0 = std::min(z0, z);
+                    z1 = std::max(z1, z);
+                }
+                double pad = 0.1 * (z1 - z0);
+                v0 = (z0 - pad) / m.newAxial.cosS;
+                v1 = (z1 + pad) / m.newAxial.cosS;
+                if (m.newAxial.tanS != 0.0) {
+                    double va = m.newAxial.apex() / m.newAxial.cosS;
+                    double gap = 1e-3 * std::abs(va - vq) + Precision::Confusion();
+                    if (va > vq) {
+                        v1 = std::min(v1, va - gap);
+                    }
+                    else {
+                        v0 = std::max(v0, va + gap);
+                    }
+                }
+                if (v1 - v0 < Precision::Confusion()) {
+                    return fail(CellDraft::FaceVanishes, "the drafted face shrinks to a point");
+                }
+            }
+            else {
+                return fail(CellDraft::UnsupportedSurface,
+                            "a cylinder or cone of the drafted set ends at a sharp edge on one "
+                            "side only",
+                            TopoDS_Face(),
+                            m.faces.front());
+            }
+            BRepBuilderAPI_MakeFace mk(m.newSurface, u0, u1, v0, v1, Precision::Confusion());
+            if (!mk.IsDone()) {
+                return fail(CellDraft::Boolean, "no face on a new cone of the drafted set");
+            }
+            patch = mk.Face();
+        }
+        sewing.Add(patch);
+    }
+    if (members.size() == 1) {
+        sheet = patch;
+        return true;
+    }
+    sewing.Perform();
+    sheet = sewing.SewedShape();
+    if (sheet.IsNull()) {
+        return fail(CellDraft::Boolean, "the new faces of the drafted set do not sew");
+    }
     return true;
 }
 
@@ -2097,6 +3061,15 @@ void CellDraft::Build(const Message_ProgressRange& /*theRange*/)
     Handle(BRepTools_History) total;
     bool changed = false;
     std::vector<TopoDS_Face> done;
+    // the faces drafted with an earlier one (its tangent chain), and how
+    std::vector<std::pair<TopoDS_Face, const FaceDraft*>> drafted;
+    auto sameDraft = [](const FaceDraft& a, const FaceDraft& b) {
+        return a.direction.IsEqual(b.direction, Precision::Angular())
+            && std::abs(a.angle - b.angle) <= Precision::Angular()
+            && a.neutralPlane.Axis().Direction().IsEqual(b.neutralPlane.Axis().Direction(),
+                                                          Precision::Angular())
+            && a.neutralPlane.Distance(b.neutralPlane.Location()) <= Precision::Confusion();
+    };
     try {
         BRepBuilderAPI_Copy copier(cur, true, false);
         TopTools_ListOfShape args;
@@ -2110,6 +3083,11 @@ void CellDraft::Build(const Message_ProgressRange& /*theRange*/)
                 continue;
             }
             done.push_back(fd.face);
+            if (std::any_of(drafted.begin(), drafted.end(), [&](const auto& d) {
+                    return d.first.IsSame(fd.face) && sameDraft(*d.second, fd);
+                })) {
+                continue;
+            }
 
             // the face's pieces in the current solid
             TopTools_IndexedMapOfShape curFaces;
@@ -2149,6 +3127,12 @@ void CellDraft::Build(const Message_ProgressRange& /*theRange*/)
                          inputFace(one.errorNeighbour, total),
                          one.message);
                 return;
+            }
+            for (const auto& f : one.fset) {
+                TopoDS_Face in = inputFace(f, total);
+                if (!in.IsNull()) {
+                    drafted.emplace_back(in, &fd);
+                }
             }
             if (one.history.IsNull()) {
                 continue;  // the face makes the angle already
@@ -2262,30 +3246,16 @@ std::string CellDraft::CheckDraft(const TopoDS_Shape& input,
             continue;
         }
         TopoDS_Face f = TopoDS::Face(inputFaces.FindKey(idx));
-        gp_Pln pf;
-        gp_Dir nf;
-        if (!facePlane(f, pf, nf)) {
-            continue;
-        }
-        // the face and the faces coplanar with it beside it, as the cell
-        // draft drafts them (CellDraftOne::prepare)
+        // the face, the faces coplanar with it beside it and its tangent
+        // chain, as the cell draft drafts them (CellDraftOne::prepare)
         TopTools_MapOfShape fset;
-        std::vector<TopoDS_Face> todo {f};
-        while (!todo.empty()) {
-            TopoDS_Face g = todo.back();
-            todo.pop_back();
-            if (!fset.Add(g)) {
-                continue;
-            }
-            std::vector<TopoDS_Face> adj;
-            adjacent(g, adj);
-            for (const auto& h : adj) {
-                gp_Pln ph;
-                gp_Dir nh;
-                if (!fset.Contains(h) && facePlane(h, ph, nh) && nh.Dot(nf) > 1 - 1e-9
-                    && pf.Distance(ph.Location()) < CoplanarTol) {
-                    todo.push_back(h);
-                }
+        std::vector<std::pair<gp_Pln, gp_Dir>> setPlanes;
+        for (const auto& g : draftChain(f, inputFaces, edgeFaces)) {
+            fset.Add(g);
+            gp_Pln pg;
+            gp_Dir ng;
+            if (facePlane(g, pg, ng)) {
+                setPlanes.emplace_back(pg, ng);
             }
         }
         std::vector<TopoDS_Face> neighbours;
@@ -2299,7 +3269,7 @@ std::string CellDraft::CheckDraft(const TopoDS_Shape& input,
                 }
             }
         }
-        for (auto& c : findCaps(input, inputFaces, edgeFaces, fset, neighbours, pf, nf)) {
+        for (auto& c : findCaps(input, inputFaces, edgeFaces, fset, neighbours, setPlanes)) {
             caps.push_back(c);
         }
     }

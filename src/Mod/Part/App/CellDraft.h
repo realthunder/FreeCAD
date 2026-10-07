@@ -50,9 +50,13 @@ namespace Part
  * grows or shrinks to meet the new plane, a new edge appears where one is
  * needed, and what cannot be done is refused with an error naming the face.
  *
- * Phase 1: planar drafted faces; planar, elementary and other neighbours;
- * a neighbour tangent to the face is refused. Faces are drafted one after
- * the other, each on the result of the last.
+ * A face is drafted with the faces coplanar with it and its tangent chain
+ * (the walls and fillets tangent to it, and so on): planes turn, cylinders
+ * and cones about the pull direction turn into cones, and the new surfaces,
+ * joined along the chain's tangent edges, take the new plane's place.
+ * Neighbours may be planar, elementary or other surfaces. Faces are drafted
+ * one after the other, each on the result of the last; a face in the tangent
+ * chain of one drafted before is drafted with it.
  */
 class PartExport CellDraft: public BRepBuilderAPI_MakeShape
 {
