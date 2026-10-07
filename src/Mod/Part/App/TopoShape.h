@@ -2112,6 +2112,12 @@ public:
          * beside it, and cannot be given a setback of its own.
          */
         std::vector<std::pair<TopoDS_Shape, double>> edges;
+        /** The depths of faces at the vertex: the patch's boundary on such a
+         * face bows into it, away from the vertex, the depth at its middle,
+         * measured from the straight line between its ends. A corner takes
+         * them only when set back.
+         */
+        std::vector<std::pair<TopoDS_Shape, double>> faces;
         /** Skip, with a warning, what cannot be placed -- the vertex ends no
          * fillet, an edge is not filleted or its fillet does not end at the
          * vertex -- instead of throwing

@@ -705,6 +705,63 @@ void PropertyFilletCorners::connectLinkProperty(App::PropertyLinkSub &links)
         });
 }
 
+bool PropertyFilletCorners::isFaceName(const std::string &name)
+{
+    return boost::starts_with(name, "Face");
+}
+
+void PropertyFilletCorners::connectFaceLinkProperty(App::PropertyLinkSub &links)
+{
+    connFaceChanged = links.signalChanged.connect(
+        [this](const App::Property &prop) {
+            // old name -> new name
+            std::map<std::string, std::string> renamed;
+            for (const auto &v : faceReferenceUpdates)
+                renamed[v.second] = v.first;
+            faceReferenceUpdates.clear();
+            auto subs = static_cast<const App::PropertyLinkSub&>(prop).getSubValues(false);
+            std::set<std::string> subSet(subs.begin(), subs.end());
+
+            std::map<std::string, Corner> value = cornerMap;
+            std::map<App::ObjectIdentifier, App::ObjectIdentifier> renames;
+            for (auto &v : value) {
+                std::map<std::string, double> edges;
+                for (const auto &e : v.second.edges) {
+                    if (!isFaceName(e.first)) {
+                        edges.insert(e);
+                        continue;
+                    }
+                    auto it = renamed.find(e.first);
+                    const std::string &face = it == renamed.end() ? e.first : it->second;
+                    // dropped with its face from the link
+                    if (!subSet.count(face))
+                        continue;
+                    edges[face] = e.second;
+                    if (face != e.first) {
+                        App::ObjectIdentifier path(*this);
+                        path << App::ObjectIdentifier::SimpleComponent(v.first);
+                        renames.emplace(App::ObjectIdentifier(path) << App::ObjectIdentifier::SimpleComponent(e.first),
+                                        App::ObjectIdentifier(path) << App::ObjectIdentifier::SimpleComponent(face));
+                    }
+                }
+                v.second.edges = std::move(edges);
+            }
+            if (value != cornerMap)
+                setValue(std::move(value));
+            auto obj = Base::freecad_dynamic_cast<App::DocumentObject>(getContainer());
+            if (obj && !renames.empty()) {
+                obj->ExpressionEngine.renameExpressions(renames);
+                for (auto doc : App::GetApplication().getDocuments())
+                    doc->renameObjectIdentifiers(renames);
+            }
+        });
+
+    connFaceUpdateReference = links.signalUpdateElementReference.connect(
+        [this](const std::string &sub, const std::string &newSub) {
+            faceReferenceUpdates.emplace(newSub, sub);
+        });
+}
+
 PyObject *PropertyFilletCorners::getPyObject(void)
 {
     Py::Dict dict;
@@ -716,7 +773,8 @@ PyObject *PropertyFilletCorners::getPyObject(void)
 void PropertyFilletCorners::setPyObject(PyObject *pyobj)
 {
     const char *msg = "Expect the input to be a dict, or a sequence of pairs, from a vertex name"
-                      " to a setback, {edge name: setback}, or (setback, {edge name: setback})";
+                      " to a setback, {edge name: setback}, or (setback, {edge name: setback});"
+                      " a face name in place of an edge's takes a depth";
     try {
         std::map<std::string, Corner> value;
         if (PyDict_Check(pyobj)) {
@@ -759,11 +817,26 @@ void PropertyFilletCorners::Save(Base::Writer &writer) const
             writer.Stream() << "\"/>\n";
             continue;
         }
-        writer.Stream() << "\" count=\"" << corner.edges.size() << "\">\n";
-        writer.incInd();
+        // the faces' depths after the edges, under their own count: a build
+        // that knows no depths reads the edges and skips the rest
+        std::size_t faces = 0;
         for (const auto &e : corner.edges)
-            writer.Stream() << writer.ind() << "<Edge id=\"" << encodeAttribute(e.first)
-                            << "\" setback=\"" << e.second << "\"/>\n";
+            faces += isFaceName(e.first) ? 1 : 0;
+        writer.Stream() << "\" count=\"" << corner.edges.size() - faces;
+        if (faces)
+            writer.Stream() << "\" faces=\"" << faces;
+        writer.Stream() << "\">\n";
+        writer.incInd();
+        for (const auto &e : corner.edges) {
+            if (!isFaceName(e.first))
+                writer.Stream() << writer.ind() << "<Edge id=\"" << encodeAttribute(e.first)
+                                << "\" setback=\"" << e.second << "\"/>\n";
+        }
+        for (const auto &e : corner.edges) {
+            if (isFaceName(e.first))
+                writer.Stream() << writer.ind() << "<Face id=\"" << encodeAttribute(e.first)
+                                << "\" depth=\"" << e.second << "\"/>\n";
+        }
         writer.decInd();
         writer.Stream() << writer.ind() << "</Corner>\n";
     }
@@ -782,10 +855,16 @@ void PropertyFilletCorners::Restore(Base::XMLReader &reader)
         std::string id = reader.getAttribute("id");
         corner.setback = reader.getAttributeAsFloat("setback", "-1");
         unsigned ecount = reader.getAttributeAsUnsigned("count", "0");
+        unsigned fcount = reader.getAttributeAsUnsigned("faces", "0");
         for (unsigned j=0; j<ecount; ++j) {
             reader.readElement("Edge");
             std::string edge = reader.getAttribute("id");
             corner.edges[edge] = reader.getAttributeAsFloat("setback");
+        }
+        for (unsigned j=0; j<fcount; ++j) {
+            reader.readElement("Face");
+            std::string face = reader.getAttribute("id");
+            corner.edges[face] = reader.getAttributeAsFloat("depth");
         }
         reader.readEndElement("Corner");
         if (!id.empty())
@@ -832,7 +911,7 @@ bool PropertyFilletCorners::setPyPathValue(const App::ObjectIdentifier &path, co
         const std::string &name = c2.getName();
         if (name == "Setback")
             setValue(vertex, value.isNone() ? -1.0 : setbackFromPy(value));
-        else if (boost::starts_with(name, "Edge")) {
+        else if (boost::starts_with(name, "Edge") || isFaceName(name)) {
             if (value.isNone())
                 removeValue(vertex, name);
             else

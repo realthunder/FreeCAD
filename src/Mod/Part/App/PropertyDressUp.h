@@ -102,7 +102,10 @@ public:
     struct Corner {
         /// The setback of every fillet ending at the vertex, less than 0 for none
         double setback = -1.0;
-        /// The setbacks of single fillets by edge sub-name, over 'setback'
+        /** The setbacks of single fillets by edge sub-name, over 'setback',
+         * and the depths of faces by face sub-name (a face's patch boundary
+         * bows into it, away from the vertex, that far at its middle)
+         */
         std::map<std::string, double> edges;
 
         bool operator==(const Corner &other) const {
@@ -132,6 +135,15 @@ public:
      */
     void connectLinkProperty(App::PropertyLinkSub &);
 
+    /** Follows the face names of the corners as the sub-names of a link to
+     * the same object holding those faces change; a face's depth is dropped
+     * with the face from that link
+     */
+    void connectFaceLinkProperty(App::PropertyLinkSub &);
+
+    /// Whether a sub-name in a corner is a face's (a depth) rather than an edge's
+    static bool isFaceName(const std::string &name);
+
     virtual PyObject *getPyObject(void) override;
     virtual void setPyObject(PyObject *) override;
 
@@ -158,6 +170,9 @@ protected:
     std::map<std::string, std::string> referenceUpdates;
     fastsignals::scoped_connection connUpdateReference;
     fastsignals::scoped_connection connChanged;
+    std::map<std::string, std::string> faceReferenceUpdates;
+    fastsignals::scoped_connection connFaceUpdateReference;
+    fastsignals::scoped_connection connFaceChanged;
 };
 
 

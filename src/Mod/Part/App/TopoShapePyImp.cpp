@@ -1625,7 +1625,8 @@ double pyDouble(PyObject *obj)
     return v;
 }
 
-// makeFillet()'s corners: {vertex: setback | {edge: setback} | (setback, {edge: setback})}
+// makeFillet()'s corners: {vertex: setback | {edge: setback} | (setback, {edge: setback})},
+// where a face in place of an edge is given a depth
 TopoShape::FilletCorners pyFilletCorners(const TopoShape &shape, PyObject *obj)
 {
     TopoShape::FilletCorners corners;
@@ -1648,8 +1649,13 @@ TopoShape::FilletCorners pyFilletCorners(const TopoShape &shape, PyObject *obj)
             edges = value;
         if (!edges)
             continue;
-        for (const auto &e : pyPairs(edges, "corner edges"))
-            corner.edges.emplace_back(pySubShape(shape, e.first), pyDouble(e.second.ptr()));
+        for (const auto &e : pyPairs(edges, "corner edges")) {
+            TopoDS_Shape sub = pySubShape(shape, e.first);
+            if (!sub.IsNull() && sub.ShapeType() == TopAbs_FACE)
+                corner.faces.emplace_back(sub, pyDouble(e.second.ptr()));
+            else
+                corner.edges.emplace_back(sub, pyDouble(e.second.ptr()));
+        }
     }
     return corners;
 }

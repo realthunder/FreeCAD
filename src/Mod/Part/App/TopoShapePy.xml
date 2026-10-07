@@ -476,6 +476,10 @@ pairs, from a vertex of this shape to its setback:
   {vertex: (setback, {edge: setback})}: both, the edges' over the vertex's
 A vertex or edge is a shape or a sub-shape name such as 'Vertex3'. An edge
 that is not filleted is set back as far as the fillets beside it.
+A face in place of an edge, {face: depth}, shapes the patch's boundary on
+that face: it bows into the face, away from the vertex, depth at its middle,
+measured from the straight line between its ends. Only a set back corner
+takes it.
         </UserDocu>
       </Documentation>
       <Sandbox tier="call"/>

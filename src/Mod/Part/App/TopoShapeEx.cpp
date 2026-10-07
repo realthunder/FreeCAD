@@ -5054,6 +5054,12 @@ typedef void (*FuncSetFilletSetback)(BRepFilletAPI_MakeFillet &,
                                      const TopoDS_Edge *,
                                      double);
 
+// BRepFilletAPI_SetFaceDepth of the OCCT fork's TKFillet
+typedef void (*FuncSetFilletFaceDepth)(BRepFilletAPI_MakeFillet &,
+                                       const TopoDS_Vertex &,
+                                       const TopoDS_Face &,
+                                       double);
+
 // Whether a fillet contour of mkFillet ends at the vertex, the one holding
 // edge if given
 bool filletEndsAt(const BRepFilletAPI_MakeFillet &mkFillet,
@@ -5125,6 +5131,41 @@ void setFilletCorners(BRepFilletAPI_MakeFillet &mkFillet,
                 continue;
             }
             setSetback(mkFillet, TopoDS::Vertex(vertex), &edge, v.second);
+        }
+        if (corner.faces.empty())
+            continue;
+        if (corner.setback < 0.0 && corner.edges.empty()) {
+            if (!corner.optional)
+                FC_THROWM(Base::CADKernelError, "fillet corner Vertex" << vindex
+                        << ": a face depth needs the corner set back");
+            FC_WARN("fillet corner Vertex" << vindex << ": not set back, face depths skipped");
+            continue;
+        }
+        static const auto setFaceDepth =
+            (FuncSetFilletFaceDepth)lookUpTKFillet("BRepFilletAPI_SetFaceDepth");
+        if (!setFaceDepth)
+            FC_THROWM(Base::CADKernelError, "fillet corner face depth needs a newer OCCT fork");
+        for (const auto &v : corner.faces) {
+            const auto &shapeFace = v.first;
+            if (shapeFace.IsNull())
+                FC_THROWM(Base::CADKernelError, "null fillet corner face");
+            if (shapeFace.ShapeType() != TopAbs_FACE)
+                FC_THROWM(Base::CADKernelError, "fillet corner depth is not on a face");
+            int findex = shape.findShape(shapeFace);
+            if (!findex)
+                FC_THROWM(Base::CADKernelError, "fillet corner face does not belong to the shape");
+            bool touches = false;
+            for (TopExp_Explorer xp(shapeFace, TopAbs_VERTEX); xp.More() && !touches; xp.Next())
+                touches = xp.Current().IsSame(vertex);
+            if (!touches) {
+                if (!corner.optional)
+                    FC_THROWM(Base::CADKernelError, "fillet corner Vertex" << vindex
+                            << ": Face" << findex << " does not touch it");
+                FC_WARN("fillet corner Vertex" << vindex << ": Face" << findex
+                        << " does not touch it, skipped");
+                continue;
+            }
+            setFaceDepth(mkFillet, TopoDS::Vertex(vertex), TopoDS::Face(shapeFace), v.second);
         }
     }
 }

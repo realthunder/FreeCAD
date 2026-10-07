@@ -121,6 +121,56 @@ class FilletCornerTest(unittest.TestCase):
         finally:
             App.closeDocument(doc.Name)
 
+    def topFace(self, shape=None):
+        shape = shape or self.box
+        return [f for f in shape.Faces if abs(f.Surface.Position.z - 10) < 1e-7
+                and abs(abs(f.Surface.Axis.z) - 1) < 1e-7][0]
+
+    def bowOnTop(self, shape):
+        """How far the patch's boundary on the top face lies from the middle
+        of its chord, square to the chord: the depth"""
+        patch = patchesOf(shape)[0]
+        for e in patch.Edges:
+            ps = [e.valueAt(e.FirstParameter + (e.LastParameter - e.FirstParameter) * k / 2000)
+                  for k in range(2001)]
+            if all(abs(p.z - 10) < 1e-4 for p in ps):
+                a, b = ps[0], ps[-1]
+                mid, along = (a + b) * 0.5, (b - a).normalize()
+                cross = min(ps, key=lambda p: abs((p - mid).dot(along)))
+                return (cross - mid).Length
+        self.fail("no patch boundary on the top face")
+
+    def testFaceDepth(self):
+        top = self.topFace()
+        name = nameOf(self.box, top)
+        plain = self.fillet({self.vertex: 4})
+        bows = []
+        for depth in (0.5, 1, 2):
+            shape = self.fillet({self.vertex: (4, {top: depth})})
+            self.assertEqual(len(patchesOf(shape)), 1)
+            # the boundary passes the depth from its chord, away from the vertex
+            self.assertAlmostEqual(self.bowOnTop(shape), depth, delta=2e-3)
+            bows.append(shape)
+        # by name, and beside edge setbacks
+        self.assertAlmostEqual(self.fillet({self.vertex: (4, {name: 1})}).Volume,
+                               bows[1].Volume, places=6)
+        both = self.fillet({self.vertex: (4, {self.edges[0]: 3, top: 1})})
+        self.assertAlmostEqual(self.bowOnTop(both), 1, delta=2e-3)
+        # without a depth the boundary is the batten, which bows its own way
+        self.assertNotAlmostEqual(self.bowOnTop(plain), 0.5, delta=0.1)
+
+    def testFaceDepthErrors(self):
+        top = self.topFace()
+        with self.assertRaisesRegex(Exception, "needs the corner set back"):
+            self.box.makeFillet(1, self.edges, corners={self.vertex: {top: 1}})
+        bottom = [f for f in self.box.Faces if abs(f.Surface.Position.z) < 1e-7
+                  and abs(abs(f.Surface.Axis.z) - 1) < 1e-7][0]
+        with self.assertRaisesRegex(Exception, "does not touch it"):
+            self.box.makeFillet(1, self.edges, corners={self.vertex: (4, {bottom: 1})})
+        # a depth the face cannot hold fails the fillet
+        with self.assertRaises(Exception):
+            self.box.makeFillet(1, self.edges, corners={self.vertex: (4, {top: 50})})
+
     def testErrors(self):
         far = cornerOf(self.box, App.Vector(0, 0, 0))[0]
         with self.assertRaisesRegex(Exception, "no fillet ends at corner"):
