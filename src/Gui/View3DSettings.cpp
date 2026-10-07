@@ -22,6 +22,8 @@
 
 #include "PreCompiled.h"
 
+#include "OverlayParams.h"
+
 #ifndef _PreComp_
 # include <Inventor/fields/SoSFColor.h>
 # include <Inventor/nodes/SoDirectionalLight.h>
@@ -131,14 +133,14 @@ void View3DSettings::OnChange(ParameterGrp::SubjectType &rCaller,ParameterGrp::M
     }
     else if (strcmp(Reason,"EnablePreselection") == 0) {
         const ParameterGrp& rclGrp = ((ParameterGrp&)rCaller);
-        SoFCEnableHighlightAction cAct(rclGrp.GetBool("EnablePreselection", true));
+        SoFCEnableHighlightAction cAct(rclGrp.GetBool("EnablePreselection", Gui::ViewParams::defaultEnablePreselection()));
         for (auto _viewer : _viewers) {
             cAct.apply(_viewer->getSceneGraph());
         }
     }
     else if (strcmp(Reason,"EnableSelection") == 0) {
         const ParameterGrp& rclGrp = ((ParameterGrp&)rCaller);
-        SoFCEnableSelectionAction cAct(rclGrp.GetBool("EnableSelection", true));
+        SoFCEnableSelectionAction cAct(rclGrp.GetBool("EnableSelection", Gui::ViewParams::defaultEnableSelection()));
         for (auto _viewer : _viewers) {
             cAct.apply(_viewer->getSceneGraph());
         }
@@ -282,7 +284,7 @@ void View3DSettings::OnChange(ParameterGrp::SubjectType &rCaller,ParameterGrp::M
         }
     }
     else if (strcmp(Reason,"CornerNaviCube") == 0) {
-        int corner = hGrp->GetInt("CornerNaviCube", 1);
+        int corner = hGrp->GetInt("CornerNaviCube", Gui::OverlayParams::defaultCornerNaviCube());
         for (auto _viewer : _viewers) {
             _viewer->setNaviCubeCorner(corner);
         }
@@ -392,7 +394,7 @@ void View3DSettings::OnChange(ParameterGrp::SubjectType &rCaller,ParameterGrp::M
     }
     else if (strcmp(Reason, "PickRadius") == 0) {
         for (auto _viewer : _viewers) {
-            _viewer->setPickRadius(rGrp.GetFloat("PickRadius", 5.0f));
+            _viewer->setPickRadius(rGrp.GetFloat("PickRadius", Gui::ViewParams::defaultPickRadius()));
         }
     }
     else if (strcmp(Reason, "TransparentObjectRenderType") == 0) {
@@ -484,7 +486,7 @@ void NaviCubeSettings::parameterChanged(const char* Name)
         return;
     NaviCube* nc = _viewer->getNaviCube();
     if (strcmp(Name, "CornerNaviCube") == 0) {
-        nc->setCorner(static_cast<NaviCube::Corner>(hGrp->GetInt("CornerNaviCube", 1)));
+        nc->setCorner(static_cast<NaviCube::Corner>(hGrp->GetInt("CornerNaviCube", Gui::OverlayParams::defaultCornerNaviCube())));
     }
     else if (strcmp(Name, "OffsetX") == 0 || strcmp(Name, "OffsetY") == 0) {
         nc->setOffset(hGrp->GetInt("OffsetX", 0), hGrp->GetInt("OffsetY", 0));

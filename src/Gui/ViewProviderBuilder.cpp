@@ -22,6 +22,8 @@
 
 #include "PreCompiled.h"
 
+#include "ViewParams.h"
+
 #ifndef _PreComp_
 # include <Inventor/nodes/SoMaterial.h>
 #endif
@@ -60,8 +62,8 @@ Gui::SoFCSelection* ViewProviderBuilder::createSelection()
 
     float transparency;
     ParameterGrp::handle hGrp = Gui::WindowParameter::getDefaultParameter()->GetGroup("View");
-    bool enablePre = hGrp->GetBool("EnablePreselection", true);
-    bool enableSel = hGrp->GetBool("EnableSelection", true);
+    bool enablePre = hGrp->GetBool("EnablePreselection", Gui::ViewParams::defaultEnablePreselection());
+    bool enableSel = hGrp->GetBool("EnableSelection", Gui::ViewParams::defaultEnableSelection());
     if (!enablePre) {
         sel->highlightMode = Gui::SoFCSelection::OFF;
     }

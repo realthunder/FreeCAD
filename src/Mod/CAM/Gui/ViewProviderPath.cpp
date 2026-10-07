@@ -49,6 +49,7 @@
 #include <QApplication>
 #include <QMenu>
 
+#include <Gui/ViewParams.h>
 #include <Gui/Application.h>
 #include <Gui/BitmapFactory.h>
 #include <Gui/Command.h>
@@ -213,7 +214,7 @@ ViewProviderPath::ViewProviderPath()
     pcMarkerStyle->style = SoDrawStyle::POINTS;
     pcMarkerStyle->pointSize = App::GetApplication()
                                    .GetParameterGroupByPath("User parameter:BaseApp/Preferences/View")
-                                   ->GetInt("MarkerSize", 4);
+                                   ->GetInt("MarkerSize", Gui::ViewParams::defaultMarkerSize());
 
     pcDrawStyle = new SoDrawStyle();
     pcDrawStyle->ref();

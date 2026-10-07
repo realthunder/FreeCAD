@@ -21,6 +21,8 @@
  ***************************************************************************/
 
 #include "PreCompiled.h"
+
+#include <Gui/ViewParams.h>
 #ifndef _PreComp_
 #include <QAction>
 #include <QMenu>
@@ -96,7 +98,7 @@ void ViewProviderTrajectory::attach(App::DocumentObject* pcObj)
         "CROSS",
         App::GetApplication()
             .GetParameterGroupByPath("User parameter:BaseApp/Preferences/View")
-            ->GetInt("MarkerSize", 5));
+            ->GetInt("MarkerSize", Gui::ViewParams::defaultMarkerSize()));
     linesep->addChild(markcol);
     linesep->addChild(marker);
 

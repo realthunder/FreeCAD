@@ -5949,7 +5949,7 @@ void ViewProviderSketch::initParams()
     ParameterGrp::handle hGrp = App::GetApplication().GetParameterGroupByPath("User parameter:BaseApp/Preferences/View");
     double viewScalingFactor = hGrp->GetFloat("ViewScalingFactor", 1.0);
     viewScalingFactor = Base::clamp<double>(viewScalingFactor, 0.5, 5.0);
-    int markersize = hGrp->GetInt("MarkerSize", 7);
+    int markersize = hGrp->GetInt("MarkerSize", Gui::ViewParams::defaultMarkerSize());
 
     int defaultFontSizePixels = QApplication::fontMetrics().height(); // returns height in pixels, not points
     int sketcherfontSize = hGrp->GetInt("EditSketcherFontSize", defaultFontSizePixels);

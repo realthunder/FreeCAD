@@ -24,6 +24,8 @@
 
 #include "PreCompiled.h"
 
+#include <Gui/ViewParams.h>
+
 #include <Precision.hxx>
 #include <QDoubleValidator>
 #include <QLocale>
@@ -447,7 +449,7 @@ void SketcherValidation::showPoints(const std::vector<Base::Vector3d>& pts)
     auto marker = new SoMarkerSet();
     long markerSize = App::GetApplication()
                           .GetParameterGroupByPath("User parameter:BaseApp/Preferences/View")
-                          ->GetInt("MarkerSize", 9);
+                          ->GetInt("MarkerSize", Gui::ViewParams::defaultMarkerSize());
     marker->markerIndex = Gui::Inventor::MarkerBitmaps::getMarkerIndex("PLUS", int(markerSize));
     pointsep->addChild(markcol);
     pointsep->addChild(marker);

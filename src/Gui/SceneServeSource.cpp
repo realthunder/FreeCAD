@@ -22,6 +22,8 @@
 
 #include "PreCompiled.h"
 
+#include "OverlayParams.h"
+
 #include "ViewParams.h"
 
 #ifndef _PreComp_
@@ -220,7 +222,7 @@ void initNaviCubeProperties(App::PropertyContainer *props)
     }
     static const App::PropertyFloatConstraint::Constraints range = {0.0, 1.0, 0.05};
     float x, y;
-    NaviCube::cornerPosition(NaviCube::Corner(hGrp->GetInt("CornerNaviCube", 1)), x, y);
+    NaviCube::cornerPosition(NaviCube::Corner(hGrp->GetInt("CornerNaviCube", Gui::OverlayParams::defaultCornerNaviCube())), x, y);
     const struct {
         const char *name;
         float value;
