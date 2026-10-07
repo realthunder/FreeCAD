@@ -1532,6 +1532,7 @@ SET(FreeCADGui_SRCS
     Utilities.h
     LiveViewInteraction.h
     RenderTiming.h
+    ReadbackFramePacer.h
     WaitCursor.h
     ManualAlignment.h
     TransactionObject.h

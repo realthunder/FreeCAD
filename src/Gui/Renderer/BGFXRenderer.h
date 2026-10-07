@@ -122,6 +122,8 @@ public:
     virtual bool boundBox(float &xmin, float &ymin, float &zmin,
                           float &xmax, float &ymax, float &zmax) override;
     virtual bool animating() const override;
+    virtual void setFramePipelined(bool on) override;
+    virtual bool frameTrails() const override;
 
     virtual void setScene(DrawCallList &&draws) override;
     virtual void setObjectInfo(ObjectInfoMap &&info) override;

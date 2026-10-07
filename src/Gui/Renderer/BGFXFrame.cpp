@@ -6698,19 +6698,33 @@ bool BGFXRenderer::Private::render(const QColor &col,
         // The blit queued above executes in the frame the boundary just
         // returned, so that is what its latency is measured from.
         view->noteReadbackFrame(frameNum);
-        // Benchmark only (FC_BGFX_READBACK_SYNC): spin until the copy
-        // has landed, which is the fully serialized route section 2
-        // costed. Off by default -- the pipelined form shows a frame
-        // that is one or two old and pays nothing for the wait. A
-        // capture (renderOffscreen) always waits: nothing redraws it
-        // later, so the frame it gets is the one it keeps.
+        // Spin until the copy has landed, which is the fully serialized
+        // route section 2 costed -- unless the host said this frame is
+        // one of a run (setFramePipelined: an animation), where the
+        // next frame shows it anyway and the pipelined form pays
+        // nothing for the wait. A frame nothing follows must wait, or
+        // the screen stays a frame or two behind the scene for as long
+        // as nothing redraws it. A capture (renderOffscreen) always
+        // waits for the same reason: the frame it gets is the one it
+        // keeps. FC_BGFX_READBACK_SYNC holds one form for a benchmark.
         //
         // Above the phase clock's restart on purpose: those frames are
         // bgfx's, not the context hand-off's, and charging them to
-        // CpuCtxIn would put a benchmark switch's cost inside a number
-        // that is supposed to be flat.
-        frameNum = view->syncReadback(frameNum,
-                                      _BGFXLib.captureWidth != 0);
+        // CpuCtxIn would put the wait's cost inside a number that is
+        // supposed to be flat.
+        const bool capture = _BGFXLib.captureWidth != 0;
+        const int forced = BGFXView::readbackSyncForced();
+        const bool wait = capture
+            || (forced < 0 ? !framePipelined : forced > 0);
+        frameNum = view->syncReadback(frameNum, wait);
+        // Forced pipelined is a measurement of that form alone: it
+        // reports nothing to settle, or the host's settling frame would
+        // be pipelined too and ask for the next one without end.
+        if (!capture)
+            frameTrailing = !wait && forced < 0;
+    }
+    else if (_BGFXLib.captureWidth == 0) {
+        frameTrailing = false;
     }
     // bgfx::frame() has its own timer; restart the chain past it so
     // it is not counted twice.
@@ -7015,7 +7029,7 @@ bool BGFXRenderer::Private::render(const QColor &col,
         // `stale` is as much the answer as the milliseconds are: the
         // pipelined form does not wait for the copy, so a stale frame
         // is one where the screen showed an image older than the scene.
-        // FC_BGFX_READBACK_SYNC trades those away for `wait`.
+        // A frame that waits for its copy trades those away for `wait`.
         if (due && view->readbackStats.frames) {
             const BGFXView::ReadbackStats rb = view->readbackStats;
             view->readbackStats.clear();

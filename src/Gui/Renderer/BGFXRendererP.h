@@ -6574,14 +6574,19 @@ public:
     /// Is any copy still in flight? Nothing may resize or free a
     /// staging buffer while bgfx still owes it a write.
     bool readbackInFlight() const;
+    /// FC_BGFX_READBACK_SYNC, for a benchmark leg that has to hold one
+    /// form whatever the session's setting is: 1 every on-screen frame
+    /// waits for its copy, 0 none does, -1 (unset) the host decides
+    /// frame by frame (Renderer::setFramePipelined).
+    static int readbackSyncForced();
     /// Spin frames until every copy in flight has landed, and return
-    /// the frame reached. On screen only under FC_BGFX_READBACK_SYNC,
-    /// a benchmark switch: it converts the pipelined route into the
-    /// fully serialized one docs/DeviceAdoption.md section 2 measured,
-    /// at the cost of the frames it spins. Always when \a capture: a
-    /// capture is read once, right after this frame, and a pipelined
-    /// one hands back the frame before it.
-    uint32_t syncReadback(uint32_t frameNum, bool capture);
+    /// the frame reached -- the fully serialized route
+    /// docs/DeviceAdoption.md section 2 measured, at the cost of the
+    /// frames it spins. Nothing when not \a wait: the frame is
+    /// pipelined and shows whatever has landed. The caller decides; a
+    /// capture always waits, since it is read once, right after this
+    /// frame, and a pipelined one hands back the frame before it.
+    uint32_t syncReadback(uint32_t frameNum, bool wait);
     /// Upload whatever has landed and draw it into the caller's bound
     /// framebuffer. Same destination rect convention as blit().
     void blitReadback(uint32_t frameNum, int dstX, int dstY, int dstH);
@@ -10475,6 +10480,14 @@ public:
     // The last rendered frame splatted animated water caustics: the
     // viewer keeps redrawing while set so the animation advances.
     bool animatedFrame = false;
+    /// The host's word for the frames that follow
+    /// (Renderer::setFramePipelined): a frame that reaches the screen
+    /// through the readback composite does not wait for its copy.
+    bool framePipelined = false;
+    /// The last on-screen frame did not wait, so the screen shows an
+    /// older one (Renderer::frameTrails). A capture leaves it alone:
+    /// what it draws is not the screen.
+    bool frameTrailing = false;
     float bboxMin[3], bboxMax[3];
     /// The camera the last frame drew with, kept for the shadow
     /// ground's camera-fitted sizing (LightConfig::groundFollowCamera).

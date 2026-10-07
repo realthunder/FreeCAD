@@ -56,6 +56,7 @@ public:
     long OutputTransform;
     double Exposure;
     long MaxViewIds;
+    long ReadbackFrameMode;
     long BackgroundReleaseDelay;
     long CoarseTessellation;
     long CoarseDeferFaces;
@@ -222,6 +223,8 @@ public:
         funcs["Exposure"] = &RenderParamsP::updateExposure;
         MaxViewIds = this->handle->GetInt("MaxViewIds", 1024);
         funcs["MaxViewIds"] = &RenderParamsP::updateMaxViewIds;
+        ReadbackFrameMode = this->handle->GetInt("ReadbackFrameMode", 1);
+        funcs["ReadbackFrameMode"] = &RenderParamsP::updateReadbackFrameMode;
         BackgroundReleaseDelay = this->handle->GetInt("BackgroundReleaseDelay", 1000);
         funcs["BackgroundReleaseDelay"] = &RenderParamsP::updateBackgroundReleaseDelay;
         CoarseTessellation = this->handle->GetInt("CoarseTessellation", 2);
@@ -558,6 +561,10 @@ public:
     // Auto generated code (Tools/params_utils.py:314)
     static void updateMaxViewIds(RenderParamsP *self) {
         self->MaxViewIds = self->handle->GetInt("MaxViewIds", 1024);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateReadbackFrameMode(RenderParamsP *self) {
+        self->ReadbackFrameMode = self->handle->GetInt("ReadbackFrameMode", 1);
     }
     // Auto generated code (Tools/params_utils.py:314)
     static void updateBackgroundReleaseDelay(RenderParamsP *self) {
@@ -1251,6 +1258,18 @@ static const App::ParamRegistry::Registrar _RenderParamsRegistrar({
 "as a matter of course.\n"
 "\n"
 "Read once, when the backend starts: a change needs a restart."),
+    App::ParamInfo("Gui", "RenderParams", "User parameter:BaseApp/Preferences/View/Render", "ReadbackFrameMode", "ReadbackFrameMode", App::ParamInfo::Int, 1)
+        .setTitle("Frame delivery through read-back")
+        .setDoc("How a frame reaches the screen on a backend that gets there by\n"
+"reading the frame back (Direct3D, Vulkan, Metal; not OpenGL).\n"
+"'Wait' holds each frame until its own copy has arrived, so the\n"
+"screen always shows what was just drawn. 'Pipelined' shows the\n"
+"newest copy that has arrived, a frame or two old, and saves the\n"
+"wait; one waiting frame follows when the redraws stop. 'Pipelined\n"
+"while animating' waits except while the view redraws by itself:\n"
+"a camera animation, a spin, animated content.")
+        .setProxy("ComboBox")
+        .setItems({{"Wait", "", nullptr}, {"Pipelined while animating", "", nullptr}, {"Pipelined", "", nullptr}}, false, true),
     App::ParamInfo("Gui", "RenderParams", "User parameter:BaseApp/Preferences/View/Render", "BackgroundReleaseDelay", "BackgroundReleaseDelay", App::ParamInfo::Int, 1000)
         .setTitle("Background view release delay")
         .setDoc("Milliseconds a 3D view may sit in the background before it gives\n"
@@ -3177,6 +3196,41 @@ void RenderParams::setMaxViewIds(const long &v) {
 // Auto generated code (Tools/params_utils.py:431)
 void RenderParams::removeMaxViewIds() {
     instance()->handle->RemoveInt("MaxViewIds");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *RenderParams::docReadbackFrameMode() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"How a frame reaches the screen on a backend that gets there by\n"
+"reading the frame back (Direct3D, Vulkan, Metal; not OpenGL).\n"
+"'Wait' holds each frame until its own copy has arrived, so the\n"
+"screen always shows what was just drawn. 'Pipelined' shows the\n"
+"newest copy that has arrived, a frame or two old, and saves the\n"
+"wait; one waiting frame follows when the redraws stop. 'Pipelined\n"
+"while animating' waits except while the view redraws by itself:\n"
+"a camera animation, a spin, animated content.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const long & RenderParams::getReadbackFrameMode() {
+    return instance()->ReadbackFrameMode;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const long & RenderParams::defaultReadbackFrameMode() {
+    const static long def = 1;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void RenderParams::setReadbackFrameMode(const long &v) {
+    instance()->handle->SetInt("ReadbackFrameMode",v);
+    instance()->ReadbackFrameMode = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void RenderParams::removeReadbackFrameMode() {
+    instance()->handle->RemoveInt("ReadbackFrameMode");
 }
 
 // Auto generated code (Tools/params_utils.py:397)

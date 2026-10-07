@@ -185,6 +185,7 @@
 #include "ViewParams.h"
 #include "ObjectMetaFeed.h"
 #include "RenderParams.h"
+#include "ReadbackFramePacer.h"
 #include "RenderTiming.h"
 // The render cache's entries hold references to vertex caches, and its
 // header only forward-declares the type; a translation unit that reaches
@@ -746,6 +747,9 @@ struct View3DInventorViewer::Private
         ,tmpPath(new SoTempPath(10))
         ,pickAction(SbViewportRegion())
         ,pickMatrixAction(SbViewportRegion())
+        ,framePacer([owner]() {
+            owner->getSoRenderManager()->scheduleRedraw();
+        })
     {
         throttleClock.start();
     }
@@ -794,6 +798,10 @@ struct View3DInventorViewer::Private
     /// Render::Renderer::completeFrames as last seen by renderScene,
     /// so frameCompleted() fires once per complete frame.
     uint64_t completeFramesSeen = 0;
+    /// Whether a backend frame waits for its read-back copy
+    /// (Render/ReadbackFrameMode), and the frame that brings the screen
+    /// up to date after the pipelined ones.
+    ReadbackFramePacer framePacer;
     Render::PBRConfig cyclesPbr;
     Render::BumpConfig cyclesBump;
     Render::OutputConfig cyclesOutput;
@@ -6631,8 +6639,15 @@ void View3DInventorViewer::renderScene()
         // Everything past here for this frame is the renderer's own
         // account, which it times itself.
         outPre.stop();
+        // Pipelined only while the view redraws by itself, where the
+        // next frame shows this one anyway: a camera animation or a
+        // spin, and the backend's own animated content as of its last
+        // frame.
+        _pimpl->framePacer.begin(_pimpl->renderer.get(),
+                this->isAnimating() || _pimpl->renderer->animating());
         externalRendered =
             _pimpl->renderer->render(col, &viewMat.getValue(), &projMat.getValue());
+        _pimpl->framePacer.end(_pimpl->renderer.get(), externalRendered);
         if (externalRendered) {
             const uint64_t n = _pimpl->renderer->completeFrames();
             if (n != _pimpl->completeFramesSeen) {

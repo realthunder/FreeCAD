@@ -176,6 +176,25 @@ public:
 
     // Auto generated code (Tools/params_utils.py:139)
     //@{
+    /// Accessor for parameter ReadbackFrameMode
+    ///
+    /// How a frame reaches the screen on a backend that gets there by
+    /// reading the frame back (Direct3D, Vulkan, Metal; not OpenGL).
+    /// 'Wait' holds each frame until its own copy has arrived, so the
+    /// screen always shows what was just drawn. 'Pipelined' shows the
+    /// newest copy that has arrived, a frame or two old, and saves the
+    /// wait; one waiting frame follows when the redraws stop. 'Pipelined
+    /// while animating' waits except while the view redraws by itself:
+    /// a camera animation, a spin, animated content.
+    static const long & getReadbackFrameMode();
+    static const long & defaultReadbackFrameMode();
+    static void removeReadbackFrameMode();
+    static void setReadbackFrameMode(const long &v);
+    static const char *docReadbackFrameMode();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
     /// Accessor for parameter BackgroundReleaseDelay
     ///
     /// Milliseconds a 3D view may sit in the background before it gives

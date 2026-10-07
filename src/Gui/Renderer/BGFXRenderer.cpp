@@ -758,6 +758,16 @@ bool BGFXRenderer::animating() const
     return pimpl->animatedFrame && pimpl->localAudience();
 }
 
+void BGFXRenderer::setFramePipelined(bool on)
+{
+    pimpl->framePipelined = on;
+}
+
+bool BGFXRenderer::frameTrails() const
+{
+    return pimpl->frameTrailing;
+}
+
 bool BGFXRenderer::boundBox(float &xmin, float &ymin, float &zmin,
                             float &xmax, float &ymax, float &zmax)
 {

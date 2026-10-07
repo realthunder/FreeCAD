@@ -3359,6 +3359,21 @@ public:
     /// this returns true, so the animation advances without user input.
     virtual bool animating() const { return false; }
 
+    /// Whether the frames that follow may reach the screen pipelined
+    /// where the backend gets there through a read-back
+    /// (docs/DeviceAdoption.md section 10): such a frame shows the
+    /// newest copy that has landed, a frame or two old, and pays
+    /// nothing for the wait. Off, which is the default, each frame
+    /// waits for its own copy and what is on screen is what was drawn.
+    /// The host says it per frame (Render/ReadbackFrameMode); a capture
+    /// waits whatever this says.
+    virtual void setFramePipelined(bool on) { (void)on; }
+    /// Whether the last frame to reach the screen was a pipelined one,
+    /// so that the screen is behind the scene and stays there until
+    /// another frame is drawn. The host owes it one frame that waits
+    /// once the pipelined ones stop coming.
+    virtual bool frameTrails() const { return false; }
+
     /// Global hint whether the active backend supports GPU-instanced
     /// draws. Geometry producers (e.g. the Part tessellation) consult it
     /// before emitting shared-instance scene structure: without real

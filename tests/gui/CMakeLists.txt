@@ -1328,3 +1328,12 @@ fc_add_gui_test(GuiToolTipIconAndImages_tests_run
 fc_add_gui_test(GuiTitleBarSwitchMaximized_tests_run
                 titlebar-switch-maximized.py
                 --timeout 180)
+
+# A view on a read-back backend shows the frame that was drawn
+# (Render/ReadbackFrameMode): a highlight, a wheel zoom and a new size
+# came with the next redraw. The waiting itself is only claimed where the
+# backend reads its frame back, which the default one here (OpenGL) does
+# not; the pictures are claimed everywhere.
+fc_add_gui_test(GuiReadbackFrameMode_tests_run
+                readback-frame-mode.py
+                --timeout 300)

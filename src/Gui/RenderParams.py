@@ -113,6 +113,17 @@ Params = [
         "as a matter of course.\n"
         "\n"
         "Read once, when the backend starts: a change needs a restart."),
+    ParamInt('ReadbackFrameMode',  1, title='Frame delivery through read-back',
+        proxy=ParamComboBox(items=['Wait', 'Pipelined while animating',
+                                   'Pipelined']),
+        doc="How a frame reaches the screen on a backend that gets there by\n"
+        "reading the frame back (Direct3D, Vulkan, Metal; not OpenGL).\n"
+        "'Wait' holds each frame until its own copy has arrived, so the\n"
+        "screen always shows what was just drawn. 'Pipelined' shows the\n"
+        "newest copy that has arrived, a frame or two old, and saves the\n"
+        "wait; one waiting frame follows when the redraws stop. 'Pipelined\n"
+        "while animating' waits except while the view redraws by itself:\n"
+        "a camera animation, a spin, animated content."),
     ParamInt('BackgroundReleaseDelay',  1000,
         title='Background view release delay',
         doc="Milliseconds a 3D view may sit in the background before it gives\n"
