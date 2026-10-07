@@ -184,6 +184,11 @@ Part::Feature* Feature::getBaseObject(bool silent) const {
     return BaseObject;
 }
 
+bool Feature::hasBaseFeature() const
+{
+    return getBaseObject(true) || Part::Feature::hasBaseFeature();
+}
+
 TopoShape Feature::getBaseShape(bool silent, bool force, bool checkSolid) const {
     Part::TopoShape result;
 

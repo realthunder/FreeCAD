@@ -70,6 +70,7 @@ set(Part_tests
     parttests/ShapeListTest.py
     parttests/TopoShapeListTest.py
     parttests/ColorPerFaceTest.py
+    parttests/ElementAppearanceTest.py
     parttests/ElementNameTest.py
     parttests/HLRProjectionTest.py
 )

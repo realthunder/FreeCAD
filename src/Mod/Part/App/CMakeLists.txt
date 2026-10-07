@@ -203,6 +203,7 @@ SET(Features_SRCS
     ForeignBaseShapes.h
     PartFeature.cpp
     PartFeature.h
+    PartFeatureAppearance.cpp
     PartFeatureMerge.cpp
     PartFeatureReference.cpp
     PartFeatureReference.h

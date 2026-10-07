@@ -29,6 +29,7 @@
 
 #include <App/FeaturePython.h>
 #include <App/GeoFeature.h>
+#include <App/PropertyElementAppearance.h>
 #include <Mod/Material/App/PropertyMaterial.h>
 #include <Mod/Part/PartGlobal.h>
 
@@ -68,6 +69,25 @@ public:
     /// The physical material card assigned to this shape
     Materials::PropertyMaterial ShapeMaterial;
     App::PropertyLinkSubHidden ColoredElements;
+    /** @name What the shape's elements look like
+     *
+     * docs/ShapeAppearanceDesign.md sec 14.6: what an object looks like is
+     * a value of the object and is made by the object, with a view provider
+     * and without. PartFeatureAppearance.cpp.
+     */
+    //@{
+    /// The looks stated of the object and of its elements, and what is
+    /// drawn of them
+    App::PropertyElementAppearance ElementAppearance;
+    /// A face no name paints takes the look of the face it was made from
+    App::PropertyBool MapFaceColor;
+    App::PropertyBool MapLineColor;
+    App::PropertyBool MapPointColor;
+    /// The transparency of the source face is taken with its colour
+    App::PropertyBool MapTransparency;
+    /// The looks are taken from the sources though the object names none
+    App::PropertyBool ForceMapColors;
+    //@}
     App::PropertyBool ValidateShape;
     App::PropertyBool InvalidShape;
     App::PropertyEnumeration FixShape;
@@ -100,6 +120,65 @@ public:
     /// Assign the appearance half of the material card
     void setMaterialAppearance(const App::MaterialAppearance& material) override;
     App::MaterialRenderProperties getMaterialRenderProperties() const override;
+
+    /** @name Making what is drawn (docs/ShapeAppearanceDesign.md sec 14.6.2) */
+    //@{
+    /** Make the drawn looks of the faces, edges and vertices again
+     *
+     * From what ElementAppearance states -- the object's own look, the
+     * looks given by number, the names, each at the elements it is now --
+     * and, where the Map* properties say so, from the looks of the elements
+     * these were made from. Kept in ElementAppearance. No recompute, and no
+     * change to undo.
+     *
+     * @param sourceDoc: where the objects the shape was made from are, if
+     *                   not in this object's document
+     * @param forceMap: take the looks of the sources now though the object
+     *                  names none: a copy of another object's shape, made
+     *                  once. What is taken is then stated, by number, as an
+     *                  import's looks are, since nothing will make it again.
+     */
+    void updateAppearance(App::Document *sourceDoc = nullptr, bool forceMap = false);
+    bool getDrawnAppearance(int kind, App::AppearanceList &list) const override;
+    void onSourceAppearanceChanged() override;
+    /** Whether the shape is made from other objects
+     *
+     * Only then are the looks of the elements it was made from asked for
+     * (unless ForceMapColors). The objects this one links to, by default.
+     */
+    virtual bool hasBaseFeature() const;
+
+    /** The own look taking the material card's while it follows it
+     *
+     * docs/MaterialStorage.md sec 15.3. Nothing where the card says nothing
+     * of a look, or where a look was chosen since.
+     */
+    void applyMaterialAppearance();
+    /// Whether there is a card's look to go back to from a chosen one
+    bool canResetAppearanceToMaterial() const;
+    /// The card's look again, and following it from now on
+    bool resetAppearanceToMaterial();
+
+    /** What a link in the way lays over an element of what it shows
+     *
+     * A face made from a face seen through a link takes the look the link
+     * gives it. Until a link holds that itself (docs/ShapeAppearanceDesign.md
+     * sec 14.6.9 step C) it is its view provider's, and this is how the
+     * Gui answers for it; with no Gui nothing is laid over.
+     *
+     * @param mapped: the element, as the object the link shows names it
+     * @param obj: the object the element's history leads to; changed to
+     *             what the link shows of it
+     * @param shown: set where the link draws through a view provider of
+     *               its own: the looks are then that one's
+     *               (ShapeAppearance, LineColorArray, PointColorArray)
+     * @param color: the colour laid over, if any is
+     * @return Whether \a color was given
+     */
+    using LinkLookFunc = bool (*)(const Data::MappedName &mapped, App::DocumentObject *&obj,
+                                  const App::PropertyContainer *&shown, App::Color &color);
+    static void setLinkLookFunc(LinkLookFunc func);
+    //@}
 
     PyObject* getPyObject() override;
 
@@ -271,6 +350,8 @@ protected:
     void onChanged(const App::Property* prop) override;
     void unsetupObject() override;
     void onDocumentRestored() override;
+    /// The change of a property that what is drawn is made of
+    void onAppearanceChanged(const App::Property* prop);
 
     // Return true if need to apply the shape placement to the Placement property
     virtual bool shouldApplyPlacement();
@@ -330,6 +411,8 @@ private:
     /// The retained generations, newest first (of every registered property)
     std::vector<ShapeVersion> _shapeVersions;
     std::vector<std::pair<std::string, PropertyPartShape*>> _elementCachePrefixMap;
+    /// Inside updateAppearance(): what it writes is no reason to run it
+    bool _updatingAppearance {false};
 };
 
 class FilletBase : public Part::Feature

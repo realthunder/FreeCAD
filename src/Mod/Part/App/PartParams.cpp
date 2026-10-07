@@ -70,6 +70,10 @@ public:
     unsigned long LoftMaxDegree;
     bool ImmutableShapeValues;
     long WarnUnnamedInput;
+    bool MapFaceColor;
+    bool MapLineColor;
+    bool MapPointColor;
+    bool MapTransparency;
     double MinimumDeviation;
     double MeshDeviation;
     double MeshAngularDeflection;
@@ -126,6 +130,14 @@ public:
         funcs["ImmutableShapeValues"] = &PartParamsP::updateImmutableShapeValues;
         WarnUnnamedInput = this->handle->GetInt("WarnUnnamedInput", 0);
         funcs["WarnUnnamedInput"] = &PartParamsP::updateWarnUnnamedInput;
+        MapFaceColor = this->handle->GetBool("MapFaceColor", true);
+        funcs["MapFaceColor"] = &PartParamsP::updateMapFaceColor;
+        MapLineColor = this->handle->GetBool("MapLineColor", false);
+        funcs["MapLineColor"] = &PartParamsP::updateMapLineColor;
+        MapPointColor = this->handle->GetBool("MapPointColor", false);
+        funcs["MapPointColor"] = &PartParamsP::updateMapPointColor;
+        MapTransparency = this->handle->GetBool("MapTransparency", false);
+        funcs["MapTransparency"] = &PartParamsP::updateMapTransparency;
         MinimumDeviation = this->handle->GetFloat("MinimumDeviation", 0.05);
         funcs["MinimumDeviation"] = &PartParamsP::updateMinimumDeviation;
         MeshDeviation = this->handle->GetFloat("MeshDeviation", 0.2);
@@ -243,6 +255,22 @@ public:
         self->WarnUnnamedInput = self->handle->GetInt("WarnUnnamedInput", 0);
     }
     // Auto generated code (Tools/params_utils.py:314)
+    static void updateMapFaceColor(PartParamsP *self) {
+        self->MapFaceColor = self->handle->GetBool("MapFaceColor", true);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateMapLineColor(PartParamsP *self) {
+        self->MapLineColor = self->handle->GetBool("MapLineColor", false);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateMapPointColor(PartParamsP *self) {
+        self->MapPointColor = self->handle->GetBool("MapPointColor", false);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateMapTransparency(PartParamsP *self) {
+        self->MapTransparency = self->handle->GetBool("MapTransparency", false);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
     static void updateMinimumDeviation(PartParamsP *self) {
         self->MinimumDeviation = self->handle->GetFloat("MinimumDeviation", 0.05);
     }
@@ -342,6 +370,14 @@ static const App::ParamRegistry::Registrar _PartParamsRegistrar({
 "survive a recompute. 0 off, 1 report each operation once per document\n"
 "recompute, 2 report every occurrence. Raising the Part module's log\n"
 "level to LOG reports every occurrence too, without this preference."),
+    App::ParamInfo("Part", "PartParams", "User parameter:BaseApp/Preferences/Mod/Part", "MapFaceColor", "MapFaceColor", App::ParamInfo::Bool, true)
+        .setTitle("Map Face Color"),
+    App::ParamInfo("Part", "PartParams", "User parameter:BaseApp/Preferences/Mod/Part", "MapLineColor", "MapLineColor", App::ParamInfo::Bool, false)
+        .setTitle("Map Line Color"),
+    App::ParamInfo("Part", "PartParams", "User parameter:BaseApp/Preferences/Mod/Part", "MapPointColor", "MapPointColor", App::ParamInfo::Bool, false)
+        .setTitle("Map Point Color"),
+    App::ParamInfo("Part", "PartParams", "User parameter:BaseApp/Preferences/Mod/Part", "MapTransparency", "MapTransparency", App::ParamInfo::Bool, false)
+        .setTitle("Map Transparency"),
     App::ParamInfo("Part", "PartParams", "User parameter:BaseApp/Preferences/Mod/Part", "MinimumDeviation", "MinimumDeviation", App::ParamInfo::Float, 0.05)
         .setTitle("Minimum Deviation"),
     App::ParamInfo("Part", "PartParams", "User parameter:BaseApp/Preferences/Mod/Part", "MeshDeviation", "MeshDeviation", App::ParamInfo::Float, 0.2)
@@ -1002,6 +1038,114 @@ void PartParams::setWarnUnnamedInput(const long &v) {
 // Auto generated code (Tools/params_utils.py:431)
 void PartParams::removeWarnUnnamedInput() {
     instance()->handle->RemoveInt("WarnUnnamedInput");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *PartParams::docMapFaceColor() {
+    return "";
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const bool & PartParams::getMapFaceColor() {
+    return instance()->MapFaceColor;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const bool & PartParams::defaultMapFaceColor() {
+    const static bool def = true;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void PartParams::setMapFaceColor(const bool &v) {
+    instance()->handle->SetBool("MapFaceColor",v);
+    instance()->MapFaceColor = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void PartParams::removeMapFaceColor() {
+    instance()->handle->RemoveBool("MapFaceColor");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *PartParams::docMapLineColor() {
+    return "";
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const bool & PartParams::getMapLineColor() {
+    return instance()->MapLineColor;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const bool & PartParams::defaultMapLineColor() {
+    const static bool def = false;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void PartParams::setMapLineColor(const bool &v) {
+    instance()->handle->SetBool("MapLineColor",v);
+    instance()->MapLineColor = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void PartParams::removeMapLineColor() {
+    instance()->handle->RemoveBool("MapLineColor");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *PartParams::docMapPointColor() {
+    return "";
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const bool & PartParams::getMapPointColor() {
+    return instance()->MapPointColor;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const bool & PartParams::defaultMapPointColor() {
+    const static bool def = false;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void PartParams::setMapPointColor(const bool &v) {
+    instance()->handle->SetBool("MapPointColor",v);
+    instance()->MapPointColor = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void PartParams::removeMapPointColor() {
+    instance()->handle->RemoveBool("MapPointColor");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *PartParams::docMapTransparency() {
+    return "";
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const bool & PartParams::getMapTransparency() {
+    return instance()->MapTransparency;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const bool & PartParams::defaultMapTransparency() {
+    const static bool def = false;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void PartParams::setMapTransparency(const bool &v) {
+    instance()->handle->SetBool("MapTransparency",v);
+    instance()->MapTransparency = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void PartParams::removeMapTransparency() {
+    instance()->handle->RemoveBool("MapTransparency");
 }
 
 // Auto generated code (Tools/params_utils.py:397)

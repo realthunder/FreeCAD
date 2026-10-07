@@ -3836,6 +3836,35 @@ static bool getLinkColor(const Data::MappedName &mapped, App::DocumentObject *&o
     return colorFound;
 }
 
+namespace {
+
+/** What a link lays over an element of what it shows, to the object
+ *
+ * The looks of an object's elements are made by the object
+ * (Part::Feature::updateAppearance()), which knows no view provider, and
+ * what a link lays over what it shows is its view provider's still. This
+ * answers for it until a link holds that itself, and goes then
+ * (docs/ShapeAppearanceDesign.md sec 14.6.9 step C).
+ */
+bool linkLookForObject(const Data::MappedName &mapped, App::DocumentObject *&obj,
+                       const App::PropertyContainer *&shown, App::Color &color)
+{
+    if(!Gui::Application::Instance)
+        return false;
+    ViewProviderPartExt *svp = nullptr;
+    const bool found = getLinkColor(mapped, obj, svp, color);
+    if(svp)
+        shown = svp;
+    return found;
+}
+
+const struct LinkLookForObject
+{
+    LinkLookForObject() { Part::Feature::setLinkLookFunc(linkLookForObject); }
+} linkLookForObjectGiven;
+
+}  // namespace
+
 struct ElementCache
 {
     Part::TopoShape shape;

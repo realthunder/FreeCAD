@@ -332,6 +332,46 @@ public:
 
     // Auto generated code (Tools/params_utils.py:139)
     //@{
+    /// Accessor for parameter MapFaceColor
+    static const bool & getMapFaceColor();
+    static const bool & defaultMapFaceColor();
+    static void removeMapFaceColor();
+    static void setMapFaceColor(const bool &v);
+    static const char *docMapFaceColor();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter MapLineColor
+    static const bool & getMapLineColor();
+    static const bool & defaultMapLineColor();
+    static void removeMapLineColor();
+    static void setMapLineColor(const bool &v);
+    static const char *docMapLineColor();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter MapPointColor
+    static const bool & getMapPointColor();
+    static const bool & defaultMapPointColor();
+    static void removeMapPointColor();
+    static void setMapPointColor(const bool &v);
+    static const char *docMapPointColor();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter MapTransparency
+    static const bool & getMapTransparency();
+    static const bool & defaultMapTransparency();
+    static void removeMapTransparency();
+    static void setMapTransparency(const bool &v);
+    static const char *docMapTransparency();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
     /// Accessor for parameter MinimumDeviation
     static const double & getMinimumDeviation();
     static const double & defaultMinimumDeviation();

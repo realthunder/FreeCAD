@@ -192,6 +192,15 @@ public:
     bool hasBase(Kind kind) const;
     const MaterialAppearance &getBase(Kind kind) const;
     void setBase(Kind kind, const MaterialAppearance &look);
+    /** Whether the kind's own look is the object's material card's
+     *
+     * The flag of the own look's list (docs/MaterialStorage.md sec 15.3).
+     * True until a look is given: a look nobody chose is the card's to
+     * give. setBase() ends it, as any look somebody chose does.
+     */
+    bool isFollowingMaterial(Kind kind) const;
+    /// The card's look as the kind's own, and following it from now on
+    void followMaterial(Kind kind, const MaterialAppearance &card);
     //@}
 
     /** @name By number
@@ -361,6 +370,8 @@ private:
     std::vector<std::string> &editSubs();
     void flushSubs();
     void eraseNamed(int pos);
+    /// \a list as the kind's own look, the numbered entries put on it
+    void assignBase(Kind kind, const AppearanceList &list);
     /// The numbered list of a kind to write to, one entry an element
     AppearanceList &editNumbered(Kind kind, int index);
     /// Put another look under the numbered entries: what an element does

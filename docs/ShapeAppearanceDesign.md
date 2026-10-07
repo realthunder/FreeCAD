@@ -3406,8 +3406,10 @@ follow still.
 >
 > **14.4 step 1 is built. 14.6 is ruled after it, the same day, and
 > replaces the rest of 14.4: everything that makes a look is the object's.
-> 14.6.9 is the build order from here.** What is filled in beyond the
-> rulings is marked *mine*, and is the user's to overrule.
+> 14.6.9 is the build order from here, and its step A is built (14.6.10):
+> the object makes the looks and nothing reads them yet. Step B is next.**
+> What is filled in beyond the rulings is marked *mine*, and is the user's
+> to overrule.
 
 ### 14.1 What was measured
 
@@ -3890,7 +3892,8 @@ file's colours are there in `FreeCADCmd`. An import's faces are numbered
 
 Each with the gates, shape freezing on and off.
 
-**A. The object makes the looks, and nothing reads them.** On
+**A. The object makes the looks, and nothing reads them** (*built*,
+14.6.10). On
 `Part::Feature`: `ElementAppearance`, the five flags, the group. The
 making of 14.6.2 -- names, what is handed on from sources that have a
 store, the card -- and the walk in `App::Document`. `App::GeoFeature`'s
@@ -3926,3 +3929,122 @@ and written in `FreeCADCmd` as its check.
 **E. Files below schema 5 against upstream and an older build**, each
 opened in the other; and the costs of 14.1 measured again on what was
 built.
+
+#### 14.6.10 Built
+
+**Step A, the object makes the looks (2026-10-07).** `Part::Feature` has
+`ElementAppearance` and `MapFaceColor`, `MapLineColor`, `MapPointColor`,
+`MapTransparency`, `ForceMapColors`, in the group `Appearances`. None of
+them is a reason to make the shape again (`Prop_Output`). The four `Map*`
+defaults are the preferences the view provider's are, read through Part's
+own `PartParams` now as well as PartGui's.
+
+*The making.* `Part::Feature::updateAppearance()`
+(`src/Mod/Part/App/PartFeatureAppearance.cpp`) is
+`ViewProviderPartExt::updateColors()` and what is below it -- the names to
+the elements they are now, the walk back through the shape's history, the
+whole material of a source face that has one -- reading the objects the
+shape was made from and never their view providers: a source is asked
+through `App::GeoFeature::getDrawnAppearance()`, which an object that keeps
+no looks answers with no, and the walk goes on to what that was made from.
+It runs when the shape, the store, a flag or the card changes
+(`Feature::onChanged()`), and when a source is drawn differently
+(`onSourceAppearanceChanged()`). Not when a document is read.
+
+*The walk.* `App::AppearanceUpdater` (`src/App/AppearanceUpdater.{h,cpp}`),
+`Gui::ColorUpdater` among objects: an object drawn differently gives itself
+to it, and when the change that set it off is done every object that
+depends on one of those is told, once, in the order of their dependencies.
+*In files of its own and not in `App::Document`* (*mine*): it needs nothing
+of a document's, and `Document.h` is every file's to compile again.
+
+*The card.* `Feature::applyMaterialAppearance()`,
+`canResetAppearanceToMaterial()` and `resetAppearanceToMaterial()`, on the
+store's `isFollowingMaterial()` / `followMaterial()`: the own look of the
+faces follows the card until a look is given, and a look nobody gave is the
+card's to give. Not while an undo is putting values back: it puts back the
+card and the look, each as it was.
+
+*A link in the way.* `Part::Feature::setLinkLookFunc()`: PartGui gives the
+one function 14.6.9 C speaks of, its own `getLinkColor()`. Where a link
+draws through a view provider of its own the looks are read from that one's
+properties by their names. Both go with step C.
+
+*What is not the view provider's way, and is meant* (*mine*):
+
+- **A look given by number is kept where nothing is handed on.** The view
+  provider, taking colours from the sources, writes every face no name
+  paints: the colours given by number are gone at the next recompute
+  (14.1, seen and not chased). The object lays what is handed on over the
+  numbered list and leaves the rest of it.
+- **A copy made once states what it takes.** `Part.show()` asks for the
+  looks of the sources once though the copy links to nothing
+  (`updateAppearance(doc, true)`); nothing would make them again, so they
+  are written to the numbered list, as an import's are.
+- **An edge and a vertex take a colour and no transparency.** The view
+  provider put the face transparency of the source, or the object's own,
+  into the alpha of a line colour, which nothing draws, and so held a
+  colour for every edge of a transparent object.
+- **Nothing is kept where every element is the object's own.** A drawn list
+  that says no more than the kind's own look is not held, however many
+  elements it was made for (`setDrawn()`), so an object nobody coloured
+  holds nothing after its shape is made.
+- **"Made from other objects" is asked of the object**
+  (`Feature::hasBaseFeature()`): the objects it links to, hidden links and
+  expressions left out, and for a PartDesign feature the one before it in
+  the body. The view provider asked whether it claims children in the tree.
+
+*Found building it.* A property of a feature that names the feature's own
+elements -- this one, and `ColoredElements` before it -- is destroyed after
+`~Feature()` has run and before `~GeoFeature()` drops the references into
+the feature, and told a feature half destroyed that its references were
+released: the feature was kept for the next recompute to ask, by a pointer
+to nothing, and that recompute crashed. `~Feature()` drops them first.
+
+*Open, for step B* (*mine to raise*):
+
+- **What an object nobody gave a look is drawn as, and hands on.** The
+  store answers the default material, which is near black
+  (0.14, 0.141, 0.145); a view provider gives a new object the preference's
+  colour, or a random one. Today such a source hands on that default as any
+  colour is handed on, which is what the view provider's default did. When
+  the view provider draws from the store the choice is between a look
+  stated for every object when it is made, and a look nobody gave saying
+  nothing to what is made from it.
+- The five flags show in the object's property editor and move nothing
+  that is seen until then.
+- `updateData()` also made the colours again for any property with
+  `Touched` in its name; that was not moved.
+
+*The probe* 14.6.9 asked for is `scripts/appearance-parity-check.py`, a GUI
+run: after each change made as it is made today, through the view provider,
+the store is given what the view provider holds -- its own looks, the names
+with theirs, the elements coloured by number where the view provider does
+not make them from the sources, the flags -- and the object's drawn faces,
+edges and vertices are held against `ShapeAppearance`, `LineColorArray` and
+`PointColorArray`, entry by entry, every field of a face's material. 64
+checks: a box painted by name, given a material, a gloss, a transparency;
+faces and an edge by number; the paint check's cut, drilled through and
+made again with nothing stated again; a source stated alone and what was
+made from it following with no recompute; the flags; a whole material
+handed on; saved and read; `Part.show()`; a fuse of two painted boxes, a
+fillet of it and a cut of that; an undo; a link in the way, with and
+without a colour of its own; a body with a pad and a pocket; a material
+card.
+
+**They are drawn alike everywhere but one, and there the object is right.**
+A pad's top face painted, and a pocket cut through it: the pocket's view
+provider, and the body's after it, hold the paint on face 6, a side, until
+something makes them take their colours again; the object has it on face 5,
+the top, which is where the view provider puts it once it does. The probe
+reports that as a note and not a failure. It goes with `updateColors()`.
+
+Tests: Part's gtest `PartAppearanceMadeTest`, 5 -- nothing kept of an
+object nobody coloured; a face in the colour of the face it was made from
+with no recompute, a name over that and still its face after the shape is
+made again, and the flag off and on; a material handed on whole and a
+colour alone; transparency only where asked for; a copy made once. The
+three cases of `PartElementAppearanceTest` turn `MapFaceColor` off, being
+of what is stated. Python `parttests.ElementAppearanceTest`, 5, in
+`FreeCADCmd`: the same without a view provider anywhere, what is drawn
+read back from a file, and the card.

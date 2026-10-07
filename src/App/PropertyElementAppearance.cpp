@@ -532,12 +532,41 @@ void PropertyElementAppearance::setBase(Kind kind, const MaterialAppearance &loo
     if (list.isSameData(listAt(SlotBase + kind))) {
         return;
     }
+    assignBase(kind, list);
+}
+
+void PropertyElementAppearance::assignBase(Kind kind, const AppearanceList &list)
+{
     const MaterialAppearance before = getBase(kind);
     Edit edit(*this);
     assign(SlotBase + kind, list);
     if (_held[SlotNumbered + kind]) {
         rebaseNumbered(kind, before, getBase(kind));
     }
+}
+
+bool PropertyElementAppearance::isFollowingMaterial(Kind kind) const
+{
+    const AppearanceList &list = listAt(SlotBase + kind);
+    return list.getSize() == 0 || list.isFollowingMaterial();
+}
+
+void PropertyElementAppearance::followMaterial(Kind kind, const MaterialAppearance &card)
+{
+    AppearanceList list = listAt(SlotBase + kind);
+    if (list.getSize() == 0) {
+        list.setValue(card);
+        list.setFollowMaterial(true);
+    }
+    else {
+        list.followMaterial(card);
+    }
+    // The flag with the look: a look that was chosen, given back to the
+    // card, is the same look and a change all the same
+    if (list.isSame(listAt(SlotBase + kind))) {
+        return;
+    }
+    assignBase(kind, list);
 }
 
 //**************************************************************************
@@ -822,7 +851,11 @@ void PropertyElementAppearance::setDrawn(Kind kind, const AppearanceList &list)
     const int slot = SlotDrawn + kind;
     const AppearanceList &numbered = getNumbered(kind);
     const AppearanceList &stated = numbered.getSize() > 0 ? numbered : listAt(SlotBase + kind);
-    if (list.getSize() == 0 || list.isSameData(stated) || list.isSame(stated)) {
+    // Every element the kind's own look and no more is what the kind's own
+    // look says already, however many of them the list was made for
+    const bool plain = numbered.getSize() == 0 && !list.hasOverrides()
+        && differingFields(list.getBase(), getBase(kind)) == OwnNone;
+    if (list.getSize() == 0 || plain || list.isSameData(stated) || list.isSame(stated)) {
         // What is stated is what is drawn, and is not kept twice
         if (!_held[slot]) {
             return;

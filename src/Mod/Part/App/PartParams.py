@@ -105,6 +105,13 @@ Params = [
         "survive a recompute. 0 off, 1 report each operation once per document\n"
         "recompute, 2 report every occurrence. Raising the Part module's log\n"
         "level to LOG reports every occurrence too, without this preference."),
+    # What a face takes from the face it was made from is made by the object
+    # (docs/ShapeAppearanceDesign.md sec 14.6), which reads these where it is
+    # made; the view provider reads the same ones.
+    _PartGuiParams['MapFaceColor'],
+    _PartGuiParams['MapLineColor'],
+    _PartGuiParams['MapPointColor'],
+    _PartGuiParams['MapTransparency'],
     _MinimumDeviation,
     _MeshDeviation,
     _MeshAngularDeflection,

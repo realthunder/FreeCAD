@@ -36,6 +36,7 @@ namespace App
 {
 
 class PropertyXLinkSub;
+class AppearanceList;
 
 /** Base class of all geometric document objects.
  */
@@ -238,6 +239,37 @@ public:
      * App::MaterialRenderProperty). Empty unless the card states one.
      */
     virtual App::MaterialRenderProperties getMaterialRenderProperties() const;
+
+    /** @name The look of the object's elements, kept by the object
+     *
+     * docs/ShapeAppearanceDesign.md sec 14.6. An object that keeps what its
+     * faces, edges and vertices look like answers here, so that a face made
+     * from one of its faces can take that face's look without knowing what
+     * kind of object it came from.
+     */
+    //@{
+    /** The elements of a kind as they are drawn
+     *
+     * @param kind: an App::PropertyElementAppearance::Kind
+     * @param list: a look for each element of the kind, or one alone where
+     *              every element is the object's own
+     *
+     * @return False where the object keeps no looks. What was made from it
+     * is then asked of what it was made from itself.
+     */
+    virtual bool getDrawnAppearance(int kind, App::AppearanceList &list) const
+    {
+        (void)kind;
+        (void)list;
+        return false;
+    }
+    /** An object this one depends on is drawn differently
+     *
+     * Told by App::AppearanceUpdater, and no recompute: what this object
+     * takes from the looks of its sources is to be made again.
+     */
+    virtual void onSourceAppearanceChanged() {}
+    //@}
 
 protected:
     /** The geometry an element name belongs to, with 'element' moved past

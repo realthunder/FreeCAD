@@ -66,6 +66,7 @@ typedef boost::iterator_range<const char*> CharRange;
 #include <boost/algorithm/string/predicate.hpp>
 
 #include <App/Application.h>
+#include <App/AppearanceUpdater.h>
 #include <App/Document.h>
 #include <App/FeaturePythonPyImp.h>
 #include <App/GeoFeatureGroupExtension.h>
@@ -236,10 +237,36 @@ Feature::Feature()
     FixShape.setEnums(FixShapeEnum);
     ADD_PROPERTY_TYPE(ColoredElements, (0), "",
             (App::PropertyType)(App::Prop_Hidden|App::Prop_ReadOnly|App::Prop_Output),"");
+
+    // What the object looks like, made here and drawn by a view provider
+    // (docs/ShapeAppearanceDesign.md sec 14.6). None of it is a reason to
+    // make the shape again.
+    static const char *appearances = "Appearances";
+    ADD_PROPERTY_TYPE(ElementAppearance, (0), appearances,
+            (App::PropertyType)(App::Prop_Hidden|App::Prop_Output),
+            "The looks of the object and of its faces, edges and vertices");
+    ADD_PROPERTY_TYPE(MapFaceColor, (PartParams::getMapFaceColor()), appearances, App::Prop_Output,
+            "A face takes the look of the face it was made from");
+    ADD_PROPERTY_TYPE(MapLineColor, (PartParams::getMapLineColor()), appearances, App::Prop_Output,
+            "An edge takes the colour of the edge it was made from");
+    ADD_PROPERTY_TYPE(MapPointColor, (PartParams::getMapPointColor()), appearances, App::Prop_Output,
+            "A vertex takes the colour of the vertex it was made from");
+    ADD_PROPERTY_TYPE(MapTransparency, (PartParams::getMapTransparency()), appearances, App::Prop_Output,
+            "A face takes the transparency of the face it was made from with its colour");
+    ADD_PROPERTY_TYPE(ForceMapColors, (false), appearances, App::Prop_Output,
+            "Take the looks of the elements the shape was made from\n"
+            "though the object links to nothing");
 }
 
 Feature::~Feature()
 {
+    // The references into this feature are gone with it, and its own are
+    // among them: a property of this feature that names its elements
+    // (ElementAppearance, ColoredElements) is destroyed after this body, and
+    // would tell a feature half destroyed that its references were released
+    // (onElementReferenceReleased()) -- which keeps the feature for the next
+    // recompute to ask, by a pointer to nothing
+    App::PropertyLinkBase::clearElementReferences(this);
     if (auto doc = getDocument()) {
         auto it = _pendingRelease.find(doc);
         if (it != _pendingRelease.end()) {
@@ -1726,6 +1753,10 @@ void Feature::reconcileShapeVersions(bool materialize)
 
 void Feature::onChanged(const App::Property* prop)
 {
+    // What was made from this object is told when it is drawn differently,
+    // once, when the change that set it off is done
+    App::AppearanceUpdater appearances;
+
     // if the placement has changed apply the change to the point data as well
     if (prop == &this->Placement
             || (getDocument()
@@ -1772,6 +1803,8 @@ void Feature::onChanged(const App::Property* prop)
             && !getDocument()->testStatus(App::Document::Restoring)
             && !getDocument()->isPerformingTransaction())
         reconcileShapeVersions(/*materialize*/true);
+
+    onAppearanceChanged(prop);
 }
 
 bool Feature::shouldApplyPlacement()
