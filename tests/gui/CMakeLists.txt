@@ -1395,6 +1395,18 @@ set_property(TEST GuiTaskPanelKeptSheetView_tests_run APPEND PROPERTY
 fc_add_gui_test(GuiSheetViewReopen_tests_run sheet-view-reopen.py
                 --timeout 300)
 
+# A document closed while its load is still building visuals
+# (docs/DocumentLoad.md sec 18.8): the drain's progress bar runs events
+# from inside a slice, and a document closed by one of them -- a script's
+# timer -- had the slice's own queue erased under it: a segmentation fault
+# in the slice, or the GUI thread walking a dead map node for good. Nine
+# closes at different moments of nine loads in one process, one of them
+# with the file reopened in the same breath, then a load left to finish.
+# Scored against the tree before: three runs of three dead or hung before
+# the first check.
+fc_add_gui_test(GuiCloseDuringVisualDrain_tests_run close-during-visual-drain.py
+                --timeout 240)
+
 # Making a view the active window makes its cell the view area's active
 # cell and brings the keyboard with it (docs/SplitViews.md sec 21): right
 # after "create new view" the first view can be clicked back into; with

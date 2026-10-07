@@ -863,6 +863,12 @@ struct DeferredVisualQueue {
     std::size_t popped = 0;
     std::size_t slices = 0;
     std::chrono::duration<double> spent {0};
+    /// Counts the times this queue's document was closed while a slice
+    /// was on the stack. The slice reads it before it lets events run
+    /// and again after: a different number says that everything it holds
+    /// of that document -- the object it popped, the queue's counts -- is
+    /// of a document that is gone (see the delete observer).
+    unsigned closedUnder = 0;
 };
 
 /// One queue per document, keyed by name (the queue outlives objects, and
@@ -926,6 +932,30 @@ DeferredVisuals &deferredVisuals()
     static bool observing = []() {
         App::GetApplication().signalDeleteDocument.connect(
                 [](const App::Document &doc) {
+                    if (visuals.running) {
+                        // Closed from INSIDE a slice: the slice says how
+                        // it is going through its progress sequence, the
+                        // progress bar runs events, and one of them -- a
+                        // script's timer, a macro -- closed the document.
+                        // The slice is on the stack with an iterator and
+                        // a reference into this map and in the middle of
+                        // a call into the sequence, so neither may go
+                        // from under it: erasing here was a segmentation
+                        // fault in the slice, or the GUI thread walking a
+                        // dead map node for good (docs/DocumentLoad.md
+                        // sec 18.8). The queue is emptied instead, so
+                        // that no handle of the closed document is left
+                        // to resolve against one reopened under its name,
+                        // and marked; the slice drops what it holds, and
+                        // ends the sequence and the state itself.
+                        auto it = visuals.docs.find(doc.getName());
+                        if (it != visuals.docs.end()) {
+                            const unsigned closedUnder = it->second.closedUnder + 1;
+                            it->second = DeferredVisualQueue();
+                            it->second.closedUnder = closedUnder;
+                        }
+                        return;
+                    }
                     visuals.docs.erase(doc.getName());
                     // The close that empties the drain also ends its
                     // progress sequence, or the bar reports a stuck
@@ -5955,6 +5985,9 @@ void ViewProviderPartExt::runDeferredVisualSlice()
         auto charge = [&queue, &elapsed, &mark]() {
             queue.spent += elapsed() - mark;
         };
+        // Whether this document is closed under this slice, by an event
+        // the progress bar runs (see the delete observer)
+        const unsigned closedUnder = queue.closedUnder;
         // This document's share, never past the slice's own end.
         const double limit = std::min(budget, mark.count() + share);
         const double left = std::max(0.001, limit - mark.count());
@@ -5981,11 +6014,20 @@ void ViewProviderPartExt::runDeferredVisualSlice()
 
         ++queue.slices;
         while (!queue.pending.empty()) {
-            auto obj = queue.pending.front().getObject();
+            const App::DocumentObjectT objT = queue.pending.front();
             queue.pending.pop_front();
             ++queue.popped;
             if (visuals.seq)
                 visuals.seq->next();
+            // The progress bar has just run events. The document may be
+            // closed, and one of its name opened in its place: the queue
+            // was emptied and started over, and what was popped above is
+            // an object of a document that is gone.
+            if (queue.closedUnder != closedUnder)
+                break;
+            // Resolved only now, for the same reason: by name, after the
+            // events, never a pointer taken before them.
+            auto obj = objT.getObject();
             auto vp = obj ? Base::freecad_dynamic_cast<ViewProviderPartExt>(
                                 Gui::Application::Instance->getViewProvider(obj))
                           : nullptr;
@@ -6015,6 +6057,20 @@ void ViewProviderPartExt::runDeferredVisualSlice()
             }
             if (elapsed().count() >= limit)
                 break;
+        }
+        if (queue.closedUnder != closedUnder) {
+            // Closed under this slice. The queue is a new one: whatever
+            // is on it was parked by a document opened since under the
+            // same name, and its turn is the next slice's; nothing on it,
+            // and the entry goes as a closed document's does.
+            if (queue.pending.empty()) {
+                it = visuals.docs.erase(it);
+            }
+            else {
+                more = true;
+                ++it;
+            }
+            continue;
         }
         charge();
 
