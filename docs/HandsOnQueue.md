@@ -34,7 +34,7 @@ report views, the reporter's own files -- is kept beside the dev tree under
 | 10 | 2026-10-06 | a 3D view is slow to take a new size | FIXED with entry 9 |
 | 11 | 2026-10-06 | dark theme: wrong colors (checkbox border, title bar buttons), audit asked | FIXED: the two named and four the audit found |
 | 12 | 2026-10-06 | TechDraw: dimensions and cosmetics are covered by the face fill | FIXED (they were transparent, not covered) |
-| 13 | 2026-10-06 | report view: grouped messages with an expand icon in the margin, no underscore (change request) | OPEN |
+| 13 | 2026-10-06 | report view: grouped messages with an expand icon in the margin, no underscore (change request) | FIXED |
 | 14 | 2026-10-06 | a Draft with no neutral plane given turns the other way after a recompute (from entry 8) | STAGED |
 | 15 | 2026-10-06 | a Pad "up to first" gives a third result (from entry 8) | OPEN |
 | 16 | 2026-10-06 | faces of a "Mutated" copy-on-change binder are renamed by every recompute in a new session (from entry 8; the old build too) | STAGED |
@@ -669,7 +669,7 @@ colour, which is opaque in the reporter's configuration; the centre lines of
 `Page004` came back with the fix. If a cosmetic line is still missing after
 the next stage, that is a different cause.
 
-## 13. Report view: grouped messages (a change request) -- OPEN
+## 13. Report view: grouped messages (a change request) -- FIXED
 
 **Asked (2026-10-06 11:58):** "do not use underscore in console grouped
 message, intead, put a clickable expansion icon before the message (note,
@@ -679,6 +679,32 @@ icon in front of it, in the margin area)."
 Wanted: no underscore on a grouped message; a clickable expand icon ahead of
 it; the message text itself stays aligned with ordinary messages, the icon in
 the margin.
+
+**Done.** A line that stands in for repeats (`... (x5)`) is no longer
+underlined. Its mark is a triangle in the view's left margin, pointing at
+the line while it is closed and down while its messages are shown, drawn
+in the text's colour so that it follows the theme (entry 11).
+- *The margin* is the document's own, widened to the height of a row of
+  text. It is the one indent every line gets alike, so a line with a mark
+  and a line without start in the same column, and it survives the view
+  being cleared, which a format on the blocks does not. The view has the
+  same margin at its top, bottom and right for it, about ten pixels more
+  than before.
+- *The click* is the mark's. A click anywhere on the line used to unfold
+  it, which is why the line said so with an underline -- and why its text
+  could not be clicked into to start a selection. The line's text behaves
+  as any other line's now; the pointing hand shows over the mark only.
+- The mark is painted by the view over its own text
+  (`ReportOutput::paintEvent`), not by a widget beside it: a strip of its
+  own would have had to guess the view's background under a style sheet.
+
+`tests/gui/report-fold-mark.py`: six prints of one line and an ordinary
+line -- one line with a count, not underlined, its text in the ordinary
+line's column, a mark in the margin at its height and none at the other's,
+a click on the text unfolds nothing, a click on the mark unfolds and a
+second folds again. 9 PASS; on the copy staged 17:44, 4 FAIL (underlined,
+nothing in the margin folded or unfolded, a click on the text unfolds).
+Pictures: `..\dl\handson\2026-10-07\entry13-*.png`.
 
 ## 14. A Draft with no neutral plane given turns the other way -- STAGED
 
