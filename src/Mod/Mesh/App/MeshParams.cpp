@@ -72,9 +72,9 @@ public:
         subHandles[1] = handle->GetGroup("Evaluation");
         subHandles[1]->Attach(this);
         AsymptoteWidth = this->subHandles[0]->GetASCII("Width", "500");
-        funcs["AsymptoteWidth"] = &MeshParamsP::updateAsymptoteWidth;
+        funcs["Width"] = &MeshParamsP::updateAsymptoteWidth;
         AsymptoteHeight = this->subHandles[0]->GetASCII("Height", "500");
-        funcs["AsymptoteHeight"] = &MeshParamsP::updateAsymptoteHeight;
+        funcs["Height"] = &MeshParamsP::updateAsymptoteHeight;
         DefaultShapeType = this->handle->GetInt("DefaultShapeType", 0);
         funcs["DefaultShapeType"] = &MeshParamsP::updateDefaultShapeType;
         MeshColor = this->handle->GetUnsigned("MeshColor", 0);
@@ -328,7 +328,7 @@ void MeshParams::setAsymptoteWidth(const std::string &v) {
 
 // Auto generated code (Tools/params_utils.py:431)
 void MeshParams::removeAsymptoteWidth() {
-    instance()->subHandles[0]->RemoveASCII("AsymptoteWidth");
+    instance()->subHandles[0]->RemoveASCII("Width");
 }
 
 // Auto generated code (Tools/params_utils.py:397)
@@ -358,7 +358,7 @@ void MeshParams::setAsymptoteHeight(const std::string &v) {
 
 // Auto generated code (Tools/params_utils.py:431)
 void MeshParams::removeAsymptoteHeight() {
-    instance()->subHandles[0]->RemoveASCII("AsymptoteHeight");
+    instance()->subHandles[0]->RemoveASCII("Height");
 }
 
 // Auto generated code (Tools/params_utils.py:397)

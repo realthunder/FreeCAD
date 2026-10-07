@@ -233,7 +233,7 @@ public:
         for param in params:
             cog.out(
                 f"""
-        signalParamChanged("{param.name}");"""
+        signalParamChanged("{param.param_name}");"""
             )
         cog.out(
             f"""
@@ -274,7 +274,7 @@ public:
         cog.out(
             f"""
         {param.name} = {param.getter('this')};
-        funcs["{param.name}"] = &{class_name}P::update{param.name};"""
+        funcs["{param.param_name}"] = &{class_name}P::update{param.name};"""
         )
 
     cog.out(
@@ -430,7 +430,7 @@ void {class_name}::set{param.name}(const {param.C_Type} &v) {{
             f"""
 {trace_comment()}
 void {class_name}::remove{param.name}() {{
-    {param.handle('instance()')}->Remove{param.Type}("{param.name}");
+    {param.handle('instance()')}->Remove{param.Type}("{param.param_name}");
 }}
 """
         )
@@ -863,7 +863,7 @@ class Param:
     def _init_pref_widget(self):
         cog.out(
             f"""
-    {self.widget_name}->setEntryName("{self.name}");"""
+    {self.widget_name}->setEntryName("{self.param_name}");"""
         )
         if self.path.startswith(_ParamPrefix):
             cog.out(
