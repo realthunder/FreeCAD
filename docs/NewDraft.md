@@ -6,7 +6,9 @@ Auto's fallback, with `StopAtBody`; section 10 says what the port changed
 and measured. Step 3 done 2026-10-06: Auto checks the classic draft's
 result and takes the cell draft where it crosses itself or grows past the
 body (section 11, with pictures); #876's cones and the internal edges in
-section 12. The design below came with a Python prototype (section 5)
+section 12. Step 4 done 2026-10-07: tangent chains -- walls and the fillets
+between them drafted as one sheet, fillets turned into cones (section 13).
+The design below came with a Python prototype (section 5)
 that the earlier measurements come from; the open questions settled
 2026-10-05 (section 9).
 
@@ -321,6 +323,8 @@ not a silently skipped face.
 
 ### 4.7 Phase 2: tangent chains and turned cylinders
 
+(Built 2026-10-07: section 13 says how, and what it still refuses.)
+
 The classic draft drafts a fillet tangent to `F` along with it (the chain
 of faces joined by G1 edges), turning a cylinder whose axis is the pull
 direction into a cone and rebuilding a fillet between two drafted walls as
@@ -342,7 +346,7 @@ Each refusal names the face (and the neighbour, where there is one):
 | `AngleTooSteep` | no plane through the hinge line makes the angle with the pull direction |
 | `TurnsOver` | the face would turn by 90 deg or more: its new outward normal points against the old one (an undercut face drafted past the pull direction -- #631's walls at 60 deg turn 108 to 113 deg) |
 | `UnsupportedSurface` | phase 1: the drafted face is not a plane |
-| `TangentNeighbour` | phase 1: a neighbour is tangent to the face |
+| `TangentNeighbour` | phase 1: a neighbour is tangent to the face; since phase 2 (section 13), only a neighbour tangent along part of an edge -- one tangent all along it is drafted with the face |
 | `NoClosure` | the swept region leaks to the box, or out of the wedge: the face does not meet that neighbour |
 | `FaceVanishes` | the drafted face is not in the result (its neighbours meet across it) |
 | `SplitsSolid` | the chosen cells are not one piece across faces: the draft cuts the solid in two (#309's 2 thick plate, its bottom tilted through it) |
@@ -628,7 +632,8 @@ already does (`OCC_VERSION_HEX`).
    (section 5.5): their cost on the sweep, and how many classic results
    they turn over to the cell draft. Decide from that whether Auto runs
    them.
-4. Phase 2 of the algorithm: tangent chains and turned cylinders.
+4. Phase 2 of the algorithm: tangent chains and turned cylinders (done
+   2026-10-07, section 13).
 5. Performance beyond the local fuse, if the sweep shows the need.
 
 ## 9. Decisions (2026-10-05)
@@ -875,7 +880,8 @@ Decided (section 9, item 6): Auto runs both checks after a classic draft
 that succeeds -- the self-intersection check always, the envelope check
 when `StopAtBody` is on -- through `CellDraft::CheckDraft(input, result,
 faces, stopAtBody)`. A flag hands the draft to the cell draft; if the cell
-draft refuses (#876's eight, `TangentNeighbour`), Auto keeps the classic
+draft refuses (#876's eight, `TangentNeighbour`; since section 13 the check
+takes the chain and does not flag them), Auto keeps the classic
 result and warns with both reasons. On the sweep that turns the 25
 flagged classic results the cell draft can build into its bodies, and
 leaves the other 1197 as they were. A document saved with a flagged
@@ -976,3 +982,158 @@ none left; 7 of #334's results in fewer faces at the same volume (182 to
 to merging planar pieces); #474 Fillet002 face 10 about 11 at 60 deg,
 `NotASolid` before, now valid at the classic draft's volume (2104.3660);
 every other case the same result, volume and face count.
+
+## 13. Step 4: tangent chains (2026-10-07)
+
+Section 4.7, built. Phase 1 refused a drafted face with a neighbour tangent
+to it (`TangentNeighbour`); that was 57 of the classic draft's valid results
+on the sweep and 57 of its refusals. Nearly all of them are walls and the
+fillets between them, ruled along the pull direction -- a boss or a pocket
+with rounded corners, #631's S-shaped ramp, #876's plate. The classic draft
+drafts the whole chain: each wall turned, each fillet (a cylinder about the
+pull direction) turned into a cone through its circle in the neutral plane,
+which stays tangent to the walls either side.
+
+### 13.1 The drafted set
+
+The drafted set of section 4.3 grows along tangent edges: from the face, a
+face beside it that is coplanar (as before), or tangent to it all along
+their edge, the same side out, and so on. It is made of **members**, one per
+surface:
+
+- a plane, with the faces coplanar with it, turned about its line with the
+  neutral plane (`findRotation`, as in phase 1);
+- a cylinder or a cone about the pull direction, with the faces on it (a
+  fillet split by slots across it is one member: #962), turned into the cone
+  `Draft_Modification::NewSurface` makes (FreeCAD's copy, `newRevolution()`:
+  the circle in the neutral plane kept, the angle with the pull direction
+  the draft's). It needs the pull direction square to the neutral plane and
+  along the axis, as the classic draft does.
+
+A tangent edge between two members is a **seam**. It must be straight and
+cross the neutral plane; the point where it does stays (the classic draft's
+fixed point of a tangent edge), and the seam turns about it onto the line
+of the new cone through it. That line must lie on both members' new
+surfaces -- the chain stays tangent -- or the draft is refused.
+
+The drafted face itself may be a fillet: drafting it drafts the same chain.
+A face that is in the chain of a face drafted before (the user picked every
+wall of a boss) is not drafted again.
+
+### 13.2 The new surface is a sheet
+
+`P'` of sections 4.2-4.5 becomes a sheet: on each member's new surface a face
+between the new lines of its seams, sewn into one shell along them. Along
+the seams it runs past the box, but stops short of a cone's apex. A plane at
+an open end of the chain runs on across the box, as `P'` does in phase 1. A
+lone cylinder or cone (no seams) turns into the whole cone.
+
+The rest of the algorithm takes the sheet as it took `P'`, but where it used
+the plane:
+
+- a seed's side is the new surface of the member its piece of `F` is on;
+- whether a cell is between the old and the new surface, and on which side
+  of the new one, is judged by the member whose **slab** holds the cell's
+  point: the region between the planes through its seams, square to them
+  (a plane's strip, a fillet's wedge about its axis). Within its slab only a
+  member's own face moves;
+- every member's new face must be in the result, or `FaceVanishes` names it;
+- the pieces of a member's new face are `Modified` of that member's faces.
+
+A single plane (no chain) goes the phase 1 way, unchanged.
+
+### 13.3 What the sweep found
+
+- **A curved neighbour is extended by its own reach.** A B-spline neighbour
+  is extended by the move that sizes the box (section 4.2), which grows with
+  the band; a chain's band is the chain. #876's upper box stands on its
+  plate with B-spline corners over the plate's fillets, and they were
+  extended 18, through the region the plate's next wall sweeps: that wall's
+  new face never came into the result. For a chain, a curved neighbour is
+  extended by how far it must reach to meet the new surface along the edge
+  it shares with the chain, as a planar one is.
+- **A neighbour that meets the set only on the hinge has no extension.**
+  #876's upper walls stand on the plate's walls at the neutral plane, with a
+  crease of 1 deg; extended down past the hinge, they ran inside the wedge
+  the plate's walls sweep, at 1 deg where the walls turn by 5, and closed it
+  off. Where a neighbour meets the set the set does not move, and it bounds
+  nothing.
+- **Two planes tangent along an edge and not coplanar stay neighbours**, as
+  in phase 1 (#334's stored draft output has such pairs, 1e-7 apart).
+
+The phase 1 paths are untouched: for a single plane the new surface, the
+extension of a B-spline neighbour and every neighbour's tool are made as
+before.
+
+### 13.4 What is still refused
+
+| Error | When | Sweep |
+|-------|------|------:|
+| `UnsupportedSurface` | a face of the chain is a cylinder or cone whose axis is not the pull direction (#962's fillets along the top edge of a wall drafted about its end; #334) | 13 |
+| `UnsupportedSurface` | a face of the chain is a B-spline (#474's fillets along its ramp) | 12 |
+| `UnsupportedSurface` | the chain closes on itself at a sharp edge; a cone of the chain ends at a sharp edge on one side; a tangent edge is not straight or runs along the neutral plane; the new faces would not stay tangent | 2 |
+| `FaceVanishes` | a cone reaches its apex within its face: a fillet drafted inward shrinks to a point (a 2 fillet on a 10 tall block at 15 deg) | 1 |
+| `TangentNeighbour` | a neighbour (not in the chain) tangent to the set along part of an edge | 0 |
+
+The cone's apex is where the true result changes topology again: above it
+the two walls meet in a sharp edge and the fillet is gone. That, and a
+chain that closes at a sharp corner, are left open.
+
+### 13.5 Measured
+
+The sweep of section 10.2 again (the classic draft's 1222 valid results and
+the 500 of Auto's refusals, `Method = New`, the stop on), against the build
+before (phase 1):
+
+| | 1222 | 500 |
+|--------|------:|------:|
+| the same result, volume (1e-9 relative), face count and boolean check | 1165 | 443 |
+| `TangentNeighbour` before, valid now | 38 | 40 |
+| `TangentNeighbour` before, refused now (13.4) | 19 | 17 |
+| anything else changed | 0 | 0 |
+
+Of the 38 valid where the classic draft is valid too, 34 are its volume
+(to the 4 decimals recorded; #631's within 1e-7 relative). The other 4 are
+those of #962: there the classic draft drafts the chosen face and the fillet beside
+it and stops, leaving a crease between the fillet and the wall beyond it
+(it follows edges stored as G1, the cell draft the geometry); the cell draft
+drafts the whole chain, the wall and the fillets and the slanted faces past
+the slots (+473.5 and +83.4). Of the 40 the classic draft refuses, 32 are
+the walls and fillets of #962 cut by its slots, 4 #631's ramp and 4 #876's
+plate at 60 deg.
+
+The refusals where the classic draft is valid: 13 `UnsupportedSurface`
+(#474's B-spline fillets 12, #334 1) and 6 `NotASolid` on #631's ramp, where
+the chain's fillet ends at the corner of two neighbours that are tangent to
+each other (a cylinder and the plane beside it): the new cone cuts the pair
+where they touch, and the fuse leaves an edge 0.0007 long whose vertex's
+tolerance takes in the next vertex -- the self-intersection test refuses it.
+The tangent contact of section 12.2 again, between neighbours this time.
+One of the 6 drafts' siblings comes out valid at the classic volume with two
+edges that small (the boolean check's small-edge test, which the cell
+draft does not run). Where the classic draft refuses too: 14
+`UnsupportedSurface`, 1 `FaceVanishes` (a cone's apex), and 2 `SplitsSolid`:
+the upper box of #876 drafted about its plate, its walls already at 1 deg and
+their chain ending at B-spline corners tangent to them to 1e-5 only, which
+the 1e-6 test takes for neighbours; their reach (the new surface nearly
+along them) runs to the limit and the region leaks.
+
+Time: the 78 valid chain drafts take 0.43 s (median, PartDesign's second
+recompute), at most 1.34 s; the phase 1 drafts as before.
+
+The suite (`occt/tests/fork/draft`, `new_chain_*`): the filleted block
+drafted from a wall both ways and from a fillet, `20 x 10 x 10 - 30 t 100 +
+4 t^2 1000 / 3 - (4 - pi)(40 - 200 t + 1000 t^2 / 3)` with `t = tan(a)`;
+inward at 15 deg refused (`FaceVanishes`); and a pocket with rounded
+corners 2 behind a block's front, drafted outward through the front wall
+(at 10 and 20 deg the classic draft refuses), at the volume of the block
+less a ruled loft between the floor's outline and the top's. `TestDraft`
++2: the filleted block (Classic and New, from a wall and from a fillet),
+and the pocket through the front under Auto.
+
+`CellDraft::CheckDraft` (Auto's check of a classic result, section 11) takes
+the chain as the cell draft does: the faces of a chain are not caps of each
+other. Section 11's eight #876 results "past the envelope" were the plate's
+walls past the planes of the other walls of their own chain; with the chain
+they are not flagged, and the cell draft builds the classic draft's solid
+for them anyway (34 above).
