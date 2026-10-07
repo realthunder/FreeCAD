@@ -1561,25 +1561,40 @@ Read together:
 Four properties on `Gui::MDIView`, so that every kind of view has them, in
 a group of their own as the `Render_*` properties of a 3D view are:
 
-| property | values | default |
+| property | values | a view that holds none |
 |---|---|---|
-| `Task_Place` | `Default`, `ComboView`, `InView` | `Default` |
-| `Task_Mode` | `Overlay`, `Side` | what was last chosen anywhere |
-| `Task_Side` | `Left`, `Right`, `Top`, `Bottom` | what was last chosen anywhere |
+| `Task_Place` | `ComboView`, `InView`, empty | the preference |
+| `Task_Mode` | `Overlay`, `Side` | what was last chosen in any view |
+| `Task_Side` | `Left`, `Right`, `Top`, `Bottom` | what was last chosen in any view |
 | `Task_Size` | pixels across, 0 = the panel's own hint | 0 |
 
-- `Task_Place` at `Default` follows the preference as it is at the moment
-  a panel is made. It leaves `Default` when the view's own button is used,
-  or when the preference page's "apply to the current views" writes it.
-  So a view the user never touched keeps following the preference, and one
-  he did keeps what he chose -- "next panel follow what's persist in the
-  view".
-- Changing a property moves the panel of that view and no other. Nothing
-  is closed, no dialog is told anything: the page moves as it does today.
-- "What was last chosen anywhere" for state 2 is kept in the user
-  parameters, written whenever a button changes a view's mode or side, and
-  read once when a view is made. It is not a preference entry -- the user
-  said the preference is state 1 only.
+- **A property is made when the user chooses in that view**, by a button
+  of its panel's title bar, and not before. Made with the view instead,
+  the four would mark every document modified for having a view opened,
+  and ride in every file. So "views created later" is realised as: a view
+  that holds nothing follows what is general when its next panel opens --
+  which is also so for a view that was there before the choice and has
+  not been chosen in. (Mine; the order says "later created view".)
+- `Task_Place` empty follows the preference as it is at the moment a panel
+  is opened. So a view the user never chose in keeps following the
+  preference, and one he did keeps what he chose -- "next panel follow
+  what's persist in the view".
+- **A panel that is open stays where it was put** until its own view's
+  property changes: not moved by the preference, nor by what is chosen in
+  another view. The task view remembers the place per dialog for that.
+- **The option beside the preference**, `View/TaskPanelInViewAll` ("... and
+  the panels that are open"): while it is on, a change of the preference --
+  and turning the option on -- makes every view follow the preference at
+  once. The views' own places are given up (emptied) and the open panels
+  move.
+- Changing a property moves the panel of that view and no other, also
+  when it is set from Python. Nothing is closed, no dialog is told
+  anything: the page moves as it does today.
+- "What was last chosen in any view" for state 2 is a user parameter
+  (`TaskView/Host`: `Mode`, `Side`), so it is remembered across runs,
+  written whenever a button changes a view's mode or side. It has no
+  entry on the preference page -- the user said the preference is state 1
+  only.
 
 ### 15.4 Side mode: the panel pair
 
@@ -1680,19 +1695,123 @@ Each with a GUI test scored on the tree before, as sec 9 asks.
   overlaid dock on the same edge. Side mode needs none of it.
 - **M5. Kept for views that are not 3D views** (15.6).
 
-### 15.8 Put to the user
+### 15.8 Put to the user, and answered (2026-10-07)
+
+> 1 how can a view be outside viewarea. 2 full height. 3 last chosen needs
+> a setting to remember across runs, isn't it? 4 remove
 
 1. **A view outside any view area, in side mode.** The pair needs a
-   splitter, and such a view has none. Either it is wrapped into a view
-   area when its panel goes to the side (`ViewArea::wrap`, which exists)
-   and gains a cell's corner zones and menu button; or side mode is not
-   offered there and it shows the overlay.
-2. **How tall the overlay is.** As tall as its panel needs, as now -- then
-   the picture below it is simply the view's, and pass-through is wanted
-   only for the gaps inside the panel. Or the full height of its side, as
-   a dock overlay is -- then nothing below the panel can be clicked until
-   M4 is built.
-3. **State 2's start for later views** is "what was last chosen", held out
-   of sight, with no preference entry of its own (15.3).
-4. **The fold-to-header button** of sec 14 goes, as I read "always show in
-   edit". Say if it should stay.
+   splitter, and such a view has none. It is not the usual case: the
+   preference "Tile views inside one tab" (`View/UseViewArea`, on by
+   default) turned off, a view opened as a tab of its own (the Alt
+   inversion of `docs/ViewPlacement.md`, or a document saved before
+   layouts restored tab by tab), or a view undocked. The placement policy
+   already promotes such a bare tab to a view area when a split is asked
+   of it (`ViewArea::wrap`, as `splitActiveView` does), and a side panel
+   is a split: so it is wrapped. A floating view, which `wrap` does not
+   take, shows the overlay. (Mine, on the user's question; not objected
+   to.)
+2. **The overlay is the full height of its side**, as a dock overlay is.
+   Until M4 nothing under the panel's clear ground can be clicked.
+3. **State 2's start for later views** is "what was last chosen": a user
+   parameter, so it is remembered across runs, with no entry on the
+   preference page (15.3).
+4. **The fold-to-header button** of sec 14 is removed.
+
+### 15.9 Milestone 1, built (2026-10-07, `c969119033`)
+
+The state, with no new look: the panel in its view is still sec 14's host.
+
+**What the user sees.**
+
+- "Task panels in their views" on the preference page now reads as it
+  acts: it is for the panels opened from now on. A panel that is open
+  stays where it is.
+- Under it, "... and the panels that are open": ticked, every panel goes
+  by the preference at once, now and whenever the preference changes, and
+  what the views had chosen for themselves is given up.
+- The button in the header of a panel in its view sends THAT panel to the
+  combo view, and the view remembers: its next panel opens in the combo
+  view too, whatever the preference says.
+- The button on the combo view's title bar is a push button, not a switch.
+  It sends the panel the Tasks tab is showing into its view, and that view
+  remembers likewise. A panel comes back by its own header's button.
+- A panel dragged to the other side of its view: the view remembers the
+  side, and a view that has none of its own opens its next panel on the
+  side last chosen anywhere. A panel that is open elsewhere does not move.
+- Saved with the document: a view reopened has its place and its side.
+- No fold button.
+
+**What is built.**
+
+- `Gui::TaskView::TaskPlacement` (`TaskPanelHost.{h,cpp}`): the four
+  properties and what stands in for one that is not there (15.3). The
+  texts are `App::PropertyString` -- `ComboView`, `InView`, `Left` ... --
+  and not an enumeration, which is kept as an index and reads wrongly the
+  day the list changes; anything else in them is taken as "none".
+  `Task_Size` is an `App::PropertyInteger`. Group `Task`, added with
+  `addDynamicProperty` the first time there is something to keep. A place
+  given up is emptied, not removed.
+- `TaskInfo::inView`: where a dialog's page belongs, settled when it is
+  shown and again only when its own view's place changes. `placePage`
+  reads that and not the preference, so `applyHosting` -- which still runs
+  when a host is destroyed with its cell -- moves nobody else.
+- `TaskView::slotChangedView`, on `Application::signalChangedView`: a
+  `Task_*` property of a view changed, by a button or by anything else.
+  The place: that dialog's `inView`, then the move. The side: the host is
+  told (`sideChanged`). A host takes its side when it is made and again
+  only then, which is what keeps an open panel from following another
+  view's choice.
+- `TaskView::followPlacement` and `TaskPlacement::applyToAll`: the option.
+  Every view there is -- the main window's, in a cell or a tab, and the
+  ones a document has outside it -- has its own place emptied, and every
+  dialog's `inView` is read again.
+- `ViewParams::TaskPanelInViewAll`, with the preference's change handler
+  no longer moving anything unless it is on.
+- `TaskView::sendShownToView` behind `OBTN TaskHost`, which is no longer
+  checkable.
+- Gone: the collapse button, `setCollapsed`, the header's double click,
+  the user parameters `TaskView/Host/<view type>`. `TaskView/Host` itself
+  now holds `Mode` and `Side`, the last chosen.
+
+**Where it departs, mine.** The properties are made when the user chooses
+in a view, not with the view (15.3). `Task_Mode` and `Task_Size` are kept
+and nothing reads them yet; of `Task_Side` the host knows left and right,
+and takes the other two for left until a look that can stand there is
+built. "Apply to all current views" is an option that stays on, not a
+button pressed once: with it on, the preference is the old switch.
+
+**Measured.** `tests/gui/task-panel-place.py`
+(`GuiTaskPanelPlace_tests_run`): one document in two cells, two panels
+open at once by the test switch.
+
+| | before (`3b38952724`) | after |
+|---|---|---|
+| as it stood when scored | 29 of the first 44, then the script stops | -- |
+| as it is | -- | 49 of 49 |
+
+It stopped on the tree before for a fault of the script's own, a document
+reopened under the name of its file; the last five checks -- the place
+and the side back with a reopened view, and a panel opened in it going by
+them -- were therefore not scored there. What moved:
+
+| | before | after |
+|---|---|---|
+| the preference turned on, a panel open | the panel moves | it stays |
+| the header's button in one view, a panel open in the other | both go to the combo view, the preference is turned off | that one goes, the view holds `ComboView` |
+| that view's next panel, the preference on | in the view | in the combo view |
+| the title bar button | the preference is turned on, every panel moves | the panel in front goes, the view holds `InView` |
+| the preference off, a view holding `InView` | its next panel in the combo view | in the view |
+| the side dragged | kept per KIND of view, in the user parameters | the view holds `Right`; last chosen `Right` |
+| `Task_Side`, `Task_Place` set from Python | nothing | that view's panel moves |
+| a fold button | there | none |
+
+`task-panel-in-view.py` (sec 14.5) runs with the option on, which is what
+its steps were written against, and reads what the two buttons did from
+the view: 89 checks, as before. The eleven GUI entries nearest the change
+pass.
+
+**Not done.** `Task_Mode`, `Task_Size`, top and bottom (M2, M3). A view
+that is no 3D view keeps its state for the session only (15.6, M5). The
+new strings are untranslated. `pre-commit` is not installed on the box it
+was built on: the hook did not run.
