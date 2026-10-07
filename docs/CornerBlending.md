@@ -548,7 +548,8 @@ planned, with these settled:
   as `<FilletCorners>` of `<Corner id setback>` of `<Edge id setback>`; an
   unknown attribute is ignored, which leaves room for the corner type of
   section 5.
-- **The vertex goes in `Base`.** Names follow topology changes only through
+- **The vertex goes in `Base`** (until 9.10: `Corners` is now a link of its
+  own and `Base` holds only what is filleted). Names follow topology changes only through
   a link, and `Base` holds the edges, so setting a corner whose vertex the
   base has also appends the vertex to `Base` (not while restoring or
   undoing). `connectLinkProperty(Base)` then renames the vertex and the
@@ -586,7 +587,7 @@ the path is found.
 ### 9.6 The task panel (phase 5)
 
 The fillet's reference list is the corner list, since a corner's vertex is
-in `Base` (9.5):
+in `Base` (9.5; since 9.10 the panel adds the corner rows from `Corners`):
 
 - **Picking.** The fillet panel takes vertexes as well as edges and faces
   (`TaskDressUpParameters::allowVertexes`, off for the other dress-ups). A
@@ -847,12 +848,9 @@ straight line between its ends.
 - **PartDesign.** `Corners` takes face names beside edge names, the value a
   depth (`Corners.Vertex7.Face6` as a path); saved as `<Face id depth>`
   after the edges under their own count, so a build without depths reads
-  the rest. A face cannot go in `Base` as the vertex does (9.5): a face
-  there is filleted all round. The faces go in a hidden link,
-  `CornerFaces`, to the same object, which the fillet keeps in step with
-  `Corners`; `connectFaceLinkProperty` follows their names and the
-  expressions on them as the topology changes, and drops a depth whose face
-  leaves the link.
+  the rest. A face cannot go in `Base` as the vertex did (9.5): a face
+  there is filleted all round. `Corners` links its faces itself (9.10), and
+  their names and the expressions on them follow the topology.
 - **Task panel.** A corner's rows list the faces at its vertex after its
   fillets; a face row's value is its depth, empty for none (0 clears it).
   The current corner gets a depth handle per face, from the middle of the
@@ -883,7 +881,7 @@ result for result, both sweeps byte for byte.
 
 Tests: `FilletCornerTest` (Part, 8: the depth by shape and by name, beside
 setbacks, and its errors), `TestFillet.TestFilletCorners` (PD, the depth
-against `makeFillet`, `CornerFaces`, an expression, save and restore,
+against `makeFillet`, kept out of `Base`, an expression, save and restore,
 removal, and a face renamed by a cut ahead of the fillet: `Face8`
 following), `TestFilletPanel` (GUI, 6: the face rows, an edit, a depth
 handle driving `Corners`, 0 clearing it).
@@ -891,3 +889,48 @@ handle driving `Corners`, 0 clearing it).
 ![A face's depth](pictures/CornerBlending/box_depth.png)
 
 ![The depth handles in the task panel](pictures/CornerBlending/task_panel_depth.png)
+
+### 9.10 `Corners` is a link (2026-10-07)
+
+9.5 put a corner's vertex in `Base`, the only link the fillet had, so that
+its name followed the topology. That cost `Base` its meaning -- what is
+filleted -- and `getContinuousEdges` had to skip vertexes in it; a build
+without that skip reads a vertex in `Base` as a bad edge, and the fillet
+fails there. A face's depth (9.9) could not go in `Base` at all.
+
+`Part::PropertyFilletCorners` is now itself an `App::PropertyLinkSub`: its
+link is the fillet's base object and its sub-names are the corners'
+vertexes and the faces they give depths, derived from the corners whenever
+they change (a name the link has already keeps its mapped name). So:
+
+- **Names.** The link renames its sub-names in place as the topology
+  changes; `updateElementReference` reads the renames off it and renames
+  the corners' vertexes and faces, and the expressions on them. The edges
+  a corner sets back stay `Base`'s names and follow `Base`
+  (`connectLinkProperty`), which now only renames them: setting `Base`
+  again leaves the corners alone.
+- **The fillet** keeps the link on `Base`'s object as either changes.
+  `Base` holds the filleted edges and faces only.
+- **Saved** as before, with the link's `<LinkSub>` after the corners in
+  `<FilletCorners ... link="1">`: a build whose corners are no link reads the
+  corners and skips it (`readEndElement` reads on to the end tag).
+- **Old files.** A fillet saved with its corners' vertexes in `Base` and no
+  link has them moved out of `Base` into `Corners` on restore
+  (`Fillet::onDocumentRestored`); the link maps the names again.
+- **Copies.** `Copy`/`Paste` carry the corners and the link; a plain link
+  pasted in (the copies made on a relabel, an import or a replaced link)
+  changes the link alone. Undo and redo, and copying a fillet with its
+  base into another document, keep the corner and its volume.
+- **Python** still reads and writes the corners as a dict; the link is not
+  editable in the property editor.
+- **Task panel.** A corner's row is no longer `Base`'s: the dress-up panel
+  asks its subclass which rows are (`isBaseItem`), adds the others after
+  building the list from `Base` (`populateOtherItems`) and lets it keep
+  them in step (`syncOtherItems`): a removed corner row removes the corner.
+
+Tests: `TestFillet.TestFilletCorners` (13): the vertex kept out of `Base`,
+`testBaseLeftAlone`, `testOldFile` (a saved file edited back to the old
+form: the vertex moves out of `Base`, the corners and the volume come
+back), the vertex, an edge and a face renamed by a cut ahead of the fillet
+through their two links; `TestFilletPanel` (6, the picked vertex kept out
+of `Base`).
