@@ -34,6 +34,7 @@
 #include <App/DocumentParams.h>
 #include <App/DocumentObject.h>
 #include <App/MaterialAppearance.h>
+#include <App/PropertyElementAppearance.h>
 #include <Base/Console.h>
 
 #include "TaskElementColors.h"
@@ -613,10 +614,14 @@ void ElementColors::setupConnections()
             this, &ElementColors::onBoxSelectClicked);
     connect(d->ui->editMaterial, &QPushButton::clicked,
             this, &ElementColors::onEditMaterialClicked);
-    // A material where the view provider keeps one for a name
-    // (docs/ShapeAppearanceDesign.md sec 13); a colour is all the others
-    // hold, and the button would offer what they drop
-    if (!d->vp->getPropertyByName("MappedAppearance"))
+    // A material where the object keeps a look for each of its elements
+    // (docs/ShapeAppearanceDesign.md sec 14); a colour is all the others
+    // hold, and the button would offer what they drop. The object's own
+    // property: a link answers for what it shows.
+    auto shown = d->vp->getObject();
+    auto looks = shown ? shown->getPropertyByName("ElementAppearance") : nullptr;
+    if (!looks || looks->getContainer() != shown
+            || !looks->isDerivedFrom(App::PropertyElementAppearance::getClassTypeId()))
         d->ui->editMaterial->hide();
 }
 

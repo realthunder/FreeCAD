@@ -235,8 +235,6 @@ Feature::Feature()
             "Always: always try to fix shape without validating first.\n");
     static const char *FixShapeEnum[] = {"Disabled", "Enabled", "Always", nullptr};
     FixShape.setEnums(FixShapeEnum);
-    ADD_PROPERTY_TYPE(ColoredElements, (0), "",
-            (App::PropertyType)(App::Prop_Hidden|App::Prop_ReadOnly|App::Prop_Output),"");
 
     // What the object looks like, made here and drawn by a view provider
     // (docs/ShapeAppearanceDesign.md sec 14.6). None of it is a reason to
@@ -262,7 +260,7 @@ Feature::~Feature()
 {
     // The references into this feature are gone with it, and its own are
     // among them: a property of this feature that names its elements
-    // (ElementAppearance, ColoredElements) is destroyed after this body, and
+    // (ElementAppearance) is destroyed after this body, and
     // would tell a feature half destroyed that its references were released
     // (onElementReferenceReleased()) -- which keeps the feature for the next
     // recompute to ask, by a pointer to nothing

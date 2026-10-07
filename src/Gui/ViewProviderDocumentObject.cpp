@@ -272,7 +272,9 @@ void ViewProviderDocumentObject::onBeforeChange(const App::Property* prop)
     if (isAttachedToDocument() && !testStatus(SecondaryView)) {
         App::DocumentObject* obj = getObject();
         App::Document* doc = obj ? obj->getDocument() : nullptr;
-        if (doc) {
+        // Not a name over a value kept elsewhere (Legacy): what it names
+        // is what an undo puts back
+        if (doc && !prop->testStatus(App::Property::Legacy)) {
             onBeforeChangeProperty(doc, prop);
         }
     }

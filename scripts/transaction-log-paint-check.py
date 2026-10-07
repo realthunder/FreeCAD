@@ -33,39 +33,32 @@ def rgb(c):
 
 
 def named(obj):
-    # The painted elements by name, each with its colour.
-    subs = obj.ColoredElements[1] if obj.ColoredElements else []
-    colors = [rgb(c) for c in obj.ViewObject.MappedColors]
-    if len(subs) != len(colors):
-        return {"subs": list(subs), "colors": colors}
-    return dict(zip(subs, colors))
+    # The elements given a look, each with its colour: what the object
+    # states of them (ElementAppearance), by name where the shape has names
+    # for its elements and by number where it has not -- a box's faces.
+    return {k: rgb(m.DiffuseColor) for k, m in obj.ElementAppearance.items()}
 
 
 def stored(obj):
-    # The same out of the store itself: the colour of each name's material.
-    subs = obj.ColoredElements[1] if obj.ColoredElements else []
-    colors = [rgb(m.DiffuseColor) for m in obj.ViewObject.MappedAppearance]
-    if len(subs) != len(colors):
-        return {"subs": list(subs), "colors": colors}
-    return dict(zip(subs, colors))
+    # The same as the view provider's name over it has it: the colours of
+    # the names, in their order.
+    ea = obj.ElementAppearance
+    colors = [rgb(c) for c in obj.ViewObject.MappedColors]
+    names = list(ea.Names)
+    if len(names) != len(colors):
+        return {"names": names, "colors": colors}
+    return dict(zip(names, colors)) if names else named(obj)
 
 
-def older(path, to):
-    # The file as a build older than MappedAppearance wrote it: the colours
-    # in MappedColors, a plain colour list, and nowhere else. The entries are
-    # copied as they are stored -- the blobs are zstd, which this Python's
-    # zipfile does not read -- and GuiDocument.xml alone is written again.
-    done = [0, 0]
+def rewritten(path, to, edits):
+    # A copy of a file with some of its entries written again. The others
+    # are copied as they are stored -- the blobs are zstd, which this
+    # Python's zipfile does not read.
     with zipfile.ZipFile(path) as zin, open(path, "rb") as fp, open(to, "wb") as out:
         central = []
         for item in zin.infolist():
-            if item.filename == "GuiDocument.xml":
-                xml = zin.read(item).decode()
-                xml, done[0] = re.subn(r'\s*<Property name="MappedAppearance"[^>]*>.*?</Property>',
-                                       "", xml, flags=re.S)
-                xml, done[1] = re.subn(r'(<Property name="MappedColors" type=")[^"]*"',
-                                       r'\1App::PropertyColorList"', xml)
-                data = xml.encode()
+            if item.filename in edits:
+                data = edits[item.filename](zin.read(item).decode()).encode()
                 packer = zlib.compressobj(6, zlib.DEFLATED, -15)
                 raw = packer.compress(data) + packer.flush()
                 method, crc, size = 8, zlib.crc32(data), len(data)
@@ -84,7 +77,51 @@ def older(path, to):
         out.write(b"".join(central))
         out.write(struct.pack("<4sHHHHIIH", b"PK\x05\x06", 0, 0, len(central), len(central),
                               out.tell() - start, start, 0))
+
+
+def older(path, to, names):
+    # The file as a build older than the object's store wrote it: the names
+    # of the painted elements a link of the object's, ColoredElements, their
+    # colours the view provider's MappedColors, a plain colour list -- and
+    # the looks of the object nowhere but in its view provider.
+    done = [0, 0]
+
+    def model(xml):
+        link = '<LinkSub value="Box" count="%d">\n%s</LinkSub>\n' % (
+            len(names), "".join('<Sub value="%s"/>\n' % n for n in names))
+
+        def swap(m):
+            return ('<Property name="ColoredElements" type="App::PropertyLinkSubHidden">\n'
+                    + link + "</Property>")
+
+        xml, done[0] = re.subn(r'<Property name="ElementAppearance"[^>]*>.*?</Property>',
+                               swap, xml, flags=re.S)
+        return xml
+
+    def view(xml):
+        colors = "".join("%x\n" % packed(c) for c in names.values())
+        body = '<ColorList count="%d">\n%s</ColorList>\n' % (len(names), colors)
+        xml, done[1] = re.subn(
+            r'<Property name="MappedColors"[^>]*>.*?</Property>',
+            lambda m: '<Property name="MappedColors" type="App::PropertyColorList">\n'
+                      + body + "</Property>",
+            xml, flags=re.S)
+        return xml
+
+    rewritten(path, to, {"Document.xml": model, "GuiDocument.xml": view})
     return done
+
+
+def packed(c):
+    # A colour as an older file wrote it: the last byte its transparency.
+    r, g, b = (int(round(x * 255)) for x in c[:3])
+    return (r << 24) | (g << 16) | (b << 8)
+
+
+def at(vp, i):
+    # The look of face i: a list of one is every face's.
+    looks = vp.ShapeAppearance
+    return looks[i] if looks.Count > 1 else looks.Base
 
 
 def shown(obj):
@@ -246,7 +283,7 @@ def run():
         check("and drawn where they were", shown(doc.Box) == there)
         App.closeDocument(doc.Name)
         old = os.path.join(folder, "PaintOlder.FCStd")
-        check("an older file made of it", older(path, old) == [1, 1])
+        check("an older file made of it", older(path, old, both) == [1, 1])
         doc = App.openDocument(old)
         check("an older file read: by name (%r)" % named(doc.Box), named(doc.Box) == both)
         check("its colours in the store (%r)" % stored(doc.Box), stored(doc.Box) == both)
@@ -267,34 +304,35 @@ def run():
         vp.DiffuseColor = colors
         check("a face coloured by its number (%r)" % shown(doc.Box),
               sorted(shown(doc.Box).values()) == sorted([RED, BLUE]))
+        check("and stated as the painted one is, a box having no names for its faces (%r)"
+              % named(doc.Box), named(doc.Box) == {top: RED, front: BLUE})
         vp.setElementColors({})
         doc.recompute()
-        check("the last name taken away: that face alone is left (%r)" % shown(doc.Box),
-              named(doc.Box) == {} and list(shown(doc.Box).values()) == [BLUE])
+        check("nothing stated: every face the object's (%r)" % shown(doc.Box),
+              named(doc.Box) == {} and shown(doc.Box) == {})
         App.closeDocument(doc.Name)
 
-        # Every face painted one colour by name is the object painted: the
-        # appearance keeps what all its faces agree on as the object's own
-        # (docs/ShapeAppearanceDesign.md sec 12). The six are drawn red and
-        # the object is red with them -- they came out the object's colour
-        # as it had been, the paint gone, the object's material card having
-        # taken the base back -- and a name taken away has that red to go
-        # back to.
+        # Every face painted one colour is six painted faces and not the
+        # object painted (docs/ShapeAppearanceDesign.md sec 14.2): the
+        # object's own look is kept apart from what its faces are given, so
+        # it is the colour it was, and a face let go has that to go back to.
         doc = App.newDocument("PaintAll")
         doc.addObject("Part::Box", "Box")
         doc.recompute()
         vp = doc.Box.ViewObject
         vp.setElementColors({"Face%d" % (i + 1): RED for i in range(6)})
         doc.recompute()
+        was = rgb(vp.ShapeColor)
         drawn = sorted({rgb(c) for c in vp.DiffuseColor})
-        check("six faces red by name: all drawn red, the object with them (%r, %r)"
+        check("six faces red: all drawn red, the object the colour it was (%r, %r)"
               % (drawn, rgb(vp.ShapeColor)),
-              drawn == [RED] and rgb(vp.ShapeColor) == RED and len(named(doc.Box)) == 6)
+              drawn == [RED] and rgb(vp.ShapeColor) == was and was != RED
+              and len(named(doc.Box)) == 6)
         vp.setElementColors({"Face%d" % (i + 1): RED for i in range(5)})
         doc.recompute()
         drawn = sorted({rgb(c) for c in vp.DiffuseColor})
-        check("one taken away: five names, and nothing left as it was not (%r)" % drawn,
-              drawn == [RED] and len(named(doc.Box)) == 5)
+        check("one let go: it is the object's colour again (%r)" % drawn,
+              drawn == sorted([RED, was]) and len(named(doc.Box)) == 5)
         App.closeDocument(doc.Name)
 
         # A whole material by name (sec 13.6 step 4).
@@ -327,8 +365,8 @@ def run():
         # after.
         paint(doc, "green bottom", "Box", {bottom: GREEN})
         glossed(0.5)
-        check("a face given a colour takes the object's new gloss (%r)" % gloss(vp.ShapeAppearance[ibottom]),
-              gloss(vp.ShapeAppearance[ibottom]) == 0.5 and rgb(vp.DiffuseColor[ibottom]) == GREEN)
+        check("a face given a colour takes the object's new gloss (%r)" % gloss(at(vp, ibottom)),
+              gloss(at(vp, ibottom)) == 0.5 and rgb(vp.DiffuseColor[ibottom]) == GREEN)
         check("and so its name says (%r)" % gloss(vp.getElementAppearances()[bottom]),
               gloss(vp.getElementAppearances()[bottom]) == 0.5)
         glossed(own)
@@ -339,8 +377,8 @@ def run():
         vp.setElementAppearances(looks)
         doc.recompute()
         doc.commitTransaction()
-        check("a material by name: drawn with its gloss (%r)" % gloss(vp.ShapeAppearance[itop]),
-              gloss(vp.ShapeAppearance[itop]) == 0.25 and rgb(vp.DiffuseColor[itop]) == RED)
+        check("a material by name: drawn with its gloss (%r)" % gloss(at(vp, itop)),
+              gloss(at(vp, itop)) == 0.25 and rgb(vp.DiffuseColor[itop]) == RED)
         check("the other faces with the object's (%r)" % sorted({gloss(x) for x in vp.ShapeAppearance}),
               sorted({gloss(x) for x in vp.ShapeAppearance}) == sorted({0.25, own}))
         check("read back by name (%r)" % gloss(vp.getElementAppearances()[top]),
@@ -350,22 +388,22 @@ def run():
               gloss(vp.getElementAppearances()["Face"]) == own)
         doc.undo()
         check("undone: the face the object's, the first name left (%r)" % named(doc.Box),
-              gloss(vp.ShapeAppearance[itop]) == own and named(doc.Box) == {bottom: GREEN})
+              gloss(at(vp, itop)) == own and named(doc.Box) == {bottom: GREEN})
         doc.redo()
-        check("redone (%r)" % gloss(vp.ShapeAppearance[itop]),
-              gloss(vp.ShapeAppearance[itop]) == 0.25 and named(doc.Box) == {top: RED, bottom: GREEN})
-        # One name given a material, and every look is whole from then on:
-        # the face that was only painted holds what it had.
+        check("redone (%r)" % gloss(at(vp, itop)),
+              gloss(at(vp, itop)) == 0.25 and named(doc.Box) == {top: RED, bottom: GREEN})
+        # One face given a material is that face's alone: the face that was
+        # only painted goes on taking the object's gloss.
         glossed(0.5)
-        check("a material given to one name: the painted face no longer follows (%r)"
-              % gloss(vp.ShapeAppearance[ibottom]),
-              gloss(vp.ShapeAppearance[ibottom]) == own and gloss(vp.ShapeAppearance[itop]) == 0.25
+        check("a material given to one face: the painted one follows the object still (%r)"
+              % gloss(at(vp, ibottom)),
+              gloss(at(vp, ibottom)) == 0.5 and gloss(at(vp, itop)) == 0.25
               and rgb(vp.DiffuseColor[ibottom]) == GREEN)
         glossed(own)
         # A colour given to a name that has a material changes its colour.
         paint(doc, "blue top", "Box", {top: BLUE})
-        check("a colour by name keeps the name's material (%r)" % gloss(vp.ShapeAppearance[itop]),
-              gloss(vp.ShapeAppearance[itop]) == 0.25 and rgb(vp.DiffuseColor[itop]) == BLUE)
+        check("a colour by name keeps the name's material (%r)" % gloss(at(vp, itop)),
+              gloss(at(vp, itop)) == 0.25 and rgb(vp.DiffuseColor[itop]) == BLUE)
         there = shown(doc.Box)
         path = os.path.join(folder, "PaintLook.FCStd")
         doc.saveAs(path)
@@ -375,27 +413,31 @@ def run():
         check("saved and read: the material by name (%r)" % gloss(vp.getElementAppearances()[top]),
               gloss(vp.getElementAppearances()[top]) == 0.25
               and named(doc.Box) == {top: BLUE, bottom: GREEN})
-        check("and drawn as it was (%r)" % gloss(vp.ShapeAppearance[itop]),
-              gloss(vp.ShapeAppearance[itop]) == 0.25 and shown(doc.Box) == there)
+        check("and drawn as it was (%r)" % gloss(at(vp, itop)),
+              gloss(at(vp, itop)) == 0.25 and shown(doc.Box) == there)
         # One name alone, and names that agree: a list keeps what all its
         # entries agree on as its base, and the looks are not read from that.
         matte = vp.getElementAppearances()[top]
         vp.setElementAppearances({top: matte})
         doc.recompute()
-        check("one name alone keeps its material (%r)" % gloss(vp.ShapeAppearance[itop]),
-              gloss(vp.ShapeAppearance[itop]) == 0.25 and gloss(vp.getElementAppearances()[top]) == 0.25)
+        check("one name alone keeps its material (%r)" % gloss(at(vp, itop)),
+              gloss(at(vp, itop)) == 0.25 and gloss(vp.getElementAppearances()[top]) == 0.25)
         vp.setElementAppearances({top: matte, bottom: matte})
         doc.recompute()
         check("two names with one material keep it (%r)" % sorted({gloss(x) for x in vp.ShapeAppearance}),
-              gloss(vp.ShapeAppearance[itop]) == 0.25 and gloss(vp.ShapeAppearance[ibottom]) == 0.25
+              gloss(at(vp, itop)) == 0.25 and gloss(at(vp, ibottom)) == 0.25
               and sorted({gloss(x) for x in vp.ShapeAppearance}) == sorted({0.25, own}))
-        # The object given the gloss a named face has, and then another:
-        # the face's is its own through both.
+        # The object given the gloss a face has, and then another. A box
+        # has no names for its faces, and a look held by a face's number is
+        # what of it differs from the object's: given the very gloss the
+        # object has, the face states none, and goes with the object after
+        # (docs/ShapeAppearanceDesign.md sec 14.2). A face held by its name
+        # keeps its own through both, which Part's tests have.
         glossed(0.25)
         glossed(0.6)
-        check("the object given that gloss and then another: the faces keep theirs (%r)"
+        check("the object given that gloss and then another: a face held by number goes with it (%r)"
               % sorted({gloss(x) for x in vp.ShapeAppearance}),
-              gloss(vp.ShapeAppearance[itop]) == 0.25 and gloss(vp.ShapeAppearance[ibottom]) == 0.25
+              gloss(at(vp, itop)) == 0.6 and gloss(at(vp, ibottom)) == 0.6
               and gloss(vp.ShapeAppearance.Base) == 0.6)
         glossed(own)
         vp.setElementAppearances({})
@@ -466,8 +508,8 @@ def run():
             item.setSelected(True)
         modal(lambda dlg: dlg.findChild(QtWidgets.QSpinBox, "shininess").setValue(25))
         button.click()
-        check("a material through its button: drawn (%r)" % gloss(vp.ShapeAppearance[int(top[4:]) - 1]),
-              gloss(vp.ShapeAppearance[int(top[4:]) - 1]) == 0.25)
+        check("a material through its button: drawn (%r)" % gloss(at(vp, int(top[4:]) - 1)),
+              gloss(at(vp, int(top[4:]) - 1)) == 0.25)
         check("and by name, in the colour it had (%r)" % named(doc.Box),
               gloss(vp.getElementAppearances()[top]) == 0.25 and named(doc.Box) == {top: RED})
         check("the object's own look left alone (%r)" % gloss(vp.ShapeAppearance.Base),
@@ -482,7 +524,7 @@ def run():
               named(doc.Box) == {top: RED} and gloss(vp.getElementAppearances()[top]) == 0.25)
         doc.undo()
         check("and one step to undo (%r)" % named(doc.Box),
-              named(doc.Box) == {} and gloss(vp.ShapeAppearance[int(top[4:]) - 1]) == own)
+              named(doc.Box) == {} and gloss(at(vp, int(top[4:]) - 1)) == own)
         App.closeDocument(doc.Name)
 
         # A face takes its source face's material (sec 13.6 step 6): the cut
@@ -496,8 +538,8 @@ def run():
         vpb.setElementAppearances({side: App.Material(DiffuseColor=RED, Shininess=0.25)})
         doc.recompute()
         check("a face made from one with a material has it (%r, %r)"
-              % (gloss(vpc.ShapeAppearance[iside]), rgb(vpc.DiffuseColor[iside])),
-              gloss(vpc.ShapeAppearance[iside]) == 0.25 and rgb(vpc.DiffuseColor[iside]) == RED)
+              % (gloss(at(vpc, iside)), rgb(vpc.DiffuseColor[iside])),
+              gloss(at(vpc, iside)) == 0.25 and rgb(vpc.DiffuseColor[iside]) == RED)
         check("and no other face of it (%r)" % sorted({gloss(x) for x in vpc.ShapeAppearance}),
               sorted({gloss(x) for x in vpc.ShapeAppearance}) == sorted({0.25, own}))
         vpb.setElementAppearances({})
@@ -505,8 +547,8 @@ def run():
         vpb.setElementColors({side: BLUE})
         doc.recompute()
         check("from one that was only painted: its colour, and the gloss its own (%r, %r)"
-              % (gloss(vpc.ShapeAppearance[iside]), rgb(vpc.DiffuseColor[iside])),
-              gloss(vpc.ShapeAppearance[iside]) == own and rgb(vpc.DiffuseColor[iside]) == BLUE)
+              % (gloss(at(vpc, iside)), rgb(vpc.DiffuseColor[iside])),
+              gloss(at(vpc, iside)) == own and rgb(vpc.DiffuseColor[iside]) == BLUE)
         vpb.setElementColors({})
         doc.recompute()
         check("the source's name taken away: nothing of it left (%r)" % shown(doc.Cut),
@@ -587,7 +629,7 @@ def run():
         vp = doc.Box.ViewObject
         check("both by name (%r)" % named(doc.Box), named(doc.Box) == {top: RED, bottom: GREEN})
         check("theirs' with its material (%r)" % gloss(vp.getElementAppearances()[top]),
-              gloss(vp.getElementAppearances()[top]) == 0.25 and gloss(vp.ShapeAppearance[itop]) == 0.25)
+              gloss(vp.getElementAppearances()[top]) == 0.25 and gloss(at(vp, itop)) == 0.25)
         check("and both drawn (%r)" % shown(doc.Box), sorted(shown(doc.Box).values()) == sorted([RED, GREEN]))
         doc.undo()
         check("the merge undone: ours alone (%r)" % named(doc.Box),
@@ -620,7 +662,7 @@ def run():
             setting.SetString("TransactionLogMergeFacePaint", "asked")
             pv = doc.previewTransactionMerge("side")
             check("asked, where the setting says to ask (%r)" % asked(pv),
-                  pv["conflicts"] == 1 and ("conflict", "Box.ColoredElements") in asked(pv))
+                  pv["conflicts"] == 1 and ("conflict", "Box.ElementAppearance") in asked(pv))
             setting.SetString("TransactionLogMergeFacePaint", "theirs")
             pv = doc.previewTransactionMerge("side")
             check("theirs, where it says theirs: nothing asked (%r)" % asked(pv), pv["conflicts"] == 0)

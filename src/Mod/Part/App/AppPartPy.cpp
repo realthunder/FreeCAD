@@ -1039,7 +1039,6 @@ private:
         Part::Feature *pcFeature = static_cast<Part::Feature*>(pcDoc->addObject("Part::Feature", name));
         // copy the data
         pcFeature->Shape.setValue(shape);
-        pcFeature->signalMapShapeColors(pcSrcDoc);
         pcFeature->updateAppearance(pcSrcDoc, true);
         pcFeature->purgeTouched();
         return Py::asObject(pcFeature->getPyObject());

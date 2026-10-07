@@ -410,7 +410,9 @@ AppearanceList &PropertyElementAppearance::editList(int slot)
     auto &held = _held[slot];
     if (!held) {
         held = std::make_unique<Held>();
-        held->name = std::string(getName()) + "." + SlotNames[slot];
+        const char *name = getName();
+        held->name = std::string(name && name[0] ? name : "ElementAppearance") + "."
+            + SlotNames[slot];
         held->list.setHolder(this, held->name.c_str());
     }
     return held->list.heldList();
@@ -441,7 +443,9 @@ void PropertyElementAppearance::syncHeld() const
         if (!held) {
             continue;
         }
-        std::string name = std::string(getName()) + "." + SlotNames[slot];
+        const char *own = getName();
+        std::string name = std::string(own && own[0] ? own : "ElementAppearance") + "."
+            + SlotNames[slot];
         if (name != held->name) {
             held->name = std::move(name);
         }
@@ -562,6 +566,33 @@ void PropertyElementAppearance::setBaseList(Kind kind, const AppearanceList &own
         return;
     }
     assignBase(kind, own);
+}
+
+const AppearanceList &PropertyElementAppearance::getBaseList(Kind kind) const
+{
+    return listAt(SlotBase + kind);
+}
+
+void PropertyElementAppearance::setDetachedNamed(const AppearanceList &looks,
+                                                 std::vector<uint16_t> &&own)
+{
+    if (owner()) {
+        throw Base::RuntimeError("the names of a property on an object are the object's elements");
+    }
+    _detached = true;
+    const auto count = static_cast<std::size_t>(looks.getSize());
+    if (!own.empty() && own.size() != count) {
+        throw Base::ValueError("the own fields are given for each named element, or for none");
+    }
+    Edit edit(*this);
+    for (auto &bits : own) {
+        bits &= OwnAll;
+    }
+    _cSubList.assign(count, std::string());
+    _ShadowSubList.assign(count, ShadowSub());
+    _own = std::move(own);
+    assign(SlotNamed, looks, false);
+    _places.reset();
 }
 
 bool PropertyElementAppearance::isFollowingMaterial(Kind kind) const
@@ -1374,7 +1405,10 @@ unsigned int PropertyElementAppearance::getMemSize() const
  */
 void PropertyElementAppearance::Save(Base::Writer &writer) const
 {
-    PropertyLinkSubHidden::Save(writer);
+    // On no object there are no names to write: the looks alone
+    if (!isDetached()) {
+        PropertyLinkSubHidden::Save(writer);
+    }
     syncHeld();
     unsigned mask = 0;
     for (int slot = 0; slot < SlotCount; ++slot) {
@@ -1416,7 +1450,22 @@ void PropertyElementAppearance::Restore(Base::XMLReader &reader)
     Base::StateLocker restoring(_restoring);
     Edit edit(*this);
     _pendingSubs.reset();
-    PropertyLinkSubHidden::Restore(reader);
+    if (!owner()) {
+        // No object to look the names up in: how many there were, so that
+        // the looks that follow are counted as theirs
+        _detached = true;
+        reader.readElement("LinkSub");
+        const long count = reader.getAttributeAsInteger("count", "0");
+        for (long i = 0; i < count; ++i) {
+            reader.readElement("Sub");
+        }
+        reader.readEndElement("LinkSub");
+        _cSubList.assign(static_cast<std::size_t>(std::max(count, 0L)), std::string());
+        _ShadowSubList.assign(_cSubList.size(), ShadowSub());
+    }
+    else {
+        PropertyLinkSubHidden::Restore(reader);
+    }
     for (auto &held : _held) {
         held.reset();
     }

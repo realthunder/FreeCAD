@@ -38,6 +38,7 @@
 #include "PreCompiled.h"
 
 #include <array>
+#include <cstring>
 #include <map>
 #include <set>
 #include <string>
@@ -531,6 +532,24 @@ const App::AppearanceList &defaultLineLook(const char *parameter)
 }
 
 }  // namespace
+
+void Feature::handleChangedPropertyName(Base::XMLReader &reader, const char *TypeName,
+                                        const char *PropName)
+{
+    // The names of the elements given a colour were a link of their own,
+    // their colours the view provider's. The names are read here, as names
+    // that state nothing; the colours are given to them when the view
+    // provider has read its own (docs/ShapeAppearanceDesign.md sec 14.6.6).
+    // Not over looks the file has: a file that has both has them there.
+    if (PropName && std::strcmp(PropName, "ColoredElements") == 0
+        && Base::Type::fromName(TypeName).isDerivedFrom(App::PropertyLinkSub::getClassTypeId())) {
+        if (!ElementAppearance.wasRestored()) {
+            ElementAppearance.Restore(reader);
+        }
+        return;
+    }
+    inherited::handleChangedPropertyName(reader, TypeName, PropName);
+}
 
 void Feature::setupObject()
 {

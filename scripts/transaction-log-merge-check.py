@@ -118,6 +118,7 @@ def run():
         doc.commitTransaction()
         doc.openTransaction("blue")
         box.ViewObject.ShapeColor = (0.0, 0.0, 1.0)
+        box.ViewObject.LineWidth = 5
         doc.commitTransaction()
         doc.openTransaction("cylinder")
         cyl = doc.addObject("Part::Cylinder", "Cylinder")
@@ -138,6 +139,7 @@ def run():
         doc.commitTransaction()
         doc.openTransaction("yellow")
         box.ViewObject.ShapeColor = (1.0, 1.0, 0.0)
+        box.ViewObject.LineWidth = 3
         doc.commitTransaction()
         settle()
 
@@ -145,8 +147,15 @@ def run():
         kinds = {c["key"]: c["kind"] for c in preview["changes"]}
         check("preview: width conflicts", kinds.get("Box.Width") == "conflict")
         check("preview: length taken", kinds.get("Box.Length") == "take")
-        check("preview: the colour is a view conflict (%r)" % kinds.get("view:Box.ShapeColor"),
-              kinds.get("view:Box.ShapeColor") == "view")
+        # The colour is the object's (docs/ShapeAppearanceDesign.md sec
+        # 14.6.5): merged by what it holds, and no row of the view's. What
+        # is the view's own -- a line width -- is a view conflict still.
+        check("preview: the colour is the object's, merged (%r)"
+              % kinds.get("Box.ElementAppearance"),
+              kinds.get("Box.ElementAppearance") == "merge"
+              and "view:Box.ShapeColor" not in kinds)
+        check("preview: the line width is a view conflict (%r)" % kinds.get("view:Box.LineWidth"),
+              kinds.get("view:Box.LineWidth") == "view")
         check("preview: one conflict", preview["conflicts"] == 1)
 
         dock, tree = panel()
@@ -181,6 +190,7 @@ def run():
             check("merged: recomputed, volume %g" % box.Shape.Volume,
                   abs(box.Shape.Volume - 30 * 5 * 5) < 1e-6)
             check("merged: box yellow, ours %r" % (colour(box),), colour(box) == (1.0, 1.0, 0.0))
+            check("merged: line width 3, ours", abs(box.ViewObject.LineWidth - 3) < 1e-9)
             check("merged: cylinder in, green",
                   cyl is not None and cyl.ViewObject is not None and colour(cyl) == (0.0, 1.0, 0.0))
             check("merged: one step", doc.UndoCount == undos + 1)

@@ -127,6 +127,7 @@ recompute path. Also, it enables more complicated dependencies beyond trees.
 #include "StringHasher.h"
 #include "Transactions.h"
 #include "TransactionMeasure.h"
+#include "PropertyElementAppearance.h"
 #include "PropertyHistory.h"
 #include "TransactionLog.h"
 
@@ -1548,7 +1549,10 @@ void Document::_checkTransaction(DocumentObject* pcDelObj, const Property *What,
                 const char *name = GetApplication().getActiveTransaction(&tid);
                 bool ignore = false;
                 if(What) {
-                    if(What->testStatus(Property::NoModify))
+                    // Legacy: a name over a value kept elsewhere, and the
+                    // write to that is what opens a transaction
+                    if(What->testStatus(Property::NoModify)
+                            || What->testStatus(Property::Legacy))
                         ignore = true;
                     else if(!Base::freecad_dynamic_cast<Document>(What->getContainer())
                             && !Base::freecad_dynamic_cast<DocumentObject>(What->getContainer())) {
@@ -5634,6 +5638,10 @@ void Document::_applyVersion(Document& version, bool views)
                 }
                 if (!prop)
                     return;
+                // A name over a value kept elsewhere is put back with that
+                // (docs/ShapeAppearanceDesign.md sec 14.6.5)
+                if (prop->testStatus(Property::Legacy))
+                    return;
                 CapturedValue want = captureValue(config, *kv.second);
                 if (!want.ok)
                     throw Base::RuntimeError("cannot read the version's value");
@@ -7268,6 +7276,10 @@ bool Document::_moveAlongLog(int64_t fromHead, int64_t toSeq, bool views)
             Property* prop = c->getPropertyByName(std::get<2>(kv.first).c_str());
             if (!prop)
                 throw Base::RuntimeError("no such property");
+            // A name over a value kept elsewhere: a row has it only from
+            // before it was one, and that value is not its own any more
+            if (prop->testStatus(Property::Legacy))
+                return;
             CapturedValue now = captureValue(config, *prop);
             const CapturedValue& v = kv.second;
             if (now.ok && now.fragment == v.fragment
@@ -9199,8 +9211,35 @@ bool mergeUnitByObject(Document& doc, TransactionLog& log, const MergePlan& plan
             return true;
         }
         auto kind = types.find(member);
-        if (!unitOfView(member) || kind == types.end())
+        if (kind == types.end())
             return false;
+        if (!unitOfView(member)) {
+            // An object's looks (docs/ShapeAppearanceDesign.md sec 14.6.5):
+            // the names as they are saved, which are text already, and the
+            // looks read into a property that is on no object and saved
+            // again as text. No other value of an object is taken apart so.
+            if (kind->second != PropertyElementAppearance::getClassTypeId().getName())
+                return false;
+            static const std::string endOfNames("</LinkSub>");
+            const std::size_t end = v.fragment.find(endOfNames);
+            if (end == std::string::npos)
+                return false;
+            PropertyElementAppearance looks;
+            try {
+                restoreValue(looks, v);
+            }
+            catch (const Base::Exception&) {
+                return false;
+            }
+            catch (const std::exception&) {
+                return false;
+            }
+            CapturedValue again = captureValue(inlined, looks);
+            if (!again.ok || !again.attachments.empty())
+                return false;
+            fragment = v.fragment.substr(0, end + endOfNames.size()) + "\n" + again.fragment;
+            return true;
+        }
         Base::Type type = Base::Type::fromName(kind->second.c_str());
         if (type.isBad() || !type.isDerivedFrom(Property::getClassTypeId()))
             return false;
@@ -9867,7 +9906,10 @@ void planWeigh(Document& doc, TransactionLog& logRef, MergePlan& plan)
             if (!obj || created.count(std::get<1>(key)))
                 continue;
             auto unit = obj->getMergeUnit(unitMember(ckind, std::get<2>(key)).c_str());
-            if (unit.size() > 1) {
+            // One property alone is a unit too, where its object merges it
+            // by what it holds: the looks of a shape's elements, by what
+            // they are given to (docs/ShapeAppearanceDesign.md sec 14.6.5)
+            if (!unit.empty()) {
                 const std::string first = unit.front();
                 units.emplace(std::make_pair(std::get<1>(key), first), std::move(unit));
             }

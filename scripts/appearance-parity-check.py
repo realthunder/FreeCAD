@@ -1,20 +1,20 @@
-# GUI check of docs/ShapeAppearanceDesign.md sec 14.6.9 step A: the object
-# makes what its elements are drawn as (Part::Feature::updateAppearance(),
-# kept in ElementAppearance) and nothing reads it yet -- the view provider
-# still makes its own (ViewProviderPartExt::updateColors()). So the two are
-# compared: the object's store is given what the view provider holds, and
-# the faces, edges and vertices the object then makes are held against the
-# view provider's ShapeAppearance, LineColorArray and PointColorArray, entry
-# by entry. One GUI run in a fresh user home, given this script at startup:
+# GUI check of docs/ShapeAppearanceDesign.md sec 14.6.3: what a
+# Part::Feature's faces, edges and vertices look like is the object's
+# (ElementAppearance, made by Part::Feature::updateAppearance()), and its
+# view provider's ShapeAppearance, DiffuseColor, ShapeColor, LineColor,
+# LineColorArray, PointColorArray and Map* properties are names over that.
+# So a change made through the view provider, as every script and panel
+# makes it, is the object's -- and after each one here the view provider's
+# list is held against what the object draws, entry by entry, with nothing
+# done in between to make them agree. One GUI run in a fresh user home,
+# given this script at startup:
 #
 #   cd build/conda-relwithdebinfo-801
 #   QT_QPA_PLATFORM=offscreen FREECAD_USER_HOME=/tmp/fchome-ap \
 #     PARITY_OUT=/tmp/ap/out.txt ~/works/sw/fcad/.conda/run.sh ./bin/FreeCAD \
 #     ~/works/sw/fcad/scripts/appearance-parity-check.py
 #
-# It writes PASS/FAIL lines to $PARITY_OUT and exits. This check goes when
-# the view provider draws what the object made (step B): there is then one
-# list and nothing to compare.
+# It writes PASS/FAIL lines to $PARITY_OUT and exits.
 import os, tempfile, traceback
 import FreeCAD as App
 import FreeCADGui as Gui
@@ -68,69 +68,6 @@ def ours(obj):
     return obj.isDerivedFrom("Part::Feature") and hasattr(obj.ViewObject, "ShapeAppearance")
 
 
-def mapped(obj, kind):
-    # Whether the view provider makes the elements of a kind from the
-    # sources: what it holds of them by number is then not stated by anybody.
-    vp = obj.ViewObject
-    flag = {"Face": vp.MapFaceColor, "Edge": vp.MapLineColor, "Vertex": vp.MapPointColor}[kind]
-    return flag and (vp.ForceMapColors or bool(vp.claimChildren()))
-
-
-def state(obj):
-    # What the view provider holds, as the object's store states it: the
-    # object's own looks, the names with theirs, and -- where the view
-    # provider does not make them from the sources -- the elements coloured
-    # by their number.
-    vp = obj.ViewObject
-    sa = vp.ShapeAppearance
-    stated = {"Face": sa.Base, "Edge": vp.LineMaterial, "Vertex": vp.PointMaterial}
-    subs = list(obj.ColoredElements[1]) if obj.ColoredElements else []
-    looks = vp.getElementAppearances()
-    colours = bool(vp.MappedAppearance.Count) and vp.MappedAppearance.FollowMaterial
-    named = set()
-    for sub in subs:
-        if sub not in looks:
-            continue
-        named.add(sub)
-        m = looks[sub]
-        stated[sub] = tuple(m.DiffuseColor[:3]) + (1.0 - m.Transparency,) if colours else m
-    base = look(sa.Base)
-    if not mapped(obj, "Face") and sa.Count > 1:
-        for i in range(sa.Count):
-            name = "Face%d" % (i + 1)
-            if name in named or look(sa[i]) == base:
-                continue
-            m = sa[i]
-            # A colour and no more where the rest of it is the object's
-            if look(m)[2:] == base[2:]:
-                stated[name] = tuple(m.DiffuseColor[:3]) + (1.0 - m.Transparency,)
-            else:
-                stated[name] = m
-    for kind, colors, own in (("Edge", vp.LineColorArray, vp.LineColor),
-                              ("Vertex", vp.PointColorArray, vp.PointColor)):
-        if mapped(obj, kind) or len(colors) <= 1:
-            continue
-        for i, c in enumerate(colors):
-            name = "%s%d" % (kind, i + 1)
-            if name not in named and rgb(c) != rgb(own):
-                stated[name] = tuple(c[:3]) + (1.0,)
-    return stated
-
-
-def sync(obj):
-    vp = obj.ViewObject
-    for flag in FLAGS:
-        if getattr(obj, flag) != getattr(vp, flag):
-            setattr(obj, flag, getattr(vp, flag))
-    obj.ElementAppearance = state(obj)
-
-
-def sync_all(doc):
-    for obj in doc.Objects:
-        if ours(obj):
-            sync(obj)
-
-
 def diffs(obj):
     # Where what the object made is not what the view provider made.
     vp = obj.ViewObject
@@ -155,52 +92,20 @@ def diffs(obj):
     return out
 
 
-def remake(doc):
-    # Every view provider that makes its faces from its sources made to do
-    # so again, by a property whose change does that and no more (a body's
-    # view provider passes the others on to its tip's). Twice: one that
-    # takes from another made after it has that one's then.
-    for _ in range(2):
-        for obj in doc.Objects:
-            if ours(obj) and any(mapped(obj, kind) for kind in ("Face", "Edge", "Vertex")):
-                vp = obj.ViewObject
-                vp.ForceMapColors = not vp.ForceMapColors
-                vp.ForceMapColors = not vp.ForceMapColors
-
-
-stale = []
-
-
 def compare(doc, what):
     bad = {}
-    late = []
     objs = [obj for obj in doc.Objects if ours(obj) and not obj.Shape.isNull()]
-    seen = len(objs)
-    unlike = [obj for obj in objs if diffs(obj)]
-    if unlike:
-        # A view provider that holds what it made of another shape, or at
-        # another time, is not what the object is held against
-        remake(doc)
-    for obj in unlike:
+    for obj in objs:
         d = diffs(obj)
-        if not d:
-            late.append(obj.Name)
-            continue
-        bad[obj.Name] = d[:4] + (["... %d more" % (len(d) - 4)] if len(d) > 4 else [])
-    if late:
-        stale.append("%s: %s" % (what, ", ".join(late)))
-    check("%s: %d objects drawn alike%s%s"
-          % (what, seen,
-             " -- once the view provider of %s made its own again" % ", ".join(late) if late else "",
-             " -- view provider/object %r" % bad if bad else ""),
-          not bad and seen > 0)
+        if d:
+            bad[obj.Name] = d[:4] + (["... %d more" % (len(d) - 4)] if len(d) > 4 else [])
+    check("%s: %d objects drawn as they are%s"
+          % (what, len(objs), " -- view provider/object %r" % bad if bad else ""),
+          not bad and len(objs) > 0)
 
 
 def step(doc, what):
-    # After a change made as it is made today, through the view provider:
-    # stated to the object's store, and what each made of it compared.
     doc.recompute()
-    sync_all(doc)
     compare(doc, what)
 
 
@@ -312,21 +217,20 @@ def run():
     check("the cut draws that too (%r)" % colours(c), GREEN in colours(c))
     cyl.Radius = 3
     doc.recompute()
-    compare(doc, "the cylinder wider, nothing stated again")
+    compare(doc, "the cylinder wider")
     cyl.Placement.Base = V(5, 5, -10)
     doc.recompute()
     check("drilled through: a seventh face", len(c.Shape.Faces) == 7)
-    compare(doc, "drilled through, nothing stated again")
+    compare(doc, "drilled through")
     step(doc, "drilled through")
     c.ViewObject.setElementColors({face(c, ZMin=10): YELLOW})
     step(doc, "a face of the cut painted by name")
     cyl.Radius = 2.5
     doc.recompute()
-    compare(doc, "the cylinder narrower, nothing stated again")
+    compare(doc, "the cylinder narrower")
     # The source alone stated: what was made from it is told, no recompute
     box.ViewObject.ShapeColor = CYAN
-    sync(box)
-    compare(doc, "the box given another colour, and stated alone")
+    compare(doc, "the box given another colour, with no recompute")
     check("the cut follows (%r)" % colours(c), CYAN in colours(c) and RED not in colours(c))
     box.ViewObject.Transparency = 50
     step(doc, "the box made transparent")
@@ -364,7 +268,7 @@ def run():
           {o.Name: colours(o) for o in doc.Objects if ours(o)} == was)
     doc.Cyl.Radius = 2
     doc.recompute()
-    compare(doc, "read and made again, nothing stated again")
+    compare(doc, "read and made again")
 
     # A copy of the cut's shape, made once (Part.show): what it takes is
     # stated, by number.
@@ -405,26 +309,24 @@ def run():
     c.Tool = cyl
     step(doc, "a cut of the fillet")
     a.ViewObject.setElementColors({face(a, ZMax=0): GREEN})
-    sync(a)
-    compare(doc, "a name taken from the first box, and stated alone")
+    compare(doc, "a name taken from the first box, with no recompute")
     b.Placement.Base = V(4, 6, 5)
     doc.recompute()
-    compare(doc, "a box moved, nothing stated again")
+    compare(doc, "a box moved")
     fuse.ViewObject.setElementColors({face(fuse, ZMax=0): CYAN})
     step(doc, "a face of the fuse painted")
     b.Placement.Base = V(5, 5, 4)
     doc.recompute()
-    compare(doc, "a box moved again, nothing stated again")
+    compare(doc, "a box moved again")
 
-    # Stated in a transaction and undone: the object's alone, since what a
-    # view provider holds is not an undo's to put back as things are.
+    # Painted in a transaction and undone: the object's, so an undo's.
     doc.UndoMode = 1
     was = {o.Name: colours(o) for o in doc.Objects if ours(o)}
     doc.openTransaction("paint")
-    a.ElementAppearance[face(a, YMax=0)] = BLUE
+    a.ViewObject.setElementColors({face(a, ZMax=0): GREEN, face(a, YMax=0): BLUE})
     doc.commitTransaction()
     now = {o.Name: colours(o) for o in doc.Objects if ours(o)}
-    check("a face given a colour through the store: the fuse draws it too (%r)" % now["Fuse"],
+    check("a face painted: the fuse draws it too (%r)" % now["Fuse"],
           BLUE in now["A"] and now != was)
     doc.undo()
     check("undone: every object draws what it drew (%r)" % colours(a),
@@ -432,6 +334,7 @@ def run():
     doc.redo()
     check("redone (%r)" % colours(a),
           {o.Name: colours(o) for o in doc.Objects if ours(o)} == now)
+    compare(doc, "redone")
     doc.undo()
     compare(doc, "and undone again")
     App.closeDocument(doc.Name)
@@ -486,11 +389,11 @@ def run():
     step(doc, "the body given a colour")
     pad.Length = 12
     doc.recompute()
-    compare(doc, "the pad longer, nothing stated again")
+    compare(doc, "the pad longer")
     App.closeDocument(doc.Name)
 
-    # The object's material card: the own look takes it, with no view
-    # provider's help, as the view provider's does.
+    # The object's material card: the own look takes it, and the view
+    # provider draws that.
     try:
         import Materials
         manager = Materials.MaterialManager()
@@ -511,6 +414,7 @@ def run():
             lines.append("SKIP no material card that says anything of a look")
         else:
             doc.recompute()
+            compare(doc, "a box given a material card")
             check("the object's own look is the card's (%r)" % (rgb(box.ElementAppearance.Face.DiffuseColor),),
                   look(box.ElementAppearance.Face) == look(box.ViewObject.ShapeAppearance.Base))
         App.closeDocument(doc.Name)
@@ -523,8 +427,6 @@ def main():
         run()
     except Exception:
         lines.append("FAIL exception\n" + traceback.format_exc())
-    for item in stale:
-        lines.append("NOTE the view provider was behind the object -- " + item)
     with open(OUT, "w") as fp:
         fp.write("\n".join(lines) + "\n")
     for doc in list(App.listDocuments().values()):

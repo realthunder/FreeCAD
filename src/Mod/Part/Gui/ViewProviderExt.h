@@ -241,23 +241,10 @@ public:
     /// A name over ShapeAppearance's diffuse field, not a second store
     PropertyDiffuseColor DiffuseColor;
 
-    /** The look of each element ColoredElements names, in its order
-     *
-     * The names are the object's and their looks are here, one entry for
-     * each (docs/ShapeAppearanceDesign.md sec 13). An entry is a whole
-     * material, and is read as one: by getMaterial(), never by what the
-     * list keeps as its base, which is whatever its entries agree on.
-     *
-     * The list's follow flag is put to a use of its own here. Set, the list
-     * holds colours and no more -- what a file older than this property
-     * has, read in through MappedColors -- and each element is the object
-     * in that colour, whatever the object comes to look like. The setters
-     * clear it: what they store is the whole of each look.
-     */
-    App::PropertyAppearanceList MappedAppearance;
-    /// A name over MappedAppearance's diffuse field, as DiffuseColor is
-    /// over ShapeAppearance's: what a file older than MappedAppearance
-    /// holds, and what an older reader is given
+    /// The colours of the elements the object gives a look by name, in
+    /// the order of its names: what a script and a file older than the
+    /// object's store know them by. Taken from the object, and read from
+    /// such a file (docs/ShapeAppearanceDesign.md sec 14.6.6).
     PropertyDiffuseColor MappedColors;
     App::PropertyBool MapFaceColor;    
     App::PropertyBool MapLineColor;    
@@ -322,13 +309,6 @@ public:
     getElementAppearances(const char *element=nullptr) const override;
     void setElementAppearances(
             const std::map<std::string,App::MaterialAppearance> &appearances) override;
-    /** The named elements' looks, as they are to be drawn
-     *
-     * MappedAppearance, each entry a whole material; or, where the list
-     * holds colours and no more (its follow flag), the object as it is now
-     * in each of them. Read with getMaterial() and getDiffuseColors().
-     */
-    App::AppearanceList namedAppearances() const;
     std::map<std::string,App::Color> getElementColors(const char *element=nullptr) const override;
     //@}
 
@@ -343,8 +323,21 @@ public:
 
     virtual void checkColorUpdate() override;
 
-    static std::vector<App::Color> getShapeColors(const Part::TopoShape &shape, App::Color &defColor,
-            App::Document *sourceDoc=0, bool linkOnly=false);
+    /** @name The looks are the object's
+     *
+     * docs/ShapeAppearanceDesign.md sec 14.6.3. The Part::Feature shown
+     * keeps what its elements look like and makes what is drawn of them;
+     * this view provider's appearance properties are names over that.
+     */
+    //@{
+    /// The object whose looks these are: the one shown, where it is its own
+    /// shape that is shown. None for a view of another shape of an object
+    /// (setShapePropertyName()), which keeps values of its own.
+    Part::Feature *appearanceStore() const;
+    void applyMaterialAppearance() override;
+    bool canResetAppearanceToMaterial() const override;
+    bool resetAppearanceToMaterial() override;
+    //@}
 
     /** @name Edit methods */
     //@{
@@ -397,6 +390,7 @@ protected:
 protected:
     /// get called by the container whenever a property has been changed
     void onChanged(const App::Property* prop) override;
+    void onBeforeChange(const App::Property* prop) override;
     /// Restore a document written before DiffuseColor became a name over
     /// ShapeAppearance: it kept its name and changed type, so it arrives
     /// here, and the base would drop it without a word.
@@ -829,22 +823,33 @@ protected:
         }
     };
     MeshLadderState meshLadder;
-    bool UpdatingColor;
-    /// The elements ColoredElements' names painted when updateColors() last
-    /// ran, each from 0, by kind (a TopAbs_ShapeEnum)
-    std::map<int, std::set<int>> paintedByName;
-    /// Make paintedByName again from the names, as a document read has to
-    void rememberPaintedByName();
-    void setFaceColors(const std::vector<App::Color> &colors, int faceCount,
-                       const std::vector<int> &unpainted,
-                       const std::map<int,int> &named,
-                       const App::AppearanceList &looks,
-                       const std::map<int,App::MaterialAppearance> *handedOn = nullptr);
-    /// Write the names and a look for each, the tail of both setters
-    void setNamedElements(App::PropertyLinkSub *names,
-                          const std::vector<std::string> &subs,
-                          const std::vector<App::MaterialAppearance> &looks,
-                          bool touched);
+    /// Whether the appearance properties are names over the object's
+    bool appearanceBound = false;
+    /// Taking the object's values: no write of them goes back to it
+    bool mirroringAppearance = false;
+    /// What a derived kind of view provider gave itself in its constructor,
+    /// to be the look of an object nobody chose one for
+    enum ClassLook { ClassFace = 1, ClassEdge = 2, ClassVertex = 4, ClassFlags = 8 };
+    int classLooks = 0;
+    void bindAppearance();
+    void unbindAppearance();
+    /// The object's looks and Map* properties into this view provider's
+    void mirrorAppearance();
+    /// A write to ShapeColor, Transparency or ShapeMaterial: the object's
+    /// own look
+    /// Mark the names over the object's looks as that, or as values again
+    void markAppearanceNames(bool on);
+    void writeOwnLook(const App::Property *prop);
+    /// A write to ShapeAppearance taken apart and given to the object
+    void writeFaces(const App::AppearanceList &before, const App::AppearanceList &after);
+    /// A colour for each edge or vertex (an App::PropertyElementAppearance
+    /// kind), each that differs from what is drawn given to the object
+    void writeColours(int kind, const std::vector<App::Color> &values);
+    void giveClassAppearance();
+    void adoptAppearance(Part::Feature *feat);
+    /// After a document is read: the looks taken from the object, or given
+    /// to one that came out of a file with none
+    void finishAppearance();
     bool highlightFaceEdges = false;
 
     /// Whether the last APPLIED per-face materials diverge in value in a
@@ -870,7 +875,6 @@ private:
     static const char* DrawStyleEnums[];
 
     Part::TopoShape cachedShape;
-    fastsignals::scoped_connection conn;
 };
 
 }

@@ -68,7 +68,6 @@ public:
     PropertyPartShape Shape;
     /// The physical material card assigned to this shape
     Materials::PropertyMaterial ShapeMaterial;
-    App::PropertyLinkSubHidden ColoredElements;
     /** @name What the shape's elements look like
      *
      * docs/ShapeAppearanceDesign.md sec 14.6: what an object looks like is
@@ -101,12 +100,12 @@ public:
     const char* getViewProviderName() const override;
     const App::PropertyComplexGeoData* getPropertyOfGeometry() const override;
 
-    /** @name The elements painted by name, to a merge
+    /** @name The looks of the elements, to a merge
      *
-     * ColoredElements and the view provider's MappedAppearance are one
-     * thing, an entry of the second for each name of the first, and where
-     * two branches both painted they are merged by name
-     * (docs/TransactionLog.md sec 31.20; PartFeatureMerge.cpp).
+     * ElementAppearance is merged by what its looks are given to where two
+     * branches both wrote it: the names by name, the numbers by number, the
+     * own looks each as a value (docs/ShapeAppearanceDesign.md sec 14.6.5,
+     * docs/TransactionLog.md sec 31.20; PartFeatureMerge.cpp).
      */
     //@{
     std::vector<std::string> getMergeUnit(const char* prop) const override;
@@ -344,8 +343,6 @@ public:
     App::PropertyLinkHidden *get_ShapeContentOwnerProperty(bool force=false);
     //[[[end]]]
 
-    fastsignals::signal<void (App::Document *)> signalMapShapeColors;
-
     static Feature *create(const TopoShape &s,
                            const char *name = nullptr,
                            App::Document *doc = nullptr);
@@ -359,6 +356,9 @@ protected:
     App::DocumentObjectExecReturn *execute() override;
     void onBeforeChange(const App::Property* prop) override;
     void onChanged(const App::Property* prop) override;
+    /// ColoredElements, of a file older than ElementAppearance: its names
+    void handleChangedPropertyName(Base::XMLReader &reader, const char *TypeName,
+                                   const char *PropName) override;
     /// A new object is given a look (giveDefaultAppearance())
     void setupObject() override;
     void unsetupObject() override;

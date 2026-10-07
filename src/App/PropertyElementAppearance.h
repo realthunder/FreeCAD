@@ -207,6 +207,27 @@ public:
      * one storage. What a new object is given, by the thousand.
      */
     void setBaseList(Kind kind, const AppearanceList &own);
+    /// The kind's own look as it is held: a list of one, or of none where
+    /// no look was given
+    const AppearanceList &getBaseList(Kind kind) const;
+    //@}
+
+    /** @name A value with no object
+     *
+     * What a merge has of each branch (docs/ShapeAppearanceDesign.md sec
+     * 14.6.5): the value as it was saved, and no object whose shape the
+     * names could be looked up in. A property that is on no object reads the
+     * looks and steps over the names, keeping only how many there were, and
+     * from then on writes the looks alone: the names are text to whoever
+     * merges, which puts them back before what this writes.
+     *
+     * Not every property on no object is one of these: a copy of a value,
+     * which is what an undo and the log hold, has its names and writes them.
+     */
+    //@{
+    bool isDetached() const { return _detached; }
+    /// A look for each of as many names, of a property on no object
+    void setDetachedNamed(const AppearanceList &looks, std::vector<uint16_t> &&own = {});
     //@}
 
     /** @name By number
@@ -411,6 +432,8 @@ private:
     int _editing {0};
     bool _restoring {false};
     bool _wasRestored {false};
+    /// Read with no object: the names are counted and not known
+    bool _detached {false};
 };
 
 }  // namespace App

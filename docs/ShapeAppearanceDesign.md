@@ -3406,8 +3406,9 @@ follow still.
 >
 > **14.4 step 1 is built. 14.6 is ruled after it, the same day, and
 > replaces the rest of 14.4: everything that makes a look is the object's.
-> 14.6.9 is the build order from here, and its step A is built (14.6.10):
-> the object makes the looks and nothing reads them yet. Step B is next.**
+> 14.6.9 is the build order from here, and its steps A and B are built
+> (14.6.10): the object makes the looks, and its view provider draws them.
+> What is left of B is listed there; step C is next.**
 > What is filled in beyond the rulings is marked *mine*, and is the user's
 > to overrule.
 
@@ -3904,7 +3905,8 @@ provider's `ShapeAppearance`, entry by entry, over the paint check's
 documents and a boolean of painted boxes. This is the step that proves
 the code moved whole, before anything depends on it.
 
-**B. The view provider draws what the object made** -- one piece, since
+**B. The view provider draws what the object made** (*built but for the
+object's own names and the dialogs*, 14.6.10) -- one piece, since
 the merge and the paint check read by name what goes (14.4 step 3).
 `ShapeAppearance` and the rest as names over the object (14.6.3), the
 write taken apart; `setElementColors()` and its kin on the store;
@@ -4091,3 +4093,158 @@ Tests: `PropertyAppearanceListTest.aWriteToANameIsHandedToWhoKeepsTheValue`;
 `PartAppearanceMadeTest.aNewObjectIsGivenALookAndKeepsNoMore` in place of
 the case that an object nobody coloured keeps nothing, and the same in
 `parttests.ElementAppearanceTest`.
+
+**Step B, the view provider draws what the object made (2026-10-07).** One
+piece, as 14.6.9 said it had to be: the view provider, `ColoredElements`,
+the merge and the paint check.
+
+*The names.* A `ViewProviderPartExt` that shows its object's own shape is
+bound to the object's store (`appearanceStore()`, `bindAppearance()`): at
+the end of `attach()`, or when a document being read is done
+(`finishAppearance()`). From then on
+
+- `ShapeAppearance` holds the object's drawn faces, the same storage
+  (`mirrorList()`), and a write to it -- any of its setters, a paste, a
+  Python view, `DiffuseColor` -- is handed to `writeFaces()`, which takes it
+  apart: the base to the object's own look, each face the write changed to
+  its name or its number with the fields that changed as its own, a face
+  that came back to the object's look let go;
+- `ShapeColor`, `Transparency` and `ShapeMaterial` are the object's own look
+  and are written to it directly (`writeOwnLook()`). *Not through the list*
+  (*found building it*): a list keeps what all its entries agree on as its
+  base, so six faces of a box red made the list's base red, and
+  `ShapeColor`, read off it, said the box was red. The own look is asked of
+  the store;
+- `LineColor`, `LineMaterial`, `PointColor`, `PointMaterial` are the own
+  looks of the edges and vertices, `LineColorArray` and `PointColorArray`
+  what is drawn of them, a write to either given to the store
+  (`writeColours()`);
+- the five `Map*` properties are the object's, each way;
+- `MappedColors` is the colours of the names, taken from the store, and
+  what an older file's are read into. `MappedAppearance` is gone.
+
+What comes from the object is set under `mirroringAppearance`, with
+`onBeforeChange()` stood down: nothing of it is recorded for an undo, and
+no row of the log is made for it. `Prop_OwnerValue` has nothing left that
+uses it.
+
+*A name is said to be one* (*found by the gates*). That was not enough for
+the log. It writes every saved value of a view provider with the row that
+makes the object, and puts them back when a branch switch, a merge or an
+import makes the object again -- after the object's own values. Each of
+those was then a write to the object of what the name said when the object
+was made: a cylinder made, then green, came back in the default colour,
+seven checks in four scripts. And not binding a view provider made that
+way, which was the first reading of it, left it drawing its own values.
+
+So a bound view provider's names carry `App::Property::Legacy` -- "a name
+for a value kept somewhere else", which `ShapeMaterial` on a view provider
+has had since docs/MaterialStorage.md sec 15.6 -- set by `bindAppearance()`
+and taken off by `unbindAppearance()` (`markAppearanceNames()`): a status
+of the one property and not of its class, since a mesh's `ShapeAppearance`
+is a value. And a property that carries it
+
+- is in no row of the log -- not the row that makes or removes its
+  container, not one of its own (`logged()`, `TransactionLog.cpp`) -- and
+  is not written by a move along the log or by a version put back, where a
+  row or a version from before has it;
+- is held by no undo (`ViewProviderDocumentObject::onBeforeChange()`) and
+  opens no transaction (`Document::_checkTransaction()`): the write to
+  what it names does both.
+
+The colour of an object is therefore the object's row and nothing else,
+which is what 14.6.5 says of it, and what two branches both wrote of it is
+merged by `ElementAppearance`'s own rule and is no "view conflict"
+(`scripts/transaction-log-merge-check.py`, which has a line width for
+that now). Until the object's own names are there and these are hidden,
+the property editor draws them the way it draws a `Legacy` name, in red
+italic.
+
+*A write to the object is no write to its faces* (*mine*). A write that
+moves the own look -- a colour, a transparency, a material -- gives a look
+to no face that had none, and of a face that states one changes only the
+fields the face states itself. A transparency is every face's that states
+a colour, as it always was.
+
+`updateColors()`, `paintedByName`, `setFaceColors()`, `setNamedElements()`
+and the walk through the history are gone from the view provider.
+`updateColors()` is kept as a name that asks the object
+(`updateAppearance()`), for what calls it. `getElementColors()`,
+`setElementColors()` and the two `Appearances` calls read and write the
+store: *what is stated of the elements is one list now, the names and the
+numbers*, so Set Colors lists a face coloured by its number with the faces
+painted by name, and taking the names away takes that too.
+
+*A kind of view provider's own look.* What a derived constructor gives
+itself before it shows anything -- a datum's colour, a binder's
+`ForceMapColors`, PartDesign's `Map*` under random colours -- is noted
+(`classLooks`) and given to the object when the view provider is attached,
+where nobody chose a look for it (`giveClassAppearance()`). That is where
+"the `Map*` defaults PartDesign's and the sketcher's view providers set"
+are set for now; made with no Gui, such an object has the preferences'.
+
+*`ColoredElements` is gone from `Part::Feature`.* A file that has it is
+read (`handleChangedPropertyName()`): the names into the store, as names
+that state nothing. When its view provider has finished reading
+(`adoptAppearance()`), and the store was not in the file (`wasRestored()`),
+the view provider's values are taken into it as a script's write would be
+-- the `Map*`, the own looks, the names in the colours of `MappedColors`,
+and what is coloured by number where the view provider did not make it
+from the sources (an import's faces as the list they are, at no cost) --
+and what is drawn is made, of this object and of those made from it that
+were taken before it: the view providers of a document are not read in the
+order of what they show. Where the store is in the file the view
+provider's values in the file are not taken.
+
+*Not built of 14.6.6:* the view provider's names are still written at every
+schema. Schema 4 is what a new document is saved at, for upstream, and
+needs them; leaving them out at 5 goes with step E.
+
+*The merge* (`PartFeatureMerge.cpp`). `ElementAppearance` is a merge unit
+of one property -- the log took a unit to be two or more, and takes one
+now -- merged where both branches wrote it: the names by mapped name, each
+with its look and which of it is its own; the looks by number a face at a
+time, a list nobody wrote being every face the own look; the own looks
+each as a value; `TransactionLogMergeFacePaint` where both wrote one thing.
+A branch's value is its saved text and there is no object to look its
+names up in, so the names stay the text they are and the looks are read
+into a property that is on no object (`isDetached()`): it steps over the
+names, counting them, and writes the looks alone. *Not every property on
+no object is one of those* (*found building it*): a copy of a value, which
+is what the log holds of a change, is on none either, has its names and
+must write them -- told apart by how it was read, not by where it is. What
+is drawn is left out of a merged value and made when it lands.
+
+*Found building it.* A list held in the store asked for its document's
+blob store whenever it was given a holder. Asking makes the store, and the
+file's history with it, after which a removed object's name is not given
+again (docs/TransactionLog.md sec 27.40): every document had a history as
+soon as it had a `Part::Feature`, and eighteen CAM cases that remove an
+object and add it again by the same name failed. A list asks only where
+it names stored content.
+
+*Limits, known:*
+
+- A face held by its number states what of its look differs from the
+  object's (14.2), so a box's face given the very gloss the object has
+  states none and goes with the object after. A face held by a name keeps
+  what it was given. It goes when a primitive's faces have names.
+- An object-level write through `ShapeAppearance.Base` on a list every
+  face of which states the same look is read against that look, not the
+  object's own. `ShapeColor` and the others do not go that way.
+- The object's own names of 14.6.1 (`ShapeColor` and the rest as
+  properties of the object, the view provider's hidden), the dialogs
+  writing the object's, and `Render_*` are not in this.
+
+Checks. `scripts/appearance-parity-check.py`, 66, is no longer two makings
+held against each other: after each change made through the view
+provider it holds the view provider's lists against what the object
+draws, with nothing in between to make them agree -- the pocket through a
+painted pad among them, right now. `scripts/transaction-log-paint-check.py`,
+80, on the store, with three of its cases saying another thing than they
+did: six faces red leave the object the colour it was; a face given a
+colour goes on taking the object's gloss though another face has a
+material; a box's face coloured by number is stated as a painted one is.
+Python `parttests.ElementAppearanceTest.ElementAppearanceMergeTest`, 3, in
+`FreeCADCmd`: faces named on both branches, one of them drilled through
+meanwhile; faces by number on both; one face on both, by the rule.

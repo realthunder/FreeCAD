@@ -227,7 +227,7 @@ public:
      * how a fresh object with a card starts following one. The overriding
      * faces are left alone, so a following object keeps its painted faces.
      */
-    void applyMaterialAppearance();
+    virtual void applyMaterialAppearance();
 
     /** Whether going back to the card's look would change anything
      *
@@ -236,7 +236,7 @@ public:
      * button and the context-menu command both ask before offering
      * themselves (docs/MaterialStorage.md 15.5).
      */
-    bool canResetAppearanceToMaterial() const;
+    virtual bool canResetAppearanceToMaterial() const;
 
     /** Take the card's look again, and follow it from now on
      *
@@ -245,7 +245,7 @@ public:
      * -- this is not "clear the overrides". Answers whether it did
      * anything.
      */
-    bool resetAppearanceToMaterial();
+    virtual bool resetAppearanceToMaterial();
 
     /** Decide, once, whether a restored appearance follows its card
      *

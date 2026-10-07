@@ -278,6 +278,10 @@ void Part2DObject::handleChangedPropertyName(Base::XMLReader &reader,
                                              const char * TypeName,
                                              const char *PropName)
 {
+    if (PropName && strcmp(PropName, "ColoredElements") == 0) {
+        Part::Feature::handleChangedPropertyName(reader, TypeName, PropName);
+        return;
+    }
     extHandleChangedPropertyName(reader, TypeName, PropName); // AttachExtension
 }
 

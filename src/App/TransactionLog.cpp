@@ -108,6 +108,18 @@ bool sameForLog(const CaptureConfig& config, const Property& copy, const Propert
     return copy.isSame(live);
 }
 
+/// Whether the log holds a property's value: one that is saved, and is the
+/// container's own. A name over a value kept elsewhere (Property::Legacy --
+/// a view provider's ShapeColor where its object holds the looks,
+/// docs/ShapeAppearanceDesign.md sec 14.6.5) is logged where it is kept:
+/// put back from a row of its own it would be written over what it names.
+bool logged(const PropertyContainer& container, const Property& prop)
+{
+    const short type = container.getPropertyType(&prop);
+    return !(type & Prop_Transient) && !(type & Prop_NoPersist)
+        && !prop.testStatus(Property::Legacy);
+}
+
 double now()
 {
     return std::chrono::duration<double>(
@@ -3104,8 +3116,7 @@ int64_t TransactionLog::onCommit(const Transaction& txn, const char* kind, const
                 std::map<std::string, Property*> props;
                 c.container->getPropertyMap(props);
                 for (auto& kv : props) {
-                    short ptype = c.container->getPropertyType(kv.second);
-                    if ((ptype & Prop_Transient) || (ptype & Prop_NoPersist))
+                    if (!logged(*c.container, *kv.second))
                         continue;
                     if (!kv.second->getName())
                         continue;
@@ -3144,8 +3155,7 @@ int64_t TransactionLog::onCommit(const Transaction& txn, const char* kind, const
                     : removed                                     ? removed->getLogTouchedBits()
                                                                   : -1;
                 for (auto& kv : props) {
-                    short ptype = c.container->getPropertyType(kv.second);
-                    if ((ptype & Prop_Transient) || (ptype & Prop_NoPersist))
+                    if (!logged(*c.container, *kv.second))
                         continue;
                     if (!kv.second->getName())
                         continue;
@@ -3229,8 +3239,7 @@ int64_t TransactionLog::onCommit(const Transaction& txn, const char* kind, const
                     task(share(data), "durable", last(), kv.first);
                     continue;
                 }
-                short ptype = c.container->getPropertyType(prop);
-                if ((ptype & Prop_Transient) || (ptype & Prop_NoPersist))
+                if (!logged(*c.container, *prop))
                     continue;
 
                 bool derived = data.derived;

@@ -601,7 +601,6 @@ void ViewProviderBody::unifyVisualProperty(const App::Property* prop) {
        prop == &MapPointColor ||
        prop == &ForceMapColors ||
        prop == &MappedColors ||
-       prop == &MappedAppearance ||
        prop == &DiffuseColor ||
        prop == &PointColorArray ||
        prop == &LineColorArray) {
