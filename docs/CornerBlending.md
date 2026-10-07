@@ -603,11 +603,13 @@ in `Base` (9.5):
   `LinearGizmo` reports a value. No handle is shown for a setback an
   expression drives.
 
-Checked by driving the panel in the GUI (a script run at startup, real
-platform: on macOS `offscreen` cannot open any edit panel, the Box's
-included): the rows of a corner with one own and two inherited setbacks,
+Checked by driving the panel in the GUI (a script run at startup): the rows of a corner with one own and two inherited setbacks,
 an edit of a child and of the corner (volume 993.8057, as in 9.4's table),
 the handles at the vertex in a screenshot, a handle's value through to
 `Corners` and the recompute, `Clear`, a pick in toggle mode and the
-removal of its row. Not covered by a committed test: the repository's GUI
-gate runs `offscreen`, where the panel cannot open on this box.
+removal of its row. The same, less the screenshot, is
+`PartDesignTests.TestFilletPanel` (5 cases), run by
+`scripts/sandbox-gui-gate.py` on `offscreen` or a real platform; it
+needed the macOS `offscreen` crash of every edit panel fixed first
+(`QuarterWidget::paintEvent`, a GL call made before checking for a
+context).

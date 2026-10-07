@@ -58,6 +58,7 @@ set(PartDesign_TestScripts
     PartDesignTests/TestMultiTransform.py
     PartDesignTests/TestBoolean.py
     PartDesignTests/TestFillet.py
+    PartDesignTests/TestFilletPanel.py
     PartDesignTests/TestChamfer.py
     PartDesignTests/TestDraft.py
     PartDesignTests/TestThickness.py

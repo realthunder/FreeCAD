@@ -22,8 +22,8 @@ clean on every box).  $SANDBOX_GUI_GATE_MODULES selects the modules
 (comma-separated, default SandboxGui,SandboxWidgets,SandboxForms,
 SandboxNative,SandboxPanels,SandboxSelection,SandboxSessionDoc,
 SandboxHostFiles,SandboxProxyImport,ViewProviderHooks,
-ViewProviderChain,SandboxToolBarMirror,SandboxPanelMirror; the two
-mirror gates run last and need no guest).  SandboxMirrorBench is a
+ViewProviderChain,PartDesignTests.TestFilletPanel,SandboxToolBarMirror,
+SandboxPanelMirror; the two mirror gates run last and need no guest).  SandboxMirrorBench is a
 measurement (docs/Sandbox.md 8.4), not in the default list: name it
 alone to run it.
 """
@@ -75,6 +75,7 @@ def main():
                        "SandboxSelection,SandboxSessionDoc,SandboxHostFiles,"
                        "SandboxProxyImport,"
                        "ViewProviderHooks,ViewProviderChain,"
+                       "PartDesignTests.TestFilletPanel,"
                        "SandboxToolBarMirror,"
                        "SandboxPanelMirror")
     modules = os.environ.get("SANDBOX_GUI_GATE_MODULES", default_modules).split(",")

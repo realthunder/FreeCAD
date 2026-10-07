@@ -170,6 +170,11 @@ reaches and what arguments the Proxy is handed, per the table in
 proxy chain -- `ViewProxyExp`, the walk, the deferred attach and a
 spreadsheet as an extension (`docs/ProxyChain.md` sec 4.4). Its App-side twin,
 `FeaturePythonChain`, is headless and rides the Python suite.
+`PartDesignTests.TestFilletPanel` (5) also runs on `offscreen`: it opens the
+fillet task panel and drives its setback corners (`docs/CornerBlending.md`
+9.6). On macOS no edit panel could open on `offscreen` before 2026-10-07 --
+`QuarterWidget::paintEvent` made a GL call before checking it had a context,
+which Linux's GL dispatch ignores and macOS's libGL crashes on.
 
 **Editing a test module means copying it into the build tree.** The modules
 are installed, not read from `src/`, so an edit to `src/Mod/Test/<M>.py` does
