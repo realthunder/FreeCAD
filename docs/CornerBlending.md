@@ -3,7 +3,8 @@
 Status: the OCCT side of phases 1 and 2 is implemented, as the fillet's
 fallback first (section 9), the Part API of phase 3 (section 9.4), the
 PartDesign property of phase 4 (section 9.5) and the task panel of phase 5
-(section 9.6).
+(section 9.6); the patch's quality at large setbacks and the pictures are
+section 9.7.
 
 Request: realthunder/FreeCAD_assembly3#894, "[FR] Blend Corner feature"
 (2021-11). Related: #917 (variable radius; the fork's fillet has per-edge
@@ -425,6 +426,8 @@ Two failures had no vertex to give the fallback, and now report one:
 These change only how a failure is reported: the computation failed, or
 crashed, before.
 
+![The fallback at #876's corner](pictures/CornerBlending/fallback_876.png)
+
 Each step of the ladder starts from a clean state: `Reset()` first (a
 failed computation leaves corner stripes with no spine, and `Compute` reads
 every spine before its own `Reset`; the same builder computed twice after a
@@ -473,9 +476,9 @@ of its volume agrees with the change of its mesh's to 0.0035 (median) and
 0.39 at most (a vertex of `issue474` Fillet002, 42 taken off), where the
 fillets made before do to 0.026 and 0.28 on the same shapes.
 
-The suite, `tests/fork/fillet/run_tests.py`: 139 pass, 2 known broken; the
-#876 corner and the four ends past #523's cylinder are made, and with the
-FreeCAD preference at 0 the #876 corner is refused as before.
+The suite, `tests/fork/fillet/run_tests.py`: 139 pass, 2 known broken;
+the #876 corner and the four ends past #523's cylinder are made, and with
+the FreeCAD preference at 0 the #876 corner is refused as before.
 
 ### 9.4 The Part API (phase 3)
 
@@ -525,6 +528,10 @@ not fold (its mean curvature keeps one sign). The last row keeps more
 material than today's corner: with one edge at `d0` the patch turns tight
 there and runs closer to the vertex. That is the shape asked for, not a
 bulge; it is why uneven setbacks want the GUI's handles (section 6).
+
+The volumes above are from before 9.7, which moved them in the third
+decimal or less, except the last row's (994.0769 to 993.8441), whose patch
+no longer hooks back at the `d0` fillet.
 
 ### 9.5 The PartDesign property (phase 4)
 
@@ -603,6 +610,8 @@ in `Base` (9.5):
   `LinearGizmo` reports a value. No handle is shown for a setback an
   expression drives.
 
+![The fillet task panel editing a corner](pictures/CornerBlending/task_panel.png)
+
 Checked by driving the panel in the GUI (a script run at startup): the rows of a corner with one own and two inherited setbacks,
 an edit of a child and of the corner (volume 993.8057, as in 9.4's table),
 the handles at the vertex in a screenshot, a handle's value through to
@@ -613,3 +622,92 @@ removal of its row. The same, less the screenshot, is
 needed the macOS `offscreen` crash of every edit panel fixed first
 (`QuarterWidget::paintEvent`, a GL call made before checking for a
 context).
+
+### 9.7 Patch quality (2026-10-07)
+
+What the setback plate gave a box corner, three fillets r 1, at large
+setbacks: an edge tolerance of 6.7e-2 at 4 x r and 1.5e-1 at 6 x r, and a
+crease of 7.3 deg against the stripes at 6 x r. Measured on the result:
+the tolerance, the farthest a boundary edge lies from the patch, and the
+largest angle between the patch's normal and its neighbour's across a
+boundary edge.
+
+Three causes, three changes, all for setback corners only (an ordinary
+corner never reaches them, so the sweeps' made-before results cannot move):
+
+- **The tolerance was the plate's, not the patch's.** The face, and with it
+  every edge, took `GeomPlate_MakeApprox::ApproxError()`: how far the
+  B-spline strays from the plate inside. No shape holds the plate; a thin
+  plate is hard to approximate near its constraint points, and that error
+  stayed near 1e-2 at 37x37 poles while the boundary was 4e-4 off. The face
+  now takes the criterion's error, the boundary fit, which the curves'
+  tolerances already carried; it still bounds the measured distance three
+  to four times over.
+- **The approximation stopped early.** It was allowed ten times the
+  plate's own miss of the boundary (`10 * G0Error()`), so the worse the
+  plate the sooner it stopped: 23x23 poles at 2 x r, 9x9 at 6 x r. A
+  setback corner's is held to the miss itself, with 16 patches instead of 9.
+- **The plate held its boundary at too few points.** Ten per boundary curve
+  over boundaries several radii long: twenty halve the crease (30 do no
+  better).
+
+And one shape fix. A face curve is a batten held tangent at each end to the
+stripe's contact line. Where a cut sits level with the next stripe's contact
+line -- a fillet at `d0` beside one set back farther -- that tangent is at
+right angles to the curve's chord, and the batten rose and hooked back to
+meet it, 0.54 past its ends on the box. A setback corner's batten now lets
+an end go whose tangent turns more than 85 deg from the chord; the curve
+meets the stripe at an angle there, as an ordinary corner's do. Even
+setbacks put the ends at 45 deg, and 3, 1.5 and 2 by edge under 85: those
+keep theirs. At 75 deg that case changed too.
+
+| Box corner, r 1 | Tolerance | Edge to patch | Crease | Poles |
+|---|---|---|---|---|
+| setback 0 | 1.2e-3 -> 2.0e-4 | 7.0e-5 -> 4.2e-5 | 0.11 -> 0.05 | 23 -> 30 |
+| setback 2 | 6.6e-3 -> 8.8e-4 | 3.9e-4 -> 1.7e-4 | 0.45 -> 0.28 | 23 -> 30 |
+| setback 4 | 6.7e-2 -> 3.8e-3 | 4.6e-3 -> 1.1e-3 | 1.68 -> 0.72 | 16 -> 30 |
+| setback 6 | 1.5e-1 -> 8.8e-3 | 5.8e-2 -> 2.5e-3 | 7.31 -> 1.24 | 9 -> 30 |
+| two fillets and a sharp edge, 4 | 1.1e-1 -> 3.7e-3 | 3.0e-2 -> 9.0e-4 | 44.8 -> 44.4 | 9 -> 30 |
+| 3, 1.5 and 2 by edge | 1.1e-2 -> 1.0e-3 | 8.0e-4 -> 2.3e-4 | 0.66 -> 0.29 | 23 -> 30 |
+| 3 and 1.5, the third at `d0` | 1.5e-2 -> 2.0e-3 | 8.9e-4 -> 2.7e-4 | 1.42 -> 0.47 | 16 -> 30 |
+
+The sharp edge's 44 deg is not a crease: where the patch cuts the sharp
+edge it cannot be tangent to both of its faces, 90 deg apart. Every result
+is valid, and valid again after being written and read. Seven fillets took
+2.35 s, now 2.95.
+
+The fallback goes through the same code. #523's cylinder fillets past its
+radius (`seam_end_top`, `mirror_top`) changed in the suite: at 3 the
+looser edges had pushed the ladder to twice the radius, its patch over most
+of the cylinder's top (1072.1768); it now stops at the first step, where the
+fillets meet, as at 2.5. Both had the hook, on the box's side; without it
+they are 1087.9914 and 1086.0296, tolerance 1.6e-3 and 2.6e-3. Suite:
+139 PASS, 2 XFAIL.
+
+The sweeps against the library as committed before this (every edge of
+the 32 models at three radii, every corner's fillet sets at two): the 2680
+and 9611 results made without the fallback are unchanged, value for value.
+Of those the fallback makes, the edges' tolerance fell from a median 1.4e-3
+to 1.3e-4 (60 of 63 tighter) and the corners' from 1.2e-3 to 1.0e-4 (281 of
+298); the largest stays 0.712, the input's own (#273). Eight more are made,
+all on #962's ribs at 0.3, and four fewer: #962 `Chamfer`'s edge 6 at 0.8
+and 1, an edge 1.25 long. There both changes together -- either alone
+still makes it -- give a patch with a bump, which the check of 9.2 refuses
+as no fillet: the edge's midpoint is 0.119 off the result where it wants
+half of 0.331. The one it made before is the smoother shape.
+
+The table of 9.4, measured again: setback 0 993.7247, 2 993.5877, 4
+992.1817, 3, 1.5 and 2 by edge 993.7989, 3 and 1.5 with the third at
+`d0` 993.8441. The pictures' edges are handed over in another order, and
+the plate depends on it: their volumes differ in the fourth decimal.
+
+![A box corner set back](pictures/CornerBlending/box_setbacks.png)
+
+![Setbacks by edge](pictures/CornerBlending/box_by_edge.png)
+
+![Two fillets and a sharp edge](pictures/CornerBlending/box_sharp_edge.png)
+
+The pictures are `occt/tests/fork/fillet/pictures/make_corners.sh
+<fcad>/docs/pictures/CornerBlending` (`corners.py` says what they show;
+it opens the FreeCAD GUI on the display). The patch is orange, found by its
+name: generated from the corner's vertex.
