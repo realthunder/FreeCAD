@@ -5644,6 +5644,79 @@ class TransactionBranchCases(unittest.TestCase):
         self.assertEqual(kinds["Box.Height"], "conflict set")
         self.assertEqual(kinds["Box.ExpressionEngine"], "take set")
 
+    def testAMergeUndoneIsMergedAgain(self):
+        # Sec 31.21: a merge undone left its row and the undo's on the branch,
+        # and the row is the branch's second parent undone or not -- the other
+        # branch counted as merged, and merging it again brought nothing, so
+        # no other answer could be given to what the merge asked. A version
+        # is taken before a merge that writes; the next merge rolls an undone
+        # one back to it and takes its rows out.
+        doc = self.track(FreeCAD.newDocument("MergeAgain"))
+        doc.UndoMode = 1
+        doc.openTransaction("create")
+        doc.addObject("Part::Box", "Box")
+        doc.addObject("Part::Cylinder", "Cyl")
+        doc.recompute()
+        doc.commitTransaction()
+        doc.saveAs(os.path.join(self.dir, "merge-again.FCStd"))
+        doc.createTransactionBranch("side")
+        doc.switchTransactionBranch("side")
+        doc.openTransaction("theirs")
+        doc.Box.Length = 20
+        doc.Cyl.Radius = 4
+        doc.recompute()
+        doc.commitTransaction()
+        doc.switchTransactionBranch("main")
+        doc.openTransaction("ours")
+        doc.Cyl.Radius = 3
+        doc.recompute()
+        doc.commitTransaction()
+
+        def state():
+            return (doc.Box.Length.Value, doc.Cyl.Radius.Value)
+
+        def merges():
+            return [t["seq"] for t in doc.getTransactionLog() if t["kind"] == "merge"]
+
+        versions = len(doc.getTransactionVersions())
+        preview = doc.previewTransactionMerge("side")
+        self.assertEqual(preview["conflicts"], 1)
+        result = doc.mergeTransactionBranch("side", {"Cyl.Radius": "ours"})
+        self.assertEqual((result["unresolved"], result["failed"]), ([], []))
+        doc.recompute()
+        self.assertEqual(state(), (20.0, 3.0))
+        self.assertEqual(len(doc.getTransactionVersions()), versions + 1, "a version before the merge")
+        first = merges()
+        self.assertEqual(len(first), 1)
+        # Undone and redone as any step is, its rows where they were.
+        doc.undo()
+        self.assertEqual(state(), (10.0, 3.0))
+        doc.redo()
+        self.assertEqual(state(), (20.0, 3.0))
+        self.assertEqual(merges(), first)
+        doc.undo()
+        doc.recompute()
+        self.assertEqual(state(), (10.0, 3.0))
+        # Asked again, as though it had not been merged. With nothing read
+        # of the log between the undo and the preview: the undo's row is
+        # written behind the document, and has to be there to be seen.
+        preview = doc.previewTransactionMerge("side")
+        self.assertEqual(preview["conflicts"], 1)
+        self.assertIn("Box.Length", [c["key"] for c in preview["changes"]])
+        self.assertEqual(merges(), first, "a preview takes nothing out")
+        result = doc.mergeTransactionBranch("side", {"Cyl.Radius": "theirs"})
+        self.assertEqual((result["unresolved"], result["failed"]), ([], []))
+        doc.recompute()
+        self.assertEqual(state(), (20.0, 4.0))
+        again = merges()
+        self.assertEqual(len(again), 1, "the merge undone is out of the log")
+        self.assertNotEqual(again, first)
+        self.assertFalse([t for t in doc.getTransactionLog() if t["inverts"] in first])
+        doc.undo()
+        self.assertEqual(state(), (10.0, 3.0))
+        doc.redo()
+        self.assertEqual(state(), (20.0, 4.0))
+
     def testASheetIsMergedByItsCells(self):
         # Sec 31.8: a sheet's cells are known by their address. A cell each
         # side set is in the merge; one both set is the later's; an alias

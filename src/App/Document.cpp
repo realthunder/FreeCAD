@@ -8234,6 +8234,108 @@ bool diffRows(TransactionStore& store, const std::vector<LogVersion>& versions, 
     return true;
 }
 
+/** A merge undone, and nothing since, at the head of a branch (sec 31.21)
+ *
+ * The rows it is: the merge, what was computed after it, the `undo` that
+ * took it back, and any redo and undo of it again that leave it undone --
+ * oldest first; `before` is the row the merge was made on, which is the
+ * state the document is in. Empty where the head is anything else, and
+ * where the rows cannot go: another document of the file stands on one, a
+ * branch was made from one, or a version somebody named was taken at one.
+ * `evict` is the unnamed versions taken at them.
+ *
+ * Such rows say nothing of the document, and say of the other branch that
+ * it is merged: while they stand, merging it again brings nothing. A merge
+ * takes them out first, and a preview reads as though it had.
+ */
+std::vector<int64_t> undoneMergeAtHead(TransactionLog& log, int64_t& before,
+                                       std::vector<int64_t>& evict)
+{
+    if (log.detached())
+        return {};
+    // The rows are written behind the document: the undo this looks for
+    // may be on its way to the store still.
+    log.flush();
+    auto& store = log.store();
+    const int64_t head = log.head();
+    auto row = [&](int64_t seq, LogTransaction& t) {
+        for (const auto& r : store.transactions(seq, 1)) {
+            if (r.seq == seq) {
+                t = r;
+                return true;
+            }
+        }
+        return false;
+    };
+    // From the head back to the newest `undo`, past what a recompute wrote
+    // and the records that changed nothing; and from that undo down what it
+    // inverts to the merge.
+    LogTransaction t;
+    int64_t at = head;
+    for (int guard = 0; guard < 64; ++guard) {
+        if (at <= 0 || !row(at, t))
+            return {};
+        if (t.kind == "undo")
+            break;
+        if (t.kind != "recompute" && !store.ops(t.seq).empty())
+            return {};
+        at = t.parent;
+    }
+    if (t.kind != "undo")
+        return {};
+    LogTransaction merge = t;
+    for (int guard = 0; guard < 64 && merge.kind != "merge"; ++guard) {
+        if ((merge.kind != "undo" && merge.kind != "redo") || merge.inverts <= 0
+                || !row(merge.inverts, merge))
+            return {};
+    }
+    if (merge.kind != "merge" || merge.parent <= 0)
+        return {};
+    const std::vector<LogTransaction> rows = store.chain(head, merge.seq);
+    if (rows.empty() || rows.front().seq != merge.seq)
+        return {};
+    // Each row after the merge is its recompute, a record, or one more turn
+    // of its own undo and redo -- and the turns leave it undone.
+    std::set<int64_t> turns {merge.seq};
+    int undone = 0;
+    std::vector<int64_t> seqs;
+    for (const auto& r : rows) {
+        seqs.push_back(r.seq);
+        if (r.seq == merge.seq)
+            continue;
+        if (r.kind == "undo" || r.kind == "redo") {
+            if (!turns.count(r.inverts))
+                return {};
+            turns.insert(r.seq);
+            undone += r.kind == "undo" ? 1 : -1;
+        }
+        else if (r.kind != "recompute" && !store.ops(r.seq).empty()) {
+            return {};
+        }
+    }
+    if (undone != 1 || log.othersStandOn(seqs))
+        return {};
+    const std::set<int64_t> gone(seqs.begin(), seqs.end());
+    std::set<int64_t> versionsGone;
+    evict.clear();
+    for (const auto& v : store.versions()) {
+        if (!gone.count(v.seq))
+            continue;
+        if (v.kind != "unnamed")
+            return {};
+        evict.push_back(v.num);
+        versionsGone.insert(v.num);
+    }
+    for (const auto& b : store.branches()) {
+        if (b.id != log.branch()
+                && (gone.count(b.fromSeq) || gone.count(b.head)
+                    || versionsGone.count(b.fromVersion)))
+            return {};
+    }
+    before = merge.parent;
+    return seqs;
+}
+
 /// The base of a merge (sec 28.2 item 2): the newest row both histories
 /// hold -- a row's ancestors all come before it, so the newest one in
 /// common is an ancestor of no other. 0 when the two share no row but start
@@ -9393,6 +9495,15 @@ void planMerge(Document& doc, const std::string& name, int64_t version, MergePla
     auto& pv = plan.preview;
     pv.branch = name;
     pv.ours = log->head();
+    // A merge undone at the head is not there to the plan (sec 31.21): the
+    // merge that follows takes its rows out, and the preview says what that
+    // merge will do.
+    {
+        int64_t before = 0;
+        std::vector<int64_t> evict;
+        if (!undoneMergeAtHead(*log, before, evict).empty())
+            pv.ours = before;
+    }
     pv.theirs = theirs.head;
     if (version > 0) {
         LogVersion v;
@@ -10006,6 +10117,40 @@ Document::MergeResult Document::_merge(const std::string& branch,
             THROWM(Base::ValueError, "a side is 'ours' or 'theirs', not '" + kv.second + "'");
     }
 
+    // Sec 31.21: a merge undone, and nothing since, is rolled back before
+    // another is made -- the branch put back on the row it was merged on,
+    // the document moved there with nothing recorded (it is in that state
+    // already, and the version taken before the merge is there to read if
+    // the rows will not fold), and the merge's rows trimmed. While they
+    // stand the other branch counts as merged, and this merge would bring
+    // nothing.
+    {
+        if (d->activeUndoTransaction)
+            commitImplicitTransaction();
+        log->resolvePending();
+        int64_t before = 0;
+        std::vector<int64_t> evict;
+        const std::vector<int64_t> seqs = undoneMergeAtHead(*log, before, evict);
+        if (!seqs.empty()) {
+            auto& store = log->store();
+            const int64_t head = log->head();
+            FC_LOG(getName() << ": the merge undone at row " << seqs.front()
+                             << " rolled back to row " << before << ", " << seqs.size()
+                             << " row(s) trimmed");
+            clearUndos();
+            _clearRedos();
+            store.forwardBranch(log->branch(), before, {});
+            log->moveHead(before);
+            _followHead(head);
+            if (!evict.empty())
+                store.evictVersions(evict);
+            store.removeTransactions(seqs);
+            _arriveOnBranch();
+            refreshVersionNames();
+            signalBranchesChanged(*this);
+        }
+    }
+
     MergePlan plan;
     if (rows && d->activeUndoTransaction)
         commitImplicitTransaction();
@@ -10325,6 +10470,12 @@ Document::MergeResult Document::_merge(const std::string& branch,
         if (obj->isError())
             failedBefore.insert(obj->getNameInDocument());
     }
+
+    // Sec 31.21: the tip as it is before a merge that writes, as a version
+    // -- unnamed, and none taken where the tip is one already -- which the
+    // merge undone is rolled back to.
+    if (!picked)
+        _leaveBranch();
 
     _clearMyRedos();
     d->activeUndoTransaction = new Transaction(0);

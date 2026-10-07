@@ -16387,12 +16387,92 @@ default ours' colour is on the face and theirs' removal is taken; merged
 with the setting theirs, theirs'. No test without the Gui: there is no
 view provider there, and the unit is then one question as it was.
 
-**Seen on the way, not chased** (`remerge.py`, a box and a cylinder, no
-paint): a merge undone cannot be made again. The branch still counts as
+**Seen on the way** (`remerge.py`, a box and a cylinder, no paint; closed
+in 31.21): a merge undone cannot be made again. The branch still counts as
 merged -- the preview has the base at theirs' head and nothing to bring
 -- so `mergeTransactionBranch` writes nothing and says nothing failed.
 Redo brings the merge back; another answer to its questions cannot be
 given. The log's, and older than this section.
+
+### 31.21 A merge undone is rolled back before the next (user, 2026-10-07)
+
+31.20's last note: a merge undone could not be made again. **Ruled
+(user):** "Before non fast forward merge, make a snapshot (unnamed
+version? Measure the cost), allow to roll back and trim if undone."
+
+**Why it could not.** An undo is a row of its own, naming the row it
+inverts (24.2); the merge's row stays on the chain, and is the branch's
+second parent undone or not. The other branch counts as merged: the
+preview has the base at its head and nothing to bring, and
+`mergeTransactionBranch` wrote nothing and said nothing failed. Redo was
+the only way back, and no other answer could be given to what the merge
+asked.
+
+**The cost of a version, measured** (`snapcost.py`: a box, a cylinder and
+their cut, N times over; one value changed on each branch; a Gui run):
+
+| objects | the version | the merge itself | a save of the file |
+| --- | --- | --- | --- |
+| 90 | 0.030 s | 0.013 s | 0.13 s |
+| 450 | 0.16 s | 0.035 s | 0.51 s |
+| 1200 | 0.49 s | 0.098 s | 1.36 s |
+
+About 0.4 ms an object, a third of a save, five times these merges --
+which bring one value each. In the store next to nothing: the values are
+the log's already, and a version is a manifest of them (the store grew by
+0 to 1.6 kB; the first of a session by more, the store's own journal).
+Taken, then: unnamed, so the limits of 16.3 let it go like any, and none
+where the tip is a version already -- after a save, a switch, a merge
+just rolled back.
+
+**Built.**
+
+- *The version.* A merge that writes -- not a fast-forward, which moves
+  the branch along rows that are there, and not rows picked (31.12) --
+  takes the tip first (`_leaveBranch()`, what a switch does to the tip it
+  leaves).
+- *Undo and redo are as they were*: a row each. A merge undone can be
+  redone.
+- *Rolled back by the next merge.* Where the head of the branch is a merge
+  undone and nothing since -- the merge, what was computed after it, the
+  undo, and any redo and undo of it again that leave it undone
+  (`undoneMergeAtHead()`) -- a merge first puts the branch back on the row
+  the merge was made on, moves the document there with nothing recorded,
+  as a fast-forward arrives, and takes those rows out of the log with the
+  unnamed versions at them. The document is in that state already; the
+  version taken before the merge is what is read if the rows will not
+  fold. The undo and redo steps are the branch's rows again, as after a
+  switch: the merge undone is no longer there to redo.
+- *A preview* reads as though that had been done, and takes nothing out.
+
+Not where another document of the file stands on one of the rows, a
+branch was made from one, or a version taken at one has a name: the rows
+stay, and the branch is merged already as far as the log can tell.
+
+**Left.**
+
+- *Something done since the undo.* The merge and its undo are then in the
+  middle of the branch and cannot be taken out, and the other branch
+  still counts as merged. What would lift it is the base of a merge
+  passing over a merge that is undone, which is not built.
+- *A command of its own.* The roll back is what the next merge does; there
+  is nothing to ask for it by. `Document` would say it in one call
+  (`rollBackMerge()`), and the dialog could offer it.
+- *Rows picked* (31.12) are neither snapshotted before nor rolled back.
+
+**Tests.** Python `testAMergeUndoneIsMergedAgain`: a conflict answered
+ours, a version more than before; undone, redone, undone, the rows where
+they were; previewed, the conflict asked again and nothing taken out;
+merged with the other answer, one merge row on the branch and none that
+inverts the first; undone and redone. `remerge.py`, in the Gui, the
+measurement that found it: the second merge now brings theirs.
+
+*Met on the way.* The first run of `remerge.py` still brought nothing
+where the test passed. The rows are written behind the document, and the
+undo this looks for was on its way to the store: the test had read the log
+between the undo and the preview, which waits for them, and the probe had
+not. `undoneMergeAtHead()` waits (`TransactionLog::flush()`), and the test
+no longer reads the log there.
 
 ## 32. A shape diff: seeing what a merge or a pick would take (plan, 2026-10-06)
 
