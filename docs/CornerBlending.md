@@ -712,39 +712,116 @@ The table of 9.4, measured again: setback 0 993.7247, 2 993.5877, 4
 `d0` 993.8441. The pictures' edges are handed over in another order, and
 the plate depends on it: their volumes differ in the fourth decimal.
 
+![A box corner set back](pictures/CornerBlending/box_setbacks_battens.png)
+
+![Setbacks by edge](pictures/CornerBlending/box_by_edge_battens.png)
+
+![Two fillets and a sharp edge](pictures/CornerBlending/box_sharp_edge_battens.png)
+
+The pictures are `occt/tests/fork/fillet/pictures/make_corners.sh
+<fcad>/docs/pictures/CornerBlending` (`corners.py` says what they show;
+it opens the FreeCAD GUI on the display). The patch is orange, found by its
+name: generated from the corner's vertex. These three are kept as they were
+then, as `*_battens.png`; the script now draws the face curves of 9.8.
+
+### 9.8 The face curves, as the issue's pictures have them (2026-10-07)
+
+The issue's two CATIA screenshots, before and after: the green boundaries
+on the faces move out into the faces and the patch grows into a large round
+bulb. Their shape is what differed from ours. CATIA's leave each fillet
+across it, continuing the cut section, and bow away from the corner. Ours
+were battens held tangent at both ends to the fillets' contact lines, so
+they bowed toward the corner: the three-lobed, pinched patch of
+`box_setbacks_battens.png` at 4. That end condition was also behind the hook
+9.7 patched with the 85 deg free end: a curve made to leave along a contact
+line at 90 deg to its target.
+
+**What a setback corner's face curve does now** (`ChFi3d_Builder_CnCrn`,
+setback corners only; an ordinary corner never reaches it):
+
+- **It leaves each fillet across it.** The direction at a fillet's end is
+  the one its cut section runs on in, past the contact line, into the face.
+  The section is the straight line, in the stripe surface's parameters,
+  between its two contact points; its tangent at the end, taken into the
+  face's parameters, replaces the contact curve's tangent as the batten's
+  end angle. The boundary runs on from section into face curve without a
+  corner, and the curve bows away from the corner. The batten is the same
+  (`FairCurve_Batten`, sliding free); given these directions it is no longer
+  made a straight line for the size of its angles, only where it fails or
+  leaves the face, as before.
+- **Where the section points away.** A section more than 85 deg from the
+  chord gives its end the contact line's tangent instead, if that one is
+  within 85 deg, and leaves it free if neither is. That is a fillet cut
+  level with the next one's contact line (the third fillet at `d0` below:
+  its neighbour's section runs at 90 deg to the chord, its contact line
+  along it), or #523's fillets past the cylinder, whose section leaves the
+  top face at 139 deg to a chord that turns back toward the cylinder. Freed
+  there, as the 85 deg rule alone did, #523's r 2.5 curve met its fillet at
+  a kink, and the plate's approximation strayed 0.29 from the plate inside:
+  tolerance 5.2e-2, against 1.6e-3. With the contact tangent there, #523's
+  four suite cases are as they were.
+- **A sharp edge keeps its end.** A curve still arrives along the sharp
+  edge it ends at: the teardrop of `box_sharp_edge.png`. Arriving square to
+  the edge, which is what a fillet's section tends to as its radius goes to
+  0, put waves through the patch and creased it 87 deg at the tip, its plate
+  asked there for a tangent plane at right angles to both faces (the edge's
+  own direction leaves the bisector, 44 deg from each). A free end turned the
+  patch concave, volume 944 for 991. Keeping the old ends on the curves that
+  touch a sharp edge, or throughout a corner that has one, put both kinds of
+  curve on one patch, and it rose 0.4 out of the box.
+- **Kept: the 85 deg rule** (it now reads the section's angle first) **and
+  the plate built again at ten points.** #962's corner is the same with the
+  new curves, its plate's G1 error 1.56 rad either way: that conflict is at
+  its sharp edge. Without the rebuild its old curves lose r 0.8 there.
+
+Measured as 9.7, a box corner r 1, the old curves (as committed before) ->
+the new; "closest" is the patch's distance from the box's vertex, "H" its
+mean curvature:
+
+| Box corner, r 1 | Tolerance | Edge to patch | Crease | Closest | H | Volume |
+|---|---|---|---|---|---|---|
+| setback 0 | 2.0e-4, the same | 4.2e-5 | 0.05 | 0.745 | 0.84 to 1.08 | 993.7247 |
+| setback 2 | 8.8e-4 -> 2.0e-3 | 1.7e-4 -> 4.2e-4 | 0.28 -> 0.54 | 0.814 -> 0.998 | 0.05 to 0.82 | 993.5877 -> 993.1596 |
+| setback 4 | 3.8e-3 -> 6.3e-3 | 1.1e-3 -> 1.7e-3 | 0.72 -> 0.91 | 1.199 -> 1.908 | 0.05 to 0.82 | 992.1817 -> 986.1467 |
+| setback 6 | 8.8e-3 -> 1.7e-2 | 2.5e-3 -> 5.4e-3 | 1.24 -> 1.85 | 1.605 -> 2.982 | 0.05 to 0.81 | 988.6201 -> 963.3828 |
+| two fillets and a sharp edge, 4 | 3.7e-3 -> 1.4e-2 | 9.0e-4 -> 3.5e-3 | 44.4 -> 43.9 | 1.204 -> 1.629 | 0.02 to 1.03 | 993.9153 -> 990.8205 |
+| 3, 1.5 and 2 by edge | 1.0e-3 -> 2.4e-3 | 2.3e-4 -> 6.1e-4 | 0.29 -> 0.43 | 0.716 -> 0.844 | -0.03 to 1.17 | 993.7989 -> 993.3932 |
+| 3 and 1.5, the third at `d0` | 2.0e-3 -> 2.5e-3 | 2.7e-4 -> 6.1e-4 | 0.47 -> 0.52 | 0.672 -> 0.706 | -0.07 to 1.72 | 993.8441 -> 993.7281 |
+
+At setback 0 the fillets meet and the face curves have no length, so
+nothing changes. Set back, the patch is the round bulb of the screenshots,
+its closest point about half the setback from the vertex where the
+battens' stayed near the fillets' meeting, and it takes more material: 25
+more at 6 x r. It keeps one sign of curvature; the two small negatives are
+samples at its boundary on a plane face, where it is flat across, as is
+every minimum of 0.05. Its tolerance roughly doubles, a larger patch over
+the same plate, and stays under a fiftieth of the radius. The sharp edge's
+patch, between two fillets' curves and two teardrop flanks, has the loosest
+edge (1.4e-2) and rises 0.037 above the face beside the tip; its patch
+was flush before.
+
+The fallback goes through the same code. The suite: 139 pass, 2 known
+broken, as before; #523's four cases are unchanged (above) and #876's
+corner moves in the fourth decimal (8665.7876 to 8665.7912). The sweeps
+against the library as committed before this: no case changes status, and
+the 2680 and 9611 results made without the fallback are unchanged, value
+for value. Of those the fallback makes, 55 of 64 edges and 259 of 306
+corners change: the median tolerance 1.0e-4 to 1.1e-4, the edges' largest
+6.1e-3 to 1.0e-2 (the corners' stays #273's input 0.712), the volumes by
+0.26 at most. Each of the 314 is valid, valid again after being written and
+read, and meshes; its volume change agrees with its mesh's to 0.0013
+(median) and 0.26 at most (#876 `Fillet002` edge 5 at r 2).
+
 ![A box corner set back](pictures/CornerBlending/box_setbacks.png)
 
 ![Setbacks by edge](pictures/CornerBlending/box_by_edge.png)
 
 ![Two fillets and a sharp edge](pictures/CornerBlending/box_sharp_edge.png)
 
-The pictures are `occt/tests/fork/fillet/pictures/make_corners.sh
-<fcad>/docs/pictures/CornerBlending` (`corners.py` says what they show;
-it opens the FreeCAD GUI on the display). The patch is orange, found by its
-name: generated from the corner's vertex.
+### 9.9 Next: a depth per face (planned)
 
-### 9.8 Next: the face curves, as the issue's pictures have them (planned)
-
-The issue's two CATIA screenshots, before and after (2026-10-07, read
-again): the green boundaries on the faces move out into the faces and the
-patch grows into a large round bulb. Their shape is what differs from
-ours. CATIA's leave each fillet across it, continuing the cut section, and
-bow away from the corner. Ours are battens held tangent at both ends to
-the fillets' contact lines, so they bow toward the corner: the three-lobed,
-pinched patch of `box_setbacks.png` at 4.
-
-That end condition is also behind both defects 9.7 patched: the hook at a
-fillet at `d0` (a curve made to leave along a contact line at 90 deg to
-its target; the 85 deg free end) and #962's conflicting tangents (the
-rebuild at ten points). Planned, for setback corners only:
-
-1. A face curve's ends leave across the fillet: in the direction of the
-   cut section where it meets the face, the boundary running on from
-   section into face curve, the curve bowing outward. This should replace
-   the 85 deg rule and may make the rebuild at ten unneeded; both stay
-   until the sweeps say so. Checked as 9.7 was: pictures beside CATIA's,
-   the box and #962 measured, the suite, the sweeps.
-2. A depth per face: how far its curve bows into the face, at its middle,
-   stored per face on a corner beside the edges' setbacks (`Corners`
-   keeps its value open for it), with a drag handle at the curve's
-   midpoint in the task panel.
+How far a face's curve bows into the face, at its middle, stored per face
+on a corner beside the edges' setbacks (`Corners` keeps its value open for
+it), with a drag handle at the curve's midpoint in the task panel. With
+9.8 the curve's shape is fixed by its ends; a depth is what lets a user
+make the bulb fuller or flatter than the batten's.
