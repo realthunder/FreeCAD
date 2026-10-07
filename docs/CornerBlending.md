@@ -1,9 +1,9 @@
 # Corner Blending -- setback vertex blends for fillets
 
 Status: the OCCT side of phases 1 and 2 is implemented, as the fillet's
-fallback first (section 9), the Part API of phase 3 (section 9.4) and the
-PartDesign property of phase 4 (section 9.5). The task panel (phase 5) is
-not started.
+fallback first (section 9), the Part API of phase 3 (section 9.4), the
+PartDesign property of phase 4 (section 9.5) and the task panel of phase 5
+(section 9.6).
 
 Request: realthunder/FreeCAD_assembly3#894, "[FR] Blend Corner feature"
 (2021-11). Related: #917 (variable radius; the fork's fillet has per-edge
@@ -575,3 +575,39 @@ and the old as the value, the reverse of what it takes, so an expression on
 a segment radius would not follow its edge's rename; the segments' index
 loop also steps twice, and their `getPathValue` returns nothing exactly when
 the path is found.
+
+### 9.6 The task panel (phase 5)
+
+The fillet's reference list is the corner list, since a corner's vertex is
+in `Base` (9.5):
+
+- **Picking.** The fillet panel takes vertexes as well as edges and faces
+  (`TaskDressUpParameters::allowVertexes`, off for the other dress-ups). A
+  picked vertex becomes a corner set back by the fillet's radius, which is
+  visible at once; 0 would rebuild today's corner as a patch and look like
+  nothing happened. Removing the vertex row removes the corner.
+- **Rows.** A fifth column, `Setback`. A vertex row holds the corner's
+  setback; its children are the fillets ending at the vertex, each showing
+  its own setback or, in brackets and greyed, the corner's it inherits.
+  Editing a child gives that fillet its own; `Clear` on the vertex row, or
+  `-`/Delete on a child, drops the setbacks of single fillets, not the
+  corner. Setbacks bind expressions like the segment fields do. Segment
+  columns are not editable on a corner, nor the setback on an edge.
+- **Handles.** The current corner (its row or a child selected) gets one
+  linear handle per fillet, at the vertex and pointing along the edge
+  (its tangent there), its length the fillet's setback. Dragging sets that
+  fillet's own setback; the fillet recomputes on release. The gizmo
+  container takes a fixed list of gizmos and is hung on the view once, so
+  the panel keeps a pool of six, hidden when unused; a corner with more
+  fillets shows the first six. Each drives a hidden spin box, which is how
+  `LinearGizmo` reports a value. No handle is shown for a setback an
+  expression drives.
+
+Checked by driving the panel in the GUI (a script run at startup, real
+platform: on macOS `offscreen` cannot open any edit panel, the Box's
+included): the rows of a corner with one own and two inherited setbacks,
+an edit of a child and of the corner (volume 993.8057, as in 9.4's table),
+the handles at the vertex in a screenshot, a handle's value through to
+`Corners` and the recompute, `Clear`, a pick in toggle mode and the
+removal of its row. Not covered by a committed test: the repository's GUI
+gate runs `offscreen`, where the panel cannot open on this box.
