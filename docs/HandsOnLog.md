@@ -914,7 +914,7 @@ the key had a definition. Scored: `tests/gui/part-measure-settings.py`
 (`GuiPartMeasureSettings_tests_run`) 5 PASS, 3 FAIL on the staged binaries.
 
 **Read, not yet converted** (two read-only helper agents; their tables are
-`..\dl\handson6-10-07\entry24-inventory-General.txt` and
+`..\dl\handson\2026-10-07\entry24-inventory-General.txt` and
 `entry24-inventory-MainWindow-Themes.txt`; two more, for the editor, macro,
 console and unit groups and for what is left of `View` and `Document`, were
 still reading when this was written):
