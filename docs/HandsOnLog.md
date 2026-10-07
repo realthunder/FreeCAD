@@ -852,7 +852,7 @@ its own thing, and not started.
 
 Evidence: `..\dl\handson\2026-10-07\msaa-*`, `entry26-first-ok-with-msaa-*`.
 
-## 24. Every setting behind a generated class -- STARTED, sixteen groups done
+## 24. Every setting behind a generated class -- STARTED, seventeen groups done
 
 The reporter, 2026-10-07, asked which entry "do entry 23 next" meant: "I
 meant entry 24". Not staged.
@@ -1102,6 +1102,34 @@ and stored that where the default is 500. Scored:
 3 PASS; 1 PASS, 2 FAIL staged. NOT DONE in Part: the import and export
 settings (`Mod/Part/General`, `IGES`, `STEP`, about 25 keys, already behind
 hand-written accessor classes in `Part/App/*/ImportExportSettings.cpp`).
+
+**Done: several small groups,** 14 settings, `a2c9d65aea`: `MiscParams`,
+one class reaching into each group (recent macros, gizmos, cache directory,
+shortcut timeout, workbench tab bar, the two start-up switches, the
+dependency graph). Put right: the size of the recent macros menu was 12, 4
+and 0 at its three readers; the shortcut timeout became 0 when its key was
+removed. Scored: `tests/gui/misc-settings.py` (`GuiMiscSettings_tests_run`)
+3 PASS; 3 FAIL staged.
+
+**The full suites,** run 2026-10-08 00:25 on `a11d735f1e` (sixteen groups
+in): C++ 784 of 784 (9 disabled, 1 skipped), Python 3385 tests with 2
+failures -- both `TestThickness` 5829 cases, failing since the OCCT merge
+and not of this work. Logs: `..\dl\handson6-10-07\entry24-evening\`.
+The GUI tests registered in `tests/gui/CMakeLists.txt` are not part of that
+`ctest` on this tree; each was run by hand with its group.
+
+**Read, not yet converted, two more modules** (two read-only helper agents,
+2026-10-08; `entry24-inventory-Sketcher.txt`, `entry24-inventory-TechDraw.txt`):
+- Sketcher: about 175 keys in 12 groups, 306 sites in 28 files. 23
+  findings, among them: the Grid page's "Grid spacing" is stored under one
+  name and read under another, so it does not reach new sketches;
+  `UseSystemDecimals` is on to its reader and shown off by its page; the
+  external geometry colour differs between reader and page; the solver box
+  writes three redundant-solver parameters under the wrong key when the two
+  solvers differ; the Dimension tool reads the geometry tools' "continue"
+  switch; the Snap command's cached state is wrong until the key changes.
+  All from reading, none measured yet.
+- TechDraw: 141 keys in 14 groups, 176 sites in 38 files, 103 on pages.
 
 **The generator,** `0a94fb63c9`: a setting stored under another name than
 its own (`param_name`) was read and written under its key, but a CHANGE was
