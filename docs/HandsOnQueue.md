@@ -19,9 +19,12 @@ the note-taking session alone writes it: the table, what was reported in the
 reporter's words, what they added or decided later, and the Inbox. The WORK
 side -- per entry number its state, cause, fix commit, tests, measurements and
 the stage that has it -- is `docs/HandsOnLog.md`, written by the build and
-test session alone. The State column below and the findings inside entries 1
-to 28 are as they stood at that time and are NOT kept up from here on; the log
-is where to read a state. A new stage is recorded there too.
+test session alone. The findings written inside entries 1 to 28 are as they
+stood at that time and are not added to here; the log has what came after,
+and each new stage. The State column IS kept up: when the build session
+finishes something it asks the note-taker to set the state, in one line, and
+the line points at the log for the rest (the reporter's rule to both
+sessions, 2026-10-07; entry 15 was the first).
 
 States: `OPEN` (not looked at), `FOUND` (cause known, no fix yet), `FIXED`
 (committed and tested in the dev tree, not staged yet), `STAGED` (in the copy
@@ -47,7 +50,7 @@ report views, the reporter's own files -- is kept beside the dev tree under
 | 12 | 2026-10-06 | TechDraw: dimensions and cosmetics are covered by the face fill | STAGED (they were transparent, not covered) |
 | 13 | 2026-10-06 | report view: grouped messages with an expand icon in the margin, no underscore (change request) | STAGED |
 | 14 | 2026-10-06 | a Draft with no neutral plane given turns the other way after a recompute (from entry 8) | STAGED |
-| 15 | 2026-10-06 | a Pad "up to first" gives a third result (from entry 8) | FOUND in part: not the pad; a pocket goes wrong only in a recompute of everything |
+| 15 | 2026-10-06 | a Pad "up to first" gives a third result (from entry 8) | FIXED `1047cc0647`: not the pad -- a refine in the feature on top (Helix002) wrote into the pocket's shape; one thing left, Pocket040's Fit direction (see `docs/HandsOnLog.md`) |
 | 16 | 2026-10-06 | faces of a "Mutated" copy-on-change binder are renamed by every recompute in a new session (from entry 8; the old build too) | STAGED |
 | 17 | 2026-10-06 | `Sketch043`, `Sketch055`: "Missing external geometry reference", seen once the binders of entry 16 are valid | OPEN |
 | 18 | 2026-10-06 | TechDraw pages do not load: "invalid vector subscript", the views loose in the tree, 320 objects restored to defaults | STAGED |
@@ -755,7 +758,7 @@ follows the edge from `Edge4` to `Edge10` across the pad's recompute and
 `Draft` comes out valid at 285.76 with `Reversed` on, as saved.
 `TestDraft.testGuessedNeutralPlaneKeepsItsEdge`; TestDraft 4 OK.
 
-## 15. A Pad "up to first" gives a third result -- FOUND in part
+## 15. A Pad "up to first" gives a third result -- FIXED `1047cc0647`, one thing left (see `docs/HandsOnLog.md`)
 
 **From entry 8.** `Pad051`: `Type` UpToFirst, `Reversed`, profile `Binder033`,
 base `Pocket039`. Volume as saved 3256.82; old build recomputed 3400.82; this
