@@ -1529,3 +1529,9 @@ fc_add_gui_test(GuiSketcherSolverSettings_tests_run
 fc_add_gui_test(GuiTechDrawSettings_tests_run
                 techdraw-settings.py
                 --timeout 180)
+
+# The settings C++ reads in Assembly, Points, Fem, Mesh and Spreadsheet are
+# listed (entry 24, the small modules).
+fc_add_gui_test(GuiModuleSettings_tests_run
+                module-settings.py
+                --timeout 180)

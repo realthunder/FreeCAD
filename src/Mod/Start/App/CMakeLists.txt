@@ -31,6 +31,8 @@ set(Start_LIBS
         )
 
 SET(Start_SRCS
+    StartParams.cpp
+    StartParams.h
         AppStart.cpp
         DisplayedFilesModel.cpp
         DisplayedFilesModel.h

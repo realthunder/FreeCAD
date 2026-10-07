@@ -22,6 +22,8 @@
  ***************************************************************************/
 
 #include "PreCompiled.h"
+
+#include <Mod/Start/App/StartParams.h>
 #ifndef _PreComp_
 #include <QString>
 #include <QTimer>
@@ -80,7 +82,7 @@ public:
     {
         auto hGrp = App::GetApplication().GetParameterGroupByPath(
             "User parameter:BaseApp/Preferences/Mod/Start");
-        bool showOnStartup = hGrp->GetBool("ShowOnStartup", true);
+        bool showOnStartup = hGrp->GetBool("ShowOnStartup", Start::StartParams::defaultShowOnStartup());
         if (showOnStartup) {
             Gui::Application::Instance->commandManager().runCommandByName("Start_Start");
             QTimer::singleShot(100, [this] {

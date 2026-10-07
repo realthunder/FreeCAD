@@ -34,6 +34,7 @@
 #include <numbers>
 
 #include "Path.h"
+#include "CAMParams.h"
 
 
 using namespace Path;
@@ -211,7 +212,9 @@ double Toolpath::getCycleTime(double hFeed, double vFeed, double hRapid, double 
         ParameterGrp::handle hGrp = App::GetApplication().GetParameterGroupByPath(
             "User parameter:BaseApp/Preferences/Mod/CAM"
         );
-        if (!hGrp->GetBool("WarningsSuppressAllSpeeds", true)) {
+        // "WarningSuppressAllSpeeds" is what the Advanced page stores. This read
+        // "WarningsSuppressAllSpeeds", which nothing stores.
+        if (!hGrp->GetBool("WarningSuppressAllSpeeds", Path::CAMParams::defaultWarningSuppressAllSpeeds())) {
             Base::Console().warning("Feed Rate Error: Check Tool Controllers have Feed Rates");
         }
         return 0;

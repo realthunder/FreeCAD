@@ -53,6 +53,8 @@ SET(Python_SRCS
 )
 
 SET(Mod_SRCS
+    CAMParams.cpp
+    CAMParams.h
     AppPath.cpp
     AppPathPy.cpp
     PreCompiled.h

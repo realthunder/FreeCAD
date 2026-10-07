@@ -22,6 +22,8 @@
  ***************************************************************************/
 
 #include "PreCompiled.h"
+
+#include <Mod/Start/App/StartParams.h>
 #include "FileCardView.h"
 
 #ifndef _PreComp_
@@ -92,7 +94,7 @@ int FileCardView::heightForWidth(int width) const
     int neededHeight = numRows * cardSize.height();
     auto hGrp = App::GetApplication().GetParameterGroupByPath(
         "User parameter:BaseApp/Preferences/Mod/Start");
-    int cardSpacing = static_cast<int>(hGrp->GetInt("FileCardSpacing", 20));  // NOLINT
+    int cardSpacing = static_cast<int>(hGrp->GetInt("FileCardSpacing", Start::StartParams::defaultFileCardSpacing()));  // NOLINT
     return neededHeight + cardSpacing * (numRows - 1) + 2 * cardSpacing;
 }
 
@@ -100,7 +102,7 @@ QSize FileCardView::sizeHint() const
 {
     auto hGrp = App::GetApplication().GetParameterGroupByPath(
         "User parameter:BaseApp/Preferences/Mod/Start");
-    int cardSpacing = static_cast<int>(hGrp->GetInt("FileCardSpacing", 20));  // NOLINT
+    int cardSpacing = static_cast<int>(hGrp->GetInt("FileCardSpacing", Start::StartParams::defaultFileCardSpacing()));  // NOLINT
 
     auto model = this->model();
     auto delegate = this->itemDelegate();
