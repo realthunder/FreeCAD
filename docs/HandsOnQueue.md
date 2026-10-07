@@ -77,6 +77,7 @@ report views, the reporter's own files -- is kept beside the dev tree under
 | 37 | 2026-10-07 | TechDraw: the edge style "Chain" is not drawn dashed, by either renderer, though the style combo box shows it dashed | OPEN |
 | 38 | 2026-10-07 | omni search: an obvious freeze the first time it is brought up | FIXED `bb31f8820b`, not staged: the first bring-up loaded and rendered the icon of every command (609) before showing the box, 0.99 s + 0.28 s on the reporter's configuration with `scanner.FCStd` open; 0.15 s + 0.07 s now (`docs/HandsOnLog.md`) |
 | 39 | 2026-10-07 | MSAA has not reached any view since 2026-09-07 (found by the build session on entry 26) | FIXED `c7d115e576`, not staged: with "MSAA 4x" chosen the backend could not create its scene targets and drew without multisampling from then on, on every backend; the depth is write-only under MSAA now. The reporter's case on the fixed tree: 0.75 s in all, both views at 4 samples (`docs/HandsOnLog.md`) |
+| 40 | 2026-10-07 | crash on exit: a TechDraw page in a split view cell is destroyed after its view provider, and writes into it | OPEN (cause read from the stack) |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -2296,10 +2297,71 @@ What it means for two other entries: the reporter's "regardless whether msaa
 is used or not" of entry 25 was said while MSAA was not in effect at all, and
 the toggling of entry 26 was toggling a setting that reached no view.
 
+## 40. Crash on exit: a TechDraw page in a view cell outlives its view provider -- OPEN (cause read from the stack)
+
+**2026-10-07 18:07, a crash.** "I just experience a crash on exiting. check
+the dump and record this incident for fix in the notes". The program crashed
+while it was being closed. The copy staged 2026-10-07 14:23 (`1c8781a7e1`),
+started under the debugger at 14:36, up for 3 h 32 min; `scanner.FCStd` had
+been worked on in it (entries 35 to 37 are from this session).
+**Evidence:** `..\dl\handson\2026-10-07\` -- `crash-exit-cdb.log` (the
+debugger's log: the first-chance stack with lines), `crash-exit-crash.log`,
+`crash-exit-report-view.log`. The dump is
+`..\tools\dbg\dumps\fcad_user_av_9a5c_2026-10-07_18-07-03-218_d668.dmp`
+(3.5 MB, the small kind); nothing below needed it opened.
+**The crash:** access violation, WRITING address 0x18fc79b9168, at
+`TechDrawGui.pyd+0x2f5870` -- the instruction `mov qword ptr [rax+748h], 0`
+in the lambda of `ViewProviderPage::createMDIViewPage`. Crash log: "event
+type 52, receiver QWidget" (52 is a deferred delete).
+**The stack, innermost first:**
+- the lambda `[this]() { m_graphicsView = nullptr; }`
+  (`src/Mod/TechDraw/Gui/ViewProviderPage.cpp`, connected in
+  `createMDIViewPage` to the page view's `destroyed` signal);
+- `QObject::destroyed`, from `QWidget::~QWidget`, from
+  `TechDrawGui::MDIViewPage`'s destructor;
+- `Gui::ViewAreaCell::~ViewAreaCell` (`src/Gui/ViewArea.cpp` 374), which
+  deletes the view it holds;
+- `Gui::ViewAreaSplitter` and `Gui::ViewArea` being destroyed, by
+  `QObject::event` handling the deferred delete;
+- `QCoreApplication::sendPostedEvents` in `QCoreApplication::exec`,
+  `Gui::Application::runApplication` (`Application.cpp` 3511), `main`.
+**The cause, read from that and the source (nothing run):** the lambda
+writes into the `ViewProviderPage` it captured, and that view provider was
+already freed -- the address it writes is no longer mapped.
+- `~ViewProviderPage()` does two things: `removeMDIView()`, and
+  `m_graphicsScene->deleteLater()`.
+- `removeMDIView()` only takes the page view away if it is among the main
+  window's windows (`getMainWindow()->windows()`). A page shown in a split
+  view CELL (`Gui::ViewArea`) is not one of those: the comment above the
+  connection says as much -- "a view embedded in a split view cell is
+  deleted without passing through removeMDIView". So the page view stays
+  alive in its cell after its view provider is gone.
+- The connection's context object is the scene, chosen because "owned by
+  this view provider, it outlives the view". The scene is not deleted with
+  the view provider but LATER (`deleteLater`), so it is still alive, the
+  connection still stands, and it still points at a freed `this`.
+- On exit the split view's own deferred delete is handled before the
+  scene's: the cell deletes the page view, `destroyed` fires, the lambda
+  runs, and writes `m_graphicsView` into freed memory.
+So the order that crashes is: view provider destroyed (its document closing)
+-> page view still in a cell -> the cell destroyed before the scene's
+deferred delete. Introduced with the cells that hold a page
+(`42f8c14dcc`, 2026-08-25, "ViewArea heterogeneous cells -- 3D view and
+TechDraw page").
+**Wider than exit, to check when it is fixed:** nothing here is special to
+closing the program. Closing a DOCUMENT whose page is shown in a cell
+destroys the view provider and leaves the page view in the cell the same
+way; that view also holds a plain pointer to its view provider
+(`MDIViewPage`, the first argument of its constructor), so anything it does
+before the cell goes -- a repaint, a click -- uses a freed object too. A
+spreadsheet or any other non-3D view kept in a cell is worth the same look.
+Not said yet: what was open at the moment of closing (which pages, in which
+cells), and whether it has happened before on exit.
+
 ## Inbox
 
 Notes not sorted into an entry yet. Add a line here at any time, in any words;
 it is read before each entry is started and moved up into the table.
 
 (empty: the notes of 2026-10-06 are entries 20 to 28, those of 2026-10-07 so far
-entries 29 to 39)
+entries 29 to 40)
