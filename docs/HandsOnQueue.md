@@ -66,7 +66,7 @@ report views, the reporter's own files -- is kept beside the dev tree under
 | 26 | 2026-10-06 | a long halt after enabling MSAA and pressing OK in the preferences | FOUND in part, nothing changed: an unchanged write of the renderer Type reloads every Part view provider (1.07 s on `scanner.FCStd`); the anti-aliasing change itself is 0.15 s; the dialog's OK as a whole not measured yet (`docs/HandsOnLog.md`) |
 | 27 | 2026-10-06 | the view cell menu: opens a spreadsheet nobody asked for, lists every TechDraw object, changes the wrong cell | STAGED 2026-10-07 14:23, fixed `fa2ada985c`: the menu made a spreadsheet view by asking for it, listed a page's views, and placed a pick by the general policy instead of into its cell; all three gone, spreadsheets now listed by type like pages (`docs/HandsOnLog.md`) |
 | 28 | 2026-10-06 | `scanner.FCStd` restores with a wrong colour, sometimes (the motor body light blue for light grey) | OPEN |
-| 29 | 2026-10-07 | view cells: transparent frames that show a split, a join and a resize while dragged (every cell the drag changes); corner handles on an opaque background; a thinner border between cells; a minimum cell size setting, default 200 (change request, decided) | OPEN |
+| 29 | 2026-10-07 | view cells: transparent frames that show a split, a join and a resize while dragged (every cell the drag changes); corner handles on an opaque background, the cell menu button too when hovered; a thinner border between cells; a minimum cell size setting, default 200 (change request, decided) | OPEN |
 | 30 | 2026-10-07 | the dark and light overlay stylesheets integrated into the Dark and Light preference packs (a task asked; what "integrated" covers to confirm); and the long freeze when an overlay stylesheet is applied, to investigate; the Python console's background in both packs, so a theme can take an overlay preset's away again | OPEN |
 | 31 | 2026-10-07 | report view: "Go to end" on by default (change request) | see `docs/HandsOnLog.md` |
 | 32 | 2026-10-07 | some sub menus are transparent with blue text (Tools > Command history): find out why; transparent menus off by default | see `docs/HandsOnLog.md` |
@@ -1813,6 +1813,10 @@ What is asked now:
   colour, at alpha 130 when only hinted, nothing behind them, and nothing at
   all until the zone is hovered or hinted. Whether the menu button in the
   top left corner (`ViewAreaMenuButton`) is meant too was not said.
+  Said by the reporter, 15:24: "for view cell handle opaque issue, add that
+  the cell menu should also show opaque when hovering." So the cell menu
+  button in the top left corner gets the opaque background too, WHEN
+  HOVERED -- it may stay subtle at rest, as it is today.
 - (f), added by the reporter 11:30: "make the view cell splitter thinner".
   The border between two cells is to be thinner than it is. How thin was not
   said. From the source: `ViewAreaSplitter` (`src/Gui/ViewArea.cpp`) is a
