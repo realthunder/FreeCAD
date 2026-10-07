@@ -1196,7 +1196,7 @@ group button, `CurRadDiaCons`, is never stored (its path and name are one
 string by a missing comma); the label font size and the constraint symbol
 size have the application font's height for a default and are not listed.
 
-**Done, first step: TechDraw** (`Preferences/Mod/TechDraw/General`), 35
+**Done: TechDraw, its General group** (`Preferences/Mod/TechDraw/General`), 35
 settings, `c50d40e3c7`: a new class in its App library,
 `TechDraw::TechDrawParams`. TechDraw reads through hand-written accessors
 and at many places straight from the group; 38 reads in 13 files take the
@@ -1206,12 +1206,53 @@ the new face finder (off to the program, on on the page), the vertex scale
 (3 against 5), the template mark size (5 against 3). The defaults test
 loads TechDraw now and names the three on the staged binaries. Scored:
 `tests/gui/techdraw-settings.py` (`GuiTechDrawSettings_tests_run`) 4 PASS;
-2 PASS, 2 FAIL staged. NOT DONE in TechDraw: its other groups
-(Decorations, Dimensions, Colors, HLR, Files, PAT, Labels, ...), about 105
-keys, and the inventory's findings -- among them two page widgets that
-store a key as another type than the reader reads (so the page never
-reaches it), seven keys read under one name and written under another, and
-a dozen defaults that differ between reader and page.
+2 PASS, 2 FAIL staged.
+
+**Done, TechDraw's other groups,** `07bde3b18b` (46 settings whose default
+is a plain value: Decorations, Dimensions, HLR, PAT, Labels, LeaderLine,
+Rez, Tracker, debug) and `c8a6805a4f` (47: the colours, the line keys, the
+file names). 128 of TechDraw are listed. The inventory's findings were
+MEASURED on the staged binaries first (kept in
+`..\dl\handson\2026-10-08\entry24-techdraw`, with a picture before and
+after); what was confirmed and fixed:
+
+- a new view on a profile that never stored a face colour has CYAN faces:
+  the default was written 0xFFFFFF, which as a packed colour is 0x00FFFFFF.
+  White now, which the page shows;
+- the iso line count and the ISO line spacing of the pages never arrived:
+  one is stored as an Int and was read as a Bool, the other stored as a
+  Float and read as an Int;
+- "Use Polygon Approximation" and the "Leaderline" colour never arrived:
+  each page stored one key and the program read another. The pages store
+  the key that is read; what they stored before is still honoured;
+- the section dialog kept its two keys in a group of its own at the top of
+  the user configuration, reached through a path with two colons;
+- seven more pages showed a default the program does not use and stored it
+  at OK (centre marks, tolerance text size, page view background, the two
+  hatch colours, the line group, the section line standard); the light
+  text colour showed the palette's. Reader's default each time -- DECIDED
+  so, as before.
+
+`ec6ddedbde`, found on the way by the defaults test: a unit spin box of ANY
+preference page rounded its default to a whole number (`toUInt()`), so OK
+stored TechDraw's arrow size as 4.0 where everything reads 3.5.
+
+Scored: `tests/gui/techdraw-settings.py` 15 PASS; 3 PASS, 12 FAIL staged.
+The defaults test passes whole on the tree and names twelve of TechDraw on
+the staged binaries.
+
+NOT fixed in TechDraw, a decision for the reporter: the Annotation page's
+section, highlight, hidden and centre line STYLES. The page stores one set
+of keys (LineStyleSection, LineStyleHighlight, ...), drawing reads another
+(SectionLine, HighlightStyle, HiddenLine, CenterLine, CenterLineStyle),
+and reads it in one place as a line of the standard and in another as a
+pen style. Two of the page's four lists reach nothing. The keys that are
+read are listed with their meaning, so they can at least be set. Also
+left: DefaultPageScale beside DefaultScale; the projection angle "Page",
+read as first angle; TechDraw's own defaults for the 3D view's highlight
+and selection colours, which are not the view's. Not listed: the diameter
+symbol (default outside ASCII), the two selection colours (default follows
+the 3D view).
 
 **The generator,** `0a94fb63c9`: a setting stored under another name than
 its own (`param_name`) was read and written under its key, but a CHANGE was
