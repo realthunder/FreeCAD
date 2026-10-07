@@ -18,6 +18,9 @@ fix yet), `FIXED` (committed and tested in the dev tree, not staged),
 Stages since the split: none yet. The copy under test is still the one of
 2026-10-07 10:37 (`7e94bff8d0`).
 
+The tree at the pause of 2026-10-07 (`c7a27b5a85` and the log after it): ctest 782 of 782 passing, `DeferredLoad_tests_run` left out (its known
+timeout, `docs/Testing.md`). Nothing of this is pushed or staged.
+
 Evidence that does not belong in the repository is under
 `..\dl\handson\<date>\`, as before.
 
@@ -143,6 +146,10 @@ set `Pocket040.Fit` to +0.5 in the file to have the 13 it was drawn with.
 Making the offset's sense independent of the plane an edge carries would
 not bring 13 back either; it was not done, since no face this build makes
 was found to show the exception.
+
+**Answered (the reporter, 2026-10-07 13:20, through the queue):** set
+`Pocket040.Fit` to +0.5 in the file. The file is the reporter's; nothing
+here edits it.
 
 ## 17. `Sketch043`, `Sketch055`: "Missing external geometry reference" -- FIXED
 
