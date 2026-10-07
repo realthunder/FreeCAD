@@ -1683,6 +1683,17 @@ void MainWindow::removeWindow(Gui::MDIView* view, bool close)
         assert(!d->mdiArea->subWindowList().contains(subwindow));
         // d->mdiArea->removeSubWindow(parent);
     }
+    else if(close && parent && !subwindow) {
+        // A view in a tab left the screen with its sub window above. One
+        // in a ViewArea cell would stay shown until the deferred delete
+        // below, and whatever is closed before the event loop turns hands
+        // it the keyboard: a spreadsheet's view, removed because its sheet
+        // is being deleted, then reads that sheet -- the sheet deleted and
+        // its document closed in one go was a segmentation fault
+        // (tests/gui/sheet-view-reopen.py). Off the screen at once, as in
+        // a tab.
+        view->hide();
+    }
 
     // A view replaced out of a ViewArea cell arrives here half-closed:
     // released from the cell (no parent) with its deferred delete still
