@@ -70,11 +70,12 @@ report views, the reporter's own files -- is kept beside the dev tree under
 | 30 | 2026-10-07 | the dark and light overlay stylesheets integrated into the Dark and Light preference packs (a task asked; what "integrated" covers to confirm); and the long freeze when an overlay stylesheet is applied, to investigate; the Python console's background in both packs, so a theme can take an overlay preset's away again | OPEN |
 | 31 | 2026-10-07 | report view: "Go to end" on by default (change request) | FIXED `47b5e72c79`, not staged: "Go to end" is on for a profile that never stored it (`docs/HandsOnLog.md`) |
 | 32 | 2026-10-07 | some sub menus are transparent with blue text (Tools > Command history): find out why; transparent menus off by default | FIXED `b960092ea5`, not staged: the see-through menus are single menu objects shared between a pop-up over the 3D view and an entry of the main menu, and a themed session with no menu sheet chosen took the see-through sheet; now no sheet chosen = an ordinary menu, the see-through ones a choice in Preferences > Theme. A question for the reporter (`docs/HandsOnLog.md`) |
-| 33 | 2026-10-07 | a cmd window pops up briefly at the first document opened after start | FOUND, fix being built: at the first 3D view `FreeCAD.exe` starts `cmd.exe /c where nvcc` with a console, from the path tracer's CUDA probe (`cuew.c`, `popen`); once per session (`docs/HandsOnLog.md`) |
+| 33 | 2026-10-07 | a cmd window pops up briefly at the first document opened after start | FIXED `ef4df215b5` (the cycles submodule at its `35a3bd898`), not staged: the CUDA probe ran `cmd.exe /c where nvcc` through `popen` at the first 3D view; it searches the PATH without a shell now, and the session starts no process at all. Neither commit pushed; the cycles one has to go first (`docs/HandsOnLog.md`) |
 | 34 | 2026-10-07 | TechDraw's preselection colour sometimes does not follow the theme (stays yellow after classic, or is blue) | FIXED `3d7b4c30fd`, not staged, as decided: Dark and Light store TechDraw's `PreSelectColor`, the blue of the 3D view's highlight; a test switches Classic, Dark, Light, Classic (`docs/HandsOnLog.md`) |
 | 35 | 2026-10-07 | TechDraw (`scanner.FCStd`, Page003): now and then a click starts a recompute; a dimension (Dimension134) cannot be selected; selecting it in the tree can recompute and clear the selection. Asked: an audit of TechDraw for unnecessary recomputes | OPEN |
 | 36 | 2026-10-07 | TechDraw drawn by the backend: dashed lines do not behave as Qt's do (view frame, section line, hidden line, and so on), zoom above all | OPEN |
 | 37 | 2026-10-07 | TechDraw: the edge style "Chain" is not drawn dashed, by either renderer, though the style combo box shows it dashed | OPEN |
+| 38 | 2026-10-07 | omni search: an obvious freeze the first time it is brought up | FIXED `bb31f8820b`, not staged: the first bring-up loaded and rendered the icon of every command (609) before showing the box, 0.99 s + 0.28 s on the reporter's configuration with `scanner.FCStd` open; 0.15 s + 0.07 s now (`docs/HandsOnLog.md`) |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -1986,7 +1987,7 @@ Read from the source by the note-taker, nothing changed:
 - There is no switch for it today: the function always applies a sheet.
   (b) needs one -- off unless asked for -- or the default sheet made opaque.
 
-## 33. A cmd window pops up briefly at the first document opened after start -- FOUND, fix being built (see `docs/HandsOnLog.md`)
+## 33. A cmd window pops up briefly at the first document opened after start -- FIXED `ef4df215b5`, not staged (see `docs/HandsOnLog.md`)
 
 **From the build session** (passed on by the build session, 2026-10-07 16:20): the candidate below is the cause,
 watched happening -- at the first document, which brings the first 3D view,
@@ -2218,10 +2219,28 @@ Not said yet: which line standard is selected (Chain exists in the ASME list
 only), and where the style was set (the line decoration panel, a cosmetic
 line, a centre line).
 
+## 38. Omni search: an obvious freeze the first time it is brought up -- FIXED `bb31f8820b`, not staged (see `docs/HandsOnLog.md`)
+
+**2026-10-07, said by the reporter to the build session directly** and
+passed on by it at 16:35 to be numbered here: "do entry 23 next. while doing
+it optimize omni search first bring up speed. right now there is an obvious
+freeze time". The second sentence is this entry: the first time the omni
+search is brought up in a session the program visibly freezes before the box
+appears.
+What the build session found and did, in its words (its log has it under
+"Omni search: the first bring-up freezes"): the first bring-up loaded and
+rendered the icon of every command, 609 of them, before showing the box --
+0.99 s + 0.28 s on the reporter's configuration with `scanner.FCStd` open,
+0.15 s + 0.07 s now.
+The first sentence, "do entry 23 next", the build session could not place --
+entry 23 is the settings audit, staged, its defaults fixed since -- and is
+asking the reporter itself whether entry 24 is meant (every setting behind a
+generated class so the omni search finds it) or what is left under 23.
+
 ## Inbox
 
 Notes not sorted into an entry yet. Add a line here at any time, in any words;
 it is read before each entry is started and moved up into the table.
 
 (empty: the notes of 2026-10-06 are entries 20 to 28, those of 2026-10-07 so far
-entries 29 to 37)
+entries 29 to 38)
