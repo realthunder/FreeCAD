@@ -1394,3 +1394,10 @@ fc_add_gui_test(GuiMenuSeeThroughIsAChoice_tests_run
 fc_add_gui_test(GuiOmniSearchFirstBringUp_tests_run
                 omni-search-first-bring-up.py
                 --timeout 120)
+
+# Switching anti-aliasing on gives the view multisampled targets: a
+# multisampled depth cannot be read as a texture, and built that way every
+# MSAA view lost its framebuffer and fell back to none for the session.
+fc_add_gui_test(GuiMsaaReachesTheView_tests_run
+                msaa-reaches-the-view.py
+                --timeout 180)

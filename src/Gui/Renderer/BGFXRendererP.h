@@ -7572,6 +7572,9 @@ public:
     /// What the sized targets were BUILT with: a floating point scene
     /// colour, or the 8-bit one.
     bool hdrScene = false;
+    /// And whether their depth can be read as a texture: not when it is
+    /// multisampled (init()).
+    bool depthSampleable = true;
     /// What the frame would like them built with -- set before init(),
     /// the way shadowSizeWanted is. Read through hdrSceneWanted(),
     /// never directly: this is the wish, that is the answer.
@@ -10322,6 +10325,10 @@ public:
     /// overwritten by whatever asks next.
     Render::FrameDumpRequest captureRequest;
     bool captureIsDump = false;
+    /// Whether the capture in flight carries the scene depth: a
+    /// multisampled view has none to give (BGFXView::depthSampleable),
+    /// and what is measured from it is then reported as unknown.
+    bool captureHasDepth = true;
     /// What cross-object instancing collapsed on the last frame
     /// (docs/DrawSubmission.md phase 0.5). Every submission decision is
     /// scoped against the draw count, and until this existed nothing

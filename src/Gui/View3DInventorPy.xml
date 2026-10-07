@@ -313,6 +313,12 @@ pixels — the cheap numeric assertions for render smoke tests
 COMPLETE frame (see waitFrameComplete); wait=False reads the very next
 one as it stands.
 
+msaaSamples is the sample count the view's scene targets were BUILT with
+(4 for MSAA 4x, 0 or 1 for none): what was built, not what was asked
+for, so a backend that fell back to no multisampling shows here. A
+multisampled view has no depth to read back, and its geometryPixels is
+-1 (unknown).
+
 The dict also carries the backend's handle-pool occupancy, each beside
 its limit: frameBuffers/maxFrameBuffers, textures/maxTextures,
 views/maxViews, plus textureMemory, renderTargetMemory, gpuMemoryUsed

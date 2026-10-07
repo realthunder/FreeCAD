@@ -1245,6 +1245,7 @@ PyObject* View3DInventorPy::getRenderStats(PyObject *args, PyObject *kwds)
         dict.setItem("height", Py::Long(stats.height));
         dict.setItem("geometryPixels",
                      Py::Long(long(stats.geometryPixels)));
+        dict.setItem("msaaSamples", Py::Long(stats.msaaSamples));
         dict.setItem("nonFiniteChannels",
                      Py::Long(long(stats.nonFiniteChannels)));
         Py::Tuple avg(3);

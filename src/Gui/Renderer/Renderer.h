@@ -1193,6 +1193,12 @@ struct RenderStats {
     /// Pixels whose depth is in front of the far plane (< 0.999),
     /// i.e. covered by geometry; -1 when no depth was read.
     long long geometryPixels = -1;
+    /// Samples per pixel the captured view's scene targets were BUILT
+    /// with -- 4 for 4x MSAA, 0 or 1 for none. What was built, not what
+    /// was asked for: a backend that cannot build multisampled targets
+    /// falls back to none and keeps drawing, and this is where that
+    /// shows.
+    int msaaSamples = 0;
     /// Average color of the geometry pixels, 0-255 per channel;
     /// -1 when no geometry pixel exists.
     float avgColor[3] = {-1.0f, -1.0f, -1.0f};

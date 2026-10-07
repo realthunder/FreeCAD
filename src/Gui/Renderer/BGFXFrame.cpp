@@ -6639,9 +6639,18 @@ bool BGFXRenderer::Private::render(const QColor &col,
         // then ask for both it and the finished colour back. Depth is
         // what no backend blits, and geometryPixels is measured from
         // it, so this pass is the whole reason a capture is portable.
-        bgfx::setTexture(0, view->s_texSceneDepth, view->bgfxDepth);
-        view->fullscreen(BGFXView::ViewCaptureDepth, view->m_progDepthEnc,
-                         BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A);
+        //
+        // A multisampled depth cannot be read as a texture at all, so
+        // such a view's capture goes without: the colour is what an
+        // export wants, and the two numbers measured from depth are
+        // reported as unknown below rather than read off a target
+        // nothing drew into.
+        captureHasDepth = view->depthSampleable;
+        if (captureHasDepth) {
+            bgfx::setTexture(0, view->s_texSceneDepth, view->bgfxDepth);
+            view->fullscreen(BGFXView::ViewCaptureDepth, view->m_progDepthEnc,
+                             BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A);
+        }
         // Sized off the staging texture's own format, which
         // ensureCaptureTargets picked to match the blit source -- the
         // RGBA8 present output when a colour transform is on, the
@@ -6849,7 +6858,7 @@ bool BGFXRenderer::Private::render(const QColor &col,
             const size_t sy = flip ? size_t(capturePixH - 1 - y) : y;
             const float *drow = depth + sy * capturePixW;
             const unsigned char *crow = &rgba[size_t(y) * capturePixW * 4];
-            for (uint16_t x = 0; x < capturePixW; ++x) {
+            for (uint16_t x = 0; captureHasDepth && x < capturePixW; ++x) {
                 if (drow[x] < 0.999f) {
                     ++ng;
                     r += crow[x * 4];
@@ -6861,7 +6870,8 @@ bool BGFXRenderer::Private::render(const QColor &col,
         lastStats.width = capturePixW;
         lastStats.height = capturePixH;
         lastStats.temporalSamples = view->accumFrames;
-        lastStats.geometryPixels = ng;
+        lastStats.geometryPixels = captureHasDepth ? ng : -1;
+        lastStats.msaaSamples = view->msaaSamples;
         lastStats.nonFiniteChannels = captureHdr ? nonFinite : -1;
         // Said out loud as well as recorded: this is a broken frame,
         // and the capture that carries it should not become a golden.

@@ -736,6 +736,20 @@ Accumulation is the other half: it amortizes samples over *time*, so N
 frames approximate N-times supersampling of the whole pipeline, at a
 constant per-frame cost instead of MSAA's cost in bandwidth and resolve.
 
+**What MSAA costs the scene depth.** A multisampled depth attachment
+cannot be resolved, and bgfx refuses a framebuffer whose multisampled
+depth is neither write-only nor sampled per sample. So the scene depth is
+readable as a texture only WITHOUT multisampling (`BGFXView::init`,
+`depthSampleable`); with it the depth is write-only, and a capture of
+such a view carries no depth -- `getRenderStats()` reports
+`geometryPixels` as -1 and `msaaSamples` as what the targets were built
+with. Built readable at every sample count (2026-09-07 to 2026-10-07),
+every view that asked for MSAA lost its framebuffer and took the
+fallback that exists for backends that cannot multisample at all: the
+session drew without MSAA from then on, on every backend, with one line
+on the console to say so. `tests/gui/msaa-reaches-the-view.py` asks the
+view how many samples it has.
+
 **Why it does not ghost.** It is not TAA in the usual sense and it is
 deliberately not the primary antialiasing (section 7 rules that out --
 edge-dominated content is what ordinary TAA smears worst). There is no

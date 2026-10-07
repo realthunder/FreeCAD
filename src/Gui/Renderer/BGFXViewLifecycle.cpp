@@ -912,7 +912,22 @@ void BGFXView::init(bool keepShared)
     // coverage having removed the reason it used to be mandatory. With
     // MSAA on it adds a resolve texture, which is the honest price of a
     // capture that works on every backend.
-    bgfxDepth = createTexture(bgfx::TextureFormat::D24S8, flags, true);
+    //
+    // ! Except that it does not exist: a MULTISAMPLED depth attachment
+    // cannot be resolved, and bgfx refuses the framebuffer outright
+    // unless such a texture is write-only or sampled per sample
+    // ("Frame buffer depth MSAA texture cannot be resolved"). Built
+    // sampleable always, every view asked for MSAA lost its
+    // framebuffer, took the fallback below, and the session ran
+    // without multisampling from then on -- on every backend, from
+    // 2026-09-07 until somebody switched anti-aliasing on and looked.
+    // So: sampleable without MSAA, which is the default and the case
+    // the paragraph above is about, and write-only with it. A capture
+    // of a multisampled view then has no depth to encode, and says so
+    // (BGFXFrame, captureHasDepth) instead of reading one.
+    depthSampleable = samples <= 1;
+    bgfxDepth = createTexture(bgfx::TextureFormat::D24S8, flags,
+                              depthSampleable);
     bgfx::Attachment attachment[2];
     // No mip chain on these render targets; the default resolve flag
     // (BGFX_RESOLVE_AUTO_GEN_MIPS) is also rejected for depth attachments.
@@ -950,9 +965,15 @@ void BGFXView::init(bool keepShared)
     if (targetsFailed && msaaSamples > 1
             && !_BGFXLib.msaaTargetsUnavailable) {
         _BGFXLib.msaaTargetsUnavailable = true;
+        // Which of the three was refused is the whole diagnosis, and
+        // nothing else reports it: a release bgfx says nothing.
         std::printf("bgfx: %dx MSAA scene targets could not be created on "
-                    "this backend -- rebuilding without multisampling\n",
-                    msaaSamples);
+                    "this backend (colour %s, depth %s, framebuffer %s) -- "
+                    "rebuilding without multisampling\n",
+                    msaaSamples,
+                    bgfx::isValid(bgfxColor) ? "made" : "REFUSED",
+                    bgfx::isValid(bgfxDepth) ? "made" : "REFUSED",
+                    bgfx::isValid(bgfxFbo) ? "made" : "REFUSED");
         init(false);
         return;
     }
