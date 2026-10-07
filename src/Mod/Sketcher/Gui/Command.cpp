@@ -1780,6 +1780,11 @@ CmdSketcherSnap::CmdSketcherSnap()
 
     ParameterGrp::handle hGrp = this->getParameterPath();
     hGrp->Attach(this);
+    // The state is refreshed when the key changes; it has to be read once
+    // as well. It started as "on" whatever was stored, so in a session that
+    // begins with snapping off the first click stored "not on" -- off again
+    // -- and did nothing.
+    snapEnabled = hGrp->GetBool("Snap", Sketcher::SketcherParams::defaultSnap());
 }
 
 CmdSketcherSnap::~CmdSketcherSnap()
