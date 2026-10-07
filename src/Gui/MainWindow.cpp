@@ -92,6 +92,7 @@
 
 #include "MainWindow.h"
 #include "MainWindowParams.h"
+#include "NotificationAreaParams.h"
 #include "GeneralParams.h"
 #include "InputHintWidget.h"
 #include "Action.h"
@@ -637,9 +638,7 @@ MainWindow::MainWindow(QWidget * parent, Qt::WindowFlags f)
     addStatusBarItem(new Dialog::SandboxIndicator(statusBar()),
                      {"SB_SandboxIndicator", QString(), StatusBarSlot::Right, 910, false, 0});
 
-    auto hGrp = App::GetApplication().GetParameterGroupByPath("User parameter:BaseApp/Preferences/NotificationArea");
-
-    auto notificationAreaEnabled = hGrp->GetBool("NotificationAreaEnabled", true);
+    auto notificationAreaEnabled = NotificationAreaParams::getNotificationAreaEnabled();
 
     NotificationArea* notificationArea = new NotificationArea(statusBar());
     notificationArea->setObjectName(QStringLiteral("notificationArea"));

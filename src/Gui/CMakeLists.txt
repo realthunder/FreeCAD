@@ -1346,6 +1346,7 @@ SET(Params_CPP_SRCS
     ExprParams.cpp
     GeneralParams.cpp
     MainWindowParams.cpp
+    NotificationAreaParams.cpp
     ReportViewParams.cpp
     ThemeParams.cpp
     OverlayParams.cpp
@@ -1362,6 +1363,7 @@ SET(Params_HPP_SRCS
     ExprParams.h
     GeneralParams.h
     MainWindowParams.h
+    NotificationAreaParams.h
     ReportViewParams.h
     ThemeParams.h
     OverlayParams.h

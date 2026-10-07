@@ -1438,3 +1438,9 @@ fc_add_gui_test(GuiPreferencesCancelAsksNothing_tests_run
 fc_add_gui_test(GuiMainWindowSettings_tests_run
                 mainwindow-settings.py
                 --timeout 180)
+
+# The notification area's settings are behind NotificationAreaParams:
+# listed by the omni search, and the area still follows its switch at once.
+fc_add_gui_test(GuiNotificationAreaSettings_tests_run
+                notification-area-settings.py
+                --timeout 180)
