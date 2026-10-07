@@ -80,6 +80,7 @@
 #include <Eigen/Dense>
 
 #include "NaviCube.h"
+#include "NaviCubeParams.h"
 
 #include "Action.h"
 #include "Application.h"
@@ -552,15 +553,15 @@ void NaviCubeShared::getParams()
 {
     for (auto &info : m_colors)
         info.color = QColor::fromRgba(m_hGrp->GetUnsigned(info.name, info.def.rgba()));
-    m_CubeWidgetSize = m_hGrp->GetInt("CubeSize", 132);
-    m_RotateToNearest = m_hGrp->GetBool("NaviRotateToNearest", true);
-    m_StepByTurn = m_hGrp->GetInt("NaviStepByTurn", 8);
-    m_ShowCS = m_hGrp->GetBool("ShowCS", true);
-    m_BorderWidth = m_hGrp->GetFloat("BorderWidth", 1.5);
-    m_Chamfer = m_hGrp->GetFloat("ChamferSize", 0.12);
-    m_AutoHideCube = m_hGrp->GetBool("AutoHideCube", false);
-    m_AutoHideButton = m_hGrp->GetBool("AutoHideButton", true);
-    m_AutoHideTimeout = m_hGrp->GetInt("AutoHideTimeout", 300);
+    m_CubeWidgetSize = NaviCubeParams::getCubeSize();
+    m_RotateToNearest = NaviCubeParams::getNaviRotateToNearest();
+    m_StepByTurn = NaviCubeParams::getNaviStepByTurn();
+    m_ShowCS = NaviCubeParams::getShowCS();
+    m_BorderWidth = NaviCubeParams::getBorderWidth();
+    m_Chamfer = NaviCubeParams::getChamferSize();
+    m_AutoHideCube = NaviCubeParams::getAutoHideCube();
+    m_AutoHideButton = NaviCubeParams::getAutoHideButton();
+    m_AutoHideTimeout = NaviCubeParams::getAutoHideTimeout();
     deinit();
 }
 
@@ -2814,7 +2815,7 @@ void NaviCubeShared::setLabels(QWidget *parent)
     auto checkbox = new QCheckBox(QObject::tr("Auto scale"));
     checkbox->setToolTip(QObject::tr("Auto scale font pixel size based on navigation cube size.\n"
                                      "If disabled, then use the selected font point size.\n"));
-    bool autoSize = m_hGrp->GetBool("FontAutoSize", true);
+    bool autoSize = NaviCubeParams::getFontAutoSize();
     checkbox->setChecked(autoSize);
     grid->addWidget(checkbox, row, 0);
     QObject::connect(checkbox, &QCheckBox::toggled, [this, fontButton](bool checked) {
@@ -2824,7 +2825,7 @@ void NaviCubeShared::setLabels(QWidget *parent)
 
     auto spinBoxScale = new QDoubleSpinBox;
     grid->addWidget(spinBoxScale, row++, 1);
-    spinBoxScale->setValue(m_hGrp->GetFloat("FontScale", 0.22));
+    spinBoxScale->setValue(NaviCubeParams::getFontScale());
     spinBoxScale->setMinimum(0.1);
     spinBoxScale->setSingleStep(0.01);
     QObject::connect(spinBoxScale, QOverload<double>::of(&QDoubleSpinBox::valueChanged),
@@ -3002,19 +3003,19 @@ void NaviCubeShared::setColors(QWidget *parent)
 
 QFont NaviCubeShared::getLabelFont()
 {
-    QString fontString = QString::fromUtf8((m_hGrp->GetASCII("FontString", "Helvetica")).c_str());
-    int fontSize = m_hGrp->GetInt("FontSize");
+    QString fontString = QString::fromUtf8((NaviCubeParams::getFontString()).c_str());
+    int fontSize = NaviCubeParams::getFontSize();
     QFont sansFont(fontString);
-    if (fontSize <= 0 || m_hGrp->GetBool("FontAutoSize", true)) {
+    if (fontSize <= 0 || NaviCubeParams::getFontAutoSize()) {
 	    int texSize = m_CubeWidgetSize * m_OverSample;
-        sansFont.setPixelSize(m_hGrp->GetFloat("FontScale", 0.22) * texSize);
+        sansFont.setPixelSize(NaviCubeParams::getFontScale() * texSize);
     } else if (fontSize > 0)
         sansFont.setPointSize(fontSize);
-    sansFont.setItalic(m_hGrp->GetBool("FontItalic", false));
-    int weight = m_hGrp->GetInt("FontWeight", 87);
+    sansFont.setItalic(NaviCubeParams::getFontItalic());
+    int weight = NaviCubeParams::getFontWeight();
     if (weight > 0)
         sansFont.setWeight(convertWeights(weight));
-    int stretch = m_hGrp->GetInt("FontStretch", 62);
+    int stretch = NaviCubeParams::getFontStretch();
     if (stretch > 0)
         sansFont.setStretch(stretch);
     return sansFont;
@@ -3033,12 +3034,12 @@ void NaviCubeShared::saveLabelFont(const QFont &font)
 
 QFont NaviCubeShared::getAxisLabelFont()
 {
-    QString fontString = QString::fromUtf8((m_hGrp->GetASCII("AxisFont", "Monospace")).c_str());
-    int fontSize = m_hGrp->GetInt("AxisFontSize", 8);
+    QString fontString = QString::fromUtf8((NaviCubeParams::getAxisFont()).c_str());
+    int fontSize = NaviCubeParams::getAxisFontSize();
     QFont font(fontString);
     font.setPointSize(fontSize);
-    font.setItalic(m_hGrp->GetBool("AxisFontItalic", false));
-    int weight = m_hGrp->GetInt("AxisFontWeight", 50);
+    font.setItalic(NaviCubeParams::getAxisFontItalic());
+    int weight = NaviCubeParams::getAxisFontWeight();
     if (weight > 0)
         font.setWeight(convertWeights(weight));
     return font;

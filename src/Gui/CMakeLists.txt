@@ -1351,6 +1351,7 @@ SET(Params_CPP_SRCS
     MacroParams.cpp
     PythonConsoleParams.cpp
     EditorParams.cpp
+    NaviCubeParams.cpp
     ReportViewParams.cpp
     ThemeParams.cpp
     OverlayParams.cpp
@@ -1372,6 +1373,7 @@ SET(Params_HPP_SRCS
     MacroParams.h
     PythonConsoleParams.h
     EditorParams.h
+    NaviCubeParams.h
     ReportViewParams.h
     ThemeParams.h
     OverlayParams.h

@@ -1482,3 +1482,9 @@ fc_add_gui_test(GuiDocumentSettings_tests_run
 fc_add_gui_test(GuiViewSettings_tests_run
                 view-settings.py
                 --timeout 180)
+
+# The navigation cube's settings are behind NaviCubeParams: listed by the
+# omni search, and the views still follow the cube's switch at once.
+fc_add_gui_test(GuiNaviCubeSettings_tests_run
+                navicube-settings.py
+                --timeout 180)
