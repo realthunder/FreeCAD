@@ -5889,7 +5889,15 @@ void ViewProviderPartExt::runDeferredVisualSlice()
                     ? Base::freecad_dynamic_cast<ViewProviderPartExt>(
                           Gui::Application::Instance->getViewProvider(obj))
                     : nullptr;
-                if (vp && vp->VisualDeferred)
+                // Parked AND still to be built. A parked visual that
+                // something built in the meantime -- a live import's own
+                // fit builds every shape it frames -- stays on the queue
+                // until its turn and is popped unbuilt; meshing it here
+                // is work for nobody, by workers writing into a shape
+                // that is already on the screen. The chess set's 15
+                // shapes were all submitted that way and none of them
+                // built by the drain (docs/DocumentLoad.md sec 18.7).
+                if (vp && vp->VisualDeferred && vp->VisualTouched)
                     vps.push_back(vp);
             }
             std::vector<PreMeshItem> items;
