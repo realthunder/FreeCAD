@@ -38,6 +38,7 @@ Evidence that does not belong in the repository is under
 | 27 | STAGED `fa2ada985c` | the cell menu made a spreadsheet view by asking for it, listed a page's views, and a pick was placed by the general policy |
 | 31 | FIXED `47b5e72c79`, not staged | "Go to end" is on for a profile that never stored it |
 | 32 | FIXED `b960092ea5`, not staged | the menus styled see-through are single objects shared between a pop-up over the 3D view and the main menu; the blue is the palette's bright text, the desktop's accent. No sheet chosen is an ordinary menu now |
+| 33 | FIXED `ef4df215b5` (cycles `35a3bd898`), not staged | the path tracer's CUDA probe ran `cmd.exe /c where nvcc` through `popen` at the first 3D view; it searches the PATH without a shell now |
 | 34 | FIXED `3d7b4c30fd`, not staged | Dark and Light store TechDraw's preselection colour, the blue of the 3D view's |
 
 **The reporter, 2026-10-07 14:20, on what is open** (said to the build
@@ -725,3 +726,35 @@ owning the key that no longer matters for a theme switch.
 
 The other packs in the tree (Dark behave, Dark contrast, Dark modern,
 Darker, Light modern, ProDark) are not offered as themes and were left.
+
+## 33. A cmd window at the first document opened -- FIXED
+
+`ef4df215b5` (the submodule `src/3rdParty/cycles` moved to its `35a3bd898`).
+Not staged. **Neither is pushed, and the cycles commit has to be pushed
+before this tree's is, or the tree points at a commit nobody else has.**
+
+**Watched** (`watch33.py`: every process started under the session, the
+moment it appears, with its command line; `e33.py` marks the session's
+steps in time). The note-taker's candidate is it:
+
+| session | at the first document | at the second |
+|---|---|---|
+| staged 14:23 | `cmd.exe /c where nvcc`, a `conhost.exe` under it, `where.exe nvcc` under that | nothing |
+| after | nothing | nothing |
+
+The first document brings the first 3D view, the first 3D view probes the
+path tracer's devices, and cuew ends its search for the CUDA compiler with
+`popen("where nvcc")`. A process with no console gets a console WINDOW for
+the shell `popen()` starts. The answer is kept, so once per session. hipew
+has the same line for `hipcc`; it is not reached on this box (its library
+does not load first), and was changed with it.
+
+**Fix,** in the cycles fork (branch `LinkVibe`): both look along the PATH
+with `SearchPath`, which starts nothing. The first document of the session
+is made in 2.3 s where it took 3.5 s.
+
+Left: the two `--version` calls further down in the same files still go
+through `popen()`. They run only where a compiler was found, which this box
+has not, so there was nothing to watch.
+
+Evidence: `..\dl\handson\2026-10-07\entry33-*`, `watch33.py`, `e33.py`.
