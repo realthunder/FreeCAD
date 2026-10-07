@@ -758,3 +758,37 @@ through `popen()`. They run only where a compiler was found, which this box
 has not, so there was nothing to watch.
 
 Evidence: `..\dl\handson\2026-10-07\entry33-*`, `watch33.py`, `e33.py`.
+
+## Omni search: the first bring-up freezes -- FIXED (no entry number yet)
+
+`bb31f8820b`. Not staged. Asked of the build session directly, 2026-10-07:
+"optimize omni search first bring up speed. right now there is an obvious
+freeze time".
+
+**Measured** (`omni1.py`: the command timed, then the event loop; the
+reporter's configuration of 2026-10-07 00:13, `scanner.FCStd` open):
+
+| | the first bring-up | the second |
+|---|---|---|
+| staged 14:23 | 0.99 s in the command, 0.28 s held after | 0.01 s |
+| after | 0.15 s, 0.07 s | 0.01 s |
+| an empty session, staged / after | 0.31 s / 0.015 s | |
+
+**Where it went** (the main thread sampled): making the command completer's
+list. Qt lays a completer's list out the moment it turns it into a popup
+window and asks the delegate the list has THEN for the size of every row.
+That is Qt's stock delegate -- the box's own is put on afterwards -- and the
+stock one sizes a row by reading its icon. So the icon of each of the 609
+commands was loaded and rendered from its SVG before the box was shown.
+
+**Fix.** The box makes its five lists itself, with its own delegate in
+place before Qt's layout. Its row size is that of its text; an icon is made
+when its row is painted.
+
+Scored: `tests/gui/omni-search-first-bring-up.py`
+(`GuiOmniSearchFirstBringUp_tests_run`), 8 PASS; on the staged binaries 1
+FAIL -- reading back the icon of every row after the bring-up takes 3 ms
+there, because the bring-up had made them all, and 229 ms here.
+`omni-search-slash-word.py` 10 PASS, `OmniSearch_Tests_run` passes.
+
+Evidence: `..\dl\handson\2026-10-07\omni-bring-up-*`, `omni1.py`.
