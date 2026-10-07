@@ -1059,6 +1059,57 @@ adopting; the drop records once, from the drop target), and what a binder
 with no context does at a recompute -- stays as it was built, as the reporter
 said of "the last set context".
 
+**The reporter, 2026-10-07 14:24, correcting the above and pointing at two
+things to check:** "it should be every drop. so something happened that cause
+the binder loose its binding. or, check if context is set when PartDesign
+auto import external object as binder. maybe that's the missing point". So:
+recording the context at EVERY drop is right ((ii)'s "the first only" is
+withdrawn, what is left of (ii) is where the drop takes it from); and two
+leads -- the binder lost a context it had, or the automatic import of an
+external object as a binder never gives it one.
+**Read for both by the note-taker, from the source only (nothing run):**
+- *The import does not set it -- the reporter's second lead holds.*
+  `Part::SubShapeBinder::import()` (`src/Mod/Part/App/SubShapeBinder.cpp`,
+  from line 1385) is handed the object being edited WITH its path
+  (`editObjT`: the top parent and the sub-name down to the edited object) and
+  uses exactly that to resolve the support (`topParent->resolveRelativeLink(
+  subname, link, linkSub, Flatten)`). Then it creates the binder, adds it to
+  the container, calls `setLinks()` -- and never writes `Context`, though the
+  context is in its hands. The binder gets one only from `update()`'s
+  adoption of `getParents()`'s first entry, which goes by the order of the
+  binder's in-list (`DocumentObject::getParents`), not by the path the user
+  was editing through. Where the container is reachable one way only the two
+  agree; where it is reachable several ways -- a body that is also linked, a
+  part under a link group -- the adopted context can be another path than
+  the one the import was resolved against.
+  Its callers, all of which inherit this: `PartDesignGui::importExternalObject`
+  (`PartDesign/Gui/Utils.cpp`), used by the feature commands
+  (`PartDesign/Gui/Command.cpp`, five places), `ReferenceSelection.cpp`,
+  `TaskSketchBasedParameters.cpp` (four places); `Part/Gui/TaskAttacher.cpp`;
+  Python `Part.importExternalObject`. The binder command
+  (`PartGui::makeSubShapeBinder`) is the same: it knows the selection's top
+  parent and path and does not write them either.
+- *`Binder008` itself more likely never had one than lost one.* The only
+  thing that empties a recorded context is `updatePlacement()` on an "invalid
+  selection", and that calls `update()` in the same breath, which refills an
+  empty context from the first parent if there is any parent. So a binder
+  saved with an EMPTY context while it is a member of a group can only have
+  been updated last when it had NO parent: it was created, or last updated,
+  outside `LinkGroup001` and put into the group afterwards. Dragging the
+  binder into a group is not a drop ONTO the binder -- it sets no context and
+  runs no update. (The other way to the same state: `Relative` switched on
+  after the last update; `onChanged` connects a signal for it and does not
+  update.) Deduced from the code, not from the file's history. It is not an
+  "Import": it is named `Binder008`, binds the whole of `Body004`, and has
+  `BindCopyOnChange` Mutated, which is what the binder command makes.
+- *Where the drop takes it from,* still to be run: `updatePlacement()` reads
+  the SELECTION, and wants one selected item leading to the binder.
+What this adds up to, for the reporter to turn into a request or not: the
+places that create a binder know its context and should record it (import,
+the binder command); and a binder put into a group afterwards has none until
+something is dropped on it or it is double-clicked -- at which point a
+recompute should not invent one.
+
 **From entry 16.** With `Binder013`, `014`, `017` and `018` valid again, what
 is built on them is recomputed for the first time in a full recompute of
 `scanner.FCStd`, and these two sketches fail (`entry16-first.txt`). Not looked
