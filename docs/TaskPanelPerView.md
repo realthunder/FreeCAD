@@ -20,7 +20,9 @@ each is tested by (sec 9), and the readings of the order that were assumed
 and want confirming (sec 10). What is built, and where it departs from the
 design, is sec 11 to 14: milestone 1, a selection per view, milestone 2,
 and milestone 3, the panel inside its view. Milestones 4 and 5 -- the dock
-overlays, the browser -- are not started.
+overlays, the browser -- are not started. Sec 15 is the order that came
+after milestone 3 -- two modes for the panel in its view, and a state per
+view where sec 10 assumed one switch for all -- as a design, not built.
 
 It is step E of `docs/ThinClient.md` 8.12 ("Chrome -- process-global ... per
 client, a Control per view, which neither fork has") taken one notch: the
@@ -1498,3 +1500,199 @@ cell, the selection per view, the edit per view and its two neighbours),
   once the event that made them is over.
 - The new strings -- the host's tool tips, the title bar button's, the
   preference's -- are untranslated.
+
+## 15. Two modes for the panel in its view (ordered 2026-10-07; DESIGN, not built)
+
+### 15.1 The order, in the user's words
+
+Four messages, the later ones answering what the earlier left open.
+
+> I want the panel to also have two mode as the global one. Overlay mode or
+> side by side mode. Side mode means the panel is at a subcell attached to
+> any side of its view. Overlay means it is inside the view resizable and
+> translucent. Behave and look basically the same as global overlay panel.
+
+> The panel will have two state. One if it is attached to global or not,
+> the setting act on the panel who own the button and all later views, but
+> not other existing panels. The other state is when attach to view whether
+> overlay or in subcell and which side this state persist into a view
+> property and apply to later created view.
+
+> To avoid user confusion, let's make setting in preference (state 1 only)
+> apply to all later created panels, with an option to apply to all current
+> view. The button on title bar act on the own panel/view, apply to state 1
+> and 2. 4, for all types of view. 5, real cell split out from the hosting
+> view which move to inner cell. 6, not applicable, always show in edit
+
+> 1, state 1 is persist in view also. next panel follow what's persist in
+> the view. 2 yes
+
+Read together:
+
+- **State 1, where**: in the combo view or in its view. A state of each
+  VIEW, kept with the view. The preference is state 1 only: it is what a
+  panel created later gets in a view that holds nothing of its own, and a
+  button beside it writes it into every current view.
+- **State 2, how, while in its view**: overlay or side cell, and which of
+  the four sides. Kept with the view, and what views created later start
+  from.
+- **The title bar buttons** act on their own panel and view only, on both
+  states. The combo view's button acts on the panel the Tasks tab shows.
+- **Every kind of view** carries the states, not 3D views alone.
+- **The side cell is a real cell**, split out of the hosting view's, the
+  view going to the inner one.
+- **No auto-hide, edit-show or task-show** for the overlay in a view: it is
+  shown for as long as its edit or dialog is on.
+
+### 15.2 What it overrules
+
+- Sec 10 assumption 2 and sec 5.5's last line, "one mode for all panels".
+  `TaskView::applyHosting()` moving EVERY page when `View/TaskPanelInView`
+  changes (sec 14.2) goes: the preference stops moving anything.
+- Sec 14.3's departures 3 and 4 and sec 14.6's "resize": opaque becomes
+  translucent, left-or-right becomes any side, and both modes resize.
+- The user parameters `TaskView/Host/<view type>` (side, folded): the view
+  holds them now.
+- Today's look of `TaskPanelHost` -- a plain widget with a header of its
+  own -- in favour of the dock overlay's.
+
+### 15.3 The state
+
+Four properties on `Gui::MDIView`, so that every kind of view has them, in
+a group of their own as the `Render_*` properties of a 3D view are:
+
+| property | values | default |
+|---|---|---|
+| `Task_Place` | `Default`, `ComboView`, `InView` | `Default` |
+| `Task_Mode` | `Overlay`, `Side` | what was last chosen anywhere |
+| `Task_Side` | `Left`, `Right`, `Top`, `Bottom` | what was last chosen anywhere |
+| `Task_Size` | pixels across, 0 = the panel's own hint | 0 |
+
+- `Task_Place` at `Default` follows the preference as it is at the moment
+  a panel is made. It leaves `Default` when the view's own button is used,
+  or when the preference page's "apply to the current views" writes it.
+  So a view the user never touched keeps following the preference, and one
+  he did keeps what he chose -- "next panel follow what's persist in the
+  view".
+- Changing a property moves the panel of that view and no other. Nothing
+  is closed, no dialog is told anything: the page moves as it does today.
+- "What was last chosen anywhere" for state 2 is kept in the user
+  parameters, written whenever a button changes a view's mode or side, and
+  read once when a view is made. It is not a preference entry -- the user
+  said the preference is state 1 only.
+
+### 15.4 Side mode: the panel pair
+
+`ViewArea` is a tree of splitters whose leaves are `ViewAreaCell`s, each
+holding exactly one view. Much of it counts and walks those cells: the
+last cell closing its container, the choice of the active cell, the join
+gesture, the placement of new views, the layout string saved with the
+document.
+
+A panel cell that WERE a `ViewAreaCell` with no view would have to be
+taught to every one of them. So it is not one. The cell's own slot in its
+splitter is taken by a small splitter -- the PAIR -- that holds the panel
+cell and the view's cell, in the order and direction the side asks for;
+the view "moves to the inner cell". The panel cell is a widget of its own
+class.
+
+- Everything that enumerates cells does not see it. It cannot be joined
+  into, split, made active, or picked for a new view.
+- The pair stands in exactly one slot, so the enclosing splitters keep
+  their sizes: the saved layout, the proportions a maximize puts back, and
+  the unified canvas's reading of cell geometry are untouched. The layout
+  string writes a pair as its cell and nothing else; a panel is there only
+  while a dialog is, and a document is not reopened into one.
+- Taking the panel cell away is the un-nesting `collapseCell` already does
+  for a splitter left with one child.
+- What must learn of the pair: `collapseCell` and `childViewGone` (the
+  panel cell goes before its view's cell does), `toggleMaximizeCell` (its
+  walk hides every sibling on the way up, and the panel must stay with a
+  maximized view), `splitCell` (a split of the view's cell happens inside
+  the pair or outside it -- outside, so that the panel keeps its side of
+  the WHOLE of what it was opened beside; to be settled when built).
+- The handle between the two is the view area's own, and resizes the
+  panel. Its position is `Task_Size`.
+- A click into the panel cell makes its view the active one, as now
+  (`TaskPageEventScope`).
+
+### 15.5 Overlay mode: what of the dock overlay is used
+
+Looked at first, as ordered: can `OverlayTabWidget` hold a task page in a
+cell? No. It is four fixed instances (`_LeftOverlay` ...), each built round
+`QDockWidget`s, placed by the geometry of the main window's MDI area, and
+driven by `OverlayManager`'s application-wide event filter, which names
+them. Twenty-five hundred lines that assume all of that.
+
+What IS used, each as it stands:
+
+- **The style sheet**, `OverlayManager::getStyleSheet()` -- the
+  `overlay:*.qss` the user picked, so the panel follows the same theme
+  setting as the docks.
+- **The switch of attributes**, `OverlayTabWidget::_setOverlayMode`: the
+  walk that makes each widget frameless and translucent. It SKIPS a
+  `TaskBox` and a dialog, which is why a task panel in the overlaid combo
+  view has clear ground and boxes that keep their own background. The
+  same walk on the host gives the same picture. It is a protected static
+  today and gets a public door.
+- **The outline effect**, `OverlayGraphicsEffect`, which keeps text
+  readable over the picture.
+- **The title bar's parts**, `prepareTitleWidget` and `createTitleButton`
+  (public statics): the row of buttons made from actions, under the object
+  name the style sheet styles. `OverlayTitleBar` itself drags DOCKS and is
+  not used; the host's header keeps its own drag, to any of four sides now.
+- **The size grip**, `OverlaySizeGrip`, which only reports where it is
+  dragged to.
+
+What is not taken, by the order: the auto modes and their menu, the hint
+strip that brings a hidden overlay back, the tabs.
+
+**Mouse pass-through** is the dock overlay's hardest part -- the filter
+tests the alpha of a grabbed picture under the cursor and hands a click on
+nothing to the widget beneath, holding the mouse for the drag that
+follows. It is written for the four docks and the MDI area. The host needs
+the same answer and a smaller question, since what lies beneath it is its
+own view; it is its own step (15.7, M4), after the look.
+
+### 15.6 Kept with the view
+
+- A 3D view writes its properties into `GuiDocument.xml` (`<View3D>`), so
+  the four ride along with no new code.
+- No other view writes anything there: a TechDraw page or a spreadsheet is
+  made again from its object. For "every kind of view" to mean kept, those
+  need an entry of their own, keyed as the layout string keys them
+  (`O:<object>`). A file-format addition, to be checked against older
+  builds before it is made.
+- A view with no document keeps its state for the session.
+
+### 15.7 Milestones
+
+Each with a GUI test scored on the tree before, as sec 9 asks.
+
+- **M1. The state.** The properties, a panel placed by its view's, the
+  preference as the seed, "apply to the current views", the buttons acting
+  on their own view. No new look. Rests on the order alone.
+- **M2. Side mode.** The pair, four sides, the handle, `Task_Size`.
+- **M3. Overlay mode's look.** Style sheet, attribute walk, effect, title
+  bar, grip, four sides.
+- **M4. Pass-through, and the dock overlays.** The click on nothing; and
+  sec 5.3, still owed: an overlay panel in a view standing clear of an
+  overlaid dock on the same edge. Side mode needs none of it.
+- **M5. Kept for views that are not 3D views** (15.6).
+
+### 15.8 Put to the user
+
+1. **A view outside any view area, in side mode.** The pair needs a
+   splitter, and such a view has none. Either it is wrapped into a view
+   area when its panel goes to the side (`ViewArea::wrap`, which exists)
+   and gains a cell's corner zones and menu button; or side mode is not
+   offered there and it shows the overlay.
+2. **How tall the overlay is.** As tall as its panel needs, as now -- then
+   the picture below it is simply the view's, and pass-through is wanted
+   only for the gaps inside the panel. Or the full height of its side, as
+   a dock overlay is -- then nothing below the panel can be clicked until
+   M4 is built.
+3. **State 2's start for later views** is "what was last chosen", held out
+   of sight, with no preference entry of its own (15.3).
+4. **The fold-to-header button** of sec 14 goes, as I read "always show in
+   edit". Say if it should stay.
