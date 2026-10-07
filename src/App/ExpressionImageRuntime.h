@@ -42,6 +42,7 @@
  * Internal to the App library: not installed, not part of the API.
  */
 
+#include <algorithm>
 #include <chrono>
 #include <condition_variable>
 #include <cstddef>
@@ -110,6 +111,16 @@ struct MemoryStats
  * either fired before disarm() (which then reports it) or finds itself
  * disarmed.  fire() must therefore be quick and must not call back into
  * the watchdog.
+ *
+ * The grace between the stages (hardMs - softMs) is counted from the
+ * moment the soft stage HAS fired, not from arm(): a soft stage that
+ * fires late must not be followed at once by the hard one, which would
+ * stop a guest that was never given the time to answer.  Late is not
+ * rare: this thread's wait is against the wall clock wherever libstdc++
+ * has no pthread_cond_clockwait (the conda toolchain's old glibc
+ * sysroot), so a wall clock stepped back a second -- what WSL2 does to
+ * catch up after load -- returns the wait a second late, and a suspended
+ * machine or a starved thread does the same on any platform.
  */
 class Watchdog
 {
@@ -144,6 +155,7 @@ public:
                                               : now + std::chrono::milliseconds(hardMs);
         hard = now + std::chrono::milliseconds(hardMs);
         softStage = softMs > 0 && softMs < hardMs;
+        grace = hard - soft;
         armed = true;
         ++generation;
         if (!thread.joinable())
@@ -178,6 +190,8 @@ private:
     uint64_t generation = 0;
     Clock::time_point soft;
     Clock::time_point hard;
+    /// What the guest is given between the stages (see the class comment).
+    Clock::duration grace {};
     /// When the thread's current wait ends on its own (max = never).
     Clock::time_point waitingUntil = Clock::time_point::max();
 
@@ -201,6 +215,8 @@ private:
             if (waitingSoft) {
                 fired = 0;
                 fire(0);
+                // the grace starts now, however late this is
+                hard = std::max(hard, Clock::now() + grace);
                 continue;
             }
             fired = 1;

@@ -174,6 +174,9 @@ TEST_F(ExpressionImageHostTest, evalAfterErrorStillWorks)
 // ---- runaway guest is stopped, the host answers TimeoutError, and the
 // ---- next evaluation works ----
 
+#include <chrono>
+#include <iostream>
+
 #include <App/Application.h>
 #include <Base/Parameter.h>
 
@@ -232,10 +235,23 @@ protected:
 TEST_F(ExpressionImageBudgetTest, runawayBytecodeLoopIsStopped)
 {
     mark();
+    const auto began = std::chrono::steady_clock::now();
     auto res = ImageHost::instance().eval("next(x for x in iter(int, 1) if x)", {});
+    const auto took = std::chrono::duration_cast<std::chrono::milliseconds>(
+                          std::chrono::steady_clock::now() - began)
+                          .count();
+    // For the log and not a check: 300 is on time, and a soft stage that
+    // fired late -- by a second where the wall clock stepped back one --
+    // shows here now that it no longer costs the guest its instance.
+    std::cout << "the runaway loop was stopped after " << took << " ms\n";
     ASSERT_FALSE(res.ok);
     EXPECT_EQ(res.excType, "TimeoutError") << res.message;
     EXPECT_NE(res.message.find("300 ms"), std::string::npos) << res.message;
+    // which stage stopped it, said here: a hard stage would otherwise
+    // only show below, as a mark that is gone
+    if (ImageHost::instance().runtime() == "pyodide")
+        EXPECT_NE(res.message.find("interrupted"), std::string::npos)
+            << res.message << ", after " << took << " ms";
 
     auto good = ImageHost::instance().eval("40 + 2", {});
     ASSERT_TRUE(good.ok) << good.excType << ": " << good.message;
@@ -299,6 +315,101 @@ TEST_F(ExpressionImageBudgetTest, zeroBudgetIsUnbounded)
     auto res = ImageHost::instance().eval("sum(range(100000))", {});
     ASSERT_TRUE(res.ok) << res.excType << ": " << res.message;
     EXPECT_EQ(value(res).get<int64_t>(), 4999950000);
+}
+
+// ---- the deadline thread itself (Watchdog in
+// ---- App/ExpressionImageRuntime.h), with no guest: the two stages as
+// ---- fire() is given them ----
+
+#include <atomic>
+#include <thread>
+
+#include <App/ExpressionImageRuntime.h>
+
+namespace
+{
+/// A Watchdog whose stages only note when they ran, in ns since it was
+/// built; stage 0 first holds the thread for `softTakes`.
+struct StageClock
+{
+    using Clock = std::chrono::steady_clock;
+
+    explicit StageClock(std::chrono::milliseconds softTakes = {})
+        : dog([this, softTakes](int stage) {
+            if (stage == 0) {
+                softAt = since();
+                std::this_thread::sleep_for(softTakes);
+                softDone = since();
+            }
+            else {
+                hardAt = since();
+            }
+        })
+    {}
+
+    int64_t since() const
+    {
+        return std::chrono::duration_cast<std::chrono::nanoseconds>(Clock::now() - t0).count();
+    }
+
+    /// Wait for the hard stage, which ends an armed call.
+    bool waitHard(std::chrono::milliseconds atMost = std::chrono::seconds(10))
+    {
+        const auto until = Clock::now() + atMost;
+        while (hardAt < 0 && Clock::now() < until)
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        return hardAt >= 0;
+    }
+
+    static constexpr int64_t ms = 1000000;
+    const Clock::time_point t0 = Clock::now();
+    std::atomic<int64_t> softAt {-1};
+    std::atomic<int64_t> softDone {-1};
+    std::atomic<int64_t> hardAt {-1};
+    // last: its thread is joined before what fire() writes goes away
+    App::ExpressionSandbox::Watchdog dog;
+};
+}  // namespace
+
+TEST(ExpressionImageWatchdogTest, stagesFireInOrderAndNotEarly)
+{
+    StageClock c;
+    const int64_t armed = c.since();
+    c.dog.arm(20, 60);
+    ASSERT_TRUE(c.waitHard()) << "the hard stage never fired";
+    EXPECT_EQ(c.dog.disarm(), 1);
+    ASSERT_GE(c.softAt.load(), 0) << "the soft stage never fired";
+    EXPECT_GE(c.softAt - armed, 20 * StageClock::ms);
+    EXPECT_GE(c.hardAt - armed, 60 * StageClock::ms);
+    EXPECT_GE(c.hardAt - c.softDone, 40 * StageClock::ms);
+}
+
+// A soft stage that fires LATE still leaves the guest its grace.  Late
+// here is stage 0 itself taking longer than the grace, which puts the
+// thread where a late wake-up puts it -- past the hard deadline arm()
+// worked out -- with no clock to step.  The hard stage used to follow at
+// once, and a guest that would have answered the interrupt was stopped
+// and dropped instead: runawayBytecodeLoopIsStopped failing in a full
+// run, once in a hundred, on a wall clock that steps (WSL2).
+TEST(ExpressionImageWatchdogTest, graceRunsFromALateSoftStage)
+{
+    StageClock c(std::chrono::milliseconds(150));
+    c.dog.arm(20, 70);  // 50 ms of grace, gone three times over in stage 0
+    ASSERT_TRUE(c.waitHard()) << "the hard stage never fired";
+    EXPECT_EQ(c.dog.disarm(), 1);
+    ASSERT_GE(c.softDone.load(), 0) << "the soft stage never fired";
+    EXPECT_GE(c.hardAt - c.softDone, 50 * StageClock::ms)
+        << "the hard stage came " << (c.hardAt - c.softDone) / 1000
+        << " us after the soft one";
+}
+
+TEST(ExpressionImageWatchdogTest, disarmedInTimeFiresNothing)
+{
+    StageClock c;
+    c.dog.arm(40, 80);
+    EXPECT_EQ(c.dog.disarm(), -1);
+    EXPECT_FALSE(c.waitHard(std::chrono::milliseconds(200)));
+    EXPECT_LT(c.softAt.load(), 0);
 }
 
 // ---- the memory budget (Outcome in App/ExpressionImageRuntime.h,
