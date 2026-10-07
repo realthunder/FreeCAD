@@ -69,9 +69,9 @@ report views, the reporter's own files -- is kept beside the dev tree under
 | 29 | 2026-10-07 | view cells: transparent frames that show a split, a join and a resize while dragged (every cell the drag changes); corner handles on an opaque background, the cell menu button too when hovered; a thinner border between cells; a minimum cell size setting, default 200 (change request, decided) | OPEN |
 | 30 | 2026-10-07 | the dark and light overlay stylesheets integrated into the Dark and Light preference packs (a task asked; what "integrated" covers to confirm); and the long freeze when an overlay stylesheet is applied, to investigate; the Python console's background in both packs, so a theme can take an overlay preset's away again | OPEN |
 | 31 | 2026-10-07 | report view: "Go to end" on by default (change request) | FIXED `47b5e72c79`, not staged: "Go to end" is on for a profile that never stored it (`docs/HandsOnLog.md`) |
-| 32 | 2026-10-07 | some sub menus are transparent with blue text (Tools > Command history): find out why; transparent menus off by default | see `docs/HandsOnLog.md` |
-| 33 | 2026-10-07 | a cmd window pops up briefly at the first document opened after start | OPEN |
-| 34 | 2026-10-07 | TechDraw's preselection colour sometimes does not follow the theme (stays yellow after classic, or is blue) | OPEN; decided 15:19: the Dark and Light packs set TechDraw's `PreSelectColor` too |
+| 32 | 2026-10-07 | some sub menus are transparent with blue text (Tools > Command history): find out why; transparent menus off by default | FIXED `b960092ea5`, not staged: the see-through menus are single menu objects shared between a pop-up over the 3D view and an entry of the main menu, and a themed session with no menu sheet chosen took the see-through sheet; now no sheet chosen = an ordinary menu, the see-through ones a choice in Preferences > Theme. A question for the reporter (`docs/HandsOnLog.md`) |
+| 33 | 2026-10-07 | a cmd window pops up briefly at the first document opened after start | FOUND, fix being built: at the first 3D view `FreeCAD.exe` starts `cmd.exe /c where nvcc` with a console, from the path tracer's CUDA probe (`cuew.c`, `popen`); once per session (`docs/HandsOnLog.md`) |
+| 34 | 2026-10-07 | TechDraw's preselection colour sometimes does not follow the theme (stays yellow after classic, or is blue) | FIXED `3d7b4c30fd`, not staged, as decided: Dark and Light store TechDraw's `PreSelectColor`, the blue of the 3D view's highlight; a test switches Classic, Dark, Light, Classic (`docs/HandsOnLog.md`) |
 | 35 | 2026-10-07 | TechDraw (`scanner.FCStd`, Page003): now and then a click starts a recompute; a dimension (Dimension134) cannot be selected; selecting it in the tree can recompute and clear the selection. Asked: an audit of TechDraw for unnecessary recomputes | OPEN |
 
 ## 1. Idle progress bar in the status bar -- STAGED
@@ -1942,7 +1942,21 @@ the default only reaches a profile that never toggled it. The key is read
 straight from the parameter group, not through `ReportViewParams`, so the
 omni search does not list it (entry 24).
 
-## 32. Sub menus that are transparent with blue text; transparent menus off by default
+## 32. Sub menus that are transparent with blue text; transparent menus off by default -- FIXED `b960092ea5`, not staged; a question for the reporter (see `docs/HandsOnLog.md`)
+
+**From the build session** (passed on by the build session, 2026-10-07 16:20), the answer to (a) and a question:
+- Why Tools > Command history was see-through: the menus given the style
+  are single menu objects shared between a pop-up over the 3D view and an
+  entry of the main menu -- command history, select-up, the tool bar menu,
+  camera binding -- and with no menu sheet chosen a themed session took the
+  see-through sheet. The blue text is that sheet's `palette(bright-text)`,
+  which under a dark colour scheme on Windows is the desktop's accent colour
+  (#a6d8ff).
+- What it is now: no menu sheet chosen means an ordinary menu; the
+  see-through sheets are a choice in Preferences > Theme.
+- The question: the 3D view's OWN pick menus are opaque by default now too,
+  as "disable transparent menu by default" reads. Should those alone stay
+  see-through? NOT ANSWERED YET.
 
 **2026-10-07 11:24, a check asked and a change request.** "check why some sub
 menu a transparent with blue text, e.g. Tools -> Command history. I remember
@@ -1970,7 +1984,14 @@ Read from the source by the note-taker, nothing changed:
 - There is no switch for it today: the function always applies a sheet.
   (b) needs one -- off unless asked for -- or the default sheet made opaque.
 
-## 33. A cmd window pops up briefly at the first document opened after start -- OPEN
+## 33. A cmd window pops up briefly at the first document opened after start -- FOUND, fix being built (see `docs/HandsOnLog.md`)
+
+**From the build session** (passed on by the build session, 2026-10-07 16:20): the candidate below is the cause,
+watched happening -- at the first document, which brings the first 3D view,
+`FreeCAD.exe` starts `cmd.exe /c where nvcc` with a console of its own, from
+the path tracer's CUDA probe (`cuew.c`, `popen`). Once per session; a second
+document starts nothing. The fix goes into the cycles submodule (the PATH
+searched without a shell).
 
 **2026-10-07 14:43, a defect.** "when the application starts, the first open
 of a document briefly pops a cmd window. subsequent opening of document does
@@ -1999,7 +2020,7 @@ open (which call, by watching for a `cmd.exe` child of `FreeCAD.exe`), and
 whether a session with no 3D view opened -- a TechDraw page or a spreadsheet
 alone -- shows it.
 
-## 34. TechDraw's preselection colour sometimes does not follow the theme -- OPEN
+## 34. TechDraw's preselection colour sometimes does not follow the theme -- FIXED `3d7b4c30fd`, not staged (see `docs/HandsOnLog.md`)
 
 **From the build session, as information** (passed on by the build session, 2026-10-07 15:51): Classic is not the
 only way `Mod/TechDraw/Colors/PreSelectColor` gets set -- the first OK in the
