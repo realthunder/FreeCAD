@@ -323,8 +323,9 @@ void clearPreMeshClaims()
     // "No build is going to ask again" is what the callers know, and it
     // is no reason to think the batch is done: a drain whose parked
     // shapes were all built by somebody else before its first slice --
-    // a live import's fit does that -- submits them, pops them unbuilt
-    // and is here in the same slice, with every worker still running.
+    // an import's own finishRestoring pass did that -- submitted them,
+    // popped them unbuilt and was here in the same slice, with every
+    // worker still running.
     for (auto it = s_claims.begin(); it != s_claims.end(); ) {
         if (it->second->done.load(std::memory_order_acquire))
             it = s_claims.erase(it);

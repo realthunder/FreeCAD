@@ -5890,13 +5890,16 @@ void ViewProviderPartExt::runDeferredVisualSlice()
                           Gui::Application::Instance->getViewProvider(obj))
                     : nullptr;
                 // Parked AND still to be built. A parked visual that
-                // something built in the meantime -- a live import's own
-                // fit builds every shape it frames -- stays on the queue
+                // something built in the meantime stays on the queue
                 // until its turn and is popped unbuilt; meshing it here
                 // is work for nobody, by workers writing into a shape
-                // that is already on the screen. The chess set's 15
-                // shapes were all submitted that way and none of them
-                // built by the drain (docs/DocumentLoad.md sec 18.7).
+                // that is already on the screen. An import does it to
+                // everything it makes: ImportGui.insert creates its
+                // objects under the Restoring guard, which parks them,
+                // and then runs finishRestoring on each, which builds
+                // it. The chess set's 15 shapes were all submitted that
+                // way and none of them built by the drain
+                // (docs/DocumentLoad.md sec 18.7).
                 if (vp && vp->VisualDeferred && vp->VisualTouched)
                     vps.push_back(vp);
             }
