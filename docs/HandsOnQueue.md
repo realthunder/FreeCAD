@@ -61,7 +61,7 @@ report views, the reporter's own files -- is kept beside the dev tree under
 | 21 | 2026-10-06 | TechDraw: a click on a section line starts a section, and the line shifts at each recompute | STAGED |
 | 22 | 2026-10-06 | omni search: `/word` with no space is an object query; `/ word` forces it (change request, decided) | STAGED 2026-10-07 14:23, fixed `5aedd5cf83`: "/word" is an object query, "/ word" forces it, a keyword in full is the keyword, the beginning of one lists modes and objects together; the browser viewer's grammar follows (its bundle not rebuilt) |
 | 23 | 2026-10-06 | omni search: every setting it collects has documentation, none of it long (an audit asked) | STAGED 2026-10-07 14:23, fixed `c7a27b5a85` (and `08b8f009aa`): 574 settings audited, 221 had no documentation and 94 ran past 400 characters; all have a short text now and a test keeps it so. Side findings for the reporter in `docs/HandsOnLog.md`. The defaults FIXED `02cab053df`, not staged: OK on a fresh profile changed 23 settings and stored 2 under a wrong type, 14 of them a generated page's spin box clamping its default to 99; a test keeps it so |
-| 24 | 2026-10-06 | every `Base::Parameter` setting behind a cog helper class so the omni search finds it, applied through delayed handlers (change request, application-wide) | STARTED, sixteen groups done as of 2026-10-08 00:20, none staged or pushed (report view, Part's measurements, General, MainWindow and Themes, NotificationArea, PythonConsole, Macro, Dialog, Units, Editor, Document, View in two steps, the navigation cube, PartDesign, Part's Check Geometry and Boolean options; and three faults of the preferences dialog itself). To do: Part's import/export, Sketcher, TechDraw, Fem, CAM, a few small Gui groups, the Python-only modules. Three questions and two decisions for the reporter (`docs/HandsOnLog.md`) |
+| 24 | 2026-10-06 | every `Base::Parameter` setting behind a cog helper class so the omni search finds it, applied through delayed handlers (change request, application-wide) | STARTED, nineteen groups done as of 2026-10-08 02:10, none staged or pushed (the core Gui groups, Document, View, the navigation cube, PartDesign, Part's Check Geometry and Boolean options, the Sketcher's own group and sub-groups; and faults found on the way). To do: the rest of the Sketcher, TechDraw, Fem, CAM, Part's import/export, the Python-only modules. Three questions and two decisions for the reporter (`docs/HandsOnLog.md`) |
 | 25 | 2026-10-06 | the outline of a highlighted face is jagged, MSAA on or off | OPEN |
 | 26 | 2026-10-06 | a long halt after enabling MSAA and pressing OK in the preferences | FIXED `175ffce199`, not staged: the FIRST OK of a profile held the program 11 to 15 s (780 keys stored for the first time and taken for changes: stylesheet set again 4.2 s, every Part view provider re-meshed 3.2 s, language activated again about 2 s); 0.9 s now (`docs/HandsOnLog.md`) |
 | 27 | 2026-10-06 | the view cell menu: opens a spreadsheet nobody asked for, lists every TechDraw object, changes the wrong cell | STAGED 2026-10-07 14:23, fixed `fa2ada985c`: the menu made a spreadsheet view by asking for it, listed a page's views, and placed a pick by the general policy instead of into its cell; all three gone, spreadsheets now listed by type like pages (`docs/HandsOnLog.md`) |
@@ -1631,7 +1631,7 @@ collects automatically; (b) each must have documentation; (c) none of it
 overly long; (d) pick out the long ones in particular -- text an agent wrote
 as development notes that ended up as a setting's documentation.
 
-## 24. Every setting behind a generated helper class, applied by delayed handlers (a change request) -- STARTED, sixteen groups done; three questions and two decisions for the reporter (see `docs/HandsOnLog.md`)
+## 24. Every setting behind a generated helper class, applied by delayed handlers (a change request) -- STARTED, nineteen groups done; three questions and two decisions for the reporter (see `docs/HandsOnLog.md`)
 
 **From the build session, started** (passed on 2026-10-07 18:10; its log,
 entry 24, has the method and the inventory):
@@ -1762,6 +1762,30 @@ entry 24, has the method and the inventory):
   - The decisions waiting for the reporter are unchanged: (a)
     `Editor/Spaces` on, (c) Home = Trimetric on a profile that stores no
     camera orientation.
+- **Passed on 2026-10-08 02:10, nineteen groups done; the log is current at
+  `ddfe5f924e`; 96 commits ahead of origin, nothing staged or pushed.**
+  - The full suites, run at midnight on `a11d735f1e`: C++ 784 of 784;
+    Python 3385 tests with 2 failures, both the `TestThickness` 5829 cases
+    that have failed since the OCCT merge.
+  - `a2c9d65aea` fourteen settings of small Gui groups (recent macros,
+    gizmos, cache directory, shortcut timeout, workbench tab bar, HiDPI and
+    software OpenGL, dependency graph).
+  - The Sketcher, three commits: `97444426c5` its own group (23 settings),
+    `721dfca8a0` its sub-groups (67: edit view, grid, line styles, dimension
+    tools, snap), and `dec07614e9` a fault a user can meet -- the "Grid
+    spacing" set on the Sketcher's Grid preference page never reached a new
+    sketch (the page stores one key, a new sketch read another); on the
+    reporter's staged copy a spacing of 25 still gives a 10 mm grid.
+  - Also put right in the Sketcher's pages: "Use system decimals" shown off
+    where the program has it on, and the internal face colour one step off.
+  - Two read-only inventories filed for what is left:
+    `..\dl\handson\2026-10-07\entry24-inventory-Sketcher.txt` (23 findings,
+    most still only read, not measured) and `entry24-inventory-TechDraw.txt`
+    (141 keys).
+  - Left: the rest of the Sketcher (solver settings, its colours kept in the
+    View group, five findings to measure), TechDraw, Fem, CAM, Part's
+    import/export settings, and the Python-only modules, which wait on the
+    reporter.
 - **Three questions for the reporter, NOT ANSWERED YET** (log, entry 24, "To
   decide"):
   1. Modules written in Python only -- BIM, Draft, AddonManager, parts of CAM
