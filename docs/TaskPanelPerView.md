@@ -1899,9 +1899,9 @@ Side mode: 15.4 as designed, with the points below.
 - The menu is a plain tool button with a menu, in the host's own header.
   The dock overlay's title bar and buttons are M3's.
 - Over the view, top and bottom are still taken for the left (M3).
-- One number, `Task_Size`, for a panel beside and a panel above: turned
-  from one to the other with the view holding a size, that size is asked
-  for across the new direction and cut to what leaves the view its least.
+- One number, `Task_Size`, for a panel beside and a panel above. Since
+  milestone 3 the view gives it up when the side turns from the one to the
+  other (`TaskPlacement::setSide`), and the panel asks again.
 - Join: a pair is a leaf for the gesture, so a cell can be joined INTO a
   neighbour that has a panel (the neighbour's view is closed, its dialog
   with it). Not tested.
@@ -1951,3 +1951,139 @@ saves the squeezed proportions. The handle between a cell and its panel
 cell has no menu. The unified canvas with a panel cell was not run. A
 panel beside a view that is no 3D view was not run. The dock overlays
 are not looked at: a panel cell is under an overlaid dock like any cell.
+
+### 15.11 Milestone 3, built (2026-10-07, `7a45fa84b4`)
+
+Overlay mode: 15.5, and most of what 15.7 kept for milestone 4.
+
+**What the user sees.**
+
+- A panel over its view has the look of an overlaid dock: the same title
+  strip with the same kind of buttons, the picture showing between and
+  around the task boxes, the boxes and the widgets in them as the dock
+  overlay's style sheet draws them.
+- It is the whole length of its side: left, right, top or bottom, by the
+  menu of the title bar, or by dragging the title bar -- across for left
+  and right, up or down for top and bottom, to the half of the view the
+  pointer is let go in.
+- A dotted grip runs along its inner edge. Dragged, it makes the panel
+  wider or taller, and the view keeps the size.
+- A click on the clear ground between the boxes is a click in the view,
+  and the wheel there zooms the view. Over a box the wheel is the
+  panel's.
+- Sent beside its view or to the combo view, the panel is an ordinary one
+  again.
+
+**What is built.**
+
+- `OverlayTabWidget::applyOverlayLook(widget, enable)`, a public static:
+  the walk `setOverlayMode` makes over a dock, for a widget that is in no
+  overlay tab widget. Unchanged in what it does -- frameless and a
+  translucent ground for each widget, a `TaskBox` and a dialog left as
+  they are, a combo box's list not entered.
+- `TaskPanelHost::applyLook()`: over the picture the host has no ground
+  (`WA_TranslucentBackground`, no auto fill), wears
+  `OverlayManager::getStyleSheet()`, and runs the walk over its page; in a
+  cell of its own all of that is undone. `takePage()` undoes the walk
+  whenever a page leaves.
+- The header is a subclass of `Gui::OverlayTitleBar`, so the style sheets'
+  `Gui--OverlayTitleBar` rule is its ground. Its own handling of the mouse
+  -- which drags docks -- is overridden; painting is the styled ground and
+  nothing else, the title being a label. The two buttons are made by
+  `OverlayTabWidget::createTitleButton` from actions, which names a button
+  after its action's data: the names the tests knew are kept.
+- `Gui::OverlaySizeGrip` along the inner edge, remade when the side turns
+  between down and along. It says where it is dragged to; the host lays
+  itself out to that and writes `Task_Size` when the grip is let go.
+- **The mask** (`updateMask`): the title bar, the grip, what stands beside
+  the scrolling in the page, and each box of the panel cut to the scroll
+  area's viewport. Set again whenever the host is laid out, resized, the
+  panel's layout changes or it is scrolled. Outside it the host does not
+  exist for Qt: nothing is painted and no event is delivered, so the view
+  beneath is drawn and takes the pointer by itself.
+- `place()`: the room is the cell less its own chrome, as before; across,
+  what the grip is being dragged to, else the view's size, else what the
+  panel asks for within a third of the view (half, for top and bottom).
+
+**Found on the way.**
+
+- **A host with the keyboard in it, moved or hidden, gave the keyboard to
+  the neighbouring view.** Re-parenting a widget hides it for the moment,
+  Qt drops the focus it holds and hands it to whatever comes next, and the
+  view area made that view the active one: the panel's dialog was
+  deactivated for a panel that had only changed its place. It has been so
+  since milestone 3 of sec 14 -- going to the combo view with the focus in
+  the panel did it -- and no test saw it, their panels recording neither
+  call nor being typed into before they moved. `attach()` now puts the
+  keyboard in the panel's own view while the host moves and back into the
+  panel after; `release()` leaves it in the view.
+- **The look was checked against the thing itself.** Three pictures of a
+  sketch being edited -- the panel over the view on the left and on the
+  top, and beside it -- and a fourth of the same sketch with the panels in
+  the combo view and every dock overlaid. In the default theme the
+  overlaid Tasks dock has button texts light on light, a dark translucent
+  list, box headers as ever and the picture between the boxes; so has the
+  panel over its view. The rough edges are the style sheet's, with no
+  application theme under it, and the two are the same.
+- **The report view came up over the pictures** for "Cannot find icon:
+  Std_Point", a warning of the sketcher's own in this tree. Not chased.
+
+**Where it departs, mine.**
+
+- **Pass-through is a mask, not the dock overlay's test of a grabbed
+  picture.** The dock overlay asks the alpha of the pixel under the
+  pointer and forwards the event; a panel in a view knows where its boxes
+  are. So a click INSIDE a box on a spot the style sheet leaves see-through
+  is the panel's here, where over a dock it might go through. No
+  "mouse pass through" mode, no Escape to leave it: there is nothing to
+  leave.
+- **No outline effect.** The dock overlay draws an outline round text on
+  clear ground (`OverlayGraphicsEffect`), with values the style sheet gives
+  an `OverlayTabWidget` by name. A task panel has no text on clear ground
+  -- it is all in boxes -- and the effect renders its widget off screen at
+  every repaint. Left out.
+- **The style sheet is taken when the look is put on.** A change of theme
+  while a panel stands over its view reaches it at its next move.
+- The menu is one button with a menu, where a dock's title bar has a
+  button per choice.
+
+**Measured.** `tests/gui/task-panel-overlay.py`
+(`GuiTaskPanelOverlay_tests_run`): one document, two views one above the
+other. The wheel is the real pointer's (XTEST).
+
+| | before (`50560fcf27`) | after |
+|---|---|---|
+| as it stood when scored | 18 of 45 | -- |
+| as it is | -- | 47 of 47 |
+
+Changed after it was scored: the grip's step put behind the title bar's
+(the size is given up when the side turns), and the check of what the
+dialog is told split in three. What moved:
+
+| | before | after |
+|---|---|---|
+| the host's ground, style sheet, title bar, buttons | opaque, none, a plain widget, plain tool buttons | none, the overlay's, `Gui::OverlayTitleBar`, `Gui::OverlayToolButton` |
+| its extent | as tall as its panel: 240 by 197 in a view 409 high | the whole side: 240 by 371 |
+| the pixel on the ground clear of its box | alpha 255 | alpha 0 |
+| the widget under that point | the panel's scroll bar | the view's |
+| the wheel there | nothing | the view zooms |
+| the wheel over a box | nothing | nothing |
+| top, bottom | taken for the left | the whole width, at the top and at the bottom |
+| a grip | none | along the inner edge; 60 pixels dragged, 60 wider, the view holding 300 |
+| the title bar dragged down | stays on its side | on the bottom |
+| going beside the view with the keyboard in the panel | the dialog deactivated | told nothing |
+| the page beside the view, and in the Tasks tab | a plain page | a plain page |
+
+`task-panel-in-view.py` asks for the whole height where it asked for the
+panel's own; its other 88 checks are as they were. The four task panel
+tests pass together (47, 61, 49, 89), and the nineteen GUI entries nearest
+the change.
+
+**Not done.**
+
+- **Standing clear of the dock overlays** (sec 5.3). A panel over a view
+  at the edge of the window is under an overlaid dock on that edge, or
+  over it. The one part of 15.7's milestone 4 that is left.
+- Kept for views that are no 3D views (15.6, M5).
+- A view too small for a panel still keeps the title bar alone.
+- The new strings are untranslated.
