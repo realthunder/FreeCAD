@@ -494,7 +494,7 @@ ReportOutput::ReportOutput(QWidget* parent)
   : QTextEdit(parent)
   , WindowParameter("OutputWindow")
   , d(new Data)
-  , gotoEnd(false)
+  , gotoEnd(true)
   , blockStart(true)
 {
     bLog = false;

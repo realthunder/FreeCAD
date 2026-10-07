@@ -1359,3 +1359,9 @@ fc_add_gui_test(GuiReportFoldMark_tests_run
 fc_add_gui_test(GuiPreferencesOkKeepsDefaults_tests_run
                 preferences-ok-keeps-defaults.py
                 --timeout 180)
+
+# The report view follows its newest line unless told not to: "Go to end"
+# is on for a profile that never stored it, and still a choice.
+fc_add_gui_test(GuiReportGoToEnd_tests_run
+                report-go-to-end.py
+                --timeout 120)
