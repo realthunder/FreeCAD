@@ -940,7 +940,9 @@ Document::Document(const char* documentName)
     if (index >= 0 && index < App::countOfLicenses) {
         name = App::licenseItems.at(index).at(App::posnOfFullName);
         url = App::licenseItems.at(index).at(App::posnOfUrl);
-        if(DocumentParams::getprefLicenseUrl().empty()) {
+        // The address from the preferences where there is one. The test was
+        // the other way round, so it was only ever taken when it was empty.
+        if(!DocumentParams::getprefLicenseUrl().empty()) {
             licenseUrl = DocumentParams::getprefLicenseUrl();
         } else if (url) {
             licenseUrl = url;
