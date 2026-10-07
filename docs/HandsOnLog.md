@@ -852,7 +852,7 @@ its own thing, and not started.
 
 Evidence: `..\dl\handson\2026-10-07\msaa-*`, `entry26-first-ok-with-msaa-*`.
 
-## 24. Every setting behind a generated class -- STARTED, twenty groups done
+## 24. Every setting behind a generated class -- STARTED, twenty-one groups done
 
 The reporter, 2026-10-07, asked which entry "do entry 23 next" meant: "I
 meant entry 24". Not staged.
@@ -1195,6 +1195,23 @@ reads the geometry tools' "continue" switch, not the constraint tools'
 group button, `CurRadDiaCons`, is never stored (its path and name are one
 string by a missing comma); the label font size and the constraint symbol
 size have the application font's height for a default and are not listed.
+
+**Done, first step: TechDraw** (`Preferences/Mod/TechDraw/General`), 35
+settings, `c50d40e3c7`: a new class in its App library,
+`TechDraw::TechDrawParams`. TechDraw reads through hand-written accessors
+and at many places straight from the group; 38 reads in 13 files take the
+class's default. Where readers and pages disagreed the default is the
+READER's and the page shows it -- DECIDED so, for the reporter to overrule:
+the new face finder (off to the program, on on the page), the vertex scale
+(3 against 5), the template mark size (5 against 3). The defaults test
+loads TechDraw now and names the three on the staged binaries. Scored:
+`tests/gui/techdraw-settings.py` (`GuiTechDrawSettings_tests_run`) 4 PASS;
+2 PASS, 2 FAIL staged. NOT DONE in TechDraw: its other groups
+(Decorations, Dimensions, Colors, HLR, Files, PAT, Labels, ...), about 105
+keys, and the inventory's findings -- among them two page widgets that
+store a key as another type than the reader reads (so the page never
+reaches it), seven keys read under one name and written under another, and
+a dozen defaults that differ between reader and page.
 
 **The generator,** `0a94fb63c9`: a setting stored under another name than
 its own (`param_name`) was read and written under its key, but a CHANGE was
