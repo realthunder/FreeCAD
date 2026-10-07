@@ -60,6 +60,9 @@ public:
     bool EnableFoldsCheck;
     bool StrictlyDegenerated;
     bool SubElementSelection;
+    bool ExportAmfCompressed;
+    bool Export3mfModel;
+    long FillHoleLevel;
 
     // Auto generated code (Tools/params_utils.py:254)
     MeshParamsP() {
@@ -107,6 +110,12 @@ public:
         funcs["StrictlyDegenerated"] = &MeshParamsP::updateStrictlyDegenerated;
         SubElementSelection = this->handle->GetBool("SubElementSelection", false);
         funcs["SubElementSelection"] = &MeshParamsP::updateSubElementSelection;
+        ExportAmfCompressed = this->handle->GetBool("ExportAmfCompressed", true);
+        funcs["ExportAmfCompressed"] = &MeshParamsP::updateExportAmfCompressed;
+        Export3mfModel = this->handle->GetBool("Export3mfModel", true);
+        funcs["Export3mfModel"] = &MeshParamsP::updateExport3mfModel;
+        FillHoleLevel = this->handle->GetInt("FillHoleLevel", 2);
+        funcs["FillHoleLevel"] = &MeshParamsP::updateFillHoleLevel;
     }
 
     // Auto generated code (Tools/params_utils.py:284)
@@ -203,6 +212,18 @@ public:
     static void updateSubElementSelection(MeshParamsP *self) {
         self->SubElementSelection = self->handle->GetBool("SubElementSelection", false);
     }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateExportAmfCompressed(MeshParamsP *self) {
+        self->ExportAmfCompressed = self->handle->GetBool("ExportAmfCompressed", true);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateExport3mfModel(MeshParamsP *self) {
+        self->Export3mfModel = self->handle->GetBool("Export3mfModel", true);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateFillHoleLevel(MeshParamsP *self) {
+        self->FillHoleLevel = self->handle->GetInt("FillHoleLevel", 2);
+    }
 };
 
 // Auto generated code (Tools/params_utils.py:336)
@@ -294,6 +315,19 @@ static const App::ParamRegistry::Registrar _MeshParamsRegistrar({
         .setTitle("Sub Element Selection")
         .setDoc("Select single facets of a mesh when clicking in the 3D view,\n"
 "instead of the whole mesh object."),
+    App::ParamInfo("Mesh", "MeshParams", "User parameter:BaseApp/Preferences/Mod/Mesh", "ExportAmfCompressed", "ExportAmfCompressed", App::ParamInfo::Bool, true)
+        .setTitle("Compress AMF files")
+        .setDoc("Writes mesh files in the AMF format with ZIP compression. Takes\n"
+"effect at the next export."),
+    App::ParamInfo("Mesh", "MeshParams", "User parameter:BaseApp/Preferences/Mod/Mesh", "Export3mfModel", "Export3mfModel", App::ParamInfo::Bool, true)
+        .setTitle("Export 3MF as model")
+        .setDoc("Always exports a mesh as model type in a 3MF file, even when it is\n"
+"not a solid. Takes effect at the next export."),
+    App::ParamInfo("Mesh", "MeshParams", "User parameter:BaseApp/Preferences/Mod/Mesh", "FillHoleLevel", "FillHoleLevel", App::ParamInfo::Int, 2)
+        .setTitle("Hole filling level")
+        .setDoc("How far around a hole the mesh is looked at when the hole is\n"
+"filled by picking one of its border triangles: the number of rings\n"
+"of neighbouring triangles. Takes effect at the next fill."),
 });
 
 // Auto generated code (Tools/params_utils.py:368)
@@ -826,5 +860,93 @@ void MeshParams::setSubElementSelection(const bool &v) {
 // Auto generated code (Tools/params_utils.py:431)
 void MeshParams::removeSubElementSelection() {
     instance()->handle->RemoveBool("SubElementSelection");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *MeshParams::docExportAmfCompressed() {
+    return QT_TRANSLATE_NOOP("MeshParams",
+"Writes mesh files in the AMF format with ZIP compression. Takes\n"
+"effect at the next export.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const bool & MeshParams::getExportAmfCompressed() {
+    return instance()->ExportAmfCompressed;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const bool & MeshParams::defaultExportAmfCompressed() {
+    const static bool def = true;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void MeshParams::setExportAmfCompressed(const bool &v) {
+    instance()->handle->SetBool("ExportAmfCompressed",v);
+    instance()->ExportAmfCompressed = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void MeshParams::removeExportAmfCompressed() {
+    instance()->handle->RemoveBool("ExportAmfCompressed");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *MeshParams::docExport3mfModel() {
+    return QT_TRANSLATE_NOOP("MeshParams",
+"Always exports a mesh as model type in a 3MF file, even when it is\n"
+"not a solid. Takes effect at the next export.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const bool & MeshParams::getExport3mfModel() {
+    return instance()->Export3mfModel;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const bool & MeshParams::defaultExport3mfModel() {
+    const static bool def = true;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void MeshParams::setExport3mfModel(const bool &v) {
+    instance()->handle->SetBool("Export3mfModel",v);
+    instance()->Export3mfModel = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void MeshParams::removeExport3mfModel() {
+    instance()->handle->RemoveBool("Export3mfModel");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *MeshParams::docFillHoleLevel() {
+    return QT_TRANSLATE_NOOP("MeshParams",
+"How far around a hole the mesh is looked at when the hole is\n"
+"filled by picking one of its border triangles: the number of rings\n"
+"of neighbouring triangles. Takes effect at the next fill.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const long & MeshParams::getFillHoleLevel() {
+    return instance()->FillHoleLevel;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const long & MeshParams::defaultFillHoleLevel() {
+    const static long def = 2;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void MeshParams::setFillHoleLevel(const long &v) {
+    instance()->handle->SetInt("FillHoleLevel",v);
+    instance()->FillHoleLevel = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void MeshParams::removeFillHoleLevel() {
+    instance()->handle->RemoveInt("FillHoleLevel");
 }
 //[[[end]]]

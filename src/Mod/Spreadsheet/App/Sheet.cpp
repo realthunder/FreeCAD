@@ -22,6 +22,8 @@
 
 #include "PreCompiled.h"
 
+#include "SheetParams.h"
+
 #ifndef _PreComp_
 #include <boost/tokenizer.hpp>
 #include <deque>
@@ -172,10 +174,10 @@ bool Sheet::getCharsFromPrefs(char& delim, char& quote, char& escape, std::strin
     bool isValid = true;
     ParameterGrp::handle group = App::GetApplication().GetParameterGroupByPath(
         "User parameter:BaseApp/Preferences/Mod/Spreadsheet");
-    QString delimiter = QString::fromStdString(group->GetASCII("ImportExportDelimiter", "tab"));
-    QString quoteChar = QString::fromStdString(group->GetASCII("ImportExportQuoteCharacter", "\""));
+    QString delimiter = QString::fromStdString(group->GetASCII("ImportExportDelimiter", Spreadsheet::SheetParams::defaultImportExportDelimiter().c_str()));
+    QString quoteChar = QString::fromStdString(group->GetASCII("ImportExportQuoteCharacter", Spreadsheet::SheetParams::defaultImportExportQuoteCharacter().c_str()));
     QString escapeChar =
-        QString::fromStdString(group->GetASCII("ImportExportEscapeCharacter", "\\"));
+        QString::fromStdString(group->GetASCII("ImportExportEscapeCharacter", Spreadsheet::SheetParams::defaultImportExportEscapeCharacter().c_str()));
 
     delim = delimiter.size() == 1 ? delimiter[0].toLatin1() : '\0';
     if (delimiter.compare(QStringLiteral("tab"), Qt::CaseInsensitive) == 0

@@ -1650,6 +1650,20 @@ public:
 
     // Auto generated code (Tools/params_utils.py:139)
     //@{
+    /// Accessor for parameter DiameterSymbol
+    ///
+    /// Character put in front of diameter dimensions; the diameter sign
+    /// unless another is given. Takes effect when dimensions are
+    /// recomputed.
+    static const std::string & getDiameterSymbol();
+    static const std::string & defaultDiameterSymbol();
+    static void removeDiameterSymbol();
+    static void setDiameterSymbol(const std::string &v);
+    static const char *docDiameterSymbol();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
     /// Accessor for parameter StandardAndStyle
     ///
     /// Standard and text placement of new dimensions: 0 ISO oriented, 1

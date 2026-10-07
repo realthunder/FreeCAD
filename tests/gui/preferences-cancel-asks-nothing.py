@@ -119,6 +119,13 @@ def open_and_cancel(watch):
 
 def run():
     try:
+        # A module's pages are in the dialog only once the module is loaded.
+        # Fem's are here because one of them stored a setting when it was
+        # shown: its VTK page saved the export level where it meant to load it.
+        try:
+            __import__("FemGui")
+        except ImportError as e:
+            note("INFO not loaded: FemGui (%s)" % e)
         watch = Watch()
         root = FreeCAD.ParamGet("User parameter:BaseApp")
         root.AttachManager(watch)

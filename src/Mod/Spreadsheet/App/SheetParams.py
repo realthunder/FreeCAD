@@ -73,6 +73,22 @@ Params = [
         doc = "Tick Double Bind when the configuration table dialog opens on a\n"
               "single column selection. The top-left cell of the table then both\n"
               "shows and sets the current configuration."),
+    ParamString('ImportExportDelimiter', 'tab',
+        title = "Delimiter character",
+        doc = "Character that separates the fields when a spreadsheet is imported\n"
+              "from or exported to a text file; the words tab, comma and\n"
+              "semicolon are accepted too. Takes effect at the next import or\n"
+              "export."),
+    ParamString('ImportExportQuoteCharacter', '"',
+        title = "Quote character",
+        doc = "Character that encloses text fields when a spreadsheet is imported\n"
+              "from or exported to a text file. It must be a single character.\n"
+              "Takes effect at the next import or export."),
+    ParamString('ImportExportEscapeCharacter', '\\',
+        title = "Escape character",
+        doc = "Character that marks special characters when a spreadsheet is\n"
+              "imported from or exported to a text file. It must be a single\n"
+              "character. Takes effect at the next import or export."),
 ]
 
 def declare():

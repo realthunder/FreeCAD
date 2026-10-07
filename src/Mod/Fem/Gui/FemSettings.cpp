@@ -21,6 +21,7 @@
  ***************************************************************************/
 
 
+#include <Mod/Fem/App/FemParams.h>
 #include <App/Application.h>
 
 #include "FemSettings.h"
@@ -43,5 +44,5 @@ void FemSettings::setPostAutoRecompute(bool on)
 
 bool FemSettings::getPostAutoRecompute() const
 {
-    return pGroup->GetBool("PostAutoRecompute", true);
+    return pGroup->GetBool("PostAutoRecompute", Fem::FemParams::defaultPostAutoRecompute());
 }

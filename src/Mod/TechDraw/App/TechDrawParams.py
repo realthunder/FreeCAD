@@ -209,8 +209,7 @@ Params = [
     # the reader's: ShowCenterMarks (off; the page showed it on) and
     # TolSizeAdjust (0.5; the page showed 0.8).
     #
-    # Not listed: Dimensions/DiameterSymbol, whose default is a character
-    # outside ASCII, and HLR/HardViz, which the page stores and nothing reads.
+    # Not listed: HLR/HardViz, which the page stores and nothing reads.
 
     # --- Decorations
     ParamInt('BalloonArrow', 0, subpath='Decorations',
@@ -600,7 +599,8 @@ Params = [
               "and the update of the section while live update is on. At least\n"
               "100."),
 
-    # --- The four of Dimensions whose default was a constant elsewhere.
+    # --- The five of Dimensions whose default was a constant elsewhere, or a
+    # character outside ASCII: it is written here by its number.
     ParamFloat('ArrowSize', 3.5, subpath='Dimensions',
         title = "Arrow size",
         doc = "Size in mm of dimension arrowheads. Applies to dimensions created\n"
@@ -609,6 +609,11 @@ Params = [
         title = "Dimension font size",
         doc = "Text size in mm of dimensions and of other annotation text that\n"
               "follows it. Applies to dimensions created afterwards."),
+    ParamString('DiameterSymbol', '\u2300', subpath='Dimensions',
+        title = "Diameter symbol",
+        doc = "Character put in front of diameter dimensions; the diameter sign\n"
+              "unless another is given. Takes effect when dimensions are\n"
+              "recomputed."),
     ParamInt('StandardAndStyle', 0, subpath='Dimensions',
         title = "Dimension standard and style",
         doc = "Standard and text placement of new dimensions: 0 ISO oriented, 1\n"

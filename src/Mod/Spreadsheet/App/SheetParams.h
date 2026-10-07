@@ -203,6 +203,49 @@ public:
     static const char *docDoubleBindConfTable();
     //@}
 
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter ImportExportDelimiter
+    ///
+    /// Character that separates the fields when a spreadsheet is imported
+    /// from or exported to a text file; the words tab, comma and
+    /// semicolon are accepted too. Takes effect at the next import or
+    /// export.
+    static const std::string & getImportExportDelimiter();
+    static const std::string & defaultImportExportDelimiter();
+    static void removeImportExportDelimiter();
+    static void setImportExportDelimiter(const std::string &v);
+    static const char *docImportExportDelimiter();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter ImportExportQuoteCharacter
+    ///
+    /// Character that encloses text fields when a spreadsheet is imported
+    /// from or exported to a text file. It must be a single character.
+    /// Takes effect at the next import or export.
+    static const std::string & getImportExportQuoteCharacter();
+    static const std::string & defaultImportExportQuoteCharacter();
+    static void removeImportExportQuoteCharacter();
+    static void setImportExportQuoteCharacter(const std::string &v);
+    static const char *docImportExportQuoteCharacter();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter ImportExportEscapeCharacter
+    ///
+    /// Character that marks special characters when a spreadsheet is
+    /// imported from or exported to a text file. It must be a single
+    /// character. Takes effect at the next import or export.
+    static const std::string & getImportExportEscapeCharacter();
+    static const std::string & defaultImportExportEscapeCharacter();
+    static void removeImportExportEscapeCharacter();
+    static void setImportExportEscapeCharacter(const std::string &v);
+    static const char *docImportExportEscapeCharacter();
+    //@}
+
 // Auto generated code (Tools/params_utils.py:179)
 }; // class SheetParams
 } // namespace Spreadsheet

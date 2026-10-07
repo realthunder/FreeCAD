@@ -161,6 +161,7 @@ public:
     long SectionUpdateDelay;
     double ArrowSize;
     double FontSize;
+    std::string DiameterSymbol;
     long StandardAndStyle;
     std::string TemplateFile;
     std::string TemplateDir;
@@ -441,6 +442,8 @@ public:
         funcs["ArrowSize"] = &TechDrawParamsP::updateArrowSize;
         FontSize = this->subHandles[2]->GetFloat("FontSize", 5.0);
         funcs["FontSize"] = &TechDrawParamsP::updateFontSize;
+        DiameterSymbol = this->subHandles[2]->GetASCII("DiameterSymbol", "\342\214\200");
+        funcs["DiameterSymbol"] = &TechDrawParamsP::updateDiameterSymbol;
         StandardAndStyle = this->subHandles[2]->GetInt("StandardAndStyle", 0);
         funcs["StandardAndStyle"] = &TechDrawParamsP::updateStandardAndStyle;
         TemplateFile = this->subHandles[12]->GetASCII("TemplateFile", "");
@@ -950,6 +953,10 @@ public:
     // Auto generated code (Tools/params_utils.py:314)
     static void updateFontSize(TechDrawParamsP *self) {
         self->FontSize = self->subHandles[2]->GetFloat("FontSize", 5.0);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateDiameterSymbol(TechDrawParamsP *self) {
+        self->DiameterSymbol = self->subHandles[2]->GetASCII("DiameterSymbol", "\342\214\200");
     }
     // Auto generated code (Tools/params_utils.py:314)
     static void updateStandardAndStyle(TechDrawParamsP *self) {
@@ -1544,6 +1551,11 @@ static const App::ParamRegistry::Registrar _TechDrawParamsRegistrar({
         .setTitle("Dimension font size")
         .setDoc("Text size in mm of dimensions and of other annotation text that\n"
 "follows it. Applies to dimensions created afterwards."),
+    App::ParamInfo("TechDraw", "TechDrawParams", "User parameter:BaseApp/Preferences/Mod/TechDraw/Dimensions", "DiameterSymbol", "DiameterSymbol", App::ParamInfo::String, "\342\214\200")
+        .setTitle("Diameter symbol")
+        .setDoc("Character put in front of diameter dimensions; the diameter sign\n"
+"unless another is given. Takes effect when dimensions are\n"
+"recomputed."),
     App::ParamInfo("TechDraw", "TechDrawParams", "User parameter:BaseApp/Preferences/Mod/TechDraw/Dimensions", "StandardAndStyle", "StandardAndStyle", App::ParamInfo::Int, 0)
         .setTitle("Dimension standard and style")
         .setDoc("Standard and text placement of new dimensions: 0 ISO oriented, 1\n"
@@ -5068,6 +5080,36 @@ void TechDrawParams::setFontSize(const double &v) {
 // Auto generated code (Tools/params_utils.py:431)
 void TechDrawParams::removeFontSize() {
     instance()->subHandles[2]->RemoveFloat("FontSize");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *TechDrawParams::docDiameterSymbol() {
+    return QT_TRANSLATE_NOOP("TechDrawParams",
+"Character put in front of diameter dimensions; the diameter sign\n"
+"unless another is given. Takes effect when dimensions are\n"
+"recomputed.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const std::string & TechDrawParams::getDiameterSymbol() {
+    return instance()->DiameterSymbol;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const std::string & TechDrawParams::defaultDiameterSymbol() {
+    const static std::string def = "\342\214\200";
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void TechDrawParams::setDiameterSymbol(const std::string &v) {
+    instance()->subHandles[2]->SetASCII("DiameterSymbol",v);
+    instance()->DiameterSymbol = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void TechDrawParams::removeDiameterSymbol() {
+    instance()->subHandles[2]->RemoveASCII("DiameterSymbol");
 }
 
 // Auto generated code (Tools/params_utils.py:397)

@@ -1061,11 +1061,11 @@ class ParamString(Param):
 
     @property
     def default(self):
-        return f'"{self._default}"'
+        return c_string(str(self._default))
 
     @property
     def registry_default(self):
-        return quote(str(self._default))
+        return c_string(str(self._default))
 
 
 class ParamQString(Param):
@@ -1465,3 +1465,27 @@ def declare_properties(properties):
 def define_properties(properties, class_name):
     for prop in properties:
         prop.define(class_name)
+
+
+# Kept at the end of the file: the generated sources name the line of this
+# file each of their parts comes from, and a line added above would rewrite
+# every one of them.
+def c_string(txt):
+    """A C++ string literal holding txt.
+
+    Quote and backslash are escaped; what is not ASCII becomes the octal
+    escapes of its UTF-8 bytes, three digits each, so that a digit following
+    them is not taken for part of the escape and the generated source stays
+    ASCII.
+    """
+    out = []
+    for ch in txt:
+        if ch in '\\"':
+            out.append("\\" + ch)
+        elif ch == "\n":
+            out.append("\\n")
+        elif ord(ch) < 128:
+            out.append(ch)
+        else:
+            out.extend("\\%03o" % byte for byte in ch.encode("utf-8"))
+    return '"' + "".join(out) + '"'

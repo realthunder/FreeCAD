@@ -100,6 +100,8 @@ endif(BUILD_FEM_VTK)
 
 
 SET(Mod_SRCS
+    FemParams.cpp
+    FemParams.h
     AppFem.cpp
     AppFemPy.cpp
     FemTools.cpp

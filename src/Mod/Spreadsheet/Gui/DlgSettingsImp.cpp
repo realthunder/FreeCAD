@@ -22,6 +22,8 @@
 
 #include "PreCompiled.h"
 
+#include <Mod/Spreadsheet/App/SheetParams.h>
+
 #include <Gui/Application.h>
 
 #include "DlgSettingsImp.h"
@@ -68,7 +70,7 @@ void DlgSettingsImp::loadSettings()
 
     ParameterGrp::handle hGrp = App::GetApplication().GetParameterGroupByPath(
         "User parameter:BaseApp/Preferences/Mod/Spreadsheet");
-    QString delimiter = QString::fromStdString(hGrp->GetASCII("ImportExportDelimiter", "tab"));
+    QString delimiter = QString::fromStdString(hGrp->GetASCII("ImportExportDelimiter", Spreadsheet::SheetParams::defaultImportExportDelimiter().c_str()));
     int idx = ui->delimiterComboBox->findText(delimiter, Qt::MatchFixedString);
     if (idx != -1) {
         ui->delimiterComboBox->setCurrentIndex(idx);

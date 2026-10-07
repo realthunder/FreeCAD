@@ -311,6 +311,46 @@ public:
     static const char *docSubElementSelection();
     //@}
 
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter ExportAmfCompressed
+    ///
+    /// Writes mesh files in the AMF format with ZIP compression. Takes
+    /// effect at the next export.
+    static const bool & getExportAmfCompressed();
+    static const bool & defaultExportAmfCompressed();
+    static void removeExportAmfCompressed();
+    static void setExportAmfCompressed(const bool &v);
+    static const char *docExportAmfCompressed();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter Export3mfModel
+    ///
+    /// Always exports a mesh as model type in a 3MF file, even when it is
+    /// not a solid. Takes effect at the next export.
+    static const bool & getExport3mfModel();
+    static const bool & defaultExport3mfModel();
+    static void removeExport3mfModel();
+    static void setExport3mfModel(const bool &v);
+    static const char *docExport3mfModel();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter FillHoleLevel
+    ///
+    /// How far around a hole the mesh is looked at when the hole is
+    /// filled by picking one of its border triangles: the number of rings
+    /// of neighbouring triangles. Takes effect at the next fill.
+    static const long & getFillHoleLevel();
+    static const long & defaultFillHoleLevel();
+    static void removeFillHoleLevel();
+    static void setFillHoleLevel(const long &v);
+    static const char *docFillHoleLevel();
+    //@}
+
 // Auto generated code (Tools/params_utils.py:179)
 }; // class MeshParams
 } // namespace Mesh

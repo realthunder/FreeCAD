@@ -31,6 +31,8 @@
 #include "DlgSettingsFemGeneralImp.h"
 #include "ui_DlgSettingsFemGeneral.h"
 
+#include <Mod/Fem/App/FemParams.h>
+
 
 using namespace FemGui;
 
@@ -51,7 +53,7 @@ DlgSettingsFemGeneralImp::DlgSettingsFemGeneralImp(QWidget* parent)
     ui->cmb_def_solver->addItems(solversList);
 
     ParameterGrp::handle hGrp = ui->cmb_def_solver->getWindowParameter();
-    ui->cmb_def_solver->setCurrentIndex(hGrp->GetInt(ui->cmb_def_solver->entryName(), 0));
+    ui->cmb_def_solver->setCurrentIndex(hGrp->GetInt(ui->cmb_def_solver->entryName(), Fem::FemParams::defaultDefaultSolver()));
 
     connect(
         ui->fc_ext_editor,
@@ -92,7 +94,7 @@ void DlgSettingsFemGeneralImp::saveSettings()
         auto action = static_cast<Gui::ActionGroup*>(cmd->getAction());
 
         ParameterGrp::handle hGrp = ui->cmb_def_solver->getWindowParameter();
-        int index = hGrp->GetInt(ui->cmb_def_solver->entryName(), 0);
+        int index = hGrp->GetInt(ui->cmb_def_solver->entryName(), Fem::FemParams::defaultDefaultSolver());
         action->setCheckedAction(index > 0 ? index - 1 : 0);
     }
 }

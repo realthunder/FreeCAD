@@ -31,6 +31,8 @@
 #include "DlgSettingsFemGmshImp.h"
 #include "ui_DlgSettingsFemGmsh.h"
 
+#include <Mod/Fem/App/FemParams.h>
+
 
 using namespace FemGui;
 
@@ -110,7 +112,7 @@ void DlgSettingsFemGmshImp::populateLogVerbosity()
 
     // set default index
     auto hGrp = ui->cb_log_verbosity->getWindowParameter();
-    std::string current = hGrp->GetASCII(ui->cb_log_verbosity->entryName(), "3");
+    std::string current = hGrp->GetASCII(ui->cb_log_verbosity->entryName(), Fem::FemParams::defaultGmshLogVerbosity().c_str());
     int index = ui->cb_log_verbosity->findData(QByteArray::fromStdString(current));
     ui->cb_log_verbosity->setCurrentIndex(index);
 }

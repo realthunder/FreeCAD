@@ -61,6 +61,8 @@ SET(Module_SRCS
 SOURCE_GROUP("Module" FILES ${Module_SRCS})
 
 SET(Assembly_SRCS
+    AssemblyParams.cpp
+    AssemblyParams.h
     AssemblyObject.cpp
     AssemblyObject.h
     AssemblyLink.cpp

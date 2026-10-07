@@ -21,6 +21,7 @@
  *                                                                          *
  ***************************************************************************/
 
+#include "AssemblyParams.h"
 #include <cmath>
 #include <vector>
 
@@ -152,7 +153,7 @@ void BomObject::generateBOM()
     auto hGrp = App::GetApplication().GetParameterGroupByPath(
         "User parameter:BaseApp/Preferences/Mod/Assembly"
     );
-    mirroredSuffix = hGrp->GetASCII("BomMirroredSuffix", " (mirrored)");
+    mirroredSuffix = hGrp->GetASCII("BomMirroredSuffix", Assembly::AssemblyParams::defaultBomMirroredSuffix().c_str());
 
     // Populate headers
     for (auto& columnName : columnsNames.getValues()) {

@@ -51,6 +51,9 @@ public:
     std::string NegativeNumberColor;
     bool VerticalConfTable;
     bool DoubleBindConfTable;
+    std::string ImportExportDelimiter;
+    std::string ImportExportQuoteCharacter;
+    std::string ImportExportEscapeCharacter;
 
     // Auto generated code (Tools/params_utils.py:254)
     SheetParamsP() {
@@ -77,6 +80,12 @@ public:
         funcs["VerticalConfTable"] = &SheetParamsP::updateVerticalConfTable;
         DoubleBindConfTable = this->handle->GetBool("DoubleBindConfTable", false);
         funcs["DoubleBindConfTable"] = &SheetParamsP::updateDoubleBindConfTable;
+        ImportExportDelimiter = this->handle->GetASCII("ImportExportDelimiter", "tab");
+        funcs["ImportExportDelimiter"] = &SheetParamsP::updateImportExportDelimiter;
+        ImportExportQuoteCharacter = this->handle->GetASCII("ImportExportQuoteCharacter", "\"");
+        funcs["ImportExportQuoteCharacter"] = &SheetParamsP::updateImportExportQuoteCharacter;
+        ImportExportEscapeCharacter = this->handle->GetASCII("ImportExportEscapeCharacter", "\\");
+        funcs["ImportExportEscapeCharacter"] = &SheetParamsP::updateImportExportEscapeCharacter;
     }
 
     // Auto generated code (Tools/params_utils.py:284)
@@ -133,6 +142,18 @@ public:
     static void updateDoubleBindConfTable(SheetParamsP *self) {
         self->DoubleBindConfTable = self->handle->GetBool("DoubleBindConfTable", false);
     }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateImportExportDelimiter(SheetParamsP *self) {
+        self->ImportExportDelimiter = self->handle->GetASCII("ImportExportDelimiter", "tab");
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateImportExportQuoteCharacter(SheetParamsP *self) {
+        self->ImportExportQuoteCharacter = self->handle->GetASCII("ImportExportQuoteCharacter", "\"");
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateImportExportEscapeCharacter(SheetParamsP *self) {
+        self->ImportExportEscapeCharacter = self->handle->GetASCII("ImportExportEscapeCharacter", "\\");
+    }
 };
 
 // Auto generated code (Tools/params_utils.py:336)
@@ -188,6 +209,22 @@ static const App::ParamRegistry::Registrar _SheetParamsRegistrar({
         .setDoc("Tick Double Bind when the configuration table dialog opens on a\n"
 "single column selection. The top-left cell of the table then both\n"
 "shows and sets the current configuration."),
+    App::ParamInfo("Spreadsheet", "SheetParams", "User parameter:BaseApp/Preferences/Mod/Spreadsheet", "ImportExportDelimiter", "ImportExportDelimiter", App::ParamInfo::String, "tab")
+        .setTitle("Delimiter character")
+        .setDoc("Character that separates the fields when a spreadsheet is imported\n"
+"from or exported to a text file; the words tab, comma and\n"
+"semicolon are accepted too. Takes effect at the next import or\n"
+"export."),
+    App::ParamInfo("Spreadsheet", "SheetParams", "User parameter:BaseApp/Preferences/Mod/Spreadsheet", "ImportExportQuoteCharacter", "ImportExportQuoteCharacter", App::ParamInfo::String, "\"")
+        .setTitle("Quote character")
+        .setDoc("Character that encloses text fields when a spreadsheet is imported\n"
+"from or exported to a text file. It must be a single character.\n"
+"Takes effect at the next import or export."),
+    App::ParamInfo("Spreadsheet", "SheetParams", "User parameter:BaseApp/Preferences/Mod/Spreadsheet", "ImportExportEscapeCharacter", "ImportExportEscapeCharacter", App::ParamInfo::String, "\\")
+        .setTitle("Escape character")
+        .setDoc("Character that marks special characters when a spreadsheet is\n"
+"imported from or exported to a text file. It must be a single\n"
+"character. Takes effect at the next import or export."),
 });
 
 // Auto generated code (Tools/params_utils.py:368)
@@ -486,5 +523,96 @@ void SheetParams::setDoubleBindConfTable(const bool &v) {
 // Auto generated code (Tools/params_utils.py:431)
 void SheetParams::removeDoubleBindConfTable() {
     instance()->handle->RemoveBool("DoubleBindConfTable");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *SheetParams::docImportExportDelimiter() {
+    return QT_TRANSLATE_NOOP("SheetParams",
+"Character that separates the fields when a spreadsheet is imported\n"
+"from or exported to a text file; the words tab, comma and\n"
+"semicolon are accepted too. Takes effect at the next import or\n"
+"export.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const std::string & SheetParams::getImportExportDelimiter() {
+    return instance()->ImportExportDelimiter;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const std::string & SheetParams::defaultImportExportDelimiter() {
+    const static std::string def = "tab";
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void SheetParams::setImportExportDelimiter(const std::string &v) {
+    instance()->handle->SetASCII("ImportExportDelimiter",v);
+    instance()->ImportExportDelimiter = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void SheetParams::removeImportExportDelimiter() {
+    instance()->handle->RemoveASCII("ImportExportDelimiter");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *SheetParams::docImportExportQuoteCharacter() {
+    return QT_TRANSLATE_NOOP("SheetParams",
+"Character that encloses text fields when a spreadsheet is imported\n"
+"from or exported to a text file. It must be a single character.\n"
+"Takes effect at the next import or export.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const std::string & SheetParams::getImportExportQuoteCharacter() {
+    return instance()->ImportExportQuoteCharacter;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const std::string & SheetParams::defaultImportExportQuoteCharacter() {
+    const static std::string def = "\"";
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void SheetParams::setImportExportQuoteCharacter(const std::string &v) {
+    instance()->handle->SetASCII("ImportExportQuoteCharacter",v);
+    instance()->ImportExportQuoteCharacter = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void SheetParams::removeImportExportQuoteCharacter() {
+    instance()->handle->RemoveASCII("ImportExportQuoteCharacter");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *SheetParams::docImportExportEscapeCharacter() {
+    return QT_TRANSLATE_NOOP("SheetParams",
+"Character that marks special characters when a spreadsheet is\n"
+"imported from or exported to a text file. It must be a single\n"
+"character. Takes effect at the next import or export.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const std::string & SheetParams::getImportExportEscapeCharacter() {
+    return instance()->ImportExportEscapeCharacter;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const std::string & SheetParams::defaultImportExportEscapeCharacter() {
+    const static std::string def = "\\";
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void SheetParams::setImportExportEscapeCharacter(const std::string &v) {
+    instance()->handle->SetASCII("ImportExportEscapeCharacter",v);
+    instance()->ImportExportEscapeCharacter = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void SheetParams::removeImportExportEscapeCharacter() {
+    instance()->handle->RemoveASCII("ImportExportEscapeCharacter");
 }
 //[[[end]]]

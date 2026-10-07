@@ -100,6 +100,19 @@ Params = [
     ParamBool("SubElementSelection", False,
         doc = "Select single facets of a mesh when clicking in the 3D view,\n"
               "instead of the whole mesh object."),
+    ParamBool("ExportAmfCompressed", True,
+        title = "Compress AMF files",
+        doc = "Writes mesh files in the AMF format with ZIP compression. Takes\n"
+              "effect at the next export."),
+    ParamBool("Export3mfModel", True,
+        title = "Export 3MF as model",
+        doc = "Always exports a mesh as model type in a 3MF file, even when it is\n"
+              "not a solid. Takes effect at the next export."),
+    ParamInt("FillHoleLevel", 2,
+        title = "Hole filling level",
+        doc = "How far around a hole the mesh is looked at when the hole is\n"
+              "filled by picking one of its border triangles: the number of rings\n"
+              "of neighbouring triangles. Takes effect at the next fill."),
 ]
 
 def declare():

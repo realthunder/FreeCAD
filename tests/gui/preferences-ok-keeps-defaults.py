@@ -167,7 +167,8 @@ def show(value):
 def run():
     try:
         # A module's pages are in the dialog only once the module is loaded.
-        for module in ("PartGui", "PartDesignGui", "SketcherGui", "MeshGui", "SpreadsheetGui", "TechDrawGui"):
+        for module in ("PartGui", "PartDesignGui", "SketcherGui", "MeshGui", "SpreadsheetGui", "TechDrawGui",
+                       "FemGui", "AssemblyGui"):
             try:
                 __import__(module)
             except ImportError as e:

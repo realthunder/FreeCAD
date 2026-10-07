@@ -20,6 +20,7 @@
  *                                                                         *
  ***************************************************************************/
 
+#include "FemParams.h"
 #include <cstdlib>
 #include <memory>
 
@@ -248,14 +249,14 @@ private:
                     if (file.hasExtension({"vtk", "vtu"})) {
                         // get VTK prefs
                         ParameterGrp::handle g = hGrp->GetGroup("InOutVtk");
-                        std::string level = g->GetASCII("MeshExportLevel", "Highest");
+                        std::string level = g->GetASCII("MeshExportLevel", Fem::FemParams::defaultMeshExportLevel().c_str());
                         femMesh.writeVTK(file.filePath().c_str(), level == "Highest" ? true : false);
                     }
                     else if (file.hasExtension("inp")) {
                         // get Abaqus inp prefs
                         ParameterGrp::handle g = hGrp->GetGroup("Abaqus");
-                        int elemParam = g->GetInt("AbaqusElementChoice", 2);
-                        bool groupParam = g->GetBool("AbaqusWriteGroups", true);
+                        int elemParam = g->GetInt("AbaqusElementChoice", Fem::FemParams::defaultAbaqusElementChoice());
+                        bool groupParam = g->GetBool("AbaqusWriteGroups", Fem::FemParams::defaultAbaqusWriteGroups());
                         // write ABAQUS Output
                         femMesh.writeABAQUS(file.filePath(), elemParam, groupParam);
                     }

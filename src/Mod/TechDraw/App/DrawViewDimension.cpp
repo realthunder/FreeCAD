@@ -2097,7 +2097,7 @@ std::string DrawViewDimension::getPrefixForDimType() const
         return "R";
     }
     else if (Type.isValue("Diameter")) {
-        return std::string(Preferences::getPreferenceGroup("Dimensions")->GetASCII("DiameterSymbol", "\xe2\x8c\x80"));// Diameter symbol
+        return std::string(Preferences::getPreferenceGroup("Dimensions")->GetASCII("DiameterSymbol", TechDraw::TechDrawParams::defaultDiameterSymbol().c_str()));// Diameter symbol
     }
 
     return "";

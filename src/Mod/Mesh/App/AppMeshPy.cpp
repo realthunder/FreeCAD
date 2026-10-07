@@ -21,6 +21,8 @@
  ***************************************************************************/
 
 #include "PreCompiled.h"
+
+#include "MeshParams.h"
 #ifndef _PreComp_
 #include <algorithm>
 #include <map>
@@ -206,10 +208,10 @@ private:
         // If not, use the preference, if that exists, else default to 0.1mm.
         auto hGrp(App::GetApplication().GetParameterGroupByPath(
             "User parameter:BaseApp/Preferences/Mod/Mesh"));
-        auto fTolerance(hGrp->GetFloat("MaxDeviationExport", 0.1f));
+        auto fTolerance(hGrp->GetFloat("MaxDeviationExport", Mesh::MeshParams::defaultMaxDeviationExport()));
 
-        int exportAmfCompressed(hGrp->GetBool("ExportAmfCompressed", true));
-        bool export3mfModel(hGrp->GetBool("Export3mfModel", true));
+        int exportAmfCompressed(hGrp->GetBool("ExportAmfCompressed", Mesh::MeshParams::defaultExportAmfCompressed()));
+        bool export3mfModel(hGrp->GetBool("Export3mfModel", Mesh::MeshParams::defaultExport3mfModel()));
 
         static const std::array<const char*, 5> kwList {"objectList",
                                                         "filename",
