@@ -42,6 +42,8 @@
 #include <Base/Tools.h>
 #include <Base/Writer.h>
 
+#include <App/DocumentParams.h>
+
 #include "AutoSaver.h"
 #include "Document.h"
 #include "MainWindow.h"
@@ -171,7 +173,14 @@ void AutoSaver::saveDocument(const std::string& name, AutoSaveProperty& saver)
         // associated 3d view is not active
         Base::Reference<ParameterGrp> hGrp = App::GetApplication().GetParameterGroupByPath
             ("User parameter:BaseApp/Preferences/Document");
-        bool save = hGrp->GetBool("SaveThumbnail",false);
+        // The setting's default is DocumentParams' (on). It was read as
+        // off here, so a key that is not stored left thumbnails on for the
+        // recovery save, which is what this is here to prevent.
+        const bool save = App::DocumentParams::getSaveThumbnail();
+        bool stored = false;
+        for (const auto& entry : hGrp->GetBoolMap("SaveThumbnail")) {
+            stored = stored || entry.first == "SaveThumbnail";
+        }
         if (save) {
             hGrp->SetBool("SaveThumbnail",false);
         }
@@ -220,7 +229,7 @@ void AutoSaver::saveDocument(const std::string& name, AutoSaveProperty& saver)
                 if (file.is_open())
                 {
                     Base::ZipWriter writer(file);
-                    if (hGrp->GetBool("SaveBinaryBrep", true))
+                    if (App::DocumentParams::getSaveBinaryBrep())
                         writer.setMode("BinaryBrep");
 
                     writer.setComment("AutoRecovery file");
@@ -247,7 +256,13 @@ void AutoSaver::saveDocument(const std::string& name, AutoSaveProperty& saver)
         std::string str = watch.toString(watch.elapsed());
         Base::Console().Log("Save AutoRecovery file: %s\n", str.c_str());
         if (save) {
-            hGrp->SetBool("SaveThumbnail",save);
+            // put back as it was: a key that was not stored is not stored
+            if (stored) {
+                hGrp->SetBool("SaveThumbnail",save);
+            }
+            else {
+                hGrp->RemoveBool("SaveThumbnail");
+            }
         }
     }
 }

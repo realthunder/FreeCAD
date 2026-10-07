@@ -83,8 +83,9 @@ void DlgSettingsDocumentImp::saveSettings()
 
     ui->prefUndoRedo->onSave();
     ui->prefUndoRedoSize->onSave();
-    ui->prefSaveTransaction->onSave();
-    ui->prefDiscardTransaction->onSave();
+    // prefSaveTransaction and prefDiscardTransaction are hidden, and the
+    // keys they stored (SaveTransactions, TransactionsDiscard) have no
+    // reader: they are no longer stored.
     ui->prefSaveThumbnail->onSave();
     ui->prefThumbnailSize->onSave();
     ui->prefAddLogo->onSave();
@@ -109,11 +110,6 @@ void DlgSettingsDocumentImp::saveSettings()
     DocumentParams::setTransactionOnRecompute(ui->prefTransactionOnRecompute->isChecked());
     DocumentParams::setThumbnailNoBackground(ui->prefThumbnailNoBackground->isChecked());
     DocumentParams::setThumbnailSampleSize(ui->prefThumbnailSampleSize->value());
-
-    int timeout = ui->prefAutoSaveTimeout->value();
-    if (!ui->prefAutoSaveEnabled->isChecked())
-        timeout = 0;
-    AutoSaver::instance()->setTimeout(timeout * 60000);
 }
 
 void DlgSettingsDocumentImp::loadSettings()
@@ -123,8 +119,6 @@ void DlgSettingsDocumentImp::loadSettings()
 
     ui->prefUndoRedo->onRestore();
     ui->prefUndoRedoSize->onRestore();
-    ui->prefSaveTransaction->onRestore();
-    ui->prefDiscardTransaction->onRestore();
     ui->prefSaveThumbnail->onRestore();
     ui->prefThumbnailSize->onRestore();
     ui->prefAddLogo->onRestore();

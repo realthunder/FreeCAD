@@ -1468,3 +1468,9 @@ fc_add_gui_test(GuiUnitsSettings_tests_run
 fc_add_gui_test(GuiEditorSettings_tests_run
                 editor-settings.py
                 --timeout 180)
+
+# The rest of the document settings are behind App::DocumentParams: listed
+# by the omni search, and the Document page stores no key nothing reads.
+fc_add_gui_test(GuiDocumentSettings_tests_run
+                document-settings.py
+                --timeout 180)

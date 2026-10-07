@@ -89,6 +89,16 @@ public:
         signalParamChanged("EnableMaterialEdit");
         signalParamChanged("MCPServerAutoStart");
         signalParamChanged("MCPServerPort");
+        signalParamChanged("AutoSaveEnabled");
+        signalParamChanged("AutoSaveTimeout");
+        signalParamChanged("AutoSaveCompressed");
+        signalParamChanged("SaveBinaryBrep");
+        signalParamChanged("RecoveryEnabled");
+        signalParamChanged("CreateNewDoc");
+        signalParamChanged("UsingUndo");
+        signalParamChanged("MaxUndoSize");
+        signalParamChanged("ChangeViewProviderTouchDocument");
+        signalParamChanged("JsonIndent");
 
     // Auto generated code (Tools/params_utils.py:241)
     }
@@ -135,6 +145,16 @@ public:
     bool EnableMaterialEdit;
     bool MCPServerAutoStart;
     long MCPServerPort;
+    bool AutoSaveEnabled;
+    long AutoSaveTimeout;
+    bool AutoSaveCompressed;
+    bool SaveBinaryBrep;
+    bool RecoveryEnabled;
+    bool CreateNewDoc;
+    bool UsingUndo;
+    long MaxUndoSize;
+    bool ChangeViewProviderTouchDocument;
+    long JsonIndent;
 
     // Auto generated code (Tools/params_utils.py:254)
     DocumentParamsP() {
@@ -227,6 +247,26 @@ public:
         funcs["MCPServerAutoStart"] = &DocumentParamsP::updateMCPServerAutoStart;
         MCPServerPort = this->handle->GetInt("MCPServerPort", 8765);
         funcs["MCPServerPort"] = &DocumentParamsP::updateMCPServerPort;
+        AutoSaveEnabled = this->handle->GetBool("AutoSaveEnabled", true);
+        funcs["AutoSaveEnabled"] = &DocumentParamsP::updateAutoSaveEnabled;
+        AutoSaveTimeout = this->handle->GetInt("AutoSaveTimeout", 15);
+        funcs["AutoSaveTimeout"] = &DocumentParamsP::updateAutoSaveTimeout;
+        AutoSaveCompressed = this->handle->GetBool("AutoSaveCompressed", true);
+        funcs["AutoSaveCompressed"] = &DocumentParamsP::updateAutoSaveCompressed;
+        SaveBinaryBrep = this->handle->GetBool("SaveBinaryBrep", true);
+        funcs["SaveBinaryBrep"] = &DocumentParamsP::updateSaveBinaryBrep;
+        RecoveryEnabled = this->handle->GetBool("RecoveryEnabled", true);
+        funcs["RecoveryEnabled"] = &DocumentParamsP::updateRecoveryEnabled;
+        CreateNewDoc = this->handle->GetBool("CreateNewDoc", false);
+        funcs["CreateNewDoc"] = &DocumentParamsP::updateCreateNewDoc;
+        UsingUndo = this->handle->GetBool("UsingUndo", true);
+        funcs["UsingUndo"] = &DocumentParamsP::updateUsingUndo;
+        MaxUndoSize = this->handle->GetInt("MaxUndoSize", 20);
+        funcs["MaxUndoSize"] = &DocumentParamsP::updateMaxUndoSize;
+        ChangeViewProviderTouchDocument = this->handle->GetBool("ChangeViewProviderTouchDocument", true);
+        funcs["ChangeViewProviderTouchDocument"] = &DocumentParamsP::updateChangeViewProviderTouchDocument;
+        JsonIndent = this->handle->GetInt("JsonIndent", 2);
+        funcs["JsonIndent"] = &DocumentParamsP::updateJsonIndent;
     }
 
     // Auto generated code (Tools/params_utils.py:284)
@@ -415,6 +455,46 @@ public:
     // Auto generated code (Tools/params_utils.py:314)
     static void updateMCPServerPort(DocumentParamsP *self) {
         self->MCPServerPort = self->handle->GetInt("MCPServerPort", 8765);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateAutoSaveEnabled(DocumentParamsP *self) {
+        self->AutoSaveEnabled = self->handle->GetBool("AutoSaveEnabled", true);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateAutoSaveTimeout(DocumentParamsP *self) {
+        self->AutoSaveTimeout = self->handle->GetInt("AutoSaveTimeout", 15);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateAutoSaveCompressed(DocumentParamsP *self) {
+        self->AutoSaveCompressed = self->handle->GetBool("AutoSaveCompressed", true);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateSaveBinaryBrep(DocumentParamsP *self) {
+        self->SaveBinaryBrep = self->handle->GetBool("SaveBinaryBrep", true);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateRecoveryEnabled(DocumentParamsP *self) {
+        self->RecoveryEnabled = self->handle->GetBool("RecoveryEnabled", true);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateCreateNewDoc(DocumentParamsP *self) {
+        self->CreateNewDoc = self->handle->GetBool("CreateNewDoc", false);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateUsingUndo(DocumentParamsP *self) {
+        self->UsingUndo = self->handle->GetBool("UsingUndo", true);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateMaxUndoSize(DocumentParamsP *self) {
+        self->MaxUndoSize = self->handle->GetInt("MaxUndoSize", 20);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateChangeViewProviderTouchDocument(DocumentParamsP *self) {
+        self->ChangeViewProviderTouchDocument = self->handle->GetBool("ChangeViewProviderTouchDocument", true);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateJsonIndent(DocumentParamsP *self) {
+        self->JsonIndent = self->handle->GetInt("JsonIndent", 2);
     }
 };
 
@@ -641,6 +721,48 @@ static const App::ParamRegistry::Registrar _DocumentParamsRegistrar({
 "use the server takes the next free port after it, so the port it\n"
 "ends up on is reported in the console and in the Tools -> MCP\n"
 "Server tooltip."),
+    App::ParamInfo("App", "DocumentParams", "User parameter:BaseApp/Preferences/Document", "AutoSaveEnabled", "AutoSaveEnabled", App::ParamInfo::Bool, true)
+        .setTitle("Save auto-recovery information")
+        .setDoc("Save auto-recovery information of the open documents at regular\n"
+"intervals. Takes effect at once."),
+    App::ParamInfo("App", "DocumentParams", "User parameter:BaseApp/Preferences/Document", "AutoSaveTimeout", "AutoSaveTimeout", App::ParamInfo::Int, 15)
+        .setTitle("Auto-recovery interval")
+        .setDoc("Minutes between two saves of auto-recovery information. 1 to 60.\n"
+"Takes effect at once."),
+    App::ParamInfo("App", "DocumentParams", "User parameter:BaseApp/Preferences/Document", "AutoSaveCompressed", "AutoSaveCompressed", App::ParamInfo::Bool, true)
+        .setTitle("Compress auto-recovery files")
+        .setDoc("Write auto-recovery information as one compressed file per\n"
+"document instead of separate uncompressed files. Takes effect at\n"
+"the next save of it."),
+    App::ParamInfo("App", "DocumentParams", "User parameter:BaseApp/Preferences/Document", "SaveBinaryBrep", "SaveBinaryBrep", App::ParamInfo::Bool, true)
+        .setTitle("Binary shapes in auto-recovery files")
+        .setDoc("Write shapes in binary BREP format into a compressed\n"
+"auto-recovery file. Read at each save of it."),
+    App::ParamInfo("App", "DocumentParams", "User parameter:BaseApp/Preferences/Document", "RecoveryEnabled", "RecoveryEnabled", App::ParamInfo::Bool, true)
+        .setTitle("Run file recovery at startup")
+        .setDoc("Look at startup for documents a crashed session left behind and\n"
+"offer to recover them."),
+    App::ParamInfo("App", "DocumentParams", "User parameter:BaseApp/Preferences/Document", "CreateNewDoc", "CreateNewDoc", App::ParamInfo::Bool, false)
+        .setTitle("Create new document at startup")
+        .setDoc("Create an empty document when the program starts with none\n"
+"open."),
+    App::ParamInfo("App", "DocumentParams", "User parameter:BaseApp/Preferences/Document", "UsingUndo", "UsingUndo", App::ParamInfo::Bool, true)
+        .setTitle("Allow undo and redo")
+        .setDoc("Record undo and redo steps for documents. Applies to documents\n"
+"created or opened afterwards."),
+    App::ParamInfo("App", "DocumentParams", "User parameter:BaseApp/Preferences/Document", "MaxUndoSize", "MaxUndoSize", App::ParamInfo::Int, 20)
+        .setTitle("Maximum undo steps")
+        .setDoc("Largest number of undo steps kept for a document. Applies to\n"
+"documents created or opened afterwards."),
+    App::ParamInfo("App", "DocumentParams", "User parameter:BaseApp/Preferences/Document", "ChangeViewProviderTouchDocument", "ChangeViewProviderTouchDocument", App::ParamInfo::Bool, true)
+        .setTitle("View changes modify the document")
+        .setDoc("Mark a document as modified when a view property of one of its\n"
+"objects changes. Applies to documents created or opened\n"
+"afterwards."),
+    App::ParamInfo("App", "DocumentParams", "User parameter:BaseApp/Preferences/Document", "JsonIndent", "JsonIndent", App::ParamInfo::Int, 2)
+        .setTitle("JSON indentation")
+        .setDoc("Indentation of the JSON text the properties of Python objects are\n"
+"saved as."),
 });
 
 // Auto generated code (Tools/params_utils.py:368)
@@ -1945,5 +2067,297 @@ void DocumentParams::setMCPServerPort(const long &v) {
 // Auto generated code (Tools/params_utils.py:431)
 void DocumentParams::removeMCPServerPort() {
     instance()->handle->RemoveInt("MCPServerPort");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *DocumentParams::docAutoSaveEnabled() {
+    return QT_TRANSLATE_NOOP("DocumentParams",
+"Save auto-recovery information of the open documents at regular\n"
+"intervals. Takes effect at once.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const bool & DocumentParams::getAutoSaveEnabled() {
+    return instance()->AutoSaveEnabled;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const bool & DocumentParams::defaultAutoSaveEnabled() {
+    const static bool def = true;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void DocumentParams::setAutoSaveEnabled(const bool &v) {
+    instance()->handle->SetBool("AutoSaveEnabled",v);
+    instance()->AutoSaveEnabled = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void DocumentParams::removeAutoSaveEnabled() {
+    instance()->handle->RemoveBool("AutoSaveEnabled");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *DocumentParams::docAutoSaveTimeout() {
+    return QT_TRANSLATE_NOOP("DocumentParams",
+"Minutes between two saves of auto-recovery information. 1 to 60.\n"
+"Takes effect at once.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const long & DocumentParams::getAutoSaveTimeout() {
+    return instance()->AutoSaveTimeout;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const long & DocumentParams::defaultAutoSaveTimeout() {
+    const static long def = 15;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void DocumentParams::setAutoSaveTimeout(const long &v) {
+    instance()->handle->SetInt("AutoSaveTimeout",v);
+    instance()->AutoSaveTimeout = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void DocumentParams::removeAutoSaveTimeout() {
+    instance()->handle->RemoveInt("AutoSaveTimeout");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *DocumentParams::docAutoSaveCompressed() {
+    return QT_TRANSLATE_NOOP("DocumentParams",
+"Write auto-recovery information as one compressed file per\n"
+"document instead of separate uncompressed files. Takes effect at\n"
+"the next save of it.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const bool & DocumentParams::getAutoSaveCompressed() {
+    return instance()->AutoSaveCompressed;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const bool & DocumentParams::defaultAutoSaveCompressed() {
+    const static bool def = true;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void DocumentParams::setAutoSaveCompressed(const bool &v) {
+    instance()->handle->SetBool("AutoSaveCompressed",v);
+    instance()->AutoSaveCompressed = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void DocumentParams::removeAutoSaveCompressed() {
+    instance()->handle->RemoveBool("AutoSaveCompressed");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *DocumentParams::docSaveBinaryBrep() {
+    return QT_TRANSLATE_NOOP("DocumentParams",
+"Write shapes in binary BREP format into a compressed\n"
+"auto-recovery file. Read at each save of it.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const bool & DocumentParams::getSaveBinaryBrep() {
+    return instance()->SaveBinaryBrep;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const bool & DocumentParams::defaultSaveBinaryBrep() {
+    const static bool def = true;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void DocumentParams::setSaveBinaryBrep(const bool &v) {
+    instance()->handle->SetBool("SaveBinaryBrep",v);
+    instance()->SaveBinaryBrep = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void DocumentParams::removeSaveBinaryBrep() {
+    instance()->handle->RemoveBool("SaveBinaryBrep");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *DocumentParams::docRecoveryEnabled() {
+    return QT_TRANSLATE_NOOP("DocumentParams",
+"Look at startup for documents a crashed session left behind and\n"
+"offer to recover them.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const bool & DocumentParams::getRecoveryEnabled() {
+    return instance()->RecoveryEnabled;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const bool & DocumentParams::defaultRecoveryEnabled() {
+    const static bool def = true;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void DocumentParams::setRecoveryEnabled(const bool &v) {
+    instance()->handle->SetBool("RecoveryEnabled",v);
+    instance()->RecoveryEnabled = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void DocumentParams::removeRecoveryEnabled() {
+    instance()->handle->RemoveBool("RecoveryEnabled");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *DocumentParams::docCreateNewDoc() {
+    return QT_TRANSLATE_NOOP("DocumentParams",
+"Create an empty document when the program starts with none\n"
+"open.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const bool & DocumentParams::getCreateNewDoc() {
+    return instance()->CreateNewDoc;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const bool & DocumentParams::defaultCreateNewDoc() {
+    const static bool def = false;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void DocumentParams::setCreateNewDoc(const bool &v) {
+    instance()->handle->SetBool("CreateNewDoc",v);
+    instance()->CreateNewDoc = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void DocumentParams::removeCreateNewDoc() {
+    instance()->handle->RemoveBool("CreateNewDoc");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *DocumentParams::docUsingUndo() {
+    return QT_TRANSLATE_NOOP("DocumentParams",
+"Record undo and redo steps for documents. Applies to documents\n"
+"created or opened afterwards.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const bool & DocumentParams::getUsingUndo() {
+    return instance()->UsingUndo;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const bool & DocumentParams::defaultUsingUndo() {
+    const static bool def = true;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void DocumentParams::setUsingUndo(const bool &v) {
+    instance()->handle->SetBool("UsingUndo",v);
+    instance()->UsingUndo = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void DocumentParams::removeUsingUndo() {
+    instance()->handle->RemoveBool("UsingUndo");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *DocumentParams::docMaxUndoSize() {
+    return QT_TRANSLATE_NOOP("DocumentParams",
+"Largest number of undo steps kept for a document. Applies to\n"
+"documents created or opened afterwards.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const long & DocumentParams::getMaxUndoSize() {
+    return instance()->MaxUndoSize;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const long & DocumentParams::defaultMaxUndoSize() {
+    const static long def = 20;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void DocumentParams::setMaxUndoSize(const long &v) {
+    instance()->handle->SetInt("MaxUndoSize",v);
+    instance()->MaxUndoSize = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void DocumentParams::removeMaxUndoSize() {
+    instance()->handle->RemoveInt("MaxUndoSize");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *DocumentParams::docChangeViewProviderTouchDocument() {
+    return QT_TRANSLATE_NOOP("DocumentParams",
+"Mark a document as modified when a view property of one of its\n"
+"objects changes. Applies to documents created or opened\n"
+"afterwards.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const bool & DocumentParams::getChangeViewProviderTouchDocument() {
+    return instance()->ChangeViewProviderTouchDocument;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const bool & DocumentParams::defaultChangeViewProviderTouchDocument() {
+    const static bool def = true;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void DocumentParams::setChangeViewProviderTouchDocument(const bool &v) {
+    instance()->handle->SetBool("ChangeViewProviderTouchDocument",v);
+    instance()->ChangeViewProviderTouchDocument = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void DocumentParams::removeChangeViewProviderTouchDocument() {
+    instance()->handle->RemoveBool("ChangeViewProviderTouchDocument");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *DocumentParams::docJsonIndent() {
+    return QT_TRANSLATE_NOOP("DocumentParams",
+"Indentation of the JSON text the properties of Python objects are\n"
+"saved as.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const long & DocumentParams::getJsonIndent() {
+    return instance()->JsonIndent;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const long & DocumentParams::defaultJsonIndent() {
+    const static long def = 2;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void DocumentParams::setJsonIndent(const long &v) {
+    instance()->handle->SetInt("JsonIndent",v);
+    instance()->JsonIndent = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void DocumentParams::removeJsonIndent() {
+    instance()->handle->RemoveInt("JsonIndent");
 }
 //[[[end]]]

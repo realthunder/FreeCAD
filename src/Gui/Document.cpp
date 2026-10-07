@@ -463,14 +463,13 @@ Document::Document(App::Document* pcDocument,Application * app)
     // mustn't increment it (Werner Jan-12-2006)
     _pcDocPy = new Gui::DocumentPy(this);
 
-    ParameterGrp::handle hGrp = App::GetApplication().GetParameterGroupByPath("User parameter:BaseApp/Preferences/Document");
-    if (hGrp->GetBool("UsingUndo",true)) {
+    if (App::DocumentParams::getUsingUndo()) {
         d->_pcDocument->setUndoMode(1);
         // set the maximum stack size
-        d->_pcDocument->setMaxUndoStackSize(hGrp->GetInt("MaxUndoSize",20));
+        d->_pcDocument->setMaxUndoStackSize(App::DocumentParams::getMaxUndoSize());
     }
 
-    d->_changeViewTouchDocument = hGrp->GetBool("ChangeViewProviderTouchDocument", true);
+    d->_changeViewTouchDocument = App::DocumentParams::getChangeViewProviderTouchDocument();
 }
 
 Document::~Document()

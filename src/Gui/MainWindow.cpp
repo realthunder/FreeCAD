@@ -2435,14 +2435,13 @@ void MainWindow::delayedStartup()
     Application::Instance->checkForDeprecatedSettings();
 
     // Create new document?
-    ParameterGrp::handle hGrp = WindowParameter::getDefaultParameter()->GetGroup("Document");
-    if (hGrp->GetBool("CreateNewDoc", false)) {
+    if (App::DocumentParams::getCreateNewDoc()) {
         if (App::GetApplication().getDocuments().empty()){
             Application::Instance->commandManager().runCommandByName("Std_New");
         }
     }
 
-    if (hGrp->GetBool("RecoveryEnabled", true)) {
+    if (App::DocumentParams::getRecoveryEnabled()) {
         Application::Instance->checkForPreviousCrashes();
     }
 

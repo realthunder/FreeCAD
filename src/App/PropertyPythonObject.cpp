@@ -30,6 +30,7 @@
 #include <boost/algorithm/string/predicate.hpp>
 
 #include "PropertyPythonObject.h"
+#include "DocumentParams.h"
 
 #include <Base/Base64.h>
 #include <Base/Console.h>
@@ -97,12 +98,8 @@ std::string PropertyPythonObject::toString() const
         Py::Module pickle(PyImport_ImportModule("json"),true);
         if (pickle.isNull())
             throw Py::Exception();
-        static int indent = -1;
-        if(indent<0) {
-            ParameterGrp::handle hGrp = App::GetApplication().GetParameterGroupByPath(
-                    "User parameter:BaseApp/Preferences/Document");
-            indent = hGrp->GetInt("JsonIndent",2);
-        }
+        // asked each time: it used to be read once and kept for the session
+        const int indent = static_cast<int>(DocumentParams::getJsonIndent());
         Py::Callable method(pickle.getAttr(std::string("dumps")));
         Py::Object dump;
         if (this->object.hasAttr("dumps")) {

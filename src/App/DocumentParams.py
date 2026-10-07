@@ -294,6 +294,48 @@ Params = [
             'use the server takes the next free port after it, so the port it\n'
             'ends up on is reported in the console and in the Tools -> MCP\n'
             'Server tooltip.'),
+    ParamBool('AutoSaveEnabled', True,
+        title = 'Save auto-recovery information',
+        doc = "Save auto-recovery information of the open documents at regular\n"
+              "intervals. Takes effect at once."),
+    ParamInt('AutoSaveTimeout', 15,
+        title = 'Auto-recovery interval',
+        doc = "Minutes between two saves of auto-recovery information. 1 to 60.\n"
+              "Takes effect at once."),
+    ParamBool('AutoSaveCompressed', True,
+        title = 'Compress auto-recovery files',
+        doc = "Write auto-recovery information as one compressed file per\n"
+              "document instead of separate uncompressed files. Takes effect at\n"
+              "the next save of it."),
+    ParamBool('SaveBinaryBrep', True,
+        title = 'Binary shapes in auto-recovery files',
+        doc = "Write shapes in binary BREP format into a compressed\n"
+              "auto-recovery file. Read at each save of it."),
+    ParamBool('RecoveryEnabled', True,
+        title = 'Run file recovery at startup',
+        doc = "Look at startup for documents a crashed session left behind and\n"
+              "offer to recover them."),
+    ParamBool('CreateNewDoc', False,
+        title = 'Create new document at startup',
+        doc = "Create an empty document when the program starts with none\n"
+              "open."),
+    ParamBool('UsingUndo', True,
+        title = 'Allow undo and redo',
+        doc = "Record undo and redo steps for documents. Applies to documents\n"
+              "created or opened afterwards."),
+    ParamInt('MaxUndoSize', 20,
+        title = 'Maximum undo steps',
+        doc = "Largest number of undo steps kept for a document. Applies to\n"
+              "documents created or opened afterwards."),
+    ParamBool('ChangeViewProviderTouchDocument', True,
+        title = 'View changes modify the document',
+        doc = "Mark a document as modified when a view property of one of its\n"
+              "objects changes. Applies to documents created or opened\n"
+              "afterwards."),
+    ParamInt('JsonIndent', 2,
+        title = 'JSON indentation',
+        doc = "Indentation of the JSON text the properties of Python objects are\n"
+              "saved as."),
 ]
 
 def declare():

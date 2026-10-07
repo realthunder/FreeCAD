@@ -2930,12 +2930,24 @@ void postMainWindowSetup(MainWindow &mw)
     QObject::connect(qApp, SIGNAL(messageReceived(const QList<QByteArray> &)),
                      &mw, SLOT(processMessages(const QList<QByteArray> &)));
 
-    ParameterGrp::handle hDocGrp = WindowParameter::getDefaultParameter()->GetGroup("Document");
-    int timeout = hDocGrp->GetInt("AutoSaveTimeout", 15); // 15 min
-    if (!hDocGrp->GetBool("AutoSaveEnabled", true))
-        timeout = 0;
-    AutoSaver::instance()->setTimeout(timeout * 60000);
-    AutoSaver::instance()->setCompressed(hDocGrp->GetBool("AutoSaveCompressed", true));
+    // Auto recovery follows its settings when they change, wherever that
+    // is done. It used to be set up here, and again by OK on the Document
+    // page; a change made any other way waited for the next start.
+    auto applyAutoSave = []() {
+        int timeout = static_cast<int>(App::DocumentParams::getAutoSaveTimeout());  // minutes
+        if (!App::DocumentParams::getAutoSaveEnabled()) {
+            timeout = 0;
+        }
+        AutoSaver::instance()->setTimeout(timeout * 60000);
+        AutoSaver::instance()->setCompressed(App::DocumentParams::getAutoSaveCompressed());
+    };
+    applyAutoSave();
+    static fastsignals::scoped_connection autoSaveChanged
+        = App::DocumentParams::signalParamChanged().connect([applyAutoSave](const char* name) {
+              if (name && strncmp(name, "AutoSave", 8) == 0) {
+                  applyAutoSave();
+              }
+          });
 
     // set toolbar icon size
     ParameterGrp::handle hGrp = WindowParameter::getDefaultParameter()->GetGroup("General");

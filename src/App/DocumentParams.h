@@ -671,6 +671,138 @@ public:
     static const char *docMCPServerPort();
     //@}
 
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter AutoSaveEnabled
+    ///
+    /// Save auto-recovery information of the open documents at regular
+    /// intervals. Takes effect at once.
+    static const bool & getAutoSaveEnabled();
+    static const bool & defaultAutoSaveEnabled();
+    static void removeAutoSaveEnabled();
+    static void setAutoSaveEnabled(const bool &v);
+    static const char *docAutoSaveEnabled();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter AutoSaveTimeout
+    ///
+    /// Minutes between two saves of auto-recovery information. 1 to 60.
+    /// Takes effect at once.
+    static const long & getAutoSaveTimeout();
+    static const long & defaultAutoSaveTimeout();
+    static void removeAutoSaveTimeout();
+    static void setAutoSaveTimeout(const long &v);
+    static const char *docAutoSaveTimeout();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter AutoSaveCompressed
+    ///
+    /// Write auto-recovery information as one compressed file per
+    /// document instead of separate uncompressed files. Takes effect at
+    /// the next save of it.
+    static const bool & getAutoSaveCompressed();
+    static const bool & defaultAutoSaveCompressed();
+    static void removeAutoSaveCompressed();
+    static void setAutoSaveCompressed(const bool &v);
+    static const char *docAutoSaveCompressed();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter SaveBinaryBrep
+    ///
+    /// Write shapes in binary BREP format into a compressed
+    /// auto-recovery file. Read at each save of it.
+    static const bool & getSaveBinaryBrep();
+    static const bool & defaultSaveBinaryBrep();
+    static void removeSaveBinaryBrep();
+    static void setSaveBinaryBrep(const bool &v);
+    static const char *docSaveBinaryBrep();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter RecoveryEnabled
+    ///
+    /// Look at startup for documents a crashed session left behind and
+    /// offer to recover them.
+    static const bool & getRecoveryEnabled();
+    static const bool & defaultRecoveryEnabled();
+    static void removeRecoveryEnabled();
+    static void setRecoveryEnabled(const bool &v);
+    static const char *docRecoveryEnabled();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter CreateNewDoc
+    ///
+    /// Create an empty document when the program starts with none
+    /// open.
+    static const bool & getCreateNewDoc();
+    static const bool & defaultCreateNewDoc();
+    static void removeCreateNewDoc();
+    static void setCreateNewDoc(const bool &v);
+    static const char *docCreateNewDoc();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter UsingUndo
+    ///
+    /// Record undo and redo steps for documents. Applies to documents
+    /// created or opened afterwards.
+    static const bool & getUsingUndo();
+    static const bool & defaultUsingUndo();
+    static void removeUsingUndo();
+    static void setUsingUndo(const bool &v);
+    static const char *docUsingUndo();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter MaxUndoSize
+    ///
+    /// Largest number of undo steps kept for a document. Applies to
+    /// documents created or opened afterwards.
+    static const long & getMaxUndoSize();
+    static const long & defaultMaxUndoSize();
+    static void removeMaxUndoSize();
+    static void setMaxUndoSize(const long &v);
+    static const char *docMaxUndoSize();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter ChangeViewProviderTouchDocument
+    ///
+    /// Mark a document as modified when a view property of one of its
+    /// objects changes. Applies to documents created or opened
+    /// afterwards.
+    static const bool & getChangeViewProviderTouchDocument();
+    static const bool & defaultChangeViewProviderTouchDocument();
+    static void removeChangeViewProviderTouchDocument();
+    static void setChangeViewProviderTouchDocument(const bool &v);
+    static const char *docChangeViewProviderTouchDocument();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter JsonIndent
+    ///
+    /// Indentation of the JSON text the properties of Python objects are
+    /// saved as.
+    static const long & getJsonIndent();
+    static const long & defaultJsonIndent();
+    static void removeJsonIndent();
+    static void setJsonIndent(const long &v);
+    static const char *docJsonIndent();
+    //@}
+
 // Auto generated code (Tools/params_utils.py:179)
 }; // class DocumentParams
 } // namespace App
