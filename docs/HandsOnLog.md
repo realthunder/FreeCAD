@@ -852,7 +852,7 @@ its own thing, and not started.
 
 Evidence: `..\dl\handson\2026-10-07\msaa-*`, `entry26-first-ok-with-msaa-*`.
 
-## 24. Every setting behind a generated class -- STARTED, eighteen groups done
+## 24. Every setting behind a generated class -- STARTED, nineteen groups done
 
 The reporter, 2026-10-07, asked which entry "do entry 23 next" meant: "I
 meant entry 24". Not staged.
@@ -1138,8 +1138,24 @@ right: "Use system decimals" is on to the program and was shown off, and
 stored off on OK, by the Display page. Scored:
 `tests/gui/sketcher-settings.py` (`GuiSketcherSettings_tests_run`) 4 PASS;
 2 PASS, 2 FAIL staged; the Sketcher's own suites pass (ctest 111, Python
-145). NOT DONE: its sub-groups and the keys it keeps in `Preferences/View`,
-about 150 keys, with the inventory's findings in them.
+145).
+
+**Done, second step: the Sketcher's sub-groups,** 67 settings, `721dfca8a0`:
+`General` (the edit view, the grid, the rendering order, dimension editing),
+`View` (line widths and patterns), `dimensioning`, `Snap`, `Constraints`,
+`Commands`, `Tools`, `Elements`, in the same class under their sub-groups.
+A sketch in edit is told of a change by the groups themselves and keeps
+reading them; 97 reads in 14 files take their DEFAULT from the class. Put
+right: the internal face colour was one step more opaque on the Appearance
+page than the program draws it; the defaults test compared whole numbers
+with a fraction's tolerance, which let a neighbouring colour pass -- exact
+now, and this colour is the only one it named in all the groups done.
+Scored: `tests/gui/sketcher-settings.py` 7 PASS; 3 PASS, 4 FAIL staged.
+NOT DONE in the Sketcher: `SolverAdvanced` (28 keys), the 11 keys it keeps
+in `Preferences/View`, and the inventory's findings that need more than a
+default -- the grid spacing stored as `GridSize` and read as `Hist0`, the
+external geometry colour, the solver box's wrong keys, the Snap command's
+cached state, the Dimension tool's continue mode.
 
 **The generator,** `0a94fb63c9`: a setting stored under another name than
 its own (`param_name`) was read and written under its key, but a CHANGE was
