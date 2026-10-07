@@ -32,7 +32,7 @@ report views, the reporter's own files -- is kept beside the dev tree under
 | 8 | 2026-10-06 | `scanner.FCStd`: the migration recompute fails | FOUND in full; the helix STAGED; the rest is entries 14 to 16 |
 | 9 | 2026-10-06 | the 3D view lags behind the mouse: hover highlight, wheel zoom | FIXED |
 | 10 | 2026-10-06 | a 3D view is slow to take a new size | FIXED with entry 9 |
-| 11 | 2026-10-06 | dark theme: wrong colors (checkbox border, title bar buttons), audit asked | OPEN |
+| 11 | 2026-10-06 | dark theme: wrong colors (checkbox border, title bar buttons), audit asked | FIXED: the two named and four the audit found |
 | 12 | 2026-10-06 | TechDraw: dimensions and cosmetics are covered by the face fill | FIXED (they were transparent, not covered) |
 | 13 | 2026-10-06 | report view: grouped messages with an expand icon in the margin, no underscore (change request) | OPEN |
 | 14 | 2026-10-06 | a Draft with no neutral plane given turns the other way after a recompute (from entry 8) | STAGED |
@@ -517,7 +517,7 @@ copy is in flight (`BGFXView::ensureReadbackTarget`), which holds it one
 frame longer still. With every frame waiting for its copy none is ever in
 flight when the next begins.
 
-## 11. Dark theme: wrong colors -- OPEN
+## 11. Dark theme: wrong colors -- FIXED
 
 **Reported (2026-10-06 11:58):** "checkbox border and customized toolbar
 maximize/minimize icon got bad color in dark theme. audit for other similar UI
@@ -526,6 +526,87 @@ color problem."
 Two named: the checkbox border, and the maximize/minimize icons of the custom
 title bar. Asked for beyond those: an audit of the dark theme for other
 widgets with the same kind of wrong color.
+
+**Seen** in the dev tree, a fresh configuration, the Dark theme applied
+(`Gui.applyTheme("Dark")`: the parameterized sheet, `FreeCAD.qss` with
+`parameters/Dark.yaml`) and the custom title bar on; photographs of the
+title bar, of a sampler of standard widgets in every state and of the
+program's own surfaces are in `..\dl\handson\2026-10-07\entry11-*`.
+
+**The two that were named.**
+- *The title bar's buttons.* The kit ships each glyph twice, a dark stroke
+  and a light one (`window-minimize.svg`, `window-minimize-dark.svg`), and
+  `WindowDecorationButton` loaded the dark stroke whatever the theme: the
+  three buttons were there and all but invisible, 1 to 2 of 255 lighter
+  than the bar. The button takes the glyph that reads the way its text
+  does now -- the light stroke where the palette's text is light, which is
+  the style sheet's `color` once the widget is polished -- and takes it
+  again when the palette changes. In the kit, marked LOCAL DIVERGENCE.
+- *The check box.* `CheckBoxBorderColor` was `@GeneralBorderColor`, which
+  in the Dark set is black: a box in the field colour with a black edge in
+  a dialog one step lighter shows no edge, and an unchecked box read as a
+  darker patch. Upstream has the same line; it has since lightened its
+  whole dark base (`c365ff6338`, 2026-09-20, `PrimaryColor` #191919 to
+  #323232), which is a change of the theme's look and was not taken here.
+  The edge is `@PrimaryColorLighten5` now (#646464), and the radio
+  button's follows it; the same parameter draws the indicator of a
+  checkable group box and of a tree, list or table item.
+
+**The audit**, by photograph: the sampler (check boxes, radio buttons,
+group boxes, item views, combo and spin boxes, line edits, buttons, tool
+buttons, slider, progress and scroll bars, tabs, a menu), the preferences
+dialog (General, 3D View, Colors, Theme), the tree, the property editor
+(both tabs), the report view, the Python console, a task panel
+(Placement), a tooltip, the status bar, a spreadsheet, the Start page, a
+message box -- in Dark, then switched to Light and back with everything
+open. Four more of the kind:
+
+- *The navigation style icon in the status bar.* A dark mouse on a dark
+  bar. `Mod/Tux` has the icons in two sets and loaded the dark strokes
+  always (upstream chooses by the style sheet's file name, which says
+  nothing here: both themes are `FreeCAD.qss`). It chooses by the
+  indicator's own text colour now, and again when the palette changes.
+  Two styles have no light icon (OpenSCAD, TinkerCAD) and keep the dark
+  one.
+- *A spreadsheet's text.* Black on the dark sheet. The Dark pack set the
+  aliased cell's background and left `TextColor` at its default, black;
+  upstream's pack sets the three text colours. Both packs set them now --
+  Light too, or going back from Dark would leave light text on a light
+  sheet.
+- *An open spreadsheet did not follow its colours.* The model read them
+  once, when the view was opened, so a theme applied afterwards left an
+  open sheet in the old ones (light text on a sheet turned light, in the
+  switch back). It watches the six colour preferences now.
+- *Report view lines written before the theme changed* kept the colour
+  they were written in: black on a view that had turned dark. The
+  highlighter gives every line the colours as they are when one of them
+  changes.
+
+**Seen and left:**
+- The link on the Start page's first-start panel ("Looking for more
+  themes?") is a dim blue on the dark panel. The sheet gives links
+  #71b6fb and the application palette has it; that one label did not
+  take it in a session whose theme was applied after the page was made.
+  Not looked at in a session started dark.
+- `ReportOutput::OnChange` answers `colorCriticalText` by setting the
+  TEXT colour. Not touched: no pack sets that key.
+- What the audit did not open: the sketcher's panels, the expression
+  editor, the material editor, the addon manager, TechDraw's pages and
+  panels, the other workbenches' task panels, the overlay title bars with
+  a dock floating, the seven legacy sheets (`Dark.qss`, `Darker.qss`,
+  ...), which are not offered as themes any more. The title bar and the
+  navigation icon follow the text colour and so hold for those sheets
+  too; the check box edge is theirs to draw.
+
+`tests/gui/theme-switch-contrast.py` claims all six in Dark, in
+Light after it and in Dark again, by reading what the widgets paint:
+39 PASS; on the copy staged 17:44, 16 FAIL (every claim made in Dark but
+the presence checks). The open sheet that did not follow is not among
+those sixteen -- the staged copy's packs never changed the sheet's text
+colour, so it had nothing to follow; it showed once the packs set it
+(`entry11-before\open-sheet-after-switch-to-light.png`).
+
+Not rerun for this entry: ctest (781 of 782 before it, entry 9).
 
 ## 12. TechDraw: dimensions and cosmetics are covered by the face fill -- FIXED
 
@@ -1320,3 +1401,31 @@ Notes not sorted into an entry yet. Add a line here at any time, in any words;
 it is read before each entry is started and moved up into the table.
 
 (empty: the notes of 2026-10-06 are entries 20 to 28)
+
+- **2026-10-07 09:32, the view cell's handles, resizing and a minimum size (a
+  change request).** "I want change the view cell UI. replace the top right
+  corner handle to a close button for closing the view. keep the bottom right
+  handle for resizing. when resizing (either dragging the corner or the split
+  handle) show transparent box of the involved cell to track the resizing in
+  real time, just like how overlay widget does it. add a setting for minimum
+  size (for both width and height) default to 200, if creating a new view will
+  result in any existing (or the new) view fall below the limit, the view
+  creation is refused, show an message in console (don't flood it)." Asked
+  for, four things:
+  (a) the handle in a cell's top right corner becomes a close button that
+  closes the view;
+  (b) the bottom right handle stays, for resizing;
+  (c) while resizing -- by the corner or by the splitter between cells -- a
+  transparent box over each cell involved follows the new size live, the way
+  the overlay dock widgets show a drag;
+  (d) a setting for the minimum cell size, one for width and height both,
+  default 200; a new view that would leave ANY cell under it, an existing one
+  or the new one, is refused, with a message in the report view that does not
+  repeat itself into a flood.
+  Read from the source by the note-taker, nothing changed: the cell's corner
+  zones are `ViewAreaZone` in `src/Gui/ViewArea.cpp`, and its enum has two
+  corners, `TopRight` and `BottomLeft` -- there is no bottom RIGHT zone today.
+  To ask the reporter: is the one to keep the existing bottom left zone, or is
+  it to move to the bottom right? The overlay's live box is `OverlayDragFrame`
+  in `src/Gui/OverlayWidgets.cpp`, and its size floor is the setting
+  `DockOverlayMinimumSize` (`OverlayParams`) -- the precedent for (c) and (d).
