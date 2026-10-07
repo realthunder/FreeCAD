@@ -1685,6 +1685,48 @@ the pre-mesh meshing a private twin of each shape and handing the
 triangulations over on the GUI thread, which removes the rule instead of
 enforcing it.
 
+**Ruled 2026-10-08: the private twin** (the user: "Private copy sounds
+good. It even works out of process."), not built. His question with it --
+does OCCT let a mesh made on another shape be installed on this one --
+measured with a scratch program on a model of planes, a cylinder, a
+sphere and a torus with their seams, edges shared between faces, and one
+solid held at two places:
+
+- **Yes.** A `Poly_Triangulation` holds nodes, UV nodes, triangles and a
+  deflection and refers to no face; a `Poly_PolygonOnTriangulation` holds
+  node indices and refers to nothing. What ties them to a shape is the
+  entry on the face and on the edge, which `BRep_Builder::UpdateFace` and
+  `UpdateEdge` write for whichever face and edge they are handed. Moved
+  from a twin onto the original: 6419 triangles, 3462 nodes and 38 edge
+  polygons, the same as a mesh made on the original; `BRepTools::
+  Triangulation` finds it complete; the mesher asked for the same mesh
+  leaves all 19 triangulations as installed, and asked for a finer one
+  replaces all 19.
+- **The same across a BREP write and read**, the receiver installing
+  COPIES of the mesh objects and pairing faces and edges by index alone --
+  the stand-in for another process. The read-back shape has its faces in
+  the original's order, which every saved document's element names
+  already rest on.
+- What makes it right: the twin is made without copying the geometry, so
+  its faces lie on the original's own surface and curve objects (19 of
+  19), and UV nodes mean the same thing on both; and an edge's polygons go
+  over together with the triangulation they index.
+- **The mesh then lives where it lives today**, one triangulation on the
+  face, shared by every shape that shares the face. Nothing is kept beside
+  the shape and nothing is held twice once the twin is dropped.
+- **OCCT's own copier is not the twin to use.** `BRepBuilderAPI_Copy`
+  makes a solid held at two places into two solids: 19 distinct faces
+  where the original has 10, and 6874 triangles meshed for 6419 kept. The
+  BREP round trip keeps them one. The twin wants a copy of its own, one
+  new TShape for each of the original's, which is also the pairing.
+- The fork's level builder already meshes such copies on the pool
+  (`MeshLevelBuild.cpp`, `meshedCopy`) and reads arrays off them; the
+  hand-over is the new part.
+- Not tried: a face that is a triangulation and no surface (a glTF
+  import), a free edge's `Poly_Polygon3D` (the model has none), a face
+  holding several triangulations, and what making the twins costs the GUI
+  thread at the submit.
+
 **4. A document closed from inside a drain slice. FIXED, `3c7c8bdcbf`; not
 the pre-mesh's.** Found by closing the document during a batch to see the
 process leave. A slice reports through a progress sequence, the progress
