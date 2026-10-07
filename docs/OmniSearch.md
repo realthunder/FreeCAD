@@ -26,6 +26,14 @@ of the active view with `/` already typed and three suggestions:
 Pick one (Enter, Tab or click) or type the prefix; the space ends it. Text
 that does not start with `/` is an object query as typed.
 
+The space after the slash is optional for an object: a word that is not a
+keyword is an object query as it stands, so `/Box.Length` is `/ Box.Length`.
+The keywords are `cmd` and `param` (the browser viewer has `cmd` only). A
+keyword in full is the keyword -- `/cmd` shows that one mode, and an object
+called `cmd` is asked for with the space, `/ cmd`. The beginning of a keyword
+could be either, so both are listed: `/c` shows the `/cmd` mode and, after it,
+the objects `c` matches; picking an object row picks the object.
+
 In every popup, Up/Down and Shift+Tab move the highlight, and Tab or a click
 picks the highlighted row (the first one when none is); Enter picks it too
 except in the object popup, where Enter acts on the text as typed (below).

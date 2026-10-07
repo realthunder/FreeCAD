@@ -637,7 +637,7 @@ private:
 OmniSearchEdit::OmniSearchEdit(QWidget *parent)
     : QLineEdit(parent)
 {
-    setPlaceholderText(tr("/ objects and properties, /cmd commands, /param parameters"));
+    setPlaceholderText(tr("/name objects and properties, /cmd commands, /param parameters"));
     setupChooser();
     setupCommands();
     setupParams();
@@ -647,9 +647,41 @@ OmniSearchEdit::OmniSearchEdit(QWidget *parent)
 
 OmniSearchEdit::~OmniSearchEdit() = default;
 
+// A row of the chooser that names an object: picking it is picking the object
+static const int ChooserObjectRole = Qt::UserRole + 200;
+
 void OmniSearchEdit::setupChooser()
 {
-    auto model = new QStandardItemModel(this);
+    chooserModel = new QStandardItemModel(this);
+    // Unfiltered: the rows are the answer already, made by fillChooser()
+    // for the text as it stands -- the modes it could be, and the objects.
+    chooser = new QCompleter(chooserModel, this);
+    chooser->setWidget(this);
+    chooser->setCompletionMode(QCompleter::UnfilteredPopupCompletion);
+    chooser->setCaseSensitivity(Qt::CaseInsensitive);
+    chooser->popup()->setItemDelegate(new OmniItemDelegate(chooser->popup()));
+    chooser->popup()->installEventFilter(this);
+    connect(chooser, qOverload<const QModelIndex&>(&QCompleter::activated),
+            this, [this](const QModelIndex &index) {
+                const bool object = index.data(ChooserObjectRole).toBool();
+                setInputText(index.data(chooser->completionRole()).toString());
+                if (object)
+                    activateObject();
+            });
+    fillChooser();
+}
+
+/* The chooser's rows for the text as it stands. A mode is listed while the
+ * text is the beginning of its prefix. Where the text is the beginning of a
+ * keyword and no more ("/c", "/par") it is as likely the beginning of an
+ * object's name, and the objects it matches follow: "/c" lists /cmd and
+ * Cube. A keyword in full is the keyword; an object of that name is asked
+ * for with the space, "/ cmd".
+ */
+void OmniSearchEdit::fillChooser()
+{
+    chooserModel->clear();
+    const QString typed = text().startsWith(QLatin1Char('/')) ? text() : QStringLiteral("/");
     struct Row { Mode mode; const char *title; QString desc; };
     const Row rows[] = {
         {Mode::Object, "/", tr("Documents, objects, sub-objects and properties")},
@@ -657,21 +689,40 @@ void OmniSearchEdit::setupChooser()
         {Mode::Param, "/param", tr("Application parameters")},
     };
     for (const auto &row : rows) {
-        auto item = new QStandardItem(QString::fromLatin1(modePrefix(row.mode)));
+        const QString prefix = QString::fromLatin1(modePrefix(row.mode));
+        if (!prefix.startsWith(typed, Qt::CaseInsensitive))
+            continue;
+        auto item = new QStandardItem(prefix);
         item->setData(QString::fromLatin1(row.title), TitleRole);
         item->setData(row.desc, DescriptionRole);
-        item->setData(QString::fromLatin1(modePrefix(row.mode)), SearchTextRole);
-        model->appendRow(item);
+        item->setData(prefix, SearchTextRole);
+        chooserModel->appendRow(item);
     }
-    chooser = new QCompleter(model, this);
-    chooser->setWidget(this);
-    chooser->setCompletionMode(QCompleter::PopupCompletion);
-    chooser->setFilterMode(Qt::MatchStartsWith);
-    chooser->setCaseSensitivity(Qt::CaseInsensitive);
-    chooser->popup()->setItemDelegate(new OmniItemDelegate(chooser->popup()));
-    chooser->popup()->installEventFilter(this);
-    connect(chooser, qOverload<const QString&>(&QCompleter::activated),
-            this, &OmniSearchEdit::setInputText);
+    if (!input.withObjects || !listCompleter || !owner())
+        return;
+    static const int MaxObjects = 50;
+    int start = 0, end = 0;
+    QStringList details;
+    const QString &word = input.objectQuery;
+    const QStringList names = listCompleter->completionsFor(word, word.size(), start, end, &details);
+    const auto locals = localObjects();
+    int listed = 0;
+    for (int i = 0; i < names.size() && listed < MaxObjects; ++i) {
+        const QString name = word.left(start) + names[i] + word.mid(end);
+        // The completer is the expression completer, and offers units and
+        // functions as well. Only what the box can resolve is a row here.
+        ObjectMatch match;
+        if (!resolveObject(name, owner(), match, &locals))
+            continue;
+        ++listed;
+        const QString full = QStringLiteral("/") + name;
+        auto item = new QStandardItem(full);
+        item->setData(name, TitleRole);
+        item->setData(i < details.size() ? details[i] : QString(), DescriptionRole);
+        item->setData(full, SearchTextRole);
+        item->setData(true, ChooserObjectRole);
+        chooserModel->appendRow(item);
+    }
 }
 
 void OmniSearchEdit::setupCommands()
@@ -748,12 +799,17 @@ void OmniSearchEdit::setOwner(App::DocumentObject *owner)
     ownerObj = owner;
     if (objCompleter) {
         objCompleter->setDocumentObject(owner);
+        listCompleter->setDocumentObject(owner);
         return;
     }
     if (!owner)
         return;
     objCompleter = new ExpressionCompleter(owner, this, /*noProperty*/false, /*checkInList*/false);
     objCompleter->setLocalObjects(localObjects());
+    // A second one for the chooser's list: completionsFor() moves the
+    // completer's prefix and tokenizer, which the popup's must keep
+    listCompleter = new ExpressionCompleter(owner, this, /*noProperty*/false, /*checkInList*/false);
+    listCompleter->setLocalObjects(localObjects());
     objCompleter->setWidget(this);
     objCompleter->popup()->setItemDelegate(new OmniItemDelegate(objCompleter->popup()));
     objCompleter->popup()->installEventFilter(this);
@@ -780,8 +836,10 @@ void OmniSearchEdit::setLocalObjects(const std::vector<App::DocumentObject*> &ob
         if (obj && obj->isAttachedToDocument())
             localObjs.emplace_back(obj);
     }
-    if (objCompleter)
+    if (objCompleter) {
         objCompleter->setLocalObjects(objs);
+        listCompleter->setLocalObjects(objs);
+    }
 }
 
 std::vector<App::DocumentObject*> OmniSearchEdit::localObjects() const
@@ -916,10 +974,19 @@ void OmniSearchEdit::onTextEdited(const QString &text)
     }
 
     switch (input.mode) {
-    case Mode::Chooser:
+    case Mode::Chooser: {
+        fillChooser();
         chooser->setCompletionPrefix(text);
         showListPopup(chooser, popupRect());
+        // The first row selected, not merely current: an unfiltered
+        // completer spends the first Down on selecting the current row,
+        // and the key would seem to do nothing.
+        auto popup = chooser->popup();
+        if (popup->currentIndex().isValid() && !popup->selectionModel()->hasSelection())
+            popup->selectionModel()->select(popup->currentIndex(),
+                                            QItemSelectionModel::ClearAndSelect);
         break;
+    }
     case Mode::Object:
         runObjectQuery();
         break;
@@ -1079,9 +1146,13 @@ bool OmniSearchEdit::chooseCurrentRow()
         return false;
     popup->hide();
     switch (input.mode) {
-    case Mode::Chooser:
+    case Mode::Chooser: {
+        const bool object = index.data(ChooserObjectRole).toBool();
         setInputText(index.data(chooser->completionRole()).toString());
+        if (object)
+            activateObject();
         break;
+    }
     case Mode::Object:
         if (c == memberCompleter) {
             QString name = index.data(Qt::EditRole).toString();

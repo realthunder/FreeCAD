@@ -123,6 +123,7 @@ protected:
 
 private:
     void setupChooser();
+    void fillChooser();
     void setupCommands();
     void setupParams();
     void setupMembers();
@@ -142,7 +143,11 @@ private:
     std::vector<App::DocumentObjectT> localObjs;
 
     QCompleter *chooser = nullptr;
+    /// The chooser's rows: the modes the text could be, then the objects
+    QStandardItemModel *chooserModel = nullptr;
     ExpressionCompleter *objCompleter = nullptr;
+    /// Asked for the objects the chooser lists; never shows a popup
+    ExpressionCompleter *listCompleter = nullptr;
     QCompleter *cmdCompleter = nullptr;
     CommandListModel *cmdModel = nullptr;
     KeywordFilterModel *cmdFilter = nullptr;

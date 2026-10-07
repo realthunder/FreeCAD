@@ -73,6 +73,12 @@ const char *OmniSearch::modePrefix(Mode mode)
     return "/";
 }
 
+const std::vector<const char*> &OmniSearch::modeKeywords()
+{
+    static const std::vector<const char*> keywords{"cmd", "param"};
+    return keywords;
+}
+
 OmniSearch::Input OmniSearch::parseInput(const QString &text)
 {
     Input res;
@@ -91,9 +97,30 @@ OmniSearch::Input OmniSearch::parseInput(const QString &text)
             return res;
         }
     }
-    res.mode = Mode::Chooser;
-    res.query = text;
-    res.offset = 0;
+    // No full prefix. What follows the slash is a keyword, the beginning
+    // of one, or the name of something.
+    const QString word = text.mid(1);
+    bool keyword = word.isEmpty();
+    for (const char *name : modeKeywords()) {
+        const QString key = QString::fromLatin1(name);
+        if (!word.isEmpty() && key.startsWith(word, Qt::CaseInsensitive)) {
+            keyword = true;
+            // short of the whole keyword it may as well be an object's name
+            if (word.size() < key.size()) {
+                res.withObjects = true;
+                res.objectQuery = word;
+            }
+        }
+    }
+    if (keyword) {
+        res.mode = Mode::Chooser;
+        res.query = text;
+        res.offset = 0;
+        return res;
+    }
+    res.mode = Mode::Object;
+    res.query = word;
+    res.offset = 1;
     return res;
 }
 

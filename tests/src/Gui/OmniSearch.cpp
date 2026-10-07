@@ -57,9 +57,43 @@ private Q_SLOTS:
         Input in = parseInput(QStringLiteral("/"));
         QCOMPARE(in.mode, Mode::Chooser);
         QCOMPARE(in.offset, 0);
+        QVERIFY(!in.withObjects);
 
+        // The beginning of a keyword is the chooser, and as likely the
+        // beginning of an object's name: both are listed
         in = parseInput(QStringLiteral("/cm"));
         QCOMPARE(in.mode, Mode::Chooser);
+        QVERIFY(in.withObjects);
+        QCOMPARE(in.objectQuery, QStringLiteral("cm"));
+        in = parseInput(QStringLiteral("/P"));
+        QCOMPARE(in.mode, Mode::Chooser);
+        QVERIFY(in.withObjects);
+        QCOMPARE(in.objectQuery, QStringLiteral("P"));
+
+        // A keyword in full is the keyword
+        for (const char *full : {"/cmd", "/param"}) {
+            in = parseInput(QString::fromLatin1(full));
+            QCOMPARE(in.mode, Mode::Chooser);
+            QVERIFY(!in.withObjects);
+        }
+
+        // Anything else after the slash is an object query, no space needed
+        in = parseInput(QStringLiteral("/Box.Length"));
+        QCOMPARE(in.mode, Mode::Object);
+        QCOMPARE(in.query, QStringLiteral("Box.Length"));
+        QCOMPARE(in.offset, 1);
+        in = parseInput(QStringLiteral("/cmdx"));
+        QCOMPARE(in.mode, Mode::Object);
+        QCOMPARE(in.query, QStringLiteral("cmdx"));
+        in = parseInput(QStringLiteral("/c d"));
+        QCOMPARE(in.mode, Mode::Object);
+        QCOMPARE(in.query, QStringLiteral("c d"));
+
+        // ... and the space is how to ask for an object named like a keyword
+        in = parseInput(QStringLiteral("/ cmd"));
+        QCOMPARE(in.mode, Mode::Object);
+        QCOMPARE(in.query, QStringLiteral("cmd"));
+        QCOMPARE(in.offset, 2);
 
         in = parseInput(QStringLiteral("/ Box"));
         QCOMPARE(in.mode, Mode::Object);

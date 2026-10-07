@@ -61,7 +61,7 @@ namespace OmniSearch {
 enum class Mode {
     /// "/" typed, no mode chosen yet
     Chooser,
-    /// "/ query": documents, objects, sub-objects and properties
+    /// "/query" or "/ query": documents, objects, sub-objects and properties
     Object,
     /// "/cmd query": registered commands
     Command,
@@ -75,16 +75,31 @@ struct Input {
     QString query;
     /// Where query starts in the full text, for splicing completions back
     int offset = 0;
+    /** Chooser only: the text after the slash is the beginning of a mode
+     * keyword ("/c", "/par"), which is as likely the beginning of an
+     * object's name. The chooser then lists the objects that match
+     * objectQuery after the modes that do.
+     */
+    bool withObjects = false;
+    QString objectQuery;
 };
 
 /// The prefix that selects a mode, "/ ", "/cmd " or "/param "
 GuiExport const char *modePrefix(Mode mode);
 
+/// The words that select a mode after the slash: "cmd", "param"
+GuiExport const std::vector<const char*> &modeKeywords();
+
 /** Split the box's text into mode and query.
  *
- * Text starting with a full prefix is that mode. A lone "/" or a
- * partial prefix ("/cm") is the chooser. Text that does not start with
- * "/" is an object query as typed.
+ * Text starting with a full prefix ("/cmd ", "/param ", "/ ") is that
+ * mode. After the slash, a word that is no keyword is an object query
+ * with no space needed ("/Box"); the space is how to ask for an object
+ * whose name is a keyword ("/ cmd"). A keyword in full ("/cmd") is the
+ * keyword and the chooser shows it; the beginning of one ("/c", "/par")
+ * is the chooser with withObjects set, modes and objects together. A
+ * lone "/" is the chooser. Text that does not start with "/" is an
+ * object query as typed.
  */
 GuiExport Input parseInput(const QString &text);
 
