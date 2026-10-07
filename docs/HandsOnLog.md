@@ -1170,11 +1170,31 @@ setting kept in another group than its class's; it does, and names that
 colour on the staged binaries. `sketcher-settings.py` 9 PASS; 3 PASS, 6
 FAIL staged.
 
-NOT DONE in the Sketcher: `SolverAdvanced` (28 keys) and the inventory's
-other findings that need more than a default -- the solver box's wrong
-keys, the Snap command's cached state, the Dimension tool's continue mode,
-the key for radius or diameter that is never stored. Each is from reading
-and wants measuring first.
+**Done, fourth step: the Sketcher's solver settings,** 27 keys,
+`2c4b0159d6`: the sub-group `SolverAdvanced`, set in the "Advanced solver
+control" box of the task panel. Three slips of that box, the first measured
+on both builds, the others from the code: a parameter of the solver that
+looks for REDUNDANT constraints was stored by which solver the MAIN combo
+box names (typed for DogLeg, stored as Levenberg-Marquardt's); that
+solver's tau was set from eps1; unticking its "sketch size multiplier"
+switched it on. `tests/gui/sketcher-solver-settings.py`
+(`GuiSketcherSolverSettings_tests_run`) 3 PASS; 1 PASS, 2 FAIL before, here
+and staged alike.
+
+**The Snap button,** `9ccbe547b8`: in a session that begins with snapping
+stored off, the first click did nothing (the command's remembered state
+started as "on" whatever was stored). Measured with a seeded profile, here
+and staged; fixed. A first test of mine set the key after the program had
+started and passed with and without the fix, so it was dropped: the fault
+needs the key stored BEFORE the start, which `tests/gui` cannot arrange
+yet. The probe and its profile are in the evidence directory.
+
+NOT DONE in the Sketcher, and for the reporter to say: the Dimension tool
+reads the geometry tools' "continue" switch, not the constraint tools'
+(as upstream does); the key meant to remember radius or diameter in the
+group button, `CurRadDiaCons`, is never stored (its path and name are one
+string by a missing comma); the label font size and the constraint symbol
+size have the application font's height for a default and are not listed.
 
 **The generator,** `0a94fb63c9`: a setting stored under another name than
 its own (`param_name`) was read and written under its key, but a CHANGE was
