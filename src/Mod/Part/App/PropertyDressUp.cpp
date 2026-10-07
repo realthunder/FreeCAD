@@ -487,7 +487,7 @@ bool PropertyFilletSegments::isSame(const Property &other) const
 
 // -------------------------------------------------------------------------
 
-TYPESYSTEM_SOURCE(Part::PropertyFilletCorners , App::Property)
+TYPESYSTEM_SOURCE(Part::PropertyFilletCorners , App::PropertyLinkSub)
 
 namespace {
 
@@ -564,18 +564,61 @@ PropertyFilletCorners::~PropertyFilletCorners()
 {
 }
 
+bool PropertyFilletCorners::isFaceName(const std::string &name)
+{
+    return boost::starts_with(name, "Face");
+}
+
+void PropertyFilletCorners::syncSubs()
+{
+    std::vector<std::string> subs;
+    std::set<std::string> subSet;
+    for (const auto &v : cornerMap) {
+        if (subSet.insert(v.first).second)
+            subs.push_back(v.first);
+    }
+    for (const auto &v : cornerMap) {
+        for (const auto &e : v.second.edges) {
+            if (isFaceName(e.first) && subSet.insert(e.first).second)
+                subs.push_back(e.first);
+        }
+    }
+    if (subs == _cSubList)
+        return;
+    // a name the link has already keeps its mapped name
+    std::vector<ShadowSub> shadows;
+    bool complete = _ShadowSubList.size() == _cSubList.size();
+    for (const auto &sub : subs) {
+        auto it = std::find(_cSubList.begin(), _cSubList.end(), sub);
+        if (it != _cSubList.end() && _ShadowSubList.size() == _cSubList.size()) {
+            shadows.push_back(_ShadowSubList[it - _cSubList.begin()]);
+            if (shadows.back().first.empty() && shadows.back().second.empty())
+                complete = false;
+        }
+        else {
+            shadows.emplace_back();
+            complete = false;
+        }
+    }
+    _cSubList = std::move(subs);
+    _ShadowSubList = std::move(shadows);
+    if (complete)
+        onContainerRestored();
+    else
+        PropertyLinkSub::updateElementReference(nullptr);
+}
+
 void PropertyFilletCorners::setValue(std::map<std::string, Corner> &&values)
 {
     aboutToSetValue();
     cornerMap = std::move(values);
+    syncSubs();
     hasSetValue();
 }
 
 void PropertyFilletCorners::setValue(const std::map<std::string, Corner> &values)
 {
-    aboutToSetValue();
-    cornerMap = values;
-    hasSetValue();
+    setValue(std::map<std::string, Corner>(values));
 }
 
 void PropertyFilletCorners::setValue(const std::string &vertex, const Corner &corner)
@@ -583,9 +626,9 @@ void PropertyFilletCorners::setValue(const std::string &vertex, const Corner &co
     auto it = cornerMap.find(vertex);
     if (it != cornerMap.end() && it->second == corner)
         return;
-    aboutToSetValue();
-    cornerMap[vertex] = corner;
-    hasSetValue();
+    auto value = cornerMap;
+    value[vertex] = corner;
+    setValue(std::move(value));
 }
 
 void PropertyFilletCorners::setValue(const std::string &vertex, double setback)
@@ -593,9 +636,9 @@ void PropertyFilletCorners::setValue(const std::string &vertex, double setback)
     auto it = cornerMap.find(vertex);
     if (it != cornerMap.end() && it->second.setback == setback)
         return;
-    aboutToSetValue();
-    cornerMap[vertex].setback = setback;
-    hasSetValue();
+    auto value = cornerMap;
+    value[vertex].setback = setback;
+    setValue(std::move(value));
 }
 
 void PropertyFilletCorners::setValue(const std::string &vertex, const std::string &edge, double setback)
@@ -606,32 +649,28 @@ void PropertyFilletCorners::setValue(const std::string &vertex, const std::strin
         if (iter != it->second.edges.end() && iter->second == setback)
             return;
     }
-    aboutToSetValue();
-    cornerMap[vertex].edges[edge] = setback;
-    hasSetValue();
+    auto value = cornerMap;
+    value[vertex].edges[edge] = setback;
+    setValue(std::move(value));
 }
 
 void PropertyFilletCorners::removeValue(const std::string &vertex)
 {
-    auto it = cornerMap.find(vertex);
-    if (it == cornerMap.end())
+    if (!cornerMap.count(vertex))
         return;
-    aboutToSetValue();
-    cornerMap.erase(it);
-    hasSetValue();
+    auto value = cornerMap;
+    value.erase(vertex);
+    setValue(std::move(value));
 }
 
 void PropertyFilletCorners::removeValue(const std::string &vertex, const std::string &edge)
 {
     auto it = cornerMap.find(vertex);
-    if (it == cornerMap.end())
+    if (it == cornerMap.end() || !it->second.edges.count(edge))
         return;
-    auto iter = it->second.edges.find(edge);
-    if (iter == it->second.edges.end())
-        return;
-    aboutToSetValue();
-    it->second.edges.erase(iter);
-    hasSetValue();
+    auto value = cornerMap;
+    value[vertex].edges.erase(edge);
+    setValue(std::move(value));
 }
 
 const PropertyFilletCorners::Corner *PropertyFilletCorners::getValue(const std::string &vertex) const
@@ -647,101 +686,99 @@ const std::map<std::string, PropertyFilletCorners::Corner> &PropertyFilletCorner
     return cornerMap;
 }
 
+void PropertyFilletCorners::setLinkObject(App::DocumentObject *obj)
+{
+    if (obj == _pcLinkSub)
+        return;
+    PropertyLinkSub::setValue(obj, std::vector<std::string>(_cSubList));
+}
+
+void PropertyFilletCorners::renameCorners(const std::map<std::string, std::string> &renamed)
+{
+    if (renamed.empty())
+        return;
+    auto rename = [&](const std::string &name) -> const std::string & {
+        auto it = renamed.find(name);
+        return it == renamed.end() ? name : it->second;
+    };
+    std::map<std::string, Corner> value;
+    std::map<App::ObjectIdentifier, App::ObjectIdentifier> renames;
+    for (const auto &v : cornerMap) {
+        const auto &vertex = rename(v.first);
+        auto &corner = value[vertex];
+        corner.setback = v.second.setback;
+        App::ObjectIdentifier path(*this);
+        path << App::ObjectIdentifier::SimpleComponent(v.first);
+        App::ObjectIdentifier pathNew(*this);
+        pathNew << App::ObjectIdentifier::SimpleComponent(vertex);
+        if (vertex != v.first) {
+            renames.emplace(path, pathNew);
+            renames.emplace(App::ObjectIdentifier(path) << App::ObjectIdentifier::SimpleComponent("Setback"),
+                            App::ObjectIdentifier(pathNew) << App::ObjectIdentifier::SimpleComponent("Setback"));
+        }
+        for (const auto &e : v.second.edges) {
+            // the faces are the link's; the edges follow the edge link
+            const auto &name = isFaceName(e.first) ? rename(e.first) : e.first;
+            corner.edges[name] = e.second;
+            if (vertex != v.first || name != e.first)
+                renames.emplace(App::ObjectIdentifier(path) << App::ObjectIdentifier::SimpleComponent(e.first),
+                                App::ObjectIdentifier(pathNew) << App::ObjectIdentifier::SimpleComponent(name));
+        }
+    }
+    cornerMap = std::move(value);
+    auto obj = Base::freecad_dynamic_cast<App::DocumentObject>(getContainer());
+    if (obj && !renames.empty()) {
+        obj->ExpressionEngine.renameExpressions(renames);
+        for (auto doc : App::GetApplication().getDocuments())
+            doc->renameObjectIdentifiers(renames);
+    }
+}
+
+void PropertyFilletCorners::updateElementReference(App::DocumentObject *feature, bool reverse, bool notify)
+{
+    // The link renames its sub-names in place; the corners take the new names
+    auto subs = _cSubList;
+    PropertyLinkSub::updateElementReference(feature, reverse, notify);
+    std::map<std::string, std::string> renamed;
+    for (std::size_t i=0; i<subs.size() && i<_cSubList.size(); ++i) {
+        if (subs[i] != _cSubList[i])
+            renamed[subs[i]] = _cSubList[i];
+    }
+    if (renamed.empty())
+        return;
+    if (!notify) {
+        renameCorners(renamed);
+        return;
+    }
+    aboutToSetValue();
+    renameCorners(renamed);
+    hasSetValue();
+}
+
 void PropertyFilletCorners::connectLinkProperty(App::PropertyLinkSub &links)
 {
     connChanged = links.signalChanged.connect(
-        [this](const App::Property &prop) {
+        [this](const App::Property &) {
             // old name -> new name
             std::map<std::string, std::string> renamed;
             for (const auto &v : referenceUpdates)
                 renamed[v.second] = v.first;
             referenceUpdates.clear();
-            auto rename = [&](const std::string &name) -> const std::string & {
-                auto it = renamed.find(name);
-                return it == renamed.end() ? name : it->second;
-            };
-            auto subs = static_cast<const App::PropertyLinkSub&>(prop).getSubValues(false);
-            std::set<std::string> subSet(subs.begin(), subs.end());
-
-            std::map<std::string, Corner> value;
-            std::map<App::ObjectIdentifier, App::ObjectIdentifier> renames;
-            for (const auto &v : cornerMap) {
-                const auto &vertex = rename(v.first);
-                // dropped with its vertex from the link
-                if (!subSet.count(vertex))
-                    continue;
-                auto &corner = value[vertex];
-                corner.setback = v.second.setback;
-                App::ObjectIdentifier path(*this);
-                path << App::ObjectIdentifier::SimpleComponent(v.first);
-                App::ObjectIdentifier pathNew(*this);
-                pathNew << App::ObjectIdentifier::SimpleComponent(vertex);
-                if (vertex != v.first) {
-                    renames.emplace(path, pathNew);
-                    renames.emplace(App::ObjectIdentifier(path) << App::ObjectIdentifier::SimpleComponent("Setback"),
-                                    App::ObjectIdentifier(pathNew) << App::ObjectIdentifier::SimpleComponent("Setback"));
-                }
-                for (const auto &e : v.second.edges) {
-                    const auto &edge = rename(e.first);
-                    corner.edges[edge] = e.second;
-                    if (vertex != v.first || edge != e.first)
-                        renames.emplace(App::ObjectIdentifier(path) << App::ObjectIdentifier::SimpleComponent(e.first),
-                                        App::ObjectIdentifier(pathNew) << App::ObjectIdentifier::SimpleComponent(edge));
-                }
-            }
-            if (value != cornerMap)
-                setValue(std::move(value));
-            auto obj = Base::freecad_dynamic_cast<App::DocumentObject>(getContainer());
-            if (obj && !renames.empty()) {
-                obj->ExpressionEngine.renameExpressions(renames);
-                for (auto doc : App::GetApplication().getDocuments())
-                    doc->renameObjectIdentifiers(renames);
-            }
-        });
-
-    connUpdateReference = links.signalUpdateElementReference.connect(
-        [this](const std::string &sub, const std::string &newSub) {
-            referenceUpdates.emplace(newSub, sub);
-        });
-}
-
-bool PropertyFilletCorners::isFaceName(const std::string &name)
-{
-    return boost::starts_with(name, "Face");
-}
-
-void PropertyFilletCorners::connectFaceLinkProperty(App::PropertyLinkSub &links)
-{
-    connFaceChanged = links.signalChanged.connect(
-        [this](const App::Property &prop) {
-            // old name -> new name
-            std::map<std::string, std::string> renamed;
-            for (const auto &v : faceReferenceUpdates)
-                renamed[v.second] = v.first;
-            faceReferenceUpdates.clear();
-            auto subs = static_cast<const App::PropertyLinkSub&>(prop).getSubValues(false);
-            std::set<std::string> subSet(subs.begin(), subs.end());
-
+            if (renamed.empty())
+                return;
             std::map<std::string, Corner> value = cornerMap;
             std::map<App::ObjectIdentifier, App::ObjectIdentifier> renames;
             for (auto &v : value) {
                 std::map<std::string, double> edges;
                 for (const auto &e : v.second.edges) {
-                    if (!isFaceName(e.first)) {
-                        edges.insert(e);
-                        continue;
-                    }
-                    auto it = renamed.find(e.first);
-                    const std::string &face = it == renamed.end() ? e.first : it->second;
-                    // dropped with its face from the link
-                    if (!subSet.count(face))
-                        continue;
-                    edges[face] = e.second;
-                    if (face != e.first) {
+                    auto it = isFaceName(e.first) ? renamed.end() : renamed.find(e.first);
+                    const std::string &edge = it == renamed.end() ? e.first : it->second;
+                    edges[edge] = e.second;
+                    if (edge != e.first) {
                         App::ObjectIdentifier path(*this);
                         path << App::ObjectIdentifier::SimpleComponent(v.first);
                         renames.emplace(App::ObjectIdentifier(path) << App::ObjectIdentifier::SimpleComponent(e.first),
-                                        App::ObjectIdentifier(path) << App::ObjectIdentifier::SimpleComponent(face));
+                                        App::ObjectIdentifier(path) << App::ObjectIdentifier::SimpleComponent(edge));
                     }
                 }
                 v.second.edges = std::move(edges);
@@ -756,9 +793,9 @@ void PropertyFilletCorners::connectFaceLinkProperty(App::PropertyLinkSub &links)
             }
         });
 
-    connFaceUpdateReference = links.signalUpdateElementReference.connect(
+    connUpdateReference = links.signalUpdateElementReference.connect(
         [this](const std::string &sub, const std::string &newSub) {
-            faceReferenceUpdates.emplace(newSub, sub);
+            referenceUpdates.emplace(newSub, sub);
         });
 }
 
@@ -777,7 +814,9 @@ void PropertyFilletCorners::setPyObject(PyObject *pyobj)
                       " a face name in place of an edge's takes a depth";
     try {
         std::map<std::string, Corner> value;
-        if (PyDict_Check(pyobj)) {
+        if (pyobj == Py_None) {
+        }
+        else if (PyDict_Check(pyobj)) {
             PyObject *key, *item;
             Py_ssize_t pos = 0;
             while (PyDict_Next(pyobj, &pos, &key, &item))
@@ -807,7 +846,10 @@ void PropertyFilletCorners::Save(Base::Writer &writer) const
         return;
     }
 
-    writer.Stream() << writer.ind() << "<FilletCorners count=\"" << cornerMap.size() << "\">\n";
+    // The link after the corners: a build whose corners are no link reads
+    // the corners and skips it
+    writer.Stream() << writer.ind() << "<FilletCorners count=\"" << cornerMap.size()
+                    << "\" link=\"1\">\n";
     writer.incInd();
     for (const auto &v : cornerMap) {
         const auto &corner = v.second;
@@ -840,6 +882,7 @@ void PropertyFilletCorners::Save(Base::Writer &writer) const
         writer.decInd();
         writer.Stream() << writer.ind() << "</Corner>\n";
     }
+    PropertyLinkSub::Save(writer);
     writer.decInd();
     writer.Stream() << writer.ind() << "</FilletCorners>\n";
 }
@@ -848,6 +891,7 @@ void PropertyFilletCorners::Restore(Base::XMLReader &reader)
 {
     reader.readElement("FilletCorners");
     unsigned count = reader.getAttributeAsUnsigned("count", "0");
+    bool link = reader.getAttributeAsInteger("link", "0") != 0;
     std::map<std::string, Corner> value;
     for (unsigned i=0; i<count; ++i) {
         reader.readElement("Corner");
@@ -870,8 +914,16 @@ void PropertyFilletCorners::Restore(Base::XMLReader &reader)
         if (!id.empty())
             value[id] = std::move(corner);
     }
+    aboutToSetValue();
+    cornerMap = std::move(value);
+    // A file from before the corners were a link keeps the names alone (and
+    // the vertexes in the fillet's Base, which the fillet moves here)
+    if (link)
+        PropertyLinkSub::Restore(reader);
+    else
+        syncSubs();
     reader.readEndElement("FilletCorners");
-    setValue(std::move(value));
+    hasSetValue();
 }
 
 void PropertyFilletCorners::getPaths(std::vector<App::ObjectIdentifier> &paths) const
@@ -977,17 +1029,28 @@ App::Property *PropertyFilletCorners::Copy() const
 {
     PropertyFilletCorners *p = new PropertyFilletCorners();
     p->cornerMap = cornerMap;
+    p->_pcLinkSub = _pcLinkSub;
+    p->_cSubList = _cSubList;
+    p->_ShadowSubList = _ShadowSubList;
     return p;
 }
 
 void PropertyFilletCorners::Paste(const Property &from)
 {
-    setValue(dynamic_cast<const PropertyFilletCorners&>(from).cornerMap);
+    if (auto other = dynamic_cast<const PropertyFilletCorners*>(&from)) {
+        aboutToSetValue();
+        cornerMap = other->cornerMap;
+        PropertyLinkSub::setValue(other->_pcLinkSub, other->_cSubList,
+                                  std::vector<ShadowSub>(other->_ShadowSubList));
+        hasSetValue();
+        return;
+    }
+    PropertyLinkSub::Paste(from);
 }
 
 unsigned int PropertyFilletCorners::getMemSize() const
 {
-    unsigned int size = 0;
+    unsigned int size = PropertyLinkSub::getMemSize();
     for (const auto &v : cornerMap)
         size += sizeof(Corner) + v.first.size() + v.second.edges.size() * (sizeof(double) + 8);
     return size;
@@ -997,9 +1060,8 @@ bool PropertyFilletCorners::isSame(const Property &other) const
 {
     if (this == &other)
         return true;
-    if (!other.isDerivedFrom(getClassTypeId()))
-        return false;
-    return cornerMap == static_cast<const PropertyFilletCorners&>(other).cornerMap;
+    auto p = dynamic_cast<const PropertyFilletCorners*>(&other);
+    return p && cornerMap == p->cornerMap && _pcLinkSub == p->_pcLinkSub;
 }
 
 // -------------------------------------------------------------------------

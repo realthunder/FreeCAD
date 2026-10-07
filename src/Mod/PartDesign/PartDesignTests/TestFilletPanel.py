@@ -191,7 +191,6 @@ class TestFilletPanel(unittest.TestCase):
         child.setData(4, QtCore.Qt.UserRole, 1.0)
         corners = {self.Vertex: (2.0, {self.Edges[0]: 3.0, face: 1.0})}
         self.assertEqual(self.Fillet.Corners, corners)
-        self.assertEqual(self.Fillet.CornerFaces[1], [face])
         self.assertTrue(
             self.waitFor(lambda: dict(self.rows(self.row(self.Vertex)))[face] == "1.00 mm")
         )
@@ -237,8 +236,9 @@ class TestFilletPanel(unittest.TestCase):
         self.Gui.Selection.addSelection(self.Doc.Name, self.Box.Name, vertex)
         self.process()
         toggle.setChecked(False)
-        # a picked vertex is a corner, set back by the radius
-        self.assertIn(vertex, self.Fillet.Base[1])
+        # a picked vertex is a corner, set back by the radius; Corners keeps
+        # it, not Base
+        self.assertNotIn(vertex, self.Fillet.Base[1])
         self.assertEqual(self.Fillet.Corners[vertex], (1.0, {}))
         self.assertTrue(self.waitFor(lambda: self.row(vertex).text(4) == "1.00 mm"))
         self.assertTrue(self.Fillet.isValid())

@@ -42,10 +42,6 @@ public:
     App::PropertyQuantityConstraint Radius;
     Part::PropertyFilletSegments Segments;
     Part::PropertyFilletCorners Corners;
-    /** The faces Corners gives depths, linked so that their names follow the
-     * topology (Base cannot hold them: a face there is filleted all round)
-     */
-    App::PropertyLinkSub CornerFaces;
     App::PropertyBool UseAllEdges;
 
     /** @name methods override feature */
@@ -61,13 +57,12 @@ public:
 
 protected:
     void onChanged(const App::Property *prop) override;
+    void onDocumentRestored() override;
     void handleChangedPropertyType(Base::XMLReader &reader, const char * TypeName, App::Property * prop) override;
 
 private:
     /// The setback corners of Corners in baseShape
     Part::TopoShape::FilletCorners getCorners(const Part::TopoShape &baseShape) const;
-    /// Links in CornerFaces the faces Corners names, on Base's object
-    void syncCornerFaces();
 
     std::vector<int> edgeIndices;
 };

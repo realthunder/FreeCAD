@@ -812,8 +812,8 @@ void TaskFilletParameters::onNewItem(QTreeWidgetItem *item)
         return;
     setupTransaction();
     pcFillet->Corners.setValue(vertex, getRadius());
-    // Setting the corner put its vertex in Base already, so the reference
-    // sync that called here finds nothing changed and does not recompute
+    // A corner's row is not Base's, so the reference sync that called here
+    // finds nothing changed and does not recompute
     if (!cornerRecomputePending) {
         cornerRecomputePending = true;
         QMetaObject::invokeMethod(this, [this]() {
@@ -821,6 +821,54 @@ void TaskFilletParameters::onNewItem(QTreeWidgetItem *item)
             recompute();
         }, Qt::QueuedConnection);
     }
+}
+
+bool TaskFilletParameters::isBaseItem(QTreeWidgetItem *item) const
+{
+    // a corner's row is Corners', not Base's
+    return !getCornerItem(item);
+}
+
+void TaskFilletParameters::populateOtherItems()
+{
+    auto DressUpView = getDressUpView();
+    if (!DressUpView)
+        return;
+    auto pcFillet = static_cast<PartDesign::Fillet*>(DressUpView->getObject());
+    for (const auto &v : pcFillet->Corners.getValue()) {
+        if (!ui->treeWidgetReferences->findItems(QString::fromStdString(v.first),
+                                                 Qt::MatchExactly).empty())
+            continue;
+        auto item = new QTreeWidgetItem(ui->treeWidgetReferences);
+        item->setText(0, QString::fromStdString(v.first));
+        setGeometryItemText(item, v.first);
+    }
+}
+
+void TaskFilletParameters::syncOtherItems()
+{
+    // a corner whose row is gone is removed
+    auto DressUpView = getDressUpView();
+    if (!DressUpView)
+        return;
+    auto pcFillet = static_cast<PartDesign::Fillet*>(DressUpView->getObject());
+    std::set<std::string> rows;
+    for (int i=0; i<ui->treeWidgetReferences->topLevelItemCount(); ++i) {
+        auto item = ui->treeWidgetReferences->topLevelItem(i);
+        if (getCornerItem(item))
+            rows.insert(getGeometryItemText(item).constData());
+    }
+    std::vector<std::string> gone;
+    for (const auto &v : pcFillet->Corners.getValue()) {
+        if (!rows.count(v.first))
+            gone.push_back(v.first);
+    }
+    if (gone.empty())
+        return;
+    setupTransaction();
+    for (const auto &vertex : gone)
+        pcFillet->Corners.removeValue(vertex);
+    recompute();
 }
 
 QTreeWidgetItem *TaskFilletParameters::getCornerItem(QTreeWidgetItem *item)

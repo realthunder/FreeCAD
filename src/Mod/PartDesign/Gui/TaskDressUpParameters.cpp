@@ -181,7 +181,9 @@ bool TaskDressUpParameters::populate(bool refresh)
     Base::StateLocker guard(busy);
     if (!refresh)
         setupTransaction();
-    return PartDesignGui::populateGeometryReferences(treeWidget, pcDressUp->Base, refresh);
+    bool touched = PartDesignGui::populateGeometryReferences(treeWidget, pcDressUp->Base, refresh);
+    populateOtherItems();
+    return touched;
 }
 
 bool TaskDressUpParameters::showOnTop(bool enable,
@@ -468,8 +470,9 @@ bool TaskDressUpParameters::syncItems(const std::vector<App::SubObjectT> &sels) 
     std::set<std::string> subset;
     std::vector<std::string> subs;
     for(int i=0, count=treeWidget->topLevelItemCount();i<count;++i) {
-        std::string s = treeWidget->topLevelItem(i)->text(0).toStdString();
-        if(subset.insert(s).second)
+        auto item = treeWidget->topLevelItem(i);
+        std::string s = item->text(0).toStdString();
+        if(subset.insert(s).second && isBaseItem(item))
             subs.push_back(std::move(s));
     }
 
@@ -494,12 +497,14 @@ bool TaskDressUpParameters::syncItems(const std::vector<App::SubObjectT> &sels) 
                 item->setText(0, QString::fromUtf8(element.c_str()));
                 setGeometryItemText(item, element.c_str());
                 item->setSelected(true);
-                subs.push_back(std::move(element));
+                if (isBaseItem(item))
+                    subs.push_back(std::move(element));
                 onNewItem(item);
             }
         }
     }
 
+    syncOtherItems();
     if(subs == pcDressUp->Base.getSubValues())
         return false;
 

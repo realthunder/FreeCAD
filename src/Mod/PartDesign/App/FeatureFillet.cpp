@@ -65,11 +65,8 @@ Fillet::Fillet()
       "A corner holds the setback of all its fillets (less than 0 for none) and the setbacks\n"
       "of single fillets by edge, and the depths of faces by face: the patch's boundary on\n"
       "the face bows into it, away from the vertex, that far at its middle. Needs the OCCT fork.");
+    // its edges are Base's and follow it; its vertexes and faces it links itself
     Corners.connectLinkProperty(Base);
-
-    ADD_PROPERTY_TYPE(CornerFaces, (nullptr), "Fillet", App::Prop_Hidden,
-      "The faces Corners gives depths, kept by the fillet so that their names follow the topology");
-    Corners.connectFaceLinkProperty(CornerFaces);
 
     ADD_PROPERTY_TYPE(UseAllEdges, (false), "Fillet", App::Prop_None,
       "Fillet all edges if true, else use only those edges in Base property.\n"
@@ -173,10 +170,10 @@ Part::TopoShape::FilletCorners Fillet::getCorners(const Part::TopoShape &baseSha
     if (Corners.getValue().empty())
         return corners;
 
-    // The names of Corners are Base's, its faces CornerFaces'; resolve them
-    // by their mapped names
+    // The edges of Corners are Base's, its vertexes and faces its own link's;
+    // resolve them by their mapped names
     std::map<std::string, std::string> mappedNames;
-    for (const auto *link : {&Base, &CornerFaces}) {
+    for (const App::PropertyLinkSub *link : {&Base, static_cast<const App::PropertyLinkSub*>(&Corners)}) {
         for (const auto &shadow : link->getShadowSubs()) {
             if (!shadow.first.empty())
                 mappedNames[shadow.second] = shadow.first;
@@ -223,61 +220,42 @@ Part::TopoShape::FilletCorners Fillet::getCorners(const Part::TopoShape &baseSha
 
 void Fillet::onChanged(const App::Property *prop)
 {
-    // A corner's vertex goes in Base, so that its name follows the topology
-    // as the edges' names do (PropertyFilletCorners::connectLinkProperty)
-    if (prop == &Corners && Base.getValue() && getDocument()
-            && !isRestoring() && !getDocument()->isPerformingTransaction()) {
-        auto subs = Base.getSubValues(false);
-        bool added = false;
-        for (const auto &v : Corners.getValue()) {
-            if (std::find(subs.begin(), subs.end(), v.first) != subs.end())
-                continue;
-            Part::TopoShape vertex;
-            try {
-                vertex = Part::Feature::getTopoShape(Base.getValue(), v.first.c_str(), true);
-            }
-            catch (Base::Exception &) {
-            }
-            if (vertex.isNull() || vertex.shapeType(true) != TopAbs_VERTEX)
-                continue;
-            subs.push_back(v.first);
-            added = true;
-        }
-        if (added)
-            Base.setValue(Base.getValue(), std::move(subs));
-    }
-    // ... and the faces it gives depths go in CornerFaces, for the same
+    // Corners links the vertexes and faces of the object Base is on
     if ((prop == &Corners || prop == &Base) && getDocument()
-            && !isRestoring() && !getDocument()->isPerformingTransaction())
-        syncCornerFaces();
+            && !isRestoring() && !getDocument()->isPerformingTransaction()
+            && Base.getValue() && Corners.getLinkObject() != Base.getValue())
+        Corners.setLinkObject(Base.getValue());
     DressUp::onChanged(prop);
 }
 
-void Fillet::syncCornerFaces()
+void Fillet::onDocumentRestored()
 {
-    std::vector<std::string> faces;
-    for (const auto &v : Corners.getValue()) {
-        for (const auto &e : v.second.edges) {
-            if (Part::PropertyFilletCorners::isFaceName(e.first)
-                    && std::find(faces.begin(), faces.end(), e.first) == faces.end())
-                faces.push_back(e.first);
+    // A fillet from before Corners was a link kept its corners' vertexes in
+    // Base, so that their names followed the topology; they move to Corners,
+    // which maps the names again
+    if (!Corners.getValue().empty() && !Corners.getLinkObject() && Base.getValue()) {
+        const auto &subs = Base.getSubValues();
+        const auto &shadows = Base.getShadowSubs();
+        std::vector<std::string> keep;
+        std::vector<App::PropertyLinkBase::ShadowSub> keepShadows;
+        bool moved = false;
+        for (std::size_t i=0; i<subs.size(); ++i) {
+            App::PropertyLinkBase::ShadowSub shadow;
+            if (i < shadows.size())
+                shadow = shadows[i];
+            const std::string &name = shadow.second.empty() ? subs[i] : shadow.second;
+            if (Corners.getValue(name)) {
+                moved = true;
+                continue;
+            }
+            keep.push_back(subs[i]);
+            keepShadows.push_back(shadow);
         }
+        Corners.setLinkObject(Base.getValue());
+        if (moved)
+            Base.setValue(Base.getValue(), std::move(keep), std::move(keepShadows));
     }
-    // with no base the faces are left as they are: unlinking them would drop
-    // their depths
-    App::DocumentObject *base = Base.getValue();
-    if (!base)
-        return;
-    if (faces.empty())
-        base = nullptr;
-    // the faces already linked keep their mapped names
-    auto subs = CornerFaces.getSubValues(false);
-    std::vector<std::string> sortedSubs(subs), sortedFaces(faces);
-    std::sort(sortedSubs.begin(), sortedSubs.end());
-    std::sort(sortedFaces.begin(), sortedFaces.end());
-    if (CornerFaces.getValue() == base && sortedSubs == sortedFaces)
-        return;
-    CornerFaces.setValue(base, std::move(faces));
+    DressUp::onDocumentRestored();
 }
 
 void Fillet::handleChangedPropertyType(Base::XMLReader &reader, const char * TypeName, App::Property * prop)

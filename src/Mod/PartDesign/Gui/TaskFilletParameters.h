@@ -84,6 +84,9 @@ protected:
     void changeEvent(QEvent *e) override;
     void refresh() override;
     void onNewItem(QTreeWidgetItem *item) override;
+    bool isBaseItem(QTreeWidgetItem *item) const override;
+    void syncOtherItems() override;
+    void populateOtherItems() override;
     void onRefDeleted() override;
     void finishedRecomputeFeature() override;
 
