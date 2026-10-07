@@ -18,6 +18,10 @@ read "WarningsSuppressAllSpeeds" where the Advanced page stores
 "WarningSuppressAllSpeeds": its warning of missing feed rates was
 suppressed whatever the page said.
 
+Material followed, with Materials::MaterialParams: 22 settings, kept in
+six sub-groups, of which what the editor and the selector show are the same
+five keys twice.
+
 Writing this test found that the omni search listed the settings of the
 modules loaded when its box was first used, and of no module loaded
 afterwards: its list was a copy made once. Each claim below loads a module
@@ -34,6 +38,8 @@ Claims:
   - "/param diameter symbol" lists Mod/TechDraw/Dimensions/DiameterSymbol;
   - "/param close start page after use" lists Mod/Start/closeStart;
   - "/param hide first rapid move" lists Mod/CAM/HideFirstRapid;
+  - "/param use built-in materials" lists
+    Mod/Material/Resources/UseBuiltInMaterials;
   - with the Advanced page's "suppress all speeds warning" stored off, the
     cycle time estimate of a path without feed rates warns in the report
     view; with nothing stored it does not.
@@ -107,6 +113,7 @@ CLAIMS = (
     ("TechDraw", "diameter symbol", "Mod/TechDraw/Dimensions/DiameterSymbol"),
     ("Start", "close start page after use", "Mod/Start/closeStart"),
     ("PathApp", "hide first rapid move", "Mod/CAM/HideFirstRapid"),
+    ("Materials", "use built-in materials", "Mod/Material/Resources/UseBuiltInMaterials"),
 )
 WARNING = "Feed Rate Error"
 

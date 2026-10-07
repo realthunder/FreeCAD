@@ -21,6 +21,7 @@
  *                                                                         *
  **************************************************************************/
 
+#include <Mod/Material/App/MaterialParams.h>
 #include <App/Application.h>
 
 #include <Mod/Material/App/MaterialManager.h>
@@ -71,12 +72,12 @@ void DlgSettingsExternal::loadSettings()
 
     loadInterfaces();
 
-    bool useExternal = hGrp->GetBool("UseExternal", false);
+    bool useExternal = hGrp->GetBool("UseExternal", Materials::MaterialParams::defaultUseExternal());
     ui->groupExternal->setChecked(useExternal);
 
-    auto cacheSize = hGrp->GetInt("ModelCacheSize", 100);
+    auto cacheSize = hGrp->GetInt("ModelCacheSize", Materials::MaterialParams::defaultModelCacheSize());
     ui->spinModelCacheSize->setValue(cacheSize);
-    cacheSize = hGrp->GetInt("MaterialCacheSize", 100);
+    cacheSize = hGrp->GetInt("MaterialCacheSize", Materials::MaterialParams::defaultMaterialCacheSize());
     ui->spinMaterialCacheSize->setValue(cacheSize);
 
     // Cache stats
@@ -101,7 +102,7 @@ void DlgSettingsExternal::loadInterfaces()
     }
 
     hGrp = App::GetApplication().GetParameterGroupByPath(getPreferences().c_str());
-    auto current = hGrp->GetASCII("Current", "None");
+    auto current = hGrp->GetASCII("Current", Materials::MaterialParams::defaultExternalInterface().c_str());
     ui->comboInterface->setCurrentText(QString::fromStdString(current));
 }
 

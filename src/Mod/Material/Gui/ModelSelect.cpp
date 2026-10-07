@@ -21,6 +21,7 @@
  *                                                                         *
  **************************************************************************/
 
+#include <Mod/Material/App/MaterialParams.h>
 #include <QDesktopServices>
 #include <QItemSelectionModel>
 #include <QPushButton>
@@ -148,7 +149,7 @@ void ModelSelect::getRecents()
 
     auto param = App::GetApplication().GetParameterGroupByPath(
         "User parameter:BaseApp/Preferences/Mod/Material/Models/Recent");
-    _recentMax = param->GetInt("RecentMax", 5);
+    _recentMax = param->GetInt("RecentMax", Materials::MaterialParams::defaultModelsRecentMax());
     int count = param->GetInt("Recent", 0);
     for (int i = 0; static_cast<long>(i) < count; i++) {
         QString key = QStringLiteral("MRU%1").arg(i);

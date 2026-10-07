@@ -21,6 +21,7 @@
  *                                                                         *
  **************************************************************************/
 
+#include "MaterialParams.h"
 #include <QMutexLocker>
 
 #include <App/Application.h>
@@ -48,7 +49,7 @@ void ModelManagerExternal::initCache()
 
     ParameterGrp::handle hGrp = App::GetApplication().GetParameterGroupByPath(
         "User parameter:BaseApp/Preferences/Mod/Material/ExternalInterface");
-    auto cacheSize = hGrp->GetInt("ModelCacheSize", DEFAULT_CACHE_SIZE);
+    auto cacheSize = hGrp->GetInt("ModelCacheSize", Materials::MaterialParams::defaultModelCacheSize());
     _cache.capacity(cacheSize);
 
     _cache.monitor();

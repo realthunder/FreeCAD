@@ -21,6 +21,7 @@
  *                                                                         *
  **************************************************************************/
 
+#include "MaterialParams.h"
 #include <Python.h>
 #include <QMutex>
 #include <QMutexLocker>
@@ -80,7 +81,7 @@ void ExternalManager::getConfiguration()
 {
     // _hGrp = App::GetApplication().GetParameterGroupByPath(
     //     "User parameter:BaseApp/Preferences/Mod/Material/ExternalInterface");
-    auto current = _hGrp->GetASCII("Current", "None");
+    auto current = _hGrp->GetASCII("Current", Materials::MaterialParams::defaultExternalInterface().c_str());
     if (current == "None") {
         _moduleName = "";
         _className = "";
