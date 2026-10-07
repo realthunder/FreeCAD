@@ -201,6 +201,12 @@ public:
     bool isFollowingMaterial(Kind kind) const;
     /// The card's look as the kind's own, and following it from now on
     void followMaterial(Kind kind, const MaterialAppearance &card);
+    /** The kind's own look as a list of one made elsewhere
+     *
+     * A list is a shared value: every object given the same list holds the
+     * one storage. What a new object is given, by the thousand.
+     */
+    void setBaseList(Kind kind, const AppearanceList &own);
     //@}
 
     /** @name By number
@@ -315,6 +321,17 @@ public:
     Property *Copy() const override;
     void Paste(const Property &from) override;
     bool isSame(const Property &other) const override;
+    /** Whether another states the same
+     *
+     * The names with their looks and which of those are their own, the
+     * looks by number, the kinds' own looks. Not what is drawn, which is
+     * made of those and of more than this property knows, and is no change
+     * of its own (docs/ShapeAppearanceDesign.md sec 14.6.5).
+     */
+    bool isSameStated(const PropertyElementAppearance &other) const;
+    /// Whether the value was read from a file: an object out of a file
+    /// older than this property has none
+    bool wasRestored() const { return _wasRestored; }
     unsigned int getMemSize() const override;
 
     const char *getEditorName() const override { return ""; }
@@ -393,6 +410,7 @@ private:
     std::vector<ElementAppearancePy *> _views;
     int _editing {0};
     bool _restoring {false};
+    bool _wasRestored {false};
 };
 
 }  // namespace App

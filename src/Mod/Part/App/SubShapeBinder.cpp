@@ -160,6 +160,7 @@ SubShapeBinder::~SubShapeBinder() {
 }
 
 void SubShapeBinder::setupObject() {
+    Part::Feature::setupObject();
     _Version.setValue(8);
     Refine.setValue(PartParams::getRefineModel());
     checkPropertyStatus();

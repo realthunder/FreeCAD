@@ -61,11 +61,18 @@ class ElementAppearanceMadeTest(unittest.TestCase):
     def tearDown(self):
         App.closeDocument(self.doc.Name)
 
-    def testNothingIsKeptOfAnObjectNobodyColoured(self):
+    def testANewObjectIsGivenALookAndKeepsNoMore(self):
         for obj in (self.box, self.cut):
             ea = obj.ElementAppearance
             self.assertEqual(ea.keys(), [])
-            self.assertEqual(ea.Faces.Count, 0)
+            # Its own look and nothing made of it: the preference's colours,
+            # with no view provider to give them
+            self.assertEqual(ea.Faces.Count, 1)
+            self.assertEqual(ea.Edges.Count, 1)
+            self.assertNotEqual(
+                tuple(round(v, 3) for v in ea.Face.DiffuseColor[:3]),
+                tuple(round(v, 3) for v in App.Material().DiffuseColor[:3]),
+            )
             self.assertEqual(obj.getGroupOfProperty("ElementAppearance"), "Appearances")
             self.assertEqual(obj.getGroupOfProperty("MapFaceColor"), "Appearances")
 

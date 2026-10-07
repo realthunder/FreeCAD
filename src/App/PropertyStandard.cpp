@@ -3140,6 +3140,12 @@ void PropertyAppearanceList::change(Op &&op, int touched)
     }
     const AppearanceList after = _list;
     _list = before;
+    if (_writer) {
+        // A name over a value kept elsewhere: the write is the keeper's to
+        // make, and comes back through mirrorList()
+        _writer(before, after, touched);
+        return;
+    }
     atomic_change guard(*this);
     _list = after;
     if (touched >= 0) {
@@ -3171,6 +3177,27 @@ void PropertyAppearanceList::hasSetValue()
     if (!_holder) {
         PropertyLists::hasSetValue();
     }
+}
+
+void PropertyAppearanceList::setWriter(Writer writer)
+{
+    _writer = std::move(writer);
+}
+
+void PropertyAppearanceList::mirrorList(const AppearanceList &list)
+{
+    if (_list.isSameData(list)) {
+        return;
+    }
+    const bool same = _list.isSame(list);
+    // The same storage, whether or not it says anything new
+    _list = list;
+    _list.setBlobManager(&blobManager());
+    if (same) {
+        return;
+    }
+    _touchList.clear();
+    touch();
 }
 
 void PropertyAppearanceList::setList(const AppearanceList &list)

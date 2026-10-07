@@ -2988,3 +2988,66 @@ TEST_F(PropertyAppearanceListTest, theFollowFlagRidesBothForkEncodings)
     restoreFromXML(old, saveToXML(prop, 4));
     EXPECT_FALSE(old.isFollowingMaterial());
 }
+
+// A name over a value kept elsewhere (docs/ShapeAppearanceDesign.md sec
+// 14.6.3): with a writer, a write is handed over and the value left as it
+// was, and the keeper's value comes back by mirrorList().
+TEST_F(PropertyAppearanceListTest, aWriteToANameIsHandedToWhoKeepsTheValue)
+{
+    App::PropertyAppearanceList prop;
+    prop.setSize(4, redMaterial());
+    const App::AppearanceList kept = prop.getList();
+
+    int writes = 0;
+    int touchedEntry = -2;
+    App::AppearanceList was;
+    App::AppearanceList wanted;
+    prop.setWriter([&](const App::AppearanceList &before, const App::AppearanceList &after,
+                       int touched) {
+        ++writes;
+        was = before;
+        wanted = after;
+        touchedEntry = touched;
+    });
+    ASSERT_TRUE(prop.hasWriter());
+
+    // An entry, the base, and a paste: each handed over, none taken
+    prop.setDiffuseColor(2, packed(0x00ff00ff));
+    EXPECT_EQ(writes, 1);
+    EXPECT_TRUE(was.isSameData(kept));
+    EXPECT_EQ(wanted.getMaterial(2).diffuseColor, packed(0x00ff00ff));
+    EXPECT_EQ(wanted.getMaterial(1).diffuseColor, packed(0xff0000ff));
+    EXPECT_TRUE(prop.getList().isSameData(kept));
+
+    App::MaterialAppearance blue = redMaterial();
+    blue.diffuseColor = packed(0x0000ffff);
+    prop.setBase(blue);
+    EXPECT_EQ(writes, 2);
+    EXPECT_EQ(wanted.getBase().diffuseColor, packed(0x0000ffff));
+    EXPECT_TRUE(prop.getList().isSameData(kept));
+
+    App::PropertyAppearanceList other;
+    other.setSize(2, blue);
+    prop.Paste(other);
+    EXPECT_EQ(writes, 3);
+    EXPECT_EQ(wanted.getSize(), 2);
+    EXPECT_TRUE(prop.getList().isSameData(kept));
+
+    // A write that changes nothing is no write
+    prop.setDiffuseColor(2, packed(0xff0000ff));
+    EXPECT_EQ(writes, 3);
+
+    // What the keeper has: the same storage, not a copy
+    prop.mirrorList(wanted);
+    EXPECT_TRUE(prop.getList().isSameData(wanted));
+    EXPECT_EQ(prop.getSize(), 2);
+    EXPECT_EQ(writes, 3);
+
+    // Without one it is a store again
+    prop.setWriter(nullptr);
+    EXPECT_FALSE(prop.hasWriter());
+    prop.setDiffuseColor(0, packed(0x00ff00ff));
+    EXPECT_EQ(writes, 3);
+    EXPECT_EQ(prop.getMaterial(0).diffuseColor, packed(0x00ff00ff));
+    (void)touchedEntry;
+}

@@ -80,6 +80,7 @@ short RuledSurface::mustExecute() const
 
 void RuledSurface::setupObject()
 {
+    Part::Feature::setupObject();
     _Version.setValue(1);
 }
 

@@ -47,11 +47,14 @@
 
 #include <App/AppearanceList.h>
 #include <App/AppearanceUpdater.h>
+#include <App/Application.h>
 #include <App/Document.h>
 #include <App/PropertyStandard.h>
 #include <Base/Console.h>
 #include <Base/Exception.h>
+#include <Base/Parameter.h>
 #include <Base/Tools.h>
+#include <Mod/Material/App/MaterialManager.h>
 
 #include "PartFeature.h"
 #include "TopoShape.h"
@@ -489,6 +492,73 @@ void Feature::onAppearanceChanged(const App::Property *prop)
     catch (Standard_Failure &e) {
         FC_ERR(getFullName() << ": the looks of the elements were not made: "
                              << e.GetMessageString());
+    }
+}
+
+namespace
+{
+
+/** The own look of the edges, or of the vertices, of a new object
+ *
+ * The preference's colour on the material a view provider has always given
+ * them. One list for every object while the preference stays what it is: a
+ * list is a shared value.
+ */
+const App::AppearanceList &defaultLineLook(const char *parameter)
+{
+    static std::map<std::string, std::pair<uint32_t, App::AppearanceList>> looks;
+    static ParameterGrp::handle hGrp = App::GetApplication().GetParameterGroupByPath(
+        "User parameter:BaseApp/Preferences/View");
+    const auto packed = static_cast<uint32_t>(hGrp->GetUnsigned(parameter, 0x191919FFUL));
+    auto &held = looks[parameter];
+    if (held.second.getSize() == 0 || held.first != packed) {
+        App::MaterialAppearance mat;
+        mat.ambientColor.set(0.2F, 0.2F, 0.2F);
+        mat.diffuseColor.setPackedValue(packed);
+        mat.diffuseColor.a = 1.0F;
+        mat.specularColor.set(0.0F, 0.0F, 0.0F);
+        mat.emissiveColor.set(0.0F, 0.0F, 0.0F);
+        mat.shininess = 1.0F;
+        mat.transparency = 0.0F;
+        App::AppearanceList list;
+        list.setValue(mat);
+        // A look nobody chose
+        list.setFollowMaterial(true);
+        held.first = packed;
+        held.second = list;
+    }
+    return held.second;
+}
+
+}  // namespace
+
+void Feature::setupObject()
+{
+    inherited::setupObject();
+    try {
+        giveDefaultAppearance();
+    }
+    catch (Base::Exception &e) {
+        FC_ERR(getFullName() << ": no look was given: " << e.what());
+    }
+}
+
+void Feature::giveDefaultAppearance()
+{
+    Store &store = ElementAppearance;
+    Store::Edit edit(store);
+    if (!store.hasBase(Store::Face)) {
+        applyMaterialAppearance();
+        if (!store.hasBase(Store::Face)) {
+            // A card that says nothing of a look: the preference's
+            store.followMaterial(Store::Face, *Materials::MaterialManager::defaultAppearance());
+        }
+    }
+    if (!store.hasBase(Store::Edge)) {
+        store.setBaseList(Store::Edge, defaultLineLook("DefaultShapeLineColor"));
+    }
+    if (!store.hasBase(Store::Vertex)) {
+        store.setBaseList(Store::Vertex, defaultLineLook("DefaultShapeVertexColor"));
     }
 }
 

@@ -243,8 +243,9 @@ def run():
     box = doc.addObject("Part::Box", "Box")
     doc.recompute()
     vp = box.ViewObject
-    check("an object nobody coloured states nothing (%r)" % box.ElementAppearance,
-          not box.ElementAppearance.keys() and box.ElementAppearance.Faces.Count == 0)
+    check("a new object has its own look and nothing stated of its elements (%r)"
+          % box.ElementAppearance,
+          not box.ElementAppearance.keys() and box.ElementAppearance.Faces.Count == 1)
     step(doc, "a box as it is made")
     top, bottom, front = face(box, ZMin=10), face(box, ZMax=0), face(box, XMax=0)
     vp.setElementColors({top: RED, bottom: GREEN})

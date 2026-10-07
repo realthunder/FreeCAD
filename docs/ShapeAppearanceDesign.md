@@ -4011,6 +4011,12 @@ to nothing, and that recompute crashed. `~Feature()` drops them first.
   the view provider draws from the store the choice is between a look
   stated for every object when it is made, and a look nobody gave saying
   nothing to what is made from it.
+
+  *Ruled 2026-10-07: the first.* Every object is given a look when it is
+  made, by the object: the preference's colours, read in App, so that an
+  object made in `FreeCADCmd` is the colour it would be made with a Gui.
+  A look is handed on as it always was. An object read from a file that has
+  no store has none until its view provider's is taken into it (14.6.6).
 - The five flags show in the object's property editor and move nothing
   that is seen until then.
 - `updateData()` also made the colours again for any property with
@@ -4048,3 +4054,40 @@ three cases of `PartElementAppearanceTest` turn `MapFaceColor` off, being
 of what is stated. Python `parttests.ElementAppearanceTest`, 5, in
 `FreeCADCmd`: the same without a view provider anywhere, what is drawn
 read back from a file, and the card.
+
+**Step B, what it stands on (2026-10-07).** Three things in App and Part,
+built before the view provider is switched, and nothing reads them yet.
+
+*A new object is given a look* (the ruling above).
+`Part::Feature::setupObject()` -> `giveDefaultAppearance()`: the faces take
+the material card's look, which for the default card is already the
+preference's shape colour, or a random one where that is asked for
+(`Materials::MaterialManager::defaultAppearance()`, read in App); the edges
+and the vertices take the preferences' line and vertex colours on the
+material a view provider has always given them. Each is still a look
+nobody chose (`isFollowingMaterial()`), so a card given later is taken, and
+a view provider whose class has a look of its own -- a datum's -- can give
+that at step B. The edges' and the vertices' are one list for every object
+(`setBaseList()`): a list is a shared value. `RuledSurface` and
+`SubShapeBinder` did not call up from their `setupObject()`, and do.
+
+*An appearance list that is a name over a value kept elsewhere*
+(`App::PropertyAppearanceList::setWriter()`, `mirrorList()`). Every write to
+such a property ends in one place (`change()`), so with a writer set the
+write is made on a copy and handed over -- the value as it was and as the
+write would leave it -- and the value is left as it was; what the keeper
+makes of it comes back by `mirrorList()`, the same storage and not a copy,
+announced as a touch is and recorded nowhere. That is how a view provider's
+`ShapeAppearance` becomes the object's drawn faces (14.6.3).
+
+*The store.* `isSameStated()`, the comparison of 14.6.5 that leaves what is
+drawn out; `wasRestored()`, true where the looks were in the file and not
+where a link's names alone were, which is how a view provider knows whose
+values to take when a document is read (14.6.6); and whether the own look
+is the card's is said by the numbered list and by what is drawn as it is by
+the own look, so that a view provider reading the drawn list reads it too.
+
+Tests: `PropertyAppearanceListTest.aWriteToANameIsHandedToWhoKeepsTheValue`;
+`PartAppearanceMadeTest.aNewObjectIsGivenALookAndKeepsNoMore` in place of
+the case that an object nobody coloured keeps nothing, and the same in
+`parttests.ElementAppearanceTest`.

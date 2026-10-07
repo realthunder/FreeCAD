@@ -211,22 +211,34 @@ protected:
     Part::Cut* _cut = nullptr;  // NOLINT Can't be private in a test framework
 };
 
-TEST_F(PartAppearanceMadeTest, anObjectNobodyColouredKeepsNothing)
+TEST_F(PartAppearanceMadeTest, aNewObjectIsGivenALookAndKeepsNoMore)
 {
     for (const Part::Feature* obj : {static_cast<const Part::Feature*>(_cut),
                                      static_cast<const Part::Feature*>(_boxes[0])}) {
-        EXPECT_TRUE(obj->ElementAppearance.isEmpty());
+        const Prop& store = obj->ElementAppearance;
+        EXPECT_TRUE(store.getStatedLooks().empty());
         for (Prop::Kind kind : {Prop::Face, Prop::Edge, Prop::Vertex}) {
-            EXPECT_EQ(obj->ElementAppearance.getDrawn(kind).getSize(), 0);
+            // Its own look, which nobody chose, and nothing made of it
+            EXPECT_TRUE(store.hasBase(kind));
+            EXPECT_TRUE(store.isFollowingMaterial(kind));
+            EXPECT_EQ(store.getDrawn(kind).getSize(), 1);
+            EXPECT_EQ(store.getNumbered(kind).getSize(), 0);
         }
-        EXPECT_STREQ(obj->ElementAppearance.getGroup(), "Appearances");
+        EXPECT_STREQ(store.getGroup(), "Appearances");
         EXPECT_STREQ(obj->MapFaceColor.getGroup(), "Appearances");
+        // The faces are the material card's, which is the preference's
+        EXPECT_EQ(store.getBase(Prop::Face).diffuseColor,
+                  obj->getMaterialAppearance().diffuseColor);
     }
-    // And is drawn as an object with no look of its own is
+    // The edges of every object given the same look are one storage
+    EXPECT_TRUE(_cut->ElementAppearance.getDrawn(Prop::Edge).isSameData(
+        _boxes[0]->ElementAppearance.getDrawn(Prop::Edge)));
     App::AppearanceList list;
     ASSERT_TRUE(_cut->getDrawnAppearance(Prop::Face, list));
     ASSERT_EQ(list.getSize(), 1);
-    EXPECT_EQ(list.getBase().diffuseColor, App::AppearanceList::defaultMaterial().diffuseColor);
+    // A look somebody gives is chosen, and the card's no more
+    _cut->ElementAppearance.setBase(Prop::Face, coloured(0xff0000ff));
+    EXPECT_FALSE(_cut->ElementAppearance.isFollowingMaterial(Prop::Face));
 }
 
 TEST_F(PartAppearanceMadeTest, aFaceTakesTheColourOfTheFaceItWasMadeFrom)
@@ -249,7 +261,7 @@ TEST_F(PartAppearanceMadeTest, aFaceTakesTheColourOfTheFaceItWasMadeFrom)
     EXPECT_EQ(_cut->ElementAppearance.getDrawn(Prop::Face).getSize(), count);
     // Made, and not stated
     EXPECT_TRUE(_cut->ElementAppearance.getStatedLooks().empty());
-    EXPECT_FALSE(_cut->ElementAppearance.hasBase(Prop::Face));
+    EXPECT_TRUE(_cut->ElementAppearance.isFollowingMaterial(Prop::Face));
 
     // The cut's own look is what its faces are in everything but the colour
     _cut->ElementAppearance.setBase(Prop::Face, coloured(green.getPackedValue(), 0.5F));
@@ -319,8 +331,8 @@ TEST_F(PartAppearanceMadeTest, aCopyMadeOnceStatesWhatItTakes)
     ASSERT_NE(copy, nullptr);
     copy->Shape.setValue(_cut->Shape.getShape());
     // It links to nothing, so nothing is taken from where its faces came
-    EXPECT_TRUE(copy->ElementAppearance.isEmpty());
-    EXPECT_EQ(copy->ElementAppearance.getDrawn(Prop::Face).getSize(), 0);
+    EXPECT_TRUE(copy->ElementAppearance.getStatedLooks().empty());
+    EXPECT_EQ(copy->ElementAppearance.getDrawn(Prop::Face).getSize(), 1);
 
     copy->updateAppearance(_doc, true);
     const int count = static_cast<int>(copy->Shape.getShape().countSubShapes(TopAbs_FACE));

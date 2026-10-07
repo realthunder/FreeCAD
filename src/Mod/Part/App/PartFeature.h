@@ -154,6 +154,17 @@ public:
      * of a look, or where a look was chosen since.
      */
     void applyMaterialAppearance();
+    /** The look an object has that nobody gave one
+     *
+     * docs/ShapeAppearanceDesign.md sec 14.6.10, ruled: every object is
+     * given a look when it is made, by the object, so that one made with no
+     * view provider is the colour it would be made with one. The faces are
+     * the material card's -- the default card is the preference's shape
+     * colour, or a random one where that is asked for -- and the edges and
+     * vertices the preferences' line and vertex colours. Each still counts
+     * as a look nobody chose (PropertyElementAppearance::isFollowingMaterial()).
+     */
+    void giveDefaultAppearance();
     /// Whether there is a card's look to go back to from a chosen one
     bool canResetAppearanceToMaterial() const;
     /// The card's look again, and following it from now on
@@ -348,6 +359,8 @@ protected:
     App::DocumentObjectExecReturn *execute() override;
     void onBeforeChange(const App::Property* prop) override;
     void onChanged(const App::Property* prop) override;
+    /// A new object is given a look (giveDefaultAppearance())
+    void setupObject() override;
     void unsetupObject() override;
     void onDocumentRestored() override;
     /// The change of a property that what is drawn is made of

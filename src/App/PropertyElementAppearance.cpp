@@ -462,6 +462,14 @@ void PropertyElementAppearance::pruneHeld()
         if (list.getSize() > 0 && !list.hasOverrides()
             && differingFields(list.getBase(), getBase(static_cast<Kind>(k))) == OwnNone) {
             held.reset();
+            continue;
+        }
+        // Whether the kind's own look is the card's is said by the numbered
+        // list as by the own look, so that what is drawn of it -- the same
+        // storage, where nothing more is laid in -- says it too
+        const bool following = isFollowingMaterial(static_cast<Kind>(k));
+        if (list.isFollowingMaterial() != following) {
+            held->list.heldList().setFollowMaterial(following);
         }
     }
     for (auto &held : _held) {
@@ -543,6 +551,17 @@ void PropertyElementAppearance::assignBase(Kind kind, const AppearanceList &list
     if (_held[SlotNumbered + kind]) {
         rebaseNumbered(kind, before, getBase(kind));
     }
+}
+
+void PropertyElementAppearance::setBaseList(Kind kind, const AppearanceList &own)
+{
+    if (own.getSize() != 1) {
+        throw Base::ValueError("a kind's own look is a list of one");
+    }
+    if (own.isSame(listAt(SlotBase + kind))) {
+        return;
+    }
+    assignBase(kind, own);
 }
 
 bool PropertyElementAppearance::isFollowingMaterial(Kind kind) const
@@ -880,6 +899,9 @@ AppearanceList PropertyElementAppearance::compose(
     const std::map<int, MaterialAppearance> *handedOn) const
 {
     AppearanceList out = getNumbered(kind);
+    // Whether the kind's own look is the card's is said of what is drawn of
+    // it too: a list drawn from is asked that as the own look would be
+    const bool following = isFollowingMaterial(kind);
     if (out.getSize() == 0 || (count >= 0 && out.getSize() != count)) {
         // No element given a look by number -- or they were counted for
         // another shape, and say nothing of this one's
@@ -906,6 +928,7 @@ AppearanceList PropertyElementAppearance::compose(
             out.set1Value(v.first, getNamedLook(v.second));
         }
     }
+    out.setFollowMaterial(following);
     return out;
 }
 
@@ -1307,6 +1330,27 @@ bool PropertyElementAppearance::isSame(const Property &other) const
     return true;
 }
 
+bool PropertyElementAppearance::isSameStated(const PropertyElementAppearance &other) const
+{
+    if (&other == this) {
+        return true;
+    }
+    if (subs() != other.subs()) {
+        return false;
+    }
+    for (int i = 0; i < static_cast<int>(subs().size()); ++i) {
+        if (getNamedOwn(i) != other.getNamedOwn(i)) {
+            return false;
+        }
+    }
+    for (int slot = 0; slot < SlotDrawn; ++slot) {
+        if (!listAt(slot).isSame(other.listAt(slot))) {
+            return false;
+        }
+    }
+    return true;
+}
+
 unsigned int PropertyElementAppearance::getMemSize() const
 {
     unsigned int size = PropertyLinkSubHidden::getMemSize();
@@ -1385,6 +1429,9 @@ void PropertyElementAppearance::Restore(Base::XMLReader &reader)
         conformNames();
         return;
     }
+    // The looks are the file's: names alone are a link's, and say nothing
+    // of what the object looked like (wasRestored())
+    _wasRestored = true;
     const unsigned mask = static_cast<unsigned>(reader.getAttributeAsInteger("lists", "0"));
     if (reader.hasAttribute("own")) {
         std::istringstream str(reader.getAttribute("own"));
