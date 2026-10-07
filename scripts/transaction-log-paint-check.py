@@ -112,6 +112,48 @@ def older(path, to, names):
     return done
 
 
+def older_link(path, to, name):
+    # The file as a build older than a link's store wrote it: what the link
+    # lays over what it shows in its view provider's properties, and of the
+    # object ColoredElements alone. A property nobody knows stands where the
+    # store was, so the count of them holds.
+    done = [0]
+
+    def model(xml):
+        def block(m):
+            body, n = re.subn(
+                r'<Property name="ElementAppearance"[^>]*>.*?</Property>',
+                '<Property name="NoStoreYet" type="App::PropertyBool">\n'
+                '<Bool value="false"/>\n</Property>',
+                m.group(2), flags=re.S)
+            done[0] += n
+            return m.group(1) + body + m.group(3)
+
+        return re.sub(r'(<Object name="%s"[^>]*>)(.*?)(</Object>)' % name, block, xml,
+                      flags=re.S)
+
+    rewritten(path, to, {"Document.xml": model})
+    return done[0]
+
+
+def held(link):
+    # What a link holds of the looks of what it shows, and the names the
+    # object knows it by.
+    ea = link.ElementAppearance
+    colored = link.ColoredElements
+    return (link.OverrideMaterial,
+            rgb(ea.Face.DiffuseColor) if "Face" in ea else None,
+            {k: rgb(m.DiffuseColor) for k, m in ea.items()},
+            list(colored[1]) if colored else [])
+
+
+def laid(link):
+    # The same as its view provider's names over that have it.
+    vp = link.ViewObject
+    return (vp.OverrideMaterial, rgb(vp.ShapeAppearance.Base.DiffuseColor),
+            [rgb(c) for c in vp.OverrideColorList])
+
+
 def packed(c):
     # A colour as an older file wrote it: the last byte its transparency.
     r, g, b = (int(round(x * 255)) for x in c[:3])
@@ -682,6 +724,83 @@ def run():
                   and named(doc.Box) == {top: RED} and list(shown(doc.Box).values()) == [RED])
         finally:
             setting.RemString("TransactionLogMergeFacePaint")
+        App.closeDocument(doc.Name)
+
+        # A link: what it lays over what it shows is the link's
+        # (docs/ShapeAppearanceDesign.md sec 14.6.4). Its view provider's
+        # OverrideMaterial, ShapeAppearance and OverrideColorList, and the
+        # object's ColoredElements, are names over that -- so it is one row
+        # of the log, the object's, and is put back whole by what puts a
+        # value back.
+        doc = App.newDocument("PaintLink")
+        doc.UndoMode = 1
+        doc.openTransaction("box")
+        box = doc.addObject("Part::Box", "Box")
+        doc.recompute()
+        doc.commitTransaction()
+        doc.saveAs(os.path.join(folder, "PaintLink.FCStd"))
+        doc.createTransactionBranch("side")
+        doc.openTransaction("link")
+        link = doc.addObject("App::Link", "Link")
+        link.LinkedObject = box
+        link.Placement.Base = V(20, 0, 0)
+        doc.recompute()
+        doc.commitTransaction()
+        check("a link as it is made lays nothing over (%r)" % (held(link),),
+              held(link) == (False, None, {}, []) and laid(link)[0] is False)
+        doc.openTransaction("looks")
+        link.ViewObject.setElementColors({"Face": GREEN, "Face6": BLUE})
+        doc.commitTransaction()
+        want = (True, GREEN, {"Face6": BLUE}, ["Face6"])
+        check("painted through its view provider, the link holds it (%r)" % (held(link),),
+              held(link) == want)
+        check("and the view provider says what the link holds (%r)" % (laid(link),),
+              laid(link) == (True, GREEN, [BLUE]))
+        row = [r for r in doc.getTransactionLog() if r["name"] == "looks"]
+        ops = sorted({(o.get("ckind"), o.get("prop"))
+                      for o in doc.getTransactionOps(row[-1]["seq"])} if row else [])
+        check("one row of the log, the object's (%r)" % (ops,),
+              ops == [("obj", "ElementAppearance")])
+        doc.undo()
+        check("undone: nothing laid over (%r, %r)" % (held(link), laid(link)),
+              held(link) == (False, None, {}, []) and laid(link)[0] is False
+              and laid(link)[2] == [])
+        doc.redo()
+        check("redone (%r)" % (held(link),),
+              held(link) == want and laid(link) == (True, GREEN, [BLUE]))
+        doc.switchTransactionBranch("main")
+        check("on main there is no link", doc.getObject("Link") is None)
+        doc.switchTransactionBranch("side")
+        link = doc.getObject("Link")
+        check("back on side the link is made again with what it held (%r, %r)"
+              % (link and held(link), link and laid(link)),
+              link is not None and held(link) == want and laid(link) == (True, GREEN, [BLUE]))
+        # By the object's own names, with nothing of the view provider's said
+        doc.openTransaction("yellow")
+        look = link.ShapeAppearance.Base
+        look.DiffuseColor = (1.0, 1.0, 0.0)
+        link.ShapeAppearance.Base = look
+        doc.commitTransaction()
+        check("the object's name written, the view provider follows (%r)" % (laid(link),),
+              laid(link) == (True, (1.0, 1.0, 0.0), [BLUE]))
+        doc.undo()
+        path = os.path.join(folder, "PaintLinkSaved.FCStd")
+        doc.saveAs(path)
+        App.closeDocument(doc.Name)
+        doc = App.openDocument(path)
+        link = doc.getObject("Link")
+        check("saved and read (%r, %r)" % (held(link), laid(link)),
+              held(link) == want and laid(link) == (True, GREEN, [BLUE]))
+        names = [n for n in ("OverrideMaterial", "ShapeAppearance", "OverrideColorList")
+                 if "Legacy" not in link.ViewObject.getPropertyStatus(n)]
+        check("its view provider's are names over the link's (%r)" % (names,), not names)
+        App.closeDocument(doc.Name)
+        old = os.path.join(folder, "PaintLinkOlder.FCStd")
+        check("an older file made of it", older_link(path, old, "Link") == 1)
+        doc = App.openDocument(old)
+        link = doc.getObject("Link")
+        check("an older file's looks are taken into the link (%r, %r)" % (held(link), laid(link)),
+              held(link) == want and laid(link) == (True, GREEN, [BLUE]))
         App.closeDocument(doc.Name)
     except Exception:
         lines.append("FAIL exception\n" + traceback.format_exc())

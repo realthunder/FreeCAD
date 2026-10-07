@@ -192,6 +192,8 @@ public:
     bool hasBase(Kind kind) const;
     const MaterialAppearance &getBase(Kind kind) const;
     void setBase(Kind kind, const MaterialAppearance &look);
+    /// No look given again: what a link has that gives none of its own
+    void clearBase(Kind kind);
     /** Whether the kind's own look is the object's material card's
      *
      * The flag of the own look's list (docs/MaterialStorage.md sec 15.3).
@@ -244,6 +246,31 @@ public:
     /// The fields the element's entry states: those in which it differs
     /// from the kind's own look
     uint16_t getNumberedOwn(Kind kind, int index) const;
+    //@}
+
+    /** @name Names that are paths
+     *
+     * docs/ShapeAppearanceDesign.md sec 14.6.4. A link has no shape of its
+     * own: what it holds is laid over what it shows, and its names are
+     * paths as a link's are -- "Face3" of what it shows, "2.Face3" of one
+     * of an array, "Pad.Face3" of an object below -- or a path with no
+     * element at all, "2.". Such a name is found by its string and by
+     * nothing else: no element of the owner is looked up, none is held by
+     * its number, and "Pad.Face3" is not "Face3". The owner says so once,
+     * when it is made.
+     */
+    //@{
+    void setPathNames(bool on);
+    bool hasPathNames() const { return _pathNames; }
+    /// Whether \a name is one of those: names are paths here, and it is
+    /// not a kind's own name ("Face", "Edge", "Vertex")
+    bool isPathName(const char *name) const;
+    /** Give a name a look, as the name is
+     *
+     * The name is added where it is not among them. \a own none is a name
+     * that states nothing, which is what a hidden element is.
+     */
+    void setNamedLook(const char *name, const MaterialAppearance &look, uint16_t own = OwnAll);
     //@}
 
     /** @name By name */
@@ -434,6 +461,8 @@ private:
     bool _wasRestored {false};
     /// Read with no object: the names are counted and not known
     bool _detached {false};
+    /// The names are paths, found by their strings (setPathNames())
+    bool _pathNames {false};
 };
 
 }  // namespace App

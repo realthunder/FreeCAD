@@ -26,7 +26,9 @@
 
 #include "GeoFeature.h"
 #include "OriginGroupExtension.h"
+#include "PropertyElementAppearance.h"
 #include "PropertyLinks.h"
+#include "PropertyStandard.h"
 
 
 namespace App
@@ -68,6 +70,17 @@ public:
 
     // Private property holding object link for color override
     App::PropertyLinkSubHidden ColoredElements;
+    /** @name What the part lays over what it holds
+     *
+     * As a link does (App::LinkAppearance, docs/ShapeAppearanceDesign.md
+     * sec 14.6.4): the store, whose names are paths, and the two names over
+     * it the property editor shows. ColoredElements is a name over it too.
+     */
+    //@{
+    App::PropertyElementAppearance ElementAppearance;
+    App::PropertyBool OverrideMaterial;
+    App::PropertyAppearanceList ShapeAppearance;
+    //@}
 
     /// Constructor
     Part();
@@ -80,6 +93,16 @@ public:
 
 
     void handleChangedPropertyType(Base::XMLReader &reader, const char *TypeName, App::Property *prop) override;
+
+protected:
+    void onChanged(const Property *prop) override;
+    void onDocumentRestored() override;
+
+private:
+    /// The names over the looks are being given what the store has
+    bool mirroringLooks {false};
+
+public:
 
     /**
      * Returns the part which contains this object.

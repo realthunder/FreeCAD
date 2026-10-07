@@ -25,6 +25,7 @@
 
 #include <App/Link.h>
 
+#include "LinkLooks.h"
 #include "SoFCUnifiedSelection.h"
 #include "ViewProviderDocumentObject.h"
 #include "ViewProviderExtension.h"
@@ -389,6 +390,9 @@ protected:
     bool useCenterballDragger;
     bool prevColorOverride = false;
     bool linkingMenu = false;
+    /// OverrideMaterial, ShapeAppearance, OverrideColorList, MaterialList
+    /// and OverrideMaterialList as names over what the link holds
+    LinkLooks looks;
 
     struct DraggerContext{
         Base::Matrix4D preTransform;

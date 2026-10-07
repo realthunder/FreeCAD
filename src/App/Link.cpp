@@ -36,8 +36,10 @@
 #include "ComplexGeoDataPy.h"
 #include "Document.h"
 #include "DocumentObserver.h"
+#include "GeoFeature.h"
 #include "GeoFeatureGroupExtension.h"
 #include "Link.h"
+#include "LinkAppearance.h"
 #include "LinkBaseExtensionPy.h"
 
 FC_LOG_LEVEL_INIT("App::Link", true,true)
@@ -88,7 +90,7 @@ import Link
 Link.define_link_base_extension()
 ]]]*/
 
-// Auto generated code (App/Link.py:196)
+// Auto generated code (App/Link.py:236)
 const std::vector<LinkBaseExtension::PropInfo> &
 LinkBaseExtension::getPropertyInfo()
 {
@@ -149,6 +151,13 @@ LinkBaseExtension::getPropertyInfo()
             "Link execute function. Default to 'appLinkExecute'. 'None' to disable."},
         {PropIndex::PropColoredElements, "ColoredElements", App::PropertyLinkSubHidden::getClassTypeId(),
             "Link colored elements"},
+        {PropIndex::PropElementAppearance, "ElementAppearance", App::PropertyElementAppearance::getClassTypeId(),
+            "The looks the link gives what it shows: its own, and those of the\n"
+            "elements and of the array elements it names"},
+        {PropIndex::PropOverrideMaterial, "OverrideMaterial", App::PropertyBool::getClassTypeId(),
+            "Give what the link shows a look of the link's own"},
+        {PropIndex::PropShapeAppearance, "ShapeAppearance", App::PropertyAppearanceList::getClassTypeId(),
+            "The look the link gives what it shows, where it gives one"},
     };
     return PropsInfo;
 }
@@ -323,6 +332,43 @@ void LinkBaseExtension::setProperty(int idx, Property *prop) {
         getVisibilityListProperty()->setStatus(Property::Immutable, true);
         getVisibilityListProperty()->setStatus(Property::Hidden, true);
         break;
+    case PropElementAppearance: {
+        // What the link lays over what it shows: its names are paths
+        // (docs/ShapeAppearanceDesign.md sec 14.6.4). Not the looks of a
+        // shape the object has of its own, which a link made in Python of a
+        // Part::Feature could give the slot.
+        auto owner = Base::freecad_dynamic_cast<DocumentObject>(prop->getContainer());
+        if(owner && !owner->isDerivedFrom(GeoFeature::getClassTypeId())) {
+            getElementAppearanceProperty()->setPathNames(true);
+            // ColoredElements is a name over it from here on
+            if(auto colored = getColoredElementsProperty())
+                colored->setStatus(Property::Legacy, true);
+        }
+        break;
+    }
+    case PropShapeAppearance: {
+        auto appearance = getShapeAppearanceProperty();
+        // Once: the properties are registered again when a document is read
+        if(appearance->hasWriter())
+            break;
+        // The look a link gives where nobody chose one
+        App::MaterialAppearance mat(App::MaterialAppearance::DEFAULT);
+        mat.diffuseColor.setPackedValue(static_cast<uint32_t>(
+            GetApplication().GetParameterGroupByPath("User parameter:BaseApp/Preferences/View")
+                ->GetUnsigned("DefaultLinkColor", 0x66FFFFFFUL)));
+        appearance->setValue(mat);
+        appearance->setStatus(Property::MaterialEdit, true);
+        appearance->setWriter([this](const AppearanceList &, const AppearanceList &after, int) {
+            LinkAppearance::Names names;
+            names.store = getElementAppearanceProperty();
+            names.colored = getColoredElementsProperty();
+            names.overrideMaterial = getOverrideMaterialProperty();
+            names.shapeAppearance = getShapeAppearanceProperty();
+            if(names.store && names.store->hasPathNames())
+                LinkAppearance::writeAppearance(names, after, mirroringLooks);
+        });
+        break;
+    }
     }
 
     if(FC_LOG_INSTANCE.isEnabled(FC_LOGLEVEL_TRACE)) {
@@ -1618,6 +1664,17 @@ bool LinkBaseExtension::extensionGetLinkedObject(DocumentObject *&ret,
 }
 
 void LinkBaseExtension::extensionOnChanged(const Property *prop) {
+    // The looks the link holds, and the names it is known by
+    if(prop && (prop == getElementAppearanceProperty() || prop == getColoredElementsProperty()
+                || prop == getOverrideMaterialProperty())) {
+        LinkAppearance::Names names;
+        names.store = getElementAppearanceProperty();
+        names.colored = getColoredElementsProperty();
+        names.overrideMaterial = getOverrideMaterialProperty();
+        names.shapeAppearance = getShapeAppearanceProperty();
+        if(names.store && names.store->hasPathNames())
+            LinkAppearance::onChanged(names, prop, mirroringLooks);
+    }
     auto parent = getContainer();
     if(parent && !parent->isRestoring() && prop && !prop->testStatus(Property::User3)) {
         if (!parent->getDocument() || !parent->getDocument()->isPerformingTransaction())
@@ -2226,6 +2283,15 @@ void LinkBaseExtension::onExtendedDocumentRestored() {
     auto parent = getContainer();
     if(!parent)
         return;
+    {
+        LinkAppearance::Names names;
+        names.store = getElementAppearanceProperty();
+        names.colored = getColoredElementsProperty();
+        names.overrideMaterial = getOverrideMaterialProperty();
+        names.shapeAppearance = getShapeAppearanceProperty();
+        if(names.store && names.store->hasPathNames())
+            LinkAppearance::onRestored(names, mirroringLooks);
+    }
     if(hasOldSubElement) {
         hasOldSubElement = false;
         // SubElements was stored as a PropertyStringList. It is now migrated to be
@@ -2633,7 +2699,7 @@ LinkExtension::LinkExtension()
     Link.init_link_extension()
     ]]]*/
 
-    // Auto generated code (App/Link.py:240)
+    // Auto generated code (App/Link.py:280)
     EXTENSION_ADD_PROPERTY_TYPE(Scale, (1.0), " Link", App::Prop_None, getPropertyInfo()[PropIndex::PropScale].doc);
     EXTENSION_ADD_PROPERTY_TYPE(ScaleVector, (Base::Vector3d(1.0, 1.0 ,1.0)), " Link", App::Prop_None, getPropertyInfo()[PropIndex::PropScaleVector].doc);
     EXTENSION_ADD_PROPERTY_TYPE(Matrix, (Base::Matrix4D{}), " Link", App::Prop_Hidden, getPropertyInfo()[PropIndex::PropMatrix].doc);
@@ -2654,7 +2720,7 @@ import Link
 Link.define_link_extension()
 ]]]*/
 
-// Auto generated code (App/Link.py:249)
+// Auto generated code (App/Link.py:289)
 void LinkExtension::registerProperties()
 {
     this->setProperty(PropIndex::PropScale, &Scale);
@@ -2668,7 +2734,7 @@ void LinkExtension::registerProperties()
     this->setProperty(PropIndex::PropElementList, &ElementList);
 }
 
-// Auto generated code (App/Link.py:259)
+// Auto generated code (App/Link.py:299)
 void LinkExtension::onExtendedDocumentRestored()
 {
     registerProperties();
@@ -2692,7 +2758,7 @@ Link.define_link()
 ]]]*/
 
 //////////////////////////////////////////////////////////////////////////////////////////
-// Auto generated code (App/Link.py:285)
+// Auto generated code (App/Link.py:327)
 namespace App {
 PROPERTY_SOURCE_TEMPLATE(App::LinkPython, App::Link)
 template<> const char* App::LinkPython::getViewProviderName() const {
@@ -2702,7 +2768,7 @@ template class AppExport FeaturePythonT<App::Link>;
 } // namespace App
 
 //////////////////////////////////////////////////////////////////////////////////////////
-// Auto generated code (App/Link.py:296)
+// Auto generated code (App/Link.py:338)
 PROPERTY_SOURCE_WITH_EXTENSIONS(App::Link, App::DocumentObject)
 Link::Link()
 {
@@ -2714,12 +2780,15 @@ Link::Link()
     ADD_PROPERTY_TYPE(ShowElement, (true), " Link", App::Prop_None, getPropertyInfo()[PropIndex::PropShowElement].doc);
     ADD_PROPERTY_TYPE(SyncGroupVisibility, (false), " Link", App::Prop_None, getPropertyInfo()[PropIndex::PropSyncGroupVisibility].doc);
     ADD_PROPERTY_TYPE(ElementCount, (0), " Link", App::Prop_None, getPropertyInfo()[PropIndex::PropElementCount].doc);
-    {// Auto generated code (App/Link.py:99)
+    {// Auto generated code (App/Link.py:122)
         static const PropertyIntegerConstraint::Constraints s_constraints = {0, INT_MAX, 1};
         ElementCount.setConstraints(&s_constraints);
     }
     ADD_PROPERTY_TYPE(LinkExecute, (""), " Link", App::Prop_None, getPropertyInfo()[PropIndex::PropLinkExecute].doc);
     ADD_PROPERTY_TYPE(ColoredElements, (nullptr), " Link", App::Prop_Hidden, getPropertyInfo()[PropIndex::PropColoredElements].doc);
+    ADD_PROPERTY_TYPE(ElementAppearance, (nullptr), "Appearances", (App::PropertyType)(App::Prop_Hidden|App::Prop_Output), getPropertyInfo()[PropIndex::PropElementAppearance].doc);
+    ADD_PROPERTY_TYPE(OverrideMaterial, (false), "Appearances", (App::PropertyType)(App::Prop_NoPersist|App::Prop_Output|App::Prop_NoRecompute), getPropertyInfo()[PropIndex::PropOverrideMaterial].doc);
+    ADD_PROPERTY_TYPE(ShapeAppearance, (App::MaterialAppearance()), "Appearances", (App::PropertyType)(App::Prop_NoPersist|App::Prop_Output|App::Prop_NoRecompute), getPropertyInfo()[PropIndex::PropShapeAppearance].doc);
     ADD_PROPERTY_TYPE(LinkCopyOnChange, (long(0)), " Link", App::Prop_None, getPropertyInfo()[PropIndex::PropLinkCopyOnChange].doc);
     ADD_PROPERTY_TYPE(LinkCopyOnChangeSource, (nullptr), " Link", App::Prop_None, getPropertyInfo()[PropIndex::PropLinkCopyOnChangeSource].doc);
     ADD_PROPERTY_TYPE(LinkCopyOnChangeGroup, (nullptr), " Link", App::Prop_None, getPropertyInfo()[PropIndex::PropLinkCopyOnChangeGroup].doc);
@@ -2729,7 +2798,7 @@ Link::Link()
     inherited_extension::initExtension(this);
 }
 
-// Auto generated code (App/Link.py:308)
+// Auto generated code (App/Link.py:350)
 void Link::registerProperties()
 {
     this->setProperty(PropIndex::PropLinkedObject, &LinkedObject);
@@ -2742,6 +2811,9 @@ void Link::registerProperties()
     this->setProperty(PropIndex::PropElementCount, &ElementCount);
     this->setProperty(PropIndex::PropLinkExecute, &LinkExecute);
     this->setProperty(PropIndex::PropColoredElements, &ColoredElements);
+    this->setProperty(PropIndex::PropElementAppearance, &ElementAppearance);
+    this->setProperty(PropIndex::PropOverrideMaterial, &OverrideMaterial);
+    this->setProperty(PropIndex::PropShapeAppearance, &ShapeAppearance);
     this->setProperty(PropIndex::PropLinkCopyOnChange, &LinkCopyOnChange);
     this->setProperty(PropIndex::PropLinkCopyOnChangeSource, &LinkCopyOnChangeSource);
     this->setProperty(PropIndex::PropLinkCopyOnChangeGroup, &LinkCopyOnChangeGroup);
@@ -2749,7 +2821,7 @@ void Link::registerProperties()
     this->setProperty(PropIndex::PropAutoLinkLabel, &AutoLinkLabel);
 }
 
-// Auto generated code (App/Link.py:318)
+// Auto generated code (App/Link.py:360)
 void Link::onDocumentRestored()
 {
     registerProperties();
@@ -2782,7 +2854,7 @@ Link.define_link_element()
 ]]]*/
 
 //////////////////////////////////////////////////////////////////////////////////////////
-// Auto generated code (App/Link.py:285)
+// Auto generated code (App/Link.py:327)
 namespace App {
 PROPERTY_SOURCE_TEMPLATE(App::LinkElementPython, App::LinkElement)
 template<> const char* App::LinkElementPython::getViewProviderName() const {
@@ -2792,7 +2864,7 @@ template class AppExport FeaturePythonT<App::LinkElement>;
 } // namespace App
 
 //////////////////////////////////////////////////////////////////////////////////////////
-// Auto generated code (App/Link.py:296)
+// Auto generated code (App/Link.py:338)
 PROPERTY_SOURCE_WITH_EXTENSIONS(App::LinkElement, App::DocumentObject)
 LinkElement::LinkElement()
 {
@@ -2808,11 +2880,14 @@ LinkElement::LinkElement()
     ADD_PROPERTY_TYPE(LinkCopyOnChangeSource, (nullptr), " Link", App::Prop_None, getPropertyInfo()[PropIndex::PropLinkCopyOnChangeSource].doc);
     ADD_PROPERTY_TYPE(LinkCopyOnChangeGroup, (nullptr), " Link", App::Prop_None, getPropertyInfo()[PropIndex::PropLinkCopyOnChangeGroup].doc);
     ADD_PROPERTY_TYPE(LinkCopyOnChangeTouched, (false), " Link", App::Prop_None, getPropertyInfo()[PropIndex::PropLinkCopyOnChangeTouched].doc);
+    ADD_PROPERTY_TYPE(ElementAppearance, (nullptr), "Appearances", (App::PropertyType)(App::Prop_Hidden|App::Prop_Output), getPropertyInfo()[PropIndex::PropElementAppearance].doc);
+    ADD_PROPERTY_TYPE(OverrideMaterial, (false), "Appearances", (App::PropertyType)(App::Prop_NoPersist|App::Prop_Output|App::Prop_NoRecompute), getPropertyInfo()[PropIndex::PropOverrideMaterial].doc);
+    ADD_PROPERTY_TYPE(ShapeAppearance, (App::MaterialAppearance()), "Appearances", (App::PropertyType)(App::Prop_NoPersist|App::Prop_Output|App::Prop_NoRecompute), getPropertyInfo()[PropIndex::PropShapeAppearance].doc);
     registerProperties();
     inherited_extension::initExtension(this);
 }
 
-// Auto generated code (App/Link.py:308)
+// Auto generated code (App/Link.py:350)
 void LinkElement::registerProperties()
 {
     this->setProperty(PropIndex::PropScale, &Scale);
@@ -2827,9 +2902,12 @@ void LinkElement::registerProperties()
     this->setProperty(PropIndex::PropLinkCopyOnChangeSource, &LinkCopyOnChangeSource);
     this->setProperty(PropIndex::PropLinkCopyOnChangeGroup, &LinkCopyOnChangeGroup);
     this->setProperty(PropIndex::PropLinkCopyOnChangeTouched, &LinkCopyOnChangeTouched);
+    this->setProperty(PropIndex::PropElementAppearance, &ElementAppearance);
+    this->setProperty(PropIndex::PropOverrideMaterial, &OverrideMaterial);
+    this->setProperty(PropIndex::PropShapeAppearance, &ShapeAppearance);
 }
 
-// Auto generated code (App/Link.py:318)
+// Auto generated code (App/Link.py:360)
 void LinkElement::onDocumentRestored()
 {
     registerProperties();
@@ -2864,7 +2942,7 @@ Link.define_link_group()
 ]]]*/
 
 //////////////////////////////////////////////////////////////////////////////////////////
-// Auto generated code (App/Link.py:285)
+// Auto generated code (App/Link.py:327)
 namespace App {
 PROPERTY_SOURCE_TEMPLATE(App::LinkGroupPython, App::LinkGroup)
 template<> const char* App::LinkGroupPython::getViewProviderName() const {
@@ -2874,7 +2952,7 @@ template class AppExport FeaturePythonT<App::LinkGroup>;
 } // namespace App
 
 //////////////////////////////////////////////////////////////////////////////////////////
-// Auto generated code (App/Link.py:296)
+// Auto generated code (App/Link.py:338)
 PROPERTY_SOURCE_WITH_EXTENSIONS(App::LinkGroup, App::DocumentObject)
 LinkGroup::LinkGroup()
 {
@@ -2883,11 +2961,14 @@ LinkGroup::LinkGroup()
     ADD_PROPERTY_TYPE(VisibilityList, (boost::dynamic_bitset<>{}), " Link", App::Prop_None, getPropertyInfo()[PropIndex::PropVisibilityList].doc);
     ADD_PROPERTY_TYPE(LinkMode, (long(0)), " Link", App::Prop_None, getPropertyInfo()[PropIndex::PropLinkMode].doc);
     ADD_PROPERTY_TYPE(ColoredElements, (nullptr), " Link", App::Prop_Hidden, getPropertyInfo()[PropIndex::PropColoredElements].doc);
+    ADD_PROPERTY_TYPE(ElementAppearance, (nullptr), "Appearances", (App::PropertyType)(App::Prop_Hidden|App::Prop_Output), getPropertyInfo()[PropIndex::PropElementAppearance].doc);
+    ADD_PROPERTY_TYPE(OverrideMaterial, (false), "Appearances", (App::PropertyType)(App::Prop_NoPersist|App::Prop_Output|App::Prop_NoRecompute), getPropertyInfo()[PropIndex::PropOverrideMaterial].doc);
+    ADD_PROPERTY_TYPE(ShapeAppearance, (App::MaterialAppearance()), "Appearances", (App::PropertyType)(App::Prop_NoPersist|App::Prop_Output|App::Prop_NoRecompute), getPropertyInfo()[PropIndex::PropShapeAppearance].doc);
     registerProperties();
     inherited_extension::initExtension(this);
 }
 
-// Auto generated code (App/Link.py:308)
+// Auto generated code (App/Link.py:350)
 void LinkGroup::registerProperties()
 {
     this->setProperty(PropIndex::PropElementList, &ElementList);
@@ -2895,9 +2976,12 @@ void LinkGroup::registerProperties()
     this->setProperty(PropIndex::PropVisibilityList, &VisibilityList);
     this->setProperty(PropIndex::PropLinkMode, &LinkMode);
     this->setProperty(PropIndex::PropColoredElements, &ColoredElements);
+    this->setProperty(PropIndex::PropElementAppearance, &ElementAppearance);
+    this->setProperty(PropIndex::PropOverrideMaterial, &OverrideMaterial);
+    this->setProperty(PropIndex::PropShapeAppearance, &ShapeAppearance);
 }
 
-// Auto generated code (App/Link.py:318)
+// Auto generated code (App/Link.py:360)
 void LinkGroup::onDocumentRestored()
 {
     registerProperties();

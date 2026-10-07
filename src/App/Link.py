@@ -52,11 +52,15 @@ PropMatrix = PropertyInfo('App::PropertyMatrix', 'Base::Matrix4D')
 PropMatrixList = PropertyInfo('App::PropertyMatrixList', 'std::vector<Base::Matrix4D>')
 PropString = PropertyInfo('App::PropertyString', 'const char*', '""')
 PropInteger = PropertyInfo('App::PropertyInteger', 'int', '0')
+PropElementAppearance = PropertyInfo('App::PropertyElementAppearance', 'App::DocumentObject*', 'nullptr')
+PropAppearanceList = PropertyInfo('App::PropertyAppearanceList', 'App::MaterialAppearance',
+                                  'App::MaterialAppearance()')
 
 class Property:
     def __init__(self, name, property_type, doc,
-            default=None, derived_type=None, prop_flags=None):
+            default=None, derived_type=None, prop_flags=None, group=' Link'):
         self.name = name
+        self.group = group
         self._type = property_type
         self.default = default if default else property_type.default
         self.doc = doc
@@ -85,7 +89,26 @@ class Property:
 
     def init_property(self, add_property):
         cog.out(f'''
-    {add_property}({self.name}, ({self.default}), " Link", {self.prop_flags}, getPropertyInfo()[PropIndex::Prop{self.name}].doc);''')
+    {add_property}({self.name}, ({self.default}), "{self.group}", {self.prop_flags}, getPropertyInfo()[PropIndex::Prop{self.name}].doc);''')
+
+
+class PropertyByPointer(Property):
+    '''A property that is asked for itself and not for a value: one that
+    holds more than one thing, or that is a name over another's value'''
+
+    def declare_accessor(self):
+        cog.out(f'''
+    {auto_comment()}
+    //@{{
+    /// Accessor for property {self.name}
+    const {self._type.name} *get{self.name}Property() const {{
+        return static_cast<const {self._type.name} *>(this->props[PropIndex::Prop{self.name}]);
+    }}
+    {self._type.name} *get{self.name}Property() {{
+        return static_cast<{self._type.name} *>(this->props[PropIndex::Prop{self.name}]);
+    }}
+    //@}}
+''')
 
 
 class PropertyIntegerConstraint(Property):
@@ -101,6 +124,9 @@ class PropertyIntegerConstraint(Property):
         {self.name}.setConstraints(&s_constraints);
     }}''')
 
+
+# A name over the looks a link holds: no value of its own, nothing in a file
+LookNameFlags = '(App::PropertyType)(App::Prop_NoPersist|App::Prop_Output|App::Prop_NoRecompute)'
 
 Properties = [
     Property('LinkPlacement', PropPlacement, "Link placement"),
@@ -167,6 +193,20 @@ Properties = [
     Property('LinkExecute', PropString, "Link execute function. Default to 'appLinkExecute'. 'None' to disable."),
 
     Property('ColoredElements', PropLinkSubHidden, "Link colored elements", prop_flags='App::Prop_Hidden'),
+
+    # What a link lays over what it shows (docs/ShapeAppearanceDesign.md sec
+    # 14.6.4): the store, and the two names over it the property editor shows
+    PropertyByPointer('ElementAppearance', PropElementAppearance,
+        "The looks the link gives what it shows: its own, and those of the\n"
+        "elements and of the array elements it names",
+        prop_flags='(App::PropertyType)(App::Prop_Hidden|App::Prop_Output)', group='Appearances'),
+
+    Property('OverrideMaterial', PropBool, "Give what the link shows a look of the link's own",
+        prop_flags=LookNameFlags, group='Appearances'),
+
+    PropertyByPointer('ShapeAppearance', PropAppearanceList,
+        "The look the link gives what it shows, where it gives one",
+        prop_flags=LookNameFlags, group='Appearances'),
 ]
 
 PropMap = { prop.name : prop for prop in Properties }
@@ -279,14 +319,16 @@ def _declare_link(props):
 ''')
 
 
-def _define_link(class_name, props):
+def _define_link(class_name, props, view_provider=None):
+    if not view_provider:
+        view_provider = class_name
     cog.out(f'''
 //////////////////////////////////////////////////////////////////////////////////////////
 {auto_comment()}
 namespace App {{
 PROPERTY_SOURCE_TEMPLATE(App::{class_name}Python, App::{class_name})
 template<> const char* App::{class_name}Python::getViewProviderName() const {{
-    return "Gui::ViewProvider{class_name}Python";
+    return "Gui::ViewProvider{view_provider}Python";
 }}
 template class AppExport FeaturePythonT<App::{class_name}>;
 }} // namespace App
@@ -334,6 +376,9 @@ LinkProps = [ PropMap[name] for name in (
     'ElementCount',
     'LinkExecute',
     'ColoredElements',
+    'ElementAppearance',
+    'OverrideMaterial',
+    'ShapeAppearance',
     'LinkCopyOnChange',
     'LinkCopyOnChangeSource',
     'LinkCopyOnChangeGroup',
@@ -360,13 +405,17 @@ LinkElementProps = [ PropMap[name] for name in (
     'LinkCopyOnChangeSource',
     'LinkCopyOnChangeGroup',
     'LinkCopyOnChangeTouched',
+    'ElementAppearance',
+    'OverrideMaterial',
+    'ShapeAppearance',
 )]
 
 def declare_link_element():
     _declare_link(LinkElementProps)
 
 def define_link_element():
-    _define_link('LinkElement', LinkElementProps)
+    # A link element is drawn by the link's own python view provider
+    _define_link('LinkElement', LinkElementProps, 'Link')
 
 LinkGroupProps = [ PropMap[name] for name in (
     'ElementList',
@@ -374,10 +423,13 @@ LinkGroupProps = [ PropMap[name] for name in (
     'VisibilityList',
     'LinkMode',
     'ColoredElements',
+    'ElementAppearance',
+    'OverrideMaterial',
+    'ShapeAppearance',
 )]
 
 def declare_link_group():
     _declare_link(LinkGroupProps)
 
 def define_link_group():
-    _define_link('LinkGroup', LinkGroupProps)
+    _define_link('LinkGroup', LinkGroupProps, 'Link')

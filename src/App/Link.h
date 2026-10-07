@@ -31,7 +31,9 @@
 #include "FeaturePython.h"
 #include "GroupExtension.h"
 #include "LinkParams.h"
+#include "PropertyElementAppearance.h"
 #include "PropertyLinks.h"
+#include "PropertyStandard.h"
 
 #define LINK_THROW(_type,_msg) do{\
     if(FC_LOG_INSTANCE.isEnabled(FC_LOGLEVEL_LOG))\
@@ -98,7 +100,7 @@ public:
     Link.declare_link_base_extension()
     ]]]*/
 
-    // Auto generated code (App/Link.py:176)
+    // Auto generated code (App/Link.py:216)
     /// Indices for predefined properties
     enum PropIndex {
         PropLinkPlacement = 0,
@@ -126,10 +128,13 @@ public:
         PropLinkMode = 22,
         PropLinkExecute = 23,
         PropColoredElements = 24,
+        PropElementAppearance = 25,
+        PropOverrideMaterial = 26,
+        PropShapeAppearance = 27,
         PropMax
     };
 
-    // Auto generated code (App/Link.py:68)
+    // Auto generated code (App/Link.py:72)
     //@{
     /// Accessor for property LinkPlacement
     Base::Placement getLinkPlacementValue() const {
@@ -145,7 +150,7 @@ public:
     }
     //@}
 
-    // Auto generated code (App/Link.py:68)
+    // Auto generated code (App/Link.py:72)
     //@{
     /// Accessor for property Placement
     Base::Placement getPlacementValue() const {
@@ -161,7 +166,7 @@ public:
     }
     //@}
 
-    // Auto generated code (App/Link.py:68)
+    // Auto generated code (App/Link.py:72)
     //@{
     /// Accessor for property LinkedObject
     App::DocumentObject* getLinkedObjectValue() const {
@@ -177,7 +182,7 @@ public:
     }
     //@}
 
-    // Auto generated code (App/Link.py:68)
+    // Auto generated code (App/Link.py:72)
     //@{
     /// Accessor for property LinkTransform
     bool getLinkTransformValue() const {
@@ -193,7 +198,7 @@ public:
     }
     //@}
 
-    // Auto generated code (App/Link.py:68)
+    // Auto generated code (App/Link.py:72)
     //@{
     /// Accessor for property LinkClaimChild
     bool getLinkClaimChildValue() const {
@@ -209,7 +214,7 @@ public:
     }
     //@}
 
-    // Auto generated code (App/Link.py:68)
+    // Auto generated code (App/Link.py:72)
     //@{
     /// Accessor for property LinkCopyOnChange
     long getLinkCopyOnChangeValue() const {
@@ -225,7 +230,7 @@ public:
     }
     //@}
 
-    // Auto generated code (App/Link.py:68)
+    // Auto generated code (App/Link.py:72)
     //@{
     /// Accessor for property LinkCopyOnChangeSource
     App::DocumentObject* getLinkCopyOnChangeSourceValue() const {
@@ -241,7 +246,7 @@ public:
     }
     //@}
 
-    // Auto generated code (App/Link.py:68)
+    // Auto generated code (App/Link.py:72)
     //@{
     /// Accessor for property LinkCopyOnChangeGroup
     App::DocumentObject* getLinkCopyOnChangeGroupValue() const {
@@ -257,7 +262,7 @@ public:
     }
     //@}
 
-    // Auto generated code (App/Link.py:68)
+    // Auto generated code (App/Link.py:72)
     //@{
     /// Accessor for property LinkCopyOnChangeTouched
     bool getLinkCopyOnChangeTouchedValue() const {
@@ -273,7 +278,7 @@ public:
     }
     //@}
 
-    // Auto generated code (App/Link.py:68)
+    // Auto generated code (App/Link.py:72)
     //@{
     /// Accessor for property SyncGroupVisibility
     bool getSyncGroupVisibilityValue() const {
@@ -289,7 +294,7 @@ public:
     }
     //@}
 
-    // Auto generated code (App/Link.py:68)
+    // Auto generated code (App/Link.py:72)
     //@{
     /// Accessor for property Scale
     double getScaleValue() const {
@@ -305,7 +310,7 @@ public:
     }
     //@}
 
-    // Auto generated code (App/Link.py:68)
+    // Auto generated code (App/Link.py:72)
     //@{
     /// Accessor for property ScaleVector
     Base::Vector3d getScaleVectorValue() const {
@@ -321,7 +326,7 @@ public:
     }
     //@}
 
-    // Auto generated code (App/Link.py:68)
+    // Auto generated code (App/Link.py:72)
     //@{
     /// Accessor for property Matrix
     Base::Matrix4D getMatrixValue() const {
@@ -337,7 +342,7 @@ public:
     }
     //@}
 
-    // Auto generated code (App/Link.py:68)
+    // Auto generated code (App/Link.py:72)
     //@{
     /// Accessor for property PlacementList
     std::vector<Base::Placement> getPlacementListValue() const {
@@ -353,7 +358,7 @@ public:
     }
     //@}
 
-    // Auto generated code (App/Link.py:68)
+    // Auto generated code (App/Link.py:72)
     //@{
     /// Accessor for property AutoPlacement
     bool getAutoPlacementValue() const {
@@ -369,7 +374,7 @@ public:
     }
     //@}
 
-    // Auto generated code (App/Link.py:68)
+    // Auto generated code (App/Link.py:72)
     //@{
     /// Accessor for property ScaleList
     std::vector<Base::Vector3d> getScaleListValue() const {
@@ -385,7 +390,7 @@ public:
     }
     //@}
 
-    // Auto generated code (App/Link.py:68)
+    // Auto generated code (App/Link.py:72)
     //@{
     /// Accessor for property MatrixList
     std::vector<Base::Matrix4D> getMatrixListValue() const {
@@ -401,7 +406,7 @@ public:
     }
     //@}
 
-    // Auto generated code (App/Link.py:68)
+    // Auto generated code (App/Link.py:72)
     //@{
     /// Accessor for property VisibilityList
     boost::dynamic_bitset<> getVisibilityListValue() const {
@@ -417,7 +422,7 @@ public:
     }
     //@}
 
-    // Auto generated code (App/Link.py:68)
+    // Auto generated code (App/Link.py:72)
     //@{
     /// Accessor for property ElementCount
     int getElementCountValue() const {
@@ -433,7 +438,7 @@ public:
     }
     //@}
 
-    // Auto generated code (App/Link.py:68)
+    // Auto generated code (App/Link.py:72)
     //@{
     /// Accessor for property ElementList
     std::vector<App::DocumentObject*> getElementListValue() const {
@@ -449,7 +454,7 @@ public:
     }
     //@}
 
-    // Auto generated code (App/Link.py:68)
+    // Auto generated code (App/Link.py:72)
     //@{
     /// Accessor for property ShowElement
     bool getShowElementValue() const {
@@ -465,7 +470,7 @@ public:
     }
     //@}
 
-    // Auto generated code (App/Link.py:68)
+    // Auto generated code (App/Link.py:72)
     //@{
     /// Accessor for property AutoLinkLabel
     bool getAutoLinkLabelValue() const {
@@ -481,7 +486,7 @@ public:
     }
     //@}
 
-    // Auto generated code (App/Link.py:68)
+    // Auto generated code (App/Link.py:72)
     //@{
     /// Accessor for property LinkMode
     long getLinkModeValue() const {
@@ -497,7 +502,7 @@ public:
     }
     //@}
 
-    // Auto generated code (App/Link.py:68)
+    // Auto generated code (App/Link.py:72)
     //@{
     /// Accessor for property LinkExecute
     const char* getLinkExecuteValue() const {
@@ -513,7 +518,7 @@ public:
     }
     //@}
 
-    // Auto generated code (App/Link.py:68)
+    // Auto generated code (App/Link.py:72)
     //@{
     /// Accessor for property ColoredElements
     App::DocumentObject* getColoredElementsValue() const {
@@ -529,7 +534,45 @@ public:
     }
     //@}
 
-    // Auto generated code (App/Link.py:190)
+    // Auto generated code (App/Link.py:101)
+    //@{
+    /// Accessor for property ElementAppearance
+    const App::PropertyElementAppearance *getElementAppearanceProperty() const {
+        return static_cast<const App::PropertyElementAppearance *>(this->props[PropIndex::PropElementAppearance]);
+    }
+    App::PropertyElementAppearance *getElementAppearanceProperty() {
+        return static_cast<App::PropertyElementAppearance *>(this->props[PropIndex::PropElementAppearance]);
+    }
+    //@}
+
+    // Auto generated code (App/Link.py:72)
+    //@{
+    /// Accessor for property OverrideMaterial
+    bool getOverrideMaterialValue() const {
+        if (auto prop = this->props[PropIndex::PropOverrideMaterial])
+            return static_cast<const App::PropertyBool *>(prop)->getValue();
+        return false;
+    }
+    const App::PropertyBool *getOverrideMaterialProperty() const {
+        return static_cast<const App::PropertyBool *>(this->props[PropIndex::PropOverrideMaterial]);
+    }
+    App::PropertyBool *getOverrideMaterialProperty() {
+        return static_cast<App::PropertyBool *>(this->props[PropIndex::PropOverrideMaterial]);
+    }
+    //@}
+
+    // Auto generated code (App/Link.py:101)
+    //@{
+    /// Accessor for property ShapeAppearance
+    const App::PropertyAppearanceList *getShapeAppearanceProperty() const {
+        return static_cast<const App::PropertyAppearanceList *>(this->props[PropIndex::PropShapeAppearance]);
+    }
+    App::PropertyAppearanceList *getShapeAppearanceProperty() {
+        return static_cast<App::PropertyAppearanceList *>(this->props[PropIndex::PropShapeAppearance]);
+    }
+    //@}
+
+    // Auto generated code (App/Link.py:230)
     static const std::vector<PropInfo> &getPropertyInfo();
     //[[[end]]]
 
@@ -707,6 +750,9 @@ protected:
 
     mutable bool checkingProperty = false;
     bool pauseCopyOnChange = false;
+    /// The names over the looks the link holds are being given what the
+    /// store has (App::LinkAppearance::onChanged())
+    bool mirroringLooks = false;
 
     fastsignals::scoped_connection connLabelChange;
     fastsignals::scoped_connection connCopyOnChangeSource;
@@ -732,7 +778,7 @@ public:
     Link.declare_link_extension()
     ]]]*/
 
-    // Auto generated code (App/Link.py:226)
+    // Auto generated code (App/Link.py:266)
     App::PropertyFloat Scale;
     App::PropertyVector ScaleVector;
     App::PropertyMatrix Matrix;
@@ -743,7 +789,7 @@ public:
     App::PropertyBool AutoPlacement;
     App::PropertyLinkList ElementList;
 
-    // Auto generated code (App/Link.py:233)
+    // Auto generated code (App/Link.py:273)
     void registerProperties();
     void onExtendedDocumentRestored() override;
     //[[[end]]]
@@ -768,7 +814,7 @@ public:
     Link.declare_link()
     ]]]*/
 
-    // Auto generated code (App/Link.py:269)
+    // Auto generated code (App/Link.py:309)
     App::PropertyXLink LinkedObject;
     App::PropertyBool LinkClaimChild;
     App::PropertyBool LinkTransform;
@@ -779,13 +825,16 @@ public:
     App::PropertyIntegerConstraint ElementCount;
     App::PropertyString LinkExecute;
     App::PropertyLinkSubHidden ColoredElements;
+    App::PropertyElementAppearance ElementAppearance;
+    App::PropertyBool OverrideMaterial;
+    App::PropertyAppearanceList ShapeAppearance;
     App::PropertyEnumeration LinkCopyOnChange;
     App::PropertyXLink LinkCopyOnChangeSource;
     App::PropertyLink LinkCopyOnChangeGroup;
     App::PropertyBool LinkCopyOnChangeTouched;
     App::PropertyBool AutoLinkLabel;
 
-    // Auto generated code (App/Link.py:276)
+    // Auto generated code (App/Link.py:316)
     void registerProperties();
     void onDocumentRestored() override;
     //[[[end]]]
@@ -825,7 +874,7 @@ public:
     Link.declare_link_element()
     ]]]*/
 
-    // Auto generated code (App/Link.py:269)
+    // Auto generated code (App/Link.py:309)
     App::PropertyFloat Scale;
     App::PropertyVector ScaleVector;
     App::PropertyMatrix Matrix;
@@ -838,8 +887,11 @@ public:
     App::PropertyXLink LinkCopyOnChangeSource;
     App::PropertyLink LinkCopyOnChangeGroup;
     App::PropertyBool LinkCopyOnChangeTouched;
+    App::PropertyElementAppearance ElementAppearance;
+    App::PropertyBool OverrideMaterial;
+    App::PropertyAppearanceList ShapeAppearance;
 
-    // Auto generated code (App/Link.py:276)
+    // Auto generated code (App/Link.py:316)
     void registerProperties();
     void onDocumentRestored() override;
     //[[[end]]]
@@ -877,14 +929,17 @@ public:
     Link.declare_link_group()
     ]]]*/
 
-    // Auto generated code (App/Link.py:269)
+    // Auto generated code (App/Link.py:309)
     App::PropertyLinkList ElementList;
     App::PropertyPlacement Placement;
     App::PropertyBoolList VisibilityList;
     App::PropertyEnumeration LinkMode;
     App::PropertyLinkSubHidden ColoredElements;
+    App::PropertyElementAppearance ElementAppearance;
+    App::PropertyBool OverrideMaterial;
+    App::PropertyAppearanceList ShapeAppearance;
 
-    // Auto generated code (App/Link.py:276)
+    // Auto generated code (App/Link.py:316)
     void registerProperties();
     void onDocumentRestored() override;
     //[[[end]]]

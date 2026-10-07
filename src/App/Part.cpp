@@ -25,6 +25,8 @@
 
 #include <App/DocumentObject.h>
 
+#include "Application.h"
+#include "LinkAppearance.h"
 #include "Part.h"
 #include "PartPy.h"
 
@@ -57,6 +59,30 @@ Part::Part()
 
     ADD_PROPERTY_TYPE(ColoredElements, (0), 0, (PropertyType)(Prop_ReadOnly|Prop_Hidden), "");
 
+    // What the part lays over what it holds, as a link does
+    // (docs/ShapeAppearanceDesign.md sec 14.6.4): the store, and the names
+    // over it, which are in no file
+    static const char *appearances = "Appearances";
+    ADD_PROPERTY_TYPE(ElementAppearance, (0), appearances,
+            (PropertyType)(Prop_Hidden|Prop_Output),
+            "The looks the part gives what it holds: its own, and those of the\n"
+            "elements it names");
+    ElementAppearance.setPathNames(true);
+    ColoredElements.setStatus(Property::Legacy, true);
+    const auto name = (PropertyType)(Prop_NoPersist|Prop_Output|Prop_NoRecompute);
+    ADD_PROPERTY_TYPE(OverrideMaterial, (false), appearances, name,
+            "Give what the part holds a look of the part's own");
+    App::MaterialAppearance mat(App::MaterialAppearance::DEFAULT);
+    mat.diffuseColor.setPackedValue(static_cast<uint32_t>(
+        GetApplication().GetParameterGroupByPath("User parameter:BaseApp/Preferences/View")
+            ->GetUnsigned("DefaultShapeColor", 0xCCCCE6FFUL)));
+    ADD_PROPERTY_TYPE(ShapeAppearance, (mat), appearances, name,
+            "The look the part gives what it holds, where it gives one");
+    ShapeAppearance.setStatus(Property::MaterialEdit, true);
+    ShapeAppearance.setWriter([this](const AppearanceList &, const AppearanceList &after, int) {
+        LinkAppearance::writeAppearance(LinkAppearance::namesOf(this), after, mirroringLooks);
+    });
+
     OriginGroupExtension::initExtension(this);
 
     ExportMode.setStatus(Property::Hidden,false);
@@ -64,6 +90,20 @@ Part::Part()
 }
 
 Part::~Part() = default;
+
+void Part::onChanged(const Property *prop)
+{
+    if (prop == &ElementAppearance || prop == &ColoredElements || prop == &OverrideMaterial) {
+        LinkAppearance::onChanged(LinkAppearance::namesOf(this), prop, mirroringLooks);
+    }
+    GeoFeature::onChanged(prop);
+}
+
+void Part::onDocumentRestored()
+{
+    LinkAppearance::onRestored(LinkAppearance::namesOf(this), mirroringLooks);
+    GeoFeature::onDocumentRestored();
+}
 
 static App::Part *_getPartOfObject(const DocumentObject *obj,
                                    std::set<const DocumentObject*> *objset)

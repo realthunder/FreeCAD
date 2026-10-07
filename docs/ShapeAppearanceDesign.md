@@ -3920,10 +3920,12 @@ where the object is made; the view providers that are not their object's
 (14.6.1) left with values of their own. The paint check written again for
 the store.
 
-**C. A link, `App::Part`, a body** (14.6.4). Until it is built, what a
-link lays over a face made from what it shows is asked of its view
-provider through one function the Gui gives App, which goes with this
-step.
+**C. A link, `App::Part`, a body** (14.6.4). *Built for a link and for
+`App::Part`* (14.6.10); a body is still to do. Until it was built, what a
+link lays over a face made from what it shows was asked of its view
+provider through one function the Gui gives App; with no Gui the link is
+asked now, and the function stays for a link that draws through a view
+provider of its own.
 
 **D. In and out without a view provider** (14.6.7), with a STEP file read
 and written in `FreeCADCmd` as its check.
@@ -4316,3 +4318,106 @@ and say what the file has when it is read; an undo takes a write back.
 against the view provider's at every step, the object's written with a
 Gui, and the view provider's carrying `Legacy` where a line width does
 not. The suite: Python 3054, ctest 891, frozen and unfrozen.
+
+**Step C, a link and `App::Part` hold what they lay over (2026-10-07).**
+14.6.4, but for a body.
+
+*The store.* `App::Link`, `App::LinkElement`, `App::LinkGroup` and
+`App::Part` have an `ElementAppearance`, in the group `Appearances`,
+hidden, written to the file at every schema. Its names are paths
+(`PropertyElementAppearance::setPathNames()`, said once by the owner): a
+name is found by its string and by nothing else, no element of the owner
+is looked up, none is held by a number, and `Pad.Face3` is not `Face3`. In
+it, as 14.6.4 has it: the own look of `Face` is the look given all that is
+shown, and given at all is the override on; a name for each element given
+a colour, a look whose own field is the colour; a name ending in the
+hidden marker, which states nothing; the name of one of an array, `2.`,
+with a look that is all its own. `App::LinkAppearance`
+(`src/App/LinkAppearance.{h,cpp}`) is how each of those is read and
+written, and nothing else writes a link's store.
+
+*The object's names.* `OverrideMaterial` and `ShapeAppearance`, in
+`Appearances`, in no file: the first is whether the own look is given, the
+second the look, a list of one. With the override off `ShapeAppearance` is
+the look the link would give -- the preference's link colour until one is
+chosen -- kept for as long as the document is open, where the view
+provider kept it in the file (*mine*: "given at all is the override on"
+leaves nowhere else for it). `ColoredElements` stays what it was to a file
+and to a script, `(obj, [names])`, and is a name over the store's names: a
+write to it is the names given, each stating nothing until it is given a
+colour, and it carries `Legacy`, so the log has the store's row and not
+two.
+
+*The view provider.* `Gui::LinkLooks` (`src/Gui/LinkLooks.{h,cpp}`), held
+by `ViewProviderLink` and by `ViewProviderPart`: `OverrideMaterial`,
+`ShapeAppearance`, `OverrideColorList`, and for an array `MaterialList` and
+`OverrideMaterialList`, take what the store has when it changes and give
+the store what is written to them, and carry `Legacy` while they do. *The
+view provider goes on drawing from them* (*mine*): `applyMaterial()`,
+`applyColors()`, `getElementColors()` and `setElementColors()` are as they
+were and read properties that are now names, so what draws a link was not
+written again. The array's two lists are written one after the other by
+what writes them, and the one not written yet is not set from the store
+in between.
+
+*A file that has no store* -- an older one, upstream's. The object takes
+the names of `ColoredElements` as names that state nothing when it has
+been read (`LinkAppearance::onRestored()`); its view provider, when that
+has, gives the store the override, the colours of the names and the
+array's looks it read (`LinkLooks::bind()`), as a script's write would.
+In `FreeCADCmd` such a file has the names, so what is hidden is hidden,
+and no colours: the limit of 14.6.6.
+
+*What was made from what a link shows.* `LinkAppearance::getLinkColor()`
+is the walk the Gui's function does, over the stores, and
+`Part::Feature`'s making of the looks asks it where no Gui gave a function
+(`setLinkLookFunc()`); a link whose looks change tells what was made from
+it (`AppearanceUpdater`). So a cut of a link to a red box is the link's
+green in `FreeCADCmd`, with no recompute. The Gui's function is still
+asked first where there is one: it knows a link that draws through a view
+provider of its own (`ChildViewProvider`), whose looks are that view
+provider's values and are not moved by this (*mine, and to be ruled if
+they are meant too*).
+
+*Not built:*
+
+- **A body.** `ViewProviderBody` hands a look its names are given on to
+  its tip's view provider, and turns that one's `Map*` off
+  (`unifyVisualProperty()`). It does so when the names take the object's
+  too, so with a Gui a write to the body's own names reaches the tip; with
+  none it does not.
+- **The merge.** A link's `ElementAppearance` written on two branches is a
+  conflict of one value. The merge by what the looks are given to is
+  `Part::Feature`'s (`PartFeatureMerge.cpp`) and reads a shape.
+- **A link made in Python on another kind of object** (Draft's, a
+  `Part::FeaturePython` with a link extension) configures no store and is
+  as it was: its view provider's properties are values.
+
+*Found, there before this, and not chased:*
+
+- **An array collapsed loses the looks of its elements.** With
+  `ShowElement` turned off the view provider gathers its elements' looks
+  into `MaterialList` and `OverrideMaterialList`, and
+  `updateElementList()`, run when the element list is emptied a moment
+  later, hands those to elements there are none of and clears them. The
+  store follows the lists, as it should, and has nothing.
+- **Set Colors' colour for all of an `App::Part` is not taken while its
+  view provider's look follows a material card.**
+  `setElementColorsTo()` assigns the look with the list still following,
+  and `ViewProviderGeometryObject::onChanged()` puts the card's back:
+  `ShapeColor` then says the colour and `ShapeAppearance` does not. The
+  part holds what `ShapeAppearance` says.
+
+Checks. Python `parttests.ElementAppearanceTest.ElementAppearanceLinkTest`,
+7, in `FreeCADCmd`: a link gives no look until it is given one; the
+override is its own look, by the store and by the names; elements are
+named by their paths, never by number, and `ColoredElements` written is
+names that state nothing; a cut of a link takes what the link lays over,
+with no recompute and no view provider; the looks are in the file and
+their names are not; an undo; an `App::Part` the same.
+`scripts/transaction-log-paint-check.py`, 93: a link painted through its
+view provider holds it and its view provider says it; one row of the log,
+the object's; an undo and a redo; a link the log makes again on a branch
+switch has what it held; the object's name written; saved and read; a
+file with no store read into one. `scripts/appearance-parity-check.py`,
+76: the link's look by the object's names, the cut made from it following.

@@ -104,10 +104,38 @@ void elementOf(const PropertyElementAppearance &prop, PyObject *key, Kind &kind,
     }
 }
 
+/// A key that is a path, where the names of the property are paths (a
+/// link's): found by its string, and no element of the owner. Else null.
+const char *pathOf(const PropertyElementAppearance &prop, PyObject *key)
+{
+    if (!PyUnicode_Check(key)) {
+        return nullptr;
+    }
+    const char *name = PyUnicode_AsUTF8(key);
+    if (!name) {
+        PyErr_Clear();
+        return nullptr;
+    }
+    return prop.isPathName(name) ? name : nullptr;
+}
+
 /// One entry written: a Material is the element's whole look, a colour its
 /// colour and no more
 void writeItem(PropertyElementAppearance &prop, PyObject *key, PyObject *value)
 {
+    if (const char *path = pathOf(prop, key)) {
+        if (PyObject_TypeCheck(value, &(MaterialPy::Type))) {
+            prop.setLook(path, *static_cast<MaterialPy *>(value)->getMaterialAppearancePtr());
+            return;
+        }
+        Color color;
+        if (colorOf(value, color)) {
+            prop.setColor(path, color);
+            return;
+        }
+        throw Base::TypeError(
+            "a look is a Material, or a colour: (r, g, b[, a]) or a packed integer");
+    }
     Kind kind = PropertyElementAppearance::KindCount;
     int index = -1;
     elementOf(prop, key, kind, index);
@@ -261,9 +289,12 @@ PyObject *ElementAppearancePy::setLook(PyObject *args)
     }
     PY_TRY
     {
+        const char *path = pathOf(*prop, key);
         Kind kind = PropertyElementAppearance::KindCount;
         int index = -1;
-        elementOf(*prop, key, kind, index);
+        if (!path) {
+            elementOf(*prop, key, kind, index);
+        }
         uint16_t bits = PropertyElementAppearance::OwnAll;
         if (own != Py_None) {
             std::vector<std::string> names;
@@ -277,6 +308,11 @@ PyObject *ElementAppearancePy::setLook(PyObject *args)
                 }
             }
             bits = PropertyElementAppearance::ownFromNames(names);
+        }
+        if (path) {
+            prop->setLook(path, *static_cast<MaterialPy *>(value)->getMaterialAppearancePtr(),
+                          bits);
+            Py_Return;
         }
         prop->setLook(kind, index, *static_cast<MaterialPy *>(value)->getMaterialAppearancePtr(),
                       bits);
@@ -298,13 +334,17 @@ PyObject *ElementAppearancePy::setColor(PyObject *args)
     }
     PY_TRY
     {
-        Kind kind = PropertyElementAppearance::KindCount;
-        int index = -1;
-        elementOf(*prop, key, kind, index);
         Color color;
         if (!colorOf(value, color)) {
             throw Base::TypeError("expected a colour: (r, g, b[, a]) or a packed integer");
         }
+        if (const char *path = pathOf(*prop, key)) {
+            prop->setColor(path, color);
+            Py_Return;
+        }
+        Kind kind = PropertyElementAppearance::KindCount;
+        int index = -1;
+        elementOf(*prop, key, kind, index);
         prop->setColor(kind, index, color);
         Py_Return;
     }
@@ -325,8 +365,15 @@ PyObject *ElementAppearancePy::own(PyObject *args)
     {
         Kind kind = PropertyElementAppearance::KindCount;
         int index = -1;
-        elementOf(*prop, key, kind, index);
-        const auto names = PropertyElementAppearance::ownNames(prop->getOwn(kind, index));
+        uint16_t bits = PropertyElementAppearance::OwnNone;
+        if (const char *path = pathOf(*prop, key)) {
+            bits = prop->getNamedOwn(prop->findNamed(path));
+        }
+        else {
+            elementOf(*prop, key, kind, index);
+            bits = prop->getOwn(kind, index);
+        }
+        const auto names = PropertyElementAppearance::ownNames(bits);
         Py::Tuple tuple(static_cast<int>(names.size()));
         for (std::size_t i = 0; i < names.size(); ++i) {
             tuple.setItem(static_cast<int>(i), Py::String(names[i]));
@@ -348,6 +395,9 @@ PyObject *ElementAppearancePy::isNamed(PyObject *args)
     }
     PY_TRY
     {
+        if (const char *path = pathOf(*prop, key)) {
+            return Py::new_reference_to(Py::Boolean(prop->findNamed(path) >= 0));
+        }
         Kind kind = PropertyElementAppearance::KindCount;
         int index = -1;
         elementOf(*prop, key, kind, index);
@@ -539,6 +589,9 @@ int ElementAppearancePy::sequence_contains(PyObject *self, PyObject *key)
         return -1;
     }
     try {
+        if (const char *path = pathOf(*prop, key)) {
+            return prop->findNamed(path) >= 0 ? 1 : 0;
+        }
         Kind kind = PropertyElementAppearance::KindCount;
         int index = -1;
         elementOf(*prop, key, kind, index);
@@ -558,6 +611,13 @@ PyObject *ElementAppearancePy::mapping_subscript(PyObject *self, PyObject *key)
     }
     PY_TRY
     {
+        if (const char *path = pathOf(*prop, key)) {
+            if (prop->findNamed(path) < 0) {
+                PyErr_SetObject(PyExc_KeyError, key);
+                return nullptr;
+            }
+            return materialPy(prop->getLook(path));
+        }
         Kind kind = PropertyElementAppearance::KindCount;
         int index = -1;
         try {

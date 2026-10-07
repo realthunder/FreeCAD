@@ -53,6 +53,7 @@
 #include <App/AppearanceUpdater.h>
 #include <App/Application.h>
 #include <App/Document.h>
+#include <App/LinkAppearance.h>
 #include <App/PropertyStandard.h>
 #include <Base/Console.h>
 #include <Base/Exception.h>
@@ -217,7 +218,15 @@ App::Color sourceColor(App::Color color,
         }
         const TopoShape &shape = source.shape;
         const App::PropertyContainer *shown = nullptr;
-        if (shape.isNull() || (_linkLook && _linkLook(original, obj, shown, color)) || !obj) {
+        if (shape.isNull()) {
+            return color;
+        }
+        // What a link in the way lays over the element: the link holds it
+        // (sec 14.6.4). The Gui answers where it is there, for a link that
+        // draws through a view provider of its own.
+        const bool laid = _linkLook ? _linkLook(original, obj, shown, color)
+                                    : App::LinkAppearance::getLinkColor(original, obj, color);
+        if (laid || !obj) {
             return color;
         }
         const App::AppearanceList *list = sourceLooks(caches, source, shown, kind);

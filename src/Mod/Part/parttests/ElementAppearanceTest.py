@@ -280,6 +280,154 @@ class ElementAppearanceNamesTest(unittest.TestCase):
         self.assertEqual(box.Transparency, 50)
 
 
+class ElementAppearanceLinkTest(unittest.TestCase):
+    """What a link lays over what it shows, held by the link and written
+    with no view provider anywhere (docs/ShapeAppearanceDesign.md sec 14.6.4)."""
+
+    def setUp(self):
+        self.doc = App.newDocument("ElementAppearanceLink")
+        self.doc.UndoMode = 1
+        self.box = self.doc.addObject("Part::Box", "Box")
+        self.link = self.doc.addObject("App::Link", "Link")
+        self.link.LinkedObject = self.box
+        self.link.Placement.Base = App.Vector(20, 0, 0)
+        self.doc.recompute()
+
+    def tearDown(self):
+        App.closeDocument(self.doc.Name)
+
+    def give(self, color):
+        self.link.OverrideMaterial = True
+        look = self.link.ShapeAppearance.Base
+        look.DiffuseColor = color
+        self.link.ShapeAppearance.Base = look
+
+    def testALinkGivesNoLookUntilItIsGivenOne(self):
+        link, ea = self.link, self.link.ElementAppearance
+        self.assertFalse(link.OverrideMaterial)
+        self.assertNotIn("Face", ea)
+        self.assertEqual(ea.keys(), [])
+        self.assertIsNone(link.ColoredElements)
+        for name in ("ElementAppearance", "OverrideMaterial", "ShapeAppearance"):
+            self.assertEqual(link.getGroupOfProperty(name), "Appearances")
+
+    def testTheOverrideIsTheLinksOwnLook(self):
+        link, ea = self.link, self.link.ElementAppearance
+        self.give(RED)
+        self.assertIn("Face", ea)
+        self.assertEqual(rgb(ea.Face.DiffuseColor), RED[:3])
+        # Given to the store, the names say it
+        ea.Face = material(GREEN)
+        self.assertTrue(link.OverrideMaterial)
+        self.assertEqual(rgb(link.ShapeAppearance.Base.DiffuseColor), GREEN[:3])
+        link.OverrideMaterial = False
+        self.assertNotIn("Face", ea)
+        # ... and the look it had is the one it has again
+        link.OverrideMaterial = True
+        self.assertEqual(rgb(ea.Face.DiffuseColor), GREEN[:3])
+
+    def testElementsAreNamedByTheirPaths(self):
+        link, ea = self.link, self.link.ElementAppearance
+        ea["Face6"] = RED
+        ea.setLook("Face1", material(BLUE))
+        self.assertEqual(ea.keys(), ["Face6", "Face1"])
+        self.assertEqual(list(link.ColoredElements[1]), ["Face6", "Face1"])
+        self.assertTrue(ea.isNamed("Face6"))
+        self.assertIn("Face1", ea)
+        self.assertNotIn("Face2", ea)
+        self.assertEqual(rgb(ea["Face6"].DiffuseColor), RED[:3])
+        # A colour is a look whose own field is the colour; a material is all its own
+        self.assertLess(len(ea.own("Face6")), len(ea.own("Face1")))
+        # Never by number: a link has no shape to count
+        with self.assertRaises(Exception):
+            ea[5] = GREEN
+        del ea["Face1"]
+        self.assertEqual(list(link.ColoredElements[1]), ["Face6"])
+        # The names written as they have always been are names that state nothing
+        link.ColoredElements = (link, ["Face6", "Face2"])
+        self.assertEqual(ea.keys(), ["Face6", "Face2"])
+        self.assertEqual(ea.own("Face2"), ())
+        self.assertEqual(rgb(ea["Face6"].DiffuseColor), RED[:3])
+        link.ColoredElements = None
+        self.assertEqual(ea.keys(), [])
+
+    def testWhatIsMadeFromALinkTakesWhatItLaysOver(self):
+        cyl = self.doc.addObject("Part::Cylinder", "Cyl")
+        cyl.Radius = 2
+        cyl.Height = 30
+        cyl.Placement.Base = App.Vector(25, 5, -10)
+        cut = self.doc.addObject("Part::Cut", "Cut")
+        cut.Base = self.link
+        cut.Tool = cyl
+        cut.MapFaceColor = True
+        self.doc.recompute()
+        self.box.ShapeColor = RED[:3]
+        self.assertIn(RED[:3], colors(cut))
+        # No recompute, and nothing asked of a view provider
+        self.give(GREEN)
+        self.assertFalse("Touched" in cut.State)
+        self.assertIn(GREEN[:3], colors(cut))
+        self.assertNotIn(RED[:3], colors(cut))
+        self.link.OverrideMaterial = False
+        self.assertIn(RED[:3], colors(cut))
+        self.assertNotIn(GREEN[:3], colors(cut))
+
+    def testTheLooksAreInTheFileAndTheirNamesAreNot(self):
+        import zipfile
+
+        self.give(RED)
+        self.link.ElementAppearance["Face6"] = BLUE
+        folder = tempfile.mkdtemp(prefix="fc-ea-")
+        path = os.path.join(folder, "link.FCStd")
+        self.doc.saveAs(path)
+        with zipfile.ZipFile(path) as z:
+            xml = z.read("Document.xml").decode("utf-8")
+        for name in ("OverrideMaterial", "ShapeAppearance"):
+            self.assertNotIn('name="%s"' % name, xml)
+        # What upstream knows a link by is written as it always was
+        self.assertIn('name="ColoredElements"', xml)
+        App.closeDocument(self.doc.Name)
+        self.doc = App.openDocument(path)
+        link = self.doc.getObject("Link")
+        ea = link.ElementAppearance
+        self.assertTrue(link.OverrideMaterial)
+        self.assertEqual(rgb(ea.Face.DiffuseColor), RED[:3])
+        self.assertEqual(rgb(link.ShapeAppearance.Base.DiffuseColor), RED[:3])
+        self.assertEqual(ea.keys(), ["Face6"])
+        self.assertEqual(rgb(ea["Face6"].DiffuseColor), BLUE[:3])
+        self.assertEqual(list(link.ColoredElements[1]), ["Face6"])
+
+    def testAnUndoTakesALookBack(self):
+        link, ea = self.link, self.link.ElementAppearance
+        self.doc.openTransaction("looks")
+        self.give(RED)
+        ea["Face6"] = BLUE
+        self.doc.commitTransaction()
+        self.doc.undo()
+        self.assertFalse(link.OverrideMaterial)
+        self.assertNotIn("Face", ea)
+        self.assertEqual(ea.keys(), [])
+        self.assertIsNone(link.ColoredElements)
+        self.doc.redo()
+        self.assertTrue(link.OverrideMaterial)
+        self.assertEqual(rgb(ea.Face.DiffuseColor), RED[:3])
+        self.assertEqual(list(link.ColoredElements[1]), ["Face6"])
+
+    def testAPartHoldsItsLooksAsALinkDoes(self):
+        part = self.doc.addObject("App::Part", "Part")
+        part.addObject(self.box)
+        ea = part.ElementAppearance
+        self.assertFalse(part.OverrideMaterial)
+        part.OverrideMaterial = True
+        self.assertIn("Face", ea)
+        ea["Box.Face6"] = GREEN
+        self.assertEqual(ea.keys(), ["Box.Face6"])
+        self.assertEqual(list(part.ColoredElements[1]), ["Box.Face6"])
+        part.OverrideMaterial = False
+        self.assertNotIn("Face", ea)
+        self.assertEqual(ea.keys(), ["Box.Face6"])
+
+
 def face(obj, **at):
     """The face of the object whose bounding box is so, as the shape counts it."""
     for i, f in enumerate(obj.Shape.Faces):

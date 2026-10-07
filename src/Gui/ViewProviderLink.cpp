@@ -1983,6 +1983,15 @@ ViewProviderLink::ViewProviderLink()
     ADD_PROPERTY(OverrideMaterialList,());
     ADD_PROPERTY(OverrideColorList,());
 
+    // What the link lays over what it shows is the link's, and these are
+    // names over it where it holds any (docs/ShapeAppearanceDesign.md sec
+    // 14.6.4)
+    looks.overrideMaterial = &OverrideMaterial;
+    looks.shapeAppearance = &ShapeAppearance;
+    looks.overrideColorList = &OverrideColorList;
+    looks.materialList = &MaterialList;
+    looks.overrideMaterialList = &OverrideMaterialList;
+
     ADD_PROPERTY(ChildViewProvider, (""));
     ChildViewProvider.setStatus(App::Property::Hidden,true);
 
@@ -2045,6 +2054,14 @@ void ViewProviderLink::attach(App::DocumentObject *pcObj) {
     if(pcObj->isDerivedFrom(App::LinkElement::getClassTypeId()))
         hide();
     linkView->setOwner(this);
+
+    // In a document being read the looks are in the file, and are taken
+    // when the read of this object is done (finishRestoring()). The
+    // document's own read, that is: a link the log puts back is made as any
+    // other.
+    auto doc = pcObj->getDocument();
+    if(!isRestoring() && doc && !doc->testStatus(App::Document::Restoring))
+        looks.bind(pcObj, false);
 }
 
 void ViewProviderLink::setDisplayMode(const char* ModeName)
@@ -2102,6 +2119,9 @@ QPixmap ViewProviderLink::getOverlayPixmap() const {
 
 void ViewProviderLink::onChanged(const App::Property* prop) {
     Gui::ColorUpdater colorUpdater;
+
+    // A write to a name over what the link holds is the link's
+    looks.onChanged(prop, isRestoring());
 
     if(prop==&ChildViewProvider) {
         childVp = freecad_dynamic_cast<ViewProviderDocumentObject>(ChildViewProvider.getObject().get());
@@ -2256,6 +2276,7 @@ const App::LinkBaseExtension *ViewProviderLink::getLinkExtension() const{
 void ViewProviderLink::updateData(const App::Property *prop) {
     if(childVp)
         childVp->updateData(prop);
+    looks.updateData(prop);
     if(!isRestoring() && !pcObject->isRestoring()) {
         auto ext = getLinkExtension();
         if(ext) {
@@ -2584,6 +2605,9 @@ void ViewProviderLink::finishRestoring() {
     auto ext = getLinkExtension();
     if(!ext)
         return;
+    // The looks are the link's: its own where the file has them, else
+    // what this view provider read, taken into it
+    looks.bind(getObject(), true);
     linkView->setDrawStyle(DrawStyle.getValue(),LineWidth.getValue(),PointSize.getValue());
     updateDataPrivate(ext,ext->getLinkedObjectProperty());
     if(ext->getLinkPlacementProperty())
@@ -4075,6 +4099,7 @@ void ViewProviderLink::beforeDelete()
 {
     if (childVp)
         childVp->beforeDelete();
+    looks.unbind();
     inherited::beforeDelete();
 }
 

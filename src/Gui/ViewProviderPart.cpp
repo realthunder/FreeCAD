@@ -59,7 +59,30 @@ ViewProviderPart::ViewProviderPart()
 
     ADD_PROPERTY(OverrideColorList,());
 
+    // What the part lays over what it holds is the part's, and these are
+    // names over it (docs/ShapeAppearanceDesign.md sec 14.6.4)
+    looks.overrideMaterial = &OverrideMaterial;
+    looks.shapeAppearance = &ShapeAppearance;
+    looks.overrideColorList = &OverrideColorList;
+    looks.others = {&ShapeColor, &Transparency};
+
     sPixmap = "Geofeaturegroup.svg";
+}
+
+void ViewProviderPart::attach(App::DocumentObject *obj)
+{
+    inherited::attach(obj);
+    // In a document being read the looks are in the file, and are taken
+    // when the read of this object is done (finishRestoring())
+    auto doc = obj ? obj->getDocument() : nullptr;
+    if (!isRestoring() && doc && !doc->testStatus(App::Document::Restoring))
+        looks.bind(obj, false);
+}
+
+void ViewProviderPart::beforeDelete()
+{
+    looks.unbind();
+    inherited::beforeDelete();
 }
 
 ViewProviderPart::~ViewProviderPart() = default;
@@ -77,6 +100,7 @@ App::PropertyLinkSub *ViewProviderPart::getColoredElementsProperty() const {
  * associated view providers of the objects of the object group get changed as well.
  */
 void ViewProviderPart::onChanged(const App::Property* prop) {
+    looks.onChanged(prop, isRestoring());
     if (prop == &OverrideMaterial)
         pcShapeMaterial->setOverride(OverrideMaterial.getValue());
     else if(!isRestoring()) {
@@ -88,6 +112,7 @@ void ViewProviderPart::onChanged(const App::Property* prop) {
 }
 
 void ViewProviderPart::updateData(const App::Property *prop) {
+    looks.updateData(prop);
     if(prop && !isRestoring() && !pcObject->isRestoring()) {
         auto obj = Base::freecad_dynamic_cast<App::Part>(getObject());
         if(prop == getColoredElementsProperty()) 
@@ -220,6 +245,7 @@ void ViewProviderPart::buildChildren3D() {
 
 void ViewProviderPart::finishRestoring() {
     inherited::finishRestoring();
+    looks.bind(getObject(), true);
     applyColors();
 }
 

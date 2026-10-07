@@ -547,6 +547,13 @@ void PropertyElementAppearance::setBase(Kind kind, const MaterialAppearance &loo
     assignBase(kind, list);
 }
 
+void PropertyElementAppearance::clearBase(Kind kind)
+{
+    if (hasBase(kind)) {
+        assignBase(kind, AppearanceList());
+    }
+}
+
 void PropertyElementAppearance::assignBase(Kind kind, const AppearanceList &list)
 {
     const MaterialAppearance before = getBase(kind);
@@ -803,6 +810,10 @@ int PropertyElementAppearance::findNamed(const char *element) const
                 return;
             }
             _places->emplace(name, pos);
+            if (_pathNames) {
+                // A path is itself, and not the element at its end
+                return;
+            }
             Kind kind = KindCount;
             int index = -1;
             if (parseElement(name.c_str(), kind, index) && index >= 0) {
@@ -822,6 +833,9 @@ int PropertyElementAppearance::findNamed(const char *element) const
     auto it = _places->find(element);
     if (it != _places->end()) {
         return it->second;
+    }
+    if (_pathNames) {
+        return -1;
     }
     Kind kind = KindCount;
     int index = -1;
@@ -882,6 +896,66 @@ void PropertyElementAppearance::eraseNamed(int pos)
     }
     next.setFollowMaterial(false);
     assign(SlotNamed, next);
+}
+
+//**************************************************************************
+// Names that are paths
+
+void PropertyElementAppearance::setPathNames(bool on)
+{
+    _pathNames = on;
+    _places.reset();
+}
+
+bool PropertyElementAppearance::isPathName(const char *name) const
+{
+    if (!_pathNames || !name || !name[0]) {
+        return false;
+    }
+    for (const char *kind : KindNames) {
+        if (std::strcmp(name, kind) == 0) {
+            return false;
+        }
+    }
+    return true;
+}
+
+void PropertyElementAppearance::setNamedLook(const char *name, const MaterialAppearance &look,
+                                             uint16_t own)
+{
+    if (!name || !name[0]) {
+        throw Base::ValueError("a look is given to a name");
+    }
+    own &= OwnAll;
+    std::vector<std::string> names = subs();
+    const AppearanceList &before = getNamedLooks();
+    const int count = static_cast<int>(names.size());
+    int pos = findNamed(name);
+    if (pos >= 0 && pos < before.getSize() && getNamedOwn(pos) == own
+        && differingFields(before.getMaterial(pos), look) == OwnNone) {
+        return;
+    }
+    AppearanceList looks;
+    looks.setPBR(before.isPBR());
+    looks.setSize(count + (pos < 0 ? 1 : 0));
+    std::vector<uint16_t> owns(static_cast<std::size_t>(count));
+    for (int i = 0; i < count; ++i) {
+        if (i < before.getSize()) {
+            looks.set1Value(i, before.getMaterial(i));
+        }
+        owns[static_cast<std::size_t>(i)] = getNamedOwn(i);
+    }
+    if (pos < 0) {
+        pos = count;
+        names.emplace_back(name);
+        owns.push_back(own);
+    }
+    else {
+        owns[static_cast<std::size_t>(pos)] = own;
+    }
+    looks.set1Value(pos, look);
+    looks.setFollowMaterial(false);
+    setNamed(std::move(names), looks, std::move(owns));
 }
 
 //**************************************************************************
@@ -983,6 +1057,12 @@ int PropertyElementAppearance::countElements(Kind kind) const
 
 bool PropertyElementAppearance::resolveElement(const char *element, Kind &kind, int &index) const
 {
+    if (_pathNames) {
+        // A kind's own name and nothing else: the rest are paths, and no
+        // element of the owner
+        return element && !isPathName(element) && parseElement(element, kind, index)
+            && index < 0;
+    }
     if (parseElement(element, kind, index)) {
         return true;
     }
@@ -1046,6 +1126,9 @@ void PropertyElementAppearance::setLook(Kind kind, int index, const MaterialAppe
     if (index < 0) {
         setBase(kind, look);
         return;
+    }
+    if (_pathNames) {
+        throw Base::ValueError("an element is named by its path here, not by its number");
     }
     own &= OwnAll;
     if (own == OwnNone) {
@@ -1125,6 +1208,10 @@ void PropertyElementAppearance::setLook(Kind kind, int index, const MaterialAppe
 void PropertyElementAppearance::setLook(const char *element, const MaterialAppearance &look,
                                         uint16_t own)
 {
+    if (isPathName(element)) {
+        setNamedLook(element, look, own);
+        return;
+    }
     Kind kind = KindCount;
     int index = -1;
     if (!resolveElement(element, kind, index)) {
@@ -1147,6 +1234,16 @@ void PropertyElementAppearance::setColor(Kind kind, int index, const Color &colo
 
 void PropertyElementAppearance::setColor(const char *element, const Color &color)
 {
+    if (isPathName(element)) {
+        const int pos = findNamed(element);
+        MaterialAppearance look = pos >= 0 && pos < getNamedLooks().getSize()
+            ? getNamedLooks().getMaterial(pos)
+            : MaterialAppearance(AppearanceList::defaultMaterial());
+        look.diffuseColor = color;
+        look.transparency = color.transparency();
+        setNamedLook(element, look, (pos >= 0 ? getNamedOwn(pos) : OwnNone) | OwnDiffuse);
+        return;
+    }
     Kind kind = KindCount;
     int index = -1;
     if (!resolveElement(element, kind, index)) {
@@ -1291,6 +1388,7 @@ void PropertyElementAppearance::updateElementReference(DocumentObject *feature, 
 Property *PropertyElementAppearance::Copy() const
 {
     auto *p = new PropertyElementAppearance();
+    p->_pathNames = _pathNames;
     p->_pcLinkSub = _pcLinkSub;
     p->_cSubList = _cSubList;
     p->_ShadowSubList = _ShadowSubList;

@@ -396,6 +396,25 @@ def run():
     link.ViewObject.ShapeAppearance.Base = over
     step(doc, "the link given a colour of its own")
     check("the cut draws the link's (%r)" % colours(c), GREEN in colours(c))
+    # Which is the link's to hold (sec 14.6.4), under its own names too
+    lea = link.ElementAppearance
+    check("and the link holds it (%r)" % (rgb(lea.Face.DiffuseColor) if "Face" in lea else None,),
+          link.OverrideMaterial and "Face" in lea and rgb(lea.Face.DiffuseColor) == GREEN
+          and rgb(link.ShapeAppearance.Base.DiffuseColor) == GREEN)
+    link.OverrideMaterial = False
+    step(doc, "the link's own look taken away, by the object's name")
+    check("the view provider follows, and the cut draws the box's again (%r)" % colours(c),
+          not link.ViewObject.OverrideMaterial and "Face" not in lea
+          and RED in colours(c) and GREEN not in colours(c))
+    link.OverrideMaterial = True
+    over = link.ShapeAppearance.Base
+    over.DiffuseColor = YELLOW
+    link.ShapeAppearance.Base = over
+    step(doc, "and given another, by the object's names")
+    check("the view provider says it, and the cut draws it (%r)" % colours(c),
+          link.ViewObject.OverrideMaterial
+          and rgb(link.ViewObject.ShapeAppearance.Base.DiffuseColor) == YELLOW
+          and YELLOW in colours(c))
     App.closeDocument(doc.Name)
 
     # A body: a pad and a pocket.

@@ -189,9 +189,11 @@ public:
     /** What a link in the way lays over an element of what it shows
      *
      * A face made from a face seen through a link takes the look the link
-     * gives it. Until a link holds that itself (docs/ShapeAppearanceDesign.md
-     * sec 14.6.9 step C) it is its view provider's, and this is how the
-     * Gui answers for it; with no Gui nothing is laid over.
+     * gives it. The link holds that (App::LinkAppearance,
+     * docs/ShapeAppearanceDesign.md sec 14.6.4), and with no function given
+     * here the link is asked. The Gui gives one, which is asked first: it
+     * knows a link that draws through a view provider of its own, whose
+     * looks are that one's, and a link that holds none.
      *
      * @param mapped: the element, as the object the link shows names it
      * @param obj: the object the element's history leads to; changed to

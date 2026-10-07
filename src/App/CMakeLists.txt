@@ -458,6 +458,7 @@ SET(Document_CPP_SRCS
     GeoFeaturePyImp.cpp
     DocumentObjectPyImp.cpp
     AppearanceUpdater.cpp
+    LinkAppearance.cpp
     DocumentObserver.cpp
     DocumentObserverPython.cpp
     DocumentPyImp.cpp
@@ -530,6 +531,7 @@ SET(Document_HPP_SRCS
     DocumentObjectFileIncluded.h
     DocumentObjectGroup.h
     AppearanceUpdater.h
+    LinkAppearance.h
     DocumentObserver.h
     DocumentObserverPython.h
     Expression.h
