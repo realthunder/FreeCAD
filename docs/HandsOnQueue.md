@@ -76,6 +76,7 @@ report views, the reporter's own files -- is kept beside the dev tree under
 | 36 | 2026-10-07 | TechDraw drawn by the backend: dashed lines do not behave as Qt's do (view frame, section line, hidden line, and so on), zoom above all | OPEN |
 | 37 | 2026-10-07 | TechDraw: the edge style "Chain" is not drawn dashed, by either renderer, though the style combo box shows it dashed | OPEN |
 | 38 | 2026-10-07 | omni search: an obvious freeze the first time it is brought up | FIXED `bb31f8820b`, not staged: the first bring-up loaded and rendered the icon of every command (609) before showing the box, 0.99 s + 0.28 s on the reporter's configuration with `scanner.FCStd` open; 0.15 s + 0.07 s now (`docs/HandsOnLog.md`) |
+| 39 | 2026-10-07 | MSAA has not reached any view since 2026-09-07 (found by the build session on entry 26) | FIXED `c7d115e576`, not staged: with "MSAA 4x" chosen the backend could not create its scene targets and drew without multisampling from then on, on every backend; the depth is write-only under MSAA now. The reporter's case on the fixed tree: 0.75 s in all, both views at 4 samples (`docs/HandsOnLog.md`) |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -1631,6 +1632,10 @@ as development notes that ended up as a setting's documentation.
 
 ## 24. Every setting behind a generated helper class, applied by delayed handlers (a change request) -- OPEN
 
+**Next for the build session, at the reporter's word** (to it, 2026-10-07,
+asked which entry "do entry 23 next" meant): "I meant entry 24, but have
+you finished 23?"
+
 **2026-10-06 15:51, every setting behind a generated helper class, so the
 omni search finds it (a change request, application-wide).** "audit the
 whole application and collect every Base::Parameter based settings into cog
@@ -1657,6 +1662,13 @@ handler asked for in (c) has a precedent in `ParamHandlers::addDelayedHandler`
 classes' own `on...Changed` hooks.
 
 ## 25. The outline of a highlighted face is jagged, MSAA or not -- OPEN
+
+**From the build session, a datum and no more** (passed on 2026-10-07 17:05):
+MSAA was not in effect at all when this was reported (entry 39). With MSAA
+really on, the highlighted face's outline is STILL jagged, on its inner
+edge: it is a stencil cut in a pass drawn after the resolve (pictures in
+`..\dl\handson\2026-10-07\entry25-outline\`). So this entry stands on its
+own; "MSAA or not" was partly entry 39.
 
 **2026-10-06 15:44, face highlight edge is jagged.** "face highlight
 silhouette shows jagged edge regardless whether msaa is used or not". The
@@ -2237,10 +2249,32 @@ entry 23 is the settings audit, staged, its defaults fixed since -- and is
 asking the reporter itself whether entry 24 is meant (every setting behind a
 generated class so the omni search finds it) or what is left under 23.
 
+## 39. MSAA has not reached any view since 2026-09-07 -- FIXED `c7d115e576`, not staged (see `docs/HandsOnLog.md`)
+
+**2026-10-07, found by the build session** while answering the reporter on
+entry 26, and passed on at 17:05 to be numbered here (its log has it under
+"MSAA does not reach the view"). The reporter's words to it, on the halt of
+entry 26: "what is the problem is entry 23. have you tested with scanner open
+and then change the msaa setting".
+What it found, in its words: with "MSAA 4x" chosen the backend prints "4x
+MSAA scene targets could not be created on this backend -- rebuilding
+without multisampling", and the session draws without multisampling from
+then on. Cause: `fd5a9a5aa6` built the scene depth readable as a texture at
+every sample count, and bgfx refuses a framebuffer with such a multisampled
+depth. Every backend, not Direct3D alone.
+The fix: the depth is write-only under MSAA; a test asks the view how many
+samples it was built with (11 PASS, 5 FAIL on the staged binaries). The
+reporter's own case on the fixed tree -- their configuration, `scanner.FCStd`
+open, anti-aliasing changed in the dialog, OK -- 0.75 s in all, both views
+rebuilt at 4 samples.
+What it means for two other entries: the reporter's "regardless whether msaa
+is used or not" of entry 25 was said while MSAA was not in effect at all, and
+the toggling of entry 26 was toggling a setting that reached no view.
+
 ## Inbox
 
 Notes not sorted into an entry yet. Add a line here at any time, in any words;
 it is read before each entry is started and moved up into the table.
 
 (empty: the notes of 2026-10-06 are entries 20 to 28, those of 2026-10-07 so far
-entries 29 to 38)
+entries 29 to 39)
