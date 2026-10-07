@@ -61,7 +61,7 @@ report views, the reporter's own files -- is kept beside the dev tree under
 | 21 | 2026-10-06 | TechDraw: a click on a section line starts a section, and the line shifts at each recompute | STAGED |
 | 22 | 2026-10-06 | omni search: `/word` with no space is an object query; `/ word` forces it (change request, decided) | STAGED 2026-10-07 14:23, fixed `5aedd5cf83`: "/word" is an object query, "/ word" forces it, a keyword in full is the keyword, the beginning of one lists modes and objects together; the browser viewer's grammar follows (its bundle not rebuilt) |
 | 23 | 2026-10-06 | omni search: every setting it collects has documentation, none of it long (an audit asked) | STAGED 2026-10-07 14:23, fixed `c7a27b5a85` (and `08b8f009aa`): 574 settings audited, 221 had no documentation and 94 ran past 400 characters; all have a short text now and a test keeps it so. Side findings for the reporter in `docs/HandsOnLog.md`. The defaults FIXED `02cab053df`, not staged: OK on a fresh profile changed 23 settings and stored 2 under a wrong type, 14 of them a generated page's spin box clamping its default to 99; a test keeps it so |
-| 24 | 2026-10-06 | every `Base::Parameter` setting behind a cog helper class so the omni search finds it, applied through delayed handlers (change request, application-wide) | STARTED, nineteen groups done as of 2026-10-08 02:10, none staged or pushed (the core Gui groups, Document, View, the navigation cube, PartDesign, Part's Check Geometry and Boolean options, the Sketcher's own group and sub-groups; and faults found on the way). To do: the rest of the Sketcher, TechDraw, Fem, CAM, Part's import/export, the Python-only modules. Three questions and two decisions for the reporter (`docs/HandsOnLog.md`) |
+| 24 | 2026-10-06 | every `Base::Parameter` setting behind a cog helper class so the omni search finds it, applied through delayed handlers (change request, application-wide) | STARTED, twenty-one groups done as of 2026-10-08 03:45, none staged or pushed (the core Gui groups, Document, View, the navigation cube, PartDesign, Part's Check Geometry and Boolean options, the Sketcher complete, TechDraw's General group; and faults found on the way). To do: the rest of TechDraw, Fem, CAM, Part's import/export, the Python-only modules. Three questions and five decisions for the reporter (`docs/HandsOnLog.md`) |
 | 25 | 2026-10-06 | the outline of a highlighted face is jagged, MSAA on or off | OPEN |
 | 26 | 2026-10-06 | a long halt after enabling MSAA and pressing OK in the preferences | FIXED `175ffce199`, not staged: the FIRST OK of a profile held the program 11 to 15 s (780 keys stored for the first time and taken for changes: stylesheet set again 4.2 s, every Part view provider re-meshed 3.2 s, language activated again about 2 s); 0.9 s now (`docs/HandsOnLog.md`) |
 | 27 | 2026-10-06 | the view cell menu: opens a spreadsheet nobody asked for, lists every TechDraw object, changes the wrong cell | STAGED 2026-10-07 14:23, fixed `fa2ada985c`: the menu made a spreadsheet view by asking for it, listed a page's views, and placed a pick by the general policy instead of into its cell; all three gone, spreadsheets now listed by type like pages (`docs/HandsOnLog.md`) |
@@ -1631,7 +1631,7 @@ collects automatically; (b) each must have documentation; (c) none of it
 overly long; (d) pick out the long ones in particular -- text an agent wrote
 as development notes that ended up as a setting's documentation.
 
-## 24. Every setting behind a generated helper class, applied by delayed handlers (a change request) -- STARTED, nineteen groups done; three questions and two decisions for the reporter (see `docs/HandsOnLog.md`)
+## 24. Every setting behind a generated helper class, applied by delayed handlers (a change request) -- STARTED, twenty-one groups done; three questions and five decisions for the reporter (see `docs/HandsOnLog.md`)
 
 **From the build session, started** (passed on 2026-10-07 18:10; its log,
 entry 24, has the method and the inventory):
@@ -1786,6 +1786,39 @@ entry 24, has the method and the inventory):
     View group, five findings to measure), TechDraw, Fem, CAM, Part's
     import/export settings, and the Python-only modules, which wait on the
     reporter.
+- **Passed on 2026-10-08 03:45, twenty-one groups done; the log is current
+  at `76143c7da8`; 104 commits ahead of origin, nothing staged or pushed.**
+  The Sketcher is done (six commits in all) and TechDraw is started.
+  - `5ba1afc503` the Sketcher's colours and sizes kept in the 3D view's
+    group (27). On the reporter's staged copy the Appearance page shows, and
+    OK stores, another colour for external geometry (204,51,115) than the
+    program draws it in (204,51,153).
+  - `2c4b0159d6` the Sketcher's solver settings (27), with three slips in
+    the "Advanced solver control" box of the task panel: a value typed for
+    the redundant DogLeg solver was stored as the Levenberg-Marquardt one
+    (measured, staged too); that solver's tau was set from eps1; unticking
+    its size multiplier switched it on.
+  - `9ccbe547b8` the Sketcher's Snap button did nothing at the first click
+    in a session that starts with snapping off (measured with a seeded
+    profile, staged too).
+  - `c50d40e3c7` TechDraw's General group (35 settings).
+  - **Three more decisions for the reporter to overrule, NOT ANSWERED YET**
+    -- each by the rule "what the program does while the key is not stored
+    wins, and the page shows it". On the staged copy OK in the preferences
+    switches all three:
+    (d) the new face finder is OFF (the Advanced page showed it on);
+    (e) the vertex scale is 3 (the page showed 5);
+    (f) the template click mark size is 5 (the page showed 3).
+  - Left for the reporter in the Sketcher, as things seen and not changed:
+    the Dimension tool reads the geometry tools' "continue" switch (as
+    upstream does); the key meant to remember radius or diameter in the
+    group button is never stored; two sizes default to the application
+    font's height and are not listed.
+  - Left in the entry: the rest of TechDraw (about 105 keys; the inventory
+    lists two page widgets whose value never reaches the reader and seven
+    keys written under one name and read under another -- all to be
+    measured), Fem, CAM, Part's import/export settings, the Python-only
+    modules.
 - **Three questions for the reporter, NOT ANSWERED YET** (log, entry 24, "To
   decide"):
   1. Modules written in Python only -- BIM, Draft, AddonManager, parts of CAM
