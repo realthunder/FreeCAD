@@ -852,7 +852,7 @@ its own thing, and not started.
 
 Evidence: `..\dl\handson\2026-10-07\msaa-*`, `entry26-first-ok-with-msaa-*`.
 
-## 24. Every setting behind a generated class -- STARTED, eleven groups done
+## 24. Every setting behind a generated class -- STARTED, thirteen groups done
 
 The reporter, 2026-10-07, asked which entry "do entry 23 next" meant: "I
 meant entry 24". Not staged.
@@ -1027,6 +1027,43 @@ by the page and dropped by the highlighter; the page stores every colour on
 OK, `Text` included. Scored: `tests/gui/editor-settings.py`
 (`GuiEditorSettings_tests_run`) 8 PASS; 4 PASS, 4 FAIL staged.
 
+**Done: the rest of the document settings** (`Preferences/Document`), 10
+more in `App::DocumentParams`, `670505110d`: auto recovery (on, interval,
+compressed, binary shapes), recovery and a new document at startup, undo
+(on, steps), view changes modifying the document, the JSON indentation. Put
+right on the way: auto recovery was set up at the start and by OK on the
+Document page only, and follows its settings now; the auto saver read
+"save thumbnails" as off where its default is on, so with the key not stored
+it did not switch them off while it saved, which is the one thing it reads
+the key for; the page stored two keys nothing reads, from two check boxes it
+hides. Scored: `tests/gui/document-settings.py`
+(`GuiDocumentSettings_tests_run`) 4 PASS; 1 PASS, 3 FAIL staged. The timer,
+the thumbnail switch and the indentation are from the code. LEFT: the auto
+saver still writes the thumbnail key while it saves, and a parameter written
+while the preferences are open makes Cancel ask about reverting.
+
+**Done, first step: the View group** (`Preferences/View`), 61 more
+settings in `ViewParams`, `e7423066d8`: the 3D view's display, background,
+lights, navigation, and seven others. They were read at about a hundred
+places in 25 files with a default at each. Most reach the views through
+`View3DSettings`, one observer per view, told by the group itself: it keeps
+reading the group, and every read takes its DEFAULT from the class (done by
+a script over the sites, `edit24s.py`). Where defaults disagreed:
+- the zoom step was 0.2 where a view is made and 0 where an open view is
+  told of a change: a step stored and then removed left the open views
+  unable to zoom until the next start;
+- Home read an unset camera orientation as Top, a new document opens in
+  Trimetric. DECIDED: Trimetric, for the reporter to overrule;
+- the Colors page showed, and OK stored, a background colour and a gradient
+  colour the views do not draw for unset keys (20,20,163 for 234,229,220);
+- the Sketcher read the background as white and without gradient.
+Scored: `tests/gui/view-settings.py` (`GuiViewSettings_tests_run`) 6 PASS;
+1 PASS, 5 FAIL staged. NOT DONE in this group: the 11 Sketcher keys kept in
+it; 19 keys that WERE defined and are still read directly at 119 places
+(`MarkerSize` at 22); the Python readers (Draft, BIM, Tux), three with other
+defaults; the three colours of the default appearance, whose default is the
+material card's.
+
 **The generator,** `0a94fb63c9`: a setting stored under another name than
 its own (`param_name`) was read and written under its key, but a CHANGE was
 looked for, and the key removed, under the setting's name. Mesh's two
@@ -1045,13 +1082,12 @@ on both counts before.
 
 **Read, not yet converted** (four read-only helper agents; their tables are
 in `..\dl\handson\2026-10-07\`, `entry24-inventory-*.txt`):
-- `View` and `Document`: 113 and 14 keys not yet defined (189 and 43 are),
-  and 19 defined View keys are still read directly at 119 places
-  (`MarkerSize` at 22). Seen: any change of an unnamed key of the View group
-  re-applies the background colours to every view.
+- `View`, what is left of it: see above. Seen and not touched: any change
+  of a key of the View group that `View3DSettings` does not name re-applies
+  the background colours to every view.
 
 **Order from here,** by what a user meets first: the rest of `src/Gui`
-(`View`'s 100 keys not yet in `ViewParams`, `Document`'s 12, `NaviCube`), then Part and PartDesign, the Sketcher, TechDraw, and the rest.
+(the rest of `View`, `NaviCube`), then Part and PartDesign, the Sketcher, TechDraw, and the rest.
 
 **To decide, for the reporter:**
 - Modules written in Python only (BIM, Draft, AddonManager, parts of CAM
