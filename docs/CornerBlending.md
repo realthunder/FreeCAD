@@ -1,8 +1,9 @@
 # Corner Blending -- setback vertex blends for fillets
 
 Status: the OCCT side of phases 1 and 2 is implemented, as the fillet's
-fallback first (section 9), and the Part API of phase 3 (section 9.4). The
-PartDesign property and the task panel (phases 4 and 5) are not started.
+fallback first (section 9), the Part API of phase 3 (section 9.4) and the
+PartDesign property of phase 4 (section 9.5). The task panel (phase 5) is
+not started.
 
 Request: realthunder/FreeCAD_assembly3#894, "[FR] Blend Corner feature"
 (2021-11). Related: #917 (variable radius; the fork's fillet has per-edge
@@ -524,3 +525,53 @@ not fold (its mean curvature keeps one sign). The last row keeps more
 material than today's corner: with one edge at `d0` the patch turns tight
 there and runs closer to the vertex. That is the shape asked for, not a
 bulge; it is why uneven setbacks want the GUI's handles (section 6).
+
+### 9.5 The PartDesign property (phase 4)
+
+`PartDesign::Fillet::Corners`, a `Part::PropertyFilletCorners`, as 4.2
+planned, with these settled:
+
+- **Value.** A map from a vertex name to a corner: the setback of all its
+  fillets (less than 0: none) and a map from an edge name to the setback of
+  that edge's fillet. Python reads it as `{"Vertex7": (2.0, {"Edge3": 3.0})}`
+  and takes the forms `makeFillet(corners=)` takes, by name only: a dict or
+  pairs, each corner a setback, `{edge: setback}`, or both as a tuple.
+  Paths: `Corners.Vertex7` (the tuple), `Corners.Vertex7.Setback` and
+  `Corners.Vertex7.Edge3`, read as lengths; `None` removes an entry. Saved
+  as `<FilletCorners>` of `<Corner id setback>` of `<Edge id setback>`; an
+  unknown attribute is ignored, which leaves room for the corner type of
+  section 5.
+- **The vertex goes in `Base`.** Names follow topology changes only through
+  a link, and `Base` holds the edges, so setting a corner whose vertex the
+  base has also appends the vertex to `Base` (not while restoring or
+  undoing). `connectLinkProperty(Base)` then renames the vertex and the
+  edges inside the corner, and the expressions bound to them, as `Base`'s
+  names change, and drops a corner whose vertex leaves `Base`: removing the
+  vertex from the reference list removes its corner. `getContinuousEdges`
+  skips a vertex, gone or not, so it neither warns nor fails the fillet.
+- **Kept, but skipped.** The feature hands the corners to `makEFillet` as
+  `optional` (a new `FilletCorner` field): a vertex that ends no fillet, an
+  edge that is not filleted or whose fillet does not end there, is skipped
+  with a warning instead of failing the fillet. A name the base no longer
+  has is skipped the same way, by the feature. Without the fork a corner
+  still fails the fillet ("needs the OCCT fork"); a corner with no setback
+  and no edges is not passed at all.
+- **What follows a rename.** Only a base with an element map: a primitive
+  (`AdditiveBox`, `Part::Box`) has none, so its names are plain indices.
+  Inserting a feature under a fillet leaves every `Base` reference missing
+  (`?Edge5`), edges as much as vertexes; the corners follow `Base` there
+  too, to `?Vertex6`, and are skipped.
+
+Tests: `TestFillet.TestFilletCorners`, 7 cases -- the setback against
+`makeFillet(corners=)`'s volume, per edge, expressions both ways, save and
+restore, a stale corner and an unknown vertex, the corner dropped with its
+vertex, and the names and a bound expression following a cut ahead of the
+fillet as it renumbers the corner (`Vertex10`/`Edge12` to
+`Vertex14`/`Edge19`) with the volume moving only by the cut's.
+
+Found on the way by reading, not tested or changed: `PropertyFilletSegments`
+and `PropertyChamferEdges` hand `renameExpressions` the new name as the key
+and the old as the value, the reverse of what it takes, so an expression on
+a segment radius would not follow its edge's rename; the segments' index
+loop also steps twice, and their `getPathValue` returns nothing exactly when
+the path is found.
