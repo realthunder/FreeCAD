@@ -852,7 +852,7 @@ its own thing, and not started.
 
 Evidence: `..\dl\handson\2026-10-07\msaa-*`, `entry26-first-ok-with-msaa-*`.
 
-## 24. Every setting behind a generated class -- STARTED, ten groups done
+## 24. Every setting behind a generated class -- STARTED, eleven groups done
 
 The reporter, 2026-10-07, asked which entry "do entry 23 next" meant: "I
 meant entry 24". Not staged.
@@ -1006,6 +1006,35 @@ status bar's button keeps reading the group (it is told by the group) with
 the class's defaults. Scored: `tests/gui/units-settings.py`
 (`GuiUnitsSettings_tests_run`) 7 PASS; 2 PASS, 5 FAIL staged.
 
+**Done: the editors** (`Preferences/Editor`), 21 settings, `4790a2cb38`:
+`EditorParams` -- font, sizes, tabs or spaces, line numbers, block cursor,
+thirteen colours. The editors, the console and the report view are told by
+the group and keep reading it, with the class's defaults; the colour table
+is one function where there were two copies. Put right on the way: Tab
+inserted a tab character and Enter indented with spaces in the same Python
+editor (`Spaces` had two defaults; it is ON now, and the page no longer
+shows and stores "Keep tabs" for an unset key); the Editor page showed the
+first fixed-pitch font instead of the one in use and OK stored it (Courier
+became Cascadia Code here); the report view's line limit, stored by its
+context menu, was 10000 again after every start (read from a group that has
+no such key; it is `MaxLines` of `ReportViewParams` now); two keys nothing
+reads are no longer stored. DECIDED here, for the reporter to overrule:
+`Spaces` on; the font default stays "Courier", what every reader used.
+RETRACTED before it was committed: a reading that stored colours never
+reach a macro editor opened later -- the claim passed on the staged
+binaries. LEFT: `Bookmark`, `Breakpoint`, `Character` are listed and stored
+by the page and dropped by the highlighter; the page stores every colour on
+OK, `Text` included. Scored: `tests/gui/editor-settings.py`
+(`GuiEditorSettings_tests_run`) 8 PASS; 4 PASS, 4 FAIL staged.
+
+**The generator,** `0a94fb63c9`: a setting stored under another name than
+its own (`param_name`) was read and written under its key, but a CHANGE was
+looked for, and the key removed, under the setting's name. Mesh's two
+asymptote sizes never followed a change for it. Needed for the editor's
+colours, whose keys contain spaces.
+`MeshParamsTest.aSettingStoredUnderAnotherNameIsFollowedAndRemoved` failed
+on both counts before.
+
 **Two things about the tools,** both cost a run or more:
 - A `.ui` edit reaches the binary one build late here: the first `ninja`
   regenerates `ui_X.h` and does not recompile `X.cpp`. The Theme page showed
@@ -1016,21 +1045,13 @@ the class's defaults. Scored: `tests/gui/units-settings.py`
 
 **Read, not yet converted** (four read-only helper agents; their tables are
 in `..\dl\handson\2026-10-07\`, `entry24-inventory-*.txt`):
-- `Editor`: about 25 settings, 16 of them colours whose key names have
-  spaces. Seen: the report view's line limit, stored by its context menu, is
-  overridden at every start by a read of another group's key of the same
-  name; `Editor/Spaces` is off to the text editor and on to the Python
-  editor, so Tab inserts a tab and Enter indents with spaces in the same
-  editor; the editor font has three defaults; the Editor page stores two
-  keys nothing reads and all sixteen colours on every OK.
 - `View` and `Document`: 113 and 14 keys not yet defined (189 and 43 are),
   and 19 defined View keys are still read directly at 119 places
   (`MarkerSize` at 22). Seen: any change of an unnamed key of the View group
   re-applies the background colours to every view.
 
 **Order from here,** by what a user meets first: the rest of `src/Gui`
-(`Editor`, `View`'s 100 keys not yet in `ViewParams`, `Document`'s 12,
-`NaviCube`), then Part and PartDesign, the Sketcher, TechDraw, and the rest.
+(`View`'s 100 keys not yet in `ViewParams`, `Document`'s 12, `NaviCube`), then Part and PartDesign, the Sketcher, TechDraw, and the rest.
 
 **To decide, for the reporter:**
 - Modules written in Python only (BIM, Draft, AddonManager, parts of CAM
