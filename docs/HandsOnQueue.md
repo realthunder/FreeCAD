@@ -1159,7 +1159,7 @@ one. check that". The intent, exactly: the recorded context is a path that
 starts at a top-level object; when that path no longer exists, the binder is
 given a new one.
 **Checked by the note-taker, in the source and by running it** (headless,
-`FreeCADCmd` of the dev tree at `ef15126e11`, nothing built; script and
+`FreeCADCmd` of the dev tree as built (the code staged 14:23), nothing built; script and
 output `..\dl\handson\2026-10-07\entry17-context-stale-path.py` / `.txt`):
 - *Starting at a top-level object: yes.* When the recorded path still leads
   to the binder, `update()` asks the context object for ITS parents
