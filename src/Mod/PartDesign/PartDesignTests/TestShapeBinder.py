@@ -246,6 +246,52 @@ class TestSubShapeBinder(unittest.TestCase):
         self.assertFalse(renamed.intersection(name for _, name in names))
         self.assertEqual(self._references(), references)
 
+    def testReferenceIntoBinderOfMovedBinder(self):
+        """A binder ON a binder that moved goes with it, and is renamed with
+        it, without a container of its own having moved: it has no motion to
+        report. A reference into IT -- a third binder, a sketch's external
+        geometry -- is found again all the same, because a shape that is its
+        former self carried off whole says where everything went. It was
+        looked for where it had been: "Missing external geometry reference"."""
+        body, sketch, pad, holder, binder = self._padAndBinder()
+        second = self.Doc.getObject("RefFace3")
+        # two edges of the second binder that do not lie along z
+        edges = [
+            "Edge%d" % (i + 1)
+            for i, e in enumerate(second.Shape.Edges)
+            if abs(e.tangentAt(e.FirstParameter).z) < 0.5
+        ]
+        self.assertGreaterEqual(len(edges), 2)
+        third = holder.newObject("PartDesign::SubShapeBinder", "Third")
+        third.Support = [(second, (edges[0],))]
+        outline = holder.newObject("Sketcher::SketchObject", "Outline")
+        outline.addExternal(second.Name, edges[1])
+        self.Doc.recompute()
+        self.assertTrue(third.isValid(), third.getStatusString())
+        self.assertTrue(outline.isValid(), outline.getStatusString())
+        length = third.Shape.Length
+        names = set(second.Shape.ElementReverseMap.values())
+        center = second.Shape.BoundBox.Center
+
+        holder.Placement = FreeCAD.Placement(
+            Base.Vector(3, -4, 53), FreeCAD.Rotation(Base.Vector(0, 1, 0), 3.5)
+        )
+        # other names for the first binder's faces, and so for the second's
+        binder.BindCopyOnChange = "Mutated"
+        self.Doc.recompute()
+
+        # the premise: the second binder went somewhere else under other names
+        self.assertTrue(second.isValid(), second.getStatusString())
+        self.assertGreater(second.Shape.BoundBox.Center.distanceToPoint(center), 50)
+        self.assertFalse(names.intersection(second.Shape.ElementReverseMap.values()))
+
+        self.assertTrue(third.isValid(), third.getStatusString())
+        self.assertAlmostEqual(third.Shape.Length, length)
+        self.assertTrue(outline.isValid(), outline.getStatusString())
+        subs = [sub for _, group in outline.ExternalGeometry for sub in group]
+        self.assertEqual(len(subs), 1)
+        self.assertFalse(subs[0].startswith("?"), subs[0])
+
     def testOffsetBinder(self):
         # See PR 7445
         body = self.Doc.addObject('PartDesign::Body','Body')

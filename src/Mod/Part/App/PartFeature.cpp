@@ -49,6 +49,7 @@
 # include <gp_Ax3.hxx>
 # include <gp_Dir.hxx>
 # include <gp_Pln.hxx>
+# include <gp_Quaternion.hxx>
 # include <gp_Trsf.hxx>
 # include <Geom_Circle.hxx>
 # include <GeomAdaptor_Curve.hxx>
@@ -91,6 +92,7 @@ typedef boost::iterator_range<const char*> CharRange;
 #include "PartFeaturePy.h"
 #include "PartParams.h"
 #include "PartPyCXX.h"
+#include "ShapeCongruence.h"
 #include "TopoShapePy.h"
 #include "TopoShapeOpCode.h"
 
@@ -142,6 +144,14 @@ struct Feature::ShapeVersion {
      */
     Base::Matrix4D motion;
     bool moved = false;
+    /** The same when the feature did not say: whether the live shape IS
+     * this generation's, moved as a whole (Part::recoverShapeMotion()), and
+     * by what.  Asked once per live shape, the first time an element is not
+     * found where it was.
+     */
+    enum class Recovered { NotTried, None, Found };
+    mutable Recovered recovered = Recovered::NotTried;
+    mutable Base::Matrix4D recoveredMotion;
 
     /** The generation's shape.  A generation adopted from a restored
      * property is not parsed just to be listed: its shape is read from the
@@ -1466,6 +1476,7 @@ void Feature::onBeforeChange(const App::Property *prop) {
                 it = _shapeVersions.erase(it);
             else {
                 it->searched.clear();
+                it->recovered = ShapeVersion::Recovered::NotTried;
                 ++it;
             }
         }
@@ -1840,6 +1851,29 @@ Feature::searchElementCache(const std::string &element,
             }
             if (!sub.isNull())
                 searchLiveShape(propShape, prefix, sub, names, options, tol, atol);
+            if (names.empty() && !sub.isNull() && !version.moved) {
+                // Not where it was, and the feature said nothing of a
+                // motion.  A shape that is its own generation carried off
+                // whole -- a binder of a binder that moved with its container
+                // is one -- still tells, by itself, where everything went.
+                if (version.recovered == ShapeVersion::Recovered::NotTried) {
+                    version.recovered = ShapeVersion::Recovered::None;
+                    gp_Trsf trsf;
+                    if (recoverShapeMotion(version.geometry().getShape(),
+                                           propShape->getShape().getShape(), trsf)
+                            && (trsf.TranslationPart().Modulus() > Precision::Confusion()
+                                || std::fabs(trsf.GetRotation().GetRotationAngle())
+                                        > Precision::Angular()))
+                    {
+                        version.recovered = ShapeVersion::Recovered::Found;
+                        version.recoveredMotion = TopoShape::convert(trsf);
+                    }
+                }
+                if (version.recovered == ShapeVersion::Recovered::Found)
+                    searchLiveShape(propShape, prefix,
+                                    sub.makETransform(version.recoveredMotion),
+                                    names, options, tol, atol);
+            }
         }
         // The newest generation that holds the element answers
         if (!names.empty())
