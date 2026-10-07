@@ -61,7 +61,7 @@ report views, the reporter's own files -- is kept beside the dev tree under
 | 21 | 2026-10-06 | TechDraw: a click on a section line starts a section, and the line shifts at each recompute | STAGED |
 | 22 | 2026-10-06 | omni search: `/word` with no space is an object query; `/ word` forces it (change request, decided) | STAGED 2026-10-07 14:23, fixed `5aedd5cf83`: "/word" is an object query, "/ word" forces it, a keyword in full is the keyword, the beginning of one lists modes and objects together; the browser viewer's grammar follows (its bundle not rebuilt) |
 | 23 | 2026-10-06 | omni search: every setting it collects has documentation, none of it long (an audit asked) | STAGED 2026-10-07 14:23, fixed `c7a27b5a85` (and `08b8f009aa`): 574 settings audited, 221 had no documentation and 94 ran past 400 characters; all have a short text now and a test keeps it so. Side findings for the reporter in `docs/HandsOnLog.md`. The defaults FIXED `02cab053df`, not staged: OK on a fresh profile changed 23 settings and stored 2 under a wrong type, 14 of them a generated page's spin box clamping its default to 99; a test keeps it so |
-| 24 | 2026-10-06 | every `Base::Parameter` setting behind a cog helper class so the omni search finds it, applied through delayed handlers (change request, application-wide) | STARTED, ten groups done as of 2026-10-07 21:35, none staged or pushed (report view, Part's measurements, General, MainWindow and Themes, NotificationArea, PythonConsole, Macro, Dialog, Units; and three faults of the preferences dialog itself). To do: Editor, View, Document, NaviCube, Part's rest, PartDesign, Sketcher, TechDraw, Fem, CAM, the Python-only modules. Three questions and two decisions for the reporter (`docs/HandsOnLog.md`) |
+| 24 | 2026-10-06 | every `Base::Parameter` setting behind a cog helper class so the omni search finds it, applied through delayed handlers (change request, application-wide) | STARTED, eleven groups done as of 2026-10-07 22:10, none staged or pushed (report view, Part's measurements, General, MainWindow and Themes, NotificationArea, PythonConsole, Macro, Dialog, Units, Editor; and three faults of the preferences dialog itself). To do: View, Document, NaviCube, Part's rest, PartDesign, Sketcher, TechDraw, Fem, CAM, the Python-only modules. Three questions and one decision for the reporter (`docs/HandsOnLog.md`) |
 | 25 | 2026-10-06 | the outline of a highlighted face is jagged, MSAA on or off | OPEN |
 | 26 | 2026-10-06 | a long halt after enabling MSAA and pressing OK in the preferences | FIXED `175ffce199`, not staged: the FIRST OK of a profile held the program 11 to 15 s (780 keys stored for the first time and taken for changes: stylesheet set again 4.2 s, every Part view provider re-meshed 3.2 s, language activated again about 2 s); 0.9 s now (`docs/HandsOnLog.md`) |
 | 27 | 2026-10-06 | the view cell menu: opens a spreadsheet nobody asked for, lists every TechDraw object, changes the wrong cell | STAGED 2026-10-07 14:23, fixed `fa2ada985c`: the menu made a spreadsheet view by asking for it, listed a page's views, and placed a pick by the general policy instead of into its cell; all three gone, spreadsheets now listed by type like pages (`docs/HandsOnLog.md`) |
@@ -1631,7 +1631,7 @@ collects automatically; (b) each must have documentation; (c) none of it
 overly long; (d) pick out the long ones in particular -- text an agent wrote
 as development notes that ended up as a setting's documentation.
 
-## 24. Every setting behind a generated helper class, applied by delayed handlers (a change request) -- STARTED, ten groups done; three questions and two decisions for the reporter (see `docs/HandsOnLog.md`)
+## 24. Every setting behind a generated helper class, applied by delayed handlers (a change request) -- STARTED, eleven groups done; three questions and one decision for the reporter (see `docs/HandsOnLog.md`)
 
 **From the build session, started** (passed on 2026-10-07 18:10; its log,
 entry 24, has the method and the inventory):
@@ -1698,6 +1698,29 @@ entry 24, has the method and the inventory):
     while Enter indented with spaces in the same Python editor;
     (b) the editor font's default is the system's fixed-pitch font -- the
     readers said "Courier" while the page showed and stored the system's.
+- **Passed on 2026-10-07 22:10, the Editor group done, `4790a2cb38`; eleven
+  groups in all, nothing staged, nothing pushed** (the log's entry 24 is
+  current at `3a0ed48960`). One of the two decisions above came out
+  differently from what was announced:
+  - (b) is WITHDRAWN: the editor font's default STAYS "Courier", what every
+    reader used. What was wrong was the Editor preference page: it showed the
+    first fixed-pitch font of the system instead of the one in use, and OK
+    stored it -- on the reporter's staged copy, OK turns the editors from
+    Courier into Cascadia Code. Fixed.
+  - (a) stands, done as announced, for the reporter to overrule:
+    `Editor/Spaces` is ON for both readers. On the staged copy Tab inserts a
+    tab character and Enter indents with spaces in the same Python editor,
+    and OK in the preferences stores "Keep tabs". NOT ANSWERED YET.
+  - Also found and fixed there: the report view's "Maximum lines" (its
+    context menu) was 10000 again after every start; measured with a profile
+    storing 500.
+  - `0a94fb63c9`, in the generator: a setting stored under another name than
+    its own never followed a change -- Mesh's two asymptote sizes. A unit
+    test fails before.
+  - One reading retracted before it was committed: that stored syntax
+    colours never reach a macro editor opened later. The claim passed on the
+    staged copy; it is not a fault.
+  - Next: View (113 keys not yet defined) and Document (14).
 - **Three questions for the reporter, NOT ANSWERED YET** (log, entry 24, "To
   decide"):
   1. Modules written in Python only -- BIM, Draft, AddonManager, parts of CAM
