@@ -54,7 +54,7 @@ report views, the reporter's own files -- is kept beside the dev tree under
 | 14 | 2026-10-06 | a Draft with no neutral plane given turns the other way after a recompute (from entry 8) | STAGED |
 | 15 | 2026-10-06 | a Pad "up to first" gives a third result (from entry 8) | STAGED 2026-10-07 14:23, fixed `1047cc0647`: not the pad -- a refine in the feature on top (Helix002) wrote into the pocket's shape. What was left is no defect: Pocket040 comes out at radius 12 for the file's 13 because its negative Fit grew in the old build; DECIDED by the reporter 2026-10-07 13:20: set `Pocket040.Fit` to +0.5 in the file (`docs/HandsOnLog.md`) |
 | 16 | 2026-10-06 | faces of a "Mutated" copy-on-change binder are renamed by every recompute in a new session (from entry 8; the old build too) | STAGED |
-| 17 | 2026-10-06 | `Sketch043`, `Sketch055`: "Missing external geometry reference", seen once the binders of entry 16 are valid | STAGED 2026-10-07 14:23, fixed `3c8cd63032`: the sketches' references into Binder017 (a binder of the moved Binder008) are found again; Pad033 then loses its profile because Sketch043 really changes -- a question for the reporter (`docs/HandsOnLog.md`) |
+| 17 | 2026-10-06 | `Sketch043`, `Sketch055`: "Missing external geometry reference", seen once the binders of entry 16 are valid | STAGED 2026-10-07 14:23, fixed `3c8cd63032`: the sketches' references into Binder017 (a binder of the moved Binder008) are found again; Pad033 then loses its profile because Sketch043 really changes -- a question for the reporter (`docs/HandsOnLog.md`). DECIDED 2026-10-07 14:34: the binder moving with the group is as designed (the file's sketch is stale); change request, on hold with the entry: the import and the binder command record the Context they know |
 | 18 | 2026-10-06 | TechDraw pages do not load: "invalid vector subscript", the views loose in the tree, 320 objects restored to defaults | STAGED |
 | 19 | 2026-10-06 | TechDraw: other indexes taken on trust (an audit asked) | STAGED 2026-10-07 14:23, fixed `805b5afb25`: out-of-range enumerations repaired at restore, the list indexes checked, the projection angle off by one, the three wrong results (line standard compare, highlight key, last line style) and combo boxes no longer storing -1; what was left alone is listed in `docs/HandsOnLog.md` |
 | 20 | 2026-10-06 | TechDraw: crash when the page is switched to the backend's renderer; and what it then drew | STAGED, the double draw too |
@@ -1119,6 +1119,38 @@ places that create a binder know its context and should record it (import,
 the binder command); and a binder put into a group afterwards has none until
 something is dropped on it or it is double-clicked -- at which point a
 recompute should not invent one.
+
+**Decided by the reporter, 2026-10-07 14:34**, on the two points just above,
+put to them as (1) the places that create a binder record the context they
+know, and (2) a recompute does not invent a context: "about the binder 1
+yes. 2 recompute logic now should be fine. it only assign a new one if the
+old recorded one does not exist, or empty. it must have some context in
+order to be 'Relative'."
+- **(1) is a change request:** `Part::SubShapeBinder::import()` and the
+  binder command (`PartGui::makeSubShapeBinder`) write `Context` themselves,
+  from the top parent and path they already resolve the support against,
+  instead of leaving it to the first update's adoption. All of import's
+  callers get it with that.
+- **(2) is withdrawn: the recompute stays as it is.** A `Relative` binder
+  has to have a context, so `update()` giving one to a binder that has none
+  is meant. That settles this entry's question too: `Binder008` taking
+  `LinkGroup001` at its first recompute, and coming out 53 mm from where the
+  file has it, is the program working as designed. What follows from it in
+  `scanner.FCStd` -- `Sketch043` changing, `Pad033` losing its region -- is
+  the model's, to be redone in the file, not a defect.
+- One case to check against the reporter's wording, since the code does not
+  do quite what it says. "It only assign a new one if the old recorded one
+  does not exist, or empty": EMPTY is covered, and so is a context whose
+  object is gone (the link is cleared with it, which leaves it empty). But a
+  context whose object still exists while its path no longer leads to the
+  binder -- the binder taken out of that container -- is neither: `update()`
+  drops it for that update (`parent = 0`) and, because the stale sub-name is
+  not empty, adopts nothing and writes nothing. The binder is then computed
+  with no context while `Relative` is on, and keeps the stale one in the
+  property. By the reporter's rule that binder should be given a new context.
+  Read from the source, not run.
+The hold on this entry ("skip entry 15 and 17 for now", 14:23) was not
+lifted with this; (1) waits with it until the reporter says.
 
 **From entry 16.** With `Binder013`, `014`, `017` and `018` valid again, what
 is built on them is recomputed for the first time in a full recompute of
