@@ -1402,6 +1402,22 @@ $RUN cmake -B build/conda-relwithdebinfo-801 \
 from stock Coin's soname because the fork's ABI diverges; FreeCAD refuses to
 start on a fork ABI mismatch, see `coin_fork_abi()` in the coin repo.)
 
+**The pre-rename `libCoin.so` is still in that prefix, and the build prefers it.**
+`coin/install/conda-relwithdebinfo/lib` holds `libCoinRT.so` (current) beside a
+`libCoin.so.80.0.6` of 2026-08-03 that no install has replaced since the rename.
+`SetupCoin3D` tries the find MODULE first, the module finds that file, and the
+fork's package config -- the only thing that names `CoinRT` -- is never asked. So
+whenever `COIN3D_LIBRARIES` is resolved afresh the tree links the stale library, and
+`libFreeCADGui.so` fails at the link with `undefined reference to 'coin_fork_abi'`,
+`coin_fork_features` and `SoLazyElementEx::getInstance`. Seen 2026-10-07: the local
+`CMakeUserPresets.json` still named `libCoin.so` in `COIN3D_LIBRARIES`, the standing
+cache had been corrected by hand, and one `cmake --preset` put the preset's value
+back (the fight described in `CLAUDE.md`). The preset names `libCoinRT.so` now. Two
+things follow: a preset on another box that predates the rename has the same line to
+fix, and there is no reason to run `cmake --preset` to register a new test -- `ninja`
+reconfigures by itself when a `CMakeLists.txt` changes, from the cache as it stands.
+The stale file itself was left where it is.
+
 **A stack nobody builds daily goes stale silently, and it fails one layer at a
 time.** (Written of the optimized stack while the Debug one was primary; it holds
 for whichever stack is the second one.) The daily stack stays honest; the other is
