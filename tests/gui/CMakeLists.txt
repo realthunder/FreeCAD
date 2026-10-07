@@ -1508,3 +1508,10 @@ fc_add_gui_test(GuiPartOptionsSettings_tests_run
 fc_add_gui_test(GuiMiscSettings_tests_run
                 misc-settings.py
                 --timeout 180)
+
+# The settings of the Sketcher's own group are behind
+# Sketcher::SketcherParams: listed by the omni search, and a new sketch
+# still takes what it starts with from them.
+fc_add_gui_test(GuiSketcherSettings_tests_run
+                sketcher-settings.py
+                --timeout 180)

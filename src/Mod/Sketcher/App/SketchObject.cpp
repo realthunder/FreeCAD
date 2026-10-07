@@ -21,6 +21,8 @@
  ***************************************************************************/
 
 #include "PreCompiled.h"
+
+#include "SketcherParams.h"
 #include <memory>
 #ifndef _PreComp_
 #include <cmath>
@@ -195,7 +197,7 @@ SketchObject::SketchObject()
                       "Sketch external geometry type: 0 = projection, 1 = intersection, 2 = both.");
 
     ParameterGrp::handle hGrpp = App::GetApplication().GetParameterGroupByPath("User parameter:BaseApp/Preferences/Mod/Sketcher");
-    geoHistoryLevel = hGrpp->GetInt("GeometryHistoryLevel",1);
+    geoHistoryLevel = Sketcher::SketcherParams::getGeometryHistoryLevel();
 
     Geometry.setOrderRelevant(true);
 
@@ -246,10 +248,10 @@ void SketchObject::setupObject()
     _Version.setValue(2);
     ParameterGrp::handle hGrpp = App::GetApplication().GetParameterGroupByPath(
             "User parameter:BaseApp/Preferences/Mod/Sketcher");
-    ArcFitTolerance.setValue(hGrpp->GetFloat("ArcFitTolerance", Precision::Confusion()*10.0));
-    ExternalBSplineMaxDegree.setValue(hGrpp->GetInt("ExternalBSplineMaxDegree", 5));
-    ExternalBSplineTolerance.setValue(hGrpp->GetFloat("ExternalBSplineTolerance", 1e-4));
-    MakeInternals.setValue(hGrpp->GetBool("MakeInternals", true));
+    ArcFitTolerance.setValue(Sketcher::SketcherParams::getArcFitTolerance());
+    ExternalBSplineMaxDegree.setValue(Sketcher::SketcherParams::getExternalBSplineMaxDegree());
+    ExternalBSplineTolerance.setValue(Sketcher::SketcherParams::getExternalBSplineTolerance());
+    MakeInternals.setValue(Sketcher::SketcherParams::getMakeInternals());
     inherited::setupObject();
 }
 

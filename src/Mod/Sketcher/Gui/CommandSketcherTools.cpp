@@ -21,6 +21,8 @@
  ***************************************************************************/
 
 #include "PreCompiled.h"
+
+#include <Mod/Sketcher/App/SketcherParams.h>
 #ifndef _PreComp_
 #include <cfloat>
 #include <memory>
@@ -2073,7 +2075,7 @@ void CmdSketcherDeleteAllGeometry::activated(int iMsg)
 
         ParameterGrp::handle hGrp = App::GetApplication().GetParameterGroupByPath(
             "User parameter:BaseApp/Preferences/Mod/Sketcher");
-        bool autoRecompute = hGrp->GetBool("AutoRecompute", false);
+        bool autoRecompute = Sketcher::SketcherParams::getAutoRecompute();
 
         if (autoRecompute)
             Gui::Command::updateActive();
@@ -2139,7 +2141,7 @@ void CmdSketcherDeleteAllConstraints::activated(int iMsg)
 
         ParameterGrp::handle hGrp = App::GetApplication().GetParameterGroupByPath(
             "User parameter:BaseApp/Preferences/Mod/Sketcher");
-        bool autoRecompute = hGrp->GetBool("AutoRecompute", false);
+        bool autoRecompute = Sketcher::SketcherParams::getAutoRecompute();
 
         if (autoRecompute)
             Gui::Command::updateActive();

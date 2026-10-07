@@ -21,6 +21,8 @@
  ***************************************************************************/
 
 #include "PreCompiled.h"
+
+#include <Mod/Sketcher/App/SketcherParams.h>
 #ifndef _PreComp_
 #include <Precision.hxx>
 #include <Bnd_Box.hxx>
@@ -365,10 +367,10 @@ void finishDatumConstraint(Gui::Command* cmd,
     float labelPositionRandomness = 0.0;
 
     if (lastConstraintType == Radius || lastConstraintType == Diameter) {
-        labelPosition = hGrp->GetFloat("RadiusDiameterConstraintDisplayBaseAngle", 15.0)
+        labelPosition = Sketcher::SketcherParams::getRadiusDiameterConstraintDisplayBaseAngle()
             * (M_PI / 180);// Get radius/diameter constraint display angle
         labelPositionRandomness =
-            hGrp->GetFloat("RadiusDiameterConstraintDisplayAngleRandomness", 0.0)
+            Sketcher::SketcherParams::getRadiusDiameterConstraintDisplayAngleRandomness()
             * (M_PI / 180);// Get randomness
 
         // Adds a random value around the base angle, so that possibly overlapping labels get likely
@@ -415,7 +417,7 @@ void finishDatumConstraint(Gui::Command* cmd,
         vp->draw(false, false);// Redraw
     }
 
-    bool show = hGrp->GetBool("ShowDialogOnDistanceConstraint", true);
+    bool show = Sketcher::SketcherParams::getShowDialogOnDistanceConstraint();
 
     // Ask for the value of the distance immediately: at the label, or in
     // the dialog. Either commits the command or aborts it.
@@ -3026,7 +3028,7 @@ protected:
 
         // Ask for the value of datum constraints
         ParameterGrp::handle hGrp = App::GetApplication().GetParameterGroupByPath("User parameter:BaseApp/Preferences/Mod/Sketcher");
-        bool show = hGrp->GetBool("ShowDialogOnDistanceConstraint", true);
+        bool show = Sketcher::SketcherParams::getShowDialogOnDistanceConstraint();
         const std::vector<Sketcher::Constraint*>& ConStr = Obj->Constraints.getValues();
 
         std::vector<int> datums;
@@ -3059,7 +3061,7 @@ protected:
     {
         ParameterGrp::handle hGrp = App::GetApplication().GetParameterGroupByPath("User parameter:BaseApp/Preferences/Mod/Sketcher");
         // This code enables the continuous creation mode.
-        bool continuousMode = hGrp->GetBool("ContinuousCreationMode", true);
+        bool continuousMode = Sketcher::SketcherParams::getContinuousCreationMode();
         if (continuousMode) {
             resetTool();
         }
@@ -4497,7 +4499,7 @@ void horVerActivated(CmdSketcherConstraint* cmd, std::string type)
         || !selection[0].isObjectTypeOf(Sketcher::SketchObject::getClassTypeId())) {
         ParameterGrp::handle hGrp = App::GetApplication().GetParameterGroupByPath(
             "User parameter:BaseApp/Preferences/Mod/Sketcher");
-        bool constraintMode = hGrp->GetBool("ContinuousConstraintMode", true);
+        bool constraintMode = Sketcher::SketcherParams::getContinuousConstraintMode();
 
         if (constraintMode) {
             ActivateHandler(cmd->getActiveGuiDocument(), new DrawSketchHandlerGenConstraint(cmd));
@@ -4904,7 +4906,7 @@ void CmdSketcherConstrainLock::activated(int iMsg)
         || !selection[0].isObjectTypeOf(Sketcher::SketchObject::getClassTypeId())) {
         ParameterGrp::handle hGrp = App::GetApplication().GetParameterGroupByPath(
             "User parameter:BaseApp/Preferences/Mod/Sketcher");
-        bool constraintMode = hGrp->GetBool("ContinuousConstraintMode", true);
+        bool constraintMode = Sketcher::SketcherParams::getContinuousConstraintMode();
 
         if (constraintMode) {
             ActivateHandler(getActiveGuiDocument(), new DrawSketchHandlerGenConstraint(this));
@@ -5118,7 +5120,7 @@ void CmdSketcherConstrainLock::applyConstraint(std::vector<SelIdPair>& selSeq, i
 
             ParameterGrp::handle hGrp = App::GetApplication().GetParameterGroupByPath(
                 "User parameter:BaseApp/Preferences/Mod/Sketcher");
-            bool autoRecompute = hGrp->GetBool("AutoRecompute", false);
+            bool autoRecompute = Sketcher::SketcherParams::getAutoRecompute();
 
             if (autoRecompute) {
                 Gui::Command::updateActive();
@@ -5189,7 +5191,7 @@ void CmdSketcherConstrainBlock::activated(int iMsg)
         || !selection[0].isObjectTypeOf(Sketcher::SketchObject::getClassTypeId())) {
         ParameterGrp::handle hGrp = App::GetApplication().GetParameterGroupByPath(
             "User parameter:BaseApp/Preferences/Mod/Sketcher");
-        bool constraintMode = hGrp->GetBool("ContinuousConstraintMode", true);
+        bool constraintMode = Sketcher::SketcherParams::getContinuousConstraintMode();
 
         if (constraintMode) {
             ActivateHandler(getActiveGuiDocument(), new DrawSketchHandlerGenConstraint(this));
@@ -5526,7 +5528,7 @@ void CmdSketcherConstrainCoincidentUnified::onActivated(CoincicenceType type)
         || !selection[0].isObjectTypeOf(Sketcher::SketchObject::getClassTypeId())) {
         ParameterGrp::handle hGrp = App::GetApplication().GetParameterGroupByPath(
             "User parameter:BaseApp/Preferences/Mod/Sketcher");
-        bool constraintMode = hGrp->GetBool("ContinuousConstraintMode", true);
+        bool constraintMode = Sketcher::SketcherParams::getContinuousConstraintMode();
 
         if (constraintMode) {
             ActivateHandler(getActiveGuiDocument(), new DrawSketchHandlerGenConstraint(this));
@@ -6043,7 +6045,7 @@ void CmdSketcherConstrainDistance::activated(int iMsg)
         || !selection[0].isObjectTypeOf(Sketcher::SketchObject::getClassTypeId())) {
         ParameterGrp::handle hGrp = App::GetApplication().GetParameterGroupByPath(
             "User parameter:BaseApp/Preferences/Mod/Sketcher");
-        bool constraintMode = hGrp->GetBool("ContinuousConstraintMode", true);
+        bool constraintMode = Sketcher::SketcherParams::getContinuousConstraintMode();
 
         if (constraintMode) {
             ActivateHandler(getActiveGuiDocument(), new DrawSketchHandlerGenConstraint(this));
@@ -6690,7 +6692,7 @@ void CmdSketcherConstrainDistanceX::activated(int iMsg)
         || !selection[0].isObjectTypeOf(Sketcher::SketchObject::getClassTypeId())) {
         ParameterGrp::handle hGrp = App::GetApplication().GetParameterGroupByPath(
             "User parameter:BaseApp/Preferences/Mod/Sketcher");
-        bool constraintMode = hGrp->GetBool("ContinuousConstraintMode", true);
+        bool constraintMode = Sketcher::SketcherParams::getContinuousConstraintMode();
 
         if (constraintMode) {
             ActivateHandler(getActiveGuiDocument(), new DrawSketchHandlerGenConstraint(this));
@@ -6993,7 +6995,7 @@ void CmdSketcherConstrainDistanceY::activated(int iMsg)
         || !selection[0].isObjectTypeOf(Sketcher::SketchObject::getClassTypeId())) {
         ParameterGrp::handle hGrp = App::GetApplication().GetParameterGroupByPath(
             "User parameter:BaseApp/Preferences/Mod/Sketcher");
-        bool constraintMode = hGrp->GetBool("ContinuousConstraintMode", true);
+        bool constraintMode = Sketcher::SketcherParams::getContinuousConstraintMode();
 
         if (constraintMode) {
             ActivateHandler(getActiveGuiDocument(), new DrawSketchHandlerGenConstraint(this));
@@ -7294,7 +7296,7 @@ void CmdSketcherConstrainParallel::activated(int iMsg)
         || !selection[0].isObjectTypeOf(Sketcher::SketchObject::getClassTypeId())) {
         ParameterGrp::handle hGrp = App::GetApplication().GetParameterGroupByPath(
             "User parameter:BaseApp/Preferences/Mod/Sketcher");
-        bool constraintMode = hGrp->GetBool("ContinuousConstraintMode", true);
+        bool constraintMode = Sketcher::SketcherParams::getContinuousConstraintMode();
 
         if (constraintMode) {
             ActivateHandler(getActiveGuiDocument(), new DrawSketchHandlerGenConstraint(this));
@@ -7467,7 +7469,7 @@ void CmdSketcherConstrainPerpendicular::activated(int iMsg)
         || !selection[0].isObjectTypeOf(Sketcher::SketchObject::getClassTypeId())) {
         ParameterGrp::handle hGrp = App::GetApplication().GetParameterGroupByPath(
             "User parameter:BaseApp/Preferences/Mod/Sketcher");
-        bool constraintMode = hGrp->GetBool("ContinuousConstraintMode", true);
+        bool constraintMode = Sketcher::SketcherParams::getContinuousConstraintMode();
 
         if (constraintMode) {
             ActivateHandler(getActiveGuiDocument(), new DrawSketchHandlerGenConstraint(this));
@@ -8304,7 +8306,7 @@ void CmdSketcherConstrainTangent::activated(int iMsg)
         || !selection[0].isObjectTypeOf(Sketcher::SketchObject::getClassTypeId())) {
         ParameterGrp::handle hGrp = App::GetApplication().GetParameterGroupByPath(
             "User parameter:BaseApp/Preferences/Mod/Sketcher");
-        bool constraintMode = hGrp->GetBool("ContinuousConstraintMode", true);
+        bool constraintMode = Sketcher::SketcherParams::getContinuousConstraintMode();
 
         if (constraintMode) {
             ActivateHandler(getActiveGuiDocument(), new DrawSketchHandlerGenConstraint(this));
@@ -9101,7 +9103,7 @@ void CmdSketcherConstrainRadius::activated(int iMsg)
         || !selection[0].isObjectTypeOf(Sketcher::SketchObject::getClassTypeId())) {
         ParameterGrp::handle hGrp = App::GetApplication().GetParameterGroupByPath(
             "User parameter:BaseApp/Preferences/Mod/Sketcher");
-        bool constraintMode = hGrp->GetBool("ContinuousConstraintMode", true);
+        bool constraintMode = Sketcher::SketcherParams::getContinuousConstraintMode();
 
         if (constraintMode) {
             ActivateHandler(getActiveGuiDocument(), new DrawSketchHandlerGenConstraint(this));
@@ -9464,7 +9466,7 @@ void CmdSketcherConstrainDiameter::activated(int iMsg)
         || !selection[0].isObjectTypeOf(Sketcher::SketchObject::getClassTypeId())) {
         ParameterGrp::handle hGrp = App::GetApplication().GetParameterGroupByPath(
             "User parameter:BaseApp/Preferences/Mod/Sketcher");
-        bool constraintMode = hGrp->GetBool("ContinuousConstraintMode", true);
+        bool constraintMode = Sketcher::SketcherParams::getContinuousConstraintMode();
 
         if (constraintMode) {
             ActivateHandler(getActiveGuiDocument(), new DrawSketchHandlerGenConstraint(this));
@@ -9782,7 +9784,7 @@ void CmdSketcherConstrainRadiam::activated(int iMsg)
         || !selection[0].isObjectTypeOf(Sketcher::SketchObject::getClassTypeId())) {
         ParameterGrp::handle hGrp = App::GetApplication().GetParameterGroupByPath(
             "User parameter:BaseApp/Preferences/Mod/Sketcher");
-        bool constraintMode = hGrp->GetBool("ContinuousConstraintMode", true);
+        bool constraintMode = Sketcher::SketcherParams::getContinuousConstraintMode();
 
         if (constraintMode) {
             ActivateHandler(getActiveGuiDocument(), new DrawSketchHandlerGenConstraint(this));
@@ -10210,7 +10212,7 @@ void CmdSketcherConstrainAngle::activated(int iMsg)
         || !selection[0].isObjectTypeOf(Sketcher::SketchObject::getClassTypeId())) {
         ParameterGrp::handle hGrp = App::GetApplication().GetParameterGroupByPath(
             "User parameter:BaseApp/Preferences/Mod/Sketcher");
-        bool constraintMode = hGrp->GetBool("ContinuousConstraintMode", true);
+        bool constraintMode = Sketcher::SketcherParams::getContinuousConstraintMode();
 
         if (constraintMode) {
             ActivateHandler(getActiveGuiDocument(), new DrawSketchHandlerGenConstraint(this));
@@ -10682,7 +10684,7 @@ void CmdSketcherConstrainEqual::activated(int iMsg)
         || !selection[0].isObjectTypeOf(Sketcher::SketchObject::getClassTypeId())) {
         ParameterGrp::handle hGrp = App::GetApplication().GetParameterGroupByPath(
             "User parameter:BaseApp/Preferences/Mod/Sketcher");
-        bool constraintMode = hGrp->GetBool("ContinuousConstraintMode", true);
+        bool constraintMode = Sketcher::SketcherParams::getContinuousConstraintMode();
 
         if (constraintMode) {
             ActivateHandler(getActiveGuiDocument(), new DrawSketchHandlerGenConstraint(this));
@@ -10949,7 +10951,7 @@ void CmdSketcherConstrainSymmetric::activated(int iMsg)
         || !selection[0].isObjectTypeOf(Sketcher::SketchObject::getClassTypeId())) {
         ParameterGrp::handle hGrp = App::GetApplication().GetParameterGroupByPath(
             "User parameter:BaseApp/Preferences/Mod/Sketcher");
-        bool constraintMode = hGrp->GetBool("ContinuousConstraintMode", true);
+        bool constraintMode = Sketcher::SketcherParams::getContinuousConstraintMode();
 
         if (constraintMode) {
             ActivateHandler(getActiveGuiDocument(), new DrawSketchHandlerGenConstraint(this));

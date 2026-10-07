@@ -22,6 +22,8 @@
 
 
 #include "PreCompiled.h"
+
+#include <Mod/Sketcher/App/SketcherParams.h>
 #include <memory>
 
 #ifndef _PreComp_
@@ -5079,11 +5081,11 @@ QString ViewProviderSketch::getPresentationString(const Constraint *constraint)
     // get parameter group for Sketcher display settings
     hGrpSketcher = App::GetApplication().GetUserParameter().GetGroup("BaseApp")->GetGroup("Preferences")->GetGroup("Mod/Sketcher");
     // Get value of HideUnits option. Default is false.
-    iHideUnits = hGrpSketcher->GetBool("HideUnits", 0);
+    iHideUnits = Sketcher::SketcherParams::getHideUnits();
     // Get Value of ShowDimensionalName option. Default is true.
-    iShowDimName = hGrpSketcher->GetBool("ShowDimensionalName", true);
+    iShowDimName = Sketcher::SketcherParams::getShowDimensionalName();
     // Get the defined format string
-    formatStr = QString::fromStdString(hGrpSketcher->GetASCII("DimensionalStringFormat", "%N = %V"));
+    formatStr = QString::fromStdString(Sketcher::SketcherParams::getDimensionalStringFormat());
 
     // Get the current name parameter string of the constraint
     nameStr = QString::fromStdString(constraint->Name);
@@ -9399,7 +9401,7 @@ bool ViewProviderSketch::setEdit(int ModNum)
     initParams();
 
     ParameterGrp::handle hSketch = App::GetApplication().GetParameterGroupByPath("User parameter:BaseApp/Preferences/Mod/Sketcher");
-    edit->handleEscapeButton = !hSketch->GetBool("LeaveSketchWithEscape", true);
+    edit->handleEscapeButton = !Sketcher::SketcherParams::getLeaveSketchWithEscape();
 
     createEditInventorNodes();
 
@@ -9493,7 +9495,7 @@ bool ViewProviderSketch::setEdit(int ModNum)
     // Enable solver initial solution update while dragging.
     ParameterGrp::handle hGrp2 = App::GetApplication().GetParameterGroupByPath("User parameter:BaseApp/Preferences/Mod/Sketcher");
 
-    getSketchObject()->setRecalculateInitialSolutionWhileMovingPoint(hGrp2->GetBool("RecalculateInitialSolutionWhileDragging",true));
+    getSketchObject()->setRecalculateInitialSolutionWhileMovingPoint(Sketcher::SketcherParams::getRecalculateInitialSolutionWhileDragging());
 
     // intercept del key press from main app
     listener = std::make_unique<ShortcutListener>(this);
@@ -10647,7 +10649,7 @@ bool ViewProviderSketch::onDelete(const std::vector<std::string> &subList)
         // need to tidy up after ourselves again.
 
         ParameterGrp::handle hGrp = App::GetApplication().GetParameterGroupByPath("User parameter:BaseApp/Preferences/Mod/Sketcher");
-        bool autoRecompute = hGrp->GetBool("AutoRecompute",false);
+        bool autoRecompute = Sketcher::SketcherParams::getAutoRecompute();
 
         if (autoRecompute) {
             Gui::Command::updateActive();

@@ -21,6 +21,8 @@
  ***************************************************************************/
 
 #include "PreCompiled.h"
+
+#include <Mod/Sketcher/App/SketcherParams.h>
 #ifndef _PreComp_
 #include <Inventor/SbString.h>
 #include <QApplication>
@@ -768,7 +770,7 @@ public:
 
         ParameterGrp::handle hGrp = App::GetApplication().GetParameterGroupByPath(
             "User parameter:BaseApp/Preferences/Mod/Sketcher");
-        bool continuousMode = hGrp->GetBool("ContinuousCreationMode", true);
+        bool continuousMode = Sketcher::SketcherParams::getContinuousCreationMode();
         if (continuousMode && newGeoIdFound) {
             // This code enables the continuous creation mode.
 
