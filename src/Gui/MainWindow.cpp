@@ -109,6 +109,7 @@
 #include "PropertyView.h"
 #include "PythonConsole.h"
 #include "ReportView.h"
+#include "ReportViewParams.h"
 #include "SelectionView.h"
 #include "Splashscreen.h"
 #include "ToolBarManager.h"
@@ -3769,12 +3770,35 @@ QMdiArea *MainWindow::getMdiArea() const
 
 // ----------------------------------------------------------
 
+namespace {
+// The one status bar observer's connection to the report view's settings
+// (kept here and not in the class, whose header would need the signal's).
+fastsignals::scoped_connection _statusBarColors;
+}
+
 StatusBarObserver::StatusBarObserver()
   : WindowParameter("OutputWindow")
 {
-    msg = QStringLiteral("#statusBar{color: #000000}"); // black
-    wrn = QStringLiteral("#statusBar{color: #ffaa00}"); // orange
-    err = QStringLiteral("#statusBar{color: #ff0000}"); // red
+    // The three colours are the report view's settings, read where their
+    // defaults are and followed when they change. A text colour of 0 is
+    // "the window's", which the status bar has always shown as black.
+    auto apply = [this](const char *name) {
+        auto format = QStringLiteral("#statusBar{color: %1}");
+        if (!name)
+            return;
+        if (strcmp(name, "colorText") == 0)
+            this->msg = format.arg(App::Color::fromPackedRGB<QColor>(
+                        ReportViewParams::getcolorText()).name());
+        else if (strcmp(name, "colorWarning") == 0)
+            this->wrn = format.arg(App::Color::fromPackedRGB<QColor>(
+                        ReportViewParams::getcolorWarning()).name());
+        else if (strcmp(name, "colorError") == 0)
+            this->err = format.arg(App::Color::fromPackedRGB<QColor>(
+                        ReportViewParams::getcolorError()).name());
+    };
+    for (const char *name : {"colorText", "colorWarning", "colorError"})
+        apply(name);
+    _statusBarColors = ReportViewParams::signalParamChanged().connect(apply);
     Base::Console().AttachObserver(this);
     getWindowParameter()->Attach(this);
     getWindowParameter()->NotifyAll();
@@ -3782,6 +3806,7 @@ StatusBarObserver::StatusBarObserver()
 
 StatusBarObserver::~StatusBarObserver()
 {
+    _statusBarColors.disconnect();
     getWindowParameter()->Detach(this);
     Base::Console().DetachObserver(this);
 }
@@ -3790,19 +3815,7 @@ void StatusBarObserver::OnChange(Base::Subject<const char*> &rCaller, const char
 {
     ParameterGrp& rclGrp = ((ParameterGrp&)rCaller);
     auto format = QStringLiteral("#statusBar{color: %1}");
-    if (strcmp(sReason, "colorText") == 0) {
-        unsigned long col = rclGrp.GetUnsigned( sReason );
-        this->msg = format.arg(App::Color::fromPackedRGB<QColor>(col).name());
-    }
-    else if (strcmp(sReason, "colorWarning") == 0) {
-        unsigned long col = rclGrp.GetUnsigned( sReason );
-        this->wrn = format.arg(App::Color::fromPackedRGB<QColor>(col).name());
-    }
-    else if (strcmp(sReason, "colorError") == 0) {
-        unsigned long col = rclGrp.GetUnsigned( sReason );
-        this->err = format.arg(App::Color::fromPackedRGB<QColor>(col).name());
-    }
-    else if (strcmp(sReason, "colorCritical") == 0) {
+    if (strcmp(sReason, "colorCritical") == 0) {
         unsigned long col = rclGrp.GetUnsigned( sReason );
         this->critical = format.arg(QColor((col >> 24) & 0xff,(col >> 16) & 0xff,(col >> 8) & 0xff).name());
     }

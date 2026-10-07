@@ -40,6 +40,7 @@
 #include "PythonConsole.h"
 #include "PythonConsolePy.h"
 #include "PythonDebugger.h"
+#include "ReportViewParams.h"
 
 
 using namespace Gui;
@@ -380,10 +381,8 @@ void MacroManager::run(MacroType eType, const char *sName)
                                            sName ? sName : "");
 
     try {
-        ParameterGrp::handle hGrp = App::GetApplication().GetUserParameter()
-            .GetGroup("BaseApp")->GetGroup("Preferences")->GetGroup("OutputWindow");
-        PyObject* pyout = hGrp->GetBool("RedirectPythonOutput",true) ? new OutputStdout : nullptr;
-        PyObject* pyerr = hGrp->GetBool("RedirectPythonErrors",true) ? new OutputStderr : nullptr;
+        PyObject* pyout = ReportViewParams::getRedirectPythonOutput() ? new OutputStdout : nullptr;
+        PyObject* pyerr = ReportViewParams::getRedirectPythonErrors() ? new OutputStderr : nullptr;
         PythonRedirector std_out("stdout",pyout);
         PythonRedirector std_err("stderr",pyerr);
         //The given path name is expected to be Utf-8

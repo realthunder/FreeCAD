@@ -44,6 +44,7 @@
 
 #include "ExprParams.h"
 #include "MainWindow.h"
+#include "ReportViewParams.h"
 #include "Tools.h"
 
 FC_LOG_LEVEL_INIT("Gui", true, true)
@@ -752,26 +753,21 @@ void DlgExpressionInput::setupColors()
     // FreeCAD.qss serves both light and dark themes under one name.
     bool isDarkStyle = hasStyleSheet && Application::isDarkTheme();
 
-    hGrp = App::GetApplication().GetParameterGroupByPath(
-           "User parameter:BaseApp/Preferences/OutputWindow");
-
     //Colors stored in preferences have no alpha information and are shifted opposed to standard color encoding
     //So we need to bit shift until alpha values get properly supported there
+    //The four are the report view's settings; the "default" beside each is
+    //what ReportViewParams defines, which colorPriority() compares against.
     constexpr QRgb defaultTextColor = qRgba(0, 0, 0, 255);
-    QRgb userTextColor = 0xFF000000 | (hGrp->GetUnsigned("colorText", 
-                         0x00000000 | (defaultTextColor << 8)) >> 8);
+    QRgb userTextColor = 0xFF000000 | (ReportViewParams::getcolorText() >> 8);
 
     constexpr QRgb defaultLogColor = qRgba(0, 0, 255, 255);
-    QRgb userLogColor = 0xFF000000 | (hGrp->GetUnsigned("colorLogging", 
-                        0x00000000 | (defaultLogColor << 8)) >> 8);
+    QRgb userLogColor = 0xFF000000 | (ReportViewParams::getcolorLogging() >> 8);
 
     constexpr QRgb defaultWarningColor = qRgba(255, 170, 0, 255);
-    QRgb userWarningColor = 0xFF000000 | (hGrp->GetUnsigned("colorWarning", 
-                            0x00000000 | (defaultWarningColor << 8)) >> 8);
+    QRgb userWarningColor = 0xFF000000 | (ReportViewParams::getcolorWarning() >> 8);
 
     constexpr QRgb defaultErrorColor = qRgba(255, 0, 0, 255);
-    QRgb userErrorColor = 0xFF000000 | (hGrp->GetUnsigned("colorError", 
-                          0x00000000 | (defaultErrorColor << 8)) >> 8);
+    QRgb userErrorColor = 0xFF000000 | (ReportViewParams::getcolorError() >> 8);
 
     //Color priority does the heavy lifting but needs lots of arguments to evaluate every case
     //I feel this can be factored better but for *only* 4 calls it looks good enough and fits one screen

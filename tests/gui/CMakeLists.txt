@@ -1401,3 +1401,10 @@ fc_add_gui_test(GuiOmniSearchFirstBringUp_tests_run
 fc_add_gui_test(GuiMsaaReachesTheView_tests_run
                 msaa-reaches-the-view.py
                 --timeout 180)
+
+# The report view's settings are behind ReportViewParams: listed by the
+# omni search, one default each, followed at once -- and "Record critical
+# messages" no longer switches normal messages off.
+fc_add_gui_test(GuiReportViewSettings_tests_run
+                report-view-settings.py
+                --timeout 180)

@@ -220,6 +220,9 @@ public Q_SLOTS:
     void onToggleGoToEnd();
 
 private:
+    void applySetting(const char *name);
+
+private:
     /** Hold back a line that repeats one of the last few shown; true when held. */
     bool holdDuplicate(ReportHighlighter::Paragraph type, const QString& text);
     /** Put one line into the view, batching as the report view always has.

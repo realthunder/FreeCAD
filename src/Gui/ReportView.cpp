@@ -437,6 +437,8 @@ public:
     static PyObject* default_stderr;
     static PyObject* replace_stderr;
 
+    fastsignals::scoped_connection connParam;
+
     ReportHighlighter::Paragraph pendingType;
     QStringList pendingMessage;
 
@@ -512,11 +514,20 @@ ReportOutput::ReportOutput(QWidget* parent)
     setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
 
     Base::Console().AttachObserver(this);
+    // still this group's: MaxLines, which the context menu's spin box stores
     getWindowParameter()->Attach(this);
     getWindowParameter()->NotifyAll();
-    // do this explicitly because the keys below might not yet be part of a group
-    getWindowParameter()->Notify("RedirectPythonOutput");
-    getWindowParameter()->Notify("RedirectPythonErrors");
+    // The view's own settings come from ReportViewParams, which knows their
+    // defaults and says when one changed -- from the preferences, the
+    // context menu, the omni search or a script alike.
+    d->connParam = ReportViewParams::signalParamChanged().connect(
+        [this](const char *name) { applySetting(name); });
+    for (const char *name : {"checkMessage", "checkLogging", "checkWarning", "checkError",
+                             "checkCritical", "colorText", "colorLogging", "colorWarning",
+                             "colorError", "checkGoToEnd", "RedirectPythonOutput",
+                             "RedirectPythonErrors"}) {
+        applySetting(name);
+    }
 
     _prefs = WindowParameter::getDefaultParameter()->GetGroup("Editor");
     _prefs->Attach(this);
@@ -1004,7 +1015,7 @@ bool ReportOutput::event(QEvent* event)
 void ReportOutput::changeEvent(QEvent *ev)
 {
     if (ev->type() == QEvent::StyleChange) {
-        OnChange(*getWindowParameter(), "colorText");
+        applySetting("colorText");
     }
     QTextEdit::changeEvent(ev);
 }
@@ -1163,34 +1174,31 @@ bool ReportOutput::isCritical() const
     return bCritical;
 }
 
+// The toggles store the setting; applySetting() is what acts on it, here as
+// for a change that came from anywhere else.
 void ReportOutput::onToggleError()
 {
-    bErr = bErr ? false : true;
-    getWindowParameter()->SetBool( "checkError", bErr );
+    ReportViewParams::setcheckError(!ReportViewParams::getcheckError());
 }
 
 void ReportOutput::onToggleWarning()
 {
-    bWrn = bWrn ? false : true;
-    getWindowParameter()->SetBool( "checkWarning", bWrn );
+    ReportViewParams::setcheckWarning(!ReportViewParams::getcheckWarning());
 }
 
 void ReportOutput::onToggleLogMessage()
 {
-    bLog = bLog ? false : true;
-    getWindowParameter()->SetBool( "checkLogging", bLog );
+    ReportViewParams::setcheckLogging(!ReportViewParams::getcheckLogging());
 }
 
 void ReportOutput::onToggleNormalMessage()
 {
-    bMsg = bMsg ? false : true;
-    getWindowParameter()->SetBool( "checkMessage", bMsg );
+    ReportViewParams::setcheckMessage(!ReportViewParams::getcheckMessage());
 }
 
 void ReportOutput::onToggleCritical()
 {
-    bCritical = bCritical ? false : true;
-    getWindowParameter()->SetBool( "checkCritical", bCritical );
+    ReportViewParams::setcheckCritical(!ReportViewParams::getcheckCritical());
 }
 
 void ReportOutput::onToggleShowReportViewOnWarning()
@@ -1220,62 +1228,44 @@ void ReportOutput::onToggleShowReportViewOnLogMessage()
 
 void ReportOutput::onToggleRedirectPythonStdout()
 {
-    if (d->redirected_stdout) {
-        d->redirected_stdout = false;
-        Base::PyGILStateLocker lock;
-        PySys_SetObject("stdout", d->default_stdout);
-    }
-    else {
-        d->redirected_stdout = true;
-        Base::PyGILStateLocker lock;
-        PySys_SetObject("stdout", d->replace_stdout);
-    }
-
-    getWindowParameter()->SetBool("RedirectPythonOutput", d->redirected_stdout);
+    ReportViewParams::setRedirectPythonOutput(!ReportViewParams::getRedirectPythonOutput());
 }
 
 void ReportOutput::onToggleRedirectPythonStderr()
 {
-    if (d->redirected_stderr) {
-        d->redirected_stderr = false;
-        Base::PyGILStateLocker lock;
-        PySys_SetObject("stderr", d->default_stderr);
-    }
-    else {
-        d->redirected_stderr = true;
-        Base::PyGILStateLocker lock;
-        PySys_SetObject("stderr", d->replace_stderr);
-    }
-
-    getWindowParameter()->SetBool("RedirectPythonErrors", d->redirected_stderr);
+    ReportViewParams::setRedirectPythonErrors(!ReportViewParams::getRedirectPythonErrors());
 }
 
 void ReportOutput::onToggleGoToEnd()
 {
-    gotoEnd = gotoEnd ? false : true;
-    getWindowParameter()->SetBool( "checkGoToEnd", gotoEnd );
+    ReportViewParams::setcheckGoToEnd(!ReportViewParams::getcheckGoToEnd());
 }
 
-void ReportOutput::OnChange(Base::Subject<const char*> &rCaller, const char * sReason)
+/* One of the view's settings, applied. Called for each at construction and
+ * whenever ReportViewParams says one changed; every branch can be run again
+ * with nothing changed.
+ */
+void ReportOutput::applySetting(const char *name)
 {
-    ParameterGrp& rclGrp = ((ParameterGrp&)rCaller);
-    if (strcmp(sReason, "checkLogging") == 0) {
-        bLog = rclGrp.GetBool( sReason, bLog );
+    if (!name)
+        return;
+    if (strcmp(name, "checkLogging") == 0) {
+        bLog = ReportViewParams::getcheckLogging();
     }
-    else if (strcmp(sReason, "checkWarning") == 0) {
-        bWrn = rclGrp.GetBool( sReason, bWrn );
+    else if (strcmp(name, "checkWarning") == 0) {
+        bWrn = ReportViewParams::getcheckWarning();
     }
-    else if (strcmp(sReason, "checkError") == 0) {
-        bErr = rclGrp.GetBool( sReason, bErr );
+    else if (strcmp(name, "checkError") == 0) {
+        bErr = ReportViewParams::getcheckError();
     }
-    else if (strcmp(sReason, "checkMessage") == 0) {
-        bMsg = rclGrp.GetBool( sReason, bMsg );
+    else if (strcmp(name, "checkMessage") == 0) {
+        bMsg = ReportViewParams::getcheckMessage();
     }
-    else if (strcmp(sReason, "checkCritical") == 0) {
-        bMsg = rclGrp.GetBool( sReason, bMsg );
+    else if (strcmp(name, "checkCritical") == 0) {
+        bCritical = ReportViewParams::getcheckCritical();
     }
-    else if (strcmp(sReason, "colorText") == 0) {
-        unsigned long col = rclGrp.GetUnsigned( sReason );
+    else if (strcmp(name, "colorText") == 0) {
+        unsigned long col = ReportViewParams::getcolorText();
         if (col == 0) {
             QPalette pal = palette();
             QColor color = pal.windowText().color();
@@ -1284,24 +1274,44 @@ void ReportOutput::OnChange(Base::Subject<const char*> &rCaller, const char * sR
         }
         reportHl->setTextColor(App::Color::fromPackedRGB<QColor>(col));
     }
-    else if (strcmp(sReason, "colorCriticalText") == 0) {
+    else if (strcmp(name, "colorLogging") == 0) {
+        reportHl->setLogColor(App::Color::fromPackedRGB<QColor>(ReportViewParams::getcolorLogging()));
+    }
+    else if (strcmp(name, "colorWarning") == 0) {
+        reportHl->setWarningColor(App::Color::fromPackedRGB<QColor>(ReportViewParams::getcolorWarning()));
+    }
+    else if (strcmp(name, "colorError") == 0) {
+        reportHl->setErrorColor(App::Color::fromPackedRGB<QColor>(ReportViewParams::getcolorError()));
+    }
+    else if (strcmp(name, "checkGoToEnd") == 0) {
+        gotoEnd = ReportViewParams::getcheckGoToEnd();
+    }
+    else if (strcmp(name, "RedirectPythonOutput") == 0) {
+        const bool on = ReportViewParams::getRedirectPythonOutput();
+        if (on != d->redirected_stdout) {
+            d->redirected_stdout = on;
+            Base::PyGILStateLocker lock;
+            PySys_SetObject("stdout", on ? d->replace_stdout : d->default_stdout);
+        }
+    }
+    else if (strcmp(name, "RedirectPythonErrors") == 0) {
+        const bool on = ReportViewParams::getRedirectPythonErrors();
+        if (on != d->redirected_stderr) {
+            d->redirected_stderr = on;
+            Base::PyGILStateLocker lock;
+            PySys_SetObject("stderr", on ? d->replace_stderr : d->default_stderr);
+        }
+    }
+}
+
+void ReportOutput::OnChange(Base::Subject<const char*> &rCaller, const char * sReason)
+{
+    ParameterGrp& rclGrp = ((ParameterGrp&)rCaller);
+    // The view's own settings are applySetting()'s, told by ReportViewParams.
+    // What is left here is what the Editor group and MaxLines say.
+    if (strcmp(sReason, "colorCriticalText") == 0) {
         unsigned long col = rclGrp.GetUnsigned( sReason );
         reportHl->setTextColor( QColor( (col >> 24) & 0xff,(col >> 16) & 0xff,(col >> 8) & 0xff) );
-    }
-    else if (strcmp(sReason, "colorLogging") == 0) {
-        unsigned long col = rclGrp.GetUnsigned( sReason );
-        reportHl->setLogColor(App::Color::fromPackedRGB<QColor>(col));
-    }
-    else if (strcmp(sReason, "colorWarning") == 0) {
-        unsigned long col = rclGrp.GetUnsigned( sReason );
-        reportHl->setWarningColor(App::Color::fromPackedRGB<QColor>(col));
-    }
-    else if (strcmp(sReason, "colorError") == 0) {
-        unsigned long col = rclGrp.GetUnsigned( sReason );
-        reportHl->setErrorColor(App::Color::fromPackedRGB<QColor>(col));
-    }
-    else if (strcmp(sReason, "checkGoToEnd") == 0) {
-        gotoEnd = rclGrp.GetBool(sReason, gotoEnd);
     }
     else if (strcmp(sReason, "FontSize") == 0 || strcmp(sReason, "Font") == 0) {
         int fontSize = rclGrp.GetInt("FontSize", 10);
@@ -1317,16 +1327,6 @@ void ReportOutput::OnChange(Base::Subject<const char*> &rCaller, const char * sR
 #else
         setTabStopDistance(width);
 #endif
-    }
-    else if (strcmp(sReason, "RedirectPythonOutput") == 0) {
-        bool checked = rclGrp.GetBool(sReason, true);
-        if (checked != d->redirected_stdout)
-            onToggleRedirectPythonStdout();
-    }
-    else if (strcmp(sReason, "RedirectPythonErrors") == 0) {
-        bool checked = rclGrp.GetBool(sReason, true);
-        if (checked != d->redirected_stderr)
-            onToggleRedirectPythonStderr();
     }
     else if (strcmp(sReason, "MaxLines") == 0) {
         this->document()->setMaximumBlockCount(rclGrp.GetInt("MaxLines", 10000));

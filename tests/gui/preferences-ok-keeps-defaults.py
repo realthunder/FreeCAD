@@ -48,6 +48,7 @@ SAME = {
     ("Mod/Mesh", "LineColor"): "0 means the built-in colour, which is the one the page shows",
     ("Document", "prefLicenseUrl"): "empty means the address of the chosen license, which the page spells out",
     ("Expression", "EditDialogBGAlpha"): "the default is a macro that differs by platform",
+    ("OutputWindow", "colorText"): "0 means the window's text colour, which is the one the page shows",
 }
 KIND = {"Bool": "Boolean", "Int": "Integer", "Unsigned": "Unsigned Long", "Float": "Float", "ASCII": "String"}
 

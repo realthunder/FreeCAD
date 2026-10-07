@@ -28,7 +28,8 @@ from os import sys, path
 sys.path.append(path.join(path.dirname(path.dirname(path.abspath(__file__))), 'Tools'))
 import params_utils
 
-from params_utils import ParamBool, ParamInt, ParamString, ParamQString, ParamUInt, ParamFloat
+from params_utils import ParamBool, ParamInt, ParamString, ParamQString, ParamUInt, ParamFloat, \
+                         ParamHex, ParamColor
 
 NameSpace = 'Gui'
 ClassName = 'ReportViewParams'
@@ -37,6 +38,47 @@ ClassDoc = 'Convenient class to obtain ReportView related parameters'
 Signal = True
 
 Params = [
+    ParamBool('checkMessage', True,
+        title = 'Record normal messages',
+        doc = "Show normal messages in the report view."),
+    ParamBool('checkLogging', False,
+        title = 'Record log messages',
+        doc = "Show log messages in the report view. They are many; the log file\n"
+              "has them either way."),
+    ParamBool('checkWarning', True,
+        title = 'Record warnings',
+        doc = "Show warnings in the report view."),
+    ParamBool('checkError', True,
+        title = 'Record error messages',
+        doc = "Show error messages in the report view."),
+    ParamBool('checkCritical', True,
+        title = 'Record critical messages',
+        doc = "Show critical messages in the report view."),
+    ParamHex('colorText', 0, proxy=ParamColor(transparency=False),
+        title = 'Normal message colour',
+        doc = "Colour of normal messages in the report view, and of the status\n"
+              "bar's. 0 uses the window's text colour."),
+    ParamHex('colorLogging', 0x0000ffff, proxy=ParamColor(transparency=False),
+        title = 'Log message colour',
+        doc = "Colour of log messages in the report view."),
+    ParamHex('colorWarning', 0xffaa00ff, proxy=ParamColor(transparency=False),
+        title = 'Warning colour',
+        doc = "Colour of warnings in the report view and in the status bar."),
+    ParamHex('colorError', 0xff0000ff, proxy=ParamColor(transparency=False),
+        title = 'Error colour',
+        doc = "Colour of error messages in the report view and in the status bar."),
+    ParamBool('checkGoToEnd', True,
+        title = 'Go to end',
+        doc = "Keep the newest line of the report view in sight as messages\n"
+              "arrive. When off the view stays where it was scrolled to."),
+    ParamBool('RedirectPythonOutput', True,
+        title = 'Redirect Python output',
+        doc = "Show what Python code prints (sys.stdout) in the report view. Also\n"
+              "decides where the output of a macro goes."),
+    ParamBool('RedirectPythonErrors', True,
+        title = 'Redirect Python errors',
+        doc = "Show Python's error output (sys.stderr) in the report view. Also\n"
+              "decides where the errors of a macro go."),
     ParamBool('checkShowReportViewOnWarning', True,
         title = 'Show report view on warning',
         doc = "Bring the report view on screen when a warning arrives."),

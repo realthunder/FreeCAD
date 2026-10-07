@@ -45,6 +45,18 @@ public:
     fastsignals::signal<void (const char*)> signalParamChanged;
     void signalAll()
     {
+        signalParamChanged("checkMessage");
+        signalParamChanged("checkLogging");
+        signalParamChanged("checkWarning");
+        signalParamChanged("checkError");
+        signalParamChanged("checkCritical");
+        signalParamChanged("colorText");
+        signalParamChanged("colorLogging");
+        signalParamChanged("colorWarning");
+        signalParamChanged("colorError");
+        signalParamChanged("checkGoToEnd");
+        signalParamChanged("RedirectPythonOutput");
+        signalParamChanged("RedirectPythonErrors");
         signalParamChanged("checkShowReportViewOnWarning");
         signalParamChanged("checkShowReportViewOnError");
         signalParamChanged("checkShowReportViewOnNormalMessage");
@@ -59,6 +71,18 @@ public:
 
     // Auto generated code (Tools/params_utils.py:241)
     }
+    bool checkMessage;
+    bool checkLogging;
+    bool checkWarning;
+    bool checkError;
+    bool checkCritical;
+    unsigned long colorText;
+    unsigned long colorLogging;
+    unsigned long colorWarning;
+    unsigned long colorError;
+    bool checkGoToEnd;
+    bool RedirectPythonOutput;
+    bool RedirectPythonErrors;
     bool checkShowReportViewOnWarning;
     bool checkShowReportViewOnError;
     bool checkShowReportViewOnNormalMessage;
@@ -76,6 +100,30 @@ public:
         handle = App::GetApplication().GetParameterGroupByPath("User parameter:BaseApp/Preferences/OutputWindow");
         handle->Attach(this);
 
+        checkMessage = this->handle->GetBool("checkMessage", true);
+        funcs["checkMessage"] = &ReportViewParamsP::updatecheckMessage;
+        checkLogging = this->handle->GetBool("checkLogging", false);
+        funcs["checkLogging"] = &ReportViewParamsP::updatecheckLogging;
+        checkWarning = this->handle->GetBool("checkWarning", true);
+        funcs["checkWarning"] = &ReportViewParamsP::updatecheckWarning;
+        checkError = this->handle->GetBool("checkError", true);
+        funcs["checkError"] = &ReportViewParamsP::updatecheckError;
+        checkCritical = this->handle->GetBool("checkCritical", true);
+        funcs["checkCritical"] = &ReportViewParamsP::updatecheckCritical;
+        colorText = this->handle->GetUnsigned("colorText", 0x00000000);
+        funcs["colorText"] = &ReportViewParamsP::updatecolorText;
+        colorLogging = this->handle->GetUnsigned("colorLogging", 0x0000FFFF);
+        funcs["colorLogging"] = &ReportViewParamsP::updatecolorLogging;
+        colorWarning = this->handle->GetUnsigned("colorWarning", 0xFFAA00FF);
+        funcs["colorWarning"] = &ReportViewParamsP::updatecolorWarning;
+        colorError = this->handle->GetUnsigned("colorError", 0xFF0000FF);
+        funcs["colorError"] = &ReportViewParamsP::updatecolorError;
+        checkGoToEnd = this->handle->GetBool("checkGoToEnd", true);
+        funcs["checkGoToEnd"] = &ReportViewParamsP::updatecheckGoToEnd;
+        RedirectPythonOutput = this->handle->GetBool("RedirectPythonOutput", true);
+        funcs["RedirectPythonOutput"] = &ReportViewParamsP::updateRedirectPythonOutput;
+        RedirectPythonErrors = this->handle->GetBool("RedirectPythonErrors", true);
+        funcs["RedirectPythonErrors"] = &ReportViewParamsP::updateRedirectPythonErrors;
         checkShowReportViewOnWarning = this->handle->GetBool("checkShowReportViewOnWarning", true);
         funcs["checkShowReportViewOnWarning"] = &ReportViewParamsP::updatecheckShowReportViewOnWarning;
         checkShowReportViewOnError = this->handle->GetBool("checkShowReportViewOnError", true);
@@ -115,6 +163,54 @@ public:
     }
 
 
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updatecheckMessage(ReportViewParamsP *self) {
+        self->checkMessage = self->handle->GetBool("checkMessage", true);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updatecheckLogging(ReportViewParamsP *self) {
+        self->checkLogging = self->handle->GetBool("checkLogging", false);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updatecheckWarning(ReportViewParamsP *self) {
+        self->checkWarning = self->handle->GetBool("checkWarning", true);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updatecheckError(ReportViewParamsP *self) {
+        self->checkError = self->handle->GetBool("checkError", true);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updatecheckCritical(ReportViewParamsP *self) {
+        self->checkCritical = self->handle->GetBool("checkCritical", true);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updatecolorText(ReportViewParamsP *self) {
+        self->colorText = self->handle->GetUnsigned("colorText", 0x00000000);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updatecolorLogging(ReportViewParamsP *self) {
+        self->colorLogging = self->handle->GetUnsigned("colorLogging", 0x0000FFFF);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updatecolorWarning(ReportViewParamsP *self) {
+        self->colorWarning = self->handle->GetUnsigned("colorWarning", 0xFFAA00FF);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updatecolorError(ReportViewParamsP *self) {
+        self->colorError = self->handle->GetUnsigned("colorError", 0xFF0000FF);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updatecheckGoToEnd(ReportViewParamsP *self) {
+        self->checkGoToEnd = self->handle->GetBool("checkGoToEnd", true);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateRedirectPythonOutput(ReportViewParamsP *self) {
+        self->RedirectPythonOutput = self->handle->GetBool("RedirectPythonOutput", true);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateRedirectPythonErrors(ReportViewParamsP *self) {
+        self->RedirectPythonErrors = self->handle->GetBool("RedirectPythonErrors", true);
+    }
     // Auto generated code (Tools/params_utils.py:314)
     static void updatecheckShowReportViewOnWarning(ReportViewParamsP *self) {
         self->checkShowReportViewOnWarning = self->handle->GetBool("checkShowReportViewOnWarning", true);
@@ -171,6 +267,55 @@ ReportViewParamsP *instance() {
 
 // Auto generated code (Tools/params_utils.py:352)
 static const App::ParamRegistry::Registrar _ReportViewParamsRegistrar({
+    App::ParamInfo("Gui", "ReportViewParams", "User parameter:BaseApp/Preferences/OutputWindow", "checkMessage", "checkMessage", App::ParamInfo::Bool, true)
+        .setTitle("Record normal messages")
+        .setDoc("Show normal messages in the report view."),
+    App::ParamInfo("Gui", "ReportViewParams", "User parameter:BaseApp/Preferences/OutputWindow", "checkLogging", "checkLogging", App::ParamInfo::Bool, false)
+        .setTitle("Record log messages")
+        .setDoc("Show log messages in the report view. They are many; the log file\n"
+"has them either way."),
+    App::ParamInfo("Gui", "ReportViewParams", "User parameter:BaseApp/Preferences/OutputWindow", "checkWarning", "checkWarning", App::ParamInfo::Bool, true)
+        .setTitle("Record warnings")
+        .setDoc("Show warnings in the report view."),
+    App::ParamInfo("Gui", "ReportViewParams", "User parameter:BaseApp/Preferences/OutputWindow", "checkError", "checkError", App::ParamInfo::Bool, true)
+        .setTitle("Record error messages")
+        .setDoc("Show error messages in the report view."),
+    App::ParamInfo("Gui", "ReportViewParams", "User parameter:BaseApp/Preferences/OutputWindow", "checkCritical", "checkCritical", App::ParamInfo::Bool, true)
+        .setTitle("Record critical messages")
+        .setDoc("Show critical messages in the report view."),
+    App::ParamInfo("Gui", "ReportViewParams", "User parameter:BaseApp/Preferences/OutputWindow", "colorText", "colorText", App::ParamInfo::Hex, 0x00000000)
+        .setTitle("Normal message colour")
+        .setDoc("Colour of normal messages in the report view, and of the status\n"
+"bar's. 0 uses the window's text colour.")
+        .setProxy("Color")
+        .setTransparency(false),
+    App::ParamInfo("Gui", "ReportViewParams", "User parameter:BaseApp/Preferences/OutputWindow", "colorLogging", "colorLogging", App::ParamInfo::Hex, 0x0000FFFF)
+        .setTitle("Log message colour")
+        .setDoc("Colour of log messages in the report view.")
+        .setProxy("Color")
+        .setTransparency(false),
+    App::ParamInfo("Gui", "ReportViewParams", "User parameter:BaseApp/Preferences/OutputWindow", "colorWarning", "colorWarning", App::ParamInfo::Hex, 0xFFAA00FF)
+        .setTitle("Warning colour")
+        .setDoc("Colour of warnings in the report view and in the status bar.")
+        .setProxy("Color")
+        .setTransparency(false),
+    App::ParamInfo("Gui", "ReportViewParams", "User parameter:BaseApp/Preferences/OutputWindow", "colorError", "colorError", App::ParamInfo::Hex, 0xFF0000FF)
+        .setTitle("Error colour")
+        .setDoc("Colour of error messages in the report view and in the status bar.")
+        .setProxy("Color")
+        .setTransparency(false),
+    App::ParamInfo("Gui", "ReportViewParams", "User parameter:BaseApp/Preferences/OutputWindow", "checkGoToEnd", "checkGoToEnd", App::ParamInfo::Bool, true)
+        .setTitle("Go to end")
+        .setDoc("Keep the newest line of the report view in sight as messages\n"
+"arrive. When off the view stays where it was scrolled to."),
+    App::ParamInfo("Gui", "ReportViewParams", "User parameter:BaseApp/Preferences/OutputWindow", "RedirectPythonOutput", "RedirectPythonOutput", App::ParamInfo::Bool, true)
+        .setTitle("Redirect Python output")
+        .setDoc("Show what Python code prints (sys.stdout) in the report view. Also\n"
+"decides where the output of a macro goes."),
+    App::ParamInfo("Gui", "ReportViewParams", "User parameter:BaseApp/Preferences/OutputWindow", "RedirectPythonErrors", "RedirectPythonErrors", App::ParamInfo::Bool, true)
+        .setTitle("Redirect Python errors")
+        .setDoc("Show Python's error output (sys.stderr) in the report view. Also\n"
+"decides where the errors of a macro go."),
     App::ParamInfo("Gui", "ReportViewParams", "User parameter:BaseApp/Preferences/OutputWindow", "checkShowReportViewOnWarning", "checkShowReportViewOnWarning", App::ParamInfo::Bool, true)
         .setTitle("Show report view on warning")
         .setDoc("Bring the report view on screen when a warning arrives."),
@@ -232,6 +377,347 @@ ReportViewParams::signalParamChanged() {
 // Auto generated code (Tools/params_utils.py:387)
 void signalAll() {
     instance()->signalAll();
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *ReportViewParams::doccheckMessage() {
+    return QT_TRANSLATE_NOOP("ReportViewParams",
+"Show normal messages in the report view.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const bool & ReportViewParams::getcheckMessage() {
+    return instance()->checkMessage;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const bool & ReportViewParams::defaultcheckMessage() {
+    const static bool def = true;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void ReportViewParams::setcheckMessage(const bool &v) {
+    instance()->handle->SetBool("checkMessage",v);
+    instance()->checkMessage = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void ReportViewParams::removecheckMessage() {
+    instance()->handle->RemoveBool("checkMessage");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *ReportViewParams::doccheckLogging() {
+    return QT_TRANSLATE_NOOP("ReportViewParams",
+"Show log messages in the report view. They are many; the log file\n"
+"has them either way.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const bool & ReportViewParams::getcheckLogging() {
+    return instance()->checkLogging;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const bool & ReportViewParams::defaultcheckLogging() {
+    const static bool def = false;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void ReportViewParams::setcheckLogging(const bool &v) {
+    instance()->handle->SetBool("checkLogging",v);
+    instance()->checkLogging = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void ReportViewParams::removecheckLogging() {
+    instance()->handle->RemoveBool("checkLogging");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *ReportViewParams::doccheckWarning() {
+    return QT_TRANSLATE_NOOP("ReportViewParams",
+"Show warnings in the report view.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const bool & ReportViewParams::getcheckWarning() {
+    return instance()->checkWarning;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const bool & ReportViewParams::defaultcheckWarning() {
+    const static bool def = true;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void ReportViewParams::setcheckWarning(const bool &v) {
+    instance()->handle->SetBool("checkWarning",v);
+    instance()->checkWarning = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void ReportViewParams::removecheckWarning() {
+    instance()->handle->RemoveBool("checkWarning");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *ReportViewParams::doccheckError() {
+    return QT_TRANSLATE_NOOP("ReportViewParams",
+"Show error messages in the report view.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const bool & ReportViewParams::getcheckError() {
+    return instance()->checkError;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const bool & ReportViewParams::defaultcheckError() {
+    const static bool def = true;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void ReportViewParams::setcheckError(const bool &v) {
+    instance()->handle->SetBool("checkError",v);
+    instance()->checkError = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void ReportViewParams::removecheckError() {
+    instance()->handle->RemoveBool("checkError");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *ReportViewParams::doccheckCritical() {
+    return QT_TRANSLATE_NOOP("ReportViewParams",
+"Show critical messages in the report view.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const bool & ReportViewParams::getcheckCritical() {
+    return instance()->checkCritical;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const bool & ReportViewParams::defaultcheckCritical() {
+    const static bool def = true;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void ReportViewParams::setcheckCritical(const bool &v) {
+    instance()->handle->SetBool("checkCritical",v);
+    instance()->checkCritical = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void ReportViewParams::removecheckCritical() {
+    instance()->handle->RemoveBool("checkCritical");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *ReportViewParams::doccolorText() {
+    return QT_TRANSLATE_NOOP("ReportViewParams",
+"Colour of normal messages in the report view, and of the status\n"
+"bar's. 0 uses the window's text colour.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const unsigned long & ReportViewParams::getcolorText() {
+    return instance()->colorText;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const unsigned long & ReportViewParams::defaultcolorText() {
+    const static unsigned long def = 0x00000000;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void ReportViewParams::setcolorText(const unsigned long &v) {
+    instance()->handle->SetUnsigned("colorText",v);
+    instance()->colorText = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void ReportViewParams::removecolorText() {
+    instance()->handle->RemoveUnsigned("colorText");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *ReportViewParams::doccolorLogging() {
+    return QT_TRANSLATE_NOOP("ReportViewParams",
+"Colour of log messages in the report view.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const unsigned long & ReportViewParams::getcolorLogging() {
+    return instance()->colorLogging;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const unsigned long & ReportViewParams::defaultcolorLogging() {
+    const static unsigned long def = 0x0000FFFF;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void ReportViewParams::setcolorLogging(const unsigned long &v) {
+    instance()->handle->SetUnsigned("colorLogging",v);
+    instance()->colorLogging = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void ReportViewParams::removecolorLogging() {
+    instance()->handle->RemoveUnsigned("colorLogging");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *ReportViewParams::doccolorWarning() {
+    return QT_TRANSLATE_NOOP("ReportViewParams",
+"Colour of warnings in the report view and in the status bar.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const unsigned long & ReportViewParams::getcolorWarning() {
+    return instance()->colorWarning;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const unsigned long & ReportViewParams::defaultcolorWarning() {
+    const static unsigned long def = 0xFFAA00FF;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void ReportViewParams::setcolorWarning(const unsigned long &v) {
+    instance()->handle->SetUnsigned("colorWarning",v);
+    instance()->colorWarning = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void ReportViewParams::removecolorWarning() {
+    instance()->handle->RemoveUnsigned("colorWarning");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *ReportViewParams::doccolorError() {
+    return QT_TRANSLATE_NOOP("ReportViewParams",
+"Colour of error messages in the report view and in the status bar.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const unsigned long & ReportViewParams::getcolorError() {
+    return instance()->colorError;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const unsigned long & ReportViewParams::defaultcolorError() {
+    const static unsigned long def = 0xFF0000FF;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void ReportViewParams::setcolorError(const unsigned long &v) {
+    instance()->handle->SetUnsigned("colorError",v);
+    instance()->colorError = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void ReportViewParams::removecolorError() {
+    instance()->handle->RemoveUnsigned("colorError");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *ReportViewParams::doccheckGoToEnd() {
+    return QT_TRANSLATE_NOOP("ReportViewParams",
+"Keep the newest line of the report view in sight as messages\n"
+"arrive. When off the view stays where it was scrolled to.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const bool & ReportViewParams::getcheckGoToEnd() {
+    return instance()->checkGoToEnd;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const bool & ReportViewParams::defaultcheckGoToEnd() {
+    const static bool def = true;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void ReportViewParams::setcheckGoToEnd(const bool &v) {
+    instance()->handle->SetBool("checkGoToEnd",v);
+    instance()->checkGoToEnd = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void ReportViewParams::removecheckGoToEnd() {
+    instance()->handle->RemoveBool("checkGoToEnd");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *ReportViewParams::docRedirectPythonOutput() {
+    return QT_TRANSLATE_NOOP("ReportViewParams",
+"Show what Python code prints (sys.stdout) in the report view. Also\n"
+"decides where the output of a macro goes.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const bool & ReportViewParams::getRedirectPythonOutput() {
+    return instance()->RedirectPythonOutput;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const bool & ReportViewParams::defaultRedirectPythonOutput() {
+    const static bool def = true;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void ReportViewParams::setRedirectPythonOutput(const bool &v) {
+    instance()->handle->SetBool("RedirectPythonOutput",v);
+    instance()->RedirectPythonOutput = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void ReportViewParams::removeRedirectPythonOutput() {
+    instance()->handle->RemoveBool("RedirectPythonOutput");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *ReportViewParams::docRedirectPythonErrors() {
+    return QT_TRANSLATE_NOOP("ReportViewParams",
+"Show Python's error output (sys.stderr) in the report view. Also\n"
+"decides where the errors of a macro go.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const bool & ReportViewParams::getRedirectPythonErrors() {
+    return instance()->RedirectPythonErrors;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const bool & ReportViewParams::defaultRedirectPythonErrors() {
+    const static bool def = true;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void ReportViewParams::setRedirectPythonErrors(const bool &v) {
+    instance()->handle->SetBool("RedirectPythonErrors",v);
+    instance()->RedirectPythonErrors = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void ReportViewParams::removeRedirectPythonErrors() {
+    instance()->handle->RemoveBool("RedirectPythonErrors");
 }
 
 // Auto generated code (Tools/params_utils.py:397)
