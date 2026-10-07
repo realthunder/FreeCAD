@@ -57,12 +57,12 @@ report views, the reporter's own files -- is kept beside the dev tree under
 | 19 | 2026-10-06 | TechDraw: other indexes taken on trust (an audit asked) | FIXED `805b5afb25`: out-of-range enumerations repaired at restore, the list indexes checked, the projection angle off by one, the three wrong results (line standard compare, highlight key, last line style) and combo boxes no longer storing -1; what was left alone is listed in `docs/HandsOnLog.md` |
 | 20 | 2026-10-06 | TechDraw: crash when the page is switched to the backend's renderer; and what it then drew | STAGED, the double draw too |
 | 21 | 2026-10-06 | TechDraw: a click on a section line starts a section, and the line shifts at each recompute | STAGED |
-| 22 | 2026-10-06 | omni search: `/word` with no space is an object query; `/ word` forces it (change request, decided) | OPEN |
-| 23 | 2026-10-06 | omni search: every setting it collects has documentation, none of it long (an audit asked) | OPEN |
+| 22 | 2026-10-06 | omni search: `/word` with no space is an object query; `/ word` forces it (change request, decided) | FIXED `5aedd5cf83`: "/word" is an object query, "/ word" forces it, a keyword in full is the keyword, the beginning of one lists modes and objects together; the browser viewer's grammar follows (its bundle not rebuilt) |
+| 23 | 2026-10-06 | omni search: every setting it collects has documentation, none of it long (an audit asked) | FIXED `c7a27b5a85` (and `08b8f009aa`): 574 settings audited, 221 had no documentation and 94 ran past 400 characters; all have a short text now and a test keeps it so. Side findings for the reporter in `docs/HandsOnLog.md` |
 | 24 | 2026-10-06 | every `Base::Parameter` setting behind a cog helper class so the omni search finds it, applied through delayed handlers (change request, application-wide) | OPEN |
 | 25 | 2026-10-06 | the outline of a highlighted face is jagged, MSAA on or off | OPEN |
-| 26 | 2026-10-06 | a long halt after enabling MSAA and pressing OK in the preferences | OPEN |
-| 27 | 2026-10-06 | the view cell menu: opens a spreadsheet nobody asked for, lists every TechDraw object, changes the wrong cell | OPEN |
+| 26 | 2026-10-06 | a long halt after enabling MSAA and pressing OK in the preferences | FOUND in part, nothing changed: an unchanged write of the renderer Type reloads every Part view provider (1.07 s on `scanner.FCStd`); the anti-aliasing change itself is 0.15 s; the dialog's OK as a whole not measured yet (`docs/HandsOnLog.md`) |
+| 27 | 2026-10-06 | the view cell menu: opens a spreadsheet nobody asked for, lists every TechDraw object, changes the wrong cell | FIXED `fa2ada985c`: the menu made a spreadsheet view by asking for it, listed a page's views, and placed a pick by the general policy instead of into its cell; all three gone, spreadsheets now listed by type like pages (`docs/HandsOnLog.md`) |
 | 28 | 2026-10-06 | `scanner.FCStd` restores with a wrong colour, sometimes (the motor body light blue for light grey) | OPEN |
 | 29 | 2026-10-07 | view cells: transparent frames that show a split, a join and a resize while dragged (every cell the drag changes); corner handles on an opaque background; a thinner border between cells; a minimum cell size setting, default 200 (change request, decided) | OPEN |
 | 30 | 2026-10-07 | the dark and light overlay stylesheets integrated into the Dark and Light preference packs (a task asked; what "integrated" covers to confirm); and the long freeze when an overlay stylesheet is applied, to investigate; the Python console's background in both packs, so a theme can take an overlay preset's away again | OPEN |
@@ -1375,7 +1375,7 @@ fix is in.
 Not looked at: rotating the line by a mark (the direction it gives the
 section), beyond leaving a click on a mark alone.
 
-## 22. Omni search: `/word` with no space is an object query (a change request) -- OPEN
+## 22. Omni search: `/word` with no space is an object query (a change request) -- FIXED `5aedd5cf83` (see `docs/HandsOnLog.md`)
 
 **2026-10-06 15:24, omni search (a change request).** "omni search first
 entry append a <space> after / to let user know to type a space." Wanted: in
@@ -1406,7 +1406,7 @@ a partial keyword (`/c`, `/par`) lists both -- the matching mode rows and
 the objects matching the word; a full keyword (`/cmd`) is the keyword, and
 an object called `cmd` is reached with the space, `/ cmd`.
 
-## 23. Omni search: the settings it collects (an audit asked) -- OPEN
+## 23. Omni search: the settings it collects (an audit asked) -- FIXED `c7a27b5a85` (see `docs/HandsOnLog.md`)
 
 **2026-10-06 15:28, omni search: the settings it collects (an audit asked).**
 "audit for all parameter/preference settings auto collected by omni search.
@@ -1452,7 +1452,7 @@ outline of a highlighted face is aliased, and switching MSAA on or off makes
 no difference to it. Not said yet: whether this is the hover highlight, the
 selection highlight or both, and which document.
 
-## 26. A long halt after enabling MSAA and pressing OK -- OPEN
+## 26. A long halt after enabling MSAA and pressing OK -- FOUND in part (see `docs/HandsOnLog.md`)
 
 **2026-10-06 15:48, a long halt after enabling MSAA and pressing OK.**
 "while I am testing to toggle msaa, after first enabled it and click ok in
@@ -1486,7 +1486,7 @@ Read from the source by the note-taker, nothing run or measured:
   -> `setMSAASamples`); a view without one is CLONED and the original
   deleted, which rebuilds the whole view.
 
-## 27. The view cell menu: a spreadsheet nobody asked for, every TechDraw object listed, the wrong cell changed -- OPEN
+## 27. The view cell menu: a spreadsheet nobody asked for, every TechDraw object listed, the wrong cell changed -- FIXED `fa2ada985c` (see `docs/HandsOnLog.md`)
 
 **2026-10-06 16:05, the view cell menu opens a spreadsheet nobody asked
 for.** "where there is a spreadsheet opened, I click 'View cell menu' of the
