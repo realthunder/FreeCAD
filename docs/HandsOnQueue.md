@@ -62,7 +62,7 @@ report views, the reporter's own files -- is kept beside the dev tree under
 | 27 | 2026-10-06 | the view cell menu: opens a spreadsheet nobody asked for, lists every TechDraw object, changes the wrong cell | OPEN |
 | 28 | 2026-10-06 | `scanner.FCStd` restores with a wrong colour, sometimes (the motor body light blue for light grey) | OPEN |
 | 29 | 2026-10-07 | view cells: transparent frames that show a split, a join and a resize while dragged (every cell the drag changes); corner handles on an opaque background; a thinner border between cells; a minimum cell size setting, default 200 (change request, decided) | OPEN |
-| 30 | 2026-10-07 | the dark and light overlay stylesheets integrated into the Dark and Light preference packs (a task asked; what "integrated" covers to confirm); and the long freeze when an overlay stylesheet is applied, to investigate | OPEN |
+| 30 | 2026-10-07 | the dark and light overlay stylesheets integrated into the Dark and Light preference packs (a task asked; what "integrated" covers to confirm); and the long freeze when an overlay stylesheet is applied, to investigate; the Python console's background in both packs, so a theme can take an overlay preset's away again | OPEN |
 | 31 | 2026-10-07 | report view: "Go to end" on by default (change request) | see `docs/HandsOnLog.md` |
 | 32 | 2026-10-07 | some sub menus are transparent with blue text (Tools > Command history): find out why; transparent menus off by default | see `docs/HandsOnLog.md` |
 
@@ -1623,6 +1623,39 @@ widgets, and a `setStyleSheet` re-polishes every child of the widget it lands
 on -- tree, property editor, report view with all their rows. Entry 26 (the
 halt after OK in the preferences) and entry 24 (apply a changed setting
 through a delayed handler) are the same family.
+
+**Added by the reporter, 11:34, a third task under this entry** (their choice
+of place, 11:36: "maybe group this under the theme merge entry"): "add python
+console stylesheet setting to dark and light theme. right now it seem to only
+appear in overlay theme, which once applied there is no way to un-apply it
+even switching to classic theme". Two things in it: (a) the Dark and Light
+themes are to carry the Python console's styling themselves; (b) as it is,
+the styling comes only with an overlay theme preset, and once that has been
+applied nothing takes it away again -- not even the classic theme.
+Read from the source by the note-taker, nothing changed, and it accounts for
+(b) in full:
+- The styling is one key, `Background`, in `Preferences/Editor`.
+  `PythonConsole::OnChange` (`src/Gui/PythonConsole.cpp`) turns a non-zero
+  value into a stylesheet on the console, `Gui--PythonConsole {background:
+  #rrggbb}`, and a zero or missing one into no stylesheet at all.
+- Only the two overlay presets write it: `data/settings/OverlayDark.FCParam`
+  (`3368601600`, 0xC8C8C800) and `OverlayLight.FCParam` (`4042321920`,
+  0xF0F0F000).
+- `src/Gui/PreferencePacks/Dark/Dark.cfg` and `.../Light/Light.cfg` both have
+  an `Editor` group -- text and syntax colours -- and neither has `Background`
+  in it. A pack only writes the keys it lists, so applying any theme after a
+  preset leaves the preset's background where it is. That is the "no way to
+  un-apply": no theme owns the key, the classic one included.
+- What does take it away today: the preset's own revert (Ctrl held while
+  choosing it in Tools > Preset configurations, `PresetsAction::onAction`),
+  or setting the key to 0 by hand.
+So (a) is `Background` added to the `Editor` group of both packs, with the
+colour each theme wants, and a value (0, for "none") in whatever the classic
+theme applies, so that every theme sets or clears it. Worth the same look for
+the preset's other keys that no pack lists -- `TreeView` (`TreeEditColor`,
+`ItemBackground`, `TreeActiveColor`), `View` (`BackgroundColor`, `Gradient`,
+`Simple`, `CursorCrosshairColor`): each is left behind the same way. This is
+the first task of this entry seen from the other end.
 
 ## 31. Report view: "Go to end" on by default (a change request)
 
