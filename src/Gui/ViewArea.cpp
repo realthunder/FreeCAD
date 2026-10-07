@@ -39,6 +39,7 @@
 
 #include <App/Document.h>
 #include <App/DocumentObject.h>
+#include <Base/Tools.h>
 
 #include "ViewArea.h"
 #include "ViewAreaCanvas.h"
@@ -229,6 +230,48 @@ private:
     bool after;
 };
 
+/// A panel cell is being put beside a cell, or taken away. The cell is
+/// re-parented for it, which takes the keyboard from whatever in it had
+/// it and hands it back; neither is the user going to another cell, and
+/// onFocusChanged must not read it so -- a view would be deactivated and
+/// activated again, and its dialogs told, for a panel that only changed
+/// its place. One flag for every container, like focusIsMoving: the focus
+/// is the application's.
+bool pairChanging = false;
+
+/// The pair \a cell stands in with its panel cell, or null
+/// (docs/TaskPanelPerView.md sec 15.4)
+ViewAreaSplitter *pairOf(const QWidget *cell)
+{
+    auto sp = cell ? qobject_cast<ViewAreaSplitter*>(cell->parentWidget()) : nullptr;
+    return sp && sp->panelPair ? sp : nullptr;
+}
+
+/// What stands in the splitter tree for \a cell: its pair when it has a
+/// panel cell beside it, else the cell itself
+QWidget *slotOf(ViewAreaCell *cell)
+{
+    if (ViewAreaSplitter *pair = pairOf(cell))
+        return pair;
+    return cell;
+}
+
+/// The cell \a slot stands for: itself, or the one in the pair. Null for
+/// a splitter of the tree proper.
+ViewAreaCell *cellOfSlot(QWidget *slot)
+{
+    if (auto cell = qobject_cast<ViewAreaCell*>(slot))
+        return cell;
+    auto sp = qobject_cast<ViewAreaSplitter*>(slot);
+    if (!sp || !sp->panelPair)
+        return nullptr;
+    for (int i = 0; i < sp->count(); ++i) {
+        if (auto cell = qobject_cast<ViewAreaCell*>(sp->widget(i)))
+            return cell;
+    }
+    return nullptr;
+}
+
 /// Splitter handle with a small management menu.
 class ViewAreaSplitterHandle : public QSplitterHandle
 {
@@ -252,11 +295,13 @@ protected:
     {
         auto sp = splitter();
         ViewArea *area = ViewArea::areaOf(sp);
-        if (!area)
+        // The handle between a cell and its panel cell closes nothing
+        auto own = qobject_cast<ViewAreaSplitter*>(sp);
+        if (!area || (own && own->panelPair))
             return QSplitterHandle::contextMenuEvent(ev);
         int idx = sp->indexOf(this);  // handle i sits after widget i-1
-        auto before = qobject_cast<ViewAreaCell*>(sp->widget(idx - 1));
-        auto behind = qobject_cast<ViewAreaCell*>(sp->widget(idx));
+        auto before = cellOfSlot(sp->widget(idx - 1));
+        auto behind = cellOfSlot(sp->widget(idx));
         bool horiz = (orientation() == Qt::Horizontal);
 
         QMenu menu;
@@ -381,7 +426,12 @@ void ViewAreaCell::updateHighlight()
 
 TaskView::TaskPanelHost *ViewAreaCell::taskHost() const
 {
-    return TaskView::TaskPanelHost::hostIn(this);
+    if (auto host = TaskView::TaskPanelHost::hostIn(this))
+        return host;
+    // Beside the cell rather than over it (sec 15.4)
+    if (auto panel = _area ? _area->panelCellOf(this) : nullptr)
+        return TaskView::TaskPanelHost::hostIn(panel);
+    return nullptr;
 }
 
 void ViewAreaCell::showZoneHint(bool on)
@@ -620,6 +670,26 @@ void ViewAreaCell::showCellMenu(const QPoint &globalPos)
         if (view && view != childView())
             area->setCellView(this, view);
     }
+}
+
+// ----------------------------------------------------------------------------
+// ViewAreaPanelCell
+// ----------------------------------------------------------------------------
+
+ViewAreaPanelCell::ViewAreaPanelCell(ViewAreaCell *cell)
+    : QWidget(nullptr)
+    , _cell(cell)
+{
+    setObjectName(QStringLiteral("viewAreaPanelCell"));
+    auto lay = new QVBoxLayout(this);
+    lay->setContentsMargins(0, 0, 0, 0);
+    lay->setSpacing(0);
+    // Its own ground: on the unified canvas the cells paint none, and
+    // the picture would show through a panel that is not over it
+    setAutoFillBackground(true);
+    // What panelCell() bounds a size by, so that the handle stops where
+    // the size would be put back to
+    setMinimumSize(MinExtent, MinExtent / 2);
 }
 
 // ----------------------------------------------------------------------------
@@ -1028,10 +1098,13 @@ ViewAreaCell *ViewArea::splitCell(ViewAreaCell *cell, Qt::Orientation orientatio
     if (!child)
         return nullptr;
 
-    auto splitter = qobject_cast<QSplitter*>(cell->parentWidget());
+    // A cell with a panel cell beside it is split as the pair: the new
+    // cell goes outside, and the panel stays beside its own view
+    QWidget *slot = slotOf(cell);
+    auto splitter = qobject_cast<QSplitter*>(slot->parentWidget());
     assert(splitter);
     auto newCell = new ViewAreaCell(this);
-    int idx = splitter->indexOf(cell);
+    int idx = splitter->indexOf(slot);
 
     if (splitter->count() < 2 || splitter->orientation() == orientation) {
         // Same direction (or a splitter that has not committed to one
@@ -1051,11 +1124,11 @@ ViewAreaCell *ViewArea::splitCell(ViewAreaCell *cell, Qt::Orientation orientatio
         // Crossing direction: nest a new splitter in the cell's place.
         QList<int> sizes = splitter->sizes();
         auto nested = new ViewAreaSplitter(orientation);
-        int half = (orientation == Qt::Horizontal ? cell->width()
-                                                  : cell->height()) / 2;
+        int half = (orientation == Qt::Horizontal ? slot->width()
+                                                  : slot->height()) / 2;
         splitter->replaceWidget(idx, nested);
-        nested->addWidget(cell);
-        cell->show();  // replaceWidget hides the widget it takes out
+        nested->addWidget(slot);
+        slot->show();  // replaceWidget hides the widget it takes out
         nested->addWidget(newCell);
         splitter->setSizes(sizes);
         nested->setSizes({half, half});
@@ -1072,15 +1145,17 @@ ViewAreaCell *ViewArea::joinTargetFor(ViewAreaCell *cell, Qt::Orientation axis,
 {
     if (!cell || cell->area() != this)
         return nullptr;
-    auto sp = qobject_cast<QSplitter*>(cell->parentWidget());
+    QWidget *slot = slotOf(const_cast<ViewAreaCell*>(cell));
+    auto sp = qobject_cast<QSplitter*>(slot->parentWidget());
     if (!sp || sp->orientation() != axis || sp->count() < 2)
         return nullptr;
-    int idx = sp->indexOf(cell) + (after ? 1 : -1);
+    int idx = sp->indexOf(slot) + (after ? 1 : -1);
     if (idx < 0 || idx >= sp->count())
         return nullptr;
     // Leaf only: a nested splitter neighbor does not share its full
-    // border with this one cell (Blender's aligned-edge rule).
-    return qobject_cast<ViewAreaCell*>(sp->widget(idx));
+    // border with this one cell (Blender's aligned-edge rule). A cell
+    // with its panel cell is a leaf.
+    return cellOfSlot(sp->widget(idx));
 }
 
 void ViewArea::toggleMaximizeCell(ViewAreaCell *cell)
@@ -1126,7 +1201,8 @@ void ViewArea::toggleMaximizeCell(ViewAreaCell *cell)
 
     // Along the path from the cell to the root, hide every sibling; the
     // splitters give hidden widgets no space, so the cell takes it all.
-    QWidget *w = cell;
+    // From its pair when it has a panel cell: the panel stays with it.
+    QWidget *w = slotOf(cell);
     while (w && w != this) {
         QWidget *parent = w->parentWidget();
         if (auto sp = qobject_cast<QSplitter*>(parent)) {
@@ -1235,8 +1311,148 @@ bool ViewArea::closeCell(ViewAreaCell *cell)
     return true;
 }
 
+ViewAreaPanelCell *ViewArea::panelCellOf(const ViewAreaCell *cell) const
+{
+    ViewAreaSplitter *pair = pairOf(cell);
+    if (!pair)
+        return nullptr;
+    for (int i = 0; i < pair->count(); ++i) {
+        if (auto panel = qobject_cast<ViewAreaPanelCell*>(pair->widget(i)))
+            return panel;
+    }
+    return nullptr;
+}
+
+ViewAreaPanelCell *ViewArea::panelCell(ViewAreaCell *cell, Qt::Edge side, int extent)
+{
+    if (!cell || cell->area() != this)
+        return nullptr;
+    const Qt::Orientation o = (side == Qt::LeftEdge || side == Qt::RightEdge)
+        ? Qt::Horizontal : Qt::Vertical;
+    const bool first = (side == Qt::LeftEdge || side == Qt::TopEdge);
+
+    // Re-parenting takes the keyboard from whatever in the cell had it
+    QPointer<QWidget> focus = QApplication::focusWidget();
+    if (focus && !cell->isAncestorOf(focus))
+        focus = nullptr;
+    Base::StateLocker changing(pairChanging);
+
+    ViewAreaSplitter *pair = pairOf(cell);
+    ViewAreaPanelCell *panel = panelCellOf(cell);
+    QSplitter *outer = nullptr;
+    // What there is to share when the pair has no geometry of its own yet
+    int total = (o == Qt::Horizontal) ? cell->width() : cell->height();
+    if (!pair) {
+        outer = qobject_cast<QSplitter*>(cell->parentWidget());
+        if (!outer)
+            return nullptr;
+        const int idx = outer->indexOf(cell);
+        const QList<int> sizes = outer->sizes();
+        pair = new ViewAreaSplitter(o);
+        pair->panelPair = true;
+        pair->setObjectName(QStringLiteral("viewAreaPanelPair"));
+        pair->slotBefore = sizes;
+        outer->replaceWidget(idx, pair);
+        panel = new ViewAreaPanelCell(cell);
+        if (first) {
+            pair->addWidget(panel);
+            pair->addWidget(cell);
+        }
+        else {
+            pair->addWidget(cell);
+            pair->addWidget(panel);
+        }
+        cell->show();  // replaceWidget hides the widget it takes out
+        pair->show();
+    }
+    else {
+        if (!panel)
+            return nullptr;
+        outer = qobject_cast<QSplitter*>(pair->parentWidget());
+        // Somebody moved the borders since the pair stood: what they are
+        // now is what the neighbours go back to
+        if (outer && outer->sizes() != pair->slotAfter)
+            pair->slotBefore = outer->sizes();
+        const bool turned = pair->orientation() != o;
+        if (extent <= 0 && !turned)
+            extent = (o == Qt::Horizontal) ? panel->width() : panel->height();
+        pair->setOrientation(o);
+        const int want = first ? 0 : 1;
+        if (pair->indexOf(panel) != want)
+            pair->insertWidget(want, panel);
+    }
+    // The slot as it was, or as near to it as the two can be put: on
+    // another side they may need less of it than they took
+    if (outer) {
+        outer->setSizes(pair->slotBefore);
+        if (outer->isVisible()) {
+            const int has = (o == Qt::Horizontal) ? pair->width() : pair->height();
+            if (has > 0)
+                total = has;
+        }
+    }
+    if (extent <= 0)
+        extent = total / 3;
+
+    // The panel keeps its size when the pair is resized; the view takes
+    // what is left
+    pair->setStretchFactor(pair->indexOf(panel), 0);
+    pair->setStretchFactor(pair->indexOf(cell), 1);
+    if (total > 0) {
+        // No more than leaves the view what it asks for at the least
+        const QSize needs = cell->minimumSizeHint().expandedTo(cell->minimumSize());
+        const int viewLeast = (o == Qt::Horizontal) ? needs.width() : needs.height();
+        const int least = (o == Qt::Horizontal) ? ViewAreaPanelCell::MinExtent
+                                                : ViewAreaPanelCell::MinExtent / 2;
+        const int most = total - pair->handleWidth() - viewLeast;
+        extent = qBound(least, extent, qMax(least, most));
+        extent = qMin(extent, total);
+        const int rest = qMax(0, total - pair->handleWidth() - extent);
+        pair->setSizes(first ? QList<int>{extent, rest} : QList<int>{rest, extent});
+    }
+    if (outer)
+        pair->slotAfter = outer->sizes();
+
+    if (focus && focus != QApplication::focusWidget())
+        focus->setFocus();
+    syncCanvas();
+    return panel;
+}
+
+void ViewArea::removePanelCell(ViewAreaCell *cell)
+{
+    ViewAreaSplitter *pair = pairOf(cell);
+    if (!pair)
+        return;
+    auto outer = qobject_cast<QSplitter*>(pair->parentWidget());
+    if (!outer)
+        return;
+    QPointer<QWidget> focus = QApplication::focusWidget();
+    if (focus && !cell->isAncestorOf(focus))
+        focus = nullptr;
+    Base::StateLocker changing(pairChanging);
+    const int idx = outer->indexOf(pair);
+    // The neighbours have back what the pair took from them, unless the
+    // borders were moved while it stood
+    QList<int> sizes = outer->sizes();
+    if (sizes == pair->slotAfter && pair->slotBefore.size() == sizes.size())
+        sizes = pair->slotBefore;
+    outer->replaceWidget(idx, cell);
+    cell->show();
+    // With the panel cell, and whatever is in it
+    pair->setParent(nullptr);
+    pair->deleteLater();
+    outer->setSizes(sizes);
+    if (focus && focus != QApplication::focusWidget())
+        focus->setFocus();
+    syncCanvas();
+}
+
 void ViewArea::collapseCell(ViewAreaCell *cell)
 {
+    // The panel cell beside it goes first: the cell is in the tree's own
+    // splitter again, which is what the rest of this takes it out of
+    removePanelCell(cell);
     auto splitter = qobject_cast<QSplitter*>(cell->parentWidget());
     if (!splitter)
         return;
@@ -1330,7 +1546,7 @@ void ViewArea::setActiveCell(ViewAreaCell *cell, bool activateWindow)
 void ViewArea::onFocusChanged(QWidget *old, QWidget *now)
 {
     Q_UNUSED(old);
-    if (_closing || !now || !isAncestorOf(now))
+    if (_closing || pairChanging || !now || !isAncestorOf(now))
         return;
     for (QWidget *w = now; w && w != this; w = w->parentWidget()) {
         if (auto cell = qobject_cast<ViewAreaCell*>(w)) {

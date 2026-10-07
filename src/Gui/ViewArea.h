@@ -64,6 +64,22 @@ public:
     /// real geometry.
     QList<int> initialSizes;
 
+    /// This splitter is a PANEL PAIR (docs/TaskPanelPerView.md sec 15.4):
+    /// it stands in the slot of one cell, and holds that cell and the
+    /// panel cell beside it. Everything that takes a cell's parent
+    /// splitter for the cell's place in the tree looks through it
+    /// (ViewArea::splitCell, joinTargetFor, toggleMaximizeCell,
+    /// collapseCell).
+    bool panelPair = false;
+    /// For a pair: the sizes of the splitter it stands in from before it
+    /// was put there, and as they were left once it stood. A pair that
+    /// does not fit its slot -- a view asks for 400 pixels, a panel for
+    /// more beside it -- takes room from its neighbours; with these they
+    /// get it back when the panel goes, unless somebody has moved the
+    /// borders in between.
+    QList<int> slotBefore;
+    QList<int> slotAfter;
+
 protected:
     void resizeEvent(QResizeEvent *) override;
 
@@ -132,6 +148,37 @@ private:
     int _mruStamp = 0;
 
     friend class ViewArea;
+};
+
+/** The cell a task panel stands in beside its view
+ * (docs/TaskPanelPerView.md sec 15.4).
+ *
+ * Not a ViewAreaCell, and that is the point of it: whatever counts, walks
+ * or picks the cells of a view area -- the last one closing the
+ * container, the active cell, the join gesture, the placement of a new
+ * view, the layout saved with the document -- does not see it. It stands
+ * with its cell in a splitter of their own, the pair, which takes the
+ * slot the cell had; so the tree around them keeps its shape and its
+ * sizes, and taking the panel cell away is putting the cell back.
+ *
+ * It is made and removed by ViewArea::panelCell / removePanelCell, on
+ * behalf of the task panel's host, which is its one child.
+ */
+class GuiExport ViewAreaPanelCell : public QWidget
+{
+    Q_OBJECT
+
+public:
+    explicit ViewAreaPanelCell(ViewAreaCell *cell);
+
+    /// The cell this one stands beside
+    ViewAreaCell *cell() const { return _cell; }
+
+    /// The least a panel cell is given across
+    static constexpr int MinExtent = 120;
+
+private:
+    QPointer<ViewAreaCell> _cell;
 };
 
 /** A Blender-style corner action zone.
@@ -234,6 +281,22 @@ public:
      */
     ViewAreaCell *splitCell(ViewAreaCell *cell, Qt::Orientation orientation,
                             MDIView *newChild = nullptr);
+    /** The panel cell beside \a cell, on \a side of it
+     * (docs/TaskPanelPerView.md sec 15.4).
+     *
+     * Made when there is none: the cell's slot in its splitter is taken
+     * by a pair holding the two. With one there already, it is moved to
+     * \a side. \a extent is its size across, in pixels; 0 leaves an
+     * existing one as it is and gives a new one a third of the slot.
+     * Null when \a cell is not one of this container's.
+     */
+    ViewAreaPanelCell *panelCell(ViewAreaCell *cell, Qt::Edge side, int extent = 0);
+    /// The panel cell beside \a cell, or null
+    ViewAreaPanelCell *panelCellOf(const ViewAreaCell *cell) const;
+    /// Take the panel cell beside \a cell away, with whatever is in it:
+    /// the cell has its slot back. Nothing when it has none.
+    void removePanelCell(ViewAreaCell *cell);
+
     /** Close \a cell: its child view goes through its normal close path
      * (which may refuse), the tile collapses into its neighbors. When
      * the last cell closes the whole container closes.

@@ -1043,8 +1043,11 @@ void TaskView::updateHint()
 void TaskView::showPage(TaskInfo *info)
 {
     // A page that is in its view is not this task view's to show: the
-    // watchers keep the Tasks tab (docs/TaskPanelPerView.md sec 5.2)
-    if (info && info->host)
+    // watchers keep the Tasks tab (docs/TaskPanelPerView.md sec 5.2).
+    // Nor is one that is on its way between the two -- asked for while
+    // its host is being made, or let go, by something that came up in
+    // the middle of that: the stack cannot show what it does not hold.
+    if (info && (info->host || stack->indexOf(info->page) < 0))
         info = nullptr;
     QWidget *page = info ? static_cast<QWidget*>(info->page) : scrollarea;
     QSint::ActionPanel *panel = info ? static_cast<QSint::ActionPanel*>(info->page->panel)
@@ -1140,7 +1143,7 @@ void TaskView::slotChangedView(const Gui::BaseView &view, const App::Property &p
             moved = true;
         }
         else if (info.host) {
-            info.host->sideChanged();
+            info.host->placementChanged();
         }
     }
     if (moved) {

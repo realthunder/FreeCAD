@@ -29,6 +29,7 @@
 #include <QWidget>
 #include <FCGlobal.h>
 
+class QAction;
 class QBoxLayout;
 class QEvent;
 class QLabel;
@@ -44,6 +45,7 @@ namespace Gui
 
 class MDIView;
 class SelectionScope;
+class ViewAreaCell;
 class ViewerScope;
 
 namespace TaskView
@@ -128,16 +130,25 @@ public:
 /** A task dialog's page inside the view it belongs to
  * (docs/TaskPanelPerView.md sec 5.2).
  *
- * A child of the widget the view fills -- its Gui::ViewAreaCell when it is
- * in one, else the view itself -- laid over the picture along one side. It
- * is where the page of a dialog is while its view's place says so
+ * It is where the page of a dialog is while its view's place says so
  * (TaskPlacement), and so it stays in sight whichever view is the active
- * one.
+ * one. In one of two ways, the view's mode:
  *
- * A slim header above the page carries the dialog's title and a button
- * that sends this panel back to the combo view. Dragging the header moves
- * the host to the other side of its view. Both are kept in the view
- * (TaskPlacement).
+ * - OVERLAY: a child of the widget the view fills -- its
+ *   Gui::ViewAreaCell when it is in one, else the view itself -- laid over
+ *   the picture along one side.
+ * - SIDE: the one child of a Gui::ViewAreaPanelCell, a cell of its own
+ *   split out beside the view's on any of the four sides, with the view
+ *   area's own handle between the two (docs/TaskPanelPerView.md sec
+ *   15.4). A view in no view area is put into one for it; one that cannot
+ *   be -- a floating window -- gets the overlay.
+ *
+ * A slim header above the page carries the dialog's title, a menu that
+ * chooses the mode and the side, and a button that sends this panel back
+ * to the combo view. Dragging the header of an overlay moves it to the
+ * other side of its view. All of it acts on this panel's view and is
+ * kept there (TaskPlacement); the host takes it when it is made and again
+ * when its own view's changes, not when another view's does.
  *
  * The task view makes a host when a page is to be shown in a view and
  * takes the page back before it lets the host go. A host whose place is
@@ -179,12 +190,15 @@ public:
 
     bool isOnRight() const
     {
-        return _right;
+        return _side == TaskPlacement::Side::Right;
     }
-    /// Take the side from the view again (TaskPlacement::side): it was
-    /// changed there. A host does not follow what is chosen in another
-    /// view while its panel is open.
-    void sideChanged();
+    /// Whether it stands in a cell of its own beside the view, as its
+    /// view's mode asks, rather than over the picture
+    bool isBeside() const;
+    /// Take mode, side and size from the view again (TaskPlacement): they
+    /// were changed there. A host does not follow what is chosen in
+    /// another view while its panel is open.
+    void placementChanged();
     /// Whether the host takes the whole height of its place. Off, which
     /// is the default, it is as tall as its panel needs and no taller: a
     /// two-line panel does not cover the height of the view. A dialog
@@ -220,6 +234,14 @@ private:
     int pageHeight() const;
     /// place(), once control is back in the event loop
     void placeLater();
+    /// The panel cell beside the view's cell, made if need be; null when
+    /// the view cannot have one
+    QWidget* besidePlace(MDIView* view);
+    /// What a panel cell is given across when the view holds no size
+    int wantedExtent() const;
+    /// The handle between the panel cell and the view's was dragged
+    void pairMoved();
+    void updateMenu();
 
     QPointer<TaskView> _taskView;
     QPointer<MDIView> _view;
@@ -228,8 +250,17 @@ private:
     QBoxLayout* _layout;
     QWidget* _header;
     QLabel* _title;
+    QToolButton* _menu;
     QToolButton* _toCombo;
-    bool _right {false};
+    QAction* _actOverlay;
+    QAction* _actBeside;
+    QAction* _actSides[4];
+    TaskPlacement::Mode _mode {TaskPlacement::Mode::Overlay};
+    TaskPlacement::Side _side {TaskPlacement::Side::Left};
+    /// The cell this host has its panel cell beside, while it has one
+    QPointer<ViewAreaCell> _besideCell;
+    /// A panel cell made before the page was there has yet to be fitted
+    bool _fitBeside {false};
     bool _dragging {false};
     bool _fill {false};
     bool _placePending {false};

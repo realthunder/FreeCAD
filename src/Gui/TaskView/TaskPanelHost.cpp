@@ -32,10 +32,13 @@
 #include <QApplication>
 #include <QBoxLayout>
 #include <QKeyEvent>
+#include <QActionGroup>
 #include <QLabel>
+#include <QMenu>
 #include <QMouseEvent>
 #include <QPainter>
 #include <QScrollArea>
+#include <QSplitter>
 #include <QStyle>
 #include <QThread>
 #include <QToolButton>
@@ -165,6 +168,25 @@ TaskPlacement::Side sideOf(const std::string& text, TaskPlacement::Side otherwis
     return otherwise;
 }
 
+Qt::Edge edgeOf(TaskPlacement::Side side)
+{
+    switch (side) {
+        case TaskPlacement::Side::Right:
+            return Qt::RightEdge;
+        case TaskPlacement::Side::Top:
+            return Qt::TopEdge;
+        case TaskPlacement::Side::Bottom:
+            return Qt::BottomEdge;
+        default:
+            return Qt::LeftEdge;
+    }
+}
+
+bool acrossIsWidth(TaskPlacement::Side side)
+{
+    return side == TaskPlacement::Side::Left || side == TaskPlacement::Side::Right;
+}
+
 const char* textOf(TaskPlacement::Side side)
 {
     switch (side) {
@@ -223,7 +245,8 @@ public:
 protected:
     void mousePressEvent(QMouseEvent* ev) override
     {
-        if (ev->button() != Qt::LeftButton) {
+        // Beside its view it is moved by choosing a side, not dragged
+        if (ev->button() != Qt::LeftButton || host->isBeside()) {
             QWidget::mousePressEvent(ev);
             return;
         }
@@ -429,6 +452,70 @@ TaskPanelHost::TaskPanelHost(TaskView* taskView, MDIView* view)
     _title->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
     row->addWidget(_title, 1);
 
+    // How this panel stands in its view, and on which side: its own
+    // view's, kept there (TaskPlacement)
+    _menu = new QToolButton(_header);
+    _menu->setObjectName(QStringLiteral("taskPanelHostMenu"));
+    _menu->setAutoRaise(true);
+    _menu->setCursor(Qt::ArrowCursor);
+    _menu->setFocusPolicy(Qt::NoFocus);
+    _menu->setArrowType(Qt::DownArrow);
+    _menu->setPopupMode(QToolButton::InstantPopup);
+    _menu->setStyleSheet(QStringLiteral("QToolButton::menu-indicator { image: none; }"));
+    _menu->setToolTip(tr("Where this task panel stands in its view"));
+    auto menu = new QMenu(_menu);
+    auto modes = new QActionGroup(menu);
+    _actOverlay = menu->addAction(tr("Over the view"));
+    _actOverlay->setObjectName(QStringLiteral("taskPanelHostOverlay"));
+    _actBeside = menu->addAction(tr("Beside the view"));
+    _actBeside->setObjectName(QStringLiteral("taskPanelHostBeside"));
+    for (QAction* action : {_actOverlay, _actBeside}) {
+        action->setCheckable(true);
+        modes->addAction(action);
+    }
+    menu->addSeparator();
+    auto sides = new QActionGroup(menu);
+    const struct
+    {
+        TaskPlacement::Side side;
+        QString text;
+        const char* name;
+    } entries[4] = {
+        {TaskPlacement::Side::Left, tr("Left"), "taskPanelHostLeft"},
+        {TaskPlacement::Side::Right, tr("Right"), "taskPanelHostRight"},
+        {TaskPlacement::Side::Top, tr("Top"), "taskPanelHostTop"},
+        {TaskPlacement::Side::Bottom, tr("Bottom"), "taskPanelHostBottom"},
+    };
+    for (int i = 0; i < 4; ++i) {
+        QAction* action = menu->addAction(entries[i].text);
+        action->setObjectName(QString::fromLatin1(entries[i].name));
+        action->setCheckable(true);
+        sides->addAction(action);
+        _actSides[i] = action;
+        const TaskPlacement::Side side = entries[i].side;
+        connect(action, &QAction::triggered, this, [this, side] {
+            if (MDIView* own = _view) {
+                TaskPlacement::setSide(own, side);
+            }
+            // Also when the view said that already: the menu shows it
+            placementChanged();
+        });
+    }
+    _menu->setMenu(menu);
+    row->addWidget(_menu);
+    connect(_actOverlay, &QAction::triggered, this, [this] {
+        if (MDIView* own = _view) {
+            TaskPlacement::setMode(own, TaskPlacement::Mode::Overlay);
+        }
+        placementChanged();
+    });
+    connect(_actBeside, &QAction::triggered, this, [this] {
+        if (MDIView* own = _view) {
+            TaskPlacement::setMode(own, TaskPlacement::Mode::Side);
+        }
+        placementChanged();
+    });
+
     _toCombo = new QToolButton(_header);
     _toCombo->setObjectName(QStringLiteral("taskPanelHostToCombo"));
     _toCombo->setAutoRaise(true);
@@ -449,9 +536,11 @@ TaskPanelHost::TaskPanelHost(TaskView* taskView, MDIView* view)
         }
     });
 
-    // Left or right for now: the other two sides come with the looks that
-    // can stand there (sec 15.7)
-    _right = TaskPlacement::side(view) == TaskPlacement::Side::Right;
+    // As the view has it now, and until the view changes it: what is
+    // chosen in another view meanwhile is for the panels opened after
+    _mode = TaskPlacement::mode(view);
+    _side = TaskPlacement::side(view);
+    updateMenu();
 
     hosts.push_back(this);
     hostCount.store(static_cast<int>(hosts.size()), std::memory_order_relaxed);
@@ -517,26 +606,123 @@ Gui::MDIView* TaskPanelHost::view() const
     return _view;
 }
 
+bool TaskPanelHost::isBeside() const
+{
+    return !_besideCell.isNull();
+}
+
+int TaskPanelHost::wantedExtent() const
+{
+    if (!_page) {
+        return 0;
+    }
+    if (acrossIsWidth(_side)) {
+        return qMax(MinWidth,
+                    _page->panel->sizeHint().width()
+                        + style()->pixelMetric(QStyle::PM_ScrollBarExtent) + 6);
+    }
+    return _header->sizeHint().height() + 2 + pageHeight();
+}
+
+QWidget* TaskPanelHost::besidePlace(MDIView* view)
+{
+    ViewArea* area = ViewArea::areaOf(view);
+    if (!area) {
+        // A view in a tab of its own: a panel beside it is a split, and a
+        // split puts such a view into a view area (sec 15.8, point 1).
+        // Null for a view that is in no tab either -- a floating one.
+        area = ViewArea::wrap(view);
+    }
+    ViewAreaCell* cell = area ? area->cellOf(view) : nullptr;
+    if (!cell) {
+        return nullptr;
+    }
+    int extent = TaskPlacement::size(view);
+    if (extent <= 0 && !area->panelCellOf(cell)) {
+        extent = wantedExtent();
+        // Made before the page is there: fitted to it when it comes
+        _fitBeside = extent <= 0;
+    }
+    return area->panelCell(cell, edgeOf(_side), extent);
+}
+
 void TaskPanelHost::attach()
 {
     MDIView* view = _view;
-    QWidget* where = (view && !_retired) ? placeFor(view) : nullptr;
-    if (!where) {
+    if (!view || _retired) {
         return;
+    }
+    QPointer<ViewAreaCell> hadCell = _besideCell;
+    QWidget* where = nullptr;
+    ViewAreaCell* cell = nullptr;
+    if (_mode == TaskPlacement::Mode::Side) {
+        where = besidePlace(view);
+        if (auto panel = qobject_cast<ViewAreaPanelCell*>(where)) {
+            cell = panel->cell();
+        }
+    }
+    if (!where) {
+        where = placeFor(view);
     }
     if (where != _place) {
         if (_place && _place != view) {
             _place->removeEventFilter(this);
         }
         _place = where;
-        if (where != view) {
-            where->installEventFilter(this);
+        if (cell) {
+            // The one thing in the panel cell, and as large as it
+            setParent(where);
+            where->layout()->addWidget(this);
+            if (auto pair = qobject_cast<QSplitter*>(where->parentWidget())) {
+                connect(pair,
+                        &QSplitter::splitterMoved,
+                        this,
+                        &TaskPanelHost::pairMoved,
+                        Qt::UniqueConnection);
+            }
         }
-        setParent(where);
+        else {
+            if (where != view) {
+                where->installEventFilter(this);
+            }
+            setParent(where);
+        }
+    }
+    _besideCell = cell;
+    // Out of the panel cell it stood in before, that cell goes: after the
+    // host has left it, or the host would go with it
+    if (hadCell && hadCell != cell) {
+        if (ViewArea* area = hadCell->area()) {
+            area->removePanelCell(hadCell);
+        }
     }
     place();
     show();
     raise();
+}
+
+void TaskPanelHost::pairMoved()
+{
+    MDIView* view = _view;
+    QWidget* panel = _besideCell ? parentWidget() : nullptr;
+    if (!view || !panel || _retired) {
+        return;
+    }
+    // The view keeps it: its next panel is given the same
+    TaskPlacement::setSize(view, acrossIsWidth(_side) ? panel->width() : panel->height());
+}
+
+void TaskPanelHost::updateMenu()
+{
+    _actOverlay->setChecked(_mode == TaskPlacement::Mode::Overlay);
+    _actBeside->setChecked(_mode == TaskPlacement::Mode::Side);
+    const TaskPlacement::Side order[4] = {TaskPlacement::Side::Left,
+                                          TaskPlacement::Side::Right,
+                                          TaskPlacement::Side::Top,
+                                          TaskPlacement::Side::Bottom};
+    for (int i = 0; i < 4; ++i) {
+        _actSides[i]->setChecked(order[i] == _side);
+    }
 }
 
 void TaskPanelHost::setPage(TaskPage* page)
@@ -558,6 +744,14 @@ void TaskPanelHost::setPage(TaskPage* page)
         page->scrollarea->setMinimumWidth(qMin(page->scrollarea->minimumWidth(), MinWidth - 8));
         page->setParent(this);
         _layout->addWidget(page, 1);
+        if (_fitBeside && _besideCell) {
+            // The panel cell was made with a third of the slot, there
+            // being no page to ask: what the page asks for, now
+            _fitBeside = false;
+            if (ViewArea* area = _besideCell->area()) {
+                area->panelCell(_besideCell, edgeOf(_side), wantedExtent());
+            }
+        }
     }
     place();
 }
@@ -579,6 +773,14 @@ TaskPage* TaskPanelHost::release()
     TaskPage* page = takePage();
     _retired = true;
     hide();
+    if (QPointer<ViewAreaCell> cell = _besideCell) {
+        // The cell of its own goes with it, once the host is out of it
+        _besideCell = nullptr;
+        setParent(nullptr);
+        if (ViewArea* area = cell->area()) {
+            area->removePanelCell(cell);
+        }
+    }
     deleteLater();
     return page;
 }
@@ -589,10 +791,30 @@ void TaskPanelHost::setTitle(const QString& title)
     _title->setToolTip(title);
 }
 
-void TaskPanelHost::sideChanged()
+void TaskPanelHost::placementChanged()
 {
-    _right = TaskPlacement::side(_view) == TaskPlacement::Side::Right;
-    place();
+    MDIView* view = _view;
+    if (!view || _retired) {
+        return;
+    }
+    const TaskPlacement::Side was = _side;
+    _mode = TaskPlacement::mode(view);
+    _side = TaskPlacement::side(view);
+    updateMenu();
+    if (_besideCell && _mode == TaskPlacement::Mode::Side) {
+        // The same panel cell, on its new side or at its new size: what
+        // the view holds; with nothing held, what the cell has, or what
+        // the panel asks for when it is turned from beside to above
+        int extent = TaskPlacement::size(view);
+        if (extent <= 0 && acrossIsWidth(was) != acrossIsWidth(_side)) {
+            extent = wantedExtent();
+        }
+        if (ViewArea* area = _besideCell->area()) {
+            area->panelCell(_besideCell, edgeOf(_side), extent);
+        }
+    }
+    // Into the panel cell, or out of it over the picture
+    attach();
 }
 
 void TaskPanelHost::setFillsHeight(bool fill)
@@ -641,6 +863,14 @@ void TaskPanelHost::place()
     if (!in || _dragging || _retired) {
         return;
     }
+    if (_besideCell) {
+        // The panel cell's layout is this host's geometry, and the cell
+        // is no smaller than a panel needs
+        if (_page) {
+            _page->setVisible(true);
+        }
+        return;
+    }
     const QRect room = in->rect().adjusted(Margin, TopMargin, -Margin, -BottomMargin);
     if (room.width() <= 0 || room.height() <= 0) {
         return;
@@ -670,7 +900,9 @@ void TaskPanelHost::place()
         // As tall as the panel needs, and no taller
         height = qMin(height, qMax(MinHeight, header + pageHeight()));
     }
-    const int x = _right ? room.right() + 1 - width : room.left();
+    // Left or right, over the picture: top and bottom are for the look
+    // that can stand there (sec 15.7), and are the left until then
+    const int x = isOnRight() ? room.right() + 1 - width : room.left();
     setGeometry(x, room.top(), width, height);
     raise();
 }
@@ -697,7 +929,7 @@ void TaskPanelHost::dragEnded()
         TaskPlacement::setSide(view, right ? TaskPlacement::Side::Right : TaskPlacement::Side::Left);
     }
     // Settled where the view says, also when that is where it was
-    sideChanged();
+    placementChanged();
 }
 
 bool TaskPanelHost::eventFilter(QObject* watched, QEvent* event)

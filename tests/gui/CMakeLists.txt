@@ -1336,6 +1336,18 @@ fc_add_gui_test(GuiTaskPanelInView_tests_run task-panel-in-view.py
 fc_add_gui_test(GuiTaskPanelPlace_tests_run task-panel-place.py
                 --timeout 300)
 
+# A task panel beside its view, in a cell of its own
+# (docs/TaskPanelPerView.md sec 15.4, milestone 2): on any of the four
+# sides, the two filling the slot the view had and the other cells where
+# they were, the handle between them resizing the panel, mode, side and
+# size kept in the view. The panel cell is no cell of the view area: a
+# split puts the new cell outside the two, a maximized view keeps its
+# panel, the saved layout knows nothing of it, and a view in a tab of its
+# own is put into a view area for it. Scored against the tree before,
+# where a panel in its view is over the picture.
+fc_add_gui_test(GuiTaskPanelSide_tests_run task-panel-side.py
+                --timeout 300)
+
 # Making a view the active window makes its cell the view area's active
 # cell and brings the keyboard with it (docs/SplitViews.md sec 21): right
 # after "create new view" the first view can be clicked back into; with
