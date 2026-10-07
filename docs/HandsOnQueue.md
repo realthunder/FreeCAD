@@ -60,15 +60,15 @@ report views, the reporter's own files -- is kept beside the dev tree under
 | 20 | 2026-10-06 | TechDraw: crash when the page is switched to the backend's renderer; and what it then drew | STAGED, the double draw too |
 | 21 | 2026-10-06 | TechDraw: a click on a section line starts a section, and the line shifts at each recompute | STAGED |
 | 22 | 2026-10-06 | omni search: `/word` with no space is an object query; `/ word` forces it (change request, decided) | STAGED 2026-10-07 14:23, fixed `5aedd5cf83`: "/word" is an object query, "/ word" forces it, a keyword in full is the keyword, the beginning of one lists modes and objects together; the browser viewer's grammar follows (its bundle not rebuilt) |
-| 23 | 2026-10-06 | omni search: every setting it collects has documentation, none of it long (an audit asked) | STAGED 2026-10-07 14:23, fixed `c7a27b5a85` (and `08b8f009aa`): 574 settings audited, 221 had no documentation and 94 ran past 400 characters; all have a short text now and a test keeps it so. Side findings for the reporter in `docs/HandsOnLog.md` |
+| 23 | 2026-10-06 | omni search: every setting it collects has documentation, none of it long (an audit asked) | STAGED 2026-10-07 14:23, fixed `c7a27b5a85` (and `08b8f009aa`): 574 settings audited, 221 had no documentation and 94 ran past 400 characters; all have a short text now and a test keeps it so. Side findings for the reporter in `docs/HandsOnLog.md`. The defaults FIXED `02cab053df`, not staged: OK on a fresh profile changed 23 settings and stored 2 under a wrong type, 14 of them a generated page's spin box clamping its default to 99; a test keeps it so |
 | 24 | 2026-10-06 | every `Base::Parameter` setting behind a cog helper class so the omni search finds it, applied through delayed handlers (change request, application-wide) | OPEN |
 | 25 | 2026-10-06 | the outline of a highlighted face is jagged, MSAA on or off | OPEN |
-| 26 | 2026-10-06 | a long halt after enabling MSAA and pressing OK in the preferences | FOUND in part, nothing changed: an unchanged write of the renderer Type reloads every Part view provider (1.07 s on `scanner.FCStd`); the anti-aliasing change itself is 0.15 s; the dialog's OK as a whole not measured yet (`docs/HandsOnLog.md`) |
+| 26 | 2026-10-06 | a long halt after enabling MSAA and pressing OK in the preferences | FIXED `175ffce199`, not staged: the FIRST OK of a profile held the program 11 to 15 s (780 keys stored for the first time and taken for changes: stylesheet set again 4.2 s, every Part view provider re-meshed 3.2 s, language activated again about 2 s); 0.9 s now (`docs/HandsOnLog.md`) |
 | 27 | 2026-10-06 | the view cell menu: opens a spreadsheet nobody asked for, lists every TechDraw object, changes the wrong cell | STAGED 2026-10-07 14:23, fixed `fa2ada985c`: the menu made a spreadsheet view by asking for it, listed a page's views, and placed a pick by the general policy instead of into its cell; all three gone, spreadsheets now listed by type like pages (`docs/HandsOnLog.md`) |
 | 28 | 2026-10-06 | `scanner.FCStd` restores with a wrong colour, sometimes (the motor body light blue for light grey) | OPEN |
 | 29 | 2026-10-07 | view cells: transparent frames that show a split, a join and a resize while dragged (every cell the drag changes); corner handles on an opaque background, the cell menu button too when hovered; a thinner border between cells; a minimum cell size setting, default 200 (change request, decided) | OPEN |
 | 30 | 2026-10-07 | the dark and light overlay stylesheets integrated into the Dark and Light preference packs (a task asked; what "integrated" covers to confirm); and the long freeze when an overlay stylesheet is applied, to investigate; the Python console's background in both packs, so a theme can take an overlay preset's away again | OPEN |
-| 31 | 2026-10-07 | report view: "Go to end" on by default (change request) | see `docs/HandsOnLog.md` |
+| 31 | 2026-10-07 | report view: "Go to end" on by default (change request) | FIXED `47b5e72c79`, not staged: "Go to end" is on for a profile that never stored it (`docs/HandsOnLog.md`) |
 | 32 | 2026-10-07 | some sub menus are transparent with blue text (Tools > Command history): find out why; transparent menus off by default | see `docs/HandsOnLog.md` |
 | 33 | 2026-10-07 | a cmd window pops up briefly at the first document opened after start | OPEN |
 | 34 | 2026-10-07 | TechDraw's preselection colour sometimes does not follow the theme (stays yellow after classic, or is blue) | OPEN; decided 15:19: the Dark and Light packs set TechDraw's `PreSelectColor` too |
@@ -1599,7 +1599,19 @@ a partial keyword (`/c`, `/par`) lists both -- the matching mode rows and
 the objects matching the word; a full keyword (`/cmd`) is the keyword, and
 an object called `cmd` is reached with the space, `/ cmd`.
 
-## 23. Omni search: the settings it collects (an audit asked) -- STAGED, fixed `c7a27b5a85` (see `docs/HandsOnLog.md`)
+## 23. Omni search: the settings it collects (an audit asked) -- STAGED, fixed `c7a27b5a85`; the defaults FIXED `02cab053df`, not staged (see `docs/HandsOnLog.md`)
+
+**For the reporter, from the build session** (passed on by the build session, 2026-10-07 15:51), two things:
+- their own profile carries the clamped values -- overlay delays 99 for 200,
+  wheel delay 99 for 1000, `CyclesSamples` 99 for 256, and more (seen in the
+  copy of the profile of 2026-10-07 00:13). The fix stops OK from writing
+  them; nothing puts a stored value back. The log, entry 23, lists the keys
+  and their defaults.
+- a question: the Selection preference page showed the two highlight colours
+  as spin boxes reading 99. They were taken off that page rather than given
+  colour buttons there, because the Colors page has both and the page saved
+  last would undo the other's change. Are colour buttons wanted on the
+  Selection page anyway? NOT ANSWERED YET.
 
 **The reporter on the audit's side findings** (relayed by the build session, which the reporter said it to on staging, 2026-10-07 14:23): "entry 23, yes
 fixed the defaults, leave the unused ones." The defaults that disagree with
@@ -1649,7 +1661,7 @@ outline of a highlighted face is aliased, and switching MSAA on or off makes
 no difference to it. Not said yet: whether this is the hover highlight, the
 selection highlight or both, and which document.
 
-## 26. A long halt after enabling MSAA and pressing OK -- FOUND in part (see `docs/HandsOnLog.md`)
+## 26. A long halt after enabling MSAA and pressing OK -- FIXED `175ffce199`, not staged (see `docs/HandsOnLog.md`)
 
 **The reporter on what was found** (relayed by the build session, which the reporter said it to on staging, 2026-10-07 14:23): "entry 26 is probably
 not the view provider, because the delay I experience is longer. most likely
@@ -1916,7 +1928,7 @@ the preset's other keys that no pack lists -- `TreeView` (`TreeEditColor`,
 `Simple`, `CursorCrosshairColor`): each is left behind the same way. This is
 the first task of this entry seen from the other end.
 
-## 31. Report view: "Go to end" on by default (a change request)
+## 31. Report view: "Go to end" on by default (a change request) -- FIXED `47b5e72c79`, not staged (see `docs/HandsOnLog.md`)
 
 **2026-10-07 11:21, a change request.** "make console 'go to end' by
 default". The report view's "Go to end" option -- follow the newest line as
@@ -1988,6 +2000,12 @@ whether a session with no 3D view opened -- a TechDraw page or a spreadsheet
 alone -- shows it.
 
 ## 34. TechDraw's preselection colour sometimes does not follow the theme -- OPEN
+
+**From the build session, as information** (passed on by the build session, 2026-10-07 15:51): Classic is not the
+only way `Mod/TechDraw/Colors/PreSelectColor` gets set -- the first OK in the
+preferences stores it too, as the TechDraw Colors page's own default. So a
+profile can hold the key without Classic ever having been applied. The
+decision below (Dark and Light set the key) covers that case as well.
 
 **2026-10-07 15:15, a defect.** "the TechDraw preselection highlight color
 'sometimes' does not follow the settings. when I switch between classic and
