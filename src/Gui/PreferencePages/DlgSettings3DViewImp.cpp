@@ -138,8 +138,8 @@ namespace {
 
 void applyCameraType(ParameterGrp *hGrp)
 {
-    if (hGrp->GetBool("ApplyCameraTypeToAll", false)) {
-        const char *cameraType = hGrp->GetBool("Perspective", false) ?
+    if (hGrp->GetBool("ApplyCameraTypeToAll", Gui::ViewParams::defaultApplyCameraTypeToAll())) {
+        const char *cameraType = hGrp->GetBool("Perspective", Gui::ViewParams::defaultPerspective()) ?
             "PerspectiveCamera" : "OrthographicCamera";
         for (auto doc : App::GetApplication().getDocuments()) {
             auto gdoc = Application::Instance->getDocument(doc);

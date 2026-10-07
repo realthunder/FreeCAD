@@ -3635,7 +3635,7 @@ void View3DInventorViewer::showRotationCenter(bool show)
 
     bool showEnabled = App::GetApplication()
                            .GetParameterGroupByPath("User parameter:BaseApp/Preferences/View")
-                           ->GetBool("ShowRotationCenter", true);
+                           ->GetBool("ShowRotationCenter", Gui::ViewParams::defaultShowRotationCenter());
 
     if (show && showEnabled) {
         SbBool found{};
@@ -3648,12 +3648,12 @@ void View3DInventorViewer::showRotationCenter(bool show)
         if (!rotationCenterGroup) {
             float size = App::GetApplication()
                              .GetParameterGroupByPath("User parameter:BaseApp/Preferences/View")
-                             ->GetFloat("RotationCenterSize", 5.0);  // NOLINT
+                             ->GetFloat("RotationCenterSize", Gui::ViewParams::defaultRotationCenterSize());  // NOLINT
 
             unsigned long rotationCenterColor =
                 App::GetApplication()
                     .GetParameterGroupByPath("User parameter:BaseApp/Preferences/View")
-                    ->GetUnsigned("RotationCenterColor", 4278190131);  // NOLINT
+                    ->GetUnsigned("RotationCenterColor", Gui::ViewParams::defaultRotationCenterColor());  // NOLINT
 
             QColor color = App::Color::fromPackedRGBA<QColor>(rotationCenterColor);
 
@@ -4384,7 +4384,7 @@ int View3DInventorViewer::getNumSamples()
     // on.
     long samples = App::GetApplication().GetParameterGroupByPath
         ("User parameter:BaseApp/Preferences/View")
-        ->GetInt("AntiAliasing", View3DInventorViewer::None);
+        ->GetInt("AntiAliasing", Gui::ViewParams::defaultAntiAliasing());
 
     // NOLINTBEGIN
     switch (samples) {
@@ -4416,7 +4416,7 @@ GLenum View3DInventorViewer::getInternalTextureFormat()
 {
     ParameterGrp::handle hGrp = App::GetApplication().GetParameterGroupByPath
         ("User parameter:BaseApp/Preferences/View");
-    std::string format = hGrp->GetASCII("InternalTextureFormat", "Default");
+    std::string format = hGrp->GetASCII("InternalTextureFormat", Gui::ViewParams::defaultInternalTextureFormat().c_str());
 
     // NOLINTBEGIN
     if (format == "GL_RGB") {
@@ -6280,18 +6280,20 @@ struct LightPropertyDef {
     const char *key;        // the View preference key, and the Light_ suffix
     LightTarget target;
     LightField field;
-    unsigned long def;      // bool, packed colour, or intensity per cent
+    unsigned long def;      // bool, packed colour, or intensity per cent:
+                            // ViewParams' default where the key is one of its settings
     const char *docu;
 };
 
 const LightPropertyDef _lightProperties[] = {
-    {"EnableHeadlight", HeadLight, FieldEnable, 1,
+    {"EnableHeadlight", HeadLight, FieldEnable, ViewParams::defaultEnableHeadlight(),
      "Light this view with the headlight"},
-    {"HeadlightColor", HeadLight, FieldColor, 0xFFFFFFFF,
+    {"HeadlightColor", HeadLight, FieldColor, ViewParams::defaultHeadlightColor(),
      "Colour of this view's headlight"},
     {"HeadlightDirection", HeadLight, FieldDirection, 0,
      "Direction of this view's headlight, in eye space"},
-    {"HeadlightIntensity", HeadLight, FieldIntensity, 100,
+    {"HeadlightIntensity", HeadLight, FieldIntensity,
+     static_cast<unsigned long>(ViewParams::defaultHeadlightIntensity()),
      "Intensity of this view's headlight"},
     {"EnableBacklight", BackLight, FieldEnable, 0,
      "Light this view's back faces with the backlight"},
@@ -6301,17 +6303,19 @@ const LightPropertyDef _lightProperties[] = {
      "Direction of this view's backlight, in eye space"},
     {"BacklightIntensity", BackLight, FieldIntensity, 100,
      "Intensity of this view's backlight"},
-    {"EnableFillLight", FillLight, FieldEnable, 0,
+    {"EnableFillLight", FillLight, FieldEnable, ViewParams::defaultEnableFillLight(),
      "Light this view with the off-axis fill light"},
-    {"FillLightColor", FillLight, FieldColor, 0xE6FAFFFF,
+    {"FillLightColor", FillLight, FieldColor, ViewParams::defaultFillLightColor(),
      "Colour of this view's fill light"},
     {"FillLightDirection", FillLight, FieldDirection, 0,
      "Direction of this view's fill light, relative to the camera"},
-    {"FillLightIntensity", FillLight, FieldIntensity, 60,
+    {"FillLightIntensity", FillLight, FieldIntensity,
+     static_cast<unsigned long>(ViewParams::defaultFillLightIntensity()),
      "Intensity of this view's fill light"},
-    {"AmbientLightColor", SceneAmbient, FieldColor, 0xFFFFFFFF,
+    {"AmbientLightColor", SceneAmbient, FieldColor, ViewParams::defaultAmbientLightColor(),
      "Colour of this view's scene ambient light"},
-    {"AmbientLightIntensity", SceneAmbient, FieldIntensity, 20,
+    {"AmbientLightIntensity", SceneAmbient, FieldIntensity,
+     static_cast<unsigned long>(ViewParams::defaultAmbientLightIntensity()),
      "Intensity of this view's scene ambient light (Coin's own default is 20)"},
 };
 
@@ -8502,7 +8506,7 @@ void View3DInventorViewer::startAnimation(const SbRotation& orientation,
     if (duration < 0) {
         duration = App::GetApplication()
                        .GetParameterGroupByPath("User parameter:BaseApp/Preferences/View")
-                       ->GetInt("AnimationDuration", 250);
+                       ->GetInt("AnimationDuration", Gui::ViewParams::defaultAnimationDuration());
     }
 
     auto animation = std::make_shared<FixedTimeAnimation>(

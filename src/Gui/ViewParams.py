@@ -790,6 +790,230 @@ Params = [
     ParamFloat('DatumTemporaryScaleFactor', 2.0, title='Datum temporary scale',
         doc="How much datum planes grow while a reference is picked from them.",
         proxy=ParamSpinBox(1.0, 10.0, 0.5, 1)),
+
+    # ------------------------------------------------------------------
+    # The settings of this group that used to be read straight from it,
+    # each with a default of its own at every reader (docs/HandsOnQueue.md
+    # entry 24). Most of them reach the 3D views through View3DSettings,
+    # one observer per view, which is told by the parameter group itself:
+    # it keeps reading the group and takes its DEFAULTS from here.
+    #
+    # Not listed, because the program keeps them for itself: SavePicture,
+    # DimensionsVisible, Dimensions3dVisible, DimensionsDeltaVisible, the
+    # HeadlightRotation quaternion of the Light sources page, the icon
+    # browser's two fields. Not listed, because nothing reads them:
+    # UseAutoRotation, ColorRecompute. Not listed, because their default
+    # is not a constant: GestureMoveThreshold and GestureTapHoldTimeout
+    # (the system's), the three colours of the default appearance (the
+    # material card's).
+
+    # --- the 3D view
+    ParamFloat('EyeDistance', 5.0, title='Eye distance for stereo modes',
+        doc="Offset between the left and the right eye image of a stereo 3D\n"
+            "view. 0.1 to 1000. Applies at once to all open 3D views."),
+    ParamBool('CornerCoordSystem', True, title='Show coordinate system in the corner',
+        doc="Show the small coordinate system in the corner of every 3D view.\n"
+            "Applies at once."),
+    ParamInt('CornerCoordSystemSize', 10, title='Corner coordinate system size',
+        doc="Size of the coordinate system in the corner of the 3D views, 2 to\n"
+            "100. Applies at once."),
+    ParamBool('ShowAxisCross', False, title='Show axis cross',
+        doc="Show the axis cross at the origin of the 3D views. Applies at once\n"
+            "to the open views and to new ones."),
+    ParamBool('ShowFPS', False, title='Show counter of frames per second',
+        doc="Show a frames per second counter in the 3D views. Applies at once."),
+    ParamBool('UseVBO', False, title='Use vertex buffer objects',
+        doc="Let Coin draw with vertex buffer objects. Applies at once to the\n"
+            "open 3D views except split views; the driver override that goes\n"
+            "with it is set at startup only."),
+    ParamBool('Orthographic', True, title='Orthographic rendering',
+        doc="Use an orthographic camera in the 3D views; the opposite of\n"
+            "Perspective."),
+    ParamBool('Perspective', False, title='Perspective rendering',
+        doc="Use a perspective camera in the 3D views. Read when a view is\n"
+            "created; with ApplyCameraTypeToAll on, a change switches the open\n"
+            "views too."),
+    ParamBool('ApplyCameraTypeToAll', False, title='Apply camera type to existing views',
+        doc="When the camera type setting changes, switch every open 3D view\n"
+            "to it as well."),
+    ParamInt('AntiAliasing', 0, title='Anti-aliasing',
+        doc="Anti-aliasing of the 3D views: 0 none, 1 line smoothing, 2 MSAA\n"
+            "2x, 3 MSAA 4x, 4 MSAA 8x. Read when a view is created; a change\n"
+            "rebuilds the open views."),
+    ParamInt('TransparentObjectRenderType', 0, title='Transparent object render type',
+        doc="How Coin draws transparent objects: 0 in one pass, 1 with the back\n"
+            "faces of non-solid objects in a pass of their own. Applies at once\n"
+            "to the open 3D views except split views."),
+    ParamString('InternalTextureFormat', 'Default', title='Offscreen buffer format',
+        doc="Pixel format of the offscreen buffer a 3D view is drawn into:\n"
+            "Default, GL_RGB, GL_RGBA, GL_RGB8, GL_RGBA8, GL_RGB10,\n"
+            "GL_RGB10_A2, GL_RGB16, GL_RGBA16, GL_RGB32F or GL_RGBA32F. Read\n"
+            "each time a buffer is created."),
+
+    # --- its background
+    ParamBool('Gradient', True, title='Linear background gradient',
+        doc="Fill the background of the 3D views with a linear gradient from\n"
+            "BackgroundColor2 (top) to BackgroundColor3 (bottom). Wins over\n"
+            "RadialGradient. Applies at once."),
+    ParamBool('RadialGradient', False, title='Radial background gradient',
+        doc="Fill the background of the 3D views with a radial gradient; used\n"
+            "when Gradient is off. With both off the plain BackgroundColor is\n"
+            "used. Applies at once."),
+    ParamBool('Simple', False, title='Simple background colour',
+        doc="The 'Simple color' choice of the Colors page. The views use a\n"
+            "plain background whenever Gradient and RadialGradient are both\n"
+            "off, whatever this says."),
+    ParamHex('BackgroundColor', 0xEAE5DCFF, title='Background colour',
+        proxy=ParamColor(transparency=False),
+        doc="Colour of the 3D view background when no gradient is used.\n"
+            "Applies at once."),
+    ParamHex('BackgroundColor2', 0x333365FF, title='Background gradient, first colour',
+        proxy=ParamColor(transparency=False),
+        doc="First colour of the background gradient of the 3D views: the top\n"
+            "of a linear one, the centre of a radial one. Applies at once."),
+    ParamHex('BackgroundColor3', 0xABABC1FF, title='Background gradient, last colour',
+        proxy=ParamColor(transparency=False),
+        doc="Last colour of the background gradient of the 3D views: the\n"
+            "bottom of a linear one, the rim of a radial one. Applies at once."),
+    ParamHex('BackgroundColor4', 0x6F6F93FF, title='Background gradient, middle colour',
+        proxy=ParamColor(transparency=False),
+        doc="Middle colour of the background gradient of the 3D views; used\n"
+            "only with UseBackgroundColorMid on. Applies at once."),
+    ParamBool('UseBackgroundColorMid', False, title='Use a middle background colour',
+        doc="Give the background gradient of the 3D views a third, middle\n"
+            "colour (BackgroundColor4). Applies at once."),
+
+    # --- its lights (a view with a light setting of its own keeps that)
+    ParamBool('EnableHeadlight', True, title='Enable headlight',
+        doc="Light the 3D views with the headlight, which follows the camera.\n"
+            "Applies at once to every view with no light setting of its own."),
+    ParamHex('HeadlightColor', 0xFFFFFFFF, title='Headlight colour',
+        proxy=ParamColor(transparency=False),
+        doc="Colour of the headlight of the 3D views. Applies at once."),
+    ParamInt('HeadlightIntensity', 100, title='Headlight intensity',
+        doc="Intensity of the headlight of the 3D views in percent, 0 to 100.\n"
+            "Applies at once."),
+    ParamString('HeadlightDirection', '', title='Headlight direction',
+        doc="Direction of the headlight relative to the camera, as (x,y,z).\n"
+            "Empty keeps the built-in direction. Set by dragging the light on\n"
+            "the Light sources page. Applies at once."),
+    ParamString('BacklightDirection', '', title='Backlight direction',
+        doc="Direction of the backlight relative to the camera, as (x,y,z).\n"
+            "Empty keeps the built-in direction. Applies at once."),
+    ParamBool('EnableFillLight', False, title='Enable fill light',
+        doc="Light the 3D views with an extra fill light from the side.\n"
+            "Applies at once."),
+    ParamHex('FillLightColor', 0xE6FAFFFF, title='Fill light colour',
+        proxy=ParamColor(transparency=False),
+        doc="Colour of the fill light of the 3D views. Applies at once."),
+    ParamInt('FillLightIntensity', 60, title='Fill light intensity',
+        doc="Intensity of the fill light of the 3D views in percent, 0 to 100.\n"
+            "Applies at once."),
+    ParamString('FillLightDirection', '', title='Fill light direction',
+        doc="Direction of the fill light relative to the camera, as (x,y,z).\n"
+            "Empty keeps the built-in direction. Applies at once."),
+    ParamHex('AmbientLightColor', 0xFFFFFFFF, title='Ambient light colour',
+        proxy=ParamColor(transparency=False),
+        doc="Colour of the ambient light of the 3D views. Applies at once."),
+    ParamInt('AmbientLightIntensity', 20, title='Ambient light intensity',
+        doc="Intensity of the ambient light of the 3D views in percent, 0 to\n"
+            "100. Applies at once."),
+
+    # --- navigation
+    ParamString('NavigationStyle', 'Gui::CADNavigationStyle', title='3D navigation style',
+        doc="Mouse navigation style of the 3D views, as a class name such as\n"
+            "Gui::CADNavigationStyle. Applies at once to all open 3D views;\n"
+            "TechDraw pages follow it as well."),
+    ParamBool('SameStyleForAllViews', True, title='Same navigation style for all views',
+        doc="A navigation style picked from a 3D view's context menu becomes\n"
+            "the NavigationStyle setting, so that every view follows. When off\n"
+            "it changes that view only."),
+    ParamInt('OrbitStyle', 1, title='Orbit style',
+        doc="How dragging rotates the 3D view: 0 turntable, 1 trackball, 2 free\n"
+            "turntable. Applies at once."),
+    ParamInt('RotationMode', 1, title='Rotation mode',
+        doc="Centre of rotation in the 3D views: 0 the window centre, 1 the\n"
+            "point under the cursor, 2 the centre of the objects. Applies at\n"
+            "once."),
+    ParamFloat('Sensitivity', 2.0, title='Rotation sensitivity',
+        doc="A value above 1 multiplies the angle of a mouse rotation of the 3D\n"
+            "view. Applies at once."),
+    ParamBool('ResetCursorPosition', False, title='Reset cursor position on rotation',
+        doc="Move the mouse cursor to the rotation centre when a rotation of\n"
+            "the 3D view starts. Applies at once."),
+    ParamBool('InvertZoom', True, title='Invert zoom',
+        doc="Invert the direction of zooming with the mouse wheel. The 3D\n"
+            "views and TechDraw pages follow at once; the dependency graph\n"
+            "reads it when it is opened."),
+    ParamBool('ZoomAtCursor', True, title='Zoom at cursor',
+        doc="Zoom towards the point under the mouse cursor instead of the\n"
+            "centre of the view. Applies at once."),
+    ParamFloat('ZoomStep', 0.2, title='Zoom step',
+        doc="Zoom factor of one step of the mouse wheel, 0.01 to 1. Applies at\n"
+            "once to the 3D views and TechDraw pages."),
+    ParamBool('UseNavigationAnimations', True, title='Animate camera moves',
+        doc="Animate camera moves such as switching to a standard view.\n"
+            "Applies at once."),
+    ParamBool('UseSpinningAnimations', False, title='Spin after a rotation',
+        doc="Let the model keep spinning when the mouse button is released\n"
+            "during a rotation. Applies at once."),
+    ParamInt('AnimationDuration', 250, title='Animation duration',
+        doc="Duration of an animated camera move in milliseconds, 100 to\n"
+            "10000. Read each time an animation starts."),
+    ParamInt('stopAnimatingIfDeactivated', 3000, title='Stop spinning when hidden after',
+        doc="Milliseconds after which a spinning 3D view stops once it is\n"
+            "hidden or minimized. A negative value never stops it."),
+    ParamBool('ShowRotationCenter', True, title='Show rotation centre',
+        doc="Show a marker at the centre of rotation while a 3D view is\n"
+            "rotated. Read at each rotation."),
+    ParamFloat('RotationCenterSize', 5.0, title='Rotation centre size',
+        doc="Size of the rotation centre marker, 1 to 100. Read when the marker\n"
+            "is next created."),
+    ParamHex('RotationCenterColor', 0xFF000033, title='Rotation centre colour',
+        proxy=ParamColor(),
+        doc="Colour and opacity of the rotation centre marker: red and mostly\n"
+            "see-through unless set. Read when the marker is next created."),
+    ParamString('NewDocumentCameraOrientation', 'Trimetric', title='Default camera orientation',
+        doc="Camera orientation of a new document and of the Home view:\n"
+            "Isometric, Dimetric, Trimetric, Top, Front, Left, Right, Rear,\n"
+            "Bottom, or Custom. Read at each use."),
+    ParamBool('AutoFitToView', True, title='Fit view after opening a file',
+        doc="Fit the 3D view to the model after a file is opened or imported."),
+    ParamBool('ShowNaviCube', True, title='Show navigation cube',
+        doc="Show the navigation cube in the 3D views. Applies at once."),
+    ParamBool('DisableTouchTilt', True, title='Disable touchscreen tilt gesture',
+        doc="Gesture navigation: ignore the rotation part of a two-finger\n"
+            "gesture on a touchscreen. Read at the start of each gesture."),
+    ParamBool('NavigationDebug', False, title='Log gesture navigation',
+        doc="Gesture navigation: write its state changes to the log. Read when\n"
+            "the Gesture style is created."),
+    ParamString('GestureRollFwdCommand', 'Std_SelForward', title='Roll forward gesture command',
+        doc="Gesture navigation: command run by the forward roll gesture."),
+    ParamString('GestureRollBackCommand', 'Std_SelBack', title='Roll back gesture command',
+        doc="Gesture navigation: command run by the backward roll gesture."),
+
+    # --- the rest
+    ParamBool('SaveWBbyTab', False, title='Remember active workbench by tab',
+        doc="Remember the active workbench separately for each view tab and\n"
+            "switch back to it when the tab is activated."),
+    ParamHex('CbLabelColor', 0xFFFFFFFF, title='Colour bar label colour',
+        proxy=ParamColor(transparency=False),
+        doc="Colour of the value labels of a colour bar in the 3D view. Read\n"
+            "when the labels are next rebuilt."),
+    ParamInt('CbLabelTextSize', 13, title='Colour bar label size',
+        doc="Text size of the value labels of a colour bar in the 3D view, 4 to\n"
+            "36. Read when the labels are next rebuilt."),
+    ParamFloat('BoundingBoxFontSize', 10.0, title='Bounding box font size',
+        doc="Font size of the dimension labels on an object's bounding box, 2\n"
+            "to 64. Read when a bounding box is first shown for an object."),
+    ParamFloat('DatumPointSize', 2.5, title='Datum point size',
+        doc="Radius of the sphere drawn for a datum point."),
+    ParamFloat('LocalCoordinateSystemSize', 1.0, title='Datum scale factor',
+        doc="Scale factor of datum objects -- origin axes, planes, points --\n"
+            "when they are drawn at a fixed size on screen."),
+    ParamInt('DefaultShapeShininess', 37, title='Default shape shininess',
+        doc="Shininess of the appearance given to new objects, in percent.\n"
+            "Read each time a default appearance is made."),
 ]
 
 def declare_begin():

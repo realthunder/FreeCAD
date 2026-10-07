@@ -24,6 +24,8 @@
 
 #include "PreCompiled.h"
 
+#include <Gui/ViewParams.h>
+
 #include "View3DSettings.h"
 
 #include "DlgCAMSimulator.h"
@@ -49,10 +51,10 @@ View3DSettings::View3DSettings(ParameterGrp::handle hGrp,
 
 static View3DInventorViewer::Background backgroundType(const ParameterGrp& rGrp)
 {
-    if (rGrp.GetBool("Gradient", true)) {
+    if (rGrp.GetBool("Gradient", Gui::ViewParams::defaultGradient())) {
         return View3DInventorViewer::Background::LinearGradient;
     }
-    else if (rGrp.GetBool("RadialGradient", false)) {
+    else if (rGrp.GetBool("RadialGradient", Gui::ViewParams::defaultRadialGradient())) {
         return View3DInventorViewer::Background::RadialGradient;
     }
     else {
@@ -64,11 +66,11 @@ static QColor backgroundColor(const ParameterGrp& rGrp)
 {
     // see View3DSettings::OnChange
 
-    unsigned long col1 = rGrp.GetUnsigned("BackgroundColor", 3940932863UL);
-    unsigned long col2 = rGrp.GetUnsigned("BackgroundColor2", 859006463UL);  // default color (dark blue)
-    unsigned long col3 = rGrp.GetUnsigned("BackgroundColor3", 2880160255UL);  // default color
+    unsigned long col1 = rGrp.GetUnsigned("BackgroundColor", Gui::ViewParams::defaultBackgroundColor());
+    unsigned long col2 = rGrp.GetUnsigned("BackgroundColor2", Gui::ViewParams::defaultBackgroundColor2());  // default color (dark blue)
+    unsigned long col3 = rGrp.GetUnsigned("BackgroundColor3", Gui::ViewParams::defaultBackgroundColor3());  // default color
                                                                               // (blue/grey)
-    unsigned long col4 = rGrp.GetUnsigned("BackgroundColor4", 1869583359UL);  // default color
+    unsigned long col4 = rGrp.GetUnsigned("BackgroundColor4", Gui::ViewParams::defaultBackgroundColor4());  // default color
                                                                               // (blue/grey)
     float r1, g1, b1, r2, g2, b2, r3, g3, b3, r4, g4, b4;
     r1 = ((col1 >> 24) & 0xff) / 255.0;
@@ -90,7 +92,7 @@ static QColor backgroundColor(const ParameterGrp& rGrp)
     (void)r4, (void)g4, (void)b4;
 
     const View3DInventorViewer::Background type = backgroundType(rGrp);
-    const bool useMidColor = rGrp.GetBool("UseBackgroundColorMid", false);
+    const bool useMidColor = rGrp.GetBool("UseBackgroundColorMid", Gui::ViewParams::defaultUseBackgroundColorMid());
 
     if (type == View3DInventorViewer::Background::NoGradient) {
         return QColor::fromRgbF(r1, g1, b1);

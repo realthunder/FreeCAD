@@ -21,6 +21,8 @@
  ***************************************************************************/
 
 #include "PreCompiled.h"
+
+#include <Gui/ViewParams.h>
 #ifndef _PreComp_
 #include <cmath>
 
@@ -153,9 +155,9 @@ public:
     }
     void init()
     {
-        page->m_atCursor = hGrp->GetBool("ZoomAtCursor", true);
-        page->m_invertZoom = hGrp->GetBool("InvertZoom", false);
-        page->m_zoomIncrement = hGrp->GetFloat("ZoomStep", 0.02);
+        page->m_atCursor = hGrp->GetBool("ZoomAtCursor", Gui::ViewParams::defaultZoomAtCursor());
+        page->m_invertZoom = hGrp->GetBool("InvertZoom", Gui::ViewParams::defaultInvertZoom());
+        page->m_zoomIncrement = hGrp->GetFloat("ZoomStep", Gui::ViewParams::defaultZoomStep());
 
         page->m_reversePan = Preferences::getPreferenceGroup("General")->GetInt("KbPan", 1);
         page->m_reverseScroll = Preferences::getPreferenceGroup("General")->GetInt("KbScroll", 1);
@@ -176,17 +178,17 @@ public:
         }
         else if (strcmp(Reason, "NavigationStyle") == 0) {
             std::string model =
-                rGrp.GetASCII("NavigationStyle", CADNavigationStyle::getClassTypeId().getName());
+                rGrp.GetASCII("NavigationStyle", Gui::ViewParams::defaultNavigationStyle().c_str());
             page->setNavigationStyle(model);
         }
         else if (strcmp(Reason, "InvertZoom") == 0) {
-            page->m_invertZoom = rGrp.GetBool("InvertZoom", true);
+            page->m_invertZoom = rGrp.GetBool("InvertZoom", Gui::ViewParams::defaultInvertZoom());
         }
         else if (strcmp(Reason, "ZoomStep") == 0) {
-            page->m_zoomIncrement = rGrp.GetFloat("ZoomStep", 0.0f);
+            page->m_zoomIncrement = rGrp.GetFloat("ZoomStep", Gui::ViewParams::defaultZoomStep());
         }
         else if (strcmp(Reason, "ZoomAtCursor") == 0) {
-            page->m_atCursor = rGrp.GetBool("ZoomAtCursor", true);
+            page->m_atCursor = rGrp.GetBool("ZoomAtCursor", Gui::ViewParams::defaultZoomAtCursor());
             if (page->m_atCursor) {
                 page->setResizeAnchor(QGVPage::AnchorUnderMouse);
                 page->setTransformationAnchor(QGVPage::AnchorUnderMouse);
@@ -1254,7 +1256,7 @@ std::string QGVPage::getNavStyleParameter()
     ParameterGrp::handle hGrp =
         App::GetApplication().GetParameterGroupByPath("User parameter:BaseApp/Preferences/View");
     std::string model =
-        hGrp->GetASCII("NavigationStyle", NavigationStyle::getClassTypeId().getName());
+        hGrp->GetASCII("NavigationStyle", Gui::ViewParams::defaultNavigationStyle().c_str());
     return model;
 }
 

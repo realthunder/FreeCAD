@@ -1687,7 +1687,7 @@ void StdCmdViewHome::activated(int iMsg)
     Q_UNUSED(iMsg);
 
     auto hGrp = App::GetApplication().GetParameterGroupByPath("User parameter:BaseApp/Preferences/View");
-    std::string default_view = hGrp->GetASCII("NewDocumentCameraOrientation","Top");
+    std::string default_view = hGrp->GetASCII("NewDocumentCameraOrientation", Gui::ViewParams::defaultNewDocumentCameraOrientation().c_str());
     doCommand(Command::Gui,"Gui.activeDocument().activeView().viewDefaultOrientation('%s',0)",default_view.c_str());
     doCommand(Command::Gui,"Gui.SendMsgToActiveView(\"ViewFit\")");
 }
@@ -5622,9 +5622,9 @@ void CreateViewStdCommands()
     rcCmdMgr.addCommand(new StdCmdDockOverlay());
 
     auto hGrp = App::GetApplication().GetParameterGroupByPath("User parameter:BaseApp/Preferences/View");
-    if(hGrp->GetASCII("GestureRollFwdCommand").empty())
+    if(hGrp->GetASCII("GestureRollFwdCommand", Gui::ViewParams::defaultGestureRollFwdCommand().c_str()).empty())
         hGrp->SetASCII("GestureRollFwdCommand","Std_SelForward");
-    if(hGrp->GetASCII("GestureRollBackCommand").empty())
+    if(hGrp->GetASCII("GestureRollBackCommand", Gui::ViewParams::defaultGestureRollBackCommand().c_str()).empty())
         hGrp->SetASCII("GestureRollBackCommand","Std_SelBack");
     // NOLINTEND
 }

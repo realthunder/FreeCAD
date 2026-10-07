@@ -21,6 +21,8 @@
  ***************************************************************************/
 
 #include "PreCompiled.h"
+
+#include <Gui/ViewParams.h>
 #ifndef _PreComp_
 #include <QContextMenuEvent>
 #include <QKeyEvent>
@@ -57,13 +59,13 @@ void QGVNavStyle::initialize()
     this->altdown = false;
     this->invertZoom = App::GetApplication()
                            .GetParameterGroupByPath("User parameter:BaseApp/Preferences/View")
-                           ->GetBool("InvertZoom", true);
+                           ->GetBool("InvertZoom", Gui::ViewParams::defaultInvertZoom());
     this->zoomAtCursor = App::GetApplication()
                              .GetParameterGroupByPath("User parameter:BaseApp/Preferences/View")
-                             ->GetBool("ZoomAtCursor", true);
+                             ->GetBool("ZoomAtCursor", Gui::ViewParams::defaultZoomAtCursor());
     this->zoomStep = App::GetApplication()
                          .GetParameterGroupByPath("User parameter:BaseApp/Preferences/View")
-                         ->GetFloat("ZoomStep", 0.2f);
+                         ->GetFloat("ZoomStep", Gui::ViewParams::defaultZoomStep());
 
     m_reversePan = Preferences::getPreferenceGroup("General")->GetInt("KbPan", 1);
     m_reverseScroll = Preferences::getPreferenceGroup("General")->GetInt("KbScroll", 1);

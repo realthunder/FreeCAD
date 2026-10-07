@@ -21,6 +21,8 @@
  ***************************************************************************/
 
 #include "PreCompiled.h"
+
+#include <Gui/ViewParams.h>
 #ifndef _PreComp_
 #include <cstdlib>
 #include <QAction>
@@ -1710,7 +1712,7 @@ void ViewProviderMesh::faceInfoCallback(void* ud, SoEventCallback* n)
             // See comment below
             ParameterGrp::handle hGrp = App::GetApplication().GetParameterGroupByPath(
                 "User parameter:BaseApp/Preferences/View");
-            hGrp->SetBool("ShowNaviCube", hGrp->GetBool("ShowNaviCube", true));
+            hGrp->SetBool("ShowNaviCube", hGrp->GetBool("ShowNaviCube", Gui::ViewParams::defaultShowNaviCube()));
         }
     }
     else if (mbe->getButton() == SoMouseButtonEvent::BUTTON1

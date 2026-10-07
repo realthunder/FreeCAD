@@ -247,13 +247,13 @@ void NavigationStyle::initialize()
     this->shiftdown = false;
     this->altdown = false;
     this->invertZoom = App::GetApplication().GetParameterGroupByPath
-        ("User parameter:BaseApp/Preferences/View")->GetBool("InvertZoom",true);
+        ("User parameter:BaseApp/Preferences/View")->GetBool("InvertZoom", Gui::ViewParams::defaultInvertZoom());
     this->zoomAtCursor = App::GetApplication().GetParameterGroupByPath
-        ("User parameter:BaseApp/Preferences/View")->GetBool("ZoomAtCursor",true);
+        ("User parameter:BaseApp/Preferences/View")->GetBool("ZoomAtCursor", Gui::ViewParams::defaultZoomAtCursor());
     this->zoomStep = App::GetApplication().GetParameterGroupByPath
-        ("User parameter:BaseApp/Preferences/View")->GetFloat("ZoomStep",0.2f);
+        ("User parameter:BaseApp/Preferences/View")->GetFloat("ZoomStep", Gui::ViewParams::defaultZoomStep());
     long mode = App::GetApplication().GetParameterGroupByPath
-        ("User parameter:BaseApp/Preferences/View")->GetInt("RotationMode", 1);
+        ("User parameter:BaseApp/Preferences/View")->GetInt("RotationMode", Gui::ViewParams::defaultRotationMode());
     if (mode == 0) {
         setRotationCenterMode(NavigationStyle::RotationCenterMode::WindowCenter);
     }

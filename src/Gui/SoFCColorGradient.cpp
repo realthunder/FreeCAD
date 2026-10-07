@@ -22,6 +22,8 @@
 
 #include "PreCompiled.h"
 
+#include "ViewParams.h"
+
 #ifndef _PreComp_
 # include <sstream>
 # include <QCoreApplication>
@@ -104,9 +106,9 @@ void SoFCColorGradient::setMarkerLabel(const SoMFString& label)
         auto trans = new SoTransform;
 
         ParameterGrp::handle hGrp = Gui::WindowParameter::getDefaultParameter()->GetGroup("View");
-        auto LabelTextSize = hGrp->GetInt("CbLabelTextSize", 13);
+        auto LabelTextSize = hGrp->GetInt("CbLabelTextSize", Gui::ViewParams::defaultCbLabelTextSize());
         auto LabelTextColor =
-            App::Color((uint32_t)hGrp->GetUnsigned("CbLabelColor", 0xffffffff));
+            App::Color((uint32_t)hGrp->GetUnsigned("CbLabelColor", Gui::ViewParams::defaultCbLabelColor()));
         auto textFont = new SoFont;
         auto color = new SoBaseColor;
         textFont->name.setValue("Helvetica,Arial,Times New Roman");

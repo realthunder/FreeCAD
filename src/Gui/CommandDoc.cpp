@@ -22,6 +22,8 @@
 
 
 #include "PreCompiled.h"
+
+#include "ViewParams.h"
 #ifndef _PreComp_
 # include <Inventor/nodes/SoCamera.h>
 # include <QApplication>
@@ -697,7 +699,7 @@ void StdCmdNew::activated(int iMsg)
     doCommand(Command::Gui,"Gui.activeDocument().activeView().viewDefaultOrientation()");
 
     ParameterGrp::handle hViewGrp = App::GetApplication().GetParameterGroupByPath("User parameter:BaseApp/Preferences/View");
-    if (hViewGrp->GetBool("ShowAxisCross"))
+    if (hViewGrp->GetBool("ShowAxisCross", Gui::ViewParams::defaultShowAxisCross()))
         doCommand(Command::Gui,"Gui.ActiveDocument.ActiveView.setAxisCross(True)");
 }
 

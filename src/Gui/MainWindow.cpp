@@ -1385,7 +1385,7 @@ void MainWindow::activatePreviousWindow ()
 void MainWindow::activateWorkbench(const QString& name)
 {
     ParameterGrp::handle hGrp = App::GetApplication().GetParameterGroupByPath("User parameter:BaseApp/Preferences/View");
-    bool saveWB = hGrp->GetBool("SaveWBbyTab", false);
+    bool saveWB = hGrp->GetBool("SaveWBbyTab", Gui::ViewParams::defaultSaveWBbyTab());
     QMdiSubWindow* subWin = d->mdiArea->activeSubWindow();
     if (subWin && saveWB) {
         QString currWb = subWin->property("ownWB").toString();
@@ -1763,7 +1763,7 @@ void MainWindow::onWindowActivated(QMdiSubWindow* w)
     }
 
     ParameterGrp::handle hGrp = App::GetApplication().GetParameterGroupByPath("User parameter:BaseApp/Preferences/View");
-    bool saveWB = hGrp->GetBool("SaveWBbyTab", false);
+    bool saveWB = hGrp->GetBool("SaveWBbyTab", Gui::ViewParams::defaultSaveWBbyTab());
     if (saveWB) {
         QString currWb = w->property("ownWB").toString();
         if (! currWb.isEmpty()) {

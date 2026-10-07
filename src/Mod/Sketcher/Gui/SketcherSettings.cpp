@@ -21,6 +21,8 @@
  ***************************************************************************/
 
 #include "PreCompiled.h"
+
+#include <Gui/ViewParams.h>
 #ifndef _PreComp_
 #include <QApplication>
 #include <QMessageBox>
@@ -699,20 +701,20 @@ QColor SketcherSettingsDisplay::getSketcherBackgroundColor()
     auto parameters = App::GetApplication().GetUserParameter().GetGroup("BaseApp/Preferences/View");
 
     uint32_t backgroundColor;
-    if (parameters->GetBool("Gradient", false) || parameters->GetBool("RadialGradient", false)) {
-        if (parameters->GetBool("UseBackgroundColorMid")) {
-            backgroundColor = parameters->GetUnsigned("BackgroundColor4", 0xFFFFFFFF);
+    if (parameters->GetBool("Gradient", Gui::ViewParams::defaultGradient()) || parameters->GetBool("RadialGradient", Gui::ViewParams::defaultRadialGradient())) {
+        if (parameters->GetBool("UseBackgroundColorMid", Gui::ViewParams::defaultUseBackgroundColorMid())) {
+            backgroundColor = parameters->GetUnsigned("BackgroundColor4", Gui::ViewParams::defaultBackgroundColor4());
         }
         else {
             // a gradient of two colours: their average, the background in
             // the middle of the view
-            backgroundColor = (((parameters->GetUnsigned("BackgroundColor2", 0xFFFFFFFF)) >> 8)
-                               + ((parameters->GetUnsigned("BackgroundColor3", 0xFFFFFFFF)) >> 8))
+            backgroundColor = (((parameters->GetUnsigned("BackgroundColor2", Gui::ViewParams::defaultBackgroundColor2())) >> 8)
+                               + ((parameters->GetUnsigned("BackgroundColor3", Gui::ViewParams::defaultBackgroundColor3())) >> 8))
                 << 7;
         }
     }
     else {
-        backgroundColor = parameters->GetUnsigned("BackgroundColor", 0xFFFFFFFF);
+        backgroundColor = parameters->GetUnsigned("BackgroundColor", Gui::ViewParams::defaultBackgroundColor());
     }
 
     return QColor((backgroundColor >> 24) & 0xFF,

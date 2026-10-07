@@ -22,6 +22,8 @@
 
 #include "PreCompiled.h"
 
+#include "ViewParams.h"
+
 #ifndef _PreComp_
 # include <QApplication>
 # include <QFile>
@@ -239,7 +241,7 @@ GraphvizView::GraphvizView(App::Document & _doc, QWidget* parent)
 
     ParameterGrp::handle hGrp = App::GetApplication().GetParameterGroupByPath
             ("User parameter:BaseApp/Preferences/View");
-    bool on = hGrp->GetBool("InvertZoom", true);
+    bool on = hGrp->GetBool("InvertZoom", Gui::ViewParams::defaultInvertZoom());
     zoomer->set_zoom_inverted(on);
 
     // Set central widget to view

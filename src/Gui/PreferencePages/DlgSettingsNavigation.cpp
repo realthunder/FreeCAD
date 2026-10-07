@@ -137,21 +137,21 @@ void DlgSettingsNavigation::loadSettings()
 
     ParameterGrp::handle hGrp = App::GetApplication().GetParameterGroupByPath
         ("User parameter:BaseApp/Preferences/View");
-    std::string model = hGrp->GetASCII("NavigationStyle", CADNavigationStyle::getClassTypeId().getName());
+    std::string model = hGrp->GetASCII("NavigationStyle", Gui::ViewParams::defaultNavigationStyle().c_str());
     int index = ui->comboNavigationStyle->findData(QByteArray(model.c_str()));
     if (index > -1) ui->comboNavigationStyle->setCurrentIndex(index);
 
-    index = hGrp->GetInt("OrbitStyle", int(NavigationStyle::Trackball));
+    index = hGrp->GetInt("OrbitStyle", Gui::ViewParams::defaultOrbitStyle());
     index = Base::clamp(index, 0, ui->comboOrbitStyle->count()-1);
     ui->comboOrbitStyle->setCurrentIndex(index);
 
-    index = hGrp->GetInt("RotationMode", 1);
+    index = hGrp->GetInt("RotationMode", Gui::ViewParams::defaultRotationMode());
     ui->comboRotationMode->setCurrentIndex(index);
 
-    bool showNaviCube = hGrp->GetBool("ShowNaviCube", true);
+    bool showNaviCube = hGrp->GetBool("ShowNaviCube", Gui::ViewParams::defaultShowNaviCube());
     ui->groupBoxNaviCube->setChecked(showNaviCube);
 
-    bool showRotationCenter = hGrp->GetBool("ShowRotationCenter", true);
+    bool showRotationCenter = hGrp->GetBool("ShowRotationCenter", Gui::ViewParams::defaultShowRotationCenter());
     ui->groupBoxRotationCenter->setChecked(showRotationCenter);
 
     ui->comboNewDocView->addItem(tr("Isometric"), QByteArray("Isometric"));
@@ -164,7 +164,7 @@ void DlgSettingsNavigation::loadSettings()
     ui->comboNewDocView->addItem(tr("Rear"), QByteArray("Rear"));
     ui->comboNewDocView->addItem(tr("Bottom"), QByteArray("Bottom"));
     ui->comboNewDocView->addItem(tr("Custom"), QByteArray("Custom"));
-    std::string camera = hGrp->GetASCII("NewDocumentCameraOrientation", "Trimetric");
+    std::string camera = hGrp->GetASCII("NewDocumentCameraOrientation", Gui::ViewParams::defaultNewDocumentCameraOrientation().c_str());
     index = ui->comboNewDocView->findData(QByteArray(camera.c_str()));
     if (index > -1) ui->comboNewDocView->setCurrentIndex(index);
     if (camera == "Custom") {

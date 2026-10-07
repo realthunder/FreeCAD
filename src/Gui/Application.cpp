@@ -605,7 +605,7 @@ Application::Application(bool GUIenabled)
         // so we can try to override the workaround by setting COIN_VBO
         ParameterGrp::handle hViewGrp = App::GetApplication().GetParameterGroupByPath(
             "User parameter:BaseApp/Preferences/View");
-        if (hViewGrp->GetBool("UseVBO",false)) {
+        if (hViewGrp->GetBool("UseVBO", Gui::ViewParams::defaultUseVBO())) {
             (void)coin_setenv("COIN_VBO", "-1", true);
         }
 
@@ -851,7 +851,7 @@ void Application::open(const char* FileName, const char* Module)
                 if (sendHasMsgToActiveView("ViewFit")) {
                     ParameterGrp::handle hGrp = App::GetApplication().GetParameterGroupByPath
                         ("User parameter:BaseApp/Preferences/View");
-                    if (hGrp->GetBool("AutoFitToView", true))
+                    if (hGrp->GetBool("AutoFitToView", Gui::ViewParams::defaultAutoFitToView()))
                         Command::doCommand(Command::Gui, "Gui.SendMsgToActiveView(\"ViewFit\")");
                 }
             }
@@ -969,7 +969,7 @@ void Application::importFrom(const char* FileName, const char* DocName, const ch
 
                     ParameterGrp::handle hGrp = App::GetApplication().GetParameterGroupByPath
                         ("User parameter:BaseApp/Preferences/View");
-                    if (hGrp->GetBool("AutoFitToView", true)) {
+                    if (hGrp->GetBool("AutoFitToView", Gui::ViewParams::defaultAutoFitToView())) {
                         MDIView* view = doc->getActiveView();
                         if (view) {
                             const char* ret = nullptr;

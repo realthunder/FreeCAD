@@ -1474,3 +1474,11 @@ fc_add_gui_test(GuiEditorSettings_tests_run
 fc_add_gui_test(GuiDocumentSettings_tests_run
                 document-settings.py
                 --timeout 180)
+
+# Sixty-one more settings of the View group are behind ViewParams, and a
+# setting that is not stored is its default to every reader: zooming still
+# works after a zoom step was stored and removed, and Home is the view a
+# new document opens in.
+fc_add_gui_test(GuiViewSettings_tests_run
+                view-settings.py
+                --timeout 180)
