@@ -61,7 +61,7 @@ report views, the reporter's own files -- is kept beside the dev tree under
 | 21 | 2026-10-06 | TechDraw: a click on a section line starts a section, and the line shifts at each recompute | STAGED |
 | 22 | 2026-10-06 | omni search: `/word` with no space is an object query; `/ word` forces it (change request, decided) | STAGED 2026-10-07 14:23, fixed `5aedd5cf83`: "/word" is an object query, "/ word" forces it, a keyword in full is the keyword, the beginning of one lists modes and objects together; the browser viewer's grammar follows (its bundle not rebuilt) |
 | 23 | 2026-10-06 | omni search: every setting it collects has documentation, none of it long (an audit asked) | STAGED 2026-10-07 14:23, fixed `c7a27b5a85` (and `08b8f009aa`): 574 settings audited, 221 had no documentation and 94 ran past 400 characters; all have a short text now and a test keeps it so. Side findings for the reporter in `docs/HandsOnLog.md`. The defaults FIXED `02cab053df`, not staged: OK on a fresh profile changed 23 settings and stored 2 under a wrong type, 14 of them a generated page's spin box clamping its default to 99; a test keeps it so |
-| 24 | 2026-10-06 | every `Base::Parameter` setting behind a cog helper class so the omni search finds it, applied through delayed handlers (change request, application-wide) | OPEN |
+| 24 | 2026-10-06 | every `Base::Parameter` setting behind a cog helper class so the omni search finds it, applied through delayed handlers (change request, application-wide) | STARTED, first group `a6ed59e824`, not staged: 1734 (group, key) pairs in use, the generated classes define 570, about 1075 key names read directly; the report view's 12 keys converted first. Three questions for the reporter (`docs/HandsOnLog.md`) |
 | 25 | 2026-10-06 | the outline of a highlighted face is jagged, MSAA on or off | OPEN |
 | 26 | 2026-10-06 | a long halt after enabling MSAA and pressing OK in the preferences | FIXED `175ffce199`, not staged: the FIRST OK of a profile held the program 11 to 15 s (780 keys stored for the first time and taken for changes: stylesheet set again 4.2 s, every Part view provider re-meshed 3.2 s, language activated again about 2 s); 0.9 s now (`docs/HandsOnLog.md`) |
 | 27 | 2026-10-06 | the view cell menu: opens a spreadsheet nobody asked for, lists every TechDraw object, changes the wrong cell | STAGED 2026-10-07 14:23, fixed `fa2ada985c`: the menu made a spreadsheet view by asking for it, listed a page's views, and placed a pick by the general policy instead of into its cell; all three gone, spreadsheets now listed by type like pages (`docs/HandsOnLog.md`) |
@@ -1630,7 +1630,32 @@ collects automatically; (b) each must have documentation; (c) none of it
 overly long; (d) pick out the long ones in particular -- text an agent wrote
 as development notes that ended up as a setting's documentation.
 
-## 24. Every setting behind a generated helper class, applied by delayed handlers (a change request) -- OPEN
+## 24. Every setting behind a generated helper class, applied by delayed handlers (a change request) -- STARTED, first group `a6ed59e824`; three questions for the reporter (see `docs/HandsOnLog.md`)
+
+**From the build session, started** (passed on 2026-10-07 18:10; its log,
+entry 24, has the method and the inventory):
+- The size of it: 1734 pairs of (group, key) are read, written or shown by a
+  preference widget; the generated classes define 570; about 1075 key names
+  are read directly -- `src/Gui` 375, Sketcher 152, TechDraw 137, BIM 116,
+  Part 60, and so on.
+- The first group converted: the report view's 12 keys (which messages are
+  recorded, their colours, Go to end, the Python redirections). The omni
+  search lists them now, each has one default, and a change is followed at
+  once. Two defects put right on the way: "checkCritical" switched NORMAL
+  messages off, and Python's output switched off through its key did not
+  come back.
+- Next on its side: the rest of `src/Gui`'s groups.
+- **Three questions for the reporter, NOT ANSWERED YET** (log, entry 24, "To
+  decide"):
+  1. Modules written in Python only -- BIM, Draft, AddonManager, parts of CAM
+     and Fem, about 300 keys -- have no generated class to register from.
+     Give the registry a way in from Python, or let them wait?
+  2. State keys -- window geometry, recent files, the last directory, a
+     dialog's last values -- are left OUT of the omni search unless the
+     reporter says otherwise.
+  3. "Apply the change with delay handler" is being done as: at once where
+     applying is cheap, through a delayed handler where it is not. Or is
+     EVERY change to be delayed?
 
 **Next for the build session, at the reporter's word** (to it, 2026-10-07,
 asked which entry "do entry 23 next" meant): "I meant entry 24, but have
