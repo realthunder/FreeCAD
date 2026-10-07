@@ -1373,3 +1373,10 @@ fc_add_gui_test(GuiReportGoToEnd_tests_run
 fc_add_gui_test(GuiPreferencesOkReappliesNothing_tests_run
                 preferences-ok-reapplies-nothing.py
                 --timeout 240)
+
+# Every theme sets TechDraw's preselection colour: Classic stored one and
+# Dark and Light did not mention the key, so after Classic a switch left
+# TechDraw yellow under a blue 3D view.
+fc_add_gui_test(GuiThemeOwnsTechDrawPreselect_tests_run
+                theme-owns-techdraw-preselect.py
+                --timeout 180)
