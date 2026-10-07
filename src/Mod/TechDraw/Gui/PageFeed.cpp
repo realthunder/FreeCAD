@@ -20,6 +20,8 @@
  ***************************************************************************/
 
 #include "PreCompiled.h"
+
+#include <Mod/TechDraw/App/TechDrawParams.h>
 #ifndef _PreComp_
 #include <algorithm>
 #include <cmath>
@@ -1668,7 +1670,7 @@ void PageFeed::feedViewPart(TechDraw::DrawViewPart* dvp, Page2D& out,
     const bool showCenters = vp && vp->ArcCenterMarks.getValue()
         && (frames
             || TechDraw::Preferences::getPreferenceGroup("Decorations")
-                   ->GetBool("PrintCenterMarks", false));
+                   ->GetBool("PrintCenterMarks", TechDraw::TechDrawParams::defaultPrintCenterMarks()));
     const uint32_t vertexColor = vp
         ? packColor(PreferencesGui::getAccessibleQColor(
               PreferencesGui::vertexQColor()))

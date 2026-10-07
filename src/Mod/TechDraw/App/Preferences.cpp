@@ -65,7 +65,7 @@ static int indexPreference(const char* group, const char* name, int defaultIndex
 
 std::string Preferences::labelFont()
 {
-    return getPreferenceGroup("Labels")->GetASCII("LabelFont", "osifont");
+    return getPreferenceGroup("Labels")->GetASCII("LabelFont", TechDraw::TechDrawParams::defaultLabelFont().c_str());
 }
 
 QString Preferences::labelFontQString()
@@ -76,7 +76,7 @@ QString Preferences::labelFontQString()
 
 double Preferences::labelFontSizeMM()
 {
-    return getPreferenceGroup("Labels")->GetFloat("LabelSize", DefaultFontSizeInMM);
+    return getPreferenceGroup("Labels")->GetFloat("LabelSize", TechDraw::TechDrawParams::defaultLabelSize());
 }
 
 double Preferences::dimFontSizeMM()
@@ -139,7 +139,7 @@ double Preferences::vertexScale()
 int Preferences::scaleType()
 {
     // DrawView::ScaleTypeEnums: Page, Automatic, Custom
-    return indexPreference("General", "DefaultScaleType", 0, 3);
+    return indexPreference("General", "DefaultScaleType", TechDraw::TechDrawParams::defaultDefaultScaleType(), 3);
 }
 
 double Preferences::scale()
@@ -161,13 +161,13 @@ bool Preferences::keepPagesUpToDate()
 
 bool Preferences::useGlobalDecimals()
 {
-    return getPreferenceGroup("Dimensions")->GetBool("UseGlobalDecimals", true);
+    return getPreferenceGroup("Dimensions")->GetBool("UseGlobalDecimals", TechDraw::TechDrawParams::defaultUseGlobalDecimals());
 }
 
 int Preferences::projectionAngle()
 {
     // First Angle, Third Angle
-    return indexPreference("General", "ProjectionAngle", 0, 2);
+    return indexPreference("General", "ProjectionAngle", TechDraw::TechDrawParams::defaultProjectionAngle(), 2);
 }
 
 int Preferences::lineGroup()
@@ -177,18 +177,18 @@ int Preferences::lineGroup()
 
 int Preferences::balloonArrow()
 {
-    return indexPreference("Decorations", "BalloonArrow", 0, ArrowPropEnum::ArrowCount);
+    return indexPreference("Decorations", "BalloonArrow", TechDraw::TechDrawParams::defaultBalloonArrow(), ArrowPropEnum::ArrowCount);
 }
 
 double Preferences::balloonKinkLength()
 {
-    return getPreferenceGroup("Dimensions")->GetFloat("BalloonKink", 5.0);
+    return getPreferenceGroup("Dimensions")->GetFloat("BalloonKink", TechDraw::TechDrawParams::defaultBalloonKink());
 }
 
 int Preferences::balloonShape()
 {
     // DrawViewBalloon::balloonTypeEnums has eight shapes
-    return indexPreference("Decorations", "BalloonShape", 0, 8);
+    return indexPreference("Decorations", "BalloonShape", TechDraw::TechDrawParams::defaultBalloonShape(), 8);
 }
 
 QString Preferences::defaultTemplate()
@@ -243,17 +243,17 @@ std::string Preferences::lineGroupFile()
 
 std::string Preferences::formatSpec()
 {
-    return getPreferenceGroup("Dimensions")->GetASCII("formatSpec", "%.2w");
+    return getPreferenceGroup("Dimensions")->GetASCII("formatSpec", TechDraw::TechDrawParams::defaultformatSpec().c_str());
 }
 
 int Preferences::altDecimals()
 {
-    return getPreferenceGroup("Dimensions")->GetInt("AltDecimals", 2);
+    return getPreferenceGroup("Dimensions")->GetInt("AltDecimals", TechDraw::TechDrawParams::defaultAltDecimals());
 }
 
 int Preferences::mattingStyle()
 {
-    return getPreferenceGroup("Decorations")->GetInt("MattingStyle", 0);
+    return getPreferenceGroup("Decorations")->GetInt("MattingStyle", TechDraw::TechDrawParams::defaultMattingStyle());
 }
 
 bool Preferences::showDetailMatting()
@@ -318,14 +318,14 @@ std::string Preferences::bitmapFill()
 //! Returns the factor for calculating the ISO extension line gap, not the actual distance.
 double Preferences::GapISO()
 {
-    double factor = getPreferenceGroup("Dimensions")->GetFloat("GapISO", 0.0);
+    double factor = getPreferenceGroup("Dimensions")->GetFloat("GapISO", TechDraw::TechDrawParams::defaultGapISO());
     return factor;
 }
 
 //! Returns the factor for calculating the ASME extension line gap, not the actual distance.
 double Preferences::GapASME()
 {
-    double factor = getPreferenceGroup("Dimensions")->GetFloat("GapASME", 0.0);
+    double factor = getPreferenceGroup("Dimensions")->GetFloat("GapASME", TechDraw::TechDrawParams::defaultGapASME());
     return factor;
 }
 
@@ -337,7 +337,7 @@ bool Preferences::reportProgress()
 
 bool Preferences::lightOnDark()
 {
-    return getPreferenceGroup("Colors")->GetBool("LightOnDark", false);
+    return getPreferenceGroup("Colors")->GetBool("LightOnDark", TechDraw::TechDrawParams::defaultLightOnDark());
 }
 
 void Preferences::lightOnDark(bool state)
@@ -348,7 +348,7 @@ void Preferences::lightOnDark(bool state)
 //! current setting (on/off) for monochrome display
 bool Preferences::monochrome()
 {
-    return getPreferenceGroup("Colors")->GetBool("Monochrome", false);
+    return getPreferenceGroup("Colors")->GetBool("Monochrome", TechDraw::TechDrawParams::defaultMonochrome());
 }
 
 //! set monochrome display on/off
@@ -412,7 +412,7 @@ App::Color Preferences::getAccessibleColor(App::Color orig)
 //! automatic correction of dimension references on/off
 bool Preferences::autoCorrectDimRefs()
 {
-    return getPreferenceGroup("Dimensions")->GetBool("AutoCorrectRefs", true);
+    return getPreferenceGroup("Dimensions")->GetBool("AutoCorrectRefs", TechDraw::TechDrawParams::defaultAutoCorrectRefs());
 }
 
 //! true if a colour a document stored with no opacity is to be read as opaque
@@ -432,7 +432,7 @@ int Preferences::scrubCount()
 //! Returns the factor for the overlap of svg tiles when hatching faces
 double Preferences::svgHatchFactor()
 {
-    double factor = getPreferenceGroup("Decorations")->GetFloat("SvgOverlapFactor", 1.25);
+    double factor = getPreferenceGroup("Decorations")->GetFloat("SvgOverlapFactor", TechDraw::TechDrawParams::defaultSvgOverlapFactor());
     return factor;
 }
 

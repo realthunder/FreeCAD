@@ -23,6 +23,8 @@
 
 #include "PreCompiled.h"
 
+#include <Mod/TechDraw/App/TechDrawParams.h>
+
 #ifndef _PreComp_
 # include <QMessageBox>
 # include <QTextStream>
@@ -126,7 +128,7 @@ double ViewProviderWeld::prefFontSize()
 
 double ViewProviderWeld::prefTileTextAdjust()
 {
-    return Preferences::getPreferenceGroup("Dimensions")->GetFloat("TileTextAdjust", 0.75);
+    return Preferences::getPreferenceGroup("Dimensions")->GetFloat("TileTextAdjust", TechDraw::TechDrawParams::defaultTileTextAdjust());
 }
 
 bool ViewProviderWeld::onDelete(const std::vector<std::string> &)

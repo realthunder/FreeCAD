@@ -316,7 +316,7 @@ Multiplier of 'Font Size'</string>
            <double>0.100000000000000</double>
           </property>
           <property name="value">
-           <double>0.800000000000000</double>
+           <double>0.500000000000000</double>
           </property>
           <property name="prefEntry" stdset="0">
            <cstring>TolSizeAdjust</cstring>

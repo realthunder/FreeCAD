@@ -9,12 +9,22 @@ preferences-ok-keeps-defaults.py, which named three of them when the group
 was defined: the new face finder is off to the program and was shown on by
 the Advanced page; the vertex scale is 3 to the program and 5 on the Scale
 page; the template mark size is 5 to the program and 3 on the page. OK
-stored the page's each time. The other groups of TechDraw are not done yet.
+stored the page's each time.
+
+Forty-six more followed, of the sub-groups Decorations, Dimensions, HLR,
+PAT, Colors, Labels, LeaderLine, Rez, Tracker and debug -- those whose
+default is a plain value. Two pages were named again: centre marks are off
+to the program and were shown on by the Annotation page; the tolerance text
+size is 0.5 to the program and 0.8 on the Dimensions page. The colours, the
+line standards and the file names of TechDraw are not done yet.
 
 Claims:
 
   - "/param vertex scale" and "/param new face finder" list the settings
-    of the sub-group General;
+    of the sub-group General, "/param tol size adjust" and "/param show
+    center marks" those of Dimensions and Decorations;
+  - a view made with "smooth edges" stored off does not show them, one
+    made without the key does;
   - a page made with the page scale stored as 2 has a scale of 2, one made
     without the key 1;
   - a page made with "keep pages up to date" stored off does not keep
@@ -79,6 +89,7 @@ def param_rows(query):
 
 def run():
     general = FreeCAD.ParamGet(PREFS + "Mod/TechDraw/General")
+    hlr = FreeCAD.ParamGet(PREFS + "Mod/TechDraw/HLR")
     doc = None
     try:
         import TechDraw  # noqa: F401  the module registers its settings when it is loaded
@@ -91,8 +102,24 @@ def run():
         check("and its face finder switch", any(r.endswith("Mod/TechDraw/General/NewFaceFinder") for r in rows),
               rows[:6])
 
+        rows = param_rows("tol size adjust")
+        check("and the tolerance text size of the Dimensions group",
+              any(r.endswith("Mod/TechDraw/Dimensions/TolSizeAdjust") for r in rows), rows[:6])
+        rows = param_rows("show center marks")
+        check("and the centre marks switch of the Decorations group",
+              any(r.endswith("Mod/TechDraw/Decorations/ShowCenterMarks") for r in rows), rows[:6])
+
         doc = FreeCAD.newDocument("Entry24TechDraw")
         settle(0.5)
+        hlr.SetBool("SmoothViz", False)
+        settle(0.2)
+        hidden = doc.addObject("TechDraw::DrawViewPart", "ViewNoSmooth").SmoothVisible
+        hlr.RemBool("SmoothViz")
+        settle(0.2)
+        shown = doc.addObject("TechDraw::DrawViewPart", "ViewSmooth").SmoothVisible
+        check("a view made with 'smooth edges' stored off does not show them, one made without the key does",
+              hidden is False and shown is True, (hidden, shown))
+
         general.SetFloat("DefaultScale", 2.0)
         settle(0.2)
         two = doc.addObject("TechDraw::DrawPage", "PageScale2").Scale
@@ -115,6 +142,7 @@ def run():
     finally:
         general.RemFloat("DefaultScale")
         general.RemBool("KeepPagesUpToDate")
+        hlr.RemBool("SmoothViz")
         if doc is not None:
             FreeCAD.closeDocument(doc.Name)
         note("DONE")

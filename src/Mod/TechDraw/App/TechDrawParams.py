@@ -28,7 +28,7 @@ from os import sys, path
 sys.path.append(path.join(path.dirname(path.dirname(path.dirname(path.dirname(path.abspath(__file__))))), 'Tools'))
 import params_utils
 
-from params_utils import ParamBool, ParamInt, ParamFloat
+from params_utils import ParamBool, ParamInt, ParamFloat, ParamString
 
 NameSpace = 'TechDraw'
 ClassName = 'TechDrawParams'
@@ -40,7 +40,7 @@ ClassDoc = 'Convenient class to obtain the settings of TechDraw'
 # straight from the groups, each with a default of its own. The defaults
 # are here; the accessors and the direct reads take them from this class.
 #
-# So far the sub-group General. Where its readers and its preference page
+# First the sub-group General. Where its readers and its preference page
 # disagreed, the default here is the READER's -- what the program does
 # while the key is not stored -- and the page was changed to show it:
 # NewFaceFinder, VertexScale, TemplateDotSize.
@@ -202,6 +202,234 @@ Params = [
         title = "Show Grid",
         doc = "New drawing pages show a grid. Applies to pages created\n"
               "afterwards; each page has its own Show Grid property."),
+
+    # ------------------------------------------------------------------
+    # The other sub-groups, as far as their settings have a default that is
+    # a plain value. Where a reader and its page disagreed the default is
+    # the reader's: ShowCenterMarks (off; the page showed it on) and
+    # TolSizeAdjust (0.5; the page showed 0.8).
+    #
+    # Not listed yet: the colours; the line widths, styles and standards;
+    # the file names of the Files group and PAT/FilePattern, whose defaults
+    # are built from where the program is installed; Dimensions/ArrowSize,
+    # FontSize, StandardAndStyle and DiameterSymbol, whose defaults are
+    # constants of TechDraw's own or a character outside ASCII. HLR/HardViz
+    # and HLR/UsePolygon are stored by the page and read by nothing.
+
+    # --- Decorations
+    ParamInt('BalloonArrow', 0, subpath='Decorations',
+        title = "Balloon Arrow",
+        doc = "Arrowhead at the end of a new balloon's leader line, as an index\n"
+              "into the list of arrow styles. Applies to balloons created\n"
+              "afterwards."),
+    ParamInt('BalloonShape', 0, subpath='Decorations',
+        title = "Balloon Shape",
+        doc = "Shape of a new balloon: 0 circular, 1 none, 2 triangle, 3\n"
+              "inspection, 4 hexagon, 5 square, 6 rectangle, 7 line. Applies to\n"
+              "balloons created afterwards."),
+    ParamFloat('CenterMarkScale', 0.5, subpath='Decorations',
+        title = "Center Mark Scale",
+        doc = "Size of the centre marks of arcs and circles in a new view, as a\n"
+              "factor. Applies to views created afterwards."),
+    ParamFloat('CosmoCLExtend', 3.0, subpath='Decorations',
+        title = "Cosmo CLExtend",
+        doc = "Distance in mm by which a new cosmetic centre line extends beyond\n"
+              "the geometry it is drawn on."),
+    ParamInt('CutSurfaceDisplay', 2, subpath='Decorations',
+        title = "Cut Surface Display",
+        doc = "How a new section shows its cut surface: 0 hidden, 1 solid colour,\n"
+              "2 SVG hatch, 3 PAT hatch. Applies to sections created afterwards."),
+    ParamInt('MattingStyle', 0, subpath='Decorations',
+        title = "Matting Style",
+        doc = "Outline of detail views and of their highlight in the source view:\n"
+              "0 circle, 1 square. Takes effect when detail views are recomputed."),
+    ParamInt('MaxSVGTile', 10000, subpath='Decorations',
+        title = "Max SVGTile",
+        doc = "Largest number of SVG tiles used to hatch one face. 1 to 1000000.\n"
+              "A limit that keeps a very fine hatch from freezing the program."),
+    ParamBool('PrintCenterMarks', False, subpath='Decorations',
+        title = "Print Center Marks",
+        doc = "Include centre marks when a page is printed or exported. Takes\n"
+              "effect at the next print or redraw."),
+    ParamBool('PyramidOrtho', True, subpath='Decorations',
+        title = "Pyramid Ortho",
+        doc = "Keep a filled-triangle balloon end symbol upright instead of\n"
+              "turning it with the leader line. Takes effect when balloons are\n"
+              "redrawn."),
+    ParamBool('SectionLineMarks', True, subpath='Decorations',
+        title = "Section Line Marks",
+        doc = "New views show marks where the section line of a complex section\n"
+              "changes direction. Applies to views created afterwards."),
+    ParamBool('ShowCenterMarks', False, subpath='Decorations',
+        title = "Show Center Marks",
+        doc = "New views show centre marks on arcs and circles. Applies to views\n"
+              "created afterwards."),
+    ParamFloat('SvgOverlapFactor', 1.25, subpath='Decorations',
+        title = "Svg Overlap Factor",
+        doc = "How far the tiled SVG hatch reaches beyond the face it fills, as a\n"
+              "factor of the face size. Raise it if a hatch leaves gaps at the\n"
+              "edge of a face."),
+    ParamFloat('SymbolFactor', 1.25, subpath='Decorations',
+        title = "Symbol Factor",
+        doc = "Size factor for welding symbols. Takes effect when welding symbols\n"
+              "are redrawn."),
+
+    # --- Dimensions
+    ParamInt('AltDecimals', 2, subpath='Dimensions',
+        title = "Alt Decimals",
+        doc = "Number of decimals in dimension values when Use Global Decimals is\n"
+              "off. Takes effect when dimensions are recomputed."),
+    ParamInt('ArrowStyle', 0, subpath='Dimensions',
+        title = "Arrow Style",
+        doc = "Arrowhead style for dimensions, as an index into the list of arrow\n"
+              "styles. Takes effect when dimensions are redrawn."),
+    ParamBool('AutoCorrectRefs', True, subpath='Dimensions',
+        title = "Auto Correct Refs",
+        doc = "When the geometry a dimension refers to has changed, try to find\n"
+              "the matching geometry again. Read each time a dimension is\n"
+              "recomputed."),
+    ParamFloat('BalloonKink', 5.0, subpath='Dimensions',
+        title = "Balloon Kink",
+        doc = "Length in mm of the short segment between a new balloon and the\n"
+              "bend of its leader line. Applies to balloons created afterwards."),
+    ParamFloat('GapASME', 0.0, subpath='Dimensions',
+        title = "Gap ASME",
+        doc = "Gap between the measured point and the start of the extension line\n"
+              "for ASME dimensions, as a factor. Applies to dimensions created\n"
+              "afterwards."),
+    ParamFloat('GapISO', 0.0, subpath='Dimensions',
+        title = "Gap ISO",
+        doc = "Gap between the measured point and the start of the extension line\n"
+              "for ISO dimensions, as a factor. Applies to dimensions created\n"
+              "afterwards."),
+    ParamBool('ShowUnits', False, subpath='Dimensions',
+        title = "Show Units",
+        doc = "Append the unit to dimension values. Takes effect when dimensions\n"
+              "are recomputed."),
+    ParamFloat('SymbolSize', 64.0, subpath='Dimensions',
+        title = "Symbol Size",
+        doc = "Nominal size of the welding symbol pictures; the supplied symbols\n"
+              "are drawn at 64. Change only for a symbol set drawn at another\n"
+              "size."),
+    ParamFloat('TileTextAdjust', 0.75, subpath='Dimensions',
+        title = "Tile Text Adjust",
+        doc = "Text size of a new welding symbol relative to the dimension font\n"
+              "size. Applies to welding symbols created afterwards."),
+    ParamFloat('TolSizeAdjust', 0.5, subpath='Dimensions',
+        title = "Tol Size Adjust",
+        doc = "Size of tolerance text relative to the dimension text. Takes\n"
+              "effect when dimensions are redrawn."),
+    ParamBool('UseGlobalDecimals', True, subpath='Dimensions',
+        title = "Use Global Decimals",
+        doc = "Show dimension values with the number of decimals set for the\n"
+              "whole program. Off uses the alternate decimals instead."),
+    ParamString('formatSpec', '%.2w', subpath='Dimensions',
+        title = "Format Spec",
+        doc = "Format of dimension values when global decimals are not used, in\n"
+              "printf style, for example %.2f; with w in place of f trailing\n"
+              "zeros are dropped."),
+
+    # --- HLR
+    ParamBool('HardHid', False, subpath='HLR',
+        title = "Hard Hid",
+        doc = "New views show hidden hard edges. Applies to views created\n"
+              "afterwards; each view has its own property."),
+    ParamBool('IsoHid', False, subpath='HLR',
+        title = "Iso Hid",
+        doc = "New views show hidden iso-parameter lines. Applies to views\n"
+              "created afterwards."),
+    ParamBool('IsoViz', False, subpath='HLR',
+        title = "Iso Viz",
+        doc = "New views show visible iso-parameter lines. Applies to views\n"
+              "created afterwards."),
+    ParamBool('SeamHid', False, subpath='HLR',
+        title = "Seam Hid",
+        doc = "New views show hidden seam lines. Applies to views created\n"
+              "afterwards."),
+    ParamBool('SeamViz', False, subpath='HLR',
+        title = "Seam Viz",
+        doc = "New views show visible seam lines. Applies to views created\n"
+              "afterwards."),
+    ParamBool('SmoothHid', False, subpath='HLR',
+        title = "Smooth Hid",
+        doc = "New views show hidden smooth edges, where faces meet tangentially.\n"
+              "Applies to views created afterwards."),
+    ParamBool('SmoothViz', True, subpath='HLR',
+        title = "Smooth Viz",
+        doc = "New views show visible smooth edges, where faces meet\n"
+              "tangentially. Applies to views created afterwards."),
+
+    # --- PAT
+    ParamFloat('GeomWeight', 0.1, subpath='PAT',
+        title = "Geom Weight",
+        doc = "Line width of the PAT hatch on the cut surface of a new section.\n"
+              "Applies to sections created afterwards."),
+    ParamInt('MaxSeg', 10000, subpath='PAT',
+        title = "Max Seg",
+        doc = "Largest number of line segments used to draw the PAT hatch of one\n"
+              "face. 1 to 1000000. A limit that keeps a very fine hatch from\n"
+              "freezing the program."),
+    ParamString('NamePattern', 'Diamond', subpath='PAT',
+        title = "Name Pattern",
+        doc = "Name of the pattern, within the PAT file, used for new geometric\n"
+              "hatches. Applies to hatches created afterwards."),
+
+    # --- Colors
+    ParamBool('ClearFace', False, subpath='Colors',
+        title = "Clear Face",
+        doc = "Faces of new views are transparent instead of filled with the face\n"
+              "colour. Applies to views created afterwards."),
+    ParamBool('LightOnDark', False, subpath='Colors',
+        title = "Light On Dark",
+        doc = "Draw pages in light colours for a dark page background. Printing\n"
+              "and export always use the normal colours. Takes effect when a page\n"
+              "is redrawn."),
+    ParamBool('Monochrome', False, subpath='Colors',
+        title = "Monochrome",
+        doc = "With Light on dark, draw everything in the single light text\n"
+              "colour instead of lightened colours. Takes effect when a page is\n"
+              "redrawn."),
+
+    # --- Labels
+    ParamString('LabelFont', 'osifont', subpath='Labels',
+        title = "Label font",
+        doc = "Font of view labels, and the font new dimensions, balloons and\n"
+              "annotations start with."),
+    ParamFloat('LabelSize', 5.0, subpath='Labels',
+        title = "Label size",
+        doc = "Text size of view labels in mm, and the size new annotations start\n"
+              "with."),
+
+    # --- LeaderLine
+    ParamBool('AutoHorizontal', True, subpath='LeaderLine',
+        title = "Leader line auto horizontal",
+        doc = "New leader lines end in a horizontal segment."),
+
+    # --- Rez
+    ParamFloat('Resolution', 10.0, subpath='Rez',
+        title = "Scene resolution",
+        doc = "Scene units per millimetre of a drawing page. Read once when the\n"
+              "TechDraw user interface is loaded."),
+
+    # --- Tracker
+    ParamFloat('TrackerWeight', 4.0, subpath='Tracker',
+        title = "Tracker line width",
+        doc = "Line width of the rubber band lines drawn while a tool tracks the\n"
+              "mouse on a page."),
+
+    # --- debug
+    ParamBool('allowCrazyEdge', False, subpath='debug',
+        title = "Allow crazy edges",
+        doc = "Keep edges of unreasonable length that projection sometimes\n"
+              "produces instead of dropping them. For developers."),
+    ParamBool('debugDetail', False, subpath='debug',
+        title = "Debug detail views",
+        doc = "Write the intermediate shapes of a detail view to files while it\n"
+              "is recomputed. For developers."),
+    ParamBool('debugSection', False, subpath='debug',
+        title = "Debug section views",
+        doc = "Write the intermediate shapes of a section view to files while it\n"
+              "is recomputed. For developers."),
 ]
 
 def declare():

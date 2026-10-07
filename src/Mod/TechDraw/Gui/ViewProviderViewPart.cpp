@@ -22,6 +22,8 @@
 
 #include "PreCompiled.h"
 
+#include <Mod/TechDraw/App/TechDrawParams.h>
+
 #ifndef _PreComp_
 #include <QMessageBox>
 #include <QTextStream>
@@ -107,8 +109,8 @@ ViewProviderViewPart::ViewProviderViewPart()
     ADD_PROPERTY_TYPE(VertexScale, (Preferences::vertexScale()), group, App::Prop_None,
                       "Vertex dot size as a multiple of the visible line width");
 
-    double defScale = Preferences::getPreferenceGroup("Decorations")->GetFloat("CenterMarkScale", 0.50);
-    bool   defShowCenters = Preferences::getPreferenceGroup("Decorations")->GetBool("ShowCenterMarks", false);
+    double defScale = Preferences::getPreferenceGroup("Decorations")->GetFloat("CenterMarkScale", TechDraw::TechDrawParams::defaultCenterMarkScale());
+    bool   defShowCenters = Preferences::getPreferenceGroup("Decorations")->GetBool("ShowCenterMarks", TechDraw::TechDrawParams::defaultShowCenterMarks());
 
     //decorations
     ADD_PROPERTY_TYPE(HorizCenterLine ,(false), dgroup, App::Prop_None, "Show a horizontal centerline through view");
@@ -162,7 +164,7 @@ ViewProviderViewPart::ViewProviderViewPart()
     // Faces related properties
     ADD_PROPERTY_TYPE(FaceColor, (Preferences::getPreferenceGroup("Colors")->GetUnsigned("FaceColor", 0xFFFFFF)),
                       fgroup, App::Prop_None, "Set color of faces");
-    ADD_PROPERTY_TYPE(FaceTransparency, (Preferences::getPreferenceGroup("Colors")->GetBool("ClearFace", false) ? 100 : 0),
+    ADD_PROPERTY_TYPE(FaceTransparency, (Preferences::getPreferenceGroup("Colors")->GetBool("ClearFace", TechDraw::TechDrawParams::defaultClearFace()) ? 100 : 0),
                       fgroup, App::Prop_None, "Set transparency of faces");
     FaceTransparency.setConstraints(&intPercent);
 }

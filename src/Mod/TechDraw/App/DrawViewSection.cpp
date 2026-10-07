@@ -1610,7 +1610,7 @@ void DrawViewSection::getParameters()
 
 bool DrawViewSection::debugSection(void)
 {
-    return Preferences::getPreferenceGroup("debug")->GetBool("debugSection", false);
+    return Preferences::getPreferenceGroup("debug")->GetBool("debugSection", TechDraw::TechDrawParams::defaultdebugSection());
 }
 
 int DrawViewSection::prefCutSurface(void)
@@ -1618,7 +1618,7 @@ int DrawViewSection::prefCutSurface(void)
     //    Base::Console().Message("DVS::prefCutSurface()\n");
 
     return Preferences::getPreferenceGroup("Decorations")
-        ->GetInt("CutSurfaceDisplay", 2);// default to SvgHatch
+        ->GetInt("CutSurfaceDisplay", TechDraw::TechDrawParams::defaultCutSurfaceDisplay());// default to SvgHatch
 }
 
 bool DrawViewSection::showSectionEdges(void)

@@ -21,6 +21,8 @@
  ***************************************************************************/
 
 #include "PreCompiled.h"
+
+#include "TechDrawParams.h"
 #ifndef _PreComp_
 #include <cmath>
 #include <cstdlib>
@@ -1185,7 +1187,7 @@ bool DrawUtil::isCrazy(TopoDS_Edge e)
     }
 
     bool crazyOK = CrazyEdgeAllowance::active()
-        || Preferences::getPreferenceGroup("debug")->GetBool("allowCrazyEdge", false);
+        || Preferences::getPreferenceGroup("debug")->GetBool("allowCrazyEdge", TechDraw::TechDrawParams::defaultallowCrazyEdge());
     if (crazyOK) {
         return false;
     }

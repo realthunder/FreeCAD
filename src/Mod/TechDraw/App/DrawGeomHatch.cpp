@@ -62,6 +62,7 @@
 #include "GeometryObject.h"
 #include "HatchLine.h"
 #include "Preferences.h"
+#include "TechDrawParams.h"
 
 
 using namespace TechDraw;
@@ -638,7 +639,7 @@ std::string DrawGeomHatch::prefGeomHatchFile()
 
 std::string DrawGeomHatch::prefGeomHatchName()
 {
-    std::string defaultNamePattern = "Diamond";
+    std::string defaultNamePattern = TechDraw::TechDrawParams::defaultNamePattern();
     std::string result = Preferences::getPreferenceGroup("PAT")->GetASCII("NamePattern", defaultNamePattern.c_str());
     if (result.empty()) {
         return defaultNamePattern;

@@ -77,15 +77,81 @@ public:
     double gridSpacing;
     bool multiSelection;
     bool showGrid;
+    long BalloonArrow;
+    long BalloonShape;
+    double CenterMarkScale;
+    double CosmoCLExtend;
+    long CutSurfaceDisplay;
+    long MattingStyle;
+    long MaxSVGTile;
+    bool PrintCenterMarks;
+    bool PyramidOrtho;
+    bool SectionLineMarks;
+    bool ShowCenterMarks;
+    double SvgOverlapFactor;
+    double SymbolFactor;
+    long AltDecimals;
+    long ArrowStyle;
+    bool AutoCorrectRefs;
+    double BalloonKink;
+    double GapASME;
+    double GapISO;
+    bool ShowUnits;
+    double SymbolSize;
+    double TileTextAdjust;
+    double TolSizeAdjust;
+    bool UseGlobalDecimals;
+    std::string formatSpec;
+    bool HardHid;
+    bool IsoHid;
+    bool IsoViz;
+    bool SeamHid;
+    bool SeamViz;
+    bool SmoothHid;
+    bool SmoothViz;
+    double GeomWeight;
+    long MaxSeg;
+    std::string NamePattern;
+    bool ClearFace;
+    bool LightOnDark;
+    bool Monochrome;
+    std::string LabelFont;
+    double LabelSize;
+    bool AutoHorizontal;
+    double Resolution;
+    double TrackerWeight;
+    bool allowCrazyEdge;
+    bool debugDetail;
+    bool debugSection;
 
     // Auto generated code (Tools/params_utils.py:254)
     TechDrawParamsP() {
         handle = App::GetApplication().GetParameterGroupByPath("User parameter:BaseApp/Preferences/Mod/TechDraw");
         handle->Attach(this);
 
-        subHandles.resize(1);
+        subHandles.resize(11);
         subHandles[0] = handle->GetGroup("General");
         subHandles[0]->Attach(this);
+        subHandles[1] = handle->GetGroup("Decorations");
+        subHandles[1]->Attach(this);
+        subHandles[2] = handle->GetGroup("Dimensions");
+        subHandles[2]->Attach(this);
+        subHandles[3] = handle->GetGroup("HLR");
+        subHandles[3]->Attach(this);
+        subHandles[4] = handle->GetGroup("PAT");
+        subHandles[4]->Attach(this);
+        subHandles[5] = handle->GetGroup("Colors");
+        subHandles[5]->Attach(this);
+        subHandles[6] = handle->GetGroup("Labels");
+        subHandles[6]->Attach(this);
+        subHandles[7] = handle->GetGroup("LeaderLine");
+        subHandles[7]->Attach(this);
+        subHandles[8] = handle->GetGroup("Rez");
+        subHandles[8]->Attach(this);
+        subHandles[9] = handle->GetGroup("Tracker");
+        subHandles[9]->Attach(this);
+        subHandles[10] = handle->GetGroup("debug");
+        subHandles[10]->Attach(this);
         AllowPageOverride = this->subHandles[0]->GetBool("AllowPageOverride", true);
         funcs["AllowPageOverride"] = &TechDrawParamsP::updateAllowPageOverride;
         AutoDist = this->subHandles[0]->GetBool("AutoDist", true);
@@ -156,6 +222,98 @@ public:
         funcs["multiSelection"] = &TechDrawParamsP::updatemultiSelection;
         showGrid = this->subHandles[0]->GetBool("showGrid", false);
         funcs["showGrid"] = &TechDrawParamsP::updateshowGrid;
+        BalloonArrow = this->subHandles[1]->GetInt("BalloonArrow", 0);
+        funcs["BalloonArrow"] = &TechDrawParamsP::updateBalloonArrow;
+        BalloonShape = this->subHandles[1]->GetInt("BalloonShape", 0);
+        funcs["BalloonShape"] = &TechDrawParamsP::updateBalloonShape;
+        CenterMarkScale = this->subHandles[1]->GetFloat("CenterMarkScale", 0.5);
+        funcs["CenterMarkScale"] = &TechDrawParamsP::updateCenterMarkScale;
+        CosmoCLExtend = this->subHandles[1]->GetFloat("CosmoCLExtend", 3.0);
+        funcs["CosmoCLExtend"] = &TechDrawParamsP::updateCosmoCLExtend;
+        CutSurfaceDisplay = this->subHandles[1]->GetInt("CutSurfaceDisplay", 2);
+        funcs["CutSurfaceDisplay"] = &TechDrawParamsP::updateCutSurfaceDisplay;
+        MattingStyle = this->subHandles[1]->GetInt("MattingStyle", 0);
+        funcs["MattingStyle"] = &TechDrawParamsP::updateMattingStyle;
+        MaxSVGTile = this->subHandles[1]->GetInt("MaxSVGTile", 10000);
+        funcs["MaxSVGTile"] = &TechDrawParamsP::updateMaxSVGTile;
+        PrintCenterMarks = this->subHandles[1]->GetBool("PrintCenterMarks", false);
+        funcs["PrintCenterMarks"] = &TechDrawParamsP::updatePrintCenterMarks;
+        PyramidOrtho = this->subHandles[1]->GetBool("PyramidOrtho", true);
+        funcs["PyramidOrtho"] = &TechDrawParamsP::updatePyramidOrtho;
+        SectionLineMarks = this->subHandles[1]->GetBool("SectionLineMarks", true);
+        funcs["SectionLineMarks"] = &TechDrawParamsP::updateSectionLineMarks;
+        ShowCenterMarks = this->subHandles[1]->GetBool("ShowCenterMarks", false);
+        funcs["ShowCenterMarks"] = &TechDrawParamsP::updateShowCenterMarks;
+        SvgOverlapFactor = this->subHandles[1]->GetFloat("SvgOverlapFactor", 1.25);
+        funcs["SvgOverlapFactor"] = &TechDrawParamsP::updateSvgOverlapFactor;
+        SymbolFactor = this->subHandles[1]->GetFloat("SymbolFactor", 1.25);
+        funcs["SymbolFactor"] = &TechDrawParamsP::updateSymbolFactor;
+        AltDecimals = this->subHandles[2]->GetInt("AltDecimals", 2);
+        funcs["AltDecimals"] = &TechDrawParamsP::updateAltDecimals;
+        ArrowStyle = this->subHandles[2]->GetInt("ArrowStyle", 0);
+        funcs["ArrowStyle"] = &TechDrawParamsP::updateArrowStyle;
+        AutoCorrectRefs = this->subHandles[2]->GetBool("AutoCorrectRefs", true);
+        funcs["AutoCorrectRefs"] = &TechDrawParamsP::updateAutoCorrectRefs;
+        BalloonKink = this->subHandles[2]->GetFloat("BalloonKink", 5.0);
+        funcs["BalloonKink"] = &TechDrawParamsP::updateBalloonKink;
+        GapASME = this->subHandles[2]->GetFloat("GapASME", 0.0);
+        funcs["GapASME"] = &TechDrawParamsP::updateGapASME;
+        GapISO = this->subHandles[2]->GetFloat("GapISO", 0.0);
+        funcs["GapISO"] = &TechDrawParamsP::updateGapISO;
+        ShowUnits = this->subHandles[2]->GetBool("ShowUnits", false);
+        funcs["ShowUnits"] = &TechDrawParamsP::updateShowUnits;
+        SymbolSize = this->subHandles[2]->GetFloat("SymbolSize", 64.0);
+        funcs["SymbolSize"] = &TechDrawParamsP::updateSymbolSize;
+        TileTextAdjust = this->subHandles[2]->GetFloat("TileTextAdjust", 0.75);
+        funcs["TileTextAdjust"] = &TechDrawParamsP::updateTileTextAdjust;
+        TolSizeAdjust = this->subHandles[2]->GetFloat("TolSizeAdjust", 0.5);
+        funcs["TolSizeAdjust"] = &TechDrawParamsP::updateTolSizeAdjust;
+        UseGlobalDecimals = this->subHandles[2]->GetBool("UseGlobalDecimals", true);
+        funcs["UseGlobalDecimals"] = &TechDrawParamsP::updateUseGlobalDecimals;
+        formatSpec = this->subHandles[2]->GetASCII("formatSpec", "%.2w");
+        funcs["formatSpec"] = &TechDrawParamsP::updateformatSpec;
+        HardHid = this->subHandles[3]->GetBool("HardHid", false);
+        funcs["HardHid"] = &TechDrawParamsP::updateHardHid;
+        IsoHid = this->subHandles[3]->GetBool("IsoHid", false);
+        funcs["IsoHid"] = &TechDrawParamsP::updateIsoHid;
+        IsoViz = this->subHandles[3]->GetBool("IsoViz", false);
+        funcs["IsoViz"] = &TechDrawParamsP::updateIsoViz;
+        SeamHid = this->subHandles[3]->GetBool("SeamHid", false);
+        funcs["SeamHid"] = &TechDrawParamsP::updateSeamHid;
+        SeamViz = this->subHandles[3]->GetBool("SeamViz", false);
+        funcs["SeamViz"] = &TechDrawParamsP::updateSeamViz;
+        SmoothHid = this->subHandles[3]->GetBool("SmoothHid", false);
+        funcs["SmoothHid"] = &TechDrawParamsP::updateSmoothHid;
+        SmoothViz = this->subHandles[3]->GetBool("SmoothViz", true);
+        funcs["SmoothViz"] = &TechDrawParamsP::updateSmoothViz;
+        GeomWeight = this->subHandles[4]->GetFloat("GeomWeight", 0.1);
+        funcs["GeomWeight"] = &TechDrawParamsP::updateGeomWeight;
+        MaxSeg = this->subHandles[4]->GetInt("MaxSeg", 10000);
+        funcs["MaxSeg"] = &TechDrawParamsP::updateMaxSeg;
+        NamePattern = this->subHandles[4]->GetASCII("NamePattern", "Diamond");
+        funcs["NamePattern"] = &TechDrawParamsP::updateNamePattern;
+        ClearFace = this->subHandles[5]->GetBool("ClearFace", false);
+        funcs["ClearFace"] = &TechDrawParamsP::updateClearFace;
+        LightOnDark = this->subHandles[5]->GetBool("LightOnDark", false);
+        funcs["LightOnDark"] = &TechDrawParamsP::updateLightOnDark;
+        Monochrome = this->subHandles[5]->GetBool("Monochrome", false);
+        funcs["Monochrome"] = &TechDrawParamsP::updateMonochrome;
+        LabelFont = this->subHandles[6]->GetASCII("LabelFont", "osifont");
+        funcs["LabelFont"] = &TechDrawParamsP::updateLabelFont;
+        LabelSize = this->subHandles[6]->GetFloat("LabelSize", 5.0);
+        funcs["LabelSize"] = &TechDrawParamsP::updateLabelSize;
+        AutoHorizontal = this->subHandles[7]->GetBool("AutoHorizontal", true);
+        funcs["AutoHorizontal"] = &TechDrawParamsP::updateAutoHorizontal;
+        Resolution = this->subHandles[8]->GetFloat("Resolution", 10.0);
+        funcs["Resolution"] = &TechDrawParamsP::updateResolution;
+        TrackerWeight = this->subHandles[9]->GetFloat("TrackerWeight", 4.0);
+        funcs["TrackerWeight"] = &TechDrawParamsP::updateTrackerWeight;
+        allowCrazyEdge = this->subHandles[10]->GetBool("allowCrazyEdge", false);
+        funcs["allowCrazyEdge"] = &TechDrawParamsP::updateallowCrazyEdge;
+        debugDetail = this->subHandles[10]->GetBool("debugDetail", false);
+        funcs["debugDetail"] = &TechDrawParamsP::updatedebugDetail;
+        debugSection = this->subHandles[10]->GetBool("debugSection", false);
+        funcs["debugSection"] = &TechDrawParamsP::updatedebugSection;
     }
 
     // Auto generated code (Tools/params_utils.py:284)
@@ -311,6 +469,190 @@ public:
     // Auto generated code (Tools/params_utils.py:314)
     static void updateshowGrid(TechDrawParamsP *self) {
         self->showGrid = self->subHandles[0]->GetBool("showGrid", false);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateBalloonArrow(TechDrawParamsP *self) {
+        self->BalloonArrow = self->subHandles[1]->GetInt("BalloonArrow", 0);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateBalloonShape(TechDrawParamsP *self) {
+        self->BalloonShape = self->subHandles[1]->GetInt("BalloonShape", 0);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateCenterMarkScale(TechDrawParamsP *self) {
+        self->CenterMarkScale = self->subHandles[1]->GetFloat("CenterMarkScale", 0.5);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateCosmoCLExtend(TechDrawParamsP *self) {
+        self->CosmoCLExtend = self->subHandles[1]->GetFloat("CosmoCLExtend", 3.0);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateCutSurfaceDisplay(TechDrawParamsP *self) {
+        self->CutSurfaceDisplay = self->subHandles[1]->GetInt("CutSurfaceDisplay", 2);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateMattingStyle(TechDrawParamsP *self) {
+        self->MattingStyle = self->subHandles[1]->GetInt("MattingStyle", 0);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateMaxSVGTile(TechDrawParamsP *self) {
+        self->MaxSVGTile = self->subHandles[1]->GetInt("MaxSVGTile", 10000);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updatePrintCenterMarks(TechDrawParamsP *self) {
+        self->PrintCenterMarks = self->subHandles[1]->GetBool("PrintCenterMarks", false);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updatePyramidOrtho(TechDrawParamsP *self) {
+        self->PyramidOrtho = self->subHandles[1]->GetBool("PyramidOrtho", true);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateSectionLineMarks(TechDrawParamsP *self) {
+        self->SectionLineMarks = self->subHandles[1]->GetBool("SectionLineMarks", true);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateShowCenterMarks(TechDrawParamsP *self) {
+        self->ShowCenterMarks = self->subHandles[1]->GetBool("ShowCenterMarks", false);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateSvgOverlapFactor(TechDrawParamsP *self) {
+        self->SvgOverlapFactor = self->subHandles[1]->GetFloat("SvgOverlapFactor", 1.25);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateSymbolFactor(TechDrawParamsP *self) {
+        self->SymbolFactor = self->subHandles[1]->GetFloat("SymbolFactor", 1.25);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateAltDecimals(TechDrawParamsP *self) {
+        self->AltDecimals = self->subHandles[2]->GetInt("AltDecimals", 2);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateArrowStyle(TechDrawParamsP *self) {
+        self->ArrowStyle = self->subHandles[2]->GetInt("ArrowStyle", 0);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateAutoCorrectRefs(TechDrawParamsP *self) {
+        self->AutoCorrectRefs = self->subHandles[2]->GetBool("AutoCorrectRefs", true);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateBalloonKink(TechDrawParamsP *self) {
+        self->BalloonKink = self->subHandles[2]->GetFloat("BalloonKink", 5.0);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateGapASME(TechDrawParamsP *self) {
+        self->GapASME = self->subHandles[2]->GetFloat("GapASME", 0.0);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateGapISO(TechDrawParamsP *self) {
+        self->GapISO = self->subHandles[2]->GetFloat("GapISO", 0.0);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateShowUnits(TechDrawParamsP *self) {
+        self->ShowUnits = self->subHandles[2]->GetBool("ShowUnits", false);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateSymbolSize(TechDrawParamsP *self) {
+        self->SymbolSize = self->subHandles[2]->GetFloat("SymbolSize", 64.0);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateTileTextAdjust(TechDrawParamsP *self) {
+        self->TileTextAdjust = self->subHandles[2]->GetFloat("TileTextAdjust", 0.75);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateTolSizeAdjust(TechDrawParamsP *self) {
+        self->TolSizeAdjust = self->subHandles[2]->GetFloat("TolSizeAdjust", 0.5);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateUseGlobalDecimals(TechDrawParamsP *self) {
+        self->UseGlobalDecimals = self->subHandles[2]->GetBool("UseGlobalDecimals", true);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateformatSpec(TechDrawParamsP *self) {
+        self->formatSpec = self->subHandles[2]->GetASCII("formatSpec", "%.2w");
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateHardHid(TechDrawParamsP *self) {
+        self->HardHid = self->subHandles[3]->GetBool("HardHid", false);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateIsoHid(TechDrawParamsP *self) {
+        self->IsoHid = self->subHandles[3]->GetBool("IsoHid", false);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateIsoViz(TechDrawParamsP *self) {
+        self->IsoViz = self->subHandles[3]->GetBool("IsoViz", false);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateSeamHid(TechDrawParamsP *self) {
+        self->SeamHid = self->subHandles[3]->GetBool("SeamHid", false);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateSeamViz(TechDrawParamsP *self) {
+        self->SeamViz = self->subHandles[3]->GetBool("SeamViz", false);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateSmoothHid(TechDrawParamsP *self) {
+        self->SmoothHid = self->subHandles[3]->GetBool("SmoothHid", false);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateSmoothViz(TechDrawParamsP *self) {
+        self->SmoothViz = self->subHandles[3]->GetBool("SmoothViz", true);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateGeomWeight(TechDrawParamsP *self) {
+        self->GeomWeight = self->subHandles[4]->GetFloat("GeomWeight", 0.1);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateMaxSeg(TechDrawParamsP *self) {
+        self->MaxSeg = self->subHandles[4]->GetInt("MaxSeg", 10000);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateNamePattern(TechDrawParamsP *self) {
+        self->NamePattern = self->subHandles[4]->GetASCII("NamePattern", "Diamond");
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateClearFace(TechDrawParamsP *self) {
+        self->ClearFace = self->subHandles[5]->GetBool("ClearFace", false);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateLightOnDark(TechDrawParamsP *self) {
+        self->LightOnDark = self->subHandles[5]->GetBool("LightOnDark", false);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateMonochrome(TechDrawParamsP *self) {
+        self->Monochrome = self->subHandles[5]->GetBool("Monochrome", false);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateLabelFont(TechDrawParamsP *self) {
+        self->LabelFont = self->subHandles[6]->GetASCII("LabelFont", "osifont");
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateLabelSize(TechDrawParamsP *self) {
+        self->LabelSize = self->subHandles[6]->GetFloat("LabelSize", 5.0);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateAutoHorizontal(TechDrawParamsP *self) {
+        self->AutoHorizontal = self->subHandles[7]->GetBool("AutoHorizontal", true);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateResolution(TechDrawParamsP *self) {
+        self->Resolution = self->subHandles[8]->GetFloat("Resolution", 10.0);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateTrackerWeight(TechDrawParamsP *self) {
+        self->TrackerWeight = self->subHandles[9]->GetFloat("TrackerWeight", 4.0);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateallowCrazyEdge(TechDrawParamsP *self) {
+        self->allowCrazyEdge = self->subHandles[10]->GetBool("allowCrazyEdge", false);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updatedebugDetail(TechDrawParamsP *self) {
+        self->debugDetail = self->subHandles[10]->GetBool("debugDetail", false);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updatedebugSection(TechDrawParamsP *self) {
+        self->debugSection = self->subHandles[10]->GetBool("debugSection", false);
     }
 };
 
@@ -476,6 +818,201 @@ static const App::ParamRegistry::Registrar _TechDrawParamsRegistrar({
         .setTitle("Show Grid")
         .setDoc("New drawing pages show a grid. Applies to pages created\n"
 "afterwards; each page has its own Show Grid property."),
+    App::ParamInfo("TechDraw", "TechDrawParams", "User parameter:BaseApp/Preferences/Mod/TechDraw/Decorations", "BalloonArrow", "BalloonArrow", App::ParamInfo::Int, 0)
+        .setTitle("Balloon Arrow")
+        .setDoc("Arrowhead at the end of a new balloon's leader line, as an index\n"
+"into the list of arrow styles. Applies to balloons created\n"
+"afterwards."),
+    App::ParamInfo("TechDraw", "TechDrawParams", "User parameter:BaseApp/Preferences/Mod/TechDraw/Decorations", "BalloonShape", "BalloonShape", App::ParamInfo::Int, 0)
+        .setTitle("Balloon Shape")
+        .setDoc("Shape of a new balloon: 0 circular, 1 none, 2 triangle, 3\n"
+"inspection, 4 hexagon, 5 square, 6 rectangle, 7 line. Applies to\n"
+"balloons created afterwards."),
+    App::ParamInfo("TechDraw", "TechDrawParams", "User parameter:BaseApp/Preferences/Mod/TechDraw/Decorations", "CenterMarkScale", "CenterMarkScale", App::ParamInfo::Float, 0.5)
+        .setTitle("Center Mark Scale")
+        .setDoc("Size of the centre marks of arcs and circles in a new view, as a\n"
+"factor. Applies to views created afterwards."),
+    App::ParamInfo("TechDraw", "TechDrawParams", "User parameter:BaseApp/Preferences/Mod/TechDraw/Decorations", "CosmoCLExtend", "CosmoCLExtend", App::ParamInfo::Float, 3.0)
+        .setTitle("Cosmo CLExtend")
+        .setDoc("Distance in mm by which a new cosmetic centre line extends beyond\n"
+"the geometry it is drawn on."),
+    App::ParamInfo("TechDraw", "TechDrawParams", "User parameter:BaseApp/Preferences/Mod/TechDraw/Decorations", "CutSurfaceDisplay", "CutSurfaceDisplay", App::ParamInfo::Int, 2)
+        .setTitle("Cut Surface Display")
+        .setDoc("How a new section shows its cut surface: 0 hidden, 1 solid colour,\n"
+"2 SVG hatch, 3 PAT hatch. Applies to sections created afterwards."),
+    App::ParamInfo("TechDraw", "TechDrawParams", "User parameter:BaseApp/Preferences/Mod/TechDraw/Decorations", "MattingStyle", "MattingStyle", App::ParamInfo::Int, 0)
+        .setTitle("Matting Style")
+        .setDoc("Outline of detail views and of their highlight in the source view:\n"
+"0 circle, 1 square. Takes effect when detail views are recomputed."),
+    App::ParamInfo("TechDraw", "TechDrawParams", "User parameter:BaseApp/Preferences/Mod/TechDraw/Decorations", "MaxSVGTile", "MaxSVGTile", App::ParamInfo::Int, 10000)
+        .setTitle("Max SVGTile")
+        .setDoc("Largest number of SVG tiles used to hatch one face. 1 to 1000000.\n"
+"A limit that keeps a very fine hatch from freezing the program."),
+    App::ParamInfo("TechDraw", "TechDrawParams", "User parameter:BaseApp/Preferences/Mod/TechDraw/Decorations", "PrintCenterMarks", "PrintCenterMarks", App::ParamInfo::Bool, false)
+        .setTitle("Print Center Marks")
+        .setDoc("Include centre marks when a page is printed or exported. Takes\n"
+"effect at the next print or redraw."),
+    App::ParamInfo("TechDraw", "TechDrawParams", "User parameter:BaseApp/Preferences/Mod/TechDraw/Decorations", "PyramidOrtho", "PyramidOrtho", App::ParamInfo::Bool, true)
+        .setTitle("Pyramid Ortho")
+        .setDoc("Keep a filled-triangle balloon end symbol upright instead of\n"
+"turning it with the leader line. Takes effect when balloons are\n"
+"redrawn."),
+    App::ParamInfo("TechDraw", "TechDrawParams", "User parameter:BaseApp/Preferences/Mod/TechDraw/Decorations", "SectionLineMarks", "SectionLineMarks", App::ParamInfo::Bool, true)
+        .setTitle("Section Line Marks")
+        .setDoc("New views show marks where the section line of a complex section\n"
+"changes direction. Applies to views created afterwards."),
+    App::ParamInfo("TechDraw", "TechDrawParams", "User parameter:BaseApp/Preferences/Mod/TechDraw/Decorations", "ShowCenterMarks", "ShowCenterMarks", App::ParamInfo::Bool, false)
+        .setTitle("Show Center Marks")
+        .setDoc("New views show centre marks on arcs and circles. Applies to views\n"
+"created afterwards."),
+    App::ParamInfo("TechDraw", "TechDrawParams", "User parameter:BaseApp/Preferences/Mod/TechDraw/Decorations", "SvgOverlapFactor", "SvgOverlapFactor", App::ParamInfo::Float, 1.25)
+        .setTitle("Svg Overlap Factor")
+        .setDoc("How far the tiled SVG hatch reaches beyond the face it fills, as a\n"
+"factor of the face size. Raise it if a hatch leaves gaps at the\n"
+"edge of a face."),
+    App::ParamInfo("TechDraw", "TechDrawParams", "User parameter:BaseApp/Preferences/Mod/TechDraw/Decorations", "SymbolFactor", "SymbolFactor", App::ParamInfo::Float, 1.25)
+        .setTitle("Symbol Factor")
+        .setDoc("Size factor for welding symbols. Takes effect when welding symbols\n"
+"are redrawn."),
+    App::ParamInfo("TechDraw", "TechDrawParams", "User parameter:BaseApp/Preferences/Mod/TechDraw/Dimensions", "AltDecimals", "AltDecimals", App::ParamInfo::Int, 2)
+        .setTitle("Alt Decimals")
+        .setDoc("Number of decimals in dimension values when Use Global Decimals is\n"
+"off. Takes effect when dimensions are recomputed."),
+    App::ParamInfo("TechDraw", "TechDrawParams", "User parameter:BaseApp/Preferences/Mod/TechDraw/Dimensions", "ArrowStyle", "ArrowStyle", App::ParamInfo::Int, 0)
+        .setTitle("Arrow Style")
+        .setDoc("Arrowhead style for dimensions, as an index into the list of arrow\n"
+"styles. Takes effect when dimensions are redrawn."),
+    App::ParamInfo("TechDraw", "TechDrawParams", "User parameter:BaseApp/Preferences/Mod/TechDraw/Dimensions", "AutoCorrectRefs", "AutoCorrectRefs", App::ParamInfo::Bool, true)
+        .setTitle("Auto Correct Refs")
+        .setDoc("When the geometry a dimension refers to has changed, try to find\n"
+"the matching geometry again. Read each time a dimension is\n"
+"recomputed."),
+    App::ParamInfo("TechDraw", "TechDrawParams", "User parameter:BaseApp/Preferences/Mod/TechDraw/Dimensions", "BalloonKink", "BalloonKink", App::ParamInfo::Float, 5.0)
+        .setTitle("Balloon Kink")
+        .setDoc("Length in mm of the short segment between a new balloon and the\n"
+"bend of its leader line. Applies to balloons created afterwards."),
+    App::ParamInfo("TechDraw", "TechDrawParams", "User parameter:BaseApp/Preferences/Mod/TechDraw/Dimensions", "GapASME", "GapASME", App::ParamInfo::Float, 0.0)
+        .setTitle("Gap ASME")
+        .setDoc("Gap between the measured point and the start of the extension line\n"
+"for ASME dimensions, as a factor. Applies to dimensions created\n"
+"afterwards."),
+    App::ParamInfo("TechDraw", "TechDrawParams", "User parameter:BaseApp/Preferences/Mod/TechDraw/Dimensions", "GapISO", "GapISO", App::ParamInfo::Float, 0.0)
+        .setTitle("Gap ISO")
+        .setDoc("Gap between the measured point and the start of the extension line\n"
+"for ISO dimensions, as a factor. Applies to dimensions created\n"
+"afterwards."),
+    App::ParamInfo("TechDraw", "TechDrawParams", "User parameter:BaseApp/Preferences/Mod/TechDraw/Dimensions", "ShowUnits", "ShowUnits", App::ParamInfo::Bool, false)
+        .setTitle("Show Units")
+        .setDoc("Append the unit to dimension values. Takes effect when dimensions\n"
+"are recomputed."),
+    App::ParamInfo("TechDraw", "TechDrawParams", "User parameter:BaseApp/Preferences/Mod/TechDraw/Dimensions", "SymbolSize", "SymbolSize", App::ParamInfo::Float, 64.0)
+        .setTitle("Symbol Size")
+        .setDoc("Nominal size of the welding symbol pictures; the supplied symbols\n"
+"are drawn at 64. Change only for a symbol set drawn at another\n"
+"size."),
+    App::ParamInfo("TechDraw", "TechDrawParams", "User parameter:BaseApp/Preferences/Mod/TechDraw/Dimensions", "TileTextAdjust", "TileTextAdjust", App::ParamInfo::Float, 0.75)
+        .setTitle("Tile Text Adjust")
+        .setDoc("Text size of a new welding symbol relative to the dimension font\n"
+"size. Applies to welding symbols created afterwards."),
+    App::ParamInfo("TechDraw", "TechDrawParams", "User parameter:BaseApp/Preferences/Mod/TechDraw/Dimensions", "TolSizeAdjust", "TolSizeAdjust", App::ParamInfo::Float, 0.5)
+        .setTitle("Tol Size Adjust")
+        .setDoc("Size of tolerance text relative to the dimension text. Takes\n"
+"effect when dimensions are redrawn."),
+    App::ParamInfo("TechDraw", "TechDrawParams", "User parameter:BaseApp/Preferences/Mod/TechDraw/Dimensions", "UseGlobalDecimals", "UseGlobalDecimals", App::ParamInfo::Bool, true)
+        .setTitle("Use Global Decimals")
+        .setDoc("Show dimension values with the number of decimals set for the\n"
+"whole program. Off uses the alternate decimals instead."),
+    App::ParamInfo("TechDraw", "TechDrawParams", "User parameter:BaseApp/Preferences/Mod/TechDraw/Dimensions", "formatSpec", "formatSpec", App::ParamInfo::String, "%.2w")
+        .setTitle("Format Spec")
+        .setDoc("Format of dimension values when global decimals are not used, in\n"
+"printf style, for example %.2f; with w in place of f trailing\n"
+"zeros are dropped."),
+    App::ParamInfo("TechDraw", "TechDrawParams", "User parameter:BaseApp/Preferences/Mod/TechDraw/HLR", "HardHid", "HardHid", App::ParamInfo::Bool, false)
+        .setTitle("Hard Hid")
+        .setDoc("New views show hidden hard edges. Applies to views created\n"
+"afterwards; each view has its own property."),
+    App::ParamInfo("TechDraw", "TechDrawParams", "User parameter:BaseApp/Preferences/Mod/TechDraw/HLR", "IsoHid", "IsoHid", App::ParamInfo::Bool, false)
+        .setTitle("Iso Hid")
+        .setDoc("New views show hidden iso-parameter lines. Applies to views\n"
+"created afterwards."),
+    App::ParamInfo("TechDraw", "TechDrawParams", "User parameter:BaseApp/Preferences/Mod/TechDraw/HLR", "IsoViz", "IsoViz", App::ParamInfo::Bool, false)
+        .setTitle("Iso Viz")
+        .setDoc("New views show visible iso-parameter lines. Applies to views\n"
+"created afterwards."),
+    App::ParamInfo("TechDraw", "TechDrawParams", "User parameter:BaseApp/Preferences/Mod/TechDraw/HLR", "SeamHid", "SeamHid", App::ParamInfo::Bool, false)
+        .setTitle("Seam Hid")
+        .setDoc("New views show hidden seam lines. Applies to views created\n"
+"afterwards."),
+    App::ParamInfo("TechDraw", "TechDrawParams", "User parameter:BaseApp/Preferences/Mod/TechDraw/HLR", "SeamViz", "SeamViz", App::ParamInfo::Bool, false)
+        .setTitle("Seam Viz")
+        .setDoc("New views show visible seam lines. Applies to views created\n"
+"afterwards."),
+    App::ParamInfo("TechDraw", "TechDrawParams", "User parameter:BaseApp/Preferences/Mod/TechDraw/HLR", "SmoothHid", "SmoothHid", App::ParamInfo::Bool, false)
+        .setTitle("Smooth Hid")
+        .setDoc("New views show hidden smooth edges, where faces meet tangentially.\n"
+"Applies to views created afterwards."),
+    App::ParamInfo("TechDraw", "TechDrawParams", "User parameter:BaseApp/Preferences/Mod/TechDraw/HLR", "SmoothViz", "SmoothViz", App::ParamInfo::Bool, true)
+        .setTitle("Smooth Viz")
+        .setDoc("New views show visible smooth edges, where faces meet\n"
+"tangentially. Applies to views created afterwards."),
+    App::ParamInfo("TechDraw", "TechDrawParams", "User parameter:BaseApp/Preferences/Mod/TechDraw/PAT", "GeomWeight", "GeomWeight", App::ParamInfo::Float, 0.1)
+        .setTitle("Geom Weight")
+        .setDoc("Line width of the PAT hatch on the cut surface of a new section.\n"
+"Applies to sections created afterwards."),
+    App::ParamInfo("TechDraw", "TechDrawParams", "User parameter:BaseApp/Preferences/Mod/TechDraw/PAT", "MaxSeg", "MaxSeg", App::ParamInfo::Int, 10000)
+        .setTitle("Max Seg")
+        .setDoc("Largest number of line segments used to draw the PAT hatch of one\n"
+"face. 1 to 1000000. A limit that keeps a very fine hatch from\n"
+"freezing the program."),
+    App::ParamInfo("TechDraw", "TechDrawParams", "User parameter:BaseApp/Preferences/Mod/TechDraw/PAT", "NamePattern", "NamePattern", App::ParamInfo::String, "Diamond")
+        .setTitle("Name Pattern")
+        .setDoc("Name of the pattern, within the PAT file, used for new geometric\n"
+"hatches. Applies to hatches created afterwards."),
+    App::ParamInfo("TechDraw", "TechDrawParams", "User parameter:BaseApp/Preferences/Mod/TechDraw/Colors", "ClearFace", "ClearFace", App::ParamInfo::Bool, false)
+        .setTitle("Clear Face")
+        .setDoc("Faces of new views are transparent instead of filled with the face\n"
+"colour. Applies to views created afterwards."),
+    App::ParamInfo("TechDraw", "TechDrawParams", "User parameter:BaseApp/Preferences/Mod/TechDraw/Colors", "LightOnDark", "LightOnDark", App::ParamInfo::Bool, false)
+        .setTitle("Light On Dark")
+        .setDoc("Draw pages in light colours for a dark page background. Printing\n"
+"and export always use the normal colours. Takes effect when a page\n"
+"is redrawn."),
+    App::ParamInfo("TechDraw", "TechDrawParams", "User parameter:BaseApp/Preferences/Mod/TechDraw/Colors", "Monochrome", "Monochrome", App::ParamInfo::Bool, false)
+        .setTitle("Monochrome")
+        .setDoc("With Light on dark, draw everything in the single light text\n"
+"colour instead of lightened colours. Takes effect when a page is\n"
+"redrawn."),
+    App::ParamInfo("TechDraw", "TechDrawParams", "User parameter:BaseApp/Preferences/Mod/TechDraw/Labels", "LabelFont", "LabelFont", App::ParamInfo::String, "osifont")
+        .setTitle("Label font")
+        .setDoc("Font of view labels, and the font new dimensions, balloons and\n"
+"annotations start with."),
+    App::ParamInfo("TechDraw", "TechDrawParams", "User parameter:BaseApp/Preferences/Mod/TechDraw/Labels", "LabelSize", "LabelSize", App::ParamInfo::Float, 5.0)
+        .setTitle("Label size")
+        .setDoc("Text size of view labels in mm, and the size new annotations start\n"
+"with."),
+    App::ParamInfo("TechDraw", "TechDrawParams", "User parameter:BaseApp/Preferences/Mod/TechDraw/LeaderLine", "AutoHorizontal", "AutoHorizontal", App::ParamInfo::Bool, true)
+        .setTitle("Leader line auto horizontal")
+        .setDoc("New leader lines end in a horizontal segment."),
+    App::ParamInfo("TechDraw", "TechDrawParams", "User parameter:BaseApp/Preferences/Mod/TechDraw/Rez", "Resolution", "Resolution", App::ParamInfo::Float, 10.0)
+        .setTitle("Scene resolution")
+        .setDoc("Scene units per millimetre of a drawing page. Read once when the\n"
+"TechDraw user interface is loaded."),
+    App::ParamInfo("TechDraw", "TechDrawParams", "User parameter:BaseApp/Preferences/Mod/TechDraw/Tracker", "TrackerWeight", "TrackerWeight", App::ParamInfo::Float, 4.0)
+        .setTitle("Tracker line width")
+        .setDoc("Line width of the rubber band lines drawn while a tool tracks the\n"
+"mouse on a page."),
+    App::ParamInfo("TechDraw", "TechDrawParams", "User parameter:BaseApp/Preferences/Mod/TechDraw/debug", "allowCrazyEdge", "allowCrazyEdge", App::ParamInfo::Bool, false)
+        .setTitle("Allow crazy edges")
+        .setDoc("Keep edges of unreasonable length that projection sometimes\n"
+"produces instead of dropping them. For developers."),
+    App::ParamInfo("TechDraw", "TechDrawParams", "User parameter:BaseApp/Preferences/Mod/TechDraw/debug", "debugDetail", "debugDetail", App::ParamInfo::Bool, false)
+        .setTitle("Debug detail views")
+        .setDoc("Write the intermediate shapes of a detail view to files while it\n"
+"is recomputed. For developers."),
+    App::ParamInfo("TechDraw", "TechDrawParams", "User parameter:BaseApp/Preferences/Mod/TechDraw/debug", "debugSection", "debugSection", App::ParamInfo::Bool, false)
+        .setTitle("Debug section views")
+        .setDoc("Write the intermediate shapes of a section view to files while it\n"
+"is recomputed. For developers."),
 });
 
 // Auto generated code (Tools/params_utils.py:368)
@@ -1508,5 +2045,1350 @@ void TechDrawParams::setshowGrid(const bool &v) {
 // Auto generated code (Tools/params_utils.py:431)
 void TechDrawParams::removeshowGrid() {
     instance()->subHandles[0]->RemoveBool("showGrid");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *TechDrawParams::docBalloonArrow() {
+    return QT_TRANSLATE_NOOP("TechDrawParams",
+"Arrowhead at the end of a new balloon's leader line, as an index\n"
+"into the list of arrow styles. Applies to balloons created\n"
+"afterwards.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const long & TechDrawParams::getBalloonArrow() {
+    return instance()->BalloonArrow;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const long & TechDrawParams::defaultBalloonArrow() {
+    const static long def = 0;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void TechDrawParams::setBalloonArrow(const long &v) {
+    instance()->subHandles[1]->SetInt("BalloonArrow",v);
+    instance()->BalloonArrow = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void TechDrawParams::removeBalloonArrow() {
+    instance()->subHandles[1]->RemoveInt("BalloonArrow");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *TechDrawParams::docBalloonShape() {
+    return QT_TRANSLATE_NOOP("TechDrawParams",
+"Shape of a new balloon: 0 circular, 1 none, 2 triangle, 3\n"
+"inspection, 4 hexagon, 5 square, 6 rectangle, 7 line. Applies to\n"
+"balloons created afterwards.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const long & TechDrawParams::getBalloonShape() {
+    return instance()->BalloonShape;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const long & TechDrawParams::defaultBalloonShape() {
+    const static long def = 0;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void TechDrawParams::setBalloonShape(const long &v) {
+    instance()->subHandles[1]->SetInt("BalloonShape",v);
+    instance()->BalloonShape = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void TechDrawParams::removeBalloonShape() {
+    instance()->subHandles[1]->RemoveInt("BalloonShape");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *TechDrawParams::docCenterMarkScale() {
+    return QT_TRANSLATE_NOOP("TechDrawParams",
+"Size of the centre marks of arcs and circles in a new view, as a\n"
+"factor. Applies to views created afterwards.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const double & TechDrawParams::getCenterMarkScale() {
+    return instance()->CenterMarkScale;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const double & TechDrawParams::defaultCenterMarkScale() {
+    const static double def = 0.5;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void TechDrawParams::setCenterMarkScale(const double &v) {
+    instance()->subHandles[1]->SetFloat("CenterMarkScale",v);
+    instance()->CenterMarkScale = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void TechDrawParams::removeCenterMarkScale() {
+    instance()->subHandles[1]->RemoveFloat("CenterMarkScale");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *TechDrawParams::docCosmoCLExtend() {
+    return QT_TRANSLATE_NOOP("TechDrawParams",
+"Distance in mm by which a new cosmetic centre line extends beyond\n"
+"the geometry it is drawn on.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const double & TechDrawParams::getCosmoCLExtend() {
+    return instance()->CosmoCLExtend;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const double & TechDrawParams::defaultCosmoCLExtend() {
+    const static double def = 3.0;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void TechDrawParams::setCosmoCLExtend(const double &v) {
+    instance()->subHandles[1]->SetFloat("CosmoCLExtend",v);
+    instance()->CosmoCLExtend = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void TechDrawParams::removeCosmoCLExtend() {
+    instance()->subHandles[1]->RemoveFloat("CosmoCLExtend");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *TechDrawParams::docCutSurfaceDisplay() {
+    return QT_TRANSLATE_NOOP("TechDrawParams",
+"How a new section shows its cut surface: 0 hidden, 1 solid colour,\n"
+"2 SVG hatch, 3 PAT hatch. Applies to sections created afterwards.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const long & TechDrawParams::getCutSurfaceDisplay() {
+    return instance()->CutSurfaceDisplay;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const long & TechDrawParams::defaultCutSurfaceDisplay() {
+    const static long def = 2;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void TechDrawParams::setCutSurfaceDisplay(const long &v) {
+    instance()->subHandles[1]->SetInt("CutSurfaceDisplay",v);
+    instance()->CutSurfaceDisplay = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void TechDrawParams::removeCutSurfaceDisplay() {
+    instance()->subHandles[1]->RemoveInt("CutSurfaceDisplay");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *TechDrawParams::docMattingStyle() {
+    return QT_TRANSLATE_NOOP("TechDrawParams",
+"Outline of detail views and of their highlight in the source view:\n"
+"0 circle, 1 square. Takes effect when detail views are recomputed.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const long & TechDrawParams::getMattingStyle() {
+    return instance()->MattingStyle;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const long & TechDrawParams::defaultMattingStyle() {
+    const static long def = 0;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void TechDrawParams::setMattingStyle(const long &v) {
+    instance()->subHandles[1]->SetInt("MattingStyle",v);
+    instance()->MattingStyle = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void TechDrawParams::removeMattingStyle() {
+    instance()->subHandles[1]->RemoveInt("MattingStyle");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *TechDrawParams::docMaxSVGTile() {
+    return QT_TRANSLATE_NOOP("TechDrawParams",
+"Largest number of SVG tiles used to hatch one face. 1 to 1000000.\n"
+"A limit that keeps a very fine hatch from freezing the program.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const long & TechDrawParams::getMaxSVGTile() {
+    return instance()->MaxSVGTile;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const long & TechDrawParams::defaultMaxSVGTile() {
+    const static long def = 10000;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void TechDrawParams::setMaxSVGTile(const long &v) {
+    instance()->subHandles[1]->SetInt("MaxSVGTile",v);
+    instance()->MaxSVGTile = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void TechDrawParams::removeMaxSVGTile() {
+    instance()->subHandles[1]->RemoveInt("MaxSVGTile");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *TechDrawParams::docPrintCenterMarks() {
+    return QT_TRANSLATE_NOOP("TechDrawParams",
+"Include centre marks when a page is printed or exported. Takes\n"
+"effect at the next print or redraw.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const bool & TechDrawParams::getPrintCenterMarks() {
+    return instance()->PrintCenterMarks;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const bool & TechDrawParams::defaultPrintCenterMarks() {
+    const static bool def = false;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void TechDrawParams::setPrintCenterMarks(const bool &v) {
+    instance()->subHandles[1]->SetBool("PrintCenterMarks",v);
+    instance()->PrintCenterMarks = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void TechDrawParams::removePrintCenterMarks() {
+    instance()->subHandles[1]->RemoveBool("PrintCenterMarks");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *TechDrawParams::docPyramidOrtho() {
+    return QT_TRANSLATE_NOOP("TechDrawParams",
+"Keep a filled-triangle balloon end symbol upright instead of\n"
+"turning it with the leader line. Takes effect when balloons are\n"
+"redrawn.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const bool & TechDrawParams::getPyramidOrtho() {
+    return instance()->PyramidOrtho;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const bool & TechDrawParams::defaultPyramidOrtho() {
+    const static bool def = true;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void TechDrawParams::setPyramidOrtho(const bool &v) {
+    instance()->subHandles[1]->SetBool("PyramidOrtho",v);
+    instance()->PyramidOrtho = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void TechDrawParams::removePyramidOrtho() {
+    instance()->subHandles[1]->RemoveBool("PyramidOrtho");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *TechDrawParams::docSectionLineMarks() {
+    return QT_TRANSLATE_NOOP("TechDrawParams",
+"New views show marks where the section line of a complex section\n"
+"changes direction. Applies to views created afterwards.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const bool & TechDrawParams::getSectionLineMarks() {
+    return instance()->SectionLineMarks;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const bool & TechDrawParams::defaultSectionLineMarks() {
+    const static bool def = true;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void TechDrawParams::setSectionLineMarks(const bool &v) {
+    instance()->subHandles[1]->SetBool("SectionLineMarks",v);
+    instance()->SectionLineMarks = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void TechDrawParams::removeSectionLineMarks() {
+    instance()->subHandles[1]->RemoveBool("SectionLineMarks");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *TechDrawParams::docShowCenterMarks() {
+    return QT_TRANSLATE_NOOP("TechDrawParams",
+"New views show centre marks on arcs and circles. Applies to views\n"
+"created afterwards.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const bool & TechDrawParams::getShowCenterMarks() {
+    return instance()->ShowCenterMarks;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const bool & TechDrawParams::defaultShowCenterMarks() {
+    const static bool def = false;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void TechDrawParams::setShowCenterMarks(const bool &v) {
+    instance()->subHandles[1]->SetBool("ShowCenterMarks",v);
+    instance()->ShowCenterMarks = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void TechDrawParams::removeShowCenterMarks() {
+    instance()->subHandles[1]->RemoveBool("ShowCenterMarks");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *TechDrawParams::docSvgOverlapFactor() {
+    return QT_TRANSLATE_NOOP("TechDrawParams",
+"How far the tiled SVG hatch reaches beyond the face it fills, as a\n"
+"factor of the face size. Raise it if a hatch leaves gaps at the\n"
+"edge of a face.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const double & TechDrawParams::getSvgOverlapFactor() {
+    return instance()->SvgOverlapFactor;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const double & TechDrawParams::defaultSvgOverlapFactor() {
+    const static double def = 1.25;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void TechDrawParams::setSvgOverlapFactor(const double &v) {
+    instance()->subHandles[1]->SetFloat("SvgOverlapFactor",v);
+    instance()->SvgOverlapFactor = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void TechDrawParams::removeSvgOverlapFactor() {
+    instance()->subHandles[1]->RemoveFloat("SvgOverlapFactor");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *TechDrawParams::docSymbolFactor() {
+    return QT_TRANSLATE_NOOP("TechDrawParams",
+"Size factor for welding symbols. Takes effect when welding symbols\n"
+"are redrawn.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const double & TechDrawParams::getSymbolFactor() {
+    return instance()->SymbolFactor;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const double & TechDrawParams::defaultSymbolFactor() {
+    const static double def = 1.25;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void TechDrawParams::setSymbolFactor(const double &v) {
+    instance()->subHandles[1]->SetFloat("SymbolFactor",v);
+    instance()->SymbolFactor = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void TechDrawParams::removeSymbolFactor() {
+    instance()->subHandles[1]->RemoveFloat("SymbolFactor");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *TechDrawParams::docAltDecimals() {
+    return QT_TRANSLATE_NOOP("TechDrawParams",
+"Number of decimals in dimension values when Use Global Decimals is\n"
+"off. Takes effect when dimensions are recomputed.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const long & TechDrawParams::getAltDecimals() {
+    return instance()->AltDecimals;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const long & TechDrawParams::defaultAltDecimals() {
+    const static long def = 2;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void TechDrawParams::setAltDecimals(const long &v) {
+    instance()->subHandles[2]->SetInt("AltDecimals",v);
+    instance()->AltDecimals = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void TechDrawParams::removeAltDecimals() {
+    instance()->subHandles[2]->RemoveInt("AltDecimals");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *TechDrawParams::docArrowStyle() {
+    return QT_TRANSLATE_NOOP("TechDrawParams",
+"Arrowhead style for dimensions, as an index into the list of arrow\n"
+"styles. Takes effect when dimensions are redrawn.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const long & TechDrawParams::getArrowStyle() {
+    return instance()->ArrowStyle;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const long & TechDrawParams::defaultArrowStyle() {
+    const static long def = 0;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void TechDrawParams::setArrowStyle(const long &v) {
+    instance()->subHandles[2]->SetInt("ArrowStyle",v);
+    instance()->ArrowStyle = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void TechDrawParams::removeArrowStyle() {
+    instance()->subHandles[2]->RemoveInt("ArrowStyle");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *TechDrawParams::docAutoCorrectRefs() {
+    return QT_TRANSLATE_NOOP("TechDrawParams",
+"When the geometry a dimension refers to has changed, try to find\n"
+"the matching geometry again. Read each time a dimension is\n"
+"recomputed.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const bool & TechDrawParams::getAutoCorrectRefs() {
+    return instance()->AutoCorrectRefs;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const bool & TechDrawParams::defaultAutoCorrectRefs() {
+    const static bool def = true;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void TechDrawParams::setAutoCorrectRefs(const bool &v) {
+    instance()->subHandles[2]->SetBool("AutoCorrectRefs",v);
+    instance()->AutoCorrectRefs = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void TechDrawParams::removeAutoCorrectRefs() {
+    instance()->subHandles[2]->RemoveBool("AutoCorrectRefs");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *TechDrawParams::docBalloonKink() {
+    return QT_TRANSLATE_NOOP("TechDrawParams",
+"Length in mm of the short segment between a new balloon and the\n"
+"bend of its leader line. Applies to balloons created afterwards.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const double & TechDrawParams::getBalloonKink() {
+    return instance()->BalloonKink;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const double & TechDrawParams::defaultBalloonKink() {
+    const static double def = 5.0;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void TechDrawParams::setBalloonKink(const double &v) {
+    instance()->subHandles[2]->SetFloat("BalloonKink",v);
+    instance()->BalloonKink = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void TechDrawParams::removeBalloonKink() {
+    instance()->subHandles[2]->RemoveFloat("BalloonKink");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *TechDrawParams::docGapASME() {
+    return QT_TRANSLATE_NOOP("TechDrawParams",
+"Gap between the measured point and the start of the extension line\n"
+"for ASME dimensions, as a factor. Applies to dimensions created\n"
+"afterwards.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const double & TechDrawParams::getGapASME() {
+    return instance()->GapASME;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const double & TechDrawParams::defaultGapASME() {
+    const static double def = 0.0;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void TechDrawParams::setGapASME(const double &v) {
+    instance()->subHandles[2]->SetFloat("GapASME",v);
+    instance()->GapASME = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void TechDrawParams::removeGapASME() {
+    instance()->subHandles[2]->RemoveFloat("GapASME");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *TechDrawParams::docGapISO() {
+    return QT_TRANSLATE_NOOP("TechDrawParams",
+"Gap between the measured point and the start of the extension line\n"
+"for ISO dimensions, as a factor. Applies to dimensions created\n"
+"afterwards.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const double & TechDrawParams::getGapISO() {
+    return instance()->GapISO;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const double & TechDrawParams::defaultGapISO() {
+    const static double def = 0.0;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void TechDrawParams::setGapISO(const double &v) {
+    instance()->subHandles[2]->SetFloat("GapISO",v);
+    instance()->GapISO = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void TechDrawParams::removeGapISO() {
+    instance()->subHandles[2]->RemoveFloat("GapISO");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *TechDrawParams::docShowUnits() {
+    return QT_TRANSLATE_NOOP("TechDrawParams",
+"Append the unit to dimension values. Takes effect when dimensions\n"
+"are recomputed.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const bool & TechDrawParams::getShowUnits() {
+    return instance()->ShowUnits;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const bool & TechDrawParams::defaultShowUnits() {
+    const static bool def = false;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void TechDrawParams::setShowUnits(const bool &v) {
+    instance()->subHandles[2]->SetBool("ShowUnits",v);
+    instance()->ShowUnits = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void TechDrawParams::removeShowUnits() {
+    instance()->subHandles[2]->RemoveBool("ShowUnits");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *TechDrawParams::docSymbolSize() {
+    return QT_TRANSLATE_NOOP("TechDrawParams",
+"Nominal size of the welding symbol pictures; the supplied symbols\n"
+"are drawn at 64. Change only for a symbol set drawn at another\n"
+"size.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const double & TechDrawParams::getSymbolSize() {
+    return instance()->SymbolSize;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const double & TechDrawParams::defaultSymbolSize() {
+    const static double def = 64.0;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void TechDrawParams::setSymbolSize(const double &v) {
+    instance()->subHandles[2]->SetFloat("SymbolSize",v);
+    instance()->SymbolSize = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void TechDrawParams::removeSymbolSize() {
+    instance()->subHandles[2]->RemoveFloat("SymbolSize");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *TechDrawParams::docTileTextAdjust() {
+    return QT_TRANSLATE_NOOP("TechDrawParams",
+"Text size of a new welding symbol relative to the dimension font\n"
+"size. Applies to welding symbols created afterwards.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const double & TechDrawParams::getTileTextAdjust() {
+    return instance()->TileTextAdjust;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const double & TechDrawParams::defaultTileTextAdjust() {
+    const static double def = 0.75;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void TechDrawParams::setTileTextAdjust(const double &v) {
+    instance()->subHandles[2]->SetFloat("TileTextAdjust",v);
+    instance()->TileTextAdjust = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void TechDrawParams::removeTileTextAdjust() {
+    instance()->subHandles[2]->RemoveFloat("TileTextAdjust");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *TechDrawParams::docTolSizeAdjust() {
+    return QT_TRANSLATE_NOOP("TechDrawParams",
+"Size of tolerance text relative to the dimension text. Takes\n"
+"effect when dimensions are redrawn.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const double & TechDrawParams::getTolSizeAdjust() {
+    return instance()->TolSizeAdjust;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const double & TechDrawParams::defaultTolSizeAdjust() {
+    const static double def = 0.5;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void TechDrawParams::setTolSizeAdjust(const double &v) {
+    instance()->subHandles[2]->SetFloat("TolSizeAdjust",v);
+    instance()->TolSizeAdjust = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void TechDrawParams::removeTolSizeAdjust() {
+    instance()->subHandles[2]->RemoveFloat("TolSizeAdjust");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *TechDrawParams::docUseGlobalDecimals() {
+    return QT_TRANSLATE_NOOP("TechDrawParams",
+"Show dimension values with the number of decimals set for the\n"
+"whole program. Off uses the alternate decimals instead.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const bool & TechDrawParams::getUseGlobalDecimals() {
+    return instance()->UseGlobalDecimals;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const bool & TechDrawParams::defaultUseGlobalDecimals() {
+    const static bool def = true;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void TechDrawParams::setUseGlobalDecimals(const bool &v) {
+    instance()->subHandles[2]->SetBool("UseGlobalDecimals",v);
+    instance()->UseGlobalDecimals = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void TechDrawParams::removeUseGlobalDecimals() {
+    instance()->subHandles[2]->RemoveBool("UseGlobalDecimals");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *TechDrawParams::docformatSpec() {
+    return QT_TRANSLATE_NOOP("TechDrawParams",
+"Format of dimension values when global decimals are not used, in\n"
+"printf style, for example %.2f; with w in place of f trailing\n"
+"zeros are dropped.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const std::string & TechDrawParams::getformatSpec() {
+    return instance()->formatSpec;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const std::string & TechDrawParams::defaultformatSpec() {
+    const static std::string def = "%.2w";
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void TechDrawParams::setformatSpec(const std::string &v) {
+    instance()->subHandles[2]->SetASCII("formatSpec",v);
+    instance()->formatSpec = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void TechDrawParams::removeformatSpec() {
+    instance()->subHandles[2]->RemoveASCII("formatSpec");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *TechDrawParams::docHardHid() {
+    return QT_TRANSLATE_NOOP("TechDrawParams",
+"New views show hidden hard edges. Applies to views created\n"
+"afterwards; each view has its own property.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const bool & TechDrawParams::getHardHid() {
+    return instance()->HardHid;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const bool & TechDrawParams::defaultHardHid() {
+    const static bool def = false;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void TechDrawParams::setHardHid(const bool &v) {
+    instance()->subHandles[3]->SetBool("HardHid",v);
+    instance()->HardHid = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void TechDrawParams::removeHardHid() {
+    instance()->subHandles[3]->RemoveBool("HardHid");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *TechDrawParams::docIsoHid() {
+    return QT_TRANSLATE_NOOP("TechDrawParams",
+"New views show hidden iso-parameter lines. Applies to views\n"
+"created afterwards.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const bool & TechDrawParams::getIsoHid() {
+    return instance()->IsoHid;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const bool & TechDrawParams::defaultIsoHid() {
+    const static bool def = false;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void TechDrawParams::setIsoHid(const bool &v) {
+    instance()->subHandles[3]->SetBool("IsoHid",v);
+    instance()->IsoHid = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void TechDrawParams::removeIsoHid() {
+    instance()->subHandles[3]->RemoveBool("IsoHid");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *TechDrawParams::docIsoViz() {
+    return QT_TRANSLATE_NOOP("TechDrawParams",
+"New views show visible iso-parameter lines. Applies to views\n"
+"created afterwards.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const bool & TechDrawParams::getIsoViz() {
+    return instance()->IsoViz;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const bool & TechDrawParams::defaultIsoViz() {
+    const static bool def = false;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void TechDrawParams::setIsoViz(const bool &v) {
+    instance()->subHandles[3]->SetBool("IsoViz",v);
+    instance()->IsoViz = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void TechDrawParams::removeIsoViz() {
+    instance()->subHandles[3]->RemoveBool("IsoViz");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *TechDrawParams::docSeamHid() {
+    return QT_TRANSLATE_NOOP("TechDrawParams",
+"New views show hidden seam lines. Applies to views created\n"
+"afterwards.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const bool & TechDrawParams::getSeamHid() {
+    return instance()->SeamHid;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const bool & TechDrawParams::defaultSeamHid() {
+    const static bool def = false;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void TechDrawParams::setSeamHid(const bool &v) {
+    instance()->subHandles[3]->SetBool("SeamHid",v);
+    instance()->SeamHid = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void TechDrawParams::removeSeamHid() {
+    instance()->subHandles[3]->RemoveBool("SeamHid");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *TechDrawParams::docSeamViz() {
+    return QT_TRANSLATE_NOOP("TechDrawParams",
+"New views show visible seam lines. Applies to views created\n"
+"afterwards.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const bool & TechDrawParams::getSeamViz() {
+    return instance()->SeamViz;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const bool & TechDrawParams::defaultSeamViz() {
+    const static bool def = false;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void TechDrawParams::setSeamViz(const bool &v) {
+    instance()->subHandles[3]->SetBool("SeamViz",v);
+    instance()->SeamViz = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void TechDrawParams::removeSeamViz() {
+    instance()->subHandles[3]->RemoveBool("SeamViz");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *TechDrawParams::docSmoothHid() {
+    return QT_TRANSLATE_NOOP("TechDrawParams",
+"New views show hidden smooth edges, where faces meet tangentially.\n"
+"Applies to views created afterwards.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const bool & TechDrawParams::getSmoothHid() {
+    return instance()->SmoothHid;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const bool & TechDrawParams::defaultSmoothHid() {
+    const static bool def = false;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void TechDrawParams::setSmoothHid(const bool &v) {
+    instance()->subHandles[3]->SetBool("SmoothHid",v);
+    instance()->SmoothHid = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void TechDrawParams::removeSmoothHid() {
+    instance()->subHandles[3]->RemoveBool("SmoothHid");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *TechDrawParams::docSmoothViz() {
+    return QT_TRANSLATE_NOOP("TechDrawParams",
+"New views show visible smooth edges, where faces meet\n"
+"tangentially. Applies to views created afterwards.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const bool & TechDrawParams::getSmoothViz() {
+    return instance()->SmoothViz;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const bool & TechDrawParams::defaultSmoothViz() {
+    const static bool def = true;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void TechDrawParams::setSmoothViz(const bool &v) {
+    instance()->subHandles[3]->SetBool("SmoothViz",v);
+    instance()->SmoothViz = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void TechDrawParams::removeSmoothViz() {
+    instance()->subHandles[3]->RemoveBool("SmoothViz");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *TechDrawParams::docGeomWeight() {
+    return QT_TRANSLATE_NOOP("TechDrawParams",
+"Line width of the PAT hatch on the cut surface of a new section.\n"
+"Applies to sections created afterwards.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const double & TechDrawParams::getGeomWeight() {
+    return instance()->GeomWeight;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const double & TechDrawParams::defaultGeomWeight() {
+    const static double def = 0.1;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void TechDrawParams::setGeomWeight(const double &v) {
+    instance()->subHandles[4]->SetFloat("GeomWeight",v);
+    instance()->GeomWeight = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void TechDrawParams::removeGeomWeight() {
+    instance()->subHandles[4]->RemoveFloat("GeomWeight");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *TechDrawParams::docMaxSeg() {
+    return QT_TRANSLATE_NOOP("TechDrawParams",
+"Largest number of line segments used to draw the PAT hatch of one\n"
+"face. 1 to 1000000. A limit that keeps a very fine hatch from\n"
+"freezing the program.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const long & TechDrawParams::getMaxSeg() {
+    return instance()->MaxSeg;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const long & TechDrawParams::defaultMaxSeg() {
+    const static long def = 10000;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void TechDrawParams::setMaxSeg(const long &v) {
+    instance()->subHandles[4]->SetInt("MaxSeg",v);
+    instance()->MaxSeg = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void TechDrawParams::removeMaxSeg() {
+    instance()->subHandles[4]->RemoveInt("MaxSeg");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *TechDrawParams::docNamePattern() {
+    return QT_TRANSLATE_NOOP("TechDrawParams",
+"Name of the pattern, within the PAT file, used for new geometric\n"
+"hatches. Applies to hatches created afterwards.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const std::string & TechDrawParams::getNamePattern() {
+    return instance()->NamePattern;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const std::string & TechDrawParams::defaultNamePattern() {
+    const static std::string def = "Diamond";
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void TechDrawParams::setNamePattern(const std::string &v) {
+    instance()->subHandles[4]->SetASCII("NamePattern",v);
+    instance()->NamePattern = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void TechDrawParams::removeNamePattern() {
+    instance()->subHandles[4]->RemoveASCII("NamePattern");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *TechDrawParams::docClearFace() {
+    return QT_TRANSLATE_NOOP("TechDrawParams",
+"Faces of new views are transparent instead of filled with the face\n"
+"colour. Applies to views created afterwards.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const bool & TechDrawParams::getClearFace() {
+    return instance()->ClearFace;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const bool & TechDrawParams::defaultClearFace() {
+    const static bool def = false;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void TechDrawParams::setClearFace(const bool &v) {
+    instance()->subHandles[5]->SetBool("ClearFace",v);
+    instance()->ClearFace = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void TechDrawParams::removeClearFace() {
+    instance()->subHandles[5]->RemoveBool("ClearFace");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *TechDrawParams::docLightOnDark() {
+    return QT_TRANSLATE_NOOP("TechDrawParams",
+"Draw pages in light colours for a dark page background. Printing\n"
+"and export always use the normal colours. Takes effect when a page\n"
+"is redrawn.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const bool & TechDrawParams::getLightOnDark() {
+    return instance()->LightOnDark;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const bool & TechDrawParams::defaultLightOnDark() {
+    const static bool def = false;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void TechDrawParams::setLightOnDark(const bool &v) {
+    instance()->subHandles[5]->SetBool("LightOnDark",v);
+    instance()->LightOnDark = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void TechDrawParams::removeLightOnDark() {
+    instance()->subHandles[5]->RemoveBool("LightOnDark");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *TechDrawParams::docMonochrome() {
+    return QT_TRANSLATE_NOOP("TechDrawParams",
+"With Light on dark, draw everything in the single light text\n"
+"colour instead of lightened colours. Takes effect when a page is\n"
+"redrawn.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const bool & TechDrawParams::getMonochrome() {
+    return instance()->Monochrome;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const bool & TechDrawParams::defaultMonochrome() {
+    const static bool def = false;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void TechDrawParams::setMonochrome(const bool &v) {
+    instance()->subHandles[5]->SetBool("Monochrome",v);
+    instance()->Monochrome = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void TechDrawParams::removeMonochrome() {
+    instance()->subHandles[5]->RemoveBool("Monochrome");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *TechDrawParams::docLabelFont() {
+    return QT_TRANSLATE_NOOP("TechDrawParams",
+"Font of view labels, and the font new dimensions, balloons and\n"
+"annotations start with.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const std::string & TechDrawParams::getLabelFont() {
+    return instance()->LabelFont;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const std::string & TechDrawParams::defaultLabelFont() {
+    const static std::string def = "osifont";
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void TechDrawParams::setLabelFont(const std::string &v) {
+    instance()->subHandles[6]->SetASCII("LabelFont",v);
+    instance()->LabelFont = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void TechDrawParams::removeLabelFont() {
+    instance()->subHandles[6]->RemoveASCII("LabelFont");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *TechDrawParams::docLabelSize() {
+    return QT_TRANSLATE_NOOP("TechDrawParams",
+"Text size of view labels in mm, and the size new annotations start\n"
+"with.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const double & TechDrawParams::getLabelSize() {
+    return instance()->LabelSize;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const double & TechDrawParams::defaultLabelSize() {
+    const static double def = 5.0;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void TechDrawParams::setLabelSize(const double &v) {
+    instance()->subHandles[6]->SetFloat("LabelSize",v);
+    instance()->LabelSize = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void TechDrawParams::removeLabelSize() {
+    instance()->subHandles[6]->RemoveFloat("LabelSize");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *TechDrawParams::docAutoHorizontal() {
+    return QT_TRANSLATE_NOOP("TechDrawParams",
+"New leader lines end in a horizontal segment.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const bool & TechDrawParams::getAutoHorizontal() {
+    return instance()->AutoHorizontal;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const bool & TechDrawParams::defaultAutoHorizontal() {
+    const static bool def = true;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void TechDrawParams::setAutoHorizontal(const bool &v) {
+    instance()->subHandles[7]->SetBool("AutoHorizontal",v);
+    instance()->AutoHorizontal = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void TechDrawParams::removeAutoHorizontal() {
+    instance()->subHandles[7]->RemoveBool("AutoHorizontal");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *TechDrawParams::docResolution() {
+    return QT_TRANSLATE_NOOP("TechDrawParams",
+"Scene units per millimetre of a drawing page. Read once when the\n"
+"TechDraw user interface is loaded.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const double & TechDrawParams::getResolution() {
+    return instance()->Resolution;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const double & TechDrawParams::defaultResolution() {
+    const static double def = 10.0;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void TechDrawParams::setResolution(const double &v) {
+    instance()->subHandles[8]->SetFloat("Resolution",v);
+    instance()->Resolution = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void TechDrawParams::removeResolution() {
+    instance()->subHandles[8]->RemoveFloat("Resolution");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *TechDrawParams::docTrackerWeight() {
+    return QT_TRANSLATE_NOOP("TechDrawParams",
+"Line width of the rubber band lines drawn while a tool tracks the\n"
+"mouse on a page.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const double & TechDrawParams::getTrackerWeight() {
+    return instance()->TrackerWeight;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const double & TechDrawParams::defaultTrackerWeight() {
+    const static double def = 4.0;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void TechDrawParams::setTrackerWeight(const double &v) {
+    instance()->subHandles[9]->SetFloat("TrackerWeight",v);
+    instance()->TrackerWeight = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void TechDrawParams::removeTrackerWeight() {
+    instance()->subHandles[9]->RemoveFloat("TrackerWeight");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *TechDrawParams::docallowCrazyEdge() {
+    return QT_TRANSLATE_NOOP("TechDrawParams",
+"Keep edges of unreasonable length that projection sometimes\n"
+"produces instead of dropping them. For developers.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const bool & TechDrawParams::getallowCrazyEdge() {
+    return instance()->allowCrazyEdge;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const bool & TechDrawParams::defaultallowCrazyEdge() {
+    const static bool def = false;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void TechDrawParams::setallowCrazyEdge(const bool &v) {
+    instance()->subHandles[10]->SetBool("allowCrazyEdge",v);
+    instance()->allowCrazyEdge = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void TechDrawParams::removeallowCrazyEdge() {
+    instance()->subHandles[10]->RemoveBool("allowCrazyEdge");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *TechDrawParams::docdebugDetail() {
+    return QT_TRANSLATE_NOOP("TechDrawParams",
+"Write the intermediate shapes of a detail view to files while it\n"
+"is recomputed. For developers.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const bool & TechDrawParams::getdebugDetail() {
+    return instance()->debugDetail;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const bool & TechDrawParams::defaultdebugDetail() {
+    const static bool def = false;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void TechDrawParams::setdebugDetail(const bool &v) {
+    instance()->subHandles[10]->SetBool("debugDetail",v);
+    instance()->debugDetail = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void TechDrawParams::removedebugDetail() {
+    instance()->subHandles[10]->RemoveBool("debugDetail");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *TechDrawParams::docdebugSection() {
+    return QT_TRANSLATE_NOOP("TechDrawParams",
+"Write the intermediate shapes of a section view to files while it\n"
+"is recomputed. For developers.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const bool & TechDrawParams::getdebugSection() {
+    return instance()->debugSection;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const bool & TechDrawParams::defaultdebugSection() {
+    const static bool def = false;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void TechDrawParams::setdebugSection(const bool &v) {
+    instance()->subHandles[10]->SetBool("debugSection",v);
+    instance()->debugSection = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void TechDrawParams::removedebugSection() {
+    instance()->subHandles[10]->RemoveBool("debugSection");
 }
 //[[[end]]]

@@ -127,20 +127,20 @@ DrawViewPart::DrawViewPart(void)
     //properties that control HLR algo
     ADD_PROPERTY_TYPE(CoarseView, (Preferences::getPreferenceGroup("General")->GetBool("CoarseView", false)),
         sgroup, App::Prop_None, "Coarse View on/off");
-    ADD_PROPERTY_TYPE(SmoothVisible, (Preferences::getPreferenceGroup("HLR")->GetBool("SmoothViz", true)),
+    ADD_PROPERTY_TYPE(SmoothVisible, (Preferences::getPreferenceGroup("HLR")->GetBool("SmoothViz", TechDraw::TechDrawParams::defaultSmoothViz())),
         sgroup, App::Prop_None, "Show Visible Smooth lines");
-    ADD_PROPERTY_TYPE(SeamVisible, (Preferences::getPreferenceGroup("HLR")->GetBool("SeamViz", false)),
+    ADD_PROPERTY_TYPE(SeamVisible, (Preferences::getPreferenceGroup("HLR")->GetBool("SeamViz", TechDraw::TechDrawParams::defaultSeamViz())),
         sgroup, App::Prop_None,
                       "Show Visible Seam lines");
-    ADD_PROPERTY_TYPE(IsoVisible, (Preferences::getPreferenceGroup("HLR")->GetBool("IsoViz", false)),
+    ADD_PROPERTY_TYPE(IsoVisible, (Preferences::getPreferenceGroup("HLR")->GetBool("IsoViz", TechDraw::TechDrawParams::defaultIsoViz())),
         sgroup, App::Prop_None, "Show Visible Iso u, v lines");
-    ADD_PROPERTY_TYPE(HardHidden, (Preferences::getPreferenceGroup("HLR")->GetBool("HardHid", false)),
+    ADD_PROPERTY_TYPE(HardHidden, (Preferences::getPreferenceGroup("HLR")->GetBool("HardHid", TechDraw::TechDrawParams::defaultHardHid())),
         sgroup, App::Prop_None, "Show Hidden Hard lines");
-    ADD_PROPERTY_TYPE(SmoothHidden, (Preferences::getPreferenceGroup("HLR")->GetBool("SmoothHid", false)),
+    ADD_PROPERTY_TYPE(SmoothHidden, (Preferences::getPreferenceGroup("HLR")->GetBool("SmoothHid", TechDraw::TechDrawParams::defaultSmoothHid())),
         sgroup, App::Prop_None, "Show Hidden Smooth lines");
-    ADD_PROPERTY_TYPE(SeamHidden, (Preferences::getPreferenceGroup("HLR")->GetBool("SeamHid", false)),
+    ADD_PROPERTY_TYPE(SeamHidden, (Preferences::getPreferenceGroup("HLR")->GetBool("SeamHid", TechDraw::TechDrawParams::defaultSeamHid())),
         sgroup, App::Prop_None, "Show Hidden Seam lines");
-    ADD_PROPERTY_TYPE(IsoHidden, (Preferences::getPreferenceGroup("HLR")->GetBool("IsoHid", false)),
+    ADD_PROPERTY_TYPE(IsoHidden, (Preferences::getPreferenceGroup("HLR")->GetBool("IsoHid", TechDraw::TechDrawParams::defaultIsoHid())),
         sgroup, App::Prop_None, "Show Hidden Iso u, v lines");
     ADD_PROPERTY_TYPE(IsoCount, (Preferences::getPreferenceGroup("HLR")->GetBool("IsoCount", 0)),
         sgroup, App::Prop_None, "Number of iso parameters lines");

@@ -537,6 +537,615 @@ public:
     static const char *docshowGrid();
     //@}
 
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter BalloonArrow
+    ///
+    /// Arrowhead at the end of a new balloon's leader line, as an index
+    /// into the list of arrow styles. Applies to balloons created
+    /// afterwards.
+    static const long & getBalloonArrow();
+    static const long & defaultBalloonArrow();
+    static void removeBalloonArrow();
+    static void setBalloonArrow(const long &v);
+    static const char *docBalloonArrow();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter BalloonShape
+    ///
+    /// Shape of a new balloon: 0 circular, 1 none, 2 triangle, 3
+    /// inspection, 4 hexagon, 5 square, 6 rectangle, 7 line. Applies to
+    /// balloons created afterwards.
+    static const long & getBalloonShape();
+    static const long & defaultBalloonShape();
+    static void removeBalloonShape();
+    static void setBalloonShape(const long &v);
+    static const char *docBalloonShape();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter CenterMarkScale
+    ///
+    /// Size of the centre marks of arcs and circles in a new view, as a
+    /// factor. Applies to views created afterwards.
+    static const double & getCenterMarkScale();
+    static const double & defaultCenterMarkScale();
+    static void removeCenterMarkScale();
+    static void setCenterMarkScale(const double &v);
+    static const char *docCenterMarkScale();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter CosmoCLExtend
+    ///
+    /// Distance in mm by which a new cosmetic centre line extends beyond
+    /// the geometry it is drawn on.
+    static const double & getCosmoCLExtend();
+    static const double & defaultCosmoCLExtend();
+    static void removeCosmoCLExtend();
+    static void setCosmoCLExtend(const double &v);
+    static const char *docCosmoCLExtend();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter CutSurfaceDisplay
+    ///
+    /// How a new section shows its cut surface: 0 hidden, 1 solid colour,
+    /// 2 SVG hatch, 3 PAT hatch. Applies to sections created afterwards.
+    static const long & getCutSurfaceDisplay();
+    static const long & defaultCutSurfaceDisplay();
+    static void removeCutSurfaceDisplay();
+    static void setCutSurfaceDisplay(const long &v);
+    static const char *docCutSurfaceDisplay();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter MattingStyle
+    ///
+    /// Outline of detail views and of their highlight in the source view:
+    /// 0 circle, 1 square. Takes effect when detail views are recomputed.
+    static const long & getMattingStyle();
+    static const long & defaultMattingStyle();
+    static void removeMattingStyle();
+    static void setMattingStyle(const long &v);
+    static const char *docMattingStyle();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter MaxSVGTile
+    ///
+    /// Largest number of SVG tiles used to hatch one face. 1 to 1000000.
+    /// A limit that keeps a very fine hatch from freezing the program.
+    static const long & getMaxSVGTile();
+    static const long & defaultMaxSVGTile();
+    static void removeMaxSVGTile();
+    static void setMaxSVGTile(const long &v);
+    static const char *docMaxSVGTile();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter PrintCenterMarks
+    ///
+    /// Include centre marks when a page is printed or exported. Takes
+    /// effect at the next print or redraw.
+    static const bool & getPrintCenterMarks();
+    static const bool & defaultPrintCenterMarks();
+    static void removePrintCenterMarks();
+    static void setPrintCenterMarks(const bool &v);
+    static const char *docPrintCenterMarks();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter PyramidOrtho
+    ///
+    /// Keep a filled-triangle balloon end symbol upright instead of
+    /// turning it with the leader line. Takes effect when balloons are
+    /// redrawn.
+    static const bool & getPyramidOrtho();
+    static const bool & defaultPyramidOrtho();
+    static void removePyramidOrtho();
+    static void setPyramidOrtho(const bool &v);
+    static const char *docPyramidOrtho();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter SectionLineMarks
+    ///
+    /// New views show marks where the section line of a complex section
+    /// changes direction. Applies to views created afterwards.
+    static const bool & getSectionLineMarks();
+    static const bool & defaultSectionLineMarks();
+    static void removeSectionLineMarks();
+    static void setSectionLineMarks(const bool &v);
+    static const char *docSectionLineMarks();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter ShowCenterMarks
+    ///
+    /// New views show centre marks on arcs and circles. Applies to views
+    /// created afterwards.
+    static const bool & getShowCenterMarks();
+    static const bool & defaultShowCenterMarks();
+    static void removeShowCenterMarks();
+    static void setShowCenterMarks(const bool &v);
+    static const char *docShowCenterMarks();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter SvgOverlapFactor
+    ///
+    /// How far the tiled SVG hatch reaches beyond the face it fills, as a
+    /// factor of the face size. Raise it if a hatch leaves gaps at the
+    /// edge of a face.
+    static const double & getSvgOverlapFactor();
+    static const double & defaultSvgOverlapFactor();
+    static void removeSvgOverlapFactor();
+    static void setSvgOverlapFactor(const double &v);
+    static const char *docSvgOverlapFactor();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter SymbolFactor
+    ///
+    /// Size factor for welding symbols. Takes effect when welding symbols
+    /// are redrawn.
+    static const double & getSymbolFactor();
+    static const double & defaultSymbolFactor();
+    static void removeSymbolFactor();
+    static void setSymbolFactor(const double &v);
+    static const char *docSymbolFactor();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter AltDecimals
+    ///
+    /// Number of decimals in dimension values when Use Global Decimals is
+    /// off. Takes effect when dimensions are recomputed.
+    static const long & getAltDecimals();
+    static const long & defaultAltDecimals();
+    static void removeAltDecimals();
+    static void setAltDecimals(const long &v);
+    static const char *docAltDecimals();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter ArrowStyle
+    ///
+    /// Arrowhead style for dimensions, as an index into the list of arrow
+    /// styles. Takes effect when dimensions are redrawn.
+    static const long & getArrowStyle();
+    static const long & defaultArrowStyle();
+    static void removeArrowStyle();
+    static void setArrowStyle(const long &v);
+    static const char *docArrowStyle();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter AutoCorrectRefs
+    ///
+    /// When the geometry a dimension refers to has changed, try to find
+    /// the matching geometry again. Read each time a dimension is
+    /// recomputed.
+    static const bool & getAutoCorrectRefs();
+    static const bool & defaultAutoCorrectRefs();
+    static void removeAutoCorrectRefs();
+    static void setAutoCorrectRefs(const bool &v);
+    static const char *docAutoCorrectRefs();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter BalloonKink
+    ///
+    /// Length in mm of the short segment between a new balloon and the
+    /// bend of its leader line. Applies to balloons created afterwards.
+    static const double & getBalloonKink();
+    static const double & defaultBalloonKink();
+    static void removeBalloonKink();
+    static void setBalloonKink(const double &v);
+    static const char *docBalloonKink();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter GapASME
+    ///
+    /// Gap between the measured point and the start of the extension line
+    /// for ASME dimensions, as a factor. Applies to dimensions created
+    /// afterwards.
+    static const double & getGapASME();
+    static const double & defaultGapASME();
+    static void removeGapASME();
+    static void setGapASME(const double &v);
+    static const char *docGapASME();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter GapISO
+    ///
+    /// Gap between the measured point and the start of the extension line
+    /// for ISO dimensions, as a factor. Applies to dimensions created
+    /// afterwards.
+    static const double & getGapISO();
+    static const double & defaultGapISO();
+    static void removeGapISO();
+    static void setGapISO(const double &v);
+    static const char *docGapISO();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter ShowUnits
+    ///
+    /// Append the unit to dimension values. Takes effect when dimensions
+    /// are recomputed.
+    static const bool & getShowUnits();
+    static const bool & defaultShowUnits();
+    static void removeShowUnits();
+    static void setShowUnits(const bool &v);
+    static const char *docShowUnits();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter SymbolSize
+    ///
+    /// Nominal size of the welding symbol pictures; the supplied symbols
+    /// are drawn at 64. Change only for a symbol set drawn at another
+    /// size.
+    static const double & getSymbolSize();
+    static const double & defaultSymbolSize();
+    static void removeSymbolSize();
+    static void setSymbolSize(const double &v);
+    static const char *docSymbolSize();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter TileTextAdjust
+    ///
+    /// Text size of a new welding symbol relative to the dimension font
+    /// size. Applies to welding symbols created afterwards.
+    static const double & getTileTextAdjust();
+    static const double & defaultTileTextAdjust();
+    static void removeTileTextAdjust();
+    static void setTileTextAdjust(const double &v);
+    static const char *docTileTextAdjust();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter TolSizeAdjust
+    ///
+    /// Size of tolerance text relative to the dimension text. Takes
+    /// effect when dimensions are redrawn.
+    static const double & getTolSizeAdjust();
+    static const double & defaultTolSizeAdjust();
+    static void removeTolSizeAdjust();
+    static void setTolSizeAdjust(const double &v);
+    static const char *docTolSizeAdjust();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter UseGlobalDecimals
+    ///
+    /// Show dimension values with the number of decimals set for the
+    /// whole program. Off uses the alternate decimals instead.
+    static const bool & getUseGlobalDecimals();
+    static const bool & defaultUseGlobalDecimals();
+    static void removeUseGlobalDecimals();
+    static void setUseGlobalDecimals(const bool &v);
+    static const char *docUseGlobalDecimals();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter formatSpec
+    ///
+    /// Format of dimension values when global decimals are not used, in
+    /// printf style, for example %.2f; with w in place of f trailing
+    /// zeros are dropped.
+    static const std::string & getformatSpec();
+    static const std::string & defaultformatSpec();
+    static void removeformatSpec();
+    static void setformatSpec(const std::string &v);
+    static const char *docformatSpec();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter HardHid
+    ///
+    /// New views show hidden hard edges. Applies to views created
+    /// afterwards; each view has its own property.
+    static const bool & getHardHid();
+    static const bool & defaultHardHid();
+    static void removeHardHid();
+    static void setHardHid(const bool &v);
+    static const char *docHardHid();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter IsoHid
+    ///
+    /// New views show hidden iso-parameter lines. Applies to views
+    /// created afterwards.
+    static const bool & getIsoHid();
+    static const bool & defaultIsoHid();
+    static void removeIsoHid();
+    static void setIsoHid(const bool &v);
+    static const char *docIsoHid();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter IsoViz
+    ///
+    /// New views show visible iso-parameter lines. Applies to views
+    /// created afterwards.
+    static const bool & getIsoViz();
+    static const bool & defaultIsoViz();
+    static void removeIsoViz();
+    static void setIsoViz(const bool &v);
+    static const char *docIsoViz();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter SeamHid
+    ///
+    /// New views show hidden seam lines. Applies to views created
+    /// afterwards.
+    static const bool & getSeamHid();
+    static const bool & defaultSeamHid();
+    static void removeSeamHid();
+    static void setSeamHid(const bool &v);
+    static const char *docSeamHid();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter SeamViz
+    ///
+    /// New views show visible seam lines. Applies to views created
+    /// afterwards.
+    static const bool & getSeamViz();
+    static const bool & defaultSeamViz();
+    static void removeSeamViz();
+    static void setSeamViz(const bool &v);
+    static const char *docSeamViz();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter SmoothHid
+    ///
+    /// New views show hidden smooth edges, where faces meet tangentially.
+    /// Applies to views created afterwards.
+    static const bool & getSmoothHid();
+    static const bool & defaultSmoothHid();
+    static void removeSmoothHid();
+    static void setSmoothHid(const bool &v);
+    static const char *docSmoothHid();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter SmoothViz
+    ///
+    /// New views show visible smooth edges, where faces meet
+    /// tangentially. Applies to views created afterwards.
+    static const bool & getSmoothViz();
+    static const bool & defaultSmoothViz();
+    static void removeSmoothViz();
+    static void setSmoothViz(const bool &v);
+    static const char *docSmoothViz();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter GeomWeight
+    ///
+    /// Line width of the PAT hatch on the cut surface of a new section.
+    /// Applies to sections created afterwards.
+    static const double & getGeomWeight();
+    static const double & defaultGeomWeight();
+    static void removeGeomWeight();
+    static void setGeomWeight(const double &v);
+    static const char *docGeomWeight();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter MaxSeg
+    ///
+    /// Largest number of line segments used to draw the PAT hatch of one
+    /// face. 1 to 1000000. A limit that keeps a very fine hatch from
+    /// freezing the program.
+    static const long & getMaxSeg();
+    static const long & defaultMaxSeg();
+    static void removeMaxSeg();
+    static void setMaxSeg(const long &v);
+    static const char *docMaxSeg();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter NamePattern
+    ///
+    /// Name of the pattern, within the PAT file, used for new geometric
+    /// hatches. Applies to hatches created afterwards.
+    static const std::string & getNamePattern();
+    static const std::string & defaultNamePattern();
+    static void removeNamePattern();
+    static void setNamePattern(const std::string &v);
+    static const char *docNamePattern();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter ClearFace
+    ///
+    /// Faces of new views are transparent instead of filled with the face
+    /// colour. Applies to views created afterwards.
+    static const bool & getClearFace();
+    static const bool & defaultClearFace();
+    static void removeClearFace();
+    static void setClearFace(const bool &v);
+    static const char *docClearFace();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter LightOnDark
+    ///
+    /// Draw pages in light colours for a dark page background. Printing
+    /// and export always use the normal colours. Takes effect when a page
+    /// is redrawn.
+    static const bool & getLightOnDark();
+    static const bool & defaultLightOnDark();
+    static void removeLightOnDark();
+    static void setLightOnDark(const bool &v);
+    static const char *docLightOnDark();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter Monochrome
+    ///
+    /// With Light on dark, draw everything in the single light text
+    /// colour instead of lightened colours. Takes effect when a page is
+    /// redrawn.
+    static const bool & getMonochrome();
+    static const bool & defaultMonochrome();
+    static void removeMonochrome();
+    static void setMonochrome(const bool &v);
+    static const char *docMonochrome();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter LabelFont
+    ///
+    /// Font of view labels, and the font new dimensions, balloons and
+    /// annotations start with.
+    static const std::string & getLabelFont();
+    static const std::string & defaultLabelFont();
+    static void removeLabelFont();
+    static void setLabelFont(const std::string &v);
+    static const char *docLabelFont();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter LabelSize
+    ///
+    /// Text size of view labels in mm, and the size new annotations start
+    /// with.
+    static const double & getLabelSize();
+    static const double & defaultLabelSize();
+    static void removeLabelSize();
+    static void setLabelSize(const double &v);
+    static const char *docLabelSize();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter AutoHorizontal
+    ///
+    /// New leader lines end in a horizontal segment.
+    static const bool & getAutoHorizontal();
+    static const bool & defaultAutoHorizontal();
+    static void removeAutoHorizontal();
+    static void setAutoHorizontal(const bool &v);
+    static const char *docAutoHorizontal();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter Resolution
+    ///
+    /// Scene units per millimetre of a drawing page. Read once when the
+    /// TechDraw user interface is loaded.
+    static const double & getResolution();
+    static const double & defaultResolution();
+    static void removeResolution();
+    static void setResolution(const double &v);
+    static const char *docResolution();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter TrackerWeight
+    ///
+    /// Line width of the rubber band lines drawn while a tool tracks the
+    /// mouse on a page.
+    static const double & getTrackerWeight();
+    static const double & defaultTrackerWeight();
+    static void removeTrackerWeight();
+    static void setTrackerWeight(const double &v);
+    static const char *docTrackerWeight();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter allowCrazyEdge
+    ///
+    /// Keep edges of unreasonable length that projection sometimes
+    /// produces instead of dropping them. For developers.
+    static const bool & getallowCrazyEdge();
+    static const bool & defaultallowCrazyEdge();
+    static void removeallowCrazyEdge();
+    static void setallowCrazyEdge(const bool &v);
+    static const char *docallowCrazyEdge();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter debugDetail
+    ///
+    /// Write the intermediate shapes of a detail view to files while it
+    /// is recomputed. For developers.
+    static const bool & getdebugDetail();
+    static const bool & defaultdebugDetail();
+    static void removedebugDetail();
+    static void setdebugDetail(const bool &v);
+    static const char *docdebugDetail();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter debugSection
+    ///
+    /// Write the intermediate shapes of a section view to files while it
+    /// is recomputed. For developers.
+    static const bool & getdebugSection();
+    static const bool & defaultdebugSection();
+    static void removedebugSection();
+    static void setdebugSection(const bool &v);
+    static const char *docdebugSection();
+    //@}
+
 // Auto generated code (Tools/params_utils.py:179)
 }; // class TechDrawParams
 } // namespace TechDraw

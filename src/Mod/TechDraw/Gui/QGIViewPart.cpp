@@ -1186,7 +1186,7 @@ bool QGIViewPart::prefFaceEdges()
 
 bool QGIViewPart::prefPrintCenters()
 {
-    bool printCenters = Preferences::getPreferenceGroup("Decorations")->GetBool("PrintCenterMarks", false);//true matches v0.18 behaviour
+    bool printCenters = Preferences::getPreferenceGroup("Decorations")->GetBool("PrintCenterMarks", TechDraw::TechDrawParams::defaultPrintCenterMarks());//true matches v0.18 behaviour
     return printCenters;
 }
 

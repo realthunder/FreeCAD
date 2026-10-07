@@ -22,6 +22,8 @@
 
 #include "PreCompiled.h"
 
+#include <Mod/TechDraw/App/TechDrawParams.h>
+
 #include <Base/Parameter.h>
 #include <Mod/TechDraw/App/Preferences.h>
 
@@ -115,6 +117,6 @@ QSize Rez::appSize(QSize s)
 
 double Rez::getParameter()
 {
-    return Preferences::getPreferenceGroup("Rez")->GetFloat("Resolution", 10.0);
+    return Preferences::getPreferenceGroup("Rez")->GetFloat("Resolution", TechDraw::TechDrawParams::defaultResolution());
 }
 

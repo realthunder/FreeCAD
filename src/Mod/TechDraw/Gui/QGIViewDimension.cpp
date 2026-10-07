@@ -22,6 +22,8 @@
 
 #include "PreCompiled.h"
 
+#include <Mod/TechDraw/App/TechDrawParams.h>
+
 #ifdef FC_OS_WIN32
 # define _USE_MATH_DEFINES //resolves Windows & M_PI issues
 #endif
@@ -399,12 +401,12 @@ int QGIDatumLabel::getPrecision()
     if (Preferences::useGlobalDecimals()) {
         return Base::UnitsApi::getDecimals();
     }
-    return Preferences::getPreferenceGroup("Dimensions")->GetInt("AltDecimals", 2);
+    return Preferences::getPreferenceGroup("Dimensions")->GetInt("AltDecimals", TechDraw::TechDrawParams::defaultAltDecimals());
 }
 
 double QGIDatumLabel::getTolAdjust()
 {
-    return Preferences::getPreferenceGroup("Dimensions")->GetFloat("TolSizeAdjust", 0.50);
+    return Preferences::getPreferenceGroup("Dimensions")->GetFloat("TolSizeAdjust", TechDraw::TechDrawParams::defaultTolSizeAdjust());
 }
 
 

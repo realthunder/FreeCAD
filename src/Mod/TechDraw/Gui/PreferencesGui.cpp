@@ -158,7 +158,7 @@ QColor PreferencesGui::leaderQColor()
 
 int PreferencesGui::dimArrowStyle()
 {
-    return Preferences::getPreferenceGroup("Dimensions")->GetInt("ArrowStyle", 0);
+    return Preferences::getPreferenceGroup("Dimensions")->GetInt("ArrowStyle", TechDraw::TechDrawParams::defaultArrowStyle());
 }
 
 double PreferencesGui::dimArrowSize()
@@ -182,7 +182,7 @@ Qt::PenStyle PreferencesGui::sectionLineStyle()
 
 bool PreferencesGui::sectionLineMarks()
 {
-    return Preferences::getPreferenceGroup("Decorations")->GetBool("SectionLineMarks", true);
+    return Preferences::getPreferenceGroup("Decorations")->GetBool("SectionLineMarks", TechDraw::TechDrawParams::defaultSectionLineMarks());
 }
 
 QString PreferencesGui::weldingDirectory()

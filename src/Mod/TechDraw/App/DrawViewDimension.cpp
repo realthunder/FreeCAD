@@ -22,6 +22,8 @@
  ***************************************************************************/
 
 #include "PreCompiled.h"
+
+#include "TechDrawParams.h"
 #ifndef _PreComp_
 # include <algorithm>
 # include <cstdlib>
@@ -2084,7 +2086,7 @@ bool DrawViewDimension::hasOverUnderTolerance() const
 
 bool DrawViewDimension::showUnits() const
 {
-    return Preferences::getPreferenceGroup("Dimensions")->GetBool("ShowUnits", false);
+    return Preferences::getPreferenceGroup("Dimensions")->GetBool("ShowUnits", TechDraw::TechDrawParams::defaultShowUnits());
 }
 
 bool DrawViewDimension::useDecimals() const { return Preferences::useGlobalDecimals(); }

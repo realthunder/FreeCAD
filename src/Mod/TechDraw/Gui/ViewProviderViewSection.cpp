@@ -24,6 +24,8 @@
 
 #include "PreCompiled.h"
 
+#include <Mod/TechDraw/App/TechDrawParams.h>
+
 #ifndef _PreComp_
 # ifdef FC_OS_WIN32
 #  include <windows.h>
@@ -68,7 +70,7 @@ ViewProviderViewSection::ViewProviderViewSection()
 
     ADD_PROPERTY_TYPE(CutSurfaceColor, (Preferences::getPreferenceGroup("Colors")->GetUnsigned("FaceColor", 0xFFFFFF)),
                       fgroup, App::Prop_None, "Set color of the cut surface");
-    ADD_PROPERTY_TYPE(CutSurfaceTransparency, (Preferences::getPreferenceGroup("Colors")->GetBool("ClearFace", false) ? 100 : 0),
+    ADD_PROPERTY_TYPE(CutSurfaceTransparency, (Preferences::getPreferenceGroup("Colors")->GetBool("ClearFace", TechDraw::TechDrawParams::defaultClearFace()) ? 100 : 0),
                       fgroup, App::Prop_None, "Set transparency of the cut surface");
     CutSurfaceTransparency.setConstraints(&intPercent);
 
@@ -165,7 +167,7 @@ void ViewProviderViewSection::getParameters()
 //    App::Color hatchColor = App::Color((uint32_t) hGrp->GetUnsigned("SectionHatchColor", 0x00000000));
 //    HatchColor.setValue(hatchColor);
 
-    double lineWeight = Preferences::getPreferenceGroup("PAT")->GetFloat("GeomWeight", 0.1);
+    double lineWeight = Preferences::getPreferenceGroup("PAT")->GetFloat("GeomWeight", TechDraw::TechDrawParams::defaultGeomWeight());
     WeightPattern.setValue(lineWeight);
 }
 
