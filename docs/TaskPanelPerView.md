@@ -24,6 +24,11 @@ overlays, the browser -- are not started. Sec 15 is the order that came
 after milestone 3 -- two modes for the panel in its view, and a state per
 view where sec 10 assumed one switch for all -- as a design, not built.
 
+Sec 15 is built through: the state per view (15.9), the panel beside its
+view (15.10), the panel over it as an overlaid dock (15.11), clear of the
+dock overlays (15.12) and kept for views that are no 3D views (15.13).
+What is left of it is in 15.14.
+
 It is step E of `docs/ThinClient.md` 8.12 ("Chrome -- process-global ... per
 client, a Control per view, which neither fork has") taken one notch: the
 panel gets an owner and a place, `Gui::Control()` stays one object.
@@ -2087,3 +2092,124 @@ the change.
 - Kept for views that are no 3D views (15.6, M5).
 - A view too small for a panel still keeps the title bar alone.
 - The new strings are untranslated.
+
+### 15.12 Clear of the dock overlays, built (2026-10-07, `08cc6a8252`)
+
+Sec 5.3, as far as it concerns a panel OVER its view; one beside its view
+is a cell like any other and needs none of it.
+
+- `OverlayManager::occupied(widget)` answers the parts of a widget that
+  overlaid docks stand over: each overlay tab widget that holds a dock, is
+  shown and is not hidden to its hint (`getState() <= Normal`), mapped into
+  the widget and cut to it. `OverlayManager::layoutChanged()` is emitted
+  after every pass of the docks' layout (the timer that runs `onTimer`),
+  whichever way the pass ends.
+- A host's room (`roomIn`, `TaskPanelHost.cpp`) is its place less the
+  place's own chrome, and now less those strips: each cuts the room on the
+  edge of the place it lies along. A strip from edge to edge lies along
+  the edge between them; one in a corner cuts the edge it reaches in from
+  the least. The host lays itself out again when the docks do.
+- The other direction needed nothing. The dock overlay's own handling of
+  the pointer asks what tab widget is under it, and a host is none; a
+  panel's mask keeps it from covering what it does not draw.
+
+Measured, `tests/gui/task-panel-clear-of-docks.py`
+(`GuiTaskPanelClearOfDocks_tests_run`): one view, the tree (260 wide), the
+combo view (150) and the Python console (208 high) laid over the window by
+`Std_DockOverlayAll`.
+
+| | before (`7a45fa84b4`) | after |
+|---|---|---|
+| checks | 7 of 16 | 16 of 16 |
+| the panel on the left | from x 4, under the tree, down behind the console | from x 260, where the tree ends, to above the console |
+| on the right | under the combo view | ends where the combo view begins |
+| on the bottom | the whole width, under all three | between the tree and the combo view, above the console |
+| the docks docked again | -- | at the left edge of its view |
+| what the dialog is told | nothing | nothing |
+
+Not done: a dock that slides out when the pointer nears its hint is
+"shown" only once it is out, so a panel does not make room for it
+beforehand; the reveal strip of a hidden dock (`DockOverlayHintSize`) is
+not kept free.
+
+### 15.13 Kept for a view that is no 3D view, built (2026-10-07, `0a95038b3d`)
+
+Sec 15.6: "4, for all types of view".
+
+**What the user sees.** A panel sent into a drawing page's view, put
+beside it or over it on a side of his choosing, is there again the next
+time the document is opened and a panel is opened in that page.
+
+**What is built.**
+
+- `Gui::Document::ViewTaskState` (place, mode, side as the texts the
+  properties hold, and the size) and `savedViewTaskState(view)`, by the
+  token the saved layouts name an object's view by, `O:<object>`
+  (`objectViewToken`).
+- `GuiDocument.xml`: `viewstates="K"` on the `Camera` element, and K
+  entries after the view areas:
+
+      <ViewTaskState view="O:Page" place="InView" mode="Side" side="Right" size="0"/>
+
+  The reader takes its counts from attributes of `Camera` and then reads
+  to the end of the document, so a reader from before this passes the
+  entries over, and a file from before it has none. Read from the code;
+  no older build was on hand to open such a file with.
+- `TaskPlacement` asks the document for a view that is no 3D view and has
+  no property of its own. NOTHING is written into the view for it: a
+  document reopened, with a panel opened in a page, is not modified by
+  that. A property is made when the user chooses, as for every view; and
+  one emptied -- the view following the preference again -- is made even
+  so, to stand in front of what was saved.
+- On save: what each open view holds (`TaskPlacement::ownState`), and what
+  was read for the views nobody opened this session, for as long as their
+  objects exist.
+
+**A view is known for its object's by its name.** The saved layouts
+already depend on it: an object's view carries the object's name as its
+widget's object name (`TechDrawGui::MDIViewPage::setDocumentObject`), and
+the object's view provider answers `getMDIView()` with it. **A
+spreadsheet's view carries no such name.** It is in no saved layout for
+that reason, and its panel's place is not kept for the same one. Giving it
+the name is a line; it would also put spreadsheet views into the saved
+layouts, so that a document reopens with them, and that is a change to
+what opening a document does, not made here. Within a session a
+spreadsheet view holds its place like any view: the test first ran on
+one, a panel over it and beside it.
+
+**Measured.** `tests/gui/task-panel-kept-any-view.py`
+(`GuiTaskPanelKeptAnyView_tests_run`): a drawing page, its panel sent into
+its view and put beside it on the right; saved, reopened; put over the
+view; saved, reopened.
+
+| | before (`7a45fa84b4`) | after |
+|---|---|---|
+| checks | 9 of 15, with a spreadsheet's view in the page's place | 15 of 15 |
+| the saved file | no entry | one, for `O:Sheet`, and `viewstates="1"` |
+| the view after the reopen | a new one, holding nothing | a new one, holding nothing |
+| its next panel, the preference saying "combo view" | in the Tasks tab | beside it on the right |
+| changed to "over the view", saved, reopened | in the Tasks tab | over the view |
+
+Scored on the tree before with a spreadsheet's view, which is what the
+script first used; with the page it was not scored there. The six that
+failed are the six that ask for anything to be kept.
+
+### 15.14 Where sec 15 stands
+
+Built, each with its test and its suites: 15.9 to 15.13. Rows in
+`docs/Testing.md`.
+
+Left, in the order I would take them:
+
+1. **A spreadsheet's view** (15.13): one line, and a decision about
+   reopening documents with it.
+2. **The style sheet followed live** (15.11): a theme changed while a
+   panel stands over its view.
+3. **A dock that slides out**, and the hint strip (15.12).
+4. **The join gesture into a cell with a panel**, the handle's menu, a
+   document saved while a pair squeezes its neighbour (15.10): none tested.
+5. **The unified canvas** with a panel over a view and with a panel cell:
+   not run in any of this.
+6. Strings untranslated. `pre-commit` and `clang-format` are not on the box
+   this was written on; the format hook ran on none of it.
+7. M5 of sec 9, the browser: a served client's panel is where it was.
