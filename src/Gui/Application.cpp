@@ -68,6 +68,7 @@
 #include <App/Document.h>
 #include <App/DocumentObjectPy.h>
 #include <App/DocumentParams.h>
+#include <App/UnitsParams.h>
 #include <App/ExpressionSecurityRuntime.h>
 #include <Base/Console.h>
 #include <Base/Interpreter.h>
@@ -510,6 +511,34 @@ Application::Application(bool GUIenabled)
 {
     //App::GetApplication().Attach(this);
     if (GUIenabled) {
+        // The unit settings are followed when they change, wherever that
+        // was done -- the preferences, the status bar, the omni search or
+        // a script. The unit system in force is what activating the active
+        // document would make it: the document's own when it is a saved
+        // one and documents are not told to follow the preference, the
+        // preference otherwise. The number of decimals and the inch
+        // fraction are put in force by App; what is on screen is redrawn.
+        static fastsignals::scoped_connection unitsChanged
+            = App::UnitsParams::signalParamChanged().connect([](const char* name) {
+                  if (!name) {
+                      return;
+                  }
+                  if (strcmp(name, "UserSchema") == 0 || strcmp(name, "IgnoreProjectSchema") == 0) {
+                      const App::Document* doc = App::GetApplication().getActiveDocument();
+                      const bool ownSystem = doc && doc->FileName.getValue()[0] != '\0'
+                          && !App::UnitsParams::getIgnoreProjectSchema();
+                      const long schema = ownSystem ? doc->UnitSystem.getValue()
+                                                    : App::UnitsParams::getUserSchema();
+                      Base::UnitsApi::setSchema(static_cast<Base::UnitSystem>(schema));
+                  }
+                  else if (strcmp(name, "Decimals") != 0 && strcmp(name, "FracInch") != 0) {
+                      return;
+                  }
+                  if (Application::Instance) {
+                      Application::Instance->onUpdate();
+                  }
+              });
+
         // the sandbox guest's FreeCADGui reaches the host through the
         // gui.* bridge ops (docs/Sandbox.md 7.9)
         SandboxGui::registerOps();
@@ -1198,16 +1227,14 @@ void Application::slotActiveDocument(const App::Document& Doc)
         }
 
         // Update the application to show the unit change
-        ParameterGrp::handle hGrp = App::GetApplication().GetParameterGroupByPath
-            ("User parameter:BaseApp/Preferences/Units");
-        if( Doc.FileName.getValue()[0] != '\0' &&  ! hGrp->GetBool("IgnoreProjectSchema")) {
+        if( Doc.FileName.getValue()[0] != '\0' &&  ! App::UnitsParams::getIgnoreProjectSchema()) {
             int userSchema = Doc.UnitSystem.getValue();
             Base::UnitsApi::setSchema(static_cast<Base::UnitSystem>(userSchema));
             getMainWindow()->setUserSchema(userSchema);
             Application::Instance->onUpdate();
         }else{// set up Unit system default
-			Base::UnitsApi::setSchema((Base::UnitSystem)hGrp->GetInt("UserSchema",0));
-			Base::UnitsApi::setDecimals(hGrp->GetInt("Decimals", Base::UnitsApi::getDecimals()));
+            Base::UnitsApi::setSchema(static_cast<Base::UnitSystem>(App::UnitsParams::getUserSchema()));
+            Base::UnitsApi::setDecimals(static_cast<int>(App::UnitsParams::getDecimals()));
         }
         signalActiveDocument(*doc->second);
         updateActions();

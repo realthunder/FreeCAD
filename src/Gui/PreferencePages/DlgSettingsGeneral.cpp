@@ -35,6 +35,7 @@
 #endif
 
 #include <App/Document.h>
+#include <App/UnitsParams.h>
 #include <Base/Parameter.h>
 #include <Base/UnitsApi.h>
 
@@ -165,11 +166,9 @@ void DlgSettingsGeneral::saveSettings()
     int FracInch;  // minimum fractional inch to display
     int viewSystemIndex; // currently selected View System (unit system)
 
-    ParameterGrp::handle hGrpu = App::GetApplication().GetParameterGroupByPath
-    ("User parameter:BaseApp/Preferences/Units");
-    hGrpu->SetInt("UserSchema", ui->comboBox_UnitSystem->currentIndex());
-    hGrpu->SetInt("Decimals", ui->spinBoxDecimals->value());
-    hGrpu->SetBool("IgnoreProjectSchema", ui->checkBox_projectUnitSystemIgnore->isChecked());
+    App::UnitsParams::setUserSchema(ui->comboBox_UnitSystem->currentIndex());
+    App::UnitsParams::setDecimals(ui->spinBoxDecimals->value());
+    App::UnitsParams::setIgnoreProjectSchema(ui->checkBox_projectUnitSystemIgnore->isChecked());
 
     // Set actual value
     Base::UnitsApi::setDecimals(ui->spinBoxDecimals->value());
@@ -181,7 +180,7 @@ void DlgSettingsGeneral::saveSettings()
     // The inverse conversion is done when loaded. That way only one thing (the
     // numerical fractional inch value) needs to be stored.
     FracInch = std::pow(2, ui->comboBox_FracInch->currentIndex() + 1);
-    hGrpu->SetInt("FracInch", FracInch);
+    App::UnitsParams::setFracInch(FracInch);
 
     // Set the actual format value
     Base::QuantityFormat::setDefaultDenominator(FracInch);
@@ -245,14 +244,12 @@ void DlgSettingsGeneral::loadSettings()
     int FracInch;
     int cbIndex;
 
-    ParameterGrp::handle hGrpu = App::GetApplication().GetParameterGroupByPath
-    ("User parameter:BaseApp/Preferences/Units");
-    ui->comboBox_UnitSystem->setCurrentIndex(hGrpu->GetInt("UserSchema", 0));
-    ui->spinBoxDecimals->setValue(hGrpu->GetInt("Decimals", Base::UnitsApi::getDecimals()));
-    ui->checkBox_projectUnitSystemIgnore->setChecked(hGrpu->GetBool("IgnoreProjectSchema", false));
+    ui->comboBox_UnitSystem->setCurrentIndex(App::UnitsParams::getUserSchema());
+    ui->spinBoxDecimals->setValue(App::UnitsParams::getDecimals());
+    ui->checkBox_projectUnitSystemIgnore->setChecked(App::UnitsParams::getIgnoreProjectSchema());
 
     // Get the current user setting for the minimum fractional inch
-    FracInch = hGrpu->GetInt("FracInch", Base::QuantityFormat::getDefaultDenominator());
+    FracInch = App::UnitsParams::getFracInch();
 
     // Convert fractional inch to the corresponding combobox index using this
     // handy little equation.

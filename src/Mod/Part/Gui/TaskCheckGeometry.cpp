@@ -56,6 +56,7 @@
 # include <Inventor/nodes/SoTransform.h>
 #endif //_PreComp_
 
+#include <App/UnitsParams.h>
 #include <Base/Interpreter.h>
 #include <Gui/Application.h>
 #include <Gui/BitmapFactory.h>
@@ -582,8 +583,7 @@ void TaskCheckGeometryResults::buildShapeContent(App::DocumentObject *pObject, c
 
     bool advancedShapeContent = App::GetApplication().GetUserParameter().GetGroup("BaseApp")->GetGroup("Preferences")->
             GetGroup("Mod")->GetGroup("Part")->GetGroup("CheckGeometry")->GetBool("AdvancedShapeContent", true);
-    int decimals = App::GetApplication().GetUserParameter().
-            GetGroup("BaseApp")->GetGroup("Preferences")->GetGroup("Units")->GetInt("Decimals", 2);
+    int decimals = static_cast<int>(App::UnitsParams::getDecimals());
     std::ostringstream stream;
     if (!shapeContentString.empty())
         stream << std::endl << std::endl;

@@ -97,6 +97,7 @@
 #include "DocumentObserver.h"
 #include "DocumentObserver.h"
 #include "DocumentParams.h"
+#include "UnitsParams.h"
 #include "DocumentPy.h"
 #include "ExpressionParser.h"
 #include "ExpressionEvaluator.h"
@@ -3246,14 +3247,29 @@ void Application::initApplication()
     });
 
     // set up Unit system default
-    ParameterGrp::handle hGrp = App::GetApplication().GetParameterGroupByPath
-       ("User parameter:BaseApp/Preferences/Units");
-    Base::UnitsApi::setSchema((Base::UnitSystem)hGrp->GetInt("UserSchema",0));
-    Base::UnitsApi::setDecimals(hGrp->GetInt("Decimals", Base::UnitsApi::getDecimals()));
+    Base::UnitsApi::setSchema(static_cast<Base::UnitSystem>(UnitsParams::getUserSchema()));
+    Base::UnitsApi::setDecimals(static_cast<int>(UnitsParams::getDecimals()));
 
     // In case we are using fractional inches, get user setting for min unit
-    int denom = hGrp->GetInt("FracInch", Base::QuantityFormat::getDefaultDenominator());
-    Base::QuantityFormat::setDefaultDenominator(denom);
+    Base::QuantityFormat::setDefaultDenominator(static_cast<int>(UnitsParams::getFracInch()));
+
+    // The number of decimals and the inch fraction are the same for every
+    // document: a change is put in force when it is made, wherever it was
+    // made. The unit system depends on the active document, and is
+    // Gui::Application's to follow.
+    static fastsignals::scoped_connection unitsChanged
+        = UnitsParams::signalParamChanged().connect([](const char* name) {
+              if (!name) {
+                  return;
+              }
+              if (strcmp(name, "Decimals") == 0) {
+                  Base::UnitsApi::setDecimals(static_cast<int>(UnitsParams::getDecimals()));
+              }
+              else if (strcmp(name, "FracInch") == 0) {
+                  Base::QuantityFormat::setDefaultDenominator(
+                      static_cast<int>(UnitsParams::getFracInch()));
+              }
+          });
 
 
 #if defined (_DEBUG)

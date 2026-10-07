@@ -350,7 +350,7 @@ class ToolBitEditor(QtGui.QWidget):
 
         # Store the original schema to restore on close
         self._original_schema = FreeCAD.ParamGet("User parameter:BaseApp/Preferences/Units").GetInt(
-            "UserSchema", 6
+            "UserSchema", 0
         )
         self._tab_closed = False
 

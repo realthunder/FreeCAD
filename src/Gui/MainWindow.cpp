@@ -92,6 +92,7 @@
 
 #include "MainWindow.h"
 #include "MainWindowParams.h"
+#include <App/UnitsParams.h>
 #include "NotificationAreaParams.h"
 #include "GeneralParams.h"
 #include "InputHintWidget.h"
@@ -229,7 +230,7 @@ public:
     void OnChange(Base::Subject<const char*> &rCaller, const char * sReason) override
     {
         Q_UNUSED(rCaller)
-        if (strcmp(sReason, "UserSchema") == 0) {
+        if (strcmp(sReason, "UserSchema") == 0 || strcmp(sReason, "IgnoreProjectSchema") == 0) {
             unitChanged();
         }
     }
@@ -264,9 +265,10 @@ private:
     {
         ParameterGrp::handle hGrpu = App::GetApplication().GetParameterGroupByPath
         ("User parameter:BaseApp/Preferences/Units");
-        bool ignore = hGrpu->GetBool("IgnoreProjectSchema", false);
+        bool ignore = hGrpu->GetBool("IgnoreProjectSchema",
+                                     App::UnitsParams::defaultIgnoreProjectSchema());
         App::Document* doc = App::GetApplication().getActiveDocument();
-        int userSchema = getWindowParameter()->GetInt("UserSchema", 0);
+        int userSchema = getWindowParameter()->GetInt("UserSchema", App::UnitsParams::defaultUserSchema());
         if ( doc != nullptr && ! ignore) {
             userSchema = doc->UnitSystem.getValue();
         }

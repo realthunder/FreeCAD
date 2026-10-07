@@ -45,6 +45,8 @@
 #include <Base/UnitsApi.h>
 #include <Gui/Selection/SelectionObjectPy.h>
 
+#include <App/UnitsParams.h>
+
 #include "Command.h"
 #include "Selection.h"
 #include "SelectionObject.h"
@@ -2140,9 +2142,14 @@ SelectionSingleton::SelectionSingleton() :
     signalSelectionChanged.connect(std::bind(&Gui::SelectionSingleton::slotSelectionChanged, this, sp::_1));
     //NOLINTEND
 
-    auto hGrp = App::GetApplication().GetParameterGroupByPath(
-            "User parameter:BaseApp/Preferences/Units");
-    fmtDecimal = hGrp->GetInt("DecimalsPreSel",-1);
+    // Read once, this used to wait for the next start.
+    fmtDecimal = static_cast<int>(App::UnitsParams::getDecimalsPreSel());
+    static fastsignals::scoped_connection decimalsChanged
+        = App::UnitsParams::signalParamChanged().connect([this](const char* name) {
+              if (name && strcmp(name, "DecimalsPreSel") == 0) {
+                  fmtDecimal = static_cast<int>(App::UnitsParams::getDecimalsPreSel());
+              }
+          });
 }
 
 /**

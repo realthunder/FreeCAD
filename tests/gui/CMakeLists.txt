@@ -1453,3 +1453,11 @@ fc_add_gui_test(GuiNotificationAreaSettings_tests_run
 fc_add_gui_test(GuiConsoleMacroSettings_tests_run
                 console-macro-settings.py
                 --timeout 180)
+
+# The unit settings are behind App::UnitsParams: listed by the omni
+# search, and a change of the unit system, the number of decimals or the
+# inch fraction is in force when it is made, not at the next start, the
+# next document or the next OK in the preferences.
+fc_add_gui_test(GuiUnitsSettings_tests_run
+                units-settings.py
+                --timeout 180)
