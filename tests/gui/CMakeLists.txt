@@ -1365,3 +1365,11 @@ fc_add_gui_test(GuiPreferencesOkKeepsDefaults_tests_run
 fc_add_gui_test(GuiReportGoToEnd_tests_run
                 report-go-to-end.py
                 --timeout 120)
+
+# OK in the preferences with nothing changed sets no stylesheet again,
+# activates no language again, and a key stored with the value it had
+# while unset is no change of the thing it names; a real change still
+# arrives.
+fc_add_gui_test(GuiPreferencesOkReappliesNothing_tests_run
+                preferences-ok-reapplies-nothing.py
+                --timeout 240)

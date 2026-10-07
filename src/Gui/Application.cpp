@@ -278,6 +278,15 @@ struct ApplicationP
     /// The parameter source fed from the active theme's YAML file;
     /// setStyleSheet() re-points it whenever the theme changes
     StyleParameters::YamlParameterSource* themeParametersSource = nullptr;
+    /// What setStyleSheet() applied last, to tell a repeat from a change
+    struct {
+        bool valid = false;
+        QString file;
+        bool tiled = false;
+        QString iconSet;
+        QString sheet;
+        QPalette palette;
+    } appliedStyle;
     /// List of all registered views
     std::list<Gui::BaseView*> passive;
     bool isClosing{false};
@@ -3670,6 +3679,72 @@ void Application::setStyleSheet(const QString& qssFile, bool tiledBackground)
     auto mdi = mw->findChild<QMdiArea*>();
     mdi->setProperty("showImage", tiledBackground);
 
+    // The theme may have changed along with the stylesheet; follow it
+    // before any substitution below, and drop values resolved under the
+    // previous theme.
+    if (d->themeParametersSource) {
+        d->themeParametersSource->changeFilePath(styleParametersFilePath());
+        d->styleParameterManager->reload();
+    }
+
+    auto hGrp = App::GetApplication().GetParameterGroupByPath("User parameter:BaseApp/Preferences/MainWindow");
+    QString iconSet = QString::fromUtf8(hGrp->GetASCII("IconSet").c_str());
+
+    // Styles every theme shares (defaults.qss): our own widgets' bits
+    // that should not depend on which sheet is active, preincluded
+    // ahead of the theme sheet exactly as upstream does -- and served
+    // even with no sheet at all, which is how the Classic theme gets
+    // them.
+    const QString defaultStyleSheet = [this]() {
+        QFile f(QStringLiteral("qss:defaults.qss"));
+        if (!f.open(QFile::ReadOnly)) {
+            return QString();
+        }
+        QTextStream in(&f);
+        return replaceVariablesInQss(in.readAll());
+    }();
+
+    // The theme's own sheet, with its variables resolved. Searched for in
+    // the user-defined search paths, which runApplication() sets up with
+    // the prefix "qss".
+    QString themeStyleSheet;
+    bool themeSheetRead = false;
+    if (!qssFile.isEmpty()) {
+        QString prefix(QStringLiteral("qss:"));
+
+        QFile f;
+        if (QFile::exists(qssFile)) {
+            f.setFileName(qssFile);
+        }
+        else if (QFile::exists(prefix + qssFile)) {
+            f.setFileName(prefix + qssFile);
+        }
+
+        if (!f.fileName().isEmpty() && f.open(QFile::ReadOnly | QFile::Text)) {
+            QTextStream str(&f);
+            themeStyleSheet = replaceVariablesInQss(str.readAll());
+            themeSheetRead = true;
+        }
+    }
+    const QString styleSheet = themeSheetRead
+        ? defaultStyleSheet + QStringLiteral("\n") + themeStyleSheet
+        : defaultStyleSheet;
+
+    // Nothing to do when this is what is applied already. The handlers call
+    // here whenever one of a dozen keys is STORED, changed or not, and OK in
+    // the preferences stores them all; an apply has Qt polish every widget
+    // again and the tree remake the icon of every item, seconds with a
+    // document open. Compared: the sheet as it would be set (so a file
+    // edited on disk, an accent colour or a theme variable still count),
+    // the icon set, the background, and the palette as the last apply left
+    // it (so a desktop that changed its scheme counts too).
+    if (d->appliedStyle.valid && (themeSheetRead || qssFile.isEmpty())
+        && d->appliedStyle.file == qssFile && d->appliedStyle.tiled == tiledBackground
+        && d->appliedStyle.iconSet == iconSet && d->appliedStyle.sheet == styleSheet
+        && d->appliedStyle.palette == qApp->palette()) {
+        return;
+    }
+
     // Qt's style sheet doesn't support it to define the link color of a QLabel
     // or in the property editor when an expression is set because therefore the
     // link color of the application's palette is used.
@@ -3702,54 +3777,14 @@ void Application::setStyleSheet(const QString& qssFile, bool tiledBackground)
 
     mw->setProperty("fc_currentStyleSheet", qssFile);
 
-    // The theme may have changed along with the stylesheet; follow it
-    // before any substitution below, and drop values resolved under the
-    // previous theme.
-    if (d->themeParametersSource) {
-        d->themeParametersSource->changeFilePath(styleParametersFilePath());
-        d->styleParameterManager->reload();
-    }
-
-    auto hGrp = App::GetApplication().GetParameterGroupByPath("User parameter:BaseApp/Preferences/MainWindow");
-    QString iconSet = QString::fromUtf8(hGrp->GetASCII("IconSet").c_str());
     if (!iconSet.isEmpty())
         getMainWindow()->setOverrideExtraIcons(iconSet);
 
-    // Styles every theme shares (defaults.qss): our own widgets' bits
-    // that should not depend on which sheet is active, preincluded
-    // ahead of the theme sheet exactly as upstream does -- and served
-    // even with no sheet at all, which is how the Classic theme gets
-    // them.
-    const QString defaultStyleSheet = [this]() {
-        QFile f(QStringLiteral("qss:defaults.qss"));
-        if (!f.open(QFile::ReadOnly)) {
-            return QString();
-        }
-        QTextStream in(&f);
-        return replaceVariablesInQss(in.readAll());
-    }();
-
     if (!qssFile.isEmpty()) {
-        // Search for stylesheet in user-defined search paths.
-        // For qss they are set-up in runApplication() with the prefix "qss"
-        QString prefix(QStringLiteral("qss:"));
-
-        QFile f;
-        if (QFile::exists(qssFile)) {
-            f.setFileName(qssFile);
-        }
-        else if (QFile::exists(prefix + qssFile)) {
-            f.setFileName(prefix + qssFile);
-        }
-
-        if (!f.fileName().isEmpty() && f.open(QFile::ReadOnly | QFile::Text)) {
+        if (themeSheetRead) {
             mdi->setBackground(QBrush(Qt::NoBrush));
-            QTextStream str(&f);
 
-            QString styleSheetContent = replaceVariablesInQss(str.readAll());
-
-            qApp->setStyleSheet(defaultStyleSheet + QStringLiteral("\n")
-                                + styleSheetContent);
+            qApp->setStyleSheet(styleSheet);
 
             ActionStyleEvent e(ActionStyleEvent::Clear);
             qApp->sendEvent(mw, &e);
@@ -3800,6 +3835,13 @@ void Application::setStyleSheet(const QString& qssFile, bool tiledBackground)
 
         refreshInheritedPalettes();
     }
+
+    d->appliedStyle.valid = themeSheetRead || qssFile.isEmpty();
+    d->appliedStyle.file = qssFile;
+    d->appliedStyle.tiled = tiledBackground;
+    d->appliedStyle.iconSet = iconSet;
+    d->appliedStyle.sheet = styleSheet;
+    d->appliedStyle.palette = qApp->palette();
 }
 
 void Application::refreshInheritedPalettes()

@@ -26,6 +26,8 @@
 #include <App/Document.h>
 #include <Gui/Application.h>
 #include <Gui/Document.h>
+#include <Gui/RenderParams.h>
+#include <Gui/ViewParams.h>
 #include <Gui/Renderer/Renderer.h>
 #include "ViewProvider.h"
 
@@ -1377,6 +1379,8 @@ public:
                 "User parameter:BaseApp/Preferences/View");
         hRender = App::GetApplication().GetParameterGroupByPath(
                 "User parameter:BaseApp/Preferences/View/Render");
+        renderCache = readRenderCache();
+        rendererType = readRendererType();
         hView->Attach(this);
         hRender->Attach(this);
         // The gate reads live backend state (Render::Renderer
@@ -1397,13 +1401,37 @@ public:
         (void)subject;
         // Each group only notifies its own keys: RenderCache lives in the
         // View group, Type in View/Render.
-        if (reason && (strcmp(reason, "RenderCache") == 0
-                       || strcmp(reason, "Type") == 0))
-            getTimer().start(100);
+        if (!reason || (strcmp(reason, "RenderCache") != 0 && strcmp(reason, "Type") != 0))
+            return;
+        // An observer of this kind is told of every WRITE of a key, changed
+        // or not, and OK in the preferences writes them all. The timer
+        // reloads every Part view provider of every document, a re-mesh of
+        // seconds, so only a value that differs from the one last seen
+        // starts it.
+        long cache = readRenderCache();
+        std::string type = readRendererType();
+        if (cache == renderCache && type == rendererType)
+            return;
+        renderCache = cache;
+        rendererType = type;
+        getTimer().start(100);
     }
 private:
+    // Read with the defaults of the settings' own definitions, so that a key
+    // stored for the first time with its default is no change either.
+    long readRenderCache() const
+    {
+        return hView->GetInt("RenderCache", Gui::ViewParams::defaultRenderCache());
+    }
+    std::string readRendererType() const
+    {
+        return hRender->GetASCII("Type", Gui::RenderParams::defaultType().c_str());
+    }
+
     ParameterGrp::handle hView;
     ParameterGrp::handle hRender;
+    long renderCache = 0;
+    std::string rendererType;
 };
 } // anonymous namespace
 

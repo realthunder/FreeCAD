@@ -423,6 +423,13 @@ void applyLanguage(const ParamKey *paramKey)
 {
     QString lang = QLocale::languageToString(QLocale().language());
     std::string language = paramKey->hGrp->GetASCII(paramKey->key, (const char*)lang.toUtf8());
+    // Told when the key is stored, which OK in the preferences does for a
+    // profile that never stored it, whatever the language. Activating the
+    // active language again reinstalls every translator and has every
+    // widget retranslate itself, preference pages included.
+    if (language == Translator::instance()->activeLanguage()) {
+        return;
+    }
     Translator::instance()->activateLanguage(language.c_str());
 }
 

@@ -100,6 +100,7 @@ public:
         
         update();
 
+        seen = choice();
         handle->Attach(this);
     }
 
@@ -121,8 +122,24 @@ public:
         if (strcmp(sReason, "StyleSheet") == 0 ||
             strcmp(sReason, "OverlayActiveStyleSheet") == 0 ||
             strcmp(sReason, "ColorScheme") == 0) {
+            // An observer of this kind is told of every WRITE of a key,
+            // changed or not, and OK in the preferences writes all three:
+            // the sheet was read from its file three times and set on every
+            // overlay again, each row of each panel polished, for nothing.
+            auto now = choice();
+            if (now == seen) {
+                return;
+            }
+            seen = now;
             OverlayManager::instance()->refresh(nullptr, true);
         }
+    }
+
+    /// The three keys the overlay's sheet is chosen by, as they are read
+    std::array<std::string, 3> choice() const {
+        return {handle->GetASCII("StyleSheet"),
+                handle->GetASCII("OverlayActiveStyleSheet"),
+                handle->GetASCII("ColorScheme", "Light")};
     }
 
     void update() {
@@ -140,6 +157,7 @@ public:
     ParameterGrp::handle handle;
     QString activeStyleSheet;
     bool hideTab = false;
+    std::array<std::string, 3> seen;
 
 private:
     /// Whether the UI the overlay sits on is currently light.
