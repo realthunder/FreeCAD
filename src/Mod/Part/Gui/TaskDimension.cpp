@@ -77,6 +77,7 @@
 #include <Gui/View3DInventorViewer.h>
 #include <Mod/Part/App/PartFeature.h>
 
+#include "PartParams.h"
 #include "TaskDimension.h"
 
 
@@ -229,16 +230,15 @@ void PartGui::dumpLinearResults(const BRepExtrema_DistShapeShape &measure)
 
 auto PartGui::getDimensionsFontName()
 {
-  ParameterGrp::handle group = App::GetApplication().GetUserParameter().GetGroup("BaseApp/Preferences/Mod/Part");
-  std::string fontName = group->GetASCII("DimensionsFontName", "defaultFont");
+  std::string fontName = PartParams::getDimensionsFontName();
   // if there is only italic, we must output ":Italic", otherwise ":Bold Italic"
-  if (group->GetBool("DimensionsFontStyleBold")) {
+  if (PartParams::getDimensionsFontStyleBold()) {
       fontName = fontName + " :Bold";
-      if (group->GetBool("DimensionsFontStyleItalic"))
+      if (PartParams::getDimensionsFontStyleItalic())
           fontName = fontName + " Italic";
   }
   else {
-      if (group->GetBool("DimensionsFontStyleItalic"))
+      if (PartParams::getDimensionsFontStyleItalic())
           fontName = fontName + " :Italic";
   }
   return fontName;
@@ -246,8 +246,7 @@ auto PartGui::getDimensionsFontName()
 
 auto PartGui::getDimensionsFontSize()
 {
-  ParameterGrp::handle group = App::GetApplication().GetUserParameter().GetGroup("BaseApp/Preferences/Mod/Part");
-  return group->GetInt("DimensionsFontSize", 30);
+  return PartParams::getDimensionsFontSize();
 }
 
 Gui::View3DInventorViewer * PartGui::getViewer()
@@ -266,9 +265,8 @@ Gui::View3DInventorViewer * PartGui::getViewer()
 
 void PartGui::addLinearDimensions(const BRepExtrema_DistShapeShape &measure)
 {
-  ParameterGrp::handle group = App::GetApplication().GetUserParameter().GetGroup("BaseApp/Preferences/Mod/Part");
-  App::Color c((uint32_t) group->GetUnsigned("Dimensions3dColor",    0xFF000000));
-  App::Color d((uint32_t) group->GetUnsigned("DimensionsDeltaColor", 0x00FF0000));
+  App::Color c((uint32_t) PartParams::getDimensions3dColor());
+  App::Color d((uint32_t) PartParams::getDimensionsDeltaColor());
 
   Gui::View3DInventorViewer *viewer = getViewer();
   if (!viewer)
@@ -1132,8 +1130,7 @@ void PartGui::goDimensionAngularNoTask(const VectorAdapter &vector1Adapter, cons
     dimSys = dimSys.transpose();
   }
 
-  ParameterGrp::handle group = App::GetApplication().GetUserParameter().GetGroup("BaseApp/Preferences/Mod/Part");
-  App::Color c((uint32_t) group->GetUnsigned("DimensionsAngularColor", 0x0000FF00));
+  App::Color c((uint32_t) PartParams::getDimensionsAngularColor());
 
   DimensionAngular *dimension = new DimensionAngular();
   dimension->ref();

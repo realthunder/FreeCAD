@@ -26,6 +26,7 @@
 
 #include "DlgSettingsMeasure.h"
 #include "ui_DlgSettingsMeasure.h"
+#include "PartParams.h"
 
 
 using namespace PartGui;
@@ -64,6 +65,15 @@ void DlgSettingsMeasure::loadSettings()
     ui->fontSizeSpinBox->onRestore();
     ui->fontNameComboBox->onRestore();
     ui->fontNameComboBox->addItems(QStringList({QString::fromUtf8("defaultFont")}));
+    // "defaultFont" is the setting's default and no font of the system. The
+    // box rebuilds its list from the system's when it is given a font, so
+    // the entry can only be added after the restore -- and has to be made
+    // current here when it is the setting, or the box shows the first
+    // system font in its place and OK stores that one.
+    if (PartParams::getDimensionsFontName() == "defaultFont") {
+        ui->fontNameComboBox->setCurrentIndex(
+            ui->fontNameComboBox->findText(QString::fromUtf8("defaultFont")));
+    }
 
     ui->fontStyleBoldCheckBox->onRestore();
     ui->fontStyleItalicCheckBox->onRestore();

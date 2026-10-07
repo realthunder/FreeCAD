@@ -1408,3 +1408,10 @@ fc_add_gui_test(GuiMsaaReachesTheView_tests_run
 fc_add_gui_test(GuiReportViewSettings_tests_run
                 report-view-settings.py
                 --timeout 180)
+
+# Part's measurements follow their settings at once: the colours and the
+# font of the 3D dimensions are behind PartGui's PartParams, and a change
+# rebuilds the measurements on screen.
+fc_add_gui_test(GuiPartMeasureSettings_tests_run
+                part-measure-settings.py
+                --timeout 180)

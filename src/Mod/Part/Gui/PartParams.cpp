@@ -31,6 +31,11 @@
 #include <Gui/Renderer/Renderer.h>
 #include "ViewProvider.h"
 
+namespace PartGui {
+// TaskDimension.h, which wants the viewer's header with it
+void refreshDimensions();
+}
+
 namespace {
 /// Whether a tessellation preference changed since the last reload. Only
 /// then are the preferences written into every object's Deviation and
@@ -63,6 +68,20 @@ QTimer &getTimer() {
 void tessellationParamChanged() {
     tessellationChanged = true;
     getTimer().start(100);
+}
+
+// The measurements on screen are built with the colours and the font of the
+// moment; a change of one rebuilds them, once for however many changed.
+void dimensionParamChanged() {
+    static QTimer *timer;
+    if (!timer) {
+        timer = new QTimer();
+        timer->setSingleShot(true);
+        QObject::connect(timer, &QTimer::timeout, [](){
+            PartGui::refreshDimensions();
+        });
+    }
+    timer->start(100);
 }
 } // anonymous namespace
 
@@ -113,6 +132,13 @@ public:
     long SelectionPickThreshold;
     long SelectionPickThreshold2;
     bool SelectionPickRTree;
+    unsigned long Dimensions3dColor;
+    unsigned long DimensionsDeltaColor;
+    unsigned long DimensionsAngularColor;
+    long DimensionsFontSize;
+    std::string DimensionsFontName;
+    bool DimensionsFontStyleBold;
+    bool DimensionsFontStyleItalic;
 
     // Auto generated code (Tools/params_utils.py:254)
     PartParamsP() {
@@ -175,6 +201,20 @@ public:
         funcs["SelectionPickThreshold2"] = &PartParamsP::updateSelectionPickThreshold2;
         SelectionPickRTree = this->handle->GetBool("SelectionPickRTree", true);
         funcs["SelectionPickRTree"] = &PartParamsP::updateSelectionPickRTree;
+        Dimensions3dColor = this->handle->GetUnsigned("Dimensions3dColor", 0xFF0000FF);
+        funcs["Dimensions3dColor"] = &PartParamsP::updateDimensions3dColor;
+        DimensionsDeltaColor = this->handle->GetUnsigned("DimensionsDeltaColor", 0x00FF00FF);
+        funcs["DimensionsDeltaColor"] = &PartParamsP::updateDimensionsDeltaColor;
+        DimensionsAngularColor = this->handle->GetUnsigned("DimensionsAngularColor", 0x0000FFFF);
+        funcs["DimensionsAngularColor"] = &PartParamsP::updateDimensionsAngularColor;
+        DimensionsFontSize = this->handle->GetInt("DimensionsFontSize", 30);
+        funcs["DimensionsFontSize"] = &PartParamsP::updateDimensionsFontSize;
+        DimensionsFontName = this->handle->GetASCII("DimensionsFontName", "defaultFont");
+        funcs["DimensionsFontName"] = &PartParamsP::updateDimensionsFontName;
+        DimensionsFontStyleBold = this->handle->GetBool("DimensionsFontStyleBold", false);
+        funcs["DimensionsFontStyleBold"] = &PartParamsP::updateDimensionsFontStyleBold;
+        DimensionsFontStyleItalic = this->handle->GetBool("DimensionsFontStyleItalic", false);
+        funcs["DimensionsFontStyleItalic"] = &PartParamsP::updateDimensionsFontStyleItalic;
     }
 
     // Auto generated code (Tools/params_utils.py:284)
@@ -330,6 +370,62 @@ public:
     // Auto generated code (Tools/params_utils.py:314)
     static void updateSelectionPickRTree(PartParamsP *self) {
         self->SelectionPickRTree = self->handle->GetBool("SelectionPickRTree", true);
+    }
+    // Auto generated code (Tools/params_utils.py:322)
+    static void updateDimensions3dColor(PartParamsP *self) {
+        auto v = self->handle->GetUnsigned("Dimensions3dColor", 0xFF0000FF);
+        if (self->Dimensions3dColor != v) {
+            self->Dimensions3dColor = v;
+            PartParams::onDimensions3dColorChanged();
+        }
+    }
+    // Auto generated code (Tools/params_utils.py:322)
+    static void updateDimensionsDeltaColor(PartParamsP *self) {
+        auto v = self->handle->GetUnsigned("DimensionsDeltaColor", 0x00FF00FF);
+        if (self->DimensionsDeltaColor != v) {
+            self->DimensionsDeltaColor = v;
+            PartParams::onDimensionsDeltaColorChanged();
+        }
+    }
+    // Auto generated code (Tools/params_utils.py:322)
+    static void updateDimensionsAngularColor(PartParamsP *self) {
+        auto v = self->handle->GetUnsigned("DimensionsAngularColor", 0x0000FFFF);
+        if (self->DimensionsAngularColor != v) {
+            self->DimensionsAngularColor = v;
+            PartParams::onDimensionsAngularColorChanged();
+        }
+    }
+    // Auto generated code (Tools/params_utils.py:322)
+    static void updateDimensionsFontSize(PartParamsP *self) {
+        auto v = self->handle->GetInt("DimensionsFontSize", 30);
+        if (self->DimensionsFontSize != v) {
+            self->DimensionsFontSize = v;
+            PartParams::onDimensionsFontSizeChanged();
+        }
+    }
+    // Auto generated code (Tools/params_utils.py:322)
+    static void updateDimensionsFontName(PartParamsP *self) {
+        auto v = self->handle->GetASCII("DimensionsFontName", "defaultFont");
+        if (self->DimensionsFontName != v) {
+            self->DimensionsFontName = v;
+            PartParams::onDimensionsFontNameChanged();
+        }
+    }
+    // Auto generated code (Tools/params_utils.py:322)
+    static void updateDimensionsFontStyleBold(PartParamsP *self) {
+        auto v = self->handle->GetBool("DimensionsFontStyleBold", false);
+        if (self->DimensionsFontStyleBold != v) {
+            self->DimensionsFontStyleBold = v;
+            PartParams::onDimensionsFontStyleBoldChanged();
+        }
+    }
+    // Auto generated code (Tools/params_utils.py:322)
+    static void updateDimensionsFontStyleItalic(PartParamsP *self) {
+        auto v = self->handle->GetBool("DimensionsFontStyleItalic", false);
+        if (self->DimensionsFontStyleItalic != v) {
+            self->DimensionsFontStyleItalic = v;
+            PartParams::onDimensionsFontStyleItalicChanged();
+        }
     }
 };
 
@@ -494,6 +590,45 @@ static const App::ParamRegistry::Registrar _PartParamsRegistrar({
 "every triangle. Much faster on dense parts; the index is built on the\n"
 "first pick that reaches a part. Parts smaller than\n"
 "SelectionPickThreshold2 are picked directly."),
+    App::ParamInfo("PartGui", "PartParams", "User parameter:BaseApp/Preferences/Mod/Part", "Dimensions3dColor", "Dimensions3dColor", App::ParamInfo::Hex, 0xFF0000FF)
+        .setTitle("Measurement colour")
+        .setDoc("Colour of the direct distance of a Part measurement in the 3D view.\n"
+"The measurements shown follow a change.")
+        .setOnChange()
+        .setProxy("Color")
+        .setTransparency(false),
+    App::ParamInfo("PartGui", "PartParams", "User parameter:BaseApp/Preferences/Mod/Part", "DimensionsDeltaColor", "DimensionsDeltaColor", App::ParamInfo::Hex, 0x00FF00FF)
+        .setTitle("Measurement delta colour")
+        .setDoc("Colour of the X, Y and Z components of a Part distance measurement\n"
+"in the 3D view. The measurements shown follow a change.")
+        .setOnChange()
+        .setProxy("Color")
+        .setTransparency(false),
+    App::ParamInfo("PartGui", "PartParams", "User parameter:BaseApp/Preferences/Mod/Part", "DimensionsAngularColor", "DimensionsAngularColor", App::ParamInfo::Hex, 0x0000FFFF)
+        .setTitle("Angle measurement colour")
+        .setDoc("Colour of a Part angle measurement in the 3D view. The\n"
+"measurements shown follow a change.")
+        .setOnChange()
+        .setProxy("Color")
+        .setTransparency(false),
+    App::ParamInfo("PartGui", "PartParams", "User parameter:BaseApp/Preferences/Mod/Part", "DimensionsFontSize", "DimensionsFontSize", App::ParamInfo::Int, 30)
+        .setTitle("Measurement font size")
+        .setDoc("Size of the text of Part measurements in the 3D view. The\n"
+"measurements shown follow a change.")
+        .setOnChange(),
+    App::ParamInfo("PartGui", "PartParams", "User parameter:BaseApp/Preferences/Mod/Part", "DimensionsFontName", "DimensionsFontName", App::ParamInfo::String, "defaultFont")
+        .setTitle("Measurement font")
+        .setDoc("Font of the text of Part measurements in the 3D view; defaultFont\n"
+"is the 3D view's own. The measurements shown follow a change.")
+        .setOnChange(),
+    App::ParamInfo("PartGui", "PartParams", "User parameter:BaseApp/Preferences/Mod/Part", "DimensionsFontStyleBold", "DimensionsFontStyleBold", App::ParamInfo::Bool, false)
+        .setTitle("Measurement font bold")
+        .setDoc("Draw the text of Part measurements in the 3D view in bold.")
+        .setOnChange(),
+    App::ParamInfo("PartGui", "PartParams", "User parameter:BaseApp/Preferences/Mod/Part", "DimensionsFontStyleItalic", "DimensionsFontStyleItalic", App::ParamInfo::Bool, false)
+        .setTitle("Measurement font italic")
+        .setDoc("Draw the text of Part measurements in the 3D view in italic.")
+        .setOnChange(),
 });
 
 // Auto generated code (Tools/params_utils.py:368)
@@ -1332,10 +1467,239 @@ void PartParams::setSelectionPickRTree(const bool &v) {
 void PartParams::removeSelectionPickRTree() {
     instance()->handle->RemoveBool("SelectionPickRTree");
 }
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *PartParams::docDimensions3dColor() {
+    return QT_TRANSLATE_NOOP("PartParams",
+"Colour of the direct distance of a Part measurement in the 3D view.\n"
+"The measurements shown follow a change.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const unsigned long & PartParams::getDimensions3dColor() {
+    return instance()->Dimensions3dColor;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const unsigned long & PartParams::defaultDimensions3dColor() {
+    const static unsigned long def = 0xFF0000FF;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void PartParams::setDimensions3dColor(const unsigned long &v) {
+    instance()->handle->SetUnsigned("Dimensions3dColor",v);
+    instance()->Dimensions3dColor = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void PartParams::removeDimensions3dColor() {
+    instance()->handle->RemoveUnsigned("Dimensions3dColor");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *PartParams::docDimensionsDeltaColor() {
+    return QT_TRANSLATE_NOOP("PartParams",
+"Colour of the X, Y and Z components of a Part distance measurement\n"
+"in the 3D view. The measurements shown follow a change.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const unsigned long & PartParams::getDimensionsDeltaColor() {
+    return instance()->DimensionsDeltaColor;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const unsigned long & PartParams::defaultDimensionsDeltaColor() {
+    const static unsigned long def = 0x00FF00FF;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void PartParams::setDimensionsDeltaColor(const unsigned long &v) {
+    instance()->handle->SetUnsigned("DimensionsDeltaColor",v);
+    instance()->DimensionsDeltaColor = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void PartParams::removeDimensionsDeltaColor() {
+    instance()->handle->RemoveUnsigned("DimensionsDeltaColor");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *PartParams::docDimensionsAngularColor() {
+    return QT_TRANSLATE_NOOP("PartParams",
+"Colour of a Part angle measurement in the 3D view. The\n"
+"measurements shown follow a change.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const unsigned long & PartParams::getDimensionsAngularColor() {
+    return instance()->DimensionsAngularColor;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const unsigned long & PartParams::defaultDimensionsAngularColor() {
+    const static unsigned long def = 0x0000FFFF;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void PartParams::setDimensionsAngularColor(const unsigned long &v) {
+    instance()->handle->SetUnsigned("DimensionsAngularColor",v);
+    instance()->DimensionsAngularColor = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void PartParams::removeDimensionsAngularColor() {
+    instance()->handle->RemoveUnsigned("DimensionsAngularColor");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *PartParams::docDimensionsFontSize() {
+    return QT_TRANSLATE_NOOP("PartParams",
+"Size of the text of Part measurements in the 3D view. The\n"
+"measurements shown follow a change.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const long & PartParams::getDimensionsFontSize() {
+    return instance()->DimensionsFontSize;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const long & PartParams::defaultDimensionsFontSize() {
+    const static long def = 30;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void PartParams::setDimensionsFontSize(const long &v) {
+    instance()->handle->SetInt("DimensionsFontSize",v);
+    instance()->DimensionsFontSize = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void PartParams::removeDimensionsFontSize() {
+    instance()->handle->RemoveInt("DimensionsFontSize");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *PartParams::docDimensionsFontName() {
+    return QT_TRANSLATE_NOOP("PartParams",
+"Font of the text of Part measurements in the 3D view; defaultFont\n"
+"is the 3D view's own. The measurements shown follow a change.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const std::string & PartParams::getDimensionsFontName() {
+    return instance()->DimensionsFontName;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const std::string & PartParams::defaultDimensionsFontName() {
+    const static std::string def = "defaultFont";
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void PartParams::setDimensionsFontName(const std::string &v) {
+    instance()->handle->SetASCII("DimensionsFontName",v);
+    instance()->DimensionsFontName = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void PartParams::removeDimensionsFontName() {
+    instance()->handle->RemoveASCII("DimensionsFontName");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *PartParams::docDimensionsFontStyleBold() {
+    return QT_TRANSLATE_NOOP("PartParams",
+"Draw the text of Part measurements in the 3D view in bold.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const bool & PartParams::getDimensionsFontStyleBold() {
+    return instance()->DimensionsFontStyleBold;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const bool & PartParams::defaultDimensionsFontStyleBold() {
+    const static bool def = false;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void PartParams::setDimensionsFontStyleBold(const bool &v) {
+    instance()->handle->SetBool("DimensionsFontStyleBold",v);
+    instance()->DimensionsFontStyleBold = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void PartParams::removeDimensionsFontStyleBold() {
+    instance()->handle->RemoveBool("DimensionsFontStyleBold");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *PartParams::docDimensionsFontStyleItalic() {
+    return QT_TRANSLATE_NOOP("PartParams",
+"Draw the text of Part measurements in the 3D view in italic.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const bool & PartParams::getDimensionsFontStyleItalic() {
+    return instance()->DimensionsFontStyleItalic;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const bool & PartParams::defaultDimensionsFontStyleItalic() {
+    const static bool def = false;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void PartParams::setDimensionsFontStyleItalic(const bool &v) {
+    instance()->handle->SetBool("DimensionsFontStyleItalic",v);
+    instance()->DimensionsFontStyleItalic = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void PartParams::removeDimensionsFontStyleItalic() {
+    instance()->handle->RemoveBool("DimensionsFontStyleItalic");
+}
 //[[[end]]]
 
 void PartParams::onMeshDeviationChanged() {
     tessellationParamChanged();
+}
+
+void PartParams::onDimensions3dColorChanged() {
+    dimensionParamChanged();
+}
+
+void PartParams::onDimensionsDeltaColorChanged() {
+    dimensionParamChanged();
+}
+
+void PartParams::onDimensionsAngularColorChanged() {
+    dimensionParamChanged();
+}
+
+void PartParams::onDimensionsFontSizeChanged() {
+    dimensionParamChanged();
+}
+
+void PartParams::onDimensionsFontNameChanged() {
+    dimensionParamChanged();
+}
+
+void PartParams::onDimensionsFontStyleBoldChanged() {
+    dimensionParamChanged();
+}
+
+void PartParams::onDimensionsFontStyleItalicChanged() {
+    dimensionParamChanged();
 }
 
 void PartParams::onMeshAngularDeflectionChanged() {

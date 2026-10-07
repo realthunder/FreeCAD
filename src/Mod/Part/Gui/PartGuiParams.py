@@ -29,7 +29,8 @@ from os import sys, path
 sys.path.append(path.join(path.dirname(path.dirname(path.dirname(path.dirname(path.abspath(__file__))))), 'Tools'))
 import params_utils
 
-from params_utils import Property, ParamBool, ParamInt, ParamHex, ParamUInt, ParamFloat, ParamColor
+from params_utils import Property, ParamBool, ParamInt, ParamHex, ParamUInt, ParamFloat, ParamColor, \
+                         ParamString
 
 NameSpace = 'PartGui'
 ClassName = 'PartParams'
@@ -153,6 +154,32 @@ Params = [
            "every triangle. Much faster on dense parts; the index is built on the\n"
            "first pick that reaches a part. Parts smaller than\n"
            "SelectionPickThreshold2 are picked directly."),
+    ParamHex("Dimensions3dColor", 0xff0000ff, on_change=True, proxy=ParamColor(transparency=False),
+        title = "Measurement colour",
+        doc = "Colour of the direct distance of a Part measurement in the 3D view.\n"
+              "The measurements shown follow a change."),
+    ParamHex("DimensionsDeltaColor", 0x00ff00ff, on_change=True, proxy=ParamColor(transparency=False),
+        title = "Measurement delta colour",
+        doc = "Colour of the X, Y and Z components of a Part distance measurement\n"
+              "in the 3D view. The measurements shown follow a change."),
+    ParamHex("DimensionsAngularColor", 0x0000ffff, on_change=True, proxy=ParamColor(transparency=False),
+        title = "Angle measurement colour",
+        doc = "Colour of a Part angle measurement in the 3D view. The\n"
+              "measurements shown follow a change."),
+    ParamInt("DimensionsFontSize", 30, on_change=True,
+        title = "Measurement font size",
+        doc = "Size of the text of Part measurements in the 3D view. The\n"
+              "measurements shown follow a change."),
+    ParamString("DimensionsFontName", "defaultFont", on_change=True,
+        title = "Measurement font",
+        doc = "Font of the text of Part measurements in the 3D view; defaultFont\n"
+              "is the 3D view's own. The measurements shown follow a change."),
+    ParamBool("DimensionsFontStyleBold", False, on_change=True,
+        title = "Measurement font bold",
+        doc = "Draw the text of Part measurements in the 3D view in bold."),
+    ParamBool("DimensionsFontStyleItalic", False, on_change=True,
+        title = "Measurement font italic",
+        doc = "Draw the text of Part measurements in the 3D view in italic."),
 ]
 
 def declare():

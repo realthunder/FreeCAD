@@ -461,6 +461,102 @@ public:
     static const char *docSelectionPickRTree();
     //@}
 
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter Dimensions3dColor
+    ///
+    /// Colour of the direct distance of a Part measurement in the 3D view.
+    /// The measurements shown follow a change.
+    static const unsigned long & getDimensions3dColor();
+    static const unsigned long & defaultDimensions3dColor();
+    static void removeDimensions3dColor();
+    static void setDimensions3dColor(const unsigned long &v);
+    static const char *docDimensions3dColor();
+    static void onDimensions3dColorChanged();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter DimensionsDeltaColor
+    ///
+    /// Colour of the X, Y and Z components of a Part distance measurement
+    /// in the 3D view. The measurements shown follow a change.
+    static const unsigned long & getDimensionsDeltaColor();
+    static const unsigned long & defaultDimensionsDeltaColor();
+    static void removeDimensionsDeltaColor();
+    static void setDimensionsDeltaColor(const unsigned long &v);
+    static const char *docDimensionsDeltaColor();
+    static void onDimensionsDeltaColorChanged();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter DimensionsAngularColor
+    ///
+    /// Colour of a Part angle measurement in the 3D view. The
+    /// measurements shown follow a change.
+    static const unsigned long & getDimensionsAngularColor();
+    static const unsigned long & defaultDimensionsAngularColor();
+    static void removeDimensionsAngularColor();
+    static void setDimensionsAngularColor(const unsigned long &v);
+    static const char *docDimensionsAngularColor();
+    static void onDimensionsAngularColorChanged();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter DimensionsFontSize
+    ///
+    /// Size of the text of Part measurements in the 3D view. The
+    /// measurements shown follow a change.
+    static const long & getDimensionsFontSize();
+    static const long & defaultDimensionsFontSize();
+    static void removeDimensionsFontSize();
+    static void setDimensionsFontSize(const long &v);
+    static const char *docDimensionsFontSize();
+    static void onDimensionsFontSizeChanged();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter DimensionsFontName
+    ///
+    /// Font of the text of Part measurements in the 3D view; defaultFont
+    /// is the 3D view's own. The measurements shown follow a change.
+    static const std::string & getDimensionsFontName();
+    static const std::string & defaultDimensionsFontName();
+    static void removeDimensionsFontName();
+    static void setDimensionsFontName(const std::string &v);
+    static const char *docDimensionsFontName();
+    static void onDimensionsFontNameChanged();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter DimensionsFontStyleBold
+    ///
+    /// Draw the text of Part measurements in the 3D view in bold.
+    static const bool & getDimensionsFontStyleBold();
+    static const bool & defaultDimensionsFontStyleBold();
+    static void removeDimensionsFontStyleBold();
+    static void setDimensionsFontStyleBold(const bool &v);
+    static const char *docDimensionsFontStyleBold();
+    static void onDimensionsFontStyleBoldChanged();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter DimensionsFontStyleItalic
+    ///
+    /// Draw the text of Part measurements in the 3D view in italic.
+    static const bool & getDimensionsFontStyleItalic();
+    static const bool & defaultDimensionsFontStyleItalic();
+    static void removeDimensionsFontStyleItalic();
+    static void setDimensionsFontStyleItalic(const bool &v);
+    static const char *docDimensionsFontStyleItalic();
+    static void onDimensionsFontStyleItalicChanged();
+    //@}
+
 // Auto generated code (Tools/params_utils.py:179)
 }; // class PartParams
 } // namespace PartGui
