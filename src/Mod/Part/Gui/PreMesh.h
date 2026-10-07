@@ -130,6 +130,13 @@ PartGuiExport void preMeshStats(std::size_t &claimed, std::size_t &meshed,
 /// whoever has stopped waiting for it.
 PartGuiExport void clearPreMeshClaims();
 
+/// Stop every batch and wait until none runs: a worker finishes the shape
+/// it is on and starts no other, and the claims of the shapes not started
+/// are published unmeshed. Returns with no worker left. Called when the
+/// application is about to quit -- a process must not leave with workers
+/// inside the mesher -- and usable again afterwards.
+PartGuiExport void stopPreMesh();
+
 /// Whether the pre-mesh runs at all (Render_PreMeshOnLoad).
 bool preMeshEnabled();
 

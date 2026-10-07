@@ -31,6 +31,8 @@
 #include <thread>
 #include <unordered_map>
 
+#include <QCoreApplication>
+
 #include <BRepMesh_IncrementalMesh.hxx>
 #include <IMeshTools_Parameters.hxx>
 #include <OSD_Parallel.hxx>
@@ -97,6 +99,20 @@ std::atomic<uint64_t> s_generation {0};
 /// had already been owed.
 std::condition_variable s_published;
 
+/// The batches that have not ended, counted under s_mutex from the submit
+/// to the last thing runBatch does, and what stopPreMesh waits on. A
+/// batch runs on a detached thread and on OCCT's pool; a process that
+/// leaves with one still meshing takes OCCT's static data from under its
+/// workers -- a segmentation fault in the mesher on the way out, nine
+/// runs of nine once the batch was long enough to span the exit
+/// (docs/DocumentLoad.md sec 18.8).
+std::size_t s_running = 0;
+std::condition_variable s_idle;
+/// Set while stopPreMesh waits: a worker starts no shape it has not
+/// started. One it is in is finished -- nothing interrupts the mesher --
+/// and the shapes this batch takes are the small ones (sec 18.3).
+std::atomic<bool> s_stopping {false};
+
 /// One batch's work, owned by the thread that runs it: the shapes stay
 /// alive for as long as any worker may touch them.
 struct Batch
@@ -137,6 +153,11 @@ struct BatchFunctor
     {
         const PreMeshItem &item = batch->items[std::size_t(index)];
         try {
+            // Asked to stop: this shape is not started. Its claim is
+            // published all the same, below -- unmeshed, as a shape the
+            // mesher failed on is, and whoever builds it meshes it.
+            if (s_stopping.load(std::memory_order_acquire))
+                throw Standard_Failure("pre-mesh stopped");
             IMeshTools_Parameters params;
             params.Deflection = item.deflection;
             params.Relative = Standard_False;
@@ -204,6 +225,13 @@ void runBatch(Batch *batch)
         }
     }
     delete batch;
+    // The last thing this thread does to anything shared: from here a
+    // waiting stopPreMesh may return and the process go.
+    {
+        std::lock_guard<std::mutex> guard(s_mutex);
+        --s_running;
+    }
+    s_idle.notify_all();
 }
 
 } // namespace
@@ -247,6 +275,19 @@ void submitPreMesh(std::vector<PreMeshItem> &&items)
     if (batch->items.empty()) {
         delete batch;
         return;
+    }
+    {
+        std::lock_guard<std::mutex> guard(s_mutex);
+        ++s_running;
+    }
+    // Before the application leaves, once: the event loop's end is ahead
+    // of everything a process takes down on its way out, which no exit
+    // handler registered here can be sure to be.
+    static bool hooked = false;
+    if (!hooked && QCoreApplication::instance()) {
+        hooked = true;
+        QObject::connect(QCoreApplication::instance(), &QCoreApplication::aboutToQuit,
+                         []() { stopPreMesh(); });
     }
     // Detached, because nothing waits for it: the drain discovers the
     // results through the claims as it walks its queue.
@@ -306,6 +347,16 @@ void preMeshStats(std::size_t &claimed, std::size_t &meshed,
     meshed = s_meshed;
     failed = s_failed;
     wall = s_wall;
+}
+
+void stopPreMesh()
+{
+    std::unique_lock<std::mutex> lock(s_mutex);
+    s_stopping.store(true, std::memory_order_release);
+    // No timeout: what is waited for is each worker's shape in hand, and
+    // a process that left without waiting is the crash this is for.
+    s_idle.wait(lock, []() { return s_running == 0; });
+    s_stopping.store(false, std::memory_order_release);
 }
 
 void clearPreMeshClaims()

@@ -187,3 +187,53 @@ TEST_F(PreMeshTest, aShapeInFlightIsNotHandedToASecondWorker)
     ASSERT_TRUE(PartGui::waitPreMesh(key, 120.0));
     ASSERT_TRUE(batchCounted(2, 30.0));
 }
+
+TEST_F(PreMeshTest, aStopWaitsForTheWorkersAndStartsNoOtherShape)
+{
+    // Far more shapes than the workers can have started when the stop
+    // comes: a batch of them would run for seconds
+    std::vector<PartGui::PreMeshItem> items;
+    std::vector<TopoDS_Shape> shapes;
+    for (int i = 0; i < 96; ++i) {
+        items.push_back(slowItem());
+        shapes.push_back(items.back().shape);
+    }
+    const void* last = keyOf(items.back());
+    PartGui::submitPreMesh(std::move(items));
+    ASSERT_TRUE(PartGui::preMeshInFlight(last)) << "meshed before it could be asked about";
+
+    const auto start = std::chrono::steady_clock::now();
+    PartGui::stopPreMesh();
+    const double waited =
+        std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
+
+    // Returned with the batch ended: its counts are in, and they are all of it
+    EXPECT_EQ(stats().claimed, 96U);
+    EXPECT_EQ(stats().meshed + stats().failed, 96U) << "the stop returned with the batch running";
+    EXPECT_LT(stats().meshed, 96U) << "every shape was meshed: nothing was stopped";
+    EXPECT_GT(stats().failed, 0U);
+    // No claim left in flight, the shapes not started among them
+    std::size_t flying = 0, unmeshed = 0;
+    for (const TopoDS_Shape& shape : shapes) {
+        if (PartGui::preMeshInFlight(shape.TShape().get())) {
+            ++flying;
+        }
+        if (!meshed(shape)) {
+            ++unmeshed;
+        }
+    }
+    EXPECT_EQ(flying, 0U);
+    EXPECT_EQ(unmeshed, stats().failed);
+    // A stop is the wait for the shapes in hand, not for the batch
+    EXPECT_LT(waited, 3.0) << "96 shapes of a few tenths of a second each";
+
+    // And the pre-mesh works again after it
+    PartGui::clearPreMeshClaims();
+    PartGui::PreMeshItem item = slowItem();
+    const void* key = keyOf(item);
+    PartGui::submitPreMesh(batchOf(item));
+    ASSERT_TRUE(PartGui::waitPreMesh(key, 120.0));
+    EXPECT_TRUE(meshed(item.shape));
+    ASSERT_TRUE(batchCounted(1, 30.0));
+    EXPECT_EQ(stats().meshed, 1U);
+}
