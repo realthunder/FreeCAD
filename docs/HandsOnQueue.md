@@ -63,6 +63,7 @@ report views, the reporter's own files -- is kept beside the dev tree under
 | 28 | 2026-10-06 | `scanner.FCStd` restores with a wrong colour, sometimes (the motor body light blue for light grey) | OPEN |
 | 29 | 2026-10-07 | view cells: transparent frames that show a split, a join and a resize while dragged (every cell the drag changes); corner handles on an opaque background; a minimum cell size setting, default 200 (change request, decided) | OPEN |
 | 30 | 2026-10-07 | the dark and light overlay stylesheets integrated into the Dark and Light preference packs (a task asked; what "integrated" covers to confirm); and the long freeze when an overlay stylesheet is applied, to investigate | OPEN |
+| 31 | 2026-10-07 | report view: "Go to end" on by default (change request) | see `docs/HandsOnLog.md` |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -1614,10 +1615,24 @@ on -- tree, property editor, report view with all their rows. Entry 26 (the
 halt after OK in the preferences) and entry 24 (apply a changed setting
 through a delayed handler) are the same family.
 
+## 31. Report view: "Go to end" on by default (a change request)
+
+**2026-10-07 11:21, a change request.** "make console 'go to end' by
+default". The report view's "Go to end" option -- follow the newest line as
+output arrives -- is to be ON unless the user has switched it off.
+Read from the source by the note-taker, nothing changed: the option is
+`gotoEnd` in `ReportOutput` (`src/Gui/ReportView.cpp`), initialised `false`
+in the constructor, toggled from the options menu ("Go to end",
+`onToggleGoToEnd`) and stored as the boolean `checkGoToEnd` in the report
+view's own parameter group. A profile that has the key keeps what it says;
+the default only reaches a profile that never toggled it. The key is read
+straight from the parameter group, not through `ReportViewParams`, so the
+omni search does not list it (entry 24).
+
 ## Inbox
 
 Notes not sorted into an entry yet. Add a line here at any time, in any words;
 it is read before each entry is started and moved up into the table.
 
 (empty: the notes of 2026-10-06 are entries 20 to 28, those of 2026-10-07 so far
-entries 29 and 30)
+entries 29 to 31)
