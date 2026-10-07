@@ -722,3 +722,29 @@ The pictures are `occt/tests/fork/fillet/pictures/make_corners.sh
 <fcad>/docs/pictures/CornerBlending` (`corners.py` says what they show;
 it opens the FreeCAD GUI on the display). The patch is orange, found by its
 name: generated from the corner's vertex.
+
+### 9.8 Next: the face curves, as the issue's pictures have them (planned)
+
+The issue's two CATIA screenshots, before and after (2026-10-07, read
+again): the green boundaries on the faces move out into the faces and the
+patch grows into a large round bulb. Their shape is what differs from
+ours. CATIA's leave each fillet across it, continuing the cut section, and
+bow away from the corner. Ours are battens held tangent at both ends to
+the fillets' contact lines, so they bow toward the corner: the three-lobed,
+pinched patch of `box_setbacks.png` at 4.
+
+That end condition is also behind both defects 9.7 patched: the hook at a
+fillet at `d0` (a curve made to leave along a contact line at 90 deg to
+its target; the 85 deg free end) and #962's conflicting tangents (the
+rebuild at ten points). Planned, for setback corners only:
+
+1. A face curve's ends leave across the fillet: in the direction of the
+   cut section where it meets the face, the boundary running on from
+   section into face curve, the curve bowing outward. This should replace
+   the 85 deg rule and may make the rebuild at ten unneeded; both stay
+   until the sweeps say so. Checked as 9.7 was: pictures beside CATIA's,
+   the box and #962 measured, the suite, the sweeps.
+2. A depth per face: how far its curve bows into the face, at its middle,
+   stored per face on a corner beside the edges' setbacks (`Corners`
+   keeps its value open for it), with a drag handle at the curve's
+   midpoint in the task panel.
