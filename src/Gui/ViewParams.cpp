@@ -35,6 +35,7 @@
 #include "Selection.h"
 #include "Control.h"
 #include "OverlayWidgets.h"
+#include "TaskView/TaskPanelHost.h"
 #include "TaskView/TaskView.h"
 #include "Widgets.h"
 #include "MainWindow.h"
@@ -130,6 +131,7 @@ public:
     bool PerViewEdit;
     bool PerViewSelection;
     bool TaskPanelInView;
+    bool TaskPanelInViewAll;
     double DraggerScale;
     double HiddenLineTransparency;
     bool HiddenLineOverrideTransparency;
@@ -395,6 +397,8 @@ public:
         funcs["PerViewSelection"] = &ViewParamsP::updatePerViewSelection;
         TaskPanelInView = this->handle->GetBool("TaskPanelInView", false);
         funcs["TaskPanelInView"] = &ViewParamsP::updateTaskPanelInView;
+        TaskPanelInViewAll = this->handle->GetBool("TaskPanelInViewAll", false);
+        funcs["TaskPanelInViewAll"] = &ViewParamsP::updateTaskPanelInViewAll;
         DraggerScale = this->handle->GetFloat("DraggerScale", 0.03);
         funcs["DraggerScale"] = &ViewParamsP::updateDraggerScale;
         HiddenLineTransparency = this->handle->GetFloat("HiddenLineTransparency", 0.4);
@@ -948,6 +952,14 @@ public:
         if (self->TaskPanelInView != v) {
             self->TaskPanelInView = v;
             ViewParams::onTaskPanelInViewChanged();
+        }
+    }
+    // Auto generated code (Tools/params_utils.py:322)
+    static void updateTaskPanelInViewAll(ViewParamsP *self) {
+        auto v = self->handle->GetBool("TaskPanelInViewAll", false);
+        if (self->TaskPanelInViewAll != v) {
+            self->TaskPanelInViewAll = v;
+            ViewParams::onTaskPanelInViewAllChanged();
         }
     }
     // Auto generated code (Tools/params_utils.py:314)
@@ -1685,10 +1697,17 @@ static const App::ParamRegistry::Registrar _ViewParamsRegistrar({
 "afterwards."),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "TaskPanelInView", "TaskPanelInView", App::ParamInfo::Bool, false)
         .setTitle("Task panels in their views")
-        .setDoc("Show a task panel inside the view it belongs to, over the picture,\n"
-"where it stays whichever view is active. When off, task panels are\n"
-"shown in the Tasks tab of the combo view, which follows the active\n"
-"view. The button on the combo view's title bar is this switch.")
+        .setDoc("Show a task panel inside the view it belongs to, where it stays\n"
+"whichever view is active. When off, task panels are shown in the\n"
+"Tasks tab of the combo view, which follows the active view. This is\n"
+"for the panels opened from now on: one that is open stays where it\n"
+"is, and a view keeps the place chosen with the button on its own\n"
+"panel's title bar.")
+        .setOnChange(),
+    App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "TaskPanelInViewAll", "TaskPanelInViewAll", App::ParamInfo::Bool, false)
+        .setTitle("... and the panels that are open")
+        .setDoc("Apply the setting above to every view at once: the panels that are\n"
+"open move, and a view's own choice of place is given up.")
         .setOnChange(),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "DraggerScale", "DraggerScale", App::ParamInfo::Float, 0.03)
         .setTitle("Transform dragger scale")
@@ -4097,10 +4116,12 @@ void ViewParams::removePerViewSelection() {
 // Auto generated code (Tools/params_utils.py:397)
 const char *ViewParams::docTaskPanelInView() {
     return QT_TRANSLATE_NOOP("ViewParams",
-"Show a task panel inside the view it belongs to, over the picture,\n"
-"where it stays whichever view is active. When off, task panels are\n"
-"shown in the Tasks tab of the combo view, which follows the active\n"
-"view. The button on the combo view's title bar is this switch.");
+"Show a task panel inside the view it belongs to, where it stays\n"
+"whichever view is active. When off, task panels are shown in the\n"
+"Tasks tab of the combo view, which follows the active view. This is\n"
+"for the panels opened from now on: one that is open stays where it\n"
+"is, and a view keeps the place chosen with the button on its own\n"
+"panel's title bar.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -4123,6 +4144,35 @@ void ViewParams::setTaskPanelInView(const bool &v) {
 // Auto generated code (Tools/params_utils.py:431)
 void ViewParams::removeTaskPanelInView() {
     instance()->handle->RemoveBool("TaskPanelInView");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *ViewParams::docTaskPanelInViewAll() {
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Apply the setting above to every view at once: the panels that are\n"
+"open move, and a view's own choice of place is given up.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const bool & ViewParams::getTaskPanelInViewAll() {
+    return instance()->TaskPanelInViewAll;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const bool & ViewParams::defaultTaskPanelInViewAll() {
+    const static bool def = false;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void ViewParams::setTaskPanelInViewAll(const bool &v) {
+    instance()->handle->SetBool("TaskPanelInViewAll",v);
+    instance()->TaskPanelInViewAll = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void ViewParams::removeTaskPanelInViewAll() {
+    instance()->handle->RemoveBool("TaskPanelInViewAll");
 }
 
 // Auto generated code (Tools/params_utils.py:397)
@@ -7639,7 +7689,7 @@ void ViewParams::removeDatumTemporaryScaleFactor() {
     instance()->handle->RemoveFloat("DatumTemporaryScaleFactor");
 }
 
-// Auto generated code (Gui/ViewParams.py:680)
+// Auto generated code (Gui/ViewParams.py:686)
 const std::vector<QString> ViewParams::AnimationCurveTypes = {
     QStringLiteral("Linear"),
     QStringLiteral("InQuad"),
@@ -7684,7 +7734,7 @@ const std::vector<QString> ViewParams::AnimationCurveTypes = {
     QStringLiteral("OutInBounce"),
 };
 
-// Auto generated code (Gui/ViewParams.py:688)
+// Auto generated code (Gui/ViewParams.py:694)
 static const char *DrawStyleNames[] = {
     QT_TRANSLATE_NOOP("DrawStyle", "As Is"),
     QT_TRANSLATE_NOOP("DrawStyle", "Points"),
@@ -7697,7 +7747,7 @@ static const char *DrawStyleNames[] = {
     nullptr,
 };
 
-// Auto generated code (Gui/ViewParams.py:698)
+// Auto generated code (Gui/ViewParams.py:704)
 static const char *DrawStyleDocs[] = {
     QT_TRANSLATE_NOOP("DrawStyle", "Display style, normal display mode"),
     QT_TRANSLATE_NOOP("DrawStyle", "Display style, show points only"),
@@ -7710,13 +7760,13 @@ static const char *DrawStyleDocs[] = {
 };
 
 namespace Gui {
-// Auto generated code (Gui/ViewParams.py:708)
+// Auto generated code (Gui/ViewParams.py:714)
 const char **drawStyleNames()
 {
     return DrawStyleNames;
 }
 
-// Auto generated code (Gui/ViewParams.py:715)
+// Auto generated code (Gui/ViewParams.py:721)
 const char *drawStyleNameFromIndex(int i)
 {
     if (i < 0 || i>= 8)
@@ -7724,7 +7774,7 @@ const char *drawStyleNameFromIndex(int i)
     return DrawStyleNames[i];
 }
 
-// Auto generated code (Gui/ViewParams.py:724)
+// Auto generated code (Gui/ViewParams.py:730)
 int drawStyleIndexFromName(const char *name)
 {
     if (!name)
@@ -7736,7 +7786,7 @@ int drawStyleIndexFromName(const char *name)
     return -1;
 }
 
-// Auto generated code (Gui/ViewParams.py:737)
+// Auto generated code (Gui/ViewParams.py:743)
 const char *drawStyleDocumentation(int i)
 {
     if (i < 0 || i>= 8)
@@ -7748,13 +7798,17 @@ const char *drawStyleDocumentation(int i)
 //[[[end]]]
 
 void ViewParams::onTaskPanelInViewChanged() {
-    // Applied live: every open dialog's page goes to its new place in one
-    // pass, and no dialog is closed for it (docs/TaskPanelPerView.md sec
-    // 5.4). The preference is the switch; the title bar button and a
-    // host's own button only set it.
-    if (auto taskView = Control().taskPanel())
-        taskView->applyHosting();
+    // For the panels opened from now on, in a view that holds no place of
+    // its own (docs/TaskPanelPerView.md sec 15.3). The ones that are open
+    // stay, unless the option beside it asks for them too.
+    if (getTaskPanelInViewAll())
+        TaskView::TaskPlacement::applyToAll();
     Control().signalHostChanged();
+}
+
+void ViewParams::onTaskPanelInViewAllChanged() {
+    if (getTaskPanelInViewAll())
+        TaskView::TaskPlacement::applyToAll();
 }
 
 void ViewParams::onShowSelectionOnTopChanged() {

@@ -472,7 +472,6 @@ public:
         _actFloat.setData(QStringLiteral("OBTN Float"));
         _actClose.setData(QStringLiteral("OBTN Close"));
         _actTaskHost.setData(QStringLiteral("OBTN TaskHost"));
-        _actTaskHost.setCheckable(true);
         _taskActions = _actions;
         _taskActions.prepend(&_actTaskHost);
         QObject::connect(&_actTaskHost, &QAction::triggered, host, &OverlayManager::onAction);
@@ -1050,17 +1049,16 @@ public:
 
     void syncTaskHostAction()
     {
-        const bool inView = ViewParams::getTaskPanelInView();
-        _actTaskHost.setChecked(inView);
-        _actTaskHost.setToolTip(inView ? QObject::tr("Show task panels in the combo view")
-                                       : QObject::tr("Show task panels in their views"));
+        _actTaskHost.setToolTip(QObject::tr("Show this task panel in its view"));
     }
 
     void onAction(QAction *action) {
         if(action == &_actTaskHost) {
-            // The change handler moves the pages and sends
-            // Control().signalHostChanged, which comes back here
-            ViewParams::setTaskPanelInView(action->isChecked());
+            // On the panel in front of it and on that panel's view alone
+            // (docs/TaskPanelPerView.md sec 15.1): the view keeps the place,
+            // and the panel comes back by the button of its own header
+            if (auto taskView = Control().taskPanel())
+                taskView->sendShownToView();
         } else if(action == &_actOverlay) {
             OverlayManager::instance()->setOverlayMode(OverlayManager::OverlayMode::ToggleActive);
         } else if(action == &_actFloat || action == &_actClose) {

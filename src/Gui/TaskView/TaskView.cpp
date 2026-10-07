@@ -454,6 +454,9 @@ TaskView::TaskView(QWidget *parent)
         connectApplicationResetEdit =
         Gui::Application::Instance->signalResetEdit.connect
             (std::bind(&Gui::TaskView::TaskView::slotResetEdit, this, sp::_1));
+        connectApplicationChangedView =
+        Gui::Application::Instance->signalChangedView.connect
+            (std::bind(&Gui::TaskView::TaskView::slotChangedView, this, sp::_1, sp::_2));
     }
     // Ahead of every other listener, the GUI's own above all: that one
     // closes the document's views (Gui::Document::beforeDelete) before it
@@ -484,6 +487,7 @@ TaskView::~TaskView()
     connectApplicationActivateView.disconnect();
     connectApplicationCloseView.disconnect();
     connectApplicationResetEdit.disconnect();
+    connectApplicationChangedView.disconnect();
     connectGuiDeleteDocument.disconnect();
     Gui::SelectionRoom().Detach(this);
 
@@ -1118,9 +1122,49 @@ void TaskView::showForActiveView()
     setShownTaskInfo(infoFor(activeOwner()));
 }
 
-bool TaskView::inViewMode()
+void TaskView::slotChangedView(const Gui::BaseView &view, const App::Property &prop)
 {
-    return ViewParams::getTaskPanelInView();
+    if (!TaskPlacement::isProperty(prop))
+        return;
+    auto mdi = dynamic_cast<const MDIView*>(&view);
+    if (!mdi)
+        return;
+    // The panel of THAT view, and of no other (sec 15.1)
+    bool moved = false;
+    for (TaskInfo &info : taskInfos) {
+        if (info.owner.mdiView() != mdi)
+            continue;
+        const bool inView = TaskPlacement::inView(mdi);
+        if (inView != info.inView) {
+            info.inView = inView;
+            moved = true;
+        }
+        else if (info.host) {
+            info.host->sideChanged();
+        }
+    }
+    if (moved) {
+        applyHosting();
+        Control().signalHostChanged();
+    }
+}
+
+void TaskView::followPlacement()
+{
+    for (TaskInfo &info : taskInfos) {
+        if (MDIView *view = info.owner.mdiView())
+            info.inView = TaskPlacement::inView(view);
+    }
+    applyHosting();
+    Control().signalHostChanged();
+}
+
+void TaskView::sendShownToView()
+{
+    TaskInfo *info = currentTaskInfo();
+    MDIView *view = info ? info->owner.mdiView() : nullptr;
+    if (view)
+        TaskPlacement::setPlace(view, TaskPlacement::Place::InView);
 }
 
 TaskPanelHost *TaskView::hostOf(const TaskDialog *dlg) const
@@ -1134,10 +1178,11 @@ TaskPanelHost *TaskView::hostOf(const TaskDialog *dlg) const
 
 void TaskView::placePage(TaskInfo &info)
 {
-    // In its view while the preference says so and the view is one of
-    // this window's. A served client's view has no widget to stand in,
-    // and a dialog nobody owns is shown over everything: both stay here.
-    MDIView *view = inViewMode() ? info.owner.mdiView() : nullptr;
+    // In its view while that view's place said so (TaskInfo::inView) and
+    // the view is one of this window's. A served client's view has no
+    // widget to stand in, and a dialog nobody owns is shown over
+    // everything: both stay here.
+    MDIView *view = info.inView ? info.owner.mdiView() : nullptr;
     if (view) {
         if (info.host && info.host->view() == view)
             return;
@@ -1303,6 +1348,11 @@ void TaskView::showDialog(TaskDialog *dlg)
     // its page waits for that view, and the watchers' page says where it
     // is (docs/TaskPanelPerView.md sec 5.1).
     TaskPage *page = info.page;
+    // Where its view's panels go, as things are now: the view's own place,
+    // else the preference (sec 15.3). It stays there until that view says
+    // otherwise.
+    if (MDIView *view = info.owner.mdiView())
+        info.inView = TaskPlacement::inView(view);
     taskInfos.push_back(std::move(info));
     // In the stack, or in its view (docs/TaskPanelPerView.md sec 5.2)
     placePage(taskInfos.back());

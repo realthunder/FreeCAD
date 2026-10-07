@@ -1327,6 +1327,15 @@ fc_add_gui_test(GuiTaskPanelCombo_tests_run task-panel-combo.py
 fc_add_gui_test(GuiTaskPanelInView_tests_run task-panel-in-view.py
                 --timeout 400)
 
+# Where a panel goes is a state of its view (docs/TaskPanelPerView.md sec
+# 15, milestone 1): the preference is for the panels opened afterwards, a
+# panel's own button and the combo view's act on that panel and its view,
+# which keeps the place and the side as properties saved with it; the
+# option beside the preference moves every open panel. Scored against the
+# tree before, where the preference moved them all.
+fc_add_gui_test(GuiTaskPanelPlace_tests_run task-panel-place.py
+                --timeout 300)
+
 # Making a view the active window makes its cell the view area's active
 # cell and brings the keyboard with it (docs/SplitViews.md sec 21): right
 # after "create new view" the first view can be clicked back into; with

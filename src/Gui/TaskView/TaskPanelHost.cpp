@@ -25,6 +25,9 @@
 #ifndef _PreComp_
 #include <algorithm>
 #include <atomic>
+#include <cstring>
+#include <set>
+#include <string>
 #include <vector>
 #include <QApplication>
 #include <QBoxLayout>
@@ -39,8 +42,13 @@
 #endif
 
 #include <App/Application.h>
+#include <App/Document.h>
+#include <App/PropertyStandard.h>
 #include <Base/Parameter.h>
+#include <Gui/Application.h>
 #include <Gui/BitmapFactory.h>
+#include <Gui/Control.h>
+#include <Gui/Document.h>
 #include <Gui/MDIView.h>
 #include <Gui/MainWindow.h>
 #include <Gui/Selection.h>
@@ -73,12 +81,102 @@ constexpr int BottomMargin = 18;
 /// The least height a place must have for a panel to be shown open
 constexpr int MinHeight = 160;
 
-/// Side and collapsed state, kept per kind of view
-ParameterGrp::handle hostParams(const Gui::MDIView* view)
+/// The properties a view holds its panel's place in (TaskPlacement)
+constexpr const char* PropPlace = "Task_Place";
+constexpr const char* PropMode = "Task_Mode";
+constexpr const char* PropSide = "Task_Side";
+constexpr const char* PropSize = "Task_Size";
+constexpr const char* PropGroup = "Task";
+
+/// What was last chosen in any view, for the views that hold nothing of
+/// their own: remembered across runs
+ParameterGrp::handle lastChosen()
 {
-    ParameterGrp::handle grp = App::GetApplication().GetParameterGroupByPath(
+    return App::GetApplication().GetParameterGroupByPath(
         "User parameter:BaseApp/Preferences/TaskView/Host");
-    return grp->GetGroup(view ? view->getTypeId().getName() : "View");
+}
+
+/// The text \a view holds under \a name; empty when it holds none
+std::string ownText(const Gui::MDIView* view, const char* name)
+{
+    if (!view) {
+        return {};
+    }
+    auto prop = Base::freecad_dynamic_cast<App::PropertyString>(view->getPropertyByName(name));
+    return prop ? prop->getStrValue() : std::string();
+}
+
+/// Keep \a value in \a view under \a name. The property is made the
+/// first time there is something to keep, and emptied, not removed, when
+/// the view gives its own choice up.
+void setOwnText(Gui::MDIView* view, const char* name, const char* doc, const std::string& value)
+{
+    if (!view) {
+        return;
+    }
+    App::Property* prop = view->getPropertyByName(name);
+    auto text = Base::freecad_dynamic_cast<App::PropertyString>(prop);
+    if (!text) {
+        if (prop || value.empty()) {
+            // Somebody else's property of that name, or nothing to keep
+            return;
+        }
+        text = Base::freecad_dynamic_cast<App::PropertyString>(
+            view->addDynamicProperty("App::PropertyString", name, PropGroup, doc));
+        if (!text) {
+            return;
+        }
+    }
+    if (text->getStrValue() != value) {
+        text->setValue(value);
+    }
+}
+
+TaskPlacement::Mode modeOf(const std::string& text, TaskPlacement::Mode otherwise)
+{
+    if (text == "Overlay") {
+        return TaskPlacement::Mode::Overlay;
+    }
+    if (text == "Side") {
+        return TaskPlacement::Mode::Side;
+    }
+    return otherwise;
+}
+
+const char* textOf(TaskPlacement::Mode mode)
+{
+    return mode == TaskPlacement::Mode::Side ? "Side" : "Overlay";
+}
+
+TaskPlacement::Side sideOf(const std::string& text, TaskPlacement::Side otherwise)
+{
+    if (text == "Left") {
+        return TaskPlacement::Side::Left;
+    }
+    if (text == "Right") {
+        return TaskPlacement::Side::Right;
+    }
+    if (text == "Top") {
+        return TaskPlacement::Side::Top;
+    }
+    if (text == "Bottom") {
+        return TaskPlacement::Side::Bottom;
+    }
+    return otherwise;
+}
+
+const char* textOf(TaskPlacement::Side side)
+{
+    switch (side) {
+        case TaskPlacement::Side::Right:
+            return "Right";
+        case TaskPlacement::Side::Top:
+            return "Top";
+        case TaskPlacement::Side::Bottom:
+            return "Bottom";
+        default:
+            return "Left";
+    }
 }
 
 /// The widget the view fills: its cell when it is in a view area -- on
@@ -157,14 +255,6 @@ protected:
         }
         ev->accept();
     }
-    void mouseDoubleClickEvent(QMouseEvent* ev) override
-    {
-        if (ev->button() == Qt::LeftButton) {
-            host->setCollapsed(!host->isCollapsed());
-        }
-        ev->accept();
-    }
-
 private:
     TaskPanelHost* host;
     bool pressed {false};
@@ -174,6 +264,143 @@ private:
 };
 
 }  // namespace
+
+// ----------------------------------------------------------------------------
+
+TaskPlacement::Place TaskPlacement::place(const MDIView* view)
+{
+    const std::string text = ownText(view, PropPlace);
+    if (text == "InView") {
+        return Place::InView;
+    }
+    if (text == "ComboView") {
+        return Place::ComboView;
+    }
+    return Place::Default;
+}
+
+bool TaskPlacement::inView(const MDIView* view)
+{
+    switch (place(view)) {
+        case Place::InView:
+            return true;
+        case Place::ComboView:
+            return false;
+        default:
+            return ViewParams::getTaskPanelInView();
+    }
+}
+
+void TaskPlacement::setPlace(MDIView* view, Place place)
+{
+    const char* text = place == Place::InView ? "InView" : place == Place::ComboView ? "ComboView" : "";
+    setOwnText(view,
+               PropPlace,
+               "Where this view's task panel is shown: ComboView, InView, or empty to\n"
+               "follow the preference.",
+               text);
+}
+
+TaskPlacement::Mode TaskPlacement::mode(const MDIView* view)
+{
+    const Mode last = modeOf(lastChosen()->GetASCII("Mode", "Overlay"), Mode::Overlay);
+    return modeOf(ownText(view, PropMode), last);
+}
+
+TaskPlacement::Side TaskPlacement::side(const MDIView* view)
+{
+    const Side last = sideOf(lastChosen()->GetASCII("Side", "Left"), Side::Left);
+    return sideOf(ownText(view, PropSide), last);
+}
+
+void TaskPlacement::setMode(MDIView* view, Mode mode)
+{
+    lastChosen()->SetASCII("Mode", textOf(mode));
+    setOwnText(view,
+               PropMode,
+               "How this view's task panel is shown in it: Overlay, over the picture, or\n"
+               "Side, in a cell of its own beside it.",
+               textOf(mode));
+}
+
+void TaskPlacement::setSide(MDIView* view, Side side)
+{
+    lastChosen()->SetASCII("Side", textOf(side));
+    setOwnText(view,
+               PropSide,
+               "The side of this view its task panel is on: Left, Right, Top or Bottom.",
+               textOf(side));
+}
+
+int TaskPlacement::size(const MDIView* view)
+{
+    if (!view) {
+        return 0;
+    }
+    auto prop = Base::freecad_dynamic_cast<App::PropertyInteger>(view->getPropertyByName(PropSize));
+    return prop ? static_cast<int>(prop->getValue()) : 0;
+}
+
+void TaskPlacement::setSize(MDIView* view, int size)
+{
+    if (!view) {
+        return;
+    }
+    App::Property* prop = view->getPropertyByName(PropSize);
+    auto number = Base::freecad_dynamic_cast<App::PropertyInteger>(prop);
+    if (!number) {
+        if (prop || size <= 0) {
+            return;
+        }
+        number = Base::freecad_dynamic_cast<App::PropertyInteger>(
+            view->addDynamicProperty("App::PropertyInteger",
+                                     PropSize,
+                                     PropGroup,
+                                     "The size of this view's task panel across, in pixels; 0 for "
+                                     "what the panel asks."));
+        if (!number) {
+            return;
+        }
+    }
+    if (number->getValue() != size) {
+        number->setValue(size);
+    }
+}
+
+bool TaskPlacement::isProperty(const App::Property& prop)
+{
+    const char* name = prop.getName();
+    return name
+        && (std::strcmp(name, PropPlace) == 0 || std::strcmp(name, PropMode) == 0
+            || std::strcmp(name, PropSide) == 0 || std::strcmp(name, PropSize) == 0);
+}
+
+void TaskPlacement::applyToAll()
+{
+    // Every view: the ones in the main window, in a cell or a tab, and the
+    // ones a document has outside it
+    std::set<MDIView*> views;
+    if (MainWindow* mw = getMainWindow()) {
+        for (MDIView* view : mw->findChildren<MDIView*>()) {
+            views.insert(view);
+        }
+    }
+    for (App::Document* doc : App::GetApplication().getDocuments()) {
+        if (Gui::Document* gui = Application::Instance->getDocument(doc)) {
+            for (MDIView* view : gui->getMDIViews()) {
+                views.insert(view);
+            }
+        }
+    }
+    for (MDIView* view : views) {
+        if (place(view) != Place::Default) {
+            setPlace(view, Place::Default);
+        }
+    }
+    if (TaskView* taskView = Control().taskPanel()) {
+        taskView->followPlacement();
+    }
+}
 
 // ----------------------------------------------------------------------------
 
@@ -202,33 +429,29 @@ TaskPanelHost::TaskPanelHost(TaskView* taskView, MDIView* view)
     _title->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
     row->addWidget(_title, 1);
 
-    _collapse = new QToolButton(_header);
-    _collapse->setObjectName(QStringLiteral("taskPanelHostCollapse"));
-    _collapse->setAutoRaise(true);
-    _collapse->setCursor(Qt::ArrowCursor);
-    _collapse->setFocusPolicy(Qt::NoFocus);
-    row->addWidget(_collapse);
-
     _toCombo = new QToolButton(_header);
     _toCombo->setObjectName(QStringLiteral("taskPanelHostToCombo"));
     _toCombo->setAutoRaise(true);
     _toCombo->setCursor(Qt::ArrowCursor);
     _toCombo->setFocusPolicy(Qt::NoFocus);
     _toCombo->setIcon(BitmapFactory().pixmap("qss:overlay/taskhost.svg"));
-    _toCombo->setToolTip(tr("Show task panels in the combo view"));
+    _toCombo->setToolTip(tr("Show this task panel in the combo view"));
     row->addWidget(_toCombo);
 
     _layout->addWidget(_header);
 
-    connect(_collapse, &QToolButton::clicked, this, [this] { setCollapsed(!_collapsed); });
-    // The preference is the switch (sec 5.5): the task view moves every
-    // page when it changes, this host's among them, and lets the host go.
-    connect(_toCombo, &QToolButton::clicked, this, [] { ViewParams::setTaskPanelInView(false); });
+    // The button acts on its own panel and view (sec 15.1): the view keeps
+    // the place, the task view hears it change, moves this page and lets
+    // the host go.
+    connect(_toCombo, &QToolButton::clicked, this, [this] {
+        if (MDIView* own = _view) {
+            TaskPlacement::setPlace(own, TaskPlacement::Place::ComboView);
+        }
+    });
 
-    ParameterGrp::handle grp = hostParams(view);
-    _right = grp->GetBool("Right", false);
-    _collapsed = grp->GetBool("Collapsed", false);
-    updateButtons();
+    // Left or right for now: the other two sides come with the looks that
+    // can stand there (sec 15.7)
+    _right = TaskPlacement::side(view) == TaskPlacement::Side::Right;
 
     hosts.push_back(this);
     hostCount.store(static_cast<int>(hosts.size()), std::memory_order_relaxed);
@@ -366,22 +589,9 @@ void TaskPanelHost::setTitle(const QString& title)
     _title->setToolTip(title);
 }
 
-void TaskPanelHost::setOnRight(bool right, bool remember)
+void TaskPanelHost::sideChanged()
 {
-    _right = right;
-    if (remember) {
-        hostParams(_view)->SetBool("Right", right);
-    }
-    place();
-}
-
-void TaskPanelHost::setCollapsed(bool collapsed, bool remember)
-{
-    _collapsed = collapsed;
-    if (remember) {
-        hostParams(_view)->SetBool("Collapsed", collapsed);
-    }
-    updateButtons();
+    _right = TaskPlacement::side(_view) == TaskPlacement::Side::Right;
     place();
 }
 
@@ -425,13 +635,6 @@ void TaskPanelHost::placeLater()
         Qt::QueuedConnection);
 }
 
-void TaskPanelHost::updateButtons()
-{
-    _collapse->setArrowType(_collapsed ? Qt::RightArrow : Qt::DownArrow);
-    _collapse->setToolTip(_collapsed ? tr("Open the task panel")
-                                     : tr("Collapse the task panel to its header"));
-}
-
 void TaskPanelHost::place()
 {
     QWidget* in = parentWidget();
@@ -455,7 +658,7 @@ void TaskPanelHost::place()
     // A place too small for a panel keeps the header alone, rather than
     // have the panel cover the view.
     const bool small = room.width() < MinWidth * 3 / 2 || room.height() < MinHeight;
-    const bool folded = _collapsed || small;
+    const bool folded = small;
     if (_page) {
         _page->setVisible(!folded);
     }
@@ -487,7 +690,14 @@ void TaskPanelHost::dragEnded()
 {
     _dragging = false;
     QWidget* in = parentWidget();
-    setOnRight(in && geometry().center().x() > in->width() / 2);
+    const bool right = in && geometry().center().x() > in->width() / 2;
+    if (MDIView* view = _view) {
+        // Kept in the view, and what a view with no side of its own starts
+        // from. The task view hears it and tells this host, when it changed
+        TaskPlacement::setSide(view, right ? TaskPlacement::Side::Right : TaskPlacement::Side::Left);
+    }
+    // Settled where the view says, also when that is where it was
+    sideChanged();
 }
 
 bool TaskPanelHost::eventFilter(QObject* watched, QEvent* event)

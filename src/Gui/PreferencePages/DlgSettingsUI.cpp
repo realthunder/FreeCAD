@@ -142,6 +142,17 @@ DlgSettingsUI::DlgSettingsUI(QWidget* parent)
 
     // Auto generated code (Tools/params_utils.py:492)
     layoutViews->addLayout(layoutRow);
+    TaskPanelInViewAll = new Gui::PrefCheckBox(this);
+    layoutRow->addWidget(TaskPanelInViewAll);
+    TaskPanelInViewAll->setChecked(Gui::ViewParams::defaultTaskPanelInViewAll());
+    TaskPanelInViewAll->setEntryName("TaskPanelInViewAll");
+    TaskPanelInViewAll->setParamGrpPath("View");
+
+    // Auto generated code (Tools/params_utils.py:486)
+    layoutRow = new QHBoxLayout();
+
+    // Auto generated code (Tools/params_utils.py:492)
+    layoutViews->addLayout(layoutRow);
     labelDocumentTarget = new QLabel(this);
     layoutRow->addWidget(labelDocumentTarget);
     DocumentTarget = new Gui::PrefComboBox(this);
@@ -959,6 +970,7 @@ void DlgSettingsUI::saveSettings()
     PerViewEdit->onSave();
     PerViewSelection->onSave();
     TaskPanelInView->onSave();
+    TaskPanelInViewAll->onSave();
     DocumentTarget->onSave();
     DocViewTarget->onSave();
     UtilityTarget->onSave();
@@ -1021,6 +1033,7 @@ void DlgSettingsUI::loadSettings()
     PerViewEdit->onRestore();
     PerViewSelection->onRestore();
     TaskPanelInView->onRestore();
+    TaskPanelInViewAll->onRestore();
     DocumentTarget->onRestore();
     DocViewTarget->onRestore();
     UtilityTarget->onRestore();
@@ -1091,6 +1104,8 @@ void DlgSettingsUI::retranslateUi()
     PerViewSelection->setText(QObject::tr("A selection per view"));
     TaskPanelInView->setToolTip(QApplication::translate("ViewParams", Gui::ViewParams::docTaskPanelInView()));
     TaskPanelInView->setText(QObject::tr("Task panels in their views"));
+    TaskPanelInViewAll->setToolTip(QApplication::translate("ViewParams", Gui::ViewParams::docTaskPanelInViewAll()));
+    TaskPanelInViewAll->setText(QObject::tr("... and the panels that are open"));
     DocumentTarget->setToolTip(QApplication::translate("OpenViewParams", Gui::OpenViewParams::docDocumentTarget()));
     labelDocumentTarget->setText(QObject::tr("New documents open in"));
     labelDocumentTarget->setToolTip(DocumentTarget->toolTip());

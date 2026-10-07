@@ -43,6 +43,7 @@ class Property;
 }
 
 namespace Gui {
+class BaseView;
 class ControlSingleton;
 class Document;
 class MDIView;
@@ -186,6 +187,11 @@ struct TaskInfo
     /// Where the page is while it is not in the task view's stack: in its
     /// owner view (docs/TaskPanelPerView.md sec 5.2). Null in the stack.
     TaskPanelHost *host {nullptr};
+    /// Whether the page belongs in its owner view. Settled when the dialog
+    /// is shown, from its view's place (TaskPlacement), and again only
+    /// when THAT view's place changes: a panel that is open is not moved by
+    /// the preference, nor by what is chosen in another view (sec 15.1).
+    bool inView {false};
 };
 
 /** TaskView class
@@ -242,20 +248,33 @@ public:
      */
     void ownerClosed(const TaskOwner &owner);
 
-    /// Whether task panels are shown in their views rather than here: the
-    /// preference TaskPanelInView (docs/TaskPanelPerView.md sec 5.5)
-    static bool inViewMode();
     /// The host \a dlg's page is in, or null while this task view has it
     TaskPanelHost *hostOf(const TaskDialog *dlg) const;
-    /** Put every page where the preference says it belongs.
+    /** Put every page where it belongs.
      *
      * In its owner view for a dialog a view of this window owns, while
-     * the preference is on; in the stack here otherwise -- always for a
+     * that view's place said so when the dialog was shown or last changed
+     * (TaskInfo::inView); in the stack here otherwise -- always for a
      * dialog nobody owns, which is shown over everything, and for a served
      * client's, whose view has no widget. No dialog is closed or opened
      * and none is told anything: the view being worked in did not change.
      */
     void applyHosting();
+    /** Every open panel goes where its view's place says NOW.
+     *
+     * What the preference's "the open views too" asks for
+     * (TaskPlacement::applyToAll); a panel is otherwise where it was put
+     * when it was shown.
+     */
+    void followPlacement();
+    /** Send the panel the stack is showing into its view.
+     *
+     * The button on the title bar of the dock that holds the task view:
+     * it acts on the panel in front of it and on that panel's view alone
+     * (docs/TaskPanelPerView.md sec 15.1), which keeps the place. Nothing
+     * when the stack shows the watchers, or a dialog no view owns.
+     */
+    void sendShownToView();
     /** A key pressed in \a page, wherever the page is.
      *
      * Enter presses the default button of that page's dialog and Escape
@@ -367,6 +386,8 @@ protected:
     void slotActivateView(const Gui::MDIView*);
     void slotViewClosed(const Gui::MDIView*);
     void slotResetEdit(const Gui::ViewProviderDocumentObject&);
+    /// A view's property changed: its panel's place, side or size
+    void slotChangedView(const Gui::BaseView&, const App::Property&);
     void slotDeleteDocument(const Gui::Document&);
 
     std::vector<TaskWatcher*> ActiveWatcher;
@@ -407,6 +428,7 @@ protected:
     Connection connectApplicationActivateView;
     Connection connectApplicationCloseView;
     Connection connectApplicationResetEdit;
+    Connection connectApplicationChangedView;
     Connection connectGuiDeleteDocument;
 };
 

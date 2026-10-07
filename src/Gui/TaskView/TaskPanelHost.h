@@ -34,6 +34,11 @@ class QEvent;
 class QLabel;
 class QToolButton;
 
+namespace App
+{
+class Property;
+}
+
 namespace Gui
 {
 
@@ -47,19 +52,92 @@ namespace TaskView
 class TaskPage;
 class TaskView;
 
+/** Where the task panel of a view goes, as that view holds it
+ * (docs/TaskPanelPerView.md sec 15.3).
+ *
+ * Two states. WHERE: in the combo view's Tasks tab, or inside the view.
+ * And, while it is inside the view, HOW: laid over the picture or in a
+ * cell of its own beside it, on which of the four sides, and how wide.
+ *
+ * Each is a property of the view -- Task_Place, Task_Mode, Task_Side,
+ * Task_Size -- so it is saved with the view and is that view's alone. A
+ * property is there only once the user has chosen in that view: by the
+ * buttons of the panel's own title bar. A view that holds none follows
+ * what is general -- the preference View/TaskPanelInView for where, and
+ * for how what was last chosen in any view, which the user parameters
+ * remember across runs.
+ *
+ * Setting one moves the panel of that view and no other
+ * (Application::signalChangedView, heard by the task view).
+ */
+class GuiExport TaskPlacement
+{
+public:
+    enum class Place
+    {
+        Default,    ///< none of its own: the preference
+        ComboView,
+        InView
+    };
+    enum class Mode
+    {
+        Overlay,
+        Side
+    };
+    enum class Side
+    {
+        Left,
+        Right,
+        Top,
+        Bottom
+    };
+
+    /// What \a view holds of its own; Default when nothing
+    static Place place(const MDIView* view);
+    /// Where a panel of \a view goes now: its own place, else the
+    /// preference
+    static bool inView(const MDIView* view);
+    /// Default takes the view's own place away: it follows the preference
+    /// again
+    static void setPlace(MDIView* view, Place place);
+
+    /// \a view's own, else what was last chosen in any view
+    static Mode mode(const MDIView* view);
+    static Side side(const MDIView* view);
+    /// Kept in \a view, and remembered as the last chosen
+    static void setMode(MDIView* view, Mode mode);
+    static void setSide(MDIView* view, Side side);
+
+    /// Across the panel, in pixels; 0 for what the panel itself asks
+    static int size(const MDIView* view);
+    static void setSize(MDIView* view, int size);
+
+    /// Whether \a prop is one of the four
+    static bool isProperty(const App::Property& prop);
+
+    /** Every view there is follows the preference from now.
+     *
+     * The places the views hold of their own are taken away, and the
+     * panels that are open go where the preference says. What the
+     * preference alone does not do: by itself it is for the panels opened
+     * afterwards.
+     */
+    static void applyToAll();
+};
+
 /** A task dialog's page inside the view it belongs to
  * (docs/TaskPanelPerView.md sec 5.2).
  *
  * A child of the widget the view fills -- its Gui::ViewAreaCell when it is
  * in one, else the view itself -- laid over the picture along one side. It
- * is where the page of a dialog is while the preference TaskPanelInView is
- * on, and so it stays in sight whichever view is the active one.
+ * is where the page of a dialog is while its view's place says so
+ * (TaskPlacement), and so it stays in sight whichever view is the active
+ * one.
  *
- * A slim header above the page carries the dialog's title and two
- * buttons: collapse to the header, and send the panels back to the combo
- * view (which turns the preference off). Dragging the header moves the
- * host to the other side of its view. Side and collapsed state are kept
- * per kind of view in the user parameters.
+ * A slim header above the page carries the dialog's title and a button
+ * that sends this panel back to the combo view. Dragging the header moves
+ * the host to the other side of its view. Both are kept in the view
+ * (TaskPlacement).
  *
  * The task view makes a host when a page is to be shown in a view and
  * takes the page back before it lets the host go. A host whose place is
@@ -103,12 +181,10 @@ public:
     {
         return _right;
     }
-    void setOnRight(bool right, bool remember = true);
-    bool isCollapsed() const
-    {
-        return _collapsed;
-    }
-    void setCollapsed(bool collapsed, bool remember = true);
+    /// Take the side from the view again (TaskPlacement::side): it was
+    /// changed there. A host does not follow what is chosen in another
+    /// view while its panel is open.
+    void sideChanged();
     /// Whether the host takes the whole height of its place. Off, which
     /// is the default, it is as tall as its panel needs and no taller: a
     /// two-line panel does not cover the height of the view. A dialog
@@ -117,8 +193,8 @@ public:
     void setFillsHeight(bool fill);
 
     /// Lay the host out in its place: along its side, clear of the
-    /// place's own chrome, down to its header when collapsed or when the
-    /// place is too small for a panel.
+    /// place's own chrome, down to its header when the place is too small
+    /// for a panel.
     void place();
     /// Move with the cursor while the header is dragged (\a x is the
     /// host's wanted left edge in its place), and settle on the nearer
@@ -139,7 +215,6 @@ protected:
 private:
     /// Stand in the widget the view fills now.
     void attach();
-    void updateButtons();
     /// The height the page asks for: its panel, and what is pinned beside
     /// the scrolling
     int pageHeight() const;
@@ -153,10 +228,8 @@ private:
     QBoxLayout* _layout;
     QWidget* _header;
     QLabel* _title;
-    QToolButton* _collapse;
     QToolButton* _toCombo;
     bool _right {false};
-    bool _collapsed {false};
     bool _dragging {false};
     bool _fill {false};
     bool _placePending {false};

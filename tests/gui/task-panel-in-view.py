@@ -30,10 +30,15 @@ With the test-only TaskPanelAllowConcurrent, a panel in each cell: both
 shown at once; what is typed goes to the one typed into; Enter accepts
 and Escape rejects THAT panel and leaves the other.
 
-The host's own button and the combo view's title bar button both flip the
-preference and move the page without closing the dialog. The host
-collapses to its header, moves to the other side of its cell, and
-remembers both.
+The host's own button and the combo view's title bar button both move
+the page without closing the dialog, each acting on its own view, which
+keeps the place (docs/TaskPanelPerView.md sec 15; tests/gui/
+task-panel-place.py is that state's own test). The host moves to the
+other side of its cell, and the view remembers it. No button folds it.
+
+The preference alone is for the panels opened afterwards, so this test
+runs with View/TaskPanelInViewAll on: every panel then goes by the
+preference at once, which is what its steps were written against.
 
 A sketch edited in a1: its panel is in a1's cell, stays with a2 active,
 and the edit survives the switch both ways. A pad edited in a1: a length
@@ -71,7 +76,7 @@ DOC_D = "TaskInViewD"
 V = FreeCAD.Vector
 VIEW = FreeCAD.ParamGet("User parameter:BaseApp/Preferences/View")
 TASKS = FreeCAD.ParamGet("User parameter:BaseApp/Preferences/TaskView")
-HOST3D = TASKS.GetGroup("Host").GetGroup("Gui::View3DInventor")
+LAST = TASKS.GetGroup("Host")
 Control = FreeCADGui.Control
 QTest = QtTest.QTest
 LEFT = QtCore.Qt.LeftButton
@@ -404,10 +409,11 @@ def build():
     VIEW.SetBool("PerViewEdit", True)
     VIEW.SetBool("ShowNaviCube", False)
     VIEW.SetBool("UseNavigationAnimations", False)
+    VIEW.SetBool("TaskPanelInViewAll", True)
     VIEW.SetBool("TaskPanelInView", False)
     TASKS.SetBool("TaskPanelAllowConcurrent", False)
-    HOST3D.SetBool("Right", False)
-    HOST3D.SetBool("Collapsed", False)
+    LAST.RemString("Side")
+    LAST.RemString("Mode")
 
     b = FreeCAD.newDocument(DOC_B)
     b.addObject("Part::Box", "Box")
@@ -622,37 +628,23 @@ def the_two_buttons():
     claim("clicking it", lambda: QTest.mouseClick(host_button("a1", "taskPanelHostToCombo"), LEFT)
           is None)
     settle(400)
-    check("turns the preference off", VIEW.GetBool("TaskPanelInView", True) is False)
+    check("leaves the preference as it was", VIEW.GetBool("TaskPanelInView", False) is True)
+    claim("the view holds the place", lambda: state["views"]["a1"].Task_Place == "ComboView")
     check("the page is in the Tasks tab", shown() == "dialog" and in_task_view(two.form), shown())
     check("no host is left", hosts() == [], len(hosts()))
     check("the dialog was not closed: nothing was told, nothing lost",
           calls("two") == before and two.edit.text() == "stays", (before, calls("two")))
-    check("the combo view's title bar has a button for the switch", title_button() is not None)
+    check("the combo view's title bar has a button for the panel in front of it",
+          title_button() is not None)
     claim("clicking it", lambda: QTest.mouseClick(title_button(), LEFT) is None)
     settle(400)
-    check("turns the preference on", VIEW.GetBool("TaskPanelInView", False) is True)
+    claim("the view holds the place", lambda: state["views"]["a1"].Task_Place == "InView")
     claim("the page is back in a1's cell", lambda: hosted("a1", two.form) and on_screen(two.form))
     check("still the same dialog", calls("two") == before and two.edit.text() == "stays",
           (before, calls("two")))
-    claim("the title bar button shows the mode",
-          lambda: title_button().isCheckable() and title_button().isChecked())
-
-    def collapse():
-        full = host_of("a1").height()
-        QTest.mouseClick(host_button("a1", "taskPanelHostCollapse"), LEFT)
-        settle(300)
-        small = host_of("a1").height()
-        return small < 60 and small < full and not on_screen(two.form), (full, small)
-
-    claim("the host collapses to its header", collapse)
-    check("and remembers it", HOST3D.GetBool("Collapsed", False) is True)
-
-    def expand():
-        QTest.mouseClick(host_button("a1", "taskPanelHostCollapse"), LEFT)
-        settle(300)
-        return on_screen(two.form) and host_of("a1").height() > 100, host_of("a1").height()
-
-    claim("and opens again", expand)
+    claim("the title bar button is no switch", lambda: not title_button().isCheckable())
+    claim("no button folds the host to its header",
+          lambda: host_button("a1", "taskPanelHostCollapse") is None)
 
     def drag_right():
         host, cell = host_of("a1"), cell_of("a1")
@@ -671,8 +663,14 @@ def the_two_buttons():
         return g.center().x() > cell.width() / 2 and cell.rect().contains(g), g.getRect()
 
     claim("dragged by its header to the far side, it stays there", drag_right)
-    check("and remembers the side", HOST3D.GetBool("Right", False) is True)
-    HOST3D.SetBool("Right", False)
+    claim("and the view remembers the side", lambda: state["views"]["a1"].Task_Side == "Right")
+    check("which is the last chosen", LAST.GetString("Side", "") == "Right",
+          LAST.GetString("Side", ""))
+    try:
+        state["views"]["a1"].Task_Side = "Left"
+    except Exception:
+        pass
+    LAST.RemString("Side")
     Control.closeDialog(view=state["views"]["a1"])
 
 
@@ -906,7 +904,10 @@ def finish():
     state["done"] = True
     VIEW.SetBool("PerViewEdit", False)
     VIEW.SetBool("TaskPanelInView", False)
+    VIEW.SetBool("TaskPanelInViewAll", False)
     VIEW.SetBool("UseViewArea", True)
+    LAST.RemString("Side")
+    LAST.RemString("Mode")
     TASKS.SetBool("TaskPanelAllowConcurrent", False)
     try:
         close_any()

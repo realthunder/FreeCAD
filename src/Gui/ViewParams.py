@@ -299,10 +299,16 @@ Params = [
         "afterwards."),
     ParamBool('TaskPanelInView', False, on_change=True,
         title='Task panels in their views', doc=
-        "Show a task panel inside the view it belongs to, over the picture,\n"
-        "where it stays whichever view is active. When off, task panels are\n"
-        "shown in the Tasks tab of the combo view, which follows the active\n"
-        "view. The button on the combo view's title bar is this switch."),
+        "Show a task panel inside the view it belongs to, where it stays\n"
+        "whichever view is active. When off, task panels are shown in the\n"
+        "Tasks tab of the combo view, which follows the active view. This is\n"
+        "for the panels opened from now on: one that is open stays where it\n"
+        "is, and a view keeps the place chosen with the button on its own\n"
+        "panel's title bar."),
+    ParamBool('TaskPanelInViewAll', False, on_change=True,
+        title='... and the panels that are open', doc=
+        "Apply the setting above to every view at once: the panels that are\n"
+        "open move, and a view's own choice of place is given up."),
     ParamFloat('DraggerScale', 0.03,
         title='Transform dragger scale',
         doc="Size of the transform dragger relative to the viewport."),
