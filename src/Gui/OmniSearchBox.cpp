@@ -33,6 +33,7 @@
 # include <QHBoxLayout>
 # include <QKeyEvent>
 # include <QLabel>
+# include <QListView>
 # include <QMenu>
 # include <QMouseEvent>
 # include <QPainter>
@@ -206,6 +207,32 @@ public:
         painter->restore();
     }
 };
+
+/* The list a completer shows its rows in, made here and not by
+ * QCompleter::popup(). Qt lays a list out the moment it is turned into a
+ * popup window, asking whatever delegate it has then for the size of EVERY
+ * row, and the stock delegate answers by reading the row's icon: bringing
+ * the box up for the first time loaded and rendered the icon of each
+ * command there is, most of a second. With this delegate in place first a
+ * row's size is that of its text, and an icon is made when its row is
+ * painted.
+ */
+QAbstractItemView *makePopup(QCompleter *completer)
+{
+    // as QCompleter::popup() sets its own up
+    auto listView = new QListView;
+    listView->setEditTriggers(QAbstractItemView::NoEditTriggers);
+    listView->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    listView->setSelectionBehavior(QAbstractItemView::SelectRows);
+    listView->setSelectionMode(QAbstractItemView::SingleSelection);
+    listView->setModelColumn(completer->completionColumn());
+    listView->setItemDelegate(new OmniItemDelegate(listView));
+    // setPopup() makes it a popup window, which is where the layout runs,
+    // and then installs Qt's delegate: ours again after it
+    completer->setPopup(listView);
+    listView->setItemDelegate(new OmniItemDelegate(listView));
+    return listView;
+}
 
 } // anonymous namespace
 
@@ -659,7 +686,7 @@ void OmniSearchEdit::setupChooser()
     chooser->setWidget(this);
     chooser->setCompletionMode(QCompleter::UnfilteredPopupCompletion);
     chooser->setCaseSensitivity(Qt::CaseInsensitive);
-    chooser->popup()->setItemDelegate(new OmniItemDelegate(chooser->popup()));
+    makePopup(chooser);
     chooser->popup()->installEventFilter(this);
     connect(chooser, qOverload<const QModelIndex&>(&QCompleter::activated),
             this, [this](const QModelIndex &index) {
@@ -737,7 +764,7 @@ void OmniSearchEdit::setupCommands()
     cmdCompleter = new QCompleter(cmdFilter, this);
     cmdCompleter->setWidget(this);
     cmdCompleter->setCompletionMode(QCompleter::UnfilteredPopupCompletion);
-    cmdCompleter->popup()->setItemDelegate(new OmniItemDelegate(cmdCompleter->popup()));
+    makePopup(cmdCompleter);
     cmdCompleter->popup()->installEventFilter(this);
     cmdCompleter->popup()->viewport()->installEventFilter(this);
     connect(cmdCompleter, qOverload<const QModelIndex&>(&QCompleter::activated),
@@ -756,7 +783,7 @@ void OmniSearchEdit::setupParams()
     paramCompleter = new QCompleter(paramFilter, this);
     paramCompleter->setWidget(this);
     paramCompleter->setCompletionMode(QCompleter::UnfilteredPopupCompletion);
-    paramCompleter->popup()->setItemDelegate(new OmniItemDelegate(paramCompleter->popup()));
+    makePopup(paramCompleter);
     paramCompleter->popup()->installEventFilter(this);
     connect(paramCompleter, qOverload<const QModelIndex&>(&QCompleter::activated),
             this, [this](const QModelIndex &index) {
@@ -777,7 +804,7 @@ void OmniSearchEdit::setupMembers()
     memberCompleter = new QCompleter(memberFilter, this);
     memberCompleter->setWidget(this);
     memberCompleter->setCompletionMode(QCompleter::UnfilteredPopupCompletion);
-    memberCompleter->popup()->setItemDelegate(new OmniItemDelegate(memberCompleter->popup()));
+    makePopup(memberCompleter);
     memberCompleter->popup()->installEventFilter(this);
     connect(memberCompleter, qOverload<const QModelIndex&>(&QCompleter::highlighted),
             this, [this](const QModelIndex &index) {
@@ -811,7 +838,7 @@ void OmniSearchEdit::setOwner(App::DocumentObject *owner)
     listCompleter = new ExpressionCompleter(owner, this, /*noProperty*/false, /*checkInList*/false);
     listCompleter->setLocalObjects(localObjects());
     objCompleter->setWidget(this);
-    objCompleter->popup()->setItemDelegate(new OmniItemDelegate(objCompleter->popup()));
+    makePopup(objCompleter);
     objCompleter->popup()->installEventFilter(this);
     // Moving through the list only completes the text; picking a row (a
     // click here, Tab in the key handling) is what commits it.

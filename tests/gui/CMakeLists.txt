@@ -1387,3 +1387,10 @@ fc_add_gui_test(GuiThemeOwnsTechDrawPreselect_tests_run
 fc_add_gui_test(GuiMenuSeeThroughIsAChoice_tests_run
                 menu-see-through-is-a-choice.py
                 --timeout 180)
+
+# Bringing the omni search up for the first time makes no command's icon:
+# the completers' lists are laid out with the box's own delegate, not the
+# stock one that reads every row's icon to size it.
+fc_add_gui_test(GuiOmniSearchFirstBringUp_tests_run
+                omni-search-first-bring-up.py
+                --timeout 120)
