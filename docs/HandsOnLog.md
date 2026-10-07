@@ -34,7 +34,7 @@ Evidence that does not belong in the repository is under
 | 19 | STAGED `805b5afb25` | every place the audit listed that runs at load, recompute or paint, the three wrong results, and the writer of -1; what is left is listed |
 | 22 | STAGED `5aedd5cf83` | `/word` is an object query; the beginning of a keyword lists modes and objects |
 | 23 | STAGED `c7a27b5a85`, and `08b8f009aa`; the defaults FIXED `02cab053df`, not staged | 574 settings: 221 had no documentation, 94 ran past 400 characters; all have a short text now, and a test keeps it so. The defaults: OK on a fresh profile changed 23 settings and stored 2 under a wrong type -- 14 of them a spin box clamping its default to 99, which the reporter's own profile carries |
-| 24 | STARTED: the method, the inventory (1734 pairs of group and key, 570 defined), two groups done -- the report view's 12 keys `a6ed59e824`, Part's measurements' 7 `014dc501f8` -- and two more read; not staged | three things for the reporter to decide are in the entry |
+| 24 | STARTED: the method, the inventory (1734 pairs of group and key, 570 defined), three groups done -- the report view's 12 keys `a6ed59e824`, Part's measurements' 7 `014dc501f8`, the General group's 29 `e0a8a17e23` -- and about 200 more keys read; not staged | three things for the reporter to decide are in the entry |
 | 26 | FIXED `175ffce199`, not staged | the first OK of a profile held the program 11 to 15 s on the reporter's configuration with `scanner.FCStd` open: 780 keys stored for the first time and taken for changes -- stylesheet set again 4.2 s, every Part view provider re-meshed 3.2 s, language activated again 2 s. 0.9 s now |
 | 27 | STAGED `fa2ada985c` | the cell menu made a spreadsheet view by asking for it, listed a page's views, and a pick was placed by the general policy |
 | 31 | FIXED `47b5e72c79`, not staged | "Go to end" is on for a profile that never stored it |
@@ -913,17 +913,24 @@ font and OK stored it -- Tahoma here); the defaults test caught it the moment
 the key had a definition. Scored: `tests/gui/part-measure-settings.py`
 (`GuiPartMeasureSettings_tests_run`) 5 PASS, 3 FAIL on the staged binaries.
 
-**Read, not yet converted** (two read-only helper agents; their tables are
-`..\dl\handson\2026-10-07\entry24-inventory-General.txt` and
-`entry24-inventory-MainWindow-Themes.txt`; two more, for the editor, macro,
-console and unit groups and for what is left of `View` and `Document`, were
-still reading when this was written):
-- `Preferences/General`: 31 settings and 9 state keys. Defects seen on the
-  way, none fixed yet: the decimal separator setting's change handler is
-  registered under a name that is not the key's, so it never fires and the
-  setting needs a restart; the General page's tool tip icon size is stored in
-  a key nothing reads (the page names the wrong group); the "apply at once"
-  box of the preferences calls a read where a write was meant.
+**Done: the General group** (`Preferences/General`), 29 settings, `e0a8a17e23`:
+a new generated class, `GeneralParams`. 22 reads in eleven files ask the
+class. Two kinds of reader keep reading the group, on purpose: those TOLD of
+a change by the parameter manager's own signal (it arrives before a class
+has brought its cache up to date -- the tool bar icon sizes, the preference
+widgets' auto apply), which now take the class's default; and the language
+and the start workbench, whose default is not a constant. Nine keys of the
+group are the program's own state and are not listed. Put right on the way:
+the General page's tool tip icon size was stored in a key nothing reads;
+"apply preferences at once" did not apply itself (a read where a write was
+meant); the decimal separator setting's change handler was registered under
+a name no key has; and the generator defined a helper of every class with a
+change signal as a free function, so a second such class in one library did
+not link. Scored: `tests/gui/general-settings.py`
+(`GuiGeneralSettings_tests_run`) 6 PASS, 5 FAIL on the staged binaries.
+
+**Read, not yet converted** (four read-only helper agents; their tables are
+in `..\dl\handson\2026-10-07\`, `entry24-inventory-*.txt`):
 - `Preferences/MainWindow` and `Themes`: 20 settings and 8 state keys.
   Defaults that disagree: the second and third accent colour have FOUR
   different defaults between the style sheet, the page, a saved theme and
@@ -932,6 +939,17 @@ still reading when this was written):
   is on by default to the window and off to the "is this theme customised"
   test; a change of `GlobalToolBarArea` alone moves nothing; a user-saved
   theme does not carry `QtStyle`, `CustomTitleBar` or `TitleBarToolBars`.
+- `Editor`, `PythonConsole`, `Macro`, `Units`, `NotificationArea`, `Dialog`:
+  about 60 settings. Seen: the report view's line limit, stored by its
+  context menu, is overridden at every start by a read of another group's
+  key of the same name; `Editor/Spaces` is off to the text editor and on to
+  the Python editor; the editor font has three defaults; the Editor and
+  Macro pages still store four keys nothing reads; `UserSchema` defaults to
+  6 in two CAM readers and 0 everywhere else.
+- `View` and `Document`: 113 and 14 keys not yet defined (189 and 43 are),
+  and 19 defined View keys are still read directly at 119 places
+  (`MarkerSize` at 22). Seen: any change of an unnamed key of the View group
+  re-applies the background colours to every view.
 
 **Order from here,** by what a user meets first: the rest of `src/Gui`
 (`General`, `MainWindow`, `Editor`, `View`'s 100 keys not yet in
