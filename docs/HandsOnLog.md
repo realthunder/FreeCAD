@@ -34,12 +34,15 @@ Evidence that does not belong in the repository is under
 | 19 | STAGED `805b5afb25` | every place the audit listed that runs at load, recompute or paint, the three wrong results, and the writer of -1; what is left is listed |
 | 22 | STAGED `5aedd5cf83` | `/word` is an object query; the beginning of a keyword lists modes and objects |
 | 23 | STAGED `c7a27b5a85`, and `08b8f009aa`; the defaults FIXED `02cab053df`, not staged | 574 settings: 221 had no documentation, 94 ran past 400 characters; all have a short text now, and a test keeps it so. The defaults: OK on a fresh profile changed 23 settings and stored 2 under a wrong type -- 14 of them a spin box clamping its default to 99, which the reporter's own profile carries |
+| 24 | STARTED: the method, the inventory (1734 pairs of group and key, 570 defined) and the first group, the report view's 12 keys, `a6ed59e824`; not staged | three things for the reporter to decide are in the entry |
 | 26 | FIXED `175ffce199`, not staged | the first OK of a profile held the program 11 to 15 s on the reporter's configuration with `scanner.FCStd` open: 780 keys stored for the first time and taken for changes -- stylesheet set again 4.2 s, every Part view provider re-meshed 3.2 s, language activated again 2 s. 0.9 s now |
 | 27 | STAGED `fa2ada985c` | the cell menu made a spreadsheet view by asking for it, listed a page's views, and a pick was placed by the general policy |
 | 31 | FIXED `47b5e72c79`, not staged | "Go to end" is on for a profile that never stored it |
 | 32 | FIXED `b960092ea5`, not staged | the menus styled see-through are single objects shared between a pop-up over the 3D view and the main menu; the blue is the palette's bright text, the desktop's accent. No sheet chosen is an ordinary menu now |
 | 33 | FIXED `ef4df215b5` (cycles `35a3bd898`), not staged | the path tracer's CUDA probe ran `cmd.exe /c where nvcc` through `popen` at the first 3D view; it searches the PATH without a shell now |
 | 34 | FIXED `3d7b4c30fd`, not staged | Dark and Light store TechDraw's preselection colour, the blue of the 3D view's |
+| 38 | FIXED `bb31f8820b`, not staged | the omni search's first bring-up made the icon of every command before showing the box: 1.27 s on the reporter's configuration, 0.22 s now |
+| 39 | FIXED `c7d115e576`, not staged | MSAA has not reached any view since 2026-09-07: the scene depth was built readable at every sample count and bgfx refuses that framebuffer. Write-only under MSAA now; a test asks the view its sample count |
 
 **The reporter, 2026-10-07 14:20, on what is open** (said to the build
 session; the queue has the reporter's own entries):
@@ -759,7 +762,7 @@ has not, so there was nothing to watch.
 
 Evidence: `..\dl\handson\2026-10-07\entry33-*`, `watch33.py`, `e33.py`.
 
-## Omni search: the first bring-up freezes -- FIXED (no entry number yet)
+## 38. Omni search: the first bring-up freezes -- FIXED
 
 `bb31f8820b`. Not staged. Asked of the build session directly, 2026-10-07:
 "optimize omni search first bring up speed. right now there is an obvious
@@ -793,7 +796,7 @@ there, because the bring-up had made them all, and 229 ms here.
 
 Evidence: `..\dl\handson\2026-10-07\omni-bring-up-*`, `omni1.py`.
 
-## MSAA does not reach the view -- FIXED (found under entry 26; no entry number yet)
+## 39. MSAA does not reach the view -- FIXED (found under entry 26)
 
 `c7d115e576`. Not staged. The reporter, 2026-10-07, on entry 26: "have you
 tested with scanner open and then change the msaa setting". The halt had
@@ -848,3 +851,73 @@ mark in a pass drawn after the resolve, one sample per pixel. Entry 25 is
 its own thing, and not started.
 
 Evidence: `..\dl\handson\2026-10-07\msaa-*`, `entry26-first-ok-with-msaa-*`.
+
+## 24. Every setting behind a generated class -- STARTED, the first group done
+
+The reporter, 2026-10-07, asked which entry "do entry 23 next" meant: "I
+meant entry 24". Not staged.
+
+**The size of it** (`inv24.py`, static: every `Get`/`Set<Type>("key", ...)`
+with a literal key in C++ and Python, given the group of the nearest path
+above it, and every preference widget of a `.ui` file; `inv24.tsv` has a
+row per group and key with its readers and defaults):
+
+- 1734 pairs of (group, key) are read, written or shown by a widget; the
+  generated classes define 570.
+- By where they are read: `src/Gui` 375 key names not behind a class,
+  Sketcher 152, TechDraw 137, BIM 116, Part 60, Fem 52, CAM 48,
+  AddonManager 34, Material 34, Start 32, App 27, Draft 26, Assembly 22,
+  Import 20 ... 1075 in all.
+- 511 of the pairs could not be given a group from the source text alone
+  (the group handle comes from elsewhere); the count of groups is 141.
+- Not every key is a setting. Window geometry, recent files, the last
+  directory, a dialog's last values are STATE the program keeps for itself;
+  they are not for the omni search. Each group has to be read for which is
+  which.
+
+**How a group is done** (the report view's is the worked example,
+`a6ed59e824`):
+1. Its keys go into the group's `*Params.py` -- one default each, settled
+   where readers disagreed (entry 23's question, per key), and a short
+   documentation written from the code that reads the key.
+   `ParamRegistryTest.everySettingIsDocumentedBriefly` holds the text to 400
+   characters.
+2. The class is regenerated (`regen23.py`, line endings kept).
+3. Every reader asks the class. A reader that used to be told by the group
+   (`OnChange`) follows the class's `signalParamChanged` instead and applies
+   a setting in ONE place, at construction and on each change -- so a change
+   from the preferences, a menu, the omni search or a script all arrive the
+   same way, at once. Where applying is expensive it goes through a delayed
+   handler, so several changes make one apply.
+4. A widget that toggles the setting stores it and lets step 3 apply it.
+5. `tests/gui/preferences-ok-keeps-defaults.py` then holds the preference
+   page's default to the definition's without being told about the new keys.
+6. A GUI test of the group: listed by "/param", followed at once, and
+   whatever the conversion put right.
+
+**Done: the report view** (`Preferences/OutputWindow`), 12 keys: which
+messages are recorded, their four colours, "Go to end", the two Python
+redirections. Readers: the view, the status bar, the expression dialog, the
+macro runner. Put right on the way: `checkCritical` switched NORMAL
+messages off; Python's output, switched off through its key, did not come
+back. Scored: `tests/gui/report-view-settings.py`
+(`GuiReportViewSettings_tests_run`) 12 PASS, 5 FAIL on the staged binaries.
+
+**Order from here,** by what a user meets first: the rest of `src/Gui`
+(`General`, `MainWindow`, `Editor`, `View`'s 100 keys not yet in
+`ViewParams`, `Document`'s 12, `Macro`, `NaviCube`, `Units`,
+`NotificationArea`, `PythonConsole`), then Part and PartDesign, the
+Sketcher, TechDraw, and the rest.
+
+**To decide, for the reporter:**
+- Modules written in Python only (BIM, Draft, AddonManager, parts of CAM
+  and Fem) have no generated class to register from: about 300 keys. The
+  registry can be given a Python door (a module registers its settings from
+  a definition file at import), or these wait. Which?
+- State keys (above) are left out unless said otherwise.
+- "Apply the change with delay handler": done as in step 3 -- at once where
+  it is cheap, through `ParamHandlers::addDelayedHandler` where it is not.
+  Say if every change is to be delayed.
+
+Evidence: `..\dl\handson\2026-10-07\inv24.py`, `inv24.tsv`,
+`inv24-summary.txt`, `entry24-report-view-*`.
