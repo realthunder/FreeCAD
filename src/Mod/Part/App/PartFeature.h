@@ -87,6 +87,23 @@ public:
     /// The looks are taken from the sources though the object names none
     App::PropertyBool ForceMapColors;
     //@}
+    /** @name The looks, by the names they have always had
+     *
+     * Names over ElementAppearance, with no value of their own and not
+     * written to a file (docs/ShapeAppearanceDesign.md sec 14.6.1): what
+     * the property editor shows, and what a script with no view provider
+     * writes. A view provider has the same names, over the same value.
+     */
+    //@{
+    /// The faces as they are drawn. A write is taken apart (writeFaces())
+    App::PropertyAppearanceList ShapeAppearance;
+    /// The object's own colour, and how far it is seen through
+    App::PropertyColor ShapeColor;
+    App::PropertyPercent Transparency;
+    /// The own colour of the edges, and of the vertices
+    App::PropertyColor LineColor;
+    App::PropertyColor PointColor;
+    //@}
     App::PropertyBool ValidateShape;
     App::PropertyBool InvalidShape;
     App::PropertyEnumeration FixShape;
@@ -188,6 +205,36 @@ public:
     using LinkLookFunc = bool (*)(const Data::MappedName &mapped, App::DocumentObject *&obj,
                                   const App::PropertyContainer *&shown, App::Color &color);
     static void setLinkLookFunc(LinkLookFunc func);
+    //@}
+
+    /** @name A write to what is drawn, given to what is stated
+     *
+     * docs/ShapeAppearanceDesign.md sec 14.6.3. The names above and a view
+     * provider's end here.
+     */
+    //@{
+    /** A write to the list of the faces, taken apart
+     *
+     * The base to the object's own look, each face the write changed to
+     * its name or its number with the fields that changed as its own, a
+     * face that came back to the object's look let go.
+     *
+     * @param before: the list as it was
+     * @param after: the list as the write would leave it
+     */
+    void writeFaces(const App::AppearanceList &before, const App::AppearanceList &after);
+    /// The object's own colour and no more: what is seen through it stays
+    void writeOwnColor(const App::Color &color);
+    /// The own transparency, and that of every face that states a colour
+    void writeOwnTransparency(long percent);
+    /// The own look, its shading model, finish and texture left as they are
+    void writeOwnMaterial(const App::MaterialAppearance &look);
+    /** The colours of the edges, or of the vertices
+     *
+     * @param kind: App::PropertyElementAppearance::Edge or Vertex
+     * @param values: one colour is the kind's own; more are one an element
+     */
+    void writeColors(int kind, const std::vector<App::Color> &values);
     //@}
 
     PyObject* getPyObject() override;
@@ -365,6 +412,10 @@ protected:
     void onDocumentRestored() override;
     /// The change of a property that what is drawn is made of
     void onAppearanceChanged(const App::Property* prop);
+    /// Whether \a prop is one of the names over ElementAppearance
+    bool isLookName(const App::Property* prop) const;
+    /// The names take what ElementAppearance has now
+    void mirrorLooks();
 
     // Return true if need to apply the shape placement to the Placement property
     virtual bool shouldApplyPlacement();
@@ -426,6 +477,8 @@ private:
     std::vector<std::pair<std::string, PropertyPartShape*>> _elementCachePrefixMap;
     /// Inside updateAppearance(): what it writes is no reason to run it
     bool _updatingAppearance {false};
+    /// Inside mirrorLooks(): what it sets is no write to the looks
+    bool _mirroringLooks {false};
 };
 
 class FilletBase : public Part::Feature

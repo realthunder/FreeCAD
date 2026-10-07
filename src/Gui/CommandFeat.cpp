@@ -26,6 +26,7 @@
 #endif
 
 #include <App/DocumentObject.h>
+#include "AppearanceNames.h"
 #include "Application.h"
 #include "CommandT.h"
 #include "DockWindowManager.h"
@@ -108,13 +109,27 @@ static void inline setRandomColor(const char *name, bool force)
                         App::Color(color[0], color[1], color[2]));
                 continue;
             }
-            if (Base::freecad_dynamic_cast<App::PropertyColor>(view->getPropertyByName("ShapeColor"))) {
+            // The object's, where the object holds its looks: what is run
+            // is then what a script with no view provider runs
+            // (docs/ShapeAppearanceDesign.md sec 14.6.1)
+            auto shapeColor = Base::freecad_dynamic_cast<App::PropertyColor>(
+                    appearanceProperty(view, "ShapeColor"));
+            if (shapeColor && shapeColor->getContainer() == sel.pObject) {
+                cmdAppObjectArgs(sel.pObject, "ShapeColor=(%.2f,%.2f,%.2f)",
+                                 color[0], color[1], color[2]);
+            }
+            else if (shapeColor) {
                 // get the view provider of the selected object and set the shape color
                 cmdGuiObjectArgs(sel.pObject, "ShapeColor=(%.2f,%.2f,%.2f)",
                                  color[0], color[1], color[2]);
             }
-            if (force && Base::freecad_dynamic_cast<App::PropertyBool>(view->getPropertyByName("MapFaceColor"))) {
-                cmdGuiObjectArgs(sel.pObject, "MapFaceColor = False");
+            auto mapFaceColor = Base::freecad_dynamic_cast<App::PropertyBool>(
+                    appearanceProperty(view, "MapFaceColor"));
+            if (force && mapFaceColor) {
+                if (mapFaceColor->getContainer() == sel.pObject)
+                    cmdAppObjectArgs(sel.pObject, "MapFaceColor = False");
+                else
+                    cmdGuiObjectArgs(sel.pObject, "MapFaceColor = False");
             }
         }
     }

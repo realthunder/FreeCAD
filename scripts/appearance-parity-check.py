@@ -89,6 +89,20 @@ def diffs(obj):
             g = rgb((entry(drawn, i, mine) if drawn.Count else mine).DiffuseColor)
             if w != g:
                 out.append("%s%d: %r/%r" % (kind, i + 1, w, g))
+    # The object's own names of the same (sec 14.6.1), against the view
+    # provider's: two names over one value.
+    for name in ("ShapeColor", "LineColor", "PointColor"):
+        if rgb(getattr(obj, name)) != rgb(getattr(vp, name)):
+            out.append("%s: %r/%r" % (name, rgb(getattr(vp, name)), rgb(getattr(obj, name))))
+    if obj.Transparency != vp.Transparency:
+        out.append("Transparency: %r/%r" % (vp.Transparency, obj.Transparency))
+    mine = obj.ShapeAppearance
+    if mine.Count != want.Count:
+        out.append("ShapeAppearance: %d/%d entries" % (want.Count, mine.Count))
+    else:
+        for i in range(mine.Count):
+            if look(mine[i]) != look(want[i]):
+                out.append("ShapeAppearance[%d] of the object" % i)
     return out
 
 
@@ -181,6 +195,27 @@ def run():
     vp.LineColor = GREEN
     vp.PointColor = RED
     step(doc, "edges and vertices given colours")
+
+    # The same by the object's own names, which is what the property editor
+    # shows; the view provider's are names over them, and say so.
+    box.ShapeColor = YELLOW
+    box.Transparency = 30
+    box.LineColor = CYAN
+    box.PointColor = BLUE
+    step(doc, "the object's own names written")
+    check("and the view provider says what they say (%r, %r)" % (rgb(vp.ShapeColor), vp.Transparency),
+          rgb(vp.ShapeColor) == YELLOW and vp.Transparency == 30 and rgb(vp.LineColor) == CYAN
+          and rgb(vp.PointColor) == BLUE)
+    box.ShapeAppearance[1] = App.Material(DiffuseColor=RED, Shininess=0.25)
+    step(doc, "a face given a material through the object's list")
+    check("which is the object's to state (%r)" % box.ElementAppearance.keys(),
+          len(box.ElementAppearance.keys()) == 1 and rgb(box.ShapeColor) == YELLOW)
+    legacy = [name for name in ("ShapeAppearance", "ShapeColor", "Transparency", "DiffuseColor",
+                                "LineColor", "PointColor", "MapFaceColor")
+              if "Legacy" not in vp.getPropertyStatus(name)]
+    check("the view provider's names are names over the object's (%r), a line width is not (%r)"
+          % (legacy, vp.getPropertyStatus("LineWidth")),
+          not legacy and "Legacy" not in vp.getPropertyStatus("LineWidth"))
     App.closeDocument(doc.Name)
 
     # Faces coloured by their number, on a shape that has no names for them.

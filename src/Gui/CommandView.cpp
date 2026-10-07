@@ -68,6 +68,7 @@
 #include <Base/Tools2D.h>
 
 #include "Action.h"
+#include "AppearanceNames.h"
 #include "Application.h"
 #include "BitmapFactory.h"
 #include "CommandT.h"
@@ -1225,7 +1226,7 @@ void StdCmdToggleTransparency::activated(int iMsg)
 
         if (!dynamic_cast<App::Part*>(obj) && !dynamic_cast<App::LinkGroup*>(obj)) {
             Gui::ViewProvider* view = Application::Instance->getDocument(sel.pDoc)->getViewProvider(obj);
-            App::Property* prop = view->getPropertyByName("Transparency");
+            App::Property* prop = appearanceProperty(view, "Transparency");
             if (prop && prop->getTypeId().isDerivedFrom(App::PropertyInteger::getClassTypeId())) {
                 viewsToToggle.push_back(view);
             }
@@ -1236,7 +1237,7 @@ void StdCmdToggleTransparency::activated(int iMsg)
                 if (!dynamic_cast<App::Part*>(obj) && !dynamic_cast<App::LinkGroup*>(obj)) {
                     App::Document* doc = obj->getDocument();
                     Gui::ViewProvider* view = Application::Instance->getDocument(doc)->getViewProvider(obj);
-                    App::Property* prop = view->getPropertyByName("Transparency");
+                    App::Property* prop = appearanceProperty(view, "Transparency");
                     if (prop && prop->getTypeId().isDerivedFrom(App::PropertyInteger::getClassTypeId())
                         && std::find(viewsToToggle.begin(), viewsToToggle.end(), view) == viewsToToggle.end()) {
                         viewsToToggle.push_back(view);
@@ -1255,7 +1256,7 @@ void StdCmdToggleTransparency::activated(int iMsg)
 
     bool oneTransparent = false;
     for (auto* view : viewsToToggle) {
-        App::Property* prop = view->getPropertyByName("Transparency");
+        App::Property* prop = appearanceProperty(view, "Transparency");
         if (prop && prop->getTypeId().isDerivedFrom(App::PropertyInteger::getClassTypeId())) {
             auto* transparencyProp = dynamic_cast<App::PropertyInteger*>(prop);
             int transparency = transparencyProp->getValue();
@@ -1268,7 +1269,7 @@ void StdCmdToggleTransparency::activated(int iMsg)
     int transparency = oneTransparent ? 0 : 70;
 
     for (auto* view : viewsToToggle) {
-        App::Property* prop = view->getPropertyByName("Transparency");
+        App::Property* prop = appearanceProperty(view, "Transparency");
         if (prop && prop->getTypeId().isDerivedFrom(App::PropertyInteger::getClassTypeId())) {
             auto* transparencyProp = dynamic_cast<App::PropertyInteger*>(prop);
             transparencyProp->setValue(transparency);

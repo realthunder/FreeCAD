@@ -154,6 +154,132 @@ class ElementAppearanceMadeTest(unittest.TestCase):
         self.assertEqual(look()[0], RED)
 
 
+def rgb(color):
+    return tuple(round(v, 3) for v in color[:3])
+
+
+class ElementAppearanceNamesTest(unittest.TestCase):
+    """The looks by the names they have always had, on the object: names over
+    ElementAppearance, written with no view provider anywhere
+    (docs/ShapeAppearanceDesign.md sec 14.6.1)."""
+
+    def setUp(self):
+        self.doc = App.newDocument("ElementAppearanceNames")
+        self.doc.UndoMode = 1
+        self.box = self.doc.addObject("Part::Box", "Box")
+        self.doc.recompute()
+
+    def tearDown(self):
+        App.closeDocument(self.doc.Name)
+
+    def testTheNamesSayWhatTheObjectHas(self):
+        box, ea = self.box, self.box.ElementAppearance
+        for name in ("ShapeAppearance", "ShapeColor", "Transparency", "LineColor", "PointColor"):
+            self.assertEqual(box.getGroupOfProperty(name), "Appearances")
+        self.assertEqual(box.getGroupOfProperty("ShapeMaterial"), "Appearances")
+        self.assertEqual(rgb(box.ShapeColor), rgb(ea.Face.DiffuseColor))
+        self.assertEqual(rgb(box.LineColor), rgb(ea.Edge.DiffuseColor))
+        self.assertEqual(rgb(box.PointColor), rgb(ea.Vertex.DiffuseColor))
+        self.assertEqual(box.Transparency, 0)
+        self.assertEqual(rgb(box.ShapeAppearance.Base.DiffuseColor), rgb(ea.Face.DiffuseColor))
+        # A look stated by any other way is what the names say after
+        ea.Face = material(RED)
+        ea.Edge = material(GREEN)
+        self.assertEqual(rgb(box.ShapeColor), RED[:3])
+        self.assertEqual(rgb(box.LineColor), GREEN[:3])
+        self.assertEqual(rgb(box.ShapeAppearance.Base.DiffuseColor), RED[:3])
+
+    def testAWriteToANameIsAWriteToTheObject(self):
+        box, ea = self.box, self.box.ElementAppearance
+        box.ShapeColor = GREEN[:3]
+        self.assertEqual(rgb(ea.Face.DiffuseColor), GREEN[:3])
+        box.Transparency = 40
+        self.assertAlmostEqual(ea.Face.Transparency, 0.4, places=3)
+        # The colour and what is seen through it are two things
+        self.assertEqual(rgb(box.ShapeColor), GREEN[:3])
+        box.ShapeColor = BLUE[:3]
+        self.assertEqual(box.Transparency, 40)
+        box.LineColor = RED[:3]
+        box.PointColor = GREEN[:3]
+        self.assertEqual(rgb(ea.Edge.DiffuseColor), RED[:3])
+        self.assertEqual(rgb(ea.Vertex.DiffuseColor), GREEN[:3])
+        # Of the object, and of no element; and no shape to make again
+        self.assertEqual(ea.keys(), [])
+        self.assertFalse("Touched" in box.State)
+
+    def testWhatWasMadeFromItFollows(self):
+        cyl = self.doc.addObject("Part::Cylinder", "Cyl")
+        cyl.Radius = 2
+        cyl.Height = 30
+        cyl.Placement.Base = App.Vector(5, 5, -10)
+        cut = self.doc.addObject("Part::Cut", "Cut")
+        cut.Base = self.box
+        cut.Tool = cyl
+        cut.MapFaceColor = True
+        self.doc.recompute()
+        self.box.ShapeColor = RED[:3]
+        cyl.ShapeColor = BLUE[:3]
+        self.assertEqual(colors(cut), sorted([RED[:3], BLUE[:3]]))
+        self.assertEqual(cut.ShapeAppearance.Count, len(cut.Shape.Faces))
+        self.assertNotIn(rgb(cut.ShapeColor), (RED[:3], BLUE[:3]))
+
+    def testAFaceWrittenThroughTheListIsStated(self):
+        box, ea = self.box, self.box.ElementAppearance
+        was = rgb(box.ShapeColor)
+        # An object nobody painted draws one look: a face is given another
+        # by a list that has one for each
+        faces = box.ShapeAppearance.copy()
+        faces.setSize(6)
+        faces[2] = material(RED)
+        box.ShapeAppearance = faces
+        self.assertEqual(len(ea.keys()), 1)
+        self.assertEqual(rgb(drawn(box)[2].DiffuseColor), RED[:3])
+        self.assertEqual(box.ShapeAppearance.Count, 6)
+        self.assertEqual(rgb(box.ShapeAppearance[2].DiffuseColor), RED[:3])
+        # The object is the colour it was, and so is every other face
+        self.assertEqual(rgb(box.ShapeColor), was)
+        self.assertEqual(colors(box), sorted([was, RED[:3]]))
+        # Given the object's look again, the face states nothing
+        box.ShapeAppearance[2] = ea.Face
+        self.assertEqual(ea.keys(), [])
+
+    def testTheNamesAreInNoFile(self):
+        import zipfile
+
+        self.box.ShapeColor = RED[:3]
+        self.box.Transparency = 30
+        self.box.LineColor = BLUE[:3]
+        folder = tempfile.mkdtemp(prefix="fc-ea-")
+        path = os.path.join(folder, "names.FCStd")
+        self.doc.saveAs(path)
+        with zipfile.ZipFile(path) as z:
+            xml = z.read("Document.xml").decode("utf-8")
+        self.assertIn('name="ElementAppearance"', xml)
+        for name in ("ShapeAppearance", "ShapeColor", "Transparency", "LineColor", "PointColor"):
+            self.assertNotIn('name="%s"' % name, xml)
+        App.closeDocument(self.doc.Name)
+        self.doc = App.openDocument(path)
+        box = self.doc.getObject("Box")
+        self.assertEqual(rgb(box.ShapeColor), RED[:3])
+        self.assertEqual(box.Transparency, 30)
+        self.assertEqual(rgb(box.LineColor), BLUE[:3])
+
+    def testAnUndoTakesAWriteToANameBack(self):
+        box, ea = self.box, self.box.ElementAppearance
+        was = rgb(box.ShapeColor)
+        self.doc.openTransaction("red")
+        box.ShapeColor = RED[:3]
+        box.Transparency = 50
+        self.doc.commitTransaction()
+        self.doc.undo()
+        self.assertEqual(rgb(ea.Face.DiffuseColor), was)
+        self.assertEqual(rgb(box.ShapeColor), was)
+        self.assertEqual(box.Transparency, 0)
+        self.doc.redo()
+        self.assertEqual(rgb(box.ShapeColor), RED[:3])
+        self.assertEqual(box.Transparency, 50)
+
+
 def face(obj, **at):
     """The face of the object whose bounding box is so, as the shape counts it."""
     for i, f in enumerate(obj.Shape.Faces):

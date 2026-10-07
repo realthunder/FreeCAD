@@ -3905,8 +3905,8 @@ provider's `ShapeAppearance`, entry by entry, over the paint check's
 documents and a boolean of painted boxes. This is the step that proves
 the code moved whole, before anything depends on it.
 
-**B. The view provider draws what the object made** (*built but for the
-object's own names and the dialogs*, 14.6.10) -- one piece, since
+**B. The view provider draws what the object made** (*built*, 14.6.10)
+-- one piece, since
 the merge and the paint check read by name what goes (14.4 step 3).
 `ShapeAppearance` and the rest as names over the object (14.6.3), the
 write taken apart; `setElementColors()` and its kin on the store;
@@ -4156,9 +4156,8 @@ The colour of an object is therefore the object's row and nothing else,
 which is what 14.6.5 says of it, and what two branches both wrote of it is
 merged by `ElementAppearance`'s own rule and is no "view conflict"
 (`scripts/transaction-log-merge-check.py`, which has a line width for
-that now). Until the object's own names are there and these are hidden,
-the property editor draws them the way it draws a `Legacy` name, in red
-italic.
+that now). The property editor does not show a `Legacy` name unless it
+shows all, and then in red italic (below).
 
 *A write to the object is no write to its faces* (*mine*). A write that
 moves the own look -- a colour, a transparency, a material -- gives a look
@@ -4232,9 +4231,7 @@ it names stored content.
 - An object-level write through `ShapeAppearance.Base` on a list every
   face of which states the same look is read against that look, not the
   object's own. `ShapeColor` and the others do not go that way.
-- The object's own names of 14.6.1 (`ShapeColor` and the rest as
-  properties of the object, the view provider's hidden), the dialogs
-  writing the object's, and `Render_*` are not in this.
+- `Render_*` is not in this.
 
 Checks. `scripts/appearance-parity-check.py`, 66, is no longer two makings
 held against each other: after each change made through the view
@@ -4248,3 +4245,74 @@ material; a box's face coloured by number is stated as a painted one is.
 Python `parttests.ElementAppearanceTest.ElementAppearanceMergeTest`, 3, in
 `FreeCADCmd`: faces named on both branches, one of them drilled through
 meanwhile; faces by number on both; one face on both, by the rule.
+
+**Step B, the object's own names (2026-10-07).** What was left of B.
+
+*The names* (14.6.1). `Part::Feature` has `ShapeAppearance`, `ShapeColor`,
+`Transparency`, `LineColor` and `PointColor` in the group `Appearances`,
+and `ShapeMaterial`, the card, is in that group now. Each of the five is a
+name over `ElementAppearance`: not written to a file (`Prop_NoPersist`),
+no reason to make the shape again, in no row of the log and held by no
+undo (`Feature::onBeforeChange()` stands down for them) -- the store's row
+and the store's undo are theirs. They take what the store has whenever it
+changes (`mirrorLooks()`): `ShapeAppearance` the drawn faces, the same
+storage; `ShapeColor` and `Transparency` the object's own look, asked of
+the store and not of the list's base; `LineColor` and `PointColor` the own
+colours of the edges and the vertices. A write to one is a write to the
+store, `obj.ShapeColor = (1, 0, 0)` in `FreeCADCmd` among them, and
+`obj.ShapeAppearance[2] = material` is that face stated, by its name or
+its number.
+
+*A property all the same* (*mine*). "No storage of their own" is as far as
+a property goes: the list shares the store's, the four others are a colour
+or a number each, and every `Part::Feature` has the five property objects.
+A name that is nowhere until it is asked for is not something a property
+container has.
+
+*The taking apart is the object's.* `writeFaces()`, and what was
+`writeOwnLook()` and `writeColours()` -- `writeOwnColor()`,
+`writeOwnTransparency()`, `writeOwnMaterial()`, `writeColors()` -- moved
+from `ViewProviderPartExt` to `Part::Feature`
+(`PartFeatureAppearance.cpp`), where the object's names end in them; the
+view provider's names call the same.
+
+*The view provider's are hidden.* They carry `Legacy` (above), and the
+property editor leaves a `Legacy` name out unless it shows all
+(`PropertyView::isPropertyHidden()`), where it is the red italic it was.
+*Not by `Hidden`* (*mine*): a property's status is written to the file with
+it, and upstream, reading a schema 4 file, would hide `ShapeColor` on its
+own view provider. Upstream has no meaning for the `Legacy` bit.
+
+*The dialogs and the commands.* `Gui::appearanceProperty(view, name)`
+(`src/Gui/AppearanceNames.h`) answers the object's property of a name where
+the object has it in `Appearances` and the view provider's is a name over
+it, else the view provider's. The display dialog (`DlgDisplayPropertiesImp`)
+reads and writes the shape, line and point colours, the transparency and
+the `Map*` boxes by it; `Std_RandomColor` runs `App...ShapeColor = ...`, so
+what a macro records of it runs with no Gui; `Std_ToggleTransparency`
+likewise. Set Colors was on the store already. *Found there:* the dialog's
+two boxes for the edges' and the vertices' colours named properties nobody
+has, `MapEdgeColor` and `MapVertexColor`, and were never enabled; they
+name `MapLineColor` and `MapPointColor`.
+
+*A body, until step C.* Its view provider hands a look it is given on to
+its tip's (`unifyVisualProperty()`), and does so when its names take the
+object's too, so a write to a body's own name reaches the tip with a Gui
+and not without one.
+
+*Other objects' properties of these names.* A Python feature on a
+`Part::FeaturePython` that adds a property called `ShapeColor`,
+`Transparency`, `LineColor`, `PointColor` or `ShapeAppearance` to the
+object is refused the name now. Nothing in this tree does; the view
+providers that do (Draft's) are not objects.
+
+Checks. Python `parttests.ElementAppearanceTest.ElementAppearanceNamesTest`,
+6, in `FreeCADCmd`: the names say what the store has; a write to each is a
+write to the object and to no element; what was made from the object
+follows with no recompute; a face written through the list is stated, and
+let go when it is given the object's look again; the names are in no file
+and say what the file has when it is read; an undo takes a write back.
+`scripts/appearance-parity-check.py`, 71: the object's names are held
+against the view provider's at every step, the object's written with a
+Gui, and the view provider's carrying `Legacy` where a line width does
+not. The suite: Python 3054, ctest 891, frozen and unfrozen.

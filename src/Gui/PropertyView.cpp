@@ -287,8 +287,12 @@ void PropertyView::slotChangePropertyView(const App::Property& prop)
 }
 
 bool PropertyView::isPropertyHidden(const App::Property *prop) {
+    // Legacy: a name over a value kept somewhere else, which is where it
+    // is shown -- a view provider's ShapeColor where its object has the
+    // looks (docs/ShapeAppearanceDesign.md sec 14.6.1)
     return prop && !showAll() &&
-        ((prop->getType() & App::Prop_Hidden) || prop->testStatus(App::Property::Hidden));
+        ((prop->getType() & App::Prop_Hidden) || prop->testStatus(App::Property::Hidden)
+            || prop->testStatus(App::Property::Legacy));
 }
 
 void PropertyView::slotAppendDynamicProperty(const App::Property& prop)

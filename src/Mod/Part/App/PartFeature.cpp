@@ -221,8 +221,9 @@ static int baseShapeOrdinal(const char *name)
 Feature::Feature()
 {
     ADD_PROPERTY(Shape, (TopoDS_Shape()));
+    static const char *appearances = "Appearances";
     auto mat = Materials::MaterialManager::defaultMaterial();
-    ADD_PROPERTY_TYPE(ShapeMaterial, (*mat), "", App::Prop_None,
+    ADD_PROPERTY_TYPE(ShapeMaterial, (*mat), appearances, App::Prop_None,
             "The physical material assigned to this shape");
     ADD_PROPERTY_TYPE(ValidateShape, (false), "", App::Prop_None,
             "Validate shape content and warn about invalid shape");
@@ -239,10 +240,23 @@ Feature::Feature()
     // What the object looks like, made here and drawn by a view provider
     // (docs/ShapeAppearanceDesign.md sec 14.6). None of it is a reason to
     // make the shape again.
-    static const char *appearances = "Appearances";
     ADD_PROPERTY_TYPE(ElementAppearance, (0), appearances,
             (App::PropertyType)(App::Prop_Hidden|App::Prop_Output),
             "The looks of the object and of its faces, edges and vertices");
+    // The names the looks have always had, over ElementAppearance: no value
+    // of their own, nothing in a file, no reason to make the shape again
+    // (docs/ShapeAppearanceDesign.md sec 14.6.1)
+    const auto name = (App::PropertyType)(App::Prop_NoPersist|App::Prop_Output|App::Prop_NoRecompute);
+    ADD_PROPERTY_TYPE(ShapeColor, (App::Color()), appearances, name,
+            "The colour of the object");
+    ADD_PROPERTY_TYPE(Transparency, (0), appearances, name,
+            "How far the object is seen through, in percent");
+    ADD_PROPERTY_TYPE(LineColor, (App::Color()), appearances, name,
+            "The colour of the edges");
+    ADD_PROPERTY_TYPE(PointColor, (App::Color()), appearances, name,
+            "The colour of the vertices");
+    ADD_PROPERTY_TYPE(ShapeAppearance, (App::MaterialAppearance()), appearances, name,
+            "The looks of the faces as they are drawn");
     ADD_PROPERTY_TYPE(MapFaceColor, (PartParams::getMapFaceColor()), appearances, App::Prop_Output,
             "A face takes the look of the face it was made from");
     ADD_PROPERTY_TYPE(MapLineColor, (PartParams::getMapLineColor()), appearances, App::Prop_Output,
@@ -254,6 +268,10 @@ Feature::Feature()
     ADD_PROPERTY_TYPE(ForceMapColors, (false), appearances, App::Prop_Output,
             "Take the looks of the elements the shape was made from\n"
             "though the object links to nothing");
+    ShapeAppearance.setWriter([this](const App::AppearanceList &before,
+                                     const App::AppearanceList &after, int) {
+        writeFaces(before, after);
+    });
 }
 
 Feature::~Feature()
@@ -1492,6 +1510,9 @@ const Data::ComplexGeoData* Feature::getElementGeometry(const char*& element) co
 }
 
 void Feature::onBeforeChange(const App::Property *prop) {
+    // A name over ElementAppearance: the write to that is what an undo holds
+    if (isLookName(prop))
+        return;
     PropertyPartShape *propShape = nullptr;
     const std::string *prefix = nullptr;
     if (prop == &Shape)
@@ -2263,6 +2284,8 @@ void Feature::onDocumentRestored() {
     // at the next save.
     adoptShapeVersions();
     App::GeoFeature::onDocumentRestored();
+    // The names over the looks are in no file: they take what the file has
+    mirrorLooks();
 }
 
 void Feature::restoreShapeContents() {

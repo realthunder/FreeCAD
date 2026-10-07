@@ -37,7 +37,10 @@
 
 #include "PreCompiled.h"
 
+#include <algorithm>
 #include <array>
+#include <cmath>
+#include <cstdint>
 #include <cstring>
 #include <map>
 #include <set>
@@ -462,10 +465,41 @@ void Feature::updateAppearance(App::Document *sourceDoc, bool forceMap)
     if (changed) {
         App::AppearanceUpdater::addObject(this);
     }
+    mirrorLooks();
 }
 
 void Feature::onAppearanceChanged(const App::Property *prop)
 {
+    if (isLookName(prop)) {
+        // A write to a name is a write to what it names. Not what the name
+        // is given of that, and nothing while a document is read: a name is
+        // in no file, and one a file has all the same is not this
+        App::Document *doc = getDocument();
+        if (_mirroringLooks || !doc || !getNameInDocument()
+            || doc->testStatus(App::Document::Restoring) || doc->isPerformingTransaction()) {
+            return;
+        }
+        try {
+            if (prop == &ShapeColor) {
+                writeOwnColor(ShapeColor.getValue());
+            }
+            else if (prop == &Transparency) {
+                writeOwnTransparency(Transparency.getValue());
+            }
+            else if (prop == &LineColor) {
+                writeColors(Store::Edge, {LineColor.getValue()});
+            }
+            else if (prop == &PointColor) {
+                writeColors(Store::Vertex, {PointColor.getValue()});
+            }
+        }
+        catch (Base::Exception &e) {
+            FC_ERR(getFullName() << ": " << prop->getName() << " was not taken: " << e.what());
+        }
+        // Whatever was made of the write, the name says what is
+        mirrorLooks();
+        return;
+    }
     if (prop != &Shape && prop != &ElementAppearance && prop != &ShapeMaterial
         && prop != &MapFaceColor && prop != &MapLineColor && prop != &MapPointColor
         && prop != &MapTransparency && prop != &ForceMapColors) {
@@ -485,6 +519,9 @@ void Feature::onAppearanceChanged(const App::Property *prop)
             if (prop == &ElementAppearance) {
                 App::AppearanceUpdater::addObject(this);
             }
+        }
+        if (prop == &ElementAppearance && !_updatingAppearance) {
+            mirrorLooks();
         }
     }
     catch (Base::Exception &e) {
@@ -625,3 +662,265 @@ bool Feature::resetAppearanceToMaterial()
     ElementAppearance.followMaterial(Store::Face, card);
     return true;
 }
+
+/** @name The looks by the names they have always had
+ *
+ * docs/ShapeAppearanceDesign.md sec 14.6.1, 14.6.3. ShapeAppearance,
+ * ShapeColor, Transparency, LineColor and PointColor are names over
+ * ElementAppearance: they take what it has (mirrorLooks()), and a write to
+ * one is taken apart and stated there. A view provider's names end in the
+ * same functions.
+ */
+//@{
+
+namespace
+{
+
+/// Field by field: App::MaterialAppearance::operator== calls two that name
+/// one card the same whatever their colours say
+bool sameLook(const App::MaterialAppearance &a, const App::MaterialAppearance &b)
+{
+    return Store::differingFields(a, b) == Store::OwnNone;
+}
+
+bool sameRGB(const App::Color &a, const App::Color &b)
+{
+    return a.r == b.r && a.g == b.g && a.b == b.b;
+}
+
+}  // namespace
+
+bool Feature::isLookName(const App::Property *prop) const
+{
+    return prop == &ShapeAppearance || prop == &ShapeColor || prop == &Transparency
+        || prop == &LineColor || prop == &PointColor;
+}
+
+void Feature::mirrorLooks()
+{
+    if (_mirroringLooks) {
+        return;
+    }
+    Base::FlagToggler<> guard(_mirroringLooks);
+    const Store &store = ElementAppearance;
+
+    // The faces: the same storage, not a copy
+    App::AppearanceList faces;
+    getDrawnAppearance(Store::Face, faces);
+    ShapeAppearance.mirrorList(faces);
+
+    // The object's own look, and not what the list of the faces keeps as
+    // its base: where every face states the same look that is the base, and
+    // it is not the object's (sec 14.2)
+    const App::MaterialAppearance own = store.getBase(Store::Face);
+    const App::Color color = App::AppearanceList::storedDiffuse(own);
+    if (ShapeColor.getValue() != color) {
+        ShapeColor.setValue(color);
+    }
+    const long percent = std::lround(own.transparency * 100.0F);
+    if (Transparency.getValue() != percent) {
+        Transparency.setValue(percent);
+    }
+    auto colour = [&store](Kind kind, App::PropertyColor &name) {
+        App::Color rgb = store.getBase(kind).diffuseColor;
+        rgb.a = name.getValue().a;
+        if (name.getValue() != rgb) {
+            name.setValue(rgb);
+        }
+    };
+    colour(Store::Edge, LineColor);
+    colour(Store::Vertex, PointColor);
+}
+
+void Feature::writeFaces(const App::AppearanceList &before, const App::AppearanceList &after)
+{
+    if (_mirroringLooks) {
+        return;
+    }
+    Store &store = ElementAppearance;
+    Store::Edit edit(store);
+
+    // The object's own look. A list assigned a face at a time has no base
+    // chosen, and says nothing of the object.
+    const bool hasBase = after.hasDerivedBase() || after.getSize() <= 1;
+    // A write that moves the object's own look is a write to the object:
+    // of its faces, those that state a look are given what it makes of
+    // them -- a transparency is every face's -- and no face comes to state
+    // one by it. What is drawn of the rest is made again.
+    bool toObject = false;
+    if (hasBase) {
+        const bool moved =
+            !sameLook(after.getBase(), before.getBase()) || after.isPBR() != before.isPBR();
+        toObject = moved;
+        const bool follows = after.isFollowingMaterial();
+        const bool followed = before.isFollowingMaterial();
+        if (follows && (moved || !followed)) {
+            // The card's look, or the look given back to the card: which
+            // the object then takes
+            store.followMaterial(Store::Face, after.getBase());
+            if (!moved) {
+                applyMaterialAppearance();
+            }
+        }
+        else if (!follows && moved) {
+            store.setBase(Store::Face, after.getBase());
+        }
+        else if (!follows && followed) {
+            // The follow ended with the look as it is
+            App::AppearanceList own = store.getBaseList(Store::Face);
+            if (own.getSize() == 1) {
+                own.setFollowMaterial(false);
+                store.setBaseList(Store::Face, own);
+            }
+        }
+    }
+    const App::MaterialAppearance base = store.getBase(Store::Face);
+
+    // The faces the write changed, each given what it says: to its name
+    // where the shape has one, to its number where it has not, with the
+    // fields that changed as its own
+    auto entry = [](const App::AppearanceList &list, int i) {
+        if (list.getSize() <= 1 || i >= list.getSize()) {
+            return list.getBase();
+        }
+        return list.getMaterial(i);
+    };
+    std::set<int> faces;
+    if (before.getSize() <= 1 && after.getSize() <= 1) {
+        // A write to the object and no more
+    }
+    else if (hasBase && (before.hasDerivedBase() || before.getSize() <= 1)) {
+        for (const App::AppearanceList *list : {&before, &after}) {
+            if (list->getSize() > 1) {
+                faces.insert(list->getOverrides().begin(), list->getOverrides().end());
+            }
+        }
+    }
+    else {
+        for (int i = 0; i < std::max(before.getSize(), after.getSize()); ++i) {
+            faces.insert(i);
+        }
+    }
+    const int count = store.countElements(Store::Face);
+    for (int i : faces) {
+        if (count >= 0 && i >= count) {
+            break;
+        }
+        if (toObject && !store.isStated(Store::Face, i)) {
+            continue;
+        }
+        const App::MaterialAppearance now = entry(after, i);
+        uint16_t changed = Store::differingFields(now, entry(before, i));
+        // Of a write to the object, only what the face states itself: the
+        // rest of it is the object's, and moved with the object
+        if (toObject) {
+            changed &= store.getOwn(Store::Face, i);
+        }
+        if (changed == Store::OwnNone) {
+            continue;
+        }
+        if (sameLook(now, base) && store.removeLook(Store::Face, i)) {
+            continue;
+        }
+        store.setLook(Store::Face, i, now, changed);
+    }
+}
+
+void Feature::writeOwnColor(const App::Color &value)
+{
+    Store &store = ElementAppearance;
+    App::MaterialAppearance own = store.getBase(Store::Face);
+    // The colour and no more: what is seen through it is Transparency's
+    App::Color color = value;
+    color.a = own.diffuseColor.a;
+    if (sameRGB(color, own.diffuseColor)) {
+        return;
+    }
+    own.diffuseColor = color;
+    store.setBase(Store::Face, own);
+}
+
+void Feature::writeOwnTransparency(long percent)
+{
+    Store &store = ElementAppearance;
+    App::MaterialAppearance own = store.getBase(Store::Face);
+    if (std::lround(own.transparency * 100.0F) == percent) {
+        return;
+    }
+    Store::Edit edit(store);
+    const float trans = static_cast<float>(percent) / 100.0F;
+    own.transparency = trans;
+    own.diffuseColor.setTransparency(trans);
+    store.setBase(Store::Face, own);
+    // A transparency is every face's: of those that state a colour too
+    for (const auto &v : store.getStatedLooks()) {
+        Store::Kind kind = Store::KindCount;
+        int index = -1;
+        if (!store.resolveElement(v.first.c_str(), kind, index) || kind != Store::Face
+            || index < 0 || !(store.getOwn(kind, index) & Store::OwnDiffuse)) {
+            continue;
+        }
+        App::MaterialAppearance look = v.second;
+        look.transparency = trans;
+        look.diffuseColor.setTransparency(trans);
+        store.setLook(kind, index, look, Store::OwnDiffuse);
+    }
+}
+
+void Feature::writeOwnMaterial(const App::MaterialAppearance &value)
+{
+    Store &store = ElementAppearance;
+    const App::MaterialAppearance own = store.getBase(Store::Face);
+    // A plain material: it states no shading model, finish or texture, and
+    // leaves the object's as they are
+    App::MaterialAppearance look = value;
+    look.pbr = own.pbr;
+    look.finish = own.finish;
+    look.texture = own.texture;
+    if (!sameLook(look, own)) {
+        store.setBase(Store::Face, look);
+    }
+}
+
+void Feature::writeColors(int which, const std::vector<App::Color> &values)
+{
+    if (which != Store::Edge && which != Store::Vertex) {
+        return;
+    }
+    const auto kind = static_cast<Kind>(which);
+    Store &store = ElementAppearance;
+    Store::Edit edit(store);
+    const App::MaterialAppearance own = store.getBase(kind);
+    if (values.size() <= 1) {
+        // One colour is every element's: the kind's own
+        if (values.size() == 1 && !sameRGB(values[0], own.diffuseColor)) {
+            App::MaterialAppearance look = own;
+            look.diffuseColor = values[0];
+            look.diffuseColor.a = own.diffuseColor.a;
+            store.setBase(kind, look);
+        }
+        return;
+    }
+    const App::AppearanceList drawn = store.getDrawn(kind);
+    const int count = store.countElements(kind);
+    for (int i = 0; i < static_cast<int>(values.size()); ++i) {
+        if (count >= 0 && i >= count) {
+            break;
+        }
+        const App::Color &value = values[static_cast<std::size_t>(i)];
+        const App::Color now = drawn.getSize() > 1 && i < drawn.getSize()
+            ? drawn.getDiffuseColor(i)
+            : own.diffuseColor;
+        if (sameRGB(value, now)) {
+            continue;
+        }
+        if (sameRGB(value, own.diffuseColor) && store.removeLook(kind, i)) {
+            continue;
+        }
+        App::Color color = value;
+        color.a = own.diffuseColor.a;
+        store.setColor(kind, i, color);
+    }
+}
+
+//@}

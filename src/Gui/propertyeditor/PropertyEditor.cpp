@@ -661,7 +661,9 @@ void PropertyEditor::setEditorMode(const QModelIndex & parent, int start, int en
     for (int i=start; i<=end; i++) {
         QModelIndex item = propertyModel->index(i, column, parent);
         auto propItem = static_cast<PropertyItem*>(item.internalPointer());
-        if (!PropertyView::showAll() && propItem && propItem->testStatus(App::Property::Hidden)) {
+        if (!PropertyView::showAll() && propItem
+                && (propItem->testStatus(App::Property::Hidden)
+                    || propItem->testStatus(App::Property::Legacy))) {
             setRowHidden (i, parent, true);
         }
     }

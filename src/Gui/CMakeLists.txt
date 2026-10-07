@@ -1052,6 +1052,7 @@ SET(Viewprovider_CPP_SRCS
     ViewProviderSuppressibleExtension.cpp
     ViewProviderGeoFeatureGroupExtension.cpp
     ViewProviderOriginGroupExtension.cpp
+    AppearanceNames.cpp
     ViewProviderAnnotation.cpp
     ViewProviderDocumentObject.cpp
     ViewProviderDocumentObjectGroup.cpp
@@ -1097,6 +1098,7 @@ SET(Viewprovider_SRCS
     ViewProviderGeoFeatureGroupExtension.h
     ViewProviderOriginGroupExtension.h
     ViewProviderAnnotation.h
+    AppearanceNames.h
     ViewProviderDocumentObject.h
     ViewProviderDocumentObjectGroup.h
     ViewProviderDragger.h
