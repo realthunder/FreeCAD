@@ -1,5 +1,7 @@
 * {
-  color: palette(bright-text);
+  /* not the palette's bright text: under a dark colour scheme that is the
+     desktop's accent, and the menu's text came out light blue */
+  color: rgb(240,240,240);
   background-color: transparent;
   border: none;
 }

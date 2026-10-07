@@ -174,7 +174,9 @@ void DlgSettingsTheme::loadCustomization()
 
     populateStylesheets("StyleSheet", "qss", ui->StyleSheets, "No style sheet");
     populateStylesheets("OverlayActiveStyleSheet", "overlay", ui->OverlayStyleSheets, "Auto");
-    populateStylesheets("MenuStyleSheet", "qssm", ui->MenuStyleSheets, "Auto");
+    // No sheet is ordinary menus: the see-through ones are a choice, not
+    // something a theme brings along (setupMenuStyle).
+    populateStylesheets("MenuStyleSheet", "qssm", ui->MenuStyleSheets, "None");
     populateStylesheets("IconSet", "iconset", ui->IconSets, "None",
                         QStringList(QStringLiteral("*.txt")));
 

@@ -1380,3 +1380,10 @@ fc_add_gui_test(GuiPreferencesOkReappliesNothing_tests_run
 fc_add_gui_test(GuiThemeOwnsTechDrawPreselect_tests_run
                 theme-owns-techdraw-preselect.py
                 --timeout 180)
+
+# A menu is see-through only when a menu sheet was chosen: the menus that
+# pop up over the 3D view are shared with the main menu, and Tools >
+# Command history came up see-through whenever a theme had a stylesheet.
+fc_add_gui_test(GuiMenuSeeThroughIsAChoice_tests_run
+                menu-see-through-is-a-choice.py
+                --timeout 180)

@@ -574,16 +574,13 @@ void setupMenuStyle(QWidget *menu)
     static QString _Stylesheet;
     QString name = QString::fromUtf8(hGrp->GetASCII("MenuStyleSheet").c_str());
     if(name.isEmpty()) {
-        // Follow the color scheme in effect rather than the stylesheet
-        // filename: the parameterized FreeCAD.qss serves both schemes
-        // under one name. A session with no stylesheet at all keeps the
-        // platform-styled default menus.
-        if(hGrp->GetASCII("StyleSheet").empty())
-            name = QStringLiteral("qssm:Default.qss");
-        else if(Application::isDarkTheme())
-            name = QStringLiteral("qssm:Dark.qss");
-        else
-            name = QStringLiteral("qssm:Light.qss");
+        // No menu sheet chosen: a menu like every other, drawn by the theme.
+        // The see-through sheets (Dark.qss, Light.qss) are for whoever picks
+        // one. They used to be the choice whenever a theme with a stylesheet
+        // was active, and since the menus styled here are shared between a
+        // pop-up over the 3D view and an entry of the main menu, Tools >
+        // Command history and its like came up see-through as well.
+        name = QStringLiteral("qssm:Default.qss");
     } else if (!QFile::exists(name))
         name = QStringLiteral("qssm:%1").arg(name);
     if(_Name != name) {
@@ -609,6 +606,12 @@ void setupMenuStyle(QWidget *menu)
         menu->setAttribute(Qt::WA_NoSystemBackground, true);
         menu->setAttribute(Qt::WA_TranslucentBackground, true);
     }
+    else if (menu->testAttribute(Qt::WA_TranslucentBackground)) {
+        // a see-through sheet was taken away again in this session
+        menu->setWindowFlags(menu->windowFlags() & ~Qt::FramelessWindowHint);
+        menu->setAttribute(Qt::WA_NoSystemBackground, false);
+        menu->setAttribute(Qt::WA_TranslucentBackground, false);
+    }
 }
 }
 
@@ -621,6 +624,9 @@ SelectionMenu::SelectionMenu(QWidget *parent)
 
 void SelectionMenu::beforeShow()
 {
+    // the sub menus follow the menu: see-through only when it is
+    if (!testAttribute(Qt::WA_TranslucentBackground))
+        return;
     for(auto child : findChildren<QMenu*>()) {
         child->setWindowFlags(child->windowFlags() | Qt::FramelessWindowHint);
         child->setAttribute(Qt::WA_NoSystemBackground, true);
