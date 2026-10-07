@@ -25,6 +25,7 @@ Evidence that does not belong in the repository is under
 |---|---|---|
 | 15 | FIXED `1047cc0647`; one question for the reporter | a refine wrote into the feature underneath. Left: `Pocket040` is 12 mm where the file has 13 -- its negative `Fit` grew in the old build, on one oddly made face |
 | 17 | FIXED `3c8cd63032`; what it uncovers is a question for the reporter | the two sketches refer to edges of a binder that moved with another binder; found again now. Then `Pad033` loses its profile, because the sketch really changes |
+| 19 | FIXED `805b5afb25` | every place the audit listed that runs at load, recompute or paint, the three wrong results, and the writer of -1; what is left is listed |
 
 ## 15. A Pad "up to first" gives a third result -- FIXED, one question left
 
@@ -180,7 +181,8 @@ comparison of vertex counts at most.
 a sketch's external geometry on a binder of a moved binder): fails on the
 staged binaries ("Failed to obtain shape ...RefFace3.?Edge3"), passes here.
 TestShapeBinder 9 OK, TestPartApp 275 OK, TestSketcherApp 145 OK,
-TestPartDesignApp 347 with the two known `TestThickness` 5829 failures, the
+TestPartDesignApp 346 with the two known `TestThickness` 5829 failures (run
+before the new case was in the build tree; its module was run after), the
 Part and Sketcher cases of ctest 24 of 24. Evidence:
 `..\dl\handson\2026-10-07\entry17-*`.
 
@@ -204,3 +206,69 @@ never did, since it had no reason to recompute the binder. `Fillet011`
 binder in a moved group is MEANT to come back 53 mm away is the reporter's
 to say; if it is, the file needs its sketch redone, and if it is not, the
 thing to change is the binder, not the references.
+
+## 19. TechDraw: other indexes taken on trust -- FIXED
+
+The queue's entry is the audit, read from the source and not run. What was
+done with each of its points, `805b5afb25`:
+
+**Enumerations a file holds outside their list** (the audit's 1, 3, 4 and
+6: `Type` of a projection group item and of a dimension, `BubbleShape`,
+about twenty callers of `getValueAsString()`). Not fixed caller by caller.
+Every TechDraw enumeration has a fixed list set in its constructor, so a
+`DrawView` and a `DrawPage` now note what their enumerations hold before a
+restore and put back any the file left outside its list
+(`RestoredEnumerations`, `DrawUtil`), with a warning that names the
+property. One place, and a caller added later is covered too.
+`TDTest/RestoredEnumerationTest.py` writes 7, 99, 99 and -3 into a saved
+file for a page's `ProjectionType`, a view's `ScaleType` and a balloon's
+`BubbleShape` and `EndType`, and reads back what a new object holds; on the
+staged binaries the first of them reads `None`.
+
+**Lists indexed by a reference number.** `DrawViewDimension`: the saved
+geometry, and the references, are asked for their size first in the three
+places that did not (2). `LandmarkDimension`: a file with fewer tags than
+references gets the missing reference vertices instead of an exception (7).
+
+**The line definition files** (8). A row too short, or a length that is
+not a number, no longer ends the `LineGenerator` constructor in an
+exception; a short row still counts, since rows are looked up by place.
+
+**`DrawProjGroup`, the two lines that disagreed by one** (5). The audit had
+the second one right: `arrangeViewPointers` read the projection angle
+preference one entry too far, so a group with no page was laid out Third
+Angle for First, and threw for Third. Both read the same entry now.
+
+**The three wrong results.**
+- `LineGenerator::fromQtStyle` asks for the standard body's name. It
+  compared the preference, a place in the sorted list of files (ANSI, ASME,
+  ISO), with an enum in the order ANSI, ISO, ASME.
+- `Preferences::HighlightLineStyle` reads `LineStyleHighlight`, the key the
+  page writes. A highlight line style chosen in the preferences now takes;
+  it never did.
+- The annotation page selects a line style when its number is within the
+  list. "count > number" left the last style of each list unselectable,
+  and the next Apply stored the first in its place.
+
+**The writers of -1.** `Gui::PrefComboBox` with no current item stores
+nothing. It stored -1, in every module, for whatever read the key as an
+index. `tests/gui/techdraw-line-style-prefs.py`: 16 PASS, 4 on the staged
+binaries (the last style not selected, the first stored over it, -1 stored
+for an empty selection, for each of the four boxes).
+
+TestTechDrawApp 7 OK; `techdraw-line-standard-out-of-range.py` 5 PASS
+still. Evidence: `..\dl\handson\2026-10-07\entry19-*`.
+
+**Left as the audit listed them, not changed:**
+- the task panels that set a document property from a combo box's
+  `currentIndex()` (TaskLeaderLine, TaskBalloon, TaskDimension,
+  TaskRichAnno): their lists are filled when the panel is made, so there is
+  a current item; and a -1 that did get into a file is repaired at the next
+  open now;
+- the dialog-only places (`TaskProjGroup`, `TaskSectionView`,
+  `TaskComplexSection`, the line group row with fewer than four fields);
+- what the audit did not cover: the fixed `references.at(1)` and `.at(2)`
+  of the dimension helpers, the restore of cosmetics and centre lines,
+  broken and complex sections, details, templates, weld symbols, hatch and
+  PAT parsing, the command files and the Python;
+- `DrawTemplate`'s one enumeration, which nothing asks for its text.
