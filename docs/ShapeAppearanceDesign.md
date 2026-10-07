@@ -3094,7 +3094,12 @@ has that red to go back to -- nothing is seen to change. The object's own
 colour is gone from the document. This is the storage's rule and is left
 as it is; **whether a base no face shows should survive is the user's to
 rule**, and it is 12.6's "a per-face write never changes `base`" against
-those two tests.
+those two tests. *(User, 2026-10-07: to be discussed. What was put to
+them: fold only a list whose base was never chosen -- an import's, an
+older file's -- and leave a chosen base alone; the two tests then say
+something else, a box painted face by face keeps its own colour at one
+entry a face, and a file in the older encoding, which states no base,
+folds on reading as now.)*
 
 *What was broken under it, and is fixed.* Written a face at a time, the
 fold moves the base without ending the list's follow of the object's

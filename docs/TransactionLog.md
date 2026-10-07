@@ -16449,15 +16449,16 @@ Not where another document of the file stands on one of the rows, a
 branch was made from one, or a version taken at one has a name: the rows
 stay, and the branch is merged already as far as the log can tell.
 
-**Left.**
+**Left, and ruled (user, 2026-10-07).**
 
 - *Something done since the undo.* The merge and its undo are then in the
   middle of the branch and cannot be taken out, and the other branch
-  still counts as merged. What would lift it is the base of a merge
-  passing over a merge that is undone, which is not built.
+  still counts as merged. **Ruled: "consider as merged."** It stays so;
+  the base of a merge does not pass over a merge that is undone.
 - *A command of its own.* The roll back is what the next merge does; there
-  is nothing to ask for it by. `Document` would say it in one call
-  (`rollBackMerge()`), and the dialog could offer it.
+  is nothing to ask for it by. **Ruled: "a command of its own", to be
+  built next.** `Document` would say it in one call (`rollBackMerge()`),
+  with Python's beside it, and the dialog offer it.
 - *Rows picked* (31.12) are neither snapshotted before nor rolled back.
 
 **Tests.** Python `testAMergeUndoneIsMergedAgain`: a conflict answered
