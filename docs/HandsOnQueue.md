@@ -11,7 +11,9 @@ Stages so far: 2026-10-06 07:56 (`84c14e12d5`, the first), 2026-10-06 11:23
 (`c1028260e3`: entries 1, 2, 4, 7), 2026-10-06 13:59 (`489c64799c`: entries 3, 5, 6, and
 the helix of entry 8), 2026-10-06 14:44 (`6b1bd3f434`: entry 14), 2026-10-06 17:44
 (`f7d3aa0cf2`: entries 16 and 18), 2026-10-07 10:37 (`7e94bff8d0`: entries 9 to 13, 20
-and 21).
+and 21), 2026-10-07 14:23 (`1c8781a7e1`, the code of `c7a27b5a85`: entries 15, 17, 19,
+22, 23 and 27; the build session's smoke test on the staged copy, 41 of 41 GUI
+checks).
 
 **Two documents since 2026-10-07 11:15, one writer each** (asked for by the
 reporter, agreed between the two sessions). This one is the REQUEST side and
@@ -50,19 +52,19 @@ report views, the reporter's own files -- is kept beside the dev tree under
 | 12 | 2026-10-06 | TechDraw: dimensions and cosmetics are covered by the face fill | STAGED (they were transparent, not covered) |
 | 13 | 2026-10-06 | report view: grouped messages with an expand icon in the margin, no underscore (change request) | STAGED |
 | 14 | 2026-10-06 | a Draft with no neutral plane given turns the other way after a recompute (from entry 8) | STAGED |
-| 15 | 2026-10-06 | a Pad "up to first" gives a third result (from entry 8) | FIXED `1047cc0647`: not the pad -- a refine in the feature on top (Helix002) wrote into the pocket's shape. What was left is no defect: Pocket040 comes out at radius 12 for the file's 13 because its negative Fit grew in the old build; DECIDED by the reporter 2026-10-07 13:20: set `Pocket040.Fit` to +0.5 in the file (`docs/HandsOnLog.md`) |
+| 15 | 2026-10-06 | a Pad "up to first" gives a third result (from entry 8) | STAGED 2026-10-07 14:23, fixed `1047cc0647`: not the pad -- a refine in the feature on top (Helix002) wrote into the pocket's shape. What was left is no defect: Pocket040 comes out at radius 12 for the file's 13 because its negative Fit grew in the old build; DECIDED by the reporter 2026-10-07 13:20: set `Pocket040.Fit` to +0.5 in the file (`docs/HandsOnLog.md`) |
 | 16 | 2026-10-06 | faces of a "Mutated" copy-on-change binder are renamed by every recompute in a new session (from entry 8; the old build too) | STAGED |
-| 17 | 2026-10-06 | `Sketch043`, `Sketch055`: "Missing external geometry reference", seen once the binders of entry 16 are valid | FIXED `3c8cd63032`: the sketches' references into Binder017 (a binder of the moved Binder008) are found again; Pad033 then loses its profile because Sketch043 really changes -- a question for the reporter (`docs/HandsOnLog.md`) |
+| 17 | 2026-10-06 | `Sketch043`, `Sketch055`: "Missing external geometry reference", seen once the binders of entry 16 are valid | STAGED 2026-10-07 14:23, fixed `3c8cd63032`: the sketches' references into Binder017 (a binder of the moved Binder008) are found again; Pad033 then loses its profile because Sketch043 really changes -- a question for the reporter (`docs/HandsOnLog.md`) |
 | 18 | 2026-10-06 | TechDraw pages do not load: "invalid vector subscript", the views loose in the tree, 320 objects restored to defaults | STAGED |
-| 19 | 2026-10-06 | TechDraw: other indexes taken on trust (an audit asked) | FIXED `805b5afb25`: out-of-range enumerations repaired at restore, the list indexes checked, the projection angle off by one, the three wrong results (line standard compare, highlight key, last line style) and combo boxes no longer storing -1; what was left alone is listed in `docs/HandsOnLog.md` |
+| 19 | 2026-10-06 | TechDraw: other indexes taken on trust (an audit asked) | STAGED 2026-10-07 14:23, fixed `805b5afb25`: out-of-range enumerations repaired at restore, the list indexes checked, the projection angle off by one, the three wrong results (line standard compare, highlight key, last line style) and combo boxes no longer storing -1; what was left alone is listed in `docs/HandsOnLog.md` |
 | 20 | 2026-10-06 | TechDraw: crash when the page is switched to the backend's renderer; and what it then drew | STAGED, the double draw too |
 | 21 | 2026-10-06 | TechDraw: a click on a section line starts a section, and the line shifts at each recompute | STAGED |
-| 22 | 2026-10-06 | omni search: `/word` with no space is an object query; `/ word` forces it (change request, decided) | FIXED `5aedd5cf83`: "/word" is an object query, "/ word" forces it, a keyword in full is the keyword, the beginning of one lists modes and objects together; the browser viewer's grammar follows (its bundle not rebuilt) |
-| 23 | 2026-10-06 | omni search: every setting it collects has documentation, none of it long (an audit asked) | FIXED `c7a27b5a85` (and `08b8f009aa`): 574 settings audited, 221 had no documentation and 94 ran past 400 characters; all have a short text now and a test keeps it so. Side findings for the reporter in `docs/HandsOnLog.md` |
+| 22 | 2026-10-06 | omni search: `/word` with no space is an object query; `/ word` forces it (change request, decided) | STAGED 2026-10-07 14:23, fixed `5aedd5cf83`: "/word" is an object query, "/ word" forces it, a keyword in full is the keyword, the beginning of one lists modes and objects together; the browser viewer's grammar follows (its bundle not rebuilt) |
+| 23 | 2026-10-06 | omni search: every setting it collects has documentation, none of it long (an audit asked) | STAGED 2026-10-07 14:23, fixed `c7a27b5a85` (and `08b8f009aa`): 574 settings audited, 221 had no documentation and 94 ran past 400 characters; all have a short text now and a test keeps it so. Side findings for the reporter in `docs/HandsOnLog.md` |
 | 24 | 2026-10-06 | every `Base::Parameter` setting behind a cog helper class so the omni search finds it, applied through delayed handlers (change request, application-wide) | OPEN |
 | 25 | 2026-10-06 | the outline of a highlighted face is jagged, MSAA on or off | OPEN |
 | 26 | 2026-10-06 | a long halt after enabling MSAA and pressing OK in the preferences | FOUND in part, nothing changed: an unchanged write of the renderer Type reloads every Part view provider (1.07 s on `scanner.FCStd`); the anti-aliasing change itself is 0.15 s; the dialog's OK as a whole not measured yet (`docs/HandsOnLog.md`) |
-| 27 | 2026-10-06 | the view cell menu: opens a spreadsheet nobody asked for, lists every TechDraw object, changes the wrong cell | FIXED `fa2ada985c`: the menu made a spreadsheet view by asking for it, listed a page's views, and placed a pick by the general policy instead of into its cell; all three gone, spreadsheets now listed by type like pages (`docs/HandsOnLog.md`) |
+| 27 | 2026-10-06 | the view cell menu: opens a spreadsheet nobody asked for, lists every TechDraw object, changes the wrong cell | STAGED 2026-10-07 14:23, fixed `fa2ada985c`: the menu made a spreadsheet view by asking for it, listed a page's views, and placed a pick by the general policy instead of into its cell; all three gone, spreadsheets now listed by type like pages (`docs/HandsOnLog.md`) |
 | 28 | 2026-10-06 | `scanner.FCStd` restores with a wrong colour, sometimes (the motor body light blue for light grey) | OPEN |
 | 29 | 2026-10-07 | view cells: transparent frames that show a split, a join and a resize while dragged (every cell the drag changes); corner handles on an opaque background; a thinner border between cells; a minimum cell size setting, default 200 (change request, decided) | OPEN |
 | 30 | 2026-10-07 | the dark and light overlay stylesheets integrated into the Dark and Light preference packs (a task asked; what "integrated" covers to confirm); and the long freeze when an overlay stylesheet is applied, to investigate; the Python console's background in both packs, so a theme can take an overlay preset's away again | OPEN |
@@ -758,7 +760,11 @@ follows the edge from `Edge4` to `Edge10` across the pad's recompute and
 `Draft` comes out valid at 285.76 with `Reversed` on, as saved.
 `TestDraft.testGuessedNeutralPlaneKeepsItsEdge`; TestDraft 4 OK.
 
-## 15. A Pad "up to first" gives a third result -- FIXED `1047cc0647`; the reporter's answer below (see `docs/HandsOnLog.md`)
+## 15. A Pad "up to first" gives a third result -- STAGED, fixed `1047cc0647`; the reporter's answer below (see `docs/HandsOnLog.md`)
+
+**On hold at the reporter's word** (relayed by the build session, which the reporter said it to on staging, 2026-10-07 14:23): "skip entry 15 and 17
+for now." The decision below stands recorded; nothing is to be done with it
+yet.
 
 **Decided by the reporter, 2026-10-07 13:20**, on the question the build
 session left (its log, entry 15: `Pocket040` comes out at radius 12 where the
@@ -963,7 +969,11 @@ not been scored against a tree without the motion yet.
   first time: `Sketch043` and `Sketch055` now say "Missing external geometry
   reference". Entry 17.
 
-## 17. `Sketch043`, `Sketch055`: "Missing external geometry reference" -- FIXED `3c8cd63032`, a question for the reporter (see `docs/HandsOnLog.md`)
+## 17. `Sketch043`, `Sketch055`: "Missing external geometry reference" -- STAGED, fixed `3c8cd63032`, a question for the reporter (see `docs/HandsOnLog.md`)
+
+**On hold at the reporter's word** (relayed by the build session, which the reporter said it to on staging, 2026-10-07 14:23): "skip entry 15 and 17
+for now." What follows -- the rule, the audit, the two leads -- stays as
+the record; no change is asked for yet.
 
 **The reporter on the question the build session left** (its log, entry 17:
 is a Relative binder in a moved group MEANT to come back 53 mm away),
@@ -1179,7 +1189,7 @@ note found blank with the same exception in its paint. The default was
 switched on and back off the same day (the reporter: "yes, make it default
 on", then "change back the default renderer to qgraphicsview").
 
-## 19. TechDraw: other indexes taken on trust (an audit asked) -- FIXED `805b5afb25` (see `docs/HandsOnLog.md`)
+## 19. TechDraw: other indexes taken on trust (an audit asked) -- STAGED, fixed `805b5afb25` (see `docs/HandsOnLog.md`)
 
 **Asked (2026-10-06):** "audit for similar problem in techdraw". Read through
 by a second agent, App and Gui, nothing run. What entry 18 already covers is
@@ -1481,7 +1491,7 @@ fix is in.
 Not looked at: rotating the line by a mark (the direction it gives the
 section), beyond leaving a click on a mark alone.
 
-## 22. Omni search: `/word` with no space is an object query (a change request) -- FIXED `5aedd5cf83` (see `docs/HandsOnLog.md`)
+## 22. Omni search: `/word` with no space is an object query (a change request) -- STAGED, fixed `5aedd5cf83` (see `docs/HandsOnLog.md`)
 
 **2026-10-06 15:24, omni search (a change request).** "omni search first
 entry append a <space> after / to let user know to type a space." Wanted: in
@@ -1512,7 +1522,11 @@ a partial keyword (`/c`, `/par`) lists both -- the matching mode rows and
 the objects matching the word; a full keyword (`/cmd`) is the keyword, and
 an object called `cmd` is reached with the space, `/ cmd`.
 
-## 23. Omni search: the settings it collects (an audit asked) -- FIXED `c7a27b5a85` (see `docs/HandsOnLog.md`)
+## 23. Omni search: the settings it collects (an audit asked) -- STAGED, fixed `c7a27b5a85` (see `docs/HandsOnLog.md`)
+
+**The reporter on the audit's side findings** (relayed by the build session, which the reporter said it to on staging, 2026-10-07 14:23): "entry 23, yes
+fixed the defaults, leave the unused ones." The defaults that disagree with
+their preference page are to be fixed; the settings nothing reads stay.
 
 **2026-10-06 15:28, omni search: the settings it collects (an audit asked).**
 "audit for all parameter/preference settings auto collected by omni search.
@@ -1560,6 +1574,12 @@ selection highlight or both, and which document.
 
 ## 26. A long halt after enabling MSAA and pressing OK -- FOUND in part (see `docs/HandsOnLog.md`)
 
+**The reporter on what was found** (relayed by the build session, which the reporter said it to on staging, 2026-10-07 14:23): "entry 26 is probably
+not the view provider, because the delay I experience is longer. most likely
+related to stylesheet re-apply." The halt is longer than the 1.07 s reload
+the build session measured; the stylesheet being applied again is where the
+reporter expects it. To be looked at from that side, with entry 30's freeze.
+
 **2026-10-06 15:48, a long halt after enabling MSAA and pressing OK.**
 "while I am testing to toggle msaa, after first enabled it and click ok in
 preference page there is a long halt where the application is unresponsive.
@@ -1592,7 +1612,7 @@ Read from the source by the note-taker, nothing run or measured:
   -> `setMSAASamples`); a view without one is CLONED and the original
   deleted, which rebuilds the whole view.
 
-## 27. The view cell menu: a spreadsheet nobody asked for, every TechDraw object listed, the wrong cell changed -- FIXED `fa2ada985c` (see `docs/HandsOnLog.md`)
+## 27. The view cell menu: a spreadsheet nobody asked for, every TechDraw object listed, the wrong cell changed -- STAGED, fixed `fa2ada985c` (see `docs/HandsOnLog.md`)
 
 **2026-10-06 16:05, the view cell menu opens a spreadsheet nobody asked
 for.** "where there is a spreadsheet opened, I click 'View cell menu' of the
