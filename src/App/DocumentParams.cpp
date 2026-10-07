@@ -151,7 +151,7 @@ public:
         funcs["prefLicenseType"] = &DocumentParamsP::updateprefLicenseType;
         prefLicenseUrl = this->handle->GetASCII("prefLicenseUrl", "");
         funcs["prefLicenseUrl"] = &DocumentParamsP::updateprefLicenseUrl;
-        CompressionLevel = this->handle->GetInt("CompressionLevel", 3);
+        CompressionLevel = this->handle->GetInt("CompressionLevel", 7);
         funcs["CompressionLevel"] = &DocumentParamsP::updateCompressionLevel;
         CheckExtension = this->handle->GetBool("CheckExtension", true);
         funcs["CheckExtension"] = &DocumentParamsP::updateCheckExtension;
@@ -185,7 +185,7 @@ public:
         funcs["BackupPolicy"] = &DocumentParamsP::updateBackupPolicy;
         CreateBackupFiles = this->handle->GetBool("CreateBackupFiles", true);
         funcs["CreateBackupFiles"] = &DocumentParamsP::updateCreateBackupFiles;
-        UseFCBakExtension = this->handle->GetBool("UseFCBakExtension", false);
+        UseFCBakExtension = this->handle->GetBool("UseFCBakExtension", true);
         funcs["UseFCBakExtension"] = &DocumentParamsP::updateUseFCBakExtension;
         SaveBackupDateFormat = this->handle->GetASCII("SaveBackupDateFormat", "%Y%m%d-%H%M%S");
         funcs["SaveBackupDateFormat"] = &DocumentParamsP::updateSaveBackupDateFormat;
@@ -203,7 +203,7 @@ public:
         funcs["WarnRecomputeOnRestore"] = &DocumentParamsP::updateWarnRecomputeOnRestore;
         NoPartialLoading = this->handle->GetBool("NoPartialLoading", false);
         funcs["NoPartialLoading"] = &DocumentParamsP::updateNoPartialLoading;
-        SaveThumbnail = this->handle->GetBool("SaveThumbnail", false);
+        SaveThumbnail = this->handle->GetBool("SaveThumbnail", true);
         funcs["SaveThumbnail"] = &DocumentParamsP::updateSaveThumbnail;
         ThumbnailNoBackground = this->handle->GetBool("ThumbnailNoBackground", false);
         funcs["ThumbnailNoBackground"] = &DocumentParamsP::updateThumbnailNoBackground;
@@ -211,7 +211,7 @@ public:
         funcs["AddThumbnailLogo"] = &DocumentParamsP::updateAddThumbnailLogo;
         ThumbnailSampleSize = this->handle->GetInt("ThumbnailSampleSize", 0);
         funcs["ThumbnailSampleSize"] = &DocumentParamsP::updateThumbnailSampleSize;
-        ThumbnailSize = this->handle->GetInt("ThumbnailSize", 128);
+        ThumbnailSize = this->handle->GetInt("ThumbnailSize", 256);
         funcs["ThumbnailSize"] = &DocumentParamsP::updateThumbnailSize;
         DuplicateLabels = this->handle->GetBool("DuplicateLabels", false);
         funcs["DuplicateLabels"] = &DocumentParamsP::updateDuplicateLabels;
@@ -266,7 +266,7 @@ public:
     }
     // Auto generated code (Tools/params_utils.py:314)
     static void updateCompressionLevel(DocumentParamsP *self) {
-        self->CompressionLevel = self->handle->GetInt("CompressionLevel", 3);
+        self->CompressionLevel = self->handle->GetInt("CompressionLevel", 7);
     }
     // Auto generated code (Tools/params_utils.py:314)
     static void updateCheckExtension(DocumentParamsP *self) {
@@ -334,7 +334,7 @@ public:
     }
     // Auto generated code (Tools/params_utils.py:314)
     static void updateUseFCBakExtension(DocumentParamsP *self) {
-        self->UseFCBakExtension = self->handle->GetBool("UseFCBakExtension", false);
+        self->UseFCBakExtension = self->handle->GetBool("UseFCBakExtension", true);
     }
     // Auto generated code (Tools/params_utils.py:314)
     static void updateSaveBackupDateFormat(DocumentParamsP *self) {
@@ -370,7 +370,7 @@ public:
     }
     // Auto generated code (Tools/params_utils.py:314)
     static void updateSaveThumbnail(DocumentParamsP *self) {
-        self->SaveThumbnail = self->handle->GetBool("SaveThumbnail", false);
+        self->SaveThumbnail = self->handle->GetBool("SaveThumbnail", true);
     }
     // Auto generated code (Tools/params_utils.py:314)
     static void updateThumbnailNoBackground(DocumentParamsP *self) {
@@ -386,7 +386,7 @@ public:
     }
     // Auto generated code (Tools/params_utils.py:314)
     static void updateThumbnailSize(DocumentParamsP *self) {
-        self->ThumbnailSize = self->handle->GetInt("ThumbnailSize", 128);
+        self->ThumbnailSize = self->handle->GetInt("ThumbnailSize", 256);
     }
     // Auto generated code (Tools/params_utils.py:314)
     static void updateDuplicateLabels(DocumentParamsP *self) {
@@ -450,7 +450,7 @@ static const App::ParamRegistry::Registrar _DocumentParamsRegistrar({
         .setTitle("License URL")
         .setDoc("Address of the license text given to new documents. Empty uses the\n"
 "address that belongs to the license chosen from the list."),
-    App::ParamInfo("App", "DocumentParams", "User parameter:BaseApp/Preferences/Document", "CompressionLevel", "CompressionLevel", App::ParamInfo::Int, 3)
+    App::ParamInfo("App", "DocumentParams", "User parameter:BaseApp/Preferences/Document", "CompressionLevel", "CompressionLevel", App::ParamInfo::Int, 7)
         .setTitle("Compression Level")
         .setDoc("How hard a document file is compressed when saved, from 0 (none,\n"
 "fastest) to 9 (smallest, slowest). Has no effect on a document saved\n"
@@ -544,7 +544,7 @@ static const App::ParamRegistry::Registrar _DocumentParamsRegistrar({
         .setDoc("Keep the previous version of a document file as a backup each time\n"
 "it is saved. When off the old file is deleted once the new one is\n"
 "written."),
-    App::ParamInfo("App", "DocumentParams", "User parameter:BaseApp/Preferences/Document", "UseFCBakExtension", "UseFCBakExtension", App::ParamInfo::Bool, false)
+    App::ParamInfo("App", "DocumentParams", "User parameter:BaseApp/Preferences/Document", "UseFCBakExtension", "UseFCBakExtension", App::ParamInfo::Bool, true)
         .setTitle("Use FC Bak Extension")
         .setDoc("Name a backup after the document, with the date of the replaced\n"
 "file and the extension .FCBak. When off a backup is the document\n"
@@ -587,7 +587,7 @@ static const App::ParamRegistry::Registrar _DocumentParamsRegistrar({
 "opened only because another links to it loads just the linked\n"
 "objects and what they depend on, and cannot be edited until\n"
 "reloaded."),
-    App::ParamInfo("App", "DocumentParams", "User parameter:BaseApp/Preferences/Document", "SaveThumbnail", "SaveThumbnail", App::ParamInfo::Bool, false)
+    App::ParamInfo("App", "DocumentParams", "User parameter:BaseApp/Preferences/Document", "SaveThumbnail", "SaveThumbnail", App::ParamInfo::Bool, true)
         .setTitle("Save Thumbnail")
         .setDoc("Save a preview picture of the 3D view into new documents each time\n"
 "they are saved. Each document carries its own copy of this choice."),
@@ -603,7 +603,7 @@ static const App::ParamRegistry::Registrar _DocumentParamsRegistrar({
         .setTitle("Thumbnail Sample Size")
         .setDoc("Number of antialiasing samples used to render the thumbnail saved\n"
 "with a document. 0 renders without antialiasing."),
-    App::ParamInfo("App", "DocumentParams", "User parameter:BaseApp/Preferences/Document", "ThumbnailSize", "ThumbnailSize", App::ParamInfo::Int, 128)
+    App::ParamInfo("App", "DocumentParams", "User parameter:BaseApp/Preferences/Document", "ThumbnailSize", "ThumbnailSize", App::ParamInfo::Int, 256)
         .setTitle("Thumbnail Size")
         .setDoc("Width and height, in pixels, of the thumbnail saved with a document.\n"
 "Values outside 64 to 1024 are brought into that range."),
@@ -821,7 +821,7 @@ const long & DocumentParams::getCompressionLevel() {
 
 // Auto generated code (Tools/params_utils.py:413)
 const long & DocumentParams::defaultCompressionLevel() {
-    const static long def = 3;
+    const static long def = 7;
     return def;
 }
 
@@ -1340,7 +1340,7 @@ const bool & DocumentParams::getUseFCBakExtension() {
 
 // Auto generated code (Tools/params_utils.py:413)
 const bool & DocumentParams::defaultUseFCBakExtension() {
-    const static bool def = false;
+    const static bool def = true;
     return def;
 }
 
@@ -1607,7 +1607,7 @@ const bool & DocumentParams::getSaveThumbnail() {
 
 // Auto generated code (Tools/params_utils.py:413)
 const bool & DocumentParams::defaultSaveThumbnail() {
-    const static bool def = false;
+    const static bool def = true;
     return def;
 }
 
@@ -1723,7 +1723,7 @@ const long & DocumentParams::getThumbnailSize() {
 
 // Auto generated code (Tools/params_utils.py:413)
 const long & DocumentParams::defaultThumbnailSize() {
-    const static long def = 128;
+    const static long def = 256;
     return def;
 }
 

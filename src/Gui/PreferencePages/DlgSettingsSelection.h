@@ -79,9 +79,7 @@ private:
     // Auto generated code (Tools/params_utils.py:451)
     QGroupBox * groupDViewSelection = nullptr;
     Gui::PrefCheckBox *EnablePreselection = nullptr;
-    Gui::PrefSpinBox *HighlightColor = nullptr;
     Gui::PrefCheckBox *EnableSelection = nullptr;
-    Gui::PrefSpinBox *SelectionColor = nullptr;
     QLabel *labelPickRadius = nullptr;
     Gui::PrefDoubleSpinBox *PickRadius = nullptr;
     Gui::PrefCheckBox *ShowSelectionOnTop = nullptr;

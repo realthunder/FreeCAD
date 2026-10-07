@@ -173,7 +173,7 @@ object, you can manually change its 'ValidShape' property.</string>
          <string>Validate shape</string>
         </property>
         <property name="checked">
-         <bool>true</bool>
+         <bool>false</bool>
         </property>
         <property name="prefEntry" stdset="0">
          <cstring>AutoValidateShape</cstring>

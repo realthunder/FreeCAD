@@ -229,7 +229,7 @@
            <color>
             <red>204</red>
             <green>204</green>
-            <blue>204</blue>
+            <blue>230</blue>
            </color>
           </property>
           <property name="prefEntry" stdset="0">
@@ -397,6 +397,13 @@ will be used or black.</string>
          <widget class="Gui::PrefColorButton" name="AnnotationTextColor">
           <property name="toolTip">
            <string>Text color for document annotations</string>
+          </property>
+          <property name="color" stdset="0">
+           <color>
+            <red>255</red>
+            <green>255</green>
+            <blue>255</blue>
+           </color>
           </property>
           <property name="prefEntry" stdset="0">
            <cstring>AnnotationTextColor</cstring>

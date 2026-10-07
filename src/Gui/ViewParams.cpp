@@ -1505,10 +1505,14 @@ static const App::ParamRegistry::Registrar _ViewParamsRegistrar({
         .setDoc("Default text colour of new annotation objects."),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "HighlightColor", "HighlightColor", App::ParamInfo::Hex, 0xE1E114FF)
         .setTitle("Pre-selection highlight color")
-        .setDoc("Pre-selection highlight color"),
+        .setDoc("Pre-selection highlight color")
+        .setProxy("Color")
+        .setTransparency(false),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "SelectionColor", "SelectionColor", App::ParamInfo::Hex, 0x1CAD1CFF)
         .setTitle("Selection highlight color")
-        .setDoc("Selection highlight color"),
+        .setDoc("Selection highlight color")
+        .setProxy("Color")
+        .setTransparency(false),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "MarkerSize", "MarkerSize", App::ParamInfo::Int, 9)
         .setTitle("Marker Size")
         .setDoc("Size in pixels of the point markers drawn in the 3D view, such as\n"

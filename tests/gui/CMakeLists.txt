@@ -1351,3 +1351,11 @@ fc_add_gui_test(GuiThemeSwitchContrast_tests_run
 fc_add_gui_test(GuiReportFoldMark_tests_run
                 report-fold-mark.py
                 --timeout 120)
+
+# OK in the preferences on a profile that never changed anything stores, for
+# every setting with a definition, the definition's default and its type:
+# a page showing another default, or clamping one to a spin box's range,
+# changed the setting behind the user's back.
+fc_add_gui_test(GuiPreferencesOkKeepsDefaults_tests_run
+                preferences-ok-keeps-defaults.py
+                --timeout 180)

@@ -197,9 +197,9 @@ Params = [
     ParamHex('AnnotationTextColor', 0xffffffff,
         title = 'Annotation Text Color',
         doc = "Default text colour of new annotation objects."),
-    ParamHex('HighlightColor', 0xe1e114ff,
+    ParamHex('HighlightColor', 0xe1e114ff, proxy=ParamColor(transparency=False),
         doc='Pre-selection highlight color', no_label=True),
-    ParamHex('SelectionColor', 0x1cad1cff,
+    ParamHex('SelectionColor', 0x1cad1cff, proxy=ParamColor(transparency=False),
         doc='Selection highlight color', no_label=True),
     ParamInt('MarkerSize', 9,
         doc = "Size in pixels of the point markers drawn in the 3D view, such as\n"

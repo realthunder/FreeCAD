@@ -106,7 +106,7 @@ This feature may slightly increase recomputation time.</string>
          <widget class="QLabel" name="textLabel1">
           <property name="text">
            <string>Document save compression level
-(0 = none, 9 = highest, 3 = default)</string>
+(0 = none, 9 = highest, 7 = default)</string>
           </property>
          </widget>
         </item>

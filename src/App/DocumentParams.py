@@ -59,7 +59,7 @@ Params = [
         title = 'License URL',
         doc = "Address of the license text given to new documents. Empty uses the\n"
               "address that belongs to the license chosen from the list."),
-    ParamInt('CompressionLevel', 3,
+    ParamInt('CompressionLevel', 7,
         doc = "How hard a document file is compressed when saved, from 0 (none,\n"
               "fastest) to 9 (smallest, slowest). Has no effect on a document saved\n"
               "as a directory."),
@@ -218,7 +218,7 @@ Params = [
         doc = "Keep the previous version of a document file as a backup each time\n"
               "it is saved. When off the old file is deleted once the new one is\n"
               "written."),
-    ParamBool('UseFCBakExtension', False,
+    ParamBool('UseFCBakExtension', True,
         doc = "Name a backup after the document, with the date of the replaced\n"
               "file and the extension .FCBak. When off a backup is the document\n"
               "file name followed by a number, as in Part.FCStd1."),
@@ -252,7 +252,7 @@ Params = [
               "opened only because another links to it loads just the linked\n"
               "objects and what they depend on, and cannot be edited until\n"
               "reloaded."),
-    ParamBool('SaveThumbnail', False,
+    ParamBool('SaveThumbnail', True,
         doc = "Save a preview picture of the 3D view into new documents each time\n"
               "they are saved. Each document carries its own copy of this choice."),
     ParamBool('ThumbnailNoBackground', False,
@@ -264,7 +264,7 @@ Params = [
     ParamInt('ThumbnailSampleSize', 0,
         doc = "Number of antialiasing samples used to render the thumbnail saved\n"
               "with a document. 0 renders without antialiasing."),
-    ParamInt('ThumbnailSize', 128,
+    ParamInt('ThumbnailSize', 256,
         doc = "Width and height, in pixels, of the thumbnail saved with a document.\n"
               "Values outside 64 to 1024 are brought into that range."),
     ParamBool('DuplicateLabels', False,

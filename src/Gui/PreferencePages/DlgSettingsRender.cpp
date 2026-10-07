@@ -83,7 +83,7 @@ DlgSettingsRender::DlgSettingsRender(QWidget* parent)
     layoutRow->addWidget(OutputTransform);
     OutputTransform->setEntryName("OutputTransform");
     OutputTransform->setParamGrpPath("View/Render");
-    for (int i=0; i<2; ++i) // Auto generated code (Tools/params_utils.py:1230)
+    for (int i=0; i<2; ++i) // Auto generated code (Tools/params_utils.py:1245)
         OutputTransform->addItem(QString());
     OutputTransform->setCurrentIndex(Gui::RenderParams::defaultOutputTransform());
 
@@ -96,6 +96,7 @@ DlgSettingsRender::DlgSettingsRender(QWidget* parent)
     layoutRow->addWidget(labelExposure);
     Exposure = new Gui::PrefDoubleSpinBox(this);
     layoutRow->addWidget(Exposure);
+    Exposure->setRange(-1e9, 1e9);
     Exposure->setValue(Gui::RenderParams::defaultExposure());
     Exposure->setEntryName("Exposure");
     Exposure->setParamGrpPath("View/Render");
@@ -129,6 +130,7 @@ DlgSettingsRender::DlgSettingsRender(QWidget* parent)
     layoutRow->addWidget(labelTemporalAccumSamples);
     TemporalAccumSamples = new Gui::PrefSpinBox(this);
     layoutRow->addWidget(TemporalAccumSamples);
+    TemporalAccumSamples->setRange(-2147483647, 2147483647);
     TemporalAccumSamples->setValue(Gui::RenderParams::defaultTemporalAccumSamples());
     TemporalAccumSamples->setEntryName("TemporalAccumSamples");
     TemporalAccumSamples->setParamGrpPath("View/Render");
@@ -151,6 +153,7 @@ DlgSettingsRender::DlgSettingsRender(QWidget* parent)
     layoutRow->addWidget(labelCoarseTessellation);
     CoarseTessellation = new Gui::PrefSpinBox(this);
     layoutRow->addWidget(CoarseTessellation);
+    CoarseTessellation->setRange(-2147483647, 2147483647);
     CoarseTessellation->setValue(Gui::RenderParams::defaultCoarseTessellation());
     CoarseTessellation->setEntryName("CoarseTessellation");
     CoarseTessellation->setParamGrpPath("View/Render");
@@ -164,6 +167,7 @@ DlgSettingsRender::DlgSettingsRender(QWidget* parent)
     layoutRow->addWidget(labelLevelTolerance);
     LevelTolerance = new Gui::PrefDoubleSpinBox(this);
     layoutRow->addWidget(LevelTolerance);
+    LevelTolerance->setRange(-1e9, 1e9);
     LevelTolerance->setValue(Gui::RenderParams::defaultLevelTolerance());
     LevelTolerance->setEntryName("LevelTolerance");
     LevelTolerance->setParamGrpPath("View/Render");
@@ -177,6 +181,7 @@ DlgSettingsRender::DlgSettingsRender(QWidget* parent)
     layoutRow->addWidget(labelLevelThreads);
     LevelThreads = new Gui::PrefSpinBox(this);
     layoutRow->addWidget(LevelThreads);
+    LevelThreads->setRange(-2147483647, 2147483647);
     LevelThreads->setValue(Gui::RenderParams::defaultLevelThreads());
     LevelThreads->setEntryName("LevelThreads");
     LevelThreads->setParamGrpPath("View/Render");
@@ -190,6 +195,7 @@ DlgSettingsRender::DlgSettingsRender(QWidget* parent)
     layoutRow->addWidget(labelLevelMemoryFloorMB);
     LevelMemoryFloorMB = new Gui::PrefSpinBox(this);
     layoutRow->addWidget(LevelMemoryFloorMB);
+    LevelMemoryFloorMB->setRange(-2147483647, 2147483647);
     LevelMemoryFloorMB->setValue(Gui::RenderParams::defaultLevelMemoryFloorMB());
     LevelMemoryFloorMB->setEntryName("LevelMemoryFloorMB");
     LevelMemoryFloorMB->setParamGrpPath("View/Render");
@@ -203,6 +209,7 @@ DlgSettingsRender::DlgSettingsRender(QWidget* parent)
     layoutRow->addWidget(labelGpuMemoryBudgetMB);
     GpuMemoryBudgetMB = new Gui::PrefSpinBox(this);
     layoutRow->addWidget(GpuMemoryBudgetMB);
+    GpuMemoryBudgetMB->setRange(-2147483647, 2147483647);
     GpuMemoryBudgetMB->setValue(Gui::RenderParams::defaultGpuMemoryBudgetMB());
     GpuMemoryBudgetMB->setEntryName("GpuMemoryBudgetMB");
     GpuMemoryBudgetMB->setParamGrpPath("View/Render");
@@ -238,7 +245,7 @@ DlgSettingsRender::DlgSettingsRender(QWidget* parent)
     layoutRow->addWidget(AOMethod);
     AOMethod->setEntryName("AOMethod");
     AOMethod->setParamGrpPath("View/Render");
-    for (int i=0; i<2; ++i) // Auto generated code (Tools/params_utils.py:1230)
+    for (int i=0; i<2; ++i) // Auto generated code (Tools/params_utils.py:1245)
         AOMethod->addItem(QString());
     AOMethod->setCurrentIndex(Gui::RenderParams::defaultAOMethod());
 
@@ -251,6 +258,7 @@ DlgSettingsRender::DlgSettingsRender(QWidget* parent)
     layoutRow->addWidget(labelAOSlices);
     AOSlices = new Gui::PrefSpinBox(this);
     layoutRow->addWidget(AOSlices);
+    AOSlices->setRange(-2147483647, 2147483647);
     AOSlices->setValue(Gui::RenderParams::defaultAOSlices());
     AOSlices->setEntryName("AOSlices");
     AOSlices->setParamGrpPath("View/Render");
@@ -264,6 +272,7 @@ DlgSettingsRender::DlgSettingsRender(QWidget* parent)
     layoutRow->addWidget(labelAOSteps);
     AOSteps = new Gui::PrefSpinBox(this);
     layoutRow->addWidget(AOSteps);
+    AOSteps->setRange(-2147483647, 2147483647);
     AOSteps->setValue(Gui::RenderParams::defaultAOSteps());
     AOSteps->setEntryName("AOSteps");
     AOSteps->setParamGrpPath("View/Render");
@@ -277,6 +286,7 @@ DlgSettingsRender::DlgSettingsRender(QWidget* parent)
     layoutRow->addWidget(labelAORadius);
     AORadius = new Gui::PrefDoubleSpinBox(this);
     layoutRow->addWidget(AORadius);
+    AORadius->setRange(-1e9, 1e9);
     AORadius->setValue(Gui::RenderParams::defaultAORadius());
     AORadius->setEntryName("AORadius");
     AORadius->setParamGrpPath("View/Render");
@@ -290,6 +300,7 @@ DlgSettingsRender::DlgSettingsRender(QWidget* parent)
     layoutRow->addWidget(labelAOIntensity);
     AOIntensity = new Gui::PrefDoubleSpinBox(this);
     layoutRow->addWidget(AOIntensity);
+    AOIntensity->setRange(-1e9, 1e9);
     AOIntensity->setValue(Gui::RenderParams::defaultAOIntensity());
     AOIntensity->setEntryName("AOIntensity");
     AOIntensity->setParamGrpPath("View/Render");
@@ -323,6 +334,7 @@ DlgSettingsRender::DlgSettingsRender(QWidget* parent)
     layoutRow->addWidget(labelPBRMetallic);
     PBRMetallic = new Gui::PrefDoubleSpinBox(this);
     layoutRow->addWidget(PBRMetallic);
+    PBRMetallic->setRange(-1e9, 1e9);
     PBRMetallic->setValue(Gui::RenderParams::defaultPBRMetallic());
     PBRMetallic->setEntryName("PBRMetallic");
     PBRMetallic->setParamGrpPath("View/Render");
@@ -336,6 +348,7 @@ DlgSettingsRender::DlgSettingsRender(QWidget* parent)
     layoutRow->addWidget(labelPBRRoughness);
     PBRRoughness = new Gui::PrefDoubleSpinBox(this);
     layoutRow->addWidget(PBRRoughness);
+    PBRRoughness->setRange(-1e9, 1e9);
     PBRRoughness->setValue(Gui::RenderParams::defaultPBRRoughness());
     PBRRoughness->setEntryName("PBRRoughness");
     PBRRoughness->setParamGrpPath("View/Render");
@@ -362,7 +375,7 @@ DlgSettingsRender::DlgSettingsRender(QWidget* parent)
     layoutRow->addWidget(ShininessMapping);
     ShininessMapping->setEntryName("ShininessMapping");
     ShininessMapping->setParamGrpPath("View/Render");
-    for (int i=0; i<2; ++i) // Auto generated code (Tools/params_utils.py:1230)
+    for (int i=0; i<2; ++i) // Auto generated code (Tools/params_utils.py:1245)
         ShininessMapping->addItem(QString());
     ShininessMapping->setCurrentIndex(Gui::RenderParams::defaultShininessMapping());
 
@@ -375,6 +388,7 @@ DlgSettingsRender::DlgSettingsRender(QWidget* parent)
     layoutRow->addWidget(labelPBREnvIntensity);
     PBREnvIntensity = new Gui::PrefDoubleSpinBox(this);
     layoutRow->addWidget(PBREnvIntensity);
+    PBREnvIntensity->setRange(-1e9, 1e9);
     PBREnvIntensity->setValue(Gui::RenderParams::defaultPBREnvIntensity());
     PBREnvIntensity->setEntryName("PBREnvIntensity");
     PBREnvIntensity->setParamGrpPath("View/Render");
@@ -397,6 +411,7 @@ DlgSettingsRender::DlgSettingsRender(QWidget* parent)
     layoutRow->addWidget(labelBumpScale);
     BumpScale = new Gui::PrefDoubleSpinBox(this);
     layoutRow->addWidget(BumpScale);
+    BumpScale->setRange(-1e9, 1e9);
     BumpScale->setValue(Gui::RenderParams::defaultBumpScale());
     BumpScale->setEntryName("BumpScale");
     BumpScale->setParamGrpPath("View/Render");
@@ -441,6 +456,7 @@ DlgSettingsRender::DlgSettingsRender(QWidget* parent)
     layoutRow->addWidget(labelVolumetricIntensity);
     VolumetricIntensity = new Gui::PrefDoubleSpinBox(this);
     layoutRow->addWidget(VolumetricIntensity);
+    VolumetricIntensity->setRange(-1e9, 1e9);
     VolumetricIntensity->setValue(Gui::RenderParams::defaultVolumetricIntensity());
     VolumetricIntensity->setEntryName("VolumetricIntensity");
     VolumetricIntensity->setParamGrpPath("View/Render");
@@ -454,6 +470,7 @@ DlgSettingsRender::DlgSettingsRender(QWidget* parent)
     layoutRow->addWidget(labelVolumetricDensity);
     VolumetricDensity = new Gui::PrefDoubleSpinBox(this);
     layoutRow->addWidget(VolumetricDensity);
+    VolumetricDensity->setRange(-1e9, 1e9);
     VolumetricDensity->setValue(Gui::RenderParams::defaultVolumetricDensity());
     VolumetricDensity->setEntryName("VolumetricDensity");
     VolumetricDensity->setParamGrpPath("View/Render");
@@ -478,6 +495,7 @@ DlgSettingsRender::DlgSettingsRender(QWidget* parent)
     layoutRow->addWidget(labelCausticsIntensity);
     CausticsIntensity = new Gui::PrefDoubleSpinBox(this);
     layoutRow->addWidget(CausticsIntensity);
+    CausticsIntensity->setRange(-1e9, 1e9);
     CausticsIntensity->setValue(Gui::RenderParams::defaultCausticsIntensity());
     CausticsIntensity->setEntryName("CausticsIntensity");
     CausticsIntensity->setParamGrpPath("View/Render");
@@ -491,6 +509,7 @@ DlgSettingsRender::DlgSettingsRender(QWidget* parent)
     layoutRow->addWidget(labelCausticsScale);
     CausticsScale = new Gui::PrefDoubleSpinBox(this);
     layoutRow->addWidget(CausticsScale);
+    CausticsScale->setRange(-1e9, 1e9);
     CausticsScale->setValue(Gui::RenderParams::defaultCausticsScale());
     CausticsScale->setEntryName("CausticsScale");
     CausticsScale->setParamGrpPath("View/Render");
@@ -504,6 +523,7 @@ DlgSettingsRender::DlgSettingsRender(QWidget* parent)
     layoutRow->addWidget(labelCausticsSpeed);
     CausticsSpeed = new Gui::PrefDoubleSpinBox(this);
     layoutRow->addWidget(CausticsSpeed);
+    CausticsSpeed->setRange(-1e9, 1e9);
     CausticsSpeed->setValue(Gui::RenderParams::defaultCausticsSpeed());
     CausticsSpeed->setEntryName("CausticsSpeed");
     CausticsSpeed->setParamGrpPath("View/Render");
@@ -537,6 +557,7 @@ DlgSettingsRender::DlgSettingsRender(QWidget* parent)
     layoutRow->addWidget(labelWaterWaveStrength);
     WaterWaveStrength = new Gui::PrefDoubleSpinBox(this);
     layoutRow->addWidget(WaterWaveStrength);
+    WaterWaveStrength->setRange(-1e9, 1e9);
     WaterWaveStrength->setValue(Gui::RenderParams::defaultWaterWaveStrength());
     WaterWaveStrength->setEntryName("WaterWaveStrength");
     WaterWaveStrength->setParamGrpPath("View/Render");
@@ -550,6 +571,7 @@ DlgSettingsRender::DlgSettingsRender(QWidget* parent)
     layoutRow->addWidget(labelWaterWaveScale);
     WaterWaveScale = new Gui::PrefDoubleSpinBox(this);
     layoutRow->addWidget(WaterWaveScale);
+    WaterWaveScale->setRange(-1e9, 1e9);
     WaterWaveScale->setValue(Gui::RenderParams::defaultWaterWaveScale());
     WaterWaveScale->setEntryName("WaterWaveScale");
     WaterWaveScale->setParamGrpPath("View/Render");
@@ -563,6 +585,7 @@ DlgSettingsRender::DlgSettingsRender(QWidget* parent)
     layoutRow->addWidget(labelWaterWaveSpeed);
     WaterWaveSpeed = new Gui::PrefDoubleSpinBox(this);
     layoutRow->addWidget(WaterWaveSpeed);
+    WaterWaveSpeed->setRange(-1e9, 1e9);
     WaterWaveSpeed->setValue(Gui::RenderParams::defaultWaterWaveSpeed());
     WaterWaveSpeed->setEntryName("WaterWaveSpeed");
     WaterWaveSpeed->setParamGrpPath("View/Render");
@@ -596,6 +619,7 @@ DlgSettingsRender::DlgSettingsRender(QWidget* parent)
     layoutRow->addWidget(labelBloomThreshold);
     BloomThreshold = new Gui::PrefDoubleSpinBox(this);
     layoutRow->addWidget(BloomThreshold);
+    BloomThreshold->setRange(-1e9, 1e9);
     BloomThreshold->setValue(Gui::RenderParams::defaultBloomThreshold());
     BloomThreshold->setEntryName("BloomThreshold");
     BloomThreshold->setParamGrpPath("View/Render");
@@ -609,6 +633,7 @@ DlgSettingsRender::DlgSettingsRender(QWidget* parent)
     layoutRow->addWidget(labelBloomIntensity);
     BloomIntensity = new Gui::PrefDoubleSpinBox(this);
     layoutRow->addWidget(BloomIntensity);
+    BloomIntensity->setRange(-1e9, 1e9);
     BloomIntensity->setValue(Gui::RenderParams::defaultBloomIntensity());
     BloomIntensity->setEntryName("BloomIntensity");
     BloomIntensity->setParamGrpPath("View/Render");
@@ -622,6 +647,7 @@ DlgSettingsRender::DlgSettingsRender(QWidget* parent)
     layoutRow->addWidget(labelBloomRadius);
     BloomRadius = new Gui::PrefDoubleSpinBox(this);
     layoutRow->addWidget(BloomRadius);
+    BloomRadius->setRange(-1e9, 1e9);
     BloomRadius->setValue(Gui::RenderParams::defaultBloomRadius());
     BloomRadius->setEntryName("BloomRadius");
     BloomRadius->setParamGrpPath("View/Render");
@@ -655,6 +681,7 @@ DlgSettingsRender::DlgSettingsRender(QWidget* parent)
     layoutRow->addWidget(labelSunDiscSize);
     SunDiscSize = new Gui::PrefDoubleSpinBox(this);
     layoutRow->addWidget(SunDiscSize);
+    SunDiscSize->setRange(-1e9, 1e9);
     SunDiscSize->setValue(Gui::RenderParams::defaultSunDiscSize());
     SunDiscSize->setEntryName("SunDiscSize");
     SunDiscSize->setParamGrpPath("View/Render");
@@ -688,6 +715,7 @@ DlgSettingsRender::DlgSettingsRender(QWidget* parent)
     layoutRow->addWidget(labelGroundReflectionIntensity);
     GroundReflectionIntensity = new Gui::PrefDoubleSpinBox(this);
     layoutRow->addWidget(GroundReflectionIntensity);
+    GroundReflectionIntensity->setRange(-1e9, 1e9);
     GroundReflectionIntensity->setValue(Gui::RenderParams::defaultGroundReflectionIntensity());
     GroundReflectionIntensity->setEntryName("GroundReflectionIntensity");
     GroundReflectionIntensity->setParamGrpPath("View/Render");
@@ -723,6 +751,7 @@ DlgSettingsRender::DlgSettingsRender(QWidget* parent)
     layoutRow->addWidget(labelCyclesSamples);
     CyclesSamples = new Gui::PrefSpinBox(this);
     layoutRow->addWidget(CyclesSamples);
+    CyclesSamples->setRange(-2147483647, 2147483647);
     CyclesSamples->setValue(Gui::RenderParams::defaultCyclesSamples());
     CyclesSamples->setEntryName("CyclesSamples");
     CyclesSamples->setParamGrpPath("View/Render");
@@ -736,6 +765,7 @@ DlgSettingsRender::DlgSettingsRender(QWidget* parent)
     layoutRow->addWidget(labelCyclesTimeLimit);
     CyclesTimeLimit = new Gui::PrefDoubleSpinBox(this);
     layoutRow->addWidget(CyclesTimeLimit);
+    CyclesTimeLimit->setRange(-1e9, 1e9);
     CyclesTimeLimit->setValue(Gui::RenderParams::defaultCyclesTimeLimit());
     CyclesTimeLimit->setEntryName("CyclesTimeLimit");
     CyclesTimeLimit->setParamGrpPath("View/Render");
@@ -760,6 +790,7 @@ DlgSettingsRender::DlgSettingsRender(QWidget* parent)
     layoutRow->addWidget(labelCyclesPixelSize);
     CyclesPixelSize = new Gui::PrefSpinBox(this);
     layoutRow->addWidget(CyclesPixelSize);
+    CyclesPixelSize->setRange(-2147483647, 2147483647);
     CyclesPixelSize->setValue(Gui::RenderParams::defaultCyclesPixelSize());
     CyclesPixelSize->setEntryName("CyclesPixelSize");
     CyclesPixelSize->setParamGrpPath("View/Render");
@@ -773,6 +804,7 @@ DlgSettingsRender::DlgSettingsRender(QWidget* parent)
     layoutRow->addWidget(labelCyclesMaxStreams);
     CyclesMaxStreams = new Gui::PrefSpinBox(this);
     layoutRow->addWidget(CyclesMaxStreams);
+    CyclesMaxStreams->setRange(-2147483647, 2147483647);
     CyclesMaxStreams->setValue(Gui::RenderParams::defaultCyclesMaxStreams());
     CyclesMaxStreams->setEntryName("CyclesMaxStreams");
     CyclesMaxStreams->setParamGrpPath("View/Render");
@@ -909,7 +941,7 @@ void DlgSettingsRender::retranslateUi()
     OutputTransform->setToolTip(QApplication::translate("RenderParams", Gui::RenderParams::docOutputTransform()));
     labelOutputTransform->setText(QObject::tr("Output colour transform"));
     labelOutputTransform->setToolTip(OutputTransform->toolTip());
-    // Auto generated code (Tools/params_utils.py:1255)
+    // Auto generated code (Tools/params_utils.py:1270)
     OutputTransform->setItemText(0, QObject::tr("Off"));
     OutputTransform->setItemText(1, QObject::tr("sRGB"));
     Exposure->setToolTip(QApplication::translate("RenderParams", Gui::RenderParams::docExposure()));
@@ -943,7 +975,7 @@ void DlgSettingsRender::retranslateUi()
     AOMethod->setToolTip(QApplication::translate("RenderParams", Gui::RenderParams::docAOMethod()));
     labelAOMethod->setText(QObject::tr("AO method"));
     labelAOMethod->setToolTip(AOMethod->toolTip());
-    // Auto generated code (Tools/params_utils.py:1255)
+    // Auto generated code (Tools/params_utils.py:1270)
     AOMethod->setItemText(0, QObject::tr("SSAO (hemisphere)"));
     AOMethod->setItemText(1, QObject::tr("GTAO (horizon)"));
     AOSlices->setToolTip(QApplication::translate("RenderParams", Gui::RenderParams::docAOSlices()));
@@ -972,7 +1004,7 @@ void DlgSettingsRender::retranslateUi()
     ShininessMapping->setToolTip(QApplication::translate("RenderParams", Gui::RenderParams::docShininessMapping()));
     labelShininessMapping->setText(QObject::tr("Shininess mapping"));
     labelShininessMapping->setToolTip(ShininessMapping->toolTip());
-    // Auto generated code (Tools/params_utils.py:1255)
+    // Auto generated code (Tools/params_utils.py:1270)
     ShininessMapping->setItemText(0, QObject::tr("GL exponent"));
     ShininessMapping->setItemText(1, QObject::tr("Full range"));
     PBREnvIntensity->setToolTip(QApplication::translate("RenderParams", Gui::RenderParams::docPBREnvIntensity()));

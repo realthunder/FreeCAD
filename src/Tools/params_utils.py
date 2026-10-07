@@ -746,6 +746,13 @@ def make_title(name):
 class Param:
     WidgetPrefix = ""
 
+    # Range of the spin box of a numeric setting shown without a proxy. A
+    # spin box starts out with Qt's range of 0 to 99 and clamps whatever it is
+    # given: the default, and then the stored value -- which OK in the
+    # preferences writes back, changed. So a setting with no range of its
+    # own gets the whole range of its type.
+    WidgetRange = None
+
     def __init__(self, name, default, doc="", title="",
                  on_change=False, proxy=None, subpath='',
                  param_name='', no_label=False, property_type=None):
@@ -828,6 +835,11 @@ class Param:
     {self.widget_name} = new {self.widget_type}(this);
     layoutRow->addWidget({self.widget_name});"""
         )
+        if not self.proxy and self.WidgetRange:
+            cog.out(
+                f"""
+    {self.widget_name}->setRange({self.WidgetRange[0]}, {self.WidgetRange[1]});"""
+            )
         if self.widget_setter:
             cog.out(
                 f"""
@@ -1032,6 +1044,7 @@ class ParamFloat(Param):
     PropertyType = "App::PropertyFloat"
     WidgetType = "Gui::PrefDoubleSpinBox"
     WidgetSetter = "setValue"
+    WidgetRange = ("-1e9", "1e9")
 
 
 class ParamString(Param):
@@ -1087,6 +1100,7 @@ class ParamInt(Param):
     PropertyType = "App::PropertyInteger"
     WidgetType = "Gui::PrefSpinBox"
     WidgetSetter = "setValue"
+    WidgetRange = ("-2147483647", "2147483647")
 
 
 class ParamUInt(Param):
@@ -1096,6 +1110,7 @@ class ParamUInt(Param):
     PropertyType = "App::PropertyInteger"
     WidgetType = "Gui::PrefSpinBox"
     WidgetSetter = "setValue"
+    WidgetRange = ("0", "2147483647")
 
 
 class ParamHex(ParamUInt):
@@ -1352,6 +1367,13 @@ class ParamSpinBox(ParamProxy):
                 f"""
     {param.widget_name}->setDecimals({self.decimals});"""
             )
+        # The default again: it was set before the range, and a default
+        # outside Qt's own 0 to 99, or finer than two decimals, was clamped
+        # to that -- and then stored by OK in the preferences.
+        cog.out(
+            f"""
+    {param.widget_name}->{param.widget_setter}({param.widget_default_expr()});"""
+        )
 
     def registry_fields(self, param):
         return (super().registry_fields(param)
