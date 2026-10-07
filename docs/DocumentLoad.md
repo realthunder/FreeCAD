@@ -1291,6 +1291,13 @@ outliving its load is a bounding box keyed on a TShape address that a
 closed document may free and a later allocation reuse; until then each
 claim also pins its own shape.
 
+**A claim covers the faces and edges of its shape, not its root alone**
+(sec 18.8, 2026-10-07). A mesher writes into faces and edges, and a shape
+that was never in the batch can be made of the faces of one that is. The
+build and the bounds question ask about the shape and everything it is
+made of (`preMeshInFlight(shape)`, `waitPreMesh(shape)`), and a shape
+made of faces in flight is not given a worker of its own.
+
 **The PUBLISHED claims, that is. One still in flight stays** (sec 18.7,
 2026-10-07): "every queue is empty" says that no build will ask again,
 and says nothing about whether the batch is done. Such a claim goes on
@@ -1557,7 +1564,8 @@ to a claim in flight; the write into freed memory itself is seen only
 under the checker, which no test runs. A GUI thread READING a shape a
 worker writes, other than through a build or a bounds question, was not
 looked for. And the batch is still a detached thread: a process that
-exits under one was not looked at.
+exits under one was not looked at. **Both were looked at the same night:
+sec 18.8.**
 
 **To run the checker** (twenty seconds, no rebuild):
 
@@ -1569,6 +1577,170 @@ under `xvfb-run` with `QT_QPA_PLATFORM=xcb`, `GT_OUT` and `GT_RESULT` set
 as `scripts/gui-test.sh` sets them, and the conda wrapper in FRONT of
 `env`, so that FreeCAD alone gets the checker. Under gdb the two are `set
 environment` lines.
+
+### 18.8 Who else touches a claimed shape, and a process that leaves under a batch (2026-10-07)
+
+The two things sec 18.7 named as not looked at. Both turned out to hold
+defects, three of them not the pre-mesh's at all.
+
+**The instrument** (scratch, not in the tree; an `LD_PRELOAD` library):
+wrappers round the mesher's constructors that mesh, round
+`PartGui::submitPreMesh`, and round 32 of `BRep_Tool`'s readers of what a
+mesher writes -- a face's triangulations, an edge's list of curve
+representations, which polygons are appended to and removed from. It
+knows which faces and edges are CLAIMED (from a submit until the worker
+of that shape is done) and which are BEING MESHED and by which thread,
+and reports any other thread that reads or starts a mesher on one, once
+per distinct stack, with a count at exit. Three things about it that cost
+time: FreeCAD's modules come in by `dlopen`, so `dlsym(RTLD_NEXT)` finds
+nothing and the real functions are taken from the library's own handle;
+OCCT's libraries call their own exported functions through the GOT, so
+calls made INSIDE OCCT are seen too; and **a mesh call made with OCCT's
+own parallelism has helper threads of OCCT's pool reading for it** -- the
+first version took those for a second party and reported 24 "overlaps"
+that were one mesher and its helpers. A second party is the main thread,
+or a thread that is itself inside a mesh call. `MESHCLASH_HOLD_MS=n`
+makes each pre-mesh worker wait n ms before it meshes, which stretches a
+batch from a fraction of a second to as long as is wanted; the wrapper's
+own state is never freed, so that it adds nothing of its own at an exit.
+
+A batch at its own speed is short -- 400 solids in 0.18 s, 3000 in about
+a second -- so most of what follows was first seen stretched and then
+looked for at the batch's own speed.
+
+**1. FreeCAD's own code, nobody touching anything: clean on independent
+shapes.** 400 solids, the batch stretched to 5.3 s, the open returning
+after 0.5 s: 50845 reads checked while shapes were claimed, none of a
+claimed shape.
+
+**2. The load's own drain meshed shapes whose faces were claimed. FIXED,
+`5ae3607abd`.** A claim was keyed on its shape's own TShape and a build
+asked about that. A shape that is not in the batch can be made of the
+faces of one that is, and the collector's "both go" (sec 18.3) answers
+only for two shapes it has both read -- a compound under instancing, a
+shape it may not read yet, it passes over BEFORE that test, and the
+partner stays in the batch. One such object over twelve primitives, the
+batch stretched:
+
+| the object | submitted | the drain, on the GUI thread, with its faces claimed |
+|---|---|---|
+| a `Part::Compound` over four of them | 12 of 13 | meshes it; 17 distinct reading paths |
+| a `Part::MultiFuse` of three that do not touch | 12 of 13 | meshes it; 17 |
+| a feature holding a compound of three others' shapes | 12 of 13 | meshes it; 17 |
+| a `Part::Cut` of a box by one of them | 13 of 14 | meshes it; 15 |
+| a shell made of two others' faces | 12 of 13 | meshes it; 11 |
+| a feature holding another's very shape | 11 of 13 | nothing: both were left out, as sec 18.3 says |
+
+And at the batch's own speed: a document of 3000 solids with compounds
+over some, three loads of three, one mesher call and 1869 reads of
+claimed faces and edges, 80 ms into a batch of one second
+(`runDeferredVisualSlice`, `updateVisual`, `captureVisualFill`,
+`BRepMesh_IncrementalMesh`; before it `meshingBounds`). How long a batch
+must run for the drain to get there, on 300 solids with the compounds
+first: at 0.13 to 0.19 s nothing, at 0.36 s a first read 269 ms in, at one
+second a mesher call 387 ms in. **The two were never seen inside one face
+at one moment** -- not in seven loads of two 3000-object documents, one of
+them laid out to make it likely. Nothing kept them apart but where the
+shapes sat in the queue.
+
+A claim now holds its faces and edges while in flight; the build's gate
+and the bounds question ask about a shape and everything it is made of,
+and the bounds question waits for the workers where the shape has no
+claim of its own to answer from; a shape made of faces in flight is not
+handed to a second worker. After: none, in all six kinds and in the three
+loads, every visual built.
+
+**3. OPEN: what is not a build does not ask.** While shapes were claimed,
+each of these on an object late in the batch:
+
+| the action | a claimed shape is |
+|---|---|
+| the view fitted to everything, or to the selection | not touched |
+| an object selected (`Gui.Selection`), a face of it selected | not touched |
+| hidden and shown; its Deviation, colour, transparency, Placement changed | not touched |
+| `ViewObject.getBoundingBox()` | not touched (answered from the claim) |
+| a parameter changed and the document recomputed | not touched (a new shape) |
+| **an object clicked in the tree** | **read, and MESHED on the GUI thread** |
+| `doc.copyObject` | read (`PropertyPartShape::SaveDocFile`, `exportBrep`) |
+| the document saved | read (`ShapeRefSet::add`) |
+| a `Part::Cut` made of two claimed objects and recomputed | read, 88 paths (the boolean) |
+| a script: `obj.Shape.BoundBox`, `.Volume` | read |
+| a script: `obj.Shape.tessellate` | read and meshed |
+| an object exported to STEP | read, 17 paths |
+
+The click is FreeCAD's own doing with every setting at its default: the
+tree's sync view has the view follow the selection (`onItemSelectionChanged`,
+`ViewSelectionExtend`, `viewObjects`, `checkElementIntersection`), which
+asks the shape for its faces (`TopoShape::getFacesFromSubElement`,
+`getDomains`), and `getDomains` MESHES a shape that has no triangulation
+(`meshShape`). The rest are the user's or a script's: by construction
+nothing stands between them and a shape a worker is writing, since the
+claims live in PartGui and these read through Part. What a reader risks
+depends on what the worker is doing to that face at that instant, and is
+worst where the shape already carried a mesh the worker replaces; none of
+it was seen to fail, and none of it was made to. **Not fixed: it is a
+design question** -- one gate in Part that every reader of a
+`PropertyPartShape` passes and that waits for a claim in flight, against
+the pre-mesh meshing a private twin of each shape and handing the
+triangulations over on the GUI thread, which removes the rule instead of
+enforcing it.
+
+**4. A document closed from inside a drain slice. FIXED, `3c7c8bdcbf`; not
+the pre-mesh's.** Found by closing the document during a batch to see the
+process leave. A slice reports through a progress sequence, the progress
+bar runs events from inside the slice, and a document closed by one of
+them -- a script's timer -- had its queue erased from the map the slice
+was walking and the sequence destroyed under the call into it. A scripted
+`closeDocument` 200 ms into the drain of 3000 solids, nine runs: six dead
+in `runDeferredVisualSlice` (`App::Application::getDocument` on a freed
+name, `std::_Rb_tree_increment`, a freed string written to the log;
+"double free or corruption" in a run that also left), two hung, the GUI
+thread at 109 % in the walk over the map, and one that lived. (The commit
+and the first version of the test's header say "of six runs four dead and
+one hung", which is five of those nine counted wrong.) With
+`Render/PreMeshOnLoad` off: one dead and two hung of four. The user's own ways to close -- the window, the
+application's quit, `Std_CloseActiveWindow` -- are not acted on while a
+load's progress bar runs, silently, and work after it; which check turns
+them down was not looked into. A close that comes while a slice is on the
+stack now empties the queue and counts itself on it; the slice reads the
+count before and after the events, resolves what it popped only after
+them, and lets go. `tests/gui/close-during-visual-drain.py`
+(`GuiCloseDuringVisualDrain_tests_run`), nine closes in nine loads in one
+process: three runs of three dead or hung before any check before, 4 of 4
+checks in four of four after.
+
+**5. A process that leaves under a running batch. FIXED, `806ab94621`.**
+With the batch stretched to span the exit -- the document closed by
+script 200 ms in, then `QCoreApplication.exit` -- nine runs of nine died
+on a pre-mesh worker in `Geom2dAdaptor_Curve::load` under `BRepMesh`, one
+of them hung as well: the workers ran the mesher while the process took
+OCCT's static data down. At the batch's own speed the workers were done
+before the process got that far, 12 exits of 12 clean. `stopPreMesh`,
+called from `QCoreApplication::aboutToQuit`: a worker starts no shape it
+has not started and finishes the one it is on, the claims of the rest are
+published unmeshed, and it returns with no batch running. After: nine of
+nine clean, three of them under the malloc checker, the wrapper counting
+over 2000 of the 2669 shapes not started at the exit and no mesher call
+in progress.
+
+**6. `QCoreApplication.exit` with a document open. FIXED, `052fea82aa`;
+nothing to do with a load.** The control for 5 showed it: exit ends the
+event loop without the main window being asked to close, the main window
+-- a local of `runApplication` -- went with the documents' views in it,
+the last view of each closed its document from its destructor, and
+closing a document asks the main window that is being destroyed for its
+active view. A segmentation fault on the way out with a box in a document
+and nothing else, three runs of three, and nine of nine during a load.
+The documents are now closed where the loop returns, as a closing main
+window closes them. `tests/gui/exit-with-open-document.py`
+(`GuiExitWithOpenDocument_tests_run`): status 1 in three of three before,
+0 in four of four after.
+
+**Seen and left.** Under the hold the drain turns one slice per turn of
+the event loop while everything left on its queue is in flight -- 278753
+slices and 3.98 s of the GUI thread in a batch of 5.3 s. At the batch's
+own speed it is 14 slices for 3000 visuals, so it is the hold's doing and
+not a finding; a load whose batch really ran for seconds would show it.
 
 ## 19. Progressive load against eager (2026-09-29)
 

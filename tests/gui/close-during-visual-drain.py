@@ -29,8 +29,8 @@ What is asserted:
     built and has a bounding box.
 
 Run through scripts/gui-test.sh (xvfb, isolated configuration, external
-timeout). Scored against the tree before the change (b57f74c576): of six
-runs of the close alone, four died in the drain and one hung.
+timeout). Scored against the tree before the change (b57f74c576): three
+runs of three dead or hung before the first check.
 """
 import os
 import traceback
