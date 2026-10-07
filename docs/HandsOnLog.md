@@ -33,9 +33,10 @@ Evidence that does not belong in the repository is under
 | 17 | STAGED `3c8cd63032`; what it uncovers is a question for the reporter | the two sketches refer to edges of a binder that moved with another binder; found again now. Then `Pad033` loses its profile, because the sketch really changes |
 | 19 | STAGED `805b5afb25` | every place the audit listed that runs at load, recompute or paint, the three wrong results, and the writer of -1; what is left is listed |
 | 22 | STAGED `5aedd5cf83` | `/word` is an object query; the beginning of a keyword lists modes and objects |
-| 23 | STAGED `c7a27b5a85`, and `08b8f009aa` | 574 settings: 221 had no documentation, 94 ran past 400 characters; all have a short text now, and a test keeps it so. What the audit turned up besides is listed |
-| 26 | FOUND in part, nothing changed | an unchanged write of the renderer `Type` reloads every Part view provider: 1.07 s on `scanner.FCStd`; the anti-aliasing change itself 0.15 s. OK in the dialog not measured yet |
+| 23 | STAGED `c7a27b5a85`, and `08b8f009aa`; the defaults FIXED `02cab053df`, not staged | 574 settings: 221 had no documentation, 94 ran past 400 characters; all have a short text now, and a test keeps it so. The defaults: OK on a fresh profile changed 23 settings and stored 2 under a wrong type -- 14 of them a spin box clamping its default to 99, which the reporter's own profile carries |
+| 26 | FIXED `175ffce199`, not staged | the first OK of a profile held the program 11 to 15 s on the reporter's configuration with `scanner.FCStd` open: 780 keys stored for the first time and taken for changes -- stylesheet set again 4.2 s, every Part view provider re-meshed 3.2 s, language activated again 2 s. 0.9 s now |
 | 27 | STAGED `fa2ada985c` | the cell menu made a spreadsheet view by asking for it, listed a page's views, and a pick was placed by the general policy |
+| 31 | FIXED `47b5e72c79`, not staged | "Go to end" is on for a profile that never stored it |
 
 **The reporter, 2026-10-07 14:20, on what is open** (said to the build
 session; the queue has the reporter's own entries):
@@ -43,11 +44,12 @@ session; the queue has the reporter's own entries):
   rest;
 - entry 23: "yes fixed the defaults, leave the unused ones" -- the defaults
   that disagree between a definition and its preference page are to be made
-  to agree; the settings nothing reads stay. Not done yet;
+  to agree; the settings nothing reads stay. Done, `02cab053df`;
 - entry 26: "probably not the view provider, because the delay I experience
   is longer. most likely related to stylesheet re-apply" -- so the second
   measured on `scanner.FCStd` is not the halt; what OK does to the
   stylesheets is where to look (entry 30's freeze is the same family).
+  Looked at, and it is the largest part of the halt: `175ffce199`.
 
 ## 15. A Pad "up to first" gives a third result -- FIXED, one question left
 
@@ -423,10 +425,169 @@ reporter; none of it was in what was asked.
   `HiddenLineOverrideColor` talks about selection highlighting: a copy and
   paste, left as it was.
 
-## 26. A long halt after enabling MSAA and pressing OK -- FOUND in part
+**The defaults that disagree -- FIXED `02cab053df`** (the reporter, 14:20:
+"yes fixed the defaults, leave the unused ones"). Not staged.
 
-Nothing changed. What was asked: is the halt the update of every view
-provider that OK sets off, or the anti-aliasing change itself?
+What a disagreement does: OK in the preferences saves every page, so on a
+profile that never stored a setting OK stores what the page SHOWS for it.
+Where that is not the default the program uses while the key is unset, the
+setting changes with nobody having changed it -- one behaviour until the
+first OK, another after.
+
+So it was checked end to end instead of by reading: a fresh profile, the
+dialog opened, OK, every key OK stored compared with its definition
+(`tests/gui/preferences-ok-keeps-defaults.py`, registered as
+`GuiPreferencesOkKeepsDefaults_tests_run`). On the binaries staged 14:23:
+**23 settings changed by OK and 2 stored as the wrong type**; the list above
+had six of them. After: 0 and 0.
+
+- **Fourteen were the page generator, not a default.** It set a spin box's
+  value before its range, so a default outside Qt's own 0 to 99, or finer
+  than two decimals, was clamped -- and stored: the overlay's delay, hint
+  delay and animation duration 200 -> 99, its wheel delay 1000 -> 99, its
+  four hint lengths and the pie menu's radius 100 -> 99, the pie menu's delay
+  200 and duration 250 -> 99, `DatumScale` and `ShadowGroundTextureSize`
+  100 -> 99.99, `ShadowEpsilon` 1e-05 -> 0. `CyclesSamples` 256 -> 99 had no
+  range at all. Fixed in `src/Tools/params_utils.py`: the value is set again
+  after the range, and a numeric setting with no range of its own gets the
+  range of its type (a stored `GpuMemoryBudgetMB` of 4096 would have been
+  cut to 99 the same way).
+  **The reporter's own profile carries these**: the copy of it taken
+  2026-10-07 00:13 has `DockOverlayDelay`, `DockOverlayHintDelay`,
+  `DockOverlayAnimationDuration`, `DockOverlayWheelDelay`, `PieMenuRadius`
+  and `CyclesSamples` at 99. Nothing puts them back: a stored value is the
+  user's as far as the program can tell. To get the defaults back, remove
+  those keys or set them by hand (200, 200, 200, 1000, 100, 256).
+- **The definition follows the page** where the definition predates an
+  upstream change of the default that the page and the other readers took:
+  `UseFCBakExtension` true, `SaveThumbnail` true, `ThumbnailSize` 256,
+  `CompressionLevel` 7. The last was measured before it was chosen
+  (`scanner.FCStd`, 686 objects, saved twice at each): level 3 2.5 s and
+  6.42 MB, level 7 2.9 to 3.3 s and 5.55 MB. The page's label said
+  "3 = default" beside a 7; it says 7.
+- **The page follows the definition** where the definition is this fork's
+  own decision: `AutoValidateShape` off (`7258b707a5`, "obvious performance
+  impact on complex shape" -- the page still ticked it, and OK switched it
+  on), `DefaultShapeColor` 0xCCCCE6 (`7f5a3b7d49`, the default material
+  card; the page showed and stored 0xCCCCCC),
+  `checkShowReportViewOnWarning` on, `AnnotationTextColor` white (the button
+  had no colour and stored the palette's, 0xE3E3E3).
+- `TreeEditColor`, in the list above, was not one: the Colors page sets its
+  button from the setting when it is built. Nothing changed for it.
+- **The Selection page's two highlight colours were spin boxes**, reading 99
+  and stored as an INTEGER `HighlightColor`/`SelectionColor` that nothing
+  reads (the colours are unsigned keys of the same names). They are off
+  that page. Not replaced by colour buttons there, and that is a choice to
+  confirm: the Colors page already has both, and of two pages storing one
+  key the page saved LAST takes the other's change back -- a button on the
+  Selection page would have looked right and done nothing.
+- Left as they are, all three the same thing seen from the page's side:
+  `MeshColor`/`LineColor` (0 means "the built-in colour", the page shows
+  that colour and stores it), `prefLicenseUrl` (empty means "the chosen
+  license's address", the page spells it out). The test lists them with the
+  reason.
+- Not a definition, so not in this: the Workbenches page rewrites its three
+  lists on a first OK (`Workbenches/Ordered`, `Disabled`,
+  `General/BackgroundAutoloadModules`), from empty to what it shows.
+
+**Readers with a fallback of their own** (`defaults23.py`, every
+hand-written `Get...("key", default)` against the definition of the same
+key): `MarkerSize` is defined 9 and read with 7 by the Sketcher and the
+mesh defect views, 5 by Robot, 4 by CAM; TechDraw reads the 3D view's
+`SelectionColor`/`HighlightColor` with green and yellow of its own; BIM's
+project manager reads `DefaultShapeColor`/`DefaultShapeLineColor` with
+white and black; `AutoSaver.cpp` reads `SaveThumbnail` with false (its
+toggling of the key does nothing here any more: the document's own
+property decides). Listed, not changed: each is a module's own choice until
+somebody says it is not, and only the first is a page-against-reader case
+(a fresh profile draws sketch points at 7, and at 9 after an OK).
+
+**The root, for a decision** (entry 24's ground): a page stores a key it
+was only showing. If a preference widget stored only a value that was
+changed, none of the above could happen, a first OK would not store 700
+keys (entry 26), and two pages could show one setting. It would also stop
+OK from "making the page's defaults real" where a reader has another
+fallback, which some profiles depend on without knowing. Not done.
+
+Evidence: `..\dl\handson\2026-10-07\entry23-ok-keeps-defaults-*`,
+`entry23-defaults-scan-after.txt`, `entry23-compression-3-against-7.txt`,
+`defaults23.py`, `pages23.py`.
+
+## 26. A long halt after enabling MSAA and pressing OK -- FIXED
+
+`175ffce199`. Not staged. The halt is reproduced, measured and gone; both of
+the reporter's guesses were right, and neither was the whole of it. What was
+found first is kept below as it was written.
+
+**Reproduced.** A copy of the reporter's configuration as it was found on
+2026-10-07 10:44 (Dark theme, nothing of the preferences ever confirmed:
+`user-cfg-recovery\user.cfg.as-found-now`), `scanner.FCStd` open, the
+preferences opened, the anti-aliasing changed, OK (`e26b.py`):
+
+| | the click | event loop held after | |
+|---|---|---|---|
+| the first OK, staged 14:23 | 1.1 to 2.5 s | 9.9 to 12.7 s, one turn | 783 keys reported changed |
+| the second | 0.4 s | 2.5 s | 70 |
+| the third | 0.45 s | 0.84 s | 67 |
+| **the first OK, after** | **0.49 s** | **0.42 s** | 779 |
+| the second, after | 0.40 s | 0.14 s | 70 |
+
+**Why the first.** OK saves every page. On a profile that never confirmed
+the preferences about 780 keys are stored for the first time, and a key
+being stored is reported as CHANGED to everything that watches it -- with
+the value it had all along. (The reporter's "after first enabled it": it is
+the first OK of the profile, not the anti-aliasing.)
+
+**Where the time went** (the main thread's native stack sampled every 60 ms
+through the 14 s, `sampler.py`, the dev tree for its symbols):
+
+| | of the 14 s |
+|---|---|
+| the application's stylesheet set again (`applyStyleSheet` -> `Application::setStyleSheet`) | 4.2 s |
+| ... of which the tree remaking the icon of each of its 686 items, because the palette is set twice on the way; most of it in file-attribute calls | 2.9 s |
+| every Part view provider reloaded and re-meshed (`ViewProviderPartExt::reload`) | 3.2 s |
+| the active language activated again (`applyLanguage`) | 1.0 s |
+| the TechDraw preference page rebuilding its line style icons for that language change | 0.9 s |
+
+So: the stylesheet, as the reporter said at 14:20; the view providers, as
+the reporter said first; and the language, which nobody suspected.
+
+**Fix.** Each handler acts on a difference, not on being told.
+- `Application::setStyleSheet` compares what it is about to apply -- the
+  sheet with its variables resolved, the icon set, the background, the
+  palette as its last apply left it -- with what it applied, and returns when
+  they are the same. A sheet edited on disk, an accent colour, a theme
+  variable and a desktop that changed its colour scheme are all differences.
+- Part's observer of the renderer `Type` and `RenderCache`, and the
+  overlay's of the three keys its sheet is chosen by, compare values, read
+  with the defaults of their definitions.
+- The language handler leaves the active language alone.
+
+**Scored.** `tests/gui/preferences-ok-reapplies-nothing.py`
+(`GuiPreferencesOkReappliesNothing_tests_run`): 13 PASS; 3 FAIL on the
+staged binaries. `part-tessellation-reload.py` 7 PASS (the observer still
+acts on a real change), `theme-switch-contrast.py` 39 PASS,
+`sketcher-preferences.py` 20 PASS.
+
+**Left, and seen.**
+- A first OK still stores its 780 keys and reports them changed; the
+  handlers that are expensive no longer mind. The others were not looked at
+  one by one: what is left of a first OK is 0.9 s. The root is the one named
+  under entry 23, and it is entry 24's.
+- After a theme SWITCH in the session the next apply is still a full one
+  (the palette is still moving when the sheet is set). Once.
+- A REAL stylesheet change costs what it cost: the tree's icons, 2.9 s on
+  this document, with `QFileInfo` asked about each icon again. That is entry
+  30's freeze from the other side, and worth its own look there.
+- The reporter's profile had the clamped 99s of entry 23 from its first OK.
+
+Evidence: `..\dl\handson\2026-10-07\entry26-*` (both probes' results before
+and after, the two profiles, the single-write table), `e26b.py`, `sampler.py`.
+
+**What was found first** (before the reporter's "probably not the view
+provider", and true as far as it went). What was asked: is the halt the
+update of every view provider that OK sets off, or the anti-aliasing change
+itself?
 
 **From the code.** OK saves every page, and a page saving a key writes it
 whether it changed or not. `ParameterGrp::_SetAttribute` tells its typed
@@ -451,10 +612,6 @@ The anti-aliasing change is not the halt. An unchanged write of one key
 costs a second on this document; what the dialog's OK costs in all -- every
 page, every observer -- was not measured, and one second is not yet the
 "long halt" reported.
-
-**Next:** time OK in the preferences dialog itself on the reporter's kind of
-session; make `InstancingGateObserver` act on a changed value only; look for
-the other old-style observers that do work on an unchanged write.
 
 ## 27. The view cell menu -- FIXED
 
@@ -496,3 +653,17 @@ Not looked at: a spreadsheet's view closed from its cell ("Close view")
 seems to stay alive hidden, and a double click on the sheet then shows
 nothing -- seen once while writing the test, on the staged binaries, not
 pinned down.
+
+## 31. Report view: "Go to end" on by default -- FIXED
+
+`47b5e72c79`. The option was a member of the report view initialised to
+off, and the stored key only overrides it; the member starts on now
+(`ReportOutput`, `src/Gui/ReportView.cpp`). A profile that stored
+`checkGoToEnd` keeps what it stored, either way.
+
+Scored: `tests/gui/report-go-to-end.py` (`GuiReportGoToEnd_tests_run`), 6
+PASS. On the binaries staged 14:23, 300 lines printed into a fresh
+profile's report view leave it at 0 of 4359: 1 FAIL, 5 PASS.
+
+Not done, and entry 24's: the key is still read straight from the
+parameter group, so the omni search does not list it.
