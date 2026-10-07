@@ -24,6 +24,8 @@
 
 #include "PreCompiled.h"
 
+#include <Mod/PartDesign/App/PartDesignParams.h>
+
 #ifndef _PreComp_
 # include <QAction>
 # include <QKeyEvent>
@@ -115,16 +117,14 @@ TaskBooleanParameters::TaskBooleanParameters(ViewProviderBoolean *BooleanView,QW
 
     auto hGrp = App::GetApplication().GetUserParameter()
         .GetGroup("BaseApp")->GetGroup("Preferences")->GetGroup("Mod/PartDesign");
-    ui->checkboxDeleteOnRemove->setChecked(hGrp->GetBool("BooleanDeleteOnRemove",true));
+    ui->checkboxDeleteOnRemove->setChecked(PartDesign::PartDesignParams::getBooleanDeleteOnRemove());
 
     connect(ui->checkboxDeleteOnRemove, &QCheckBox::toggled,
             this, &TaskBooleanParameters::onDeleteOnRemove);
 }
 
 void TaskBooleanParameters::onDeleteOnRemove(bool checked) {
-    auto hGrp = App::GetApplication().GetUserParameter()
-        .GetGroup("BaseApp")->GetGroup("Preferences")->GetGroup("Mod/PartDesign");
-    hGrp->SetBool("BooleanDeleteOnRemove",checked);
+    PartDesign::PartDesignParams::setBooleanDeleteOnRemove(checked);
 }
 
 void TaskBooleanParameters::populate() {

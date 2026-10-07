@@ -21,6 +21,8 @@
  ******************************************************************************/
 
 #include "PreCompiled.h"
+
+#include "PartDesignParams.h"
 #ifndef _PreComp_
 # include <Bnd_Box.hxx>
 # include <BRep_Builder.hxx>
@@ -93,7 +95,7 @@ Transformed::Transformed()
     //init Refine property
     Base::Reference<ParameterGrp> hGrp = App::GetApplication().GetUserParameter()
         .GetGroup("BaseApp")->GetGroup("Preferences")->GetGroup("Mod/PartDesign");
-    this->Refine.setValue(hGrp->GetBool("RefineModel", false));
+    this->Refine.setValue(PartDesign::PartDesignParams::getRefineModel());
 
     AddSubType.setStatus(App::Property::Hidden, true);
     AddSubType.setStatus(App::Property::ReadOnly, true);

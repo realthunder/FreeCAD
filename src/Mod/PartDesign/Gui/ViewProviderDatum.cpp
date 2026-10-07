@@ -23,6 +23,8 @@
 
 #include "PreCompiled.h"
 
+#include <Mod/PartDesign/App/PartDesignParams.h>
+
 #ifndef _PreComp_
 # include <QApplication>
 # include <QMessageBox>
@@ -93,7 +95,7 @@ ViewProviderDatum::ViewProviderDatum()
     // The parameter is stored in 'PartDesign' for historical reason
     ParameterGrp::handle hGrp = App::GetApplication().GetParameterGroupByPath (
             "User parameter:BaseApp/Preferences/Mod/PartDesign");
-    unsigned long shcol = hGrp->GetUnsigned ( "DefaultDatumColor", 0xFFD70066 );
+    unsigned long shcol = PartDesign::PartDesignParams::getDefaultDatumColor();
 
     App::Color col ( (uint32_t) shcol );
     ShapeColor.setValue ( col );

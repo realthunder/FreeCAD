@@ -23,6 +23,8 @@
 
 #include "PreCompiled.h"
 
+#include <Mod/PartDesign/App/PartDesignParams.h>
+
 #ifndef _PreComp_
 # include <BRep_Tool.hxx>
 # include <BRepAdaptor_Surface.hxx>
@@ -615,9 +617,7 @@ void CmdPartDesignNewSketch::activated(int iMsg)
     // the mode that fits them best -- and a sketch, which a user rarely
     // means as the support of the next one and is not given to it.
     bool useAttacher = (QApplication::queryKeyboardModifiers() & Qt::ShiftModifier)
-        || App::GetApplication().GetParameterGroupByPath(
-               "User parameter:BaseApp/Preferences/Mod/PartDesign")
-               ->GetBool("NewSketchUseAttachmentDialog", false);
+        || PartDesign::PartDesignParams::getNewSketchUseAttachmentDialog();
 
     // In case the selected face belongs to the body then it means its
     // Display Mode Body is set to Tip. But the body face is not allowed

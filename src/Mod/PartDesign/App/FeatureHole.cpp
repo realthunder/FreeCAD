@@ -22,6 +22,8 @@
 
 
 #include "PreCompiled.h"
+
+#include "PartDesignParams.h"
 #ifndef _PreComp_
 # include <gp_Ax3.hxx>
 # include <gp_Dir.hxx>
@@ -949,7 +951,7 @@ void Hole::setupObject()
 {
     auto hGrp = App::GetApplication().GetParameterGroupByPath(
         "User parameter:BaseApp/Preferences/Mod/PartDesign");
-    int bits = baseProfileOption_idxToBitmask(hGrp->GetInt("defaultBaseTypeHole", 1));
+    int bits = baseProfileOption_idxToBitmask(PartDesign::PartDesignParams::getdefaultBaseTypeHole());
     BaseProfileType.setValue(bits > 0 ? bits : int(BaseProfileTypeOptions::OnPointsCirclesArcs));
     ProfileBased::setupObject();
 }

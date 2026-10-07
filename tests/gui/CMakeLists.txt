@@ -1488,3 +1488,9 @@ fc_add_gui_test(GuiViewSettings_tests_run
 fc_add_gui_test(GuiNaviCubeSettings_tests_run
                 navicube-settings.py
                 --timeout 180)
+
+# PartDesign's settings are behind PartDesign::PartDesignParams: listed by
+# the omni search, and new features and datums still take them.
+fc_add_gui_test(GuiPartDesignSettings_tests_run
+                partdesign-settings.py
+                --timeout 180)

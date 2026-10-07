@@ -23,6 +23,8 @@
 
 #include "PreCompiled.h"
 
+#include <Mod/PartDesign/App/PartDesignParams.h>
+
 #ifndef _PreComp_
 # include <Inventor/details/SoLineDetail.h>
 # include <Inventor/nodes/SoCoordinate3.h>
@@ -56,15 +58,15 @@ ViewProviderDatumCoordinateSystem::ViewProviderDatumCoordinateSystem()
 
     auto hGrp = App::GetApplication().GetParameterGroupByPath(
              "User parameter:BaseApp/Preferences/Mod/PartDesign");
-    auto fontSize = hGrp->GetInt("CoordinateSystemFontSize",10);
-    auto zoom = hGrp->GetFloat("CoordinateSystemZoom",1.0);
-    auto showLabel = hGrp->GetBool("CoordinateSystemShowLabel",false);
+    auto fontSize = PartDesign::PartDesignParams::getCoordinateSystemFontSize();
+    auto zoom = PartDesign::PartDesignParams::getCoordinateSystemZoom();
+    auto showLabel = PartDesign::PartDesignParams::getCoordinateSystemShowLabel();
 
     ADD_PROPERTY_TYPE(FontSize, (fontSize), "Datum", App::Prop_None, "");
     ADD_PROPERTY_TYPE(Zoom, (zoom), "Datum", App::Prop_None, "");
     ADD_PROPERTY_TYPE(ShowLabel, (showLabel), "Datum", App::Prop_None, "");
 
-    if(hGrp->GetBool("CoordinateSystemSelectOnTop",true))
+    if(PartDesign::PartDesignParams::getCoordinateSystemSelectOnTop())
         OnTopWhenSelected.setValue(1);
 
     sPixmap = "PartDesign_CoordinateSystem.svg";

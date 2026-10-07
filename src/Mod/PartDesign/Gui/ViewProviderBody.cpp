@@ -23,6 +23,8 @@
 
 #include "PreCompiled.h"
 
+#include <Mod/PartDesign/App/PartDesignParams.h>
+
 #ifndef _PreComp_
 # include <Inventor/actions/SoGetBoundingBoxAction.h>
 # include <Inventor/SbColor.h>
@@ -278,7 +280,7 @@ bool ViewProviderBody::doubleClicked()
         }
     }
     // assure the PartDesign workbench
-    if(App::GetApplication().GetUserParameter().GetGroup("BaseApp/Preferences/Mod/PartDesign")->GetBool("SwitchToWB", true))
+    if(PartDesign::PartDesignParams::getSwitchToWB())
         Gui::Command::assureWorkbench("PartDesignWorkbench");
 
     Gui::Command::doCommand(Gui::Command::Gui,

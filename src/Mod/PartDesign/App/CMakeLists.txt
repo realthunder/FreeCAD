@@ -114,6 +114,8 @@ SET(FeaturesSketchBased_SRCS
     FeatureAddSub.h
     FeatureHole.h
     FeatureHole.cpp
+    PartDesignParams.h
+    PartDesignParams.cpp
     FeatureBoolean.h
     FeatureBoolean.cpp
     FeatureSplit.h
