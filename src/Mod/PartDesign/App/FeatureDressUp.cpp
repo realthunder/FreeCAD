@@ -37,6 +37,7 @@
 #include <Base/Console.h>
 #include <App/Document.h>
 #include <Base/Exception.h>
+#include <App/ElementNamingUtils.h>
 
 FC_LOG_LEVEL_INIT("PartDesign",true,true)
 
@@ -108,6 +109,18 @@ Part::Feature *DressUp::getBaseObject(bool silent) const
     return rv;
 }
 
+// Whether a reference of Base is a vertex, the old style name 'ref' with or
+// without the missing element prefix
+static bool isVertexReference(const std::string &ref)
+{
+    const char *element = Data::findElementName(ref.c_str());
+    if (!element)
+        return false;
+    if (boost::starts_with(element, Data::missingPrefix()))
+        element += Data::missingPrefix().size();
+    return boost::starts_with(element, "Vertex");
+}
+
 std::vector<TopoShape> DressUp::getContinuousEdges(const TopoShape &shape) {
     std::vector<TopoShape> ret;
     std::unordered_set<TopoDS_Shape, Part::ShapeHasher, Part::ShapeHasher> shapeSet;
@@ -138,6 +151,10 @@ std::vector<TopoShape> DressUp::getContinuousEdges(const TopoShape &shape) {
     for(const auto &v : Base.getShadowSubs()) {
         TopoDS_Shape subshape;
         const auto &ref = v.first.size()?v.first:v.second;
+        // A vertex names a corner of the fillet (Fillet::Corners), which
+        // skips one that has gone itself
+        if (isVertexReference(v.second))
+            continue;
         subshape = shape.getSubShape(ref.c_str(), true);
         if(subshape.IsNull())
             FC_THROWM(Base::CADKernelError, "Invalid edge link: " << v.second);

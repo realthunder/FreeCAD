@@ -32,13 +32,16 @@
 # include <ShapeFix_ShapeTolerance.hxx>
 #endif
 
+#include <Base/Console.h>
 #include <Base/Exception.h>
 #include <Base/Reader.h>
 #include <App/Document.h>
+#include <Mod/Part/App/PartFeature.h>
 #include <Mod/Part/App/TopoShape.h>
 
 #include "FeatureFillet.h"
 
+FC_LOG_LEVEL_INIT("PartDesign",true,true)
 
 using namespace PartDesign;
 
@@ -56,6 +59,13 @@ Fillet::Fillet()
 
     Segments.connectLinkProperty(Base);
 
+    ADD_PROPERTY_TYPE(Corners, (), "Fillet", App::Prop_None,
+      "Setback corners, by vertex: each fillet ending at the vertex stops a distance from it,\n"
+      "measured along its edge, and one patch tangent to them closes the opening.\n"
+      "A corner holds the setback of all its fillets (less than 0 for none) and the setbacks\n"
+      "of single fillets by edge. Needs the OCCT fork.");
+    Corners.connectLinkProperty(Base);
+
     ADD_PROPERTY_TYPE(UseAllEdges, (false), "Fillet", App::Prop_None,
       "Fillet all edges if true, else use only those edges in Base property.\n"
       "If true, then this overrides any edge changes made to the Base property or in the dialog.\n");
@@ -65,7 +75,8 @@ short Fillet::mustExecute() const
 {
     if (Placement.isTouched()
             || Radius.isTouched()
-            || Segments.isTouched())
+            || Segments.isTouched()
+            || Corners.isTouched())
         return 1;
     return DressUp::mustExecute();
 }
@@ -111,7 +122,7 @@ App::DocumentObjectExecReturn *Fillet::execute()
                 conf.emplace_back(segment.param, segment.radius, segment.length);
         }
 
-        shape.makEFillet(baseShape,edges,segmentList,Radius.getValue());
+        shape.makEFillet(baseShape,edges,segmentList,Radius.getValue(),nullptr,getCorners(baseShape));
         if (shape.isNull())
             return new App::DocumentObjectExecReturn(QT_TRANSLATE_NOOP("Exception", "Resulting shape is null"));
 
@@ -149,6 +160,80 @@ App::DocumentObjectExecReturn *Fillet::execute()
     catch (Standard_Failure& e) {
         return new App::DocumentObjectExecReturn(e.GetMessageString());
     }
+}
+
+Part::TopoShape::FilletCorners Fillet::getCorners(const Part::TopoShape &baseShape) const
+{
+    Part::TopoShape::FilletCorners corners;
+    if (Corners.getValue().empty())
+        return corners;
+
+    // The names of Corners are Base's; resolve them by their mapped names
+    std::map<std::string, std::string> mappedNames;
+    const auto &shadows = Base.getShadowSubs();
+    for (const auto &shadow : shadows) {
+        if (!shadow.first.empty())
+            mappedNames[shadow.second] = shadow.first;
+    }
+    auto find = [&](const std::string &name, TopAbs_ShapeEnum type) {
+        auto it = mappedNames.find(name);
+        const auto &ref = it == mappedNames.end() ? name : it->second;
+        TopoDS_Shape shape = baseShape.getSubShape(ref.c_str(), true);
+        if (shape.IsNull() || shape.ShapeType() != type) {
+            FC_WARN(getFullName() << ": skip fillet corner reference " << name);
+            return TopoDS_Shape();
+        }
+        return shape;
+    };
+
+    for (const auto &v : Corners.getValue()) {
+        const auto &setting = v.second;
+        if (setting.setback < 0.0 && setting.edges.empty())
+            continue;
+        TopoDS_Shape vertex = find(v.first, TopAbs_VERTEX);
+        if (vertex.IsNull())
+            continue;
+        corners.emplace_back();
+        auto &corner = corners.back();
+        corner.vertex = vertex;
+        corner.setback = setting.setback;
+        // A corner that no longer ends a fillet is kept, and skipped
+        corner.optional = true;
+        for (const auto &e : setting.edges) {
+            TopoDS_Shape edge = find(e.first, TopAbs_EDGE);
+            if (!edge.IsNull())
+                corner.edges.emplace_back(edge, e.second);
+        }
+    }
+    return corners;
+}
+
+void Fillet::onChanged(const App::Property *prop)
+{
+    // A corner's vertex goes in Base, so that its name follows the topology
+    // as the edges' names do (PropertyFilletCorners::connectLinkProperty)
+    if (prop == &Corners && Base.getValue() && getDocument()
+            && !isRestoring() && !getDocument()->isPerformingTransaction()) {
+        auto subs = Base.getSubValues(false);
+        bool added = false;
+        for (const auto &v : Corners.getValue()) {
+            if (std::find(subs.begin(), subs.end(), v.first) != subs.end())
+                continue;
+            Part::TopoShape vertex;
+            try {
+                vertex = Part::Feature::getTopoShape(Base.getValue(), v.first.c_str(), true);
+            }
+            catch (Base::Exception &) {
+            }
+            if (vertex.isNull() || vertex.shapeType(true) != TopAbs_VERTEX)
+                continue;
+            subs.push_back(v.first);
+            added = true;
+        }
+        if (added)
+            Base.setValue(Base.getValue(), std::move(subs));
+    }
+    DressUp::onChanged(prop);
 }
 
 void Fillet::handleChangedPropertyType(Base::XMLReader &reader, const char * TypeName, App::Property * prop)

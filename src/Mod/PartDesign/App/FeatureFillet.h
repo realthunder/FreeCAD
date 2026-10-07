@@ -41,6 +41,7 @@ public:
 
     App::PropertyQuantityConstraint Radius;
     Part::PropertyFilletSegments Segments;
+    Part::PropertyFilletCorners Corners;
     App::PropertyBool UseAllEdges;
 
     /** @name methods override feature */
@@ -55,9 +56,13 @@ public:
     //@}
 
 protected:
+    void onChanged(const App::Property *prop) override;
     void handleChangedPropertyType(Base::XMLReader &reader, const char * TypeName, App::Property * prop) override;
 
 private:
+    /// The setback corners of Corners in baseShape
+    Part::TopoShape::FilletCorners getCorners(const Part::TopoShape &baseShape) const;
+
     std::vector<int> edgeIndices;
 };
 
