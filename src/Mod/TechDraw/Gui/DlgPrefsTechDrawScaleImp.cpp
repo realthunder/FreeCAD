@@ -24,6 +24,8 @@
 
 #include "PreCompiled.h"
 
+#include <Mod/TechDraw/App/TechDrawParams.h>
+
 #include "DlgPrefsTechDrawScaleImp.h"
 #include "ui_DlgPrefsTechDrawScale.h"
 
@@ -76,8 +78,9 @@ void DlgPrefsTechDrawScaleImp::loadSettings()
     ui->pdsbViewScale->onRestore();
     ui->pdsbVertexScale->onRestore();
     ui->pdsbCenterScale->onRestore();
-    double markDefault = 3.0;
-    ui->pdsbTemplateMark->setValue(markDefault);
+    // what the program uses while the key is not stored (it was 3 here
+    // and 5 where template marks are sized)
+    ui->pdsbTemplateMark->setValue(TechDraw::TechDrawParams::defaultTemplateDotSize());
     ui->pdsbTemplateMark->onRestore();
     ui->pdsbSymbolScale->onRestore();
 }

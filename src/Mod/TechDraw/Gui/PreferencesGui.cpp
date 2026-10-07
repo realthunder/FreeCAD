@@ -22,6 +22,8 @@
 
 #include "PreCompiled.h"
 
+#include <Mod/TechDraw/App/TechDrawParams.h>
+
 #ifndef _PreComp_
 # include <string>
 # include <QColor>
@@ -167,7 +169,7 @@ double PreferencesGui::dimArrowSize()
 
 double PreferencesGui::edgeFuzz()
 {
-    return Preferences::getPreferenceGroup("General")->GetFloat("EdgeFuzz", 10.0);
+    return Preferences::getPreferenceGroup("General")->GetFloat("EdgeFuzz", TechDraw::TechDrawParams::defaultEdgeFuzz());
 }
 
 
@@ -216,17 +218,17 @@ QColor PreferencesGui::gridQColor()
 
 double PreferencesGui::gridSpacing()
 {
-    return Preferences::getPreferenceGroup("General")->GetFloat("gridSpacing", 10.0);
+    return Preferences::getPreferenceGroup("General")->GetFloat("gridSpacing", TechDraw::TechDrawParams::defaultgridSpacing());
 }
 
 bool PreferencesGui::showGrid()
 {
-    return Preferences::getPreferenceGroup("General")->GetBool("showGrid", false);
+    return Preferences::getPreferenceGroup("General")->GetBool("showGrid", TechDraw::TechDrawParams::defaultshowGrid());
 }
 
 bool PreferencesGui::multiSelection()
 {
-  return Preferences::getPreferenceGroup("General")->GetBool("multiSelection", false);
+  return Preferences::getPreferenceGroup("General")->GetBool("multiSelection", TechDraw::TechDrawParams::defaultmultiSelection());
 }
 
 App::Color PreferencesGui::pageColor()
@@ -296,7 +298,7 @@ QColor PreferencesGui::lightenColor(QColor orig)
 
 double PreferencesGui::templateClickBoxSize()
 {
-    return Preferences::getPreferenceGroup("General")->GetFloat("TemplateDotSize", 5.0);
+    return Preferences::getPreferenceGroup("General")->GetFloat("TemplateDotSize", TechDraw::TechDrawParams::defaultTemplateDotSize());
 }
 
 

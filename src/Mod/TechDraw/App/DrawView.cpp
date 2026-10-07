@@ -22,6 +22,8 @@
 
 #include "PreCompiled.h"
 
+#include "TechDrawParams.h"
+
 #ifndef _PreComp_
 # include <cmath>
 # include <sstream>
@@ -630,7 +632,7 @@ void DrawView::setScaleAttribute()
 
 int DrawView::prefScaleType()
 {
-    return Preferences::getPreferenceGroup("General")->GetInt("DefaultScaleType", 0);
+    return Preferences::getPreferenceGroup("General")->GetInt("DefaultScaleType", TechDraw::TechDrawParams::defaultDefaultScaleType());
 }
 
 double DrawView::prefScale()
@@ -641,7 +643,7 @@ double DrawView::prefScale()
             return page->Scale.getValue();
         }
     }
-    return Preferences::getPreferenceGroup("General")->GetFloat("DefaultViewScale", 1.0);
+    return Preferences::getPreferenceGroup("General")->GetFloat("DefaultViewScale", TechDraw::TechDrawParams::defaultDefaultViewScale());
 }
 
 void DrawView::requestPaint()

@@ -45,6 +45,8 @@
 
 #include "PreCompiled.h"
 
+#include "TechDrawParams.h"
+
 #ifndef _PreComp_
 #include <BRepAdaptor_Surface.hxx>
 #include <BRepAlgoAPI_Cut.hxx>
@@ -1602,7 +1604,7 @@ void DrawViewSection::replacePatIncluded(std::string newPatFile)
 void DrawViewSection::getParameters()
 {
     //    Base::Console().Message("DVS::getParameters()\n");
-    bool fuseFirst = Preferences::getPreferenceGroup("General")->GetBool("SectionFuseFirst", false);
+    bool fuseFirst = Preferences::getPreferenceGroup("General")->GetBool("SectionFuseFirst", TechDraw::TechDrawParams::defaultSectionFuseFirst());
     FuseBeforeCut.setValue(fuseFirst);
 }
 
@@ -1621,7 +1623,7 @@ int DrawViewSection::prefCutSurface(void)
 
 bool DrawViewSection::showSectionEdges(void)
 {
-    return Preferences::getPreferenceGroup("General")->GetBool("ShowSectionEdges", true);
+    return Preferences::getPreferenceGroup("General")->GetBool("ShowSectionEdges", TechDraw::TechDrawParams::defaultShowSectionEdges());
 }
 
 PyObject* DrawViewSection::getPyObject()

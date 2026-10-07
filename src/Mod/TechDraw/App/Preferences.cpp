@@ -21,6 +21,8 @@
  ***************************************************************************/
 
 #include "PreCompiled.h"
+
+#include "TechDrawParams.h"
 #ifndef _PreComp_
 # include <string>
 
@@ -131,7 +133,7 @@ App::Color Preferences::vertexColor()
 
 double Preferences::vertexScale()
 {
-    return getPreferenceGroup("General")->GetFloat("VertexScale", 3.0);
+    return getPreferenceGroup("General")->GetFloat("VertexScale", TechDraw::TechDrawParams::defaultVertexScale());
 }
 
 int Preferences::scaleType()
@@ -147,14 +149,14 @@ double Preferences::scale()
         return getPreferenceGroup("General")->GetFloat("DefaultPageScale", 1.0);
     }
     else if (prefScaleType == 1) {//custom scale
-        return getPreferenceGroup("General")->GetFloat("DefaultViewScale", 1.0);
+        return getPreferenceGroup("General")->GetFloat("DefaultViewScale", TechDraw::TechDrawParams::defaultDefaultViewScale());
     }
     return 1.0;
 }
 
 bool Preferences::keepPagesUpToDate()
 {
-    return getPreferenceGroup("General")->GetBool("KeepPagesUpToDate", true);  // Auto update
+    return getPreferenceGroup("General")->GetBool("KeepPagesUpToDate", TechDraw::TechDrawParams::defaultKeepPagesUpToDate());  // Auto update
 }
 
 bool Preferences::useGlobalDecimals()
@@ -256,12 +258,12 @@ int Preferences::mattingStyle()
 
 bool Preferences::showDetailMatting()
 {
-    return getPreferenceGroup("General")->GetBool("ShowDetailMatting", true);
+    return getPreferenceGroup("General")->GetBool("ShowDetailMatting", TechDraw::TechDrawParams::defaultShowDetailMatting());
 }
 
 bool Preferences::showDetailHighlight()
 {
-    return getPreferenceGroup("General")->GetBool("ShowDetailHighlight", true);
+    return getPreferenceGroup("General")->GetBool("ShowDetailHighlight", TechDraw::TechDrawParams::defaultShowDetailHighlight());
 }
 
 std::string Preferences::svgFile()
@@ -418,13 +420,13 @@ bool Preferences::autoCorrectDimRefs()
 //! be a transparency nobody looked at, saved as 0; it is an opacity now.
 bool Preferences::fixColorAlphaOnLoad()
 {
-    return getPreferenceGroup("General")->GetBool("FixColorAlphaOnLoad", true);
+    return getPreferenceGroup("General")->GetBool("FixColorAlphaOnLoad", TechDraw::TechDrawParams::defaultFixColorAlphaOnLoad());
 }
 
 //! number of times to clean the output edges from HLR
 int Preferences::scrubCount()
 {
-    return getPreferenceGroup("General")->GetInt("ScrubCount", 0);
+    return getPreferenceGroup("General")->GetInt("ScrubCount", TechDraw::TechDrawParams::defaultScrubCount());
 }
 
 //! Returns the factor for the overlap of svg tiles when hatching faces
@@ -438,7 +440,7 @@ double Preferences::svgHatchFactor()
 //! view instead of the original shape
 bool Preferences::SectionUsePreviousCut()
 {
-    return getPreferenceGroup("General")->GetBool("SectionUsePreviousCut", false);
+    return getPreferenceGroup("General")->GetBool("SectionUsePreviousCut", TechDraw::TechDrawParams::defaultSectionUsePreviousCut());
 }
 
 //! Whether a view keeps the projection it made in the document, so that
@@ -447,7 +449,7 @@ bool Preferences::SectionUsePreviousCut()
 //! See docs/TechDrawStoredGeometry.md.
 bool Preferences::storeProjectedGeometry()
 {
-    return getPreferenceGroup("General")->GetBool("StoreProjectedGeometry", true);
+    return getPreferenceGroup("General")->GetBool("StoreProjectedGeometry", TechDraw::TechDrawParams::defaultStoreProjectedGeometry());
 }
 
 //! an index into the list of available line standards/version found in LineGroupDirectory

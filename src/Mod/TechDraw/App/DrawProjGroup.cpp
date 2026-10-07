@@ -23,6 +23,8 @@
 
 #include "PreCompiled.h"
 
+#include "TechDrawParams.h"
+
 #ifndef _PreComp_
 #include <QRectF>
 #include <gp_Ax2.hxx>
@@ -61,7 +63,7 @@ DrawProjGroup::DrawProjGroup()
     static const char* group = "Base";
     static const char* agroup = "Distribute";
 
-    bool autoDist = Preferences::getPreferenceGroup("General")->GetBool("AutoDist", true);
+    bool autoDist = Preferences::getPreferenceGroup("General")->GetBool("AutoDist", TechDraw::TechDrawParams::defaultAutoDist());
 
     ADD_PROPERTY_TYPE(Source, (nullptr), group, App::Prop_None, "Shape to view");
     Source.setScope(App::LinkScope::Global);

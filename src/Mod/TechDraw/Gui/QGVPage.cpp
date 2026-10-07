@@ -22,6 +22,8 @@
 
 #include "PreCompiled.h"
 
+#include <Mod/TechDraw/App/TechDrawParams.h>
+
 #include <Gui/ViewParams.h>
 #ifndef _PreComp_
 #include <cmath>
@@ -159,8 +161,8 @@ public:
         page->m_invertZoom = hGrp->GetBool("InvertZoom", Gui::ViewParams::defaultInvertZoom());
         page->m_zoomIncrement = hGrp->GetFloat("ZoomStep", Gui::ViewParams::defaultZoomStep());
 
-        page->m_reversePan = Preferences::getPreferenceGroup("General")->GetInt("KbPan", 1);
-        page->m_reverseScroll = Preferences::getPreferenceGroup("General")->GetInt("KbScroll", 1);
+        page->m_reversePan = Preferences::getPreferenceGroup("General")->GetInt("KbPan", TechDraw::TechDrawParams::defaultKbPan());
+        page->m_reverseScroll = Preferences::getPreferenceGroup("General")->GetInt("KbScroll", TechDraw::TechDrawParams::defaultKbScroll());
     }
     /// Observer message from the ParameterGrp
     void OnChange(ParameterGrp::SubjectType& rCaller, ParameterGrp::MessageType Reason) override
@@ -419,7 +421,7 @@ void QGVPage::drawBackground(QPainter* painter, const QRectF&)
     // painted after it (drawItems) -- they stay for the mouse.
     // Runtime-gated.
     if (TechDraw::Preferences::getPreferenceGroup("General")
-            ->GetBool("PageRendererVg", false)) {
+            ->GetBool("PageRendererVg", TechDraw::TechDrawParams::defaultPageRendererVg())) {
         drawVgPreview(painter);
     }
     else if (m_vgPage) {
@@ -431,7 +433,7 @@ void QGVPage::drawBackground(QPainter* painter, const QRectF&)
             [this]() {
                 if (m_vgPage
                     && !TechDraw::Preferences::getPreferenceGroup("General")
-                            ->GetBool("PageRendererVg", false)) {
+                            ->GetBool("PageRendererVg", TechDraw::TechDrawParams::defaultPageRendererVg())) {
                     leaveVgPreview();
                 }
             },
@@ -511,7 +513,7 @@ void QGVPage::drawItems(QPainter* painter, int numItems, QGraphicsItem* items[],
     // differ, the page shows both.
     if (!m_vgDrawn
         || TechDraw::Preferences::getPreferenceGroup("General")
-               ->GetBool("PageRendererVgVerify", false)) {
+               ->GetBool("PageRendererVgVerify", TechDraw::TechDrawParams::defaultPageRendererVgVerify())) {
         m_vgItemsPainted = numItems;
         QGraphicsView::drawItems(painter, numItems, items, options);
         return;
@@ -849,7 +851,7 @@ void QGVPage::drawVgPreview(QPainter* painter)
     // paint, a Vulkan device, no device at all and warmup refused).
     const bool wantComposite =
         TechDraw::Preferences::getPreferenceGroup("General")
-            ->GetBool("PageRendererVgComposite", true);
+            ->GetBool("PageRendererVgComposite", TechDraw::TechDrawParams::defaultPageRendererVgComposite());
     // Whether it CAN engage is settled before the viewport is touched.
     // The backend's device is one per process, so where the session
     // runs on anything but OpenGL (Direct3D 11 is the Windows default)

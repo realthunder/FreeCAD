@@ -21,6 +21,8 @@
  ***************************************************************************/
 
 #include "PreCompiled.h"
+
+#include "TechDrawParams.h"
 #ifndef _PreComp_
 # include <sstream>
 
@@ -76,7 +78,7 @@ DrawPage::DrawPage(void)
     ProjectionType.setEnums(ProjectionTypeEnums);
     ADD_PROPERTY(ProjectionType, ((long)Preferences::projectionAngle()));
 
-    double defScale = Preferences::getPreferenceGroup("General")->GetFloat("DefaultScale", 1.0);
+    double defScale = Preferences::getPreferenceGroup("General")->GetFloat("DefaultScale", TechDraw::TechDrawParams::defaultDefaultScale());
     ADD_PROPERTY_TYPE(Scale, (defScale), group, (App::PropertyType)(App::Prop_None),
                       "Scale factor for this Page");
 
@@ -500,13 +502,13 @@ bool DrawPage::hasObject(App::DocumentObject* obj)
 //allow/prevent drawing updates for all Pages
 bool DrawPage::GlobalUpdateDrawings(void)
 {
-    return Preferences::getPreferenceGroup("General")->GetBool("GlobalUpdateDrawings", true);
+    return Preferences::getPreferenceGroup("General")->GetBool("GlobalUpdateDrawings", TechDraw::TechDrawParams::defaultGlobalUpdateDrawings());
 }
 
 //allow/prevent a single page to update despite GlobalUpdateDrawings setting
 bool DrawPage::AllowPageOverride(void)
 {
-    return Preferences::getPreferenceGroup("General")->GetBool("AllowPageOverride", true);
+    return Preferences::getPreferenceGroup("General")->GetBool("AllowPageOverride", TechDraw::TechDrawParams::defaultAllowPageOverride());
 }
 
 //! get a translated label string from the context (ex TaskActiveView), the base name (ex ActiveView) and

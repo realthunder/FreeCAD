@@ -1522,3 +1522,10 @@ fc_add_gui_test(GuiSketcherSettings_tests_run
 fc_add_gui_test(GuiSketcherSolverSettings_tests_run
                 sketcher-solver-settings.py
                 --timeout 180)
+
+# The settings of TechDraw's General group are behind
+# TechDraw::TechDrawParams: listed by the omni search, and a new page
+# still takes its scale and its update switch from them.
+fc_add_gui_test(GuiTechDrawSettings_tests_run
+                techdraw-settings.py
+                --timeout 180)

@@ -21,6 +21,8 @@
  ***************************************************************************/
 
 #include "PreCompiled.h"
+
+#include <Mod/TechDraw/App/TechDrawParams.h>
 #ifndef _PreComp_
 #include <cmath>
 
@@ -1178,7 +1180,7 @@ void QGIViewPart::rotateView() {}
 bool QGIViewPart::prefFaceEdges()
 {
     bool result = false;
-    result = Preferences::getPreferenceGroup("General")->GetBool("DrawFaceEdges", false);
+    result = Preferences::getPreferenceGroup("General")->GetBool("DrawFaceEdges", TechDraw::TechDrawParams::defaultDrawFaceEdges());
     return result;
 }
 

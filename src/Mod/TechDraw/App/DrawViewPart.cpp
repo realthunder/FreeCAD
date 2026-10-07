@@ -36,6 +36,8 @@
 
 #include "PreCompiled.h"
 
+#include "TechDrawParams.h"
+
 #ifndef _PreComp_
 #include <Standard_Version.hxx>
 #include <BRepAlgo_NormalProjection.hxx>
@@ -119,7 +121,7 @@ DrawViewPart::DrawViewPart(void)
                       "Projection Plane X Axis in R3. Rotates/Mirrors View");
     ADD_PROPERTY_TYPE(Perspective, (false), group, App::Prop_None,
                       "Perspective(true) or Orthographic(false) projection");
-    ADD_PROPERTY_TYPE(Focus, (Preferences::getPreferenceGroup("General")->GetFloat("FocusDistance", 100.0)),
+    ADD_PROPERTY_TYPE(Focus, (Preferences::getPreferenceGroup("General")->GetFloat("FocusDistance", TechDraw::TechDrawParams::defaultFocusDistance())),
                     group, App::Prop_None, "Perspective view focus distance");
 
     //properties that control HLR algo
@@ -1464,12 +1466,12 @@ const BaseGeomPtrVector DrawViewPart::getVisibleFaceEdges() const
 
 bool DrawViewPart::handleFaces()
 {
-    return Preferences::getPreferenceGroup("General")->GetBool("HandleFaces", true);
+    return Preferences::getPreferenceGroup("General")->GetBool("HandleFaces", TechDraw::TechDrawParams::defaultHandleFaces());
 }
 
 bool DrawViewPart::newFaceFinder(void)
 {
-    return Preferences::getPreferenceGroup("General")->GetBool("NewFaceFinder", false);
+    return Preferences::getPreferenceGroup("General")->GetBool("NewFaceFinder", TechDraw::TechDrawParams::defaultNewFaceFinder());
 }
 
 //! remove features that are useless without this DVP

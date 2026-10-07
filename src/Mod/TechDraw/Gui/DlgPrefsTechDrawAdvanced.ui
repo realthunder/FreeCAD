@@ -406,7 +406,7 @@ Then you need to increase the tile limit.</string>
            <string>Use New Face Finder Algorithm</string>
           </property>
           <property name="checked">
-           <bool>true</bool>
+           <bool>false</bool>
           </property>
           <property name="prefEntry" stdset="0">
            <cstring>NewFaceFinder</cstring>
