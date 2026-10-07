@@ -61,7 +61,7 @@ report views, the reporter's own files -- is kept beside the dev tree under
 | 21 | 2026-10-06 | TechDraw: a click on a section line starts a section, and the line shifts at each recompute | STAGED |
 | 22 | 2026-10-06 | omni search: `/word` with no space is an object query; `/ word` forces it (change request, decided) | STAGED 2026-10-07 14:23, fixed `5aedd5cf83`: "/word" is an object query, "/ word" forces it, a keyword in full is the keyword, the beginning of one lists modes and objects together; the browser viewer's grammar follows (its bundle not rebuilt) |
 | 23 | 2026-10-06 | omni search: every setting it collects has documentation, none of it long (an audit asked) | STAGED 2026-10-07 14:23, fixed `c7a27b5a85` (and `08b8f009aa`): 574 settings audited, 221 had no documentation and 94 ran past 400 characters; all have a short text now and a test keeps it so. Side findings for the reporter in `docs/HandsOnLog.md`. The defaults FIXED `02cab053df`, not staged: OK on a fresh profile changed 23 settings and stored 2 under a wrong type, 14 of them a generated page's spin box clamping its default to 99; a test keeps it so |
-| 24 | 2026-10-06 | every `Base::Parameter` setting behind a cog helper class so the omni search finds it, applied through delayed handlers (change request, application-wide) | STARTED, twenty-one groups done as of 2026-10-08 03:45, none staged or pushed (the core Gui groups, Document, View, the navigation cube, PartDesign, Part's Check Geometry and Boolean options, the Sketcher complete, TechDraw's General group; and faults found on the way). To do: the rest of TechDraw, Fem, CAM, Part's import/export, the Python-only modules. Three questions and five decisions for the reporter (`docs/HandsOnLog.md`) |
+| 24 | 2026-10-06 | every `Base::Parameter` setting behind a cog helper class so the omni search finds it, applied through delayed handlers (change request, application-wide) | STARTED, TechDraw done as of 2026-10-08 04:55 (128 settings listed) after the core Gui groups, Document, View, the navigation cube, PartDesign, Part's Check Geometry and Boolean options and the Sketcher; none staged or pushed. To do: Part's import/export, Import, Material, Start, CAM, Assembly, a few small modules, the Python-only modules. Three questions and twelve decisions for the reporter (`docs/HandsOnLog.md`) |
 | 25 | 2026-10-06 | the outline of a highlighted face is jagged, MSAA on or off | OPEN |
 | 26 | 2026-10-06 | a long halt after enabling MSAA and pressing OK in the preferences | FIXED `175ffce199`, not staged: the FIRST OK of a profile held the program 11 to 15 s (780 keys stored for the first time and taken for changes: stylesheet set again 4.2 s, every Part view provider re-meshed 3.2 s, language activated again about 2 s); 0.9 s now (`docs/HandsOnLog.md`) |
 | 27 | 2026-10-06 | the view cell menu: opens a spreadsheet nobody asked for, lists every TechDraw object, changes the wrong cell | STAGED 2026-10-07 14:23, fixed `fa2ada985c`: the menu made a spreadsheet view by asking for it, listed a page's views, and placed a pick by the general policy instead of into its cell; all three gone, spreadsheets now listed by type like pages (`docs/HandsOnLog.md`) |
@@ -1631,7 +1631,7 @@ collects automatically; (b) each must have documentation; (c) none of it
 overly long; (d) pick out the long ones in particular -- text an agent wrote
 as development notes that ended up as a setting's documentation.
 
-## 24. Every setting behind a generated helper class, applied by delayed handlers (a change request) -- STARTED, twenty-one groups done; three questions and five decisions for the reporter (see `docs/HandsOnLog.md`)
+## 24. Every setting behind a generated helper class, applied by delayed handlers (a change request) -- STARTED, TechDraw done; three questions and twelve decisions for the reporter (see `docs/HandsOnLog.md`)
 
 **From the build session, started** (passed on 2026-10-07 18:10; its log,
 entry 24, has the method and the inventory):
@@ -1819,6 +1819,44 @@ entry 24, has the method and the inventory):
     keys written under one name and read under another -- all to be
     measured), Fem, CAM, Part's import/export settings, the Python-only
     modules.
+- **Passed on 2026-10-08 04:55, TechDraw done (128 settings listed); still
+  STARTED overall; nothing pushed, nothing restaged.** Commits: `07bde3b18b`
+  (46 settings of TechDraw's other groups), `ec6ddedbde` (Gui), `c8a6805a4f`
+  (47 more: colours, line keys, file names, and five page settings that
+  never arrived), `473854fe47` (the log).
+  - `ec6ddedbde`, in Gui and so in every module: a unit spin box of any
+    preference page rounded its default to a whole number, so OK stored
+    TechDraw's arrow size as 4.0 where everything reads 3.5.
+  - Measured on the staged binaries first, then fixed:
+    - a new TechDraw view on a profile that never stored a face colour has
+      CYAN faces (the default was written 0xFFFFFF; white now);
+    - the HLR page's iso line count and the Dimensions page's ISO line
+      spacing never arrived (stored as one type, read as another);
+    - "Use Polygon Approximation" and the "Leaderline" colour never arrived
+      (the page stored one key, the program read another; the pages store
+      the key that is read now, and what they stored before is still
+      honoured);
+    - the section dialog kept its two keys in a group of its own (a path
+      with two colons).
+  - **Seven more decisions for the reporter to overrule, NOT ANSWERED YET**
+    -- the same rule, the reader's default wins and the page is changed to
+    show it:
+    (g) `ShowCenterMarks` off; (h) `TolSizeAdjust` 0.5; (i) the page view's
+    background grey 112; (j) new hatch colours green; (k) line group 3;
+    (l) the section line standard ISO; (m) the light text colour white.
+  - **Left for the reporter, NOT fixed:**
+    - the Annotation page's section, highlight, hidden and centre line STYLE
+      lists store keys that drawing does not read -- drawing reads
+      `SectionLine`, `HighlightStyle`, `HiddenLine`, `CenterLine`,
+      `CenterLineStyle`, and not in one meaning; two of the four lists reach
+      nothing;
+    - `DefaultPageScale` beside `DefaultScale`;
+    - the projection angle "Page" read as first angle;
+    - TechDraw's own defaults for the 3D view's highlight and selection
+      colours.
+  - Still to do: Part's import/export settings, Import, Material, Start,
+    CAM, Assembly, a few small modules; the Python-only modules wait on the
+    reporter's answer to question 1.
 - **Three questions for the reporter, NOT ANSWERED YET** (log, entry 24, "To
   decide"):
   1. Modules written in Python only -- BIM, Draft, AddonManager, parts of CAM
@@ -2403,6 +2441,13 @@ Read from the documents and the source by the note-taker, nothing run:
   a second renderer can take differently.
 
 ## 37. TechDraw: the edge style "Chain" is not drawn dashed, by either renderer -- OPEN
+
+**Possibly related, from the build session's work on entry 24** (2026-10-08
+04:55): the Annotation preference page's line STYLE lists (section,
+highlight, hidden, centre) store keys that drawing does not read, and two of
+the four reach nothing. That is the preferences' choice of a style, not an
+edge's own "Chain"; noted here because both are a line style that does not
+arrive.
 
 **2026-10-07 16:30, a defect, noted with entry 36.** "BTW, one edge style
 'Chain' does not render as dashed in both renderer, even though it shows as
