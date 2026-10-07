@@ -852,7 +852,7 @@ its own thing, and not started.
 
 Evidence: `..\dl\handson\2026-10-07\msaa-*`, `entry26-first-ok-with-msaa-*`.
 
-## 24. Every setting behind a generated class -- STARTED, thirteen groups done
+## 24. Every setting behind a generated class -- STARTED, fourteen groups done
 
 The reporter, 2026-10-07, asked which entry "do entry 23 next" meant: "I
 meant entry 24". Not staged.
@@ -1064,6 +1064,22 @@ it; 19 keys that WERE defined and are still read directly at 119 places
 defaults; the three colours of the default appearance, whose default is the
 material card's.
 
+**Done, second step of the View group,** `d748e690c0`: keys that WERE
+defined and were still read with another default. The marker size is 9 by
+definition and on the 3D View page, and was 4 in CAM, 5 in Robot, 7 in
+Mesh's defect views and in the Sketcher while the key was not stored: the
+markers of a sketch grew from 7 to 9 pixels at the first OK in the
+preferences. 28 reads in 12 files take the class's default. Kept on
+purpose: a new sketch's vertices are 4 pixels where the shape point size was
+never set (the setting's default is 2). No test of its own -- nothing a
+script can see says how large a marker is drawn.
+
+**Done: the navigation cube** (`Preferences/NaviCube`), 28 settings,
+`2b9cd20ae7`: `NaviCubeParams`. Its colours are stored in Qt's order
+(0xAARRGGBB), so they are listed as numbers. Nothing found wrong. Scored:
+`tests/gui/navicube-settings.py` (`GuiNaviCubeSettings_tests_run`) 4 PASS;
+2 PASS, 2 FAIL staged.
+
 **The generator,** `0a94fb63c9`: a setting stored under another name than
 its own (`param_name`) was read and written under its key, but a CHANGE was
 looked for, and the key removed, under the setting's name. Mesh's two
@@ -1087,7 +1103,7 @@ in `..\dl\handson\2026-10-07\`, `entry24-inventory-*.txt`):
   the background colours to every view.
 
 **Order from here,** by what a user meets first: the rest of `src/Gui`
-(the rest of `View`, `NaviCube`), then Part and PartDesign, the Sketcher, TechDraw, and the rest.
+(small groups: the gizmos, the cache directory, the property view, recent macros), then Part and PartDesign, the Sketcher, TechDraw, and the rest.
 
 **To decide, for the reporter:**
 - Modules written in Python only (BIM, Draft, AddonManager, parts of CAM
