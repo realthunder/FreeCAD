@@ -32,6 +32,7 @@
 #include <Base/Type.h>
 
 #include "ViewProviderTextDocument.h"
+#include "EditorParams.h"
 #include "ActionFunction.h"
 #include "Application.h"
 #include "Document.h"
@@ -58,10 +59,10 @@ ViewProviderTextDocument::ViewProviderTextDocument()
             "Defines whether the content can be edited.");
 
     QFont font;
-    font.setFamily(QString::fromUtf8(App::GetApplication().GetUserParameter().
-        GetGroup("BaseApp")->GetGroup("Preferences")->GetGroup("Editor")->GetASCII("Font", font.family().toUtf8()).c_str()));
-    font.setPointSize(App::GetApplication().GetUserParameter().
-        GetGroup("BaseApp")->GetGroup("Preferences")->GetGroup("Editor")->GetInt("FontSize", font.pointSize()));
+    // the editors' font, with the editors' defaults (it was the
+    // application's font here while the setting was not stored)
+    font.setFamily(QString::fromUtf8(EditorParams::getFont().c_str()));
+    font.setPointSize(static_cast<int>(EditorParams::getFontSize()));
 
     ADD_PROPERTY_TYPE(FontSize,(font.pointSize()), "Editor", App::Prop_None, "Font size");
     ADD_PROPERTY_TYPE(FontName,((const char*)font.family().toUtf8()), "Editor", App::Prop_None, "Font name");

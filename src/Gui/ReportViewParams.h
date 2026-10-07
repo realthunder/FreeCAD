@@ -222,6 +222,19 @@ public:
 
     // Auto generated code (Tools/params_utils.py:139)
     //@{
+    /// Accessor for parameter MaxLines
+    ///
+    /// Largest number of lines the report view keeps; older lines are
+    /// dropped. 0 means no limit. Also in the view's context menu.
+    static const long & getMaxLines();
+    static const long & defaultMaxLines();
+    static void removeMaxLines();
+    static void setMaxLines(const long &v);
+    static const char *docMaxLines();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
     /// Accessor for parameter checkShowReportViewOnWarning
     ///
     /// Bring the report view on screen when a warning arrives.

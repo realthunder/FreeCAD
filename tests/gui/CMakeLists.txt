@@ -1461,3 +1461,10 @@ fc_add_gui_test(GuiConsoleMacroSettings_tests_run
 fc_add_gui_test(GuiUnitsSettings_tests_run
                 units-settings.py
                 --timeout 180)
+
+# The editors' settings are behind EditorParams: listed by the omni search
+# (the colours too, whose keys contain spaces), Tab and Enter agree on
+# spaces, and the report view's line limit is the view's own key.
+fc_add_gui_test(GuiEditorSettings_tests_run
+                editor-settings.py
+                --timeout 180)

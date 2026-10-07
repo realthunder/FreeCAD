@@ -51,6 +51,7 @@ SAME = {
     ("OutputWindow", "colorText"): "0 means the window's text colour, which is the one the page shows",
     ("General", "Language"): "empty means the system's language, which the page spells out",
     ("Macro", "MacroPath"): "empty means the user's macro directory, which the page spells out",
+    ("Editor", "Text"): "not set means the window's text colour, which is the one the page shows",
     ("Dialog", "DontUseNativeDialog"): "the default is a macro the build decides",
     ("General", "AutoloadModule"): "empty means the configured start workbench, which the page spells out",
 }

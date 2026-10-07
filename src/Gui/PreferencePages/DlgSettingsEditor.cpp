@@ -32,6 +32,7 @@
 
 #include "DlgSettingsEditor.h"
 #include "ui_DlgSettingsEditor.h"
+#include "EditorParams.h"
 
 
 using namespace Gui;
@@ -246,10 +247,11 @@ void DlgSettingsEditor::saveSettings()
 {
     ui->EnableLineNumber->onSave();
     ui->EnableBlockCursor->onSave();
-    ui->EnableFolding->onSave();
     ui->tabSize->onSave();
     ui->indentSize->onSave();
-    ui->radioTabs->onSave();
+    // One key says tabs or spaces: Spaces. "Keep tabs" used to store a key
+    // of its own, Tabs, and the hidden folding box EnableFolding; nothing
+    // has ever read either.
     ui->radioSpaces->onSave();
 
     // Saves the color map
@@ -269,11 +271,10 @@ void DlgSettingsEditor::loadSettings()
 {
     ui->EnableLineNumber->onRestore();
     ui->EnableBlockCursor->onRestore();
-    ui->EnableFolding->onRestore();
     ui->tabSize->onRestore();
     ui->indentSize->onRestore();
-    ui->radioTabs->onRestore();
     ui->radioSpaces->onRestore();
+    ui->radioTabs->setChecked(!ui->radioSpaces->isChecked());
 
     setEditorTabWidth(ui->tabSize->value());
 
@@ -311,10 +312,13 @@ void DlgSettingsEditor::loadSettings()
 
     // fill up font styles
     //
-    ui->fontSize->setValue(10);
-    ui->fontSize->setValue(hGrp->GetInt("FontSize", ui->fontSize->value()));
+    ui->fontSize->setValue(static_cast<int>(EditorParams::getFontSize()));
 
-    QByteArray defaultMonospaceFont = getMonospaceFont().family().toUtf8();
+    // The font shown for a setting that is not stored is the one the
+    // editors use for it, EditorParams' default. It used to be looked for
+    // under a generic family name no list of fonts has, so the box showed
+    // its first entry and OK stored that font.
+    QByteArray defaultMonospaceFont = QByteArray::fromStdString(EditorParams::defaultFont());
 
 #if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
     QStringList familyNames = QFontDatabase().families(QFontDatabase::Any);
@@ -337,9 +341,14 @@ void DlgSettingsEditor::loadSettings()
         }
     }
 #endif
+    // The font in use is in the list whatever the font database says of it.
+    const QString currentFamily = QString::fromUtf8(hGrp->GetASCII("Font", defaultMonospaceFont).c_str());
+    if (!fixedFamilyNames.contains(currentFamily)) {
+        fixedFamilyNames.prepend(currentFamily);
+    }
+    ui->fontFamily->clear();
     ui->fontFamily->addItems(fixedFamilyNames);
-    int index = fixedFamilyNames.indexOf(
-        QString::fromUtf8(hGrp->GetASCII("Font", defaultMonospaceFont).c_str()));
+    int index = fixedFamilyNames.indexOf(currentFamily);
     if (index < 0)
         index = 0;
     ui->fontFamily->setCurrentIndex(index);

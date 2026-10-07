@@ -91,6 +91,8 @@ public:
     void setSyntaxHighlighter(SyntaxHighlighter*);
 
     void OnChange(Base::Subject<const char*> &rCaller,const char* rcReason) override;
+    /// Gives the highlighter the colour stored for \a key, or its default.
+    void applyColor(const QString& key);
 
     void lineNumberAreaPaintEvent(QPaintEvent* );
     int lineNumberAreaWidth();

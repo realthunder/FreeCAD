@@ -46,6 +46,7 @@
 #include "PythonTracing.h"
 #include "Application.h"
 #include "CallTips.h"
+#include "EditorParams.h"
 #include "FileDialog.h"
 #include "Macro.h"
 #include "MainWindow.h"
@@ -106,21 +107,10 @@ struct PythonConsoleP
         type = Normal;
         interactive = false;
         historyFile = QString::fromUtf8((App::Application::getUserAppDataDir() + "PythonHistory.log").c_str());
-        colormap[QStringLiteral("Text")] = qApp->palette().windowText().color();
-        colormap[QStringLiteral("Bookmark")] = Qt::cyan;
-        colormap[QStringLiteral("Breakpoint")] = Qt::red;
-        colormap[QStringLiteral("Keyword")] = Qt::blue;
-        colormap[QStringLiteral("Comment")] = QColor(0, 170, 0);
-        colormap[QStringLiteral("Block comment")] = QColor(160, 160, 164);
-        colormap[QStringLiteral("Number")] = Qt::blue;
-        colormap[QStringLiteral("String")] = Qt::red;
-        colormap[QStringLiteral("Character")] = Qt::red;
-        colormap[QStringLiteral("Class name")] = QColor(255, 170, 0);
-        colormap[QStringLiteral("Define name")] = QColor(255, 170, 0);
-        colormap[QStringLiteral("Operator")] = QColor(160, 160, 164);
-        colormap[QStringLiteral("Python output")] = QColor(170, 170, 127);
-        colormap[QStringLiteral("Python error")] = Qt::red;
-        colormap[QStringLiteral("Background")] = Qt::black;
+        // the colours and their defaults are EditorParams'
+        for (const auto& entry : editorColorDefaults()) {
+            colormap[entry.first] = entry.second;
+        }
     }
 };
 
@@ -547,8 +537,9 @@ void PythonConsole::OnChange(Base::Subject<const char*> &rCaller, const char* sR
     const auto & rGrp = static_cast<ParameterGrp &>(rCaller);
 
     if (strcmp(sReason, "FontSize") == 0 || strcmp(sReason, "Font") == 0) {
-        int fontSize = rGrp.GetInt("FontSize", 10);
-        QString fontFamily = QString::fromUtf8(rGrp.GetASCII("Font", "Courier").c_str());
+        int fontSize = rGrp.GetInt("FontSize", EditorParams::defaultFontSize());
+        QString fontFamily = QString::fromUtf8(
+            rGrp.GetASCII("Font", EditorParams::defaultFont().c_str()).c_str());
 
         QFont font(fontFamily, fontSize);
         setFont(font);
@@ -953,8 +944,7 @@ void PythonConsole::runSource(const QString& line)
         // will be aborted.
         PyErr_Clear();
 
-        ParameterGrp::handle hPrefGrp = getWindowParameter();
-        bool check = hPrefGrp->GetBool("CheckSystemExit",true);
+        bool check = EditorParams::getCheckSystemExit();
         int ret = QMessageBox::Yes;
         if (check) {
             ret = QMessageBox::question(this, tr("System exit"),

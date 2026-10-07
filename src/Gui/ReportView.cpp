@@ -56,6 +56,7 @@
 #include "PythonConsolePy.h"
 #include "Tools.h"
 #include "MessageCollapse.h"
+#include "EditorParams.h"
 #include "ReportViewParams.h"
 #include "Command.h"
 
@@ -515,7 +516,7 @@ ReportOutput::ReportOutput(QWidget* parent)
     setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
 
     Base::Console().AttachObserver(this);
-    // still this group's: MaxLines, which the context menu's spin box stores
+    // still told by the group itself: colorCriticalText
     getWindowParameter()->Attach(this);
     getWindowParameter()->NotifyAll();
     // The view's own settings come from ReportViewParams, which knows their
@@ -526,14 +527,13 @@ ReportOutput::ReportOutput(QWidget* parent)
     for (const char *name : {"checkMessage", "checkLogging", "checkWarning", "checkError",
                              "checkCritical", "colorText", "colorLogging", "colorWarning",
                              "colorError", "checkGoToEnd", "RedirectPythonOutput",
-                             "RedirectPythonErrors"}) {
+                             "RedirectPythonErrors", "MaxLines"}) {
         applySetting(name);
     }
 
     _prefs = WindowParameter::getDefaultParameter()->GetGroup("Editor");
     _prefs->Attach(this);
     _prefs->Notify("FontSize");
-    _prefs->Notify("MaxLines");
 
     // scroll to bottom at startup to make sure that last appended text is visible
     ensureCursorVisible();
@@ -1253,6 +1253,12 @@ void ReportOutput::applySetting(const char *name)
     if (strcmp(name, "checkLogging") == 0) {
         bLog = ReportViewParams::getcheckLogging();
     }
+    else if (strcmp(name, "MaxLines") == 0) {
+        // The limit is this view's, stored by its context menu. It used
+        // to be read at every start from the EDITOR group, which has no
+        // such key, so a limit that had been set was 10000 again.
+        this->document()->setMaximumBlockCount(static_cast<int>(ReportViewParams::getMaxLines()));
+    }
     else if (strcmp(name, "checkWarning") == 0) {
         bWrn = ReportViewParams::getcheckWarning();
     }
@@ -1309,14 +1315,15 @@ void ReportOutput::OnChange(Base::Subject<const char*> &rCaller, const char * sR
 {
     ParameterGrp& rclGrp = ((ParameterGrp&)rCaller);
     // The view's own settings are applySetting()'s, told by ReportViewParams.
-    // What is left here is what the Editor group and MaxLines say.
+    // What is left here is colorCriticalText and what the Editor group says.
     if (strcmp(sReason, "colorCriticalText") == 0) {
         unsigned long col = rclGrp.GetUnsigned( sReason );
         reportHl->setTextColor( QColor( (col >> 24) & 0xff,(col >> 16) & 0xff,(col >> 8) & 0xff) );
     }
     else if (strcmp(sReason, "FontSize") == 0 || strcmp(sReason, "Font") == 0) {
-        int fontSize = rclGrp.GetInt("FontSize", 10);
-        QString fontFamily = QString::fromUtf8(rclGrp.GetASCII("Font", "Courier").c_str());
+        int fontSize = rclGrp.GetInt("FontSize", EditorParams::defaultFontSize());
+        QString fontFamily = QString::fromUtf8(
+            rclGrp.GetASCII("Font", EditorParams::defaultFont().c_str()).c_str());
 
         QFont font(fontFamily, fontSize);
         setFont(font);
@@ -1328,9 +1335,6 @@ void ReportOutput::OnChange(Base::Subject<const char*> &rCaller, const char * sR
 #else
         setTabStopDistance(width);
 #endif
-    }
-    else if (strcmp(sReason, "MaxLines") == 0) {
-        this->document()->setMaximumBlockCount(rclGrp.GetInt("MaxLines", 10000));
     }
 }
 

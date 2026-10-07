@@ -79,6 +79,10 @@ Params = [
         title = 'Redirect Python errors',
         doc = "Show Python's error output (sys.stderr) in the report view. Also\n"
               "decides where the errors of a macro go."),
+    ParamInt('MaxLines', 10000,
+        title = 'Maximum lines',
+        doc = "Largest number of lines the report view keeps; older lines are\n"
+              "dropped. 0 means no limit. Also in the view's context menu."),
     ParamBool('checkShowReportViewOnWarning', True,
         title = 'Show report view on warning',
         doc = "Bring the report view on screen when a warning arrives."),

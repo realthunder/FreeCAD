@@ -57,6 +57,7 @@ public:
         signalParamChanged("checkGoToEnd");
         signalParamChanged("RedirectPythonOutput");
         signalParamChanged("RedirectPythonErrors");
+        signalParamChanged("MaxLines");
         signalParamChanged("checkShowReportViewOnWarning");
         signalParamChanged("checkShowReportViewOnError");
         signalParamChanged("checkShowReportViewOnNormalMessage");
@@ -83,6 +84,7 @@ public:
     bool checkGoToEnd;
     bool RedirectPythonOutput;
     bool RedirectPythonErrors;
+    long MaxLines;
     bool checkShowReportViewOnWarning;
     bool checkShowReportViewOnError;
     bool checkShowReportViewOnNormalMessage;
@@ -124,6 +126,8 @@ public:
         funcs["RedirectPythonOutput"] = &ReportViewParamsP::updateRedirectPythonOutput;
         RedirectPythonErrors = this->handle->GetBool("RedirectPythonErrors", true);
         funcs["RedirectPythonErrors"] = &ReportViewParamsP::updateRedirectPythonErrors;
+        MaxLines = this->handle->GetInt("MaxLines", 10000);
+        funcs["MaxLines"] = &ReportViewParamsP::updateMaxLines;
         checkShowReportViewOnWarning = this->handle->GetBool("checkShowReportViewOnWarning", true);
         funcs["checkShowReportViewOnWarning"] = &ReportViewParamsP::updatecheckShowReportViewOnWarning;
         checkShowReportViewOnError = this->handle->GetBool("checkShowReportViewOnError", true);
@@ -210,6 +214,10 @@ public:
     // Auto generated code (Tools/params_utils.py:314)
     static void updateRedirectPythonErrors(ReportViewParamsP *self) {
         self->RedirectPythonErrors = self->handle->GetBool("RedirectPythonErrors", true);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateMaxLines(ReportViewParamsP *self) {
+        self->MaxLines = self->handle->GetInt("MaxLines", 10000);
     }
     // Auto generated code (Tools/params_utils.py:314)
     static void updatecheckShowReportViewOnWarning(ReportViewParamsP *self) {
@@ -316,6 +324,10 @@ static const App::ParamRegistry::Registrar _ReportViewParamsRegistrar({
         .setTitle("Redirect Python errors")
         .setDoc("Show Python's error output (sys.stderr) in the report view. Also\n"
 "decides where the errors of a macro go."),
+    App::ParamInfo("Gui", "ReportViewParams", "User parameter:BaseApp/Preferences/OutputWindow", "MaxLines", "MaxLines", App::ParamInfo::Int, 10000)
+        .setTitle("Maximum lines")
+        .setDoc("Largest number of lines the report view keeps; older lines are\n"
+"dropped. 0 means no limit. Also in the view's context menu."),
     App::ParamInfo("Gui", "ReportViewParams", "User parameter:BaseApp/Preferences/OutputWindow", "checkShowReportViewOnWarning", "checkShowReportViewOnWarning", App::ParamInfo::Bool, true)
         .setTitle("Show report view on warning")
         .setDoc("Bring the report view on screen when a warning arrives."),
@@ -718,6 +730,35 @@ void ReportViewParams::setRedirectPythonErrors(const bool &v) {
 // Auto generated code (Tools/params_utils.py:431)
 void ReportViewParams::removeRedirectPythonErrors() {
     instance()->handle->RemoveBool("RedirectPythonErrors");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *ReportViewParams::docMaxLines() {
+    return QT_TRANSLATE_NOOP("ReportViewParams",
+"Largest number of lines the report view keeps; older lines are\n"
+"dropped. 0 means no limit. Also in the view's context menu.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const long & ReportViewParams::getMaxLines() {
+    return instance()->MaxLines;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const long & ReportViewParams::defaultMaxLines() {
+    const static long def = 10000;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void ReportViewParams::setMaxLines(const long &v) {
+    instance()->handle->SetInt("MaxLines",v);
+    instance()->MaxLines = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void ReportViewParams::removeMaxLines() {
+    instance()->handle->RemoveInt("MaxLines");
 }
 
 // Auto generated code (Tools/params_utils.py:397)

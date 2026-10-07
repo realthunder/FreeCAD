@@ -1350,6 +1350,7 @@ SET(Params_CPP_SRCS
     DialogParams.cpp
     MacroParams.cpp
     PythonConsoleParams.cpp
+    EditorParams.cpp
     ReportViewParams.cpp
     ThemeParams.cpp
     OverlayParams.cpp
@@ -1370,6 +1371,7 @@ SET(Params_HPP_SRCS
     DialogParams.h
     MacroParams.h
     PythonConsoleParams.h
+    EditorParams.h
     ReportViewParams.h
     ThemeParams.h
     OverlayParams.h
