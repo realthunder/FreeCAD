@@ -690,11 +690,22 @@ and 9611 results made without the fallback are unchanged, value for value.
 Of those the fallback makes, the edges' tolerance fell from a median 1.4e-3
 to 1.3e-4 (60 of 63 tighter) and the corners' from 1.2e-3 to 1.0e-4 (281 of
 298); the largest stays 0.712, the input's own (#273). Eight more are made,
-all on #962's ribs at 0.3, and four fewer: #962 `Chamfer`'s edge 6 at 0.8
-and 1, an edge 1.25 long. There both changes together -- either alone
-still makes it -- give a patch with a bump, which the check of 9.2 refuses
-as no fillet: the edge's midpoint is 0.119 off the result where it wants
-half of 0.331. The one it made before is the smoother shape.
+all on #962's ribs at 0.3, and one fewer: #962 `Chamfer`'s edge 6 at radius
+1 (three corner sets in the sweep, one fillet).
+
+That corner, where the edge, 1.25 long, meets a rib and the base, first
+cost all four of its results. Its plate is asked for tangent planes 90 deg
+apart (`G1Error()` 1.56 rad, in every version, the old one's too), and held
+at twenty points it is pulled between them the harder: the convex fillet's
+patch bulged out past the input, the fillet adding 0.033 where it should
+remove, and the check of 9.2 refused it as no fillet. The box corners'
+plates, whose boundaries agree, stay under 0.6 deg; a setback plate past
+30 deg is now built again at ten points. At 0.8 that removes 0.012 again
+(the old code 0.017) and it is made; at 0.3 it moves the result by 0.002.
+At 1 it still adds 0.041 and is refused -- the old code made it adding
+0.021, a bulge too, which slipped past the check. Clamping the batten's
+end angle instead (45 or 60 deg) mended this corner but put the hooks back
+at the box's.
 
 The table of 9.4, measured again: setback 0 993.7247, 2 993.5877, 4
 992.1817, 3, 1.5 and 2 by edge 993.7989, 3 and 1.5 with the third at
