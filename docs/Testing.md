@@ -1072,6 +1072,26 @@ showed only in a full run.**
   load left the click with nothing to pick (2 in 45 runs of
   `sketch-constraint-external-pick.py` beside the whole suite, none in 21
   since its helper sends a move right before the press and the release).
+- *A test that asks the main window for ALL its widgets poisons its own
+  later readings* (2026-10-07). `mainWindow.findChildren(QWidget)` makes
+  the binding adopt every widget it returns as a child of the main
+  window's wrapper, and that wrapper lives for the session: the widget
+  inside each 3D view is among them. Close the view, open another whose
+  inner widget is allocated where the old one stood, and
+  `view.graphicsView()` is handed the dead one's wrapper -- "Internal C++
+  object (PySide6.QtWidgets.QGraphicsView) already deleted", about one
+  run in three of `task-panel-side.py` as first written. `gc.collect()`
+  does not clear it: the main window's wrapper holds it. Scan with
+  `QApplication.allWidgets()` instead, which adopts nothing (eight runs
+  of eight after); ask the main window only for what is few and stays --
+  its dock widgets, a named child.
+- *A dock that comes up by itself in a test is a message.* The report
+  view raises itself on a warning. `task-panel-side.py` had its cells 208
+  pixels shorter than it had laid them out, and no check of its own
+  failing for any other reason: Qt had warned about a stacked widget, on
+  the report view and nowhere in the run's log. Read the report view's
+  text (`Gui::DockWnd::ReportOutput`, `toPlainText()`) before taking a
+  geometry that moved for a layout problem.
 
 **The clock step can be made on demand.** Waiting for WSL2 to step the
 wall clock is how the first two of these were caught, in tens of runs.

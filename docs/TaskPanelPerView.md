@@ -1623,9 +1623,9 @@ class.
 - What must learn of the pair: `collapseCell` and `childViewGone` (the
   panel cell goes before its view's cell does), `toggleMaximizeCell` (its
   walk hides every sibling on the way up, and the panel must stay with a
-  maximized view), `splitCell` (a split of the view's cell happens inside
-  the pair or outside it -- outside, so that the panel keeps its side of
-  the WHOLE of what it was opened beside; to be settled when built).
+  maximized view), `splitCell` and `joinTargetFor` (a split of the view's
+  cell puts the new cell OUTSIDE the pair, so the panel stays beside its
+  own view; a join sees a pair as the one cell it stands for).
 - The handle between the two is the view area's own, and resizes the
   panel. Its position is `Task_Size`.
 - A click into the panel cell makes its view the active one, as now
@@ -1815,3 +1815,139 @@ pass.
 that is no 3D view keeps its state for the session only (15.6, M5). The
 new strings are untranslated. `pre-commit` is not installed on the box it
 was built on: the hook did not run.
+
+### 15.10 Milestone 2, built (2026-10-07, `50560fcf27`)
+
+Side mode: 15.4 as designed, with the points below.
+
+**What the user sees.**
+
+- A menu in the header of a panel in its view: "Over the view" or "Beside
+  the view", and "Left", "Right", "Top", "Bottom". It is that view's, and
+  the view keeps it.
+- Beside the view, the panel is in a cell of its own. The view's picture
+  is not covered: the view is given the rest of the room it had, and
+  everything else in the view area stays where it was. The border between
+  the two is dragged like any border in the view area, and the view keeps
+  the size.
+- The next panel of that view opens the same way and at the same size. A
+  view in which nothing was chosen opens its next panel in the mode and on
+  the side last chosen anywhere.
+- Splitting the view puts the new view outside the two. Maximizing the
+  view keeps its panel beside it. Closing the dialog, putting the panel
+  over the view again, or closing the view takes the panel's cell away,
+  and the view has its room back.
+- A view in a tab of its own is put into a view area when its panel goes
+  beside it.
+
+**What is built.**
+
+- `Gui::ViewAreaPanelCell` (`ViewArea.{h,cpp}`), a widget with a layout and
+  a ground of its own, and `ViewAreaSplitter::panelPair`.
+  `ViewArea::panelCell(cell, side, extent)` makes the pair or moves the
+  panel cell to another side of it; `removePanelCell` puts the cell back
+  in its slot; `panelCellOf` reads. `slotOf` / `cellOfSlot`, local to the
+  file, are "what stands in the tree for this cell" and its inverse, used
+  by `splitCell`, `joinTargetFor`, `toggleMaximizeCell` and the handle's
+  menu. `collapseCell` removes the panel cell first. `layoutNode` needed
+  nothing: a widget that is no cell writes nothing, and a splitter left
+  with one entry writes as that entry.
+- `TaskPanelHost`: `_mode` and `_side` taken when it is made and in
+  `placementChanged()`; `besidePlace()` asks the view area for the panel
+  cell, wrapping a view that is in none (`ViewArea::wrap`); in the panel
+  cell the host is the one widget of its layout and `place()` has nothing
+  to do; `pairMoved()` writes `Task_Size`; `release()` leaves the panel
+  cell before it lets it go. The header is no grip while beside the view.
+- `ViewAreaCell::taskHost()` looks in the panel cell too.
+
+**Found on the way.**
+
+- **The view area took its own restructuring for the user changing
+  cells.** Putting a cell into a pair re-parents it; Qt takes the keyboard
+  from the view and the code hands it back; `onFocusChanged` made another
+  cell the active one and then this one again. Dialogs were deactivated
+  and activated for a panel that only changed its place, and -- when the
+  panel was a NEW one, opening straight into a side cell -- the task view
+  was asked what to show while that panel's host was still being made,
+  and told its stack to show a page the stack does not hold. Qt's warning
+  ("QStackedWidget::setCurrentWidget: widget ... not contained in stack")
+  brought the report view up, and that is how it was seen: the cells of
+  the test had lost 208 pixels of height. Two changes: a flag
+  (`pairChanging`) under which `onFocusChanged` stands still, and
+  `showPage` takes a page that is in neither place for "none".
+- **A view asks for 400 by 300 pixels at the least**
+  (`View3DInventor::minimumSizeHint`), and a panel beside it for 120
+  more. In a slot too small for both -- two views side by side in a
+  1280 pixel window with the docks open have 427 each -- Qt gives the
+  pair what the neighbours can spare (27 pixels there) and the view less
+  than it asks. The size asked for the panel now leaves the view its
+  least, and the pair remembers the neighbours' sizes from before it stood
+  (`slotBefore`, `slotAfter`): they get their room back when it goes,
+  unless a border was dragged in between.
+- **A test that asks the main window for all its widgets poisons its own
+  later readings.** `mainWindow.findChildren(QWidget)` makes the binding
+  adopt every widget found as a child of the main window's wrapper, for
+  good; the widget inside a view among them. Close that view, open
+  another whose inner widget is allocated where the old one stood, and
+  the binding hands out the dead one's wrapper: "Internal C++ object
+  (QGraphicsView) already deleted", one run in three. A garbage
+  collection does not clear it. `QApplication.allWidgets()` adopts
+  nothing. `docs/Testing.md`, with the other GUI test traps.
+
+**Where it departs, mine.**
+
+- The menu is a plain tool button with a menu, in the host's own header.
+  The dock overlay's title bar and buttons are M3's.
+- Over the view, top and bottom are still taken for the left (M3).
+- One number, `Task_Size`, for a panel beside and a panel above: turned
+  from one to the other with the view holding a size, that size is asked
+  for across the new direction and cut to what leaves the view its least.
+- Join: a pair is a leaf for the gesture, so a cell can be joined INTO a
+  neighbour that has a panel (the neighbour's view is closed, its dialog
+  with it). Not tested.
+
+**Measured.** `tests/gui/task-panel-side.py`
+(`GuiTaskPanelSide_tests_run`): one document, two views one above the
+other, the Python console out of the way so that a view has room for a
+panel beside it.
+
+| | before (`c969119033`) | after |
+|---|---|---|
+| as it stood when scored | 23 of 53 | -- |
+| as it is | -- | 61 of 61, 8 runs of 8 |
+
+The script was changed after it was scored on the tree before: the views
+put one above the other for room, the checks of place split up so that
+each prints what it read, and eight added -- what the dialogs are told,
+and that Qt has nothing to say about the stack. The 23 that passed there
+are checks of what a panel over the view does too. What moved:
+
+| | before | after |
+|---|---|---|
+| "beside the view" | no such choice | the panel in a cell of its own, 240 wide, the view 614, the two in the slot the view had |
+| the other cell of the view area | -- | where it was, to the pixel |
+| right, top, bottom, left again | -- | each side, the two filling the slot each time |
+| the border dragged 60 pixels | -- | the panel 60 wider, the view holding the size |
+| a later panel in a view that chose nothing | over the view | beside it |
+| what the dialog is told by all of that | -- | nothing |
+| a second panel opened straight beside its view | -- | the first deactivated once, no warning |
+| the view split | -- | the new cell outside the two |
+| the view maximized | -- | its panel still beside it |
+| "over the view" again; the dialog closed | -- | no panel cell, the view's cell as it was |
+| the view closed under its panel | -- | the dialog rejected, the cell gone |
+| a view in a tab of its own | -- | in a view area, its panel beside it |
+| the document saved with a panel beside a view, reopened | -- | two cells as large as before, no panel cell |
+
+By hand, with the first form of the script -- two views side by side in
+the small window, 427 pixels each: the pair takes 27 pixels from the
+neighbour (454 and 400); with the panel over the view again, and with the
+dialog closed, the view's cell is 427 wide again, where it stayed at 454
+before the neighbours' sizes were remembered.
+
+The seventeen GUI entries nearest the change pass.
+
+**Not done.** A document saved while a pair is squeezing its neighbour
+saves the squeezed proportions. The handle between a cell and its panel
+cell has no menu. The unified canvas with a panel cell was not run. A
+panel beside a view that is no 3D view was not run. The dock overlays
+are not looked at: a panel cell is under an overlaid dock like any cell.
