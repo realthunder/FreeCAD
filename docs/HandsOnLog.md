@@ -1151,11 +1151,20 @@ page than the program draws it; the defaults test compared whole numbers
 with a fraction's tolerance, which let a neighbouring colour pass -- exact
 now, and this colour is the only one it named in all the groups done.
 Scored: `tests/gui/sketcher-settings.py` 7 PASS; 3 PASS, 4 FAIL staged.
+
+**The Grid page's spacing reaches a new sketch,** `dec07614e9`: the page
+stores the number `GridSize`; a new sketch read the text `Hist0`, which
+nothing writes any more, and started at 10 mm whatever the page said.
+Measured on the staged binaries: a spacing of 25 stored the page's way gives
+10. Fixed, the old profile's `Hist0` still counting while the page's key is
+not stored; `sketcher-settings.py` holds it (8 PASS; 3 PASS, 5 FAIL staged).
+
 NOT DONE in the Sketcher: `SolverAdvanced` (28 keys), the 11 keys it keeps
-in `Preferences/View`, and the inventory's findings that need more than a
-default -- the grid spacing stored as `GridSize` and read as `Hist0`, the
-external geometry colour, the solver box's wrong keys, the Snap command's
-cached state, the Dimension tool's continue mode.
+in `Preferences/View`, and the inventory's other findings that need more
+than a default -- the external geometry colour, the solver box's wrong
+keys, the Snap command's cached state, the Dimension tool's continue mode,
+the key for radius or diameter that is never stored. Each is from reading
+and wants measuring first.
 
 **The generator,** `0a94fb63c9`: a setting stored under another name than
 its own (`param_name`) was read and written under its key, but a CHANGE was
