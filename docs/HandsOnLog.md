@@ -852,7 +852,7 @@ its own thing, and not started.
 
 Evidence: `..\dl\handson\2026-10-07\msaa-*`, `entry26-first-ok-with-msaa-*`.
 
-## 24. Every setting behind a generated class -- STARTED, fourteen groups done
+## 24. Every setting behind a generated class -- STARTED, fifteen groups done
 
 The reporter, 2026-10-07, asked which entry "do entry 23 next" meant: "I
 meant entry 24". Not staged.
@@ -1079,6 +1079,14 @@ script can see says how large a marker is drawn.
 (0xAARRGGBB), so they are listed as numbers. Nothing found wrong. Scored:
 `tests/gui/navicube-settings.py` (`GuiNaviCubeSettings_tests_run`) 4 PASS;
 2 PASS, 2 FAIL staged.
+
+**Done: PartDesign** (`Preferences/Mod/PartDesign`), 11 settings,
+`8ee1957f20`: a new class in its App library, `PartDesign::PartDesignParams`
+(features read `RefineModel`). Nothing found wrong. Seen and left: Part
+defines a `DefaultDatumColor` of its own in `Mod/Part` while PartDesign's
+datums read this group's; `singleClickFeatureSelect` is a key of
+`Preferences/Selection`. Scored: `tests/gui/partdesign-settings.py`
+(`GuiPartDesignSettings_tests_run`) 5 PASS; 3 PASS, 2 FAIL staged.
 
 **The generator,** `0a94fb63c9`: a setting stored under another name than
 its own (`param_name`) was read and written under its key, but a CHANGE was
