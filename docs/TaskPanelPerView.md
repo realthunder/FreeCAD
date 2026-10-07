@@ -2177,6 +2177,12 @@ what opening a document does, not made here. Within a session a
 spreadsheet view holds its place like any view: the test first ran on
 one, a panel over it and beside it.
 
+**Since `865c94a0b2` it carries the name** (ordered 2026-10-07; what
+reopening a document with its spreadsheet views costs is measured in
+`docs/SplitViews.md` sec 22). The same script runs on a spreadsheet's view
+with `GT_KIND=sheet` (`GuiTaskPanelKeptSheetView_tests_run`): 15 of 15,
+and 9 on the tree before the name.
+
 **Measured.** `tests/gui/task-panel-kept-any-view.py`
 (`GuiTaskPanelKeptAnyView_tests_run`): a drawing page, its panel sent into
 its view and put beside it on the right; saved, reopened; put over the
@@ -2201,8 +2207,8 @@ Built, each with its test and its suites: 15.9 to 15.13. Rows in
 
 Left, in the order I would take them:
 
-1. **A spreadsheet's view** (15.13): one line, and a decision about
-   reopening documents with it.
+1. **A spreadsheet's view** (15.13): DONE, `865c94a0b2`, the decision
+   being yes -- `docs/SplitViews.md` sec 22.
 2. **The style sheet followed live** (15.11): a theme changed while a
    panel stands over its view.
 3. **A dock that slides out**, and the hint strip (15.12).

@@ -1501,3 +1501,85 @@ their views (`docs/TaskPanelPerView.md` sec 14). `ViewAreaCell::taskHost()`
 answers it. The host is the task view's widget, lays itself out against
 the cell (clear of the border, the menu button and the two corner zones),
 and follows the view when it leaves the cell.
+
+## 22. A spreadsheet's view in the saved layouts (2026-10-07)
+
+Sec 5.6: a layout names a view an object provides by the object,
+`O:<name>`, read off the view's widget -- its object name is the
+object's. `TechDrawGui::MDIViewPage` has set it from the start.
+`SpreadsheetGui::SheetView` set none, so a spreadsheet's view was written
+into no layout: a document saved with a spreadsheet beside its 3D view
+came back with the 3D view alone, its layout written as `N:View1`, the
+cell gone. The place of the view's task panel was not kept for the same
+reason (`docs/TaskPanelPerView.md` sec 15.13).
+
+`SheetView` takes its sheet's name (`865c94a0b2`). **A document is now
+reopened with its spreadsheet views where they were**, which is a change
+to what opening a document does, asked for.
+
+**What reopening does, and what was watched for.** A sheet's view provider
+is the one provider whose `getMDIView()` MAKES a view when there is none
+-- every other one answers what exists, or nothing -- and making it
+places it by the placement policy and starts its edit. So on a reopen the
+layout's resolver gets a view that has just been put somewhere, and moves
+it into its cell; whatever took it in the meantime is a donor, and an
+emptied donor is deleted. Measured, `tests/gui/sheet-view-reopen.py`
+(`GuiSheetViewReopen_tests_run`), a box and a sheet, the sheet's view in a
+split to the right of the 3D view:
+
+| | before (`da6a8cff6c`) | after |
+|---|---|---|
+| the view's object name | empty | `Spreadsheet` |
+| the saved layout | `N:View1` | `H{500,500\|N:View1,O:Spreadsheet}` |
+| reopened | the 3D view alone, one cell | both, two cells, the split as saved |
+| views, areas, cells, tabs after the reopen | -- | as counted before the save: nothing more |
+| the document modified by being opened | no | no |
+| an edit left on | no | no |
+| the active view | the 3D view | the 3D view, as it was when saved |
+| a second save | `N:View1` | the same layout again |
+| the view closed, saved, reopened | -- | not there, and no cell for it |
+| the sheet deleted, saved, reopened | the 3D view alone | the same |
+| checks | 11 of 21, then a segmentation fault | 27 of 27 |
+
+The task panel's place on a spreadsheet's view:
+`tests/gui/task-panel-kept-any-view.py` with `GT_KIND=sheet`
+(`GuiTaskPanelKeptSheetView_tests_run`), 15 of 15, and 9 on the tree
+before -- the six that ask for anything to be kept.
+
+**A crash the script found, which is not the name's** (`10a06a87e9`). A
+sheet deleted and its document closed with no turn of the event loop
+between -- two lines of a script -- was a segmentation fault on the tree
+before. `ViewProviderSheet::beforeDelete` hands the view to
+`MainWindow::removeWindow`, which takes a view in a TAB off the screen
+at once (its sub window loses its parent) and leaves one in a CELL shown
+until the cell's deferred delete. Closing the document closes the 3D
+view, Qt gives the keyboard to the next widget that can take it, and
+that is the dead sheet's table: `SheetView::updateContentLine` reads the
+sheet (`SpreadsheetView.cpp:312`). A cell is where a document's further
+views open by default. `removeWindow` now hides such a view where it
+removes it. A drawing page's view lived through the same sequence
+before -- it reads nothing of its page on focus -- and is hidden the
+same. With a turn of the event loop between the two, the view and its
+cell were gone cleanly before as well.
+
+**OPEN, found on the way and not this change's: a cell's menu opens
+spreadsheets.** The per-cell menu (sec 12) lists "one entry per
+object-provided view" by asking EVERY object's view provider for its
+view (`ViewAreaCell`'s menu, `ViewArea.cpp`), and a sheet's provider
+makes one when asked. Measured with a scratch probe on a document
+holding a box and two sheets nobody opened: zero spreadsheet views
+before the menu button is clicked, the menu lists both sheets, and one
+spreadsheet view stands in a new cell afterwards (one where two sheets
+were asked: the placement policy's reuse of a cell that holds no 3D view
+would account for it, which was not looked into). Read from the code and
+not run: the same sweep would list a page's template, and every view and
+hatch on it, as entries of their own, their providers answering with the
+page's view. Two ways to put it right,
+neither taken: the menu lists what is open by walking the document's
+views and reading their objects off their names, which this section
+makes possible for a sheet and which drops the template and hatch
+entries with it; or the sheet's `getMDIView()` becomes the query every
+other provider's is, and what makes a view moves to the callers that
+mean to make one (`Gui::Document::setActiveView` relies on it today).
+`Gui::ExpressionEditorView` asks the providers of the objects it edits
+the same way when it places itself (read from the code, not run).
