@@ -29,6 +29,8 @@
 #include <Bnd_Box.hxx>
 #include <TopoDS_Shape.hxx>
 
+#include <Mod/Part/PartGlobal.h>
+
 namespace PartGui
 {
 
@@ -81,12 +83,14 @@ struct PreMeshItem
 };
 
 /// GUI thread: claim every item's TShape in flight and tessellate the
-/// batch on worker threads. Returns at once; \a items is consumed.
-void submitPreMesh(std::vector<PreMeshItem> &&items);
+/// batch on worker threads. Returns at once; \a items is consumed. An
+/// item whose TShape is already in flight is left to the worker that
+/// has it.
+PartGuiExport void submitPreMesh(std::vector<PreMeshItem> &&items);
 
 /// Is a pre-mesh of \a tshape still running? A build must leave the
 /// shape alone while it is.
-bool preMeshInFlight(const void *tshape);
+PartGuiExport bool preMeshInFlight(const void *tshape);
 
 /// Block until \a tshape's pre-mesh has published, at most \a seconds.
 /// True once the shape is safe to read, false on the timeout -- where
@@ -99,7 +103,7 @@ bool preMeshInFlight(const void *tshape);
 /// arriving is the one thing that preference rules out. The GUI thread
 /// has nothing else to do inside such a load, so it waits for the
 /// worker and then builds as it always did.
-bool waitPreMesh(const void *tshape, double seconds);
+PartGuiExport bool waitPreMesh(const void *tshape, double seconds);
 
 /// The geometry box the pre-mesh measured for \a tshape while its claim
 /// is still IN FLIGHT. False -- no claim, or published -- leaves \a box
@@ -110,18 +114,21 @@ bool waitPreMesh(const void *tshape, double seconds);
 /// GUI thread before the worker started, so it answers without reading
 /// a shape a worker may be writing. Even the geometry-only
 /// BRepBndLib::Add fetches each face's triangulation handle.
-bool preMeshBox(const void *tshape, Bnd_Box &box);
+PartGuiExport bool preMeshBox(const void *tshape, Bnd_Box &box);
 
 /// What the pre-mesh has done so far, for the line the drain reports
 /// itself with. \a wall is the batch's own elapsed time (0 while one is
 /// still running).
-void preMeshStats(std::size_t &claimed, std::size_t &meshed,
-                  std::size_t &failed, double &wall);
+PartGuiExport void preMeshStats(std::size_t &claimed, std::size_t &meshed,
+                                std::size_t &failed, double &wall);
 
-/// Forget every claim. A document closing invalidates the shapes the
-/// claims are about; in-flight batches are left to finish (they own
-/// their shapes) and their results are simply dropped.
-void clearPreMeshClaims();
+/// Forget every claim that is published. A document closing invalidates
+/// the shapes the claims are about; in-flight batches are left to finish
+/// (they own their shapes) and their results are simply dropped -- but a
+/// claim still IN FLIGHT stays, answering as in flight, until its worker
+/// publishes it and takes it out: the shape is being written until then,
+/// whoever has stopped waiting for it.
+PartGuiExport void clearPreMeshClaims();
 
 /// Whether the pre-mesh runs at all (Render_PreMeshOnLoad).
 bool preMeshEnabled();

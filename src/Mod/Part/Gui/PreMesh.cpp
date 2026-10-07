@@ -53,7 +53,8 @@ struct Claim
     /// address, and the stale claim answers -- with a bounding box --
     /// for a shape it knows nothing about. Released by
     /// clearPreMeshClaims, which the drain calls once every queue it
-    /// serves is empty.
+    /// serves is empty -- or, for a claim that was still in flight
+    /// then, by the worker that publishes it.
     TopoDS_Shape shape;
     Bnd_Box geomBox;
     /// False while a worker is still writing this TShape's
@@ -68,11 +69,18 @@ struct Claim
 /// left behind by a closed document is dropped by clearPreMeshClaims
 /// (a recycled address would otherwise answer for a different shape).
 /// The map is only ever inserted into on the GUI thread, at submit; a
-/// worker writes nothing but its own claim's flag, and readers take the
-/// mutex to find the entry. Entries are stable (unique_ptr), so a
-/// worker's flag write cannot be moved by a rehash.
+/// worker writes its own claim's flag and, where a clear has passed
+/// since its batch was submitted, takes its own entry out. Readers take
+/// the mutex to find the entry.
+///
+/// A claim is SHARED between the map and the batch that publishes it.
+/// It used to be the map's alone, and clearPreMeshClaims freed it with
+/// its worker still running: the worker then published into freed
+/// memory -- one byte, the flag, 88 bytes into a block the allocator had
+/// handed to somebody else -- on every load whose drain emptied its
+/// queues before the batch was done (docs/DocumentLoad.md sec 18.7).
 std::mutex s_mutex;
-std::unordered_map<const void *, std::unique_ptr<Claim>> s_claims;
+std::unordered_map<const void *, std::shared_ptr<Claim>> s_claims;
 std::size_t s_claimed = 0;
 std::size_t s_meshed = 0;
 std::size_t s_failed = 0;
@@ -94,11 +102,32 @@ std::condition_variable s_published;
 struct Batch
 {
     std::vector<PreMeshItem> items;
-    std::vector<Claim *> claims;
+    /// Held, not borrowed: whatever the map does in the meantime, the
+    /// claim a worker publishes is alive when it does.
+    std::vector<std::shared_ptr<Claim>> claims;
     uint64_t generation = 0;
     std::atomic<std::size_t> meshed {0};
     std::atomic<std::size_t> failed {0};
 };
+
+/// Publish one claim of \a batch: from here on the shape may be touched.
+/// The caller holds s_mutex.
+///
+/// A claim whose batch was submitted before the last clear is one
+/// clearPreMeshClaims had to leave in the map, because its shape was
+/// still being written. Nobody is going to ask for its result, and the
+/// TShape it is keyed on is pinned only for as long as it stays -- so
+/// the worker takes it out here, the moment the shape is safe to read.
+void publishLocked(Batch *batch, std::size_t index)
+{
+    Claim *claim = batch->claims[index].get();
+    claim->done.store(true, std::memory_order_release);
+    if (batch->generation == s_generation.load(std::memory_order_acquire))
+        return;
+    auto it = s_claims.find(batch->items[index].shape.TShape().get());
+    if (it != s_claims.end() && it->second.get() == claim)
+        s_claims.erase(it);
+}
 
 struct BatchFunctor
 {
@@ -107,7 +136,6 @@ struct BatchFunctor
     void operator()(int index) const
     {
         const PreMeshItem &item = batch->items[std::size_t(index)];
-        Claim *claim = batch->claims[std::size_t(index)];
         try {
             IMeshTools_Parameters params;
             params.Deflection = item.deflection;
@@ -141,7 +169,7 @@ struct BatchFunctor
         // against that waiter's predicate test.
         {
             std::lock_guard<std::mutex> guard(s_mutex);
-            claim->done.store(true, std::memory_order_release);
+            publishLocked(batch, std::size_t(index));
         }
         s_published.notify_all();
     }
@@ -160,8 +188,8 @@ void runBatch(Batch *batch)
         // every claim is released before this unwinds.
         {
             std::lock_guard<std::mutex> guard(s_mutex);
-            for (Claim *claim : batch->claims)
-                claim->done.store(true, std::memory_order_release);
+            for (std::size_t index = 0; index < batch->claims.size(); ++index)
+                publishLocked(batch, index);
         }
         s_published.notify_all();
     }
@@ -190,22 +218,35 @@ void submitPreMesh(std::vector<PreMeshItem> &&items)
     if (items.empty())
         return;
     auto *batch = new Batch();
-    batch->items = std::move(items);
-    batch->claims.reserve(batch->items.size());
+    batch->items.reserve(items.size());
+    batch->claims.reserve(items.size());
     {
         std::lock_guard<std::mutex> guard(s_mutex);
         batch->generation = s_generation.load(std::memory_order_acquire);
-        for (const PreMeshItem &item : batch->items) {
+        for (PreMeshItem &item : items) {
             const void *tshape = item.shape.TShape().get();
             auto &slot = s_claims[tshape];
-            if (!slot)
-                slot = std::make_unique<Claim>();
+            // Already being meshed -- by a batch a clear left in flight,
+            // or one a second parking of the same shape ran into. A
+            // second worker on one TShape is two writers of one
+            // triangulation, and the first to publish would release the
+            // shape with the other still writing it. The claim in
+            // flight covers it: whoever builds the shape waits on that.
+            if (slot && !slot->done.load(std::memory_order_acquire))
+                continue;
+            // A new claim, never the old one made in flight again: a
+            // claim belongs to one batch.
+            slot = std::make_shared<Claim>();
             slot->shape = item.shape;
             slot->geomBox = item.geomBox;
-            slot->done.store(false, std::memory_order_release);
-            batch->claims.push_back(slot.get());
+            batch->claims.push_back(slot);
+            batch->items.push_back(std::move(item));
             ++s_claimed;
         }
+    }
+    if (batch->items.empty()) {
+        delete batch;
+        return;
     }
     // Detached, because nothing waits for it: the drain discovers the
     // results through the claims as it walks its queue.
@@ -270,18 +311,29 @@ void preMeshStats(std::size_t &claimed, std::size_t &meshed,
 void clearPreMeshClaims()
 {
     std::lock_guard<std::mutex> guard(s_mutex);
-    // An in-flight batch still holds pointers to these claims, so the
-    // entries themselves are not freed here -- the generation bump is
-    // what tells that batch its results are no longer wanted, and the
-    // claims it releases are ones nothing looks up any more.
-    for (auto &entry : s_claims)
-        entry.second->done.store(true, std::memory_order_release);
-    s_claims.clear();
+    // A claim still in flight STAYS. Its worker is writing the shape, so
+    // the shape has to go on answering "in flight" to whoever asks --
+    // dropped here, it answered "not claimed", and the GUI thread was
+    // free to build a shape a worker was meshing. Nor is its address one
+    // a later allocation can reuse: the batch holds the shape. The
+    // generation bump is what tells that batch its results are no longer
+    // wanted, and its workers take their own claims out as they publish
+    // (publishLocked).
+    //
+    // "No build is going to ask again" is what the callers know, and it
+    // is no reason to think the batch is done: a drain whose parked
+    // shapes were all built by somebody else before its first slice --
+    // a live import's fit does that -- submits them, pops them unbuilt
+    // and is here in the same slice, with every worker still running.
+    for (auto it = s_claims.begin(); it != s_claims.end(); ) {
+        if (it->second->done.load(std::memory_order_acquire))
+            it = s_claims.erase(it);
+        else
+            ++it;
+    }
     s_claimed = s_meshed = s_failed = 0;
     s_wall = 0.0;
     s_generation.fetch_add(1, std::memory_order_acq_rel);
-    // A build asleep on one of these is waiting for a claim that has
-    // just stopped existing; its predicate reads that as settled.
     s_published.notify_all();
 }
 
