@@ -50,9 +50,9 @@ report views, the reporter's own files -- is kept beside the dev tree under
 | 12 | 2026-10-06 | TechDraw: dimensions and cosmetics are covered by the face fill | STAGED (they were transparent, not covered) |
 | 13 | 2026-10-06 | report view: grouped messages with an expand icon in the margin, no underscore (change request) | STAGED |
 | 14 | 2026-10-06 | a Draft with no neutral plane given turns the other way after a recompute (from entry 8) | STAGED |
-| 15 | 2026-10-06 | a Pad "up to first" gives a third result (from entry 8) | FIXED `1047cc0647`: not the pad -- a refine in the feature on top (Helix002) wrote into the pocket's shape; one thing left, Pocket040's Fit direction (see `docs/HandsOnLog.md`) |
+| 15 | 2026-10-06 | a Pad "up to first" gives a third result (from entry 8) | FIXED `1047cc0647`: not the pad -- a refine in the feature on top (Helix002) wrote into the pocket's shape. What was left is no defect: Pocket040 comes out at radius 12 for the file's 13 because its negative Fit grew in the old build; a question for the reporter, keep 12 or set its Fit to +0.5 (`docs/HandsOnLog.md`) |
 | 16 | 2026-10-06 | faces of a "Mutated" copy-on-change binder are renamed by every recompute in a new session (from entry 8; the old build too) | STAGED |
-| 17 | 2026-10-06 | `Sketch043`, `Sketch055`: "Missing external geometry reference", seen once the binders of entry 16 are valid | OPEN |
+| 17 | 2026-10-06 | `Sketch043`, `Sketch055`: "Missing external geometry reference", seen once the binders of entry 16 are valid | FIXED `3c8cd63032`: the sketches' references into Binder017 (a binder of the moved Binder008) are found again; Pad033 then loses its profile because Sketch043 really changes -- a question for the reporter (`docs/HandsOnLog.md`) |
 | 18 | 2026-10-06 | TechDraw pages do not load: "invalid vector subscript", the views loose in the tree, 320 objects restored to defaults | STAGED |
 | 19 | 2026-10-06 | TechDraw: other indexes taken on trust (an audit asked) | OPEN |
 | 20 | 2026-10-06 | TechDraw: crash when the page is switched to the backend's renderer; and what it then drew | STAGED, the double draw too |
@@ -758,7 +758,7 @@ follows the edge from `Edge4` to `Edge10` across the pad's recompute and
 `Draft` comes out valid at 285.76 with `Reversed` on, as saved.
 `TestDraft.testGuessedNeutralPlaneKeepsItsEdge`; TestDraft 4 OK.
 
-## 15. A Pad "up to first" gives a third result -- FIXED `1047cc0647`, one thing left (see `docs/HandsOnLog.md`)
+## 15. A Pad "up to first" gives a third result -- FIXED `1047cc0647`, a question for the reporter (see `docs/HandsOnLog.md`)
 
 **From entry 8.** `Pad051`: `Type` UpToFirst, `Reversed`, profile `Binder033`,
 base `Pocket039`. Volume as saved 3256.82; old build recomputed 3400.82; this
@@ -953,7 +953,7 @@ not been scored against a tree without the motion yet.
   first time: `Sketch043` and `Sketch055` now say "Missing external geometry
   reference". Entry 17.
 
-## 17. `Sketch043`, `Sketch055`: "Missing external geometry reference" -- OPEN
+## 17. `Sketch043`, `Sketch055`: "Missing external geometry reference" -- FIXED `3c8cd63032`, a question for the reporter (see `docs/HandsOnLog.md`)
 
 **From entry 16.** With `Binder013`, `014`, `017` and `018` valid again, what
 is built on them is recomputed for the first time in a full recompute of
