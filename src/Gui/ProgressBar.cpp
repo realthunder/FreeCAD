@@ -42,6 +42,7 @@
 #include <Base/Parameter.h>
 
 #include "ProgressBar.h"
+#include "GeneralParams.h"
 #include "LiveViewInteraction.h"
 #include "MainWindow.h"
 #include "ProgressDialog.h"
@@ -77,7 +78,7 @@ static size_t progressDetailLevels()
 {
     ParameterGrp::handle hGrp = App::GetApplication().GetParameterGroupByPath(
         "User parameter:BaseApp/Preferences/General");
-    long levels = hGrp->GetInt("ProgressDetailLevels", 5);
+    long levels = GeneralParams::getProgressDetailLevels();
     return levels < 1 ? 1 : (size_t)levels;
 }
 

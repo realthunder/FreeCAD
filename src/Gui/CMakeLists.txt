@@ -1344,6 +1344,7 @@ SET(Params_CPP_SRCS
     OpenViewParams.cpp
     RenderParams.cpp
     ExprParams.cpp
+    GeneralParams.cpp
     ReportViewParams.cpp
     OverlayParams.cpp
     TreeParams.cpp
@@ -1357,6 +1358,7 @@ SET(Params_HPP_SRCS
     OpenViewParams.h
     RenderParams.h
     ExprParams.h
+    GeneralParams.h
     ReportViewParams.h
     OverlayParams.h
     TreeParams.h

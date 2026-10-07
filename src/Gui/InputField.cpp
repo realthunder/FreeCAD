@@ -39,6 +39,7 @@
 #include <Base/Tools.h>
 
 #include "InputField.h"
+#include "GeneralParams.h"
 #include "BitmapFactory.h"
 #include "Command.h"
 #include "QuantitySpinBox_p.h"
@@ -79,7 +80,7 @@ InputField::InputField(QWidget * parent)
     SaveSize(5)
 {
     setValidator(new InputValidator(this));
-    if (!App::GetApplication().GetParameterGroupByPath("User parameter:BaseApp/Preferences/General")->GetBool("ComboBoxWheelEventFilter",false)) {
+    if (!GeneralParams::getComboBoxWheelEventFilter()) {
         setFocusPolicy(Qt::WheelFocus);
     }
     else {

@@ -1415,3 +1415,10 @@ fc_add_gui_test(GuiReportViewSettings_tests_run
 fc_add_gui_test(GuiPartMeasureSettings_tests_run
                 part-measure-settings.py
                 --timeout 180)
+
+# The settings of Preferences/General are behind GeneralParams: listed by
+# the omni search, the page's tool tip icon size stored where it is read,
+# and "apply preferences at once" applying itself at once.
+fc_add_gui_test(GuiGeneralSettings_tests_run
+                general-settings.py
+                --timeout 180)

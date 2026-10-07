@@ -51,6 +51,7 @@
 #include <Base/Tools.h>
 
 #include "DlgPreferencesImp.h"
+#include "GeneralParams.h"
 #include "ui_DlgPreferences.h"
 
 #include "Action.h"
@@ -579,8 +580,7 @@ void DlgPreferencesImp::restoreDefaults()
             action->push(tr("Reset"));
 
         // keep this parameter
-        bool saveParameter = App::GetApplication().GetParameterGroupByPath("User parameter:BaseApp/Preferences/General")->
-                              GetBool("SaveUserParameter", true);
+        bool saveParameter = GeneralParams::getSaveUserParameter();
 
         ParameterManager* mgr = App::GetApplication().GetParameterSet("User parameter");
         mgr->Clear(true);
@@ -700,9 +700,7 @@ void DlgPreferencesImp::applyChanges()
         }
     }
 
-    bool saveParameter = App::GetApplication()
-                             .GetParameterGroupByPath("User parameter:BaseApp/Preferences/General")
-                             ->GetBool("SaveUserParameter", true);
+    bool saveParameter = GeneralParams::getSaveUserParameter();
     
     if (saveParameter) {
         ParameterManager* parmgr = App::GetApplication().GetParameterSet("User parameter");

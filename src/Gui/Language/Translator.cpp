@@ -36,6 +36,7 @@
 #include <App/Application.h>
 #include <Gui/TextEdit.h>
 #include "Translator.h"
+#include <Gui/GeneralParams.h>
 
 
 using namespace Gui;
@@ -203,7 +204,7 @@ Translator::Translator()
     d->mapLanguageTopLevelDomain[QT_TR_NOOP("Vietnamese"           )] = "vi";
 
     auto hGrp = App::GetApplication().GetParameterGroupByPath("User parameter:BaseApp/Preferences/General");
-    auto entries = hGrp->GetASCII("AdditionalLanguageDomainEntries", "");
+    auto entries = GeneralParams::getAdditionalLanguageDomainEntries();
     // The format of the entries is "Language Name 1"="code1";"Language Name 2"="code2";...
     // Example: <FCText Name="AdditionalLanguageDomainEntries">"Romanian"="ro";"Polish"="pl";</FCText>
     QRegularExpression matchingRE(QString::fromUtf8("\"(.*[^\\s]+.*)\"\\s*=\\s*\"([^\\s]+)\";?"));
@@ -219,7 +220,7 @@ Translator::Translator()
 
     d->paths = directories();
 
-    enableDecimalPointConversion(hGrp->GetBool("SubstituteDecimalSeparator", false));
+    enableDecimalPointConversion(GeneralParams::getSubstituteDecimalSeparator());
 }
 
 Translator::~Translator()
@@ -382,8 +383,7 @@ void Translator::updateLocaleChange() const
 QStringList Translator::directories() const
 {
     QStringList list;
-    auto dir = App::GetApplication().GetParameterGroupByPath("User parameter:BaseApp/Preferences/General")->
-        GetASCII("AdditionalTranslationsDirectory", "");
+    auto dir = GeneralParams::getAdditionalTranslationsDirectory();
     if (!dir.empty())
         list.push_back(QString::fromStdString(dir));
     QDir home(QString::fromUtf8(App::Application::getUserAppDataDir().c_str()));

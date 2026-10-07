@@ -40,6 +40,7 @@
 #include <QStandardPaths>
 
 #include "DownloadItem.h"
+#include "GeneralParams.h"
 #include "Application.h"
 #include "Document.h"
 #include "DownloadManager.h"
@@ -275,7 +276,7 @@ QString DownloadItem::getDownloadDirectory() const
     QString dirPath = QDir(path).filePath(exe);
     Base::Reference<ParameterGrp> hPath = App::GetApplication().GetUserParameter().GetGroup("BaseApp")
                                ->GetGroup("Preferences")->GetGroup("General");
-    std::string dir = hPath->GetASCII("DownloadPath", "");
+    std::string dir = GeneralParams::getDownloadPath();
     if (!dir.empty()) {
         dirPath = QString::fromUtf8(dir.c_str());
     }

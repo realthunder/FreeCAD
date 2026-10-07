@@ -45,6 +45,7 @@
 #include <App/Color.h>
 
 #include "ReportView.h"
+#include "GeneralParams.h"
 #include "Action.h"
 #include "Application.h"
 #include "BitmapFactory.h"
@@ -103,7 +104,7 @@ ReportView::ReportView( QWidget* parent )
 
     // raise the tab page set in the preferences
     ParameterGrp::handle hGrp = WindowParameter::getDefaultParameter()->GetGroup("General");
-    int index = hGrp->GetInt("AutoloadTab", 0);
+    int index = GeneralParams::getAutoloadTab();
     tabWidget->setCurrentIndex(index);
 }
 

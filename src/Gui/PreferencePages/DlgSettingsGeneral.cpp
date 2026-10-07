@@ -513,7 +513,9 @@ void DlgSettingsGeneral::attachObserver()
     auto hGeneral = App::GetApplication().GetUserParameter().GetGroup("BaseApp/Preferences/General");
     handlers.addDelayedHandler(hGeneral, {"Language", "UseLocaleFormatting"}, applyNumberLocale);
     handlers.addHandler(hGeneral, "Language", applyLanguage);
-    handlers.addHandler(hGeneral, "SubstituteDecimal", applyDecimalPointConversion);
+    // by the key's own name: under "SubstituteDecimal", which no key is
+    // called, this never ran and the setting took a restart
+    handlers.addHandler(hGeneral, "SubstituteDecimalSeparator", applyDecimalPointConversion);
     handlers.addHandler(hGeneral, "EnableCursorBlinking", applyCursorBlinking);
     handlers.addDelayedHandler(hGeneral,
                               {"ToolbarIconSize",

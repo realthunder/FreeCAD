@@ -51,6 +51,7 @@
 
 #include "Action.h"
 #include "Application.h"
+#include "GeneralParams.h"
 #include "ViewPlacement.h"
 #include "BitmapFactory.h"
 #include "Command.h"
@@ -338,12 +339,10 @@ QString createDefaultExportBasename()
     auto selection = Gui::Selection().getObjectsOfType(App::DocumentObject::getClassTypeId());
     QString exportFormatString;
     if (selection.size() == 1) {
-        exportFormatString = QString::fromStdString (App::GetApplication().GetParameterGroupByPath("User parameter:BaseApp/Preferences/General")->
-            GetASCII("ExportDefaultFilenameSingle", "%F-%P-"));
+        exportFormatString = QString::fromStdString (GeneralParams::getExportDefaultFilenameSingle());
     }
     else {
-        exportFormatString = QString::fromStdString (App::GetApplication().GetParameterGroupByPath("User parameter:BaseApp/Preferences/General")->
-            GetASCII("ExportDefaultFilenameMultiple", "%F"));
+        exportFormatString = QString::fromStdString (GeneralParams::getExportDefaultFilenameMultiple());
     }
 
     // For code simplicity, pull all values we might need

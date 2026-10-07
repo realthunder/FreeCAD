@@ -69,6 +69,7 @@
 #include <Base/Tools.h>
 
 #include "Action.h"
+#include "GeneralParams.h"
 #include "BitmapFactory.h"
 #include "Command.h"
 #include "CommandCompleter.h"
@@ -1750,8 +1751,7 @@ public:
     void trySaveUserParameter()
     {
         // update the XML structure and save the user parameter to disk (#0001989)
-        bool saveParameter = App::GetApplication().GetParameterGroupByPath
-            ("User parameter:BaseApp/Preferences/General")->GetBool("SaveUserParameter", true);
+        bool saveParameter = GeneralParams::getSaveUserParameter();
         if (saveParameter) {
             saveUserParameter();
         }
@@ -1962,8 +1962,7 @@ void RecentMacrosAction::appendFile(const QString& filename)
     save();
 
     // update the XML structure and save the user parameter to disk (#0001989)
-    bool saveParameter = App::GetApplication().GetParameterGroupByPath
-        ("User parameter:BaseApp/Preferences/General")->GetBool("SaveUserParameter", true);
+    bool saveParameter = GeneralParams::getSaveUserParameter();
     if (saveParameter) {
         ParameterManager* parmgr = App::GetApplication().GetParameterSet("User parameter");
         parmgr->SaveDocument(App::Application::Config()["UserParameter"].c_str());

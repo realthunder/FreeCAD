@@ -87,6 +87,7 @@
 #include <Quarter/Quarter.h>
 
 #include "Application.h"
+#include "GeneralParams.h"
 #include "AutoSaver.h"
 #include "AxisOriginPy.h"
 #include "BitmapFactory.h"
@@ -953,7 +954,7 @@ void Application::importFrom(const char* FileName, const char* DocName, const ch
             QString filename = QString::fromUtf8(File.filePath().c_str());
             auto parameterGroup = App::GetApplication().GetParameterGroupByPath(
                 "User parameter:BaseApp/Preferences/General");
-            bool addToRecent = parameterGroup->GetBool("RecentIncludesImported", true);
+            bool addToRecent = GeneralParams::getRecentIncludesImported();
             parameterGroup->SetBool("RecentIncludesImported",
                                     addToRecent);// Make sure it gets added to the parameter list
             if (addToRecent) {
@@ -1021,7 +1022,7 @@ void Application::exportTo(const char* FileName, const char* DocName, const char
 
             auto parameterGroup = App::GetApplication().GetParameterGroupByPath(
                 "User parameter:BaseApp/Preferences/General");
-            bool addToRecent = parameterGroup->GetBool("RecentIncludesExported", false);
+            bool addToRecent = GeneralParams::getRecentIncludesExported();
             parameterGroup->SetBool("RecentIncludesExported",
                                     addToRecent);// Make sure it gets added to the parameter list
             if (addToRecent) {
@@ -2703,7 +2704,7 @@ void preAppSetup()
 
         ParameterGrp::handle hGen = App::GetApplication().GetParameterGroupByPath(
             "User parameter:BaseApp/Preferences/General");
-        if (underWsl && hGen->GetBool("PreferXcbOnWsl", true)) {
+        if (underWsl && GeneralParams::getPreferXcbOnWsl()) {
             qputenv("QT_QPA_PLATFORM", "xcb");
             Base::Console().Log("Init: WSL detected, using the xcb platform "
                                 "plugin (PreferXcbOnWsl)\n");
@@ -2882,7 +2883,7 @@ void postMainWindowSetup(MainWindow &mw)
     // allow to disable version number
     ParameterGrp::handle hGen =
         App::GetApplication().GetParameterGroupByPath("User parameter:BaseApp/Preferences/General");
-    bool showVersion = hGen->GetBool("ShowVersionInTitle", true);
+    bool showVersion = GeneralParams::getShowVersionInTitle();
 
     if (showVersion) {
         // set main window title with FreeCAD Version
@@ -2914,13 +2915,13 @@ void postMainWindowSetup(MainWindow &mw)
     mw.setIconSize(QSize(size,size));
 
     // filter wheel events for combo boxes
-    if (hGrp->GetBool("ComboBoxWheelEventFilter", false)) {
+    if (GeneralParams::getComboBoxWheelEventFilter()) {
         WheelEventFilter* filter = new WheelEventFilter(qApp);
         qApp->installEventFilter(filter);
     }
     
     // For values different to 1 and 2 use the OS locale settings
-    auto localeFormat = hGrp->GetInt("UseLocaleFormatting", 0);
+    auto localeFormat = GeneralParams::getUseLocaleFormatting();
     if (localeFormat == 1) {
         Translator::instance()->setLocale(
             hGrp->GetASCII("Language", Translator::instance()->activeLanguage().c_str()));
@@ -2930,7 +2931,7 @@ void postMainWindowSetup(MainWindow &mw)
     }
 
     // set text cursor blinking state
-    int blinkTime = hGrp->GetBool("EnableCursorBlinking", true) ? -1 : 0;
+    int blinkTime = GeneralParams::getEnableCursorBlinking() ? -1 : 0;
     qApp->setCursorFlashTime(blinkTime);
 
     {
@@ -3262,9 +3263,7 @@ void postMainWindowSetup(MainWindow &mw)
     // Now run the background autoload, for workbenches that should be loaded at startup, but not
     // displayed to the user immediately
     std::string autoloadCSV =
-        App::GetApplication()
-            .GetParameterGroupByPath("User parameter:BaseApp/Preferences/General")
-            ->GetASCII("BackgroundAutoloadModules", "");
+        GeneralParams::getBackgroundAutoloadModules();
 
     // Tokenize the comma-separated list and load the requested workbenches if they exist in this
     // installation

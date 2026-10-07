@@ -375,7 +375,7 @@ ReportViewParams::signalParamChanged() {
 }
 
 // Auto generated code (Tools/params_utils.py:387)
-void signalAll() {
+void ReportViewParams::signalAll() {
     instance()->signalAll();
 }
 

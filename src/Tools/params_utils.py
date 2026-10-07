@@ -385,7 +385,7 @@ fastsignals::signal<void (const char*)> &
         cog.out(
             f"""
 {trace_comment()}
-void signalAll() {{
+void {class_name}::signalAll() {{
     instance()->signalAll();
 }}
 """

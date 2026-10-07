@@ -91,6 +91,7 @@
 #include <customtitlebarkit/MenuIntegration.h>
 
 #include "MainWindow.h"
+#include "GeneralParams.h"
 #include "InputHintWidget.h"
 #include "Action.h"
 #include "Assistant.h"
@@ -2724,10 +2725,10 @@ void MainWindow::startSplasher()
         ParameterGrp::handle hGrp = App::GetApplication().GetUserParameter().
             GetGroup("BaseApp")->GetGroup("Preferences")->GetGroup("General");
         // first search for an external image file
-        if (hGrp->GetBool("ShowSplasher", true)) {
+        if (GeneralParams::getShowSplasher()) {
             d->splashscreen = new SplashScreen(this->splashImage());
 
-            if (!hGrp->GetBool("ShowSplasherMessages", true)) {
+            if (!GeneralParams::getShowSplasherMessages()) {
                 d->splashscreen->setShowMessages(false);
             }
 

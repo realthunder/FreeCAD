@@ -46,6 +46,7 @@
 #include <Base/Console.h>
 
 #include "ToolBarManager.h"
+#include "GeneralParams.h"
 
 #include "Action.h"
 #include "Application.h"
@@ -543,15 +544,15 @@ ToolBarManager::ToolBarManager()
 
     auto refreshParams = [this](const char *name) {
         if (!name || boost::equals(name, "ToolbarIconSize"))
-            _toolBarIconSize = hGeneral->GetInt("ToolbarIconSize", 24);
+            _toolBarIconSize = hGeneral->GetInt("ToolbarIconSize", GeneralParams::defaultToolbarIconSize());
         if (!name || boost::equals(name, "StatusBarIconSize"))
-            _statusBarIconSize = hGeneral->GetInt("StatusBarIconSize", 0);
+            _statusBarIconSize = hGeneral->GetInt("StatusBarIconSize", GeneralParams::defaultStatusBarIconSize());
         if (!name || boost::equals(name, "MenuBarIconSize"))
-            _menuBarIconSize = hGeneral->GetInt("MenuBarIconSize", 0);
+            _menuBarIconSize = hGeneral->GetInt("MenuBarIconSize", GeneralParams::defaultMenuBarIconSize());
         if (!name || boost::equals(name, "WorkbenchTabIconSize"))
-            _workbenchTabIconSize = hGeneral->GetInt("WorkbenchTabIconSize", 0);
+            _workbenchTabIconSize = hGeneral->GetInt("WorkbenchTabIconSize", GeneralParams::defaultWorkbenchTabIconSize());
         if (!name || boost::equals(name, "WorkbenchComboIconSize"))
-            _workbenchComboIconSize = hGeneral->GetInt("WorkbenchComboIconSize", 0);
+            _workbenchComboIconSize = hGeneral->GetInt("WorkbenchComboIconSize", GeneralParams::defaultWorkbenchComboIconSize());
     };
     refreshParams(nullptr);
 
@@ -701,7 +702,7 @@ bool ToolBarManager::areTitleToolBarsLocked() const
     // Upstream FreeCAD/FreeCAD#26766 defaults this to true. Here it does not:
     // the toolbars in these areas have always been movable in this fork, and a
     // parameter that has never existed should not lock them on first run.
-    return hGeneral->GetBool("LockTitleToolBars", false);
+    return GeneralParams::getLockTitleToolBars();
 }
 
 void ToolBarManager::setTitleToolBarsLocked(bool locked)

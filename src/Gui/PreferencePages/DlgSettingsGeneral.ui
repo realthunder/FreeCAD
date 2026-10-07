@@ -323,7 +323,7 @@ display the splash screen</string>
            <number>64</number>
           </property>
           <property name="prefPath" stdset="0">
-           <cstring>General</cstring>
+           <cstring>View</cstring>
           </property>
           <property name="prefEntry" stdset="0">
            <cstring>ToolTipIconSize</cstring>
