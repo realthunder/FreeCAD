@@ -1422,3 +1422,11 @@ fc_add_gui_test(GuiPartMeasureSettings_tests_run
 fc_add_gui_test(GuiGeneralSettings_tests_run
                 general-settings.py
                 --timeout 180)
+
+# The preferences opened and cancelled with nothing touched write no
+# setting and ask nothing: a page that sets a widget after its restore
+# stores the key when preferences are applied at once, and the dialog took
+# the dock windows' own layout being saved for a change to revert.
+fc_add_gui_test(GuiPreferencesCancelAsksNothing_tests_run
+                preferences-cancel-asks-nothing.py
+                --timeout 180)

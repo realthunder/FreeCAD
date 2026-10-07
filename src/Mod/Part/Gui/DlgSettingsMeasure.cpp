@@ -69,10 +69,18 @@ void DlgSettingsMeasure::loadSettings()
     // box rebuilds its list from the system's when it is given a font, so
     // the entry can only be added after the restore -- and has to be made
     // current here when it is the setting, or the box shows the first
-    // system font in its place and OK stores that one.
+    // system font in its place and OK stores that one. Making it current
+    // is not the user choosing it: with preferences applied as they are
+    // made the box would store the key at once, and Cancel on a dialog
+    // nothing was changed in then asks whether to revert the changes. So
+    // the box does not save while it is done. Its signals cannot simply
+    // be blocked: a font box learns its current font from one of them,
+    // and OK would store the font it showed before.
     if (PartParams::getDimensionsFontName() == "defaultFont") {
+        ui->fontNameComboBox->setAutoSave(false);
         ui->fontNameComboBox->setCurrentIndex(
             ui->fontNameComboBox->findText(QString::fromUtf8("defaultFont")));
+        ui->fontNameComboBox->setAutoSave(Gui::PrefParam::AutoSave());
     }
 
     ui->fontStyleBoldCheckBox->onRestore();

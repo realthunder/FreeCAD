@@ -13,7 +13,11 @@ that did not work:
     and called a read where it meant the write;
   - the change handler of the decimal separator setting was registered
     under a name that is not the key's (not claimed here: nothing a script
-    can see changes with it).
+    can see changes with it);
+  - "apply preferences at once" switched OFF did nothing for a dialog
+    opened afterwards: a preference widget made while it is off connected
+    its save all the same, so every change was still stored as it was made
+    (found later, with the test that cancels the preferences untouched).
 
 Claims:
 
@@ -22,7 +26,9 @@ Claims:
   - a tool tip icon size set on the General page is stored in the View
     group, and nothing of that name in the General group;
   - unticking "apply preferences at once" stores the setting before OK is
-    pressed.
+    pressed;
+  - a box changed in the preferences is stored before OK while preferences
+    are applied at once, and only by OK while they are not.
 
 Scored against the tree before the change: see the commit message.
 """
@@ -113,6 +119,7 @@ def in_preferences(action):
 def run():
     general = FreeCAD.ParamGet(PREFS + "General")
     view = FreeCAD.ParamGet(PREFS + "View")
+    notification = FreeCAD.ParamGet(PREFS + "NotificationArea")
     try:
         rows = param_rows("splash")
         check("the omni search lists the splash screen setting",
@@ -147,10 +154,32 @@ def run():
               value)
         general.RemBool("AutoApplyPreference")
         settle(0.3)
+
+        # A box of a page nobody is looking at, whose setting moves nothing
+        # on screen. The widget saves a tenth of a second after a change,
+        # when it saves at all.
+        def untick_auto_remove(dialog):
+            box = dialog.findChild(QtWidgets.QCheckBox, "autoRemoveUserNotifications")
+            before = box.isChecked()
+            box.setChecked(not before)
+            settle(0.6)
+            return before, stored("NotificationArea", "AutoRemoveUserNotifications")
+
+        value = in_preferences(untick_auto_remove)
+        check("applied at once, a box unticked in the preferences is stored before OK",
+              value == (True, [False]), value)
+        notification.RemBool("AutoRemoveUserNotifications")
+        general.SetBool("AutoApplyPreference", False)
+        settle(0.3)
+        value = in_preferences(untick_auto_remove)
+        check("not applied at once, it is not stored before OK", value == (True, []), value)
+        check("and OK stores it", stored("NotificationArea", "AutoRemoveUserNotifications") == [False],
+              stored("NotificationArea", "AutoRemoveUserNotifications"))
     except Exception:
         note("FAIL the test ran | " + traceback.format_exc().replace("\n", " | "))
     finally:
         general.RemBool("AutoApplyPreference")
+        notification.RemBool("AutoRemoveUserNotifications")
         note("DONE")
         QtCore.QTimer.singleShot(0, FreeCADGui.getMainWindow().close)
 

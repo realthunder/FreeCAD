@@ -139,8 +139,19 @@ DlgPreferencesImp::DlgPreferencesImp(QWidget* parent, Qt::WindowFlags fl)
     hBackup = manager.get();
     App::GetApplication().GetUserParameter().copyTo(hBackup);
     connParam = App::GetApplication().GetUserParameter().signalParamChanged.connect(
-        [this](ParameterGrp*, ParameterGrp::ParamType, const char*, const char*) {
-            this->paramTouched = true;
+        [this](ParameterGrp* param, ParameterGrp::ParamType, const char*, const char*) {
+            // Only a SETTING written is a change Cancel offers to revert.
+            // The program keeps its own state in the same parameters -- the
+            // dock windows store their layout when the main window first
+            // loses the focus, which is when this dialog opens -- and
+            // taking that for a change made Cancel ask whether to revert
+            // on a dialog nothing was changed in.
+            for (auto group = param; group; group = group->Parent()) {
+                if (strcmp(group->GetGroupName(), "Preferences") == 0) {
+                    this->paramTouched = true;
+                    return;
+                }
+            }
         });
 }
 
