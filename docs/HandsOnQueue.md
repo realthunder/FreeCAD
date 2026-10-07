@@ -72,7 +72,7 @@ report views, the reporter's own files -- is kept beside the dev tree under
 | 32 | 2026-10-07 | some sub menus are transparent with blue text (Tools > Command history): find out why; transparent menus off by default | see `docs/HandsOnLog.md` |
 | 33 | 2026-10-07 | a cmd window pops up briefly at the first document opened after start | OPEN |
 | 34 | 2026-10-07 | TechDraw's preselection colour sometimes does not follow the theme (stays yellow after classic, or is blue) | OPEN; decided 15:19: the Dark and Light packs set TechDraw's `PreSelectColor` too |
-| 35 | 2026-10-07 | TechDraw (`scanner.FCStd`, Page003): a single click starts a recompute; a dimension (Dimension134) cannot be selected; selecting it in the tree can recompute and clear the selection | OPEN |
+| 35 | 2026-10-07 | TechDraw (`scanner.FCStd`, Page003): now and then a click starts a recompute; a dimension (Dimension134) cannot be selected; selecting it in the tree can recompute and clear the selection. Asked: an audit of TechDraw for unnecessary recomputes | OPEN |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -2028,7 +2028,7 @@ for it -- the blue they give the 3D view, unless the reporter says another --
 and Classic keeps its own. Every theme then owns the key and a switch in
 either direction changes it.
 
-## 35. TechDraw: a click starts a recompute, and a dimension that cannot be selected -- OPEN
+## 35. TechDraw: now and then a click starts a recompute, a dimension that cannot be selected; an audit for unnecessary recomputes -- OPEN
 
 **2026-10-07 15:21, a defect, three symptoms the reporter thinks are one.**
 "I open scanner file and click recompute, which has some recomputation error.
@@ -2075,6 +2075,46 @@ session started 14:36) and from the source; nothing run:
   2d reference" lines from the dimensions).
 Not said yet: whether (a) happens on an empty spot of the page or only on
 items, and whether it happens in a page of a document with no errors.
+
+**Corrected by the reporter, and an audit asked, 2026-10-07 15:26:** "not
+everything then. it's just that a seemingly raondom click will trigger
+recompute. we need to audit Techdraw for unnecessary recompute". So (a) is
+not every click: now and then a click, with no pattern the reporter can see,
+starts a recompute. And the request is wider than this page: go through
+TechDraw for recomputes that are not needed.
+**An inventory to start the audit from, by the note-taker, from the source
+only (nothing run, nothing judged yet):** in `src/Mod/TechDraw/Gui` there are
+117 calls of `Gui::Command::updateActive()` (a recompute of the document), 62
+of `recomputeFeature()` (one object), 71 of `requestPaint()` and 6 `touch()`.
+Most sit in commands and task panels, where the user has just changed
+something: `CommandExtensionPack.cpp` 29, `CommandExtensionDims.cpp` 29,
+`TaskDimension.cpp` 22, `TaskLeaderLine.cpp` 17, `CommandAnnotate.cpp` 16,
+`Command.cpp` 15, `TaskCenterLine.cpp` 13, `TaskBalloon.cpp` 13, and less
+elsewhere. The ones that a CLICK IN THE PAGE can reach are few, and are
+where "seemingly random" would come from -- each runs at the end of a drag,
+and the question for each is whether a press and release that moved nothing
+is told from a drag:
+- `QGIViewDimension::datumLabelDragFinished` (`QGIViewDimension.cpp` 700-714)
+  -- writes the dimension label's `X`, `Y`, then `updateActive()`;
+- `QGIViewBalloon.cpp` 505-518 -- a balloon's `X`, `Y`, and its origin if
+  that was dragged, then `updateActive()`;
+- `QGIHighlight.cpp` 78-94 -- a detail view's highlight: `AnchorPoint`, then
+  `updateActive()`, from a timer;
+- `QGISectionLine.cpp` 685 -- the section line (entry 21, fixed there);
+- `QGILeaderLine::restoreState` (`QGILeaderLine.cpp` 306-314) -- a leader's
+  points put back, then `recomputeFeature()`;
+- `QGSPage.cpp` 580-596 -- a balloon being created;
+- `QGIView.cpp` 191 -- a view dragged: `setPosition()`, which writes `X` and
+  `Y`; no recompute of its own, but a written property marks the object;
+- `MDIViewPage.cpp` 218, 224 -- after undo and redo;
+- `ViewProviderPage.cpp` 252 and `ViewProviderViewPart.cpp` 374 --
+  `recomputeFeature()` from a view provider.
+What "unnecessary" would mean, for the audit to apply: a recompute after
+nothing was changed (a click that moved nothing; a value written equal to
+the one it had); a recompute of the DOCUMENT where one object changed (every
+`updateActive()` above, against `recomputeFeature()`); and a recompute that
+only repeats one that has just failed, which is what makes it noticed in
+`scanner.FCStd`.
 
 ## Inbox
 
