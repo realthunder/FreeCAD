@@ -71,6 +71,7 @@ report views, the reporter's own files -- is kept beside the dev tree under
 | 31 | 2026-10-07 | report view: "Go to end" on by default (change request) | see `docs/HandsOnLog.md` |
 | 32 | 2026-10-07 | some sub menus are transparent with blue text (Tools > Command history): find out why; transparent menus off by default | see `docs/HandsOnLog.md` |
 | 33 | 2026-10-07 | a cmd window pops up briefly at the first document opened after start | OPEN |
+| 34 | 2026-10-07 | TechDraw's preselection colour sometimes does not follow the theme (stays yellow after classic, or is blue) | OPEN |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -1981,10 +1982,44 @@ open (which call, by watching for a `cmd.exe` child of `FreeCAD.exe`), and
 whether a session with no 3D view opened -- a TechDraw page or a spreadsheet
 alone -- shows it.
 
+## 34. TechDraw's preselection colour sometimes does not follow the theme -- OPEN
+
+**2026-10-07 15:15, a defect.** "the TechDraw preselection highlight color
+'sometimes' does not follow the settings. when I switch between classic and
+dark/light theme. the 3d view pre-selection change between yellow and blue,
+but techdraw sometime stays as yellow. sometimes it is blue". Switching
+between the Classic theme and Dark or Light, the 3D view's preselection
+colour follows -- yellow under Classic, blue under Dark and Light -- and the
+TechDraw page's does not always: it stays yellow at times and is blue at
+others.
+Read from the source by the note-taker, nothing run -- it accounts for
+"sometimes" without anything being random:
+- TechDraw's colour is `Preferences::preselectColor()`
+  (`src/Mod/TechDraw/App/Preferences.cpp`): the key `PreSelectColor` in
+  `Mod/TechDraw/Colors` if it is set, and ONLY IF IT IS NOT, the 3D view's
+  `HighlightColor` from `Preferences/View`.
+- The Classic pack sets both: `View/HighlightColor` = `3789624575`
+  (0xE1E114FF, yellow) and `Mod/TechDraw/Colors/PreSelectColor` =
+  `4294902015` (0xFFFF00FF, yellow).
+- The Dark and Light packs set `View/HighlightColor` = `327679` (blue) and do
+  not mention `PreSelectColor` at all.
+- So in a profile where Classic was never applied the TechDraw key is unset,
+  TechDraw follows the 3D view, and Dark or Light gives blue. Once Classic
+  has been applied the key holds yellow, and Dark or Light, which do not own
+  it, leave it there: the 3D view goes blue and TechDraw stays yellow, for
+  good. Which of the two the reporter sees depends on whether Classic has
+  been through that profile, not on the switch just made.
+The same shape as entry 30's third task (a key one theme writes and the
+others do not own). The repair is one of two, for the reporter or the build
+session to choose: Dark and Light set `PreSelectColor` too, or Classic stops
+setting it so that TechDraw follows the 3D view under every theme. To run
+when it is looked at: that an open page picks a changed colour up without
+being reopened.
+
 ## Inbox
 
 Notes not sorted into an entry yet. Add a line here at any time, in any words;
 it is read before each entry is started and moved up into the table.
 
 (empty: the notes of 2026-10-06 are entries 20 to 28, those of 2026-10-07 so far
-entries 29 to 33)
+entries 29 to 34)
