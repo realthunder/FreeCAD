@@ -1444,3 +1444,12 @@ fc_add_gui_test(GuiMainWindowSettings_tests_run
 fc_add_gui_test(GuiNotificationAreaSettings_tests_run
                 notification-area-settings.py
                 --timeout 180)
+
+# The Python console's, the macros' and the dialogs' settings are behind
+# PythonConsoleParams, MacroParams and DialogParams: listed by the omni
+# search and followed at once; a macro path stored empty means the user's
+# macro directory, and Draft's ShapeString panel leaves the file dialog
+# switch as it found it.
+fc_add_gui_test(GuiConsoleMacroSettings_tests_run
+                console-macro-settings.py
+                --timeout 180)

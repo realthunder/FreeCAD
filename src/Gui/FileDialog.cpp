@@ -51,6 +51,7 @@
 
 #include "FileDialog.h"
 #include "BitmapFactory.h"
+#include "DialogParams.h"
 #include "MainWindow.h"
 #include "PrefWidgets.h"
 #include "Tools.h"
@@ -69,12 +70,9 @@ bool DialogOptions::dontUseNativeFileDialog(bool checkModifier)
 #if defined(FORCE_USE_QT_FILEDIALOG) // ignore user parameter settings
     notNativeDialog = true;
 #else
-#   if defined(USE_QT_FILEDIALOG)
-    notNativeDialog = true;
-#   endif
-    ParameterGrp::handle group = App::GetApplication().GetUserParameter().
-          GetGroup("BaseApp")->GetGroup("Preferences")->GetGroup("Dialog");
-    notNativeDialog = group->GetBool("DontUseNativeDialog", notNativeDialog);
+    // What an unset key means is the build's choice (USE_QT_FILEDIALOG);
+    // DialogParams has it as the setting's default.
+    notNativeDialog = DialogParams::getDontUseNativeDialog();
 #endif
 
     if (checkModifier && QApplication::queryKeyboardModifiers() == Qt::ShiftModifier)
@@ -84,9 +82,7 @@ bool DialogOptions::dontUseNativeFileDialog(bool checkModifier)
 
 bool DialogOptions::dontUseNativeColorDialog(bool checkModifier)
 {
-    ParameterGrp::handle group = App::GetApplication().GetUserParameter().
-          GetGroup("BaseApp")->GetGroup("Preferences")->GetGroup("Dialog");
-    bool notNativeDialog = group->GetBool("DontUseNativeColorDialog", true);
+    bool notNativeDialog = DialogParams::getDontUseNativeColorDialog();
     if (checkModifier && QApplication::queryKeyboardModifiers() == Qt::ShiftModifier)
         return !notNativeDialog;
     return notNativeDialog;

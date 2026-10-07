@@ -742,9 +742,14 @@ PyObject* Application::sGetUserMacroPath(PyObject * /*self*/, PyObject *args)
 
     std::string macroDir = Application::getUserMacroDir();
     if (Base::asBoolean(actual)) {
-        macroDir = App::GetApplication().
+        // The setting is Gui's MacroParams, which App cannot ask. A path
+        // that is stored empty is no path, as it is there.
+        std::string path = App::GetApplication().
             GetParameterGroupByPath("User parameter:BaseApp/Preferences/Macro")
             ->GetASCII("MacroPath",macroDir.c_str());
+        if (!path.empty()) {
+            macroDir = path;
+        }
     }
 
     Py::String user_macro_dir(macroDir,"utf-8");

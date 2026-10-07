@@ -36,6 +36,7 @@
 #include <Base/Interpreter.h>
 
 #include "Macro.h"
+#include "MacroParams.h"
 #include "MainWindow.h"
 #include "PythonConsole.h"
 #include "PythonConsolePy.h"
@@ -205,26 +206,31 @@ bool MacroOutputOption::isAppCommand(int type)
 MacroManager::MacroManager()
   : pyDebugger(new PythonDebugger())
 {
-    // Attach to the Parametergroup regarding macros
-    this->params = App::GetApplication().GetParameterGroupByPath("User parameter:BaseApp/Preferences/Macro");
-    this->params->Attach(this);
-    this->params->NotifyAll();
+    // The switches are MacroParams': it has their defaults and says when
+    // one changed.
+    this->connParam = MacroParams::signalParamChanged().connect(
+        [this](const char*) { applySettings(); });
+    applySettings();
 }
 
 MacroManager::~MacroManager()
 {
     delete pyDebugger;
-    this->params->Detach(this);
 }
 
-void MacroManager::OnChange(Base::Subject<const char*> &rCaller, const char * sReason)
+void MacroManager::applySettings()
 {
-    (void)rCaller;
-    (void)sReason;
-    option.recordGui         = this->params->GetBool("RecordGui", true);
-    option.guiAsComment      = this->params->GetBool("GuiAsComment", true);
-    option.scriptToPyConsole = this->params->GetBool("ScriptToPyConsole", true);
-    this->localEnv           = this->params->GetBool("LocalEnvironment", true);
+    option.recordGui         = MacroParams::getRecordGui();
+    option.guiAsComment      = MacroParams::getGuiAsComment();
+    option.scriptToPyConsole = MacroParams::getScriptToPyConsole();
+    this->localEnv           = MacroParams::getLocalEnvironment();
+}
+
+std::string MacroManager::macroDirectory()
+{
+    // A path that is stored empty is no path either.
+    const std::string& path = MacroParams::getMacroPath();
+    return path.empty() ? App::Application::getUserMacroDir() : path;
 }
 
 void MacroManager::open(MacroType eType, const char *sName)

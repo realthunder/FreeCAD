@@ -1347,6 +1347,9 @@ SET(Params_CPP_SRCS
     GeneralParams.cpp
     MainWindowParams.cpp
     NotificationAreaParams.cpp
+    DialogParams.cpp
+    MacroParams.cpp
+    PythonConsoleParams.cpp
     ReportViewParams.cpp
     ThemeParams.cpp
     OverlayParams.cpp
@@ -1364,6 +1367,9 @@ SET(Params_HPP_SRCS
     GeneralParams.h
     MainWindowParams.h
     NotificationAreaParams.h
+    DialogParams.h
+    MacroParams.h
+    PythonConsoleParams.h
     ReportViewParams.h
     ThemeParams.h
     OverlayParams.h
@@ -1628,7 +1634,7 @@ if (FREECAD_USE_PCH)
 endif(FREECAD_USE_PCH)
 
 if (FREECAD_USE_QT_FILEDIALOG)
-    set_source_files_properties(FileDialog.cpp PROPERTIES COMPILE_FLAGS -DUSE_QT_FILEDIALOG)
+    set_source_files_properties(FileDialog.cpp DialogParams.cpp PROPERTIES COMPILE_FLAGS -DUSE_QT_FILEDIALOG)
 endif()
 
 if (FREECAD_FORCE_USE_QT_FILEDIALOG)

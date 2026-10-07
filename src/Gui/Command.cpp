@@ -1516,9 +1516,7 @@ void MacroCommand::activated(int iMsg)
     if (!systemMacro) {
         std::string cMacroPath;
 
-        cMacroPath = App::GetApplication().GetParameterGroupByPath
-                             ("User parameter:BaseApp/Preferences/Macro")->GetASCII("MacroPath",
-                                     App::Application::getUserMacroDir().c_str());
+        cMacroPath = MacroManager::macroDirectory();
 
         d = QDir(QString::fromUtf8(cMacroPath.c_str()));
     }

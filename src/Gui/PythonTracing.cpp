@@ -30,6 +30,7 @@
 #endif
 
 #include "PythonTracing.h"
+#include "PythonConsoleParams.h"
 #include <App/Application.h>
 #include <Base/Interpreter.h>
 
@@ -77,12 +78,7 @@ void PythonTracing::deactivate()
 
 void PythonTracing::fetchFromSettings()
 {
-    const long defaultTimeout = 200;
-
-    auto parameterGroup = App::GetApplication().GetParameterGroupByPath(
-        "User parameter:BaseApp/Preferences/PythonConsole");
-    int interval = static_cast<int>(parameterGroup->GetInt("ProfilerInterval", defaultTimeout));
-    setTimeout(interval);
+    setTimeout(static_cast<int>(PythonConsoleParams::getProfilerInterval()));
 }
 
 bool PythonTracing::interrupt() const

@@ -81,8 +81,6 @@ class ShapeStringTaskPanel:
 
         # Prevent cyclic processing of point values:
         self.display_point_active = False
-        # Default for the "DontUseNativeFontDialog" preference:
-        self.font_dialog_pref = False
         # Dummy attribute used by gui_tool_utils.getPoint in action method
         self.node = None
 
@@ -146,10 +144,20 @@ class ShapeStringTaskPanel:
                 # initialize nonexisting one
                 ParamGroup.SetBool("DontUseNativeFontDialog", True)
             param = ParamGroup.GetBool("DontUseNativeFontDialog")
+            # What the user has for the file dialog is put back as it was:
+            # a key that is not stored stays that way (what unset means is
+            # the build's choice, and not False on every platform), and a
+            # stored one keeps its value. This used to be remembered here
+            # and then reset to False by the lines after the call in
+            # __init__, so every use of the panel stored False.
+            self.font_dialog_stored = "DontUseNativeDialog" in ParamGroup.GetBools()
             self.font_dialog_pref = ParamGroup.GetBool("DontUseNativeDialog")
             ParamGroup.SetBool("DontUseNativeDialog", param)
         elif flag == "Restore":
-            ParamGroup.SetBool("DontUseNativeDialog", self.font_dialog_pref)
+            if getattr(self, "font_dialog_stored", True):
+                ParamGroup.SetBool("DontUseNativeDialog", getattr(self, "font_dialog_pref", False))
+            else:
+                ParamGroup.RemBool("DontUseNativeDialog")
 
     def reset_point(self):
         """Reset the selected point and display new point in the task panel."""

@@ -42,10 +42,12 @@
 
 #include "PythonConsole.h"
 #include "PythonConsolePy.h"
+#include "PythonConsoleParams.h"
 #include "PythonTracing.h"
 #include "Application.h"
 #include "CallTips.h"
 #include "FileDialog.h"
+#include "Macro.h"
 #include "MainWindow.h"
 #include "Tools.h"
 #include "Widgets.h"
@@ -98,7 +100,7 @@ struct PythonConsoleP
     QStringList statements;
     bool interactive;
     QMap<QString, QColor> colormap; // Color map
-    ParameterGrp::handle hGrpSettings;
+    fastsignals::scoped_connection connParam;
     PythonConsoleP()
     {
         type = Normal;
@@ -485,9 +487,13 @@ PythonConsole::PythonConsole(QWidget *parent)
     hPrefGrp->Attach(this);
     hPrefGrp->NotifyAll();
 
-    d->hGrpSettings = WindowParameter::getDefaultParameter()->GetGroup("PythonConsole");
-    d->hGrpSettings->Attach(this);
-    d->hGrpSettings->NotifyAll();
+    // The console's own settings are PythonConsoleParams': it has their
+    // defaults and says when one changed -- from the preferences, the
+    // context menu, the omni search or a script alike.
+    d->connParam = PythonConsoleParams::signalParamChanged().connect(
+        [this](const char* name) { applySetting(name); });
+    applySetting("PythonWordWrap");
+    applySetting("PythonBlockCursor");
 
     // disable undo/redo stuff
     setUndoRedoEnabled( false );
@@ -526,7 +532,6 @@ PythonConsole::~PythonConsole()
 {
     saveHistory();
     Base::PyGILStateLocker lock;
-    d->hGrpSettings->Detach(this);
     getWindowParameter()->Detach(this);
     delete pythonSyntax;
     Py_XDECREF(d->_stdoutPy);
@@ -540,16 +545,6 @@ PythonConsole::~PythonConsole()
 void PythonConsole::OnChange(Base::Subject<const char*> &rCaller, const char* sReason )
 {
     const auto & rGrp = static_cast<ParameterGrp &>(rCaller);
-
-    if (strcmp(sReason, "PythonWordWrap") == 0) {
-        bool pythonWordWrap = rGrp.GetBool("PythonWordWrap", true);
-        if (pythonWordWrap) {
-            setWordWrapMode(QTextOption::WrapAtWordBoundaryOrAnywhere);
-        }
-        else {
-            setWordWrapMode(QTextOption::NoWrap);
-        }
-    }
 
     if (strcmp(sReason, "FontSize") == 0 || strcmp(sReason, "Font") == 0) {
         int fontSize = rGrp.GetInt("FontSize", 10);
@@ -583,14 +578,26 @@ void PythonConsole::OnChange(Base::Subject<const char*> &rCaller, const char* sR
         }
     }
 
-    if (strcmp(sReason, "PythonBlockCursor") == 0) {
-        bool block = rGrp.GetBool("PythonBlockCursor", false);
-        if (block) {
-            setCursorWidth(QFontMetrics(font()).averageCharWidth());
-        }
-        else {
-            setCursorWidth(1);
-        }
+    if (strcmp(sReason, "FontSize") == 0 || strcmp(sReason, "Font") == 0) {
+        // the block cursor is as wide as a character of the font
+        applySetting("PythonBlockCursor");
+    }
+}
+
+void PythonConsole::applySetting(const char* name)
+{
+    if (!name) {
+        return;
+    }
+    if (strcmp(name, "PythonWordWrap") == 0) {
+        setWordWrapMode(PythonConsoleParams::getPythonWordWrap()
+                            ? QTextOption::WrapAtWordBoundaryOrAnywhere
+                            : QTextOption::NoWrap);
+    }
+    else if (strcmp(name, "PythonBlockCursor") == 0) {
+        setCursorWidth(PythonConsoleParams::getPythonBlockCursor()
+                           ? QFontMetrics(font()).averageCharWidth()
+                           : 1);
     }
 }
 
@@ -1433,7 +1440,7 @@ void PythonConsole::contextMenuEvent ( QContextMenuEvent * e )
     QAction* saveh = menu.addAction(tr("Save history"));
     saveh->setToolTip(tr("Saves Python history across %1 sessions").arg(qApp->applicationName()));
     saveh->setCheckable(true);
-    saveh->setChecked(d->hGrpSettings->GetBool("SavePythonHistory", false));
+    saveh->setChecked(PythonConsoleParams::getSavePythonHistory());
 
     menu.addSeparator();
 
@@ -1456,13 +1463,13 @@ void PythonConsole::contextMenuEvent ( QContextMenuEvent * e )
     QAction* wrap = menu.addAction(tr("Word wrap"));
     wrap->setCheckable(true);
 
-    wrap->setChecked(d->hGrpSettings->GetBool("PythonWordWrap", true));
+    wrap->setChecked(PythonConsoleParams::getPythonWordWrap());
     QAction* exec = menu.exec(e->globalPos());
     if (exec == wrap) {
-        d->hGrpSettings->SetBool("PythonWordWrap", wrap->isChecked());
+        PythonConsoleParams::setPythonWordWrap(wrap->isChecked());
     }
     else if (exec == saveh) {
-        d->hGrpSettings->SetBool("SavePythonHistory", saveh->isChecked());
+        PythonConsoleParams::setSavePythonHistory(saveh->isChecked());
     }
 }
 
@@ -1475,8 +1482,7 @@ void PythonConsole::onClearConsole()
 
 void PythonConsole::onSaveHistoryAs()
 {
-    QString cMacroPath = QString::fromUtf8(getDefaultParameter()->GetGroup( "Macro" )->
-        GetASCII("MacroPath",App::Application::getUserMacroDir().c_str()).c_str());
+    QString cMacroPath = QString::fromUtf8(MacroManager::macroDirectory().c_str());
     QString fn = FileDialog::getSaveFileName(this, tr("Save History"), cMacroPath,
         QStringLiteral("%1 (*.FCMacro *.py)").arg(tr("Macro Files")));
     if (!fn.isEmpty()) {
@@ -1557,7 +1563,7 @@ void PythonConsole::loadHistory() const
         return;
     }
 
-    if (!d->hGrpSettings->GetBool("SavePythonHistory", false)) {
+    if (!PythonConsoleParams::getSavePythonHistory()) {
         return;
     }
     QFile f(d->historyFile);
@@ -1582,7 +1588,7 @@ void PythonConsole::saveHistory() const
     if (d->history.isEmpty()) {
         return;
     }
-    if (!d->hGrpSettings->GetBool("SavePythonHistory", false)) {
+    if (!PythonConsoleParams::getSavePythonHistory()) {
         return;
     }
     QFile f(d->historyFile);
