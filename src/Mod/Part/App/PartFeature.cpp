@@ -384,25 +384,33 @@ Feature::getExportElementName(TopoShape shape, const char *name) const
         // chosen elements are not enough to disambiguate the higher element,
         // we'll include an index for disambiguation.
 
-        auto subshape = shape.getSubTopoShape(res.first, res.second, true);
         TopAbs_ShapeEnum lower;
         Data::IndexedName idxName;
+        switch(res.first) {
+        case TopAbs_WIRE:
+            lower = TopAbs_EDGE;
+            idxName = Data::IndexedName::fromConst("Edge", 1);
+            break;
+        case TopAbs_SHELL:
+        case TopAbs_SOLID:
+        case TopAbs_COMPOUND:
+        case TopAbs_COMPSOLID:
+            lower = TopAbs_FACE;
+            idxName = Data::IndexedName::fromConst("Face", 1);
+            break;
+        default:
+            lower = TopAbs_SHAPE;
+        }
+        // A face, an edge or a vertex has nothing lower to be named by, and
+        // its sub shape is not made to find that out: the shape keeps every
+        // one it is asked for, some 6 KB each, and a reference to an element
+        // of a shape without names -- an import's, a primitive's -- asks for
+        // it each time the shape is made (docs/ShapeAppearanceDesign.md sec
+        // 14.1: 780 MB for 120,000 faces held by name).
+        TopoShape subshape;
+        if (lower != TopAbs_SHAPE)
+            subshape = shape.getSubTopoShape(res.first, res.second, true);
         if (!subshape.isNull()) {
-            switch(res.first) {
-            case TopAbs_WIRE:
-                lower = TopAbs_EDGE;
-                idxName = Data::IndexedName::fromConst("Edge", 1);
-                break;
-            case TopAbs_SHELL:
-            case TopAbs_SOLID:
-            case TopAbs_COMPOUND:
-            case TopAbs_COMPSOLID:
-                lower = TopAbs_FACE;
-                idxName = Data::IndexedName::fromConst("Face", 1);
-                break;
-            default:
-                lower = TopAbs_SHAPE;
-            }
             if (lower != TopAbs_SHAPE) {
                 typedef std::pair<size_t, std::vector<int>> NameEntry;
                 std::vector<NameEntry> indices;

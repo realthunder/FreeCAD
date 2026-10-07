@@ -3427,10 +3427,16 @@ A recompute costs the same either way. By number at 120,000 faces: 78 ms,
 
 Two of the costs by name are accidents. The 6.6 KB: a name on a shape that
 has no element map goes through `Part::Feature::getExportElementName`,
-which builds a sub shape for it and uses that only for a wire, a shell or
-a solid (*read, not confirmed by a run*). And the first write is worse
+which built a sub shape for it and used that only for a wire, a shell or
+a solid -- and the shape keeps every sub shape it is asked for. *Fixed,
+2026-10-07*: it is built for those and for nothing else. 36,000 names on
+such a shape, the names alone: 235 MB held and 169 ms before, 7.5 MB and
+18 ms after -- 208 B a name -- and nothing more when the shape is made
+again, where it was another 230 MB each time. A primitive's faces were
+paying it too, six at a time. And the first write is worse
 than linear (0.38 s at 12,000 faces, 4.6 s at 36,000), in the list of
-looks and not in the names, which alone are linear.
+looks and not in the names, which alone are linear: that is
+`setNamedElements()` and `setFaceColors()`, which step 3 replaces.
 
 *Seen and not chased:* colours given by number were gone after the shape
 was made again, on both kinds of shape -- for a shape with sources that is
@@ -3546,14 +3552,33 @@ Python, `App.ElementAppearance`, a view of the property and not a copy:
 
 1. **The property, in App** (*built*, 14.5): the class, its file form, its
    Python object, tests. Nothing uses it.
-2. **`Part::Feature` has it** (*mine*: named `ElementAppearance`, and
-   `ColoredElements` read from a file that has it and no longer there --
-   the alternative, the old name on the new type, keeps an older build of
-   this fork reading the names and changes what `obj.ColoredElements[1]`
-   means). What makes the looks from names and numbers moves to
-   `Part::Feature`, where a shape is: the half of `updateColors()` that
-   needs no view provider.
-3. **`ShapeAppearance` a reference to it.** A read is the drawn faces; a
+2. **`Part::Feature` has it**, named `ElementAppearance`, beside
+   `ColoredElements` for as long as this step lasts. What makes the looks
+   from names and numbers moves to `Part::Feature`, where a shape is: the
+   half of `updateColors()` that needs no view provider. Nothing writes
+   the property yet, so nothing is seen.
+
+   *The name* (*mine*). A new one, and `ColoredElements` gone from
+   `Part::Feature` at step 3, read from a file that has it. Weighed against
+   the old name on the new type, which would keep an older build of this
+   fork reading the names:
+   - `obj.ColoredElements` is `(obj, [names])` to a script, and `[1]` of it
+     the names; on the new type `[1]` is the look of a face;
+   - upstream has no `ColoredElements` on a `Part::Feature`, only on a
+     link, and Draft tells the two apart by it
+     (`draftutils/gui_utils.py`, `hasattr(obj, "ColoredElements")`): with
+     the name gone from `Part::Feature` those tests answer here as they do
+     there;
+   - a link's and `App::Part`'s `ColoredElements`, and what walks them by
+     that name (`LinkBaseExtension::getHiddenSubnames`), are left as they
+     are either way -- Q6 of sec 13, a later step of their own.
+   An older build then opens a newer file with its faces drawn as they
+   were -- `ShapeAppearance` is still written below schema 5 -- and
+   without their names.
+3. **`ShapeAppearance` a reference to it** -- *with steps 5 and 7, in one
+   piece*: the merge and the paint check both read `ColoredElements` and
+   `MappedAppearance` by name, so neither stands once those are gone. A
+   read is the drawn faces; a
    write is taken apart -- the base to `Face`, a face to its name or its
    number -- and put through the property. `MappedAppearance` goes
    (never released: nothing to convert, sec 13 says when); `MappedColors`
@@ -3568,7 +3593,8 @@ Python, `App.ElementAppearance`, a view of the property and not a copy:
 6. **Below schema 5** `ShapeAppearance` and `DiffuseColor` are still
    written, for upstream and for an older build; read back only where the
    file has no store, and then taken into it as a script's write would be.
-7. The panel, the paint check, and the two accidents of 14.1.
+7. The panel and the paint check. (Of the two accidents of 14.1 the
+   first is fixed; the second goes with the code step 3 replaces.)
 
 ### 14.5 Built
 
