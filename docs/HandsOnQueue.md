@@ -61,7 +61,7 @@ report views, the reporter's own files -- is kept beside the dev tree under
 | 21 | 2026-10-06 | TechDraw: a click on a section line starts a section, and the line shifts at each recompute | STAGED |
 | 22 | 2026-10-06 | omni search: `/word` with no space is an object query; `/ word` forces it (change request, decided) | STAGED 2026-10-07 14:23, fixed `5aedd5cf83`: "/word" is an object query, "/ word" forces it, a keyword in full is the keyword, the beginning of one lists modes and objects together; the browser viewer's grammar follows (its bundle not rebuilt) |
 | 23 | 2026-10-06 | omni search: every setting it collects has documentation, none of it long (an audit asked) | STAGED 2026-10-07 14:23, fixed `c7a27b5a85` (and `08b8f009aa`): 574 settings audited, 221 had no documentation and 94 ran past 400 characters; all have a short text now and a test keeps it so. Side findings for the reporter in `docs/HandsOnLog.md`. The defaults FIXED `02cab053df`, not staged: OK on a fresh profile changed 23 settings and stored 2 under a wrong type, 14 of them a generated page's spin box clamping its default to 99; a test keeps it so |
-| 24 | 2026-10-06 | every `Base::Parameter` setting behind a cog helper class so the omni search finds it, applied through delayed handlers (change request, application-wide) | STARTED, TechDraw done as of 2026-10-08 04:55 (128 settings listed) after the core Gui groups, Document, View, the navigation cube, PartDesign, Part's Check Geometry and Boolean options and the Sketcher; none staged or pushed. To do: Part's import/export, Import, Material, Start, CAM, Assembly, a few small modules, the Python-only modules. Three questions and twelve decisions for the reporter (`docs/HandsOnLog.md`) |
+| 24 | 2026-10-06 | every `Base::Parameter` setting behind a cog helper class so the omni search finds it, applied through delayed handlers (change request, application-wide) | C++ SIDE DONE 2026-10-08 06:55, work stopped, about 1170 settings listed; not staged, not pushed (116 commits ahead). WAITS FOR THE REPORTER'S DECISIONS, to be gone through next session: `..\dl\handson\2026-10-08\entry24-decisions.md` (A 28 defaults chosen, B 23 behaviours put right, C 5 questions, D 16 findings not fixed). The Python-only modules wait on C1 (`docs/HandsOnLog.md`) |
 | 25 | 2026-10-06 | the outline of a highlighted face is jagged, MSAA on or off | OPEN |
 | 26 | 2026-10-06 | a long halt after enabling MSAA and pressing OK in the preferences | FIXED `175ffce199`, not staged: the FIRST OK of a profile held the program 11 to 15 s (780 keys stored for the first time and taken for changes: stylesheet set again 4.2 s, every Part view provider re-meshed 3.2 s, language activated again about 2 s); 0.9 s now (`docs/HandsOnLog.md`) |
 | 27 | 2026-10-06 | the view cell menu: opens a spreadsheet nobody asked for, lists every TechDraw object, changes the wrong cell | STAGED 2026-10-07 14:23, fixed `fa2ada985c`: the menu made a spreadsheet view by asking for it, listed a page's views, and placed a pick by the general policy instead of into its cell; all three gone, spreadsheets now listed by type like pages (`docs/HandsOnLog.md`) |
@@ -1631,7 +1631,7 @@ collects automatically; (b) each must have documentation; (c) none of it
 overly long; (d) pick out the long ones in particular -- text an agent wrote
 as development notes that ended up as a setting's documentation.
 
-## 24. Every setting behind a generated helper class, applied by delayed handlers (a change request) -- STARTED, TechDraw done; three questions and twelve decisions for the reporter (see `docs/HandsOnLog.md`)
+## 24. Every setting behind a generated helper class, applied by delayed handlers (a change request) -- C++ side done, work stopped; waits for the reporter's decisions (see `docs/HandsOnLog.md`)
 
 **From the build session, started** (passed on 2026-10-07 18:10; its log,
 entry 24, has the method and the inventory):
@@ -1857,6 +1857,47 @@ entry 24, has the method and the inventory):
   - Still to do: Part's import/export settings, Import, Material, Start,
     CAM, Assembly, a few small modules; the Python-only modules wait on the
     reporter's answer to question 1.
+- **Passed on 2026-10-08 06:55: the C++ side is DONE and work has stopped.
+  The entry now waits for the reporter's decisions.** Nothing pushed (116
+  commits ahead of origin), nothing restaged.
+  - The reporter to the build session, 2026-10-08: "Give me a summary of the
+    current status. I think we haven't planned this properly", then
+    "Continue finish material part. Next session we go through the list and
+    make all the decisions".
+  - **The list to go through next session** is
+    `..\dl\handson\2026-10-08\entry24-decisions.md`, written by the build
+    session, answerable by a letter and a number ("A3 no: page's value",
+    "B7 revert", "C1 Python door"), each line naming its commit:
+    - A, 28 defaults it chose where a preference page and the program
+      disagreed -- the decisions (a) to (m) noted above are among them;
+    - B, 23 behaviours put right on the way;
+    - C, 5 questions never answered: C1 a way into the registry from Python
+      for the Python-only modules (BIM, Draft, AddonManager, the Python
+      settings of Fem and CAM, the DXF options; about 300 keys), or leave
+      them out of the omni search; C2 state keys (window sizes, recent
+      lists, last directories, first-run flags) left out of the list -- keep
+      it so; C3 a change applied at once where that is cheap and through a
+      delayed handler where it is not, or every change delayed; C4 is entry
+      24 done with the C++ side, the Python-only modules becoming an entry
+      of their own once C1 is answered; C5 review before push -- 116 commits
+      ahead of origin, one push or grouped or squashed first (the cycles
+      commit `35a3bd898` goes first);
+    - D, 16 findings measured or read and NOT fixed.
+    That file supersedes the questions 1 to 3 and the decisions (a) to (m)
+    as they are listed in this entry: answer there, by its letters.
+  - Commits since the last note: `632fc1bb30` (Part and Import, the STEP
+    and IGES settings, 26); `a4d495b72e` (the omni search never listed the
+    settings of a module loaded after its first use); `b823244541`
+    (Assembly, Points, Fem, Mesh, Spreadsheet; the generator escapes string
+    defaults; opening the preferences with Fem loaded stored a setting);
+    `cafb223d59` (Start, CAM; CAM's feed rate warning was always
+    suppressed); `f71b8365ab` (Material); `4e7b2e18b7` (the log). About
+    1170 settings are listed now.
+  - The full suites, 2026-10-08 06:20: C++ 784 of 784; Python 3385 with the
+    2 known `TestThickness` failures.
+  - **Not to be started meanwhile**, by the build session's own account:
+    the Python-only modules of this entry (they wait on C1), and entries
+    25, 28, 29, 30, 35, 36, 37 and 40.
 - **Three questions for the reporter, NOT ANSWERED YET** (log, entry 24, "To
   decide"):
   1. Modules written in Python only -- BIM, Draft, AddonManager, parts of CAM
