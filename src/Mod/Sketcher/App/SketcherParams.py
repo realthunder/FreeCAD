@@ -36,8 +36,8 @@ ParamPath = 'User parameter:BaseApp/Preferences/Mod/Sketcher'
 ClassDoc = 'Convenient class to obtain the settings of the Sketcher'
 
 # The settings of the group itself, and below them those of its
-# sub-groups. SolverAdvanced and the keys the Sketcher keeps in
-# Preferences/View are not here yet. Not listed, because the program keeps
+# sub-groups and those the Sketcher keeps in Preferences/View.
+# SolverAdvanced is not here yet. Not listed, because the program keeps
 # them for itself:
 # which sections of the task panel are expanded, the last values of the
 # polygon and array dialogs, the width of the datum dialog. The class lives
@@ -433,6 +433,121 @@ Params = [
         title = "Element list icon size",
         doc = "Size in pixels of the icons in the element list of the sketch task\n"
               "panel. 16 to 128. Takes effect the next time a sketch is edited."),
+
+    # ------------------------------------------------------------------
+    # The keys the Sketcher keeps in Preferences/View, the 3D view's group.
+    # A colour's default is what the Appearance page shows for it; the
+    # sketch used to take it from a constant of its own, which was the
+    # same colour to within a step or two of rounding in four cases, and
+    # another colour in one: external geometry, where the page is the one
+    # that was changed. Not listed, because their default is the height of
+    # the application's font: EditSketcherFontSize and ConstraintSymbolSize.
+    # CursorCrosshairColor is on the Sketcher's page and read by Gui.
+    ParamString('EditSketcherFontName', '', subpath='User parameter:BaseApp/Preferences/View',
+        title = "Sketch label font",
+        doc = "Font family of the dimension labels in sketch edit mode. Empty\n"
+              "means the labels' own font. Applies at once."),
+    ParamInt('ConstraintIconLabelsPerLine', 10, subpath='User parameter:BaseApp/Preferences/View',
+        title = "Constraint numbers per line",
+        doc = "How many constraint numbers fit on one line of the label beside a\n"
+              "combined constraint icon, 1 to 100."),
+    ParamInt('ConstraintIconLabelLines', 3, subpath='User parameter:BaseApp/Preferences/View',
+        title = "Lines of constraint numbers",
+        doc = "Largest number of lines of the label beside a combined constraint\n"
+              "icon, 1 to 100."),
+    ParamFloat('ViewScalingFactor', 1.0, subpath='User parameter:BaseApp/Preferences/View',
+        title = "Sketch view scale factor",
+        doc = "Scale factor of the fixed pixel sizes of sketch edit mode (points,\n"
+              "constraint lines), 0.5 to 5. Applies at once."),
+    ParamInt('SegmentsPerGeometry', 50, subpath='User parameter:BaseApp/Preferences/View',
+        title = "Segments per geometry",
+        doc = "Number of straight segments a curve is drawn with in sketch edit\n"
+              "mode. Applies at once."),
+    ParamHex('CursorTextColor', 0x0000FFFF, subpath='User parameter:BaseApp/Preferences/View', proxy=ParamColor(transparency=False),
+        title = "Cursor text colour",
+        doc = "Colour of the coordinate text shown at the cursor in sketch edit\n"
+              "mode. Takes effect the next time a sketch is edited."),
+    ParamHex('SketchEdgeColor', 0xFFFFFFFF, subpath='User parameter:BaseApp/Preferences/View', proxy=ParamColor(transparency=False),
+        title = "Sketch edge colour",
+        doc = "Colour of a sketch's edges outside edit mode, for sketches that\n"
+              "use automatic colours. Applies at once."),
+    ParamHex('SketchVertexColor', 0xFFFFFFFF, subpath='User parameter:BaseApp/Preferences/View', proxy=ParamColor(transparency=False),
+        title = "Sketch vertex colour",
+        doc = "Colour of a sketch's vertices outside edit mode, for sketches that\n"
+              "use automatic colours. Applies at once."),
+    ParamHex('EditedEdgeColor', 0xFFFFFFFF, subpath='User parameter:BaseApp/Preferences/View', proxy=ParamColor(transparency=False),
+        title = "Geometry colour",
+        doc = "Colour of normal geometry in sketch edit mode. Applies at once."),
+    ParamHex('ConstructionColor', 0x0000DCFF, subpath='User parameter:BaseApp/Preferences/View', proxy=ParamColor(transparency=False),
+        title = "Construction geometry colour",
+        doc = "Colour of construction geometry in sketch edit mode. Applies at\n"
+              "once."),
+    ParamHex('InternalAlignedGeoColor', 0xB2B27FFF, subpath='User parameter:BaseApp/Preferences/View', proxy=ParamColor(transparency=False),
+        title = "Internal alignment colour",
+        doc = "Colour of internal alignment geometry in sketch edit mode. Applies\n"
+              "at once."),
+    ParamHex('FullyConstraintElementColor', 0x80D0A0FF, subpath='User parameter:BaseApp/Preferences/View', proxy=ParamColor(transparency=False),
+        title = "Fully constrained geometry colour",
+        doc = "Colour of a fully constrained element of normal geometry in sketch\n"
+              "edit mode. Applies at once."),
+    ParamHex('FullyConstraintConstructionElementColor', 0x8FA9FDFF, subpath='User parameter:BaseApp/Preferences/View', proxy=ParamColor(transparency=False),
+        title = "Fully constrained construction colour",
+        doc = "Colour of a fully constrained element of construction geometry in\n"
+              "sketch edit mode. Applies at once."),
+    ParamHex('FullyConstraintInternalAlignmentColor', 0xDEDEC8FF, subpath='User parameter:BaseApp/Preferences/View', proxy=ParamColor(transparency=False),
+        title = "Fully constrained internal alignment colour",
+        doc = "Colour of a fully constrained element of internal alignment\n"
+              "geometry in sketch edit mode. Applies at once."),
+    ParamHex('InvalidSketchColor', 0xFF6D00FF, subpath='User parameter:BaseApp/Preferences/View', proxy=ParamColor(transparency=False),
+        title = "Invalid sketch colour",
+        doc = "Colour of the geometry of a sketch with conflicting or redundant\n"
+              "constraints in sketch edit mode. Applies at once."),
+    ParamHex('FullyConstrainedColor', 0x00FF00FF, subpath='User parameter:BaseApp/Preferences/View', proxy=ParamColor(transparency=False),
+        title = "Fully constrained sketch colour",
+        doc = "Colour of the geometry of a fully constrained sketch in sketch\n"
+              "edit mode. Applies at once."),
+    ParamHex('ConstrainedDimColor', 0xFF2600FF, subpath='User parameter:BaseApp/Preferences/View', proxy=ParamColor(transparency=False),
+        title = "Dimensional constraint colour",
+        doc = "Colour of dimensional constraints in sketch edit mode. Applies at\n"
+              "once."),
+    ParamHex('ConstrainedIcoColor', 0xFF2600FF, subpath='User parameter:BaseApp/Preferences/View', proxy=ParamColor(transparency=False),
+        title = "Constraint symbol colour",
+        doc = "Colour of constraint symbols in sketch edit mode. Applies at once."),
+    ParamHex('NonDrivingConstrDimColor', 0x0026FFFF, subpath='User parameter:BaseApp/Preferences/View', proxy=ParamColor(transparency=False),
+        title = "Reference constraint colour",
+        doc = "Colour of reference (non-driving) dimensional constraints in\n"
+              "sketch edit mode. Applies at once."),
+    ParamHex('ExprBasedConstrDimColor', 0xFF7F26FF, subpath='User parameter:BaseApp/Preferences/View', proxy=ParamColor(transparency=False),
+        title = "Expression constraint colour",
+        doc = "Colour of dimensional constraints whose value is an expression in\n"
+              "sketch edit mode. Applies at once."),
+    ParamHex('DeactivatedConstrDimColor', 0xCCCCCCFF, subpath='User parameter:BaseApp/Preferences/View', proxy=ParamColor(transparency=False),
+        title = "Deactivated constraint colour",
+        doc = "Colour of deactivated constraints in sketch edit mode. Applies at\n"
+              "once."),
+    ParamHex('ExternalColor', 0xCC3399FF, subpath='User parameter:BaseApp/Preferences/View', proxy=ParamColor(transparency=False),
+        title = "External geometry colour",
+        doc = "Colour of external geometry in sketch edit mode. Applies at once."),
+    ParamHex('ExternalDefiningColor', 0xCC3399FF, subpath='User parameter:BaseApp/Preferences/View', proxy=ParamColor(transparency=False),
+        title = "Defining external geometry colour",
+        doc = "Colour of defining external geometry in sketch edit mode. Applies\n"
+              "at once."),
+    ParamHex('InformationColor', 0x00FF00FF, subpath='User parameter:BaseApp/Preferences/View', proxy=ParamColor(transparency=False),
+        title = "Information layer colour",
+        doc = "Colour of the information layer -- B-spline polygons, combs, hints\n"
+              "-- in sketch edit mode. Applies at once."),
+    ParamHex('FrozenColor', 0x7FFFFFFF, subpath='User parameter:BaseApp/Preferences/View', proxy=ParamColor(transparency=False),
+        title = "Frozen external geometry colour",
+        doc = "Colour of frozen external geometry in sketch edit mode. Applies at\n"
+              "once."),
+    ParamHex('DetachedColor', 0x1C7F1CFF, subpath='User parameter:BaseApp/Preferences/View', proxy=ParamColor(transparency=False),
+        title = "Detached external geometry colour",
+        doc = "Colour of detached external geometry in sketch edit mode. Applies\n"
+              "at once."),
+    ParamHex('MissingColor', 0x7F00FFFF, subpath='User parameter:BaseApp/Preferences/View', proxy=ParamColor(transparency=False),
+        title = "Missing external geometry colour",
+        doc = "Colour of external geometry whose source is missing in sketch edit\n"
+              "mode. Applies at once."),
 ]
 
 def declare():

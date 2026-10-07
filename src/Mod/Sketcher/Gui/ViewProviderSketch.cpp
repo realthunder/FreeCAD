@@ -5964,7 +5964,7 @@ void ViewProviderSketch::initParams()
 {
     //Add scaling to Constraint icons
     ParameterGrp::handle hGrp = App::GetApplication().GetParameterGroupByPath("User parameter:BaseApp/Preferences/View");
-    double viewScalingFactor = hGrp->GetFloat("ViewScalingFactor", 1.0);
+    double viewScalingFactor = hGrp->GetFloat("ViewScalingFactor", Sketcher::SketcherParams::defaultViewScalingFactor());
     viewScalingFactor = Base::clamp<double>(viewScalingFactor, 0.5, 5.0);
     int markersize = hGrp->GetInt("MarkerSize", Gui::ViewParams::defaultMarkerSize());
 
@@ -5998,14 +5998,14 @@ void ViewProviderSketch::initParams()
             dpi = 96.0;
         edit->labelFontSize = std::lround(sketcherfontSize * dpr * 72.0 / dpi);
         // upstream b9a89bada1
-        edit->labelFontName = hGrp->GetASCII("EditSketcherFontName", "");
+        edit->labelFontName = hGrp->GetASCII("EditSketcherFontName", Sketcher::SketcherParams::defaultEditSketcherFontName().c_str());
         // A constraint symbol has a size of its own (upstream eef738b312,
         // dc22fb4b9b): the application font's height until it is set. It
         // was 0.8 of the label font's size and followed that.
         long symbolSize = hGrp->GetInt("ConstraintSymbolSize", defaultFontSizePixels);
         edit->constraintIconSize = std::lround(std::max(6L, symbolSize) * dpr);
-        edit->iconLabelsPerLine = std::max(1L, hGrp->GetInt("ConstraintIconLabelsPerLine", 10));
-        edit->iconLabelLines = std::max(1L, hGrp->GetInt("ConstraintIconLabelLines", 3));
+        edit->iconLabelsPerLine = std::max(1L, hGrp->GetInt("ConstraintIconLabelsPerLine", Sketcher::SketcherParams::defaultConstraintIconLabelsPerLine()));
+        edit->iconLabelLines = std::max(1L, hGrp->GetInt("ConstraintIconLabelLines", Sketcher::SketcherParams::defaultConstraintIconLabelLines()));
 
         // Markers are bitmaps in a fixed set of sizes: scale, then take the
         // nearest one up, or the largest there is.
@@ -6081,71 +6081,71 @@ void ViewProviderSketch::initParams()
         defCurveMissingColor = (unsigned long)(CurveMissingColor.getPackedValue());
     }
     // set the curve color
-    color = hGrp->GetUnsigned("EditedEdgeColor", defCurveColor);
+    color = hGrp->GetUnsigned("EditedEdgeColor", Sketcher::SketcherParams::defaultEditedEdgeColor());
     CurveColor.setPackedValue((uint32_t)color, transparency);
     // set the construction curve color
-    color = hGrp->GetUnsigned("ConstructionColor", defCurveDraftColor);
+    color = hGrp->GetUnsigned("ConstructionColor", Sketcher::SketcherParams::defaultConstructionColor());
     CurveDraftColor.setPackedValue((uint32_t)color, transparency);
     // set the internal alignment geometry color
-    color = hGrp->GetUnsigned("InternalAlignedGeoColor", defInternalAlignedGeoColor);
+    color = hGrp->GetUnsigned("InternalAlignedGeoColor", Sketcher::SketcherParams::defaultInternalAlignedGeoColor());
     InternalAlignedGeoColor.setPackedValue((uint32_t)color, transparency);
     // set the color for a fully constrained element
-    color = hGrp->GetUnsigned("FullyConstraintElementColor", defFullyConstraintElementColor);
+    color = hGrp->GetUnsigned("FullyConstraintElementColor", Sketcher::SketcherParams::defaultFullyConstraintElementColor());
     FullyConstraintElementColor.setPackedValue((uint32_t)color, transparency);
     // set the color for fully constrained construction element
-    color = hGrp->GetUnsigned("FullyConstraintConstructionElementColor", defFullyConstraintConstructionElementColor);
+    color = hGrp->GetUnsigned("FullyConstraintConstructionElementColor", Sketcher::SketcherParams::defaultFullyConstraintConstructionElementColor());
     FullyConstraintConstructionElementColor.setPackedValue((uint32_t)color, transparency);
     // set the color for fully constrained internal alignment element
-    color = hGrp->GetUnsigned("FullyConstraintInternalAlignmentColor", defFullyConstraintInternalAlignmentColor);
+    color = hGrp->GetUnsigned("FullyConstraintInternalAlignmentColor", Sketcher::SketcherParams::defaultFullyConstraintInternalAlignmentColor());
     FullyConstraintInternalAlignmentColor.setPackedValue((uint32_t)color, transparency);
     // set the color for fully constrained construction points
     // set the cross lines color
     //CrossColorV.setPackedValue((uint32_t)color, transparency);
     //CrossColorH.setPackedValue((uint32_t)color, transparency);
     // set invalid sketch color
-    color = hGrp->GetUnsigned("InvalidSketchColor", defInvalidSketchColor);
+    color = hGrp->GetUnsigned("InvalidSketchColor", Sketcher::SketcherParams::defaultInvalidSketchColor());
     InvalidSketchColor.setPackedValue((uint32_t)color, transparency);
     // set the fully constrained color
-    color = hGrp->GetUnsigned("FullyConstrainedColor", defFullyConstrainedColor);
+    color = hGrp->GetUnsigned("FullyConstrainedColor", Sketcher::SketcherParams::defaultFullyConstrainedColor());
     FullyConstrainedColor.setPackedValue((uint32_t)color, transparency);
     // set the constraint dimension color
-    color = hGrp->GetUnsigned("ConstrainedDimColor", defConstrDimColor);
+    color = hGrp->GetUnsigned("ConstrainedDimColor", Sketcher::SketcherParams::defaultConstrainedDimColor());
     ConstrDimColor.setPackedValue((uint32_t)color, transparency);
     // set the constraint color
-    color = hGrp->GetUnsigned("ConstrainedIcoColor", defConstrIcoColor);
+    color = hGrp->GetUnsigned("ConstrainedIcoColor", Sketcher::SketcherParams::defaultConstrainedIcoColor());
     ConstrIcoColor.setPackedValue((uint32_t)color, transparency);
     // set non-driving constraint color
-    color = hGrp->GetUnsigned("NonDrivingConstrDimColor", defNonDrivingConstrDimColor);
+    color = hGrp->GetUnsigned("NonDrivingConstrDimColor", Sketcher::SketcherParams::defaultNonDrivingConstrDimColor());
     NonDrivingConstrDimColor.setPackedValue((uint32_t)color, transparency);
     // set expression based constraint color
-    color = hGrp->GetUnsigned("ExprBasedConstrDimColor", defExprBasedConstrDimColor);
+    color = hGrp->GetUnsigned("ExprBasedConstrDimColor", Sketcher::SketcherParams::defaultExprBasedConstrDimColor());
     ExprBasedConstrDimColor.setPackedValue((uint32_t)color, transparency);
     // set expression based constraint color
-    color = hGrp->GetUnsigned("DeactivatedConstrDimColor", defDeactivatedConstrDimColor );
+    color = hGrp->GetUnsigned("DeactivatedConstrDimColor", Sketcher::SketcherParams::defaultDeactivatedConstrDimColor());
     DeactivatedConstrDimColor.setPackedValue((uint32_t)color, transparency);
 
     // set the external geometry color
-    color = hGrp->GetUnsigned("ExternalColor", defCurveExternalColor);
+    color = hGrp->GetUnsigned("ExternalColor", Sketcher::SketcherParams::defaultExternalColor());
     CurveExternalColor.setPackedValue((uint32_t)color, transparency);
 
     static const unsigned long defCurveExternalDefiningColor =
         (unsigned long)(CurveExternalDefiningColor.getPackedValue());
-    color = hGrp->GetUnsigned("ExternalDefiningColor", defCurveExternalDefiningColor);
+    color = hGrp->GetUnsigned("ExternalDefiningColor", Sketcher::SketcherParams::defaultExternalDefiningColor());
     CurveExternalDefiningColor.setPackedValue((uint32_t)color, transparency);
 
     // the information layer: B-spline polygons, combs, the hints
     static const unsigned long defInformationColor =
         (unsigned long)(InformationColor.getPackedValue());
-    color = hGrp->GetUnsigned("InformationColor", defInformationColor);
+    color = hGrp->GetUnsigned("InformationColor", Sketcher::SketcherParams::defaultInformationColor());
     InformationColor.setPackedValue((uint32_t)color, transparency);
 
-    color = hGrp->GetUnsigned("FrozenColor", defCurveFrozenColor);
+    color = hGrp->GetUnsigned("FrozenColor", Sketcher::SketcherParams::defaultFrozenColor());
     CurveFrozenColor.setPackedValue((uint32_t)color, transparency);
 
-    color = hGrp->GetUnsigned("DetachedColor", defCurveDetachedColor);
+    color = hGrp->GetUnsigned("DetachedColor", Sketcher::SketcherParams::defaultDetachedColor());
     CurveDetachedColor.setPackedValue((uint32_t)color, transparency);
 
-    color = hGrp->GetUnsigned("MissingColor", defCurveMissingColor);
+    color = hGrp->GetUnsigned("MissingColor", Sketcher::SketcherParams::defaultMissingColor());
     CurveMissingColor.setPackedValue((uint32_t)color, transparency);
 
     // set the highlight color
@@ -6262,7 +6262,7 @@ void ViewProviderSketch::draw(bool temp /*=false*/, bool rebuildinformationlayer
     // end information layer
 
     ParameterGrp::handle hGrp = App::GetApplication().GetParameterGroupByPath("User parameter:BaseApp/Preferences/View");
-    int stdcountsegments = hGrp->GetInt("SegmentsPerGeometry", 50);
+    int stdcountsegments = hGrp->GetInt("SegmentsPerGeometry", Sketcher::SketcherParams::defaultSegmentsPerGeometry());
     // value cannot be smaller than 3
     if (stdcountsegments < 3)
         stdcountsegments = 3;
@@ -9857,7 +9857,7 @@ void ViewProviderSketch::createEditInventorNodes(void)
     ParameterGrp::handle hGrp = App::GetApplication().GetParameterGroupByPath("User parameter:BaseApp/Preferences/View");
     float transparency;
     SbColor cursorTextColor(0,0,1);
-    cursorTextColor.setPackedValue((uint32_t)hGrp->GetUnsigned("CursorTextColor", cursorTextColor.getPackedValue()), transparency);
+    cursorTextColor.setPackedValue((uint32_t)hGrp->GetUnsigned("CursorTextColor", Sketcher::SketcherParams::defaultCursorTextColor()), transparency);
 
     // What a tool shows while it works -- the curve being drawn, its
     // markers, the hints, the cursor's coordinates -- and the copies a

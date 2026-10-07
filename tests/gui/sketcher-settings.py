@@ -7,12 +7,15 @@ starts with (internal faces, arc fitting, B-splines of external geometry,
 the history level), the constraint list's switches, and how dimensions and
 cursor coordinates are written. Of the sub-groups: the edit view and the
 grid (General), the line styles (View), the dimension tools, the tool bar
-choices, snapping. SolverAdvanced and the keys the Sketcher keeps in
-Preferences/View are not done yet. The Sketcher's pages are held to the
-definitions by preferences-ok-keeps-defaults.py, which named two of them:
-"Use system decimals" is on to the program and was shown off by the
+choices, snapping. And 27 keys the Sketcher keeps in Preferences/View:
+its label font, a few sizes, and the colours of a sketch in and out of
+edit. SolverAdvanced is not done yet. The Sketcher's pages are held to
+the definitions by preferences-ok-keeps-defaults.py, which named three of
+them: "Use system decimals" is on to the program and was shown off by the
 Display page, and OK stored off; the internal face colour was one step
-more opaque on the Appearance page than the program draws it.
+more opaque on the Appearance page than the program draws it; and the
+page showed external geometry in another colour (204,51,115) than the
+program draws it in (204,51,153), and OK stored the page's.
 
 Claims:
 
@@ -29,7 +32,9 @@ Claims:
     the key shows it;
   - a sketch made with the Grid page's spacing stored as 25 mm has a grid
     of 25 mm (the page stores the number GridSize; a new sketch read the
-    text Hist0, which nothing writes any more, and stayed at 10 mm).
+    text Hist0, which nothing writes any more, and stayed at 10 mm);
+  - "/param external geometry colour" lists the colour, in the 3D view's
+    group where the Sketcher keeps it.
 
 Scored against the tree before the change: see the commit message.
 """
@@ -148,6 +153,10 @@ def run():
         usual = doc.addObject("Sketcher::SketchObject", "SketchGrid10").ViewObject.GridSize.Value
         check("a sketch made with the page's grid spacing stored as 25 has 25, one made without the key 10",
               abs(wide - 25.0) < 1e-9 and abs(usual - 10.0) < 1e-9, (wide, usual))
+
+        rows = param_rows("external geometry colour")
+        check("the omni search lists the external geometry colour, kept in the 3D view's group",
+              any(r.endswith("Preferences/View/ExternalColor") for r in rows), rows[:6])
     except Exception:
         note("FAIL the test ran | " + traceback.format_exc().replace("\n", " | "))
     finally:

@@ -119,7 +119,11 @@ def definitions():
                     # is not its name (CheckGeometry/AutoRun).
                     where = group[len(PREFIX):]
                     sub = getattr(prm, "subpath", "")
-                    if sub and not sub.startswith("User parameter:"):
+                    if sub.startswith(PREFIX):
+                        # ... or in another group altogether (the Sketcher's
+                        # colours are in the 3D view's)
+                        where = sub[len(PREFIX):]
+                    elif sub and not sub.startswith("User parameter:"):
                         where += "/" + sub
                     key = getattr(prm, "param_name", "") or prm.name
                     found[(where, key)] = (mod.ClassName, prm._default, KIND.get(prm.Type))

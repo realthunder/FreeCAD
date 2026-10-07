@@ -561,7 +561,7 @@ void SketcherSettingsDisplay::saveSettings()
     if (ui->fontBoxSketcherFontName->currentFont().family() != loadedFontFamily
         || !App::GetApplication()
                 .GetParameterGroupByPath("User parameter:BaseApp/Preferences/View")
-                ->GetASCII("EditSketcherFontName", "")
+                ->GetASCII("EditSketcherFontName", Sketcher::SketcherParams::defaultEditSketcherFontName().c_str())
                 .empty()) {
         ui->fontBoxSketcherFontName->onSave();
     }
@@ -726,7 +726,7 @@ QColor SketcherSettingsDisplay::getSketcherBackgroundColor()
 QColor SketcherSettingsDisplay::getSketcherConstraintColor()
 {
     auto parameters = App::GetApplication().GetUserParameter().GetGroup("BaseApp/Preferences/View");
-    uint32_t constraintColor = parameters->GetUnsigned("ConstrainedDimColor", 0x000000FF);
+    uint32_t constraintColor = parameters->GetUnsigned("ConstrainedDimColor", Sketcher::SketcherParams::defaultConstrainedDimColor());
 
     return QColor((constraintColor >> 24) & 0xFF,
                   (constraintColor >> 16) & 0xFF,

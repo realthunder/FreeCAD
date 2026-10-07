@@ -1252,6 +1252,354 @@ public:
     static const char *docElementIconSize();
     //@}
 
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter EditSketcherFontName
+    ///
+    /// Font family of the dimension labels in sketch edit mode. Empty
+    /// means the labels' own font. Applies at once.
+    static const std::string & getEditSketcherFontName();
+    static const std::string & defaultEditSketcherFontName();
+    static void removeEditSketcherFontName();
+    static void setEditSketcherFontName(const std::string &v);
+    static const char *docEditSketcherFontName();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter ConstraintIconLabelsPerLine
+    ///
+    /// How many constraint numbers fit on one line of the label beside a
+    /// combined constraint icon, 1 to 100.
+    static const long & getConstraintIconLabelsPerLine();
+    static const long & defaultConstraintIconLabelsPerLine();
+    static void removeConstraintIconLabelsPerLine();
+    static void setConstraintIconLabelsPerLine(const long &v);
+    static const char *docConstraintIconLabelsPerLine();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter ConstraintIconLabelLines
+    ///
+    /// Largest number of lines of the label beside a combined constraint
+    /// icon, 1 to 100.
+    static const long & getConstraintIconLabelLines();
+    static const long & defaultConstraintIconLabelLines();
+    static void removeConstraintIconLabelLines();
+    static void setConstraintIconLabelLines(const long &v);
+    static const char *docConstraintIconLabelLines();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter ViewScalingFactor
+    ///
+    /// Scale factor of the fixed pixel sizes of sketch edit mode (points,
+    /// constraint lines), 0.5 to 5. Applies at once.
+    static const double & getViewScalingFactor();
+    static const double & defaultViewScalingFactor();
+    static void removeViewScalingFactor();
+    static void setViewScalingFactor(const double &v);
+    static const char *docViewScalingFactor();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter SegmentsPerGeometry
+    ///
+    /// Number of straight segments a curve is drawn with in sketch edit
+    /// mode. Applies at once.
+    static const long & getSegmentsPerGeometry();
+    static const long & defaultSegmentsPerGeometry();
+    static void removeSegmentsPerGeometry();
+    static void setSegmentsPerGeometry(const long &v);
+    static const char *docSegmentsPerGeometry();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter CursorTextColor
+    ///
+    /// Colour of the coordinate text shown at the cursor in sketch edit
+    /// mode. Takes effect the next time a sketch is edited.
+    static const unsigned long & getCursorTextColor();
+    static const unsigned long & defaultCursorTextColor();
+    static void removeCursorTextColor();
+    static void setCursorTextColor(const unsigned long &v);
+    static const char *docCursorTextColor();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter SketchEdgeColor
+    ///
+    /// Colour of a sketch's edges outside edit mode, for sketches that
+    /// use automatic colours. Applies at once.
+    static const unsigned long & getSketchEdgeColor();
+    static const unsigned long & defaultSketchEdgeColor();
+    static void removeSketchEdgeColor();
+    static void setSketchEdgeColor(const unsigned long &v);
+    static const char *docSketchEdgeColor();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter SketchVertexColor
+    ///
+    /// Colour of a sketch's vertices outside edit mode, for sketches that
+    /// use automatic colours. Applies at once.
+    static const unsigned long & getSketchVertexColor();
+    static const unsigned long & defaultSketchVertexColor();
+    static void removeSketchVertexColor();
+    static void setSketchVertexColor(const unsigned long &v);
+    static const char *docSketchVertexColor();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter EditedEdgeColor
+    ///
+    /// Colour of normal geometry in sketch edit mode. Applies at once.
+    static const unsigned long & getEditedEdgeColor();
+    static const unsigned long & defaultEditedEdgeColor();
+    static void removeEditedEdgeColor();
+    static void setEditedEdgeColor(const unsigned long &v);
+    static const char *docEditedEdgeColor();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter ConstructionColor
+    ///
+    /// Colour of construction geometry in sketch edit mode. Applies at
+    /// once.
+    static const unsigned long & getConstructionColor();
+    static const unsigned long & defaultConstructionColor();
+    static void removeConstructionColor();
+    static void setConstructionColor(const unsigned long &v);
+    static const char *docConstructionColor();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter InternalAlignedGeoColor
+    ///
+    /// Colour of internal alignment geometry in sketch edit mode. Applies
+    /// at once.
+    static const unsigned long & getInternalAlignedGeoColor();
+    static const unsigned long & defaultInternalAlignedGeoColor();
+    static void removeInternalAlignedGeoColor();
+    static void setInternalAlignedGeoColor(const unsigned long &v);
+    static const char *docInternalAlignedGeoColor();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter FullyConstraintElementColor
+    ///
+    /// Colour of a fully constrained element of normal geometry in sketch
+    /// edit mode. Applies at once.
+    static const unsigned long & getFullyConstraintElementColor();
+    static const unsigned long & defaultFullyConstraintElementColor();
+    static void removeFullyConstraintElementColor();
+    static void setFullyConstraintElementColor(const unsigned long &v);
+    static const char *docFullyConstraintElementColor();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter FullyConstraintConstructionElementColor
+    ///
+    /// Colour of a fully constrained element of construction geometry in
+    /// sketch edit mode. Applies at once.
+    static const unsigned long & getFullyConstraintConstructionElementColor();
+    static const unsigned long & defaultFullyConstraintConstructionElementColor();
+    static void removeFullyConstraintConstructionElementColor();
+    static void setFullyConstraintConstructionElementColor(const unsigned long &v);
+    static const char *docFullyConstraintConstructionElementColor();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter FullyConstraintInternalAlignmentColor
+    ///
+    /// Colour of a fully constrained element of internal alignment
+    /// geometry in sketch edit mode. Applies at once.
+    static const unsigned long & getFullyConstraintInternalAlignmentColor();
+    static const unsigned long & defaultFullyConstraintInternalAlignmentColor();
+    static void removeFullyConstraintInternalAlignmentColor();
+    static void setFullyConstraintInternalAlignmentColor(const unsigned long &v);
+    static const char *docFullyConstraintInternalAlignmentColor();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter InvalidSketchColor
+    ///
+    /// Colour of the geometry of a sketch with conflicting or redundant
+    /// constraints in sketch edit mode. Applies at once.
+    static const unsigned long & getInvalidSketchColor();
+    static const unsigned long & defaultInvalidSketchColor();
+    static void removeInvalidSketchColor();
+    static void setInvalidSketchColor(const unsigned long &v);
+    static const char *docInvalidSketchColor();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter FullyConstrainedColor
+    ///
+    /// Colour of the geometry of a fully constrained sketch in sketch
+    /// edit mode. Applies at once.
+    static const unsigned long & getFullyConstrainedColor();
+    static const unsigned long & defaultFullyConstrainedColor();
+    static void removeFullyConstrainedColor();
+    static void setFullyConstrainedColor(const unsigned long &v);
+    static const char *docFullyConstrainedColor();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter ConstrainedDimColor
+    ///
+    /// Colour of dimensional constraints in sketch edit mode. Applies at
+    /// once.
+    static const unsigned long & getConstrainedDimColor();
+    static const unsigned long & defaultConstrainedDimColor();
+    static void removeConstrainedDimColor();
+    static void setConstrainedDimColor(const unsigned long &v);
+    static const char *docConstrainedDimColor();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter ConstrainedIcoColor
+    ///
+    /// Colour of constraint symbols in sketch edit mode. Applies at once.
+    static const unsigned long & getConstrainedIcoColor();
+    static const unsigned long & defaultConstrainedIcoColor();
+    static void removeConstrainedIcoColor();
+    static void setConstrainedIcoColor(const unsigned long &v);
+    static const char *docConstrainedIcoColor();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter NonDrivingConstrDimColor
+    ///
+    /// Colour of reference (non-driving) dimensional constraints in
+    /// sketch edit mode. Applies at once.
+    static const unsigned long & getNonDrivingConstrDimColor();
+    static const unsigned long & defaultNonDrivingConstrDimColor();
+    static void removeNonDrivingConstrDimColor();
+    static void setNonDrivingConstrDimColor(const unsigned long &v);
+    static const char *docNonDrivingConstrDimColor();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter ExprBasedConstrDimColor
+    ///
+    /// Colour of dimensional constraints whose value is an expression in
+    /// sketch edit mode. Applies at once.
+    static const unsigned long & getExprBasedConstrDimColor();
+    static const unsigned long & defaultExprBasedConstrDimColor();
+    static void removeExprBasedConstrDimColor();
+    static void setExprBasedConstrDimColor(const unsigned long &v);
+    static const char *docExprBasedConstrDimColor();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter DeactivatedConstrDimColor
+    ///
+    /// Colour of deactivated constraints in sketch edit mode. Applies at
+    /// once.
+    static const unsigned long & getDeactivatedConstrDimColor();
+    static const unsigned long & defaultDeactivatedConstrDimColor();
+    static void removeDeactivatedConstrDimColor();
+    static void setDeactivatedConstrDimColor(const unsigned long &v);
+    static const char *docDeactivatedConstrDimColor();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter ExternalColor
+    ///
+    /// Colour of external geometry in sketch edit mode. Applies at once.
+    static const unsigned long & getExternalColor();
+    static const unsigned long & defaultExternalColor();
+    static void removeExternalColor();
+    static void setExternalColor(const unsigned long &v);
+    static const char *docExternalColor();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter ExternalDefiningColor
+    ///
+    /// Colour of defining external geometry in sketch edit mode. Applies
+    /// at once.
+    static const unsigned long & getExternalDefiningColor();
+    static const unsigned long & defaultExternalDefiningColor();
+    static void removeExternalDefiningColor();
+    static void setExternalDefiningColor(const unsigned long &v);
+    static const char *docExternalDefiningColor();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter InformationColor
+    ///
+    /// Colour of the information layer -- B-spline polygons, combs, hints
+    /// -- in sketch edit mode. Applies at once.
+    static const unsigned long & getInformationColor();
+    static const unsigned long & defaultInformationColor();
+    static void removeInformationColor();
+    static void setInformationColor(const unsigned long &v);
+    static const char *docInformationColor();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter FrozenColor
+    ///
+    /// Colour of frozen external geometry in sketch edit mode. Applies at
+    /// once.
+    static const unsigned long & getFrozenColor();
+    static const unsigned long & defaultFrozenColor();
+    static void removeFrozenColor();
+    static void setFrozenColor(const unsigned long &v);
+    static const char *docFrozenColor();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter DetachedColor
+    ///
+    /// Colour of detached external geometry in sketch edit mode. Applies
+    /// at once.
+    static const unsigned long & getDetachedColor();
+    static const unsigned long & defaultDetachedColor();
+    static void removeDetachedColor();
+    static void setDetachedColor(const unsigned long &v);
+    static const char *docDetachedColor();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter MissingColor
+    ///
+    /// Colour of external geometry whose source is missing in sketch edit
+    /// mode. Applies at once.
+    static const unsigned long & getMissingColor();
+    static const unsigned long & defaultMissingColor();
+    static void removeMissingColor();
+    static void setMissingColor(const unsigned long &v);
+    static const char *docMissingColor();
+    //@}
+
 // Auto generated code (Tools/params_utils.py:179)
 }; // class SketcherParams
 } // namespace Sketcher

@@ -326,7 +326,7 @@ void CurveConverter::updateCurvedEdgeCountSegmentsParameter()
     ParameterGrp::handle hGrp = App::GetApplication().GetParameterGroupByPath(
         "User parameter:BaseApp/Preferences/View"
     );
-    int stdcountsegments = hGrp->GetInt("SegmentsPerGeometry", 50);
+    int stdcountsegments = hGrp->GetInt("SegmentsPerGeometry", Sketcher::SketcherParams::defaultSegmentsPerGeometry());
 
     // value cannot be smaller than 6
     if (stdcountsegments < 6) {

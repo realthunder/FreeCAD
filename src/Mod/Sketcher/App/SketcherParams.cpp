@@ -133,13 +133,40 @@ public:
     bool SnapToGrid;
     double SnapAngle;
     long ElementIconSize;
+    std::string EditSketcherFontName;
+    long ConstraintIconLabelsPerLine;
+    long ConstraintIconLabelLines;
+    double ViewScalingFactor;
+    long SegmentsPerGeometry;
+    unsigned long CursorTextColor;
+    unsigned long SketchEdgeColor;
+    unsigned long SketchVertexColor;
+    unsigned long EditedEdgeColor;
+    unsigned long ConstructionColor;
+    unsigned long InternalAlignedGeoColor;
+    unsigned long FullyConstraintElementColor;
+    unsigned long FullyConstraintConstructionElementColor;
+    unsigned long FullyConstraintInternalAlignmentColor;
+    unsigned long InvalidSketchColor;
+    unsigned long FullyConstrainedColor;
+    unsigned long ConstrainedDimColor;
+    unsigned long ConstrainedIcoColor;
+    unsigned long NonDrivingConstrDimColor;
+    unsigned long ExprBasedConstrDimColor;
+    unsigned long DeactivatedConstrDimColor;
+    unsigned long ExternalColor;
+    unsigned long ExternalDefiningColor;
+    unsigned long InformationColor;
+    unsigned long FrozenColor;
+    unsigned long DetachedColor;
+    unsigned long MissingColor;
 
     // Auto generated code (Tools/params_utils.py:254)
     SketcherParamsP() {
         handle = App::GetApplication().GetParameterGroupByPath("User parameter:BaseApp/Preferences/Mod/Sketcher");
         handle->Attach(this);
 
-        subHandles.resize(9);
+        subHandles.resize(10);
         subHandles[0] = handle->GetGroup("General");
         subHandles[0]->Attach(this);
         subHandles[1] = handle->GetGroup("General/GridSize");
@@ -158,6 +185,8 @@ public:
         subHandles[7]->Attach(this);
         subHandles[8] = handle->GetGroup("Elements");
         subHandles[8]->Attach(this);
+        subHandles[9] = App::GetApplication().GetParameterGroupByPath("User parameter:BaseApp/Preferences/View");
+        subHandles[9]->Attach(this);
         AutoRecompute = this->handle->GetBool("AutoRecompute", false);
         funcs["AutoRecompute"] = &SketcherParamsP::updateAutoRecompute;
         AutoRemoveRedundants = this->handle->GetBool("AutoRemoveRedundants", false);
@@ -340,6 +369,60 @@ public:
         funcs["SnapAngle"] = &SketcherParamsP::updateSnapAngle;
         ElementIconSize = this->subHandles[8]->GetInt("ElementIconSize", 32);
         funcs["ElementIconSize"] = &SketcherParamsP::updateElementIconSize;
+        EditSketcherFontName = this->subHandles[9]->GetASCII("EditSketcherFontName", "");
+        funcs["EditSketcherFontName"] = &SketcherParamsP::updateEditSketcherFontName;
+        ConstraintIconLabelsPerLine = this->subHandles[9]->GetInt("ConstraintIconLabelsPerLine", 10);
+        funcs["ConstraintIconLabelsPerLine"] = &SketcherParamsP::updateConstraintIconLabelsPerLine;
+        ConstraintIconLabelLines = this->subHandles[9]->GetInt("ConstraintIconLabelLines", 3);
+        funcs["ConstraintIconLabelLines"] = &SketcherParamsP::updateConstraintIconLabelLines;
+        ViewScalingFactor = this->subHandles[9]->GetFloat("ViewScalingFactor", 1.0);
+        funcs["ViewScalingFactor"] = &SketcherParamsP::updateViewScalingFactor;
+        SegmentsPerGeometry = this->subHandles[9]->GetInt("SegmentsPerGeometry", 50);
+        funcs["SegmentsPerGeometry"] = &SketcherParamsP::updateSegmentsPerGeometry;
+        CursorTextColor = this->subHandles[9]->GetUnsigned("CursorTextColor", 0x0000FFFF);
+        funcs["CursorTextColor"] = &SketcherParamsP::updateCursorTextColor;
+        SketchEdgeColor = this->subHandles[9]->GetUnsigned("SketchEdgeColor", 0xFFFFFFFF);
+        funcs["SketchEdgeColor"] = &SketcherParamsP::updateSketchEdgeColor;
+        SketchVertexColor = this->subHandles[9]->GetUnsigned("SketchVertexColor", 0xFFFFFFFF);
+        funcs["SketchVertexColor"] = &SketcherParamsP::updateSketchVertexColor;
+        EditedEdgeColor = this->subHandles[9]->GetUnsigned("EditedEdgeColor", 0xFFFFFFFF);
+        funcs["EditedEdgeColor"] = &SketcherParamsP::updateEditedEdgeColor;
+        ConstructionColor = this->subHandles[9]->GetUnsigned("ConstructionColor", 0x0000DCFF);
+        funcs["ConstructionColor"] = &SketcherParamsP::updateConstructionColor;
+        InternalAlignedGeoColor = this->subHandles[9]->GetUnsigned("InternalAlignedGeoColor", 0xB2B27FFF);
+        funcs["InternalAlignedGeoColor"] = &SketcherParamsP::updateInternalAlignedGeoColor;
+        FullyConstraintElementColor = this->subHandles[9]->GetUnsigned("FullyConstraintElementColor", 0x80D0A0FF);
+        funcs["FullyConstraintElementColor"] = &SketcherParamsP::updateFullyConstraintElementColor;
+        FullyConstraintConstructionElementColor = this->subHandles[9]->GetUnsigned("FullyConstraintConstructionElementColor", 0x8FA9FDFF);
+        funcs["FullyConstraintConstructionElementColor"] = &SketcherParamsP::updateFullyConstraintConstructionElementColor;
+        FullyConstraintInternalAlignmentColor = this->subHandles[9]->GetUnsigned("FullyConstraintInternalAlignmentColor", 0xDEDEC8FF);
+        funcs["FullyConstraintInternalAlignmentColor"] = &SketcherParamsP::updateFullyConstraintInternalAlignmentColor;
+        InvalidSketchColor = this->subHandles[9]->GetUnsigned("InvalidSketchColor", 0xFF6D00FF);
+        funcs["InvalidSketchColor"] = &SketcherParamsP::updateInvalidSketchColor;
+        FullyConstrainedColor = this->subHandles[9]->GetUnsigned("FullyConstrainedColor", 0x00FF00FF);
+        funcs["FullyConstrainedColor"] = &SketcherParamsP::updateFullyConstrainedColor;
+        ConstrainedDimColor = this->subHandles[9]->GetUnsigned("ConstrainedDimColor", 0xFF2600FF);
+        funcs["ConstrainedDimColor"] = &SketcherParamsP::updateConstrainedDimColor;
+        ConstrainedIcoColor = this->subHandles[9]->GetUnsigned("ConstrainedIcoColor", 0xFF2600FF);
+        funcs["ConstrainedIcoColor"] = &SketcherParamsP::updateConstrainedIcoColor;
+        NonDrivingConstrDimColor = this->subHandles[9]->GetUnsigned("NonDrivingConstrDimColor", 0x0026FFFF);
+        funcs["NonDrivingConstrDimColor"] = &SketcherParamsP::updateNonDrivingConstrDimColor;
+        ExprBasedConstrDimColor = this->subHandles[9]->GetUnsigned("ExprBasedConstrDimColor", 0xFF7F26FF);
+        funcs["ExprBasedConstrDimColor"] = &SketcherParamsP::updateExprBasedConstrDimColor;
+        DeactivatedConstrDimColor = this->subHandles[9]->GetUnsigned("DeactivatedConstrDimColor", 0xCCCCCCFF);
+        funcs["DeactivatedConstrDimColor"] = &SketcherParamsP::updateDeactivatedConstrDimColor;
+        ExternalColor = this->subHandles[9]->GetUnsigned("ExternalColor", 0xCC3399FF);
+        funcs["ExternalColor"] = &SketcherParamsP::updateExternalColor;
+        ExternalDefiningColor = this->subHandles[9]->GetUnsigned("ExternalDefiningColor", 0xCC3399FF);
+        funcs["ExternalDefiningColor"] = &SketcherParamsP::updateExternalDefiningColor;
+        InformationColor = this->subHandles[9]->GetUnsigned("InformationColor", 0x00FF00FF);
+        funcs["InformationColor"] = &SketcherParamsP::updateInformationColor;
+        FrozenColor = this->subHandles[9]->GetUnsigned("FrozenColor", 0x7FFFFFFF);
+        funcs["FrozenColor"] = &SketcherParamsP::updateFrozenColor;
+        DetachedColor = this->subHandles[9]->GetUnsigned("DetachedColor", 0x1C7F1CFF);
+        funcs["DetachedColor"] = &SketcherParamsP::updateDetachedColor;
+        MissingColor = this->subHandles[9]->GetUnsigned("MissingColor", 0x7F00FFFF);
+        funcs["MissingColor"] = &SketcherParamsP::updateMissingColor;
     }
 
     // Auto generated code (Tools/params_utils.py:284)
@@ -719,6 +802,114 @@ public:
     // Auto generated code (Tools/params_utils.py:314)
     static void updateElementIconSize(SketcherParamsP *self) {
         self->ElementIconSize = self->subHandles[8]->GetInt("ElementIconSize", 32);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateEditSketcherFontName(SketcherParamsP *self) {
+        self->EditSketcherFontName = self->subHandles[9]->GetASCII("EditSketcherFontName", "");
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateConstraintIconLabelsPerLine(SketcherParamsP *self) {
+        self->ConstraintIconLabelsPerLine = self->subHandles[9]->GetInt("ConstraintIconLabelsPerLine", 10);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateConstraintIconLabelLines(SketcherParamsP *self) {
+        self->ConstraintIconLabelLines = self->subHandles[9]->GetInt("ConstraintIconLabelLines", 3);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateViewScalingFactor(SketcherParamsP *self) {
+        self->ViewScalingFactor = self->subHandles[9]->GetFloat("ViewScalingFactor", 1.0);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateSegmentsPerGeometry(SketcherParamsP *self) {
+        self->SegmentsPerGeometry = self->subHandles[9]->GetInt("SegmentsPerGeometry", 50);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateCursorTextColor(SketcherParamsP *self) {
+        self->CursorTextColor = self->subHandles[9]->GetUnsigned("CursorTextColor", 0x0000FFFF);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateSketchEdgeColor(SketcherParamsP *self) {
+        self->SketchEdgeColor = self->subHandles[9]->GetUnsigned("SketchEdgeColor", 0xFFFFFFFF);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateSketchVertexColor(SketcherParamsP *self) {
+        self->SketchVertexColor = self->subHandles[9]->GetUnsigned("SketchVertexColor", 0xFFFFFFFF);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateEditedEdgeColor(SketcherParamsP *self) {
+        self->EditedEdgeColor = self->subHandles[9]->GetUnsigned("EditedEdgeColor", 0xFFFFFFFF);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateConstructionColor(SketcherParamsP *self) {
+        self->ConstructionColor = self->subHandles[9]->GetUnsigned("ConstructionColor", 0x0000DCFF);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateInternalAlignedGeoColor(SketcherParamsP *self) {
+        self->InternalAlignedGeoColor = self->subHandles[9]->GetUnsigned("InternalAlignedGeoColor", 0xB2B27FFF);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateFullyConstraintElementColor(SketcherParamsP *self) {
+        self->FullyConstraintElementColor = self->subHandles[9]->GetUnsigned("FullyConstraintElementColor", 0x80D0A0FF);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateFullyConstraintConstructionElementColor(SketcherParamsP *self) {
+        self->FullyConstraintConstructionElementColor = self->subHandles[9]->GetUnsigned("FullyConstraintConstructionElementColor", 0x8FA9FDFF);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateFullyConstraintInternalAlignmentColor(SketcherParamsP *self) {
+        self->FullyConstraintInternalAlignmentColor = self->subHandles[9]->GetUnsigned("FullyConstraintInternalAlignmentColor", 0xDEDEC8FF);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateInvalidSketchColor(SketcherParamsP *self) {
+        self->InvalidSketchColor = self->subHandles[9]->GetUnsigned("InvalidSketchColor", 0xFF6D00FF);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateFullyConstrainedColor(SketcherParamsP *self) {
+        self->FullyConstrainedColor = self->subHandles[9]->GetUnsigned("FullyConstrainedColor", 0x00FF00FF);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateConstrainedDimColor(SketcherParamsP *self) {
+        self->ConstrainedDimColor = self->subHandles[9]->GetUnsigned("ConstrainedDimColor", 0xFF2600FF);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateConstrainedIcoColor(SketcherParamsP *self) {
+        self->ConstrainedIcoColor = self->subHandles[9]->GetUnsigned("ConstrainedIcoColor", 0xFF2600FF);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateNonDrivingConstrDimColor(SketcherParamsP *self) {
+        self->NonDrivingConstrDimColor = self->subHandles[9]->GetUnsigned("NonDrivingConstrDimColor", 0x0026FFFF);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateExprBasedConstrDimColor(SketcherParamsP *self) {
+        self->ExprBasedConstrDimColor = self->subHandles[9]->GetUnsigned("ExprBasedConstrDimColor", 0xFF7F26FF);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateDeactivatedConstrDimColor(SketcherParamsP *self) {
+        self->DeactivatedConstrDimColor = self->subHandles[9]->GetUnsigned("DeactivatedConstrDimColor", 0xCCCCCCFF);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateExternalColor(SketcherParamsP *self) {
+        self->ExternalColor = self->subHandles[9]->GetUnsigned("ExternalColor", 0xCC3399FF);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateExternalDefiningColor(SketcherParamsP *self) {
+        self->ExternalDefiningColor = self->subHandles[9]->GetUnsigned("ExternalDefiningColor", 0xCC3399FF);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateInformationColor(SketcherParamsP *self) {
+        self->InformationColor = self->subHandles[9]->GetUnsigned("InformationColor", 0x00FF00FF);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateFrozenColor(SketcherParamsP *self) {
+        self->FrozenColor = self->subHandles[9]->GetUnsigned("FrozenColor", 0x7FFFFFFF);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateDetachedColor(SketcherParamsP *self) {
+        self->DetachedColor = self->subHandles[9]->GetUnsigned("DetachedColor", 0x1C7F1CFF);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateMissingColor(SketcherParamsP *self) {
+        self->MissingColor = self->subHandles[9]->GetUnsigned("MissingColor", 0x7F00FFFF);
     }
 };
 
@@ -1101,6 +1292,155 @@ static const App::ParamRegistry::Registrar _SketcherParamsRegistrar({
         .setTitle("Element list icon size")
         .setDoc("Size in pixels of the icons in the element list of the sketch task\n"
 "panel. 16 to 128. Takes effect the next time a sketch is edited."),
+    App::ParamInfo("Sketcher", "SketcherParams", "User parameter:BaseApp/Preferences/View", "EditSketcherFontName", "EditSketcherFontName", App::ParamInfo::String, "")
+        .setTitle("Sketch label font")
+        .setDoc("Font family of the dimension labels in sketch edit mode. Empty\n"
+"means the labels' own font. Applies at once."),
+    App::ParamInfo("Sketcher", "SketcherParams", "User parameter:BaseApp/Preferences/View", "ConstraintIconLabelsPerLine", "ConstraintIconLabelsPerLine", App::ParamInfo::Int, 10)
+        .setTitle("Constraint numbers per line")
+        .setDoc("How many constraint numbers fit on one line of the label beside a\n"
+"combined constraint icon, 1 to 100."),
+    App::ParamInfo("Sketcher", "SketcherParams", "User parameter:BaseApp/Preferences/View", "ConstraintIconLabelLines", "ConstraintIconLabelLines", App::ParamInfo::Int, 3)
+        .setTitle("Lines of constraint numbers")
+        .setDoc("Largest number of lines of the label beside a combined constraint\n"
+"icon, 1 to 100."),
+    App::ParamInfo("Sketcher", "SketcherParams", "User parameter:BaseApp/Preferences/View", "ViewScalingFactor", "ViewScalingFactor", App::ParamInfo::Float, 1.0)
+        .setTitle("Sketch view scale factor")
+        .setDoc("Scale factor of the fixed pixel sizes of sketch edit mode (points,\n"
+"constraint lines), 0.5 to 5. Applies at once."),
+    App::ParamInfo("Sketcher", "SketcherParams", "User parameter:BaseApp/Preferences/View", "SegmentsPerGeometry", "SegmentsPerGeometry", App::ParamInfo::Int, 50)
+        .setTitle("Segments per geometry")
+        .setDoc("Number of straight segments a curve is drawn with in sketch edit\n"
+"mode. Applies at once."),
+    App::ParamInfo("Sketcher", "SketcherParams", "User parameter:BaseApp/Preferences/View", "CursorTextColor", "CursorTextColor", App::ParamInfo::Hex, 0x0000FFFF)
+        .setTitle("Cursor text colour")
+        .setDoc("Colour of the coordinate text shown at the cursor in sketch edit\n"
+"mode. Takes effect the next time a sketch is edited.")
+        .setProxy("Color")
+        .setTransparency(false),
+    App::ParamInfo("Sketcher", "SketcherParams", "User parameter:BaseApp/Preferences/View", "SketchEdgeColor", "SketchEdgeColor", App::ParamInfo::Hex, 0xFFFFFFFF)
+        .setTitle("Sketch edge colour")
+        .setDoc("Colour of a sketch's edges outside edit mode, for sketches that\n"
+"use automatic colours. Applies at once.")
+        .setProxy("Color")
+        .setTransparency(false),
+    App::ParamInfo("Sketcher", "SketcherParams", "User parameter:BaseApp/Preferences/View", "SketchVertexColor", "SketchVertexColor", App::ParamInfo::Hex, 0xFFFFFFFF)
+        .setTitle("Sketch vertex colour")
+        .setDoc("Colour of a sketch's vertices outside edit mode, for sketches that\n"
+"use automatic colours. Applies at once.")
+        .setProxy("Color")
+        .setTransparency(false),
+    App::ParamInfo("Sketcher", "SketcherParams", "User parameter:BaseApp/Preferences/View", "EditedEdgeColor", "EditedEdgeColor", App::ParamInfo::Hex, 0xFFFFFFFF)
+        .setTitle("Geometry colour")
+        .setDoc("Colour of normal geometry in sketch edit mode. Applies at once.")
+        .setProxy("Color")
+        .setTransparency(false),
+    App::ParamInfo("Sketcher", "SketcherParams", "User parameter:BaseApp/Preferences/View", "ConstructionColor", "ConstructionColor", App::ParamInfo::Hex, 0x0000DCFF)
+        .setTitle("Construction geometry colour")
+        .setDoc("Colour of construction geometry in sketch edit mode. Applies at\n"
+"once.")
+        .setProxy("Color")
+        .setTransparency(false),
+    App::ParamInfo("Sketcher", "SketcherParams", "User parameter:BaseApp/Preferences/View", "InternalAlignedGeoColor", "InternalAlignedGeoColor", App::ParamInfo::Hex, 0xB2B27FFF)
+        .setTitle("Internal alignment colour")
+        .setDoc("Colour of internal alignment geometry in sketch edit mode. Applies\n"
+"at once.")
+        .setProxy("Color")
+        .setTransparency(false),
+    App::ParamInfo("Sketcher", "SketcherParams", "User parameter:BaseApp/Preferences/View", "FullyConstraintElementColor", "FullyConstraintElementColor", App::ParamInfo::Hex, 0x80D0A0FF)
+        .setTitle("Fully constrained geometry colour")
+        .setDoc("Colour of a fully constrained element of normal geometry in sketch\n"
+"edit mode. Applies at once.")
+        .setProxy("Color")
+        .setTransparency(false),
+    App::ParamInfo("Sketcher", "SketcherParams", "User parameter:BaseApp/Preferences/View", "FullyConstraintConstructionElementColor", "FullyConstraintConstructionElementColor", App::ParamInfo::Hex, 0x8FA9FDFF)
+        .setTitle("Fully constrained construction colour")
+        .setDoc("Colour of a fully constrained element of construction geometry in\n"
+"sketch edit mode. Applies at once.")
+        .setProxy("Color")
+        .setTransparency(false),
+    App::ParamInfo("Sketcher", "SketcherParams", "User parameter:BaseApp/Preferences/View", "FullyConstraintInternalAlignmentColor", "FullyConstraintInternalAlignmentColor", App::ParamInfo::Hex, 0xDEDEC8FF)
+        .setTitle("Fully constrained internal alignment colour")
+        .setDoc("Colour of a fully constrained element of internal alignment\n"
+"geometry in sketch edit mode. Applies at once.")
+        .setProxy("Color")
+        .setTransparency(false),
+    App::ParamInfo("Sketcher", "SketcherParams", "User parameter:BaseApp/Preferences/View", "InvalidSketchColor", "InvalidSketchColor", App::ParamInfo::Hex, 0xFF6D00FF)
+        .setTitle("Invalid sketch colour")
+        .setDoc("Colour of the geometry of a sketch with conflicting or redundant\n"
+"constraints in sketch edit mode. Applies at once.")
+        .setProxy("Color")
+        .setTransparency(false),
+    App::ParamInfo("Sketcher", "SketcherParams", "User parameter:BaseApp/Preferences/View", "FullyConstrainedColor", "FullyConstrainedColor", App::ParamInfo::Hex, 0x00FF00FF)
+        .setTitle("Fully constrained sketch colour")
+        .setDoc("Colour of the geometry of a fully constrained sketch in sketch\n"
+"edit mode. Applies at once.")
+        .setProxy("Color")
+        .setTransparency(false),
+    App::ParamInfo("Sketcher", "SketcherParams", "User parameter:BaseApp/Preferences/View", "ConstrainedDimColor", "ConstrainedDimColor", App::ParamInfo::Hex, 0xFF2600FF)
+        .setTitle("Dimensional constraint colour")
+        .setDoc("Colour of dimensional constraints in sketch edit mode. Applies at\n"
+"once.")
+        .setProxy("Color")
+        .setTransparency(false),
+    App::ParamInfo("Sketcher", "SketcherParams", "User parameter:BaseApp/Preferences/View", "ConstrainedIcoColor", "ConstrainedIcoColor", App::ParamInfo::Hex, 0xFF2600FF)
+        .setTitle("Constraint symbol colour")
+        .setDoc("Colour of constraint symbols in sketch edit mode. Applies at once.")
+        .setProxy("Color")
+        .setTransparency(false),
+    App::ParamInfo("Sketcher", "SketcherParams", "User parameter:BaseApp/Preferences/View", "NonDrivingConstrDimColor", "NonDrivingConstrDimColor", App::ParamInfo::Hex, 0x0026FFFF)
+        .setTitle("Reference constraint colour")
+        .setDoc("Colour of reference (non-driving) dimensional constraints in\n"
+"sketch edit mode. Applies at once.")
+        .setProxy("Color")
+        .setTransparency(false),
+    App::ParamInfo("Sketcher", "SketcherParams", "User parameter:BaseApp/Preferences/View", "ExprBasedConstrDimColor", "ExprBasedConstrDimColor", App::ParamInfo::Hex, 0xFF7F26FF)
+        .setTitle("Expression constraint colour")
+        .setDoc("Colour of dimensional constraints whose value is an expression in\n"
+"sketch edit mode. Applies at once.")
+        .setProxy("Color")
+        .setTransparency(false),
+    App::ParamInfo("Sketcher", "SketcherParams", "User parameter:BaseApp/Preferences/View", "DeactivatedConstrDimColor", "DeactivatedConstrDimColor", App::ParamInfo::Hex, 0xCCCCCCFF)
+        .setTitle("Deactivated constraint colour")
+        .setDoc("Colour of deactivated constraints in sketch edit mode. Applies at\n"
+"once.")
+        .setProxy("Color")
+        .setTransparency(false),
+    App::ParamInfo("Sketcher", "SketcherParams", "User parameter:BaseApp/Preferences/View", "ExternalColor", "ExternalColor", App::ParamInfo::Hex, 0xCC3399FF)
+        .setTitle("External geometry colour")
+        .setDoc("Colour of external geometry in sketch edit mode. Applies at once.")
+        .setProxy("Color")
+        .setTransparency(false),
+    App::ParamInfo("Sketcher", "SketcherParams", "User parameter:BaseApp/Preferences/View", "ExternalDefiningColor", "ExternalDefiningColor", App::ParamInfo::Hex, 0xCC3399FF)
+        .setTitle("Defining external geometry colour")
+        .setDoc("Colour of defining external geometry in sketch edit mode. Applies\n"
+"at once.")
+        .setProxy("Color")
+        .setTransparency(false),
+    App::ParamInfo("Sketcher", "SketcherParams", "User parameter:BaseApp/Preferences/View", "InformationColor", "InformationColor", App::ParamInfo::Hex, 0x00FF00FF)
+        .setTitle("Information layer colour")
+        .setDoc("Colour of the information layer -- B-spline polygons, combs, hints\n"
+"-- in sketch edit mode. Applies at once.")
+        .setProxy("Color")
+        .setTransparency(false),
+    App::ParamInfo("Sketcher", "SketcherParams", "User parameter:BaseApp/Preferences/View", "FrozenColor", "FrozenColor", App::ParamInfo::Hex, 0x7FFFFFFF)
+        .setTitle("Frozen external geometry colour")
+        .setDoc("Colour of frozen external geometry in sketch edit mode. Applies at\n"
+"once.")
+        .setProxy("Color")
+        .setTransparency(false),
+    App::ParamInfo("Sketcher", "SketcherParams", "User parameter:BaseApp/Preferences/View", "DetachedColor", "DetachedColor", App::ParamInfo::Hex, 0x1C7F1CFF)
+        .setTitle("Detached external geometry colour")
+        .setDoc("Colour of detached external geometry in sketch edit mode. Applies\n"
+"at once.")
+        .setProxy("Color")
+        .setTransparency(false),
+    App::ParamInfo("Sketcher", "SketcherParams", "User parameter:BaseApp/Preferences/View", "MissingColor", "MissingColor", App::ParamInfo::Hex, 0x7F00FFFF)
+        .setTitle("Missing external geometry colour")
+        .setDoc("Colour of external geometry whose source is missing in sketch edit\n"
+"mode. Applies at once.")
+        .setProxy("Color")
+        .setTransparency(false),
 });
 
 // Auto generated code (Tools/params_utils.py:368)
@@ -3744,5 +4084,785 @@ void SketcherParams::setElementIconSize(const long &v) {
 // Auto generated code (Tools/params_utils.py:431)
 void SketcherParams::removeElementIconSize() {
     instance()->subHandles[8]->RemoveInt("ElementIconSize");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *SketcherParams::docEditSketcherFontName() {
+    return QT_TRANSLATE_NOOP("SketcherParams",
+"Font family of the dimension labels in sketch edit mode. Empty\n"
+"means the labels' own font. Applies at once.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const std::string & SketcherParams::getEditSketcherFontName() {
+    return instance()->EditSketcherFontName;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const std::string & SketcherParams::defaultEditSketcherFontName() {
+    const static std::string def = "";
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void SketcherParams::setEditSketcherFontName(const std::string &v) {
+    instance()->subHandles[9]->SetASCII("EditSketcherFontName",v);
+    instance()->EditSketcherFontName = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void SketcherParams::removeEditSketcherFontName() {
+    instance()->subHandles[9]->RemoveASCII("EditSketcherFontName");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *SketcherParams::docConstraintIconLabelsPerLine() {
+    return QT_TRANSLATE_NOOP("SketcherParams",
+"How many constraint numbers fit on one line of the label beside a\n"
+"combined constraint icon, 1 to 100.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const long & SketcherParams::getConstraintIconLabelsPerLine() {
+    return instance()->ConstraintIconLabelsPerLine;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const long & SketcherParams::defaultConstraintIconLabelsPerLine() {
+    const static long def = 10;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void SketcherParams::setConstraintIconLabelsPerLine(const long &v) {
+    instance()->subHandles[9]->SetInt("ConstraintIconLabelsPerLine",v);
+    instance()->ConstraintIconLabelsPerLine = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void SketcherParams::removeConstraintIconLabelsPerLine() {
+    instance()->subHandles[9]->RemoveInt("ConstraintIconLabelsPerLine");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *SketcherParams::docConstraintIconLabelLines() {
+    return QT_TRANSLATE_NOOP("SketcherParams",
+"Largest number of lines of the label beside a combined constraint\n"
+"icon, 1 to 100.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const long & SketcherParams::getConstraintIconLabelLines() {
+    return instance()->ConstraintIconLabelLines;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const long & SketcherParams::defaultConstraintIconLabelLines() {
+    const static long def = 3;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void SketcherParams::setConstraintIconLabelLines(const long &v) {
+    instance()->subHandles[9]->SetInt("ConstraintIconLabelLines",v);
+    instance()->ConstraintIconLabelLines = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void SketcherParams::removeConstraintIconLabelLines() {
+    instance()->subHandles[9]->RemoveInt("ConstraintIconLabelLines");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *SketcherParams::docViewScalingFactor() {
+    return QT_TRANSLATE_NOOP("SketcherParams",
+"Scale factor of the fixed pixel sizes of sketch edit mode (points,\n"
+"constraint lines), 0.5 to 5. Applies at once.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const double & SketcherParams::getViewScalingFactor() {
+    return instance()->ViewScalingFactor;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const double & SketcherParams::defaultViewScalingFactor() {
+    const static double def = 1.0;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void SketcherParams::setViewScalingFactor(const double &v) {
+    instance()->subHandles[9]->SetFloat("ViewScalingFactor",v);
+    instance()->ViewScalingFactor = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void SketcherParams::removeViewScalingFactor() {
+    instance()->subHandles[9]->RemoveFloat("ViewScalingFactor");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *SketcherParams::docSegmentsPerGeometry() {
+    return QT_TRANSLATE_NOOP("SketcherParams",
+"Number of straight segments a curve is drawn with in sketch edit\n"
+"mode. Applies at once.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const long & SketcherParams::getSegmentsPerGeometry() {
+    return instance()->SegmentsPerGeometry;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const long & SketcherParams::defaultSegmentsPerGeometry() {
+    const static long def = 50;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void SketcherParams::setSegmentsPerGeometry(const long &v) {
+    instance()->subHandles[9]->SetInt("SegmentsPerGeometry",v);
+    instance()->SegmentsPerGeometry = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void SketcherParams::removeSegmentsPerGeometry() {
+    instance()->subHandles[9]->RemoveInt("SegmentsPerGeometry");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *SketcherParams::docCursorTextColor() {
+    return QT_TRANSLATE_NOOP("SketcherParams",
+"Colour of the coordinate text shown at the cursor in sketch edit\n"
+"mode. Takes effect the next time a sketch is edited.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const unsigned long & SketcherParams::getCursorTextColor() {
+    return instance()->CursorTextColor;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const unsigned long & SketcherParams::defaultCursorTextColor() {
+    const static unsigned long def = 0x0000FFFF;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void SketcherParams::setCursorTextColor(const unsigned long &v) {
+    instance()->subHandles[9]->SetUnsigned("CursorTextColor",v);
+    instance()->CursorTextColor = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void SketcherParams::removeCursorTextColor() {
+    instance()->subHandles[9]->RemoveUnsigned("CursorTextColor");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *SketcherParams::docSketchEdgeColor() {
+    return QT_TRANSLATE_NOOP("SketcherParams",
+"Colour of a sketch's edges outside edit mode, for sketches that\n"
+"use automatic colours. Applies at once.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const unsigned long & SketcherParams::getSketchEdgeColor() {
+    return instance()->SketchEdgeColor;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const unsigned long & SketcherParams::defaultSketchEdgeColor() {
+    const static unsigned long def = 0xFFFFFFFF;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void SketcherParams::setSketchEdgeColor(const unsigned long &v) {
+    instance()->subHandles[9]->SetUnsigned("SketchEdgeColor",v);
+    instance()->SketchEdgeColor = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void SketcherParams::removeSketchEdgeColor() {
+    instance()->subHandles[9]->RemoveUnsigned("SketchEdgeColor");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *SketcherParams::docSketchVertexColor() {
+    return QT_TRANSLATE_NOOP("SketcherParams",
+"Colour of a sketch's vertices outside edit mode, for sketches that\n"
+"use automatic colours. Applies at once.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const unsigned long & SketcherParams::getSketchVertexColor() {
+    return instance()->SketchVertexColor;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const unsigned long & SketcherParams::defaultSketchVertexColor() {
+    const static unsigned long def = 0xFFFFFFFF;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void SketcherParams::setSketchVertexColor(const unsigned long &v) {
+    instance()->subHandles[9]->SetUnsigned("SketchVertexColor",v);
+    instance()->SketchVertexColor = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void SketcherParams::removeSketchVertexColor() {
+    instance()->subHandles[9]->RemoveUnsigned("SketchVertexColor");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *SketcherParams::docEditedEdgeColor() {
+    return QT_TRANSLATE_NOOP("SketcherParams",
+"Colour of normal geometry in sketch edit mode. Applies at once.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const unsigned long & SketcherParams::getEditedEdgeColor() {
+    return instance()->EditedEdgeColor;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const unsigned long & SketcherParams::defaultEditedEdgeColor() {
+    const static unsigned long def = 0xFFFFFFFF;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void SketcherParams::setEditedEdgeColor(const unsigned long &v) {
+    instance()->subHandles[9]->SetUnsigned("EditedEdgeColor",v);
+    instance()->EditedEdgeColor = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void SketcherParams::removeEditedEdgeColor() {
+    instance()->subHandles[9]->RemoveUnsigned("EditedEdgeColor");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *SketcherParams::docConstructionColor() {
+    return QT_TRANSLATE_NOOP("SketcherParams",
+"Colour of construction geometry in sketch edit mode. Applies at\n"
+"once.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const unsigned long & SketcherParams::getConstructionColor() {
+    return instance()->ConstructionColor;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const unsigned long & SketcherParams::defaultConstructionColor() {
+    const static unsigned long def = 0x0000DCFF;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void SketcherParams::setConstructionColor(const unsigned long &v) {
+    instance()->subHandles[9]->SetUnsigned("ConstructionColor",v);
+    instance()->ConstructionColor = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void SketcherParams::removeConstructionColor() {
+    instance()->subHandles[9]->RemoveUnsigned("ConstructionColor");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *SketcherParams::docInternalAlignedGeoColor() {
+    return QT_TRANSLATE_NOOP("SketcherParams",
+"Colour of internal alignment geometry in sketch edit mode. Applies\n"
+"at once.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const unsigned long & SketcherParams::getInternalAlignedGeoColor() {
+    return instance()->InternalAlignedGeoColor;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const unsigned long & SketcherParams::defaultInternalAlignedGeoColor() {
+    const static unsigned long def = 0xB2B27FFF;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void SketcherParams::setInternalAlignedGeoColor(const unsigned long &v) {
+    instance()->subHandles[9]->SetUnsigned("InternalAlignedGeoColor",v);
+    instance()->InternalAlignedGeoColor = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void SketcherParams::removeInternalAlignedGeoColor() {
+    instance()->subHandles[9]->RemoveUnsigned("InternalAlignedGeoColor");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *SketcherParams::docFullyConstraintElementColor() {
+    return QT_TRANSLATE_NOOP("SketcherParams",
+"Colour of a fully constrained element of normal geometry in sketch\n"
+"edit mode. Applies at once.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const unsigned long & SketcherParams::getFullyConstraintElementColor() {
+    return instance()->FullyConstraintElementColor;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const unsigned long & SketcherParams::defaultFullyConstraintElementColor() {
+    const static unsigned long def = 0x80D0A0FF;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void SketcherParams::setFullyConstraintElementColor(const unsigned long &v) {
+    instance()->subHandles[9]->SetUnsigned("FullyConstraintElementColor",v);
+    instance()->FullyConstraintElementColor = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void SketcherParams::removeFullyConstraintElementColor() {
+    instance()->subHandles[9]->RemoveUnsigned("FullyConstraintElementColor");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *SketcherParams::docFullyConstraintConstructionElementColor() {
+    return QT_TRANSLATE_NOOP("SketcherParams",
+"Colour of a fully constrained element of construction geometry in\n"
+"sketch edit mode. Applies at once.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const unsigned long & SketcherParams::getFullyConstraintConstructionElementColor() {
+    return instance()->FullyConstraintConstructionElementColor;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const unsigned long & SketcherParams::defaultFullyConstraintConstructionElementColor() {
+    const static unsigned long def = 0x8FA9FDFF;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void SketcherParams::setFullyConstraintConstructionElementColor(const unsigned long &v) {
+    instance()->subHandles[9]->SetUnsigned("FullyConstraintConstructionElementColor",v);
+    instance()->FullyConstraintConstructionElementColor = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void SketcherParams::removeFullyConstraintConstructionElementColor() {
+    instance()->subHandles[9]->RemoveUnsigned("FullyConstraintConstructionElementColor");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *SketcherParams::docFullyConstraintInternalAlignmentColor() {
+    return QT_TRANSLATE_NOOP("SketcherParams",
+"Colour of a fully constrained element of internal alignment\n"
+"geometry in sketch edit mode. Applies at once.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const unsigned long & SketcherParams::getFullyConstraintInternalAlignmentColor() {
+    return instance()->FullyConstraintInternalAlignmentColor;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const unsigned long & SketcherParams::defaultFullyConstraintInternalAlignmentColor() {
+    const static unsigned long def = 0xDEDEC8FF;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void SketcherParams::setFullyConstraintInternalAlignmentColor(const unsigned long &v) {
+    instance()->subHandles[9]->SetUnsigned("FullyConstraintInternalAlignmentColor",v);
+    instance()->FullyConstraintInternalAlignmentColor = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void SketcherParams::removeFullyConstraintInternalAlignmentColor() {
+    instance()->subHandles[9]->RemoveUnsigned("FullyConstraintInternalAlignmentColor");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *SketcherParams::docInvalidSketchColor() {
+    return QT_TRANSLATE_NOOP("SketcherParams",
+"Colour of the geometry of a sketch with conflicting or redundant\n"
+"constraints in sketch edit mode. Applies at once.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const unsigned long & SketcherParams::getInvalidSketchColor() {
+    return instance()->InvalidSketchColor;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const unsigned long & SketcherParams::defaultInvalidSketchColor() {
+    const static unsigned long def = 0xFF6D00FF;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void SketcherParams::setInvalidSketchColor(const unsigned long &v) {
+    instance()->subHandles[9]->SetUnsigned("InvalidSketchColor",v);
+    instance()->InvalidSketchColor = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void SketcherParams::removeInvalidSketchColor() {
+    instance()->subHandles[9]->RemoveUnsigned("InvalidSketchColor");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *SketcherParams::docFullyConstrainedColor() {
+    return QT_TRANSLATE_NOOP("SketcherParams",
+"Colour of the geometry of a fully constrained sketch in sketch\n"
+"edit mode. Applies at once.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const unsigned long & SketcherParams::getFullyConstrainedColor() {
+    return instance()->FullyConstrainedColor;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const unsigned long & SketcherParams::defaultFullyConstrainedColor() {
+    const static unsigned long def = 0x00FF00FF;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void SketcherParams::setFullyConstrainedColor(const unsigned long &v) {
+    instance()->subHandles[9]->SetUnsigned("FullyConstrainedColor",v);
+    instance()->FullyConstrainedColor = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void SketcherParams::removeFullyConstrainedColor() {
+    instance()->subHandles[9]->RemoveUnsigned("FullyConstrainedColor");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *SketcherParams::docConstrainedDimColor() {
+    return QT_TRANSLATE_NOOP("SketcherParams",
+"Colour of dimensional constraints in sketch edit mode. Applies at\n"
+"once.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const unsigned long & SketcherParams::getConstrainedDimColor() {
+    return instance()->ConstrainedDimColor;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const unsigned long & SketcherParams::defaultConstrainedDimColor() {
+    const static unsigned long def = 0xFF2600FF;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void SketcherParams::setConstrainedDimColor(const unsigned long &v) {
+    instance()->subHandles[9]->SetUnsigned("ConstrainedDimColor",v);
+    instance()->ConstrainedDimColor = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void SketcherParams::removeConstrainedDimColor() {
+    instance()->subHandles[9]->RemoveUnsigned("ConstrainedDimColor");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *SketcherParams::docConstrainedIcoColor() {
+    return QT_TRANSLATE_NOOP("SketcherParams",
+"Colour of constraint symbols in sketch edit mode. Applies at once.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const unsigned long & SketcherParams::getConstrainedIcoColor() {
+    return instance()->ConstrainedIcoColor;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const unsigned long & SketcherParams::defaultConstrainedIcoColor() {
+    const static unsigned long def = 0xFF2600FF;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void SketcherParams::setConstrainedIcoColor(const unsigned long &v) {
+    instance()->subHandles[9]->SetUnsigned("ConstrainedIcoColor",v);
+    instance()->ConstrainedIcoColor = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void SketcherParams::removeConstrainedIcoColor() {
+    instance()->subHandles[9]->RemoveUnsigned("ConstrainedIcoColor");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *SketcherParams::docNonDrivingConstrDimColor() {
+    return QT_TRANSLATE_NOOP("SketcherParams",
+"Colour of reference (non-driving) dimensional constraints in\n"
+"sketch edit mode. Applies at once.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const unsigned long & SketcherParams::getNonDrivingConstrDimColor() {
+    return instance()->NonDrivingConstrDimColor;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const unsigned long & SketcherParams::defaultNonDrivingConstrDimColor() {
+    const static unsigned long def = 0x0026FFFF;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void SketcherParams::setNonDrivingConstrDimColor(const unsigned long &v) {
+    instance()->subHandles[9]->SetUnsigned("NonDrivingConstrDimColor",v);
+    instance()->NonDrivingConstrDimColor = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void SketcherParams::removeNonDrivingConstrDimColor() {
+    instance()->subHandles[9]->RemoveUnsigned("NonDrivingConstrDimColor");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *SketcherParams::docExprBasedConstrDimColor() {
+    return QT_TRANSLATE_NOOP("SketcherParams",
+"Colour of dimensional constraints whose value is an expression in\n"
+"sketch edit mode. Applies at once.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const unsigned long & SketcherParams::getExprBasedConstrDimColor() {
+    return instance()->ExprBasedConstrDimColor;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const unsigned long & SketcherParams::defaultExprBasedConstrDimColor() {
+    const static unsigned long def = 0xFF7F26FF;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void SketcherParams::setExprBasedConstrDimColor(const unsigned long &v) {
+    instance()->subHandles[9]->SetUnsigned("ExprBasedConstrDimColor",v);
+    instance()->ExprBasedConstrDimColor = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void SketcherParams::removeExprBasedConstrDimColor() {
+    instance()->subHandles[9]->RemoveUnsigned("ExprBasedConstrDimColor");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *SketcherParams::docDeactivatedConstrDimColor() {
+    return QT_TRANSLATE_NOOP("SketcherParams",
+"Colour of deactivated constraints in sketch edit mode. Applies at\n"
+"once.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const unsigned long & SketcherParams::getDeactivatedConstrDimColor() {
+    return instance()->DeactivatedConstrDimColor;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const unsigned long & SketcherParams::defaultDeactivatedConstrDimColor() {
+    const static unsigned long def = 0xCCCCCCFF;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void SketcherParams::setDeactivatedConstrDimColor(const unsigned long &v) {
+    instance()->subHandles[9]->SetUnsigned("DeactivatedConstrDimColor",v);
+    instance()->DeactivatedConstrDimColor = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void SketcherParams::removeDeactivatedConstrDimColor() {
+    instance()->subHandles[9]->RemoveUnsigned("DeactivatedConstrDimColor");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *SketcherParams::docExternalColor() {
+    return QT_TRANSLATE_NOOP("SketcherParams",
+"Colour of external geometry in sketch edit mode. Applies at once.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const unsigned long & SketcherParams::getExternalColor() {
+    return instance()->ExternalColor;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const unsigned long & SketcherParams::defaultExternalColor() {
+    const static unsigned long def = 0xCC3399FF;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void SketcherParams::setExternalColor(const unsigned long &v) {
+    instance()->subHandles[9]->SetUnsigned("ExternalColor",v);
+    instance()->ExternalColor = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void SketcherParams::removeExternalColor() {
+    instance()->subHandles[9]->RemoveUnsigned("ExternalColor");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *SketcherParams::docExternalDefiningColor() {
+    return QT_TRANSLATE_NOOP("SketcherParams",
+"Colour of defining external geometry in sketch edit mode. Applies\n"
+"at once.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const unsigned long & SketcherParams::getExternalDefiningColor() {
+    return instance()->ExternalDefiningColor;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const unsigned long & SketcherParams::defaultExternalDefiningColor() {
+    const static unsigned long def = 0xCC3399FF;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void SketcherParams::setExternalDefiningColor(const unsigned long &v) {
+    instance()->subHandles[9]->SetUnsigned("ExternalDefiningColor",v);
+    instance()->ExternalDefiningColor = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void SketcherParams::removeExternalDefiningColor() {
+    instance()->subHandles[9]->RemoveUnsigned("ExternalDefiningColor");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *SketcherParams::docInformationColor() {
+    return QT_TRANSLATE_NOOP("SketcherParams",
+"Colour of the information layer -- B-spline polygons, combs, hints\n"
+"-- in sketch edit mode. Applies at once.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const unsigned long & SketcherParams::getInformationColor() {
+    return instance()->InformationColor;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const unsigned long & SketcherParams::defaultInformationColor() {
+    const static unsigned long def = 0x00FF00FF;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void SketcherParams::setInformationColor(const unsigned long &v) {
+    instance()->subHandles[9]->SetUnsigned("InformationColor",v);
+    instance()->InformationColor = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void SketcherParams::removeInformationColor() {
+    instance()->subHandles[9]->RemoveUnsigned("InformationColor");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *SketcherParams::docFrozenColor() {
+    return QT_TRANSLATE_NOOP("SketcherParams",
+"Colour of frozen external geometry in sketch edit mode. Applies at\n"
+"once.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const unsigned long & SketcherParams::getFrozenColor() {
+    return instance()->FrozenColor;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const unsigned long & SketcherParams::defaultFrozenColor() {
+    const static unsigned long def = 0x7FFFFFFF;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void SketcherParams::setFrozenColor(const unsigned long &v) {
+    instance()->subHandles[9]->SetUnsigned("FrozenColor",v);
+    instance()->FrozenColor = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void SketcherParams::removeFrozenColor() {
+    instance()->subHandles[9]->RemoveUnsigned("FrozenColor");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *SketcherParams::docDetachedColor() {
+    return QT_TRANSLATE_NOOP("SketcherParams",
+"Colour of detached external geometry in sketch edit mode. Applies\n"
+"at once.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const unsigned long & SketcherParams::getDetachedColor() {
+    return instance()->DetachedColor;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const unsigned long & SketcherParams::defaultDetachedColor() {
+    const static unsigned long def = 0x1C7F1CFF;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void SketcherParams::setDetachedColor(const unsigned long &v) {
+    instance()->subHandles[9]->SetUnsigned("DetachedColor",v);
+    instance()->DetachedColor = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void SketcherParams::removeDetachedColor() {
+    instance()->subHandles[9]->RemoveUnsigned("DetachedColor");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *SketcherParams::docMissingColor() {
+    return QT_TRANSLATE_NOOP("SketcherParams",
+"Colour of external geometry whose source is missing in sketch edit\n"
+"mode. Applies at once.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const unsigned long & SketcherParams::getMissingColor() {
+    return instance()->MissingColor;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const unsigned long & SketcherParams::defaultMissingColor() {
+    const static unsigned long def = 0x7F00FFFF;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void SketcherParams::setMissingColor(const unsigned long &v) {
+    instance()->subHandles[9]->SetUnsigned("MissingColor",v);
+    instance()->MissingColor = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void SketcherParams::removeMissingColor() {
+    instance()->subHandles[9]->RemoveUnsigned("MissingColor");
 }
 //[[[end]]]
