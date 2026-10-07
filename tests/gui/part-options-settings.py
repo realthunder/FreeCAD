@@ -11,13 +11,25 @@ the generator handles since 0a94fb63c9. Reading them for that found:
     nothing writes: the box did nothing (from the code; nothing a script
     can see says how many threads the check ran in).
 
+The settings of the STEP and IGES translators followed: 13 of
+Mod/Part/General, IGES and STEP, and 13 of Mod/Import. They are read
+through three hand-written settings classes, which take their defaults
+from the definitions now. One page disagreed with what is written: a STEP
+file exported on a profile that never stored an author names 'Author',
+while the export page showed an empty field and stored that at OK. The
+definition is the writer's.
+
 Claims:
 
   - "/param geometry check in a single thread" lists the option of the
     sub-group CheckGeometry, and "/param refine model after boolean" the
     one of the sub-group Boolean;
   - a Part Fuse made with the Boolean refine switch on has Refine on, one
-    made without the key has it off.
+    made without the key has it off;
+  - "/param step header author" and "/param progressive import" list the
+    settings of Mod/Part/STEP and of Mod/Import;
+  - a STEP file exported with no author stored names 'Author', one
+    exported with an author and a company stored names them.
 
 Scored against the tree before the change: see the commit message.
 """
@@ -76,8 +88,18 @@ def param_rows(query):
     return rows
 
 
+def step_header(obj, Import, name):
+    """The FILE_NAME entity of the STEP file `obj` is exported to."""
+    path = os.path.join(OUT, name)
+    Import.export([obj], path)
+    text = open(path, "r", errors="replace").read()
+    start = text.index("FILE_NAME")
+    return " ".join(text[start:text.index(";", start)].split())
+
+
 def run():
     boolean = FreeCAD.ParamGet(PREFS + "Mod/Part/Boolean")
+    step = FreeCAD.ParamGet(PREFS + "Mod/Part/STEP")
     doc = None
     try:
         import Part  # noqa: F401  the modules register their settings when they are loaded
@@ -100,10 +122,34 @@ def run():
         off = doc.addObject("Part::Fuse", "FusePlain").Refine
         check("a Fuse made with the Boolean refine switch on has Refine on, one made without the key has it off",
               on is True and off is False, (on, off))
+
+        rows = param_rows("step header author")
+        check("the omni search lists the author of the STEP header",
+              any(r.endswith("Mod/Part/STEP/Author") for r in rows), rows[:6])
+        rows = param_rows("progressive import")
+        check("and the progressive import switch", any(r.endswith("Mod/Import/ProgressiveImport") for r in rows),
+              rows[:6])
+
+        import Import
+
+        box = doc.addObject("Part::Box", "Box")
+        doc.recompute()
+        plain = step_header(box, Import, "plain.step")
+        step.SetString("Author", "Entry24")
+        step.SetString("Company", "HandsOn")
+        settle(0.2)
+        named = step_header(box, Import, "named.step")
+        step.RemString("Author")
+        step.RemString("Company")
+        check("a STEP file exported with no author stored names 'Author', one with an author and a company "
+              "stored names them", "('Author')" in plain and "('Entry24')" in named and "'HandsOn'" in named,
+              (plain[:200], named[:200]))
     except Exception:
         note("FAIL the test ran | " + traceback.format_exc().replace("\n", " | "))
     finally:
         boolean.RemBool("RefineModel")
+        step.RemString("Author")
+        step.RemString("Company")
         if doc is not None:
             FreeCAD.closeDocument(doc.Name)
         note("DONE")

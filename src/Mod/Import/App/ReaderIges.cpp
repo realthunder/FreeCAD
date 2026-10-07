@@ -38,6 +38,7 @@
 #include "ReaderIges.h"
 #include <Base/Exception.h>
 #include <App/Application.h>
+#include <Mod/Part/App/PartParams.h>
 #include <Mod/Part/App/encodeFilename.h>
 #include <Mod/Part/App/ProgressIndicator.h>
 
@@ -61,7 +62,7 @@ void ReaderIges::read(Handle(TDocStd_Document) hDoc)  // NOLINT
     IGESControl_Controller::Init();
     IGESCAFControl_Reader aReader;
     // http://www.opencascade.org/org/forum/thread_20603/?forum=3
-    aReader.SetReadVisible(hGrp->GetBool("SkipBlankEntities", true));
+    aReader.SetReadVisible(hGrp->GetBool("SkipBlankEntities", Part::PartParams::defaultSkipBlankEntities()));
     aReader.SetColorMode(true);
     aReader.SetNameMode(true);
     aReader.SetLayerMode(true);

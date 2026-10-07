@@ -26,6 +26,7 @@
 #endif
 
 #include "ImportExportSettings.h"
+#include <Mod/Part/App/PartParams.h>
 #include <App/Application.h>
 
 
@@ -44,7 +45,7 @@ void ImportExportSettings::setVisibleExportDialog(bool on)
 
 bool ImportExportSettings::isVisibleExportDialog() const
 {
-    return pGroup->GetBool("VisibleExportDialog", true);
+    return pGroup->GetBool("VisibleExportDialog", PartParams::defaultVisibleExportDialog());
 }
 
 
@@ -58,14 +59,15 @@ void ImportExportSettings::setWriteSurfaceCurveMode(bool on)
 bool ImportExportSettings::getWriteSurfaceCurveMode() const
 {
     ParameterGrp::handle grp = App::GetApplication().GetParameterGroupByPath("User parameter:BaseApp/Preferences/Mod/Part/General");
-    int writesurfacecurve = Interface_Static::IVal("write.surfacecurve.mode");
-    writesurfacecurve = grp->GetInt("WriteSurfaceCurveMode", writesurfacecurve);
+    int writesurfacecurve = grp->GetInt("WriteSurfaceCurveMode", PartParams::defaultWriteSurfaceCurveMode());
     return (writesurfacecurve == 0 ? false : true);
 }
 
 std::string ImportExportSettings::getScheme() const
 {
-    return pGroup->GetASCII("Scheme", Interface_Static::CVal("write.step.schema"));
+    // empty, which is the default, means the kernel's own
+    std::string scheme = pGroup->GetASCII("Scheme", PartParams::defaultStepScheme().c_str());
+    return scheme.empty() ? std::string(Interface_Static::CVal("write.step.schema")) : scheme;
 }
 
 void ImportExportSettings::setScheme(const char* scheme)
@@ -76,7 +78,7 @@ void ImportExportSettings::setScheme(const char* scheme)
 
 Interface::Unit ImportExportSettings::getUnit() const
 {
-    return static_cast<Interface::Unit>(pGroup->GetInt("Unit", 0));
+    return static_cast<Interface::Unit>(pGroup->GetInt("Unit", PartParams::defaultStepUnit()));
 }
 
 void ImportExportSettings::setUnit(Interface::Unit unit)
@@ -87,7 +89,7 @@ void ImportExportSettings::setUnit(Interface::Unit unit)
 
 std::string ImportExportSettings::getCompany() const
 {
-    return pGroup->GetASCII("Company");
+    return pGroup->GetASCII("Company", PartParams::defaultStepCompany().c_str());
 }
 
 void ImportExportSettings::setCompany(const char* name)
@@ -97,7 +99,7 @@ void ImportExportSettings::setCompany(const char* name)
 
 std::string ImportExportSettings::getAuthor() const
 {
-    return pGroup->GetASCII("Author");
+    return pGroup->GetASCII("Author", PartParams::defaultStepAuthor().c_str());
 }
 
 void ImportExportSettings::setAuthor(const char* name)

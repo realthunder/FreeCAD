@@ -484,6 +484,358 @@ public:
     static const char *docAutoElementMap();
     //@}
 
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter ReadSurfaceCurveMode
+    ///
+    /// Which curve is kept when an entity of a STEP or IGES file has both
+    /// a 2D and a 3D one: 0 both, 3 the 3D curve and the 2D one is
+    /// rebuilt from it; for IGES also 2 prefer the 2D curve, -2 always
+    /// the 2D, -3 always the 3D. Read when Part is loaded.
+    static const long & getReadSurfaceCurveMode();
+    static const long & defaultReadSurfaceCurveMode();
+    static void removeReadSurfaceCurveMode();
+    static void setReadSurfaceCurveMode(const long &v);
+    static const char *docReadSurfaceCurveMode();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter WriteSurfaceCurveMode
+    ///
+    /// Write the curves in the parameter space of surfaces (pcurves) into
+    /// STEP files: 0 off, which makes smaller files, 1 on. Stored by the
+    /// STEP export options.
+    static const long & getWriteSurfaceCurveMode();
+    static const long & defaultWriteSurfaceCurveMode();
+    static void removeWriteSurfaceCurveMode();
+    static void setWriteSurfaceCurveMode(const long &v);
+    static const char *docWriteSurfaceCurveMode();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter IgesBrepMode
+    ///
+    /// Write solids and shells into IGES files as BRep entities (type
+    /// 186) instead of trimmed surfaces (type 144).
+    static const bool & getIgesBrepMode();
+    static const bool & defaultIgesBrepMode();
+    static void removeIgesBrepMode();
+    static void setIgesBrepMode(const bool &v);
+    static const char *docIgesBrepMode();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter IgesUnit
+    ///
+    /// Unit of exported IGES files: 0 millimetre, 1 metre, 2 inch.
+    static const long & getIgesUnit();
+    static const long & defaultIgesUnit();
+    static void removeIgesUnit();
+    static void setIgesUnit(const long &v);
+    static const char *docIgesUnit();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter IgesCompany
+    ///
+    /// Company named in the header of exported IGES files.
+    static const std::string & getIgesCompany();
+    static const std::string & defaultIgesCompany();
+    static void removeIgesCompany();
+    static void setIgesCompany(const std::string &v);
+    static const char *docIgesCompany();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter IgesAuthor
+    ///
+    /// Author named in the header of exported IGES files.
+    static const std::string & getIgesAuthor();
+    static const std::string & defaultIgesAuthor();
+    static void removeIgesAuthor();
+    static void setIgesAuthor(const std::string &v);
+    static const char *docIgesAuthor();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter IgesProduct
+    ///
+    /// Product named in the header of exported IGES files. Empty uses the
+    /// kernel's own. Read when Part is loaded.
+    static const std::string & getIgesProduct();
+    static const std::string & defaultIgesProduct();
+    static void removeIgesProduct();
+    static void setIgesProduct(const std::string &v);
+    static const char *docIgesProduct();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter SkipBlankEntities
+    ///
+    /// Leave out the blank (hidden) entities of an IGES file that is
+    /// imported.
+    static const bool & getSkipBlankEntities();
+    static const bool & defaultSkipBlankEntities();
+    static void removeSkipBlankEntities();
+    static void setSkipBlankEntities(const bool &v);
+    static const char *docSkipBlankEntities();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter StepUnit
+    ///
+    /// Unit of exported STEP files: 0 millimetre, 1 metre, 2 inch.
+    static const long & getStepUnit();
+    static const long & defaultStepUnit();
+    static void removeStepUnit();
+    static void setStepUnit(const long &v);
+    static const char *docStepUnit();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter StepScheme
+    ///
+    /// Application protocol of exported STEP files: AP203, AP214CD,
+    /// AP214DIS, AP214IS or AP242DIS. Empty uses the kernel's own.
+    static const std::string & getStepScheme();
+    static const std::string & defaultStepScheme();
+    static void removeStepScheme();
+    static void setStepScheme(const std::string &v);
+    static const char *docStepScheme();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter StepProduct
+    ///
+    /// Product name written into exported STEP files. Empty uses the
+    /// kernel's own. Read when Part is loaded.
+    static const std::string & getStepProduct();
+    static const std::string & defaultStepProduct();
+    static void removeStepProduct();
+    static void setStepProduct(const std::string &v);
+    static const char *docStepProduct();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter StepCompany
+    ///
+    /// Organisation named in the header of exported STEP files.
+    static const std::string & getStepCompany();
+    static const std::string & defaultStepCompany();
+    static void removeStepCompany();
+    static void setStepCompany(const std::string &v);
+    static const char *docStepCompany();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter StepAuthor
+    ///
+    /// Author named in the header of exported STEP files.
+    static const std::string & getStepAuthor();
+    static const std::string & defaultStepAuthor();
+    static void removeStepAuthor();
+    static void setStepAuthor(const std::string &v);
+    static const char *docStepAuthor();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter VisibleExportDialog
+    ///
+    /// Show the options dialog each time a STEP file is exported.
+    static const bool & getVisibleExportDialog();
+    static const bool & defaultVisibleExportDialog();
+    static void removeVisibleExportDialog();
+    static void setVisibleExportDialog(const bool &v);
+    static const char *docVisibleExportDialog();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter ExportHiddenObject
+    ///
+    /// Write objects that are hidden as well, marked invisible. Switch
+    /// off for programs that do not understand invisibility in a STEP
+    /// file.
+    static const bool & getExportHiddenObject();
+    static const bool & defaultExportHiddenObject();
+    static void removeExportHiddenObject();
+    static void setExportHiddenObject(const bool &v);
+    static const char *docExportHiddenObject();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter ImportHiddenObject
+    ///
+    /// Read the objects a file marks invisible as well.
+    static const bool & getImportHiddenObject();
+    static const bool & defaultImportHiddenObject();
+    static void removeImportHiddenObject();
+    static void setImportHiddenObject(const bool &v);
+    static const char *docImportHiddenObject();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter ExportKeepPlacement
+    ///
+    /// Keep the placement when a single object is exported. Read back,
+    /// the placement is part of the shape's geometry and not a Placement
+    /// property.
+    static const bool & getExportKeepPlacement();
+    static const bool & defaultExportKeepPlacement();
+    static void removeExportKeepPlacement();
+    static void setExportKeepPlacement(const bool &v);
+    static const char *docExportKeepPlacement();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter UseAppPart
+    ///
+    /// Import the groups of an assembly as App::Part containers; off uses
+    /// App::LinkGroup.
+    static const bool & getUseAppPart();
+    static const bool & defaultUseAppPart();
+    static void removeUseAppPart();
+    static void setUseAppPart(const bool &v);
+    static const char *docUseAppPart();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter UseBaseName
+    ///
+    /// Name imported objects after what they are an instance of, not
+    /// after the instance. Useful for old STEP files whose instance names
+    /// are generated and mean nothing.
+    static const bool & getUseBaseName();
+    static const bool & defaultUseBaseName();
+    static void removeUseBaseName();
+    static void setUseBaseName(const bool &v);
+    static const char *docUseBaseName();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter ReduceObjects
+    ///
+    /// Import repeated instances as Link arrays, which makes fewer
+    /// objects.
+    static const bool & getReduceObjects();
+    static const bool & defaultReduceObjects();
+    static void removeReduceObjects();
+    static void setReduceObjects(const bool &v);
+    static const char *docReduceObjects();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter ShowProgress
+    ///
+    /// Show a progress bar while a file is imported.
+    static const bool & getShowProgress();
+    static const bool & defaultShowProgress();
+    static void removeShowProgress();
+    static void setShowProgress(const bool &v);
+    static const char *docShowProgress();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter ProgressiveImport
+    ///
+    /// Create the imported objects step by step, so the model shows while
+    /// the import still runs. Single document mode only.
+    static const bool & getProgressiveImport();
+    static const bool & defaultProgressiveImport();
+    static void removeProgressiveImport();
+    static void setProgressiveImport(const bool &v);
+    static const char *docProgressiveImport();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter StreamBatchStart
+    ///
+    /// Number of units -- roots, or the components of a single root --
+    /// the first batch of a progressive import transfers. At least 1.
+    static const long & getStreamBatchStart();
+    static const long & defaultStreamBatchStart();
+    static void removeStreamBatchStart();
+    static void setStreamBatchStart(const long &v);
+    static const char *docStreamBatchStart();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter StreamBatchFactor
+    ///
+    /// Factor by which each batch of a progressive import is larger than
+    /// the one before; 1 keeps the size. Each batch repeats passes over
+    /// the whole file, hence the steep growth.
+    static const long & getStreamBatchFactor();
+    static const long & defaultStreamBatchFactor();
+    static void removeStreamBatchFactor();
+    static void setStreamBatchFactor(const long &v);
+    static const char *docStreamBatchFactor();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter ImportMode
+    ///
+    /// How an assembly file becomes documents: 0 a single document, 1 a
+    /// group per document, 2 a group per directory, 3 an object per
+    /// document, 4 an object per directory.
+    static const long & getImportMode();
+    static const long & defaultImportMode();
+    static void removeImportMode();
+    static void setImportMode(const long &v);
+    static const char *docImportMode();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter GltfRebuildBRep
+    ///
+    /// Whether the meshes of a glTF file are rebuilt as BRep faces: 0
+    /// never, each mesh arrives as it was read with its triangles, UVs
+    /// and normals; 1 only where nothing would be lost; 2 always.
+    static const long & getGltfRebuildBRep();
+    static const long & defaultGltfRebuildBRep();
+    static void removeGltfRebuildBRep();
+    static void setGltfRebuildBRep(const long &v);
+    static const char *docGltfRebuildBRep();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter ReadShapeCompoundMode
+    ///
+    /// The option 'Enable STEP Compound merge' of the STEP import: the
+    /// parts of a file are merged into one compound instead of imported
+    /// as objects of their own.
+    static const bool & getReadShapeCompoundMode();
+    static const bool & defaultReadShapeCompoundMode();
+    static void removeReadShapeCompoundMode();
+    static void setReadShapeCompoundMode(const bool &v);
+    static const char *docReadShapeCompoundMode();
+    //@}
+
 // Auto generated code (Tools/params_utils.py:179)
 }; // class PartParams
 } // namespace Part

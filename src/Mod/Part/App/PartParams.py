@@ -180,6 +180,121 @@ Params = [
         doc = "Give a shape that arrives without element names -- read from a\n"
               "file, set by a script -- names of its own. Read once, at the first\n"
               "such shape of a session."),
+    # --- the sub-group General, the rest: what the STEP and IGES translators are told
+    ParamInt("ReadSurfaceCurveMode", 0, subpath='General',
+        title = "Read surface curve mode",
+        doc = "Which curve is kept when an entity of a STEP or IGES file has both\n"
+              "a 2D and a 3D one: 0 both, 3 the 3D curve and the 2D one is\n"
+              "rebuilt from it; for IGES also 2 prefer the 2D curve, -2 always\n"
+              "the 2D, -3 always the 3D. Read when Part is loaded."),
+    ParamInt("WriteSurfaceCurveMode", 0, subpath='General',
+        title = "Write curves on surfaces",
+        doc = "Write the curves in the parameter space of surfaces (pcurves) into\n"
+              "STEP files: 0 off, which makes smaller files, 1 on. Stored by the\n"
+              "STEP export options."),
+    # --- the sub-group IGES
+    ParamBool("IgesBrepMode", False, subpath='IGES', param_name='BrepMode',
+        title = "Write IGES solids as BRep",
+        doc = "Write solids and shells into IGES files as BRep entities (type\n"
+              "186) instead of trimmed surfaces (type 144)."),
+    ParamInt("IgesUnit", 0, subpath='IGES', param_name='Unit',
+        title = "IGES export unit",
+        doc = "Unit of exported IGES files: 0 millimetre, 1 metre, 2 inch."),
+    ParamString("IgesCompany", '', subpath='IGES', param_name='Company',
+        title = "IGES header company",
+        doc = "Company named in the header of exported IGES files."),
+    ParamString("IgesAuthor", '', subpath='IGES', param_name='Author',
+        title = "IGES header author",
+        doc = "Author named in the header of exported IGES files."),
+    ParamString("IgesProduct", '', subpath='IGES', param_name='Product',
+        title = "IGES header product",
+        doc = "Product named in the header of exported IGES files. Empty uses the\n"
+              "kernel's own. Read when Part is loaded."),
+    ParamBool("SkipBlankEntities", True, subpath='IGES',
+        title = "Skip blank IGES entities",
+        doc = "Leave out the blank (hidden) entities of an IGES file that is\n"
+              "imported."),
+    # --- the sub-group STEP. The author is the writer's: a file exported on a
+    # profile that never stored one names 'Author', while the page showed an
+    # empty field and stored that at OK.
+    ParamInt("StepUnit", 0, subpath='STEP', param_name='Unit',
+        title = "STEP export unit",
+        doc = "Unit of exported STEP files: 0 millimetre, 1 metre, 2 inch."),
+    ParamString("StepScheme", '', subpath='STEP', param_name='Scheme',
+        title = "STEP export scheme",
+        doc = "Application protocol of exported STEP files: AP203, AP214CD,\n"
+              "AP214DIS, AP214IS or AP242DIS. Empty uses the kernel's own."),
+    ParamString("StepProduct", '', subpath='STEP', param_name='Product',
+        title = "STEP product name",
+        doc = "Product name written into exported STEP files. Empty uses the\n"
+              "kernel's own. Read when Part is loaded."),
+    ParamString("StepCompany", '', subpath='STEP', param_name='Company',
+        title = "STEP header company",
+        doc = "Organisation named in the header of exported STEP files."),
+    ParamString("StepAuthor", 'Author', subpath='STEP', param_name='Author',
+        title = "STEP header author",
+        doc = "Author named in the header of exported STEP files."),
+    ParamBool("VisibleExportDialog", True, subpath='STEP',
+        title = "Show the STEP export options",
+        doc = "Show the options dialog each time a STEP file is exported."),
+    # --- the group Preferences/Mod/Import: how an assembly file is read and written
+    ParamBool("ExportHiddenObject", True, subpath='User parameter:BaseApp/Preferences/Mod/Import',
+        title = "Export invisible objects",
+        doc = "Write objects that are hidden as well, marked invisible. Switch\n"
+              "off for programs that do not understand invisibility in a STEP\n"
+              "file."),
+    ParamBool("ImportHiddenObject", True, subpath='User parameter:BaseApp/Preferences/Mod/Import',
+        title = "Import invisible objects",
+        doc = "Read the objects a file marks invisible as well."),
+    ParamBool("ExportKeepPlacement", False, subpath='User parameter:BaseApp/Preferences/Mod/Import',
+        title = "Export single object placement",
+        doc = "Keep the placement when a single object is exported. Read back,\n"
+              "the placement is part of the shape's geometry and not a Placement\n"
+              "property."),
+    ParamBool("UseAppPart", True, subpath='User parameter:BaseApp/Preferences/Mod/Import',
+        title = "Use Part container",
+        doc = "Import the groups of an assembly as App::Part containers; off uses\n"
+              "App::LinkGroup."),
+    ParamBool("UseBaseName", True, subpath='User parameter:BaseApp/Preferences/Mod/Import',
+        title = "Ignore instance names",
+        doc = "Name imported objects after what they are an instance of, not\n"
+              "after the instance. Useful for old STEP files whose instance names\n"
+              "are generated and mean nothing."),
+    ParamBool("ReduceObjects", False, subpath='User parameter:BaseApp/Preferences/Mod/Import',
+        title = "Reduce number of objects",
+        doc = "Import repeated instances as Link arrays, which makes fewer\n"
+              "objects."),
+    ParamBool("ShowProgress", True, subpath='User parameter:BaseApp/Preferences/Mod/Import',
+        title = "Show progress when importing",
+        doc = "Show a progress bar while a file is imported."),
+    ParamBool("ProgressiveImport", True, subpath='User parameter:BaseApp/Preferences/Mod/Import',
+        title = "Progressive import",
+        doc = "Create the imported objects step by step, so the model shows while\n"
+              "the import still runs. Single document mode only."),
+    ParamInt("StreamBatchStart", 1, subpath='User parameter:BaseApp/Preferences/Mod/Import',
+        title = "Progressive import, first batch",
+        doc = "Number of units -- roots, or the components of a single root --\n"
+              "the first batch of a progressive import transfers. At least 1."),
+    ParamInt("StreamBatchFactor", 8, subpath='User parameter:BaseApp/Preferences/Mod/Import',
+        title = "Progressive import, batch growth",
+        doc = "Factor by which each batch of a progressive import is larger than\n"
+              "the one before; 1 keeps the size. Each batch repeats passes over\n"
+              "the whole file, hence the steep growth."),
+    ParamInt("ImportMode", 0, subpath='User parameter:BaseApp/Preferences/Mod/Import',
+        title = "Import mode",
+        doc = "How an assembly file becomes documents: 0 a single document, 1 a\n"
+              "group per document, 2 a group per directory, 3 an object per\n"
+              "document, 4 an object per directory."),
+    ParamInt("GltfRebuildBRep", 0, subpath='User parameter:BaseApp/Preferences/Mod/Import',
+        title = "Rebuild BRep from glTF",
+        doc = "Whether the meshes of a glTF file are rebuilt as BRep faces: 0\n"
+              "never, each mesh arrives as it was read with its triangles, UVs\n"
+              "and normals; 1 only where nothing would be lost; 2 always."),
+    ParamBool("ReadShapeCompoundMode", False, subpath='User parameter:BaseApp/Preferences/Mod/Import/hSTEP',
+        title = "STEP compound merge",
+        doc = "The option 'Enable STEP Compound merge' of the STEP import: the\n"
+              "parts of a file are merged into one compound instead of imported\n"
+              "as objects of their own."),
 ]
 
 def declare():

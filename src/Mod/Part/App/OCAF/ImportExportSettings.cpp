@@ -27,6 +27,7 @@
 #endif
 
 #include "ImportExportSettings.h"
+#include <Mod/Part/App/PartParams.h>
 #include <Mod/Part/App/IGES/ImportExportSettings.h>
 #include <Mod/Part/App/STEP/ImportExportSettings.h>
 #include <App/Application.h>
@@ -61,7 +62,7 @@ void ImportExportSettings::initGeneral(Base::Reference<ParameterGrp> hGrp)
     //  2: "2DUse_Preferred" - the 2D is used to rebuild the 3D in case of their inconsistency
     // -2: "2DUse_Forced" - the 2D is always used to rebuild the 3D (even if 2D is present in the file)
     // -3: "3DUse_Forced" - the 3D is always used to rebuild the 2D (even if 2D is present in the file)
-    int readsurfacecurve = hGenGrp->GetInt("ReadSurfaceCurveMode", 0);
+    int readsurfacecurve = hGenGrp->GetInt("ReadSurfaceCurveMode", PartParams::defaultReadSurfaceCurveMode());
     Interface_Static::SetIVal("read.surfacecurve.mode", readsurfacecurve);
 
     // write.surfacecurve.mode (STEP-only):
@@ -70,7 +71,7 @@ void ImportExportSettings::initGeneral(Base::Reference<ParameterGrp> hGrp)
     // STEP file.
     // Off (0) : writes STEP files without pcurves. This mode decreases the size of the resulting file.
     // On (1) : (default) writes pcurves to STEP file
-    int writesurfacecurve = hGenGrp->GetInt("WriteSurfaceCurveMode", 0);
+    int writesurfacecurve = hGenGrp->GetInt("WriteSurfaceCurveMode", PartParams::defaultWriteSurfaceCurveMode());
     Interface_Static::SetIVal("write.surfacecurve.mode", writesurfacecurve);
 }
 
@@ -78,15 +79,19 @@ void ImportExportSettings::initIGES(Base::Reference<ParameterGrp> hGrp)
 {
     //IGES handling
     Base::Reference<ParameterGrp> hIgesGrp = hGrp->GetGroup("IGES");
-    int value = Interface_Static::IVal("write.iges.brep.mode");
-    bool brep = hIgesGrp->GetBool("BrepMode", value > 0);
+    bool brep = hIgesGrp->GetBool("BrepMode", PartParams::defaultIgesBrepMode());
     Interface_Static::SetIVal("write.iges.brep.mode",brep ? 1 : 0);
-    Interface_Static::SetCVal("write.iges.header.company", hIgesGrp->GetASCII("Company").c_str());
-    Interface_Static::SetCVal("write.iges.header.author", hIgesGrp->GetASCII("Author").c_str());
-    Interface_Static::SetCVal("write.iges.header.product", hIgesGrp->GetASCII("Product",
-       Interface_Static::CVal("write.iges.header.product")).c_str());
+    Interface_Static::SetCVal("write.iges.header.company",
+        hIgesGrp->GetASCII("Company", PartParams::defaultIgesCompany().c_str()).c_str());
+    Interface_Static::SetCVal("write.iges.header.author",
+        hIgesGrp->GetASCII("Author", PartParams::defaultIgesAuthor().c_str()).c_str());
+    // empty, which is the default, leaves the kernel's own
+    std::string product = hIgesGrp->GetASCII("Product", PartParams::defaultIgesProduct().c_str());
+    if (!product.empty()) {
+        Interface_Static::SetCVal("write.iges.header.product", product.c_str());
+    }
 
-    int unitIges = hIgesGrp->GetInt("Unit", 0);
+    int unitIges = hIgesGrp->GetInt("Unit", PartParams::defaultIgesUnit());
     switch (unitIges) {
         case 1:
             Interface_Static::SetCVal("write.iges.unit","M");
@@ -104,7 +109,7 @@ void ImportExportSettings::initSTEP(Base::Reference<ParameterGrp> hGrp)
 {
     //STEP handling
     Base::Reference<ParameterGrp> hStepGrp = hGrp->GetGroup("STEP");
-    int unitStep = hStepGrp->GetInt("Unit", 0);
+    int unitStep = hStepGrp->GetInt("Unit", PartParams::defaultStepUnit());
     switch (unitStep) {
         case 1:
             Interface_Static::SetCVal("write.step.unit","M");
@@ -117,10 +122,15 @@ void ImportExportSettings::initSTEP(Base::Reference<ParameterGrp> hGrp)
             break;
     }
 
-    std::string ap = hStepGrp->GetASCII("Scheme", Interface_Static::CVal("write.step.schema"));
-    Interface_Static::SetCVal("write.step.schema", ap.c_str());
-    Interface_Static::SetCVal("write.step.product.name", hStepGrp->GetASCII("Product",
-       Interface_Static::CVal("write.step.product.name")).c_str());
+    // empty, which is the default of both, leaves the kernel's own
+    std::string ap = hStepGrp->GetASCII("Scheme", PartParams::defaultStepScheme().c_str());
+    if (!ap.empty()) {
+        Interface_Static::SetCVal("write.step.schema", ap.c_str());
+    }
+    std::string product = hStepGrp->GetASCII("Product", PartParams::defaultStepProduct().c_str());
+    if (!product.empty()) {
+        Interface_Static::SetCVal("write.step.product.name", product.c_str());
+    }
 }
 
 ImportExportSettings::ImportExportSettings()
@@ -155,7 +165,7 @@ void ImportExportSettings::setReadShapeCompoundMode(bool on)
 bool ImportExportSettings::getReadShapeCompoundMode() const
 {
     auto grp = pGroup->GetGroup("hSTEP");
-    return grp->GetBool("ReadShapeCompoundMode", false);
+    return grp->GetBool("ReadShapeCompoundMode", PartParams::defaultReadShapeCompoundMode());
 }
 
 void ImportExportSettings::setExportHiddenObject(bool on)
@@ -165,7 +175,7 @@ void ImportExportSettings::setExportHiddenObject(bool on)
 
 bool ImportExportSettings::getExportHiddenObject() const
 {
-    return pGroup->GetBool("ExportHiddenObject", true);
+    return pGroup->GetBool("ExportHiddenObject", PartParams::defaultExportHiddenObject());
 }
 
 void ImportExportSettings::setImportHiddenObject(bool on)
@@ -175,7 +185,7 @@ void ImportExportSettings::setImportHiddenObject(bool on)
 
 bool ImportExportSettings::getImportHiddenObject() const
 {
-    return pGroup->GetBool("ImportHiddenObject", true);
+    return pGroup->GetBool("ImportHiddenObject", PartParams::defaultImportHiddenObject());
 }
 
 void ImportExportSettings::setExportKeepPlacement(bool on)
@@ -185,7 +195,7 @@ void ImportExportSettings::setExportKeepPlacement(bool on)
 
 bool ImportExportSettings::getExportKeepPlacement() const
 {
-    return pGroup->GetBool("ExportKeepPlacement", false);
+    return pGroup->GetBool("ExportKeepPlacement", PartParams::defaultExportKeepPlacement());
 }
 
 void ImportExportSettings::setUseLinkGroup(bool on)
@@ -195,7 +205,7 @@ void ImportExportSettings::setUseLinkGroup(bool on)
 
 bool ImportExportSettings::getUseLinkGroup() const
 {
-    return !pGroup->GetBool("UseAppPart", true);
+    return !pGroup->GetBool("UseAppPart", PartParams::defaultUseAppPart());
 }
 
 void ImportExportSettings::setUseBaseName(bool on)
@@ -205,7 +215,7 @@ void ImportExportSettings::setUseBaseName(bool on)
 
 bool ImportExportSettings::getUseBaseName() const
 {
-    return pGroup->GetBool("UseBaseName", true);
+    return pGroup->GetBool("UseBaseName", PartParams::defaultUseBaseName());
 }
 
 void ImportExportSettings::setReduceObjects(bool on)
@@ -215,7 +225,7 @@ void ImportExportSettings::setReduceObjects(bool on)
 
 bool ImportExportSettings::getReduceObjects() const
 {
-    return pGroup->GetBool("ReduceObjects", false);
+    return pGroup->GetBool("ReduceObjects", PartParams::defaultReduceObjects());
 }
 
 void ImportExportSettings::setShowProgress(bool on)
@@ -225,7 +235,7 @@ void ImportExportSettings::setShowProgress(bool on)
 
 bool ImportExportSettings::getShowProgress() const
 {
-    return pGroup->GetBool("ShowProgress", true);
+    return pGroup->GetBool("ShowProgress", PartParams::defaultShowProgress());
 }
 
 void ImportExportSettings::setProgressiveImport(bool on)
@@ -235,17 +245,17 @@ void ImportExportSettings::setProgressiveImport(bool on)
 
 bool ImportExportSettings::getProgressiveImport() const
 {
-    return pGroup->GetBool("ProgressiveImport", true);
+    return pGroup->GetBool("ProgressiveImport", PartParams::defaultProgressiveImport());
 }
 
 int ImportExportSettings::getStreamBatchStart() const
 {
-    return std::max(1, static_cast<int>(pGroup->GetInt("StreamBatchStart", 1)));
+    return std::max(1, static_cast<int>(pGroup->GetInt("StreamBatchStart", PartParams::defaultStreamBatchStart())));
 }
 
 int ImportExportSettings::getStreamBatchFactor() const
 {
-    return std::max(1, static_cast<int>(pGroup->GetInt("StreamBatchFactor", 8)));
+    return std::max(1, static_cast<int>(pGroup->GetInt("StreamBatchFactor", PartParams::defaultStreamBatchFactor())));
 }
 
 void ImportExportSettings::setImportMode(ImportExportSettings::ImportMode mode)
@@ -255,7 +265,7 @@ void ImportExportSettings::setImportMode(ImportExportSettings::ImportMode mode)
 
 ImportExportSettings::ImportMode ImportExportSettings::getImportMode() const
 {
-    return static_cast<ImportExportSettings::ImportMode>(pGroup->GetInt("ImportMode", 0));
+    return static_cast<ImportExportSettings::ImportMode>(pGroup->GetInt("ImportMode", PartParams::defaultImportMode()));
 }
 
 } // namespace OCAF

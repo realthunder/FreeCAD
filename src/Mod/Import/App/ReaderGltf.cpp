@@ -51,6 +51,7 @@
 #include <App/Application.h>
 #include <Base/Exception.h>
 #include <Base/Parameter.h>
+#include <Mod/Part/App/PartParams.h>
 #include <Mod/Part/App/TopoShape.h>
 #include <Mod/Part/App/Tools.h>
 
@@ -62,8 +63,7 @@ ReaderGltf::ReaderGltf(const Base::FileInfo& file)
 {
     auto hGrp = App::GetApplication().GetParameterGroupByPath(
         "User parameter:BaseApp/Preferences/Mod/Import");
-    const long stated = hGrp->GetInt("GltfRebuildBRep",
-                                     static_cast<long>(RebuildBRep::None));
+    const long stated = hGrp->GetInt("GltfRebuildBRep", Part::PartParams::defaultGltfRebuildBRep());
     switch (stated) {
         case static_cast<long>(RebuildBRep::Auto):
             rebuild = RebuildBRep::Auto;

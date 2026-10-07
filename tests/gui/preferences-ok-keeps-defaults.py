@@ -54,6 +54,7 @@ SAME = {
     ("Editor", "Text"): "not set means the window's text colour, which is the one the page shows",
     ("Dialog", "DontUseNativeDialog"): "the default is a macro the build decides",
     ("General", "AutoloadModule"): "empty means the configured start workbench, which the page spells out",
+    ("Mod/Part/STEP", "Scheme"): "empty means the kernel's own scheme, which the page spells out",
 }
 KIND = {"Bool": "Boolean", "Int": "Integer", "Unsigned": "Unsigned Long", "Float": "Float", "ASCII": "String"}
 
