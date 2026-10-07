@@ -24,6 +24,7 @@ Evidence that does not belong in the repository is under
 | # | State | In one line |
 |---|---|---|
 | 15 | FIXED `1047cc0647`; one question for the reporter | a refine wrote into the feature underneath. Left: `Pocket040` is 12 mm where the file has 13 -- its negative `Fit` grew in the old build, on one oddly made face |
+| 17 | FIXED `3c8cd63032`; what it uncovers is a question for the reporter | the two sketches refer to edges of a binder that moved with another binder; found again now. Then `Pad033` loses its profile, because the sketch really changes |
 
 ## 15. A Pad "up to first" gives a third result -- FIXED, one question left
 
@@ -137,3 +138,69 @@ set `Pocket040.Fit` to +0.5 in the file to have the 13 it was drawn with.
 Making the offset's sense independent of the plane an edge carries would
 not bring 13 back either; it was not done, since no face this build makes
 was found to show the exception.
+
+## 17. `Sketch043`, `Sketch055`: "Missing external geometry reference" -- FIXED
+
+**What they refer to.** Both sketches take external geometry from
+`Binder017`: `Sketch043` its `Edge1`, `Sketch055` `Edge1` and `Edge2`.
+`Binder017` binds `Face3` of `Binder008`, the Mutated binder of entry 16.
+When `Binder008` is recomputed it moves 53 mm (the file's own state, entry
+16) and its elements get other names; `Binder017` is rebuilt from the moved
+face, so it moves by the same 53 mm and its four edges are renamed too
+(`;#888f;:H58b,E` is what the sketches hold; the string behind `#888f` no
+longer exists).
+
+**Why the repair missed.** A reference that loses its name is searched by
+its geometry in the generations a feature keeps of its shape
+(`Part::Feature::searchElementCache`). Since entry 16 a binder whose
+container moved says by what, and its generations are searched moved the
+same way -- that is what found `Binder008`'s faces again. `Binder017` has no
+container that moved: seen from itself nothing happened, its support just
+came back somewhere else. It reported no motion, and its edges were looked
+for where they had been. The one face it has was found only because a shape
+with a single face of the kind leaves no choice; four edges do.
+
+**Fix,** `3c8cd63032`. When an element is not found where it was and the
+feature named no motion, the live shape is compared with the generation as
+a whole: `Part::recoverShapeMotion` says whether it is the same shape, index
+for index, carried off by a rigid motion, and by which. If so the element is
+searched moved by it. Asked once per generation and live shape, and only
+after the plain search has failed, so a shape that did not move pays one
+comparison of vertex counts at most.
+
+**Scored** on `scanner.FCStd`, recompute of everything (`e17a.py`):
+
+| | before | after |
+|---|---|---|
+| `Sketch043` | "Missing external geometry reference", `Binder017.Edge1` dropped | up to date, `Binder017.Edge1` kept |
+| `Sketch055` | the same, both references dropped | up to date, both kept |
+| objects in error | `Sketch043`, `Sketch055`, `Fillet011` | `Pad033`, `Fillet011` |
+
+`TestShapeBinder.testReferenceIntoBinderOfMovedBinder` (a third binder and
+a sketch's external geometry on a binder of a moved binder): fails on the
+staged binaries ("Failed to obtain shape ...RefFace3.?Edge3"), passes here.
+TestShapeBinder 9 OK, TestPartApp 275 OK, TestSketcherApp 145 OK,
+TestPartDesignApp 347 with the two known `TestThickness` 5829 failures, the
+Part and Sketcher cases of ctest 24 of 24. Evidence:
+`..\dl\handson\2026-10-07\entry17-*`.
+
+**What it uncovers: `Pad033`, and it is the model.** Before, the two
+sketches failed and everything on them kept the shape the file had. Now
+they recompute, and `Sketch043` comes out different: the edge it takes from
+`Binder017` lies at x = -10.508 in the sketch where the file had it at
+-7.272, because the binder is 53 mm along the group's own z and 3.24 mm
+sideways from where it was. The line constrained onto it moves with it, one
+arc collapses to a point, the outline no longer closes, and the sketch has
+five regions where it had six. `Pad033` pads `InternalFace2`, a region of
+212.09 mm2 that is not there any more: "Sub shape not found:
+Sketch043.?InternalFace2" (`e17b.py`). No name was lost; the geometry is
+gone.
+
+So after entries 8 and 14 to 17 the migration recompute of this file ends
+with two errors, and both are consequences of `Binder008` being brought up
+to date after its group was moved -- which the build that wrote the file
+never did, since it had no reason to recompute the binder. `Fillet011`
+("Invalid edge link") was not looked at separately. Whether a Relative
+binder in a moved group is MEANT to come back 53 mm away is the reporter's
+to say; if it is, the file needs its sketch redone, and if it is not, the
+thing to change is the binder, not the references.
