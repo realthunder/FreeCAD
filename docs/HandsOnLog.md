@@ -852,7 +852,7 @@ its own thing, and not started.
 
 Evidence: `..\dl\handson\2026-10-07\msaa-*`, `entry26-first-ok-with-msaa-*`.
 
-## 24. Every setting behind a generated class -- STARTED, fifteen groups done
+## 24. Every setting behind a generated class -- STARTED, sixteen groups done
 
 The reporter, 2026-10-07, asked which entry "do entry 23 next" meant: "I
 meant entry 24". Not staged.
@@ -1087,6 +1087,21 @@ defines a `DefaultDatumColor` of its own in `Mod/Part` while PartDesign's
 datums read this group's; `singleClickFeatureSelect` is a key of
 `Preferences/Selection`. Scored: `tests/gui/partdesign-settings.py`
 (`GuiPartDesignSettings_tests_run`) 5 PASS; 3 PASS, 2 FAIL staged.
+
+**Done: Part's Boolean and geometry check options,** 22 settings,
+`a11d735f1e`: the fifteen options of Check Geometry
+(`Mod/Part/CheckGeometry`), the three of Part's Booleans
+(`Mod/Part/Boolean`), `AutoElementMap` and two single keys, in the two
+`PartParams` classes, kept in sub-groups. Put right on the way: the
+"Single-threaded" box of the Check Geometry panel stored one key and the
+check read another, which nothing writes -- the box did nothing; the
+defaults test never compared a setting kept in a sub-group, and when it did
+it named Mesh's import/export page, which showed the asymptote size empty
+and stored that where the default is 500. Scored:
+`tests/gui/part-options-settings.py` (`GuiPartOptionsSettings_tests_run`)
+3 PASS; 1 PASS, 2 FAIL staged. NOT DONE in Part: the import and export
+settings (`Mod/Part/General`, `IGES`, `STEP`, about 25 keys, already behind
+hand-written accessor classes in `Part/App/*/ImportExportSettings.cpp`).
 
 **The generator,** `0a94fb63c9`: a setting stored under another name than
 its own (`param_name`) was read and written under its key, but a CHANGE was
