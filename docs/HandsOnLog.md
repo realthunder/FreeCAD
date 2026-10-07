@@ -852,7 +852,7 @@ its own thing, and not started.
 
 Evidence: `..\dl\handson\2026-10-07\msaa-*`, `entry26-first-ok-with-msaa-*`.
 
-## 24. Every setting behind a generated class -- STARTED, twenty-one groups done
+## 24. Every setting behind a generated class -- C++ SIDE DONE, decisions wait for the reporter
 
 The reporter, 2026-10-07, asked which entry "do entry 23 next" meant: "I
 meant entry 24". Not staged.
@@ -1099,9 +1099,8 @@ defaults test never compared a setting kept in a sub-group, and when it did
 it named Mesh's import/export page, which showed the asymptote size empty
 and stored that where the default is 500. Scored:
 `tests/gui/part-options-settings.py` (`GuiPartOptionsSettings_tests_run`)
-3 PASS; 1 PASS, 2 FAIL staged. NOT DONE in Part: the import and export
-settings (`Mod/Part/General`, `IGES`, `STEP`, about 25 keys, already behind
-hand-written accessor classes in `Part/App/*/ImportExportSettings.cpp`).
+3 PASS; 1 PASS, 2 FAIL staged. (The import and export settings followed,
+below.)
 
 **Done: several small groups,** 14 settings, `a2c9d65aea`: `MiscParams`,
 one class reaching into each group (recent macros, gizmos, cache directory,
@@ -1253,6 +1252,67 @@ read as first angle; TechDraw's own defaults for the 3D view's highlight
 and selection colours, which are not the view's. Not listed: the diameter
 symbol (default outside ASCII), the two selection colours (default follows
 the 3D view).
+
+**Done: Part's import and export settings,** 26 settings, `632fc1bb30`:
+the STEP, IGES and glTF translators (`Mod/Part/General`, `IGES`, `STEP`,
+`Mod/Import`), in `PartParams`. They were read through three hand-written
+settings classes and a second time where Part hands them to the kernel and
+where Import writes a file; all take the definition's default. One page
+disagreed: a STEP file exported on a clean profile names 'Author' in its
+header while the page showed an empty field and stored that at OK (measured
+staged). Reader's, as before. `part-options-settings.py` 6 PASS; 2 PASS, 4
+FAIL staged. Left: the DXF options (they live with Draft's settings).
+
+**Done: the small modules,** `b823244541`, from a helper agent's inventory
+of what their C++ still read directly
+(`..\dl\handson\2026-10-08\entry24-inventory-modules.json`, 122 keys, 92
+settings): new classes `Assembly::AssemblyParams` (6),
+`Points::PointsParams` (3), `Fem::FemParams` (7, only what C++ reads); 3
+more in `MeshParams`, 3 in `SheetParams`, and TechDraw's diameter symbol.
+The generator escapes a string default now (quote, backslash, anything not
+ASCII as octal escapes); its helper sits at the END of `params_utils.py`
+because the generated sources name the line each part comes from -- a line
+added near the top rewrote all 66 of them. Put right: opening the
+preferences with Fem loaded STORED a setting (its VTK page saved where it
+loads), and Cancel then asked about reverting -- measured staged with
+`preferences-cancel-asks-nothing.py`, which loads Fem now.
+
+**The omni search missed every module loaded after its first use,**
+`a4d495b72e`: its list of settings was a copy of the registry made when the
+box was set up, with a `refresh()` nothing called. TechDraw, Mesh, Fem --
+whatever was first switched to after one search -- was not listed. Found by
+`tests/gui/module-settings.py`, which loads a module and then asks, ten
+times over.
+
+**Done: Start and CAM,** `cafb223d59`: `Start::StartParams` (15; the Start
+page has no preference page, so none could be set but by hand) and
+`Path::CAMParams` (13, only what C++ reads). Put right: CAM's cycle time
+estimate read `WarningsSuppressAllSpeeds` where the Advanced page stores
+`WarningSuppressAllSpeeds`, so its warning was suppressed whatever the page
+said (measured staged). The probe move colour is the reader's (255,235,0;
+the page showed 255,255,5).
+
+**Done: Material,** `f71b8365ab`: `Materials::MaterialParams`, 22 settings
+in six sub-groups. "Show legacy files" of the editor is off to the program
+and was shown on by the page; reader's.
+
+`tests/gui/module-settings.py` (`GuiModuleSettings_tests_run`) holds all of
+these: 10 PASS; 10 FAIL staged. The defaults test loads Fem, Assembly and
+Material as well and passes whole; it named Material's and STEP's on the
+staged binaries.
+
+**The full suites again,** run 2026-10-08 06:20 on the tree of `f71b8365ab`:
+C++ 784 of 784 (9 disabled, 1 skipped), Python 3385 tests with the same 2
+failures as before -- the `TestThickness` 5829 cases, failing since the
+OCCT merge. Logs: `..\dl\handson\2026-10-08\entry24-suites\`.
+
+**WHERE ENTRY 24 STANDS, 2026-10-08:** the C++ side is done -- about 1170
+settings listed. What is left is the Python-only modules (below) and the
+decisions. The reporter, 2026-10-08: "Next session we go through the list
+and make all the decisions". THE LIST:
+`..\dl\handson\2026-10-08\entry24-decisions.md` -- 28 defaults chosen
+(A), 23 behaviours put right on the way (B), 5 questions never answered
+(C), 16 findings not fixed (D). Nothing is pushed or restaged.
 
 **The generator,** `0a94fb63c9`: a setting stored under another name than
 its own (`param_name`) was read and written under its key, but a CHANGE was
