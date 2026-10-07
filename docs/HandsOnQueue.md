@@ -71,7 +71,7 @@ report views, the reporter's own files -- is kept beside the dev tree under
 | 31 | 2026-10-07 | report view: "Go to end" on by default (change request) | see `docs/HandsOnLog.md` |
 | 32 | 2026-10-07 | some sub menus are transparent with blue text (Tools > Command history): find out why; transparent menus off by default | see `docs/HandsOnLog.md` |
 | 33 | 2026-10-07 | a cmd window pops up briefly at the first document opened after start | OPEN |
-| 34 | 2026-10-07 | TechDraw's preselection colour sometimes does not follow the theme (stays yellow after classic, or is blue) | OPEN |
+| 34 | 2026-10-07 | TechDraw's preselection colour sometimes does not follow the theme (stays yellow after classic, or is blue) | OPEN; decided 15:19: the Dark and Light packs set TechDraw's `PreSelectColor` too |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -2015,6 +2015,13 @@ session to choose: Dark and Light set `PreSelectColor` too, or Classic stops
 setting it so that TechDraw follows the 3D view under every theme. To run
 when it is looked at: that an open page picks a changed colour up without
 being reopened.
+
+**Decided by the reporter, 2026-10-07 15:19**, asked which of the two: "dark
+and light set techdraw". So the Dark and Light packs get
+`Mod/TechDraw/Colors/PreSelectColor` themselves, with the colour each wants
+for it -- the blue they give the 3D view, unless the reporter says another --
+and Classic keeps its own. Every theme then owns the key and a switch in
+either direction changes it.
 
 ## Inbox
 
