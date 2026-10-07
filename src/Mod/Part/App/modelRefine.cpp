@@ -38,6 +38,7 @@
 # include <BRepBuilderAPI_MakeFace.hxx>
 # include <BRepBuilderAPI_MakeSolid.hxx>
 # include <BRepBuilderAPI_Sewing.hxx>
+# include <Geom2d_Curve.hxx>
 # include <Geom_BSplineSurface.hxx>
 # include <Geom_Conic.hxx>
 # include <Geom_CylindricalSurface.hxx>
@@ -63,6 +64,7 @@
 # include <TopoDS_Shape.hxx>
 # include <TopExp.hxx>
 # include <TopExp_Explorer.hxx>
+# include <TopLoc_Location.hxx>
 # include <TopTools_DataMapOfIntegerListOfShape.hxx>
 # include <TopTools_DataMapOfShapeShape.hxx>
 # include <TopTools_ListOfShape.hxx>
@@ -487,6 +489,43 @@ GeomAbs_SurfaceType FaceTypedCylinder::getType() const
     return GeomAbs_Cylinder;
 }
 
+// A surface of its own for a face that replaces others.
+//
+// A face built over the surface of the faces it replaces finds, on its
+// boundary edges, the very pcurves those faces use: an edge keeps one pcurve
+// per surface, and the edges and the surface are both the input's. ShapeFix
+// then moves such a pcurve by a period where the new face wants it, in
+// place, and every shape that still holds one of the old faces -- the
+// feature this one was built on, to begin with -- is left with a face that
+// runs a turn too far and is no longer valid. So the new face gets a copy of
+// the surface, and each boundary edge a copy of the pcurve it had there, for
+// ShapeFix to move as it likes. An edge with no pcurve on the surface gets
+// none here either and is given one by ShapeFix, as before.
+template<class SurfaceType>
+static Handle(SurfaceType) ownSurface(const Handle(SurfaceType)& surface,
+                                      const std::vector<TopoDS_Wire>& wires)
+{
+    Handle(SurfaceType) own = Handle(SurfaceType)::DownCast(surface->Copy());
+    if (own.IsNull())
+        return surface;
+    BRep_Builder builder;
+    const TopLoc_Location identity;
+    for (const auto& wire : wires) {
+        for (TopExp_Explorer it(wire, TopAbs_EDGE); it.More(); it.Next()) {
+            const TopoDS_Edge& edge = TopoDS::Edge(it.Current());
+            Standard_Real first = 0.0, last = 0.0;
+            Handle(Geom2d_Curve) pcurve =
+                BRep_Tool::CurveOnSurface(edge, surface, identity, first, last);
+            if (pcurve.IsNull())
+                continue;
+            builder.UpdateEdge(edge, Handle(Geom2d_Curve)::DownCast(pcurve->Copy()), own,
+                               identity, BRep_Tool::Tolerance(edge));
+            builder.Range(edge, own, identity, first, last);
+        }
+    }
+    return own;
+}
+
 // Auxiliary method
 const TopoDS_Face fixFace(const TopoDS_Face& f) {
     static TopoDS_Face dummy;
@@ -654,6 +693,7 @@ TopoDS_Face FaceTypedCylinder::buildFace(const FaceVectorType &faces) const
     Handle(Geom_CylindricalSurface) surface = getGeomCylinder(faces.at(0));
     if (surface.IsNull())
       return dummy;
+    surface = ownSurface(surface, allWires);
     std::vector<TopoDS_Wire> innerWires, encirclingWires;
     std::vector<TopoDS_Wire>::iterator wireIt;
     for (wireIt = allWires.begin(); wireIt != allWires.end(); ++wireIt) {
@@ -990,6 +1030,7 @@ TopoDS_Face FaceTypedBSpline::buildFace(const FaceVectorType &faces) const
     Handle(Geom_BSplineSurface) surface = Handle(Geom_BSplineSurface)::DownCast(BRep_Tool::Surface(faces.at(0)));
     if (!surface)
         return {};
+    surface = ownSurface(surface, wires);
     std::vector<TopoDS_Wire>::iterator wireIt;
     wireIt = wires.begin();
     BRepBuilderAPI_MakeFace faceMaker(surface, *wireIt);
