@@ -1421,6 +1421,71 @@ a face or an edge TShape with another root -- so the GUI thread goes on
 tessellating everything the collector would not claim. That remainder is
 the next thing to attack here, not the hook.
 
+### 18.7 OPEN: the heap is corrupted while a live import is meshed (found 2026-10-07)
+
+Not fixed, and not understood to the bottom. Written down so that it is
+not found a second time from nothing.
+
+**What is seen.** `tests/gui/live-import-nested-loop.py`
+(`GuiLiveImportNestedLoop_tests_run`) dies in about one run of twenty,
+after passing its checks or before it has made one, at a different place
+each time: `QRegion::cleanUp` under `QWidgetPrivate::getOpaqueChildren`,
+`QRegion::operator+=` in `QWidgetRepaintManager::paintAndFlush`,
+`malloc(): smallbin double linked list corrupted` under a `QPen`, and
+`free(): invalid pointer` freeing a local vector in
+`BGFXView::submitBackground`. One failure in the full `ctest` of
+2026-10-07 at `50560fcf27` (963 of 964); alone, 1 run in 18, and under
+gdb 1 in 3 and 2 in 31. None of the 341 crash logs on the box before
+that day has Qt's region code as its innermost frames.
+
+**What it is.** Not four faults: one heap, damaged. In the last of them
+the vector's block lies INSIDE a block malloc holds as free -- a free
+chunk of 0x150 bytes begins 0x60 bytes ahead of it and covers it, and the
+vector's own header holds free-list pointers. That is a block freed while
+somebody still owned it, not a buffer overrun. The free chunk still held
+six doubles of float precision, a box about 460 by 22 by 147: the chess
+set's scale.
+
+**Where it comes from.** With glibc's malloc checker on the FreeCAD
+process the run stops at the fault and not at a victim, on the FIRST run,
+every time (2 of 2), on a pre-mesh worker:
+
+    PartGui::BatchFunctor::operator()        src/Mod/Part/Gui/PreMesh.cpp:123
+    BRepMesh_IncrementalMesh::Perform        BRepMesh_IncrementalMesh.cxx:80
+    BRepMesh_Context::~BRepMesh_Context
+    IMeshTools_Context::~IMeshTools_Context  (a handle<IMeshTools_ModelAlgo>)
+    free(): invalid pointer
+
+with seven other workers inside `BRepMesh_IncrementalMesh` at that
+instant. The second capture stopped in the same destructor on a
+segmentation fault, the context's algorithm objects already holding heap
+addresses where their vtables belong. With `Render/PreMeshOnLoad` off the
+same test passes 4 runs of 4 under the checker, eight checks each. So it
+is the parallel pre-mesh, on this load; whether on every load was not
+run.
+
+**What is not known.** Who breaks the rule of sec 18.3. The collector
+already refuses two roots that share a face or an edge. What this test
+adds is a GUI thread that keeps working while the batch runs -- the
+import still filling the document, the tree populating inside the
+command's nested loop, the import's animated fit asking for bounds -- and
+any of them touching a shape a worker owns would do it; so would a
+sharing below the face, a triangulation two faces hold. That wants a
+sanitizer build of OCCT and Part (address, or thread), which was not
+made: it is a day's building on this box and was not asked for.
+
+**To make it on demand** (twenty seconds, no rebuild):
+
+    gdb -q -batch \
+      -ex 'set environment LD_PRELOAD /lib/x86_64-linux-gnu/libc_malloc_debug.so.0' \
+      -ex 'set environment MALLOC_CHECK_ 3' \
+      -ex run -ex 'thread apply all bt 30' \
+      --args build/conda-relwithdebinfo-801/bin/FreeCAD --user-cfg <dir>/user.cfg \
+             tests/gui/live-import-nested-loop.py
+
+under `xvfb-run` with `QT_QPA_PLATFORM=xcb`, `GT_OUT` and `GT_RESULT` set
+as `scripts/gui-test.sh` sets them, and the conda wrapper around gdb.
+
 ## 19. Progressive load against eager (2026-09-29)
 
 ProgressiveLoad (sec 13, default on since `d53ba63848`) builds a restored
