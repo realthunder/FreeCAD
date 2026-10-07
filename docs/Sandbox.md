@@ -1131,8 +1131,52 @@ CPython's emscripten signal handling on a shared `int32` buffer, then a
 hard `Isolate::TerminateExecution` (wasmtime: epoch interruption);
 `Expression/Sandbox:BudgetMs` 5000, `GraceMs` 1000; outcomes
 `Interrupted` / `Terminated`; `Watchdog` in
-`ExpressionPyodideRuntime.cpp:389-517`.  Budget overhead: WASI transport
+`ExpressionImageRuntime.h`.  Budget overhead: WASI transport
 floor 2.6 to 3.1 us; pyodide inside run-to-run noise.
+
+**The grace runs from the soft stage, not from the start of the trip**
+(2026-10-07).  The hard deadline used to be fixed when the trip was armed,
+`BudgetMs + GraceMs` after its start, so a soft stage that fired LATE was
+followed by the hard one with no time between them: a guest that would
+have answered the interrupt in a millisecond was terminated and dropped,
+and the caller saw "(terminated)" where "(interrupted)" was due and lost
+whatever the instance held.  Late is an ordinary event.  The watchdog
+thread waits on a condition variable, and libstdc++ turns that wait into
+one against the WALL clock wherever it was built without
+`pthread_cond_clockwait` -- the conda toolchain's old glibc sysroot, so
+every Linux build of ours (`nm -D libFreeCADApp.so` shows
+`pthread_cond_timedwait` and no `clockwait`).  A wall clock stepped back
+by a second returns that wait a second late, and WSL2 does exactly that:
+measured on this box right after two busy loops per core had run for a
+minute, steps of -1.01 and -0.89 s, 32.26 s apart, then one of -0.46 s,
+then none in the 200 s after -- in episodes, then, and as far as that one
+shows after load, which is when both failures below were seen.
+A suspended laptop or a starved thread does the same on any platform.
+The watchdog now moves the hard deadline to the grace after the soft
+stage has fired, when that is later.  What is left is that the budget
+itself can run long by the size of a step -- an evaluation given 5 s may
+get 6 -- which the budget, a net and not a timer, can bear.
+
+This was `ExpressionImageBudgetTest.runawayBytecodeLoopIsStopped` failing
+inside a full `ctest` and never alone (2026-10-05 and 2026-10-07, "pyodide
+dropped its instance on a soft interrupt: AttributeError: module 'sys' has
+no attribute 'fcx_budget_mark'"): its soft wait is 300 ms of the 32 s, one
+run in a hundred, and only while the clock is stepping.  A slow guest
+does not do it -- six runs of six passed with two busy loops per core,
+three times slower.  Made on demand with a preloaded
+`pthread_cond_timedwait` that returns the 300 ms wait late: 0 and 400 ms
+late pass, 1000 ms late fails in those words before the change and
+passes after it, as does 2500.  The test could not say which stage had
+fired, both messages carrying "300 ms"; it asks for "(interrupted)" now
+and prints how long the loop ran.  `ExpressionImageWatchdogTest` holds
+the rule with no guest and no clock to step: on the watchdog as it was,
+the hard stage came 11 us after a late soft one.
+
+Not shown is that the step accounts for both failures: two in eight full
+runs is more than one in a hundred, and both took 10.3 s where a step at
+the usual speed makes 6 (`docs/Testing.md`, "A fourth family").  What the
+change settles is that a late soft stage can no longer be the way; a
+recurrence would now read "(terminated)" with the loop's time beside it.
 
 Memory (7.17 D4, BUILT 2026-09-14): a ceiling per guest,
 `Sandbox:MemoryMB` (1024) on its linear memory and array buffers and

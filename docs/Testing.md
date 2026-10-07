@@ -1088,6 +1088,35 @@ interval to the test: `LD_PRELOAD` and `FC_CLOCK_SHIM` set to the built
 where the step should fall. What is left on the time of day in `src/Gui`
 is stamps (Quarter, the touch events) and Coin's own sensors, no interval.
 
+**A fourth family: a timed wait (2026-10-07).** No code of ours reads the
+time of day here, so the shim above does not reach it. A
+`std::condition_variable::wait_until` on a steady deadline is, in every
+Linux build of ours, a `pthread_cond_timedwait` against the WALL clock
+(libstdc++ without `pthread_cond_clockwait`: the conda toolchain's old
+glibc sysroot), and a wall clock stepped back returns it late by the step.
+Late is harmless until a second deadline stands behind the first: the
+sandbox's `Watchdog` fired its soft stage a second late and its hard stage
+11 us after, and `ExpressionImageBudgetTest.runawayBytecodeLoopIsStopped`
+failed in two of the eight full runs of 2026-10-05 to 2026-10-07 and
+never alone (`docs/Sandbox.md`, "The grace runs from the soft stage").
+Two lessons. A slow guest was the wrong suspect and cost nothing to rule
+out -- two busy loops per core, six runs of six passing three times
+slower; what load may do is step the clock, which is where the steps
+were measured. And the step can be made on demand
+here too: a preloaded `pthread_cond_timedwait` that adds a second to the
+one deadline 250 to 320 ms away (twenty lines, `dlsym(RTLD_NEXT)`) failed
+the unchanged test in its recorded words at the first run. NOT SHOWN is
+that this is all of it: a 300 ms wait against a step every 32 s is one
+run in a hundred, not two in eight, and both failing runs took 10.3 s
+where a step at the box's usual speed makes 6 -- two boots on a box twice
+as slow would make 10, and one of the two had builds beside it. So the
+test prints how long its loop ran before it was stopped (300 ms on time,
+1300 after a step), and says which stage stopped it: a recurrence names
+its cause. The other
+timed waits in `src` -- `PreMesh.cpp`, `CyclesStream.cpp`, two in
+`SceneServer.cpp` -- have no second deadline behind them (read, not run):
+a step makes each late and nothing more.
+
 ### Toolbar paints threw on macOS 12
 
 **Found 2026-09-07 by the echo test's log, fixed the same day** --
