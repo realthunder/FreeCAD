@@ -1114,7 +1114,7 @@ removed. Scored: `tests/gui/misc-settings.py` (`GuiMiscSettings_tests_run`)
 **The full suites,** run 2026-10-08 00:25 on `a11d735f1e` (sixteen groups
 in): C++ 784 of 784 (9 disabled, 1 skipped), Python 3385 tests with 2
 failures -- both `TestThickness` 5829 cases, failing since the OCCT merge
-and not of this work. Logs: `..\dl\handson6-10-07\entry24-evening\`.
+and not of this work. Logs: `..\dl\handson\2026-10-07\entry24-evening\`.
 The GUI tests registered in `tests/gui/CMakeLists.txt` are not part of that
 `ctest` on this tree; each was run by hand with its group.
 
