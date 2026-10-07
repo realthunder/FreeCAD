@@ -852,7 +852,7 @@ its own thing, and not started.
 
 Evidence: `..\dl\handson\2026-10-07\msaa-*`, `entry26-first-ok-with-msaa-*`.
 
-## 24. Every setting behind a generated class -- STARTED, the first group done
+## 24. Every setting behind a generated class -- STARTED, ten groups done
 
 The reporter, 2026-10-07, asked which entry "do entry 23 next" meant: "I
 meant entry 24". Not staged.
@@ -929,33 +929,108 @@ change signal as a free function, so a second such class in one library did
 not link. Scored: `tests/gui/general-settings.py`
 (`GuiGeneralSettings_tests_run`) 6 PASS, 5 FAIL on the staged binaries.
 
+**Done: the main window and the themes** (`Preferences/MainWindow`, 18
+settings; `Preferences/Themes`, the three accent colours), `7b28d267df`: two
+new classes, `MainWindowParams` and `ThemeParams`. Readers that read at use
+ask the class (the title bar, the dock window shortcut, the tool bar areas,
+the workbench selector's place, the menu style sheet, the icon set policy);
+the theme machinery keeps reading the group, because it runs while a theme
+is being written key by key, and takes its defaults from the class. Eight
+keys of the group are the program's own state and are not listed. Put right
+on the way: the second and third accent colour had FOUR defaults (the style
+sheet's, the first accent's on the Theme page -- which OK stored for all
+three and the next start rewrote --, the same in a saved theme, black in the
+style parameter source) and have one now, held by a unit test; a change of
+`GlobalToolBarArea` alone moved nothing; the "is this theme customised"
+comparison read an unset `TitleBarToolBars` as off where the window reads it
+as on. Scored: `tests/gui/mainwindow-settings.py`
+(`GuiMainWindowSettings_tests_run`) 6 PASS; 2 PASS, 4 FAIL on the staged
+binaries. LEFT, seen and not touched: a user-saved theme does not carry
+`QtStyle`, `CustomTitleBar` or `TitleBarToolBars` (the template lacks them);
+`StatefulLabel` waits for `StyleSheet` in the General group, where it never
+is.
+
+**Three things in the preferences dialog itself,** found by that group's
+test, `2022b69697`:
+- Cancel asked "Do you want to revert back to previous settings before
+  exit?" on a dialog nothing was changed in -- on the staged binaries too,
+  at the first Cancel of a session. The dialog took any parameter written
+  while it was open for a change, and the dock windows store their layout
+  when the main window first loses the focus, which is when the dialog
+  opens. Only a key below `Preferences` counts now.
+- The same question on EVERY Cancel was mine: the Measure page (above) made
+  "defaultFont" current after the restore, and with preferences applied at
+  once the font box stored the key. The box does not save while that is
+  done. (Blocking its signals was the first try and was wrong: OK then
+  stored Tahoma again, and the defaults test said so.)
+- "Apply preferences at once" switched OFF did nothing for a dialog opened
+  afterwards: a preference widget made while it is off connected its save
+  all the same. `PrefWidget::autoSave()`.
+`tests/gui/preferences-cancel-asks-nothing.py`
+(`GuiPreferencesCancelAsksNothing_tests_run`) 3 PASS; 2 PASS, 1 FAIL staged.
+`general-settings.py` has three more claims: 9 PASS; 3 PASS, 6 FAIL staged.
+A page that sets a widget after its restore shows up in the first of these,
+whichever page it is.
+
+**Done: the notification area** (`Preferences/NotificationArea`), 11
+settings, `5bf21a2f43`: a new class, `NotificationAreaParams`. The area, the
+main window and the notify helpers ask it; the area applies each setting
+when it is made and the one the class says has changed. Nothing was found
+wrong in this group. Scored: `tests/gui/notification-area-settings.py`
+(`GuiNotificationAreaSettings_tests_run`) 5 PASS; 3 PASS, 2 FAIL staged (the
+two omni search claims).
+
+**Done: the Python console, the macros, the dialogs**
+(`Preferences/PythonConsole` 5, `Preferences/Macro` 8, `Preferences/Dialog`
+2), `d5ade41454`: `PythonConsoleParams`, `MacroParams`, `DialogParams`. What
+an unset `DontUseNativeDialog` means is the build's choice, and the class
+has it as the default. Put right on the way: a macro path stored EMPTY was
+taken for the path (the macro dialogs listed nothing,
+`FreeCAD.getUserMacroDir(True)` returned ""); Draft's ShapeString panel put
+the file dialog switch back to False whatever it had been, at every use; the
+Macro dialog stored three hidden switches each time it read them; the
+console's block cursor kept its width when the font changed. Left out as
+never read: `Macro/ScriptToFile`, `Macro/ScriptFile` (the Macro page still
+stores them). Scored: `tests/gui/console-macro-settings.py`
+(`GuiConsoleMacroSettings_tests_run`) 12 PASS; 6 PASS, 6 FAIL staged.
+
+**Done: the units** (`Preferences/Units`), 5 settings, `7d728d7e77`: a new
+class in App, `App::UnitsParams`. This group was read at fixed moments (the
+start, a document becoming active, OK on the General page), so a change from
+anywhere else waited for one of them: the status bar's unit button showed
+the new unit system while quantities were still formatted in the old one.
+App puts the number of decimals and the inch fraction in force when they
+change, Gui the unit system, by the rule activating a document already
+applied. Two CAM readers took an unset unit system for 6; they say 0. The
+status bar's button keeps reading the group (it is told by the group) with
+the class's defaults. Scored: `tests/gui/units-settings.py`
+(`GuiUnitsSettings_tests_run`) 7 PASS; 2 PASS, 5 FAIL staged.
+
+**Two things about the tools,** both cost a run or more:
+- A `.ui` edit reaches the binary one build late here: the first `ninja`
+  regenerates `ui_X.h` and does not recompile `X.cpp`. The Theme page showed
+  its old colours on a "freshly built" tree. Build twice after a `.ui` edit.
+- A test that presses Cancel from a timer has to send the click from a
+  timer of its own, and look the button up there: on Windows a timer does
+  not fire again while its slot is inside the box the click raised.
+
 **Read, not yet converted** (four read-only helper agents; their tables are
 in `..\dl\handson\2026-10-07\`, `entry24-inventory-*.txt`):
-- `Preferences/MainWindow` and `Themes`: 20 settings and 8 state keys.
-  Defaults that disagree: the second and third accent colour have FOUR
-  different defaults between the style sheet, the page, a saved theme and
-  the style parameter source, and OK on the Theme page stores the first
-  accent three times, which the next start then rewrites; `TitleBarToolBars`
-  is on by default to the window and off to the "is this theme customised"
-  test; a change of `GlobalToolBarArea` alone moves nothing; a user-saved
-  theme does not carry `QtStyle`, `CustomTitleBar` or `TitleBarToolBars`.
-- `Editor`, `PythonConsole`, `Macro`, `Units`, `NotificationArea`, `Dialog`:
-  about 60 settings. Seen: the report view's line limit, stored by its
-  context menu, is overridden at every start by a read of another group's
-  key of the same name; `Editor/Spaces` is off to the text editor and on to
-  the Python editor; the editor font has three defaults; the Editor and
-  Macro pages still store four keys nothing reads; `UserSchema` defaults to
-  6 in two CAM readers and 0 everywhere else.
+- `Editor`: about 25 settings, 16 of them colours whose key names have
+  spaces. Seen: the report view's line limit, stored by its context menu, is
+  overridden at every start by a read of another group's key of the same
+  name; `Editor/Spaces` is off to the text editor and on to the Python
+  editor, so Tab inserts a tab and Enter indents with spaces in the same
+  editor; the editor font has three defaults; the Editor page stores two
+  keys nothing reads and all sixteen colours on every OK.
 - `View` and `Document`: 113 and 14 keys not yet defined (189 and 43 are),
   and 19 defined View keys are still read directly at 119 places
   (`MarkerSize` at 22). Seen: any change of an unnamed key of the View group
   re-applies the background colours to every view.
 
 **Order from here,** by what a user meets first: the rest of `src/Gui`
-(`General`, `MainWindow`, `Editor`, `View`'s 100 keys not yet in
-`ViewParams`, `Document`'s 12, `Macro`, `NaviCube`, `Units`,
-`NotificationArea`, `PythonConsole`), then Part and PartDesign, the
-Sketcher, TechDraw, and the rest.
+(`Editor`, `View`'s 100 keys not yet in `ViewParams`, `Document`'s 12,
+`NaviCube`), then Part and PartDesign, the Sketcher, TechDraw, and the rest.
 
 **To decide, for the reporter:**
 - Modules written in Python only (BIM, Draft, AddonManager, parts of CAM
