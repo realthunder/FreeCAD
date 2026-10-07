@@ -73,6 +73,8 @@ report views, the reporter's own files -- is kept beside the dev tree under
 | 33 | 2026-10-07 | a cmd window pops up briefly at the first document opened after start | FOUND, fix being built: at the first 3D view `FreeCAD.exe` starts `cmd.exe /c where nvcc` with a console, from the path tracer's CUDA probe (`cuew.c`, `popen`); once per session (`docs/HandsOnLog.md`) |
 | 34 | 2026-10-07 | TechDraw's preselection colour sometimes does not follow the theme (stays yellow after classic, or is blue) | FIXED `3d7b4c30fd`, not staged, as decided: Dark and Light store TechDraw's `PreSelectColor`, the blue of the 3D view's highlight; a test switches Classic, Dark, Light, Classic (`docs/HandsOnLog.md`) |
 | 35 | 2026-10-07 | TechDraw (`scanner.FCStd`, Page003): now and then a click starts a recompute; a dimension (Dimension134) cannot be selected; selecting it in the tree can recompute and clear the selection. Asked: an audit of TechDraw for unnecessary recomputes | OPEN |
+| 36 | 2026-10-07 | TechDraw drawn by the backend: dashed lines do not behave as Qt's do (view frame, section line, hidden line, and so on), zoom above all | OPEN |
+| 37 | 2026-10-07 | TechDraw: the edge style "Chain" is not drawn dashed, by either renderer, though the style combo box shows it dashed | OPEN |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -2155,10 +2157,71 @@ the one it had); a recompute of the DOCUMENT where one object changed (every
 only repeats one that has just failed, which is what makes it noticed in
 `scanner.FCStd`.
 
+## 36. TechDraw drawn by the backend: dashed lines do not behave as Qt's -- OPEN
+
+**2026-10-07 16:18 and 16:30.** First a question, "check if this is queued.
+TechDraw backend renderer draws dash line zoom handling" -- it was not: the
+only mention was a line under entry 20 and in
+`docs/TechDrawPortAndSection.md`, as a known difference of the view FRAME
+alone. Then the report: "most dashed line rendering does not behave the same
+as Qt, namely view frame, section line, hidden line, and so on."
+So, with the page drawn by the backend (`PageRendererVg`): dashed lines in
+general -- the view frame, section lines, hidden lines, others -- do not
+come out as the Qt page draws them, and how the dashes take a zoom is the
+heart of it. Not said yet: what exactly differs for each kind (dash length,
+gap, where the pattern starts, how it follows the zoom), and at which zoom.
+Read from the documents and the source by the note-taker, nothing run:
+- What is written down already, for the frame only
+  (`docs/TechDrawPortAndSection.md`, "Still different from the Qt page"): "A
+  frame's dashes grow with the zoom (the line stays a hairline): Qt counts a
+  cosmetic pen's dashes in device pixels." So there are two kinds of pen in
+  the Qt page and they take a zoom differently: a COSMETIC pen (the frame, a
+  width in pixels) keeps its dashes the same size on screen at any zoom; a
+  pen with a real width (hidden lines, centre lines, section lines) has its
+  dashes in multiples of the line width, on the paper, so they grow and
+  shrink with the page. The backend has to tell the two apart to match.
+- Where the patterns come from: `LineGenerator::getLinePen`
+  (`src/Mod/TechDraw/App/LineGenerator.cpp`) builds a `QPen` with a custom
+  dash pattern out of the line standard's files
+  (`src/Mod/TechDraw/LineGroup/*.LineDef.csv`, element lengths in pen widths
+  in `*.ElementDef.csv`), with a dash OFFSET for a pattern that starts on a
+  gap, and the cap style from the preferences -- "if the cap style is Round
+  or Square, the lengths ... will be wrong by 1 pen width". Offset, caps and
+  the proportional or absolute lengths of the ANSI file are three more things
+  a second renderer can take differently.
+
+## 37. TechDraw: the edge style "Chain" is not drawn dashed, by either renderer -- OPEN
+
+**2026-10-07 16:30, a defect, noted with entry 36.** "BTW, one edge style
+'Chain' does not render as dashed in both renderer, even though it shows as
+such in the style combobox". An edge given the style "Chain" is drawn as a
+plain line by the Qt page AND by the backend, while the style combo box shows
+a dashed sample for it. Being in both, it is not the backend's; it is in what
+both are fed.
+Read from the source by the note-taker, nothing run:
+- "Chain" is line 17, the LAST, of the ASME standard's list
+  (`src/Mod/TechDraw/LineGroup/ASME.Y14.2.2008.LineDef.csv`:
+  `17,Chain,LongDash,Space,Dash,Space`). The same pattern as line 4,
+  "Center", and 5, "Symmetry", which the reporter did not name as failing.
+- `LineGenerator::getLinePen` gives a plain solid pen for a line number
+  below 2 or ABOVE the number of definitions loaded, and takes definition
+  `number - 1`. The last line of a list is the one that falls off first if
+  the count and the number disagree by one -- one definition not loaded, or
+  the number kept as a place in the combo box rather than as the line's
+  number.
+- Entry 19 found and fixed that very shape in the PREFERENCES ("count >
+  number" left the last style of each list unselectable, and the next Apply
+  stored the first in its place; fixed `805b5afb25`, staged 14:23). The edge
+  style of a view's line -- the combo box the reporter means -- is another
+  path and was not part of it.
+Not said yet: which line standard is selected (Chain exists in the ASME list
+only), and where the style was set (the line decoration panel, a cosmetic
+line, a centre line).
+
 ## Inbox
 
 Notes not sorted into an entry yet. Add a line here at any time, in any words;
 it is read before each entry is started and moved up into the table.
 
 (empty: the notes of 2026-10-06 are entries 20 to 28, those of 2026-10-07 so far
-entries 29 to 35)
+entries 29 to 37)
