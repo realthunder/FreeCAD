@@ -965,6 +965,45 @@ not been scored against a tree without the motion yet.
 
 ## 17. `Sketch043`, `Sketch055`: "Missing external geometry reference" -- FIXED `3c8cd63032`, a question for the reporter (see `docs/HandsOnLog.md`)
 
+**The reporter on the question the build session left** (its log, entry 17:
+is a Relative binder in a moved group MEANT to come back 53 mm away),
+2026-10-07 13:29: "that's how binder is supposed to work. a binder needs a
+context to recompute. if the user double click the binder inside the
+LinkGroup then it's context is relative to the linkgroup, which the binder
+will record inside a property (either named Owner or Parent or something
+else I don't remember). so without that step, binder continues to recompute
+with the last set context".
+The rule, then: a binder is recomputed in the context it has RECORDED. The
+context becomes the link group when the user double-clicks the binder inside
+that group, and is written into a property; until that is done again, the
+last recorded context goes on being used. Moving with the group is right for
+a binder whose recorded context is the group, and only for that one.
+Read by the note-taker, from the source and from the copy of the file
+(`..\dl\handson\2026-10-06\scanner.FCStd`, its `Document.xml`; nothing opened
+in the program, nothing run):
+- The property is `Context` (`Part::SubShapeBinder`,
+  `src/Mod/Part/App/SubShapeBinder.cpp`): hidden, an object and a sub-name,
+  "Stores the context of this binder. It is used for monitoring and auto
+  updating the relative placement of the bound shape".
+- In the file `Binder008` has `Relative` true and an EMPTY `Context` (`<XLink
+  file="" stamp="" name=""/>`). It is a member of `LinkGroup001`
+  (`ElementList`), whose placement is 53 mm along z. So this binder has no
+  recorded context at all: the group was never made its context.
+  (`Binder017`, for comparison, has one: `Body007`, sub `Misc.Binder017.`.)
+- What the code does with an empty context, `SubShapeBinder::update()`: when
+  `Relative` is on, no context is recorded and the context's sub-name is
+  empty, it takes the binder's own parents (`getParents()`), adopts the FIRST
+  one as the context and writes it into `Context`. No double-click is
+  involved. For `Binder008` that first parent is `LinkGroup001`, and from
+  that recompute on the binder is relative to the group -- hence the 53 mm.
+So by the reporter's rule the 53 mm is not owed: this binder was never given
+the group as its context, and "the last set context" is none. What moves it
+is the code adopting a context by itself when none is recorded. Whether that
+adoption is itself meant -- a binder with no context taking its first parent
+at its first recompute, which is also how a new binder inside a group gets
+one without a double-click -- or should not happen for a binder restored
+from a file, is the question that is left; put to the reporter 13:35.
+
 **From entry 16.** With `Binder013`, `014`, `017` and `018` valid again, what
 is built on them is recomputed for the first time in a full recompute of
 `scanner.FCStd`, and these two sketches fail (`entry16-first.txt`). Not looked
