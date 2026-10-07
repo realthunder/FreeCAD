@@ -15,13 +15,16 @@ Changed again and saved again, it comes back as changed.
 
 The view must name its object as the saved layouts already need it to
 (its widget's object name is the object's, TechDrawGui::MDIViewPage). A
-spreadsheet's view does not, and is not covered: sec 15.13.
+spreadsheet's view did not, and was not covered (sec 15.13); it does now,
+and with GT_KIND=sheet in the environment this script runs on one
+(GuiTaskPanelKeptSheetView_tests_run), where it does not on a page.
 
 Run through scripts/gui-test.sh (xvfb, isolated configuration, external
 timeout), or by hand as `FreeCAD <this script>` with GT_OUT set.
 
 Scored against the tree before the change (7a45fa84b4), where the view's
-properties die with the view.
+properties die with the view; on a spreadsheet's view, against the tree
+before that view had its name (da6a8cff6c).
 """
 import os
 import traceback
@@ -36,7 +39,8 @@ OUT = os.environ["GT_OUT"]
 RESULT = os.environ.get("GT_RESULT", os.path.join(OUT, "result.txt"))
 DOC = "TaskKept"
 SAVED = os.path.join(OUT, "task-kept.FCStd")
-SHEET = "TechDrawGui::MDIViewPage"
+KIND = os.environ.get("GT_KIND", "page")
+SHEET = "SpreadsheetGui::SheetView" if KIND == "sheet" else "TechDrawGui::MDIViewPage"
 VIEW = FreeCAD.ParamGet("User parameter:BaseApp/Preferences/View")
 TASKS = FreeCAD.ParamGet("User parameter:BaseApp/Preferences/TaskView")
 LAST = TASKS.GetGroup("Host")
@@ -238,12 +242,15 @@ def build():
             dock.hide()
     doc = FreeCAD.newDocument(DOC)
     doc.addObject("Part::Box", "Box")
-    # A drawing page, named as the rest of this script names it
-    page = doc.addObject("TechDraw::DrawPage", "Sheet")
-    template = doc.addObject("TechDraw::DrawSVGTemplate", "Template")
-    template.Template = os.path.join(FreeCAD.getResourceDir(), "Mod", "TechDraw",
-                                     "Templates", "A4_LandscapeTD.svg")
-    page.Template = template
+    if KIND == "sheet":
+        doc.addObject("Spreadsheet::Sheet", "Sheet").set("A1", "3")
+    else:
+        # A drawing page, named as the rest of this script names it
+        page = doc.addObject("TechDraw::DrawPage", "Sheet")
+        template = doc.addObject("TechDraw::DrawSVGTemplate", "Template")
+        template.Template = os.path.join(FreeCAD.getResourceDir(), "Mod", "TechDraw",
+                                         "Templates", "A4_LandscapeTD.svg")
+        page.Template = template
     doc.recompute()
     settle(500)
     open_sheet_view()

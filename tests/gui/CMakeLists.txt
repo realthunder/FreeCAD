@@ -1376,6 +1376,24 @@ fc_add_gui_test(GuiTaskPanelClearOfDocks_tests_run task-panel-clear-of-docks.py
 # the view's properties die with the view.
 fc_add_gui_test(GuiTaskPanelKeptAnyView_tests_run task-panel-kept-any-view.py
                 --timeout 300)
+# The same on a spreadsheet's view, which has the name it takes since
+# GuiSheetViewReopen below.
+fc_add_gui_test(GuiTaskPanelKeptSheetView_tests_run task-panel-kept-any-view.py
+                --timeout 300)
+set_property(TEST GuiTaskPanelKeptSheetView_tests_run APPEND PROPERTY
+             ENVIRONMENT "GT_KIND=sheet")
+
+# A spreadsheet's view names its object as a drawing page's does, so the
+# saved layouts write it (O:<object>) and a document is reopened with it
+# in its cell (docs/SplitViews.md sec 5.6): no cell or tab more than were
+# saved, the document not modified by being opened, no edit left on; a
+# view that was closed stays away, and so does the view of a sheet that is
+# gone. Its last case is a crash the script found on the tree before: a
+# sheet deleted and its document closed with no turn of the event loop
+# between left the view in its cell, reading the sheet. Scored against
+# the tree before.
+fc_add_gui_test(GuiSheetViewReopen_tests_run sheet-view-reopen.py
+                --timeout 300)
 
 # Making a view the active window makes its cell the view area's active
 # cell and brings the keyboard with it (docs/SplitViews.md sec 21): right

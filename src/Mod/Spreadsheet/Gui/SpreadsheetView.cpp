@@ -69,6 +69,15 @@ SheetView::SheetView(Gui::Document* pcDocument, App::DocumentObject* docObj, QWi
     : MDIView(pcDocument, parent)
     , sheet(static_cast<Sheet*>(docObj))
 {
+    // An object's view is known for its object's by its name: the saved
+    // layouts write it as O:<object> and a document is reopened with it in
+    // its cell, and the place of its task panel is kept by the same token
+    // (Gui::Document::objectViewToken; TechDrawGui::MDIViewPage does the
+    // same for a page).
+    if (const char* name = sheet->getNameInDocument()) {
+        setObjectName(QString::fromUtf8(name));
+    }
+
     // Set up ui
 
     model = new SheetModel(static_cast<Sheet*>(docObj));
