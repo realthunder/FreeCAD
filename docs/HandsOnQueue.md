@@ -1646,7 +1646,7 @@ entry 24, has the method and the inventory):
   messages off, and Python's output switched off through its key did not
   come back.
 - Next on its side: the rest of `src/Gui`'s groups.
-- **Passed on 2026-10-07 19:40, three groups done, none staged.** The
+- **Passed on 2026-10-07 19:00, three groups done, none staged.** The
   reporter to the build session that evening: "pause after you finished
   entry 24" -- it works this entry to its end and starts nothing else; entry
   40 and the rest stay where they are.
