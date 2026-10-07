@@ -1004,6 +1004,61 @@ at its first recompute, which is also how a new binder inside a group gets
 one without a double-click -- or should not happen for a binder restored
 from a file, is the question that is left; put to the reporter 13:35.
 
+**The reporter's answer, and an audit asked, 2026-10-07 14:19:** "audit for
+all the places binder Context is set. by right, it should record the context
+the first time an object is dropped onto the binder in tree view." So the
+intent: the context is recorded ONCE, when an object is first dropped onto
+the binder in the tree view. Not at a recompute.
+**The audit, by the note-taker, from the source only (nothing run):** the
+property is written in three places and nowhere else -- no command, no Python,
+no other module.
+1. `SubShapeBinder::update()`, `src/Mod/Part/App/SubShapeBinder.cpp` 279-300,
+   at EVERY update of a `Relative` binder, a recompute included:
+   - context recorded and still leading to this binder: it is lengthened to
+     the top-most parent of the context object (`parent->getParents()`, the
+     first one) and written back if that changed it;
+   - context recorded but no longer leading to this binder: treated as none
+     for this update, left in the property as it is;
+   - NO context recorded (object and sub-name both empty): the binder's own
+     `getParents()` is asked, the FIRST parent is adopted and written. This
+     is what gave `Binder008` the group, and it needs no action of the user.
+2. `ViewProviderSubShapeBinder::updatePlacement()`,
+   `src/Mod/Part/Gui/ViewProviderSubShapeBinder.cpp` 358-393, both branches
+   (381, 393): the context is taken from the SELECTION -- exactly one selected
+   item whose path leads to this binder gives the object and the path;
+   anything else logs "invalid selection" and writes an EMPTY context. Then
+   `update(UpdateForced)`, where an empty context is filled by 1. It is
+   called from four places:
+   - `doubleClicked()` -- the double click the reporter described;
+   - `setEdit(0)`;
+   - the context menu's "Synchronize";
+   - `dropObjectEx()`, after the dropped links are set, whenever `Relative`
+     is on -- at EVERY drop, not the first only.
+3. Restore from the file (the property is saved; `Binder017` has one).
+Creating a binder (`PartGui::makeSubShapeBinder`,
+`src/Mod/Part/Gui/Command.cpp`) works out the container from the selection to
+resolve the support, but does not write `Context`; the new binder gets one
+from 1, at its first update, if it has a parent by then.
+**Against the intent:**
+- (i) 1's adoption of the first parent is not a drop and not the user's doing;
+  it runs at any recompute, a restored file's first one included. This is
+  the 53 mm of this entry.
+- (ii) the drop does record a context, but at every drop, and from the
+  selection rather than from where the binder was dropped on. To check when
+  it is run: during a drag in the tree the selection is normally what is
+  being DRAGGED, not the binder -- if so the drop writes an empty context and
+  1 then adopts the first parent, so even the drop does not record what the
+  reporter means.
+- (iii) double click, edit and "Synchronize" re-record it too. The reporter
+  described the double click as a way to set the context, so those may be
+  wanted; "the first time" then applies to the drop alone. To confirm.
+- (iv) nothing clears a context on purpose; it is emptied only by an
+  "invalid selection" in 2.
+Not decided yet: whether this audit becomes a change request (1 stops
+adopting; the drop records once, from the drop target), and what a binder
+with no context does at a recompute -- stays as it was built, as the reporter
+said of "the last set context".
+
 **From entry 16.** With `Binder013`, `014`, `017` and `018` valid again, what
 is built on them is recomputed for the first time in a full recompute of
 `scanner.FCStd`, and these two sketches fail (`entry16-first.txt`). Not looked
