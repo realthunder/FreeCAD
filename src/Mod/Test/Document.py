@@ -2802,6 +2802,119 @@ class FeatureTestAttribute(unittest.TestCase):
         FreeCAD.closeDocument("TestAttribute")
 
 
+class ElementAppearanceCases(unittest.TestCase):
+    # What the elements of a shape look like, held by the object
+    # (docs/ShapeAppearanceDesign.md sec 14): the Python view of
+    # App::PropertyElementAppearance. The object here has no shape, so a look
+    # is held by the element's number; names are Part's to test.
+    RED = (1.0, 0.0, 0.0, 1.0)
+    BLUE = (0.0, 0.0, 1.0, 1.0)
+
+    def setUp(self):
+        self.doc = FreeCAD.newDocument("TestElementAppearance")
+        self.obj = self.doc.addObject("App::FeatureTest", "obj")
+        self.obj.addProperty("App::PropertyElementAppearance", "ElementAppearance")
+        self.ea = self.obj.ElementAppearance
+
+    def tearDown(self):
+        FreeCAD.closeDocument(self.doc.Name)
+
+    def material(self, color, shininess):
+        mat = FreeCAD.Material()
+        mat.DiffuseColor = color
+        mat.Shininess = shininess
+        return mat
+
+    def testIndexedByNameOrNumber(self):
+        ea = self.ea
+        self.assertEqual(len(ea), 0)
+        ea.Face = self.material(self.BLUE, 0.25)
+        ea["Face3"] = self.material(self.RED, 0.75)
+        self.assertEqual(ea["Face3"].DiffuseColor, self.RED)
+        self.assertEqual(ea[2].DiffuseColor, self.RED)
+        self.assertEqual(ea[2].Shininess, 0.75)
+        self.assertEqual(ea["Face1"].DiffuseColor, self.BLUE)
+        self.assertEqual(ea["Face"].DiffuseColor, self.BLUE)
+        self.assertEqual(ea.Face.DiffuseColor, self.BLUE)
+        self.assertIn("Face3", ea)
+        self.assertIn(2, ea)
+        self.assertNotIn("Face1", ea)
+        self.assertNotIn("Wire1", ea)
+        self.assertEqual(ea.keys(), ["Face3"])
+        self.assertEqual([k for k, _ in ea.items()], ["Face3"])
+        self.assertEqual(len(ea), 1)
+        self.assertFalse(ea.isNamed("Face3"))
+        with self.assertRaises(KeyError):
+            ea["Wire1"]
+        with self.assertRaises(TypeError):
+            ea["Face1"] = "red"
+        # The view is of the property: read again, it says the same
+        self.assertEqual(self.obj.ElementAppearance[2].DiffuseColor, self.RED)
+
+    def testAColourFollowsTheObjectInTheRest(self):
+        ea = self.ea
+        ea.Face = self.material(self.BLUE, 0.25)
+        ea["Face2"] = self.RED
+        self.assertEqual(ea.own("Face2"), ("DiffuseColor",))
+        self.assertEqual(ea.own("Face1"), ())
+        ea.Face = self.material(self.BLUE, 0.5)
+        self.assertEqual(ea["Face2"].DiffuseColor, self.RED)
+        self.assertEqual(ea["Face2"].Shininess, 0.5)
+        # A gloss of its own, by the fields named
+        ea.setLook("Face2", self.material(self.RED, 1.0), ("Shininess",))
+        ea.Face = self.material(self.BLUE, 0.125)
+        self.assertEqual(ea["Face2"].Shininess, 1.0)
+        self.assertEqual(ea.own("Face2"), ("DiffuseColor", "Shininess"))
+        with self.assertRaises(ValueError):
+            ea.setLook("Face2", self.material(self.RED, 1.0), ("Gloss",))
+
+    def testTakenAway(self):
+        ea = self.ea
+        ea.Face = self.material(self.BLUE, 0.25)
+        ea.update({"Face1": self.RED, 3: self.material(self.RED, 0.75)})
+        self.assertEqual(sorted(ea.keys()), ["Face1", "Face4"])
+        del ea["Face1"]
+        self.assertEqual(ea["Face1"].DiffuseColor, self.BLUE)
+        with self.assertRaises(KeyError):
+            del ea["Face1"]
+        self.assertTrue(ea.remove(3))
+        self.assertFalse(ea.remove(3))
+        self.assertEqual(len(ea), 0)
+        ea.clear()
+        self.assertEqual(ea.Face.DiffuseColor, FreeCAD.Material().DiffuseColor)
+
+    def testAssignedWhole(self):
+        self.obj.ElementAppearance = {"Face": self.material(self.BLUE, 0.25), "Face2": self.RED}
+        ea = self.obj.ElementAppearance
+        self.assertEqual(ea.Face.DiffuseColor, self.BLUE)
+        self.assertEqual(ea["Face2"].DiffuseColor, self.RED)
+        # What is drawn, as a list that is a value of its own
+        faces = ea.Faces
+        self.assertEqual(faces[1].DiffuseColor, self.RED)
+        self.assertEqual(faces.Base.DiffuseColor, self.BLUE)
+        # From one object to another
+        other = self.doc.addObject("App::FeatureTest", "other")
+        other.addProperty("App::PropertyElementAppearance", "ElementAppearance")
+        other.ElementAppearance = ea
+        self.assertEqual(other.ElementAppearance["Face2"].DiffuseColor, self.RED)
+        self.obj.ElementAppearance = None
+        self.assertEqual(len(self.obj.ElementAppearance), 0)
+        self.assertEqual(other.ElementAppearance["Face2"].DiffuseColor, self.RED)
+
+    def testAViewOfAnObjectThatIsGone(self):
+        ea = self.ea
+        ea["Face2"] = self.RED
+        self.assertIs(ea.Object, self.obj)
+        self.doc.removeObject("obj")
+        self.doc.UndoMode = 0
+        del self.obj
+        # Whatever became of the object, a view of its property does not crash
+        try:
+            ea.keys()
+        except ReferenceError:
+            pass
+
+
 class TransactionBranchCases(unittest.TestCase):
     # Branches of the transaction log in a file (docs/TransactionLog.md
     # sec 17, 26): the branch travels with the embedded history, and a file

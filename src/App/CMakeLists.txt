@@ -391,6 +391,7 @@ generate_from_xml(ComplexGeoDataPy)
 generate_from_xml(PropertyContainerPy)
 generate_from_xml(MaterialPy)
 generate_from_xml(MaterialListPy)
+generate_from_xml(ElementAppearancePy)
 
 generate_embed_from_py(FreeCADInit InitScript.h)
 generate_embed_from_py(FreeCADTest TestScript.h)
@@ -422,6 +423,7 @@ SET(FreeCADApp_XML_SRCS
     ComplexGeoDataPy.xml
     MaterialPy.xml
     MaterialListPy.xml
+    ElementAppearancePy.xml
     ExpressionPy.xml
     StringHasherPy.xml
     StringIDPy.xml
@@ -594,6 +596,7 @@ SET(Properties_CPP_SRCS
     PropertyFile.cpp
     PropertyHistory.cpp
     PropertyGeo.cpp
+    PropertyElementAppearance.cpp
     PropertyLinks.cpp
     PropertyPythonObject.cpp
     PropertyStandard.cpp
@@ -608,6 +611,7 @@ SET(Properties_HPP_SRCS
     PropertyFile.h
     PropertyHistory.h
     PropertyGeo.h
+    PropertyElementAppearance.h
     PropertyLinks.h
     PropertyPythonObject.h
     PropertyStandard.h
@@ -643,6 +647,7 @@ SET(FreeCADApp_CPP_SRCS
     AppearanceList.cpp
     MaterialPyImp.cpp
     MaterialListPyImp.cpp
+    ElementAppearancePyImp.cpp
     Metadata.cpp
     MetadataPyImp.cpp
     ParamRegistry.cpp

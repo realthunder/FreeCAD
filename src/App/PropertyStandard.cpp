@@ -3151,6 +3151,28 @@ void PropertyAppearanceList::change(Op &&op, int touched)
     guard.tryInvoke();
 }
 
+void PropertyAppearanceList::setHolder(Property *holder, const char *name)
+{
+    _holder = holder;
+    setNameInHolder(name);
+    setContainer(holder ? holder->getContainer() : nullptr);
+    _list.setBlobManager(&blobManager());
+}
+
+void PropertyAppearanceList::aboutToSetValue()
+{
+    if (!_holder) {
+        PropertyLists::aboutToSetValue();
+    }
+}
+
+void PropertyAppearanceList::hasSetValue()
+{
+    if (!_holder) {
+        PropertyLists::hasSetValue();
+    }
+}
+
 void PropertyAppearanceList::setList(const AppearanceList &list)
 {
     change([&] {

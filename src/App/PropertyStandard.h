@@ -1225,6 +1225,21 @@ public:
     void editList(const std::function<void(AppearanceList &)> &op, int touched = -1);
     //@}
 
+    /** @name A list held inside another property
+     *
+     * App::PropertyElementAppearance keeps its lists in these, for the
+     * writing of them, which is this class's. A held list is no property of
+     * the container: it announces nothing -- its holder announces the change
+     * a write to it is part of -- and its file is named \a name, which must
+     * outlive it.
+     */
+    //@{
+    void setHolder(Property *holder, const char *name);
+    Property *getHolder() const { return _holder; }
+    /// The value where it is, for the holder to write to
+    AppearanceList &heldList() { return _list; }
+    //@}
+
     /** @name The value this property holds
      *
      * Copying it costs a pointer, so handing it to Python, snapshotting it
@@ -1702,6 +1717,12 @@ public:
 
 protected:
     MaterialAppearance getPyValue(PyObject *) const;
+    /// A held list announces nothing (setHolder())
+    //@{
+    void aboutToSetValue() override;
+    void hasSetValue() override;
+    //@}
+
     void setPyValues(const std::vector<PyObject*> &vals, const std::vector<int> &indices) override;
 
     void restoreXML(Base::XMLReader &) override;
@@ -1787,6 +1808,8 @@ private:
     /// mid-restore withdraws them rather than leaving it queued for content
     /// it will never take
     FileBlobManager *_pendingBlobManager {nullptr};
+    /// The property this list is held in, if it is (setHolder())
+    Property *_holder {nullptr};
 
     /** Which shape the doc file being read is in
      *

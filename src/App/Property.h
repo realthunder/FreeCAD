@@ -200,6 +200,14 @@ public:
      */
     std::string getFileName(const char *postfix=nullptr, const char *prefix=nullptr) const;
 
+    /** Name a property that no container registered
+     *
+     * For a property held inside another one, which is saved through it:
+     * its file is named after it like any property's (getFileName()). \a
+     * name must outlive this property.
+     */
+    void setNameInHolder(const char *name) { myName = name; }
+
     /// Get the class name of the associated property editor item
     virtual const char* getEditorName() const { return ""; }
 

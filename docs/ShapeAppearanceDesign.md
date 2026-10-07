@@ -3390,3 +3390,246 @@ Paint check, 79: a face given a colour takes the object's new gloss and
 its name says so; one name given a material and the painted face no
 longer follows; names out of an older file written again as colours
 follow still.
+
+## 14. One store on the object: `App::PropertyElementAppearance`
+
+> Ruled 2026-10-07, after the names were measured against the numbers
+> (14.1). In the user's words: "store move to object. let's make a new
+> dedicated property that is derived from a linksub property with additional
+> color/material storage that shape appearance uses. The property shall
+> support smart indexing through either name or pure number with optimal
+> storage. create corresponding python object for this property as well.
+> [a write by number gets its name when it is written:] yes. [what is made
+> of the sources:] cache it in the new property. ShapeAppearance will become
+> a internal reference to this new property. they can share the same
+> internal storage."
+>
+> **14.4 step 1 is built. The rest is the plan.** What is filled in beyond
+> the ruling is marked *mine*, and is the user's to overrule.
+
+### 14.1 What was measured
+
+`cost.py`, `cost2.py` (a GUI run, offscreen, the log off; every face given
+a colour).
+
+| | by number | by name |
+| --- | --- | --- |
+| shape with an element map, 9,000 faces: held | 65 B a face | 430 B a face |
+| ... the file, compressed | +0.9 KB | +96 KB, a tenth of the file |
+| ... read back | 465 ms | 544 ms |
+| ... each `updateColors()` | 13 ms | 20 ms |
+| shape without one (an import), 12,000 faces: held | 52 B a face | 6.6 KB a face, 80 MB |
+| ... the file, compressed | +0.4 KB | +71 KB |
+| ... read back | 28 ms | 125 ms |
+
+A recompute costs the same either way. By number at 120,000 faces: 78 ms,
++12 MB, +2.5 KB of file; the names alone at that size, 504 ms and 781 MB.
+
+Two of the costs by name are accidents. The 6.6 KB: a name on a shape that
+has no element map goes through `Part::Feature::getExportElementName`,
+which builds a sub shape for it and uses that only for a wire, a shell or
+a solid (*read, not confirmed by a run*). And the first write is worse
+than linear (0.38 s at 12,000 faces, 4.6 s at 36,000), in the list of
+looks and not in the names, which alone are linear.
+
+*Seen and not chased:* colours given by number were gone after the shape
+was made again, on both kinds of shape -- for a shape with sources that is
+`MapFaceColor` writing over them, as it says it does; for the import-like
+one it was not traced.
+
+So: a name where the shape has one, the number where it has not. On a
+shape without an element map a name *is* the number, and holding it as a
+string buys nothing.
+
+### 14.2 The property
+
+`App::PropertyElementAppearance`, derived from `App::PropertyLinkSubHidden`
+and linked to the object it is on: the names are its sub-elements, kept by
+their mapped names and followed through a recompute as any reference is.
+Beside them, for each kind of element -- face, edge, vertex:
+
+- **the kind's own look**, which is what the names `Face`, `Edge` and
+  `Vertex` have always meant to `setElementColors`: the object's;
+- **the looks given by number**, for an element the shape gives no name;
+- **what is drawn**: every element's look as it comes out of all of it,
+  and of the sources the shape was made from (`MapFaceColor`). Made, not
+  stated, and kept so that a document read does not have to make it again
+  -- nor can, where a source is in a document that is not loaded.
+
+and for the names, **a look each and which of it is the name's own**.
+
+*The storage.* Each of those is an `App::AppearanceList` -- sec 12's base
+and overriding entries -- and nothing new is stored a field at a time:
+
+| | holds | costs |
+| --- | --- | --- |
+| own, one a kind | the kind's own look: a list of one | nothing until it is given; then one material |
+| numbered, one a kind | an entry for each element; one that differs from the kind's own look is an element given a look by number | nothing until an element is given one; then 20 B an element coloured |
+| named | one entry for each name, whole | what `MappedAppearance` cost |
+| which is its own | 16 bits a name: the fields the name states | 2 B a name, nothing while every name states all |
+| drawn, one a kind | the resolved list | **a pointer** while it says what the numbered one does -- no names, nothing from a source: an import -- since a list is a shared value (`Base::COWValue`); otherwise the overriding entries once more |
+
+The view provider's `ShapeAppearance` holds the same value as the drawn
+faces: the third holder of one storage, not a copy.
+
+*The kind's own look is kept apart from the numbered list, and is not its
+base* (*found building it*), though the two are the same until every
+element is given the same look by number. Two things take a base away from
+a list. The fold: a list keeps what all its entries agree on as its base
+(13.7), so six faces of a box red by number would be a red box. And every
+encoding below schema 5, the default, states one entry at a time and no
+base at all. So an element is "given a look by number" where its entry
+differs from the kind's own look, which is asked of the two and stored
+nowhere; and the kind's look given anew is put under the numbered entries
+(`rebaseNumbered()`), each keeping the fields in which it differed.
+
+A list is held in a `PropertyAppearanceList` nested in the property and
+made only when there is something to hold, so an object nobody coloured
+pays for ten null pointers. Nested and not a bare value because the
+writing of a list is not small -- two encodings chosen by schema, the
+finish and the texture beside them below schema 5, the blobs a texture
+names and their arrival after the XML is read -- and is that class's.
+A nested list signals nothing of its own and takes its file's name from
+the property it is in (`setHolder()`; `Property::setNameInHolder()`).
+
+*Which of a look is the name's own* (*mine*). Sec 13 went through three
+answers to "does a painted face take the object's new gloss" and ended at
+one flag for the whole list, because a list cannot tell a field no entry
+states from a field every entry states alike (the fold, 13.7). Sixteen
+bits a name can: a name given a colour states the colour, and is the
+object in everything else, as that comes to be; a name given a material
+states all of it. It is a face at a time and a field at a time, so one
+name given a material no longer ends the follow of the others. The follow
+flag is not used for this any more. An element held by its number has no
+bits: what it states is the fields in which its entry differs from the
+kind's own look, which says the same thing so long as nobody gives an
+element the very value the object has.
+
+*The fold* (13.7, the question left for a discussion) is answered by the
+shape of the store and needs no ruling: the kind's own look is stated,
+`Face`, and nothing a face is given writes it. Six faces of a box red, by
+name or by number, are six red faces; the box is the colour it was, and
+one taken away has that to go back to. The lists may fold as they like --
+nothing reads the base of one as anybody's choice. The two tests that pin
+the fold stay as they are.
+
+### 14.3 Smart indexing
+
+An element is asked for and given by any of
+
+- its name as the shape counts it, `Face3`;
+- its number, as `ShapeAppearance` counts faces: `2`;
+- its mapped name;
+- `Face`, `Edge`, `Vertex`: the kind's own look.
+
+A read answers what is drawn. A write goes **to the name where the shape
+has a mapped name for the element, to the number where it has not** --
+asked of the object's geometry (`ComplexGeoData::getMappedName`) when it
+is written, which is the ruling that a write by number gets its name then
+and not at a merge (it replaces docs/TransactionLog.md sec 31.17's). An
+element with both, a number stated before the shape had names, is the
+name's: the name is laid over the number when the looks are made.
+
+Python, `App.ElementAppearance`, a view of the property and not a copy:
+
+    ea = obj.ElementAppearance
+    ea["Face3"] = material        # the whole of it is the face's own
+    ea["Face3"] = (1.0, 0.0, 0.0) # the colour alone; the rest follows the object
+    ea[2]                         # the same face, by number
+    del ea["Face3"]               # back to the object's
+    ea.Face = material            # the object's own look
+    ea.keys(), ea.items()         # what is stated, named and numbered
+    ea.Faces                      # what is drawn, an App.MaterialList
+    ea.own("Face3")               # ('DiffuseColor',)
+
+### 14.4 Build order
+
+1. **The property, in App** (*built*, 14.5): the class, its file form, its
+   Python object, tests. Nothing uses it.
+2. **`Part::Feature` has it** (*mine*: named `ElementAppearance`, and
+   `ColoredElements` read from a file that has it and no longer there --
+   the alternative, the old name on the new type, keeps an older build of
+   this fork reading the names and changes what `obj.ColoredElements[1]`
+   means). What makes the looks from names and numbers moves to
+   `Part::Feature`, where a shape is: the half of `updateColors()` that
+   needs no view provider.
+3. **`ShapeAppearance` a reference to it.** A read is the drawn faces; a
+   write is taken apart -- the base to `Face`, a face to its name or its
+   number -- and put through the property. `MappedAppearance` goes
+   (never released: nothing to convert, sec 13 says when); `MappedColors`
+   stays the name over the named colours an older file and a script know.
+   What is made of the sources stays the view provider's to work out, and
+   is kept in the property.
+4. **The importer and the exporters without a view provider**: a STEP
+   file's colours read in `FreeCADCmd` and written from it.
+5. **The merge** (docs/TransactionLog.md sec 31.20) on one value: the
+   pair, the two halves arriving one after the other and
+   `Prop_OwnerValue` for these two all go.
+6. **Below schema 5** `ShapeAppearance` and `DiffuseColor` are still
+   written, for upstream and for an older build; read back only where the
+   file has no store, and then taken into it as a script's write would be.
+7. The panel, the paint check, and the two accidents of 14.1.
+
+### 14.5 Built
+
+**Step 1, the property (2026-10-07).** `App::PropertyElementAppearance`
+(`src/App/PropertyElementAppearance.{h,cpp}`), with `App.ElementAppearance`
+(`ElementAppearancePy.xml`, `ElementAppearancePyImp.cpp`). Nothing has one
+yet: the tests give an object one as a dynamic property.
+
+*The writes.* `setBase(kind, look)`; `setLook(kind, index, look, own)` and
+`setColor()`, which go to the name or to the number as 14.3 says, asked of
+the object's geometry (`hasMappedName()`, virtual); `setNamed()` and
+`setNumbered()` for all of one at once, which is what an import and a
+merge have; `removeLook()`, `clear()`. Each announces itself; an `Edit`
+held around several announces them once and gives the names to the link
+once, which is what looks them up in the shape -- so a thousand names
+written in one `Edit` are looked up once and not a thousand times.
+
+*What is drawn.* `compose(kind, count, named, handedOn)` makes the list:
+the numbered one at `count` entries -- or the kind's own look alone where
+the numbers were counted for another shape -- then the looks handed on,
+then each name's look at the elements it is now. `setDrawn()` keeps it, and
+keeps nothing where it says what is stated already. It records no change
+(`touch()`): it is made of what is. Which elements a name is now, and what
+a source hands on, are the owner's to work out, since they need the shape:
+step 2.
+
+*The names as a link has them.* Whatever changes the names knowing a link
+and no more -- a paste of a plain link, `setValue()` through a base
+pointer, a link broken -- leaves a look for each name there is and no more
+(`conformNames()`): a name that came without a look states nothing, and
+names taken away take the looks at the end of the list. *That is right
+only for names taken from the end;* nothing that is not this class changes
+them once `ColoredElements` is this property's, which is step 2.
+
+*The file.* The link as a link is written, then
+`<ElementAppearance lists=".." own=".."/>` -- which lists follow, and the
+own fields run by run (`3*1 7ff`) -- then the lists, each as a
+`PropertyAppearanceList` writes itself at the schema of the file. A reader
+that knows a link and no more reads the names and steps over the rest; a
+link as it was written before is read as names that state nothing.
+
+*Python.* The view is registered with its property and made invalid when
+that goes. `obj.ElementAppearance = {...}` replaces what is stated,
+`= other.ElementAppearance` copies, `= None` clears, and `(obj, [names])`
+is taken as a link takes it.
+
+*Not built in this step, and known:* a held list that has gone to a file
+of its own is read after the XML pass, into the list the XML pass made;
+a write to the property between the two that lets that list go would leave
+the read with nowhere to land. Nothing writes there today.
+
+Tests: gtest `PropertyElementAppearance_tests_run`, 17 -- an object nobody
+coloured holds nothing; a face the shape gives no name held by its number,
+and what is drawn the same storage; a colour following the object and a
+material beside it not; six faces alike leaving the object its look, and
+one taken away going back to it; a name stating what it was given; what is
+drawn laid from numbers, names and a look handed on; a copy put back; names
+changed as a link changes them; the file form at schema 4 and 5, and a
+plain link read; a document saved and opened, the numbered list in a file
+of its own; one step to undo. Part's gtest `PartElementAppearanceTest`, 3,
+on a cut, whose faces have mapped names: a look given by `Face1` or by
+number held by the name, found by the mapped name, and still its face
+after the shape is made again. Python `Document.ElementAppearanceCases`,
+5.

@@ -57,6 +57,7 @@
 #include <QStandardPaths>
 #include <LibraryVersions.h>
 
+#include <App/ElementAppearancePy.h>
 #include <App/MaterialListPy.h>
 #include <App/MaterialPy.h>
 #include <App/MetadataPy.h>
@@ -133,6 +134,7 @@
 #include "PropertyExpressionEngine.h"
 #include "PropertyFile.h"
 #include "PropertyHistory.h"
+#include "PropertyElementAppearance.h"
 #include "PropertyLinks.h"
 #include "PropertyPythonObject.h"
 #include "SavedView.h"
@@ -334,6 +336,7 @@ void Application::setupPythonTypes()
 
     Base::Interpreter().addType(&App::MaterialPy::Type, pAppModule, "Material");
     Base::Interpreter().addType(&App::MaterialListPy::Type, pAppModule, "MaterialList");
+    Base::Interpreter().addType(&App::ElementAppearancePy::Type, pAppModule, "ElementAppearance");
     // The class is App::AppearanceList now; the Python type keeps the name
     // fork macros use, and answers to the new one as well.
     Base::Interpreter().addType(&App::MaterialListPy::Type, pAppModule, "AppearanceList");
@@ -2478,6 +2481,7 @@ void Application::initTypes()
     App::PropertyLinkSubChild       ::init();
     App::PropertyLinkSubGlobal      ::init();
     App::PropertyLinkSubHidden      ::init();
+    App::PropertyElementAppearance  ::init();
     App::PropertyLinkList           ::init();
     App::PropertyLinkListChild      ::init();
     App::PropertyLinkListGlobal     ::init();
