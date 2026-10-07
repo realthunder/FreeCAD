@@ -1359,6 +1359,15 @@ fc_add_gui_test(GuiTaskPanelSide_tests_run task-panel-side.py
 fc_add_gui_test(GuiTaskPanelOverlay_tests_run task-panel-overlay.py
                 --timeout 300)
 
+# A task panel over its view stands clear of the overlaid docks
+# (docs/TaskPanelPerView.md sec 5.3): with the tree, the combo view and
+# the Python console laid over the window, the panel begins where a dock
+# ends on whichever side it is put, and has its room back when the docks
+# are docks again. Scored against the tree before, where it is laid out
+# as if no dock were over it.
+fc_add_gui_test(GuiTaskPanelClearOfDocks_tests_run task-panel-clear-of-docks.py
+                --timeout 300)
+
 # Making a view the active window makes its cell the view area's active
 # cell and brings the keyboard with it (docs/SplitViews.md sec 21): right
 # after "create new view" the first view can be clicked back into; with

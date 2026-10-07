@@ -442,7 +442,12 @@ public:
                      OverlayTabWidget::_TopOverlay,
                      OverlayTabWidget::_BottomOverlay};
 
-        connect(&_timer, &QTimer::timeout, [this](){onTimer();});
+        // Every pass of the layout, whichever way it ends, is told to
+        // whoever lays itself out against the docks (occupied())
+        connect(&_timer, &QTimer::timeout, [this, host](){
+            onTimer();
+            Q_EMIT host->layoutChanged();
+        });
         _timer.setSingleShot(true);
 
         _reloadTimer.setSingleShot(true);
@@ -2076,6 +2081,25 @@ void OverlayManager::setMouseTransparent(bool enabled)
 bool OverlayManager::isMouseTransparent() const
 {
     return d->mouseTransparent;
+}
+
+QRegion OverlayManager::occupied(const QWidget *widget) const
+{
+    QRegion region;
+    if (!widget)
+        return region;
+    for (OverlayTabWidget *tabWidget : _Overlays) {
+        if (!tabWidget || !tabWidget->count() || !tabWidget->isVisible()
+                || !tabWidget->isOverlaid()
+                || tabWidget->getState() > OverlayTabWidget::State::Normal)
+            continue;
+        const QRect global(tabWidget->mapToGlobal(QPoint(0, 0)), tabWidget->size());
+        const QRect local = QRect(widget->mapFromGlobal(global.topLeft()), global.size())
+            .intersected(widget->rect());
+        if (!local.isEmpty())
+            region += local;
+    }
+    return region;
 }
 
 bool OverlayManager::isUnderOverlay() const

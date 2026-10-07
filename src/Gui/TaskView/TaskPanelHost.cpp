@@ -90,10 +90,61 @@ constexpr int MinHeight = 160;
 /// The grip along the inner edge of an overlay (Gui::OverlaySizeGrip)
 constexpr int GripSize = 6;
 
-/// What of its place an overlay may stand in
+/// What of its place an overlay may stand in: clear of the place's own
+/// chrome, and of the docks laid over the edges of the window
+/// (docs/TaskPanelPerView.md sec 5.3). A dock overlay is a strip along
+/// an edge; in a place it reaches it lies along one of the place's edges
+/// too, and the room ends where the strip does. For a strip that touches
+/// two edges of the place -- a corner of it -- the edge it reaches in from
+/// the least.
 QRect roomIn(const QWidget* place)
 {
-    return place->rect().adjusted(Margin, TopMargin, -Margin, -BottomMargin);
+    QRect room = place->rect().adjusted(Margin, TopMargin, -Margin, -BottomMargin);
+    const QRect all = place->rect();
+    for (const QRect& taken : Gui::OverlayManager::instance()->occupied(place)) {
+        const bool atLeft = taken.left() <= all.left() + 1;
+        const bool atRight = taken.right() >= all.right() - 1;
+        const bool atTop = taken.top() <= all.top() + 1;
+        const bool atBottom = taken.bottom() >= all.bottom() - 1;
+        // How far in from each edge it touches; far beyond any for one it
+        // does not
+        const int none = all.width() + all.height();
+        int depth[4] = {atLeft ? taken.right() + 1 - all.left() : none,
+                        atRight ? all.right() + 1 - taken.left() : none,
+                        atTop ? taken.bottom() + 1 - all.top() : none,
+                        atBottom ? all.bottom() + 1 - taken.top() : none};
+        // A strip from edge to edge lies along the edge between them
+        if (atLeft && atRight) {
+            depth[0] = depth[1] = none;
+        }
+        if (atTop && atBottom) {
+            depth[2] = depth[3] = none;
+        }
+        int edge = 0;
+        for (int i = 1; i < 4; ++i) {
+            if (depth[i] < depth[edge]) {
+                edge = i;
+            }
+        }
+        if (depth[edge] >= none) {
+            continue;
+        }
+        switch (edge) {
+            case 0:
+                room.setLeft(qMax(room.left(), taken.right() + 1));
+                break;
+            case 1:
+                room.setRight(qMin(room.right(), taken.left() - 1));
+                break;
+            case 2:
+                room.setTop(qMax(room.top(), taken.bottom() + 1));
+                break;
+            default:
+                room.setBottom(qMin(room.bottom(), taken.top() - 1));
+                break;
+        }
+    }
+    return room;
 }
 
 /// The properties a view holds its panel's place in (TaskPlacement)
@@ -587,6 +638,13 @@ TaskPanelHost::TaskPanelHost(TaskView* taskView, MDIView* view)
 
     hosts.push_back(this);
     hostCount.store(static_cast<int>(hosts.size()), std::memory_order_relaxed);
+
+    // The docks laid over the window were laid out again: the room an
+    // overlay has between them may have changed (roomIn)
+    connect(OverlayManager::instance(),
+            &OverlayManager::layoutChanged,
+            this,
+            &TaskPanelHost::placeLater);
 
     if (view) {
         view->installEventFilter(this);
