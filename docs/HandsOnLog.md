@@ -1968,7 +1968,7 @@ and not before the next session.
 
 **Step 1, the split key by key,** 2026-10-08. Nothing in the tree changed.
 Each of the 300 candidates was read at its sites (by a subagent of the
-build session; `..\dl\handson6-10-08\entry41-42-sizing\`:
+build session; `..\dl\handson\2026-10-08\entry41-42-sizing\`:
 `entry42-split.tsv`, a row per path and key with type, the default of each
 reader, kind, where it is set and a note; `entry42-split-summary.txt`).
 Ten candidates were one key name in several groups and became 25 rows; 315
