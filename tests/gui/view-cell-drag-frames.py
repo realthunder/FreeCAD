@@ -6,7 +6,12 @@ over every cell the drag changes, at the size each will have; the layout
 is not touched until the button is released. A split that would leave a
 cell under the minimum cell size is refused.
 
-Claims, on a document with a box, in a main window of 1400 x 900:
+Claims, on a document with a box, in a main window of 1400 x 900 (the
+gestures with the minimum cell size set to 200, to have room in it):
+  default - with nothing set the minimum is 300: of "split right" and "split
+            down" on the one cell, the one that would leave cells under 300
+            is refused and the other is carried out -- and one of them is
+            a split a minimum of 200 would have allowed;
   split   - a corner zone dragged into its cell: still one cell, and two
             frames, "kept" and "fresh", that tile it with the border
             under the cursor; dragged back to where it was pressed, the
@@ -273,9 +278,41 @@ def refusals():
     return -1
 
 
+def activate_3d():
+    """Make a 3D view of the document the active one: the split commands act on it"""
+    view3d = FreeCADGui.getDocument(DOC).mdiViewsOfType("Gui::View3DInventor")[0]
+    FreeCADGui.getMainWindow().setActiveWindow(view3d)
+    settle(0.1)
+
+
+def default_scenario():
+    """With nothing set the minimum is 300: told by what it refuses"""
+    check("default: the minimum cell size is not set", OPEN_VIEW.GetInt("MinimumCellSize", -1) == -1,
+          OPEN_VIEW.GetInt("MinimumCellSize", -1))
+    cell = rects()[0]
+    halves = {"Std_ViewSplitRight": (cell.width() - BORDER) // 2,
+              "Std_ViewSplitDown": (cell.height() - BORDER) // 2}
+    check("default: one of the two splits would give cells between 200 and 300",
+          any(200 <= h < 300 for h in halves.values()), halves)
+    for command, half in halves.items():
+        activate_3d()
+        said = refusals()
+        FreeCADGui.runCommand(command)
+        settle()
+        if half >= 300:
+            check("default: %s, cells of %d, is carried out" % (command, half),
+                  len(cells()) == 2, show(rects()))
+        else:
+            check("default: %s, cells of %d, is refused, and says so" % (command, half),
+                  len(cells()) == 1 and refusals() == said + 1,
+                  (show(rects()), said, refusals()))
+        while len(cells()) > 1:
+            activate_3d()
+            FreeCADGui.runCommand("Std_ViewSplitClose")
+            settle()
+
+
 def minimum_scenario():
-    check("minimum: the setting is 200 unless set", OPEN_VIEW.GetInt("MinimumCellSize", 200) == 200,
-          OPEN_VIEW.GetInt("MinimumCellSize", 200))
     # down to one cell, and a minimum of more than half of it either way: every
     # split is refused, and the cell is not pushed wider by its own minimum
     view3d = FreeCADGui.getDocument(DOC).mdiViewsOfType("Gui::View3DInventor")[0]
@@ -375,6 +412,11 @@ def run():
                      and rects()[0].width() >= 900 and rects()[0].height() >= 500,
                      show(rects()) if area() else None):
             return
+        default_scenario()
+        # the gestures below on a minimum of 200: the window a test can count on
+        # has no room for two cells of 300 one over the other
+        OPEN_VIEW.SetInt("MinimumCellSize", 200)
+        settle()
         split_scenario()
         if len(cells()) == 2:
             border_scenario()

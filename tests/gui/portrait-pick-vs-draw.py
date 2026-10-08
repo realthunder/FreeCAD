@@ -304,6 +304,10 @@ def run():
             "UnifiedCanvas", True)
         mw.resize(1000, 1000)
         settle()
+        # The cell wanted is taller than wide, about 290 across: under the
+        # minimum view cell size (300), which would refuse the split.
+        FreeCAD.ParamGet("User parameter:BaseApp/Preferences/View/OpenView").SetInt(
+            "MinimumCellSize", 200)
         FreeCADGui.runCommand("Std_ViewSplitRight")
         settle()
         cell = FreeCADGui.getDocument(DOC).activeView()

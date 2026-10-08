@@ -60,7 +60,7 @@ public:
         funcs["UtilityTarget"] = &OpenViewParamsP::updateUtilityTarget;
         SplitDirection = this->handle->GetASCII("SplitDirection", "Auto");
         funcs["SplitDirection"] = &OpenViewParamsP::updateSplitDirection;
-        MinimumCellSize = this->handle->GetInt("MinimumCellSize", 200);
+        MinimumCellSize = this->handle->GetInt("MinimumCellSize", 300);
         funcs["MinimumCellSize"] = &OpenViewParamsP::updateMinimumCellSize;
     }
 
@@ -96,7 +96,7 @@ public:
     }
     // Auto generated code (Tools/params_utils.py:314)
     static void updateMinimumCellSize(OpenViewParamsP *self) {
-        self->MinimumCellSize = self->handle->GetInt("MinimumCellSize", 200);
+        self->MinimumCellSize = self->handle->GetInt("MinimumCellSize", 300);
     }
 };
 
@@ -132,7 +132,7 @@ static const App::ParamRegistry::Registrar _OpenViewParamsRegistrar({
         .setDoc("Which way a cell is divided when a view opens in a split")
         .setProxy("ComboBox")
         .setItems({{"Along the longer side", "", "Auto"}, {"To the right", "", "Right"}, {"Below", "", "Down"}}, true, true),
-    App::ParamInfo("Gui", "OpenViewParams", "User parameter:BaseApp/Preferences/View/OpenView", "MinimumCellSize", "MinimumCellSize", App::ParamInfo::Int, 200)
+    App::ParamInfo("Gui", "OpenViewParams", "User parameter:BaseApp/Preferences/View/OpenView", "MinimumCellSize", "MinimumCellSize", App::ParamInfo::Int, 300)
         .setTitle("Minimum view cell size")
         .setDoc("The least width and height, in pixels, of a cell of a split view.\n"
 "A split that would leave a cell smaller than this -- either half of\n"
@@ -279,7 +279,7 @@ const long & OpenViewParams::getMinimumCellSize() {
 
 // Auto generated code (Tools/params_utils.py:413)
 const long & OpenViewParams::defaultMinimumCellSize() {
-    const static long def = 200;
+    const static long def = 300;
     return def;
 }
 

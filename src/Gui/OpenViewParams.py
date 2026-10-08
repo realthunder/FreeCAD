@@ -148,7 +148,7 @@ Params = [
         hint="Hold Alt while opening to invert tab/split for that one view."),
         doc="Which way a cell is divided when a view opens in a split"),
 
-    ParamInt('MinimumCellSize', 200, title="Minimum view cell size",
+    ParamInt('MinimumCellSize', 300, title="Minimum view cell size",
         proxy=ParamSpinBox(0, 2000, 10),
         doc="The least width and height, in pixels, of a cell of a split view.\n"
             "A split that would leave a cell smaller than this -- either half of\n"

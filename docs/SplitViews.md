@@ -1499,7 +1499,8 @@ again (its `doMove` cannot be asked "what if"), so a frame may be a pixel
 or two off the size the cell gets; the legal range of the border itself
 is QSplitter's (`closestLegalPosition`).
 
-**Minimum cell size**, `View/OpenView/MinimumCellSize`, default 200, on the
+**Minimum cell size**, `View/OpenView/MinimumCellSize`, default 300 (asked
+for at 200, and raised to 300 by the reporter the day it was built), on the
 preferences' Views group: `canSplitCell()` refuses a split that would
 leave either half of the divided cell narrower than it, or a new cell
 shorter than it the other way -- "if creating a new view will result in
@@ -1514,8 +1515,8 @@ document).
 The same number is the cell's own minimum (`ViewAreaCell::
 minimumSizeHint`), which is what stops a dragged border and a shrinking
 window. Until this a cell answered with its view's hint, and every
-`MDIView` asks for 400 x 300 -- a minimum nobody had chosen, twice the one
-asked for, and the reason a split border dropped where the frames said
+`MDIView` asks for 400 x 300 -- a minimum nobody had chosen, wider than the
+one asked for, and the reason a split border dropped where the frames said
 snapped somewhere else (found by the test). The cell's answer is capped at
 that old 400 x 300: a large setting refuses splits, it does not push the
 main window off the screen.
