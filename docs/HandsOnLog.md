@@ -43,8 +43,8 @@ Evidence that does not belong in the repository is under
 | 34 | FIXED `3d7b4c30fd`, not staged | Dark and Light store TechDraw's preselection colour, the blue of the 3D view's |
 | 38 | FIXED `bb31f8820b`, not staged | the omni search's first bring-up made the icon of every command before showing the box: 1.27 s on the reporter's configuration, 0.22 s now |
 | 39 | FIXED `c7d115e576`, not staged | MSAA has not reached any view since 2026-09-07: the scene depth was built readable at every sample count and bgfx refuses that framebuffer. Write-only under MSAA now; a test asks the view its sample count |
-| 41 | SIZED 2026-10-08, not started; waits for a yes to the cut | the Python-only modules' settings through a door into the registry: about 600 keys, 440 of them Draft and BIM, whose own table already defines most |
-| 42 | SIZED 2026-10-08, not started; waits for a yes to the cut | state keys through the generator and listed: of about 300 keys C++ reads without a definition, about 90 are state, about 110 are settings entry 24 did not reach, about 90 are records under names the user makes |
+| 41 | SIZED 2026-10-08, the cut agreed; FIRST in the next session, not started | the Python-only modules' settings through a door into the registry: about 600 keys, 440 of them Draft and BIM, whose own table already defines most. Door first, proved on Assembly; then Draft and BIM; then Fem, CAM, AddonManager; then the rest |
+| 42 | SIZED 2026-10-08, the cut agreed; after entry 41, not started | of about 300 keys C++ reads without a definition: about 90 state keys go through the generator and are listed, about 110 settings entry 24 did not reach go in the same entry, about 90 records under names the user makes stay out |
 
 **The reporter, 2026-10-07 14:20, on what is open** (said to the build
 session; the queue has the reporter's own entries):
@@ -1595,7 +1595,7 @@ highlighted row is entry 43 of the queue. Entry 24 has nothing left with
 the reporter. Pushed: `origin/PartDesignPort` = `b70cc6ebf1`, cycles
 `35a3bd898` first. Not staged.
 
-## 41. The Python-only modules' settings, through a door into the registry -- SIZED, waits for the reporter's yes to a cut
+## 41. The Python-only modules' settings, through a door into the registry -- SIZED, the cut agreed; FIRST in the next session
 
 Decided under entry 24 (C1, C4). Not started. Sized 2026-10-08, static,
 with `inv24.py` run again on the tree of `b70cc6ebf1` and split by who
@@ -1621,7 +1621,17 @@ These are counts of (group, key) pairs from the sources, not of settings
 checked one by one; the readers that name a key through a variable are
 not seen at all.
 
-## 42. State keys through the generator, and listed -- SIZED, waits for the reporter's yes to a cut
+The cut put to the reporter, 2026-10-08: (1) the door -- a call that
+registers a setting from Python and a loader for definition files in the
+format the C++ classes use -- proved on Assembly's Python page; (2) Draft
+and BIM through Draft's own table, not a second copy of it, with a short
+text for the about 155 that have none; (3) Fem, CAM, AddonManager; (4) the
+small rest. Registration only: the Python readers keep their code, and a
+default that a reader and a page disagree on is listed for the reporter,
+not chosen. The reporter: "start in next session. 41, looks good, go
+first."
+
+## 42. State keys through the generator, and listed -- SIZED, the cut agreed; after entry 41
 
 Decided under entry 24 (C2), and the reporter, 2026-10-08: "Entry 42, list
 those keys". Not started. Sized with the same run
@@ -1646,3 +1656,10 @@ the first is what C2 named:
 
 The split is by reading the list, not by a rule; the first step of the
 entry is to make it key by key.
+
+The reporter, 2026-10-08: "42 leave the user-named ones, add those missed
+ones to generator in the same entry." So: (1) the split key by key;
+(2) the about 90 state keys through the generator, listed; (3) the about
+110 missed settings in this entry too, group by group, the 3D mouse
+first; the records under names the user makes stay out. After entry 41,
+and not before the next session.
