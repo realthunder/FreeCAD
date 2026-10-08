@@ -1022,6 +1022,22 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     set_property(TEST GuiClockStep_tests_run APPEND PROPERTY ENVIRONMENT
         "FC_CLOCK_SHIM=$<TARGET_FILE:FCClockStepShim>"
         "LD_PRELOAD=$<TARGET_FILE:FCClockStepShim>")
+
+    # Nor does it stretch a slice of a progressive load: the two drains
+    # that fill a document in after its open timed their slices by the time
+    # of day, and a slice with a step back in it worked on until it had
+    # made the step good -- a second and more for a budget of a tenth, the
+    # drain saying of itself that it had spent less than nothing. The same
+    # shim steps clock_gettime(CLOCK_REALTIME), which is what the standard
+    # library's system clock reads, on a schedule that follows the steady
+    # clock. Scored against the tree before, three runs: 7 checks of 15 each
+    # time, the view provider drain in 2 to 10 slices against 27 or 28 and
+    # saying -3.4 to -5.3 s, the visual drain in 4 to 14 against 88 and
+    # saying -8.6 to -10.4 s.
+    fc_add_gui_test(GuiDrainClockStep_tests_run drain-clock-step.py --timeout 240)
+    set_property(TEST GuiDrainClockStep_tests_run APPEND PROPERTY ENVIRONMENT
+        "FC_CLOCK_SHIM=$<TARGET_FILE:FCClockStepShim>"
+        "LD_PRELOAD=$<TARGET_FILE:FCClockStepShim>")
 endif()
 
 # The Sketcher's General preference page: the options that decide which

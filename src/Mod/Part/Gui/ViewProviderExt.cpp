@@ -863,6 +863,9 @@ struct DeferredVisualQueue {
     std::size_t popped = 0;
     std::size_t slices = 0;
     std::chrono::duration<double> spent {0};
+    /// The longest stretch one slice spent on this document: what the
+    /// slice budget is a promise about.
+    std::chrono::duration<double> longest {0};
     /// Counts the times this queue's document was closed while a slice
     /// was on the stack. The slice reads it before it lets events run
     /// and again after: a different number says that everything it holds
@@ -5836,10 +5839,16 @@ void ViewProviderPartExt::runDeferredVisualSlice()
 
     const double budget =
         std::max(1L, Gui::RenderParams::getProgressiveLoadBudgetMS()) / 1000.0;
-    auto start = std::chrono::high_resolution_clock::now();
+    // The steady clock, and not the time of day: a slice is an interval,
+    // and where the time of day is resynced in steps it moves back -- a
+    // slice with a step in it then had a negative time spent and worked on
+    // until it had made the step good, a second and more for a budget of a
+    // tenth, and the drain's own line said it had spent less than nothing
+    // (tests/gui/drain-clock-step.py).
+    auto start = std::chrono::steady_clock::now();
     auto elapsed = [&start]() {
         return std::chrono::duration<double>(
-                std::chrono::high_resolution_clock::now() - start);
+                std::chrono::steady_clock::now() - start);
     };
 
     // Which documents can be worked on at all right now. A document still
@@ -5955,7 +5964,10 @@ void ViewProviderPartExt::runDeferredVisualSlice()
         }
         auto mark = elapsed();
         auto charge = [&queue, &elapsed, &mark]() {
-            queue.spent += elapsed() - mark;
+            const auto took = elapsed() - mark;
+            queue.spent += took;
+            if (took > queue.longest)
+                queue.longest = took;
         };
         // Whether this document is closed under this slice, by an event
         // the progress bar runs (see the delete observer)
@@ -6053,7 +6065,8 @@ void ViewProviderPartExt::runDeferredVisualSlice()
         }
         FC_LOG("progressive load " << it->first << ": " << queue.built
                 << " of " << queue.popped << " visuals in " << queue.slices
-                << " slices, " << queue.spent.count() << 's');
+                << " slices, " << queue.spent.count() << "s, longest "
+                << queue.longest.count() << 's');
         if (preMeshEnabled()) {
             // What the parallel pre-mesh did for this load (sec 18):
             // the batch's own wall time is what the drain's mesh term

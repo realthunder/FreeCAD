@@ -280,6 +280,8 @@ struct DocumentP
     std::size_t _deferSlices = 0;
     std::size_t _deferBuilt = 0;
     FC_DURATION _deferSpent {0};
+    // The longest of its slices: what the slice budget is a promise about
+    FC_DURATION _deferLongest {0};
     // The drain's progress indicator (KeepInteractive -- it reports, it
     // does not take the window away), one step per object unit over all
     // three phases. Without it the stretch between the open returning
@@ -2960,7 +2962,7 @@ void Document::slotStartRestoreDocument(const App::Document& doc)
     d->_deferSweep.clear();
     d->_deferFinish.clear();
     d->_deferSlices = d->_deferBuilt = 0;
-    d->_deferSpent = FC_DURATION(0);
+    d->_deferSpent = d->_deferLongest = FC_DURATION(0);
     d->_deferReadTime = d->_deferFinishTime = FC_DURATION(0);
     d->_deferSweepTime = d->_deferModeTime = FC_DURATION(0);
     ViewProvider::VisualBuildTime = ViewProvider::VisualMeshTime = FC_DURATION(0);
@@ -3400,10 +3402,22 @@ void Document::runDeferredRestoreSlice()
 
     const double budget =
         std::max(1L, Gui::RenderParams::getProgressiveLoadBudgetMS()) / 1000.0;
-    auto start = std::chrono::high_resolution_clock::now();
+    // The steady clock, and not the time of day: a slice is an interval,
+    // and where the time of day is resynced in steps it moves back -- a
+    // slice with a step in it then had a negative time spent and worked on
+    // until it had made the step good, a second and more for a budget of a
+    // tenth (tests/gui/drain-clock-step.py).
+    auto start = std::chrono::steady_clock::now();
     auto elapsed = [&start]() {
         return std::chrono::duration<double>(
-                std::chrono::high_resolution_clock::now() - start);
+                std::chrono::steady_clock::now() - start);
+    };
+    // Where a slice ends, whichever way it ends
+    auto spend = [this, &elapsed]() {
+        const FC_DURATION took = elapsed();
+        d->_deferSpent += took;
+        if (took > d->_deferLongest)
+            d->_deferLongest = took;
     };
     ++d->_deferSlices;
 
@@ -3473,7 +3487,7 @@ void Document::runDeferredRestoreSlice()
         // applications, which turns this drain into minutes.
         if (d->_pcDocument->serveDeferredFiles(budget)) {
             d->_pcDocument->setStatus(App::Document::Restoring, false);
-            d->_deferSpent += elapsed();
+            spend();
             scheduleDeferredRestore();
             return;
         }
@@ -3497,7 +3511,7 @@ void Document::runDeferredRestoreSlice()
             }
             if (!d->_deferCreate.done()) {
                 d->_pcDocument->setStatus(App::Document::Restoring, false);
-                d->_deferSpent += elapsed();
+                spend();
                 scheduleDeferredRestore();
                 return;
             }
@@ -3552,7 +3566,7 @@ void Document::runDeferredRestoreSlice()
             }
             if (!d->_deferSweep.done()) {
                 d->_pcDocument->setStatus(App::Document::Restoring, false);
-                d->_deferSpent += elapsed();
+                spend();
                 scheduleDeferredRestore();
                 return;
             }
@@ -3723,7 +3737,7 @@ void Document::runDeferredRestoreSlice()
             }
             if (!d->_deferFinish.done()) {
                 d->_pcDocument->setStatus(App::Document::Restoring, false);
-                d->_deferSpent += elapsed();
+                spend();
                 if ((d->_deferSlices % 50) == 0)
                     FC_LOG("progressive restore " << d->_pcDocument->getName()
                             << ": finishing " << d->_deferFinish.position()
@@ -3762,7 +3776,7 @@ void Document::runDeferredRestoreSlice()
         d->_deferStream.reset();
     }
     d->_pcDocument->setStatus(App::Document::Restoring, false);
-    d->_deferSpent += elapsed();
+    spend();
 
     // Phase four is unfinished here only when a phase above threw out of
     // its slice; the normal budget exit reports and reschedules in place.
@@ -3875,7 +3889,8 @@ void Document::finishDeferredRestore()
 
     FC_LOG("progressive restore " << d->_pcDocument->getName() << ": "
             << d->_deferBuilt << " view providers in " << d->_deferSlices
-            << " slices, " << d->_deferSpent.count() << "s (instantiate "
+            << " slices, " << d->_deferSpent.count() << "s, longest "
+            << d->_deferLongest.count() << "s (instantiate "
             << d->_newObjInstTime.count() << "s, attach "
             << d->_newObjAttachTime.count() << "s, update "
             << d->_newObjUpdateTime.count() << "s, views "
