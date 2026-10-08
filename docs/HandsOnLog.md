@@ -44,7 +44,7 @@ Evidence that does not belong in the repository is under
 | 38 | FIXED `bb31f8820b`, not staged | the omni search's first bring-up made the icon of every command before showing the box: 1.27 s on the reporter's configuration, 0.22 s now |
 | 39 | FIXED `c7d115e576`, not staged | MSAA has not reached any view since 2026-09-07: the scene depth was built readable at every sample count and bgfx refuses that framebuffer. Write-only under MSAA now; a test asks the view its sample count |
 | 41 | FIXED, all four steps: `a75b43f1d5`, `4a99a978f7`, `48037fbd8c`, `de7bd49797`, `ff12279ee6`, and `aa63b07cc8` for the answers to L9 and L10; not staged, not pushed; a list with the reporter (L1-L8, L11, L12, F1, F3, F4, F6-F8; L11 with a recommendation) | the Python-only modules' settings through a door into the registry: 603 settings listed that were not -- Assembly 13, Draft and BIM 426, Fem 47, CAM 27, the Addon Manager 41, Help 14, OpenSCAD 15, ReverseEngineering 11, Tux 5, Material 4. Registration only, the readers keep their code; a test per module holds each described default to its readers' |
-| 42 | STEP 1 of 3 DONE 2026-10-08 (the split key by key: 94 state keys, 114 settings, 44 records, 23 dead, 14 defined after all); nothing generated yet; Q2 to Q5 answered, Q1 explained and with the reporter | of about 300 keys C++ reads without a definition: about 90 state keys go through the generator and are listed, about 110 settings entry 24 did not reach go in the same entry, about 90 records under names the user makes stay out |
+| 42 | STEP 1 of 3 DONE 2026-10-08 (the split key by key: 94 state keys, 114 settings, 44 records, 23 dead, 14 defined after all); nothing generated yet; Q2 to Q5 answered, Q1 explained and with the reporter, Q6 not answered | of about 300 keys C++ reads without a definition: about 90 state keys go through the generator and are listed, about 110 settings entry 24 did not reach go in the same entry, about 90 records under names the user makes stay out |
 | 44 | FIXED `813d0250f9`, not staged | the C++ DXF exporter was pointed at `Mod/Import` for its options, where nothing stores them; it takes them from `Mod/Draft`, where the DXF page puts them, as upstream does. An ellipse with "as polylines" on was an ELLIPSE before, an LWPOLYLINE after |
 
 **The reporter, 2026-10-07 14:20, on what is open** (said to the build
@@ -1934,7 +1934,7 @@ stay undescribed, Tux's marker stays described.
   read without a GUI too (`Help.show()` prints the page there); Tux's five
   only mean something with one.
 
-## 42. State keys through the generator, and listed -- step 1 DONE (the split key by key), steps 2 and 3 to do; Q2 to Q5 answered, Q1 with the reporter
+## 42. State keys through the generator, and listed -- step 1 DONE (the split key by key), steps 2 and 3 to do; Q2 to Q5 answered, Q1 and Q6 with the reporter
 
 Decided under entry 24 (C2), and the reporter, 2026-10-08: "Entry 42, list
 those keys". Not started. Sized with the same run
@@ -2052,6 +2052,8 @@ don't take plain definition? Q2 fix. Q3 drop. Q4 Drop. Q5 drop."
 - Q3: `SceneShare/Token` stays out of the registry.
 - Q4: `Workbenches/Ordered` and `Disabled` stay out.
 - Q5: the two recent lists stay out; their length is defined.
+- Q6 was not among the answers. It asked for nothing yet; it comes up
+  again with each group whose reader writes its default back.
 
 So the field is 91 state keys (94 less the token and the two lists) and,
 of the 114 settings, 112 less whatever Q1 leaves out.
