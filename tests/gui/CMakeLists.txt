@@ -1585,3 +1585,9 @@ fc_add_gui_test(GuiTechDrawDimensionClickNoRecompute_tests_run
 fc_add_gui_test(GuiOmniSearchHighlightedRow_tests_run
                 omni-search-highlighted-row.py
                 --timeout 180)
+
+# A theme takes away the colours an overlay preset left behind -- the Python
+# console's background above all, which no theme listed and so none cleared.
+fc_add_gui_test(GuiThemeClearsOverlayPresetLeftovers_tests_run
+                theme-clears-overlay-preset-leftovers.py
+                --timeout 180)
