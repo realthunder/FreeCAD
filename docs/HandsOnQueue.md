@@ -78,8 +78,8 @@ test.
 | 26 | 2026-10-06 | a long halt after enabling MSAA and pressing OK in the preferences | FIXED `175ffce199`, not staged: the FIRST OK of a profile held the program 11 to 15 s (780 keys stored for the first time and taken for changes: stylesheet set again 4.2 s, every Part view provider re-meshed 3.2 s, language activated again about 2 s); 0.9 s now (`docs/HandsOnLog.md`) |
 | 27 | 2026-10-06 | the view cell menu: opens a spreadsheet nobody asked for, lists every TechDraw object, changes the wrong cell | STAGED 2026-10-07 14:23, fixed `fa2ada985c`: the menu made a spreadsheet view by asking for it, listed a page's views, and placed a pick by the general policy instead of into its cell; all three gone, spreadsheets now listed by type like pages (`docs/HandsOnLog.md`) |
 | 28 | 2026-10-06 | `scanner.FCStd` restores with a wrong colour, sometimes (the motor body light blue for light grey) | OPEN |
-| 29 | 2026-10-07 | view cells: transparent frames that show a split, a join and a resize while dragged (every cell the drag changes); corner handles on an opaque background, the cell menu button too when hovered; a thinner border between cells; a minimum cell size setting, default 200 (change request, decided) | OPEN |
-| 30 | 2026-10-07 | the dark and light overlay stylesheets integrated into the Dark and Light preference packs (a task asked; what "integrated" covers to confirm); and the long freeze when an overlay stylesheet is applied, to investigate; the Python console's background in both packs, so a theme can take an overlay preset's away again | OPEN, in hand by the build session since 2026-10-09: the third task (the themes own the keys an overlay preset leaves behind) and the timing of the preset's freeze. The first task waits for the reporter: what "integrated" covers, NOT ANSWERED YET |
+| 29 | 2026-10-07 | view cells: transparent frames that show a split, a join and a resize while dragged (every cell the drag changes); corner handles on an opaque background, the cell menu button too when hovered; a thinner border between cells; a minimum cell size setting, default 200 (change request, decided) | OPEN, in hand by the build session since 2026-10-09 00:26: written, not built yet |
+| 30 | 2026-10-07 | the dark and light overlay stylesheets integrated into the Dark and Light preference packs (a task asked; what "integrated" covers to confirm); and the long freeze when an overlay stylesheet is applied, to investigate; the Python console's background in both packs, so a theme can take an overlay preset's away again | THIRD TASK FIXED `dad4f5d18a`, not staged, not pushed: Light, Dark and Classic list every colour an overlay preset writes, the console's and the tree's backgrounds as none, so a theme takes the preset's away again; 8 PASS and 10 FAIL before, 18 PASS after. SECOND TASK MEASURED, nothing changed: "Overlay dark theme" holds the program 13.0 s on a fresh profile with `scanner.FCStd` open, 9.6 s of it the APPLICATION's style sheet (`Dark.qss`), 3.3 s the combo view switched off; what to do about it is the reporter's to say. FIRST TASK not started: what "integrated" covers, NOT ANSWERED YET (`docs/HandsOnLog.md`) |
 | 31 | 2026-10-07 | report view: "Go to end" on by default (change request) | FIXED `47b5e72c79`, not staged: "Go to end" is on for a profile that never stored it (`docs/HandsOnLog.md`) |
 | 32 | 2026-10-07 | some sub menus are transparent with blue text (Tools > Command history): find out why; transparent menus off by default | FIXED `b960092ea5`, not staged: the see-through menus are single menu objects shared between a pop-up over the 3D view and an entry of the main menu, and a themed session with no menu sheet chosen took the see-through sheet; now no sheet chosen = an ordinary menu, the see-through ones a choice in Preferences > Theme. A question for the reporter (`docs/HandsOnLog.md`) |
 | 33 | 2026-10-07 | a cmd window pops up briefly at the first document opened after start | FIXED `ef4df215b5` (the cycles submodule at its `35a3bd898`), not staged: the CUDA probe ran `cmd.exe /c where nvcc` through `popen` at the first 3D view; it searches the PATH without a shell now, and the session starts no process at all. Neither commit pushed; the cycles one has to go first (`docs/HandsOnLog.md`) |
@@ -2212,7 +2212,67 @@ What is asked now:
   and the border still has to be wide enough to grab and to right-click (its
   menu closes a neighbouring view).
 
-## 30. The dark and light overlay stylesheets integrated into the Dark and Light preference packs (a task asked) -- OPEN, in hand since 2026-10-09; the first task waits for the reporter
+## 30. The dark and light overlay stylesheets integrated into the Dark and Light preference packs (a task asked) -- third task FIXED `dad4f5d18a`, not staged; the freeze measured; the first task waits for the reporter (see `docs/HandsOnLog.md`)
+
+**2026-10-09 00:26, the build session: the third task is fixed, the second
+measured, the first still waits** (its message; code `dad4f5d18a`, its log,
+entry 30, `81c046df11`, local). Not staged, not pushed.
+
+Third task (the Python console's background that no theme takes away),
+FIXED `dad4f5d18a`:
+- the reading below holds. Of the colours the two overlay presets write,
+  `Editor/Background` (the console's) and `TreeView/ItemBackground` were
+  listed by none of the three themes, and `View/CursorCrosshairColor` not by
+  Light; a theme writes only what it lists;
+- Light, Dark and Classic list them all now. The two backgrounds as 0,
+  "none": under each theme the console and the tree are styled by the
+  theme's own sheet, and 0 is what takes the preset's away again;
+- under Light the cross-hair is a dark grey now: it was the coded white
+  there, on a light 3D background, preset or no preset -- a defect of its
+  own that the same line closes;
+- NOT touched: the preset's layout keys (the tree's hidden column, the dock
+  windows, the overlay panels) -- "a theme is not a layout" -- and the six
+  other packs;
+- scored: `tests/gui/theme-clears-overlay-preset-leftovers.py`, 8 PASS and
+  10 FAIL on the copy staged 2026-10-07, 18 PASS after.
+- **The build session's choice, for the reporter to overrule, NOT ANSWERED
+  YET:** the themes set the console background to NONE rather than to a
+  colour of their own. The reporter's "add python console stylesheet
+  setting to dark and light theme" could also mean a console colour of the
+  theme's own; none is defined anywhere, so none was invented.
+
+Second task (the freeze), MEASURED, nothing changed. A fresh profile (no
+theme, no style sheet), a copy of `scanner.FCStd` open, "Overlay dark theme"
+applied through its menu as the reporter did; the time the event loop is
+held:
+- the preset, first time: 13.0 s, 12.0 s of it in one turn;
+- the same preset again, nothing changing: still 4.0 s;
+- key by key: `MainWindow/StyleSheet` = `Dark.qss` 9.6 s -- the
+  APPLICATION's sheet, not the overlay's; `DockWindows/ComboView/Enabled` =
+  0, 3.3 s; `OverlayActiveStyleSheet` 0.55 s; each of the 26 overlay panel
+  state keys about 1.4 s when it arrives alone (54 s for the preset written
+  key by key; arriving together, as the preset does, they are taken in one
+  go); the colours nothing.
+So three quarters of the freeze is the application's style sheet being
+replaced, the same cost entry 26 met. The note-taker's guess of 2026-10-07
+below (the overlay refresh run once per key) is NOT where most of it goes.
+Not measured: the reporter's own configuration ("several tens of seconds"
+is more than the 13 s here), and what inside the 9.6 s.
+**What to do about it is the reporter's to say, NOT ANSWERED YET.** The log
+names the cheap ones: not acting on a value that did not change, and one
+overlay re-read per burst of its keys.
+
+First task ("integrate"): not started. The question below stands, NOT
+ANSWERED YET. As the build session puts it now, the two packs already name
+`Light_overlay.qss` and `Dark_overlay.qss` and now own every colour the
+overlay presets write, so what is left to "integrate" is one of:
+- the packs naming a different pair of overlay sheets;
+- the overlay taking its colours from the theme's parameters instead of a
+  sheet of its own;
+- the overlay LAYOUT (which panels float where) coming with the theme.
+(The third differs from the note-taker's third of 2026-10-07, "something
+seen on screen that is wrong with the overlay under the two themes"; both
+stand as possible readings.)
 
 **2026-10-09 00:09, the build session has it in hand:** the third task (the
 themes own the keys an overlay preset leaves behind) and the timing of the
