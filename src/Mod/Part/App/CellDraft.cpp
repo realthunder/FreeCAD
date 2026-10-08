@@ -55,16 +55,20 @@
 #include <BOPDS_IteratorSI.hxx>
 #include <BRepAdaptor_Surface.hxx>
 #include <BRepAlgoAPI_Common.hxx>
+#include <BRepAlgoAPI_Defeaturing.hxx>
 #include <BRepBndLib.hxx>
 #include <BRepBuilderAPI_Copy.hxx>
 #include <BRepAdaptor_Curve.hxx>
 #include <BRepBuilderAPI_MakeFace.hxx>
 #include <BRepBuilderAPI_MakePolygon.hxx>
+#include <BRepBuilderAPI_MakeVertex.hxx>
+#include <BRepExtrema_DistShapeShape.hxx>
 #include <BRepBuilderAPI_Sewing.hxx>
 #include <BRepBuilderAPI_MakeWire.hxx>
 #include <BRepCheck_Analyzer.hxx>
 #include <BRepClass3d_SolidClassifier.hxx>
 #include <BRepClass3d_SolidExplorer.hxx>
+#include <BRepFilletAPI_MakeFillet.hxx>
 #include <BRepGProp.hxx>
 #include <BRepLib.hxx>
 #include <ShapeFix_ShapeTolerance.hxx>
@@ -1600,8 +1604,9 @@ bool CellDraftOne::collectMembers(const TopTools_IndexedDataMapOfShapeListOfShap
                     }
                     if (join < 0 && !propagate && !picked.Contains(g)) {
                         return fail(CellDraft::TangentNeighbour,
-                                    "a face tangent to the drafted face is not drafted; turn "
-                                    "tangent propagation on, or fillet after the draft",
+                                    "a face tangent to the drafted face is not drafted, and is "
+                                    "not a fillet between two planes that can be made again; "
+                                    "turn tangent propagation on, or fillet after the draft",
                                     TopoDS_Face(),
                                     g);
                     }
@@ -3501,6 +3506,8 @@ const char* CellDraft::ErrorName(ErrorType error)
             return "NotASolid";
         case Boolean:
             return "Boolean";
+        case RefilletFails:
+            return "RefilletFails";
     }
     return "Unknown";
 }
@@ -3548,6 +3555,7 @@ void CellDraft::Build(const Message_ProgressRange& /*theRange*/)
     myErrorFace.Nullify();
     myErrorNeighbour.Nullify();
     myErrorMessage.clear();
+    myRefillet.Clear();
 
     TopoDS_Shape cur;
     int nsolids = 0;
@@ -3584,6 +3592,12 @@ void CellDraft::Build(const Message_ProgressRange& /*theRange*/)
         args.Append(cur);
         total = new BRepTools_History(args, copier);
         cur = copier.Shape();
+        // Without tangent propagation a fillet beside the picked faces stays
+        // a fillet: taken off first, made again on the drafted faces.
+        std::vector<Refillet> refillets;
+        if (!myTangentPropagation && !takeOffFillets(cur, total, refillets)) {
+            return;
+        }
         for (const auto& fd : myFaces) {
             if (std::any_of(done.begin(), done.end(), [&fd](const TopoDS_Face& f) {
                     return f.IsSame(fd.face);
@@ -3666,6 +3680,9 @@ void CellDraft::Build(const Message_ProgressRange& /*theRange*/)
             cur = one.result;
             changed = true;
         }
+        if (!refillets.empty() && !makeFilletsAgain(cur, total, refillets)) {
+            return;
+        }
     }
     catch (Standard_Failure& e) {
         std::string msg = "exception: ";
@@ -3709,7 +3726,10 @@ void CellDraft::uniqueList(const TopTools_ListOfShape& from, TopTools_ListOfShap
 const TopTools_ListOfShape& CellDraft::Modified(const TopoDS_Shape& shape)
 {
     myGenerated.Clear();
-    if (!myHistory.IsNull()) {
+    if (const TopTools_ListOfShape* faces = myRefillet.Seek(shape)) {
+        uniqueList(*faces, myGenerated);
+    }
+    else if (!myHistory.IsNull()) {
         uniqueList(myHistory->Modified(shape), myGenerated);
     }
     return myGenerated;
@@ -3726,7 +3746,247 @@ const TopTools_ListOfShape& CellDraft::Generated(const TopoDS_Shape& shape)
 
 bool CellDraft::IsDeleted(const TopoDS_Shape& shape)
 {
-    return !myHistory.IsNull() && myHistory->IsRemoved(shape);
+    return !myRefillet.IsBound(shape) && !myHistory.IsNull() && myHistory->IsRemoved(shape);
+}
+
+// The fillets to take off: faces tangent to the picked faces' own set (the
+// picked faces, their coplanar pieces, the pieces of their surfaces and the
+// picked faces tangent to them) that were not picked, each a cylinder
+// tangent along its length to two planes, one of them in the set, and ending
+// on planes. Taken off together; the other faces tangent to the set are left
+// for the draft to refuse. (A fillet running on into a cone, #876's corners,
+// is taken off by extending the cone, not the planes.)
+bool CellDraft::takeOffFillets(TopoDS_Shape& cur,
+                               const Handle(BRepTools_History) & total,
+                               std::vector<Refillet>& refillets)
+{
+    TopTools_IndexedMapOfShape curFaces;
+    TopExp::MapShapes(cur, TopAbs_FACE, curFaces);
+    TopTools_IndexedDataMapOfShapeListOfShape edgeFaces;
+    TopExp::MapShapesAndUniqueAncestors(cur, TopAbs_EDGE, TopAbs_FACE, edgeFaces);
+    auto across = [&](const TopoDS_Face& f, auto&& visit) {
+        for (TopExp_Explorer exp(f, TopAbs_EDGE); exp.More(); exp.Next()) {
+            const TopoDS_Edge& e = TopoDS::Edge(exp.Current());
+            if (BRep_Tool::Degenerated(e) || !edgeFaces.Contains(e)) {
+                continue;
+            }
+            for (const auto& s : edgeFaces.FindFromKey(e)) {
+                TopoDS_Face g = TopoDS::Face(curFaces.FindKey(curFaces.FindIndex(s)));
+                if (!g.IsSame(f)) {
+                    visit(e, g);
+                }
+            }
+        }
+    };
+
+    TopTools_MapOfShape picked;
+    std::vector<TopoDS_Face> todo;
+    for (const auto& fd : myFaces) {
+        for (const auto& m : total->Modified(fd.face)) {
+            if (m.ShapeType() == TopAbs_FACE && curFaces.Contains(m) && picked.Add(m)) {
+                todo.push_back(TopoDS::Face(curFaces.FindKey(curFaces.FindIndex(m))));
+            }
+        }
+    }
+    TopTools_MapOfShape own;
+    while (!todo.empty()) {
+        TopoDS_Face f = todo.back();
+        todo.pop_back();
+        if (!own.Add(f)) {
+            continue;
+        }
+        for (const auto& g : draftChain(f, curFaces, edgeFaces, false)) {
+            todo.push_back(g);
+        }
+        across(f, [&](const TopoDS_Edge& e, const TopoDS_Face& g) {
+            if (picked.Contains(g) && tangentAlong(e, f, g)) {
+                todo.push_back(g);
+            }
+        });
+    }
+
+    TopTools_MapOfShape seen;
+    TopTools_ListOfShape remove;
+    for (TopTools_MapOfShape::Iterator it(own); it.More(); it.Next()) {
+        TopoDS_Face f = TopoDS::Face(it.Key());
+        across(f, [&](const TopoDS_Edge& e, const TopoDS_Face& t) {
+            if (own.Contains(t) || !tangentAlong(e, f, t) || !seen.Add(t)) {
+                return;
+            }
+            BRepAdaptor_Surface surf(t);
+            if (surf.GetType() != GeomAbs_Cylinder) {
+                return;
+            }
+            std::vector<TopoDS_Face> sides;
+            bool planarEnds = true;
+            gp_Pln pl;
+            gp_Dir n;
+            across(t, [&](const TopoDS_Edge& te, const TopoDS_Face& h) {
+                if (!tangentAlong(te, t, h)) {
+                    planarEnds = planarEnds && facePlane(h, pl, n);
+                }
+                else if (std::none_of(sides.begin(), sides.end(), [&](const TopoDS_Face& x) {
+                             return x.IsSame(h);
+                         })) {
+                    sides.push_back(h);
+                }
+            });
+            if (!planarEnds || sides.size() != 2 || !facePlane(sides[0], pl, n)
+                || !facePlane(sides[1], pl, n)) {
+                return;
+            }
+            Refillet r;
+            r.fillet = inputFace(t, total);
+            r.a = inputFace(sides[0], total);
+            r.b = inputFace(sides[1], total);
+            r.radius = surf.Cylinder().Radius();
+            if (r.fillet.IsNull() || r.a.IsNull() || r.b.IsNull()) {
+                return;
+            }
+            refillets.push_back(r);
+            remove.Append(t);
+        });
+    }
+    if (refillets.empty()) {
+        return true;
+    }
+
+    BRepAlgoAPI_Defeaturing mk;
+    mk.SetShape(cur);
+    mk.AddFacesToRemove(remove);
+    mk.SetToFillHistory(true);
+    mk.Build();
+    int nsolids = 0;
+    if (mk.IsDone()) {
+        for (TopExp_Explorer exp(mk.Shape(), TopAbs_SOLID); exp.More(); exp.Next()) {
+            ++nsolids;
+        }
+    }
+    if (nsolids != 1 || !BRepCheck_Analyzer(mk.Shape()).IsValid()) {
+        setError(RefilletFails,
+                 refillets.front().fillet,
+                 TopoDS_Shape(),
+                 "a fillet tangent to the drafted face, not drafted, could not be taken off "
+                 "to be made again after the draft");
+        return false;
+    }
+    FC_LOG("took off " << refillets.size() << " fillets to make again");
+    total->Merge(mk.History());
+    cur = mk.Shape();
+    return true;
+}
+
+// The fillets taken off, made again at their radius on the edges between
+// what became of the two planes each joined. Pieces of one fillet (split by
+// slots, #962) share their planes' images: an edge goes to the fillet
+// nearest to it.
+bool CellDraft::makeFilletsAgain(TopoDS_Shape& cur,
+                                 const Handle(BRepTools_History) & total,
+                                 const std::vector<Refillet>& refillets)
+{
+    TopTools_IndexedMapOfShape curFaces;
+    TopExp::MapShapes(cur, TopAbs_FACE, curFaces);
+    auto images = [&](const TopoDS_Face& face) {
+        std::vector<TopoDS_Face> faces;
+        if (total->IsRemoved(face)) {
+            return faces;
+        }
+        const TopTools_ListOfShape& mod = total->Modified(face);
+        if (mod.IsEmpty()) {
+            if (curFaces.Contains(face)) {
+                faces.push_back(face);
+            }
+            return faces;
+        }
+        for (const auto& m : mod) {
+            if (m.ShapeType() == TopAbs_FACE && curFaces.Contains(m)) {
+                faces.push_back(TopoDS::Face(m));
+            }
+        }
+        return faces;
+    };
+
+    BRepFilletAPI_MakeFillet mk(cur);
+    std::vector<std::vector<TopoDS_Edge>> edges(refillets.size());
+    // edge -> the fillet it goes to, and how far that fillet is from it
+    TopTools_IndexedMapOfShape found;
+    std::vector<std::pair<size_t, double>> owner;
+    for (size_t i = 0; i < refillets.size(); ++i) {
+        const Refillet& r = refillets[i];
+        TopTools_MapOfShape onB;
+        for (const auto& fb : images(r.b)) {
+            for (TopExp_Explorer exp(fb, TopAbs_EDGE); exp.More(); exp.Next()) {
+                onB.Add(exp.Current());
+            }
+        }
+        for (const auto& fa : images(r.a)) {
+            for (TopExp_Explorer exp(fa, TopAbs_EDGE); exp.More(); exp.Next()) {
+                if (!onB.Contains(exp.Current())) {
+                    continue;
+                }
+                const TopoDS_Edge& e = TopoDS::Edge(exp.Current());
+                BRepAdaptor_Curve c(e);
+                gp_Pnt mid = c.Value((c.FirstParameter() + c.LastParameter()) / 2);
+                BRepExtrema_DistShapeShape dist(BRepBuilderAPI_MakeVertex(mid).Vertex(),
+                                                r.fillet);
+                double d = dist.IsDone() ? dist.Value() : Precision::Infinite();
+                int k = found.Add(e);
+                if (k > static_cast<int>(owner.size())) {
+                    owner.emplace_back(i, d);
+                }
+                else if (d < owner[k - 1].second) {
+                    owner[k - 1] = {i, d};
+                }
+            }
+        }
+    }
+    for (int k = 1; k <= found.Extent(); ++k) {
+        const Refillet& r = refillets[owner[k - 1].first];
+        edges[owner[k - 1].first].push_back(TopoDS::Edge(found(k)));
+        mk.Add(r.radius, TopoDS::Edge(found(k)));
+    }
+    for (size_t i = 0; i < refillets.size(); ++i) {
+        const Refillet& r = refillets[i];
+        if (edges[i].empty()) {
+            setError(RefilletFails,
+                     r.fillet,
+                     TopoDS_Shape(),
+                     "the faces a fillet joined no longer meet after the draft, to make the "
+                     "fillet again on");
+            return false;
+        }
+    }
+    mk.Build();
+    int nsolids = 0;
+    if (mk.IsDone()) {
+        for (TopExp_Explorer exp(mk.Shape(), TopAbs_SOLID); exp.More(); exp.Next()) {
+            ++nsolids;
+        }
+    }
+    if (nsolids != 1 || !BRepCheck_Analyzer(mk.Shape()).IsValid()) {
+        setError(RefilletFails,
+                 refillets.front().fillet,
+                 TopoDS_Shape(),
+                 "a fillet taken off for the draft could not be made again at its radius");
+        return false;
+    }
+    TopTools_ListOfShape args;
+    args.Append(cur);
+    Handle(BRepTools_History) history = new BRepTools_History(args, mk);
+    for (size_t i = 0; i < refillets.size(); ++i) {
+        TopTools_ListOfShape faces;
+        for (const auto& e : edges[i]) {
+            for (const auto& f : mk.Generated(e)) {
+                if (f.ShapeType() == TopAbs_FACE) {
+                    faces.Append(f);
+                }
+            }
+        }
+        myRefillet.Bind(refillets[i].fillet, faces);
+    }
+    total->Merge(history);
+    cur = mk.Shape();
+    return true;
 }
 
 std::string CellDraft::CheckDraft(const TopoDS_Shape& input,

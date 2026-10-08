@@ -28,6 +28,7 @@
 
 #include <BRepBuilderAPI_MakeShape.hxx>
 #include <BRepTools_History.hxx>
+#include <TopTools_DataMapOfShapeListOfShape.hxx>
 #include <TopTools_IndexedMapOfShape.hxx>
 #include <TopTools_ListOfShape.hxx>
 #include <TopoDS_Face.hxx>
@@ -77,6 +78,7 @@ public:
         SplitsSolid,
         NotASolid,
         Boolean,
+        RefilletFails,
     };
 
     explicit CellDraft(const TopoDS_Shape& shape);
@@ -103,7 +105,10 @@ public:
     /** Whether a drafted face takes its tangent chain with it (default
      * true), as BRepOffsetAPI_DraftAngle does. Off, only the faces added
      * are drafted, with their coplanar pieces and the added faces tangent
-     * to them; a face tangent to them that was not added is refused
+     * to them. A fillet tangent to them that was not added -- a cylinder
+     * between two planes -- is taken off, the faces drafted, and the fillet
+     * made again at its radius on the edge where the two planes now meet
+     * (draft before fillet); any other face tangent to them is refused
      * (TangentNeighbour; docs/NewDraft.md section 17).
      */
     void SetTangentPropagation(bool propagate)
@@ -185,6 +190,22 @@ private:
                           const Handle(BRepTools_History) & history) const;
     void uniqueList(const TopTools_ListOfShape& from, TopTools_ListOfShape& to);
 
+    // a fillet taken off before the draft and made again after it
+    struct Refillet
+    {
+        // of the input shape
+        TopoDS_Face fillet;
+        TopoDS_Face a;
+        TopoDS_Face b;
+        double radius;
+    };
+    bool takeOffFillets(TopoDS_Shape& cur,
+                        const Handle(BRepTools_History) & total,
+                        std::vector<Refillet>& refillets);
+    bool makeFilletsAgain(TopoDS_Shape& cur,
+                          const Handle(BRepTools_History) & total,
+                          const std::vector<Refillet>& refillets);
+
 private:
     TopoDS_Shape myInput;
     std::vector<FaceDraft> myFaces;
@@ -192,6 +213,8 @@ private:
     bool myTangentPropagation = true;
     Handle(BRepTools_History) myHistory;
     TopTools_IndexedMapOfShape myResultMap;
+    // a fillet of the input made again -> its new faces
+    TopTools_DataMapOfShapeListOfShape myRefillet;
     ErrorType myError = NoError;
     TopoDS_Face myErrorFace;
     TopoDS_Face myErrorNeighbour;
