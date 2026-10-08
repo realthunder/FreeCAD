@@ -329,8 +329,8 @@ public:
     /// Accessor for parameter ProjectionAngle
     ///
     /// Projection convention of new pages and projection groups: 0 first
-    /// angle, 1 third angle. The third choice on the page, Page,
-    /// currently reads as first angle.
+    /// angle, 1 third angle, 2 Page: a new projection group follows its
+    /// page, and a new page is first angle.
     static const long & getProjectionAngle();
     static const long & defaultProjectionAngle();
     static void removeProjectionAngle();
@@ -1144,6 +1144,34 @@ public:
     static void removedebugSection();
     static void setdebugSection(const bool &v);
     static const char *docdebugSection();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter PreSelectColor
+    ///
+    /// Colour of what the pointer is over in a page view. 0, the value
+    /// while it is not set, follows the preselection colour of the 3D
+    /// view. Read at each hover.
+    static const unsigned long & getPreSelectColor();
+    static const unsigned long & defaultPreSelectColor();
+    static void removePreSelectColor();
+    static void setPreSelectColor(const unsigned long &v);
+    static const char *docPreSelectColor();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter SelectColor
+    ///
+    /// Colour of what is selected in a page view. 0, the value while it
+    /// is not set, follows the selection colour of the 3D view. Read at
+    /// each selection.
+    static const unsigned long & getSelectColor();
+    static const unsigned long & defaultSelectColor();
+    static void removeSelectColor();
+    static void setSelectColor(const unsigned long &v);
+    static const char *docSelectColor();
     //@}
 
     // Auto generated code (Tools/params_utils.py:139)

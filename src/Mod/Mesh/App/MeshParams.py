@@ -43,7 +43,7 @@ Params = [
         doc = "Width of the picture in an exported Asymptote (.asy) file, as\n"
               "written to its size() command, in points. Leave empty to write no\n"
               "size at all."),
-    ParamString('AsymptoteHeight', '500', on_change=True, subpath='Asymptote', param_name='Height',
+    ParamString('AsymptoteHeight', '', on_change=True, subpath='Asymptote', param_name='Height',
         doc = "Height of the picture in an exported Asymptote (.asy) file, in\n"
               "points. Only written when a width is set; leave empty to give the\n"
               "width alone."),

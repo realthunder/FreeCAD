@@ -47,7 +47,6 @@ public:
     bool BooleanDeleteOnRemove;
     bool SwitchToWB;
     bool SwitchToTask;
-    unsigned long DefaultDatumColor;
     long CoordinateSystemFontSize;
     double CoordinateSystemZoom;
     bool CoordinateSystemShowLabel;
@@ -70,8 +69,6 @@ public:
         funcs["SwitchToWB"] = &PartDesignParamsP::updateSwitchToWB;
         SwitchToTask = this->handle->GetBool("SwitchToTask", true);
         funcs["SwitchToTask"] = &PartDesignParamsP::updateSwitchToTask;
-        DefaultDatumColor = this->handle->GetUnsigned("DefaultDatumColor", 0xFFD70066);
-        funcs["DefaultDatumColor"] = &PartDesignParamsP::updateDefaultDatumColor;
         CoordinateSystemFontSize = this->handle->GetInt("CoordinateSystemFontSize", 10);
         funcs["CoordinateSystemFontSize"] = &PartDesignParamsP::updateCoordinateSystemFontSize;
         CoordinateSystemZoom = this->handle->GetFloat("CoordinateSystemZoom", 1.0);
@@ -119,10 +116,6 @@ public:
     // Auto generated code (Tools/params_utils.py:314)
     static void updateSwitchToTask(PartDesignParamsP *self) {
         self->SwitchToTask = self->handle->GetBool("SwitchToTask", true);
-    }
-    // Auto generated code (Tools/params_utils.py:314)
-    static void updateDefaultDatumColor(PartDesignParamsP *self) {
-        self->DefaultDatumColor = self->handle->GetUnsigned("DefaultDatumColor", 0xFFD70066);
     }
     // Auto generated code (Tools/params_utils.py:314)
     static void updateCoordinateSystemFontSize(PartDesignParamsP *self) {
@@ -177,12 +170,6 @@ static const App::ParamRegistry::Registrar _PartDesignParamsRegistrar({
         .setTitle("Show the task panel in PartDesign")
         .setDoc("Bring the task view to the front when the PartDesign workbench is\n"
 "activated."),
-    App::ParamInfo("PartDesign", "PartDesignParams", "User parameter:BaseApp/Preferences/Mod/PartDesign", "DefaultDatumColor", "DefaultDatumColor", App::ParamInfo::Hex, 0xFFD70066)
-        .setTitle("Default datum colour")
-        .setDoc("Colour and transparency of new datum planes, lines and points:\n"
-"golden yellow, mostly see-through, unless set.")
-        .setProxy("Color")
-        .setTransparency(true),
     App::ParamInfo("PartDesign", "PartDesignParams", "User parameter:BaseApp/Preferences/Mod/PartDesign", "CoordinateSystemFontSize", "CoordinateSystemFontSize", App::ParamInfo::Int, 10)
         .setTitle("Local coordinate system font size")
         .setDoc("Font size of the axis labels of a new local coordinate system."),
@@ -376,35 +363,6 @@ void PartDesignParams::setSwitchToTask(const bool &v) {
 // Auto generated code (Tools/params_utils.py:431)
 void PartDesignParams::removeSwitchToTask() {
     instance()->handle->RemoveBool("SwitchToTask");
-}
-
-// Auto generated code (Tools/params_utils.py:397)
-const char *PartDesignParams::docDefaultDatumColor() {
-    return QT_TRANSLATE_NOOP("PartDesignParams",
-"Colour and transparency of new datum planes, lines and points:\n"
-"golden yellow, mostly see-through, unless set.");
-}
-
-// Auto generated code (Tools/params_utils.py:405)
-const unsigned long & PartDesignParams::getDefaultDatumColor() {
-    return instance()->DefaultDatumColor;
-}
-
-// Auto generated code (Tools/params_utils.py:413)
-const unsigned long & PartDesignParams::defaultDefaultDatumColor() {
-    const static unsigned long def = 0xFFD70066;
-    return def;
-}
-
-// Auto generated code (Tools/params_utils.py:422)
-void PartDesignParams::setDefaultDatumColor(const unsigned long &v) {
-    instance()->handle->SetUnsigned("DefaultDatumColor",v);
-    instance()->DefaultDatumColor = v;
-}
-
-// Auto generated code (Tools/params_utils.py:431)
-void PartDesignParams::removeDefaultDatumColor() {
-    instance()->handle->RemoveUnsigned("DefaultDatumColor");
 }
 
 // Auto generated code (Tools/params_utils.py:397)

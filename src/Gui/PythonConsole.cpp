@@ -538,10 +538,8 @@ void PythonConsole::OnChange(Base::Subject<const char*> &rCaller, const char* sR
 
     if (strcmp(sReason, "FontSize") == 0 || strcmp(sReason, "Font") == 0) {
         int fontSize = rGrp.GetInt("FontSize", EditorParams::defaultFontSize());
-        QString fontFamily = QString::fromUtf8(
-            rGrp.GetASCII("Font", EditorParams::defaultFont().c_str()).c_str());
-
-        QFont font(fontFamily, fontSize);
+        QFont font = editorFont(
+            rGrp.GetASCII("Font", EditorParams::defaultFont().c_str()), fontSize);
         setFont(font);
         QFontMetrics metric(font);
         int width = QtTools::horizontalAdvance(metric, QStringLiteral("0000"));

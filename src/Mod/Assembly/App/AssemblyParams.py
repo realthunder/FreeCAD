@@ -28,7 +28,7 @@ from os import sys, path
 sys.path.append(path.join(path.dirname(path.dirname(path.dirname(path.dirname(path.abspath(__file__))))), 'Tools'))
 import params_utils
 
-from params_utils import ParamBool, ParamInt, ParamFloat, ParamString
+from params_utils import ParamBool, ParamInt, ParamFloat, ParamString, ParamHex, ParamColor
 
 NameSpace = 'Assembly'
 ClassName = 'AssemblyParams'
@@ -56,6 +56,11 @@ Params = [
         title = "Switch to Assembly workbench",
         doc = "Switches to the Assembly workbench when an assembly is double-\n"
               "clicked for editing. Takes effect at the next double-click."),
+    ParamHex('JointHighlightColor', 0xCC1A1AFF, proxy=ParamColor(transparency=False),
+        title = "Joint highlight colour",
+        doc = "Colour the elements a joint connects are shown in while the\n"
+              "joint is selected or edited: a red, unless set. Takes effect at\n"
+              "the next highlight."),
     ParamBool('LogSolverDebug', False,
         title = "Log dragging steps",
         doc = "Writes the dragging steps of the solver to the files\n"

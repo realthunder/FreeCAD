@@ -76,7 +76,8 @@ public:
     /// Accessor for parameter Font
     ///
     /// Font family of the macro and Python editors, the Python console
-    /// and the report view. Applied at once.
+    /// and the report view. Empty, the value while it is not set, means
+    /// the system's fixed-pitch font. Applied at once.
     static const std::string & getFont();
     static const std::string & defaultFont();
     static void removeFont();
@@ -348,6 +349,7 @@ public:
 #include <vector>
 
 #include <QColor>
+#include <QFont>
 #include <QString>
 
 namespace Gui {
@@ -359,6 +361,13 @@ namespace Gui {
  * "leave it to the theme".
  */
 GuiExport std::vector<std::pair<QString, QColor>> editorColorDefaults();
+
+/** The editors' font for a family and a size as they are stored.
+ *
+ * An empty family, which is what the setting is while nobody chose one, is
+ * the system's fixed-pitch font, as upstream has it.
+ */
+GuiExport QFont editorFont(const std::string& family, int pointSize);
 
 } // namespace Gui
 

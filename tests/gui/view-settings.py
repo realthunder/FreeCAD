@@ -9,8 +9,10 @@ places, each with a default of its own, and not always the same one:
     that the key changed. A zoom step that was stored and then removed --
     "back to the default" -- left the open views with a step of 0: the
     mouse wheel and Zoom In did nothing until the next start;
-  - the Home view read an unset camera orientation as Top, where a new
+  - the Home view reads an unset camera orientation as Top, where a new
     document opens in Trimetric and the Navigation page shows Trimetric.
+    That is upstream's, on purpose, and stays (it was made Trimetric here
+    for a day; docs/HandsOnLog.md entry 24, decision A3).
 
 Every reader takes the default from the class now. The preference pages'
 defaults are held to the definitions by preferences-ok-keeps-defaults.py.
@@ -136,16 +138,25 @@ def run():
         view.viewDefaultOrientation()
         settle(0.5)
         new_document = orientation(view)
-        view.viewTop()
+        view.viewFront()
         settle(0.5)
+        front = orientation(view)
         FreeCADGui.runCommand("Std_ViewHome")
         settle(1.0)
-        check("with no camera orientation stored, Home shows the model as a new document does",
-              orientation(view) == new_document and new_document != top, (orientation(view), new_document, top))
+        check("with no camera orientation stored, Home is Top and a new document opens otherwise, as upstream",
+              orientation(view) == top and new_document != top and front != top,
+              (orientation(view), new_document, top))
+        group.SetString("NewDocumentCameraOrientation", "Front")
+        settle(0.3)
+        FreeCADGui.runCommand("Std_ViewHome")
+        settle(1.0)
+        check("and once an orientation is stored Home takes it", orientation(view) == front,
+              (orientation(view), front))
     except Exception:
         note("FAIL the test ran | " + traceback.format_exc().replace("\n", " | "))
     finally:
         group.RemFloat("ZoomStep")
+        group.RemString("NewDocumentCameraOrientation")
         if doc is not None:
             FreeCAD.closeDocument(doc.Name)
         note("DONE")

@@ -165,6 +165,6 @@ def setToolBitSchema(schema=None):
     # Fallback to user preference or provided schema
     if schema is None:
         schema = FreeCAD.ParamGet("User parameter:BaseApp/Preferences/Units").GetInt(
-            "UserSchema", 0
+            "UserSchema", 6
         )
     FreeCAD.Units.setSchema(schema)

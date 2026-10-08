@@ -125,6 +125,20 @@ public:
 
     // Auto generated code (Tools/params_utils.py:139)
     //@{
+    /// Accessor for parameter JointHighlightColor
+    ///
+    /// Colour the elements a joint connects are shown in while the
+    /// joint is selected or edited: a red, unless set. Takes effect at
+    /// the next highlight.
+    static const unsigned long & getJointHighlightColor();
+    static const unsigned long & defaultJointHighlightColor();
+    static void removeJointHighlightColor();
+    static void setJointHighlightColor(const unsigned long &v);
+    static const char *docJointHighlightColor();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
     /// Accessor for parameter LogSolverDebug
     ///
     /// Writes the dragging steps of the solver to the files

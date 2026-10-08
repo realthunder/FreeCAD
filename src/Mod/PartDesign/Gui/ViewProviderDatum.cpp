@@ -66,6 +66,7 @@
 #include <Gui/ViewProviderCoordinateSystem.h>
 #include <Gui/ViewProviderOriginGroupExtension.h>
 #include <Mod/Part/App/DatumFeature.h>
+#include <Mod/Part/Gui/PartParams.h>
 
 #include "ViewProviderDatum.h"
 #include "TaskDatumParameters.h"
@@ -95,7 +96,7 @@ ViewProviderDatum::ViewProviderDatum()
     // The parameter is stored in 'PartDesign' for historical reason
     ParameterGrp::handle hGrp = App::GetApplication().GetParameterGroupByPath (
             "User parameter:BaseApp/Preferences/Mod/PartDesign");
-    unsigned long shcol = PartDesign::PartDesignParams::getDefaultDatumColor();
+    unsigned long shcol = PartGui::PartParams::getDefaultDatumColor();
 
     App::Color col ( (uint32_t) shcol );
     ShapeColor.setValue ( col );

@@ -1535,3 +1535,10 @@ fc_add_gui_test(GuiTechDrawSettings_tests_run
 fc_add_gui_test(GuiModuleSettings_tests_run
                 module-settings.py
                 --timeout 180)
+
+# What the reporter decided about entry 24's defaults and findings: the
+# editors' font, the Asymptote size, the settings listed since, one datum
+# colour, the Sketcher's remembered radius or diameter.
+fc_add_gui_test(GuiEntry24Decisions_tests_run
+                entry24-decisions.py
+                --timeout 180)

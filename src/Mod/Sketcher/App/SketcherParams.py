@@ -439,13 +439,24 @@ Params = [
     # sketch used to take it from a constant of its own, which was the
     # same colour to within a step or two of rounding in four cases, and
     # another colour in one: external geometry, where the page is the one
-    # that was changed. Not listed, because their default is the height of
-    # the application's font: EditSketcherFontSize and ConstraintSymbolSize.
+    # that was changed. EditSketcherFontSize and ConstraintSymbolSize are 0
+    # while they are not set, and 0 is the height of the application's
+    # font, which is not a number a definition can hold.
     # CursorCrosshairColor is on the Sketcher's page and read by Gui.
     ParamString('EditSketcherFontName', '', subpath='User parameter:BaseApp/Preferences/View',
         title = "Sketch label font",
         doc = "Font family of the dimension labels in sketch edit mode. Empty\n"
               "means the labels' own font. Applies at once."),
+    ParamInt('EditSketcherFontSize', 0, subpath='User parameter:BaseApp/Preferences/View',
+        title = "Sketch label font size",
+        doc = "Size in pixels of the dimension labels in sketch edit mode. 0, the\n"
+              "value while it is not set, means the height of the application's\n"
+              "font. Applies at once."),
+    ParamInt('ConstraintSymbolSize', 0, subpath='User parameter:BaseApp/Preferences/View',
+        title = "Constraint symbol size",
+        doc = "Size in pixels of the constraint symbols in sketch edit mode, 6 at\n"
+              "least. 0, the value while it is not set, means the height of the\n"
+              "application's font. Applies at once."),
     ParamInt('ConstraintIconLabelsPerLine', 10, subpath='User parameter:BaseApp/Preferences/View',
         title = "Constraint numbers per line",
         doc = "How many constraint numbers fit on one line of the label beside a\n"

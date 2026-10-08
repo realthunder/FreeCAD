@@ -114,11 +114,20 @@ Params = [
         doc = "Move the camera to bring a newly created feature into view. Used\n"
               "by Part offset and thickness, by PartDesign features made from a\n"
               "selected profile, and by new bodies."),
+    # One colour for datums and binders, kept in PartDesign's group, where
+    # upstream has it and where its themes store it. It is defined here
+    # because the sub-shape binder of this fork lives in Part. There used
+    # to be a second DefaultDatumColor in Part's own group, which the
+    # binders read while the datums read PartDesign's.
     ParamHex("DefaultDatumColor", 0xFFD70066, proxy=ParamColor(),
-        doc = "Default face colour of shape binders, of sub-shape binders shown\n"
-              "in binder style, and of PartDesign extrusions. Datum planes, lines\n"
-              "and points take theirs from the PartDesign settings."),
+        subpath="User parameter:BaseApp/Preferences/Mod/PartDesign",
+        title = "Default datum colour",
+        doc = "Colour and transparency of new datum planes, lines and points, of\n"
+              "shape binders, of sub-shape binders shown in binder style, and of\n"
+              "PartDesign extrusions: golden yellow, mostly see-through, unless\n"
+              "set."),
     ParamHex("DefaultDatumLineColor", 0xFA9600FF, proxy=ParamColor(),
+        subpath="User parameter:BaseApp/Preferences/Mod/PartDesign",
        doc="Line and point color of a shape binder, darker than DefaultDatumColor\n"
            "so that its outline shows against the model (upstream 5dbb4d7c7e)"),
     ParamBool("RespectSystemDPI", False, on_change=True,

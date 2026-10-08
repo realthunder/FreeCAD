@@ -123,6 +123,8 @@ public:
     bool allowCrazyEdge;
     bool debugDetail;
     bool debugSection;
+    unsigned long PreSelectColor;
+    unsigned long SelectColor;
     unsigned long Background;
     unsigned long CutSurfaceColor;
     unsigned long FaceColor;
@@ -366,6 +368,10 @@ public:
         funcs["debugDetail"] = &TechDrawParamsP::updatedebugDetail;
         debugSection = this->subHandles[10]->GetBool("debugSection", false);
         funcs["debugSection"] = &TechDrawParamsP::updatedebugSection;
+        PreSelectColor = this->subHandles[5]->GetUnsigned("PreSelectColor", 0x00000000);
+        funcs["PreSelectColor"] = &TechDrawParamsP::updatePreSelectColor;
+        SelectColor = this->subHandles[5]->GetUnsigned("SelectColor", 0x00000000);
+        funcs["SelectColor"] = &TechDrawParamsP::updateSelectColor;
         Background = this->subHandles[5]->GetUnsigned("Background", 0x707070FF);
         funcs["Background"] = &TechDrawParamsP::updateBackground;
         CutSurfaceColor = this->subHandles[5]->GetUnsigned("CutSurfaceColor", 0xD3D3D3FF);
@@ -803,6 +809,14 @@ public:
         self->debugSection = self->subHandles[10]->GetBool("debugSection", false);
     }
     // Auto generated code (Tools/params_utils.py:314)
+    static void updatePreSelectColor(TechDrawParamsP *self) {
+        self->PreSelectColor = self->subHandles[5]->GetUnsigned("PreSelectColor", 0x00000000);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateSelectColor(TechDrawParamsP *self) {
+        self->SelectColor = self->subHandles[5]->GetUnsigned("SelectColor", 0x00000000);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
     static void updateBackground(TechDrawParamsP *self) {
         self->Background = self->subHandles[5]->GetUnsigned("Background", 0x707070FF);
     }
@@ -1092,8 +1106,8 @@ static const App::ParamRegistry::Registrar _TechDrawParamsRegistrar({
     App::ParamInfo("TechDraw", "TechDrawParams", "User parameter:BaseApp/Preferences/Mod/TechDraw/General", "ProjectionAngle", "ProjectionAngle", App::ParamInfo::Int, 0)
         .setTitle("Projection Angle")
         .setDoc("Projection convention of new pages and projection groups: 0 first\n"
-"angle, 1 third angle. The third choice on the page, Page,\n"
-"currently reads as first angle."),
+"angle, 1 third angle, 2 Page: a new projection group follows its\n"
+"page, and a new page is first angle."),
     App::ParamInfo("TechDraw", "TechDrawParams", "User parameter:BaseApp/Preferences/Mod/TechDraw/General", "restoreCosmetic", "restoreCosmetic", App::ParamInfo::Bool, true)
         .setTitle("Restore Cosmetic")
         .setDoc("Read cosmetic vertices, edges and centre lines when a document is\n"
@@ -1353,6 +1367,20 @@ static const App::ParamRegistry::Registrar _TechDrawParamsRegistrar({
         .setTitle("Debug section views")
         .setDoc("Write the intermediate shapes of a section view to files while it\n"
 "is recomputed. For developers."),
+    App::ParamInfo("TechDraw", "TechDrawParams", "User parameter:BaseApp/Preferences/Mod/TechDraw/Colors", "PreSelectColor", "PreSelectColor", App::ParamInfo::Hex, 0x00000000)
+        .setTitle("Preselection colour")
+        .setDoc("Colour of what the pointer is over in a page view. 0, the value\n"
+"while it is not set, follows the preselection colour of the 3D\n"
+"view. Read at each hover.")
+        .setProxy("Color")
+        .setTransparency(false),
+    App::ParamInfo("TechDraw", "TechDrawParams", "User parameter:BaseApp/Preferences/Mod/TechDraw/Colors", "SelectColor", "SelectColor", App::ParamInfo::Hex, 0x00000000)
+        .setTitle("Selection colour")
+        .setDoc("Colour of what is selected in a page view. 0, the value while it\n"
+"is not set, follows the selection colour of the 3D view. Read at\n"
+"each selection.")
+        .setProxy("Color")
+        .setTransparency(false),
     App::ParamInfo("TechDraw", "TechDrawParams", "User parameter:BaseApp/Preferences/Mod/TechDraw/Colors", "Background", "Background", App::ParamInfo::Hex, 0x707070FF)
         .setTitle("Page view background")
         .setDoc("Colour of the area around the sheet in a page view. Read when a\n"
@@ -2162,8 +2190,8 @@ void TechDrawParams::removePageRendererVgVerify() {
 const char *TechDrawParams::docProjectionAngle() {
     return QT_TRANSLATE_NOOP("TechDrawParams",
 "Projection convention of new pages and projection groups: 0 first\n"
-"angle, 1 third angle. The third choice on the page, Page,\n"
-"currently reads as first angle.");
+"angle, 1 third angle, 2 Page: a new projection group follows its\n"
+"page, and a new page is first angle.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -3970,6 +3998,66 @@ void TechDrawParams::setdebugSection(const bool &v) {
 // Auto generated code (Tools/params_utils.py:431)
 void TechDrawParams::removedebugSection() {
     instance()->subHandles[10]->RemoveBool("debugSection");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *TechDrawParams::docPreSelectColor() {
+    return QT_TRANSLATE_NOOP("TechDrawParams",
+"Colour of what the pointer is over in a page view. 0, the value\n"
+"while it is not set, follows the preselection colour of the 3D\n"
+"view. Read at each hover.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const unsigned long & TechDrawParams::getPreSelectColor() {
+    return instance()->PreSelectColor;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const unsigned long & TechDrawParams::defaultPreSelectColor() {
+    const static unsigned long def = 0x00000000;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void TechDrawParams::setPreSelectColor(const unsigned long &v) {
+    instance()->subHandles[5]->SetUnsigned("PreSelectColor",v);
+    instance()->PreSelectColor = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void TechDrawParams::removePreSelectColor() {
+    instance()->subHandles[5]->RemoveUnsigned("PreSelectColor");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *TechDrawParams::docSelectColor() {
+    return QT_TRANSLATE_NOOP("TechDrawParams",
+"Colour of what is selected in a page view. 0, the value while it\n"
+"is not set, follows the selection colour of the 3D view. Read at\n"
+"each selection.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const unsigned long & TechDrawParams::getSelectColor() {
+    return instance()->SelectColor;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const unsigned long & TechDrawParams::defaultSelectColor() {
+    const static unsigned long def = 0x00000000;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void TechDrawParams::setSelectColor(const unsigned long &v) {
+    instance()->subHandles[5]->SetUnsigned("SelectColor",v);
+    instance()->SelectColor = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void TechDrawParams::removeSelectColor() {
+    instance()->subHandles[5]->RemoveUnsigned("SelectColor");
 }
 
 // Auto generated code (Tools/params_utils.py:397)

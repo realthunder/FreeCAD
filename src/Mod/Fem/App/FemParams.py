@@ -36,8 +36,9 @@ ParamPath = 'User parameter:BaseApp/Preferences/Mod/Fem'
 ClassDoc = 'Convenient class to obtain the settings of the Fem workbench that C++ reads'
 
 # Only what C++ reads. Most of Fem's settings are read by its Python code
-# and its Python pages, and are not listed here. Gmsh/NumOfThreads is not
-# listed either: its default is the number of processor threads.
+# and its Python pages, and are not listed here. Gmsh/NumOfThreads is 0
+# while it is not set, and 0 is the number of processor threads, which is
+# not a number a definition can hold.
 Params = [
     ParamBool('PostAutoRecompute', True,
         title = "Apply changes automatically",
@@ -62,6 +63,11 @@ Params = [
         title = "Export INP group data",
         doc = "Writes the mesh groups as well when a mesh is exported to an\n"
               "Abaqus INP file. Takes effect at the next export."),
+    ParamInt('GmshNumOfThreads', 0, subpath='Gmsh', param_name='NumOfThreads',
+        title = "Gmsh threads",
+        doc = "Number of threads Gmsh meshes with. 0, the value while it is not\n"
+              "set, means as many as the processor has. Takes effect at the\n"
+              "next meshing."),
     ParamString('GmshLogVerbosity', '3', subpath='Gmsh', param_name='LogVerbosity',
         title = "Gmsh log verbosity",
         doc = "How much Gmsh reports in the task panel while it meshes, as its\n"

@@ -65,10 +65,8 @@ Params = [
         title = 'Show the task panel in PartDesign',
         doc = "Bring the task view to the front when the PartDesign workbench is\n"
               "activated."),
-    ParamHex('DefaultDatumColor', 0xFFD70066, proxy=ParamColor(),
-        title = 'Default datum colour',
-        doc = "Colour and transparency of new datum planes, lines and points:\n"
-              "golden yellow, mostly see-through, unless set."),
+    # DefaultDatumColor of this group is defined by Part (PartGuiParams.py):
+    # the binders of Part take the same colour.
     ParamInt('CoordinateSystemFontSize', 10,
         title = 'Local coordinate system font size',
         doc = "Font size of the axis labels of a new local coordinate system."),

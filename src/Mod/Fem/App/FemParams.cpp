@@ -47,6 +47,7 @@ public:
     std::string MeshExportLevel;
     long AbaqusElementChoice;
     bool AbaqusWriteGroups;
+    long GmshNumOfThreads;
     std::string GmshLogVerbosity;
     std::string Z88Solver;
 
@@ -76,6 +77,8 @@ public:
         funcs["AbaqusElementChoice"] = &FemParamsP::updateAbaqusElementChoice;
         AbaqusWriteGroups = this->subHandles[2]->GetBool("AbaqusWriteGroups", true);
         funcs["AbaqusWriteGroups"] = &FemParamsP::updateAbaqusWriteGroups;
+        GmshNumOfThreads = this->subHandles[3]->GetInt("NumOfThreads", 0);
+        funcs["NumOfThreads"] = &FemParamsP::updateGmshNumOfThreads;
         GmshLogVerbosity = this->subHandles[3]->GetASCII("LogVerbosity", "3");
         funcs["LogVerbosity"] = &FemParamsP::updateGmshLogVerbosity;
         Z88Solver = this->subHandles[4]->GetASCII("Solver", "sorcg");
@@ -115,6 +118,10 @@ public:
     // Auto generated code (Tools/params_utils.py:314)
     static void updateAbaqusWriteGroups(FemParamsP *self) {
         self->AbaqusWriteGroups = self->subHandles[2]->GetBool("AbaqusWriteGroups", true);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateGmshNumOfThreads(FemParamsP *self) {
+        self->GmshNumOfThreads = self->subHandles[3]->GetInt("NumOfThreads", 0);
     }
     // Auto generated code (Tools/params_utils.py:314)
     static void updateGmshLogVerbosity(FemParamsP *self) {
@@ -159,6 +166,11 @@ static const App::ParamRegistry::Registrar _FemParamsRegistrar({
         .setTitle("Export INP group data")
         .setDoc("Writes the mesh groups as well when a mesh is exported to an\n"
 "Abaqus INP file. Takes effect at the next export."),
+    App::ParamInfo("Fem", "FemParams", "User parameter:BaseApp/Preferences/Mod/Fem/Gmsh", "GmshNumOfThreads", "NumOfThreads", App::ParamInfo::Int, 0)
+        .setTitle("Gmsh threads")
+        .setDoc("Number of threads Gmsh meshes with. 0, the value while it is not\n"
+"set, means as many as the processor has. Takes effect at the\n"
+"next meshing."),
     App::ParamInfo("Fem", "FemParams", "User parameter:BaseApp/Preferences/Mod/Fem/Gmsh", "GmshLogVerbosity", "LogVerbosity", App::ParamInfo::String, "3")
         .setTitle("Gmsh log verbosity")
         .setDoc("How much Gmsh reports in the task panel while it meshes, as its\n"
@@ -321,6 +333,36 @@ void FemParams::setAbaqusWriteGroups(const bool &v) {
 // Auto generated code (Tools/params_utils.py:431)
 void FemParams::removeAbaqusWriteGroups() {
     instance()->subHandles[2]->RemoveBool("AbaqusWriteGroups");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *FemParams::docGmshNumOfThreads() {
+    return QT_TRANSLATE_NOOP("FemParams",
+"Number of threads Gmsh meshes with. 0, the value while it is not\n"
+"set, means as many as the processor has. Takes effect at the\n"
+"next meshing.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const long & FemParams::getGmshNumOfThreads() {
+    return instance()->GmshNumOfThreads;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const long & FemParams::defaultGmshNumOfThreads() {
+    const static long def = 0;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void FemParams::setGmshNumOfThreads(const long &v) {
+    instance()->subHandles[3]->SetInt("NumOfThreads",v);
+    instance()->GmshNumOfThreads = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void FemParams::removeGmshNumOfThreads() {
+    instance()->subHandles[3]->RemoveInt("NumOfThreads");
 }
 
 // Auto generated code (Tools/params_utils.py:397)

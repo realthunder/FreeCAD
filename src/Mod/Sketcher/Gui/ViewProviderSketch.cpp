@@ -5966,10 +5966,14 @@ void ViewProviderSketch::initParams()
     ParameterGrp::handle hGrp = App::GetApplication().GetParameterGroupByPath("User parameter:BaseApp/Preferences/View");
     double viewScalingFactor = hGrp->GetFloat("ViewScalingFactor", Sketcher::SketcherParams::defaultViewScalingFactor());
     viewScalingFactor = Base::clamp<double>(viewScalingFactor, 0.5, 5.0);
-    int markersize = hGrp->GetInt("MarkerSize", Gui::ViewParams::defaultMarkerSize());
+    // 7 while not stored, as upstream: smaller than the 3D view's 9
+    int markersize = hGrp->GetInt("MarkerSize", 7);
 
     int defaultFontSizePixels = QApplication::fontMetrics().height(); // returns height in pixels, not points
-    int sketcherfontSize = hGrp->GetInt("EditSketcherFontSize", defaultFontSizePixels);
+    // 0, which is also the definition's default, is the application font's height
+    int sketcherfontSize = hGrp->GetInt("EditSketcherFontSize", Sketcher::SketcherParams::defaultEditSketcherFontSize());
+    if (sketcherfontSize <= 0)
+        sketcherfontSize = defaultFontSizePixels;
 
     if(edit) {
         // Coin draws into the framebuffer, whose pixels are DEVICE pixels.
@@ -6002,7 +6006,9 @@ void ViewProviderSketch::initParams()
         // A constraint symbol has a size of its own (upstream eef738b312,
         // dc22fb4b9b): the application font's height until it is set. It
         // was 0.8 of the label font's size and followed that.
-        long symbolSize = hGrp->GetInt("ConstraintSymbolSize", defaultFontSizePixels);
+        long symbolSize = hGrp->GetInt("ConstraintSymbolSize", Sketcher::SketcherParams::defaultConstraintSymbolSize());
+        if (symbolSize <= 0)
+            symbolSize = defaultFontSizePixels;
         edit->constraintIconSize = std::lround(std::max(6L, symbolSize) * dpr);
         edit->iconLabelsPerLine = std::max(1L, hGrp->GetInt("ConstraintIconLabelsPerLine", Sketcher::SketcherParams::defaultConstraintIconLabelsPerLine()));
         edit->iconLabelLines = std::max(1L, hGrp->GetInt("ConstraintIconLabelLines", Sketcher::SketcherParams::defaultConstraintIconLabelLines()));

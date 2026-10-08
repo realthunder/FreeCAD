@@ -114,6 +114,28 @@ PyObject* initModule()
 
 } // namespace PartGui
 
+// The datum and binder colours are kept in PartDesign's group
+// (PartGuiParams.py). This fork had them in Part's for a while: a value
+// somebody stored there is moved, once, unless PartDesign's is set too.
+static void moveDatumColours()
+{
+    auto hPart = App::GetApplication().GetParameterGroupByPath(
+        "User parameter:BaseApp/Preferences/Mod/Part");
+    auto hPartDesign = App::GetApplication().GetParameterGroupByPath(
+        "User parameter:BaseApp/Preferences/Mod/PartDesign");
+    for (const char* key : {"DefaultDatumColor", "DefaultDatumLineColor"}) {
+        // stored, not a default: two presets coming back equal
+        const unsigned long value = hPart->GetUnsigned(key, 0);
+        if (value != hPart->GetUnsigned(key, 1)) {
+            continue;
+        }
+        if (hPartDesign->GetUnsigned(key, 0) != hPartDesign->GetUnsigned(key, 1)) {
+            hPartDesign->SetUnsigned(key, value);
+        }
+        hPart->RemoveUnsigned(key);
+    }
+}
+
 PyMOD_INIT_FUNC(PartGui)
 {
     if (!Gui::Application::Instance) {
@@ -258,6 +280,7 @@ PyMOD_INIT_FUNC(PartGui)
 
     // add resources and reloads the translators
     loadPartResource();
+    moveDatumColours();
 
     // register bitmaps
     // Gui::BitmapFactoryInst& rclBmpFactory = Gui::BitmapFactory();

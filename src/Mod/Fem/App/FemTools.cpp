@@ -286,55 +286,6 @@ gp_XYZ Fem::Tools::getDirection(const TopoDS_Edge& edge)
     return dir;
 }
 
-// function to determine 3rd-party binaries used by the FEM WB
-std::string Fem::Tools::checkIfBinaryExists(
-    std::string prefSection,
-    std::string prefBinaryName,
-    std::string binaryName
-)
-{
-    // if "Search in known binary directories" is set in the preferences, we ignore custom path
-    auto paramPath = "User parameter:BaseApp/Preferences/Mod/Fem/" + prefSection;
-    auto knownDirectoriesString = "UseStandard" + prefSection + "Location";
-    ParameterGrp::handle hGrp = App::GetApplication().GetParameterGroupByPath(paramPath.c_str());
-    bool knownDirectories = hGrp->GetBool(knownDirectoriesString.c_str(), true);
-
-    if (knownDirectories) {
-        // first check the environment paths, normally determined by the PATH environment variable
-        // On Windows, the executable extensions(".exe" etc.) should be automatically appended
-        QString executablePath = QStandardPaths::findExecutable(
-            QString::fromLatin1(binaryName.c_str())
-        );
-        if (!executablePath.isEmpty()) {
-            return executablePath.toStdString();
-        }
-        // check the folder of the FreeCAD binary
-        else {
-            auto appBinaryPath = App::Application::getHomePath() + "bin/";
-            QStringList pathCandidates = {QString::fromLatin1(appBinaryPath.c_str())};
-            QString executablePath = QStandardPaths::findExecutable(
-                QString::fromLatin1(binaryName.c_str()),
-                pathCandidates
-            );
-            if (!executablePath.isEmpty()) {
-                return executablePath.toStdString();
-            }
-        }
-    }
-    else {
-        auto binaryPathString = prefBinaryName + "BinaryPath";
-        // use binary path from settings, fall back to system path if not defined
-        auto binaryPath = hGrp->GetASCII(binaryPathString.c_str(), binaryName.c_str());
-        QString executablePath = QStandardPaths::findExecutable(
-            QString::fromLatin1(binaryPath.c_str())
-        );
-        if (!executablePath.isEmpty()) {
-            return executablePath.toStdString();
-        }
-    }
-    return "";
-}
-
 Base::Placement Fem::Tools::getSubShapeGlobalLocation(const Part::Feature* feat, const TopoDS_Shape& sh)
 {
     Base::Matrix4D matrix = Part::TopoShape::convert(sh.Location().Transformation());

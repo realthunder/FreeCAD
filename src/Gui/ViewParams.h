@@ -34,7 +34,7 @@ import ViewParams
 ViewParams.declare_begin()
 ]]]*/
 
-// Auto generated code (Gui/ViewParams.py:1021)
+// Auto generated code (Gui/ViewParams.py:1022)
 #include <QString>
 
 // Auto generated code (Tools/params_utils.py:82)
@@ -3132,9 +3132,10 @@ public:
     //@{
     /// Accessor for parameter NewDocumentCameraOrientation
     ///
-    /// Camera orientation of a new document and of the Home view:
-    /// Isometric, Dimetric, Trimetric, Top, Front, Left, Right, Rear,
-    /// Bottom, or Custom. Read at each use.
+    /// Camera orientation of a new document: Isometric, Dimetric,
+    /// Trimetric, Top, Front, Left, Right, Rear, Bottom, or Custom. Once
+    /// set, the Home view takes it too; until then Home is Top. Read at
+    /// each use.
     static const std::string & getNewDocumentCameraOrientation();
     static const std::string & defaultNewDocumentCameraOrientation();
     static void removeNewDocumentCameraOrientation();
@@ -3306,7 +3307,7 @@ public:
     static const char *docDefaultShapeShininess();
     //@}
 
-    // Auto generated code (Gui/ViewParams.py:1027)
+    // Auto generated code (Gui/ViewParams.py:1028)
     static const std::vector<QString> AnimationCurveTypes;
 
     static void onViewParamChanged(const char *sReason);
@@ -3337,7 +3338,7 @@ ViewParams.declare_end()
 }; // class ViewParams
 } // namespace Gui
 
-// Auto generated code (Gui/ViewParams.py:1040)
+// Auto generated code (Gui/ViewParams.py:1041)
 namespace Gui {
 /// Obtain all display style names, terminated by nullptr entry.
 GuiExport const char **drawStyleNames();

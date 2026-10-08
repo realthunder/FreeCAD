@@ -96,34 +96,6 @@ App::Color Preferences::normalColor()
     return fcColor;
 }
 
-App::Color Preferences::selectColor()
-{
-    Base::Reference<ParameterGrp> hGrp = App::GetApplication()
-                                             .GetUserParameter()
-                                             .GetGroup("BaseApp")
-                                             ->GetGroup("Preferences")
-                                             ->GetGroup("View");
-    unsigned int defColor = hGrp->GetUnsigned("SelectionColor", 0x00FF00FF);//#00FF00 lime
-
-    App::Color fcColor;
-    fcColor.setPackedValue(getPreferenceGroup("Colors")->GetUnsigned("SelectColor", defColor));
-    return fcColor;
-}
-
-App::Color Preferences::preselectColor()
-{
-    Base::Reference<ParameterGrp> hGrp = App::GetApplication()
-                                             .GetUserParameter()
-                                             .GetGroup("BaseApp")
-                                             ->GetGroup("Preferences")
-                                             ->GetGroup("View");
-    unsigned int defColor = hGrp->GetUnsigned("HighlightColor", 0xFFFF00FF);//#FFFF00 yellow
-
-    App::Color fcColor;
-    fcColor.setPackedValue(getPreferenceGroup("Colors")->GetUnsigned("PreSelectColor", defColor));
-    return fcColor;
-}
-
 App::Color Preferences::vertexColor()
 {
     App::Color fcColor;
@@ -166,8 +138,10 @@ bool Preferences::useGlobalDecimals()
 
 int Preferences::projectionAngle()
 {
-    // First Angle, Third Angle
-    return indexPreference("General", "ProjectionAngle", TechDraw::TechDrawParams::defaultProjectionAngle(), 2);
+    // DrawProjGroup::ProjectionTypeEnums: First Angle, Third Angle, Default
+    // (the page's). A page has the first two only: DrawPage takes the
+    // third for its default.
+    return indexPreference("General", "ProjectionAngle", TechDraw::TechDrawParams::defaultProjectionAngle(), 3);
 }
 
 int Preferences::lineGroup()

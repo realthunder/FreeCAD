@@ -1617,8 +1617,11 @@ class GmshTools(ObjectTools):
         # with multiple threads (tested with gmsh 4.13.1)
         if self.ParallelProcessing and self.algorithm2D != "7":
             cpu_count = FreeCAD.ParamGet("User parameter:BaseApp/Preferences/Mod/Fem/Gmsh").GetInt(
-                "NumOfThreads", QThread.idealThreadCount()
+                "NumOfThreads", 0
             )
+            if cpu_count <= 0:
+                # not set, or 0: as many as the processor has
+                cpu_count = QThread.idealThreadCount()
             geo.write("// enable multi-core processing\n")
             geo.write(f"General.NumThreads = {cpu_count};\n")
             geo.write("\n")

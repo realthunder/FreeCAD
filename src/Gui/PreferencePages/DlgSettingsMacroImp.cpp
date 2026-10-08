@@ -80,8 +80,6 @@ void DlgSettingsMacroImp::saveSettings()
     ui->PrefCheckBox_RecordGui->onSave();
     ui->PrefCheckBox_GuiAsComment->onSave();
     ui->PConsoleCheckBox->onSave();
-    ui->FileLogCheckBox->onSave();
-    ui->MacroPath_2->onSave();
     ui->RecentMacros->onSave();
     ParameterGrp::handle hGrp = WindowParameter::getDefaultParameter()->GetGroup("RecentMacros");
     hGrp->SetASCII("ShortcutModifiers", qPrintable(ui->ShortcutModifiers->text()));
@@ -96,8 +94,6 @@ void DlgSettingsMacroImp::loadSettings()
     ui->PrefCheckBox_RecordGui->onRestore();
     ui->PrefCheckBox_GuiAsComment->onRestore();
     ui->PConsoleCheckBox->onRestore();
-    ui->FileLogCheckBox->onRestore();
-    ui->MacroPath_2->onRestore();
     ui->RecentMacros->onRestore();
     ParameterGrp::handle hGrp = WindowParameter::getDefaultParameter()->GetGroup("RecentMacros");
     ui->ShortcutModifiers->setText(QString::fromStdString(MiscParams::getShortcutModifiers()));

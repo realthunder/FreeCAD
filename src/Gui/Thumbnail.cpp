@@ -91,7 +91,9 @@ unsigned int Thumbnail::getMemSize () const
 
 void Thumbnail::Save (Base::Writer &writer) const
 {
-    if (!image.isNull() || updateOnSave)
+    // A recovery save (AutoSaver) asks for no new picture: it takes the one
+    // already held, if there is one.
+    if (!image.isNull() || (updateOnSave && !writer.getMode("NoThumbnailUpdate")))
         writer.addFile("thumbnails/Thumbnail.png", this);
 }
 
@@ -104,7 +106,7 @@ void Thumbnail::SaveDocFile (Base::Writer &writer) const
 {
     QImage img;
 
-    if (!updateOnSave || !viewer) {
+    if (!updateOnSave || !viewer || writer.getMode("NoThumbnailUpdate")) {
         img = image;
     } else if (updateOnSave) {
         if (this->viewer->thread() != QThread::currentThread()) {

@@ -169,21 +169,12 @@ void AutoSaver::saveDocument(const std::string& name, AutoSaveProperty& saver)
             file.close();
         }
 
-        // make sure to tmp. disable saving thumbnails because this causes trouble if the
-        // associated 3d view is not active
-        Base::Reference<ParameterGrp> hGrp = App::GetApplication().GetParameterGroupByPath
-            ("User parameter:BaseApp/Preferences/Document");
-        // The setting's default is DocumentParams' (on). It was read as
-        // off here, so a key that is not stored left thumbnails on for the
-        // recovery save, which is what this is here to prevent.
-        const bool save = App::DocumentParams::getSaveThumbnail();
-        bool stored = false;
-        for (const auto& entry : hGrp->GetBoolMap("SaveThumbnail")) {
-            stored = stored || entry.first == "SaveThumbnail";
-        }
-        if (save) {
-            hGrp->SetBool("SaveThumbnail",false);
-        }
+        // No new thumbnail for a recovery save: making one causes trouble if
+        // the associated 3d view is not active. The writers are told
+        // (Thumbnail::Save). This used to switch the "save thumbnails"
+        // preference off and on again around the save -- a write to the
+        // user's settings every few minutes, and to no effect: what a save
+        // follows is the document's SaveThumbnail property.
 
         getMainWindow()->showMessage(tr("Please wait until the AutoRecovery file has been saved..."), 5000);
         //qApp->processEvents();
@@ -199,6 +190,7 @@ void AutoSaver::saveDocument(const std::string& name, AutoSaveProperty& saver)
                 // So, always force binary format because ASCII
                 // is not reentrant. See PropertyPartShape::SaveDocFile
                 writer.setMode("BinaryBrep");
+                writer.setMode("NoThumbnailUpdate");
 
                 // Included files go in as their own entries, shared by
                 // content. In this uncompressed mode that is what keeps a
@@ -232,6 +224,7 @@ void AutoSaver::saveDocument(const std::string& name, AutoSaveProperty& saver)
                     if (App::DocumentParams::getSaveBinaryBrep())
                         writer.setMode("BinaryBrep");
 
+                    writer.setMode("NoThumbnailUpdate");
                     writer.setComment("AutoRecovery file");
                     writer.setLevel(1); // apparently the fastest compression
                     writer.setSchemaVersion(doc->getSaveSchemaVersion());
@@ -255,15 +248,6 @@ void AutoSaver::saveDocument(const std::string& name, AutoSaveProperty& saver)
 
         std::string str = watch.toString(watch.elapsed());
         Base::Console().Log("Save AutoRecovery file: %s\n", str.c_str());
-        if (save) {
-            // put back as it was: a key that was not stored is not stored
-            if (stored) {
-                hGrp->SetBool("SaveThumbnail",save);
-            }
-            else {
-                hGrp->RemoveBool("SaveThumbnail");
-            }
-        }
     }
 }
 

@@ -1322,10 +1322,8 @@ void ReportOutput::OnChange(Base::Subject<const char*> &rCaller, const char * sR
     }
     else if (strcmp(sReason, "FontSize") == 0 || strcmp(sReason, "Font") == 0) {
         int fontSize = rclGrp.GetInt("FontSize", EditorParams::defaultFontSize());
-        QString fontFamily = QString::fromUtf8(
-            rclGrp.GetASCII("Font", EditorParams::defaultFont().c_str()).c_str());
-
-        QFont font(fontFamily, fontSize);
+        QFont font = editorFont(
+            rclGrp.GetASCII("Font", EditorParams::defaultFont().c_str()), fontSize);
         setFont(font);
         fitFoldMargin();
         QFontMetrics metric(font);

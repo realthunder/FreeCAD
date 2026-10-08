@@ -134,6 +134,8 @@ public:
     double SnapAngle;
     long ElementIconSize;
     std::string EditSketcherFontName;
+    long EditSketcherFontSize;
+    long ConstraintSymbolSize;
     long ConstraintIconLabelsPerLine;
     long ConstraintIconLabelLines;
     double ViewScalingFactor;
@@ -400,6 +402,10 @@ public:
         funcs["ElementIconSize"] = &SketcherParamsP::updateElementIconSize;
         EditSketcherFontName = this->subHandles[9]->GetASCII("EditSketcherFontName", "");
         funcs["EditSketcherFontName"] = &SketcherParamsP::updateEditSketcherFontName;
+        EditSketcherFontSize = this->subHandles[9]->GetInt("EditSketcherFontSize", 0);
+        funcs["EditSketcherFontSize"] = &SketcherParamsP::updateEditSketcherFontSize;
+        ConstraintSymbolSize = this->subHandles[9]->GetInt("ConstraintSymbolSize", 0);
+        funcs["ConstraintSymbolSize"] = &SketcherParamsP::updateConstraintSymbolSize;
         ConstraintIconLabelsPerLine = this->subHandles[9]->GetInt("ConstraintIconLabelsPerLine", 10);
         funcs["ConstraintIconLabelsPerLine"] = &SketcherParamsP::updateConstraintIconLabelsPerLine;
         ConstraintIconLabelLines = this->subHandles[9]->GetInt("ConstraintIconLabelLines", 3);
@@ -889,6 +895,14 @@ public:
     // Auto generated code (Tools/params_utils.py:314)
     static void updateEditSketcherFontName(SketcherParamsP *self) {
         self->EditSketcherFontName = self->subHandles[9]->GetASCII("EditSketcherFontName", "");
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateEditSketcherFontSize(SketcherParamsP *self) {
+        self->EditSketcherFontSize = self->subHandles[9]->GetInt("EditSketcherFontSize", 0);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateConstraintSymbolSize(SketcherParamsP *self) {
+        self->ConstraintSymbolSize = self->subHandles[9]->GetInt("ConstraintSymbolSize", 0);
     }
     // Auto generated code (Tools/params_utils.py:314)
     static void updateConstraintIconLabelsPerLine(SketcherParamsP *self) {
@@ -1487,6 +1501,16 @@ static const App::ParamRegistry::Registrar _SketcherParamsRegistrar({
         .setTitle("Sketch label font")
         .setDoc("Font family of the dimension labels in sketch edit mode. Empty\n"
 "means the labels' own font. Applies at once."),
+    App::ParamInfo("Sketcher", "SketcherParams", "User parameter:BaseApp/Preferences/View", "EditSketcherFontSize", "EditSketcherFontSize", App::ParamInfo::Int, 0)
+        .setTitle("Sketch label font size")
+        .setDoc("Size in pixels of the dimension labels in sketch edit mode. 0, the\n"
+"value while it is not set, means the height of the application's\n"
+"font. Applies at once."),
+    App::ParamInfo("Sketcher", "SketcherParams", "User parameter:BaseApp/Preferences/View", "ConstraintSymbolSize", "ConstraintSymbolSize", App::ParamInfo::Int, 0)
+        .setTitle("Constraint symbol size")
+        .setDoc("Size in pixels of the constraint symbols in sketch edit mode, 6 at\n"
+"least. 0, the value while it is not set, means the height of the\n"
+"application's font. Applies at once."),
     App::ParamInfo("Sketcher", "SketcherParams", "User parameter:BaseApp/Preferences/View", "ConstraintIconLabelsPerLine", "ConstraintIconLabelsPerLine", App::ParamInfo::Int, 10)
         .setTitle("Constraint numbers per line")
         .setDoc("How many constraint numbers fit on one line of the label beside a\n"
@@ -4407,6 +4431,66 @@ void SketcherParams::setEditSketcherFontName(const std::string &v) {
 // Auto generated code (Tools/params_utils.py:431)
 void SketcherParams::removeEditSketcherFontName() {
     instance()->subHandles[9]->RemoveASCII("EditSketcherFontName");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *SketcherParams::docEditSketcherFontSize() {
+    return QT_TRANSLATE_NOOP("SketcherParams",
+"Size in pixels of the dimension labels in sketch edit mode. 0, the\n"
+"value while it is not set, means the height of the application's\n"
+"font. Applies at once.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const long & SketcherParams::getEditSketcherFontSize() {
+    return instance()->EditSketcherFontSize;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const long & SketcherParams::defaultEditSketcherFontSize() {
+    const static long def = 0;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void SketcherParams::setEditSketcherFontSize(const long &v) {
+    instance()->subHandles[9]->SetInt("EditSketcherFontSize",v);
+    instance()->EditSketcherFontSize = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void SketcherParams::removeEditSketcherFontSize() {
+    instance()->subHandles[9]->RemoveInt("EditSketcherFontSize");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *SketcherParams::docConstraintSymbolSize() {
+    return QT_TRANSLATE_NOOP("SketcherParams",
+"Size in pixels of the constraint symbols in sketch edit mode, 6 at\n"
+"least. 0, the value while it is not set, means the height of the\n"
+"application's font. Applies at once.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const long & SketcherParams::getConstraintSymbolSize() {
+    return instance()->ConstraintSymbolSize;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const long & SketcherParams::defaultConstraintSymbolSize() {
+    const static long def = 0;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void SketcherParams::setConstraintSymbolSize(const long &v) {
+    instance()->subHandles[9]->SetInt("ConstraintSymbolSize",v);
+    instance()->ConstraintSymbolSize = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void SketcherParams::removeConstraintSymbolSize() {
+    instance()->subHandles[9]->RemoveInt("ConstraintSymbolSize");
 }
 
 // Auto generated code (Tools/params_utils.py:397)

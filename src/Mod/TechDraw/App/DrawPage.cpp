@@ -76,7 +76,14 @@ DrawPage::DrawPage(void)
 
     // Projection Properties
     ProjectionType.setEnums(ProjectionTypeEnums);
-    ADD_PROPERTY(ProjectionType, ((long)Preferences::projectionAngle()));
+    // "Page", the third choice of the preference, is for a projection group
+    // (follow the page). A page is first or third angle: upstream sets its
+    // two-entry enumeration to 2 here, which is no value.
+    long projection = Preferences::projectionAngle();
+    if (projection > 1) {
+        projection = TechDraw::TechDrawParams::defaultProjectionAngle();
+    }
+    ADD_PROPERTY(ProjectionType, (projection));
 
     double defScale = Preferences::getPreferenceGroup("General")->GetFloat("DefaultScale", TechDraw::TechDrawParams::defaultDefaultScale());
     ADD_PROPERTY_TYPE(Scale, (defScale), group, (App::PropertyType)(App::Prop_None),

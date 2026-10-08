@@ -44,18 +44,19 @@ Signal = True
 #
 # A colour is stored as 0xRRGGBB00. The keys of some of them contain a
 # space, which is why their names here differ from their keys. Three keys
-# the Editor page still lists are not settings: Bookmark, Breakpoint and
-# Character are read and then dropped by the syntax highlighter. Two more
+# the Editor page used to list are not settings: Bookmark, Breakpoint and
+# Character were read and then dropped by the syntax highlighter. Two more
 # were stored by the page and never read: Tabs and EnableFolding.
 def Color(name, default, title, doc, key=''):
     return ParamHex(name, default, param_name=key, proxy=ParamColor(transparency=False),
                     title=title, doc=doc)
 
 Params = [
-    ParamString('Font', 'Courier',
+    ParamString('Font', '',
         title = 'Font family',
         doc = "Font family of the macro and Python editors, the Python console\n"
-              "and the report view. Applied at once."),
+              "and the report view. Empty, the value while it is not set, means\n"
+              "the system's fixed-pitch font. Applied at once."),
     ParamInt('FontSize', 10,
         title = 'Font size',
         doc = "Font size in points of the macro and Python editors, the Python\n"

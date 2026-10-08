@@ -37,8 +37,8 @@ ClassDoc = 'Convenient class to obtain the settings of macro recording and runni
 Signal = True
 
 # Not listed: what the program keeps here for itself (ShowWalkthroughMessage,
-# the answer to a one-time hint), and two keys the Macro page still stores
-# that nothing has ever read (ScriptToFile, ScriptFile).
+# the answer to a one-time hint). The Macro page has two hidden widgets for
+# keys nothing has ever read (ScriptToFile, ScriptFile); it stores neither.
 Params = [
     ParamString('MacroPath', '',
         title = 'Macro path',

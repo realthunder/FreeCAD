@@ -1267,6 +1267,34 @@ public:
 
     // Auto generated code (Tools/params_utils.py:139)
     //@{
+    /// Accessor for parameter EditSketcherFontSize
+    ///
+    /// Size in pixels of the dimension labels in sketch edit mode. 0, the
+    /// value while it is not set, means the height of the application's
+    /// font. Applies at once.
+    static const long & getEditSketcherFontSize();
+    static const long & defaultEditSketcherFontSize();
+    static void removeEditSketcherFontSize();
+    static void setEditSketcherFontSize(const long &v);
+    static const char *docEditSketcherFontSize();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter ConstraintSymbolSize
+    ///
+    /// Size in pixels of the constraint symbols in sketch edit mode, 6 at
+    /// least. 0, the value while it is not set, means the height of the
+    /// application's font. Applies at once.
+    static const long & getConstraintSymbolSize();
+    static const long & defaultConstraintSymbolSize();
+    static void removeConstraintSymbolSize();
+    static void setConstraintSymbolSize(const long &v);
+    static const char *docConstraintSymbolSize();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
     /// Accessor for parameter ConstraintIconLabelsPerLine
     ///
     /// How many constraint numbers fit on one line of the label beside a

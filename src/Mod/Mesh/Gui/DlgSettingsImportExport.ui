@@ -159,9 +159,6 @@
         </item>
         <item row="0" column="4">
          <widget class="Gui::PrefLineEdit" name="asymptoteHeight">
-          <property name="text">
-           <string notr="true">500</string>
-          </property>
           <property name="prefPath" stdset="0">
            <cstring>Mod/Mesh/Asymptote</cstring>
           </property>

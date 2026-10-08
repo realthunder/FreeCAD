@@ -76,7 +76,7 @@ public:
         subHandles[1]->Attach(this);
         AsymptoteWidth = this->subHandles[0]->GetASCII("Width", "500");
         funcs["Width"] = &MeshParamsP::updateAsymptoteWidth;
-        AsymptoteHeight = this->subHandles[0]->GetASCII("Height", "500");
+        AsymptoteHeight = this->subHandles[0]->GetASCII("Height", "");
         funcs["Height"] = &MeshParamsP::updateAsymptoteHeight;
         DefaultShapeType = this->handle->GetInt("DefaultShapeType", 0);
         funcs["DefaultShapeType"] = &MeshParamsP::updateDefaultShapeType;
@@ -142,7 +142,7 @@ public:
     }
     // Auto generated code (Tools/params_utils.py:322)
     static void updateAsymptoteHeight(MeshParamsP *self) {
-        auto v = self->subHandles[0]->GetASCII("Height", "500");
+        auto v = self->subHandles[0]->GetASCII("Height", "");
         if (self->AsymptoteHeight != v) {
             self->AsymptoteHeight = v;
             MeshParams::onAsymptoteHeightChanged();
@@ -242,7 +242,7 @@ static const App::ParamRegistry::Registrar _MeshParamsRegistrar({
 "written to its size() command, in points. Leave empty to write no\n"
 "size at all.")
         .setOnChange(),
-    App::ParamInfo("Mesh", "MeshParams", "User parameter:BaseApp/Preferences/Mod/Mesh/Asymptote", "AsymptoteHeight", "Height", App::ParamInfo::String, "500")
+    App::ParamInfo("Mesh", "MeshParams", "User parameter:BaseApp/Preferences/Mod/Mesh/Asymptote", "AsymptoteHeight", "Height", App::ParamInfo::String, "")
         .setTitle("Asymptote Height")
         .setDoc("Height of the picture in an exported Asymptote (.asy) file, in\n"
 "points. Only written when a width is set; leave empty to give the\n"
@@ -380,7 +380,7 @@ const std::string & MeshParams::getAsymptoteHeight() {
 
 // Auto generated code (Tools/params_utils.py:413)
 const std::string & MeshParams::defaultAsymptoteHeight() {
-    const static std::string def = "500";
+    const static std::string def = "";
     return def;
 }
 

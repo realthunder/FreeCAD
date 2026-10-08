@@ -1687,7 +1687,9 @@ void StdCmdViewHome::activated(int iMsg)
     Q_UNUSED(iMsg);
 
     auto hGrp = App::GetApplication().GetParameterGroupByPath("User parameter:BaseApp/Preferences/View");
-    std::string default_view = hGrp->GetASCII("NewDocumentCameraOrientation", Gui::ViewParams::defaultNewDocumentCameraOrientation().c_str());
+    // Top while no orientation is stored, as upstream: a new document
+    // opens Trimetric then, and Home is not the same view.
+    std::string default_view = hGrp->GetASCII("NewDocumentCameraOrientation", "Top");
     doCommand(Command::Gui,"Gui.activeDocument().activeView().viewDefaultOrientation('%s',0)",default_view.c_str());
     doCommand(Command::Gui,"Gui.SendMsgToActiveView(\"ViewFit\")");
 }

@@ -601,15 +601,23 @@ void SketcherSettingsDisplay::loadSettings()
     ui->fontBoxSketcherFontName->onRestore();
     loadedFontFamily = ui->fontBoxSketcherFontName->currentFont().family();
     onFontNameChanged(ui->fontBoxSketcherFontName->currentFont());
-    ui->EditSketcherFontSize->onRestore();
+    // Unset, or 0, both sizes are the application font's height: show
+    // that, not the number the form was drawn with
+    auto restoreFontHeightSize = [](Gui::PrefSpinBox* box) {
+        const int height = QApplication::fontMetrics().height();
+        box->setValue(height);
+        box->onRestore();
+        if (box->getWindowParameter()->GetInt(box->entryName(), height) <= 0) {
+            QSignalBlocker block(box);
+            box->setValue(height);
+        }
+    };
+    restoreFontHeightSize(ui->EditSketcherFontSize);
     ui->ConstraintIconLabelsPerLine->onRestore();
     ui->ConstraintIconLabelLines->onRestore();
     ui->ElementIconSize->onRestore();
     ui->axisTransparency->onRestore();
-    // Unset, a symbol is as high as the application font: show that, not
-    // the number the form was drawn with
-    ui->ConstraintSymbolSize->setValue(QApplication::fontMetrics().height());
-    ui->ConstraintSymbolSize->onRestore();
+    restoreFontHeightSize(ui->ConstraintSymbolSize);
     ui->viewScalingFactor->onRestore();
     ui->SegmentsPerGeometry->onRestore();
     ui->dialogOnDistanceConstraint->onRestore();

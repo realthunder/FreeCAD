@@ -58,8 +58,6 @@ public:
     static double dimArrowSize();
 
     static Base::Color normalColor();
-    static Base::Color selectColor();
-    static Base::Color preselectColor();
     static Base::Color vertexColor();
     static double vertexScale();
     static int scaleType();

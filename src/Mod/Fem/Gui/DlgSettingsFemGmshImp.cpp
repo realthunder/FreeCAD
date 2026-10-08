@@ -66,7 +66,10 @@ void DlgSettingsFemGmshImp::loadSettings()
     // determine number of CPU threads
 
     ParameterGrp::handle hGrp = ui->sb_threads->getWindowParameter();
-    ui->sb_threads->setValue(hGrp->GetInt(ui->sb_threads->entryName(), QThread::idealThreadCount()));
+    // 0, which is also the definition's default, is as many as there are
+    const long threads
+        = hGrp->GetInt(ui->sb_threads->entryName(), Fem::FemParams::defaultGmshNumOfThreads());
+    ui->sb_threads->setValue(threads > 0 ? static_cast<int>(threads) : QThread::idealThreadCount());
 
     populateLogVerbosity();
     ui->cb_log_verbosity->onRestore();

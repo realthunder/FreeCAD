@@ -151,19 +151,6 @@ public:
 
     // Auto generated code (Tools/params_utils.py:139)
     //@{
-    /// Accessor for parameter DefaultDatumColor
-    ///
-    /// Colour and transparency of new datum planes, lines and points:
-    /// golden yellow, mostly see-through, unless set.
-    static const unsigned long & getDefaultDatumColor();
-    static const unsigned long & defaultDefaultDatumColor();
-    static void removeDefaultDatumColor();
-    static void setDefaultDatumColor(const unsigned long &v);
-    static const char *docDefaultDatumColor();
-    //@}
-
-    // Auto generated code (Tools/params_utils.py:139)
-    //@{
     /// Accessor for parameter CoordinateSystemFontSize
     ///
     /// Font size of the axis labels of a new local coordinate system.

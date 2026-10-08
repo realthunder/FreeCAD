@@ -10127,7 +10127,7 @@ DEF_STD_CMD_GC(CmdSketcherCompConstrainRadDia)
 
 CmdSketcherCompConstrainRadDia::CmdSketcherCompConstrainRadDia()
 : inherited("Sketcher_CompConstrainRadDia", 2, 
-            "User parameter:BaseApp/Preferences/Mod/Sketcher"
+            "User parameter:BaseApp/Preferences/Mod/Sketcher",
             "CurRadDiaCons")
 {
     sAppModule = "Sketcher";

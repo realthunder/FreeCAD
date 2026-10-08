@@ -35,6 +35,7 @@
 #include <App/MaterialAppearance.h>
 #include <Base/Console.h>
 #include <Base/Parameter.h>
+#include <Gui/ViewParams.h>
 #include <Mod/TechDraw/App/Preferences.h>
 #include <Mod/TechDraw/App/LineGenerator.h>
 
@@ -71,16 +72,26 @@ QColor PreferencesGui::normalQColor()
     return fcColor.asValue<QColor>();
 }
 
+// TechDraw's own colour once one is set. 0, which is what the setting is
+// while it is not, follows the 3D view's: the view's setting, with the
+// view's default (it used to be read here with a default of TechDraw's).
+static QColor ownOrTheViews(unsigned long own, unsigned long views)
+{
+    App::Color fcColor;
+    fcColor.setPackedValue(static_cast<uint32_t>(own != 0 ? own : views));
+    return fcColor.asValue<QColor>();
+}
+
 QColor PreferencesGui::selectQColor()
 {
-    App::Color fcColor = Preferences::selectColor();
-    return fcColor.asValue<QColor>();
+    return ownOrTheViews(TechDraw::TechDrawParams::getSelectColor(),
+                         Gui::ViewParams::getSelectionColor());
 }
 
 QColor PreferencesGui::preselectQColor()
 {
-    App::Color fcColor = Preferences::preselectColor();
-    return fcColor.asValue<QColor>();
+    return ownOrTheViews(TechDraw::TechDrawParams::getPreSelectColor(),
+                         Gui::ViewParams::getHighlightColor());
 }
 
 App::Color PreferencesGui::sectionLineColor()

@@ -45,6 +45,7 @@ public:
     bool SolveOnMove;
     bool LeaveEditWithEscape;
     bool SwitchToWB;
+    unsigned long JointHighlightColor;
     bool LogSolverDebug;
     std::string BomMirroredSuffix;
 
@@ -61,6 +62,8 @@ public:
         funcs["LeaveEditWithEscape"] = &AssemblyParamsP::updateLeaveEditWithEscape;
         SwitchToWB = this->handle->GetBool("SwitchToWB", true);
         funcs["SwitchToWB"] = &AssemblyParamsP::updateSwitchToWB;
+        JointHighlightColor = this->handle->GetUnsigned("JointHighlightColor", 0xCC1A1AFF);
+        funcs["JointHighlightColor"] = &AssemblyParamsP::updateJointHighlightColor;
         LogSolverDebug = this->handle->GetBool("LogSolverDebug", false);
         funcs["LogSolverDebug"] = &AssemblyParamsP::updateLogSolverDebug;
         BomMirroredSuffix = this->handle->GetASCII("BomMirroredSuffix", " (mirrored)");
@@ -96,6 +99,10 @@ public:
     // Auto generated code (Tools/params_utils.py:314)
     static void updateSwitchToWB(AssemblyParamsP *self) {
         self->SwitchToWB = self->handle->GetBool("SwitchToWB", true);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateJointHighlightColor(AssemblyParamsP *self) {
+        self->JointHighlightColor = self->handle->GetUnsigned("JointHighlightColor", 0xCC1A1AFF);
     }
     // Auto generated code (Tools/params_utils.py:314)
     static void updateLogSolverDebug(AssemblyParamsP *self) {
@@ -134,6 +141,13 @@ static const App::ParamRegistry::Registrar _AssemblyParamsRegistrar({
         .setTitle("Switch to Assembly workbench")
         .setDoc("Switches to the Assembly workbench when an assembly is double-\n"
 "clicked for editing. Takes effect at the next double-click."),
+    App::ParamInfo("Assembly", "AssemblyParams", "User parameter:BaseApp/Preferences/Mod/Assembly", "JointHighlightColor", "JointHighlightColor", App::ParamInfo::Hex, 0xCC1A1AFF)
+        .setTitle("Joint highlight colour")
+        .setDoc("Colour the elements a joint connects are shown in while the\n"
+"joint is selected or edited: a red, unless set. Takes effect at\n"
+"the next highlight.")
+        .setProxy("Color")
+        .setTransparency(false),
     App::ParamInfo("Assembly", "AssemblyParams", "User parameter:BaseApp/Preferences/Mod/Assembly", "LogSolverDebug", "LogSolverDebug", App::ParamInfo::Bool, false)
         .setTitle("Log dragging steps")
         .setDoc("Writes the dragging steps of the solver to the files\n"
@@ -266,6 +280,36 @@ void AssemblyParams::setSwitchToWB(const bool &v) {
 // Auto generated code (Tools/params_utils.py:431)
 void AssemblyParams::removeSwitchToWB() {
     instance()->handle->RemoveBool("SwitchToWB");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *AssemblyParams::docJointHighlightColor() {
+    return QT_TRANSLATE_NOOP("AssemblyParams",
+"Colour the elements a joint connects are shown in while the\n"
+"joint is selected or edited: a red, unless set. Takes effect at\n"
+"the next highlight.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const unsigned long & AssemblyParams::getJointHighlightColor() {
+    return instance()->JointHighlightColor;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const unsigned long & AssemblyParams::defaultJointHighlightColor() {
+    const static unsigned long def = 0xCC1A1AFF;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void AssemblyParams::setJointHighlightColor(const unsigned long &v) {
+    instance()->handle->SetUnsigned("JointHighlightColor",v);
+    instance()->JointHighlightColor = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void AssemblyParams::removeJointHighlightColor() {
+    instance()->handle->RemoveUnsigned("JointHighlightColor");
 }
 
 // Auto generated code (Tools/params_utils.py:397)

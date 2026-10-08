@@ -349,9 +349,9 @@ class ToolBitEditor(QtGui.QWidget):
         self.default_title = self.form.windowTitle()
 
         # Store the original schema to restore on close
-        self._original_schema = FreeCAD.ParamGet("User parameter:BaseApp/Preferences/Units").GetInt(
-            "UserSchema", 0
-        )
+        # The schema in effect, not the raw preference, so a document on its
+        # own schema gets that back rather than the user default (upstream).
+        self._original_schema = FreeCAD.Units.getSchema()
         self._tab_closed = False
 
         # Get first tab from the form, add the shape widget to the right.

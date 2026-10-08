@@ -2917,9 +2917,10 @@ static const App::ParamRegistry::Registrar _ViewParamsRegistrar({
         .setTransparency(true),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "NewDocumentCameraOrientation", "NewDocumentCameraOrientation", App::ParamInfo::String, "Trimetric")
         .setTitle("Default camera orientation")
-        .setDoc("Camera orientation of a new document and of the Home view:\n"
-"Isometric, Dimetric, Trimetric, Top, Front, Left, Right, Rear,\n"
-"Bottom, or Custom. Read at each use."),
+        .setDoc("Camera orientation of a new document: Isometric, Dimetric,\n"
+"Trimetric, Top, Front, Left, Right, Rear, Bottom, or Custom. Once\n"
+"set, the Home view takes it too; until then Home is Top. Read at\n"
+"each use."),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "AutoFitToView", "AutoFitToView", App::ParamInfo::Bool, true)
         .setTitle("Fit view after opening a file")
         .setDoc("Fit the 3D view to the model after a file is opened or imported."),
@@ -9797,9 +9798,10 @@ void ViewParams::removeRotationCenterColor() {
 // Auto generated code (Tools/params_utils.py:397)
 const char *ViewParams::docNewDocumentCameraOrientation() {
     return QT_TRANSLATE_NOOP("ViewParams",
-"Camera orientation of a new document and of the Home view:\n"
-"Isometric, Dimetric, Trimetric, Top, Front, Left, Right, Rear,\n"
-"Bottom, or Custom. Read at each use.");
+"Camera orientation of a new document: Isometric, Dimetric,\n"
+"Trimetric, Top, Front, Left, Right, Rear, Bottom, or Custom. Once\n"
+"set, the Home view takes it too; until then Home is Top. Read at\n"
+"each use.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -10196,7 +10198,7 @@ void ViewParams::removeDefaultShapeShininess() {
     instance()->handle->RemoveInt("DefaultShapeShininess");
 }
 
-// Auto generated code (Gui/ViewParams.py:1056)
+// Auto generated code (Gui/ViewParams.py:1057)
 const std::vector<QString> ViewParams::AnimationCurveTypes = {
     QStringLiteral("Linear"),
     QStringLiteral("InQuad"),
@@ -10241,7 +10243,7 @@ const std::vector<QString> ViewParams::AnimationCurveTypes = {
     QStringLiteral("OutInBounce"),
 };
 
-// Auto generated code (Gui/ViewParams.py:1064)
+// Auto generated code (Gui/ViewParams.py:1065)
 static const char *DrawStyleNames[] = {
     QT_TRANSLATE_NOOP("DrawStyle", "As Is"),
     QT_TRANSLATE_NOOP("DrawStyle", "Points"),
@@ -10254,7 +10256,7 @@ static const char *DrawStyleNames[] = {
     nullptr,
 };
 
-// Auto generated code (Gui/ViewParams.py:1074)
+// Auto generated code (Gui/ViewParams.py:1075)
 static const char *DrawStyleDocs[] = {
     QT_TRANSLATE_NOOP("DrawStyle", "Display style, normal display mode"),
     QT_TRANSLATE_NOOP("DrawStyle", "Display style, show points only"),
@@ -10267,13 +10269,13 @@ static const char *DrawStyleDocs[] = {
 };
 
 namespace Gui {
-// Auto generated code (Gui/ViewParams.py:1084)
+// Auto generated code (Gui/ViewParams.py:1085)
 const char **drawStyleNames()
 {
     return DrawStyleNames;
 }
 
-// Auto generated code (Gui/ViewParams.py:1091)
+// Auto generated code (Gui/ViewParams.py:1092)
 const char *drawStyleNameFromIndex(int i)
 {
     if (i < 0 || i>= 8)
@@ -10281,7 +10283,7 @@ const char *drawStyleNameFromIndex(int i)
     return DrawStyleNames[i];
 }
 
-// Auto generated code (Gui/ViewParams.py:1100)
+// Auto generated code (Gui/ViewParams.py:1101)
 int drawStyleIndexFromName(const char *name)
 {
     if (!name)
@@ -10293,7 +10295,7 @@ int drawStyleIndexFromName(const char *name)
     return -1;
 }
 
-// Auto generated code (Gui/ViewParams.py:1113)
+// Auto generated code (Gui/ViewParams.py:1114)
 const char *drawStyleDocumentation(int i)
 {
     if (i < 0 || i>= 8)

@@ -136,8 +136,8 @@ Params = [
     ParamInt('ProjectionAngle', 0, subpath='General',
         title = "Projection Angle",
         doc = "Projection convention of new pages and projection groups: 0 first\n"
-              "angle, 1 third angle. The third choice on the page, Page,\n"
-              "currently reads as first angle."),
+              "angle, 1 third angle, 2 Page: a new projection group follows its\n"
+              "page, and a new page is first angle."),
     ParamBool('restoreCosmetic', True, subpath='General',
         title = "Restore Cosmetic",
         doc = "Read cosmetic vertices, edges and centre lines when a document is\n"
@@ -426,13 +426,24 @@ Params = [
         doc = "Write the intermediate shapes of a section view to files while it\n"
               "is recomputed. For developers."),
 
-    # --- Colours. PreSelectColor and SelectColor of the Colors group are not listed:
-    # while they are not stored TechDraw follows the highlight and selection
-    # colours of the 3D view, which is no constant. FaceColor was read with
+    # --- Colours. PreSelectColor and SelectColor are 0 while they are not
+    # set, and 0 follows the highlight and selection colours of the 3D view
+    # (PreferencesGui, which is where the 3D view's are known). A colour that
+    # is chosen is never 0: its last byte is 255. FaceColor was read with
     # 0xFFFFFF, which as a packed colour is 0x00FFFFFF, cyan: a new view on a
     # profile that never stored the key had cyan faces. White is what the
     # Colors page shows and what was meant. Background, Hatch and GeomHatch
     # are the readers' (grey 112; green), where the page showed 211 and black.
+    ParamHex('PreSelectColor', 0, subpath='Colors', proxy=ParamColor(transparency=False),
+        title = "Preselection colour",
+        doc = "Colour of what the pointer is over in a page view. 0, the value\n"
+              "while it is not set, follows the preselection colour of the 3D\n"
+              "view. Read at each hover."),
+    ParamHex('SelectColor', 0, subpath='Colors', proxy=ParamColor(transparency=False),
+        title = "Selection colour",
+        doc = "Colour of what is selected in a page view. 0, the value while it\n"
+              "is not set, follows the selection colour of the 3D view. Read at\n"
+              "each selection."),
     ParamHex('Background', 0x707070FF, subpath='Colors', proxy=ParamColor(transparency=False),
         title = "Page view background",
         doc = "Colour of the area around the sheet in a page view. Read when a\n"

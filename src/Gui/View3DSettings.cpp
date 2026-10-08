@@ -415,7 +415,14 @@ void View3DSettings::OnChange(ParameterGrp::SubjectType &rCaller,ParameterGrp::M
             }
         }
     }
-    else {
+    // Named, where this used to be the "else" of the whole chain: a change
+    // of any key of the group this function does not know re-applied the
+    // background colours to every view.
+    else if (strcmp(Reason, "BackgroundColor") == 0
+             || strcmp(Reason, "BackgroundColor2") == 0
+             || strcmp(Reason, "BackgroundColor3") == 0
+             || strcmp(Reason, "BackgroundColor4") == 0
+             || strcmp(Reason, "UseBackgroundColorMid") == 0) {
         unsigned long col1 = rGrp.GetUnsigned("BackgroundColor", Gui::ViewParams::defaultBackgroundColor());
         unsigned long col2 = rGrp.GetUnsigned("BackgroundColor2", Gui::ViewParams::defaultBackgroundColor2()); // default color (dark blue)
         unsigned long col3 = rGrp.GetUnsigned("BackgroundColor3", Gui::ViewParams::defaultBackgroundColor3()); // default color (blue/grey)

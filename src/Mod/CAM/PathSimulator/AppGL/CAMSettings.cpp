@@ -27,6 +27,7 @@
 #include "CAMSettings.h"
 
 #include "DlgCAMSimulator.h"
+#include <Mod/CAM/App/CAMParams.h>
 #include <string_view>
 
 using namespace std::literals;
@@ -60,14 +61,14 @@ void CAMSettings::OnChange(ParameterGrp::SubjectType& rCaller, ParameterGrp::Mes
     if (Reason == "DefaultNormalPathColor"sv || Reason == "DefaultRapidPathColor"sv) {
 
         const unsigned long lcol
-            = hGrp->GetUnsigned("DefaultNormalPathColor", 11141375UL);  // dark green (0,170,0)
+            = hGrp->GetUnsigned("DefaultNormalPathColor", Path::CAMParams::defaultDefaultNormalPathColor());
         float lr, lg, lb;
         lr = ((lcol >> 24) & 0xff) / 255.0;
         lg = ((lcol >> 16) & 0xff) / 255.0;
         lb = ((lcol >> 8) & 0xff) / 255.0;
 
         const unsigned long rcol
-            = hGrp->GetUnsigned("DefaultRapidPathColor", 2852126975UL);  // dark red (170,0,0)
+            = hGrp->GetUnsigned("DefaultRapidPathColor", Path::CAMParams::defaultDefaultRapidPathColor());
         float rr, rg, rb;
         rr = ((rcol >> 24) & 0xff) / 255.0;
         rg = ((rcol >> 16) & 0xff) / 255.0;
@@ -79,7 +80,9 @@ void CAMSettings::OnChange(ParameterGrp::SubjectType& rCaller, ParameterGrp::Mes
         // Whoever moved it -- the overlay button, the preferences
         // page, a script -- the button shows the current wish
         // (docs/CAMSimRenderPort.md sec 11.11).
-        mDlg.setDocViewEnabled(hGrp->GetBool("SimulatorShowInDocumentView", true));
+        mDlg.setDocViewEnabled(
+            hGrp->GetBool("SimulatorShowInDocumentView", Path::CAMParams::defaultSimulatorShowInDocumentView())
+        );
     }
 }
 

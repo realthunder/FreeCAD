@@ -365,9 +365,10 @@ public:
     //@{
     /// Accessor for parameter DefaultDatumColor
     ///
-    /// Default face colour of shape binders, of sub-shape binders shown
-    /// in binder style, and of PartDesign extrusions. Datum planes, lines
-    /// and points take theirs from the PartDesign settings.
+    /// Colour and transparency of new datum planes, lines and points, of
+    /// shape binders, of sub-shape binders shown in binder style, and of
+    /// PartDesign extrusions: golden yellow, mostly see-through, unless
+    /// set.
     static const unsigned long & getDefaultDatumColor();
     static const unsigned long & defaultDefaultDatumColor();
     static void removeDefaultDatumColor();

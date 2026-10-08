@@ -15,7 +15,10 @@ Claims, on a profile with nothing stored:
   - every key OK stored that has a definition holds the definition's
     default (a failure names the setting, both values and nothing else);
   - and is stored as the type the definition reads: a colour shown in a
-    spin box is written as an integer, under a key nothing reads.
+    spin box is written as an integer, under a key nothing reads;
+  - OK stores none of the keys listed in UNSTORED: settings that follow
+    something else while they are unset (the editors' font and text colour,
+    TechDraw's preselection and selection colour), and keys nothing reads.
 
 The settings a page cannot show as they are defined are listed in SAME, with
 the reason the value written means the same thing.
@@ -55,7 +58,25 @@ SAME = {
     ("Dialog", "DontUseNativeDialog"): "the default is a macro the build decides",
     ("General", "AutoloadModule"): "empty means the configured start workbench, which the page spells out",
     ("Mod/Part/STEP", "Scheme"): "empty means the kernel's own scheme, which the page spells out",
+    ("View", "EditSketcherFontSize"): "0 means the application font's height, which the page spells out",
+    ("View", "ConstraintSymbolSize"): "0 means the application font's height, which the page spells out",
+    ("Mod/Fem/Gmsh", "NumOfThreads"): "0 means the processor's thread count, which the page spells out",
 }
+# What OK must not store on a profile that never chose it (entry 24, the
+# decisions): a value that says "follow something else" while it is unset,
+# and keys nothing reads.
+UNSTORED = (
+    ("Editor", "Font", "unset is the system's fixed-pitch font"),
+    ("Editor", "Text", "unset is the window's text colour"),
+    ("Editor", "Keyword", "the page stored every colour at OK"),
+    ("Editor", "Bookmark", "no editor has such a colour"),
+    ("Editor", "Breakpoint", "no editor has such a colour"),
+    ("Editor", "Character", "no editor has such a colour"),
+    ("Macro", "ScriptToFile", "nothing reads it"),
+    ("Macro", "ScriptFile", "nothing reads it"),
+    ("Mod/TechDraw/Colors", "PreSelectColor", "unset follows the 3D view's preselection colour"),
+    ("Mod/TechDraw/Colors", "SelectColor", "unset follows the 3D view's selection colour"),
+)
 KIND = {"Bool": "Boolean", "Int": "Integer", "Unsigned": "Unsigned Long", "Float": "Float", "ASCII": "String"}
 
 
@@ -233,6 +254,9 @@ def run():
         for line in mistyped:
             note("FAIL a page stores a setting as the type that is read | " + line)
         check("every key OK stored has its setting's type", not mistyped, "%d do not" % len(mistyped))
+        kept = ["%s/%s (%s)" % (group, name, why) for group, name, why in UNSTORED
+                if any(k[:2] == (group, name) for k in written)]
+        check("OK stored none of the keys that are to stay unset", not kept, kept)
     except Exception:
         note("FAIL the test ran | " + traceback.format_exc().replace("\n", " | "))
     finally:

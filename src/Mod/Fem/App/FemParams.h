@@ -140,6 +140,20 @@ public:
 
     // Auto generated code (Tools/params_utils.py:139)
     //@{
+    /// Accessor for parameter GmshNumOfThreads
+    ///
+    /// Number of threads Gmsh meshes with. 0, the value while it is not
+    /// set, means as many as the processor has. Takes effect at the
+    /// next meshing.
+    static const long & getGmshNumOfThreads();
+    static const long & defaultGmshNumOfThreads();
+    static void removeGmshNumOfThreads();
+    static void setGmshNumOfThreads(const long &v);
+    static const char *docGmshNumOfThreads();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
     /// Accessor for parameter GmshLogVerbosity
     ///
     /// How much Gmsh reports in the task panel while it meshes, as its

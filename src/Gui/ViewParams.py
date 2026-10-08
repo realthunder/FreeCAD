@@ -974,9 +974,10 @@ Params = [
         doc="Colour and opacity of the rotation centre marker: red and mostly\n"
             "see-through unless set. Read when the marker is next created."),
     ParamString('NewDocumentCameraOrientation', 'Trimetric', title='Default camera orientation',
-        doc="Camera orientation of a new document and of the Home view:\n"
-            "Isometric, Dimetric, Trimetric, Top, Front, Left, Right, Rear,\n"
-            "Bottom, or Custom. Read at each use."),
+        doc="Camera orientation of a new document: Isometric, Dimetric,\n"
+            "Trimetric, Top, Front, Left, Right, Rear, Bottom, or Custom. Once\n"
+            "set, the Home view takes it too; until then Home is Top. Read at\n"
+            "each use."),
     ParamBool('AutoFitToView', True, title='Fit view after opening a file',
         doc="Fit the 3D view to the model after a file is opened or imported."),
     ParamBool('ShowNaviCube', True, title='Show navigation cube',
