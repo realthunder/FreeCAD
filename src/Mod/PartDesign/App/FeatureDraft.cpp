@@ -100,8 +100,9 @@ Draft::Draft()
     ADD_PROPERTY_TYPE(TangentPropagation,(true),"Draft",App::Prop_None,
             "A drafted face takes the faces tangent to it along: the fillets\n"
             "beside it, the walls beyond them, and so on. Off, only the\n"
-            "faces picked are drafted; a face tangent to them that is not\n"
-            "picked is refused. The classic draft always takes them.");
+            "faces picked are drafted, as if drafted before the fillets: a\n"
+            "fillet beside them that is not picked is made again at its\n"
+            "radius. The classic draft always takes them.");
 }
 
 namespace

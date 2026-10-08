@@ -483,28 +483,54 @@ class TestDraft(unittest.TestCase):
 
     def testDraftTangentPropagationOff(self):
         # The block of testDraftNewTangentChain. With tangent propagation
-        # off, only the faces picked are drafted: one wall picked, the
-        # fillets beside it are not drafted, which is refused for now
-        # (docs/NewDraft.md section 17), and the classic draft, which always
-        # drafts the chain, refuses it whatever the method.
+        # off, only the faces picked are drafted, as if drafted before the
+        # fillets: a fillet beside them is taken off and made again at its
+        # radius on the edge where the drafted wall meets the wall beyond
+        # (docs/NewDraft.md section 17). The classic draft, which always
+        # drafts the chain, refuses.
         shape = Part.makeBox(20, 10, 10)
         shape = shape.makeFillet(2, [e for e in shape.Edges
                                      if abs(e.Vertexes[0].Z - e.Vertexes[1].Z) > 1])
-        t = math.tan(math.radians(5))
-        volume = (2000 - 30 * t * 100 + 4 * t * t * 1000 / 3
-                  - (4 - math.pi) * (40 - 2 * t * 100 + t * t * 1000 / 3))
-        for method, error in (("Auto", "TangentNeighbour"), ("New", "TangentNeighbour"),
-                              ("Classic", "classic draft always drafts")):
+        a = math.radians(5)
+        t, c, s = math.tan(a), math.cos(a), math.sin(a)
+        corner = 4 * (1 - math.pi / 4)
+        draft = self.makeDraftOn(shape, self.planeAt("Y", 0), self.planeAt("Z", 0), "Classic",
+                                 propagate=False)
+        self.assertIn("Invalid", draft.State)
+        self.assertIn("classic draft always drafts", draft.getStatusString())
+        # The wall y=0 alone: it stays square to the side walls, and the two
+        # fillets beside it run along its slope, 10 / cos(a) long.
+        volume = 2000 - 1000 * t - 2 * corner * 10 - 2 * corner * 10 / c
+        for method in ("Auto", "New"):
             draft = self.makeDraftOn(shape, self.planeAt("Y", 0), self.planeAt("Z", 0), method,
                                      propagate=False)
-            self.assertIn("Invalid", draft.State, method)
-            self.assertIn(error, draft.getStatusString(), method)
-            self.assertIn("tangent propagation", draft.getStatusString(), method)
+            self.assertNotIn("Invalid", draft.State, method)
+            self.assertTrue(draft.Shape.isValid(), method)
+            self.assertAlmostEqual(draft.Shape.Volume, volume, 6, method)
+            self.assertEqual(len(draft.Shape.Faces), 10, method)
+            draft.Shape.check(True)
+        # The walls y=0 and x=0, not the fillet between them: that fillet is
+        # made again between the two drafted walls, which meet at pi -
+        # acos(sin(a)^2), along a line sqrt(1 + sin(a)^2) / cos(a) long per
+        # unit of height.
+        phi = math.pi - math.acos(s * s)
+        between = 4 * (1 / math.tan(phi / 2) - (math.pi - phi) / 2)
+        volume = (2000 - 1500 * t + 1000 * t * t / 3 - corner * 10 - 2 * corner * 10 / c
+                  - between * 10 * math.sqrt(1 + s * s) / c)
+        walls = lambda f: self.planeAt("Y", 0)(f) or self.planeAt("X", 0)(f)
+        draft = self.makeDraftOn(shape, walls, self.planeAt("Z", 0), "Auto", propagate=False)
+        self.assertNotIn("Invalid", draft.State)
+        self.assertTrue(draft.Shape.isValid())
+        self.assertAlmostEqual(draft.Shape.Volume, volume, 6)
+        self.assertEqual(len(draft.Shape.Faces), 10)
         # every wall and fillet picked: the chain itself, drafted as with
         # propagation on
-        walls = lambda f: abs(f.BoundBox.ZLength - 10) < 1e-9
+        volume = (2000 - 30 * t * 100 + 4 * t * t * 1000 / 3
+                  - (4 - math.pi) * (40 - 2 * t * 100 + t * t * 1000 / 3))
+        allWalls = lambda f: abs(f.BoundBox.ZLength - 10) < 1e-9
         for method in ("Auto", "New"):
-            draft = self.makeDraftOn(shape, walls, self.planeAt("Z", 0), method, propagate=False)
+            draft = self.makeDraftOn(shape, allWalls, self.planeAt("Z", 0), method,
+                                     propagate=False)
             self.assertNotIn("Invalid", draft.State, method)
             self.assertTrue(draft.Shape.isValid(), method)
             self.assertAlmostEqual(draft.Shape.Volume, volume, 6, method)
