@@ -17,6 +17,7 @@ target_sources(
             ${CMAKE_CURRENT_SOURCE_DIR}/UnitsSchemaFormat.cpp
             ${CMAKE_CURRENT_SOURCE_DIR}/Reader.cpp
             ${CMAKE_CURRENT_SOURCE_DIR}/Rotation.cpp
+            ${CMAKE_CURRENT_SOURCE_DIR}/ThreadPool.cpp
             ${CMAKE_CURRENT_SOURCE_DIR}/TimeInfo.cpp
             ${CMAKE_CURRENT_SOURCE_DIR}/Tools.cpp
             ${CMAKE_CURRENT_SOURCE_DIR}/Tools2D.cpp

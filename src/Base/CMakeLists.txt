@@ -268,6 +268,7 @@ SET(FreeCADBase_CPP_SRCS
     Stream.cpp
     Swap.cpp
     ${SWIG_SRCS}
+    ThreadPool.cpp
     TimeInfo.cpp
     StringUtils.cpp
     Tools.cpp
@@ -341,6 +342,7 @@ SET(FreeCADBase_HPP_SRCS
     Stream.h
     Swap.h
     ${SWIG_HEADERS}
+    ThreadPool.h
     TimeInfo.h
     StringUtils.h
     Tools.h
