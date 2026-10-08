@@ -1468,6 +1468,11 @@ settings GUI tests together 196 PASS, 0 FAIL
 code. The helper `guard.py` of `gui.cmd` was gone with a session scratch
 directory and is written again, beside `gui.cmd`.
 
+The full suites on the tree of `e21eff05a7`, 2026-10-08 08:53: C++ 784 of
+784 (8 disabled benchmarks did not run), Python 3385 tests with the same 2
+failures as before, the `TestThickness` 5829 cases. Logs:
+`..\dl\handson\2026-10-08\entry24-scripts\full-ctest.log`, `full-pytest.log`.
+
 **BACK TO THE REPORTER:**
 - A24: accent colours 2 and 3 -- the fork's own (kept), upstream's seed
   (85,123,182 for both), or upstream's literal reader default (black)?
