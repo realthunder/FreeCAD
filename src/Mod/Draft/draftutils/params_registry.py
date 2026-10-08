@@ -692,10 +692,8 @@ def _dialog(name, what, width, height):
 
 # The settings BIM's code reads with the name written out, which neither the table nor a
 # page has: (type, the default every reader passes, title, documentation), by group and
-# entry. Left out on purpose, as no one default describes them: LibraryOnline (its
-# default depends on whether a parts library is installed), BimViewWidth and
-# BimViewHeight (stored as numbers and read as switches), and Mod/NativeIFC/SingleDoc is
-# taken from its page although two readers disagree on it.
+# entry. Left out on purpose, as no one default describes it: LibraryOnline (its
+# default depends on whether a parts library is installed).
 EXTRA = {
     "Mod/BIM": {
         "ScheduleAutoUpdate": (
@@ -802,6 +800,20 @@ EXTRA = {
             True,
             "Views manager: floating",
             "Whether the BIM views manager was last floating instead of docked.",
+        ),
+        "BimViewWidth": (
+            "int",
+            200,
+            "Views manager: width",
+            "Width, in pixels, the BIM views manager last had. Stored when the manager is "
+            "docked somewhere else.",
+        ),
+        "BimViewHeight": (
+            "int",
+            300,
+            "Views manager: height",
+            "Height, in pixels, the BIM views manager last had. Stored when the manager is "
+            "docked somewhere else.",
         ),
         "BimViewTabs": (
             "string",

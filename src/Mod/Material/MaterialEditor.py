@@ -280,7 +280,7 @@ class MaterialEditor:
         """updates the contents of the materials combo with existing material cards"""
 
         mat_prefs = FreeCAD.ParamGet("User parameter:BaseApp/Preferences/Mod/Material/Cards")
-        sort_by_resources = mat_prefs.GetBool("SortByResources", False)
+        sort_by_resources = mat_prefs.GetBool("SortByResources", True)
 
         # get all available materials (fill self.materials, self.cards and self.icons)
         from materialtools.cardutils import import_materials as getmats

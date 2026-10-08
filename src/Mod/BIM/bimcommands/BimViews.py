@@ -169,8 +169,8 @@ class BIM_Views:
             # set the dock widget
             area = PARAMS.GetInt("BimViewArea", 1)
             floating = PARAMS.GetBool("BimViewFloat", True)
-            height = PARAMS.GetBool("BimViewWidth", 200)
-            width = PARAMS.GetBool("BimViewHeight", 300)
+            width = PARAMS.GetInt("BimViewWidth", 200)
+            height = PARAMS.GetInt("BimViewHeight", 300)
             tabs = PARAMS.GetString("BimViewTabs", "")
             vm.setObjectName("BIM Views Manager")
             vm.setWindowTitle(translate("BIM", "BIM Views Manager"))

@@ -9,11 +9,12 @@ indicator. The code that reads them is left as it is -- each default here is
 the one its reader passes.
 
 Not here: the tool bar places PersistentToolbars keeps, which are in groups
-named after the workbenches.
+named after the workbenches, and its 'Deprecated' marker, which notes that
+those places were handed over to the main window.
 """
 import sys
 
-from freecad.params import ParamBool, ParamInt, register
+from freecad.params import ParamBool, register
 
 NameSpace = "Tux"
 ClassName = "TuxParams"
@@ -56,19 +57,8 @@ Params = [
         param_name="Enabled",
         title="Persistent toolbars",
         doc="Loads the part of Tux that kept the place of each tool bar for each "
-        "workbench. It has handed that over to the main window; see its 'Deprecated' "
-        "setting. Read at start.",
-    ),
-    ParamInt(
-        "PersistentToolbarsDeprecated",
-        1,
-        subpath="PersistentToolbars",
-        param_name="Deprecated",
-        title="Persistent toolbars: handed over",
-        doc="1: at the next start the tool bar places Tux has kept are applied once "
-        "more, so that the main window takes them over, and this becomes 2. 2: handed "
-        "over, Tux leaves the tool bars alone. 0: Tux keeps and restores the place of "
-        "each tool bar for each workbench itself. Read at start.",
+        "workbench. It has handed that over to the main window and leaves the tool "
+        "bars alone since. Read at start.",
     ),
 ]
 

@@ -98,7 +98,7 @@ Params = [
     ),
     ParamBool(
         "PostProcessorShowEditor",
-        True,
+        False,
         title="Show editor before writing G-code",
         doc="Pops up the G-code editor for review and editing before the output file is "
         "written.",

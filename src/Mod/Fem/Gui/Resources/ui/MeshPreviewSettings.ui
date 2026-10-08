@@ -67,7 +67,7 @@
         <number>1</number>
        </property>
        <property name="prefEntry" stdset="0">
-        <cstring>previewFactor</cstring>
+        <cstring>previewMeshFactor</cstring>
        </property>
        <property name="prefPath" stdset="0">
         <cstring>User parameter:BaseApp/Preferences/Mod/Fem/Gmsh</cstring>

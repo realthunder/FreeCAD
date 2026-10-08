@@ -31,7 +31,7 @@ Params = [
     ),
     ParamBool(
         "CardsSortByResources",
-        False,
+        True,
         subpath="Cards",
         param_name="SortByResources",
         title="Sort by resources",

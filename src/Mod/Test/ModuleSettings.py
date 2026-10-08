@@ -21,10 +21,10 @@ import FreeCAD
 # definition file -> how many settings it describes, and the directories
 # under its own whose sources are tests, not readers
 MODULES = {
-    "HelpParams": (14, ()),
+    "HelpParams": (13, ()),
     "OpenSCADParams": (15, ("OpenSCADTest",)),
     "ReverseEngineeringParams": (11, ()),
-    "TuxParams": (5, ()),
+    "TuxParams": (4, ()),
     "MaterialPyParams": (4, ("materialtests",)),
 }
 

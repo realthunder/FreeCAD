@@ -3,7 +3,7 @@
 
 Help is written in Python and has no generated class: its settings are
 described to the settings registry when Init.py imports this file
-(freecad.params), so that the omni search lists them with the others. Ten
+(freecad.params), so that the omni search lists them with the others. Nine
 are on the module's preference page, and the title and the editor of each
 are the page's; each default is the one Help.py reads it with. Four more
 are where the help panel was last left, and how large.
@@ -11,6 +11,10 @@ are where the help panel was last left, and how large.
 The page shows two groups of radio buttons, and each button is a setting of
 its own. Help.py does not read them as groups: it takes the first that is
 on, in the order the documentation of each says.
+
+Not here: optionTab, the third button of the second group. The page stores it
+and nothing reads it -- a tab is what is used when neither the web browser
+nor the dialog is on.
 """
 import sys
 
@@ -67,14 +71,6 @@ Params = [
         title="Translation suffix",
         doc='A translation suffix, for example "fr" for the French documentation. Empty, '
         "the pages are in English." + _NEXT,
-    ),
-    ParamBool(
-        "optionTab",
-        True,
-        title="In a FreeCAD tab",
-        doc="The choice of the preference page that a help page opens in a tab of the "
-        "main window. Nothing reads it: a tab is what is used when neither the web "
-        "browser nor the dialog is on.",
     ),
     ParamBool(
         "optionBrowser",

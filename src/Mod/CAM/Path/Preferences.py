@@ -543,7 +543,7 @@ def showEditorOnPostProcess():
         bool: True to show editor, False to skip it (default: True)
     """
     pref = preferences()
-    return pref.GetBool(PostProcessorShowEditor, True)
+    return pref.GetBool(PostProcessorShowEditor, False)
 
 
 def setShowEditorOnPostProcess(show: bool):
