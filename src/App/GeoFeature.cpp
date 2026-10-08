@@ -353,7 +353,12 @@ GeoFeature::getHigherElements(const char *element, bool silent) const
 
 App::MaterialAppearance GeoFeature::getMaterialAppearance() const
 {
-    return App::MaterialAppearance(App::MaterialAppearance::DEFAULT);
+    // No card: the appearance nobody gave, which is what every reader of
+    // this holds it against. The DEFAULT material here was a card to all of
+    // them, and a view provider that follows its card put that look back
+    // over a list of looks it was assigned -- Set Colors' colour for all of
+    // an App::Part among them (docs/ShapeAppearanceDesign.md 14.6.10).
+    return App::MaterialAppearance();
 }
 
 void GeoFeature::setMaterialAppearance(const App::MaterialAppearance& material)

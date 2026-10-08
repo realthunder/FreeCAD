@@ -227,6 +227,9 @@ public:
      * cannot reach directly. These two virtuals are the bridge: a feature that
      * carries a material card reports its appearance here, and the view
      * provider reads it from the App side without linking Materials.
+     *
+     * A feature that carries none answers with a default-constructed
+     * appearance, which is what "no card" is to whoever asks.
      */
     virtual App::MaterialAppearance getMaterialAppearance() const;
     /// Set the feature's material appearance from an App::MaterialAppearance
