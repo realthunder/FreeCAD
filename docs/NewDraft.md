@@ -1316,3 +1316,15 @@ ones. Bounding those too would have refused four of #474's Fillet002 drafts
 that come out at the classic draft's volume (face 10 about 3 at 15 deg,
 about 11 at 5, 15 and 60, from the 1e-6 try, tolerances 0.09 to 0.29).
 Whether such a result should stand is open.
+
+The 18 `NotASolid` left where the classic draft is valid are all #474's
+Fillet003 input, faces 25, 27 and 29 drafted about the faces beside them.
+That input is valid and boolean-clean, but its face 22 is a sliver: a plane
+triangle 2 long and 1e-6 wide (area 9e-7), coplanar with face 23 beside it,
+a leftover of the fillet that made the input. The classic draft keeps the
+topology, so the sliver stays a consistent sliver, and its 16 results are
+valid and clean. The cell draft cuts the sliver's thin end and leaves edges
+1e-5 and 1e-6 long whose tolerance (5e-6) takes in their neighbours; the
+boolean check refuses that. Giving the sliver no extension of its own does
+not change it: the draft has to reshape the sliver itself. Left as it is --
+a defect of the input that only a draft keeping the topology gets past.
