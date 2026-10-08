@@ -28,6 +28,7 @@
 #endif
 
 #include "MenuManager.h"
+#include "MainWindowParams.h"
 #include "Application.h"
 #include "Command.h"
 #include "MainWindow.h"
@@ -217,8 +218,7 @@ void MenuManager::setup(MenuItem* menuItems) const
     // Optional parameter, clearing the menu bar, can be set as a workaround.
     // Clearing the menu bar can cause issues, when trying to access menu bar through Python.
     // https://forum.freecad.org/viewtopic.php?f=10&t=30340&start=440#p289330
-    if (App::GetApplication().GetParameterGroupByPath
-        ("User parameter:BaseApp/Preferences/MainWindow")->GetBool("ClearMenuBar",false)) {
+    if (MainWindowParams::getClearMenuBar()) {
         menuBar->clear();
     }
 #else

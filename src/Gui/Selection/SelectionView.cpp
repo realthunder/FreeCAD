@@ -45,6 +45,7 @@
 #include <App/GeoFeature.h>
 #include <Base/Console.h>
 #include "Application.h"
+#include <Gui/MiscParams.h>
 #include "BitmapFactory.h"
 #include "CommandT.h"
 #include "Document.h"
@@ -195,10 +196,9 @@ static void addItem(QTreeWidget *tree, const App::SubObjectT &objT)
 /// @cond DOXERR
 void SelectionView::onSelectionChanged(const SelectionChanges &Reason)
 {
-    ParameterGrp::handle hGrp = App::GetApplication().GetUserParameter().GetGroup("BaseApp")
-        ->GetGroup("Preferences")->GetGroup("Selection");
-    bool autoShow = hGrp->GetBool("AutoShowSelectionView", false);
-    hGrp->SetBool("AutoShowSelectionView", autoShow); // Remove this line once the preferences window item is implemented
+    bool autoShow = MiscParams::getAutoShowSelectionView();
+    // Still stored at every read, as before the setting had a definition
+    MiscParams::setAutoShowSelectionView(autoShow);
 
     if (autoShow) {
         if (!parentWidget()->isVisible() && Selection().hasSelection()) {

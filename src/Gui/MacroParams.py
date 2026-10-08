@@ -36,8 +36,8 @@ ParamPath = 'User parameter:BaseApp/Preferences/Macro'
 ClassDoc = 'Convenient class to obtain the settings of macro recording and running'
 Signal = True
 
-# Not listed: what the program keeps here for itself (ShowWalkthroughMessage,
-# the answer to a one-time hint). The Macro page has two hidden widgets for
+# The last one is what the program keeps here for itself, the answer to a
+# one-time hint. The Macro page has two hidden widgets for
 # keys nothing has ever read (ScriptToFile, ScriptFile); it stores neither.
 Params = [
     ParamString('MacroPath', '',
@@ -76,6 +76,11 @@ Params = [
         title = 'Drop the note when duplicating',
         doc = "When a macro is duplicated, leave out of the suggested name\n"
               "whatever stands between the number and the file extension."),
+    ParamBool('ShowWalkthroughMessage', True,
+        title = 'Show the walkthrough hint',
+        doc = "The hint of the Macros dialog about its Walkthrough is still to be\n"
+              "shown. The program switches it off when the hint is dismissed\n"
+              "for good."),
 ]
 
 def declare():

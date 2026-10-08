@@ -53,6 +53,7 @@ public:
         signalParamChanged("ReplaceSpaces");
         signalParamChanged("DuplicateFrom001");
         signalParamChanged("DuplicateIgnoreExtraNote");
+        signalParamChanged("ShowWalkthroughMessage");
 
     // Auto generated code (Tools/params_utils.py:241)
     }
@@ -64,6 +65,7 @@ public:
     bool ReplaceSpaces;
     bool DuplicateFrom001;
     bool DuplicateIgnoreExtraNote;
+    bool ShowWalkthroughMessage;
 
     // Auto generated code (Tools/params_utils.py:254)
     MacroParamsP() {
@@ -86,6 +88,8 @@ public:
         funcs["DuplicateFrom001"] = &MacroParamsP::updateDuplicateFrom001;
         DuplicateIgnoreExtraNote = this->handle->GetBool("DuplicateIgnoreExtraNote", false);
         funcs["DuplicateIgnoreExtraNote"] = &MacroParamsP::updateDuplicateIgnoreExtraNote;
+        ShowWalkthroughMessage = this->handle->GetBool("ShowWalkthroughMessage", true);
+        funcs["ShowWalkthroughMessage"] = &MacroParamsP::updateShowWalkthroughMessage;
     }
 
     // Auto generated code (Tools/params_utils.py:284)
@@ -135,6 +139,10 @@ public:
     static void updateDuplicateIgnoreExtraNote(MacroParamsP *self) {
         self->DuplicateIgnoreExtraNote = self->handle->GetBool("DuplicateIgnoreExtraNote", false);
     }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateShowWalkthroughMessage(MacroParamsP *self) {
+        self->ShowWalkthroughMessage = self->handle->GetBool("ShowWalkthroughMessage", true);
+    }
 };
 
 // Auto generated code (Tools/params_utils.py:336)
@@ -183,6 +191,11 @@ static const App::ParamRegistry::Registrar _MacroParamsRegistrar({
         .setTitle("Drop the note when duplicating")
         .setDoc("When a macro is duplicated, leave out of the suggested name\n"
 "whatever stands between the number and the file extension."),
+    App::ParamInfo("Gui", "MacroParams", "User parameter:BaseApp/Preferences/Macro", "ShowWalkthroughMessage", "ShowWalkthroughMessage", App::ParamInfo::Bool, true)
+        .setTitle("Show the walkthrough hint")
+        .setDoc("The hint of the Macros dialog about its Walkthrough is still to be\n"
+"shown. The program switches it off when the hint is dismissed\n"
+"for good."),
 });
 
 // Auto generated code (Tools/params_utils.py:368)
@@ -435,5 +448,35 @@ void MacroParams::setDuplicateIgnoreExtraNote(const bool &v) {
 // Auto generated code (Tools/params_utils.py:431)
 void MacroParams::removeDuplicateIgnoreExtraNote() {
     instance()->handle->RemoveBool("DuplicateIgnoreExtraNote");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *MacroParams::docShowWalkthroughMessage() {
+    return QT_TRANSLATE_NOOP("MacroParams",
+"The hint of the Macros dialog about its Walkthrough is still to be\n"
+"shown. The program switches it off when the hint is dismissed\n"
+"for good.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const bool & MacroParams::getShowWalkthroughMessage() {
+    return instance()->ShowWalkthroughMessage;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const bool & MacroParams::defaultShowWalkthroughMessage() {
+    const static bool def = true;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void MacroParams::setShowWalkthroughMessage(const bool &v) {
+    instance()->handle->SetBool("ShowWalkthroughMessage",v);
+    instance()->ShowWalkthroughMessage = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void MacroParams::removeShowWalkthroughMessage() {
+    instance()->handle->RemoveBool("ShowWalkthroughMessage");
 }
 //[[[end]]]

@@ -803,6 +803,34 @@ public:
     static const char *docJsonIndent();
     //@}
 
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter PreferCompactFormat
+    ///
+    /// The compact format was chosen the last time a file was saved under
+    /// a new name, and is what the next such save starts on. Stored by
+    /// the Save As dialog.
+    static const bool & getPreferCompactFormat();
+    static const bool & defaultPreferCompactFormat();
+    static void removePreferCompactFormat();
+    static void setPreferCompactFormat(const bool &v);
+    static const char *docPreferCompactFormat();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter WarnCompactFormat
+    ///
+    /// The warning shown when a save comes out in the compact format is
+    /// still to be shown. The program switches it off when the warning
+    /// is dismissed for good.
+    static const bool & getWarnCompactFormat();
+    static const bool & defaultWarnCompactFormat();
+    static void removeWarnCompactFormat();
+    static void setWarnCompactFormat(const bool &v);
+    static const char *docWarnCompactFormat();
+    //@}
+
 // Auto generated code (Tools/params_utils.py:179)
 }; // class DocumentParams
 } // namespace App

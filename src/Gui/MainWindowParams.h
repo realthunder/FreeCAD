@@ -320,6 +320,115 @@ public:
     static const char *docDockableWindowShortcut();
     //@}
 
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter ClearMenuBar
+    ///
+    /// Empties the menu bar each time a workbench sets its menus up: a
+    /// way round a fault of the global menu of some Linux desktops.
+    /// It can break access to the menu bar from Python. On no page.
+    static const bool & getClearMenuBar();
+    static const bool & defaultClearMenuBar();
+    static void removeClearMenuBar();
+    static void setClearMenuBar(const bool &v);
+    static const char *docClearMenuBar();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter Geometry
+    ///
+    /// Where the main window last was and how large, as 'x y width
+    /// height'. Stored by the program when the window closes.
+    static const std::string & getGeometry();
+    static const std::string & defaultGeometry();
+    static void removeGeometry();
+    static void setGeometry(const std::string &v);
+    static const char *docGeometry();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter Maximized
+    ///
+    /// The main window was last maximized. Stored by the program when
+    /// the window closes.
+    static const bool & getMaximized();
+    static const bool & defaultMaximized();
+    static void removeMaximized();
+    static void setMaximized(const bool &v);
+    static const char *docMaximized();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter MainWindowState
+    ///
+    /// Where the tool bars and the dock windows last were, as Qt packs
+    /// it. Stored by the program when the window closes; a preference
+    /// pack that holds a layout stores it too, and the layout follows a
+    /// change. Not for editing by hand.
+    static const std::string & getMainWindowState();
+    static const std::string & defaultMainWindowState();
+    static void removeMainWindowState();
+    static void setMainWindowState(const std::string &v);
+    static const char *docMainWindowState();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter StatusBar
+    ///
+    /// The status bar was last shown. Stored by the program when the
+    /// window closes.
+    static const bool & getStatusBar();
+    static const bool & defaultStatusBar();
+    static void removeStatusBar();
+    static void setStatusBar(const bool &v);
+    static const char *docStatusBar();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter WindowStateRestored
+    ///
+    /// Flipped by the program each time it has put the layout of the
+    /// main window back, so that code watching the group hears of it.
+    /// Its value means nothing.
+    static const bool & getWindowStateRestored();
+    static const bool & defaultWindowStateRestored();
+    static void removeWindowStateRestored();
+    static void setWindowStateRestored(const bool &v);
+    static const char *docWindowStateRestored();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter Theme
+    ///
+    /// Name of the theme last applied, kept by the theme manager so that
+    /// it knows what the interface carries. Choose a theme on the Theme
+    /// page, not here.
+    static const std::string & getTheme();
+    static const std::string & defaultTheme();
+    static void removeTheme();
+    static void setTheme(const std::string &v);
+    static const char *docTheme();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter ThemeAutoApplied
+    ///
+    /// Dark or Light, as following the desktop last came out; empty
+    /// while a theme is chosen by hand. Kept by the theme manager.
+    static const std::string & getThemeAutoApplied();
+    static const std::string & defaultThemeAutoApplied();
+    static void removeThemeAutoApplied();
+    static void setThemeAutoApplied(const std::string &v);
+    static const char *docThemeAutoApplied();
+    //@}
+
 // Auto generated code (Tools/params_utils.py:179)
 }; // class MainWindowParams
 } // namespace Gui

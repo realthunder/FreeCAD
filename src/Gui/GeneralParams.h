@@ -461,6 +461,143 @@ public:
     static const char *docTempPath();
     //@}
 
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter LastModule
+    ///
+    /// The workbench that was active when the program last closed,
+    /// which the next session starts in while the start-up workbench
+    /// is set to the last one used. Stored by the program; empty until
+    /// then, when the start workbench is used.
+    static const std::string & getLastModule();
+    static const std::string & defaultLastModule();
+    static void removeLastModule();
+    static void setLastModule(const std::string &v);
+    static const char *docLastModule();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter FileOpenSavePath
+    ///
+    /// The folder the file dialogs were last in, which they open on.
+    /// Stored by the program; empty until then, when the home folder
+    /// is used.
+    static const std::string & getFileOpenSavePath();
+    static const std::string & defaultFileOpenSavePath();
+    static void removeFileOpenSavePath();
+    static void setFileOpenSavePath(const std::string &v);
+    static const char *docFileOpenSavePath();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter FileImportFilter
+    ///
+    /// The file type last chosen in the Import dialog, which it opens
+    /// with. Stored by the program.
+    static const std::string & getFileImportFilter();
+    static const std::string & defaultFileImportFilter();
+    static void removeFileImportFilter();
+    static void setFileImportFilter(const std::string &v);
+    static const char *docFileImportFilter();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter FileExportFilter
+    ///
+    /// The file type last chosen in the Export dialog, which it opens
+    /// with. Stored by the program.
+    static const std::string & getFileExportFilter();
+    static const std::string & defaultFileExportFilter();
+    static void removeFileExportFilter();
+    static void setFileExportFilter(const std::string &v);
+    static const char *docFileExportFilter();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter OffscreenImageFormat
+    ///
+    /// The file format last chosen in the Save picture dialog. Stored
+    /// by the program.
+    static const std::string & getOffscreenImageFormat();
+    static const std::string & defaultOffscreenImageFormat();
+    static void removeOffscreenImageFormat();
+    static void setOffscreenImageFormat(const std::string &v);
+    static const char *docOffscreenImageFormat();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter OffscreenImageBackground
+    ///
+    /// The background last chosen in the options of the Save picture
+    /// dialog, as the number of its entry. Stored by the program.
+    static const long & getOffscreenImageBackground();
+    static const long & defaultOffscreenImageBackground();
+    static void removeOffscreenImageBackground();
+    static void setOffscreenImageBackground(const long &v);
+    static const char *docOffscreenImageBackground();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter ConfirmAll
+    ///
+    /// The state the box 'Apply answer to all' was last left in, in the
+    /// question about unsaved documents at closing. Stored by the
+    /// program.
+    static const bool & getConfirmAll();
+    static const bool & defaultConfirmAll();
+    static void removeConfirmAll();
+    static void setConfirmAll(const bool &v);
+    static const char *docConfirmAll();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter ObjectSelectionAutoDeps
+    ///
+    /// The state the box that selects the dependencies of an object with
+    /// it was last left in, in the object selection dialog. Stored by
+    /// the program.
+    static const bool & getObjectSelectionAutoDeps();
+    static const bool & defaultObjectSelectionAutoDeps();
+    static void removeObjectSelectionAutoDeps();
+    static void setObjectSelectionAutoDeps(const bool &v);
+    static const char *docObjectSelectionAutoDeps();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter ObjectSelectionShowDeps
+    ///
+    /// Whether the object selection dialog last showed its dependency
+    /// lists. Stored by the program.
+    static const bool & getObjectSelectionShowDeps();
+    static const bool & defaultObjectSelectionShowDeps();
+    static void removeObjectSelectionShowDeps();
+    static void setObjectSelectionShowDeps(const bool &v);
+    static const char *docObjectSelectionShowDeps();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter UserEditMode
+    ///
+    /// What a double click on an object in the tree does, as the number
+    /// of the entry of Edit > Edit mode: 0 the object's default, 1
+    /// transform, 2 cutting, 3 colour. Stored when the menu is used and
+    /// read at start.
+    static const long & getUserEditMode();
+    static const long & defaultUserEditMode();
+    static void removeUserEditMode();
+    static void setUserEditMode(const long &v);
+    static const char *docUserEditMode();
+    //@}
+
 // Auto generated code (Tools/params_utils.py:179)
 }; // class GeneralParams
 } // namespace Gui

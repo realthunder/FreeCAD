@@ -336,6 +336,16 @@ Params = [
         title = 'JSON indentation',
         doc = "Indentation of the JSON text the properties of Python objects are\n"
               "saved as."),
+    ParamBool('PreferCompactFormat', True,
+        title = 'Last format chosen for a new file',
+        doc = "The compact format was chosen the last time a file was saved under\n"
+              "a new name, and is what the next such save starts on. Stored by\n"
+              "the Save As dialog."),
+    ParamBool('WarnCompactFormat', True,
+        title = 'Warn about the compact format',
+        doc = "The warning shown when a save comes out in the compact format is\n"
+              "still to be shown. The program switches it off when the warning\n"
+              "is dismissed for good."),
 ]
 
 def declare():

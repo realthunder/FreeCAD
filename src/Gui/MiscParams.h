@@ -248,6 +248,1422 @@ public:
     static const char *docUnflatten();
     //@}
 
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter GeoFeatureSubgraphs
+    ///
+    /// Draws the objects of each coordinate system -- a Part, a Body --
+    /// inside a box of its own in the dependency graph. On no page.
+    /// Takes effect when the graph is next drawn.
+    static const bool & getGeoFeatureSubgraphs();
+    static const bool & defaultGeoFeatureSubgraphs();
+    static void removeGeoFeatureSubgraphs();
+    static void setGeoFeatureSubgraphs(const bool &v);
+    static const char *docGeoFeatureSubgraphs();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter EnableGizmos
+    ///
+    /// Enables on-screen handles (draggers) in the 3D view for
+    /// interactively modifying dimensions and parameters of the feature
+    /// being edited by dragging.
+    static const bool & getEnableGizmos();
+    static const bool & defaultEnableGizmos();
+    static void removeEnableGizmos();
+    static void setEnableGizmos(const bool &v);
+    static const char *docEnableGizmos();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter DelayedGizmoUpdate
+    ///
+    /// Prevents the model from recalculating while manipulating
+    /// draggers. The shape updates only after release of the mouse
+    /// button.
+    static const bool & getDelayedGizmoUpdate();
+    static const bool & defaultDelayedGizmoUpdate();
+    static void removeDelayedGizmoUpdate();
+    static void setDelayedGizmoUpdate(const bool &v);
+    static const char *docDelayedGizmoUpdate();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter EnableCoarseSnap
+    ///
+    /// Enables larger snapping increments while manipulating draggers.
+    static const bool & getEnableCoarseSnap();
+    static const bool & defaultEnableCoarseSnap();
+    static void removeEnableCoarseSnap();
+    static void setEnableCoarseSnap(const bool &v);
+    static const char *docEnableCoarseSnap();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter FineSnapModifier
+    ///
+    /// Defines the modifier key used for fine snapping while dragging,
+    /// as Qt numbers it: 33554432 is Shift, 67108864 is Ctrl. Anything
+    /// else is taken for Shift.
+    static const long & getFineSnapModifier();
+    static const long & defaultFineSnapModifier();
+    static void removeFineSnapModifier();
+    static void setFineSnapModifier(const long &v);
+    static const char *docFineSnapModifier();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter DefaultCoarseDragBehavior
+    ///
+    /// Determines whether the drag is coarse or fine without holding
+    /// the modifier key.
+    static const long & getDefaultCoarseDragBehavior();
+    static const long & defaultDefaultCoarseDragBehavior();
+    static void removeDefaultCoarseDragBehavior();
+    static void setDefaultCoarseDragBehavior(const long &v);
+    static const char *docDefaultCoarseDragBehavior();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter PropertyViewAutoTransactionView
+    ///
+    /// An edit in the View tab of the property view opens an undo step of
+    /// its own and recomputes the document when it ends, as one in the
+    /// Data tab does. On no page.
+    static const bool & getPropertyViewAutoTransactionView();
+    static const bool & defaultPropertyViewAutoTransactionView();
+    static void removePropertyViewAutoTransactionView();
+    static void setPropertyViewAutoTransactionView(const bool &v);
+    static const char *docPropertyViewAutoTransactionView();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter PropertyViewAutoTransactionData
+    ///
+    /// An edit in the Data tab of the property view opens an undo step of
+    /// its own and recomputes the document when it ends. On no page.
+    static const bool & getPropertyViewAutoTransactionData();
+    static const bool & defaultPropertyViewAutoTransactionData();
+    static void removePropertyViewAutoTransactionData();
+    static void setPropertyViewAutoTransactionData(const bool &v);
+    static const char *docPropertyViewAutoTransactionData();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter PropertyViewAutoExpandView
+    ///
+    /// The View tab of the property view starts a session with
+    /// everything unfolded: the groups, and the parts of a property that
+    /// has some. 'Auto expand' of the view's context menu switches it
+    /// for the session. On no page.
+    static const bool & getPropertyViewAutoExpandView();
+    static const bool & defaultPropertyViewAutoExpandView();
+    static void removePropertyViewAutoExpandView();
+    static void setPropertyViewAutoExpandView(const bool &v);
+    static const char *docPropertyViewAutoExpandView();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter PropertyViewAutoExpandData
+    ///
+    /// The Data tab of the property view starts a session with
+    /// everything unfolded: the groups, and the parts of a property that
+    /// has some. 'Auto expand' of the view's context menu switches it
+    /// for the session. On no page.
+    static const bool & getPropertyViewAutoExpandData();
+    static const bool & defaultPropertyViewAutoExpandData();
+    static void removePropertyViewAutoExpandData();
+    static void setPropertyViewAutoExpandData(const bool &v);
+    static const char *docPropertyViewAutoExpandData();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter PropertyViewHideHeader
+    ///
+    /// Hides the header row, Property and Value, of the property view.
+    /// Set by 'Hide header' of the view's context menu.
+    static const bool & getPropertyViewHideHeader();
+    static const bool & defaultPropertyViewHideHeader();
+    static void removePropertyViewHideHeader();
+    static void setPropertyViewHideHeader(const bool &v);
+    static const char *docPropertyViewHideHeader();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter PropertyViewViewSectionSize
+    ///
+    /// Width in pixels of the Property column of the View tab. Stored
+    /// by the property view when the column is resized.
+    static const long & getPropertyViewViewSectionSize();
+    static const long & defaultPropertyViewViewSectionSize();
+    static void removePropertyViewViewSectionSize();
+    static void setPropertyViewViewSectionSize(const long &v);
+    static const char *docPropertyViewViewSectionSize();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter PropertyViewDataSectionSize
+    ///
+    /// Width in pixels of the Property column of the Data tab. Stored
+    /// by the property view when the column is resized.
+    static const long & getPropertyViewDataSectionSize();
+    static const long & defaultPropertyViewDataSectionSize();
+    static void removePropertyViewDataSectionSize();
+    static void setPropertyViewDataSectionSize(const long &v);
+    static const char *docPropertyViewDataSectionSize();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter PropertyViewLastTabIndex
+    ///
+    /// The tab the property view was last on: 0 View, 1 Data. Stored
+    /// when the tab changes, read when the view is made.
+    static const long & getPropertyViewLastTabIndex();
+    static const long & defaultPropertyViewLastTabIndex();
+    static void removePropertyViewLastTabIndex();
+    static void setPropertyViewLastTabIndex(const long &v);
+    static const char *docPropertyViewLastTabIndex();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter NewPropertyType
+    ///
+    /// The property type the Add Property dialog was last used with,
+    /// which it opens on. Stored when the dialog is accepted.
+    static const std::string & getNewPropertyType();
+    static const std::string & defaultNewPropertyType();
+    static void removeNewPropertyType();
+    static void setNewPropertyType(const std::string &v);
+    static const char *docNewPropertyType();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter NewPropertyGroup
+    ///
+    /// The group the Add Property dialog last put a property in, which
+    /// it opens with. Stored when the dialog is accepted.
+    static const std::string & getNewPropertyGroup();
+    static const std::string & defaultNewPropertyGroup();
+    static void removeNewPropertyGroup();
+    static void setNewPropertyGroup(const std::string &v);
+    static const char *docNewPropertyGroup();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter NewPropertyAppend
+    ///
+    /// The Add Property dialog opens with its box checked that puts the
+    /// group's name in front of the property's. Stored when the dialog
+    /// is accepted.
+    static const bool & getNewPropertyAppend();
+    static const bool & defaultNewPropertyAppend();
+    static void removeNewPropertyAppend();
+    static void setNewPropertyAppend(const bool &v);
+    static const char *docNewPropertyAppend();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter PanelMirror
+    ///
+    /// Which task dialogs a served session mirrors to its viewers: all,
+    /// none, or the class names of the dialogs separated by commas. On
+    /// no page. Takes effect at the next dialog.
+    static const std::string & getPanelMirror();
+    static const std::string & defaultPanelMirror();
+    static void removePanelMirror();
+    static void setPanelMirror(const std::string &v);
+    static const char *docPanelMirror();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter PanelPollMs
+    ///
+    /// Milliseconds between two looks the panel mirror takes at a
+    /// mirrored task dialog for changes its widgets did not announce; 0
+    /// switches the polling off. On no page. Takes effect at the next
+    /// dialog.
+    static const long & getPanelPollMs();
+    static const long & defaultPanelPollMs();
+    static void removePanelPollMs();
+    static void setPanelPollMs(const long &v);
+    static const char *docPanelPollMs();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter AutoShowSelectionView
+    ///
+    /// Brings the selection view up when something is selected and
+    /// puts it away when the selection is empty. On no page. Takes
+    /// effect at the next change of the selection.
+    static const bool & getAutoShowSelectionView();
+    static const bool & defaultAutoShowSelectionView();
+    static void removeAutoShowSelectionView();
+    static void setAutoShowSelectionView(const bool &v);
+    static const char *docAutoShowSelectionView();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter SingleClickFeatureSelect
+    ///
+    /// In PartDesign's dialog that asks for a feature to work on, a
+    /// click on a feature picks it and goes on; off, the choice has to
+    /// be confirmed. On no page.
+    static const bool & getSingleClickFeatureSelect();
+    static const bool & defaultSingleClickFeatureSelect();
+    static void removeSingleClickFeatureSelect();
+    static void setSingleClickFeatureSelect(const bool &v);
+    static const char *docSingleClickFeatureSelect();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter DAGViewSelectionMode
+    ///
+    /// Whether a click in the DAG view selects one object in place of
+    /// the selection or adds to it. On no page. Read when the view is
+    /// made.
+    static const long & getDAGViewSelectionMode();
+    static const long & defaultDAGViewSelectionMode();
+    static void removeDAGViewSelectionMode();
+    static void setDAGViewSelectionMode(const long &v);
+    static const char *docDAGViewSelectionMode();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter DAGViewFontPointSize
+    ///
+    /// Font size of the DAG view in points; 0 is the application's. On
+    /// no page. Read when the view is made.
+    static const long & getDAGViewFontPointSize();
+    static const long & defaultDAGViewFontPointSize();
+    static void removeDAGViewFontPointSize();
+    static void setDAGViewFontPointSize(const long &v);
+    static const char *docDAGViewFontPointSize();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter DAGViewDirection
+    ///
+    /// The direction the DAG view lists the objects in: 1, or -1 for the
+    /// other way up. Anything else is taken for 1. On no page. Read when
+    /// the view is made.
+    static const double & getDAGViewDirection();
+    static const double & defaultDAGViewDirection();
+    static void removeDAGViewDirection();
+    static void setDAGViewDirection(const double &v);
+    static const char *docDAGViewDirection();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter CustomViewQ0
+    ///
+    /// First component of the quaternion a new document's view is turned
+    /// to when its camera orientation is 'Custom'. Set by the dialog of
+    /// the Navigation page.
+    static const double & getCustomViewQ0();
+    static const double & defaultCustomViewQ0();
+    static void removeCustomViewQ0();
+    static void setCustomViewQ0(const double &v);
+    static const char *docCustomViewQ0();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter CustomViewQ1
+    ///
+    /// Second component of the quaternion of the 'Custom' camera
+    /// orientation of a new document.
+    static const double & getCustomViewQ1();
+    static const double & defaultCustomViewQ1();
+    static void removeCustomViewQ1();
+    static void setCustomViewQ1(const double &v);
+    static const char *docCustomViewQ1();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter CustomViewQ2
+    ///
+    /// Third component of the quaternion of the 'Custom' camera
+    /// orientation of a new document.
+    static const double & getCustomViewQ2();
+    static const double & defaultCustomViewQ2();
+    static void removeCustomViewQ2();
+    static void setCustomViewQ2(const double &v);
+    static const char *docCustomViewQ2();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter CustomViewQ3
+    ///
+    /// Fourth component of the quaternion of the 'Custom' camera
+    /// orientation of a new document.
+    static const double & getCustomViewQ3();
+    static const double & defaultCustomViewQ3();
+    static void removeCustomViewQ3();
+    static void setCustomViewQ3(const double &v);
+    static const char *docCustomViewQ3();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter RecentFiles
+    ///
+    /// How many files the recent files menu shows. The General page
+    /// has it. The list itself is kept beside it, a key per file, and is
+    /// not listed.
+    static const long & getRecentFiles();
+    static const long & defaultRecentFiles();
+    static void removeRecentFiles();
+    static void setRecentFiles(const long &v);
+    static const char *docRecentFiles();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter DonatePage
+    ///
+    /// The address Help > Donate opens. The command stores what it read,
+    /// so the key is there after its first use.
+    static const std::string & getDonatePage();
+    static const std::string & defaultDonatePage();
+    static void removeDonatePage();
+    static void setDonatePage(const std::string &v);
+    static const char *docDonatePage();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter Graphviz
+    ///
+    /// Folder of the Graphviz programs the dependency graph is drawn
+    /// with. Not set, /usr/bin is tried on Linux and the search path
+    /// elsewhere; when that fails the program asks for the folder and
+    /// stores the answer here.
+    static const std::string & getGraphviz();
+    static const std::string & defaultGraphviz();
+    static void removeGraphviz();
+    static void setGraphviz(const std::string &v);
+    static const char *docGraphviz();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter IconThemeName
+    ///
+    /// Name of the icon theme Qt is told to use. Empty, the program's own
+    /// icons are used. On no page. Read at start.
+    static const std::string & getIconThemeName();
+    static const std::string & defaultIconThemeName();
+    static void removeIconThemeName();
+    static void setIconThemeName(const std::string &v);
+    static const char *docIconThemeName();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter IconThemeSearchPath
+    ///
+    /// A folder put in front of the places Qt looks for icon themes in.
+    /// On no page. Read at start.
+    static const std::string & getIconThemeSearchPath();
+    static const std::string & defaultIconThemeSearchPath();
+    static void removeIconThemeSearchPath();
+    static void setIconThemeSearchPath(const std::string &v);
+    static const char *docIconThemeSearchPath();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter IconThemeSearchPaths
+    ///
+    /// Linux only: leaves the desktop's icon theme and its search paths
+    /// in place, where the program otherwise uses its own icons alone.
+    /// It rarely works, the common themes lack most of the icons. On no
+    /// page. Read at start.
+    static const bool & getIconThemeSearchPaths();
+    static const bool & defaultIconThemeSearchPaths();
+    static void removeIconThemeSearchPaths();
+    static void setIconThemeSearchPaths(const bool &v);
+    static const char *docIconThemeSearchPaths();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter TreeViewEnabled
+    ///
+    /// The model tree has a dock window of its own, with the property
+    /// view in another. 'Tree view mode' of the General page stores it
+    /// with the two below. Read when the main window sets its dock
+    /// windows up.
+    static const bool & getTreeViewEnabled();
+    static const bool & defaultTreeViewEnabled();
+    static void removeTreeViewEnabled();
+    static void setTreeViewEnabled(const bool &v);
+    static const char *docTreeViewEnabled();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter PropertyViewEnabled
+    ///
+    /// The property view has a dock window of its own. It always has
+    /// one while the tree view does. Read when the main window sets its
+    /// dock windows up.
+    static const bool & getPropertyViewEnabled();
+    static const bool & defaultPropertyViewEnabled();
+    static void removePropertyViewEnabled();
+    static void setPropertyViewEnabled(const bool &v);
+    static const char *docPropertyViewEnabled();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter ComboViewEnabled
+    ///
+    /// The combo view -- model tree and property view in one dock window
+    /// -- is there. Read when the main window sets its dock windows up.
+    static const bool & getComboViewEnabled();
+    static const bool & defaultComboViewEnabled();
+    static void removeComboViewEnabled();
+    static void setComboViewEnabled(const bool &v);
+    static const char *docComboViewEnabled();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter TaskWatcherEnabled
+    ///
+    /// The list of tasks of the active workbench has a dock window of its
+    /// own, apart from the task view. The General page has it. Read
+    /// when the main window sets its dock windows up.
+    static const bool & getTaskWatcherEnabled();
+    static const bool & defaultTaskWatcherEnabled();
+    static void removeTaskWatcherEnabled();
+    static void setTaskWatcherEnabled(const bool &v);
+    static const char *docTaskWatcherEnabled();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter DAGViewEnabled
+    ///
+    /// The DAG view, a dock window that shows the objects of the document
+    /// as a dependency graph, is there. On no page. Read when the main
+    /// window sets its dock windows up.
+    static const bool & getDAGViewEnabled();
+    static const bool & defaultDAGViewEnabled();
+    static void removeDAGViewEnabled();
+    static void setDAGViewEnabled(const bool &v);
+    static const char *docDAGViewEnabled();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter ComboViewTreeViewSize
+    ///
+    /// Height in pixels the model tree last had in the combo view; 0
+    /// leaves it to the layout. Stored by the program.
+    static const long & getComboViewTreeViewSize();
+    static const long & defaultComboViewTreeViewSize();
+    static void removeComboViewTreeViewSize();
+    static void setComboViewTreeViewSize(const long &v);
+    static const char *docComboViewTreeViewSize();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter ComboViewPropertyViewSize
+    ///
+    /// Height in pixels the property view last had in the combo view; 0
+    /// leaves it to the layout. Stored by the program.
+    static const long & getComboViewPropertyViewSize();
+    static const long & defaultComboViewPropertyViewSize();
+    static void removeComboViewPropertyViewSize();
+    static void setComboViewPropertyViewSize(const long &v);
+    static const char *docComboViewPropertyViewSize();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter PlacementRotationMethod
+    ///
+    /// The way of giving a rotation the Placement dialog was last on, as
+    /// the number of its entry. Stored by the dialog.
+    static const long & getPlacementRotationMethod();
+    static const long & defaultPlacementRotationMethod();
+    static void removePlacementRotationMethod();
+    static void setPlacementRotationMethod(const long &v);
+    static const char *docPlacementRotationMethod();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter SharePort
+    ///
+    /// The port the scene server listens on when a document is shared.
+    static const long & getSharePort();
+    static const long & defaultSharePort();
+    static void removeSharePort();
+    static void setSharePort(const long &v);
+    static const char *docSharePort();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter ShareDoor
+    ///
+    /// Name of the front door last chosen in the Share dialog: one of
+    /// the doors kept beside this setting, each a way viewers reach
+    /// this machine.
+    static const std::string & getShareDoor();
+    static const std::string & defaultShareDoor();
+    static void removeShareDoor();
+    static void setShareDoor(const std::string &v);
+    static const char *docShareDoor();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter ShareExternalHost
+    ///
+    /// The address viewers reach this machine at, as the share links
+    /// carry it. Empty, the address the program finds itself is used.
+    static const std::string & getShareExternalHost();
+    static const std::string & defaultShareExternalHost();
+    static void removeShareExternalHost();
+    static void setShareExternalHost(const std::string &v);
+    static const char *docShareExternalHost();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter ShareViewerPage
+    ///
+    /// Address of the viewer page the share links point at. Empty, the
+    /// page the program serves itself is used.
+    static const std::string & getShareViewerPage();
+    static const std::string & defaultShareViewerPage();
+    static void removeShareViewerPage();
+    static void setShareViewerPage(const std::string &v);
+    static const char *docShareViewerPage();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter ShareTrustProxy
+    ///
+    /// Takes the address of a viewer from the X-Forwarded-For header a
+    /// proxy in front of this machine adds, instead of the address the
+    /// connection comes from. Only for a door on the local network.
+    static const bool & getShareTrustProxy();
+    static const bool & defaultShareTrustProxy();
+    static void removeShareTrustProxy();
+    static void setShareTrustProxy(const bool &v);
+    static const char *docShareTrustProxy();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter ShareDoorsSeeded
+    ///
+    /// The program has made the first front doors of the Share dialog.
+    /// Stored by the program so that it does it once.
+    static const bool & getShareDoorsSeeded();
+    static const bool & defaultShareDoorsSeeded();
+    static void removeShareDoorsSeeded();
+    static void setShareDoorsSeeded(const bool &v);
+    static const char *docShareDoorsSeeded();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter ShareGrantsMigrated
+    ///
+    /// The program has turned what an older version kept -- one token
+    /// and a list of clients -- into grants. Stored by the program so
+    /// that it does it once.
+    static const bool & getShareGrantsMigrated();
+    static const bool & defaultShareGrantsMigrated();
+    static void removeShareGrantsMigrated();
+    static void setShareGrantsMigrated(const bool &v);
+    static const char *docShareGrantsMigrated();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter DraggerLastTranslationIncrement
+    ///
+    /// The translation increment the Transform task panel was last left
+    /// with. Stored when the panel is accepted.
+    static const double & getDraggerLastTranslationIncrement();
+    static const double & defaultDraggerLastTranslationIncrement();
+    static void removeDraggerLastTranslationIncrement();
+    static void setDraggerLastTranslationIncrement(const double &v);
+    static const char *docDraggerLastTranslationIncrement();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter DraggerLastRotationIncrement
+    ///
+    /// The rotation increment, in degrees, the Transform task panel was
+    /// last left with. Stored when the panel is accepted.
+    static const double & getDraggerLastRotationIncrement();
+    static const double & defaultDraggerLastRotationIncrement();
+    static void removeDraggerLastRotationIncrement();
+    static void setDraggerLastRotationIncrement(const double &v);
+    static const char *docDraggerLastRotationIncrement();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter ActivateOverlay
+    ///
+    /// Sets the overlay management of the dock windows up: with it a
+    /// dock window can be laid over the 3D view. On no page. Read at
+    /// start.
+    static const bool & getActivateOverlay();
+    static const bool & defaultActivateOverlay();
+    static void removeActivateOverlay();
+    static void setActivateOverlay(const bool &v);
+    static const char *docActivateOverlay();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter DockCursorMargin
+    ///
+    /// Distance in pixels from the edge of a dock window within which
+    /// the mouse counts as on the edge, for resizing an overlaid one.
+    /// On no page. Takes effect at once.
+    static const long & getDockCursorMargin();
+    static const long & defaultDockCursorMargin();
+    static void removeDockCursorMargin();
+    static void setDockCursorMargin(const long &v);
+    static const char *docDockCursorMargin();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter DockStdTreeView
+    ///
+    /// The tree view dock was last shown. Kept by the program; it also
+    /// decides whether the tree view has a dock of its own while that
+    /// setting is not stored.
+    static const bool & getDockStdTreeView();
+    static const bool & defaultDockStdTreeView();
+    static void removeDockStdTreeView();
+    static void setDockStdTreeView(const bool &v);
+    static const char *docDockStdTreeView();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter DockStdPropertyView
+    ///
+    /// The property view dock was last shown. Kept by the program; it
+    /// also decides whether the property view has a dock of its own
+    /// while that setting is not stored.
+    static const bool & getDockStdPropertyView();
+    static const bool & defaultDockStdPropertyView();
+    static void removeDockStdPropertyView();
+    static void setDockStdPropertyView(const bool &v);
+    static const char *docDockStdPropertyView();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter OverlayLeftWidgets
+    ///
+    /// The names of the dock windows laid over the left side of the 3D view,
+    /// separated by commas, in the order of their tabs.
+    static const std::string & getOverlayLeftWidgets();
+    static const std::string & defaultOverlayLeftWidgets();
+    static void removeOverlayLeftWidgets();
+    static void setOverlayLeftWidgets(const std::string &v);
+    static const char *docOverlayLeftWidgets();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter OverlayLeftWidth
+    ///
+    /// Width in pixels of the overlay panel of the left side; 0 while it has
+    /// never been sized.
+    static const long & getOverlayLeftWidth();
+    static const long & defaultOverlayLeftWidth();
+    static void removeOverlayLeftWidth();
+    static void setOverlayLeftWidth(const long &v);
+    static const char *docOverlayLeftWidth();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter OverlayLeftHeight
+    ///
+    /// Height in pixels of the overlay panel of the left side; 0 while it has
+    /// never been sized.
+    static const long & getOverlayLeftHeight();
+    static const long & defaultOverlayLeftHeight();
+    static void removeOverlayLeftHeight();
+    static void setOverlayLeftHeight(const long &v);
+    static const char *docOverlayLeftHeight();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter OverlayLeftOffset1
+    ///
+    /// First of the two offsets, in pixels, the overlay panel of the left side
+    /// is placed with.
+    static const long & getOverlayLeftOffset1();
+    static const long & defaultOverlayLeftOffset1();
+    static void removeOverlayLeftOffset1();
+    static void setOverlayLeftOffset1(const long &v);
+    static const char *docOverlayLeftOffset1();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter OverlayLeftOffset3
+    ///
+    /// Second of the two offsets, in pixels, the overlay panel of the left side
+    /// is placed with.
+    static const long & getOverlayLeftOffset3();
+    static const long & defaultOverlayLeftOffset3();
+    static void removeOverlayLeftOffset3();
+    static void setOverlayLeftOffset3(const long &v);
+    static const char *docOverlayLeftOffset3();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter OverlayLeftOffset2
+    ///
+    /// Pixels the size of the overlay panel of the left side is changed by.
+    static const long & getOverlayLeftOffset2();
+    static const long & defaultOverlayLeftOffset2();
+    static void removeOverlayLeftOffset2();
+    static void setOverlayLeftOffset2(const long &v);
+    static const char *docOverlayLeftOffset2();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter OverlayLeftSizes
+    ///
+    /// The sizes in pixels of the dock windows in the overlay panel of this
+    /// side, separated by commas, in the order of their tabs.
+    static const std::string & getOverlayLeftSizes();
+    static const std::string & defaultOverlayLeftSizes();
+    static void removeOverlayLeftSizes();
+    static void setOverlayLeftSizes(const std::string &v);
+    static const char *docOverlayLeftSizes();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter OverlayLeftAutoHide
+    ///
+    /// The overlay panel of the left side hides while the mouse is away from
+    /// it. Of the four modes -- this one, EditHide, EditShow, TaskShow --
+    /// the first that is on counts.
+    static const bool & getOverlayLeftAutoHide();
+    static const bool & defaultOverlayLeftAutoHide();
+    static void removeOverlayLeftAutoHide();
+    static void setOverlayLeftAutoHide(const bool &v);
+    static const char *docOverlayLeftAutoHide();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter OverlayLeftEditHide
+    ///
+    /// The overlay panel of the left side hides while an object is edited.
+    static const bool & getOverlayLeftEditHide();
+    static const bool & defaultOverlayLeftEditHide();
+    static void removeOverlayLeftEditHide();
+    static void setOverlayLeftEditHide(const bool &v);
+    static const char *docOverlayLeftEditHide();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter OverlayLeftEditShow
+    ///
+    /// The overlay panel of the left side shows only while an object is
+    /// edited.
+    static const bool & getOverlayLeftEditShow();
+    static const bool & defaultOverlayLeftEditShow();
+    static void removeOverlayLeftEditShow();
+    static void setOverlayLeftEditShow(const bool &v);
+    static const char *docOverlayLeftEditShow();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter OverlayLeftTaskShow
+    ///
+    /// The overlay panel of the left side shows only while a task dialog is
+    /// open.
+    static const bool & getOverlayLeftTaskShow();
+    static const bool & defaultOverlayLeftTaskShow();
+    static void removeOverlayLeftTaskShow();
+    static void setOverlayLeftTaskShow(const bool &v);
+    static const char *docOverlayLeftTaskShow();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter OverlayLeftClosed
+    ///
+    /// The overlay panel of the left side was last hidden by the user. Counts
+    /// only while none of its automatic modes is on.
+    static const bool & getOverlayLeftClosed();
+    static const bool & defaultOverlayLeftClosed();
+    static void removeOverlayLeftClosed();
+    static void setOverlayLeftClosed(const bool &v);
+    static const char *docOverlayLeftClosed();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter OverlayLeftTransparent
+    ///
+    /// The overlay panel of the left side lets the 3D view show through.
+    static const bool & getOverlayLeftTransparent();
+    static const bool & defaultOverlayLeftTransparent();
+    static void removeOverlayLeftTransparent();
+    static void setOverlayLeftTransparent(const bool &v);
+    static const char *docOverlayLeftTransparent();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter OverlayRightWidgets
+    ///
+    /// The names of the dock windows laid over the right side of the 3D view,
+    /// separated by commas, in the order of their tabs.
+    static const std::string & getOverlayRightWidgets();
+    static const std::string & defaultOverlayRightWidgets();
+    static void removeOverlayRightWidgets();
+    static void setOverlayRightWidgets(const std::string &v);
+    static const char *docOverlayRightWidgets();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter OverlayRightWidth
+    ///
+    /// Width in pixels of the overlay panel of the right side; 0 while it has
+    /// never been sized.
+    static const long & getOverlayRightWidth();
+    static const long & defaultOverlayRightWidth();
+    static void removeOverlayRightWidth();
+    static void setOverlayRightWidth(const long &v);
+    static const char *docOverlayRightWidth();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter OverlayRightHeight
+    ///
+    /// Height in pixels of the overlay panel of the right side; 0 while it has
+    /// never been sized.
+    static const long & getOverlayRightHeight();
+    static const long & defaultOverlayRightHeight();
+    static void removeOverlayRightHeight();
+    static void setOverlayRightHeight(const long &v);
+    static const char *docOverlayRightHeight();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter OverlayRightOffset1
+    ///
+    /// First of the two offsets, in pixels, the overlay panel of the right side
+    /// is placed with.
+    static const long & getOverlayRightOffset1();
+    static const long & defaultOverlayRightOffset1();
+    static void removeOverlayRightOffset1();
+    static void setOverlayRightOffset1(const long &v);
+    static const char *docOverlayRightOffset1();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter OverlayRightOffset3
+    ///
+    /// Second of the two offsets, in pixels, the overlay panel of the right side
+    /// is placed with.
+    static const long & getOverlayRightOffset3();
+    static const long & defaultOverlayRightOffset3();
+    static void removeOverlayRightOffset3();
+    static void setOverlayRightOffset3(const long &v);
+    static const char *docOverlayRightOffset3();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter OverlayRightOffset2
+    ///
+    /// Pixels the size of the overlay panel of the right side is changed by.
+    static const long & getOverlayRightOffset2();
+    static const long & defaultOverlayRightOffset2();
+    static void removeOverlayRightOffset2();
+    static void setOverlayRightOffset2(const long &v);
+    static const char *docOverlayRightOffset2();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter OverlayRightSizes
+    ///
+    /// The sizes in pixels of the dock windows in the overlay panel of this
+    /// side, separated by commas, in the order of their tabs.
+    static const std::string & getOverlayRightSizes();
+    static const std::string & defaultOverlayRightSizes();
+    static void removeOverlayRightSizes();
+    static void setOverlayRightSizes(const std::string &v);
+    static const char *docOverlayRightSizes();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter OverlayRightAutoHide
+    ///
+    /// The overlay panel of the right side hides while the mouse is away from
+    /// it. Of the four modes -- this one, EditHide, EditShow, TaskShow --
+    /// the first that is on counts.
+    static const bool & getOverlayRightAutoHide();
+    static const bool & defaultOverlayRightAutoHide();
+    static void removeOverlayRightAutoHide();
+    static void setOverlayRightAutoHide(const bool &v);
+    static const char *docOverlayRightAutoHide();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter OverlayRightEditHide
+    ///
+    /// The overlay panel of the right side hides while an object is edited.
+    static const bool & getOverlayRightEditHide();
+    static const bool & defaultOverlayRightEditHide();
+    static void removeOverlayRightEditHide();
+    static void setOverlayRightEditHide(const bool &v);
+    static const char *docOverlayRightEditHide();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter OverlayRightEditShow
+    ///
+    /// The overlay panel of the right side shows only while an object is
+    /// edited.
+    static const bool & getOverlayRightEditShow();
+    static const bool & defaultOverlayRightEditShow();
+    static void removeOverlayRightEditShow();
+    static void setOverlayRightEditShow(const bool &v);
+    static const char *docOverlayRightEditShow();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter OverlayRightTaskShow
+    ///
+    /// The overlay panel of the right side shows only while a task dialog is
+    /// open.
+    static const bool & getOverlayRightTaskShow();
+    static const bool & defaultOverlayRightTaskShow();
+    static void removeOverlayRightTaskShow();
+    static void setOverlayRightTaskShow(const bool &v);
+    static const char *docOverlayRightTaskShow();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter OverlayRightClosed
+    ///
+    /// The overlay panel of the right side was last hidden by the user. Counts
+    /// only while none of its automatic modes is on.
+    static const bool & getOverlayRightClosed();
+    static const bool & defaultOverlayRightClosed();
+    static void removeOverlayRightClosed();
+    static void setOverlayRightClosed(const bool &v);
+    static const char *docOverlayRightClosed();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter OverlayRightTransparent
+    ///
+    /// The overlay panel of the right side lets the 3D view show through.
+    static const bool & getOverlayRightTransparent();
+    static const bool & defaultOverlayRightTransparent();
+    static void removeOverlayRightTransparent();
+    static void setOverlayRightTransparent(const bool &v);
+    static const char *docOverlayRightTransparent();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter OverlayTopWidgets
+    ///
+    /// The names of the dock windows laid over the top side of the 3D view,
+    /// separated by commas, in the order of their tabs.
+    static const std::string & getOverlayTopWidgets();
+    static const std::string & defaultOverlayTopWidgets();
+    static void removeOverlayTopWidgets();
+    static void setOverlayTopWidgets(const std::string &v);
+    static const char *docOverlayTopWidgets();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter OverlayTopWidth
+    ///
+    /// Width in pixels of the overlay panel of the top side; 0 while it has
+    /// never been sized.
+    static const long & getOverlayTopWidth();
+    static const long & defaultOverlayTopWidth();
+    static void removeOverlayTopWidth();
+    static void setOverlayTopWidth(const long &v);
+    static const char *docOverlayTopWidth();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter OverlayTopHeight
+    ///
+    /// Height in pixels of the overlay panel of the top side; 0 while it has
+    /// never been sized.
+    static const long & getOverlayTopHeight();
+    static const long & defaultOverlayTopHeight();
+    static void removeOverlayTopHeight();
+    static void setOverlayTopHeight(const long &v);
+    static const char *docOverlayTopHeight();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter OverlayTopOffset1
+    ///
+    /// First of the two offsets, in pixels, the overlay panel of the top side
+    /// is placed with.
+    static const long & getOverlayTopOffset1();
+    static const long & defaultOverlayTopOffset1();
+    static void removeOverlayTopOffset1();
+    static void setOverlayTopOffset1(const long &v);
+    static const char *docOverlayTopOffset1();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter OverlayTopOffset3
+    ///
+    /// Second of the two offsets, in pixels, the overlay panel of the top side
+    /// is placed with.
+    static const long & getOverlayTopOffset3();
+    static const long & defaultOverlayTopOffset3();
+    static void removeOverlayTopOffset3();
+    static void setOverlayTopOffset3(const long &v);
+    static const char *docOverlayTopOffset3();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter OverlayTopOffset2
+    ///
+    /// Pixels the size of the overlay panel of the top side is changed by.
+    static const long & getOverlayTopOffset2();
+    static const long & defaultOverlayTopOffset2();
+    static void removeOverlayTopOffset2();
+    static void setOverlayTopOffset2(const long &v);
+    static const char *docOverlayTopOffset2();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter OverlayTopSizes
+    ///
+    /// The sizes in pixels of the dock windows in the overlay panel of this
+    /// side, separated by commas, in the order of their tabs.
+    static const std::string & getOverlayTopSizes();
+    static const std::string & defaultOverlayTopSizes();
+    static void removeOverlayTopSizes();
+    static void setOverlayTopSizes(const std::string &v);
+    static const char *docOverlayTopSizes();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter OverlayTopAutoHide
+    ///
+    /// The overlay panel of the top side hides while the mouse is away from
+    /// it. Of the four modes -- this one, EditHide, EditShow, TaskShow --
+    /// the first that is on counts.
+    static const bool & getOverlayTopAutoHide();
+    static const bool & defaultOverlayTopAutoHide();
+    static void removeOverlayTopAutoHide();
+    static void setOverlayTopAutoHide(const bool &v);
+    static const char *docOverlayTopAutoHide();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter OverlayTopEditHide
+    ///
+    /// The overlay panel of the top side hides while an object is edited.
+    static const bool & getOverlayTopEditHide();
+    static const bool & defaultOverlayTopEditHide();
+    static void removeOverlayTopEditHide();
+    static void setOverlayTopEditHide(const bool &v);
+    static const char *docOverlayTopEditHide();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter OverlayTopEditShow
+    ///
+    /// The overlay panel of the top side shows only while an object is
+    /// edited.
+    static const bool & getOverlayTopEditShow();
+    static const bool & defaultOverlayTopEditShow();
+    static void removeOverlayTopEditShow();
+    static void setOverlayTopEditShow(const bool &v);
+    static const char *docOverlayTopEditShow();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter OverlayTopTaskShow
+    ///
+    /// The overlay panel of the top side shows only while a task dialog is
+    /// open.
+    static const bool & getOverlayTopTaskShow();
+    static const bool & defaultOverlayTopTaskShow();
+    static void removeOverlayTopTaskShow();
+    static void setOverlayTopTaskShow(const bool &v);
+    static const char *docOverlayTopTaskShow();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter OverlayTopClosed
+    ///
+    /// The overlay panel of the top side was last hidden by the user. Counts
+    /// only while none of its automatic modes is on.
+    static const bool & getOverlayTopClosed();
+    static const bool & defaultOverlayTopClosed();
+    static void removeOverlayTopClosed();
+    static void setOverlayTopClosed(const bool &v);
+    static const char *docOverlayTopClosed();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter OverlayTopTransparent
+    ///
+    /// The overlay panel of the top side lets the 3D view show through.
+    static const bool & getOverlayTopTransparent();
+    static const bool & defaultOverlayTopTransparent();
+    static void removeOverlayTopTransparent();
+    static void setOverlayTopTransparent(const bool &v);
+    static const char *docOverlayTopTransparent();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter OverlayBottomWidgets
+    ///
+    /// The names of the dock windows laid over the bottom side of the 3D view,
+    /// separated by commas, in the order of their tabs.
+    static const std::string & getOverlayBottomWidgets();
+    static const std::string & defaultOverlayBottomWidgets();
+    static void removeOverlayBottomWidgets();
+    static void setOverlayBottomWidgets(const std::string &v);
+    static const char *docOverlayBottomWidgets();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter OverlayBottomWidth
+    ///
+    /// Width in pixels of the overlay panel of the bottom side; 0 while it has
+    /// never been sized.
+    static const long & getOverlayBottomWidth();
+    static const long & defaultOverlayBottomWidth();
+    static void removeOverlayBottomWidth();
+    static void setOverlayBottomWidth(const long &v);
+    static const char *docOverlayBottomWidth();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter OverlayBottomHeight
+    ///
+    /// Height in pixels of the overlay panel of the bottom side; 0 while it has
+    /// never been sized.
+    static const long & getOverlayBottomHeight();
+    static const long & defaultOverlayBottomHeight();
+    static void removeOverlayBottomHeight();
+    static void setOverlayBottomHeight(const long &v);
+    static const char *docOverlayBottomHeight();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter OverlayBottomOffset1
+    ///
+    /// First of the two offsets, in pixels, the overlay panel of the bottom side
+    /// is placed with.
+    static const long & getOverlayBottomOffset1();
+    static const long & defaultOverlayBottomOffset1();
+    static void removeOverlayBottomOffset1();
+    static void setOverlayBottomOffset1(const long &v);
+    static const char *docOverlayBottomOffset1();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter OverlayBottomOffset3
+    ///
+    /// Second of the two offsets, in pixels, the overlay panel of the bottom side
+    /// is placed with.
+    static const long & getOverlayBottomOffset3();
+    static const long & defaultOverlayBottomOffset3();
+    static void removeOverlayBottomOffset3();
+    static void setOverlayBottomOffset3(const long &v);
+    static const char *docOverlayBottomOffset3();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter OverlayBottomOffset2
+    ///
+    /// Pixels the size of the overlay panel of the bottom side is changed by.
+    static const long & getOverlayBottomOffset2();
+    static const long & defaultOverlayBottomOffset2();
+    static void removeOverlayBottomOffset2();
+    static void setOverlayBottomOffset2(const long &v);
+    static const char *docOverlayBottomOffset2();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter OverlayBottomSizes
+    ///
+    /// The sizes in pixels of the dock windows in the overlay panel of this
+    /// side, separated by commas, in the order of their tabs.
+    static const std::string & getOverlayBottomSizes();
+    static const std::string & defaultOverlayBottomSizes();
+    static void removeOverlayBottomSizes();
+    static void setOverlayBottomSizes(const std::string &v);
+    static const char *docOverlayBottomSizes();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter OverlayBottomAutoHide
+    ///
+    /// The overlay panel of the bottom side hides while the mouse is away from
+    /// it. Of the four modes -- this one, EditHide, EditShow, TaskShow --
+    /// the first that is on counts.
+    static const bool & getOverlayBottomAutoHide();
+    static const bool & defaultOverlayBottomAutoHide();
+    static void removeOverlayBottomAutoHide();
+    static void setOverlayBottomAutoHide(const bool &v);
+    static const char *docOverlayBottomAutoHide();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter OverlayBottomEditHide
+    ///
+    /// The overlay panel of the bottom side hides while an object is edited.
+    static const bool & getOverlayBottomEditHide();
+    static const bool & defaultOverlayBottomEditHide();
+    static void removeOverlayBottomEditHide();
+    static void setOverlayBottomEditHide(const bool &v);
+    static const char *docOverlayBottomEditHide();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter OverlayBottomEditShow
+    ///
+    /// The overlay panel of the bottom side shows only while an object is
+    /// edited.
+    static const bool & getOverlayBottomEditShow();
+    static const bool & defaultOverlayBottomEditShow();
+    static void removeOverlayBottomEditShow();
+    static void setOverlayBottomEditShow(const bool &v);
+    static const char *docOverlayBottomEditShow();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter OverlayBottomTaskShow
+    ///
+    /// The overlay panel of the bottom side shows only while a task dialog is
+    /// open.
+    static const bool & getOverlayBottomTaskShow();
+    static const bool & defaultOverlayBottomTaskShow();
+    static void removeOverlayBottomTaskShow();
+    static void setOverlayBottomTaskShow(const bool &v);
+    static const char *docOverlayBottomTaskShow();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter OverlayBottomClosed
+    ///
+    /// The overlay panel of the bottom side was last hidden by the user. Counts
+    /// only while none of its automatic modes is on.
+    static const bool & getOverlayBottomClosed();
+    static const bool & defaultOverlayBottomClosed();
+    static void removeOverlayBottomClosed();
+    static void setOverlayBottomClosed(const bool &v);
+    static const char *docOverlayBottomClosed();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter OverlayBottomTransparent
+    ///
+    /// The overlay panel of the bottom side lets the 3D view show through.
+    static const bool & getOverlayBottomTransparent();
+    static const bool & defaultOverlayBottomTransparent();
+    static void removeOverlayBottomTransparent();
+    static void setOverlayBottomTransparent(const bool &v);
+    static const char *docOverlayBottomTransparent();
+    //@}
+
 // Auto generated code (Tools/params_utils.py:179)
 }; // class MiscParams
 } // namespace Gui

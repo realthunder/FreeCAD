@@ -36,12 +36,9 @@ ParamPath = 'User parameter:BaseApp/Preferences/General'
 ClassDoc = 'Convenient class to obtain the general application settings'
 Signal = True
 
-# The SETTINGS of the group. What the program keeps there for itself is not
-# listed: the last module, the last directory and filters of the file
-# dialogs, the last answers of a few dialogs (LastModule, FileOpenSavePath,
-# FileImportFilter, FileExportFilter, OffscreenImageFormat,
-# OffscreenImageBackground, ConfirmAll, ObjectSelectionAutoDeps,
-# ObjectSelectionShowDeps, UserEditMode).
+# The settings of the group, and at the end what the program keeps there
+# for itself: the last module, the last directory and filters of the file
+# dialogs, the last answers of a few dialogs.
 Params = [
     ParamString('Language', '',
         doc = "User interface language, as its English name (English, German,\n"
@@ -171,6 +168,56 @@ Params = [
         title = 'Temporary files directory',
         doc = "Directory used for temporary files instead of the system's, when\n"
               "it exists. Takes effect at the next start."),
+    # --- what the program keeps in this group for itself. Their readers
+    # read the group as before; the values here are what they find when
+    # nothing is stored yet.
+    ParamString('LastModule', '',
+        title = 'Last workbench',
+        doc = "The workbench that was active when the program last closed,\n"
+              "which the next session starts in while the start-up workbench\n"
+              "is set to the last one used. Stored by the program; empty until\n"
+              "then, when the start workbench is used."),
+    ParamString('FileOpenSavePath', '',
+        title = 'Last folder of the file dialogs',
+        doc = "The folder the file dialogs were last in, which they open on.\n"
+              "Stored by the program; empty until then, when the home folder\n"
+              "is used."),
+    ParamString('FileImportFilter', '',
+        title = 'Last file type of the Import dialog',
+        doc = "The file type last chosen in the Import dialog, which it opens\n"
+              "with. Stored by the program."),
+    ParamString('FileExportFilter', '',
+        title = 'Last file type of the Export dialog',
+        doc = "The file type last chosen in the Export dialog, which it opens\n"
+              "with. Stored by the program."),
+    ParamString('OffscreenImageFormat', '',
+        title = 'Last format of Save picture',
+        doc = "The file format last chosen in the Save picture dialog. Stored\n"
+              "by the program."),
+    ParamInt('OffscreenImageBackground', 0,
+        title = 'Last background of Save picture',
+        doc = "The background last chosen in the options of the Save picture\n"
+              "dialog, as the number of its entry. Stored by the program."),
+    ParamBool('ConfirmAll', False,
+        title = "Last 'Apply answer to all' of the save question",
+        doc = "The state the box 'Apply answer to all' was last left in, in the\n"
+              "question about unsaved documents at closing. Stored by the\n"
+              "program."),
+    ParamBool('ObjectSelectionAutoDeps', True,
+        title = 'Object selection: auto select dependencies',
+        doc = "The state the box that selects the dependencies of an object with\n"
+              "it was last left in, in the object selection dialog. Stored by\n"
+              "the program."),
+    ParamBool('ObjectSelectionShowDeps', False,
+        title = 'Object selection: show dependencies',
+        doc = "Whether the object selection dialog last showed its dependency\n"
+              "lists. Stored by the program."),
+    ParamInt('UserEditMode', 0,
+        title = 'Edit mode',
+        doc = "What a double click on an object in the tree does, as the number\n"
+              "of the entry of Edit > Edit mode: 0 the object's default, 1\n"
+              "transform, 2 cutting, 3 colour. Stored when the menu is used and\n"
+              "read at start."),
 ]
 
 def declare():

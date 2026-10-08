@@ -37,6 +37,7 @@
 #include <Base/Tools.h>
 
 #include "PropertyView.h"
+#include "MiscParams.h"
 #include "Application.h"
 #include "Document.h"
 #include "MainWindow.h"
@@ -82,6 +83,7 @@ PropertyView::PropertyView(QWidget *parent)
                      || boost::equals(Name, "ViewSectionSize")
                      || boost::equals(Name, "DataSectionSize")
                      || boost::equals(Name, "AutoTransactionView")
+                     || boost::equals(Name, "AutoTransactionData")
                      || boost::equals(Name, "AutoExpandView")
                      || boost::equals(Name, "AutoExpandData")))
             {
@@ -117,7 +119,7 @@ PropertyView::PropertyView(QWidget *parent)
     connect(propertyEditorData->header(), SIGNAL(sectionResized(int,int,int)),
             this, SLOT(sectionResized(int,int,int)));
 
-    int preferredTab = _GetParam()->GetInt("LastTabIndex", 1);
+    int preferredTab = MiscParams::getPropertyViewLastTabIndex();
 
     if ( preferredTab > 0 && preferredTab < tabs->count() )
         tabs->setCurrentIndex(preferredTab);
@@ -217,12 +219,12 @@ void PropertyView::setShowAll(bool enable) {
 }
 
 void PropertyView::toggleHeader(bool visible) {
-    _GetParam()->SetBool("HideHeader",visible);
+    MiscParams::setPropertyViewHideHeader(visible);
 }
 
 bool PropertyView::isHeaderHidden()
 {
-    return _GetParam()->GetBool("HideHeader",false);
+    return MiscParams::getPropertyViewHideHeader();
 }
 
 void PropertyView::sectionResized(int index, int oldSize, int newSize)
@@ -232,8 +234,10 @@ void PropertyView::sectionResized(int index, int oldSize, int newSize)
         return;
 
     Base::ConnectionBlocker blocker(connectParamChange);
-    _GetParam()->SetInt(sender() == propertyEditorView->header() ?
-            "ViewSectionSize" : "DataSectionSize", newSize);
+    if (sender() == propertyEditorView->header())
+        MiscParams::setPropertyViewViewSectionSize(newSize);
+    else
+        MiscParams::setPropertyViewDataSectionSize(newSize);
 }
 
 void PropertyView::hideEvent(QHideEvent *ev) {
@@ -397,17 +401,17 @@ void PropertyView::applyParams()
         return;
     paramChanged = false;
 
-    propertyEditorView->setAutomaticDocumentUpdate(_GetParam()->GetBool("AutoTransactionView", false));
-    propertyEditorView->setAutomaticExpand(_GetParam()->GetBool("AutoExpandView", false));
+    propertyEditorView->setAutomaticDocumentUpdate(MiscParams::getPropertyViewAutoTransactionView());
+    propertyEditorView->setAutomaticExpand(MiscParams::getPropertyViewAutoExpandView());
     QSignalBlocker blocker(propertyEditorView->header());
-    propertyEditorView->header()->resizeSection(0, _GetParam()->GetInt("ViewSectionSize", 150));
+    propertyEditorView->header()->resizeSection(0, MiscParams::getPropertyViewViewSectionSize());
 
-    propertyEditorData->setAutomaticDocumentUpdate(_GetParam()->GetBool("AutoTransactionData", true));
-    propertyEditorData->setAutomaticExpand(_GetParam()->GetBool("AutoExpandData", false));
+    propertyEditorData->setAutomaticDocumentUpdate(MiscParams::getPropertyViewAutoTransactionData());
+    propertyEditorData->setAutomaticExpand(MiscParams::getPropertyViewAutoExpandData());
     QSignalBlocker blocker2(propertyEditorData->header());
-    propertyEditorData->header()->resizeSection(0, _GetParam()->GetInt("DataSectionSize", 150));
+    propertyEditorData->header()->resizeSection(0, MiscParams::getPropertyViewDataSectionSize());
 
-    bool hideHeader = _GetParam()->GetBool("HideHeader", false);
+    bool hideHeader = MiscParams::getPropertyViewHideHeader();
     propertyEditorView->hideHeader(hideHeader);
     propertyEditorData->hideHeader(hideHeader);
 }
@@ -655,7 +659,7 @@ void PropertyView::onTimer()
 void PropertyView::tabChanged(int index)
 {
     Base::ConnectionBlocker blocker(connectParamChange);
-    _GetParam()->SetInt("LastTabIndex",index);
+    MiscParams::setPropertyViewLastTabIndex(index);
 }
 
 void PropertyView::changeEvent(QEvent *e)

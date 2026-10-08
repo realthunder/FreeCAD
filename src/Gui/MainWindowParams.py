@@ -36,10 +36,9 @@ ParamPath = 'User parameter:BaseApp/Preferences/MainWindow'
 ClassDoc = 'Convenient class to obtain the main window and theme settings'
 Signal = True
 
-# The SETTINGS of the group. Its state is not listed: the window's geometry
-# and layout (Geometry, MainWindowState, Maximized, StatusBar,
-# WindowStateRestored) and the theme book-keeping (Theme, ThemeAutoApplied,
-# ThemeIconSet).
+# The settings of the group, and at the end its state: the window's
+# geometry and layout and the theme book-keeping. ThemeIconSet, which
+# nothing in the sources reads by that name, is not listed.
 #
 # Most of these are applied by handlers that the parameter manager tells of a
 # change (DlgSettingsTheme::attachObserver, MainWindow, ToolBarManager,
@@ -134,6 +133,45 @@ Params = [
         doc = "Key sequence the entries of the dockable window menu get as a\n"
               "shortcut, each followed by its number. Empty turns these shortcuts\n"
               "off. Read each time the menu opens."),
+    ParamBool('ClearMenuBar', False,
+        title = 'Clear the menu bar before it is rebuilt',
+        doc = "Empties the menu bar each time a workbench sets its menus up: a\n"
+              "way round a fault of the global menu of some Linux desktops.\n"
+              "It can break access to the menu bar from Python. On no page."),
+    # --- what the program keeps in this group for itself: the window and
+    # the theme book-keeping. Their readers read the group as before.
+    ParamString('Geometry', '',
+        title = 'Main window: place and size',
+        doc = "Where the main window last was and how large, as 'x y width\n"
+              "height'. Stored by the program when the window closes."),
+    ParamBool('Maximized', False,
+        title = 'Main window: maximized',
+        doc = "The main window was last maximized. Stored by the program when\n"
+              "the window closes."),
+    ParamString('MainWindowState', '',
+        title = 'Main window: layout',
+        doc = "Where the tool bars and the dock windows last were, as Qt packs\n"
+              "it. Stored by the program when the window closes; a preference\n"
+              "pack that holds a layout stores it too, and the layout follows a\n"
+              "change. Not for editing by hand."),
+    ParamBool('StatusBar', True,
+        title = 'Main window: status bar',
+        doc = "The status bar was last shown. Stored by the program when the\n"
+              "window closes."),
+    ParamBool('WindowStateRestored', False,
+        title = 'Main window: layout restored (signal)',
+        doc = "Flipped by the program each time it has put the layout of the\n"
+              "main window back, so that code watching the group hears of it.\n"
+              "Its value means nothing."),
+    ParamString('Theme', '',
+        title = 'Theme in force',
+        doc = "Name of the theme last applied, kept by the theme manager so that\n"
+              "it knows what the interface carries. Choose a theme on the Theme\n"
+              "page, not here."),
+    ParamString('ThemeAutoApplied', '',
+        title = "Theme: what 'follow the desktop' chose",
+        doc = "Dark or Light, as following the desktop last came out; empty\n"
+              "while a theme is chosen by hand. Kept by the theme manager."),
 ]
 
 def declare():

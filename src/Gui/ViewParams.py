@@ -197,6 +197,11 @@ Params = [
     ParamHex('AnnotationTextColor', 0xffffffff,
         title = 'Annotation Text Color',
         doc = "Default text colour of new annotation objects."),
+    ParamHex('CursorCrosshairColor', 0xffffffff, proxy=ParamColor(transparency=False),
+        title = 'Crosshair cursor colour',
+        doc = "Colour of the crosshair the drawing tools of the Sketcher put in\n"
+              "place of the mouse pointer. The Sketcher's Appearance page shows\n"
+              "it. Takes effect at the next tool started."),
     ParamHex('HighlightColor', 0xe1e114ff, proxy=ParamColor(transparency=False),
         doc='Pre-selection highlight color', no_label=True),
     ParamHex('SelectionColor', 0x1cad1cff, proxy=ParamColor(transparency=False),
@@ -798,10 +803,9 @@ Params = [
     # one observer per view, which is told by the parameter group itself:
     # it keeps reading the group and takes its DEFAULTS from here.
     #
-    # Not listed, because the program keeps them for itself: SavePicture,
-    # DimensionsVisible, Dimensions3dVisible, DimensionsDeltaVisible, the
-    # HeadlightRotation quaternion of the Light sources page, the icon
-    # browser's two fields. Not listed, because nothing reads them:
+    # What the program keeps here for itself is at the end of the list;
+    # the icon browser's two fields are not listed. Not listed, because
+    # nothing reads them:
     # UseAutoRotation, ColorRecompute. Not listed, because their default
     # is not a constant: GestureMoveThreshold and GestureTapHoldTimeout
     # (the system's), the three colours of the default appearance (the
@@ -1015,6 +1019,45 @@ Params = [
     ParamInt('DefaultShapeShininess', 37, title='Default shape shininess',
         doc="Shininess of the appearance given to new objects, in percent.\n"
             "Read each time a default appearance is made."),
+    # --- what the program keeps in this group for itself. Their readers
+    # read the group as before.
+    ParamBool('DimensionsVisible', True,
+        title = 'Measurements shown',
+        doc = "The measurements made with the measure tools are shown in the 3D\n"
+              "views. Stored by the command that toggles them; the views follow\n"
+              "at once."),
+    ParamBool('Dimensions3dVisible', True,
+        title = '3D measurements shown',
+        doc = "The direct, 3D, lines of the measurements are shown. Stored by\n"
+              "the command that toggles them; the views follow at once."),
+    ParamBool('DimensionsDeltaVisible', True,
+        title = 'Delta measurements shown',
+        doc = "The lines of the measurements along the three axes are shown.\n"
+              "Stored by the command that toggles them; the views follow at\n"
+              "once."),
+    ParamString('SavePicture', '',
+        title = 'Save picture: last method',
+        doc = "How the Save picture dialog last made its picture:\n"
+              "FramebufferObject, CoinOffscreenRenderer, GrabFramebuffer, or\n"
+              "empty for the dialog's own way. Stored when a method is chosen in\n"
+              "the dialog's options, and used for every picture saved."),
+    ParamFloat('HeadlightRotationX', 0.0,
+        title = 'Headlight dragger: rotation x',
+        doc = "First component of the rotation the dragger of the Light\n"
+              "sources page was left with. The view itself uses the headlight\n"
+              "direction, which the page stores with it."),
+    ParamFloat('HeadlightRotationY', 0.0,
+        title = 'Headlight dragger: rotation y',
+        doc = "Second component of the rotation of the dragger of the Light\n"
+              "sources page."),
+    ParamFloat('HeadlightRotationZ', 0.0,
+        title = 'Headlight dragger: rotation z',
+        doc = "Third component of the rotation of the dragger of the Light\n"
+              "sources page."),
+    ParamFloat('HeadlightRotationW', 1.0,
+        title = 'Headlight dragger: rotation w',
+        doc = "Fourth component of the rotation of the dragger of the Light\n"
+              "sources page."),
 ]
 
 def declare_begin():

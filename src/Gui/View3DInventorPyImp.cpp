@@ -43,6 +43,7 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include "Camera.h"
+#include "MiscParams.h"
 #include "Renderer/CyclesRenderer.h"
 #include "Renderer/Renderer.h"
 #include "Renderer/SceneServer.h"
@@ -372,11 +373,10 @@ PyObject* View3DInventorPy::viewDefaultOrientation(PyObject *args)
             rot = Camera::rotation(Camera::Trimetric);
         }
         else if (newDocView == "Custom") {
-            ParameterGrp::handle hGrp = App::GetApplication().GetParameterGroupByPath("User parameter:BaseApp/Preferences/View/Custom");
-            float q0 = static_cast<float>(hGrp->GetFloat("Q0", 0));
-            float q1 = static_cast<float>(hGrp->GetFloat("Q1", 0));
-            float q2 = static_cast<float>(hGrp->GetFloat("Q2", 0));
-            float q3 = static_cast<float>(hGrp->GetFloat("Q3", 1));
+            float q0 = static_cast<float>(MiscParams::getCustomViewQ0());
+            float q1 = static_cast<float>(MiscParams::getCustomViewQ1());
+            float q2 = static_cast<float>(MiscParams::getCustomViewQ2());
+            float q3 = static_cast<float>(MiscParams::getCustomViewQ3());
             rot.setValue(q0, q1, q2, q3);
         }
 

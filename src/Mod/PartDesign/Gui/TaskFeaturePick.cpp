@@ -37,6 +37,7 @@
 #include <Gui/Application.h>
 #include <Gui/BitmapFactory.h>
 #include <Gui/Control.h>
+#include <Gui/MiscParams.h>
 #include <Gui/ViewParams.h>
 #include <Gui/ViewProviderCoordinateSystem.h>
 #include <Mod/PartDesign/App/Body.h>
@@ -456,9 +457,7 @@ App::DocumentObject* TaskFeaturePick::makeCopy(App::DocumentObject* obj, std::st
 
 bool TaskFeaturePick::isSingleSelectionEnabled() const
 {
-    ParameterGrp::handle hGrp = App::GetApplication().GetUserParameter().GetGroup("BaseApp")->
-                                                      GetGroup("Preferences")->GetGroup("Selection");
-    return hGrp->GetBool("singleClickFeatureSelect", true);
+    return Gui::MiscParams::getSingleClickFeatureSelect();
 }
 
 void TaskFeaturePick::onSelectionChanged(const Gui::SelectionChanges& msg)

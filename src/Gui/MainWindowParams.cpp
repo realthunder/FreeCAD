@@ -63,6 +63,14 @@ public:
         signalParamChanged("GlobalToolBarArea");
         signalParamChanged("WSPosition");
         signalParamChanged("DockableWindowShortcut");
+        signalParamChanged("ClearMenuBar");
+        signalParamChanged("Geometry");
+        signalParamChanged("Maximized");
+        signalParamChanged("MainWindowState");
+        signalParamChanged("StatusBar");
+        signalParamChanged("WindowStateRestored");
+        signalParamChanged("Theme");
+        signalParamChanged("ThemeAutoApplied");
 
     // Auto generated code (Tools/params_utils.py:241)
     }
@@ -84,6 +92,14 @@ public:
     std::string GlobalToolBarArea;
     std::string WSPosition;
     std::string DockableWindowShortcut;
+    bool ClearMenuBar;
+    std::string Geometry;
+    bool Maximized;
+    std::string MainWindowState;
+    bool StatusBar;
+    bool WindowStateRestored;
+    std::string Theme;
+    std::string ThemeAutoApplied;
 
     // Auto generated code (Tools/params_utils.py:254)
     MainWindowParamsP() {
@@ -126,6 +142,22 @@ public:
         funcs["WSPosition"] = &MainWindowParamsP::updateWSPosition;
         DockableWindowShortcut = this->handle->GetASCII("DockableWindowShortcut", "D, D");
         funcs["DockableWindowShortcut"] = &MainWindowParamsP::updateDockableWindowShortcut;
+        ClearMenuBar = this->handle->GetBool("ClearMenuBar", false);
+        funcs["ClearMenuBar"] = &MainWindowParamsP::updateClearMenuBar;
+        Geometry = this->handle->GetASCII("Geometry", "");
+        funcs["Geometry"] = &MainWindowParamsP::updateGeometry;
+        Maximized = this->handle->GetBool("Maximized", false);
+        funcs["Maximized"] = &MainWindowParamsP::updateMaximized;
+        MainWindowState = this->handle->GetASCII("MainWindowState", "");
+        funcs["MainWindowState"] = &MainWindowParamsP::updateMainWindowState;
+        StatusBar = this->handle->GetBool("StatusBar", true);
+        funcs["StatusBar"] = &MainWindowParamsP::updateStatusBar;
+        WindowStateRestored = this->handle->GetBool("WindowStateRestored", false);
+        funcs["WindowStateRestored"] = &MainWindowParamsP::updateWindowStateRestored;
+        Theme = this->handle->GetASCII("Theme", "");
+        funcs["Theme"] = &MainWindowParamsP::updateTheme;
+        ThemeAutoApplied = this->handle->GetASCII("ThemeAutoApplied", "");
+        funcs["ThemeAutoApplied"] = &MainWindowParamsP::updateThemeAutoApplied;
     }
 
     // Auto generated code (Tools/params_utils.py:284)
@@ -214,6 +246,38 @@ public:
     // Auto generated code (Tools/params_utils.py:314)
     static void updateDockableWindowShortcut(MainWindowParamsP *self) {
         self->DockableWindowShortcut = self->handle->GetASCII("DockableWindowShortcut", "D, D");
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateClearMenuBar(MainWindowParamsP *self) {
+        self->ClearMenuBar = self->handle->GetBool("ClearMenuBar", false);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateGeometry(MainWindowParamsP *self) {
+        self->Geometry = self->handle->GetASCII("Geometry", "");
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateMaximized(MainWindowParamsP *self) {
+        self->Maximized = self->handle->GetBool("Maximized", false);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateMainWindowState(MainWindowParamsP *self) {
+        self->MainWindowState = self->handle->GetASCII("MainWindowState", "");
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateStatusBar(MainWindowParamsP *self) {
+        self->StatusBar = self->handle->GetBool("StatusBar", true);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateWindowStateRestored(MainWindowParamsP *self) {
+        self->WindowStateRestored = self->handle->GetBool("WindowStateRestored", false);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateTheme(MainWindowParamsP *self) {
+        self->Theme = self->handle->GetASCII("Theme", "");
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateThemeAutoApplied(MainWindowParamsP *self) {
+        self->ThemeAutoApplied = self->handle->GetASCII("ThemeAutoApplied", "");
     }
 };
 
@@ -314,6 +378,43 @@ static const App::ParamRegistry::Registrar _MainWindowParamsRegistrar({
         .setDoc("Key sequence the entries of the dockable window menu get as a\n"
 "shortcut, each followed by its number. Empty turns these shortcuts\n"
 "off. Read each time the menu opens."),
+    App::ParamInfo("Gui", "MainWindowParams", "User parameter:BaseApp/Preferences/MainWindow", "ClearMenuBar", "ClearMenuBar", App::ParamInfo::Bool, false)
+        .setTitle("Clear the menu bar before it is rebuilt")
+        .setDoc("Empties the menu bar each time a workbench sets its menus up: a\n"
+"way round a fault of the global menu of some Linux desktops.\n"
+"It can break access to the menu bar from Python. On no page."),
+    App::ParamInfo("Gui", "MainWindowParams", "User parameter:BaseApp/Preferences/MainWindow", "Geometry", "Geometry", App::ParamInfo::String, "")
+        .setTitle("Main window: place and size")
+        .setDoc("Where the main window last was and how large, as 'x y width\n"
+"height'. Stored by the program when the window closes."),
+    App::ParamInfo("Gui", "MainWindowParams", "User parameter:BaseApp/Preferences/MainWindow", "Maximized", "Maximized", App::ParamInfo::Bool, false)
+        .setTitle("Main window: maximized")
+        .setDoc("The main window was last maximized. Stored by the program when\n"
+"the window closes."),
+    App::ParamInfo("Gui", "MainWindowParams", "User parameter:BaseApp/Preferences/MainWindow", "MainWindowState", "MainWindowState", App::ParamInfo::String, "")
+        .setTitle("Main window: layout")
+        .setDoc("Where the tool bars and the dock windows last were, as Qt packs\n"
+"it. Stored by the program when the window closes; a preference\n"
+"pack that holds a layout stores it too, and the layout follows a\n"
+"change. Not for editing by hand."),
+    App::ParamInfo("Gui", "MainWindowParams", "User parameter:BaseApp/Preferences/MainWindow", "StatusBar", "StatusBar", App::ParamInfo::Bool, true)
+        .setTitle("Main window: status bar")
+        .setDoc("The status bar was last shown. Stored by the program when the\n"
+"window closes."),
+    App::ParamInfo("Gui", "MainWindowParams", "User parameter:BaseApp/Preferences/MainWindow", "WindowStateRestored", "WindowStateRestored", App::ParamInfo::Bool, false)
+        .setTitle("Main window: layout restored (signal)")
+        .setDoc("Flipped by the program each time it has put the layout of the\n"
+"main window back, so that code watching the group hears of it.\n"
+"Its value means nothing."),
+    App::ParamInfo("Gui", "MainWindowParams", "User parameter:BaseApp/Preferences/MainWindow", "Theme", "Theme", App::ParamInfo::String, "")
+        .setTitle("Theme in force")
+        .setDoc("Name of the theme last applied, kept by the theme manager so that\n"
+"it knows what the interface carries. Choose a theme on the Theme\n"
+"page, not here."),
+    App::ParamInfo("Gui", "MainWindowParams", "User parameter:BaseApp/Preferences/MainWindow", "ThemeAutoApplied", "ThemeAutoApplied", App::ParamInfo::String, "")
+        .setTitle("Theme: what 'follow the desktop' chose")
+        .setDoc("Dark or Light, as following the desktop last came out; empty\n"
+"while a theme is chosen by hand. Kept by the theme manager."),
 });
 
 // Auto generated code (Tools/params_utils.py:368)
@@ -867,5 +968,242 @@ void MainWindowParams::setDockableWindowShortcut(const std::string &v) {
 // Auto generated code (Tools/params_utils.py:431)
 void MainWindowParams::removeDockableWindowShortcut() {
     instance()->handle->RemoveASCII("DockableWindowShortcut");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *MainWindowParams::docClearMenuBar() {
+    return QT_TRANSLATE_NOOP("MainWindowParams",
+"Empties the menu bar each time a workbench sets its menus up: a\n"
+"way round a fault of the global menu of some Linux desktops.\n"
+"It can break access to the menu bar from Python. On no page.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const bool & MainWindowParams::getClearMenuBar() {
+    return instance()->ClearMenuBar;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const bool & MainWindowParams::defaultClearMenuBar() {
+    const static bool def = false;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void MainWindowParams::setClearMenuBar(const bool &v) {
+    instance()->handle->SetBool("ClearMenuBar",v);
+    instance()->ClearMenuBar = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void MainWindowParams::removeClearMenuBar() {
+    instance()->handle->RemoveBool("ClearMenuBar");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *MainWindowParams::docGeometry() {
+    return QT_TRANSLATE_NOOP("MainWindowParams",
+"Where the main window last was and how large, as 'x y width\n"
+"height'. Stored by the program when the window closes.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const std::string & MainWindowParams::getGeometry() {
+    return instance()->Geometry;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const std::string & MainWindowParams::defaultGeometry() {
+    const static std::string def = "";
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void MainWindowParams::setGeometry(const std::string &v) {
+    instance()->handle->SetASCII("Geometry",v);
+    instance()->Geometry = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void MainWindowParams::removeGeometry() {
+    instance()->handle->RemoveASCII("Geometry");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *MainWindowParams::docMaximized() {
+    return QT_TRANSLATE_NOOP("MainWindowParams",
+"The main window was last maximized. Stored by the program when\n"
+"the window closes.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const bool & MainWindowParams::getMaximized() {
+    return instance()->Maximized;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const bool & MainWindowParams::defaultMaximized() {
+    const static bool def = false;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void MainWindowParams::setMaximized(const bool &v) {
+    instance()->handle->SetBool("Maximized",v);
+    instance()->Maximized = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void MainWindowParams::removeMaximized() {
+    instance()->handle->RemoveBool("Maximized");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *MainWindowParams::docMainWindowState() {
+    return QT_TRANSLATE_NOOP("MainWindowParams",
+"Where the tool bars and the dock windows last were, as Qt packs\n"
+"it. Stored by the program when the window closes; a preference\n"
+"pack that holds a layout stores it too, and the layout follows a\n"
+"change. Not for editing by hand.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const std::string & MainWindowParams::getMainWindowState() {
+    return instance()->MainWindowState;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const std::string & MainWindowParams::defaultMainWindowState() {
+    const static std::string def = "";
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void MainWindowParams::setMainWindowState(const std::string &v) {
+    instance()->handle->SetASCII("MainWindowState",v);
+    instance()->MainWindowState = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void MainWindowParams::removeMainWindowState() {
+    instance()->handle->RemoveASCII("MainWindowState");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *MainWindowParams::docStatusBar() {
+    return QT_TRANSLATE_NOOP("MainWindowParams",
+"The status bar was last shown. Stored by the program when the\n"
+"window closes.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const bool & MainWindowParams::getStatusBar() {
+    return instance()->StatusBar;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const bool & MainWindowParams::defaultStatusBar() {
+    const static bool def = true;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void MainWindowParams::setStatusBar(const bool &v) {
+    instance()->handle->SetBool("StatusBar",v);
+    instance()->StatusBar = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void MainWindowParams::removeStatusBar() {
+    instance()->handle->RemoveBool("StatusBar");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *MainWindowParams::docWindowStateRestored() {
+    return QT_TRANSLATE_NOOP("MainWindowParams",
+"Flipped by the program each time it has put the layout of the\n"
+"main window back, so that code watching the group hears of it.\n"
+"Its value means nothing.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const bool & MainWindowParams::getWindowStateRestored() {
+    return instance()->WindowStateRestored;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const bool & MainWindowParams::defaultWindowStateRestored() {
+    const static bool def = false;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void MainWindowParams::setWindowStateRestored(const bool &v) {
+    instance()->handle->SetBool("WindowStateRestored",v);
+    instance()->WindowStateRestored = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void MainWindowParams::removeWindowStateRestored() {
+    instance()->handle->RemoveBool("WindowStateRestored");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *MainWindowParams::docTheme() {
+    return QT_TRANSLATE_NOOP("MainWindowParams",
+"Name of the theme last applied, kept by the theme manager so that\n"
+"it knows what the interface carries. Choose a theme on the Theme\n"
+"page, not here.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const std::string & MainWindowParams::getTheme() {
+    return instance()->Theme;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const std::string & MainWindowParams::defaultTheme() {
+    const static std::string def = "";
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void MainWindowParams::setTheme(const std::string &v) {
+    instance()->handle->SetASCII("Theme",v);
+    instance()->Theme = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void MainWindowParams::removeTheme() {
+    instance()->handle->RemoveASCII("Theme");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *MainWindowParams::docThemeAutoApplied() {
+    return QT_TRANSLATE_NOOP("MainWindowParams",
+"Dark or Light, as following the desktop last came out; empty\n"
+"while a theme is chosen by hand. Kept by the theme manager.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const std::string & MainWindowParams::getThemeAutoApplied() {
+    return instance()->ThemeAutoApplied;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const std::string & MainWindowParams::defaultThemeAutoApplied() {
+    const static std::string def = "";
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void MainWindowParams::setThemeAutoApplied(const std::string &v) {
+    instance()->handle->SetASCII("ThemeAutoApplied",v);
+    instance()->ThemeAutoApplied = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void MainWindowParams::removeThemeAutoApplied() {
+    instance()->handle->RemoveASCII("ThemeAutoApplied");
 }
 //[[[end]]]

@@ -42,6 +42,7 @@
 #include <Gui/ViewParams.h>
 
 #include "DlgSettingsNavigation.h"
+#include <Gui/MiscParams.h>
 #include "ui_DlgSettingsNavigation.h"
 #include "../ui_MouseButtons.h"
 
@@ -110,11 +111,10 @@ void DlgSettingsNavigation::saveSettings()
         Qt::UserRole);
     hGrp->SetASCII("NewDocumentCameraOrientation", (const char*)camera.toByteArray());
     if (camera == QByteArray("Custom")) {
-        ParameterGrp::handle hCustom = hGrp->GetGroup("Custom");
-        hCustom->SetFloat("Q0", q0);
-        hCustom->SetFloat("Q1", q1);
-        hCustom->SetFloat("Q2", q2);
-        hCustom->SetFloat("Q3", q3);
+        MiscParams::setCustomViewQ0(q0);
+        MiscParams::setCustomViewQ1(q1);
+        MiscParams::setCustomViewQ2(q2);
+        MiscParams::setCustomViewQ3(q3);
     }
 }
 
@@ -168,11 +168,10 @@ void DlgSettingsNavigation::loadSettings()
     index = ui->comboNewDocView->findData(QByteArray(camera.c_str()));
     if (index > -1) ui->comboNewDocView->setCurrentIndex(index);
     if (camera == "Custom") {
-        ParameterGrp::handle hCustom = hGrp->GetGroup("Custom");
-        q0 = hCustom->GetFloat("Q0", q0);
-        q1 = hCustom->GetFloat("Q1", q1);
-        q2 = hCustom->GetFloat("Q2", q2);
-        q3 = hCustom->GetFloat("Q3", q3);
+        q0 = MiscParams::getCustomViewQ0();
+        q1 = MiscParams::getCustomViewQ1();
+        q2 = MiscParams::getCustomViewQ2();
+        q3 = MiscParams::getCustomViewQ3();
     }
 
     connect(ui->comboNewDocView, qOverload<int>(&QComboBox::currentIndexChanged),

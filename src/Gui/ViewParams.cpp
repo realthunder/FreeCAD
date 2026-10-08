@@ -70,6 +70,7 @@ public:
     bool RandomColor;
     unsigned long BoundingBoxColor;
     unsigned long AnnotationTextColor;
+    unsigned long CursorCrosshairColor;
     unsigned long HighlightColor;
     unsigned long SelectionColor;
     long MarkerSize;
@@ -310,6 +311,14 @@ public:
     double DatumPointSize;
     double LocalCoordinateSystemSize;
     long DefaultShapeShininess;
+    bool DimensionsVisible;
+    bool Dimensions3dVisible;
+    bool DimensionsDeltaVisible;
+    std::string SavePicture;
+    double HeadlightRotationX;
+    double HeadlightRotationY;
+    double HeadlightRotationZ;
+    double HeadlightRotationW;
 
     // Auto generated code (Tools/params_utils.py:254)
     ViewParamsP() {
@@ -336,6 +345,8 @@ public:
         funcs["BoundingBoxColor"] = &ViewParamsP::updateBoundingBoxColor;
         AnnotationTextColor = this->handle->GetUnsigned("AnnotationTextColor", 0xFFFFFFFF);
         funcs["AnnotationTextColor"] = &ViewParamsP::updateAnnotationTextColor;
+        CursorCrosshairColor = this->handle->GetUnsigned("CursorCrosshairColor", 0xFFFFFFFF);
+        funcs["CursorCrosshairColor"] = &ViewParamsP::updateCursorCrosshairColor;
         HighlightColor = this->handle->GetUnsigned("HighlightColor", 0xE1E114FF);
         funcs["HighlightColor"] = &ViewParamsP::updateHighlightColor;
         SelectionColor = this->handle->GetUnsigned("SelectionColor", 0x1CAD1CFF);
@@ -816,6 +827,22 @@ public:
         funcs["LocalCoordinateSystemSize"] = &ViewParamsP::updateLocalCoordinateSystemSize;
         DefaultShapeShininess = this->handle->GetInt("DefaultShapeShininess", 37);
         funcs["DefaultShapeShininess"] = &ViewParamsP::updateDefaultShapeShininess;
+        DimensionsVisible = this->handle->GetBool("DimensionsVisible", true);
+        funcs["DimensionsVisible"] = &ViewParamsP::updateDimensionsVisible;
+        Dimensions3dVisible = this->handle->GetBool("Dimensions3dVisible", true);
+        funcs["Dimensions3dVisible"] = &ViewParamsP::updateDimensions3dVisible;
+        DimensionsDeltaVisible = this->handle->GetBool("DimensionsDeltaVisible", true);
+        funcs["DimensionsDeltaVisible"] = &ViewParamsP::updateDimensionsDeltaVisible;
+        SavePicture = this->handle->GetASCII("SavePicture", "");
+        funcs["SavePicture"] = &ViewParamsP::updateSavePicture;
+        HeadlightRotationX = this->handle->GetFloat("HeadlightRotationX", 0.0);
+        funcs["HeadlightRotationX"] = &ViewParamsP::updateHeadlightRotationX;
+        HeadlightRotationY = this->handle->GetFloat("HeadlightRotationY", 0.0);
+        funcs["HeadlightRotationY"] = &ViewParamsP::updateHeadlightRotationY;
+        HeadlightRotationZ = this->handle->GetFloat("HeadlightRotationZ", 0.0);
+        funcs["HeadlightRotationZ"] = &ViewParamsP::updateHeadlightRotationZ;
+        HeadlightRotationW = this->handle->GetFloat("HeadlightRotationW", 1.0);
+        funcs["HeadlightRotationW"] = &ViewParamsP::updateHeadlightRotationW;
     }
 
     // Auto generated code (Tools/params_utils.py:284)
@@ -880,6 +907,10 @@ public:
     // Auto generated code (Tools/params_utils.py:314)
     static void updateAnnotationTextColor(ViewParamsP *self) {
         self->AnnotationTextColor = self->handle->GetUnsigned("AnnotationTextColor", 0xFFFFFFFF);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateCursorCrosshairColor(ViewParamsP *self) {
+        self->CursorCrosshairColor = self->handle->GetUnsigned("CursorCrosshairColor", 0xFFFFFFFF);
     }
     // Auto generated code (Tools/params_utils.py:314)
     static void updateHighlightColor(ViewParamsP *self) {
@@ -1869,6 +1900,38 @@ public:
     static void updateDefaultShapeShininess(ViewParamsP *self) {
         self->DefaultShapeShininess = self->handle->GetInt("DefaultShapeShininess", 37);
     }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateDimensionsVisible(ViewParamsP *self) {
+        self->DimensionsVisible = self->handle->GetBool("DimensionsVisible", true);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateDimensions3dVisible(ViewParamsP *self) {
+        self->Dimensions3dVisible = self->handle->GetBool("Dimensions3dVisible", true);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateDimensionsDeltaVisible(ViewParamsP *self) {
+        self->DimensionsDeltaVisible = self->handle->GetBool("DimensionsDeltaVisible", true);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateSavePicture(ViewParamsP *self) {
+        self->SavePicture = self->handle->GetASCII("SavePicture", "");
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateHeadlightRotationX(ViewParamsP *self) {
+        self->HeadlightRotationX = self->handle->GetFloat("HeadlightRotationX", 0.0);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateHeadlightRotationY(ViewParamsP *self) {
+        self->HeadlightRotationY = self->handle->GetFloat("HeadlightRotationY", 0.0);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateHeadlightRotationZ(ViewParamsP *self) {
+        self->HeadlightRotationZ = self->handle->GetFloat("HeadlightRotationZ", 0.0);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateHeadlightRotationW(ViewParamsP *self) {
+        self->HeadlightRotationW = self->handle->GetFloat("HeadlightRotationW", 1.0);
+    }
 };
 
 // Auto generated code (Tools/params_utils.py:336)
@@ -1930,6 +1993,13 @@ static const App::ParamRegistry::Registrar _ViewParamsRegistrar({
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "AnnotationTextColor", "AnnotationTextColor", App::ParamInfo::Hex, 0xFFFFFFFF)
         .setTitle("Annotation Text Color")
         .setDoc("Default text colour of new annotation objects."),
+    App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "CursorCrosshairColor", "CursorCrosshairColor", App::ParamInfo::Hex, 0xFFFFFFFF)
+        .setTitle("Crosshair cursor colour")
+        .setDoc("Colour of the crosshair the drawing tools of the Sketcher put in\n"
+"place of the mouse pointer. The Sketcher's Appearance page shows\n"
+"it. Takes effect at the next tool started.")
+        .setProxy("Color")
+        .setTransparency(false),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "HighlightColor", "HighlightColor", App::ParamInfo::Hex, 0xE1E114FF)
         .setTitle("Pre-selection highlight color")
         .setDoc("Pre-selection highlight color")
@@ -2970,6 +3040,43 @@ static const App::ParamRegistry::Registrar _ViewParamsRegistrar({
         .setTitle("Default shape shininess")
         .setDoc("Shininess of the appearance given to new objects, in percent.\n"
 "Read each time a default appearance is made."),
+    App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "DimensionsVisible", "DimensionsVisible", App::ParamInfo::Bool, true)
+        .setTitle("Measurements shown")
+        .setDoc("The measurements made with the measure tools are shown in the 3D\n"
+"views. Stored by the command that toggles them; the views follow\n"
+"at once."),
+    App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "Dimensions3dVisible", "Dimensions3dVisible", App::ParamInfo::Bool, true)
+        .setTitle("3D measurements shown")
+        .setDoc("The direct, 3D, lines of the measurements are shown. Stored by\n"
+"the command that toggles them; the views follow at once."),
+    App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "DimensionsDeltaVisible", "DimensionsDeltaVisible", App::ParamInfo::Bool, true)
+        .setTitle("Delta measurements shown")
+        .setDoc("The lines of the measurements along the three axes are shown.\n"
+"Stored by the command that toggles them; the views follow at\n"
+"once."),
+    App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "SavePicture", "SavePicture", App::ParamInfo::String, "")
+        .setTitle("Save picture: last method")
+        .setDoc("How the Save picture dialog last made its picture:\n"
+"FramebufferObject, CoinOffscreenRenderer, GrabFramebuffer, or\n"
+"empty for the dialog's own way. Stored when a method is chosen in\n"
+"the dialog's options, and used for every picture saved."),
+    App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "HeadlightRotationX", "HeadlightRotationX", App::ParamInfo::Float, 0.0)
+        .setTitle("Headlight dragger: rotation x")
+        .setDoc("First component of the rotation the dragger of the Light\n"
+"sources page was left with. The view itself uses the headlight\n"
+"direction, which the page stores with it."),
+    App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "HeadlightRotationY", "HeadlightRotationY", App::ParamInfo::Float, 0.0)
+        .setTitle("Headlight dragger: rotation y")
+        .setDoc("Second component of the rotation of the dragger of the Light\n"
+"sources page."),
+    App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "HeadlightRotationZ", "HeadlightRotationZ", App::ParamInfo::Float, 0.0)
+        .setTitle("Headlight dragger: rotation z")
+        .setDoc("Third component of the rotation of the dragger of the Light\n"
+"sources page."),
+    App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "HeadlightRotationW", "HeadlightRotationW", App::ParamInfo::Float, 1.0)
+        .setTitle("Headlight dragger: rotation w")
+        .setDoc("Fourth component of the rotation of the dragger of the Light\n"
+"sources page."),
 });
 
 // Auto generated code (Tools/params_utils.py:368)
@@ -3272,6 +3379,36 @@ void ViewParams::setAnnotationTextColor(const unsigned long &v) {
 // Auto generated code (Tools/params_utils.py:431)
 void ViewParams::removeAnnotationTextColor() {
     instance()->handle->RemoveUnsigned("AnnotationTextColor");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *ViewParams::docCursorCrosshairColor() {
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Colour of the crosshair the drawing tools of the Sketcher put in\n"
+"place of the mouse pointer. The Sketcher's Appearance page shows\n"
+"it. Takes effect at the next tool started.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const unsigned long & ViewParams::getCursorCrosshairColor() {
+    return instance()->CursorCrosshairColor;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const unsigned long & ViewParams::defaultCursorCrosshairColor() {
+    const static unsigned long def = 0xFFFFFFFF;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void ViewParams::setCursorCrosshairColor(const unsigned long &v) {
+    instance()->handle->SetUnsigned("CursorCrosshairColor",v);
+    instance()->CursorCrosshairColor = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void ViewParams::removeCursorCrosshairColor() {
+    instance()->handle->RemoveUnsigned("CursorCrosshairColor");
 }
 
 // Auto generated code (Tools/params_utils.py:397)
@@ -10198,7 +10335,244 @@ void ViewParams::removeDefaultShapeShininess() {
     instance()->handle->RemoveInt("DefaultShapeShininess");
 }
 
-// Auto generated code (Gui/ViewParams.py:1057)
+// Auto generated code (Tools/params_utils.py:397)
+const char *ViewParams::docDimensionsVisible() {
+    return QT_TRANSLATE_NOOP("ViewParams",
+"The measurements made with the measure tools are shown in the 3D\n"
+"views. Stored by the command that toggles them; the views follow\n"
+"at once.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const bool & ViewParams::getDimensionsVisible() {
+    return instance()->DimensionsVisible;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const bool & ViewParams::defaultDimensionsVisible() {
+    const static bool def = true;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void ViewParams::setDimensionsVisible(const bool &v) {
+    instance()->handle->SetBool("DimensionsVisible",v);
+    instance()->DimensionsVisible = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void ViewParams::removeDimensionsVisible() {
+    instance()->handle->RemoveBool("DimensionsVisible");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *ViewParams::docDimensions3dVisible() {
+    return QT_TRANSLATE_NOOP("ViewParams",
+"The direct, 3D, lines of the measurements are shown. Stored by\n"
+"the command that toggles them; the views follow at once.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const bool & ViewParams::getDimensions3dVisible() {
+    return instance()->Dimensions3dVisible;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const bool & ViewParams::defaultDimensions3dVisible() {
+    const static bool def = true;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void ViewParams::setDimensions3dVisible(const bool &v) {
+    instance()->handle->SetBool("Dimensions3dVisible",v);
+    instance()->Dimensions3dVisible = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void ViewParams::removeDimensions3dVisible() {
+    instance()->handle->RemoveBool("Dimensions3dVisible");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *ViewParams::docDimensionsDeltaVisible() {
+    return QT_TRANSLATE_NOOP("ViewParams",
+"The lines of the measurements along the three axes are shown.\n"
+"Stored by the command that toggles them; the views follow at\n"
+"once.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const bool & ViewParams::getDimensionsDeltaVisible() {
+    return instance()->DimensionsDeltaVisible;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const bool & ViewParams::defaultDimensionsDeltaVisible() {
+    const static bool def = true;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void ViewParams::setDimensionsDeltaVisible(const bool &v) {
+    instance()->handle->SetBool("DimensionsDeltaVisible",v);
+    instance()->DimensionsDeltaVisible = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void ViewParams::removeDimensionsDeltaVisible() {
+    instance()->handle->RemoveBool("DimensionsDeltaVisible");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *ViewParams::docSavePicture() {
+    return QT_TRANSLATE_NOOP("ViewParams",
+"How the Save picture dialog last made its picture:\n"
+"FramebufferObject, CoinOffscreenRenderer, GrabFramebuffer, or\n"
+"empty for the dialog's own way. Stored when a method is chosen in\n"
+"the dialog's options, and used for every picture saved.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const std::string & ViewParams::getSavePicture() {
+    return instance()->SavePicture;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const std::string & ViewParams::defaultSavePicture() {
+    const static std::string def = "";
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void ViewParams::setSavePicture(const std::string &v) {
+    instance()->handle->SetASCII("SavePicture",v);
+    instance()->SavePicture = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void ViewParams::removeSavePicture() {
+    instance()->handle->RemoveASCII("SavePicture");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *ViewParams::docHeadlightRotationX() {
+    return QT_TRANSLATE_NOOP("ViewParams",
+"First component of the rotation the dragger of the Light\n"
+"sources page was left with. The view itself uses the headlight\n"
+"direction, which the page stores with it.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const double & ViewParams::getHeadlightRotationX() {
+    return instance()->HeadlightRotationX;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const double & ViewParams::defaultHeadlightRotationX() {
+    const static double def = 0.0;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void ViewParams::setHeadlightRotationX(const double &v) {
+    instance()->handle->SetFloat("HeadlightRotationX",v);
+    instance()->HeadlightRotationX = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void ViewParams::removeHeadlightRotationX() {
+    instance()->handle->RemoveFloat("HeadlightRotationX");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *ViewParams::docHeadlightRotationY() {
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Second component of the rotation of the dragger of the Light\n"
+"sources page.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const double & ViewParams::getHeadlightRotationY() {
+    return instance()->HeadlightRotationY;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const double & ViewParams::defaultHeadlightRotationY() {
+    const static double def = 0.0;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void ViewParams::setHeadlightRotationY(const double &v) {
+    instance()->handle->SetFloat("HeadlightRotationY",v);
+    instance()->HeadlightRotationY = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void ViewParams::removeHeadlightRotationY() {
+    instance()->handle->RemoveFloat("HeadlightRotationY");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *ViewParams::docHeadlightRotationZ() {
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Third component of the rotation of the dragger of the Light\n"
+"sources page.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const double & ViewParams::getHeadlightRotationZ() {
+    return instance()->HeadlightRotationZ;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const double & ViewParams::defaultHeadlightRotationZ() {
+    const static double def = 0.0;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void ViewParams::setHeadlightRotationZ(const double &v) {
+    instance()->handle->SetFloat("HeadlightRotationZ",v);
+    instance()->HeadlightRotationZ = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void ViewParams::removeHeadlightRotationZ() {
+    instance()->handle->RemoveFloat("HeadlightRotationZ");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *ViewParams::docHeadlightRotationW() {
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Fourth component of the rotation of the dragger of the Light\n"
+"sources page.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const double & ViewParams::getHeadlightRotationW() {
+    return instance()->HeadlightRotationW;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const double & ViewParams::defaultHeadlightRotationW() {
+    const static double def = 1.0;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void ViewParams::setHeadlightRotationW(const double &v) {
+    instance()->handle->SetFloat("HeadlightRotationW",v);
+    instance()->HeadlightRotationW = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void ViewParams::removeHeadlightRotationW() {
+    instance()->handle->RemoveFloat("HeadlightRotationW");
+}
+
+// Auto generated code (Gui/ViewParams.py:1100)
 const std::vector<QString> ViewParams::AnimationCurveTypes = {
     QStringLiteral("Linear"),
     QStringLiteral("InQuad"),
@@ -10243,7 +10617,7 @@ const std::vector<QString> ViewParams::AnimationCurveTypes = {
     QStringLiteral("OutInBounce"),
 };
 
-// Auto generated code (Gui/ViewParams.py:1065)
+// Auto generated code (Gui/ViewParams.py:1108)
 static const char *DrawStyleNames[] = {
     QT_TRANSLATE_NOOP("DrawStyle", "As Is"),
     QT_TRANSLATE_NOOP("DrawStyle", "Points"),
@@ -10256,7 +10630,7 @@ static const char *DrawStyleNames[] = {
     nullptr,
 };
 
-// Auto generated code (Gui/ViewParams.py:1075)
+// Auto generated code (Gui/ViewParams.py:1118)
 static const char *DrawStyleDocs[] = {
     QT_TRANSLATE_NOOP("DrawStyle", "Display style, normal display mode"),
     QT_TRANSLATE_NOOP("DrawStyle", "Display style, show points only"),
@@ -10269,13 +10643,13 @@ static const char *DrawStyleDocs[] = {
 };
 
 namespace Gui {
-// Auto generated code (Gui/ViewParams.py:1085)
+// Auto generated code (Gui/ViewParams.py:1128)
 const char **drawStyleNames()
 {
     return DrawStyleNames;
 }
 
-// Auto generated code (Gui/ViewParams.py:1092)
+// Auto generated code (Gui/ViewParams.py:1135)
 const char *drawStyleNameFromIndex(int i)
 {
     if (i < 0 || i>= 8)
@@ -10283,7 +10657,7 @@ const char *drawStyleNameFromIndex(int i)
     return DrawStyleNames[i];
 }
 
-// Auto generated code (Gui/ViewParams.py:1101)
+// Auto generated code (Gui/ViewParams.py:1144)
 int drawStyleIndexFromName(const char *name)
 {
     if (!name)
@@ -10295,7 +10669,7 @@ int drawStyleIndexFromName(const char *name)
     return -1;
 }
 
-// Auto generated code (Gui/ViewParams.py:1114)
+// Auto generated code (Gui/ViewParams.py:1157)
 const char *drawStyleDocumentation(int i)
 {
     if (i < 0 || i>= 8)

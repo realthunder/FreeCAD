@@ -99,6 +99,8 @@ public:
         signalParamChanged("MaxUndoSize");
         signalParamChanged("ChangeViewProviderTouchDocument");
         signalParamChanged("JsonIndent");
+        signalParamChanged("PreferCompactFormat");
+        signalParamChanged("WarnCompactFormat");
 
     // Auto generated code (Tools/params_utils.py:241)
     }
@@ -155,6 +157,8 @@ public:
     long MaxUndoSize;
     bool ChangeViewProviderTouchDocument;
     long JsonIndent;
+    bool PreferCompactFormat;
+    bool WarnCompactFormat;
 
     // Auto generated code (Tools/params_utils.py:254)
     DocumentParamsP() {
@@ -267,6 +271,10 @@ public:
         funcs["ChangeViewProviderTouchDocument"] = &DocumentParamsP::updateChangeViewProviderTouchDocument;
         JsonIndent = this->handle->GetInt("JsonIndent", 2);
         funcs["JsonIndent"] = &DocumentParamsP::updateJsonIndent;
+        PreferCompactFormat = this->handle->GetBool("PreferCompactFormat", true);
+        funcs["PreferCompactFormat"] = &DocumentParamsP::updatePreferCompactFormat;
+        WarnCompactFormat = this->handle->GetBool("WarnCompactFormat", true);
+        funcs["WarnCompactFormat"] = &DocumentParamsP::updateWarnCompactFormat;
     }
 
     // Auto generated code (Tools/params_utils.py:284)
@@ -495,6 +503,14 @@ public:
     // Auto generated code (Tools/params_utils.py:314)
     static void updateJsonIndent(DocumentParamsP *self) {
         self->JsonIndent = self->handle->GetInt("JsonIndent", 2);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updatePreferCompactFormat(DocumentParamsP *self) {
+        self->PreferCompactFormat = self->handle->GetBool("PreferCompactFormat", true);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateWarnCompactFormat(DocumentParamsP *self) {
+        self->WarnCompactFormat = self->handle->GetBool("WarnCompactFormat", true);
     }
 };
 
@@ -763,6 +779,16 @@ static const App::ParamRegistry::Registrar _DocumentParamsRegistrar({
         .setTitle("JSON indentation")
         .setDoc("Indentation of the JSON text the properties of Python objects are\n"
 "saved as."),
+    App::ParamInfo("App", "DocumentParams", "User parameter:BaseApp/Preferences/Document", "PreferCompactFormat", "PreferCompactFormat", App::ParamInfo::Bool, true)
+        .setTitle("Last format chosen for a new file")
+        .setDoc("The compact format was chosen the last time a file was saved under\n"
+"a new name, and is what the next such save starts on. Stored by\n"
+"the Save As dialog."),
+    App::ParamInfo("App", "DocumentParams", "User parameter:BaseApp/Preferences/Document", "WarnCompactFormat", "WarnCompactFormat", App::ParamInfo::Bool, true)
+        .setTitle("Warn about the compact format")
+        .setDoc("The warning shown when a save comes out in the compact format is\n"
+"still to be shown. The program switches it off when the warning\n"
+"is dismissed for good."),
 });
 
 // Auto generated code (Tools/params_utils.py:368)
@@ -2359,5 +2385,65 @@ void DocumentParams::setJsonIndent(const long &v) {
 // Auto generated code (Tools/params_utils.py:431)
 void DocumentParams::removeJsonIndent() {
     instance()->handle->RemoveInt("JsonIndent");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *DocumentParams::docPreferCompactFormat() {
+    return QT_TRANSLATE_NOOP("DocumentParams",
+"The compact format was chosen the last time a file was saved under\n"
+"a new name, and is what the next such save starts on. Stored by\n"
+"the Save As dialog.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const bool & DocumentParams::getPreferCompactFormat() {
+    return instance()->PreferCompactFormat;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const bool & DocumentParams::defaultPreferCompactFormat() {
+    const static bool def = true;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void DocumentParams::setPreferCompactFormat(const bool &v) {
+    instance()->handle->SetBool("PreferCompactFormat",v);
+    instance()->PreferCompactFormat = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void DocumentParams::removePreferCompactFormat() {
+    instance()->handle->RemoveBool("PreferCompactFormat");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *DocumentParams::docWarnCompactFormat() {
+    return QT_TRANSLATE_NOOP("DocumentParams",
+"The warning shown when a save comes out in the compact format is\n"
+"still to be shown. The program switches it off when the warning\n"
+"is dismissed for good.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const bool & DocumentParams::getWarnCompactFormat() {
+    return instance()->WarnCompactFormat;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const bool & DocumentParams::defaultWarnCompactFormat() {
+    const static bool def = true;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void DocumentParams::setWarnCompactFormat(const bool &v) {
+    instance()->handle->SetBool("WarnCompactFormat",v);
+    instance()->WarnCompactFormat = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void DocumentParams::removeWarnCompactFormat() {
+    instance()->handle->RemoveBool("WarnCompactFormat");
 }
 //[[[end]]]

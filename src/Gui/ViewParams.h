@@ -34,7 +34,7 @@ import ViewParams
 ViewParams.declare_begin()
 ]]]*/
 
-// Auto generated code (Gui/ViewParams.py:1022)
+// Auto generated code (Gui/ViewParams.py:1065)
 #include <QString>
 
 // Auto generated code (Tools/params_utils.py:82)
@@ -214,6 +214,20 @@ public:
     static void removeAnnotationTextColor();
     static void setAnnotationTextColor(const unsigned long &v);
     static const char *docAnnotationTextColor();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter CursorCrosshairColor
+    ///
+    /// Colour of the crosshair the drawing tools of the Sketcher put in
+    /// place of the mouse pointer. The Sketcher's Appearance page shows
+    /// it. Takes effect at the next tool started.
+    static const unsigned long & getCursorCrosshairColor();
+    static const unsigned long & defaultCursorCrosshairColor();
+    static void removeCursorCrosshairColor();
+    static void setCursorCrosshairColor(const unsigned long &v);
+    static const char *docCursorCrosshairColor();
     //@}
 
     // Auto generated code (Tools/params_utils.py:139)
@@ -3307,7 +3321,116 @@ public:
     static const char *docDefaultShapeShininess();
     //@}
 
-    // Auto generated code (Gui/ViewParams.py:1028)
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter DimensionsVisible
+    ///
+    /// The measurements made with the measure tools are shown in the 3D
+    /// views. Stored by the command that toggles them; the views follow
+    /// at once.
+    static const bool & getDimensionsVisible();
+    static const bool & defaultDimensionsVisible();
+    static void removeDimensionsVisible();
+    static void setDimensionsVisible(const bool &v);
+    static const char *docDimensionsVisible();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter Dimensions3dVisible
+    ///
+    /// The direct, 3D, lines of the measurements are shown. Stored by
+    /// the command that toggles them; the views follow at once.
+    static const bool & getDimensions3dVisible();
+    static const bool & defaultDimensions3dVisible();
+    static void removeDimensions3dVisible();
+    static void setDimensions3dVisible(const bool &v);
+    static const char *docDimensions3dVisible();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter DimensionsDeltaVisible
+    ///
+    /// The lines of the measurements along the three axes are shown.
+    /// Stored by the command that toggles them; the views follow at
+    /// once.
+    static const bool & getDimensionsDeltaVisible();
+    static const bool & defaultDimensionsDeltaVisible();
+    static void removeDimensionsDeltaVisible();
+    static void setDimensionsDeltaVisible(const bool &v);
+    static const char *docDimensionsDeltaVisible();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter SavePicture
+    ///
+    /// How the Save picture dialog last made its picture:
+    /// FramebufferObject, CoinOffscreenRenderer, GrabFramebuffer, or
+    /// empty for the dialog's own way. Stored when a method is chosen in
+    /// the dialog's options, and used for every picture saved.
+    static const std::string & getSavePicture();
+    static const std::string & defaultSavePicture();
+    static void removeSavePicture();
+    static void setSavePicture(const std::string &v);
+    static const char *docSavePicture();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter HeadlightRotationX
+    ///
+    /// First component of the rotation the dragger of the Light
+    /// sources page was left with. The view itself uses the headlight
+    /// direction, which the page stores with it.
+    static const double & getHeadlightRotationX();
+    static const double & defaultHeadlightRotationX();
+    static void removeHeadlightRotationX();
+    static void setHeadlightRotationX(const double &v);
+    static const char *docHeadlightRotationX();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter HeadlightRotationY
+    ///
+    /// Second component of the rotation of the dragger of the Light
+    /// sources page.
+    static const double & getHeadlightRotationY();
+    static const double & defaultHeadlightRotationY();
+    static void removeHeadlightRotationY();
+    static void setHeadlightRotationY(const double &v);
+    static const char *docHeadlightRotationY();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter HeadlightRotationZ
+    ///
+    /// Third component of the rotation of the dragger of the Light
+    /// sources page.
+    static const double & getHeadlightRotationZ();
+    static const double & defaultHeadlightRotationZ();
+    static void removeHeadlightRotationZ();
+    static void setHeadlightRotationZ(const double &v);
+    static const char *docHeadlightRotationZ();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter HeadlightRotationW
+    ///
+    /// Fourth component of the rotation of the dragger of the Light
+    /// sources page.
+    static const double & getHeadlightRotationW();
+    static const double & defaultHeadlightRotationW();
+    static void removeHeadlightRotationW();
+    static void setHeadlightRotationW(const double &v);
+    static const char *docHeadlightRotationW();
+    //@}
+
+    // Auto generated code (Gui/ViewParams.py:1071)
     static const std::vector<QString> AnimationCurveTypes;
 
     static void onViewParamChanged(const char *sReason);
@@ -3338,7 +3461,7 @@ ViewParams.declare_end()
 }; // class ViewParams
 } // namespace Gui
 
-// Auto generated code (Gui/ViewParams.py:1041)
+// Auto generated code (Gui/ViewParams.py:1084)
 namespace Gui {
 /// Obtain all display style names, terminated by nullptr entry.
 GuiExport const char **drawStyleNames();

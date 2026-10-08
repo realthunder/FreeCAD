@@ -179,6 +179,20 @@ public:
     static const char *docDuplicateIgnoreExtraNote();
     //@}
 
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter ShowWalkthroughMessage
+    ///
+    /// The hint of the Macros dialog about its Walkthrough is still to be
+    /// shown. The program switches it off when the hint is dismissed
+    /// for good.
+    static const bool & getShowWalkthroughMessage();
+    static const bool & defaultShowWalkthroughMessage();
+    static void removeShowWalkthroughMessage();
+    static void setShowWalkthroughMessage(const bool &v);
+    static const char *docShowWalkthroughMessage();
+    //@}
+
 // Auto generated code (Tools/params_utils.py:179)
 }; // class MacroParams
 } // namespace Gui

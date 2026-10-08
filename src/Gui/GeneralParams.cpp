@@ -74,6 +74,16 @@ public:
         signalParamChanged("AdditionalLanguageDomainEntries");
         signalParamChanged("AdditionalTranslationsDirectory");
         signalParamChanged("TempPath");
+        signalParamChanged("LastModule");
+        signalParamChanged("FileOpenSavePath");
+        signalParamChanged("FileImportFilter");
+        signalParamChanged("FileExportFilter");
+        signalParamChanged("OffscreenImageFormat");
+        signalParamChanged("OffscreenImageBackground");
+        signalParamChanged("ConfirmAll");
+        signalParamChanged("ObjectSelectionAutoDeps");
+        signalParamChanged("ObjectSelectionShowDeps");
+        signalParamChanged("UserEditMode");
 
     // Auto generated code (Tools/params_utils.py:241)
     }
@@ -106,6 +116,16 @@ public:
     std::string AdditionalLanguageDomainEntries;
     std::string AdditionalTranslationsDirectory;
     std::string TempPath;
+    std::string LastModule;
+    std::string FileOpenSavePath;
+    std::string FileImportFilter;
+    std::string FileExportFilter;
+    std::string OffscreenImageFormat;
+    long OffscreenImageBackground;
+    bool ConfirmAll;
+    bool ObjectSelectionAutoDeps;
+    bool ObjectSelectionShowDeps;
+    long UserEditMode;
 
     // Auto generated code (Tools/params_utils.py:254)
     GeneralParamsP() {
@@ -170,6 +190,26 @@ public:
         funcs["AdditionalTranslationsDirectory"] = &GeneralParamsP::updateAdditionalTranslationsDirectory;
         TempPath = this->handle->GetASCII("TempPath", "");
         funcs["TempPath"] = &GeneralParamsP::updateTempPath;
+        LastModule = this->handle->GetASCII("LastModule", "");
+        funcs["LastModule"] = &GeneralParamsP::updateLastModule;
+        FileOpenSavePath = this->handle->GetASCII("FileOpenSavePath", "");
+        funcs["FileOpenSavePath"] = &GeneralParamsP::updateFileOpenSavePath;
+        FileImportFilter = this->handle->GetASCII("FileImportFilter", "");
+        funcs["FileImportFilter"] = &GeneralParamsP::updateFileImportFilter;
+        FileExportFilter = this->handle->GetASCII("FileExportFilter", "");
+        funcs["FileExportFilter"] = &GeneralParamsP::updateFileExportFilter;
+        OffscreenImageFormat = this->handle->GetASCII("OffscreenImageFormat", "");
+        funcs["OffscreenImageFormat"] = &GeneralParamsP::updateOffscreenImageFormat;
+        OffscreenImageBackground = this->handle->GetInt("OffscreenImageBackground", 0);
+        funcs["OffscreenImageBackground"] = &GeneralParamsP::updateOffscreenImageBackground;
+        ConfirmAll = this->handle->GetBool("ConfirmAll", false);
+        funcs["ConfirmAll"] = &GeneralParamsP::updateConfirmAll;
+        ObjectSelectionAutoDeps = this->handle->GetBool("ObjectSelectionAutoDeps", true);
+        funcs["ObjectSelectionAutoDeps"] = &GeneralParamsP::updateObjectSelectionAutoDeps;
+        ObjectSelectionShowDeps = this->handle->GetBool("ObjectSelectionShowDeps", false);
+        funcs["ObjectSelectionShowDeps"] = &GeneralParamsP::updateObjectSelectionShowDeps;
+        UserEditMode = this->handle->GetInt("UserEditMode", 0);
+        funcs["UserEditMode"] = &GeneralParamsP::updateUserEditMode;
     }
 
     // Auto generated code (Tools/params_utils.py:284)
@@ -302,6 +342,46 @@ public:
     // Auto generated code (Tools/params_utils.py:314)
     static void updateTempPath(GeneralParamsP *self) {
         self->TempPath = self->handle->GetASCII("TempPath", "");
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateLastModule(GeneralParamsP *self) {
+        self->LastModule = self->handle->GetASCII("LastModule", "");
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateFileOpenSavePath(GeneralParamsP *self) {
+        self->FileOpenSavePath = self->handle->GetASCII("FileOpenSavePath", "");
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateFileImportFilter(GeneralParamsP *self) {
+        self->FileImportFilter = self->handle->GetASCII("FileImportFilter", "");
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateFileExportFilter(GeneralParamsP *self) {
+        self->FileExportFilter = self->handle->GetASCII("FileExportFilter", "");
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateOffscreenImageFormat(GeneralParamsP *self) {
+        self->OffscreenImageFormat = self->handle->GetASCII("OffscreenImageFormat", "");
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateOffscreenImageBackground(GeneralParamsP *self) {
+        self->OffscreenImageBackground = self->handle->GetInt("OffscreenImageBackground", 0);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateConfirmAll(GeneralParamsP *self) {
+        self->ConfirmAll = self->handle->GetBool("ConfirmAll", false);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateObjectSelectionAutoDeps(GeneralParamsP *self) {
+        self->ObjectSelectionAutoDeps = self->handle->GetBool("ObjectSelectionAutoDeps", true);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateObjectSelectionShowDeps(GeneralParamsP *self) {
+        self->ObjectSelectionShowDeps = self->handle->GetBool("ObjectSelectionShowDeps", false);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateUserEditMode(GeneralParamsP *self) {
+        self->UserEditMode = self->handle->GetInt("UserEditMode", 0);
     }
 };
 
@@ -444,6 +524,53 @@ static const App::ParamRegistry::Registrar _GeneralParamsRegistrar({
         .setTitle("Temporary files directory")
         .setDoc("Directory used for temporary files instead of the system's, when\n"
 "it exists. Takes effect at the next start."),
+    App::ParamInfo("Gui", "GeneralParams", "User parameter:BaseApp/Preferences/General", "LastModule", "LastModule", App::ParamInfo::String, "")
+        .setTitle("Last workbench")
+        .setDoc("The workbench that was active when the program last closed,\n"
+"which the next session starts in while the start-up workbench\n"
+"is set to the last one used. Stored by the program; empty until\n"
+"then, when the start workbench is used."),
+    App::ParamInfo("Gui", "GeneralParams", "User parameter:BaseApp/Preferences/General", "FileOpenSavePath", "FileOpenSavePath", App::ParamInfo::String, "")
+        .setTitle("Last folder of the file dialogs")
+        .setDoc("The folder the file dialogs were last in, which they open on.\n"
+"Stored by the program; empty until then, when the home folder\n"
+"is used."),
+    App::ParamInfo("Gui", "GeneralParams", "User parameter:BaseApp/Preferences/General", "FileImportFilter", "FileImportFilter", App::ParamInfo::String, "")
+        .setTitle("Last file type of the Import dialog")
+        .setDoc("The file type last chosen in the Import dialog, which it opens\n"
+"with. Stored by the program."),
+    App::ParamInfo("Gui", "GeneralParams", "User parameter:BaseApp/Preferences/General", "FileExportFilter", "FileExportFilter", App::ParamInfo::String, "")
+        .setTitle("Last file type of the Export dialog")
+        .setDoc("The file type last chosen in the Export dialog, which it opens\n"
+"with. Stored by the program."),
+    App::ParamInfo("Gui", "GeneralParams", "User parameter:BaseApp/Preferences/General", "OffscreenImageFormat", "OffscreenImageFormat", App::ParamInfo::String, "")
+        .setTitle("Last format of Save picture")
+        .setDoc("The file format last chosen in the Save picture dialog. Stored\n"
+"by the program."),
+    App::ParamInfo("Gui", "GeneralParams", "User parameter:BaseApp/Preferences/General", "OffscreenImageBackground", "OffscreenImageBackground", App::ParamInfo::Int, 0)
+        .setTitle("Last background of Save picture")
+        .setDoc("The background last chosen in the options of the Save picture\n"
+"dialog, as the number of its entry. Stored by the program."),
+    App::ParamInfo("Gui", "GeneralParams", "User parameter:BaseApp/Preferences/General", "ConfirmAll", "ConfirmAll", App::ParamInfo::Bool, false)
+        .setTitle("Last 'Apply answer to all' of the save question")
+        .setDoc("The state the box 'Apply answer to all' was last left in, in the\n"
+"question about unsaved documents at closing. Stored by the\n"
+"program."),
+    App::ParamInfo("Gui", "GeneralParams", "User parameter:BaseApp/Preferences/General", "ObjectSelectionAutoDeps", "ObjectSelectionAutoDeps", App::ParamInfo::Bool, true)
+        .setTitle("Object selection: auto select dependencies")
+        .setDoc("The state the box that selects the dependencies of an object with\n"
+"it was last left in, in the object selection dialog. Stored by\n"
+"the program."),
+    App::ParamInfo("Gui", "GeneralParams", "User parameter:BaseApp/Preferences/General", "ObjectSelectionShowDeps", "ObjectSelectionShowDeps", App::ParamInfo::Bool, false)
+        .setTitle("Object selection: show dependencies")
+        .setDoc("Whether the object selection dialog last showed its dependency\n"
+"lists. Stored by the program."),
+    App::ParamInfo("Gui", "GeneralParams", "User parameter:BaseApp/Preferences/General", "UserEditMode", "UserEditMode", App::ParamInfo::Int, 0)
+        .setTitle("Edit mode")
+        .setDoc("What a double click on an object in the tree does, as the number\n"
+"of the entry of Edit > Edit mode: 0 the object's default, 1\n"
+"transform, 2 cutting, 3 colour. Stored when the menu is used and\n"
+"read at start."),
 });
 
 // Auto generated code (Tools/params_utils.py:368)
@@ -1314,5 +1441,302 @@ void GeneralParams::setTempPath(const std::string &v) {
 // Auto generated code (Tools/params_utils.py:431)
 void GeneralParams::removeTempPath() {
     instance()->handle->RemoveASCII("TempPath");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *GeneralParams::docLastModule() {
+    return QT_TRANSLATE_NOOP("GeneralParams",
+"The workbench that was active when the program last closed,\n"
+"which the next session starts in while the start-up workbench\n"
+"is set to the last one used. Stored by the program; empty until\n"
+"then, when the start workbench is used.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const std::string & GeneralParams::getLastModule() {
+    return instance()->LastModule;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const std::string & GeneralParams::defaultLastModule() {
+    const static std::string def = "";
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void GeneralParams::setLastModule(const std::string &v) {
+    instance()->handle->SetASCII("LastModule",v);
+    instance()->LastModule = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void GeneralParams::removeLastModule() {
+    instance()->handle->RemoveASCII("LastModule");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *GeneralParams::docFileOpenSavePath() {
+    return QT_TRANSLATE_NOOP("GeneralParams",
+"The folder the file dialogs were last in, which they open on.\n"
+"Stored by the program; empty until then, when the home folder\n"
+"is used.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const std::string & GeneralParams::getFileOpenSavePath() {
+    return instance()->FileOpenSavePath;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const std::string & GeneralParams::defaultFileOpenSavePath() {
+    const static std::string def = "";
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void GeneralParams::setFileOpenSavePath(const std::string &v) {
+    instance()->handle->SetASCII("FileOpenSavePath",v);
+    instance()->FileOpenSavePath = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void GeneralParams::removeFileOpenSavePath() {
+    instance()->handle->RemoveASCII("FileOpenSavePath");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *GeneralParams::docFileImportFilter() {
+    return QT_TRANSLATE_NOOP("GeneralParams",
+"The file type last chosen in the Import dialog, which it opens\n"
+"with. Stored by the program.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const std::string & GeneralParams::getFileImportFilter() {
+    return instance()->FileImportFilter;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const std::string & GeneralParams::defaultFileImportFilter() {
+    const static std::string def = "";
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void GeneralParams::setFileImportFilter(const std::string &v) {
+    instance()->handle->SetASCII("FileImportFilter",v);
+    instance()->FileImportFilter = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void GeneralParams::removeFileImportFilter() {
+    instance()->handle->RemoveASCII("FileImportFilter");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *GeneralParams::docFileExportFilter() {
+    return QT_TRANSLATE_NOOP("GeneralParams",
+"The file type last chosen in the Export dialog, which it opens\n"
+"with. Stored by the program.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const std::string & GeneralParams::getFileExportFilter() {
+    return instance()->FileExportFilter;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const std::string & GeneralParams::defaultFileExportFilter() {
+    const static std::string def = "";
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void GeneralParams::setFileExportFilter(const std::string &v) {
+    instance()->handle->SetASCII("FileExportFilter",v);
+    instance()->FileExportFilter = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void GeneralParams::removeFileExportFilter() {
+    instance()->handle->RemoveASCII("FileExportFilter");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *GeneralParams::docOffscreenImageFormat() {
+    return QT_TRANSLATE_NOOP("GeneralParams",
+"The file format last chosen in the Save picture dialog. Stored\n"
+"by the program.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const std::string & GeneralParams::getOffscreenImageFormat() {
+    return instance()->OffscreenImageFormat;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const std::string & GeneralParams::defaultOffscreenImageFormat() {
+    const static std::string def = "";
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void GeneralParams::setOffscreenImageFormat(const std::string &v) {
+    instance()->handle->SetASCII("OffscreenImageFormat",v);
+    instance()->OffscreenImageFormat = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void GeneralParams::removeOffscreenImageFormat() {
+    instance()->handle->RemoveASCII("OffscreenImageFormat");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *GeneralParams::docOffscreenImageBackground() {
+    return QT_TRANSLATE_NOOP("GeneralParams",
+"The background last chosen in the options of the Save picture\n"
+"dialog, as the number of its entry. Stored by the program.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const long & GeneralParams::getOffscreenImageBackground() {
+    return instance()->OffscreenImageBackground;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const long & GeneralParams::defaultOffscreenImageBackground() {
+    const static long def = 0;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void GeneralParams::setOffscreenImageBackground(const long &v) {
+    instance()->handle->SetInt("OffscreenImageBackground",v);
+    instance()->OffscreenImageBackground = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void GeneralParams::removeOffscreenImageBackground() {
+    instance()->handle->RemoveInt("OffscreenImageBackground");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *GeneralParams::docConfirmAll() {
+    return QT_TRANSLATE_NOOP("GeneralParams",
+"The state the box 'Apply answer to all' was last left in, in the\n"
+"question about unsaved documents at closing. Stored by the\n"
+"program.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const bool & GeneralParams::getConfirmAll() {
+    return instance()->ConfirmAll;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const bool & GeneralParams::defaultConfirmAll() {
+    const static bool def = false;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void GeneralParams::setConfirmAll(const bool &v) {
+    instance()->handle->SetBool("ConfirmAll",v);
+    instance()->ConfirmAll = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void GeneralParams::removeConfirmAll() {
+    instance()->handle->RemoveBool("ConfirmAll");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *GeneralParams::docObjectSelectionAutoDeps() {
+    return QT_TRANSLATE_NOOP("GeneralParams",
+"The state the box that selects the dependencies of an object with\n"
+"it was last left in, in the object selection dialog. Stored by\n"
+"the program.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const bool & GeneralParams::getObjectSelectionAutoDeps() {
+    return instance()->ObjectSelectionAutoDeps;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const bool & GeneralParams::defaultObjectSelectionAutoDeps() {
+    const static bool def = true;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void GeneralParams::setObjectSelectionAutoDeps(const bool &v) {
+    instance()->handle->SetBool("ObjectSelectionAutoDeps",v);
+    instance()->ObjectSelectionAutoDeps = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void GeneralParams::removeObjectSelectionAutoDeps() {
+    instance()->handle->RemoveBool("ObjectSelectionAutoDeps");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *GeneralParams::docObjectSelectionShowDeps() {
+    return QT_TRANSLATE_NOOP("GeneralParams",
+"Whether the object selection dialog last showed its dependency\n"
+"lists. Stored by the program.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const bool & GeneralParams::getObjectSelectionShowDeps() {
+    return instance()->ObjectSelectionShowDeps;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const bool & GeneralParams::defaultObjectSelectionShowDeps() {
+    const static bool def = false;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void GeneralParams::setObjectSelectionShowDeps(const bool &v) {
+    instance()->handle->SetBool("ObjectSelectionShowDeps",v);
+    instance()->ObjectSelectionShowDeps = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void GeneralParams::removeObjectSelectionShowDeps() {
+    instance()->handle->RemoveBool("ObjectSelectionShowDeps");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *GeneralParams::docUserEditMode() {
+    return QT_TRANSLATE_NOOP("GeneralParams",
+"What a double click on an object in the tree does, as the number\n"
+"of the entry of Edit > Edit mode: 0 the object's default, 1\n"
+"transform, 2 cutting, 3 colour. Stored when the menu is used and\n"
+"read at start.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const long & GeneralParams::getUserEditMode() {
+    return instance()->UserEditMode;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const long & GeneralParams::defaultUserEditMode() {
+    const static long def = 0;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void GeneralParams::setUserEditMode(const long &v) {
+    instance()->handle->SetInt("UserEditMode",v);
+    instance()->UserEditMode = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void GeneralParams::removeUserEditMode() {
+    instance()->handle->RemoveInt("UserEditMode");
 }
 //[[[end]]]
