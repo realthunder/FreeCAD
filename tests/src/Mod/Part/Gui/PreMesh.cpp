@@ -269,27 +269,103 @@ TEST_F(PreMeshTest, aShapeMadeOfAClaimedOnesFacesIsInFlightToo)
     EXPECT_TRUE(PartGui::preMeshInFlight(item.shape));
     EXPECT_FALSE(PartGui::preMeshInFlight(apart));
 
-    // Nor is it handed to a worker of its own
+    // Claimed itself, it is a claim of its own -- behind the one that has
+    // its faces, which are in one twin at a time (sec 18.9; it used to be
+    // refused, and left to the GUI thread)
     PartGui::PreMeshItem second;
     second.shape = compound;
     second.geomBox = item.geomBox;
     second.deflection = item.deflection;
     second.angle = item.angle;
     PartGui::submitPreMesh(batchOf(second));
-    EXPECT_EQ(stats().claimed, 1U) << "a second worker was given the faces of the first";
+    EXPECT_EQ(stats().claimed, 2U);
+    EXPECT_TRUE(PartGui::preMeshInFlight(compound.TShape().get()));
 
-    // The wait for it ends when the worker of its faces publishes
+    // The wait for it ends when both are on their shapes
     ASSERT_TRUE(PartGui::waitPreMesh(compound, 120.0));
     EXPECT_TRUE(meshed(item.shape)) << "the wait returned with the worker still meshing";
+    EXPECT_TRUE(meshed(compound));
     EXPECT_FALSE(PartGui::preMeshInFlight(compound));
     EXPECT_FALSE(PartGui::preMeshInFlight(face));
-    ASSERT_TRUE(batchCounted(1, 30.0));
-
-    // Published, the compound can be claimed, and its faces are in flight
-    // through it
-    PartGui::submitPreMesh(batchOf(second));
-    EXPECT_EQ(stats().claimed, 2U);
-    ASSERT_TRUE(PartGui::waitPreMesh(compound, 120.0));
     ASSERT_TRUE(batchCounted(2, 30.0));
+
+    // Done, the compound can be claimed again, and has nothing left to do
+    PartGui::submitPreMesh(batchOf(second));
+    EXPECT_EQ(stats().claimed, 3U);
+    ASSERT_TRUE(PartGui::waitPreMesh(compound, 120.0));
+    ASSERT_TRUE(batchCounted(3, 30.0));
     EXPECT_FALSE(PartGui::preMeshInFlight(item.shape));
+}
+
+// From here: the private twin (docs/DocumentLoad.md sec 18.9). A worker is
+// handed a copy, and what it made there reaches the shape on the shape's own
+// thread, when that thread asks.
+
+namespace
+{
+
+std::vector<const void*> triangulationsOf(const TopoDS_Shape& shape)
+{
+    std::vector<const void*> out;
+    for (TopExp_Explorer xp(shape, TopAbs_FACE); xp.More(); xp.Next()) {
+        TopLoc_Location loc;
+        out.push_back(BRep_Tool::Triangulation(TopoDS::Face(xp.Current()), loc).get());
+    }
+    return out;
+}
+
+}  // namespace
+
+TEST_F(PreMeshTest, aWorkerDoesNotWriteTheShape)
+{
+    PartGui::PreMeshItem item = slowItem();
+    const void* key = keyOf(item);
+    PartGui::submitPreMesh(batchOf(item));
+
+    // Long past what the mesh takes -- a few tenths of a second -- with
+    // nothing asked of the pre-mesh in the meantime: whatever a worker was
+    // going to do to this shape, it has done
+    std::this_thread::sleep_for(std::chrono::seconds(3));
+    EXPECT_FALSE(meshed(item.shape)) << "the shape was meshed by another thread than its own";
+
+    // Its own thread asks, and takes the mesh
+    ASSERT_TRUE(PartGui::waitPreMesh(key, 120.0));
+    EXPECT_TRUE(meshed(item.shape));
+    EXPECT_FALSE(PartGui::preMeshInFlight(key));
+}
+
+TEST_F(PreMeshTest, shapesSharingFacesAreBothMeshedAndEachFaceOnce)
+{
+    // An object and a compound over it, as two objects of one document hold
+    // them: one batch, the same ask
+    PartGui::PreMeshItem item = slowItem();
+    TopoDS_Compound compound;
+    BRep_Builder builder;
+    builder.MakeCompound(compound);
+    builder.Add(compound, item.shape);
+    const TopoDS_Shape box = BRepPrimAPI_MakeBox(10.0, 10.0, 10.0).Shape();
+    builder.Add(compound, box);
+    PartGui::PreMeshItem second;
+    second.shape = compound;
+    second.geomBox = item.geomBox;
+    second.deflection = item.deflection;
+    second.angle = item.angle;
+
+    std::vector<PartGui::PreMeshItem> items;
+    items.push_back(item);
+    items.push_back(second);
+    PartGui::submitPreMesh(std::move(items));
+    EXPECT_EQ(stats().claimed, 2U) << "a shape sharing faces with another was left to the GUI thread";
+    EXPECT_TRUE(PartGui::preMeshInFlight(compound));
+
+    ASSERT_TRUE(PartGui::waitPreMesh(keyOf(item), 120.0));
+    ASSERT_TRUE(meshed(item.shape));
+    const std::vector<const void*> first = triangulationsOf(item.shape);
+
+    ASSERT_TRUE(PartGui::waitPreMesh(compound, 120.0));
+    EXPECT_FALSE(PartGui::preMeshInFlight(compound));
+    EXPECT_TRUE(meshed(box)) << "the compound's own faces were not meshed";
+    EXPECT_TRUE(meshed(compound));
+    // The faces the two share were meshed for the first, and stand
+    EXPECT_EQ(triangulationsOf(item.shape), first) << "a shared face was meshed a second time";
 }

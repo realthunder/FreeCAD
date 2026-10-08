@@ -903,6 +903,13 @@ struct EmittedVCache {
 // the anonymous namespace this section otherwise lives in.
 } // anonymous namespace
 struct ViewProviderPartExt::PendingVisualVCache : EmittedVCache {};
+
+bool meshAnswersAsk(const TopoDS_Shape &shape, double deflection, bool acceptFiner)
+{
+    return !shape.IsNull()
+        && tessellationIsRedundant(shape, deflection, acceptFiner).redundant();
+}
+
 namespace {
 
 /// True while the deferred-visual drain is the caller of updateVisual.
@@ -5653,6 +5660,12 @@ void ViewProviderPartExt::scheduleDeferredVisualSlice(int delayMs)
 /// matching, and a mesh built at the wrong ask is worse than no mesh at
 /// all: the display build then pays for the pre-mesh's work and its own.
 /// So the rule throughout is that a doubt excludes.
+///
+/// Sharing is no longer a doubt (sec 18.9). Two shapes with a face or an
+/// edge in common used to be refused, both of them -- two workers would
+/// have written one triangulation -- and on the reference assembly that
+/// was 9103 of 17058 shapes left to the GUI thread. A worker meshes a
+/// private twin now, and the queue hands a face to one twin at a time.
 /// \a vps are the parked view providers, filtered by the caller: the
 /// parked flag is the view provider's own business (protected), and
 /// everything this reads off them -- the shape and the two deviation
@@ -5665,21 +5678,9 @@ static void collectPreMeshItems(App::Document *doc,
     const long deferFaces = Gui::RenderParams::getCoarseDeferFaces();
     const bool instancing = shapeInstancingActive();
 
-    struct Candidate {
-        TopoDS_Shape shape;
-        double deflection = 0.0;
-        double angle = 0.0;
-        Bnd_Box box;
-        bool excluded = false;
-    };
-    std::vector<Candidate> candidates;
-    candidates.reserve(vps.size());
-    // Every face and edge TShape seen, to the candidate that owns it.
-    // Two candidates sharing one -- an instance pair, a shape and its
-    // own compound -- would have two workers writing one triangulation,
-    // so BOTH go. That is why nothing is submitted until the whole
-    // batch is known.
-    std::unordered_map<const void *, std::size_t> owner;
+    const bool skipResident = Gui::RenderParams::getMeshSkipRedundant();
+    const bool acceptFiner = Gui::RenderParams::getMeshSkipFinerResident();
+    items.reserve(vps.size());
 
     for (auto *vp : vps) {
         // Shape contents (a compound expanded into child features) are
@@ -5759,42 +5760,13 @@ static void collectPreMeshItems(App::Document *doc,
             angle = std::min(meshLevelAngle(unsigned(coarseLvl)), M_PI / 2.0);
         }
 
-        Candidate cand;
-        cand.shape = shape;
-        cand.deflection = deflection;
-        cand.angle = angle;
-        cand.box = box;
-        const std::size_t index = candidates.size();
-        candidates.push_back(std::move(cand));
-
-        // The sharing test, over the subshapes a mesher writes: the
-        // faces (triangulation) and the edges (polygons).
-        auto claim = [&owner, index, &candidates](const TopoDS_Shape &sub) {
-            auto res = owner.emplace(sub.TShape().get(), index);
-            if (!res.second && res.first->second != index) {
-                candidates[res.first->second].excluded = true;
-                candidates[index].excluded = true;
-            }
-        };
-        for (TopExp_Explorer xp(candidates[index].shape, TopAbs_FACE);
-             xp.More(); xp.Next())
-            claim(xp.Current());
-        for (TopExp_Explorer xp(candidates[index].shape, TopAbs_EDGE);
-             xp.More(); xp.Next())
-            claim(xp.Current());
-        // A shape that shares a subshape with ITSELF (the same TShape
-        // twice in one compound) is fine: one worker owns both.
-    }
-
-    items.reserve(candidates.size());
-    for (Candidate &cand : candidates) {
-        if (cand.excluded)
-            continue;
         PreMeshItem item;
-        item.shape = std::move(cand.shape);
-        item.geomBox = cand.box;
-        item.deflection = cand.deflection;
-        item.angle = cand.angle;
+        item.shape = shape;
+        item.geomBox = box;
+        item.deflection = deflection;
+        item.angle = angle;
+        item.skipResident = skipResident;
+        item.acceptFiner = acceptFiner;
         items.push_back(std::move(item));
     }
 }
@@ -6367,6 +6339,21 @@ void ViewProviderPartExt::updateVisual()
     // ...and where THIS build's went, if it was slow enough to matter
     // on its own (a paced descent's turn is one object's rebuild).
     SlowBuildProbe slowReport(this);
+    // A call that parks itself on a pre-mesh claim (the gate below) has
+    // built nothing, and is taken back out of the count the timer below
+    // adds to as it leaves -- declared ahead of the timer, so that it runs
+    // after it. The count is "visuals built": a reopen of 200 boxes that
+    // hold one solid said 201, the one being the first of them finding its
+    // claim in flight (tests/gui/reopen-visual-builds.py; before the claims
+    // covered shapes that share faces there was no claim to park on).
+    struct ParkedBuild {
+        bool parked = false;
+        ~ParkedBuild()
+        {
+            if (parked && Gui::ViewProvider::VisualBuildCount)
+                --Gui::ViewProvider::VisualBuildCount;
+        }
+    } parkedBuild;
     // A restore or a live import runs this thousands of times inside another
     // stage's timing; the accumulator is what makes that share visible.
     Gui::ViewProvider::VisualBuildTimer buildTimer;
@@ -6442,13 +6429,15 @@ void ViewProviderPartExt::updateVisual()
     // mirrors arrays this rebuild is about to replace.
     ++meshLadder.visualFillSeq;
     pendingVCache.reset();
-    // A pre-mesh worker may still be writing this very TShape's
-    // triangulation (docs/DocumentLoad.md sec 18). Nothing may read it
-    // until that write is published, so the build is parked exactly as
-    // the load parks one and the drain pops it again once the claim
-    // clears. Placed after the landing claim is consumed and the fill
-    // sequence bumped, so an early exit here leaves the same state
-    // every other early exit does.
+    // A pre-mesh worker may be meshing a twin of this very shape, or be
+    // about to (docs/DocumentLoad.md sec 18, 18.9). Building now would
+    // mesh, on this thread, what is a moment from being delivered, so
+    // the build is parked exactly as the load parks one and the drain
+    // pops it again once the claim is done. The shape itself is nobody
+    // else's: asking is also what takes the meshes that have come back
+    // and hands out the next ones. Placed after the landing claim is
+    // consumed and the fill sequence bumped, so an early exit here
+    // leaves the same state every other early exit does.
     if (preMeshEnabled() && !cachedShape.getShape().IsNull()
             && preMeshInFlight(cachedShape.getShape())) {
         // ...unless there is no drain to park it TO. A load with
@@ -6457,16 +6446,17 @@ void ViewProviderPartExt::updateVisual()
         // arriving -- a synchronous load turned progressive by nothing
         // the user asked for (sec 18.6). The GUI thread has nothing
         // else to do inside such a load, so it waits for the worker
-        // and then builds exactly as it would have. The cap is a
-        // backstop against a claim that never publishes, not a policy
-        // knob: every path that abandons a batch releases its claims,
-        // and a load that hit it would still be correct, just parked.
+        // -- taking what the others hand back in the meantime -- and
+        // then builds exactly as it would have. The cap is a backstop
+        // against a claim that never ends, not a policy knob, and a
+        // load that hit it would still be correct, just parked.
         // A secondary view is never parked either (deferVisualForLoad):
         // the drain names objects and would never find it again.
         const bool parks = Gui::RenderParams::getProgressiveLoad()
             && !testStatus(Gui::SecondaryView);
         if (parks
                 || !waitPreMesh(cachedShape.getShape(), 120.0)) {
+            parkedBuild.parked = true;
             VisualTouched = true;
             if (auto obj = getObject()) {
                 if (auto doc = obj->getDocument())
@@ -8336,14 +8326,15 @@ ViewProviderPartExt::_getBoundingBox(const char *subname,
     // binder of a user file kept +-1e100 after the drain (eager, which
     // builds before anyone asks: +-50), and a datum plane sized over it.
     //
-    // A shape a pre-mesh worker is still meshing is not read at all
-    // (docs/DocumentLoad.md sec 18.3): BRepMesh writes the triangulation
-    // into the TShape, BRepBndLib reads it, and the shape a load parks is
-    // exactly the one a camera fit asks about. Its claim carries the
-    // geometry box measured before the worker started. Any other shape
-    // keeps the resident mesh's box, which for a curve is the tighter one
-    // (sec 19: a helix's poles box the 207.8 x 277.5 it draws as 226.97
-    // x 284.27).
+    // A shape with a pre-mesh claim in flight answers from the claim
+    // (docs/DocumentLoad.md sec 18.3): it carries the geometry box
+    // measured at the submit, which is the box the build will derive its
+    // ask from, and it is there without measuring anything. Any other
+    // shape is read -- no worker writes a document's shape any more (sec
+    // 18.9), so one made of faces a claim is about to deliver is read
+    // too, and no longer waits for it -- and keeps the resident mesh's
+    // box, which for a curve is the tighter one (sec 19: a helix's poles
+    // box the 207.8 x 277.5 it draws as 226.97 x 284.27).
     if (VisualTouched && !(subname && subname[0])) {
         try {
             TopoDS_Shape shape = getShape().getShape();
@@ -8353,15 +8344,6 @@ ViewProviderPartExt::_getBoundingBox(const char *subname,
                     if (transform && !shape.Location().IsIdentity())
                         bounds = bounds.Transformed(
                             shape.Location().Transformation());
-                }
-                // No claim of its own, but made of faces a worker is
-                // still writing -- a compound over claimed shapes, a
-                // boolean's result: there is no box measured for it, and
-                // measuring reads those faces. The answer waits for the
-                // workers, which is the rest of a batch at most, and is
-                // none at all if they never finish.
-                else if (preMeshInFlight(shape) && !waitPreMesh(shape, 120.0)) {
-                    return Base::BoundBox3d();
                 }
                 else {
                     if (!transform)

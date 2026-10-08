@@ -52,8 +52,27 @@ namespace PartGui
 /// nesting the two only oversubscribes). The drain's own BRepMesh call
 /// then finds the mesh resident and skips (Render_MeshSkipRedundant).
 ///
-/// Two things make that skip actually fire, and both are why this is
-/// more than a thread pool:
+/// A WORKER NEVER SEES THE DOCUMENT'S SHAPE (sec 18.9). It used to mesh
+/// it in place, and everything else that reads a shape -- a save, a copy,
+/// a boolean, a script, a click in the tree -- read the very lists it was
+/// writing (sec 18.8). Now a request is queued and nothing more; when its
+/// turn comes the GUI thread makes a private twin of the shape
+/// (Part::MeshTwin), a thread of the compute pool meshes the twin, and the
+/// result comes back to the GUI thread, which puts it on the shape. So:
+///
+///   * Every function here is the GUI thread's -- the thread the shapes
+///     belong to. Each of them first takes what the workers have handed
+///     back and hands out what can go, so the queue moves for as long as
+///     anybody asks, event loop or no event loop (a load that builds
+///     inside the restore turns none).
+///   * A face is meshed once. A shape made of faces another request has
+///     out waits for that one to come back, and its own twin then carries
+///     the mesh those faces took: two objects holding one solid, an object
+///     and the compound over it, are both requests, and the second finds
+///     its work done.
+///
+/// Two rules of the in-place design remain, for other reasons than they
+/// had:
 ///
 ///   * The ASK has to match. The display deflection derives from the
 ///     shape's bounding box, and BRepBndLib::Add prefers a resident
@@ -65,11 +84,11 @@ namespace PartGui
 ///     Every claim therefore carries the GEOMETRY box the pre-mesh
 ///     measured, and the build derives its ask from that box instead of
 ///     measuring again.
-///   * A shape being meshed must not be touched. BRepMesh writes the
-///     triangulation into the TShape; a GUI-thread build reading it
-///     mid-write is a race whatever the mesh ends up being. So a claim
-///     is IN FLIGHT until its worker is done, and updateVisual stays
-///     parked on such a shape rather than building it.
+///   * A build leaves a shape in flight alone. Nothing is being written
+///     any more, so this is no longer what keeps it safe: it is what
+///     keeps the GUI thread from meshing a shape a worker is about to
+///     deliver. A claim is IN FLIGHT from the submit until its mesh is on
+///     the shape, and updateVisual parks on such a shape, or waits for it.
 struct PreMeshItem
 {
     /// The shape exactly as the build will mesh it: location stripped,
@@ -80,77 +99,85 @@ struct PreMeshItem
     Bnd_Box geomBox;
     double deflection = 0.0;
     double angle = 0.0;
+    /// A shape whose resident mesh already answers the ask is given no
+    /// worker (Render_MeshSkipRedundant): the build would not have meshed
+    /// it either, and a worker handed it would decide by OCCT's rule where
+    /// the build decides by meshAnswersAsk.
+    bool skipResident = true;
+    /// Render_MeshSkipFinerResident, for that check.
+    bool acceptFiner = false;
 };
 
-/// GUI thread: claim every item's TShape in flight and tessellate the
-/// batch on worker threads. Returns at once; \a items is consumed. An
-/// item whose TShape is already in flight is left to the worker that
-/// has it.
+/// Does the mesh \a shape holds already answer an ask for \a deflection?
+/// The display build's own check (ViewProviderExt.cpp), without the
+/// parameters it is switched by.
+PartGuiExport bool meshAnswersAsk(const TopoDS_Shape &shape, double deflection,
+                                  bool acceptFiner);
+
+/// Claim every item in flight and queue it for the workers. Returns at
+/// once; \a items is consumed. An item whose TShape is already in flight
+/// is left to the claim that has it.
 PartGuiExport void submitPreMesh(std::vector<PreMeshItem> &&items);
 
-/// Is a pre-mesh of \a tshape still running? A build must leave the
-/// shape alone while it is.
+/// Is a pre-mesh of \a tshape still to come? A build leaves the shape to
+/// it while it is.
 ///
 /// This asks about a claim's own shape. A build asks the other one: a
-/// shape that was never in a batch can be made of the faces of one that
-/// is.
+/// shape that was never claimed can be made of the faces of one that is.
 PartGuiExport bool preMeshInFlight(const void *tshape);
 
-/// Is \a shape, or any face or edge it is made of, still being meshed?
-/// What a build asks, and anything else that is about to read or mesh a
-/// shape: the mesher writes into faces and edges, and a compound over
-/// claimed shapes, a boolean's result, a shell of their faces is made of
-/// faces a worker owns without being claimed itself. Costs nothing when
-/// no batch runs.
+/// Is \a shape, or any face or edge it is made of, still to be meshed by
+/// a claim? What a build asks: a compound over claimed shapes, a
+/// boolean's result, a shell of their faces is made of faces a claim is
+/// about to deliver without being claimed itself. Costs nothing when
+/// nothing is in flight.
 PartGuiExport bool preMeshInFlight(const TopoDS_Shape &shape);
 
-/// Block until nothing \a shape is made of is still being meshed, at
-/// most \a seconds; false on the timeout.
+/// Take the meshes as they come back until nothing \a shape is made of
+/// is in flight, at most \a seconds; false on the timeout.
 PartGuiExport bool waitPreMesh(const TopoDS_Shape &shape, double seconds);
 
-/// Block until \a tshape's pre-mesh has published, at most \a seconds.
-/// True once the shape is safe to read, false on the timeout -- where
-/// the caller must go on treating the shape as in flight.
+/// Take the meshes as they come back until \a tshape's own is on it, at
+/// most \a seconds. True once it is -- or once the claim is gone --
+/// false on the timeout.
 ///
 /// For the load that has no drain behind it (ProgressiveLoad off): its
 /// builds run inside the restore, so there is nowhere to park one to,
 /// and parking it anyway would turn a synchronous load into a
 /// progressive one -- an open returning with the document still
 /// arriving is the one thing that preference rules out. The GUI thread
-/// has nothing else to do inside such a load, so it waits for the
-/// worker and then builds as it always did.
+/// has nothing else to do inside such a load, so it waits here, landing
+/// what the workers hand back and handing out the next, and then builds
+/// as it always did.
 PartGuiExport bool waitPreMesh(const void *tshape, double seconds);
 
 /// The geometry box the pre-mesh measured for \a tshape while its claim
-/// is still IN FLIGHT. False -- no claim, or published -- leaves \a box
-/// untouched, and the shape is then safe to read.
+/// is still IN FLIGHT. False -- no claim, or its mesh landed -- leaves
+/// \a box untouched.
 ///
 /// For the bounds question that must not build the visual
-/// (ViewProviderPartExt::_getBoundingBox): the box was measured on the
-/// GUI thread before the worker started, so it answers without reading
-/// a shape a worker may be writing. Even the geometry-only
-/// BRepBndLib::Add fetches each face's triangulation handle.
+/// (ViewProviderPartExt::_getBoundingBox): the box is the one the build
+/// will derive its ask from, and it is there without measuring anything.
 PartGuiExport bool preMeshBox(const void *tshape, Bnd_Box &box);
 
 /// What the pre-mesh has done so far, for the line the drain reports
-/// itself with. \a wall is the batch's own elapsed time (0 while one is
-/// still running).
+/// itself with: claims made, meshes on their shapes (a shape that needed
+/// none counts), claims that ended without one. \a wall runs from the
+/// first submit to the last mesh taken.
 PartGuiExport void preMeshStats(std::size_t &claimed, std::size_t &meshed,
                                 std::size_t &failed, double &wall);
 
-/// Forget every claim that is published. A document closing invalidates
-/// the shapes the claims are about; in-flight batches are left to finish
-/// (they own their shapes) and their results are simply dropped -- but a
-/// claim still IN FLIGHT stays, answering as in flight, until its worker
-/// publishes it and takes it out: the shape is being written until then,
-/// whoever has stopped waiting for it.
+/// Forget the claims. One that has not been handed to a worker is
+/// dropped: its callers know that no build is going to ask. One a worker
+/// has STAYS, answering as in flight, until its mesh is taken, and is
+/// counted for nobody.
 PartGuiExport void clearPreMeshClaims();
 
-/// Stop every batch and wait until none runs: a worker finishes the shape
-/// it is on and starts no other, and the claims of the shapes not started
-/// are published unmeshed. Returns with no worker left. Called when the
+/// Stop and wait until no worker is in the mesher: a worker finishes the
+/// twin it is on and starts no other, the meshes that are ready are put
+/// on their shapes, and every other claim ends unmeshed. Called when the
 /// application is about to quit -- a process must not leave with workers
-/// inside the mesher -- and usable again afterwards.
+/// inside OCCT -- and usable again afterwards.
 PartGuiExport void stopPreMesh();
 
 /// Whether the pre-mesh runs at all (Render_PreMeshOnLoad).

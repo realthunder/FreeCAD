@@ -26,20 +26,23 @@
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
+#include <deque>
 #include <memory>
 #include <mutex>
-#include <thread>
 #include <unordered_map>
+#include <utility>
 
 #include <QCoreApplication>
+#include <QMetaObject>
 
 #include <BRepMesh_IncrementalMesh.hxx>
 #include <IMeshTools_Parameters.hxx>
 #include <TopExp_Explorer.hxx>
-#include <OSD_Parallel.hxx>
 #include <Standard_Failure.hxx>
 
+#include <Base/ThreadPool.h>
 #include <Gui/RenderParams.h>
+#include <Mod/Part/App/MeshTwin.h>
 
 #include "PreMesh.h"
 
@@ -60,216 +63,405 @@ void partsOf(const TopoDS_Shape &shape, std::vector<const void *> &parts)
 
 struct Claim
 {
+    enum class State
+    {
+        /// Queued: no twin, no worker.
+        Pending,
+        /// Its twin is with a worker, or back and not yet taken.
+        Out,
+        /// Its mesh is on the shape, or it ended without one.
+        Done,
+    };
+
     /// Pins the TShape this claim is KEYED on. Without it a document
     /// closing frees that TShape, a later allocation reuses the
     /// address, and the stale claim answers -- with a bounding box --
     /// for a shape it knows nothing about. Released by
     /// clearPreMeshClaims, which the drain calls once every queue it
-    /// serves is empty -- or, for a claim that was still in flight
-    /// then, by the worker that publishes it.
+    /// serves is empty -- or, for a claim that was out then, when its
+    /// mesh is taken.
     TopoDS_Shape shape;
     Bnd_Box geomBox;
-    /// The faces and edges of the shape, by TShape: what a mesher
-    /// writes, and what this claim holds in s_parts while in flight.
+    double deflection = 0.0;
+    double angle = 0.0;
+    bool skipResident = true;
+    bool acceptFiner = false;
+    /// The faces and edges of the shape, by TShape: what a mesh is put
+    /// on, and what this claim holds in s_parts until it is done.
     std::vector<const void *> parts;
-    /// False while a worker is still writing this TShape's
-    /// triangulation. Read by the GUI thread on every build of the
-    /// shape, so it is the one field that must be cheap and atomic.
-    std::atomic<bool> done {false};
+    /// The clear this claim was made after (s_generation).
+    uint64_t generation = 0;
+    State state = State::Pending;
+    /// What the worker meshes: made when the claim is handed out, landed
+    /// and dropped when it is taken back.
+    std::unique_ptr<Part::MeshTwin> twin;
+    /// The worker's verdict, written before it hands the claim back.
+    bool failed = false;
+    /// Claims that share a face or an edge with this one and came after
+    /// it, while it is out: they go when this one is back.
+    std::vector<std::shared_ptr<Claim>> waiters;
 };
+using ClaimPtr = std::shared_ptr<Claim>;
 
-/// The claims, keyed by TShape address. Compared, never dereferenced --
-/// the batch owns a TopoDS_Shape handle for every shape it meshes, so a
-/// claimed TShape cannot die while its claim is in flight, and a claim
-/// left behind by a closed document is dropped by clearPreMeshClaims
-/// (a recycled address would otherwise answer for a different shape).
-/// The map is only ever inserted into on the GUI thread, at submit; a
-/// worker writes its own claim's flag and, where a clear has passed
-/// since its batch was submitted, takes its own entry out. Readers take
-/// the mutex to find the entry.
-///
-/// A claim is SHARED between the map and the batch that publishes it.
-/// It used to be the map's alone, and clearPreMeshClaims freed it with
-/// its worker still running: the worker then published into freed
-/// memory -- one byte, the flag, 88 bytes into a block the allocator had
-/// handed to somebody else -- on every load whose drain emptied its
-/// queues before the batch was done (docs/DocumentLoad.md sec 18.7).
+/// Everything below is the GUI thread's, with two exceptions: a worker
+/// puts the claim it has meshed on s_finished, under s_mutex, and reads
+/// s_stopping. The mutex is held for every access all the same -- it is
+/// what orders a worker's hand-back against a waiter's test -- and never
+/// across anything that touches a shape or posts a task.
 std::mutex s_mutex;
-std::unordered_map<const void *, std::shared_ptr<Claim>> s_claims;
-/// The faces and edges of every claim IN FLIGHT, to their claim.
+/// Signalled when a worker hands a claim back, and when the last twin a
+/// worker was given to free is freed: what the waits sleep on.
+std::condition_variable s_handedBack;
+/// The claims, keyed by TShape address. Compared, never dereferenced:
+/// each claim pins its own shape (see Claim::shape).
+std::unordered_map<const void *, ClaimPtr> s_claims;
+/// The faces and edges of every claim that is not done, counted.
 ///
 /// A claim is keyed on its shape's own TShape, and for a long time that
-/// was all a build asked about. But a mesher writes into faces and
-/// edges, and a shape that is not in the batch can be made of the faces
-/// of one that is: a compound over other objects, the result of a cut or
-/// a fuse, a shell put together from their faces. The collector lets
-/// such a pair through whenever it has to pass the second shape over
-/// before its sharing test -- a compound under instancing, a shape it may
-/// not read yet -- and the drain then meshed that shape on the GUI thread
-/// with its faces claimed: once in every load of a 3000-object document
-/// holding a compound, 80 ms into a batch of one second, and in five of
-/// six kinds of such objects once the batch was long (docs/DocumentLoad.md
-/// sec 18.8). Entries are put in at the submit and taken out at the
-/// publish, both under s_mutex.
-std::unordered_map<const void *, Claim *> s_parts;
-/// How many claims are in flight: what lets a build's question about a
-/// whole shape cost nothing when no batch runs.
+/// was all a build asked about. But a mesh goes on faces and edges, and a
+/// shape that was never claimed can be made of the faces of one that is:
+/// a compound over other objects, the result of a cut or a fuse, a shell
+/// put together from their faces (docs/DocumentLoad.md sec 18.8).
+std::unordered_map<const void *, int> s_parts;
+/// The faces and edges of every claim that is OUT, to that claim: a face
+/// is in one twin at a time, so that it is meshed once.
+std::unordered_map<const void *, Claim *> s_outParts;
+/// Claims not yet handed out, in the order they came.
+std::deque<ClaimPtr> s_pending;
+/// Claims the workers have handed back, to be taken by the GUI thread.
+std::vector<ClaimPtr> s_finished;
+/// How many claims are out, and how many faces and edges they hold.
+std::size_t s_out = 0;
+std::size_t s_outWeight = 0;
+/// Twins handed to a worker to be freed and not freed yet.
+std::size_t s_freeing = 0;
+/// How many claims are not done, and how many are on s_finished: what
+/// lets a build's question cost nothing when there is nothing to answer.
 std::atomic<std::size_t> s_flying {0};
+std::atomic<std::size_t> s_back {0};
 std::size_t s_claimed = 0;
 std::size_t s_meshed = 0;
 std::size_t s_failed = 0;
 double s_wall = 0.0;
-/// Bumped by clearPreMeshClaims: a batch submitted before it stops
-/// publishing, because the shapes its claims describe are gone.
+std::chrono::steady_clock::time_point s_first;
+/// Bumped by clearPreMeshClaims: a claim made before it is counted for
+/// nobody, and leaves the map when it is done.
 std::atomic<uint64_t> s_generation {0};
-
-/// Signalled every time a claim is published, for waitPreMesh. The
-/// publishing store is made under s_mutex as well as being atomic, and
-/// that is the whole point of it: without the lock a worker could
-/// publish and notify in the window between a waiter's predicate test
-/// and its wait, and the waiter would then sleep through the wakeup it
-/// had already been owed.
-std::condition_variable s_published;
-
-/// The batches that have not ended, counted under s_mutex from the submit
-/// to the last thing runBatch does, and what stopPreMesh waits on. A
-/// batch runs on a detached thread and on OCCT's pool; a process that
-/// leaves with one still meshing takes OCCT's static data from under its
-/// workers -- a segmentation fault in the mesher on the way out, nine
-/// runs of nine once the batch was long enough to span the exit
-/// (docs/DocumentLoad.md sec 18.8).
-std::size_t s_running = 0;
-std::condition_variable s_idle;
-/// Set while stopPreMesh waits: a worker starts no shape it has not
-/// started. One it is in is finished -- nothing interrupts the mesher --
-/// and the shapes this batch takes are the small ones (sec 18.3).
+/// Set while stopPreMesh waits: a worker starts no twin it has not
+/// started. One it is in is finished -- nothing interrupts the mesher.
 std::atomic<bool> s_stopping {false};
+/// A wake of the GUI thread is on its way.
+std::atomic<bool> s_wakePosted {false};
 
-/// One batch's work, owned by the thread that runs it: the shapes stay
-/// alive for as long as any worker may touch them.
-struct Batch
-{
-    std::vector<PreMeshItem> items;
-    /// Held, not borrowed: whatever the map does in the meantime, the
-    /// claim a worker publishes is alive when it does.
-    std::vector<std::shared_ptr<Claim>> claims;
-    uint64_t generation = 0;
-    std::atomic<std::size_t> meshed {0};
-    std::atomic<std::size_t> failed {0};
-};
+void service();
 
-/// Publish one claim of \a batch: from here on the shape may be touched.
-/// The caller holds s_mutex.
+/// How much may be out at once, so that a worker that ends does not wait
+/// for the GUI thread to come round and make it a twin -- and so that the
+/// twins of a whole document are not all alive, and all made, at the same
+/// moment.
 ///
-/// A claim whose batch was submitted before the last clear is one
-/// clearPreMeshClaims had to leave in the map, because its shape was
-/// still being written. Nobody is going to ask for its result, and the
-/// TShape it is keyed on is pinned only for as long as it stays -- so
-/// the worker takes it out here, the moment the shape is safe to read.
-void publishLocked(Batch *batch, std::size_t index)
+/// Counted in what the twins hold, faces and edges, and not in twins. A
+/// count was the first thing tried, two for each worker: on the reference
+/// assembly the median shape meshes in 17 us, seven workers were through
+/// fourteen of them long before the GUI thread asked again, and the batch
+/// that took 1.1 s meshing in place took 4.8 s. Measured there
+/// (docs/DocumentLoad.md sec 18.9), two loads each:
+///
+///     faces and edges out    batch, progressive / synchronous
+///                   5000      3.5-3.8 s / 1.7 s
+///                  50000      2.7 s     / 1.4-1.5 s
+///              unbounded      2.4 s     / 1.3-1.4 s
+///
+/// and unbounded bought the load nothing over 50000 -- the slice that
+/// submits then makes every twin of the document before anything is
+/// built, and every one of them is alive at once. (The batch times are a
+/// steady clock's. The loads were timed by a wall clock that was stepping
+/// that afternoon, and say no more than that.) The floor is for shapes
+/// bigger than the window by themselves: every worker has one, and one
+/// stands ready.
+const std::size_t kWindowParts = 50000;
+
+std::size_t windowFloor()
 {
-    Claim *claim = batch->claims[index].get();
-    claim->done.store(true, std::memory_order_release);
-    for (const void *part : claim->parts) {
-        auto it = s_parts.find(part);
-        if (it != s_parts.end() && it->second == claim)
-            s_parts.erase(it);
-    }
-    s_flying.fetch_sub(1, std::memory_order_acq_rel);
-    if (batch->generation == s_generation.load(std::memory_order_acquire))
-        return;
-    auto it = s_claims.find(batch->items[index].shape.TShape().get());
-    if (it != s_claims.end() && it->second.get() == claim)
-        s_claims.erase(it);
+    return 2 * std::size_t(Base::ThreadPool::compute().size());
 }
 
-struct BatchFunctor
+/// From a worker: have the GUI thread take what has come back. ONE call
+/// on its way at a time, whatever the number of claims behind it: Qt
+/// delivers every queued call in a single sweep of its queue.
+void wake()
 {
-    Batch *batch;
+    if (s_wakePosted.exchange(true, std::memory_order_acq_rel))
+        return;
+    QCoreApplication *app = QCoreApplication::instance();
+    if (!app) {
+        // Nobody to wake: whoever asks next takes it.
+        s_wakePosted.store(false, std::memory_order_release);
+        return;
+    }
+    QMetaObject::invokeMethod(app, []() {
+        s_wakePosted.store(false, std::memory_order_release);
+        service();
+    }, Qt::QueuedConnection);
+}
 
-    void operator()(int index) const
-    {
-        const PreMeshItem &item = batch->items[std::size_t(index)];
+/// A worker's whole task: the twin, and nothing of the document's.
+void meshTwin(ClaimPtr claim)
+{
+    bool failed = true;
+    // Asked to stop: this twin is not started, and its claim ends
+    // unmeshed -- as a shape the mesher failed on does, and whoever
+    // builds it meshes it.
+    if (!s_stopping.load(std::memory_order_acquire)) {
         try {
-            // Asked to stop: this shape is not started. Its claim is
-            // published all the same, below -- unmeshed, as a shape the
-            // mesher failed on is, and whoever builds it meshes it.
-            if (s_stopping.load(std::memory_order_acquire))
-                throw Standard_Failure("pre-mesh stopped");
             IMeshTools_Parameters params;
-            params.Deflection = item.deflection;
+            params.Deflection = claim->deflection;
             params.Relative = Standard_False;
-            params.Angle = item.angle;
+            params.Angle = claim->angle;
             // The split is across shapes here, so each shape is meshed
             // whole and single-threaded: OCCT's own per-face split
-            // would only contend with the 27 siblings already running.
+            // would only contend with the siblings already running.
             params.InParallel = Standard_False;
             // Exactly what the display build asks with, so the mesh
             // this leaves is the mesh that build would have made.
             params.AllowQualityDecrease = Standard_True;
-            BRepMesh_IncrementalMesh(item.shape, params);
-            ++batch->meshed;
+            BRepMesh_IncrementalMesh(claim->twin->shape(), params);
+            failed = false;
         }
         catch (const Standard_Failure &) {
             // A shape OCCT cannot mesh is not an error here: the
             // display build will make the same call and fail the same
-            // way, which is where such a shape has always been
-            // handled. The claim is still published -- the box it
-            // carries is the geometry's, mesh or no mesh.
-            ++batch->failed;
+            // way, which is where such a shape has always been handled.
         }
         catch (...) {
-            ++batch->failed;
         }
-        // Published last, and only after the tessellation is entirely
-        // written: this is what lets the GUI thread touch the shape.
-        // Under the mutex because a build may be asleep on this very
-        // claim (waitPreMesh), and the lock is what orders this store
-        // against that waiter's predicate test.
-        {
-            std::lock_guard<std::mutex> guard(s_mutex);
-            publishLocked(batch, std::size_t(index));
-        }
-        s_published.notify_all();
     }
-};
+    {
+        std::lock_guard<std::mutex> guard(s_mutex);
+        claim->failed = failed;
+        // Moved: the claim, and the shape it pins, are the GUI thread's
+        // again from here, and nothing of them is left on this one.
+        s_finished.push_back(std::move(claim));
+        s_back.fetch_add(1, std::memory_order_acq_rel);
+    }
+    s_handedBack.notify_all();
+    wake();
+}
 
-void runBatch(Batch *batch)
+/// End \a claim: nothing is in flight for it from here. The caller holds
+/// s_mutex.
+void publishLocked(ClaimPtr claim, bool meshed)
 {
-    const auto start = std::chrono::steady_clock::now();
-    const int count = int(batch->items.size());
-    try {
-        OSD_Parallel::For(0, count, BatchFunctor{batch}, count <= 1);
+    const bool wasOut = claim->state == Claim::State::Out;
+    claim->state = Claim::State::Done;
+    for (const void *part : claim->parts) {
+        if (wasOut) {
+            auto out = s_outParts.find(part);
+            if (out != s_outParts.end() && out->second == claim.get())
+                s_outParts.erase(out);
+        }
+        auto it = s_parts.find(part);
+        if (it != s_parts.end() && --it->second <= 0)
+            s_parts.erase(it);
     }
-    catch (...) {
-        // Whatever is left unpublished would park its shapes' builds
-        // forever -- or hold a waiting one until its timeout -- so
-        // every claim is released before this unwinds.
+    if (wasOut) {
+        --s_out;
+        s_outWeight -= std::min(s_outWeight, claim->parts.size());
+    }
+    s_flying.fetch_sub(1, std::memory_order_acq_rel);
+    if (claim->generation == s_generation.load(std::memory_order_acquire)) {
+        ++(meshed ? s_meshed : s_failed);
+        s_wall = std::chrono::duration<double>(
+                std::chrono::steady_clock::now() - s_first).count();
+    }
+    else {
+        // Made before the last clear, which had to leave it because a
+        // worker had its twin. Nobody is going to ask for its result, and
+        // the TShape it is keyed on is pinned only for as long as it
+        // stays.
+        auto it = s_claims.find(claim->shape.TShape().get());
+        if (it != s_claims.end() && it->second == claim)
+            s_claims.erase(it);
+    }
+    // Those that waited for these faces go next, in the order they came.
+    std::vector<ClaimPtr> waiters;
+    waiters.swap(claim->waiters);
+    for (auto it = waiters.rbegin(); it != waiters.rend(); ++it) {
+        if ((*it)->state != Claim::State::Pending)
+            continue;
+        if (s_stopping.load(std::memory_order_acquire))
+            publishLocked(*it, false);
+        else
+            s_pending.push_front(*it);
+    }
+}
+
+/// Put what a worker made on the shape, and end the claim.
+void take(const ClaimPtr &claim)
+{
+    bool meshed = false;
+    if (claim->twin) {
+        if (claim->failed) {
+            claim->twin->abandon();
+        }
+        else {
+            claim->twin->land();
+            meshed = true;
+        }
+        std::shared_ptr<Part::MeshTwin> spent(std::move(claim->twin));
+        if (s_stopping.load(std::memory_order_acquire)) {
+            // On the way out of the process: nothing more goes to a
+            // worker, which could be freeing it while OCCT is taken down.
+            spent.reset();
+        }
+        else {
+            // The twin's memory is given back by a worker -- 0.23 s of the
+            // GUI thread over the 17058 shapes of the MiSTer reference
+            // otherwise (docs/DocumentLoad.md sec 18.9). What it holds of
+            // the original is handles, counted atomically.
+            {
+                std::lock_guard<std::mutex> guard(s_mutex);
+                ++s_freeing;
+            }
+            Base::ThreadPool::compute().post([spent = std::move(spent)]() mutable {
+                spent.reset();
+                {
+                    std::lock_guard<std::mutex> guard(s_mutex);
+                    --s_freeing;
+                }
+                s_handedBack.notify_all();
+            });
+        }
+    }
+    std::lock_guard<std::mutex> guard(s_mutex);
+    publishLocked(claim, meshed);
+}
+
+/// Hand out what can go: a twin for each claim whose turn it is, while
+/// the window has room.
+void dispatch()
+{
+    const std::size_t floor = windowFloor();
+    for (;;) {
+        std::vector<ClaimPtr> go;
         {
             std::lock_guard<std::mutex> guard(s_mutex);
-            for (std::size_t index = 0; index < batch->claims.size(); ++index)
-                publishLocked(batch, index);
+            if (s_stopping.load(std::memory_order_acquire))
+                return;
+            while (!s_pending.empty()
+                   && (s_out < floor || s_outWeight < kWindowParts)) {
+                ClaimPtr claim = std::move(s_pending.front());
+                s_pending.pop_front();
+                if (claim->state != Claim::State::Pending)
+                    continue;
+                // A face is in one twin at a time. Two twins holding it
+                // would mesh it twice, and the second to land would leave
+                // the first one's edge polygons behind; a claim that
+                // waits finds the mesh on its faces when its own twin is
+                // made.
+                Claim *ahead = nullptr;
+                for (const void *part : claim->parts) {
+                    auto it = s_outParts.find(part);
+                    if (it != s_outParts.end()) {
+                        ahead = it->second;
+                        break;
+                    }
+                }
+                if (ahead) {
+                    ahead->waiters.push_back(std::move(claim));
+                    continue;
+                }
+                for (const void *part : claim->parts)
+                    s_outParts.emplace(part, claim.get());
+                claim->state = Claim::State::Out;
+                ++s_out;
+                s_outWeight += claim->parts.size();
+                go.push_back(std::move(claim));
+            }
         }
-        s_published.notify_all();
-    }
-    const double wall = std::chrono::duration<double>(
-            std::chrono::steady_clock::now() - start).count();
-    {
-        std::lock_guard<std::mutex> guard(s_mutex);
-        if (batch->generation == s_generation.load(std::memory_order_acquire)) {
-            s_meshed += batch->meshed.load();
-            s_failed += batch->failed.load();
-            s_wall += wall;
+        if (go.empty())
+            return;
+        bool freed = false;
+        for (const ClaimPtr &claim : go) {
+            bool resident = false;
+            try {
+                // Meshed already, for another claim that holds its faces
+                // or by whoever built it in the meantime: the build
+                // would not call the mesher for it, and neither does this.
+                resident = claim->skipResident
+                    && meshAnswersAsk(claim->shape, claim->deflection,
+                                      claim->acceptFiner);
+                if (!resident)
+                    claim->twin = std::make_unique<Part::MeshTwin>(claim->shape);
+            }
+            catch (const Standard_Failure &) {
+                claim->twin.reset();
+            }
+            catch (const std::bad_alloc &) {
+                claim->twin.reset();
+            }
+            if (!claim->twin) {
+                std::lock_guard<std::mutex> guard(s_mutex);
+                publishLocked(claim, resident);
+                freed = true;
+                continue;
+            }
+            Base::ThreadPool::compute().post([claim]() mutable {
+                meshTwin(std::move(claim));
+            });
         }
+        // A claim that needed no worker left its place in the window.
+        if (!freed)
+            return;
     }
-    delete batch;
-    // The last thing this thread does to anything shared: from here a
-    // waiting stopPreMesh may return and the process go.
-    {
-        std::lock_guard<std::mutex> guard(s_mutex);
-        --s_running;
+}
+
+/// Take what the workers have handed back, then hand out what can go.
+void service()
+{
+    if (s_back.load(std::memory_order_acquire) != 0) {
+        std::vector<ClaimPtr> back;
+        {
+            std::lock_guard<std::mutex> guard(s_mutex);
+            back.swap(s_finished);
+            s_back.store(0, std::memory_order_release);
+        }
+        for (const ClaimPtr &claim : back)
+            take(claim);
     }
-    s_idle.notify_all();
+    dispatch();
+}
+
+/// The caller holds s_mutex.
+bool flyingLocked(const void *tshape)
+{
+    auto it = s_claims.find(tshape);
+    return it != s_claims.end() && it->second->state != Claim::State::Done;
+}
+
+/// Serve the queue until \a flying, asked under s_mutex, says no; false
+/// at \a deadline.
+template<typename Flying>
+bool waitUntil(std::chrono::steady_clock::time_point deadline, Flying flying)
+{
+    for (;;) {
+        service();
+        std::unique_lock<std::mutex> lock(s_mutex);
+        if (!flying())
+            return true;
+        // In flight after a service: a twin is out, and a worker will
+        // hand it back.
+        if (!s_handedBack.wait_until(lock, deadline,
+                                     []() { return !s_finished.empty(); }))
+            return false;
+    }
+}
+
+std::chrono::steady_clock::time_point deadlineIn(double seconds)
+{
+    return std::chrono::steady_clock::now()
+        + std::chrono::duration_cast<std::chrono::steady_clock::duration>(
+                std::chrono::duration<double>(std::max(0.0, seconds)));
 }
 
 } // namespace
@@ -283,55 +475,39 @@ void submitPreMesh(std::vector<PreMeshItem> &&items)
 {
     if (items.empty())
         return;
-    auto *batch = new Batch();
-    batch->items.reserve(items.size());
-    batch->claims.reserve(items.size());
     // Walked before the lock is taken: the shapes are this thread's.
     std::vector<std::vector<const void *>> parts(items.size());
     for (std::size_t index = 0; index < items.size(); ++index)
         partsOf(items[index].shape, parts[index]);
     {
         std::lock_guard<std::mutex> guard(s_mutex);
-        batch->generation = s_generation.load(std::memory_order_acquire);
+        const uint64_t generation = s_generation.load(std::memory_order_acquire);
         for (std::size_t index = 0; index < items.size(); ++index) {
             PreMeshItem &item = items[index];
             const void *tshape = item.shape.TShape().get();
-            // Already being meshed -- by a batch a clear left in flight,
-            // or one a second parking of the same shape ran into -- or
-            // made of faces and edges that are: a second worker would be
-            // a second writer of one triangulation, and the first to
-            // publish would release the shape with the other still
-            // writing it. The claim in flight covers it: whoever builds
-            // the shape waits on that.
-            auto found = s_claims.find(tshape);
-            bool flying = found != s_claims.end()
-                && !found->second->done.load(std::memory_order_acquire);
-            for (std::size_t i = 0; !flying && i < parts[index].size(); ++i)
-                flying = s_parts.count(parts[index][i]) != 0;
-            if (flying)
+            // Claimed already and not done -- a claim a clear left out, a
+            // second parking of the same shape, a second document holding
+            // the same TShape: the claim it has covers it.
+            if (flyingLocked(tshape))
                 continue;
-            // A new claim, never the old one made in flight again: a
-            // claim belongs to one batch.
-            auto &slot = s_claims[tshape];
-            slot = std::make_shared<Claim>();
-            slot->shape = item.shape;
-            slot->geomBox = item.geomBox;
-            slot->parts = std::move(parts[index]);
-            for (const void *part : slot->parts)
-                s_parts.emplace(part, slot.get());
+            // A new claim, never the old one made in flight again.
+            auto claim = std::make_shared<Claim>();
+            claim->shape = item.shape;
+            claim->geomBox = item.geomBox;
+            claim->deflection = item.deflection;
+            claim->angle = item.angle;
+            claim->skipResident = item.skipResident;
+            claim->acceptFiner = item.acceptFiner;
+            claim->parts = std::move(parts[index]);
+            claim->generation = generation;
+            for (const void *part : claim->parts)
+                ++s_parts[part];
             s_flying.fetch_add(1, std::memory_order_acq_rel);
-            batch->claims.push_back(slot);
-            batch->items.push_back(std::move(item));
-            ++s_claimed;
+            if (s_claimed++ == 0)
+                s_first = std::chrono::steady_clock::now();
+            s_claims[tshape] = claim;
+            s_pending.push_back(std::move(claim));
         }
-    }
-    if (batch->items.empty()) {
-        delete batch;
-        return;
-    }
-    {
-        std::lock_guard<std::mutex> guard(s_mutex);
-        ++s_running;
     }
     // Before the application leaves, once: the event loop's end is ahead
     // of everything a process takes down on its way out, which no exit
@@ -342,30 +518,29 @@ void submitPreMesh(std::vector<PreMeshItem> &&items)
         QObject::connect(QCoreApplication::instance(), &QCoreApplication::aboutToQuit,
                          []() { stopPreMesh(); });
     }
-    // Detached, because nothing waits for it: the drain discovers the
-    // results through the claims as it walks its queue.
-    std::thread(runBatch, batch).detach();
+    service();
 }
 
 bool preMeshInFlight(const void *tshape)
 {
-    if (!tshape)
+    if (!tshape || s_flying.load(std::memory_order_acquire) == 0)
         return false;
+    service();
     std::lock_guard<std::mutex> guard(s_mutex);
-    auto it = s_claims.find(tshape);
-    return it != s_claims.end()
-        && !it->second->done.load(std::memory_order_acquire);
+    return flyingLocked(tshape);
 }
 
 bool preMeshInFlight(const TopoDS_Shape &shape)
 {
     if (shape.IsNull() || s_flying.load(std::memory_order_acquire) == 0)
         return false;
+    service();
+    if (s_flying.load(std::memory_order_acquire) == 0)
+        return false;
     std::vector<const void *> parts;
     partsOf(shape, parts);
     std::lock_guard<std::mutex> guard(s_mutex);
-    auto it = s_claims.find(shape.TShape().get());
-    if (it != s_claims.end() && !it->second->done.load(std::memory_order_acquire))
+    if (flyingLocked(shape.TShape().get()))
         return true;
     for (const void *part : parts) {
         if (s_parts.count(part))
@@ -381,22 +556,16 @@ bool waitPreMesh(const TopoDS_Shape &shape, double seconds)
     std::vector<const void *> parts;
     partsOf(shape, parts);
     const void *tshape = shape.TShape().get();
-    const auto deadline = std::chrono::steady_clock::now()
-        + std::chrono::duration_cast<std::chrono::steady_clock::duration>(
-                std::chrono::duration<double>(std::max(0.0, seconds)));
-    std::unique_lock<std::mutex> lock(s_mutex);
-    // Every publish takes its claim's faces and edges out of s_parts and
-    // signals, so the wait ends at the last of the claims this shape is
-    // made of.
-    return s_published.wait_until(lock, deadline, [tshape, &parts]() {
-        auto it = s_claims.find(tshape);
-        if (it != s_claims.end() && !it->second->done.load(std::memory_order_acquire))
-            return false;
+    // Every claim done takes its faces and edges out of s_parts, so the
+    // wait ends at the last of the claims this shape is made of.
+    return waitUntil(deadlineIn(seconds), [tshape, &parts]() {
+        if (flyingLocked(tshape))
+            return true;
         for (const void *part : parts) {
             if (s_parts.count(part))
-                return false;
+                return true;
         }
-        return true;
+        return false;
     });
 }
 
@@ -404,31 +573,21 @@ bool waitPreMesh(const void *tshape, double seconds)
 {
     if (!tshape)
         return true;
-    const auto deadline = std::chrono::steady_clock::now()
-        + std::chrono::duration_cast<std::chrono::steady_clock::duration>(
-                std::chrono::duration<double>(std::max(0.0, seconds)));
-    std::unique_lock<std::mutex> lock(s_mutex);
-    // A claim that is GONE answers as well as one that is published:
-    // clearPreMeshClaims drops the lot, and nothing owns the shape after
-    // it. Waiting on the entry itself would be waiting on a claim that
-    // no longer exists to be published.
-    return s_published.wait_until(lock, deadline, [tshape]() {
-        auto it = s_claims.find(tshape);
-        return it == s_claims.end()
-            || it->second->done.load(std::memory_order_acquire);
-    });
+    // A claim that is GONE answers as well as one that is done:
+    // clearPreMeshClaims drops what it can, and nothing is coming for the
+    // shape after it.
+    return waitUntil(deadlineIn(seconds),
+                     [tshape]() { return flyingLocked(tshape); });
 }
 
 bool preMeshBox(const void *tshape, Bnd_Box &box)
 {
-    if (!tshape)
+    if (!tshape || s_flying.load(std::memory_order_acquire) == 0)
         return false;
     std::lock_guard<std::mutex> guard(s_mutex);
     auto it = s_claims.find(tshape);
-    // Set at submit, under this mutex, and not written while the worker
-    // runs: safe to hand out before it publishes.
     if (it == s_claims.end()
-            || it->second->done.load(std::memory_order_acquire)
+            || it->second->state == Claim::State::Done
             || it->second->geomBox.IsVoid())
         return false;
     box = it->second->geomBox;
@@ -438,6 +597,7 @@ bool preMeshBox(const void *tshape, Bnd_Box &box)
 void preMeshStats(std::size_t &claimed, std::size_t &meshed,
                   std::size_t &failed, double &wall)
 {
+    service();
     std::lock_guard<std::mutex> guard(s_mutex);
     claimed = s_claimed;
     meshed = s_meshed;
@@ -447,42 +607,84 @@ void preMeshStats(std::size_t &claimed, std::size_t &meshed,
 
 void stopPreMesh()
 {
-    std::unique_lock<std::mutex> lock(s_mutex);
     s_stopping.store(true, std::memory_order_release);
-    // No timeout: what is waited for is each worker's shape in hand, and
-    // a process that left without waiting is the crash this is for.
-    s_idle.wait(lock, []() { return s_running == 0; });
+    {
+        // What no worker has: ended unmeshed, here.
+        std::lock_guard<std::mutex> guard(s_mutex);
+        std::deque<ClaimPtr> pending;
+        pending.swap(s_pending);
+        for (const ClaimPtr &claim : pending) {
+            if (claim->state == Claim::State::Pending)
+                publishLocked(claim, false);
+        }
+    }
+    // No timeout: what is waited for is each worker's twin in hand, and
+    // a process that left without waiting is the crash this is for
+    // (docs/DocumentLoad.md sec 18.8). A mesh that is ready is taken: it
+    // costs microseconds, and the stop is then no reason for a shape to
+    // be meshed again.
+    for (;;) {
+        std::vector<ClaimPtr> back;
+        {
+            std::unique_lock<std::mutex> lock(s_mutex);
+            s_handedBack.wait(lock, []() {
+                return !s_finished.empty() || (s_out == 0 && s_freeing == 0);
+            });
+            back.swap(s_finished);
+            s_back.store(0, std::memory_order_release);
+        }
+        if (back.empty())
+            break;
+        for (const ClaimPtr &claim : back)
+            take(claim);
+    }
     s_stopping.store(false, std::memory_order_release);
 }
 
 void clearPreMeshClaims()
 {
     std::lock_guard<std::mutex> guard(s_mutex);
-    // A claim still in flight STAYS. Its worker is writing the shape, so
-    // the shape has to go on answering "in flight" to whoever asks --
-    // dropped here, it answered "not claimed", and the GUI thread was
-    // free to build a shape a worker was meshing. Nor is its address one
-    // a later allocation can reuse: the batch holds the shape. The
-    // generation bump is what tells that batch its results are no longer
-    // wanted, and its workers take their own claims out as they publish
-    // (publishLocked).
-    //
-    // "No build is going to ask again" is what the callers know, and it
-    // is no reason to think the batch is done: a drain whose parked
-    // shapes were all built by somebody else before its first slice --
-    // an import's own finishRestoring pass did that -- submitted them,
-    // popped them unbuilt and was here in the same slice, with every
-    // worker still running.
+    // First: what ends below is then a claim made before the clear, and
+    // is counted for nobody and taken out of the map.
+    s_generation.fetch_add(1, std::memory_order_acq_rel);
+    // A claim no worker has is dropped. "No build is going to ask again"
+    // is what the callers know, and with nothing of it out there is
+    // nothing to wait for.
+    std::deque<ClaimPtr> pending;
+    pending.swap(s_pending);
+    std::vector<ClaimPtr> waiting;
+    for (auto &entry : s_claims) {
+        if (entry.second->state == Claim::State::Out) {
+            for (ClaimPtr &waiter : entry.second->waiters)
+                waiting.push_back(std::move(waiter));
+            entry.second->waiters.clear();
+        }
+    }
+    for (const ClaimPtr &claim : pending) {
+        if (claim->state == Claim::State::Pending)
+            publishLocked(claim, false);
+    }
+    for (const ClaimPtr &claim : waiting) {
+        if (claim->state == Claim::State::Pending)
+            publishLocked(claim, false);
+    }
+    // A claim that is OUT stays, and goes on answering as in flight until
+    // its mesh is taken: a build that asked would otherwise mesh, on the
+    // GUI thread, a shape whose mesh is a moment away. It is not an
+    // address a later allocation can reuse either: the claim holds the
+    // shape. A drain whose parked shapes were all built by somebody else
+    // before its first slice -- an import's own finishRestoring pass did
+    // that -- submitted them, popped them unbuilt and was here in the same
+    // slice, with every worker still running (sec 18.7).
     for (auto it = s_claims.begin(); it != s_claims.end(); ) {
-        if (it->second->done.load(std::memory_order_acquire))
+        if (it->second->state == Claim::State::Done)
             it = s_claims.erase(it);
         else
             ++it;
     }
     s_claimed = s_meshed = s_failed = 0;
     s_wall = 0.0;
-    s_generation.fetch_add(1, std::memory_order_acq_rel);
-    s_published.notify_all();
+    s_handedBack.notify_all();
 }
 
 } // namespace PartGui
