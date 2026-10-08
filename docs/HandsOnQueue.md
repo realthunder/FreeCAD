@@ -82,6 +82,7 @@ report views, the reporter's own files -- is kept beside the dev tree under
 | 42 | 2026-10-08 | state keys (window sizes, recent lists, last directories, first-run flags) through the generator like every other setting (from entry 24: C2) | STEP 1 OF 3 DONE 2026-10-08, nothing generated yet; Q1 to Q5 answered, Q6 not answered: the 300 candidates read key by key -- 94 state keys, 114 settings, 44 records under run-time names (stay out), 23 dead, 14 defined after all. After the answers: 91 state keys and 88 settings to go through the generator, the 3D mouse first, plus `ExportPoints` and `DxfVersionOut` from entry 44; the share token, the workbench order and the recent lists stay out, and 20 settings without one written default stay out and are listed. Q2 is entry 44, fixed (`docs/HandsOnLog.md`) |
 | 43 | 2026-10-08 | omni search: the highlighted row's text is white on a light blue highlight | OPEN; looked at by the build session, not a side effect of the theme defaults, not fixed |
 | 44 | 2026-10-08 | the DXF page's exporter settings do not reach the C++ DXF exporter: `Import.writeDXFObject`/`writeDXFShape` point it at `Mod/Import`, where nothing stores them (found by the build session on entry 42, Q2) | FIXED `813d0250f9`, not staged: the exporter was pointed at `Mod/Import` for its options, where nothing stores them; it takes them from `Mod/Draft`, where the DXF page puts them, as upstream does. An ellipse written with "Treat ellipses and splines as polylines" on was an ELLIPSE before and is an LWPOLYLINE after (24 points at a segment length of 5, 198 at 0.5). `Import_tests_run` 6 of 6; the full suites not rerun after it (`docs/HandsOnLog.md`) |
+| 45 | 2026-10-08 | a spreadsheet's view provider MAKES its view when asked for it (`ViewProviderSheet::getMDIView()`): one click on a sheet in the tree opens it, show-in-cell closes another sheet's view; a design agreed by the reporter in another session, single click selects and opens nothing (handed over from session x16, branch SketcherPort; goes on from entry 27) | OPEN: measured and ruled in the other session, built nowhere; when and where it is built is the reporter's to say |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -3126,10 +3127,130 @@ It touches entry 42: these four are among the 28 settings of its Q1 that do
 not take a plain definition, because they are read from two groups.
 Not said yet by the reporter: whether to fix it, and when.
 
+## 45. A spreadsheet's view provider makes its view when it is only asked for it -- OPEN, a design agreed in another session, built nowhere
+
+**2026-10-08 20:52, handed over by another session at the reporter's
+request** (session x16, "fcad-37", on another machine; branch SketcherPort,
+its tip `298bbfb92f`). It was measured and ruled there on 2026-10-07 and NOT
+built; that session will not build it. Its words on what happens next: "What
+you do with this is for the user to say; I was only asked to hand it over."
+Its file and line numbers are its tree's, as of 2026-10-07.
+
+The reporter, verbatim, as that session passes it on -- before the look:
+"I report the view cell menu problem in another session and is pending for
+repair. anyway, we can take a look now." And to the design below: "agree.
+single click selects. build it in next session".
+
+**The problem, as measured there.** `ViewProviderSheet::getMDIView()` is the
+only view provider's `getMDIView` that CREATES when asked: it makes the
+view, places it (`ViewPlacement::place`) and calls `startEditing()`. That is
+upstream's code of 2019. The fork's callers treat `getMDIView()` as a
+question. Measured with scratch probes, a box and two sheets:
+1. The cell menu button clicked with no sheet open: the menu lists both
+   sheets, and one sheet view is left behind in a new cell (the menu sweeps
+   every object and asks each).
+2. The tree, with SyncView on (the default): ONE click on a sheet opens its
+   view (`Tree.cpp` syncView -> `Document::setActiveView(vp)` ->
+   `getMDIView`).
+3. `Std_ViewCellShowObject`, the first sheet open beside the 3D view, the 3D
+   cell active and the second sheet selected: the second sheet takes the
+   FIRST sheet's cell, that view is CLOSED, and the active cell is untouched
+   (the placement policy's reuse step runs inside the question). Why it did
+   not then move into the active cell was not looked into.
+
+Read there, not run, the same shape and expected to misbehave the same way:
+the menu's pick (`ViewArea.cpp`, around 665 there); `ExpressionEditorView.cpp:905`;
+`DlgPropertyLink.cpp:713` (asks, discards non-3D views); `Document.cpp:4999`
+(a Link to a sheet).
+
+**The design the reporter agreed to:**
+1. `ViewProviderSheet::getMDIView()` returns `view` or null. The contract is
+   stated in the base header (`ViewProvider.h`, around 675): a question,
+   never a creation.
+2. A new virtual on `ViewProviderDocumentObject` meaning "your view to HOST,
+   made if needed". Default: `getMDIView()`; if null, `show()`; then
+   `getMDIView()` again (what pages and shader graphs need,
+   `ViewProviderShaderObject.h:82`). The sheet's override makes the view
+   BARE: `showSpreadsheetView` split into make and place, `startEditing`
+   kept where it is needed. The name was left to the implementer; none was
+   put to the reporter.
+3. Its users: `Document.cpp` `applyViewAreaLayouts` (the maximize lookup
+   stays a query), `Std_ViewCellShowObject`, and the menu pick in
+   `ViewArea.cpp`.
+4. Sweeps stay queries: the menu listing, the expression editor, the link
+   dialog, `objectViewToken` / `leafToken`.
+5. The sheet's `doubleClicked` / `setEdit` / "Show spreadsheet" are
+   unchanged (create and place by policy). A tree double click still opens:
+   it calls `vp->doubleClicked()` after `setActiveView`.
+6. RULED: a single click on a sheet selects and opens NOTHING, as for a
+   TechDraw page. If its view is already open it is activated as today.
+
+**Tests first, scored on the tree before the change:**
+- the menu opens nothing and still lists the OPEN sheets;
+- a menu pick hosts the sheet in THAT cell;
+- show-in-cell lands in the active cell and leaves the other sheet's view
+  alone;
+- one click opens nothing, a double click opens;
+- `GuiSheetViewReopen` (27 checks) and `GuiTaskPanelKeptSheetView` (15) stay
+  green;
+- the expression editor and the link dialog tried, and said so if they end
+  up not covered.
+
+**Things to watch, from that session:**
+- `Document.cpp:718` there: `setEdit` asks `setActiveView(vp)` when the
+  active view is not a 3D view. For a sheet it will now raise a 3D view
+  first and then the sheet's `setEdit` opens the sheet: check that the sheet
+  ends up active.
+- `SheetView.cpp` is a CRLF file (keep the line endings); check
+  `ViewProviderSpreadsheet.cpp` too.
+- Driving a menu in a GUI test: a polling `QTimer` can close
+  `QApplication.activePopupWidget()`. To PICK an entry,
+  `popup.setActiveAction(a)` then `QTest.keyClick(popup, Key_Return)`; a
+  programmatic `trigger()` probably does not make `exec()` return it (that
+  session's reading, not tried).
+- Check removals one event-loop step later: a deferred delete does not run
+  inside a settle called from the test function itself.
+
+Related commits it names, all on SketcherPort: `865c94a0b2` ("Sheet: a
+spreadsheet's view names its object" -- why a document now reopens with its
+sheet views), `10a06a87e9` (a view removed from a cell is hidden at once),
+`b57f74c576` (`docs/SplitViews.md` sec 22 holds the ruling and the two extra
+places; it was also the tree the tests were to be scored on).
+
+**How it sits on THIS tree (PartDesignPort), the note-taker's reading: read,
+nothing run.**
+- It goes on from entry 27, the reporter's "view cell menu problem".
+  Entry 27's fix here, `fa2ada985c`, staged 2026-10-07 14:23, already took
+  the menu's LISTING off the view providers (it reads the open views), so
+  finding 1 should not happen here; and it opens a menu pick and
+  `Std_ViewCellShowObject` "for that cell" (`ViewPlacement::IntoCell`,
+  `ViewArea.cpp:641`, `CommandView.cpp:2931`). Whether finding 3 still
+  happens here with that in place was not run.
+- The root is still here: `ViewProviderSheet::getMDIView()` calls
+  `showSpreadsheetView()` (`ViewProviderSpreadsheet.cpp:175`). The build
+  session's log, entry 27, says so and why it was left: "selecting a sheet
+  with 'sync view' on relies on it, and changing that was not asked." The
+  ruling above asks it now. So finding 2, one click opens the sheet, is to
+  be expected here (`Tree.cpp:643`).
+- The same question is put here at `ExpressionEditorView.cpp:905`,
+  `Document.cpp:4166`, `Document.cpp:4902` and `4914`, and in the layout
+  restore, `Document.cpp:3195` to `3233`. `DlgPropertyLink.cpp` has no
+  `getMDIView()` call by that spelling in this tree.
+- **The two branches have each changed this place.** None of the four
+  commits that session names is in this clone, and SketcherPort as fetched
+  here (`15c9f647bf`, 2026-10-05) does not hold `fa2ada985c`. `865c94a0b2`
+  there and `fa2ada985c` here both make a sheet's view carry its object's
+  name. Whoever builds this has two versions of the same ground to bring
+  together.
+
+Not said yet by the reporter: which session builds it and on which branch;
+"build it in next session" was said to the other session, which says it will
+not.
+
 ## Inbox
 
 Notes not sorted into an entry yet. Add a line here at any time, in any words;
 it is read before each entry is started and moved up into the table.
 
 (empty: the notes of 2026-10-06 are entries 20 to 28, those of 2026-10-07
-entries 29 to 40, those of 2026-10-08 so far entries 41 to 44)
+entries 29 to 40, those of 2026-10-08 so far entries 41 to 45)
