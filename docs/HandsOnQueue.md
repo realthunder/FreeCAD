@@ -78,7 +78,7 @@ report views, the reporter's own files -- is kept beside the dev tree under
 | 38 | 2026-10-07 | omni search: an obvious freeze the first time it is brought up | FIXED `bb31f8820b`, not staged: the first bring-up loaded and rendered the icon of every command (609) before showing the box, 0.99 s + 0.28 s on the reporter's configuration with `scanner.FCStd` open; 0.15 s + 0.07 s now (`docs/HandsOnLog.md`) |
 | 39 | 2026-10-07 | MSAA has not reached any view since 2026-09-07 (found by the build session on entry 26) | FIXED `c7d115e576`, not staged: with "MSAA 4x" chosen the backend could not create its scene targets and drew without multisampling from then on, on every backend; the depth is write-only under MSAA now. The reporter's case on the fixed tree: 0.75 s in all, both views at 4 samples (`docs/HandsOnLog.md`) |
 | 40 | 2026-10-07 | crash on exit: a TechDraw page in a split view cell is destroyed after its view provider, and writes into it | OPEN (cause read from the stack) |
-| 41 | 2026-10-08 | the Python-only modules' settings in the omni search, through a way into the registry from Python (from entry 24: C1, C4) | STEPS 1 TO 3 OF 4 FIXED, not staged, a list with the reporter: the way in from Python and Assembly through it `a75b43f1d5` (13 settings), Draft and BIM `4a99a978f7` (426 settings through Draft's own table, listed once Draft or BIM has been used, as decided), Fem, CAM and the Addon Manager `de7bd49797` (115 settings); Part's four settings listed twice, once now, `48037fbd8c`; left: the small rest (Help, OpenSCAD, ReverseEngineering, Tux, Material, Test). Of the list F2 and F5 are answered; L1 to L8, F1, F3, F4 and F6 to F8 are not (`docs/HandsOnLog.md`) |
+| 41 | 2026-10-08 | the Python-only modules' settings in the omni search, through a way into the registry from Python (from entry 24: C1, C4) | FIXED, all four steps (`a75b43f1d5`, `4a99a978f7`, `48037fbd8c`, `de7bd49797`, `ff12279ee6`); not staged, not pushed: 601 settings listed that were not -- Assembly 13, Draft and BIM 426 (listed once Draft or BIM has been used, as decided), Fem 47, CAM 27, the Addon Manager 41, and step 4's 47: Help 12, OpenSCAD 15, ReverseEngineering 11, Tux 5, Material 4, Test none. Registration only. A list is with the reporter: F2 and F5 answered; L1 to L12, F1, F3, F4 and F6 to F12 are not, none of them blocking (`docs/HandsOnLog.md`) |
 | 42 | 2026-10-08 | state keys (window sizes, recent lists, last directories, first-run flags) through the generator like every other setting (from entry 24: C2) | OPEN, sized and the cut agreed 2026-10-08, starts next session after 41: about 90 state keys through the generator and listed, about 110 settings entry 24 did not reach added here, about 90 records under user-made names left out (`docs/HandsOnLog.md`) |
 | 43 | 2026-10-08 | omni search: the highlighted row's text is white on a light blue highlight | OPEN; looked at by the build session, not a side effect of the theme defaults, not fixed |
 
@@ -2684,7 +2684,49 @@ spreadsheet or any other non-3D view kept in a cell is worth the same look.
 Not said yet: what was open at the moment of closing (which pages, in which
 cells), and whether it has happened before on exit.
 
-## 41. The Python-only modules' settings in the omni search, through a way in from Python -- steps 1 to 3 of 4 FIXED, not staged; a list with the reporter, F2 and F5 answered (see `docs/HandsOnLog.md`)
+## 41. The Python-only modules' settings in the omni search, through a way in from Python -- FIXED, all four steps, not staged; a list with the reporter, F2 and F5 answered (see `docs/HandsOnLog.md`)
+
+**2026-10-08 16:38, the build session: step 4 is done, and with it the
+entry** (its message; its log, entry 41, "Step 4", `e24f6db6f4`, local). Not
+staged, not pushed. The full C++ and Python suites were started after the
+commit; their result goes into the log when they end. Entry 42 is next.
+- Step 4, `ff12279ee6`: 47 settings -- Help 12, OpenSCAD 15,
+  ReverseEngineering 11, Tux 5, Material 4, the Test module none. Each
+  module has a definition file its `Init.py` imports, so they are listed
+  from the start of a session.
+- The entry in all: 601 settings listed that were not (Assembly 13, Draft
+  and BIM 426, Fem, CAM and the Addon Manager 115, step 4's 47).
+  Registration only: the Python readers keep their code.
+
+**Added to the list for the reporter, NOT ANSWERED YET** (the log's L9 to
+L12 and F9 to F12, in short here):
+- L9 Help `dockWidgetWidth`, `dockWidgetHeight`: stored as numbers, read
+  back with `GetBool`, and crossed, the height from the width's key -- the
+  same four lines as BIM's views manager (L5). NOT described.
+- L10 OpenSCAD `useMaxFN`: the page says 16 and `importCSG.py` reads it with
+  16; `prototype.py` reads it with nothing, so 0, which means no limit.
+  Described: 16.
+- L11 Material `Cards/SortByResources`: the page has the box checked,
+  `MaterialEditor.py` reads it with False. Described: False.
+- L12 Help `optionTab` is stored by the page and read by nothing; and
+  `optionGithub`: the page has the button disabled ("currently not
+  available"), the code honours the setting. Both described, each saying so.
+- F9 OpenSCAD `meshmaxarea` and `meshlocallen` are read only by a branch
+  that is switched off: NOT described.
+- F10 CHANGED by the build session: Help and Tux had no `Init.py`, only an
+  `InitGui.py`. Each has one now, holding the one import, so their settings
+  are listed without the GUI as well.
+- F11 Tux `PersistentToolbars/Deprecated` is a marker more than a setting (1
+  hands the kept tool bar places to the main window at the next start and
+  becomes 2; 2 means Tux leaves the tool bars alone; 0 makes Tux keep them
+  itself). Described, as an integer saying that. The places themselves are
+  in groups named after the workbenches: not described, as with F8.
+- F12 Material `Cards/LegacyEditor` is named only in a commented-out line:
+  not described.
+- F4 again: these 47 titles and documentations are English only.
+
+Unanswered in all now: L1 to L12, F1, F3, F4, F6 to F12. None of them blocks
+anything, in the build session's words.
 
 **2026-10-08 15:38, the build session: step 3 is done, and the reporter
 answered two points of the list** (its message; its log, entry 41,
