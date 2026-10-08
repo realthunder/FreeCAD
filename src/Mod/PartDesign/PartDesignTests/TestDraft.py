@@ -454,10 +454,28 @@ class TestDraft(unittest.TestCase):
                 cones = [f for f in draft.Shape.Faces
                          if f.Surface.__class__.__name__ == "Cone"]
                 self.assertEqual(len(cones), 4)
-        # inward at 15 deg the cones would reach their apex at 2 / tan(15
-        # deg) = 7.46, under the top: refused
+        # Inward at 15 deg the cones reach their apex at za = 2 / tan(15 deg)
+        # = 7.46, under the top: each fillet shrinks to a point there, and
+        # above it the walls on either side meet in a sharp edge.
+        t = math.tan(math.radians(15))
+        za = 2 / t
+        volume = (2000 - 30 * t * 100 + 4 * t * t * 1000 / 3
+                  - (4 - math.pi) * (4 * za - 2 * t * za ** 2 + t * t * za ** 3 / 3))
         draft = self.makeDraftOn(shape, self.planeAt("Y", 0), self.planeAt("Z", 0), "New",
                                  angle=15)
+        self.assertNotIn("Invalid", draft.State)
+        self.assertTrue(draft.Shape.isValid())
+        self.assertAlmostEqual(draft.Shape.Volume, volume, 6)
+        self.assertEqual(len(draft.Shape.Faces), 10)
+        ridges = [e for e in draft.Shape.Edges
+                  if e.Curve.__class__.__name__ == "Line"
+                  and min(v.Z for v in e.Vertexes) > za - 1e-6
+                  and max(v.Z for v in e.Vertexes) - min(v.Z for v in e.Vertexes) > 1]
+        self.assertEqual(len(ridges), 4)
+        # at 30 deg the short walls narrow to nothing at 5 / tan(30 deg) =
+        # 8.66, under the top too: refused
+        draft = self.makeDraftOn(shape, self.planeAt("Y", 0), self.planeAt("Z", 0), "New",
+                                 angle=30)
         self.assertIn("Invalid", draft.State)
         self.assertIn("FaceVanishes", draft.getStatusString())
 
@@ -505,6 +523,34 @@ class TestDraft(unittest.TestCase):
             self.assertNotIn("Invalid", draft.State)
             self.assertTrue(draft.Shape.isValid())
             self.assertAlmostEqual(draft.Shape.Volume, volume, 6)
+            draft.Shape.check(True)
+
+    def testDraftNewTangentChainSharpCorner(self):
+        # A 20x10x10 block with three vertical edges filleted 2, the one at
+        # the origin left sharp: the chain from any wall runs round to that
+        # corner from both sides and closes there at a sharp edge, where the
+        # two new planes meet. At height z the section is the rectangle in
+        # by z tan(a) with three corners rounded r - z tan(a); inward at 15
+        # deg the fillets reach their apex at 7.46 and the walls meet past
+        # it, which the classic draft refuses.
+        shape = Part.makeBox(20, 10, 10)
+        shape = shape.makeFillet(2, [e for e in shape.Edges
+                                     if abs(e.Vertexes[0].Z - e.Vertexes[1].Z) > 1
+                                     and abs(e.Vertexes[0].X) + abs(e.Vertexes[0].Y) > 1e-9])
+
+        def volume(a):
+            t = math.tan(math.radians(a))
+            za = min(10, 2 / t)
+            return (2000 - 30 * t * 100 + 4 * t * t * 1000 / 3
+                    - 3 * (1 - math.pi / 4) * (4 * za - 2 * t * za ** 2 + t * t * za ** 3 / 3))
+
+        for angle, face in ((5, self.planeAt("Y", 10)), (5, self.planeAt("Y", 0)),
+                            (15, self.planeAt("X", 0))):
+            draft = self.makeDraftOn(shape, face, self.planeAt("Z", 0), "New", angle=angle)
+            self.assertNotIn("Invalid", draft.State, angle)
+            self.assertTrue(draft.Shape.isValid(), angle)
+            self.assertAlmostEqual(draft.Shape.Volume, volume(angle), 6, angle)
+            self.assertEqual(len(draft.Shape.Faces), 9, angle)
             draft.Shape.check(True)
 
     def tearDown(self):
