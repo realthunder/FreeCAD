@@ -34,6 +34,7 @@ FreeCAD.__unit_test__ += [
     "InputProperty",
     "ShapeStorage",
     "Metadata",
+    "ModuleSettings",
     "StringHasher",
     "UnicodeTests",
     "TestPythonSyntax",

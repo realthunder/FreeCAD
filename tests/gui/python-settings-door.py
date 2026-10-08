@@ -22,6 +22,13 @@ Claims:
     Addons/ProxyUrl, with neither Fem's nor CAM's library loaded: Fem and
     CAM have a definition file each, the Addon Manager registers from its
     defaults file;
+  - "/param translation suffix" lists Mod/Help/Suffix, "/param openscad
+    executable" Mod/OpenSCAD/openscadexecutable, "/param b-spline fit
+    degree" Mod/ReverseEngineering/BSplineFit/UDegree, "/param navigation
+    indicator compact" /Tux/NavigationIndicator/Compact -- which is not
+    under Preferences -- and "/param delete card duplicates"
+    Mod/Material/Cards/DeleteDuplicates: the small modules have a
+    definition file each;
   - a setting registered while the session runs is listed by the next query;
   - with the module loaded, the settings its generated class describes are
     listed beside them, each once: "/param Mod/Assembly/" has the thirteen
@@ -109,7 +116,7 @@ def param_rows(query):
         found = [str(w.model().index(i, 0).data()) for i in range(w.model().rowCount())]
         # The list is not shown while another application is in front, which a
         # test cannot prevent on a desktop in use; its rows are there all the same.
-        if w.isVisible() or any(r.startswith("Preferences/") for r in found):
+        if w.isVisible() or any(r.startswith(("Preferences/", "/Tux/")) for r in found):
             rows += found
     QtWidgets.QApplication.sendEvent(edit, QtGui.QKeyEvent(QtCore.QEvent.KeyPress, Qt.Key_Escape, Qt.NoModifier))
     settle(0.5)
@@ -136,6 +143,17 @@ def run():
               and "Preferences/Addons/ProxyUrl" in found[2]
               and not {"Fem", "PathApp"} & set(sys.modules),
               ([f[:2] for f in found], sorted({"Fem", "PathApp"} & set(sys.modules))))
+
+        found = [param_rows(q) for q in ("translation suffix", "openscad executable",
+                                         "b-spline fit degree", "navigation indicator compact",
+                                         "delete card duplicates")]
+        check("and Help's, OpenSCAD's, ReverseEngineering's, Tux's and Material's card list's",
+              "Preferences/Mod/Help/Suffix" in found[0]
+              and "Preferences/Mod/OpenSCAD/openscadexecutable" in found[1]
+              and "Preferences/Mod/ReverseEngineering/BSplineFit/UDegree" in found[2]
+              and "/Tux/NavigationIndicator/Compact" in found[3]
+              and "Preferences/Mod/Material/Cards/DeleteDuplicates" in found[4],
+              [f[:2] for f in found])
 
         call = getattr(FreeCAD, "registerParam", None)
         done = call is not None and call(

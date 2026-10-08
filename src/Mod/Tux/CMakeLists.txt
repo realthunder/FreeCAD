@@ -3,7 +3,9 @@ IF (BUILD_GUI)
 ENDIF (BUILD_GUI)
 
 SET(Tux_SRCS
+    Init.py
     InitGui.py
+    TuxParams.py
     NavigationIndicatorGui.py
     PersistentToolbars.py
     PersistentToolbarsGui.py

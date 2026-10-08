@@ -22,3 +22,6 @@
 # *                                                                         *
 # ***************************************************************************/
 # FreeCAD init script of the ReverseEngineering module
+
+# What the Fit B-spline surface dialog keeps, described to the settings registry
+import ReverseEngineeringParams

@@ -5,6 +5,7 @@ ENDIF (BUILD_GUI)
 SET(OpenSCAD_SRCS
     Init.py
     InitGui.py
+    OpenSCADParams.py
     OpenSCAD2Dgeom.py
     OpenSCADFeatures.py
     OpenSCADUtils.py

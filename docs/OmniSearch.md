@@ -318,6 +318,13 @@ The first module through is Assembly: `Mod/Assembly/AssemblyPyParams.py`,
 the thirteen settings only its commands and dialogues read, beside the
 seven of `App/AssemblyParams.py`. A module that has a table of its settings
 already (Draft) calls `registerParam` per row instead of a second copy.
+Fem, CAM and Material have a definition file for their Python side
+(`FemPyParams.py`, `CAMPyParams.py`, `MaterialPyParams.py`); Help, OpenSCAD,
+ReverseEngineering and Tux one for all they have, the last two of which
+show that neither the reader nor the path need be the usual: the eleven of
+`ReverseEngineeringParams.py` are what the widgets of a C++ dialog store,
+and Tux's are under `User parameter:Tux`, listed as `/Tux/...`.
+`Mod/Test/ModuleSettings.py` holds the small modules' to their readers.
 
 Regeneration, after editing a `*Params.py` or the generator (cog is not
 wired into CMake; `pip install cogapp` once):

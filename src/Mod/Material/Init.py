@@ -27,3 +27,6 @@ import FreeCAD
 FreeCAD.addImportType("FreeCAD Material Card (*.FCMat)", "importFCMat")
 
 FreeCAD.__unit_test__ += [ "TestMaterialsApp" ]
+
+# The settings Material's Python code reads, described to the settings registry
+import MaterialPyParams

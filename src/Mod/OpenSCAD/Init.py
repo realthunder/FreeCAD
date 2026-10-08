@@ -39,3 +39,6 @@ if openscadbin:
 
 FreeCAD.addExportType("OpenSCAD CSG Format (*.csg)", "exportCSG")
 FreeCAD.addExportType("OpenSCAD Format (*.scad)", "exportCSG")
+
+# The settings OpenSCAD's code reads, described to the settings registry
+import OpenSCADParams
