@@ -3746,6 +3746,67 @@ std::set<App::DocumentObjectT> _AdoptedObjects;
 
 }  // namespace
 
+namespace {
+
+/** The looks of what was taken from an older file, made once more when the
+ * document has been read
+ *
+ * Each is made as its view provider finishes (finishAppearance()), which is
+ * inside the read and one object at a time: a flag another view provider
+ * sets after that, or a source that is taken later, changes nothing then,
+ * since nothing is made while a document is read. A body's tip read from a
+ * file upstream had saved was drawn in the colours of the feature before it
+ * with its own look saying another colour. So, with every view provider
+ * done: each again, what the others are made from first.
+ */
+void settleAdopted(const App::Document &doc)
+{
+    std::vector<App::DocumentObject*> objs;
+    for(auto it = _AdoptedObjects.begin(); it != _AdoptedObjects.end();) {
+        if(it->getDocumentName() != doc.getName()) {
+            ++it;
+            continue;
+        }
+        if(auto obj = it->getObject())
+            objs.push_back(obj);
+        it = _AdoptedObjects.erase(it);
+    }
+    if(objs.empty() || doc.testStatus(App::Document::Restoring))
+        return;
+    const std::set<App::DocumentObject*> adopted(objs.begin(), objs.end());
+    try {
+        // Sorted with what an object is made from before it
+        for(auto obj : App::Document::getDependencyList(objs, App::Document::DepSort)) {
+            if(!adopted.count(obj))
+                continue;
+            if(auto feat = Base::freecad_dynamic_cast<Part::Feature>(obj))
+                feat->updateAppearance();
+        }
+    }
+    catch (Base::Exception &e) {
+        e.ReportException();
+    }
+}
+
+void settleAdoptedWhenRead()
+{
+    static bool connected = false;
+    if(connected)
+        return;
+    connected = true;
+    App::GetApplication().signalFinishRestoreDocument.connect(settleAdopted);
+    App::GetApplication().signalDeleteDocument.connect([](const App::Document &doc) {
+        for(auto it = _AdoptedObjects.begin(); it != _AdoptedObjects.end();) {
+            if(it->getDocumentName() == doc.getName())
+                it = _AdoptedObjects.erase(it);
+            else
+                ++it;
+        }
+    });
+}
+
+}  // namespace
+
 Part::Feature *ViewProviderPartExt::appearanceStore() const
 {
     if(!shapePropName.empty() && shapePropName != "Shape")
@@ -4032,9 +4093,13 @@ void ViewProviderPartExt::finishAppearance()
     if(adopted) {
         // What is drawn is made of what was taken, and what was made from
         // this object and taken before it is made again: the view providers
-        // of a document are not read in the order of what they show
-        feat->updateAppearance();
+        // of a document are not read in the order of what they show. Asked
+        // for by name, since this is inside the read, where nothing is made
+        // otherwise -- and nothing was: a cut read from an older file was
+        // drawn in one colour, an import's faces from upstream's in the first.
+        feat->updateAppearance(nullptr, false, true);
         _AdoptedObjects.emplace(feat);
+        settleAdoptedWhenRead();
         std::set<App::DocumentObject*> inset;
         feat->getInListEx(inset, true);
         std::vector<App::DocumentObject*> objs(inset.begin(), inset.end());
@@ -4042,7 +4107,7 @@ void ViewProviderPartExt::finishAppearance()
             if(!inset.count(obj) || !_AdoptedObjects.count(App::DocumentObjectT(obj)))
                 continue;
             if(auto other = Base::freecad_dynamic_cast<Part::Feature>(obj))
-                other->updateAppearance();
+                other->updateAppearance(nullptr, false, true);
         }
     }
     mirrorAppearance();

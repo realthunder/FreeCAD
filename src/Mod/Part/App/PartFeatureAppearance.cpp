@@ -383,11 +383,11 @@ void Feature::onSourceAppearanceChanged()
     }
 }
 
-void Feature::updateAppearance(App::Document *sourceDoc, bool forceMap)
+void Feature::updateAppearance(App::Document *sourceDoc, bool forceMap, bool whileRestoring)
 {
     App::Document *doc = getDocument();
     if (_updatingAppearance || !doc || !getNameInDocument()
-        || doc->testStatus(App::Document::Restoring)) {
+        || (!whileRestoring && doc->testStatus(App::Document::Restoring))) {
         return;
     }
     const TopoShape shape = Shape.getShape();

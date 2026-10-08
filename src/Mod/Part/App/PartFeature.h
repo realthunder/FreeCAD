@@ -153,8 +153,14 @@ public:
      *                  names none: a copy of another object's shape, made
      *                  once. What is taken is then stated, by number, as an
      *                  import's looks are, since nothing will make it again.
+     * @param whileRestoring: make it though the document is being read.
+     *                  Nothing is made then, since a file has what is drawn
+     *                  -- but a file written before the looks were the
+     *                  object's has not, and who takes such a file's looks
+     *                  into the object asks for what is drawn of them.
      */
-    void updateAppearance(App::Document *sourceDoc = nullptr, bool forceMap = false);
+    void updateAppearance(App::Document *sourceDoc = nullptr, bool forceMap = false,
+                          bool whileRestoring = false);
     bool getDrawnAppearance(int kind, App::AppearanceList &list) const override;
     void onSourceAppearanceChanged() override;
     /** Whether the shape is made from other objects
