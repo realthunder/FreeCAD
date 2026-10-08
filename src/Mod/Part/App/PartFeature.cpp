@@ -2284,6 +2284,20 @@ void Feature::onDocumentRestored() {
     // at the next save.
     adoptShapeVersions();
     App::GeoFeature::onDocumentRestored();
+    // Out of a file older than the looks being the object's, it has none
+    // until a view provider gives it what it read -- and one that shows it
+    // as a link does gives none: a part group of Assembly3 came out with no
+    // look at all, and that was the colour of a view provider made on it
+    // later. So it has what a new object has, for a view provider to give
+    // it another (docs/ShapeAppearanceDesign.md sec 14.6.11).
+    if (!ElementAppearance.hasBase(App::PropertyElementAppearance::Face)) {
+        try {
+            giveDefaultAppearance();
+        }
+        catch (Base::Exception &e) {
+            FC_ERR(getFullName() << ": no look was given: " << e.what());
+        }
+    }
     // The names over the looks are in no file: they take what the file has
     mirrorLooks();
 }
