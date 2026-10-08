@@ -2923,17 +2923,19 @@ void StdCmdViewCellShowObject::activated(int iMsg)
         if (!area)
             return;
     }
-    auto cell = area->cellOf(area->activeSubView());
+    // The cell of the active VIEW. The area's own active cell is the one
+    // last clicked into or filled; a view activated another way -- the
+    // tree's sync view, a script -- does not move it, and the object then
+    // went into that stale cell, closing what was shown there.
+    auto cell = area->cellOf(active);
+    if (!cell)
+        cell = area->cellOf(area->activeSubView());
     if (!cell)
         return;
 
     // Opened for the active cell (see ViewAreaCell::showCellMenu)
     ViewPlacement::IntoCell here(area, cell);
-    MDIView *view = vp->getMDIView();
-    if (!view) {
-        vp->show();
-        view = vp->getMDIView();
-    }
+    MDIView *view = vp->getOrCreateMDIView();
     if (!view || view == active)
         return;
     area->setCellView(cell, view);

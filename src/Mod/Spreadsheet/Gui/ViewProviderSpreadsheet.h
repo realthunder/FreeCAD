@@ -78,7 +78,10 @@ public:
         return true;
     }
 
+    /// The sheet's view if it is open; asking does not open it
     Gui::MDIView* getMDIView() const override;
+    /// The sheet's view, opened if it is not: show() does not open one
+    Gui::MDIView* getOrCreateMDIView() override;
 
     inline SheetView* getView() const
     {

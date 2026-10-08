@@ -639,11 +639,7 @@ void ViewAreaCell::showCellMenu(const QPoint &globalPos)
             // policy it went into the last non-3D cell instead, and the
             // cell asked could not have it any more.
             ViewPlacement::IntoCell here(area, this);
-            view = vp->getMDIView();
-            if (!view) {
-                vp->show();
-                view = vp->getMDIView();
-            }
+            view = vp->getOrCreateMDIView();
         }
         if (!view || view == childView())
             return;

@@ -1549,6 +1549,12 @@ fc_add_gui_test(GuiPythonSettingsDoor_tests_run
                 python-settings-door.py
                 --timeout 180)
 
+# A spreadsheet's view is opened when it is asked for, not when a caller
+# only asks whether there is one: a click on the sheet in the tree opened it.
+fc_add_gui_test(GuiSheetViewOnRequest_tests_run
+                sheet-view-on-request.py
+                --timeout 180)
+
 # The state the program keeps and the settings entry 24 had not reached are
 # behind generated classes too, group by group: the 3D mouse first.
 fc_add_gui_test(GuiStateAndMissedSettings_tests_run

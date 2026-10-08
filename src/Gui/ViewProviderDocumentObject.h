@@ -108,6 +108,19 @@ public:
     void hide() override;
     /// Show the object in the view
     void show() override;
+    /** The view of this object for a caller that is going to HOST it --
+     * a view cell that was asked to show the object, a saved layout
+     * coming back -- made if there is none. getMDIView() is the question;
+     * this is the request.
+     *
+     * The default asks getMDIView() and, without a view, calls show() and
+     * asks again: what a TechDraw page and a shader graph need. A
+     * provider whose view is not opened by show() (a spreadsheet's)
+     * overrides it. A view made here is placed by ViewPlacement as any
+     * view the provider opens, so inside a ViewPlacement::IntoCell it
+     * goes into that cell.
+     */
+    virtual MDIView *getOrCreateMDIView();
     /// Is called by the tree if the user double clicks on the object. It returns the string
     /// for the transaction that will be shown in the undo/redo dialog.
     /// If null is returned then no transaction will be opened.

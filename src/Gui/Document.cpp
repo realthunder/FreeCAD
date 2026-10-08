@@ -3191,12 +3191,10 @@ void Document::applyViewAreaLayouts(const std::list<MDIView*> &views)
             if (!view && token.compare(0, 2, "O:") == 0) {
                 auto obj = getDocument()->getObject(token.c_str() + 2);
                 if (obj) {
-                    if (auto vp = getViewProvider(obj)) {
-                        view = vp->getMDIView();
-                        if (!view) {
-                            vp->show();
-                            view = vp->getMDIView();
-                        }
+                    // The view is wanted, to be hosted: made if there is none
+                    if (auto vp = dynamic_cast<ViewProviderDocumentObject*>(
+                                getViewProvider(obj))) {
+                        view = vp->getOrCreateMDIView();
                     }
                 }
             }

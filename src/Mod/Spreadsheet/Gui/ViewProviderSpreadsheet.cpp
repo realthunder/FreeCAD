@@ -174,7 +174,15 @@ SheetView* ViewProviderSheet::showSpreadsheetView()
 
 Gui::MDIView* ViewProviderSheet::getMDIView() const
 {
-    return const_cast<ViewProviderSheet*>(this)->showSpreadsheetView();
+    // The view if there is one. This used to make it, so every caller that
+    // only asked -- the tree at each click on the sheet, with "sync view"
+    // on -- opened the sheet, placed by the general policy.
+    return view;
+}
+
+Gui::MDIView* ViewProviderSheet::getOrCreateMDIView()
+{
+    return showSpreadsheetView();
 }
 
 void ViewProviderSheet::updateData(const App::Property* prop)
