@@ -1595,7 +1595,7 @@ highlighted row is entry 43 of the queue. Entry 24 has nothing left with
 the reporter. Pushed: `origin/PartDesignPort` = `b70cc6ebf1`, cycles
 `35a3bd898` first. Not staged.
 
-## 41. The Python-only modules' settings, through a door into the registry -- SIZED, the cut agreed; FIRST in the next session
+## 41. The Python-only modules' settings, through a door into the registry -- steps 1 and 2 of 4 DONE (the way in, Assembly; Draft and BIM), a list with the reporter; Fem, CAM, AddonManager and the rest to do
 
 Decided under entry 24 (C1, C4). Not started. Sized 2026-10-08, static,
 with `inv24.py` run again on the tree of `b70cc6ebf1` and split by who
@@ -1630,6 +1630,113 @@ small rest. Registration only: the Python readers keep their code, and a
 default that a reader and a page disagree on is listed for the reporter,
 not chosen. The reporter: "start in next session. 41, looks good, go
 first."
+
+**Step 1, the way in, and Assembly through it** (`a75b43f1d5`), 2026-10-08:
+
+- `App::ParamSpec` and `ParamRegistry::add(spec)`: a description put
+  together at run time, whose strings the registry keeps. Refused: an empty
+  path or entry, a default that is no value of the type, a path and entry
+  described already (the first description stands; the entries handed out
+  are held by pointer).
+- `FreeCAD.registerParam(path, entry, type, default, title=, doc=, ...)`
+  and `FreeCAD.listParams(query='')`. The default is a Python value of the
+  type. A path that names no parameter set raises: every list of settings
+  reads a value through the path, so one bad path would break them all.
+- `freecad.params` (`src/Ext/freecad/params.py`) loads a definition file in
+  the form the generated classes use, with the generator's own classes:
+  `Tools/params_utils.py` is installed beside it and imported with an empty
+  module standing in for `cog`.
+- Assembly: `Mod/Assembly/AssemblyPyParams.py`, imported by its `Init.py`,
+  the 13 settings only its Python code reads (the count had said 14). Listed
+  from the start of a session, the module not loaded. Registration only;
+  `AssemblyTests/TestSettings.py` reads the sources and holds each described
+  default to the one every reader passes.
+
+Scored: `Tests_run` `ParamRegistry*` 9/9 (2 new); `-t BaseTests` 57 OK (7
+new); `-t TestAssemblyWorkbench` 16 OK (2 new);
+`tests/gui/python-settings-door.py` (`GuiPythonSettingsDoor_tests_run`) 5
+PASS, 0 PASS and 5 FAIL on the staged binaries. Described in
+`docs/OmniSearch.md`, section 3.1.
+
+**Step 2, Draft and BIM** (`4a99a978f7`), 2026-10-08: 426 settings, through Draft's own
+table. `draftutils/params.py` gets three lines: it notes the widget of each
+page setting while it reads the pages, and hands its table to the new
+`draftutils/params_registry.py` when it is loaded. That module adds what a
+description needs beyond the table's name, type and default:
+
+- of a page setting (226), the title -- the text of a check box, or the
+  label beside the widget -- the tool tip, and the editor: the items of the
+  18 combo boxes, the range of the spin boxes, colour buttons, file
+  choosers;
+- a written title and documentation for the 153 settings of the table no
+  page shows, and a documentation for the 47 page settings without a tool
+  tip (the in-command shortcuts, the default colours and sizes of BIM's
+  objects); one tool tip was over the 400 characters (`DWGConversion`);
+- BIM's settings the table does not have: the 17 of the NativeIFC page,
+  which the table does not read, and 30 that BIM's code reads with the name
+  written out (dialogue sizes, the library panel, the views manager).
+
+Only Draft's and BIM's own groups are described; the table also holds 21
+settings of other groups that Draft reads (General, Units, View, Mod/Mesh),
+which are their modules' to describe. Measured before deciding where to
+register: loading the table costs 1.9 s here (0.49 s `Draft_rc`, 0.57 s
+`Arch_rc`, 0.85 s the table), so it is NOT done at the start of a session --
+Draft's and BIM's settings are listed once either workbench has been used,
+as a C++ module's are when its library loads.
+
+`drafttests/test_params_registry.py` (in `TestDraft`): every own row of the
+table is in the registry with the table's type and default; every setting
+Draft and BIM describe has a title and at most 400 characters of
+documentation, so a setting added to the table without either fails; the
+written documentation names nothing that is not there; and each default
+written for a directly read setting is the one every reader in BIM's
+sources passes.
+
+Scored: `-t TestDraft` 91 OK (6 new), `-t TestArch` 280 OK, `-t BaseTests`
+57 OK, `-t TestAssemblyWorkbench` 16 OK;
+`tests/gui/python-settings-door.py`, two claims more, 7 PASS, 1 PASS and 6
+FAIL on the staged binaries. The full suites were not run again after
+these two commits (last: `427ffc8d28`). Not staged, not pushed.
+
+Left of the entry: step 3 (Fem about 54, CAM about 40, AddonManager about
+20) and step 4 (Help, OpenSCAD, ReverseEngineering, Tux, Material, Test).
+A module with plain reads takes a definition file (`freecad.params`); one
+with a table of its own (CAM's `Path/Preferences.py`, AddonManager's
+defaults file) registers from that.
+
+**The list for the reporter,** nothing of it chosen or changed:
+
+Defaults that disagree, or cannot be described by one value:
+- L1 Assembly `BOMOnlyParts`: the task panel's `.ui` file has the box
+  checked; the code reads the setting with False and sets the box from
+  that. Described: False.
+- L2 `Mod/Draft/DefaultPrintColor`: Draft's table says 255 (black); BIM's
+  layers manager reads it with 0. Described: 255.
+- L3 `Mod/NativeIFC/SingleDoc` ("Always lock new documents"): the page has
+  it off; `ifc_import.py` reads it with True at line 88 and with False at
+  line 144, `ifc_status.py` with nothing. Described: off, the page's.
+- L4 `Mod/BIM/LibraryOnline`: its default is "on unless a parts library is
+  installed", computed when the library panel opens. NOT described.
+- L5 `Mod/BIM/BimViewWidth`, `BimViewHeight`: stored as numbers and read
+  back with `GetBool` -- and crossed, the height from the width. NOT
+  described.
+
+Seen on the way, and left:
+- F1 `BimProjectManager.py` stores `View/DefautShapeLineWidth` (so spelled;
+  nothing reads it), and it and `BimSetup.py` store `Mod/Draft/dimsymbol`,
+  `arrowsize` and `color`, which Draft's table does not have.
+- F2 Four of Part's settings are described twice, by `Part::PartParams` and
+  by `PartGui::PartParams` (`MeshDeviation`, `MeshAngularDeflection`,
+  `MinimumDeviation`, `MinimumAngularDeflection`): the omni search lists
+  each of them twice. Found by a probe with every module loaded: 1233
+  entries, 1229 distinct.
+- F3 `Mod/Draft/ScaleRelative` is stored by the Scale task panel and read
+  by nothing.
+- F4 The titles and documentation written here (about 250) are English
+  only: nothing extracts them for translation. A page setting's title and
+  tool tip are translated, through the page's own context.
+- F5 To decide: Draft's and BIM's settings are listed after first use of
+  either workbench, because of the 1.9 s above; Assembly's from the start.
 
 ## 42. State keys through the generator, and listed -- SIZED, the cut agreed; after entry 41
 
