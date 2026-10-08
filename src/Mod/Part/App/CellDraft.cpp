@@ -41,8 +41,10 @@
 
 #include <algorithm>
 #include <cmath>
+#include <functional>
 #include <set>
 #include <sstream>
+#include <tuple>
 
 #include <BOPAlgo_Alerts.hxx>
 #include <BOPAlgo_ArgumentAnalyzer.hxx>
@@ -65,6 +67,7 @@
 #include <BRepClass3d_SolidExplorer.hxx>
 #include <BRepGProp.hxx>
 #include <BRepLib.hxx>
+#include <ShapeFix_ShapeTolerance.hxx>
 #include <BRepPrimAPI_MakeCylinder.hxx>
 #include <BRepPrimAPI_MakeBox.hxx>
 #include <BRepPrimAPI_MakeSphere.hxx>
@@ -1058,6 +1061,62 @@ double maxTolerance(const TopoDS_Shape& shape)
     return tol;
 }
 
+// Whether a shape passes BRepCheck and the whole boolean argument check, as
+// Part's check(true) runs it (TopoShape::analyze).
+bool passesFullCheck(const TopoDS_Shape& shape)
+{
+    if (!BRepCheck_Analyzer(shape).IsValid()) {
+        return false;
+    }
+    BOPAlgo_ArgumentAnalyzer check;
+    check.SetShape1(BRepBuilderAPI_Copy(shape, true, false).Shape());
+    check.ArgumentTypeMode() = true;
+    check.SelfInterMode() = true;
+    check.SmallEdgeMode() = true;
+    check.RebuildFaceMode() = true;
+    check.ContinuityMode() = true;
+    check.TangentMode() = true;
+    check.MergeVertexMode() = true;
+    check.CurveOnSurfaceMode() = true;
+    check.MergeEdgeMode() = true;
+    check.SetRunParallel(true);
+    check.Perform();
+    return !check.HasFaulty();
+}
+
+// Tolerances wider than the geometry needs, brought back: every tolerance of
+// the shape above the floor set to it, then raised again as far as its gaps
+// need. Kept if ok() holds after, else every tolerance is put back as it was.
+// The general fuse widens tolerances where surfaces meet at a small angle:
+// #474's ramp parts came out with 1e-3 to 1.8e-2 where 1e-5 to 3e-5 do.
+bool tightenTolerances(const TopoDS_Shape& shape, double floor, const std::function<bool()>& ok)
+{
+    std::vector<std::tuple<TopoDS_Shape, double, TopAbs_ShapeEnum>> saved;
+    ShapeFix_ShapeTolerance stol;
+    for (TopAbs_ShapeEnum type : {TopAbs_VERTEX, TopAbs_EDGE, TopAbs_FACE}) {
+        TopTools_IndexedMapOfShape map;
+        TopExp::MapShapes(shape, type, map);
+        for (int i = 1; i <= map.Extent(); ++i) {
+            const TopoDS_Shape& s = map(i);
+            double tol = type == TopAbs_VERTEX ? BRep_Tool::Tolerance(TopoDS::Vertex(s))
+                : type == TopAbs_EDGE         ? BRep_Tool::Tolerance(TopoDS::Edge(s))
+                                              : BRep_Tool::Tolerance(TopoDS::Face(s));
+            saved.emplace_back(s, tol, type);
+            if (tol > floor) {
+                stol.SetTolerance(s, floor, type);
+            }
+        }
+    }
+    BRepLib::UpdateTolerances(shape, true);
+    if (ok()) {
+        return true;
+    }
+    for (const auto& [s, tol, type] : saved) {
+        stol.SetTolerance(s, tol, type);
+    }
+    return false;
+}
+
 bool isBoundaryFace(const TopoDS_Shape& face)
 {
     return face.Orientation() == TopAbs_FORWARD || face.Orientation() == TopAbs_REVERSED;
@@ -1280,9 +1339,8 @@ private:
     const CellDraft::FaceDraft& draft;
     bool stopAtBody;
     // the general fuse's fuzzy value: none, then a little on a second try,
-    // then by the part's size (coarse)
+    // then by the part's size
     double fuzzy = 0.0;
-    bool coarse = false;
 
     TopTools_IndexedMapOfShape solidFaces;
     TopTools_MapOfShape fsetMap;
@@ -2858,20 +2916,32 @@ bool CellDraftOne::attempt(double scale)
         }
     }
     FC_TIME_LOG(t, "check");
-    // The coarse fuzzy fuse may grow tolerances by a few times its value,
-    // not more: #474's Fillet002, face 10 about 9 at 5 deg, came out at the
-    // classic draft's volume with a vertex of 3.6e-2 on a part 30 across (90
-    // times the fuzzy value); #631's ramp at 15 deg with 5.3e-3 (3 times).
-    // (The other tries are not bounded: the exact fuse's results on #474's
-    // ramp grow to 6.8e-2 already, docs/NewDraft.md section 15.)
-    if (coarse) {
-        double tol = maxTolerance(result);
-        if (tol > inputTol + 4 * fuzzy && tol > 1e-4) {
-            std::ostringstream ss;
-            ss << "the fuzzy fuse grew a tolerance to " << tol;
-            return fail(CellDraft::NotASolid, ss.str());
-        }
+    // The tolerances the fuse widened, brought back to what the geometry
+    // needs (docs/NewDraft.md section 16), if the result then passes the
+    // whole boolean check as Part's check(true) runs it: an edge the fuse
+    // widened may lie on a face the draft did not make, and the check's
+    // small-edge test judges an edge by its vertices' tolerances (#876's face
+    // 4 about 7 at 5 deg: tightened, the region check passed and the small-
+    // edge test found two edges too small). #474's Fillet002, face 10 about
+    // 11 at 15 deg: 0.38 tightened to 6.7e-5. Then a result whose tolerances
+    // still pass the input's by 1e-3 of the part's size is refused: there the
+    // gaps are real (the same face about 11 at 60 deg: 0.095).
+    double tol = maxTolerance(result);
+    if (tol > std::max(10 * inputTol, 1e-5)) {
+        bool tight = tightenTolerances(result, std::max(inputTol, Precision::Confusion()), [&]() {
+            return passesFullCheck(result);
+        });
+        double after = maxTolerance(result);
+        FC_LOG("tolerance " << tol << (tight ? " tightened to " : " kept, it would need ")
+                            << after);
+        tol = after;
     }
+    if (tol > inputTol + 1e-3 * reachLimit) {
+        std::ostringstream ss;
+        ss << "a tolerance of the result is " << tol << ", the input's at most " << inputTol;
+        return fail(CellDraft::NotASolid, ss.str());
+    }
+    FC_TIME_LOG(t, "tolerances");
     // The history: the fuse's, from the solid's own shapes and from the
     // tools to their owners; then the choice of cells; then the merge.
     Handle(BRepTools_History) h1 = new BRepTools_History;
@@ -3332,7 +3402,6 @@ bool CellDraftOne::run()
     // fuse puts the point where the three meet in two places 0.0007 apart.
     for (double fz : {0.0, 1e-6, 1e-5 * reachLimit}) {
         fuzzy = fz;
-        coarse = fz > 1e-6;
         for (double scale : {1.0, 4.0, 16.0}) {
             error = CellDraft::NoError;
             if (attempt(scale)) {
