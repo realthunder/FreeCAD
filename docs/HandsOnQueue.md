@@ -79,8 +79,9 @@ report views, the reporter's own files -- is kept beside the dev tree under
 | 39 | 2026-10-07 | MSAA has not reached any view since 2026-09-07 (found by the build session on entry 26) | FIXED `c7d115e576`, not staged: with "MSAA 4x" chosen the backend could not create its scene targets and drew without multisampling from then on, on every backend; the depth is write-only under MSAA now. The reporter's case on the fixed tree: 0.75 s in all, both views at 4 samples (`docs/HandsOnLog.md`) |
 | 40 | 2026-10-07 | crash on exit: a TechDraw page in a split view cell is destroyed after its view provider, and writes into it | OPEN (cause read from the stack) |
 | 41 | 2026-10-08 | the Python-only modules' settings in the omni search, through a way into the registry from Python (from entry 24: C1, C4) | FIXED, all four steps (`a75b43f1d5`, `4a99a978f7`, `48037fbd8c`, `de7bd49797`, `ff12279ee6`) and `aa63b07cc8` for L9 and L10; not staged, not pushed: 603 settings listed that were not -- Assembly 13, Draft and BIM 426 (listed once Draft or BIM has been used, as decided), Fem 47, CAM 27, the Addon Manager 41, Help 14, OpenSCAD 15, ReverseEngineering 11, Tux 5, Material 4, Test none. Registration only, but for the help panel's size read (L9) and OpenSCAD's `useMaxFN` (L10). Full suites on `ff12279ee6`: ctest 787 of 787, Python 3411 with the two known thickness failures. Still with the reporter: L1 to L8, L11 (a recommendation), L12, F1, F3, F4, F6 to F8, none of them blocking (`docs/HandsOnLog.md`) |
-| 42 | 2026-10-08 | state keys (window sizes, recent lists, last directories, first-run flags) through the generator like every other setting (from entry 24: C2) | OPEN, sized and the cut agreed 2026-10-08, starts next session after 41: about 90 state keys through the generator and listed, about 110 settings entry 24 did not reach added here, about 90 records under user-made names left out (`docs/HandsOnLog.md`) |
+| 42 | 2026-10-08 | state keys (window sizes, recent lists, last directories, first-run flags) through the generator like every other setting (from entry 24: C2) | STEP 1 OF 3 DONE 2026-10-08, nothing generated yet, six points with the reporter (Q1 to Q6): the 300 candidates read key by key -- 94 state keys, 114 settings, 44 records under run-time names (stay out), 23 dead, 14 defined after all; checked against the live registry with every module loaded (1818 rows), none of the 208 is in it. Left: the 94 state keys, then the 114 settings, through the generator. Q2 is entry 44 (`docs/HandsOnLog.md`) |
 | 43 | 2026-10-08 | omni search: the highlighted row's text is white on a light blue highlight | OPEN; looked at by the build session, not a side effect of the theme defaults, not fixed |
+| 44 | 2026-10-08 | the DXF page's exporter settings do not reach the C++ DXF exporter: `Import.writeDXFObject`/`writeDXFShape` point it at `Mod/Import`, where nothing stores them (found by the build session on entry 42, Q2) | FOUND, read in the code, not run; not fixed |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -2892,7 +2893,55 @@ their short documentation (entry 23's rule) and a change followed at once
 where that is cheap (C3).
 Not started. Not said yet: the order of the modules.
 
-## 42. State keys through the generator like every other setting -- OPEN, sized and agreed, starts next session after 41 (see `docs/HandsOnLog.md`)
+## 42. State keys through the generator like every other setting -- step 1 of 3 DONE (the split key by key), nothing generated yet; six points with the reporter (see `docs/HandsOnLog.md`)
+
+**2026-10-08 17:35, the build session: step 1, the split key by key, is
+done** (its message; its log, entry 42, `bbde4cf51b` and `e89d5320ae`,
+local). Nothing in the source changed. The 300 candidates were read one by
+one at the places that read them:
+- 94 state keys;
+- 114 settings (58 of them read and set nowhere, by the log);
+- 44 records under names made at run time -- these stay out;
+- 23 dead;
+- 14 defined after all.
+So the sizing's "about 90" and "about 110" hold. Checked against the live
+registry with every module loaded (1818 rows): none of the 208 state keys
+and settings is in it.
+The files: `..\dl\handson\2026-10-08\entry41-42-sizing\entry42-split.tsv`
+and `entry42-split-summary.txt`.
+Left: step 2, the 94 state keys through the generator, listed; step 3, the
+114 settings, the 3D mouse first.
+
+**Six points for the reporter before anything is generated, NOT ANSWERED
+YET** (the log's Q1 to Q6, in short here):
+- Q1 28 of the 114 settings do not take a plain definition:
+  - 17 have no literal default: the cube's 6 face labels and 6 of the web
+    addresses are translated texts, `IssuesPage` comes from the build's
+    configuration, two gesture keys from Qt, `BitmapFill` is a resource
+    path, `LogLevels/Default` is computed;
+  - 4 are developer switches (`WireJoiner` twice, `PyodideUnpinned`,
+    `LogLevels/DebugDefault`);
+  - 2 are old keys read only as the fall-back of their successor
+    (`DAGView/Enabled`, `TechDraw/HLR/UsePolygon`);
+  - 1 mirrors four radio buttons (`DxfImportMode`);
+  - 4 are the DXF exporter's of Q2.
+- Q2 a defect FOUND, not fixed, read in the code and not run: the DXF
+  page's exporter settings do not reach the C++ DXF exporter. It is entry 44
+  now.
+- Q3 `SceneShare/Token` is a secret, kept so that links handed out go on
+  working: defined or not, its value should not show in a search.
+- Q4 `Workbenches/Ordered` and `Disabled` have a fixed path and key and are
+  set on a page, so the split has them as SETTINGS; the sizing had listed
+  "the workbench order" with the records that stay out.
+- Q5 the two recent lists are keys `MRU0`, `MRU1`, ... in a group that is
+  cleared and rewritten: counted as state, but a definition per key does not
+  fit them; only their length (`RecentFiles`) can be defined.
+- Q6 eight commands store the translated default they have just read (the
+  web addresses), which freezes it into `user.cfg`; the same write-back is
+  in `AutoShowSelectionView`, three `DAGView` keys and four
+  `DockWindows/*/Enabled`. And three defaults disagree between readers:
+  `DockWindows/PropertyView/Enabled`, `MainWindow/Theme` ("" and "Classic"),
+  `General/LastModule`.
 
 **Sized by the build session and the cut agreed by the reporter, 2026-10-08**
 (passed on 11:50; its log, entry 42, `2b7eeb10ca`, local). The reporter,
@@ -2940,10 +2989,26 @@ not go with the accent colour behind it. Possibly touched by entry 24's one
 open point, A24 (the theme's accent colours), since the background is an
 accent colour. Not said yet: under which theme (Light, Dark, Classic).
 
+## 44. The DXF page's exporter settings do not reach the C++ DXF exporter -- FOUND, read in the code, not run
+
+**2026-10-08 17:35, found by the build session on entry 42** (its Q2; its
+log, entry 42, `bbde4cf51b`, local) and given a number here. Not reported by
+the reporter; nothing was run, and nothing is fixed.
+As the log has it: the C++ DXF exporter reads its four options --
+`maxsegmentlength`, `ExportPoints`, `DxfVersionOut`, `DiscretizeEllipses` --
+from `Mod/Draft` in its constructor; `Import.writeDXFObject` and
+`Import.writeDXFShape` then point it at `Mod/Import` and read again
+(`AppImportPy.cpp:486`, `520`), where nothing stores them. So what is set on
+the DXF preference page for the exporter does not reach it by these two
+calls, and it works with its built-in defaults.
+It touches entry 42: these four are among the 28 settings of its Q1 that do
+not take a plain definition, because they are read from two groups.
+Not said yet by the reporter: whether to fix it, and when.
+
 ## Inbox
 
 Notes not sorted into an entry yet. Add a line here at any time, in any words;
 it is read before each entry is started and moved up into the table.
 
 (empty: the notes of 2026-10-06 are entries 20 to 28, those of 2026-10-07
-entries 29 to 40, those of 2026-10-08 so far entries 41 to 43)
+entries 29 to 40, those of 2026-10-08 so far entries 41 to 44)
