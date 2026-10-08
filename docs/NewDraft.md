@@ -9,7 +9,8 @@ body (section 11, with pictures); #876's cones and the internal edges in
 section 12. Step 4 done 2026-10-07: tangent chains -- walls and the fillets
 between them drafted as one sheet, fillets turned into cones (section 13).
 2026-10-08: past a cone's apex the walls meet in a ridge, and a chain may
-close at a sharp corner between two planes (section 14).
+close at a sharp corner between two planes (section 14); a coarse fuzzy
+try for neighbours tangent to each other (section 15).
 The design below came with a Python prototype (section 5)
 that the earlier measurements come from; the open questions settled
 2026-10-05 (section 9).
@@ -1270,3 +1271,48 @@ The sweep's input shapes had been cleared out of the scratch directory; they
 were exported again from the models (the features' input shapes) and the
 older scratch, and checked against the last run: on the build before, every
 case gives last session's result.
+
+## 15. Neighbours tangent to each other (2026-10-08)
+
+The 6 `NotASolid` of section 13.5 on #631's ramp, where the classic draft is
+valid. #631's Fillet002 input, face 7 drafted about face 9: the chain is an
+S-shaped ramp of walls and r=49 fillets running along the pull direction.
+At its end two neighbours meet tangentially -- face 8, a cylinder of radius
+40, and face 9, a plane 40 from its axis -- along a line. The chain's new
+cone crosses that line, and there three curves meet: the cone with the
+cylinder on either side of the line, and the cone with the plane. The fuse
+computes each on its own and puts their common point in two places 0.0007
+apart, joined by an edge 0.0007 long whose vertex's tolerance (6.8e-4) takes
+in the other end: the boolean check calls it a self-intersection. Neither
+the exact fuse nor the fuzzy one at 1e-6 joins them.
+
+- `ShapeFix_Wireframe::FixSmallEdges` on the chosen cells' solid joins them
+  and the check passes, but the volume moves by 0.066 (1.7e-6 relative,
+  against 4e-8 before): not taken.
+- A fuzzy value of 1e-3 joins them in the fuse itself: valid, boolean-clean,
+  4.8e-8 from the classic draft's volume. 1e-4 does not.
+
+So the cell draft now tries a third time, with a fuzzy value of 1e-5 of the
+solid's diagonal (1.8e-3 on #631), after the exact fuse and 1e-6 have both
+failed the checks. A coarse fuse can grow tolerances; its result is refused
+(`NotASolid`, naming the tolerance) when a tolerance passes the input's by
+more than 4 times the fuzzy value. #631's results hold 2.2e-3 to 5.3e-3
+(at most 3 times); #474's Fillet002, face 10 about 3 and about 9 at 5 deg,
+came out at the classic draft's volume from the coarse fuse with vertices of
+0.21 and 0.036 on a part 30 across, and stay refused.
+
+On the sweep (the 1222 and the 500, `Method = New`, the stop on): the 6
+of #631 valid, within 8e-8 of the classic draft's volumes, boolean-clean;
+nothing else changes. The suite: `new_chain_issue631_f7_n9_a{5,15}`.
+
+The tolerance bound is the coarse try's only. The exact fuse already grows
+tolerances on some drafts. Over the 1222 the cell draft's valid results
+hold, as their largest tolerance: under 1e-5 935, under 1e-4 133, under
+1e-3 34, under 1e-2 39, more 45. Most of the large ones are the input's own
+(#273's input carries 3e-2); grown more than 100 times past the input's,
+44, all on #474's ramp parts (up to 6.8e-2, Fillet002 face 10 about 8), #631
+(up to 5.3e-3) and #962 (2.6e-3), from the exact fuse as well as the fuzzy
+ones. Bounding those too would have refused four of #474's Fillet002 drafts
+that come out at the classic draft's volume (face 10 about 3 at 15 deg,
+about 11 at 5, 15 and 60, from the 1e-6 try, tolerances 0.09 to 0.29).
+Whether such a result should stand is open.
