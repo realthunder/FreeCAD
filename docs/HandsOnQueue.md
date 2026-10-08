@@ -61,7 +61,7 @@ report views, the reporter's own files -- is kept beside the dev tree under
 | 21 | 2026-10-06 | TechDraw: a click on a section line starts a section, and the line shifts at each recompute | STAGED |
 | 22 | 2026-10-06 | omni search: `/word` with no space is an object query; `/ word` forces it (change request, decided) | STAGED 2026-10-07 14:23, fixed `5aedd5cf83`: "/word" is an object query, "/ word" forces it, a keyword in full is the keyword, the beginning of one lists modes and objects together; the browser viewer's grammar follows (its bundle not rebuilt) |
 | 23 | 2026-10-06 | omni search: every setting it collects has documentation, none of it long (an audit asked) | STAGED 2026-10-07 14:23, fixed `c7a27b5a85` (and `08b8f009aa`): 574 settings audited, 221 had no documentation and 94 ran past 400 characters; all have a short text now and a test keeps it so. Side findings for the reporter in `docs/HandsOnLog.md`. The defaults FIXED `02cab053df`, not staged: OK on a fresh profile changed 23 settings and stored 2 under a wrong type, 14 of them a generated page's spin box clamping its default to 99; a test keeps it so |
-| 24 | 2026-10-06 | every `Base::Parameter` setting behind a cog helper class so the omni search finds it, applied through delayed handlers (change request, application-wide) | C++ SIDE DONE; decisions applied in two rounds, `e21eff05a7` and `427ffc8d28`; not staged; push follows the suites: editors' font Courier, Home Top, marker size 7 everywhere, Asymptote height empty, CAM unit default upstream's; 15 of the 16 findings fixed or dropped as decided; A24 (accent colours) still with the reporter (`docs/HandsOnLog.md`) |
+| 24 | 2026-10-06 | every `Base::Parameter` setting behind a cog helper class so the omni search finds it, applied through delayed handlers (change request, application-wide) | C++ SIDE DONE AND SETTLED; decisions applied in two rounds, `e21eff05a7` and `427ffc8d28`; PUSHED 2026-10-08 (origin/PartDesignPort = `b70cc6ebf1`, cycles `35a3bd898` first); not staged. Nothing left with the reporter. What remains of the aim is entries 41 and 42 (`docs/HandsOnLog.md`) |
 | 25 | 2026-10-06 | the outline of a highlighted face is jagged, MSAA on or off | OPEN |
 | 26 | 2026-10-06 | a long halt after enabling MSAA and pressing OK in the preferences | FIXED `175ffce199`, not staged: the FIRST OK of a profile held the program 11 to 15 s (780 keys stored for the first time and taken for changes: stylesheet set again 4.2 s, every Part view provider re-meshed 3.2 s, language activated again about 2 s); 0.9 s now (`docs/HandsOnLog.md`) |
 | 27 | 2026-10-06 | the view cell menu: opens a spreadsheet nobody asked for, lists every TechDraw object, changes the wrong cell | STAGED 2026-10-07 14:23, fixed `fa2ada985c`: the menu made a spreadsheet view by asking for it, listed a page's views, and placed a pick by the general policy instead of into its cell; all three gone, spreadsheets now listed by type like pages (`docs/HandsOnLog.md`) |
@@ -1634,7 +1634,7 @@ collects automatically; (b) each must have documentation; (c) none of it
 overly long; (d) pick out the long ones in particular -- text an agent wrote
 as development notes that ended up as a setting's documentation.
 
-## 24. Every setting behind a generated helper class, applied by delayed handlers (a change request) -- C++ side done, decisions applied in two rounds; A24 still with the reporter (see `docs/HandsOnLog.md`)
+## 24. Every setting behind a generated helper class, applied by delayed handlers (a change request) -- C++ side done and settled, PUSHED `b70cc6ebf1`, not staged (see `docs/HandsOnLog.md`)
 
 **From the build session, started** (passed on 2026-10-07 18:10; its log,
 entry 24, has the method and the inventory):
@@ -1954,6 +1954,17 @@ entry 24, has the method and the inventory):
   - One answer taken with a correction, told to the reporter: "A9 ... 7"
     was taken for A5, the marker size.
   - "Entry 42, list those keys" is recorded under entry 42.
+- **The last two points settled by the reporter, 2026-10-08, passed on by
+  the build session; nothing is left with them.** Verbatim: "A24, keep ours
+  then. don't change. and yes it is A5 marker size." So A24: the fork's
+  three accent colours (`00d2b684fd`) stay; and "A9 ... 7" was A5, the
+  marker size, 7 everywhere as applied.
+  Pushed on the reporter's word ("Push after done"): origin/PartDesignPort
+  = `b70cc6ebf1`, the cycles commit `35a3bd898` first. Not staged. (The
+  log's own note of this, `da1577e221`, is local and goes with the next
+  push.)
+  Next from the build session: a count and a proposed cut for entries 41
+  and 42, for the reporter to say yes to before any of it is touched.
 - **Three questions for the reporter, NOT ANSWERED YET** (log, entry 24, "To
   decide"):
   1. Modules written in Python only -- BIM, Draft, AddonManager, parts of CAM
