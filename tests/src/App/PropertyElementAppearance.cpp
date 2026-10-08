@@ -13,6 +13,7 @@
 #include <gtest/gtest.h>
 
 #include <map>
+#include <memory>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -710,6 +711,55 @@ TEST_F(PropertyElementAppearanceTest, manyAtOnceAreOneStepToUndo)
     EXPECT_TRUE(_prop->getStatedLooks().empty());
     _doc->redo();
     EXPECT_EQ(_prop->getStatedLooks().size(), 40U);
+}
+
+TEST_F(PropertyElementAppearanceTest, aLookHeldAndNotGivenIsStatedAndNotDrawn)
+{
+    EXPECT_FALSE(_prop->hasKept());
+    _prop->setKept(coloured(Green, 0.75F));
+    ASSERT_TRUE(_prop->hasKept());
+    EXPECT_FALSE(_prop->isEmpty());
+    // No look is given by it
+    EXPECT_FALSE(_prop->hasBase(Prop::Face));
+    EXPECT_EQ(_prop->getDrawn(Prop::Face).getSize(), 0);
+    EXPECT_TRUE(_prop->getStatedLooks().empty());
+    EXPECT_EQ(_prop->getLook(Prop::Face, 0).diffuseColor,
+              App::AppearanceList::defaultMaterial().diffuseColor);
+
+    // It is of the value: another that has none is not the same, a copy is
+    Prop* other = property(_doc->addObject("App::FeatureTest", "other"));
+    ASSERT_NE(other, nullptr);
+    EXPECT_FALSE(_prop->isSameStated(*other));
+    std::unique_ptr<App::Property> copy(_prop->Copy());
+    other->Paste(*copy);
+    EXPECT_TRUE(_prop->isSameStated(*other));
+    EXPECT_EQ(other->getKept().shininess, 0.75F);
+
+    // In the file at either schema, and in a document saved and opened
+    for (int schema : {4, 5}) {
+        Prop* back = property(
+            _doc->addObject("App::FeatureTest", ("back" + std::to_string(schema)).c_str()));
+        ASSERT_NE(back, nullptr);
+        restoreFromXML(*back, saveToXML(*_prop, schema));
+        ASSERT_TRUE(back->hasKept()) << schema;
+        EXPECT_EQ(back->getKept().diffuseColor, Green) << schema;
+        EXPECT_EQ(back->getKept().shininess, 0.75F) << schema;
+        EXPECT_FALSE(back->hasBase(Prop::Face)) << schema;
+    }
+    roundTrip();
+    ASSERT_TRUE(_prop->hasKept());
+    EXPECT_EQ(_prop->getKept().diffuseColor, Green);
+
+    // One step to undo
+    _doc->setUndoMode(1);
+    _doc->openTransaction("let go");
+    _prop->clearKept();
+    _doc->commitTransaction();
+    EXPECT_FALSE(_prop->hasKept());
+    EXPECT_TRUE(_prop->isEmpty());
+    _doc->undo();
+    ASSERT_TRUE(_prop->hasKept());
+    EXPECT_EQ(_prop->getKept().diffuseColor, Green);
 }
 
 TEST_F(PropertyElementAppearanceTest, aNameThatIsNoElementsIsRefused)

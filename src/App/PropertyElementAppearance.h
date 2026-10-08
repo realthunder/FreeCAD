@@ -232,6 +232,24 @@ public:
     void setDetachedNamed(const AppearanceList &looks, std::vector<uint16_t> &&own = {});
     //@}
 
+    /** @name A look held and not given
+     *
+     * docs/ShapeAppearanceDesign.md sec 14.6.4. A link gives all it shows a
+     * look or gives none, and "given at all is given": the own look of its
+     * faces is there while it gives one and is not while it does not. The
+     * look it gave, or was to give, is still the one it is asked for and
+     * the one it gives when it gives one again, and is held here, apart
+     * from the own look, so that it is in the file. Stated, and a change to
+     * undo; nothing is made of it and nothing is drawn from it.
+     */
+    //@{
+    bool hasKept() const;
+    /// The default material where none is held
+    const MaterialAppearance &getKept() const;
+    void setKept(const MaterialAppearance &look);
+    void clearKept();
+    //@}
+
     /** @name By number
      *
      * One entry for each element of the kind, each the kind's own look or
@@ -423,13 +441,15 @@ protected:
 
 private:
     /// Where a list is kept: the named looks, then for each kind its own
-    /// look, its numbered list and what is drawn of it
+    /// look, its numbered list and what is drawn of it, and last the look
+    /// held and not given. A file says which it has by these numbers.
     //@{
     static constexpr int SlotNamed = 0;
     static constexpr int SlotBase = 1;
     static constexpr int SlotNumbered = SlotBase + int(KindCount);
     static constexpr int SlotDrawn = SlotNumbered + int(KindCount);
-    static constexpr int SlotCount = SlotDrawn + int(KindCount);
+    static constexpr int SlotKept = SlotDrawn + int(KindCount);
+    static constexpr int SlotCount = SlotKept + 1;
     //@}
     /// A list, and the name its file is written under
     struct Held;

@@ -108,12 +108,27 @@ void LinkLooks::adopt()
     Store::Edit edit(store);
     if (overrideMaterial && shapeAppearance) {
         Looks::setOverride(store, overrideMaterial->getValue(), shapeAppearance->getBase());
+        keepChosen();
     }
     if (overrideColorList && names.colored) {
         Looks::setColored(store, names.colored->getSubValues(), overrideColorList->getValues());
     }
     if (materialList && overrideMaterialList) {
         Looks::setArrayLooks(store, looksOf(*materialList), overrideMaterialList->getValues());
+    }
+}
+
+void LinkLooks::keepChosen()
+{
+    Store &store = *names.store;
+    if (!shapeAppearance || !names.shapeAppearance || Looks::hasOverride(store)
+        || shapeAppearance->getSize() < 1 || names.shapeAppearance->getSize() < 1) {
+        return;
+    }
+    // What the object says is the look it holds, or the one nobody chose:
+    // another here is one somebody did
+    if (!sameLook(shapeAppearance->getBase(), names.shapeAppearance->getBase())) {
+        Looks::keepLook(store, shapeAppearance->getBase());
     }
 }
 
@@ -128,6 +143,14 @@ void LinkLooks::mirror()
     // The look before the flag: what draws on the flag draws the look
     if (on && shapeAppearance) {
         const App::MaterialAppearance &look = store.getBase(Store::Face);
+        if (shapeAppearance->getSize() < 1 || !sameLook(shapeAppearance->getBase(), look)) {
+            shapeAppearance->setValue(look);
+        }
+    }
+    else if (shapeAppearance && names.shapeAppearance
+             && names.shapeAppearance->getSize() > 0) {
+        // It gives none: the look it would give, as the object says it
+        const App::MaterialAppearance &look = names.shapeAppearance->getBase();
         if (shapeAppearance->getSize() < 1 || !sameLook(shapeAppearance->getBase(), look)) {
             shapeAppearance->setValue(look);
         }
@@ -179,6 +202,10 @@ void LinkLooks::onChanged(const App::Property *prop, bool restoring)
             if (overrideMaterial && shapeAppearance) {
                 Looks::setOverride(store, overrideMaterial->getValue(),
                                    shapeAppearance->getBase());
+                // A look written while it gives none is the one it would give
+                if (prop == shapeAppearance) {
+                    keepChosen();
+                }
             }
         }
         else if (prop == overrideColorList) {

@@ -58,7 +58,7 @@ const char *const KindNames[PropertyElementAppearance::KindCount] = {"Face", "Ed
 /// What a held list's file is named after, beside the property's own name
 const char *const SlotNames[] = {"Named",      "Face",       "Edge",         "Vertex",  "Faces",
                                  "Edges",      "Vertices",   "DrawnFaces",   "DrawnEdges",
-                                 "DrawnVertices"};
+                                 "DrawnVertices", "Kept"};
 
 struct OwnName
 {
@@ -628,6 +628,41 @@ void PropertyElementAppearance::followMaterial(Kind kind, const MaterialAppearan
         return;
     }
     assignBase(kind, list);
+}
+
+//**************************************************************************
+// A look held and not given
+
+bool PropertyElementAppearance::hasKept() const
+{
+    return listAt(SlotKept).getSize() > 0;
+}
+
+const MaterialAppearance &PropertyElementAppearance::getKept() const
+{
+    const AppearanceList &list = listAt(SlotKept);
+    return list.getSize() > 0 ? list.getBase() : AppearanceList::defaultMaterial();
+}
+
+void PropertyElementAppearance::setKept(const MaterialAppearance &look)
+{
+    if (hasKept() && differingFields(getKept(), look) == OwnNone) {
+        return;
+    }
+    AppearanceList list;
+    list.setValue(look);
+    list.setFollowMaterial(false);
+    Edit edit(*this);
+    assign(SlotKept, list);
+}
+
+void PropertyElementAppearance::clearKept()
+{
+    if (!hasKept()) {
+        return;
+    }
+    Edit edit(*this);
+    assign(SlotKept, AppearanceList());
 }
 
 //**************************************************************************
@@ -1792,7 +1827,7 @@ bool PropertyElementAppearance::isSameStated(const PropertyElementAppearance &ot
             return false;
         }
     }
-    return true;
+    return listAt(SlotKept).isSame(other.listAt(SlotKept));
 }
 
 unsigned int PropertyElementAppearance::getMemSize() const

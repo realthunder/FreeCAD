@@ -33,6 +33,7 @@
 
 #include "AppearanceList.h"
 #include "AppearanceUpdater.h"
+#include "Application.h"
 #include "Document.h"
 #include "DocumentObject.h"
 #include "ElementNamingUtils.h"
@@ -188,13 +189,45 @@ bool LinkAppearance::hasOverride(const Store &store)
 
 void LinkAppearance::setOverride(Store &store, bool on, const MaterialAppearance &look)
 {
+    const bool has = store.hasBase(Store::Face);
     if (!on) {
+        if (!has) {
+            return;
+        }
+        // The look it gave is the one it would give
+        Store::Edit edit(store);
+        store.setKept(store.getBase(Store::Face));
         store.clearBase(Store::Face);
+        return;
     }
-    else if (!store.hasBase(Store::Face)
-             || Store::differingFields(store.getBase(Store::Face), look) != Store::OwnNone) {
+    const bool same =
+        has && Store::differingFields(store.getBase(Store::Face), look) == Store::OwnNone;
+    if (same && !store.hasKept()) {
+        return;
+    }
+    Store::Edit edit(store);
+    if (!same) {
         store.setBase(Store::Face, look);
     }
+    store.clearKept();
+}
+
+void LinkAppearance::keepLook(Store &store, const MaterialAppearance &look)
+{
+    if (!store.hasBase(Store::Face)) {
+        store.setKept(look);
+    }
+}
+
+MaterialAppearance LinkAppearance::defaultLook(bool ofPart)
+{
+    MaterialAppearance look(MaterialAppearance::DEFAULT);
+    look.diffuseColor.setPackedValue(static_cast<uint32_t>(
+        GetApplication()
+            .GetParameterGroupByPath("User parameter:BaseApp/Preferences/View")
+            ->GetUnsigned(ofPart ? "DefaultShapeColor" : "DefaultLinkColor",
+                          ofPart ? 0xCCCCE6FFUL : 0x66FFFFFFUL)));
+    return look;
 }
 
 void LinkAppearance::getColored(const Store &store, std::vector<std::string> &names,
@@ -323,6 +356,21 @@ void mirror(const LinkAppearance::Names &names)
     if (names.shapeAppearance && on) {
         names.shapeAppearance->mirrorList(store.getBaseList(Store::Face));
     }
+    else if (names.shapeAppearance) {
+        // It gives none: the look it would give, which is the one kept, or
+        // the one nobody chose
+        const MaterialAppearance look = store.hasKept()
+            ? store.getKept()
+            : LinkAppearance::defaultLook(
+                  Base::freecad_dynamic_cast<App::Part>(store.getContainer()) != nullptr);
+        const AppearanceList &now = names.shapeAppearance->getList();
+        if (now.getSize() != 1
+            || Store::differingFields(now.getBase(), look) != Store::OwnNone) {
+            AppearanceList kept;
+            kept.setValue(look);
+            names.shapeAppearance->mirrorList(kept);
+        }
+    }
 }
 
 bool settled(const LinkAppearance::Names &names)
@@ -403,9 +451,8 @@ void LinkAppearance::writeAppearance(const Names &names, const AppearanceList &a
     }
     else {
         // No look of its own: kept as the one it would have
-        AppearanceList kept;
-        kept.setValue(after.getBase());
-        names.shapeAppearance->mirrorList(kept);
+        keepLook(*names.store, after.getBase());
+        mirror(names);
     }
 }
 

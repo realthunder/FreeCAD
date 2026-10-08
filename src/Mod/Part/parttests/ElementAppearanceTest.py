@@ -404,6 +404,52 @@ class ElementAppearanceLinkTest(unittest.TestCase):
         self.assertEqual(rgb(ea["Face6"].DiffuseColor), BLUE[:3])
         self.assertEqual(list(link.ColoredElements[1]), ["Face6"])
 
+    def testTheLookALinkWouldGiveIsInTheFile(self):
+        link, ea = self.link, self.link.ElementAppearance
+        nobodys = rgb(link.ShapeAppearance.Base.DiffuseColor)
+        # Given a look and then none: the one it gave is the one it would give
+        self.give(GREEN)
+        link.OverrideMaterial = False
+        self.assertNotIn("Face", ea)
+        self.assertEqual(rgb(link.ShapeAppearance.Base.DiffuseColor), GREEN[:3])
+        # ... and so is one it is given while it gives none, which is no look
+        # given: nothing made from the link takes it
+        self.doc.openTransaction("a look to give")
+        look = link.ShapeAppearance.Base
+        look.DiffuseColor = BLUE
+        link.ShapeAppearance.Base = look
+        self.doc.commitTransaction()
+        self.assertFalse(link.OverrideMaterial)
+        self.assertNotIn("Face", ea)
+        self.assertEqual(ea.keys(), [])
+        self.assertEqual(rgb(link.ShapeAppearance.Base.DiffuseColor), BLUE[:3])
+        self.doc.undo()
+        self.assertEqual(rgb(link.ShapeAppearance.Base.DiffuseColor), GREEN[:3])
+        self.doc.redo()
+        self.assertEqual(rgb(link.ShapeAppearance.Base.DiffuseColor), BLUE[:3])
+        # In the file whatever its schema: at 5 no name is written, and the
+        # look was in nothing else
+        folder = tempfile.mkdtemp(prefix="fc-ea-")
+        paths = []
+        for schema in (5, 4):
+            self.doc.SaveSchemaVersion = schema
+            paths.append(os.path.join(folder, "kept%d.FCStd" % schema))
+            self.doc.saveAs(paths[-1])
+        for path in paths:
+            App.closeDocument(self.doc.Name)
+            self.doc = App.openDocument(path)
+            link = self.doc.getObject("Link")
+            ea = link.ElementAppearance
+            self.assertFalse(link.OverrideMaterial, path)
+            self.assertNotIn("Face", ea, path)
+            self.assertEqual(rgb(link.ShapeAppearance.Base.DiffuseColor), BLUE[:3], path)
+            link.OverrideMaterial = True
+            self.assertEqual(rgb(ea.Face.DiffuseColor), BLUE[:3], path)
+        # Everything let go is the look nobody chose again
+        link.ElementAppearance = None
+        self.assertFalse(link.OverrideMaterial)
+        self.assertEqual(rgb(link.ShapeAppearance.Base.DiffuseColor), nobodys)
+
     def testAnUndoTakesALookBack(self):
         link, ea = self.link, self.link.ElementAppearance
         self.doc.openTransaction("looks")

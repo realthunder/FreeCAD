@@ -72,10 +72,7 @@ Part::Part()
     const auto name = (PropertyType)(Prop_NoPersist|Prop_Output|Prop_NoRecompute);
     ADD_PROPERTY_TYPE(OverrideMaterial, (false), appearances, name,
             "Give what the part holds a look of the part's own");
-    App::MaterialAppearance mat(App::MaterialAppearance::DEFAULT);
-    mat.diffuseColor.setPackedValue(static_cast<uint32_t>(
-        GetApplication().GetParameterGroupByPath("User parameter:BaseApp/Preferences/View")
-            ->GetUnsigned("DefaultShapeColor", 0xCCCCE6FFUL)));
+    const App::MaterialAppearance mat = LinkAppearance::defaultLook(true);
     ADD_PROPERTY_TYPE(ShapeAppearance, (mat), appearances, name,
             "The look the part gives what it holds, where it gives one");
     ShapeAppearance.setStatus(Property::MaterialEdit, true);

@@ -352,11 +352,7 @@ void LinkBaseExtension::setProperty(int idx, Property *prop) {
         if(appearance->hasWriter())
             break;
         // The look a link gives where nobody chose one
-        App::MaterialAppearance mat(App::MaterialAppearance::DEFAULT);
-        mat.diffuseColor.setPackedValue(static_cast<uint32_t>(
-            GetApplication().GetParameterGroupByPath("User parameter:BaseApp/Preferences/View")
-                ->GetUnsigned("DefaultLinkColor", 0x66FFFFFFUL)));
-        appearance->setValue(mat);
+        appearance->setValue(LinkAppearance::defaultLook(false));
         appearance->setStatus(Property::MaterialEdit, true);
         appearance->setWriter([this](const AppearanceList &, const AppearanceList &after, int) {
             LinkAppearance::Names names;

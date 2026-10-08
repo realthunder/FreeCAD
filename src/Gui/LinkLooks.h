@@ -103,6 +103,9 @@ private:
     void mark(bool on);
     void mirror();
     void adopt();
+    /// The look here, where the link gives none and the object says another
+    /// one, is the one it would give: kept by the object
+    void keepChosen();
 
     App::LinkAppearance::Names names;
     bool mirroring {false};

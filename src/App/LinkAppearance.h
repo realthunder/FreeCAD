@@ -96,10 +96,21 @@ public:
     /// Whether \a name is of an element that is not shown
     static bool isHiddenName(const std::string &name);
 
-    /** @name The look the link gives all it shows */
+    /** @name The look the link gives all it shows
+     *
+     * Given at all is the override on. Turned off, the look it gave is
+     * kept (PropertyElementAppearance::setKept()) for when it gives one
+     * again, and so is a look it is given while it gives none: what
+     * ShapeAppearance says of a link that does not override.
+     */
     //@{
     static bool hasOverride(const Store &store);
     static void setOverride(Store &store, bool on, const MaterialAppearance &look);
+    /// The look it would give. Nothing while it gives one, which is that.
+    static void keepLook(Store &store, const MaterialAppearance &look);
+    /// The look given where nobody chose one: the preference's link colour,
+    /// and for an App::Part its shape colour
+    static MaterialAppearance defaultLook(bool ofPart);
     //@}
 
     /** @name The elements given a colour, or hidden
