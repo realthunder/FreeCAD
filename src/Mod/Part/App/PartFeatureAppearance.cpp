@@ -741,6 +741,47 @@ void Feature::mirrorLooks()
     colour(Store::Vertex, PointColor);
 }
 
+namespace {
+
+/// Whether every element of the shape is held by its number: no name is
+/// stated, and the shape gives none
+bool allByNumber(const App::PropertyElementAppearance &store, const TopoShape &shape)
+{
+    return store.getNamedCount() == 0 && shape.getElementMapSize() == 0;
+}
+
+/** The looks given by number, to write many of in one go
+ *
+ * One at a time (PropertyElementAppearance::setLook()) each is read out of
+ * the list the one before was written to, and a list written to puts itself
+ * in order before it answers: every entry gone over, for every entry. A
+ * colour for each of 120,000 faces of an import took a minute. Read from
+ * the list as it was, written to a copy, given back once.
+ */
+App::AppearanceList numberedToWrite(const App::PropertyElementAppearance &store,
+                                    App::PropertyElementAppearance::Kind kind, int count,
+                                    const App::MaterialAppearance &base)
+{
+    App::AppearanceList work = store.getNumbered(kind);
+    if (work.getSize() == 0) {
+        // Every element the kind's own look, until one is given another
+        work = store.getBaseList(kind);
+        if (work.getSize() > 0) {
+            work.setSize(count);
+        }
+        else {
+            work.setSize(count, base);
+        }
+        work.setFollowMaterial(false);
+    }
+    else if (work.getSize() < count) {
+        work.setSize(count);
+    }
+    return work;
+}
+
+}  // namespace
+
 void Feature::writeFaces(const App::AppearanceList &before, const App::AppearanceList &after)
 {
     if (_mirroringLooks) {
@@ -811,6 +852,48 @@ void Feature::writeFaces(const App::AppearanceList &before, const App::Appearanc
         }
     }
     const int count = store.countElements(Store::Face);
+    bool plain = faces.size() > 1 && count > 0 && allByNumber(store, Shape.getShape());
+    for (auto it = faces.begin(); plain && it != faces.end(); ++it) {
+        // What names stored content is held as it is written, one at a time
+        const App::MaterialAppearance look = entry(after, *it);
+        plain = !look.texture.isSet() && look.materialx.empty();
+    }
+    if (plain) {
+        // Every face by its number: together (numberedToWrite())
+        const App::AppearanceList numbered = store.getNumbered(Store::Face);
+        App::AppearanceList work = numberedToWrite(store, Store::Face, count, base);
+        bool any = false;
+        for (int i : faces) {
+            if (i >= count) {
+                break;
+            }
+            const App::MaterialAppearance current =
+                i < numbered.getSize() ? numbered.getMaterial(i) : base;
+            const uint16_t own = Store::differingFields(current, base);
+            if (toObject && own == Store::OwnNone) {
+                continue;
+            }
+            const App::MaterialAppearance now = entry(after, i);
+            uint16_t changed = Store::differingFields(now, entry(before, i));
+            if (toObject) {
+                changed &= own;
+            }
+            if (changed == Store::OwnNone) {
+                continue;
+            }
+            const App::MaterialAppearance next =
+                sameLook(now, base) ? base : Store::layOver(current, now, changed);
+            if (Store::differingFields(next, current) == Store::OwnNone) {
+                continue;
+            }
+            work.set1Value(i, next);
+            any = true;
+        }
+        if (any) {
+            store.setNumbered(Store::Face, work);
+        }
+        return;
+    }
     for (int i : faces) {
         if (count >= 0 && i >= count) {
             break;
@@ -912,6 +995,40 @@ void Feature::writeColors(int which, const std::vector<App::Color> &values)
     }
     const App::AppearanceList drawn = store.getDrawn(kind);
     const int count = store.countElements(kind);
+    if (count > 0 && allByNumber(store, Shape.getShape())) {
+        // Every element by its number: together (numberedToWrite())
+        const App::AppearanceList numbered = store.getNumbered(kind);
+        App::AppearanceList work = numberedToWrite(store, kind, count, own);
+        bool any = false;
+        for (int i = 0; i < static_cast<int>(values.size()) && i < count; ++i) {
+            const App::Color &value = values[static_cast<std::size_t>(i)];
+            const App::Color now = drawn.getSize() > 1 && i < drawn.getSize()
+                ? drawn.getDiffuseColor(i)
+                : own.diffuseColor;
+            if (sameRGB(value, now)) {
+                continue;
+            }
+            const App::MaterialAppearance current =
+                i < numbered.getSize() ? numbered.getMaterial(i) : own;
+            App::MaterialAppearance next = own;
+            if (!sameRGB(value, own.diffuseColor)) {
+                App::MaterialAppearance look = current;
+                look.diffuseColor = value;
+                look.diffuseColor.a = own.diffuseColor.a;
+                look.transparency = look.diffuseColor.transparency();
+                next = Store::layOver(current, look, Store::OwnDiffuse);
+            }
+            if (Store::differingFields(next, current) == Store::OwnNone) {
+                continue;
+            }
+            work.set1Value(i, next);
+            any = true;
+        }
+        if (any) {
+            store.setNumbered(kind, work);
+        }
+        return;
+    }
     for (int i = 0; i < static_cast<int>(values.size()); ++i) {
         if (count >= 0 && i >= count) {
             break;
