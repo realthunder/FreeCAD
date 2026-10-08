@@ -1443,10 +1443,17 @@ void StringHasher::Restore(Base::XMLReader& reader)
         return;
     }
 
+    // The table in a member the file names, which is how upstream writes
+    // one that is not empty, and this fork did. Named for whoever restores
+    // the document to read, as the member above is, and not handed to the
+    // reader to be served after the objects: a document that shares its
+    // file's hasher reads its table into a hasher of its own and merges it
+    // (Document::Restore), and that one was gone before the reader came to
+    // it -- the table was lost, and the reader called into freed memory.
     if(reader.hasAttribute("file")) {
         const char *file = reader.getAttribute("file");
         if(*file) {
-            reader.addFile(file,this);
+            _tableFile = file;
         }
         return;
     }

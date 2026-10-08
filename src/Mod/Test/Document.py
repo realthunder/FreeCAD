@@ -4136,6 +4136,44 @@ class TransactionBranchCases(unittest.TestCase):
         v = self.track(FreeCAD.openFileVersion(path, num, False))
         self.assertEqual(v.getObject("Cut").Shape.ElementMap, em)
 
+    def testStringTableNamedAsUpstreamNamesIt(self):
+        # Upstream names a string table that is not empty file="...", and
+        # this fork did: a member the reader served after the objects, to
+        # whichever hasher read the element. A document that shares its
+        # file's hasher reads the table into one of its own, which was gone
+        # by then -- the table was lost and the reader called into freed
+        # memory. Found opening here a file upstream had saved again.
+        import re, zipfile
+
+        doc = self.cutDocument("UpTable")
+        em = doc.getObject("Cut").Shape.ElementMap
+        path = os.path.join(self.dir, "uptable.FCStd")
+        doc.saveAs(path)
+        FreeCAD.closeDocument(doc.Name)
+        named = os.path.join(self.dir, "uptable_file.FCStd")
+        with zipfile.ZipFile(path) as z, zipfile.ZipFile(named, "w", zipfile.ZIP_DEFLATED) as out:
+            for info in z.infolist():
+                try:
+                    data = z.read(info.filename)
+                except NotImplementedError:
+                    # The log's members, packed as zipfile cannot unpack:
+                    # the file is then one with no log, as upstream's is
+                    continue
+                if info.filename == "Document.xml":
+                    xml, count = re.subn(
+                        r'<StringHasher2 table="StringTable.txt"[^>]*/>',
+                        '<StringHasher2  file="StringTable.txt"/>',
+                        data.decode(),
+                    )
+                    self.assertEqual(count, 1)
+                    data = xml.encode()
+                out.writestr(info.filename, data)
+        doc = self.track(FreeCAD.openDocument(named))
+        self.assertEqual(doc.getObject("Cut").Shape.ElementMap, em)
+        # Read again, the document's hasher is the file's and has strings
+        doc.restore()
+        self.assertEqual(doc.getObject("Cut").Shape.ElementMap, em)
+
     def testSaveCompactsTheStringTable(self):
         # Sec 27.50 item 4, 27.51 Q3-Q4: a save drops every string nothing
         # holds and no retained version or value uses, and keeps the ones
