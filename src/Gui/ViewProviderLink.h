@@ -210,6 +210,10 @@ class GuiExport ViewProviderLink : public ViewProviderDocumentObject
 public:
     App::PropertyBool OverrideMaterial;
     App::PropertyAppearanceList ShapeAppearance;
+    /// ShapeAppearance's look under the name upstream and an older build of
+    /// this fork know it by: what their scripts write, and what a file below
+    /// schema 5 says for them. A name, with no value of its own.
+    App::PropertyAppearance ShapeMaterial;
     App::PropertyEnumeration DrawStyle;
     App::PropertyFloatConstraint LineWidth;
     App::PropertyFloatConstraint PointSize;

@@ -1963,6 +1963,14 @@ ViewProviderLink::ViewProviderLink()
     mat.diffuseColor.setPackedValue(ViewParams::getDefaultLinkColor());
     ADD_PROPERTY_TYPE(ShapeAppearance, (mat), " Link", App::Prop_None, 0);
     ShapeAppearance.setStatus(App::Property::MaterialEdit, true);
+    // The name a link's look had, and has upstream. A file written for
+    // upstream said ShapeAppearance alone, which upstream has not on a link:
+    // a link given a colour here was the default colour there. Legacy and
+    // not Hidden: a status is written with its property, and upstream would
+    // hide its own ShapeMaterial.
+    ADD_PROPERTY_TYPE(ShapeMaterial, (mat), " Link", App::Prop_None,
+                      "Retired: the look of ShapeAppearance under its former name");
+    ShapeMaterial.setStatus(App::Property::Legacy, true);
 
     ADD_PROPERTY_TYPE(DrawStyle,((long int)0), " Link", App::Prop_None, "");
     static const char* DrawStyleEnums[]= {"None","Solid","Dashed","Dotted","Dashdot",nullptr};
@@ -2119,6 +2127,17 @@ QPixmap ViewProviderLink::getOverlayPixmap() const {
 
 void ViewProviderLink::onChanged(const App::Property* prop) {
     Gui::ColorUpdater colorUpdater;
+
+    // The look under its former name, each way
+    if (prop == &ShapeMaterial) {
+        if (!(ShapeAppearance.getBase() == ShapeMaterial.getValue())) {
+            ShapeAppearance.setValue(ShapeMaterial.getValue());
+        }
+        return;
+    }
+    if (prop == &ShapeAppearance && !(ShapeMaterial.getValue() == ShapeAppearance.getBase())) {
+        ShapeMaterial.setValue(ShapeAppearance.getBase());
+    }
 
     // A write to a name over what the link holds is the link's
     looks.onChanged(prop, isRestoring());
@@ -2567,8 +2586,12 @@ void ViewProviderLink::handleChangedPropertyName(Base::XMLReader &reader,
                                                  const char *TypeName,
                                                  const char *PropName)
 {
+    // By the type the name resolves to, not by its spelling: the file of an
+    // older build, and of upstream, says App::PropertyMaterial, which is the
+    // former name of this type (Base::Type::addLegacyName). Compared as
+    // strings since the rename, the look a link was given was dropped.
     if (strcmp(PropName, "ShapeMaterial") == 0
-            && strcmp(TypeName, App::PropertyAppearance::getClassTypeId().getName()) == 0) {
+            && Base::Type::fromName(TypeName) == App::PropertyAppearance::getClassTypeId()) {
         App::PropertyAppearance prop;
         prop.Restore(reader);
         ShapeAppearance.setValue(prop.getValue());

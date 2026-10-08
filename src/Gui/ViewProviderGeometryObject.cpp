@@ -444,8 +444,10 @@ void ViewProviderGeometryObject::handleChangedPropertyType(Base::XMLReader &read
         ShapeColor.applyToAppearance();
         return;
     }
+    // The type the name resolves to: an older file says App::PropertyMaterial,
+    // the former name of App::PropertyAppearance
     if (prop == &ShapeMaterial
-            && strcmp(TypeName, App::PropertyAppearance::getClassTypeId().getName()) == 0) {
+            && Base::Type::fromName(TypeName) == App::PropertyAppearance::getClassTypeId()) {
         App::PropertyAppearance old;
         old.Restore(reader);
         ShapeMaterial.mirrorValue(old.getValue());
