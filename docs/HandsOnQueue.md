@@ -61,7 +61,7 @@ report views, the reporter's own files -- is kept beside the dev tree under
 | 21 | 2026-10-06 | TechDraw: a click on a section line starts a section, and the line shifts at each recompute | STAGED |
 | 22 | 2026-10-06 | omni search: `/word` with no space is an object query; `/ word` forces it (change request, decided) | STAGED 2026-10-07 14:23, fixed `5aedd5cf83`: "/word" is an object query, "/ word" forces it, a keyword in full is the keyword, the beginning of one lists modes and objects together; the browser viewer's grammar follows (its bundle not rebuilt) |
 | 23 | 2026-10-06 | omni search: every setting it collects has documentation, none of it long (an audit asked) | STAGED 2026-10-07 14:23, fixed `c7a27b5a85` (and `08b8f009aa`): 574 settings audited, 221 had no documentation and 94 ran past 400 characters; all have a short text now and a test keeps it so. Side findings for the reporter in `docs/HandsOnLog.md`. The defaults FIXED `02cab053df`, not staged: OK on a fresh profile changed 23 settings and stored 2 under a wrong type, 14 of them a generated page's spin box clamping its default to 99; a test keeps it so |
-| 24 | 2026-10-06 | every `Base::Parameter` setting behind a cog helper class so the omni search finds it, applied through delayed handlers (change request, application-wide) | C++ SIDE DONE 2026-10-08 06:55, work stopped, about 1170 settings listed; not staged, not pushed (116 commits ahead). WAITS FOR THE REPORTER'S DECISIONS, to be gone through next session: `..\dl\handson\2026-10-08\entry24-decisions.md` (A 28 defaults chosen, B 23 behaviours put right, C 5 questions, D 16 findings not fixed). The Python-only modules wait on C1 (`docs/HandsOnLog.md`) |
+| 24 | 2026-10-06 | every `Base::Parameter` setting behind a cog helper class so the omni search finds it, applied through delayed handlers (change request, application-wide) | C++ SIDE DONE; decisions applied `e21eff05a7`, not staged, not pushed: of 28 defaults chosen on the way 5 went back to upstream's program (editor font, Home, marker sizes, Asymptote height, CAM units); 12 of the 16 open findings fixed; six questions back with the reporter (A24, A28, D1, D8, D13, D14); the Python door (C1) is entry 41 and the state keys (C2) entry 42, decided and not started (`docs/HandsOnLog.md`) |
 | 25 | 2026-10-06 | the outline of a highlighted face is jagged, MSAA on or off | OPEN |
 | 26 | 2026-10-06 | a long halt after enabling MSAA and pressing OK in the preferences | FIXED `175ffce199`, not staged: the FIRST OK of a profile held the program 11 to 15 s (780 keys stored for the first time and taken for changes: stylesheet set again 4.2 s, every Part view provider re-meshed 3.2 s, language activated again about 2 s); 0.9 s now (`docs/HandsOnLog.md`) |
 | 27 | 2026-10-06 | the view cell menu: opens a spreadsheet nobody asked for, lists every TechDraw object, changes the wrong cell | STAGED 2026-10-07 14:23, fixed `fa2ada985c`: the menu made a spreadsheet view by asking for it, listed a page's views, and placed a pick by the general policy instead of into its cell; all three gone, spreadsheets now listed by type like pages (`docs/HandsOnLog.md`) |
@@ -78,6 +78,8 @@ report views, the reporter's own files -- is kept beside the dev tree under
 | 38 | 2026-10-07 | omni search: an obvious freeze the first time it is brought up | FIXED `bb31f8820b`, not staged: the first bring-up loaded and rendered the icon of every command (609) before showing the box, 0.99 s + 0.28 s on the reporter's configuration with `scanner.FCStd` open; 0.15 s + 0.07 s now (`docs/HandsOnLog.md`) |
 | 39 | 2026-10-07 | MSAA has not reached any view since 2026-09-07 (found by the build session on entry 26) | FIXED `c7d115e576`, not staged: with "MSAA 4x" chosen the backend could not create its scene targets and drew without multisampling from then on, on every backend; the depth is write-only under MSAA now. The reporter's case on the fixed tree: 0.75 s in all, both views at 4 samples (`docs/HandsOnLog.md`) |
 | 40 | 2026-10-07 | crash on exit: a TechDraw page in a split view cell is destroyed after its view provider, and writes into it | OPEN (cause read from the stack) |
+| 41 | 2026-10-08 | the Python-only modules' settings in the omni search, through a way into the registry from Python (from entry 24: C1, C4) | OPEN, decided, not started |
+| 42 | 2026-10-08 | state keys (window sizes, recent lists, last directories, first-run flags) through the generator like every other setting (from entry 24: C2) | OPEN, decided, not started |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -1631,7 +1633,7 @@ collects automatically; (b) each must have documentation; (c) none of it
 overly long; (d) pick out the long ones in particular -- text an agent wrote
 as development notes that ended up as a setting's documentation.
 
-## 24. Every setting behind a generated helper class, applied by delayed handlers (a change request) -- C++ side done, work stopped; waits for the reporter's decisions (see `docs/HandsOnLog.md`)
+## 24. Every setting behind a generated helper class, applied by delayed handlers (a change request) -- C++ side done, decisions applied `e21eff05a7`; six questions back with the reporter (see `docs/HandsOnLog.md`)
 
 **From the build session, started** (passed on 2026-10-07 18:10; its log,
 entry 24, has the method and the inventory):
@@ -1898,6 +1900,39 @@ entry 24, has the method and the inventory):
   - **Not to be started meanwhile**, by the build session's own account:
     the Python-only modules of this entry (they wait on C1), and entries
     25, 28, 29, 30, 35, 36, 37 and 40.
+- **The reporter's decisions, 2026-10-08, made with the build session and
+  passed on at 08:55; applied in `e21eff05a7`, not staged, not pushed.** The
+  answers, verbatim, to the letters of the list
+  (`..\dl\handson\2026-10-08\entry24-decisions.md`): "'apply preferences at
+  once' applies itself, what did you do with it. For the rest you changed,
+  lookup upstream code and follow their behavior. If they also has
+  descripency, follow their program default. C1 python gate. C2 use
+  generator all the same. C3 no delay for cheap one. C4 yes. C5 one push.
+  D1, D2 check upstream first. D3 default to all 0 and follow 3d, Otherwise
+  use the setting. D4 explain what's continue switch. D5, D6 fix. D7 fix. D8
+  elaborate. D9-12 fix. D13 elaborate. D14 expose the assembly setting.
+  What's with material and import. D15, 16 fix".
+  What that settles, as the build session reports it (its log, entry 24,
+  "THE DECISIONS, 2026-10-08", commit `fbeae5b965`):
+  - The rule for parts A and B: where the build session had changed a
+    default or a behaviour, upstream's code is looked up and followed; where
+    upstream's page and program disagree as well, upstream's PROGRAM default
+    wins. Of the 28 defaults chosen on the way, 5 went back to upstream's
+    program: the editor font, Home, the marker sizes, the Asymptote height,
+    CAM's units. This replaces the decisions (a) to (m) noted above.
+  - C1: a way into the registry from Python ("python gate") -- entry 41.
+  - C2: state keys go through the generator all the same -- entry 42.
+  - C3: no delay for a change that is cheap to apply.
+  - C4: yes -- this entry ends with the C++ side; the Python-only modules
+    are an entry of their own (41).
+  - C5: one push (the cycles commit first).
+  - Part D: 12 of the 16 open findings are fixed.
+  - **Six questions are back with the reporter, NOT ANSWERED YET: A24, A28,
+    D1, D8, D13, D14** -- what each asks is in the log. (The reporter's own
+    questions in the answers above -- what was done with "apply preferences
+    at once", what the "continue" switch of D4 is, D8 and D13 to be
+    elaborated, "what's with material and import" -- are the build session's
+    to answer there.)
 - **Three questions for the reporter, NOT ANSWERED YET** (log, entry 24, "To
   decide"):
   1. Modules written in Python only -- BIM, Draft, AddonManager, parts of CAM
@@ -2617,10 +2652,39 @@ spreadsheet or any other non-3D view kept in a cell is worth the same look.
 Not said yet: what was open at the moment of closing (which pages, in which
 cells), and whether it has happened before on exit.
 
+## 41. The Python-only modules' settings in the omni search, through a way in from Python -- OPEN, decided, not started
+
+**2026-10-08, split off entry 24 by the reporter's decisions** (C1 "python
+gate", C4 "yes"; passed on by the build session at 08:55, which asked for a
+place in the queue). Entry 24 ends with the C++ side. What is left of its
+aim -- every setting findable by the omni search -- is the modules written
+in Python only, which have no generated class to register from: BIM, Draft,
+AddonManager, the Python settings of Fem and CAM, the DXF options; about 300
+keys.
+Decided: the registry gets a way in from Python (in the build session's
+words when it asked: "a module registers its settings from a definition file
+at import"), and these modules' settings are registered through it, with
+their short documentation (entry 23's rule) and a change followed at once
+where that is cheap (C3).
+Not started. Not said yet: the order of the modules.
+
+## 42. State keys through the generator like every other setting -- OPEN, decided, not started
+
+**2026-10-08, split off entry 24 by the reporter's decision** (C2, passed on
+by the build session at 08:55, which asked for a place in the queue). The
+question was whether state keys -- window sizes, recent lists, last
+directories, first-run flags, a dialog's last values -- stay OUT of the
+generated classes and the omni search's list, as the build session had left
+them. The reporter: "C2 use generator all the same". So they are defined
+through the generator like every other setting.
+Not started. To settle when it is: whether "through the generator" also
+means LISTED by the omni search, or defined there and kept out of its list
+-- the answer says the first and does not mention the list.
+
 ## Inbox
 
 Notes not sorted into an entry yet. Add a line here at any time, in any words;
 it is read before each entry is started and moved up into the table.
 
-(empty: the notes of 2026-10-06 are entries 20 to 28, those of 2026-10-07 so far
-entries 29 to 40)
+(empty: the notes of 2026-10-06 are entries 20 to 28, those of 2026-10-07
+entries 29 to 40, those of 2026-10-08 so far entries 41 and 42)
