@@ -1045,6 +1045,19 @@ TopoDS_Shape stripInternalEdges(const TopoDS_Shape& shape, Handle(BRepTools_Hist
     return res;
 }
 
+// The largest tolerance of a vertex or an edge of a shape.
+double maxTolerance(const TopoDS_Shape& shape)
+{
+    double tol = 0.0;
+    for (TopExp_Explorer exp(shape, TopAbs_VERTEX); exp.More(); exp.Next()) {
+        tol = std::max(tol, BRep_Tool::Tolerance(TopoDS::Vertex(exp.Current())));
+    }
+    for (TopExp_Explorer exp(shape, TopAbs_EDGE); exp.More(); exp.Next()) {
+        tol = std::max(tol, BRep_Tool::Tolerance(TopoDS::Edge(exp.Current())));
+    }
+    return tol;
+}
+
 bool isBoundaryFace(const TopoDS_Shape& face)
 {
     return face.Orientation() == TopAbs_FORWARD || face.Orientation() == TopAbs_REVERSED;
@@ -1266,8 +1279,10 @@ private:
     const TopoDS_Shape& solid;
     const CellDraft::FaceDraft& draft;
     bool stopAtBody;
-    // the general fuse's fuzzy value: none, then a little on a second try
+    // the general fuse's fuzzy value: none, then a little on a second try,
+    // then by the part's size (coarse)
     double fuzzy = 0.0;
+    bool coarse = false;
 
     TopTools_IndexedMapOfShape solidFaces;
     TopTools_MapOfShape fsetMap;
@@ -1279,6 +1294,8 @@ private:
     std::vector<Cap> caps;
     double disp = 0.0;
     double reachLimit = 0.0;
+    // the input's largest tolerance
+    double inputTol = 0.0;
     // a tangent seam's new line along the neutral plane's normal: the height
     // of a level
     double perLevel = 1.0;
@@ -1783,6 +1800,7 @@ bool CellDraftOne::prepare()
     Bnd_Box solidBox;
     BRepBndLib::Add(solid, solidBox, false);
     reachLimit = boxDiagonal(solidBox);
+    inputTol = maxTolerance(solid);
 
     if (!collectMembers(edgeFaces) || !makeSeams()) {
         return false;
@@ -2840,6 +2858,20 @@ bool CellDraftOne::attempt(double scale)
         }
     }
     FC_TIME_LOG(t, "check");
+    // The coarse fuzzy fuse may grow tolerances by a few times its value,
+    // not more: #474's Fillet002, face 10 about 9 at 5 deg, came out at the
+    // classic draft's volume with a vertex of 3.6e-2 on a part 30 across (90
+    // times the fuzzy value); #631's ramp at 15 deg with 5.3e-3 (3 times).
+    // (The other tries are not bounded: the exact fuse's results on #474's
+    // ramp grow to 6.8e-2 already, docs/NewDraft.md section 15.)
+    if (coarse) {
+        double tol = maxTolerance(result);
+        if (tol > inputTol + 4 * fuzzy && tol > 1e-4) {
+            std::ostringstream ss;
+            ss << "the fuzzy fuse grew a tolerance to " << tol;
+            return fail(CellDraft::NotASolid, ss.str());
+        }
+    }
     // The history: the fuse's, from the solid's own shapes and from the
     // tools to their owners; then the choice of cells; then the merge.
     Handle(BRepTools_History) h1 = new BRepTools_History;
@@ -3294,8 +3326,13 @@ bool CellDraftOne::run()
     // with a fuzzy fuse: neighbours tangent to each other (#876's cone
     // corners between drafted walls) touch along lines, which the exact
     // fuse can leave in a sliver it does not split.
-    for (double fz : {0.0, 1e-6}) {
+    // A third try, fuzzier by the part's size, for neighbours tangent to each
+    // other where a new surface crosses their line of contact (#631's ramp:
+    // a cylinder and the plane tangent to it, the new cone across them): the
+    // fuse puts the point where the three meet in two places 0.0007 apart.
+    for (double fz : {0.0, 1e-6, 1e-5 * reachLimit}) {
         fuzzy = fz;
+        coarse = fz > 1e-6;
         for (double scale : {1.0, 4.0, 16.0}) {
             error = CellDraft::NoError;
             if (attempt(scale)) {
