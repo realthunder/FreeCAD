@@ -40,6 +40,7 @@ Evidence that does not belong in the repository is under
 | 24 | C++ SIDE DONE, about 1180 settings listed; the reporter's decisions of 2026-10-08 applied in two rounds, `e21eff05a7` and `427ffc8d28`; pushed `b70cc6ebf1`, not staged | every setting C++ reads is behind a generated class. After both rounds: the editors' font is Courier, Home is Top, the marker size is 7 everywhere, the Asymptote height is empty, CAM's unit default is upstream's; 15 of the 16 findings are fixed or dropped as decided (D4 needs nothing). A24: the fork's three accent colours stay ("keep ours"). Nothing is left with the reporter. Entries 41 (Python door) and 42 (state keys, to be listed) are decided and not started |
 | 26 | FIXED `175ffce199`, not staged | the first OK of a profile held the program 11 to 15 s on the reporter's configuration with `scanner.FCStd` open: 780 keys stored for the first time and taken for changes -- stylesheet set again 4.2 s, every Part view provider re-meshed 3.2 s, language activated again 2 s. 0.9 s now |
 | 27 | STAGED `fa2ada985c` | the cell menu made a spreadsheet view by asking for it, listed a page's views, and a pick was placed by the general policy |
+| 30 | THIRD TASK FIXED `dad4f5d18a`, not staged, not pushed; the freeze MEASURED, not fixed; the first task waits for the reporter | Light, Dark and Classic list the colours an overlay preset leaves behind, so a theme clears the Python console's background again. The freeze on `scanner.FCStd`: 13 s for the dark overlay preset, of which 9.5 s is the application's style sheet being changed; the same preset a second time, nothing changing, still 4 s |
 | 31 | FIXED `47b5e72c79`, not staged | "Go to end" is on for a profile that never stored it |
 | 32 | FIXED `b960092ea5`, not staged | the menus styled see-through are single objects shared between a pop-up over the 3D view and the main menu; the blue is the palette's bright text, the desktop's accent. No sheet chosen is an ordinary menu now |
 | 33 | FIXED `ef4df215b5` (cycles `35a3bd898`), not staged | the path tracer's CUDA probe ran `cmd.exe /c where nvcc` through `popen` at the first 3D view; it searches the PATH without a shell now |
@@ -2487,3 +2488,95 @@ that can run is written in black.
 
 Not looked at: other lists with a delegate of their own under the native
 style. The stock delegate is right by the style's own substitution.
+
+## 30. The overlay stylesheets and the theme packs -- third task FIXED `dad4f5d18a`; the freeze measured; the first task with the reporter
+
+Three tasks under one entry. Taken in the order they could be.
+
+**Third task: "add python console stylesheet setting to dark and light
+theme ... once applied there is no way to un-apply it even switching to
+classic theme" -- FIXED.** The queue's reading holds. Of the colours the
+two overlay presets write under Preferences, three were listed by no theme
+(one of them by two of the three), and a theme writes only what it lists:
+
+| key | Light | Dark | Classic |
+|---|---|---|---|
+| `Editor/Background` (the console's) | missing | missing | missing |
+| `TreeView/ItemBackground` | missing | missing | missing |
+| `View/CursorCrosshairColor` | missing | listed | listed |
+
+All three list them now. The two backgrounds as 0, "none": under each
+theme the console and the tree are styled by the theme's own sheet, and 0
+is what takes the preset's away again. MY CHOICE, for the reporter to
+overrule: "add python console stylesheet setting" could also mean a
+console colour of the theme's own; none is defined anywhere, so none was
+invented. Under Light the cross-hair is the dark grey the light overlay
+preset uses (`0x3D3D3DFF`): it was the coded white there, on a light 3D
+background, preset or no preset -- a defect of its own that the same line
+closes. `View/Gradient`, `View/Simple` and `View/BackgroundColor`, which
+the queue also named, were listed by all three already. NOT touched: the
+preset's layout keys (`TreeView/HideColumn`, the dock windows, the overlay
+panels) -- a theme is not a layout -- and the six other packs.
+
+`tests/gui/theme-clears-overlay-preset-leftovers.py`: every colour an
+overlay preset writes is a key each of the three lists; with the dark
+preset's two backgrounds in place (the console does take the background),
+each theme puts them back to none. Before (the copy staged 2026-10-07)
+8 PASS, 10 FAIL; after, 18 PASS.
+
+**Second task: "investigate the application long freeze time when
+applying overlay stylesheet" -- MEASURED, nothing changed.** `e30.py` in
+`..\dl\handson\2026-10-08\q2`: a fresh profile (no theme, no style sheet),
+a copy of `scanner.FCStd` open (686 objects, 1067 widgets alive), "Overlay
+dark theme" applied through its menu action as the reporter did, the time
+the event loop is held:
+
+| | held |
+|---|---|
+| the preset, first time | 13.0 s, 12.0 s of it one turn of the event loop |
+| the same preset again, nothing changing | 4.0 s |
+
+and its 45 keys written one after another by hand, each waited out:
+
+| key | held |
+|---|---|
+| `MainWindow/StyleSheet` = `Dark.qss` | 9.6 s |
+| `DockWindows/ComboView/Enabled` = 0 | 3.3 s |
+| `MainWindow/OverlayActiveStyleSheet` | 0.55 s |
+| each of the 26 keys under `MainWindow/DockWindows/Overlay*` | 0.9 to 2.6 s, 1.4 s typically |
+| the colours and the rest | nothing |
+
+So, on this machine and a fresh profile:
+- Three quarters of the freeze is the APPLICATION'S style sheet being
+  replaced, not the overlay's: the preset names `Dark.qss` for it, and Qt
+  polishes every widget again. Entry 26 met the same cost from the other
+  side (a style sheet set again, 4.2 s there).
+- The combo view being switched off for separate tree and property panels
+  is the next 3 s.
+- Every key of an overlay panel's state costs a whole re-read of the
+  overlay layout, about 1.4 s, when it arrives alone: 54 s for the preset
+  written key by key. Arriving together, as the preset does, they are
+  taken in one go -- the 13 s is not 45 times anything. A profile or a
+  macro that writes them one at a time pays all of it.
+- Applying the preset a second time, with every value already there,
+  still holds 4 s: values that did not change are acted on.
+The reporter's "several tens of seconds" is more than the 13 s here; their
+profile started from the theme's sheet with more panels open, and their
+machine is not this one. Not measured on their configuration.
+
+NOT measured: what inside those 9.6 s (a sampled stack of the long turn
+would say whether it is the polish of the 1067 widgets, the tree's rows or
+the sheet's parse), and the same without a document. Not changed: the
+order and the merging of what the preset triggers. What to do about it is
+the reporter's to say -- the cheap ones would be not acting on a value
+that did not change, and one overlay re-read per burst of its keys.
+
+**First task: "integrate dark and light overlay stylesheet into dark and
+light preference pack" -- WITH THE REPORTER.** The queue's question
+stands, and the third task answers part of it from the other end: the two
+packs already name `Light_overlay.qss` and `Dark_overlay.qss`, and now own
+every colour the overlay presets write. What is left to "integrate" is one
+of: the packs naming a different pair of overlay sheets; the overlay
+taking its colours from the theme's parameters instead of a sheet of its
+own; or the overlay LAYOUT (which panels float where) coming with the
+theme. Not started without that word.
