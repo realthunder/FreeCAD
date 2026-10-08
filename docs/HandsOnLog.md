@@ -34,7 +34,7 @@ Evidence that does not belong in the repository is under
 | 19 | STAGED `805b5afb25` | every place the audit listed that runs at load, recompute or paint, the three wrong results, and the writer of -1; what is left is listed |
 | 22 | STAGED `5aedd5cf83` | `/word` is an object query; the beginning of a keyword lists modes and objects |
 | 23 | STAGED `c7a27b5a85`, and `08b8f009aa`; the defaults FIXED `02cab053df`, not staged | 574 settings: 221 had no documentation, 94 ran past 400 characters; all have a short text now, and a test keeps it so. The defaults: OK on a fresh profile changed 23 settings and stored 2 under a wrong type -- 14 of them a spin box clamping its default to 99, which the reporter's own profile carries |
-| 24 | STARTED: the method, the inventory (1734 pairs of group and key, 570 defined), three groups done -- the report view's 12 keys `a6ed59e824`, Part's measurements' 7 `014dc501f8`, the General group's 29 `e0a8a17e23` -- and about 200 more keys read; not staged | three things for the reporter to decide are in the entry |
+| 24 | C++ SIDE DONE, about 1180 settings listed; the reporter's decisions of 2026-10-08 applied `e21eff05a7`; not staged, not pushed | every setting C++ reads is behind a generated class. Of 28 defaults chosen on the way, 5 went back to upstream's program (editor font, Home, marker sizes, Asymptote height, CAM units); 12 of the 16 open findings are fixed. Six questions are back with the reporter (A24, A28, D1, D8, D13, D14). The Python door (C1) and the state keys (C2) are decided and not started: each gets a count first |
 | 26 | FIXED `175ffce199`, not staged | the first OK of a profile held the program 11 to 15 s on the reporter's configuration with `scanner.FCStd` open: 780 keys stored for the first time and taken for changes -- stylesheet set again 4.2 s, every Part view provider re-meshed 3.2 s, language activated again 2 s. 0.9 s now |
 | 27 | STAGED `fa2ada985c` | the cell menu made a spreadsheet view by asking for it, listed a page's views, and a pick was placed by the general policy |
 | 31 | FIXED `47b5e72c79`, not staged | "Go to end" is on for a profile that never stored it |
@@ -852,7 +852,7 @@ its own thing, and not started.
 
 Evidence: `..\dl\handson\2026-10-07\msaa-*`, `entry26-first-ok-with-msaa-*`.
 
-## 24. Every setting behind a generated class -- C++ SIDE DONE, decisions wait for the reporter
+## 24. Every setting behind a generated class -- C++ SIDE DONE, the decisions applied `e21eff05a7`; six questions back to the reporter
 
 The reporter, 2026-10-07, asked which entry "do entry 23 next" meant: "I
 meant entry 24". Not staged.
@@ -1351,3 +1351,132 @@ in `..\dl\handson\2026-10-07\`, `entry24-inventory-*.txt`):
 
 Evidence: `..\dl\handson\2026-10-07\inv24.py`, `inv24.tsv`,
 `inv24-summary.txt`, `entry24-report-view-*`.
+
+**THE DECISIONS, 2026-10-08.** The reporter went through the list
+(`..\dl\handson\2026-10-08\entry24-decisions.md`) and answered in one
+message, in their words:
+
+> "apply preferences at once" applies itself, what did you do with it. For
+> the rest you changed, lookup upstream code and follow their behavior. If
+> they also has descripency, follow their program default. C1 python gate.
+> C2 use generator all the same. C3 no delay for cheap one. C4 yes. C5 one
+> push. D1, D2 check upstream first. D3 default to all 0 and follow 3d,
+> Otherwise use the setting. D4 explain what's continue switch. D5, D6
+> fix. D7 fix. D8 elaborate. D9-12 fix. D13 elaborate. D14 expose the
+> assembly setting. What's with material and import. D15, 16 fix
+
+Applied in `e21eff05a7`. Upstream is `upstream/main` `b960974504`
+(2026-10-01), read by four helper agents and checked at each place that was
+changed.
+
+*A, the defaults.* Rule: upstream's behaviour, and where upstream's page
+and program disagree, upstream's program.
+
+| # | Upstream's program | Result |
+|---|---|---|
+| A1 | spaces on, at all three readers | as it was |
+| A2 | no family stored = the system's fixed-pitch font | CHANGED from "Courier"; an editor is 15 pt on Linux again; a text document shows in the application font until a font is stored |
+| A3 | Home = Top, a new document = Trimetric, on purpose | CHANGED back: Home is Top |
+| A4 | 234,229,220 ... (page 20,20,163) | as it was |
+| A5 | 4 CAM, 5 Robot, 7 Mesh defects and sketch, 9 elsewhere | CHANGED back to those four |
+| A6 | on (page off) | as it was |
+| A7 | another key and colour (`SketchFaceColor`, orange, alpha 64) | as it was: `FaceColor` is the fork's own key, blue on purpose (`94d76ec9c2`) |
+| A8 | 204,51,153 (page 204,51,115) | as it was |
+| A9 | width 500, height EMPTY | CHANGED: height empty, `size(500);` |
+| A10-A19 | each the reader's value | as they were. A15, A16: upstream's literal has alpha 0 where the fork has 255; not copied, it would paint a transparent brush |
+| A20-A22 | 'Author'; 255,235,0; off | as they were |
+| A23 | white | as it was |
+| A24 | 0 (black) at the only reader; page and first-start seed 0,171,255 / 85,123,182 / 85,123,182 | NOT changed; the fork's three are its own Light theme's. Back to the reporter |
+| A25 | 12 in effect | as it was |
+| A26 | 6 at CAM's reader (0 in core) | CHANGED back to 6; the tool bit editor takes upstream's `FreeCAD.Units.getSchema()` |
+| A27 | 0xC8FFFF00, last byte never read | as it was (the same colour) |
+| A28 | 16, with a newer layout of the file cards | NOT changed: the fork's file card view is upstream's older one, where reader and layout were both 20. Back to the reporter |
+
+*B, the faults put right.* None reverted. By the helpers' reading of
+upstream (their quotes, not run): upstream has the same fault in
+B3, B7 (`checkCritical`), B9 (all four), B10, B11, B12, B14, B16 (all
+three), B17, B18 (`IsoCount`), B19 and B21. Fork-only code: B1, B4, B5,
+B8, B13, B20, and B6, B22, B23 (the fork's own machinery). Not faulty
+upstream, and the fix gives upstream's behaviour: B2, B15 (upstream's
+spin box stores text where the fork's stores a number). B5, which the
+reporter asked about: "apply preferences at once" exists in this fork
+only; `PrefParam::setAutoSave` called `GetBool` where it meant `SetBool`,
+so unticking the box did not reach the preference widgets until OK.
+
+*C.* C1: the Python door. C2: state keys go through the generator like
+the rest. C3: no delay where applying is cheap (as done). C4: entry 24 is
+done with the C++ side; the Python-only modules are an entry of their own.
+C5: one push. NOT STARTED: C1 and C2 are sweeps and get a count and a cut
+first (`size-and-decide-before-sweeping`). `left24.py src/` cannot give
+C2's count: it also lists defined keys whose readers still read the group.
+
+*D.*
+- D1 checked, NOT changed, back to the reporter. Upstream wired the
+  SECTION style list to drawing (`LineStyleSection`, default line 4, the
+  default of views made afterwards); the fork draws from `SectionLine`
+  (a pen style, default 2) and uses the property once as a pen style and
+  once as a line number. HIGHLIGHT is unconnected in both trees.
+  Hidden and centre DO reach drawing in the fork, by the helper's
+  reading (the list said two of four reach nothing; it is section and
+  highlight). Following upstream moves a new view's section line from line
+  2 to line 4 and changes what the saved property means.
+- D2: `DefaultPageScale` dangles upstream too, left. The projection
+  angle is fixed the way upstream means it: "Page" makes a new
+  projection group follow its page; a new page stays first angle
+  (upstream leaves its two-entry enumeration at 2, which is no value).
+- D3 done as said: `PreSelectColor` and `SelectColor` are listed, 0 while
+  not set, 0 follows the 3D view's setting with the 3D view's default.
+  The Colors page shows the view's colour and stores nothing until
+  another is chosen.
+- D4 explained, nothing to change: upstream's Dimension tool reads
+  `ContinuousCreationMode` too.
+- D5 fixed, and a second fault behind it: `GroupCommand::createAction`
+  read the stored choice and dropped it.
+- D6 fixed: both listed, 0 = the application font's height.
+- D7 fixed (the template). D9 fixed. D11 fixed.
+- D8 explained, NOT changed: `StatefulLabel` (the solver message of the
+  Sketcher's task panel) listens for `StyleSheet` in `Preferences/General`;
+  the key is in `Preferences/MainWindow`. Its per-state style cache is
+  therefore not cleared when the style sheet changes. Same upstream. One
+  line to fix.
+- D10 fixed, and it was more than the write: in this fork a save follows
+  the document's `SaveThumbnail` property, so the switch the auto saver
+  flipped reached nothing and every recovery save rendered a thumbnail.
+  The writer is told (`NoThumbnailUpdate`). From the code.
+- D12 fixed: one key, `Mod/PartDesign/DefaultDatumColor`, defined by
+  Part's class because the sub-shape binder lives in Part.
+  `DefaultDatumLineColor` moved with it. A value stored in `Mod/Part` is
+  moved once when PartGui loads.
+- D13 explained, NOT changed: a hidden per-extension override from the
+  old web start page (upstream `79ea979eb1`, 2023, "later we can set up
+  an UI"), gone upstream with that page. The fork's new Start reads it
+  (`de27349da7`); nothing has ever written it, and the comment beside the
+  read says the import dialog does.
+- D14: Assembly's colour is `Mod/Assembly/JointHighlightColor`, default
+  the red. It no longer follows a stored `View/HighlightColor`. Material
+  and Import: both are App libraries and cannot see Gui's `ViewParams`,
+  so they read the View group with literals of their own, as upstream
+  does. Import's face colour while not stored is 204,204,204; the 3D
+  view's in this fork is 204,204,230. Material's defaults are
+  `App::MaterialAppearance::DEFAULT`'s. NOT changed.
+- D15 fixed. D16 fixed.
+
+Scored: `tests/gui/entry24-decisions.py`
+(`GuiEntry24Decisions_tests_run`) 12 PASS; 0 PASS, 12 FAIL staged. The 22
+settings GUI tests together 196 PASS, 0 FAIL
+(`..\dl\handson\2026-10-08\entry24-scripts\g-d-*`). D10 and D11 from the
+code. The helper `guard.py` of `gui.cmd` was gone with a session scratch
+directory and is written again, beside `gui.cmd`.
+
+**BACK TO THE REPORTER:**
+- A24: accent colours 2 and 3 -- the fork's own (kept), upstream's seed
+  (85,123,182 for both), or upstream's literal reader default (black)?
+- A28: file card spacing 20 (kept) or upstream's 16?
+- D1: follow upstream for the section line style list?
+- D8: fix the one line?
+- D13: drop the read, keep it as a hidden key with a true comment, or
+  have the import chooser store the choice?
+- D14: should Import's default face colour be the 3D view's?
+- Seen by the helpers, not touched: TechDraw `ScrubCount` is 1 upstream
+  and 0 here (0 before entry 24 too); upstream replaced `NewFaceFinder`
+  by `FaceFinderVersion` with a third finder, not in the fork.
