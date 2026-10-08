@@ -575,15 +575,18 @@ PyObject* ViewProviderPy::setElementColors(PyObject* args)
         throw Py::TypeError("Expect a dict");
 
     std::map<std::string,App::Color> colors;
-    Py::Dict dict(pyObj);
-    for(auto it=dict.begin();it!=dict.end();++it) {
-        const auto &value = *it;
-        if(!value.first.isString() || !value.second.isSequence())
+    // PyDict_Next and not Py::Dict's iterators, which make the list of the
+    // keys again at every step: a second for the 12,000 faces of an import
+    PyObject *key = nullptr;
+    PyObject *value = nullptr;
+    Py_ssize_t pos = 0;
+    App::PropertyColor prop;
+    while(PyDict_Next(pyObj, &pos, &key, &value)) {
+        if(!PyUnicode_Check(key) || !PySequence_Check(value))
             throw Py::TypeError("Expect the dictionary to contain items of type elementName:(r,g,b,a)");
 
-        App::PropertyColor prop;
-        prop.setPyObject(value.second.ptr());
-        colors[value.first.as_string()] = prop.getValue();
+        prop.setPyObject(value);
+        colors[Py::String(key).as_string()] = prop.getValue();
     }
     getViewProviderPtr()->setElementColors(colors);
     Py_Return;
@@ -613,15 +616,17 @@ PyObject* ViewProviderPy::setElementAppearances(PyObject* args)
         throw Py::TypeError("Expect a dict");
 
     std::map<std::string,App::MaterialAppearance> appearances;
-    Py::Dict dict(pyObj);
-    for(auto it=dict.begin();it!=dict.end();++it) {
-        const auto &value = *it;
-        if(!value.first.isString()
-                || !PyObject_TypeCheck(value.second.ptr(), &(App::MaterialPy::Type)))
+    // PyDict_Next, as setElementColors() above
+    PyObject *key = nullptr;
+    PyObject *value = nullptr;
+    Py_ssize_t pos = 0;
+    while(PyDict_Next(pyObj, &pos, &key, &value)) {
+        if(!PyUnicode_Check(key)
+                || !PyObject_TypeCheck(value, &(App::MaterialPy::Type)))
             throw Py::TypeError("Expect the dictionary to contain items of type elementName:material");
 
-        appearances[value.first.as_string()] =
-            *static_cast<App::MaterialPy*>(value.second.ptr())->getMaterialAppearancePtr();
+        appearances[Py::String(key).as_string()] =
+            *static_cast<App::MaterialPy*>(value)->getMaterialAppearancePtr();
     }
     getViewProviderPtr()->setElementAppearances(appearances);
     Py_Return;

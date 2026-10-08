@@ -85,19 +85,23 @@ Py::Dict ViewProviderPartExtPy::getElementColors() const {
 void ViewProviderPartExtPy::setElementColors(Py::Dict dict) {
     auto *vp = getViewProviderPartExtPtr();
     std::map<std::string,App::Color> info;
-    for(auto it=dict.begin();it!=dict.end();++it) {
-        const auto &value = *it;
-        if(!value.first.isString())
+    // PyDict_Next and not Py::Dict's iterators, which make the list of the
+    // keys again at every step
+    PyObject *key = nullptr;
+    PyObject *value = nullptr;
+    Py_ssize_t pos = 0;
+    App::PropertyColor prop;
+    while(PyDict_Next(dict.ptr(), &pos, &key, &value)) {
+        if(!PyUnicode_Check(key))
             throw Py::TypeError("expect the key to be string");
-        App::PropertyColor prop;
         try {
-            prop.setPyObject(value.second.ptr());
+            prop.setPyObject(value);
         }catch(Base::Exception &e) {
             if(dynamic_cast<Base::TypeError*>(&e))
                 throw Py::TypeError(e.what());
             throw Py::RuntimeError(e.what());
         }
-        info.emplace(Py::String(value.first).as_string(),prop.getValue());
+        info.emplace(Py::String(key).as_string(),prop.getValue());
     }
     vp->setElementColors(info);
 }

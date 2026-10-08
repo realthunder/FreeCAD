@@ -12,6 +12,7 @@
 
 #include <gtest/gtest.h>
 
+#include <map>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -539,6 +540,176 @@ TEST_F(PropertyElementAppearanceTest, aWriteIsOneStepToUndo)
     EXPECT_EQ(_prop->getLook("Face3").diffuseColor, Green);
     ASSERT_EQ(_prop->getNamedCount(), 2);
     EXPECT_EQ(_prop->getLook("Face1").diffuseColor, Red);
+}
+
+namespace
+{
+
+/// What setStatedColors() does, a name at a time: what it has to come to
+void oneAtATime(Prop& prop, const std::map<std::string, App::Color>& colors)
+{
+    Prop::Edit edit(prop);
+    for (const auto& v : prop.getStatedLooks()) {
+        if (!colors.count(v.first)) {
+            prop.removeLook(v.first.c_str());
+        }
+    }
+    for (const auto& v : colors) {
+        if (v.first == "Face" || v.first == "Edge" || v.first == "Vertex") {
+            continue;
+        }
+        try {
+            prop.setColor(v.first.c_str(), v.second);
+        }
+        catch (Base::Exception&) {
+        }
+    }
+}
+
+/// Whether two state the same of the same elements, however each holds it
+void expectSameStated(const Prop& a, const Prop& b)
+{
+    const auto left = a.getStatedLooks();
+    const auto right = b.getStatedLooks();
+    ASSERT_EQ(left.size(), right.size());
+    EXPECT_EQ(a.getNamedCount(), b.getNamedCount());
+    for (std::size_t i = 0; i < left.size(); ++i) {
+        EXPECT_EQ(left[i].first, right[i].first) << i;
+        EXPECT_EQ(Prop::differingFields(left[i].second, right[i].second), Prop::OwnNone)
+            << left[i].first;
+        Prop::Kind kind = Prop::KindCount;
+        int index = -1;
+        ASSERT_TRUE(Prop::parseElement(left[i].first.c_str(), kind, index));
+        EXPECT_EQ(a.getOwn(kind, index), b.getOwn(kind, index)) << left[i].first;
+    }
+    for (int k = 0; k < Prop::KindCount; ++k) {
+        const auto kind = static_cast<Prop::Kind>(k);
+        EXPECT_EQ(Prop::differingFields(a.getBase(kind), b.getBase(kind)), Prop::OwnNone);
+    }
+}
+
+std::map<std::string, App::Color> palette(int from, int to, uint32_t seed)
+{
+    std::map<std::string, App::Color> colors;
+    for (int i = from; i < to; ++i) {
+        colors["Face" + std::to_string(i + 1)] =
+            packed(((seed + static_cast<uint32_t>(i) * 2654435761U) & 0xffffff00U) | 0xffU);
+    }
+    return colors;
+}
+
+}  // namespace
+
+TEST_F(PropertyElementAppearanceTest, manyColoursAtOnceAreWhatANameAtATimeMakes)
+{
+    Prop* other = property(_doc->addObject("App::FeatureTest", "other"));
+    ASSERT_NE(other, nullptr);
+    for (Prop* prop : {_prop, other}) {
+        prop->setBase(Prop::Face, coloured(Blue, 0.25F));
+        // One face holds a material of its own before any is painted
+        prop->setLook("Face7", coloured(Green, 0.75F));
+    }
+    // More than are written where they are, their names not in the order of
+    // their numbers ("Face10" is before "Face2"); then other colours for a
+    // part of them, which takes the rest away; then a few; then none
+    const std::vector<std::map<std::string, App::Color>> calls = {
+        palette(0, 60, 1U),
+        palette(20, 50, 7U),
+        palette(45, 90, 7U),
+        palette(3, 9, 11U),
+        {},
+    };
+    for (const auto& colors : calls) {
+        _prop->setStatedColors(colors);
+        oneAtATime(*other, colors);
+        expectSameStated(*_prop, *other);
+        for (const auto& v : colors) {
+            EXPECT_EQ(_prop->getLook(v.first.c_str()).diffuseColor, v.second) << v.first;
+        }
+    }
+    EXPECT_EQ(_prop->getNumbered(Prop::Face).getSize(), 0);
+
+    // The face that had a material keeps it under its new colour, and is
+    // back to the object's when it is left out
+    _prop->setLook("Face7", coloured(Green, 0.75F));
+    _prop->setStatedColors({{"Face7", Red}, {"Face8", Red}});
+    EXPECT_EQ(_prop->getLook("Face7").diffuseColor, Red);
+    EXPECT_EQ(_prop->getLook("Face7").shininess, 0.75F);
+    EXPECT_EQ(_prop->getLook("Face8").shininess, 0.25F);
+    _prop->setStatedColors({{"Face8", Red}});
+    EXPECT_FALSE(_prop->isStated(Prop::Face, 6));
+    EXPECT_EQ(_prop->getLook("Face7").shininess, 0.25F);
+}
+
+TEST_F(PropertyElementAppearanceTest, manyAtOnceTakeAwayTheNamesLeftOut)
+{
+    Prop* other = property(_doc->addObject("App::FeatureTest", "other"));
+    ASSERT_NE(other, nullptr);
+    for (Prop* prop : {_prop, other}) {
+        prop->setBase(Prop::Face, coloured(Blue, 0.25F));
+        App::AppearanceList looks;
+        looks.setSize(3, prop->getBase(Prop::Face));
+        looks.set1Value(0, coloured(Red));
+        looks.set1Value(1, coloured(Green, 0.75F));
+        looks.set1Value(2, coloured(Green, 0.5F));
+        prop->setNamed({"Face1", "Face2", "Edge4"}, looks,
+                       {Prop::OwnDiffuse, Prop::OwnAll, Prop::OwnAll});
+        prop->setColor("Face9", Red);
+    }
+    // The second name is left out and goes; the first changes colour and
+    // states no more than it did; a face with no name is held by its number
+    const std::map<std::string, App::Color> colors = {
+        {"Face1", Green},
+        {"Edge4", Red},
+        {"Face5", Red},
+    };
+    _prop->setStatedColors(colors);
+    oneAtATime(*other, colors);
+    expectSameStated(*_prop, *other);
+    ASSERT_EQ(_prop->getNamedCount(), 2);
+    EXPECT_EQ(_prop->findNamed("Face2"), -1);
+    EXPECT_EQ(_prop->getLook("Face1").diffuseColor, Green);
+    EXPECT_EQ(_prop->getOwn(Prop::Face, 0), Prop::OwnDiffuse);
+    EXPECT_EQ(_prop->getLook("Edge4").diffuseColor, Red);
+    EXPECT_EQ(_prop->getLook("Edge4").shininess, 0.5F);
+    EXPECT_FALSE(_prop->isStated(Prop::Face, 8));
+    EXPECT_TRUE(_prop->isStated(Prop::Face, 4));
+
+    // Whole looks, the same way: each is all the element's own
+    _prop->setStatedLooks({{"Face1", coloured(Blue, 0.75F)}, {"Face6", coloured(Red, 0.5F)}});
+    ASSERT_EQ(_prop->getNamedCount(), 1);
+    EXPECT_EQ(_prop->getOwn(Prop::Face, 0), Prop::OwnAll);
+    EXPECT_EQ(_prop->getLook("Face1").shininess, 0.75F);
+    EXPECT_EQ(_prop->getLook("Face6").shininess, 0.5F);
+    EXPECT_FALSE(_prop->isStated(Prop::Face, 4));
+    EXPECT_EQ(_prop->getStatedLooks().size(), 2U);
+}
+
+TEST_F(PropertyElementAppearanceTest, aNameAmongManyThatIsNoElementsIsSaidAndTheRestAreTaken)
+{
+    _prop->setBase(Prop::Face, coloured(Blue));
+    std::vector<std::string> unknown;
+    // "Face" is the object's, and no element: stepped over, not refused
+    _prop->setStatedColors({{"Face", Green}, {"Face2", Red}, {"Wire1", Red}, {"nothing", Red}},
+                           &unknown);
+    EXPECT_EQ(unknown, (std::vector<std::string> {"Wire1", "nothing"}));
+    EXPECT_EQ(_prop->getBase(Prop::Face).diffuseColor, Blue);
+    EXPECT_EQ(_prop->getLook("Face2").diffuseColor, Red);
+    EXPECT_EQ(_prop->getStatedLooks().size(), 1U);
+}
+
+TEST_F(PropertyElementAppearanceTest, manyAtOnceAreOneStepToUndo)
+{
+    _prop->setBase(Prop::Face, coloured(Blue));
+    _doc->setUndoMode(1);
+    _doc->openTransaction("paint");
+    _prop->setStatedColors(palette(0, 40, 3U));
+    _doc->commitTransaction();
+    EXPECT_EQ(_prop->getStatedLooks().size(), 40U);
+    _doc->undo();
+    EXPECT_TRUE(_prop->getStatedLooks().empty());
+    _doc->redo();
+    EXPECT_EQ(_prop->getStatedLooks().size(), 40U);
 }
 
 TEST_F(PropertyElementAppearanceTest, aNameThatIsNoElementsIsRefused)

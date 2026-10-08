@@ -349,6 +349,29 @@ public:
     std::vector<std::pair<std::string, MaterialAppearance>> getStatedLooks() const;
     //@}
 
+    /** @name Many elements at once
+     *
+     * What is stated of the elements, replaced by what a call names: an
+     * element it does not name is back to its kind's own look, and each it
+     * does is given its colour as setColor() gives one, or its look as
+     * setLook() does. A kind's own name -- "Face" -- is no element, and is
+     * stepped over: setBase() gives the object a look.
+     *
+     * One at a time, each element is read out of the list the one before
+     * was written to, and a list written to puts itself in order before it
+     * answers: every entry gone over, for every entry. Here each list is
+     * read as it was and made again in the order of its entries, once.
+     *
+     * A name that is no element's is put in \a unknown and nothing else
+     * comes of it.
+     */
+    //@{
+    void setStatedColors(const std::map<std::string, Color> &colors,
+                         std::vector<std::string> *unknown = nullptr);
+    void setStatedLooks(const std::map<std::string, MaterialAppearance> &looks,
+                        std::vector<std::string> *unknown = nullptr);
+    //@}
+
     /** @name The Python view of this property
      *
      * getPyObject() hands out an ElementAppearancePy that reads and writes
@@ -435,6 +458,15 @@ private:
     std::vector<std::string> &editSubs();
     void flushSubs();
     void eraseNamed(int pos);
+    /// One element a call names: its look, or its colour where that is null
+    struct Stated;
+    /// What setStatedColors() and setStatedLooks() do
+    void setStated(const std::vector<Stated> &stated, std::vector<std::string> *unknown);
+    /// The elements of a kind given a look by number, in their order
+    std::vector<int> statedNumbers(Kind kind) const;
+    /// The name at \a pos as the shape counts it, where the link has looked
+    /// it up; as it was given where it has not
+    const std::string &statedName(std::size_t pos) const;
     /// \a list as the kind's own look, the numbered entries put on it
     void assignBase(Kind kind, const AppearanceList &list);
     /// The numbered list of a kind to write to, one entry an element

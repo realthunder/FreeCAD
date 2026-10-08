@@ -3408,6 +3408,16 @@ ViewProviderPartExt::getElementAppearances(const char *element) const
     return ret;
 }
 
+namespace {
+
+void reportUnknownElements(const std::vector<std::string> &names)
+{
+    for(const auto &name : names)
+        Base::ValueError("'" + name + "' names no element").ReportException();
+}
+
+} // namespace
+
 void ViewProviderPartExt::setElementColors(const std::map<std::string,App::Color> &info)
 {
     auto feat = appearanceStore();
@@ -3432,21 +3442,11 @@ void ViewProviderPartExt::setElementColors(const std::map<std::string,App::Color
     // What is stated of the elements is what the call names and no more.
     // An element that has a look keeps it and changes colour; a new one is
     // the object in that colour, as the object comes to be.
-    App::PropertyElementAppearance &store = feat->ElementAppearance;
-    App::PropertyElementAppearance::Edit edit(store);
-    for(const auto &v : store.getStatedLooks()) {
-        if(!info.count(v.first))
-            store.removeLook(v.first.c_str());
-    }
-    for(auto &v : info) {
-        if(v.first == "Face" || v.first == "Edge" || v.first == "Vertex")
-            continue;
-        try {
-            store.setColor(v.first.c_str(), v.second);
-        } catch (Base::Exception &e) {
-            e.ReportException();
-        }
-    }
+    // All of them at once: a name at a time is every element gone over for
+    // every element
+    std::vector<std::string> unknown;
+    feat->ElementAppearance.setStatedColors(info, &unknown);
+    reportUnknownElements(unknown);
 }
 
 void ViewProviderPartExt::setElementAppearances(
@@ -3466,20 +3466,10 @@ void ViewProviderPartExt::setElementAppearances(
         else if(v.first == "Vertex")
             store.setBase(Store::Vertex, v.second);
     }
-    for(const auto &v : store.getStatedLooks()) {
-        if(!info.count(v.first))
-            store.removeLook(v.first.c_str());
-    }
-    for(auto &v : info) {
-        if(v.first == "Face" || v.first == "Edge" || v.first == "Vertex")
-            continue;
-        try {
-            // The whole of it is the element's own
-            store.setLook(v.first.c_str(), v.second);
-        } catch (Base::Exception &e) {
-            e.ReportException();
-        }
-    }
+    // The whole of each is the element's own
+    std::vector<std::string> unknown;
+    store.setStatedLooks(info, &unknown);
+    reportUnknownElements(unknown);
 }
 
 void ViewProviderPartExt::unsetHighlightedFaces()

@@ -79,6 +79,10 @@ const OwnName OwnNames[] = {
     {PropertyElementAppearance::OwnType, "Type"},
 };
 
+/// How many elements a call may give a look by number and still write them
+/// where they are: more are written to a list made again (setStated())
+const std::size_t FewElements = 16;
+
 /// A material's type, written without MaterialAppearance::setType() taking
 /// the preset's colours with it
 void setTypeOnly(MaterialAppearance &mat, MaterialAppearance::MaterialType type)
@@ -1331,48 +1335,359 @@ bool PropertyElementAppearance::isEmpty() const
     });
 }
 
+const std::string &PropertyElementAppearance::statedName(std::size_t pos) const
+{
+    if (!_pendingSubs && pos < _ShadowSubList.size() && !_ShadowSubList[pos].second.empty()) {
+        return _ShadowSubList[pos].second;
+    }
+    return subs()[pos];
+}
+
+std::vector<int> PropertyElementAppearance::statedNumbers(Kind kind) const
+{
+    std::vector<int> res;
+    const AppearanceList &list = getNumbered(kind);
+    if (list.getSize() == 0) {
+        return res;
+    }
+    if (differingFields(list.getBase(), getBase(kind)) == OwnNone) {
+        for (uint32_t idx : list.getOverrides()) {
+            if (getNumberedOwn(kind, static_cast<int>(idx)) != OwnNone) {
+                res.push_back(static_cast<int>(idx));
+            }
+        }
+    }
+    else {
+        // Every element was given the same by number, and the list keeps
+        // that as its base
+        for (int idx = 0; idx < list.getSize(); ++idx) {
+            if (getNumberedOwn(kind, idx) != OwnNone) {
+                res.push_back(idx);
+            }
+        }
+    }
+    return res;
+}
+
 std::vector<std::pair<std::string, MaterialAppearance>>
 PropertyElementAppearance::getStatedLooks() const
 {
     std::vector<std::pair<std::string, MaterialAppearance>> res;
     const auto &names = subs();
     for (std::size_t i = 0; i < names.size(); ++i) {
-        const std::string *name = &names[i];
-        if (!_pendingSubs && i < _ShadowSubList.size() && !_ShadowSubList[i].second.empty()) {
-            name = &_ShadowSubList[i].second;
-        }
-        res.emplace_back(*name, getNamedLook(static_cast<int>(i)));
+        res.emplace_back(statedName(i), getNamedLook(static_cast<int>(i)));
     }
     for (int k = 0; k < KindCount; ++k) {
         const auto kind = static_cast<Kind>(k);
         const AppearanceList &list = getNumbered(kind);
-        if (list.getSize() == 0) {
-            continue;
-        }
-        auto note = [&](int idx) {
-            if (getNumberedOwn(kind, idx) == OwnNone) {
-                return;
-            }
+        for (int idx : statedNumbers(kind)) {
             const std::string name = elementName(kind, idx);
             if (findNamed(name.c_str()) < 0) {
                 res.emplace_back(name, list.getMaterial(idx));
             }
-        };
-        if (differingFields(list.getBase(), getBase(kind)) == OwnNone) {
-            const std::vector<uint32_t> overrides = list.getOverrides();
-            for (uint32_t idx : overrides) {
-                note(static_cast<int>(idx));
-            }
-        }
-        else {
-            // Every element was given the same by number, and the list
-            // keeps that as its base
-            for (int idx = 0; idx < list.getSize(); ++idx) {
-                note(idx);
-            }
         }
     }
     return res;
+}
+
+//**************************************************************************
+// Many elements at once
+
+struct PropertyElementAppearance::Stated
+{
+    const std::string *name;
+    const MaterialAppearance *look;
+    const Color *color;
+
+    uint16_t own() const
+    {
+        return look ? OwnAll : OwnDiffuse;
+    }
+    /// What an element that is \a current comes to be
+    MaterialAppearance over(const MaterialAppearance &current) const
+    {
+        if (look) {
+            return *look;
+        }
+        MaterialAppearance out = current;
+        out.diffuseColor = *color;
+        out.transparency = color->transparency();
+        return out;
+    }
+};
+
+void PropertyElementAppearance::setStatedColors(const std::map<std::string, Color> &colors,
+                                                std::vector<std::string> *unknown)
+{
+    std::vector<Stated> stated;
+    stated.reserve(colors.size());
+    for (const auto &v : colors) {
+        stated.push_back({&v.first, nullptr, &v.second});
+    }
+    setStated(stated, unknown);
+}
+
+void PropertyElementAppearance::setStatedLooks(
+    const std::map<std::string, MaterialAppearance> &looks,
+    std::vector<std::string> *unknown)
+{
+    std::vector<Stated> stated;
+    stated.reserve(looks.size());
+    for (const auto &v : looks) {
+        stated.push_back({&v.first, &v.second, nullptr});
+    }
+    setStated(stated, unknown);
+}
+
+void PropertyElementAppearance::setStated(const std::vector<Stated> &stated,
+                                          std::vector<std::string> *unknown)
+{
+    // In the order of their names, as a map has them
+    auto given = [&stated](const std::string &name) {
+        const auto it = std::lower_bound(stated.begin(), stated.end(), name,
+                                         [](const Stated &s, const std::string &value) {
+                                             return *s.name < value;
+                                         });
+        return it != stated.end() && *it->name == name;
+    };
+    Edit edit(*this);
+    if (_pathNames) {
+        // A path is found by its string and by nothing else, one at a time
+        for (const auto &v : getStatedLooks()) {
+            if (!given(v.first)) {
+                removeLook(v.first.c_str());
+            }
+        }
+        for (const Stated &s : stated) {
+            if (!isPathName(s.name->c_str())) {
+                continue;
+            }
+            if (s.look) {
+                setLook(s.name->c_str(), *s.look);
+            }
+            else {
+                setColor(s.name->c_str(), *s.color);
+            }
+        }
+        return;
+    }
+
+    // Which element each name is. Of two names of one element the later
+    // says, as it did when they were given one after the other.
+    struct Target
+    {
+        Kind kind;
+        int index;
+        const Stated *what;
+    };
+    std::vector<Target> targets;
+    targets.reserve(stated.size());
+    for (const Stated &s : stated) {
+        Kind kind = KindCount;
+        int index = -1;
+        if (!resolveElement(s.name->c_str(), kind, index)) {
+            if (unknown) {
+                unknown->push_back(*s.name);
+            }
+            continue;
+        }
+        if (index >= 0) {
+            targets.push_back({kind, index, &s});
+        }
+    }
+    auto before = [](const Target &a, const Target &b) {
+        return a.kind != b.kind ? a.kind < b.kind : a.index < b.index;
+    };
+    std::stable_sort(targets.begin(), targets.end(), before);
+    {
+        std::size_t out = 0;
+        for (std::size_t i = 0; i < targets.size(); ++i) {
+            if (out > 0 && targets[out - 1].kind == targets[i].kind
+                && targets[out - 1].index == targets[i].index) {
+                targets[out - 1] = targets[i];
+            }
+            else {
+                targets[out++] = targets[i];
+            }
+        }
+        targets.resize(out);
+    }
+    auto isTarget = [&](Kind kind, int index) {
+        return std::binary_search(targets.begin(), targets.end(), Target {kind, index, nullptr},
+                                  before);
+    };
+
+    // Each to the name the element has, to a name the shape gives it, or to
+    // its number
+    const int count = static_cast<int>(subs().size());
+    const AppearanceList named = getNamedLooks();
+    std::vector<const Stated *> toName(static_cast<std::size_t>(count), nullptr);
+    std::vector<Target> added;
+    std::array<std::vector<std::pair<int, const Stated *>>, KindCount> toNumber;
+    for (const Target &t : targets) {
+        const int pos = findNamed(elementName(t.kind, t.index).c_str());
+        if (pos >= 0 && pos < count) {
+            toName[static_cast<std::size_t>(pos)] = t.what;
+        }
+        else if (hasMappedName(t.kind, t.index)) {
+            added.push_back(t);
+        }
+        else {
+            toNumber[t.kind].emplace_back(t.index, t.what);
+        }
+    }
+
+    // The names: those the call leaves out go, in one pass
+    std::vector<char> keep(static_cast<std::size_t>(count), 0);
+    bool renamed = !added.empty();
+    for (std::size_t pos = 0; pos < keep.size(); ++pos) {
+        keep[pos] = toName[pos] || given(statedName(pos));
+        renamed = renamed || !keep[pos] || toName[pos];
+    }
+
+    // The numbers, a kind at a time. Decided before the names are changed:
+    // an element with both goes with its name.
+    for (int k = 0; k < KindCount; ++k) {
+        const auto kind = static_cast<Kind>(k);
+        // The list as it was, which is what is read: the copy is written
+        const AppearanceList numbered = getNumbered(kind);
+        const MaterialAppearance base = getBase(kind);
+        // What is given and what is taken away, in the order of the entries
+        std::vector<std::pair<int, const Stated *>> plan;
+        {
+            const auto &gives = toNumber[kind];
+            const std::vector<int> had = statedNumbers(kind);
+            plan.reserve(gives.size() + had.size());
+            std::size_t g = 0;
+            for (int idx : had) {
+                while (g < gives.size() && gives[g].first < idx) {
+                    plan.push_back(gives[g++]);
+                }
+                if (g < gives.size() && gives[g].first == idx) {
+                    plan.push_back(gives[g++]);
+                    continue;
+                }
+                if (isTarget(kind, idx)) {
+                    continue;
+                }
+                const int pos = findNamed(elementName(kind, idx).c_str());
+                if (pos < 0 || pos >= count || !keep[static_cast<std::size_t>(pos)]) {
+                    plan.emplace_back(idx, nullptr);
+                }
+            }
+            plan.insert(plan.end(), gives.begin() + static_cast<std::ptrdiff_t>(g), gives.end());
+        }
+        if (plan.empty()) {
+            continue;
+        }
+        const int size =
+            std::max({countElements(kind), plan.back().first + 1, numbered.getSize()});
+        AppearanceList work = numbered;
+        if (work.getSize() == 0) {
+            // Every element the kind's own look, until one is given another
+            work = listAt(SlotBase + kind);
+            if (work.getSize() > 0) {
+                work.setSize(size);
+            }
+            else {
+                work.setSize(size, base);
+            }
+            work.setFollowMaterial(false);
+        }
+        else if (work.getSize() < size) {
+            work.setSize(size);
+        }
+        auto current = [&numbered, &base](int idx) {
+            return idx < numbered.getSize() ? numbered.getMaterial(idx) : base;
+        };
+        auto next = [&base](const Stated *what, const MaterialAppearance &now) {
+            return what ? what->over(now) : base;
+        };
+        bool any = false;
+        if (plan.size() <= FewElements) {
+            for (const auto &v : plan) {
+                const MaterialAppearance now = current(v.first);
+                const MaterialAppearance then = next(v.second, now);
+                if (differingFields(then, now) != OwnNone) {
+                    work.set1Value(v.first, then);
+                    any = true;
+                }
+            }
+        }
+        else {
+            // An entry put among those a list holds moves every one behind
+            // it. Made again from the first to the last, each is put at the
+            // end.
+            const std::vector<uint32_t> overrides = numbered.getOverrides();
+            work.clearOverrides();
+            std::size_t p = 0;
+            for (uint32_t held : overrides) {
+                const int idx = static_cast<int>(held);
+                for (; p < plan.size() && plan[p].first < idx; ++p) {
+                    const MaterialAppearance now = current(plan[p].first);
+                    const MaterialAppearance then = next(plan[p].second, now);
+                    any = any || differingFields(then, now) != OwnNone;
+                    work.set1Value(plan[p].first, then);
+                }
+                const MaterialAppearance now = numbered.getMaterial(idx);
+                if (p < plan.size() && plan[p].first == idx) {
+                    const MaterialAppearance then = next(plan[p++].second, now);
+                    any = any || differingFields(then, now) != OwnNone;
+                    work.set1Value(idx, then);
+                }
+                else {
+                    work.set1Value(idx, now);
+                }
+            }
+            for (; p < plan.size(); ++p) {
+                const MaterialAppearance now = current(plan[p].first);
+                const MaterialAppearance then = next(plan[p].second, now);
+                any = any || differingFields(then, now) != OwnNone;
+                work.set1Value(plan[p].first, then);
+            }
+        }
+        if (any) {
+            assign(SlotNumbered + kind, work);
+        }
+    }
+
+    if (!renamed) {
+        return;
+    }
+    const std::vector<std::string> &names = subs();
+    std::vector<std::string> nextNames;
+    std::vector<uint16_t> nextOwn;
+    AppearanceList looks;
+    looks.setPBR(named.getSize() > 0 ? named.isPBR() : listAt(SlotBase + Face).isPBR());
+    looks.setSize(static_cast<int>(std::count(keep.begin(), keep.end(), 1))
+                  + static_cast<int>(added.size()));
+    nextNames.reserve(static_cast<std::size_t>(looks.getSize()));
+    nextOwn.reserve(static_cast<std::size_t>(looks.getSize()));
+    for (std::size_t pos = 0; pos < keep.size(); ++pos) {
+        if (!keep[pos]) {
+            continue;
+        }
+        MaterialAppearance look = named.getMaterial(static_cast<int>(pos));
+        uint16_t own = getNamedOwn(static_cast<int>(pos));
+        if (const Stated *what = toName[pos]) {
+            look = layOver(look, what->over(look), what->own());
+            own |= what->own();
+        }
+        looks.set1Value(static_cast<int>(nextNames.size()), look);
+        nextNames.push_back(names[pos]);
+        nextOwn.push_back(own);
+    }
+    for (const Target &t : added) {
+        // What the name does not state is kept as the object has it now,
+        // which is what keeps the list to the fields that are stated
+        const MaterialAppearance &base = getBase(t.kind);
+        looks.set1Value(static_cast<int>(nextNames.size()),
+                        layOver(base, t.what->over(base), t.what->own()));
+        nextNames.push_back(elementName(t.kind, t.index));
+        nextOwn.push_back(t.what->own());
+    }
+    looks.setFollowMaterial(false);
+    setNamed(std::move(nextNames), looks, std::move(nextOwn));
 }
 
 //**************************************************************************
