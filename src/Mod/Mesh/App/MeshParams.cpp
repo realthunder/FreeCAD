@@ -63,17 +63,22 @@ public:
     bool ExportAmfCompressed;
     bool Export3mfModel;
     long FillHoleLevel;
+    double MeshingLinearDeflection;
+    double MeshingAngularDeflection;
+    bool MeshingRelativeLinearDeflection;
 
     // Auto generated code (Tools/params_utils.py:254)
     MeshParamsP() {
         handle = App::GetApplication().GetParameterGroupByPath("User parameter:BaseApp/Preferences/Mod/Mesh");
         handle->Attach(this);
 
-        subHandles.resize(2);
+        subHandles.resize(3);
         subHandles[0] = handle->GetGroup("Asymptote");
         subHandles[0]->Attach(this);
         subHandles[1] = handle->GetGroup("Evaluation");
         subHandles[1]->Attach(this);
+        subHandles[2] = handle->GetGroup("Meshing/Standard");
+        subHandles[2]->Attach(this);
         AsymptoteWidth = this->subHandles[0]->GetASCII("Width", "500");
         funcs["Width"] = &MeshParamsP::updateAsymptoteWidth;
         AsymptoteHeight = this->subHandles[0]->GetASCII("Height", "");
@@ -116,6 +121,12 @@ public:
         funcs["Export3mfModel"] = &MeshParamsP::updateExport3mfModel;
         FillHoleLevel = this->handle->GetInt("FillHoleLevel", 2);
         funcs["FillHoleLevel"] = &MeshParamsP::updateFillHoleLevel;
+        MeshingLinearDeflection = this->subHandles[2]->GetFloat("LinearDeflection", 0.1);
+        funcs["LinearDeflection"] = &MeshParamsP::updateMeshingLinearDeflection;
+        MeshingAngularDeflection = this->subHandles[2]->GetFloat("AngularDeflection", 30.0);
+        funcs["AngularDeflection"] = &MeshParamsP::updateMeshingAngularDeflection;
+        MeshingRelativeLinearDeflection = this->subHandles[2]->GetBool("RelativeLinearDeflection", false);
+        funcs["RelativeLinearDeflection"] = &MeshParamsP::updateMeshingRelativeLinearDeflection;
     }
 
     // Auto generated code (Tools/params_utils.py:284)
@@ -224,6 +235,18 @@ public:
     static void updateFillHoleLevel(MeshParamsP *self) {
         self->FillHoleLevel = self->handle->GetInt("FillHoleLevel", 2);
     }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateMeshingLinearDeflection(MeshParamsP *self) {
+        self->MeshingLinearDeflection = self->subHandles[2]->GetFloat("LinearDeflection", 0.1);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateMeshingAngularDeflection(MeshParamsP *self) {
+        self->MeshingAngularDeflection = self->subHandles[2]->GetFloat("AngularDeflection", 30.0);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateMeshingRelativeLinearDeflection(MeshParamsP *self) {
+        self->MeshingRelativeLinearDeflection = self->subHandles[2]->GetBool("RelativeLinearDeflection", false);
+    }
 };
 
 // Auto generated code (Tools/params_utils.py:336)
@@ -328,6 +351,20 @@ static const App::ParamRegistry::Registrar _MeshParamsRegistrar({
         .setDoc("How far around a hole the mesh is looked at when the hole is\n"
 "filled by picking one of its border triangles: the number of rings\n"
 "of neighbouring triangles. Takes effect at the next fill."),
+    App::ParamInfo("Mesh", "MeshParams", "User parameter:BaseApp/Preferences/Mod/Mesh/Meshing/Standard", "MeshingLinearDeflection", "LinearDeflection", App::ParamInfo::Float, 0.1)
+        .setTitle("Mesh from shape: last surface deviation")
+        .setDoc("The surface deviation 'Create mesh from shape' was last used with,\n"
+"on its Standard tab. Stored when the dialog is accepted."),
+    App::ParamInfo("Mesh", "MeshParams", "User parameter:BaseApp/Preferences/Mod/Mesh/Meshing/Standard", "MeshingAngularDeflection", "AngularDeflection", App::ParamInfo::Float, 30.0)
+        .setTitle("Mesh from shape: last angular deviation")
+        .setDoc("The angular deviation, in degrees, 'Create mesh from shape' was\n"
+"last used with, on its Standard tab. Stored when the dialog is\n"
+"accepted."),
+    App::ParamInfo("Mesh", "MeshParams", "User parameter:BaseApp/Preferences/Mod/Mesh/Meshing/Standard", "MeshingRelativeLinearDeflection", "RelativeLinearDeflection", App::ParamInfo::Bool, false)
+        .setTitle("Mesh from shape: last 'relative surface deviation'")
+        .setDoc("'Relative surface deviation' was checked when 'Create mesh from\n"
+"shape' was last used, on its Standard tab. Stored when the dialog\n"
+"is accepted."),
 });
 
 // Auto generated code (Tools/params_utils.py:368)
@@ -948,5 +985,94 @@ void MeshParams::setFillHoleLevel(const long &v) {
 // Auto generated code (Tools/params_utils.py:431)
 void MeshParams::removeFillHoleLevel() {
     instance()->handle->RemoveInt("FillHoleLevel");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *MeshParams::docMeshingLinearDeflection() {
+    return QT_TRANSLATE_NOOP("MeshParams",
+"The surface deviation 'Create mesh from shape' was last used with,\n"
+"on its Standard tab. Stored when the dialog is accepted.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const double & MeshParams::getMeshingLinearDeflection() {
+    return instance()->MeshingLinearDeflection;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const double & MeshParams::defaultMeshingLinearDeflection() {
+    const static double def = 0.1;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void MeshParams::setMeshingLinearDeflection(const double &v) {
+    instance()->subHandles[2]->SetFloat("LinearDeflection",v);
+    instance()->MeshingLinearDeflection = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void MeshParams::removeMeshingLinearDeflection() {
+    instance()->subHandles[2]->RemoveFloat("LinearDeflection");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *MeshParams::docMeshingAngularDeflection() {
+    return QT_TRANSLATE_NOOP("MeshParams",
+"The angular deviation, in degrees, 'Create mesh from shape' was\n"
+"last used with, on its Standard tab. Stored when the dialog is\n"
+"accepted.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const double & MeshParams::getMeshingAngularDeflection() {
+    return instance()->MeshingAngularDeflection;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const double & MeshParams::defaultMeshingAngularDeflection() {
+    const static double def = 30.0;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void MeshParams::setMeshingAngularDeflection(const double &v) {
+    instance()->subHandles[2]->SetFloat("AngularDeflection",v);
+    instance()->MeshingAngularDeflection = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void MeshParams::removeMeshingAngularDeflection() {
+    instance()->subHandles[2]->RemoveFloat("AngularDeflection");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *MeshParams::docMeshingRelativeLinearDeflection() {
+    return QT_TRANSLATE_NOOP("MeshParams",
+"'Relative surface deviation' was checked when 'Create mesh from\n"
+"shape' was last used, on its Standard tab. Stored when the dialog\n"
+"is accepted.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const bool & MeshParams::getMeshingRelativeLinearDeflection() {
+    return instance()->MeshingRelativeLinearDeflection;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const bool & MeshParams::defaultMeshingRelativeLinearDeflection() {
+    const static bool def = false;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void MeshParams::setMeshingRelativeLinearDeflection(const bool &v) {
+    instance()->subHandles[2]->SetBool("RelativeLinearDeflection",v);
+    instance()->MeshingRelativeLinearDeflection = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void MeshParams::removeMeshingRelativeLinearDeflection() {
+    instance()->subHandles[2]->RemoveBool("RelativeLinearDeflection");
 }
 //[[[end]]]

@@ -100,6 +100,11 @@ class DraftParamsRegistry(unittest.TestCase):
             for entry, (_typ, default, _title, _doc) in entries.items():
                 self.assertIn((PREFIX + path, entry), rows)
                 self.assertEqual(found.get(entry), {default}, path + "/" + entry)
+        # what the C++ DXF code of the Import module reads from Draft's group
+        row = rows[(PREFIX + "Mod/Draft", "DxfVersionOut")]
+        self.assertEqual((row["type"], row["default"]), ("Int", "14"))
+        self.assertEqual(rows[(PREFIX + "Mod/Draft", "ExportPoints")]["default"], "false")
+        self.assertEqual(rows[(PREFIX + "Mod/Draft", "dxfUseDraftVisGroups")]["default"], "true")
 
     def test_written_documentation_is_of_the_table(self):
         """params_registry.DOCS names no setting that neither the table nor a page has."""

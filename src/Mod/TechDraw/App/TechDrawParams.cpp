@@ -173,6 +173,8 @@ public:
     std::string LineDefLocation;
     std::string LineElementLocation;
     std::string FilePattern;
+    unsigned long TileColor;
+    bool SectionLiveUpdate;
 
     // Auto generated code (Tools/params_utils.py:254)
     TechDrawParamsP() {
@@ -468,6 +470,10 @@ public:
         funcs["LineElementLocation"] = &TechDrawParamsP::updateLineElementLocation;
         FilePattern = this->subHandles[4]->GetASCII("FilePattern", "");
         funcs["FilePattern"] = &TechDrawParamsP::updateFilePattern;
+        TileColor = this->subHandles[5]->GetUnsigned("TileColor", 0x000000FF);
+        funcs["TileColor"] = &TechDrawParamsP::updateTileColor;
+        SectionLiveUpdate = this->subHandles[0]->GetBool("SectionLiveUpdate", true);
+        funcs["SectionLiveUpdate"] = &TechDrawParamsP::updateSectionLiveUpdate;
     }
 
     // Auto generated code (Tools/params_utils.py:284)
@@ -1007,6 +1013,14 @@ public:
     // Auto generated code (Tools/params_utils.py:314)
     static void updateFilePattern(TechDrawParamsP *self) {
         self->FilePattern = self->subHandles[4]->GetASCII("FilePattern", "");
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateTileColor(TechDrawParamsP *self) {
+        self->TileColor = self->subHandles[5]->GetUnsigned("TileColor", 0x000000FF);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateSectionLiveUpdate(TechDrawParamsP *self) {
+        self->SectionLiveUpdate = self->subHandles[0]->GetBool("SectionLiveUpdate", true);
     }
 };
 
@@ -1619,6 +1633,17 @@ static const App::ParamRegistry::Registrar _TechDrawParamsRegistrar({
         .setTitle("PAT file")
         .setDoc("PAT file new geometric hatches take their pattern from. Empty uses\n"
 "FCPAT.pat, supplied with the program."),
+    App::ParamInfo("TechDraw", "TechDrawParams", "User parameter:BaseApp/Preferences/Mod/TechDraw/Colors", "TileColor", "TileColor", App::ParamInfo::Hex, 0x000000FF)
+        .setTitle("Welding symbol tile colour")
+        .setDoc("Colour the tiles of a welding symbol are drawn in. On no page.\n"
+"Takes effect when a tile is next drawn.")
+        .setProxy("Color")
+        .setTransparency(false),
+    App::ParamInfo("TechDraw", "TechDrawParams", "User parameter:BaseApp/Preferences/Mod/TechDraw/General", "SectionLiveUpdate", "SectionLiveUpdate", App::ParamInfo::Bool, true)
+        .setTitle("Section task: live update")
+        .setDoc("'Live update' of the section view task was last checked: the\n"
+"section follows each change in the task at once. Stored when the\n"
+"box is clicked."),
 });
 
 // Auto generated code (Tools/params_utils.py:368)
@@ -5456,5 +5481,64 @@ void TechDrawParams::setFilePattern(const std::string &v) {
 // Auto generated code (Tools/params_utils.py:431)
 void TechDrawParams::removeFilePattern() {
     instance()->subHandles[4]->RemoveASCII("FilePattern");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *TechDrawParams::docTileColor() {
+    return QT_TRANSLATE_NOOP("TechDrawParams",
+"Colour the tiles of a welding symbol are drawn in. On no page.\n"
+"Takes effect when a tile is next drawn.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const unsigned long & TechDrawParams::getTileColor() {
+    return instance()->TileColor;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const unsigned long & TechDrawParams::defaultTileColor() {
+    const static unsigned long def = 0x000000FF;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void TechDrawParams::setTileColor(const unsigned long &v) {
+    instance()->subHandles[5]->SetUnsigned("TileColor",v);
+    instance()->TileColor = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void TechDrawParams::removeTileColor() {
+    instance()->subHandles[5]->RemoveUnsigned("TileColor");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *TechDrawParams::docSectionLiveUpdate() {
+    return QT_TRANSLATE_NOOP("TechDrawParams",
+"'Live update' of the section view task was last checked: the\n"
+"section follows each change in the task at once. Stored when the\n"
+"box is clicked.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const bool & TechDrawParams::getSectionLiveUpdate() {
+    return instance()->SectionLiveUpdate;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const bool & TechDrawParams::defaultSectionLiveUpdate() {
+    const static bool def = true;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void TechDrawParams::setSectionLiveUpdate(const bool &v) {
+    instance()->subHandles[0]->SetBool("SectionLiveUpdate",v);
+    instance()->SectionLiveUpdate = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void TechDrawParams::removeSectionLiveUpdate() {
+    instance()->subHandles[0]->RemoveBool("SectionLiveUpdate");
 }
 //[[[end]]]

@@ -65,13 +65,19 @@ public:
     std::string ExternalInterface;
     long ModelCacheSize;
     long MaterialCacheSize;
+    long EditorWidth;
+    long EditorHeight;
+    long FavoritesCount;
+    long RecentCount;
+    long ModelsFavoritesCount;
+    long ModelsRecentCount;
 
     // Auto generated code (Tools/params_utils.py:254)
     MaterialParamsP() {
         handle = App::GetApplication().GetParameterGroupByPath("User parameter:BaseApp/Preferences/Mod/Material");
         handle->Attach(this);
 
-        subHandles.resize(6);
+        subHandles.resize(8);
         subHandles[0] = handle->GetGroup("Editor");
         subHandles[0]->Attach(this);
         subHandles[1] = handle->GetGroup("TreeWidget");
@@ -84,6 +90,10 @@ public:
         subHandles[4]->Attach(this);
         subHandles[5] = handle->GetGroup("ExternalInterface");
         subHandles[5]->Attach(this);
+        subHandles[6] = handle->GetGroup("Favorites");
+        subHandles[6]->Attach(this);
+        subHandles[7] = handle->GetGroup("Models/Favorites");
+        subHandles[7]->Attach(this);
         DefaultMaterial = this->handle->GetASCII("DefaultMaterial", "7f9fd73b-50c9-41d8-b7b2-575a030c1eeb");
         funcs["DefaultMaterial"] = &MaterialParamsP::updateDefaultMaterial;
         EditorShowFavorites = this->subHandles[0]->GetBool("ShowFavorites", true);
@@ -130,6 +140,18 @@ public:
         funcs["ModelCacheSize"] = &MaterialParamsP::updateModelCacheSize;
         MaterialCacheSize = this->subHandles[5]->GetInt("MaterialCacheSize", 100);
         funcs["MaterialCacheSize"] = &MaterialParamsP::updateMaterialCacheSize;
+        EditorWidth = this->subHandles[0]->GetInt("EditorWidth", 835);
+        funcs["EditorWidth"] = &MaterialParamsP::updateEditorWidth;
+        EditorHeight = this->subHandles[0]->GetInt("EditorHeight", 542);
+        funcs["EditorHeight"] = &MaterialParamsP::updateEditorHeight;
+        FavoritesCount = this->subHandles[6]->GetInt("Favorites", 0);
+        funcs["Favorites"] = &MaterialParamsP::updateFavoritesCount;
+        RecentCount = this->subHandles[2]->GetInt("Recent", 0);
+        funcs["Recent"] = &MaterialParamsP::updateRecentCount;
+        ModelsFavoritesCount = this->subHandles[7]->GetInt("Favorites", 0);
+        funcs["Favorites"] = &MaterialParamsP::updateModelsFavoritesCount;
+        ModelsRecentCount = this->subHandles[3]->GetInt("Recent", 0);
+        funcs["Recent"] = &MaterialParamsP::updateModelsRecentCount;
     }
 
     // Auto generated code (Tools/params_utils.py:284)
@@ -237,6 +259,30 @@ public:
     // Auto generated code (Tools/params_utils.py:314)
     static void updateMaterialCacheSize(MaterialParamsP *self) {
         self->MaterialCacheSize = self->subHandles[5]->GetInt("MaterialCacheSize", 100);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateEditorWidth(MaterialParamsP *self) {
+        self->EditorWidth = self->subHandles[0]->GetInt("EditorWidth", 835);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateEditorHeight(MaterialParamsP *self) {
+        self->EditorHeight = self->subHandles[0]->GetInt("EditorHeight", 542);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateFavoritesCount(MaterialParamsP *self) {
+        self->FavoritesCount = self->subHandles[6]->GetInt("Favorites", 0);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateRecentCount(MaterialParamsP *self) {
+        self->RecentCount = self->subHandles[2]->GetInt("Recent", 0);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateModelsFavoritesCount(MaterialParamsP *self) {
+        self->ModelsFavoritesCount = self->subHandles[7]->GetInt("Favorites", 0);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateModelsRecentCount(MaterialParamsP *self) {
+        self->ModelsRecentCount = self->subHandles[3]->GetInt("Recent", 0);
     }
 };
 
@@ -354,6 +400,30 @@ static const App::ParamRegistry::Registrar _MaterialParamsRegistrar({
         .setTitle("Material cache size")
         .setDoc("Number of materials kept in the cache of the external material\n"
 "interface. Takes effect after restart."),
+    App::ParamInfo("Materials", "MaterialParams", "User parameter:BaseApp/Preferences/Mod/Material/Editor", "EditorWidth", "EditorWidth", App::ParamInfo::Int, 835)
+        .setTitle("Materials editor: width")
+        .setDoc("Width in pixels the materials editor last had. Stored when the\n"
+"editor closes."),
+    App::ParamInfo("Materials", "MaterialParams", "User parameter:BaseApp/Preferences/Mod/Material/Editor", "EditorHeight", "EditorHeight", App::ParamInfo::Int, 542)
+        .setTitle("Materials editor: height")
+        .setDoc("Height in pixels the materials editor last had. Stored when the\n"
+"editor closes."),
+    App::ParamInfo("Materials", "MaterialParams", "User parameter:BaseApp/Preferences/Mod/Material/Favorites", "FavoritesCount", "Favorites", App::ParamInfo::Int, 0)
+        .setTitle("Favourite materials: count")
+        .setDoc("How many favourite materials are kept, in the keys beside this\n"
+"one. Stored by the program with the list."),
+    App::ParamInfo("Materials", "MaterialParams", "User parameter:BaseApp/Preferences/Mod/Material/Recent", "RecentCount", "Recent", App::ParamInfo::Int, 0)
+        .setTitle("Recent materials: count")
+        .setDoc("How many recent materials are kept, in the keys beside this one.\n"
+"Stored by the program with the list."),
+    App::ParamInfo("Materials", "MaterialParams", "User parameter:BaseApp/Preferences/Mod/Material/Models/Favorites", "ModelsFavoritesCount", "Favorites", App::ParamInfo::Int, 0)
+        .setTitle("Favourite material models: count")
+        .setDoc("How many favourite material models are kept, in the keys beside\n"
+"this one. Stored by the program with the list."),
+    App::ParamInfo("Materials", "MaterialParams", "User parameter:BaseApp/Preferences/Mod/Material/Models/Recent", "ModelsRecentCount", "Recent", App::ParamInfo::Int, 0)
+        .setTitle("Recent material models: count")
+        .setDoc("How many recent material models are kept, in the keys beside this\n"
+"one. Stored by the program with the list."),
 });
 
 // Auto generated code (Tools/params_utils.py:368)
@@ -1038,5 +1108,179 @@ void MaterialParams::setMaterialCacheSize(const long &v) {
 // Auto generated code (Tools/params_utils.py:431)
 void MaterialParams::removeMaterialCacheSize() {
     instance()->subHandles[5]->RemoveInt("MaterialCacheSize");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *MaterialParams::docEditorWidth() {
+    return QT_TRANSLATE_NOOP("MaterialParams",
+"Width in pixels the materials editor last had. Stored when the\n"
+"editor closes.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const long & MaterialParams::getEditorWidth() {
+    return instance()->EditorWidth;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const long & MaterialParams::defaultEditorWidth() {
+    const static long def = 835;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void MaterialParams::setEditorWidth(const long &v) {
+    instance()->subHandles[0]->SetInt("EditorWidth",v);
+    instance()->EditorWidth = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void MaterialParams::removeEditorWidth() {
+    instance()->subHandles[0]->RemoveInt("EditorWidth");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *MaterialParams::docEditorHeight() {
+    return QT_TRANSLATE_NOOP("MaterialParams",
+"Height in pixels the materials editor last had. Stored when the\n"
+"editor closes.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const long & MaterialParams::getEditorHeight() {
+    return instance()->EditorHeight;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const long & MaterialParams::defaultEditorHeight() {
+    const static long def = 542;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void MaterialParams::setEditorHeight(const long &v) {
+    instance()->subHandles[0]->SetInt("EditorHeight",v);
+    instance()->EditorHeight = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void MaterialParams::removeEditorHeight() {
+    instance()->subHandles[0]->RemoveInt("EditorHeight");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *MaterialParams::docFavoritesCount() {
+    return QT_TRANSLATE_NOOP("MaterialParams",
+"How many favourite materials are kept, in the keys beside this\n"
+"one. Stored by the program with the list.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const long & MaterialParams::getFavoritesCount() {
+    return instance()->FavoritesCount;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const long & MaterialParams::defaultFavoritesCount() {
+    const static long def = 0;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void MaterialParams::setFavoritesCount(const long &v) {
+    instance()->subHandles[6]->SetInt("Favorites",v);
+    instance()->FavoritesCount = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void MaterialParams::removeFavoritesCount() {
+    instance()->subHandles[6]->RemoveInt("Favorites");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *MaterialParams::docRecentCount() {
+    return QT_TRANSLATE_NOOP("MaterialParams",
+"How many recent materials are kept, in the keys beside this one.\n"
+"Stored by the program with the list.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const long & MaterialParams::getRecentCount() {
+    return instance()->RecentCount;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const long & MaterialParams::defaultRecentCount() {
+    const static long def = 0;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void MaterialParams::setRecentCount(const long &v) {
+    instance()->subHandles[2]->SetInt("Recent",v);
+    instance()->RecentCount = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void MaterialParams::removeRecentCount() {
+    instance()->subHandles[2]->RemoveInt("Recent");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *MaterialParams::docModelsFavoritesCount() {
+    return QT_TRANSLATE_NOOP("MaterialParams",
+"How many favourite material models are kept, in the keys beside\n"
+"this one. Stored by the program with the list.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const long & MaterialParams::getModelsFavoritesCount() {
+    return instance()->ModelsFavoritesCount;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const long & MaterialParams::defaultModelsFavoritesCount() {
+    const static long def = 0;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void MaterialParams::setModelsFavoritesCount(const long &v) {
+    instance()->subHandles[7]->SetInt("Favorites",v);
+    instance()->ModelsFavoritesCount = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void MaterialParams::removeModelsFavoritesCount() {
+    instance()->subHandles[7]->RemoveInt("Favorites");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *MaterialParams::docModelsRecentCount() {
+    return QT_TRANSLATE_NOOP("MaterialParams",
+"How many recent material models are kept, in the keys beside this\n"
+"one. Stored by the program with the list.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const long & MaterialParams::getModelsRecentCount() {
+    return instance()->ModelsRecentCount;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const long & MaterialParams::defaultModelsRecentCount() {
+    const static long def = 0;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void MaterialParams::setModelsRecentCount(const long &v) {
+    instance()->subHandles[3]->SetInt("Recent",v);
+    instance()->ModelsRecentCount = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void MaterialParams::removeModelsRecentCount() {
+    instance()->subHandles[3]->RemoveInt("Recent");
 }
 //[[[end]]]

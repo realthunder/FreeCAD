@@ -6,6 +6,7 @@ endif(BUILD_GUI)
 
 set(Inspection_Scripts
     Init.py
+    InspectionParams.py
 )
 
 if(BUILD_GUI)

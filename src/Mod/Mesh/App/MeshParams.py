@@ -113,6 +113,26 @@ Params = [
         doc = "How far around a hole the mesh is looked at when the hole is\n"
               "filled by picking one of its border triangles: the number of rings\n"
               "of neighbouring triangles. Takes effect at the next fill."),
+    # --- Mod/Mesh/Meshing/Standard: what the 'Create mesh from shape'
+    # dialog of MeshPart was last accepted with. The dialog reads the group
+    # with whatever its widgets start on, which is what is written here.
+    ParamFloat("MeshingLinearDeflection", 0.1, subpath='Meshing/Standard',
+        param_name='LinearDeflection',
+        title = "Mesh from shape: last surface deviation",
+        doc = "The surface deviation 'Create mesh from shape' was last used with,\n"
+              "on its Standard tab. Stored when the dialog is accepted."),
+    ParamFloat("MeshingAngularDeflection", 30.0, subpath='Meshing/Standard',
+        param_name='AngularDeflection',
+        title = "Mesh from shape: last angular deviation",
+        doc = "The angular deviation, in degrees, 'Create mesh from shape' was\n"
+              "last used with, on its Standard tab. Stored when the dialog is\n"
+              "accepted."),
+    ParamBool("MeshingRelativeLinearDeflection", False, subpath='Meshing/Standard',
+        param_name='RelativeLinearDeflection',
+        title = "Mesh from shape: last 'relative surface deviation'",
+        doc = "'Relative surface deviation' was checked when 'Create mesh from\n"
+              "shape' was last used, on its Standard tab. Stored when the dialog\n"
+              "is accepted."),
 ]
 
 def declare():

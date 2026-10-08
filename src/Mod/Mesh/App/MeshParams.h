@@ -351,6 +351,47 @@ public:
     static const char *docFillHoleLevel();
     //@}
 
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter MeshingLinearDeflection
+    ///
+    /// The surface deviation 'Create mesh from shape' was last used with,
+    /// on its Standard tab. Stored when the dialog is accepted.
+    static const double & getMeshingLinearDeflection();
+    static const double & defaultMeshingLinearDeflection();
+    static void removeMeshingLinearDeflection();
+    static void setMeshingLinearDeflection(const double &v);
+    static const char *docMeshingLinearDeflection();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter MeshingAngularDeflection
+    ///
+    /// The angular deviation, in degrees, 'Create mesh from shape' was
+    /// last used with, on its Standard tab. Stored when the dialog is
+    /// accepted.
+    static const double & getMeshingAngularDeflection();
+    static const double & defaultMeshingAngularDeflection();
+    static void removeMeshingAngularDeflection();
+    static void setMeshingAngularDeflection(const double &v);
+    static const char *docMeshingAngularDeflection();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter MeshingRelativeLinearDeflection
+    ///
+    /// 'Relative surface deviation' was checked when 'Create mesh from
+    /// shape' was last used, on its Standard tab. Stored when the dialog
+    /// is accepted.
+    static const bool & getMeshingRelativeLinearDeflection();
+    static const bool & defaultMeshingRelativeLinearDeflection();
+    static void removeMeshingRelativeLinearDeflection();
+    static void setMeshingRelativeLinearDeflection(const bool &v);
+    static const char *docMeshingRelativeLinearDeflection();
+    //@}
+
 // Auto generated code (Tools/params_utils.py:179)
 }; // class MeshParams
 } // namespace Mesh

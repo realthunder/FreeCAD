@@ -56,6 +56,7 @@ public:
     unsigned long FileThumbnailBackgroundColor;
     unsigned long FileThumbnailBorderColor;
     unsigned long FileThumbnailSelectionColor;
+    bool FirstStart2024;
 
     // Auto generated code (Tools/params_utils.py:254)
     StartParamsP() {
@@ -92,6 +93,8 @@ public:
         funcs["FileThumbnailBorderColor"] = &StartParamsP::updateFileThumbnailBorderColor;
         FileThumbnailSelectionColor = this->handle->GetUnsigned("FileThumbnailSelectionColor", 0x26A26900);
         funcs["FileThumbnailSelectionColor"] = &StartParamsP::updateFileThumbnailSelectionColor;
+        FirstStart2024 = this->handle->GetBool("FirstStart2024", true);
+        funcs["FirstStart2024"] = &StartParamsP::updateFirstStart2024;
     }
 
     // Auto generated code (Tools/params_utils.py:284)
@@ -167,6 +170,10 @@ public:
     // Auto generated code (Tools/params_utils.py:314)
     static void updateFileThumbnailSelectionColor(StartParamsP *self) {
         self->FileThumbnailSelectionColor = self->handle->GetUnsigned("FileThumbnailSelectionColor", 0x26A26900);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateFirstStart2024(StartParamsP *self) {
+        self->FirstStart2024 = self->handle->GetBool("FirstStart2024", true);
     }
 };
 
@@ -264,6 +271,11 @@ static const App::ParamRegistry::Registrar _StartParamsRegistrar({
 "repaint.")
         .setProxy("Color")
         .setTransparency(false),
+    App::ParamInfo("Start", "StartParams", "User parameter:BaseApp/Preferences/Mod/Start", "FirstStart2024", "FirstStart2024", App::ParamInfo::Bool, true)
+        .setTitle("Start: first start")
+        .setDoc("The Start page still shows its first-start panel, where the\n"
+"language, the units, the navigation style and the theme are\n"
+"chosen. The program switches it off when the panel is dismissed."),
 });
 
 // Auto generated code (Tools/params_utils.py:368)
@@ -716,5 +728,35 @@ void StartParams::setFileThumbnailSelectionColor(const unsigned long &v) {
 // Auto generated code (Tools/params_utils.py:431)
 void StartParams::removeFileThumbnailSelectionColor() {
     instance()->handle->RemoveUnsigned("FileThumbnailSelectionColor");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *StartParams::docFirstStart2024() {
+    return QT_TRANSLATE_NOOP("StartParams",
+"The Start page still shows its first-start panel, where the\n"
+"language, the units, the navigation style and the theme are\n"
+"chosen. The program switches it off when the panel is dismissed.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const bool & StartParams::getFirstStart2024() {
+    return instance()->FirstStart2024;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const bool & StartParams::defaultFirstStart2024() {
+    const static bool def = true;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void StartParams::setFirstStart2024(const bool &v) {
+    instance()->handle->SetBool("FirstStart2024",v);
+    instance()->FirstStart2024 = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void StartParams::removeFirstStart2024() {
+    instance()->handle->RemoveBool("FirstStart2024");
 }
 //[[[end]]]

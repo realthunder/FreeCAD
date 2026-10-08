@@ -836,6 +836,61 @@ public:
     static const char *docReadShapeCompoundMode();
     //@}
 
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter MaximumPatternOccurrences
+    ///
+    /// The most occurrences a pattern or a link array may be given.
+    /// App's pattern code reads it once, when the first pattern is
+    /// made, so a change counts from the next start. On no page.
+    static const long & getMaximumPatternOccurrences();
+    static const long & defaultMaximumPatternOccurrences();
+    static void removeMaximumPatternOccurrences();
+    static void setMaximumPatternOccurrences(const long &v);
+    static const char *docMaximumPatternOccurrences();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter GridLinePattern
+    ///
+    /// Pattern the grid of a Part 2D object is drawn with when its grid
+    /// style is dashed: 16 bits, one for each pixel of a stretch of line.
+    /// The Sketcher has a setting of its own for its grid. On no page.
+    /// Takes effect when a grid is next built.
+    static const long & getGridLinePattern();
+    static const long & defaultGridLinePattern();
+    static void removeGridLinePattern();
+    static void setGridLinePattern(const long &v);
+    static const char *docGridLinePattern();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter WireJoinerObjectName
+    ///
+    /// For development: the name of the object whose wire joining is
+    /// traced. Empty, none is.
+    static const std::string & getWireJoinerObjectName();
+    static const std::string & defaultWireJoinerObjectName();
+    static void removeWireJoinerObjectName();
+    static void setWireJoinerObjectName(const std::string &v);
+    static const char *docWireJoinerObjectName();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter WireJoinerIteration
+    ///
+    /// For development: the iteration from which the wire joiner shows
+    /// its intermediate shapes for the traced object; 0 for never.
+    static const long & getWireJoinerIteration();
+    static const long & defaultWireJoinerIteration();
+    static void removeWireJoinerIteration();
+    static void setWireJoinerIteration(const long &v);
+    static const char *docWireJoinerIteration();
+    //@}
+
 // Auto generated code (Tools/params_utils.py:179)
 }; // class PartParams
 } // namespace Part

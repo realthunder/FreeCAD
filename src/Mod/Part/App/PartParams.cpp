@@ -99,13 +99,17 @@ public:
     long ImportMode;
     long GltfRebuildBRep;
     bool ReadShapeCompoundMode;
+    long MaximumPatternOccurrences;
+    long GridLinePattern;
+    std::string WireJoinerObjectName;
+    long WireJoinerIteration;
 
     // Auto generated code (Tools/params_utils.py:254)
     PartParamsP() {
         handle = App::GetApplication().GetParameterGroupByPath("User parameter:BaseApp/Preferences/Mod/Part");
         handle->Attach(this);
 
-        subHandles.resize(6);
+        subHandles.resize(7);
         subHandles[0] = handle->GetGroup("Boolean");
         subHandles[0]->Attach(this);
         subHandles[1] = handle->GetGroup("General");
@@ -118,6 +122,8 @@ public:
         subHandles[4]->Attach(this);
         subHandles[5] = App::GetApplication().GetParameterGroupByPath("User parameter:BaseApp/Preferences/Mod/Import/hSTEP");
         subHandles[5]->Attach(this);
+        subHandles[6] = App::GetApplication().GetParameterGroupByPath("User parameter:BaseApp/Preferences/WireJoiner");
+        subHandles[6]->Attach(this);
         ShapePropertyCopy = this->handle->GetBool("ShapePropertyCopy", false);
         funcs["ShapePropertyCopy"] = &PartParamsP::updateShapePropertyCopy;
         DisableShapeCache = this->handle->GetBool("DisableShapeCache", false);
@@ -232,6 +238,14 @@ public:
         funcs["GltfRebuildBRep"] = &PartParamsP::updateGltfRebuildBRep;
         ReadShapeCompoundMode = this->subHandles[5]->GetBool("ReadShapeCompoundMode", false);
         funcs["ReadShapeCompoundMode"] = &PartParamsP::updateReadShapeCompoundMode;
+        MaximumPatternOccurrences = this->handle->GetInt("MaximumPatternOccurrences", 1000);
+        funcs["MaximumPatternOccurrences"] = &PartParamsP::updateMaximumPatternOccurrences;
+        GridLinePattern = this->handle->GetInt("GridLinePattern", 3855);
+        funcs["GridLinePattern"] = &PartParamsP::updateGridLinePattern;
+        WireJoinerObjectName = this->subHandles[6]->GetASCII("ObjectName", "");
+        funcs["ObjectName"] = &PartParamsP::updateWireJoinerObjectName;
+        WireJoinerIteration = this->subHandles[6]->GetInt("Iteration", 0);
+        funcs["Iteration"] = &PartParamsP::updateWireJoinerIteration;
     }
 
     // Auto generated code (Tools/params_utils.py:284)
@@ -475,6 +489,22 @@ public:
     // Auto generated code (Tools/params_utils.py:314)
     static void updateReadShapeCompoundMode(PartParamsP *self) {
         self->ReadShapeCompoundMode = self->subHandles[5]->GetBool("ReadShapeCompoundMode", false);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateMaximumPatternOccurrences(PartParamsP *self) {
+        self->MaximumPatternOccurrences = self->handle->GetInt("MaximumPatternOccurrences", 1000);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateGridLinePattern(PartParamsP *self) {
+        self->GridLinePattern = self->handle->GetInt("GridLinePattern", 3855);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateWireJoinerObjectName(PartParamsP *self) {
+        self->WireJoinerObjectName = self->subHandles[6]->GetASCII("ObjectName", "");
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateWireJoinerIteration(PartParamsP *self) {
+        self->WireJoinerIteration = self->subHandles[6]->GetInt("Iteration", 0);
     }
 };
 
@@ -741,6 +771,25 @@ static const App::ParamRegistry::Registrar _PartParamsRegistrar({
         .setDoc("The option 'Enable STEP Compound merge' of the STEP import: the\n"
 "parts of a file are merged into one compound instead of imported\n"
 "as objects of their own."),
+    App::ParamInfo("Part", "PartParams", "User parameter:BaseApp/Preferences/Mod/Part", "MaximumPatternOccurrences", "MaximumPatternOccurrences", App::ParamInfo::Int, 1000)
+        .setTitle("Most occurrences of a pattern")
+        .setDoc("The most occurrences a pattern or a link array may be given.\n"
+"App's pattern code reads it once, when the first pattern is\n"
+"made, so a change counts from the next start. On no page."),
+    App::ParamInfo("Part", "PartParams", "User parameter:BaseApp/Preferences/Mod/Part", "GridLinePattern", "GridLinePattern", App::ParamInfo::Int, 3855)
+        .setTitle("Grid line pattern of a 2D object")
+        .setDoc("Pattern the grid of a Part 2D object is drawn with when its grid\n"
+"style is dashed: 16 bits, one for each pixel of a stretch of line.\n"
+"The Sketcher has a setting of its own for its grid. On no page.\n"
+"Takes effect when a grid is next built."),
+    App::ParamInfo("Part", "PartParams", "User parameter:BaseApp/Preferences/WireJoiner", "WireJoinerObjectName", "ObjectName", App::ParamInfo::String, "")
+        .setTitle("Wire joiner: object to trace")
+        .setDoc("For development: the name of the object whose wire joining is\n"
+"traced. Empty, none is."),
+    App::ParamInfo("Part", "PartParams", "User parameter:BaseApp/Preferences/WireJoiner", "WireJoinerIteration", "Iteration", App::ParamInfo::Int, 0)
+        .setTitle("Wire joiner: iteration to show from")
+        .setDoc("For development: the iteration from which the wire joiner shows\n"
+"its intermediate shapes for the traced object; 0 for never."),
 });
 
 // Auto generated code (Tools/params_utils.py:368)
@@ -2424,5 +2473,124 @@ void PartParams::setReadShapeCompoundMode(const bool &v) {
 // Auto generated code (Tools/params_utils.py:431)
 void PartParams::removeReadShapeCompoundMode() {
     instance()->subHandles[5]->RemoveBool("ReadShapeCompoundMode");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *PartParams::docMaximumPatternOccurrences() {
+    return QT_TRANSLATE_NOOP("PartParams",
+"The most occurrences a pattern or a link array may be given.\n"
+"App's pattern code reads it once, when the first pattern is\n"
+"made, so a change counts from the next start. On no page.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const long & PartParams::getMaximumPatternOccurrences() {
+    return instance()->MaximumPatternOccurrences;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const long & PartParams::defaultMaximumPatternOccurrences() {
+    const static long def = 1000;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void PartParams::setMaximumPatternOccurrences(const long &v) {
+    instance()->handle->SetInt("MaximumPatternOccurrences",v);
+    instance()->MaximumPatternOccurrences = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void PartParams::removeMaximumPatternOccurrences() {
+    instance()->handle->RemoveInt("MaximumPatternOccurrences");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *PartParams::docGridLinePattern() {
+    return QT_TRANSLATE_NOOP("PartParams",
+"Pattern the grid of a Part 2D object is drawn with when its grid\n"
+"style is dashed: 16 bits, one for each pixel of a stretch of line.\n"
+"The Sketcher has a setting of its own for its grid. On no page.\n"
+"Takes effect when a grid is next built.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const long & PartParams::getGridLinePattern() {
+    return instance()->GridLinePattern;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const long & PartParams::defaultGridLinePattern() {
+    const static long def = 3855;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void PartParams::setGridLinePattern(const long &v) {
+    instance()->handle->SetInt("GridLinePattern",v);
+    instance()->GridLinePattern = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void PartParams::removeGridLinePattern() {
+    instance()->handle->RemoveInt("GridLinePattern");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *PartParams::docWireJoinerObjectName() {
+    return QT_TRANSLATE_NOOP("PartParams",
+"For development: the name of the object whose wire joining is\n"
+"traced. Empty, none is.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const std::string & PartParams::getWireJoinerObjectName() {
+    return instance()->WireJoinerObjectName;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const std::string & PartParams::defaultWireJoinerObjectName() {
+    const static std::string def = "";
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void PartParams::setWireJoinerObjectName(const std::string &v) {
+    instance()->subHandles[6]->SetASCII("ObjectName",v);
+    instance()->WireJoinerObjectName = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void PartParams::removeWireJoinerObjectName() {
+    instance()->subHandles[6]->RemoveASCII("ObjectName");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *PartParams::docWireJoinerIteration() {
+    return QT_TRANSLATE_NOOP("PartParams",
+"For development: the iteration from which the wire joiner shows\n"
+"its intermediate shapes for the traced object; 0 for never.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const long & PartParams::getWireJoinerIteration() {
+    return instance()->WireJoinerIteration;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const long & PartParams::defaultWireJoinerIteration() {
+    const static long def = 0;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void PartParams::setWireJoinerIteration(const long &v) {
+    instance()->subHandles[6]->SetInt("Iteration",v);
+    instance()->WireJoinerIteration = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void PartParams::removeWireJoinerIteration() {
+    instance()->subHandles[6]->RemoveInt("Iteration");
 }
 //[[[end]]]

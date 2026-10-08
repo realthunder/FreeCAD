@@ -28,9 +28,63 @@ and Security). Only its switch could be reached from the interface:
     key removed -- the reader asks the class now, where it read the group;
   - all 14 are in the registry once, each with a title and a documentation.
 
+Small groups, in Gui::MiscParams, MainWindowParams and ViewParams -- 30
+keys: the rest of the gizmos' group, the property view's settings and what
+it and the Add Property dialog keep, the panel mirror, the selection view,
+the DAG view, the custom orientation of a new document's view, and two
+single ones:
+
+  - "/param fine snap modifier" lists Gui/Gizmos/FineSnapModifier, which a
+    page of Part shows, and "/param property view expand data"
+    PropertyView/AutoExpandData, which nothing showed;
+  - what the program keeps is listed too: "/param add property last group"
+    lists PropertyView/NewPropertyGroup;
+  - the property view follows its settings: with HideHeader stored on, the
+    header of its Data tab is hidden a moment later, and back with the key
+    removed;
+  - "/param crosshair cursor colour" lists View/CursorCrosshairColor and
+    "/param clear the menu bar" MainWindow/ClearMenuBar;
+  - none of the 30 is in the registry twice, each has a title and a
+    documentation.
+
+What the program keeps for itself in Gui's groups, and the last of Gui's
+settings without a definition -- 105 keys, in GeneralParams,
+MainWindowParams, ViewParams, MacroParams, App's DocumentParams and
+MiscParams. Their readers are left as they are; the keys are described:
+
+  - "/param last folder of the file dialogs" lists
+    General/FileOpenSavePath, and "/param main window layout"
+    MainWindow/MainWindowState;
+  - the four overlay panels' keys, 13 each, are listed from their groups
+    outside Preferences: "/param overlay left dock windows" lists
+    MainWindow/DockWindows/OverlayLeft/Widgets;
+  - "/param share port" lists SceneShare/Port;
+  - what was to stay out is not in the registry: the share token, the
+    recent files and macros themselves, the order and the switching off of
+    the workbenches.
+
+The modules -- 30 keys in the classes of Sketcher, Material, TechDraw,
+Part, Mesh and Start, in Draft's table and in a definition file for
+Inspection:
+
+  - "/param visual inspection search distance" lists
+    Mod/Inspection/Inspection/SearchDistance with the module not loaded;
+  - with their libraries loaded, "/param sketch panel constraints open"
+    lists Mod/Sketcher/ExpandedConstraintsWidget, "/param materials editor
+    width" Mod/Material/Editor/EditorWidth, "/param welding symbol tile
+    colour" Mod/TechDraw/Colors/TileColor, "/param most occurrences of a
+    pattern" Mod/Part/MaximumPatternOccurrences, "/param mesh from shape
+    last surface deviation" Mod/Mesh/Meshing/Standard/LinearDeflection and
+    "/param start first start" Mod/Start/FirstStart2024;
+  - with Draft's table loaded, "/param dxf export points" lists
+    Mod/Draft/ExportPoints, which the C++ exporter reads from there since
+    entry 44;
+  - the registry still holds no path and entry twice.
+
 Scored against the tree before the change: see the commit message.
 """
 import os
+import sys
 import time
 import traceback
 
@@ -138,10 +192,151 @@ def sandbox():
           len(rows) == 14 and len(keys) == 14 and not bare, (len(rows), len(keys), bare[:4]))
 
 
+SMALL = {
+    "Gui/Gizmos": ("EnableGizmos", "DelayedGizmoUpdate", "EnableCoarseSnap", "FineSnapModifier",
+                   "DefaultCoarseDragBehavior"),
+    "PropertyView": ("AutoTransactionView", "AutoTransactionData", "AutoExpandView",
+                     "AutoExpandData", "HideHeader", "ViewSectionSize", "DataSectionSize",
+                     "LastTabIndex", "NewPropertyType", "NewPropertyGroup", "NewPropertyAppend"),
+    "Fw": ("PanelMirror", "PanelPollMs"),
+    "Selection": ("AutoShowSelectionView", "singleClickFeatureSelect"),
+    "DAGView": ("SelectionMode", "FontPointSize", "Direction"),
+    "View/Custom": ("Q0", "Q1", "Q2", "Q3"),
+    "DependencyGraph": ("GeoFeatureSubgraphs",),
+    "MainWindow": ("ClearMenuBar",),
+    "View": ("CursorCrosshairColor",),
+}
+
+
+def small_groups():
+    found = [param_rows(q) for q in ("fine snap modifier", "property view expand data")]
+    check("the omni search lists the gizmos' and the property view's settings",
+          "Preferences/Gui/Gizmos/FineSnapModifier" in found[0]
+          and "Preferences/PropertyView/AutoExpandData" in found[1], [f[:3] for f in found])
+    rows = param_rows("add property last group")
+    check("and what the Add Property dialog keeps",
+          "Preferences/PropertyView/NewPropertyGroup" in rows, rows[:3])
+
+    group = FreeCAD.ParamGet("User parameter:BaseApp/Preferences/PropertyView")
+    had = "HideHeader" in group.GetBools()
+    old = group.GetBool("HideHeader", False)
+    doc = FreeCAD.newDocument("Entry42PropertyView")
+    try:
+        doc.addObject("App::FeaturePython", "Thing")
+        FreeCADGui.Selection.addSelection(doc.Name, "Thing")
+        settle(1.0)
+        editors = [w for w in FreeCADGui.getMainWindow().findChildren(QtWidgets.QTreeView)
+                   if w.metaObject().className() == "Gui::PropertyEditor::PropertyEditor"]
+        shown = [e.isHeaderHidden() for e in editors]
+        group.SetBool("HideHeader", True)
+        settle(1.0)
+        hidden = [e.isHeaderHidden() for e in editors]
+        group.RemBool("HideHeader")
+        settle(1.0)
+        back = [e.isHeaderHidden() for e in editors]
+    finally:
+        if had:
+            group.SetBool("HideHeader", old)
+        FreeCAD.closeDocument(doc.Name)
+    check("the property view follows HideHeader a moment after it changes",
+          bool(editors) and not any(shown) and all(hidden) and not any(back),
+          (len(editors), shown, hidden, back))
+
+    found = [param_rows(q) for q in ("crosshair cursor colour", "clear the menu bar")]
+    check("and the two single ones are listed",
+          "Preferences/View/CursorCrosshairColor" in found[0]
+          and "Preferences/MainWindow/ClearMenuBar" in found[1], [f[:3] for f in found])
+
+    count = {}
+    bare = []
+    for r in FreeCAD.listParams():
+        for group_name, entries in SMALL.items():
+            if r["path"].endswith("Preferences/" + group_name) and r["entry"] in entries:
+                key = (group_name, r["entry"])
+                count[key] = count.get(key, 0) + 1
+                if not r["title"] or not 0 < len(r["doc"]) <= 400:
+                    bare.append(r["entry"])
+    want = sum(len(v) for v in SMALL.values())
+    check("the 30 are in the registry once each, with a title and a documentation",
+          want == 30 and len(count) == 30 and set(count.values()) == {1} and not bare,
+          (want, len(count), sorted(k for k, n in count.items() if n != 1), bare[:4]))
+
+
+def kept_by_the_program():
+    found = [param_rows(q) for q in ("last folder of the file dialogs", "main window layout")]
+    check("the omni search lists what the file dialogs and the main window keep",
+          "Preferences/General/FileOpenSavePath" in found[0]
+          and "Preferences/MainWindow/MainWindowState" in found[1], [f[:3] for f in found])
+    rows = param_rows("overlay left dock windows")
+    listed = FreeCAD.listParams()
+    overlay = [r for r in listed
+               if r["path"].startswith("User parameter:BaseApp/MainWindow/DockWindows/Overlay")]
+    check("and the overlay panels' keys, 13 for each of the four",
+          "MainWindow/DockWindows/OverlayLeft/Widgets" in rows and len(overlay) == 52
+          and len({(r["path"], r["entry"]) for r in overlay}) == 52, (rows[:3], len(overlay)))
+    rows = param_rows("share port")
+    check("and the Share dialog's fields", "Preferences/SceneShare/Port" in rows, rows[:3])
+    out = [r["path"].split("Preferences/")[-1] + "/" + r["entry"] for r in listed
+           if (r["path"].endswith("/SceneShare") and r["entry"] == "Token")
+           or r["entry"].startswith("MRU")
+           or (r["path"].endswith("/Workbenches") and r["entry"] in ("Ordered", "Disabled"))]
+    check("what was to stay out is not in the registry", bool(listed) and not out, out)
+    bare = [r["entry"] for r in listed
+            if r["context"] in ("MiscParams", "GeneralParams", "MainWindowParams", "MacroParams")
+            and (not r["title"] or not 0 < len(r["doc"]) <= 400)]
+    seen = {}
+    for r in listed:
+        seen[(r["path"], r["entry"])] = seen.get((r["path"], r["entry"]), 0) + 1
+    twice = sorted(k[1] for k, n in seen.items() if n > 1)
+    check("nothing is described twice, and each has a title and a documentation",
+          not bare and not twice, (bare[:4], twice[:4]))
+
+
+def modules():
+    loaded = "Inspection" in sys.modules
+    rows = param_rows("visual inspection search distance")
+    check("the omni search lists what the Visual Inspection dialog keeps, the module not loaded",
+          not loaded and "Preferences/Mod/Inspection/Inspection/SearchDistance" in rows,
+          (loaded, rows[:3]))
+    for name in ("Part", "Sketcher", "Materials", "TechDraw", "Mesh", "Start"):
+        try:
+            __import__(name)
+        except ImportError as e:
+            note("no %s: %s" % (name, e))
+    settle(0.5)
+    wanted = (
+        ("sketch panel constraints open", "Preferences/Mod/Sketcher/ExpandedConstraintsWidget"),
+        ("materials editor width", "Preferences/Mod/Material/Editor/EditorWidth"),
+        ("welding symbol tile colour", "Preferences/Mod/TechDraw/Colors/TileColor"),
+        ("most occurrences of a pattern", "Preferences/Mod/Part/MaximumPatternOccurrences"),
+        ("mesh from shape last surface deviation",
+         "Preferences/Mod/Mesh/Meshing/Standard/LinearDeflection"),
+        ("start first start", "Preferences/Mod/Start/FirstStart2024"),
+    )
+    missing = [row for query, row in wanted if row not in param_rows(query)]
+    check("and what Sketcher, Material, TechDraw, Part, Mesh and Start had without a definition",
+          not missing, missing)
+    from draftutils import params  # noqa: F401 -- Draft's table
+
+    settle(0.5)
+    rows = param_rows("dxf export points")
+    check("and the DXF exporter's options, with Draft's table loaded",
+          "Preferences/Mod/Draft/ExportPoints" in rows, rows[:3])
+    seen = {}
+    for r in FreeCAD.listParams():
+        seen[(r["path"], r["entry"])] = seen.get((r["path"], r["entry"]), 0) + 1
+    twice = sorted(k[1] for k, n in seen.items() if n > 1)
+    check("the registry holds no path and entry twice", bool(seen) and not twice,
+          (len(seen), twice[:6]))
+
+
 def run():
     try:
         spaceball()
         sandbox()
+        small_groups()
+        kept_by_the_program()
+        modules()
     except Exception:
         note("FAIL the test ran | " + traceback.format_exc().replace("\n", " | "))
     finally:

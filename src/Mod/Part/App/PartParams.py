@@ -295,6 +295,29 @@ Params = [
         doc = "The option 'Enable STEP Compound merge' of the STEP import: the\n"
               "parts of a file are merged into one compound instead of imported\n"
               "as objects of their own."),
+    ParamInt('MaximumPatternOccurrences', 1000,
+        title = "Most occurrences of a pattern",
+        doc = "The most occurrences a pattern or a link array may be given.\n"
+              "App's pattern code reads it once, when the first pattern is\n"
+              "made, so a change counts from the next start. On no page."),
+    ParamInt('GridLinePattern', 0x0f0f,
+        title = "Grid line pattern of a 2D object",
+        doc = "Pattern the grid of a Part 2D object is drawn with when its grid\n"
+              "style is dashed: 16 bits, one for each pixel of a stretch of line.\n"
+              "The Sketcher has a setting of its own for its grid. On no page.\n"
+              "Takes effect when a grid is next built."),
+    # --- Preferences/WireJoiner: two aids for whoever debugs the wire
+    # joiner, read each time one is made
+    ParamString('WireJoinerObjectName', '',
+        subpath='User parameter:BaseApp/Preferences/WireJoiner', param_name='ObjectName',
+        title = "Wire joiner: object to trace",
+        doc = "For development: the name of the object whose wire joining is\n"
+              "traced. Empty, none is."),
+    ParamInt('WireJoinerIteration', 0,
+        subpath='User parameter:BaseApp/Preferences/WireJoiner', param_name='Iteration',
+        title = "Wire joiner: iteration to show from",
+        doc = "For development: the iteration from which the wire joiner shows\n"
+              "its intermediate shapes for the traced object; 0 for never."),
 ]
 
 def declare():

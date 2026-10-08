@@ -88,6 +88,7 @@
 
 #include "Geometry.h"
 #include "PartFeature.h"
+#include "PartParams.h"
 #include "TopoShapeOpCode.h"
 
 namespace bg = boost::geometry;
@@ -157,9 +158,8 @@ public:
 
     WireJoinerP()
     {
-        auto hParam = App::GetApplication().GetParameterGroupByPath("User parameter:BaseApp/Preferences/WireJoiner");
-        catchObject = hParam->GetASCII("ObjectName");
-        catchIteration = hParam->GetInt("Iteration", 0);
+        catchObject = PartParams::getWireJoinerObjectName();
+        catchIteration = static_cast<int>(PartParams::getWireJoinerIteration());
     }
 
     bool getBBox(const TopoDS_Shape &e, Bnd_Box &bound) {

@@ -61,6 +61,9 @@ SAME = {
     ("View", "EditSketcherFontSize"): "0 means the application font's height, which the page spells out",
     ("View", "ConstraintSymbolSize"): "0 means the application font's height, which the page spells out",
     ("Mod/Fem/Gmsh", "NumOfThreads"): "0 means the processor's thread count, which the page spells out",
+    ("Mod/Material/Recent", "Recent"): "not a page's default but a count the program keeps: a "
+                                       "material chooser adds its material to the recent list "
+                                       "when its page goes",
 }
 # What OK must not store on a profile that never chose it (entry 24, the
 # decisions): a value that says "follow something else" while it is unset,

@@ -144,6 +144,33 @@ Params = [
         title = "Material cache size",
         doc = "Number of materials kept in the cache of the external material\n"
               "interface. Takes effect after restart."),
+    # --- what the program keeps for itself. Their readers read the group
+    # as before. The four counts are the lengths of lists kept beside
+    # them, a key per entry (FAV0.., MRU0..), which are not listed.
+    ParamInt('EditorWidth', 835, subpath='Editor',
+        title = 'Materials editor: width',
+        doc = "Width in pixels the materials editor last had. Stored when the\n"
+              "editor closes."),
+    ParamInt('EditorHeight', 542, subpath='Editor',
+        title = 'Materials editor: height',
+        doc = "Height in pixels the materials editor last had. Stored when the\n"
+              "editor closes."),
+    ParamInt('FavoritesCount', 0, subpath='Favorites', param_name='Favorites',
+        title = 'Favourite materials: count',
+        doc = "How many favourite materials are kept, in the keys beside this\n"
+              "one. Stored by the program with the list."),
+    ParamInt('RecentCount', 0, subpath='Recent', param_name='Recent',
+        title = 'Recent materials: count',
+        doc = "How many recent materials are kept, in the keys beside this one.\n"
+              "Stored by the program with the list."),
+    ParamInt('ModelsFavoritesCount', 0, subpath='Models/Favorites', param_name='Favorites',
+        title = 'Favourite material models: count',
+        doc = "How many favourite material models are kept, in the keys beside\n"
+              "this one. Stored by the program with the list."),
+    ParamInt('ModelsRecentCount', 0, subpath='Models/Recent', param_name='Recent',
+        title = 'Recent material models: count',
+        doc = "How many recent material models are kept, in the keys beside this\n"
+              "one. Stored by the program with the list."),
 ]
 
 def declare():

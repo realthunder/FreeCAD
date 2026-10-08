@@ -22,6 +22,7 @@ import FreeCAD
 # under its own whose sources are tests, not readers
 MODULES = {
     "HelpParams": (13, ()),
+    "InspectionParams": (2, ()),
     "OpenSCADParams": (15, ("OpenSCADTest",)),
     "ReverseEngineeringParams": (11, ()),
     "TuxParams": (4, ()),
@@ -119,7 +120,7 @@ class TestModuleSettings(unittest.TestCase):
             for r in FreeCAD.listParams("Preferences/Mod/Material")
             if r["path"].startswith(prefix) and r["context"] == "MaterialParams"
         ]
-        self.assertEqual(len(generated), 23)
+        self.assertEqual(len(generated), 29)
 
     def test_defaults_are_the_readers(self):
         """Each default described is the one every reader of the setting passes."""

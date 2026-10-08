@@ -47,8 +47,7 @@ ClassDoc = 'Convenient class to obtain the settings of TechDraw'
 #
 # Not listed: CoarseView, which is read and never written (the page stores
 # HLR/UsePolygon); ReportProgress,
-# which nothing reads; SectionLiveUpdate and SectionUpdateDelay, which the
-# section task keeps in a group of another name.
+# which nothing reads.
 Params = [
     ParamBool('AllowPageOverride', True, subpath='General',
         title = "Allow Page Override",
@@ -665,6 +664,16 @@ Params = [
         title = "PAT file",
         doc = "PAT file new geometric hatches take their pattern from. Empty uses\n"
               "FCPAT.pat, supplied with the program."),
+    ParamHex('TileColor', 0x000000ff, subpath='Colors', proxy=ParamColor(transparency=False),
+        title = "Welding symbol tile colour",
+        doc = "Colour the tiles of a welding symbol are drawn in. On no page.\n"
+              "Takes effect when a tile is next drawn."),
+    # what the program keeps for itself; the section task reads the group
+    ParamBool('SectionLiveUpdate', True, subpath='General',
+        title = "Section task: live update",
+        doc = "'Live update' of the section view task was last checked: the\n"
+              "section follows each change in the task at once. Stored when the\n"
+              "box is clicked."),
 ]
 
 def declare():

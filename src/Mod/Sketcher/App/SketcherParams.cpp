@@ -189,6 +189,15 @@ public:
     bool ParameterQRKeepsColumnOrder;
     bool SkipUnneededConstraintQR;
     bool FillJacobianFromConstraintParams;
+    bool ExpandedMessagesWidget;
+    bool ExpandedSolverAdvancedWidget;
+    bool ExpandedEditControlWidget;
+    bool ExpandedConstraintsWidget;
+    bool ExpandedElementsWidget;
+    long DatumDialogWidth;
+    long ConstraintExternalPick;
+    bool ConstraintFilterEnabled;
+    long ElementFilterState;
 
     // Auto generated code (Tools/params_utils.py:254)
     SketcherParamsP() {
@@ -512,6 +521,24 @@ public:
         funcs["SkipUnneededConstraintQR"] = &SketcherParamsP::updateSkipUnneededConstraintQR;
         FillJacobianFromConstraintParams = this->subHandles[10]->GetBool("FillJacobianFromConstraintParams", true);
         funcs["FillJacobianFromConstraintParams"] = &SketcherParamsP::updateFillJacobianFromConstraintParams;
+        ExpandedMessagesWidget = this->handle->GetBool("ExpandedMessagesWidget", true);
+        funcs["ExpandedMessagesWidget"] = &SketcherParamsP::updateExpandedMessagesWidget;
+        ExpandedSolverAdvancedWidget = this->handle->GetBool("ExpandedSolverAdvancedWidget", false);
+        funcs["ExpandedSolverAdvancedWidget"] = &SketcherParamsP::updateExpandedSolverAdvancedWidget;
+        ExpandedEditControlWidget = this->handle->GetBool("ExpandedEditControlWidget", false);
+        funcs["ExpandedEditControlWidget"] = &SketcherParamsP::updateExpandedEditControlWidget;
+        ExpandedConstraintsWidget = this->handle->GetBool("ExpandedConstraintsWidget", true);
+        funcs["ExpandedConstraintsWidget"] = &SketcherParamsP::updateExpandedConstraintsWidget;
+        ExpandedElementsWidget = this->handle->GetBool("ExpandedElementsWidget", true);
+        funcs["ExpandedElementsWidget"] = &SketcherParamsP::updateExpandedElementsWidget;
+        DatumDialogWidth = this->handle->GetInt("DatumDialogWidth", 0);
+        funcs["DatumDialogWidth"] = &SketcherParamsP::updateDatumDialogWidth;
+        ConstraintExternalPick = this->subHandles[0]->GetInt("ConstraintExternalPick", 0);
+        funcs["ConstraintExternalPick"] = &SketcherParamsP::updateConstraintExternalPick;
+        ConstraintFilterEnabled = this->subHandles[0]->GetBool("ConstraintFilterEnabled", true);
+        funcs["ConstraintFilterEnabled"] = &SketcherParamsP::updateConstraintFilterEnabled;
+        ElementFilterState = this->subHandles[0]->GetInt("ElementFilterState", 2147483647);
+        funcs["ElementFilterState"] = &SketcherParamsP::updateElementFilterState;
     }
 
     // Auto generated code (Tools/params_utils.py:284)
@@ -1115,6 +1142,42 @@ public:
     // Auto generated code (Tools/params_utils.py:314)
     static void updateFillJacobianFromConstraintParams(SketcherParamsP *self) {
         self->FillJacobianFromConstraintParams = self->subHandles[10]->GetBool("FillJacobianFromConstraintParams", true);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateExpandedMessagesWidget(SketcherParamsP *self) {
+        self->ExpandedMessagesWidget = self->handle->GetBool("ExpandedMessagesWidget", true);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateExpandedSolverAdvancedWidget(SketcherParamsP *self) {
+        self->ExpandedSolverAdvancedWidget = self->handle->GetBool("ExpandedSolverAdvancedWidget", false);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateExpandedEditControlWidget(SketcherParamsP *self) {
+        self->ExpandedEditControlWidget = self->handle->GetBool("ExpandedEditControlWidget", false);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateExpandedConstraintsWidget(SketcherParamsP *self) {
+        self->ExpandedConstraintsWidget = self->handle->GetBool("ExpandedConstraintsWidget", true);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateExpandedElementsWidget(SketcherParamsP *self) {
+        self->ExpandedElementsWidget = self->handle->GetBool("ExpandedElementsWidget", true);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateDatumDialogWidth(SketcherParamsP *self) {
+        self->DatumDialogWidth = self->handle->GetInt("DatumDialogWidth", 0);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateConstraintExternalPick(SketcherParamsP *self) {
+        self->ConstraintExternalPick = self->subHandles[0]->GetInt("ConstraintExternalPick", 0);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateConstraintFilterEnabled(SketcherParamsP *self) {
+        self->ConstraintFilterEnabled = self->subHandles[0]->GetBool("ConstraintFilterEnabled", true);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateElementFilterState(SketcherParamsP *self) {
+        self->ElementFilterState = self->subHandles[0]->GetInt("ElementFilterState", 2147483647);
     }
 };
 
@@ -1759,6 +1822,46 @@ static const App::ParamRegistry::Registrar _SketcherParamsRegistrar({
         .setTitle("Fill Jacobian from constraint parameters")
         .setDoc("Fill the Jacobian of a sketch from the parameters each constraint\n"
 "names instead of from all of them. For comparing results."),
+    App::ParamInfo("Sketcher", "SketcherParams", "User parameter:BaseApp/Preferences/Mod/Sketcher", "ExpandedMessagesWidget", "ExpandedMessagesWidget", App::ParamInfo::Bool, true)
+        .setTitle("Sketch panel: solver messages open")
+        .setDoc("The Solver messages box of the sketch task panel was open when the\n"
+"sketch was last left. Stored by the program."),
+    App::ParamInfo("Sketcher", "SketcherParams", "User parameter:BaseApp/Preferences/Mod/Sketcher", "ExpandedSolverAdvancedWidget", "ExpandedSolverAdvancedWidget", App::ParamInfo::Bool, false)
+        .setTitle("Sketch panel: advanced solver control open")
+        .setDoc("The Advanced solver control box of the sketch task panel was open\n"
+"when the sketch was last left. Stored by the program."),
+    App::ParamInfo("Sketcher", "SketcherParams", "User parameter:BaseApp/Preferences/Mod/Sketcher", "ExpandedEditControlWidget", "ExpandedEditControlWidget", App::ParamInfo::Bool, false)
+        .setTitle("Sketch panel: edit controls open")
+        .setDoc("The Edit controls box of the sketch task panel was open when the\n"
+"sketch was last left. Stored by the program."),
+    App::ParamInfo("Sketcher", "SketcherParams", "User parameter:BaseApp/Preferences/Mod/Sketcher", "ExpandedConstraintsWidget", "ExpandedConstraintsWidget", App::ParamInfo::Bool, true)
+        .setTitle("Sketch panel: constraints open")
+        .setDoc("The Constraints box of the sketch task panel was open when the\n"
+"sketch was last left. Stored by the program."),
+    App::ParamInfo("Sketcher", "SketcherParams", "User parameter:BaseApp/Preferences/Mod/Sketcher", "ExpandedElementsWidget", "ExpandedElementsWidget", App::ParamInfo::Bool, true)
+        .setTitle("Sketch panel: elements open")
+        .setDoc("The Elements box of the sketch task panel was open when the sketch\n"
+"was last left. Stored by the program."),
+    App::ParamInfo("Sketcher", "SketcherParams", "User parameter:BaseApp/Preferences/Mod/Sketcher", "DatumDialogWidth", "DatumDialogWidth", App::ParamInfo::Int, 0)
+        .setTitle("Datum dialog width")
+        .setDoc("Width in pixels the dialog that asks for the value of a\n"
+"dimensional constraint last had; used when above 100. Stored by\n"
+"the program when the dialog closes."),
+    App::ParamInfo("Sketcher", "SketcherParams", "User parameter:BaseApp/Preferences/Mod/Sketcher/General", "ConstraintExternalPick", "ConstraintExternalPick", App::ParamInfo::Int, 0)
+        .setTitle("Constraint tools: picking outside geometry")
+        .setDoc("The mode the constraint tools were last left in for picking\n"
+"geometry outside the sketch, 0 for off; the next constraint tool\n"
+"starts in it. Stored when an external geometry command is pressed\n"
+"inside a constraint tool."),
+    App::ParamInfo("Sketcher", "SketcherParams", "User parameter:BaseApp/Preferences/Mod/Sketcher/General", "ConstraintFilterEnabled", "ConstraintFilterEnabled", App::ParamInfo::Bool, true)
+        .setTitle("Constraint list: filter on")
+        .setDoc("The filter of the constraint list of the sketch task panel was\n"
+"last on. Stored when its box is toggled."),
+    App::ParamInfo("Sketcher", "SketcherParams", "User parameter:BaseApp/Preferences/Mod/Sketcher/General", "ElementFilterState", "ElementFilterState", App::ParamInfo::Int, 2147483647)
+        .setTitle("Element list: filter")
+        .setDoc("Which kinds of elements the element list of the sketch task panel\n"
+"last showed, a bit for each entry of its filter; all of them\n"
+"while it has not been used. Stored when the filter changes."),
 });
 
 // Auto generated code (Tools/params_utils.py:368)
@@ -6020,5 +6123,270 @@ void SketcherParams::setFillJacobianFromConstraintParams(const bool &v) {
 // Auto generated code (Tools/params_utils.py:431)
 void SketcherParams::removeFillJacobianFromConstraintParams() {
     instance()->subHandles[10]->RemoveBool("FillJacobianFromConstraintParams");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *SketcherParams::docExpandedMessagesWidget() {
+    return QT_TRANSLATE_NOOP("SketcherParams",
+"The Solver messages box of the sketch task panel was open when the\n"
+"sketch was last left. Stored by the program.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const bool & SketcherParams::getExpandedMessagesWidget() {
+    return instance()->ExpandedMessagesWidget;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const bool & SketcherParams::defaultExpandedMessagesWidget() {
+    const static bool def = true;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void SketcherParams::setExpandedMessagesWidget(const bool &v) {
+    instance()->handle->SetBool("ExpandedMessagesWidget",v);
+    instance()->ExpandedMessagesWidget = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void SketcherParams::removeExpandedMessagesWidget() {
+    instance()->handle->RemoveBool("ExpandedMessagesWidget");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *SketcherParams::docExpandedSolverAdvancedWidget() {
+    return QT_TRANSLATE_NOOP("SketcherParams",
+"The Advanced solver control box of the sketch task panel was open\n"
+"when the sketch was last left. Stored by the program.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const bool & SketcherParams::getExpandedSolverAdvancedWidget() {
+    return instance()->ExpandedSolverAdvancedWidget;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const bool & SketcherParams::defaultExpandedSolverAdvancedWidget() {
+    const static bool def = false;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void SketcherParams::setExpandedSolverAdvancedWidget(const bool &v) {
+    instance()->handle->SetBool("ExpandedSolverAdvancedWidget",v);
+    instance()->ExpandedSolverAdvancedWidget = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void SketcherParams::removeExpandedSolverAdvancedWidget() {
+    instance()->handle->RemoveBool("ExpandedSolverAdvancedWidget");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *SketcherParams::docExpandedEditControlWidget() {
+    return QT_TRANSLATE_NOOP("SketcherParams",
+"The Edit controls box of the sketch task panel was open when the\n"
+"sketch was last left. Stored by the program.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const bool & SketcherParams::getExpandedEditControlWidget() {
+    return instance()->ExpandedEditControlWidget;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const bool & SketcherParams::defaultExpandedEditControlWidget() {
+    const static bool def = false;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void SketcherParams::setExpandedEditControlWidget(const bool &v) {
+    instance()->handle->SetBool("ExpandedEditControlWidget",v);
+    instance()->ExpandedEditControlWidget = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void SketcherParams::removeExpandedEditControlWidget() {
+    instance()->handle->RemoveBool("ExpandedEditControlWidget");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *SketcherParams::docExpandedConstraintsWidget() {
+    return QT_TRANSLATE_NOOP("SketcherParams",
+"The Constraints box of the sketch task panel was open when the\n"
+"sketch was last left. Stored by the program.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const bool & SketcherParams::getExpandedConstraintsWidget() {
+    return instance()->ExpandedConstraintsWidget;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const bool & SketcherParams::defaultExpandedConstraintsWidget() {
+    const static bool def = true;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void SketcherParams::setExpandedConstraintsWidget(const bool &v) {
+    instance()->handle->SetBool("ExpandedConstraintsWidget",v);
+    instance()->ExpandedConstraintsWidget = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void SketcherParams::removeExpandedConstraintsWidget() {
+    instance()->handle->RemoveBool("ExpandedConstraintsWidget");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *SketcherParams::docExpandedElementsWidget() {
+    return QT_TRANSLATE_NOOP("SketcherParams",
+"The Elements box of the sketch task panel was open when the sketch\n"
+"was last left. Stored by the program.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const bool & SketcherParams::getExpandedElementsWidget() {
+    return instance()->ExpandedElementsWidget;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const bool & SketcherParams::defaultExpandedElementsWidget() {
+    const static bool def = true;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void SketcherParams::setExpandedElementsWidget(const bool &v) {
+    instance()->handle->SetBool("ExpandedElementsWidget",v);
+    instance()->ExpandedElementsWidget = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void SketcherParams::removeExpandedElementsWidget() {
+    instance()->handle->RemoveBool("ExpandedElementsWidget");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *SketcherParams::docDatumDialogWidth() {
+    return QT_TRANSLATE_NOOP("SketcherParams",
+"Width in pixels the dialog that asks for the value of a\n"
+"dimensional constraint last had; used when above 100. Stored by\n"
+"the program when the dialog closes.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const long & SketcherParams::getDatumDialogWidth() {
+    return instance()->DatumDialogWidth;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const long & SketcherParams::defaultDatumDialogWidth() {
+    const static long def = 0;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void SketcherParams::setDatumDialogWidth(const long &v) {
+    instance()->handle->SetInt("DatumDialogWidth",v);
+    instance()->DatumDialogWidth = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void SketcherParams::removeDatumDialogWidth() {
+    instance()->handle->RemoveInt("DatumDialogWidth");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *SketcherParams::docConstraintExternalPick() {
+    return QT_TRANSLATE_NOOP("SketcherParams",
+"The mode the constraint tools were last left in for picking\n"
+"geometry outside the sketch, 0 for off; the next constraint tool\n"
+"starts in it. Stored when an external geometry command is pressed\n"
+"inside a constraint tool.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const long & SketcherParams::getConstraintExternalPick() {
+    return instance()->ConstraintExternalPick;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const long & SketcherParams::defaultConstraintExternalPick() {
+    const static long def = 0;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void SketcherParams::setConstraintExternalPick(const long &v) {
+    instance()->subHandles[0]->SetInt("ConstraintExternalPick",v);
+    instance()->ConstraintExternalPick = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void SketcherParams::removeConstraintExternalPick() {
+    instance()->subHandles[0]->RemoveInt("ConstraintExternalPick");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *SketcherParams::docConstraintFilterEnabled() {
+    return QT_TRANSLATE_NOOP("SketcherParams",
+"The filter of the constraint list of the sketch task panel was\n"
+"last on. Stored when its box is toggled.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const bool & SketcherParams::getConstraintFilterEnabled() {
+    return instance()->ConstraintFilterEnabled;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const bool & SketcherParams::defaultConstraintFilterEnabled() {
+    const static bool def = true;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void SketcherParams::setConstraintFilterEnabled(const bool &v) {
+    instance()->subHandles[0]->SetBool("ConstraintFilterEnabled",v);
+    instance()->ConstraintFilterEnabled = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void SketcherParams::removeConstraintFilterEnabled() {
+    instance()->subHandles[0]->RemoveBool("ConstraintFilterEnabled");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *SketcherParams::docElementFilterState() {
+    return QT_TRANSLATE_NOOP("SketcherParams",
+"Which kinds of elements the element list of the sketch task panel\n"
+"last showed, a bit for each entry of its filter; all of them\n"
+"while it has not been used. Stored when the filter changes.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const long & SketcherParams::getElementFilterState() {
+    return instance()->ElementFilterState;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const long & SketcherParams::defaultElementFilterState() {
+    const static long def = 2147483647;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void SketcherParams::setElementFilterState(const long &v) {
+    instance()->subHandles[0]->SetInt("ElementFilterState",v);
+    instance()->ElementFilterState = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void SketcherParams::removeElementFilterState() {
+    instance()->subHandles[0]->RemoveInt("ElementFilterState");
 }
 //[[[end]]]

@@ -277,6 +277,20 @@ public:
     static const char *docFileThumbnailSelectionColor();
     //@}
 
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter FirstStart2024
+    ///
+    /// The Start page still shows its first-start panel, where the
+    /// language, the units, the navigation style and the theme are
+    /// chosen. The program switches it off when the panel is dismissed.
+    static const bool & getFirstStart2024();
+    static const bool & defaultFirstStart2024();
+    static void removeFirstStart2024();
+    static void setFirstStart2024(const bool &v);
+    static const char *docFirstStart2024();
+    //@}
+
 // Auto generated code (Tools/params_utils.py:179)
 }; // class StartParams
 } // namespace Start

@@ -857,6 +857,37 @@ EXTRA = {
         ),
     },
 }
+# The settings of Draft's group that the C++ DXF code of the Import module reads and
+# neither the table nor a page has: (type, the default the reader passes, title,
+# documentation). The exporter takes its options from this group (docs/HandsOnLog.md,
+# entry 44).
+IMPORT_READ = {
+    "Mod/Draft": {
+        "dxfUseDraftVisGroups": (
+            "bool",
+            True,
+            "DXF import: layers",
+            "The layers of an imported DXF file become layers of the document, and each "
+            "object goes into its own; off, they become plain groups. On no page.",
+        ),
+        "ExportPoints": (
+            "bool",
+            False,
+            "DXF export: points",
+            "The C++ DXF exporter writes a POINT for each vertex of an exported shape "
+            "beside its edges. On no page.",
+        ),
+        "DxfVersionOut": (
+            "int",
+            14,
+            "DXF export: version",
+            "The DXF version the C++ exporter writes when its caller names none: 14, or "
+            "12 for a file without splines and light polylines. Draft's own export names "
+            "one, so this counts for a script that calls Import.writeDXFShape. On no page.",
+        ),
+    },
+}
+
 EXTRA["Mod/BIM"].update(_dialog("BimClassification", "classification manager", 629, 516))
 EXTRA["Mod/BIM"].update(_dialog("BimIfcProperties", "IFC properties manager", 1200, 608))
 EXTRA["Mod/BIM"].update(_dialog("BimIfcQuantities", "IFC quantities manager", 680, 512))
@@ -1035,10 +1066,11 @@ def register(param_dict, page_widgets):
             one(path, entry, typ, default, page_widgets.get((path, entry)))
     for path, entry, typ, default, page in extra_page_settings():
         one(path, entry, typ, default, page)
-    for path, entries in EXTRA.items():
-        for entry, (typ, default, title, doc) in entries.items():
-            if entry not in param_dict.get(path, {}):
-                one(path, entry, typ, default, None, (title, doc))
+    for table in (EXTRA, IMPORT_READ):
+        for path, entries in table.items():
+            for entry, (typ, default, title, doc) in entries.items():
+                if entry not in param_dict.get(path, {}):
+                    one(path, entry, typ, default, None, (title, doc))
 
 
 def extra_page_settings():

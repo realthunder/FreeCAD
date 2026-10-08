@@ -22,3 +22,6 @@
 # ***************************************************************************/
 
 # FreeCAD init script of the Inspection module
+
+# What the Visual Inspection dialog keeps, described to the settings registry
+import InspectionParams

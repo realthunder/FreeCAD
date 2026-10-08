@@ -1806,6 +1806,33 @@ public:
     static const char *docFilePattern();
     //@}
 
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter TileColor
+    ///
+    /// Colour the tiles of a welding symbol are drawn in. On no page.
+    /// Takes effect when a tile is next drawn.
+    static const unsigned long & getTileColor();
+    static const unsigned long & defaultTileColor();
+    static void removeTileColor();
+    static void setTileColor(const unsigned long &v);
+    static const char *docTileColor();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter SectionLiveUpdate
+    ///
+    /// 'Live update' of the section view task was last checked: the
+    /// section follows each change in the task at once. Stored when the
+    /// box is clicked.
+    static const bool & getSectionLiveUpdate();
+    static const bool & defaultSectionLiveUpdate();
+    static void removeSectionLiveUpdate();
+    static void setSectionLiveUpdate(const bool &v);
+    static const char *docSectionLiveUpdate();
+    //@}
+
 // Auto generated code (Tools/params_utils.py:179)
 }; // class TechDrawParams
 } // namespace TechDraw

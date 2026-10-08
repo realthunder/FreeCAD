@@ -666,6 +666,49 @@ Params = [
         title = "Fill Jacobian from constraint parameters",
         doc = "Fill the Jacobian of a sketch from the parameters each constraint\n"
               "names instead of from all of them. For comparing results."),
+    # --- what the program keeps for itself. Their readers read the group
+    # as before. SelectedConstraintFilters of the General group is not
+    # here: its default is one bit for each entry of the filter list.
+    ParamBool('ExpandedMessagesWidget', True,
+        title = 'Sketch panel: solver messages open',
+        doc = "The Solver messages box of the sketch task panel was open when the\n"
+              "sketch was last left. Stored by the program."),
+    ParamBool('ExpandedSolverAdvancedWidget', False,
+        title = 'Sketch panel: advanced solver control open',
+        doc = "The Advanced solver control box of the sketch task panel was open\n"
+              "when the sketch was last left. Stored by the program."),
+    ParamBool('ExpandedEditControlWidget', False,
+        title = 'Sketch panel: edit controls open',
+        doc = "The Edit controls box of the sketch task panel was open when the\n"
+              "sketch was last left. Stored by the program."),
+    ParamBool('ExpandedConstraintsWidget', True,
+        title = 'Sketch panel: constraints open',
+        doc = "The Constraints box of the sketch task panel was open when the\n"
+              "sketch was last left. Stored by the program."),
+    ParamBool('ExpandedElementsWidget', True,
+        title = 'Sketch panel: elements open',
+        doc = "The Elements box of the sketch task panel was open when the sketch\n"
+              "was last left. Stored by the program."),
+    ParamInt('DatumDialogWidth', 0,
+        title = 'Datum dialog width',
+        doc = "Width in pixels the dialog that asks for the value of a\n"
+              "dimensional constraint last had; used when above 100. Stored by\n"
+              "the program when the dialog closes."),
+    ParamInt('ConstraintExternalPick', 0, subpath='General',
+        title = 'Constraint tools: picking outside geometry',
+        doc = "The mode the constraint tools were last left in for picking\n"
+              "geometry outside the sketch, 0 for off; the next constraint tool\n"
+              "starts in it. Stored when an external geometry command is pressed\n"
+              "inside a constraint tool."),
+    ParamBool('ConstraintFilterEnabled', True, subpath='General',
+        title = 'Constraint list: filter on',
+        doc = "The filter of the constraint list of the sketch task panel was\n"
+              "last on. Stored when its box is toggled."),
+    ParamInt('ElementFilterState', 0x7fffffff, subpath='General',
+        title = 'Element list: filter',
+        doc = "Which kinds of elements the element list of the sketch task panel\n"
+              "last showed, a bit for each entry of its filter; all of them\n"
+              "while it has not been used. Stored when the filter changes."),
 ]
 
 def declare():

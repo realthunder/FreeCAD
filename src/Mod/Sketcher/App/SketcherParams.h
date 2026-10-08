@@ -1974,6 +1974,127 @@ public:
     static const char *docFillJacobianFromConstraintParams();
     //@}
 
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter ExpandedMessagesWidget
+    ///
+    /// The Solver messages box of the sketch task panel was open when the
+    /// sketch was last left. Stored by the program.
+    static const bool & getExpandedMessagesWidget();
+    static const bool & defaultExpandedMessagesWidget();
+    static void removeExpandedMessagesWidget();
+    static void setExpandedMessagesWidget(const bool &v);
+    static const char *docExpandedMessagesWidget();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter ExpandedSolverAdvancedWidget
+    ///
+    /// The Advanced solver control box of the sketch task panel was open
+    /// when the sketch was last left. Stored by the program.
+    static const bool & getExpandedSolverAdvancedWidget();
+    static const bool & defaultExpandedSolverAdvancedWidget();
+    static void removeExpandedSolverAdvancedWidget();
+    static void setExpandedSolverAdvancedWidget(const bool &v);
+    static const char *docExpandedSolverAdvancedWidget();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter ExpandedEditControlWidget
+    ///
+    /// The Edit controls box of the sketch task panel was open when the
+    /// sketch was last left. Stored by the program.
+    static const bool & getExpandedEditControlWidget();
+    static const bool & defaultExpandedEditControlWidget();
+    static void removeExpandedEditControlWidget();
+    static void setExpandedEditControlWidget(const bool &v);
+    static const char *docExpandedEditControlWidget();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter ExpandedConstraintsWidget
+    ///
+    /// The Constraints box of the sketch task panel was open when the
+    /// sketch was last left. Stored by the program.
+    static const bool & getExpandedConstraintsWidget();
+    static const bool & defaultExpandedConstraintsWidget();
+    static void removeExpandedConstraintsWidget();
+    static void setExpandedConstraintsWidget(const bool &v);
+    static const char *docExpandedConstraintsWidget();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter ExpandedElementsWidget
+    ///
+    /// The Elements box of the sketch task panel was open when the sketch
+    /// was last left. Stored by the program.
+    static const bool & getExpandedElementsWidget();
+    static const bool & defaultExpandedElementsWidget();
+    static void removeExpandedElementsWidget();
+    static void setExpandedElementsWidget(const bool &v);
+    static const char *docExpandedElementsWidget();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter DatumDialogWidth
+    ///
+    /// Width in pixels the dialog that asks for the value of a
+    /// dimensional constraint last had; used when above 100. Stored by
+    /// the program when the dialog closes.
+    static const long & getDatumDialogWidth();
+    static const long & defaultDatumDialogWidth();
+    static void removeDatumDialogWidth();
+    static void setDatumDialogWidth(const long &v);
+    static const char *docDatumDialogWidth();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter ConstraintExternalPick
+    ///
+    /// The mode the constraint tools were last left in for picking
+    /// geometry outside the sketch, 0 for off; the next constraint tool
+    /// starts in it. Stored when an external geometry command is pressed
+    /// inside a constraint tool.
+    static const long & getConstraintExternalPick();
+    static const long & defaultConstraintExternalPick();
+    static void removeConstraintExternalPick();
+    static void setConstraintExternalPick(const long &v);
+    static const char *docConstraintExternalPick();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter ConstraintFilterEnabled
+    ///
+    /// The filter of the constraint list of the sketch task panel was
+    /// last on. Stored when its box is toggled.
+    static const bool & getConstraintFilterEnabled();
+    static const bool & defaultConstraintFilterEnabled();
+    static void removeConstraintFilterEnabled();
+    static void setConstraintFilterEnabled(const bool &v);
+    static const char *docConstraintFilterEnabled();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter ElementFilterState
+    ///
+    /// Which kinds of elements the element list of the sketch task panel
+    /// last showed, a bit for each entry of its filter; all of them
+    /// while it has not been used. Stored when the filter changes.
+    static const long & getElementFilterState();
+    static const long & defaultElementFilterState();
+    static void removeElementFilterState();
+    static void setElementFilterState(const long &v);
+    static const char *docElementFilterState();
+    //@}
+
 // Auto generated code (Tools/params_utils.py:179)
 }; // class SketcherParams
 } // namespace Sketcher

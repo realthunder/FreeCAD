@@ -114,6 +114,12 @@ Params = [
         doc = "Border colour of the selected file thumbnail on the Start page.\n"
               "Only used while no style sheet is loaded. Takes effect at the next\n"
               "repaint."),
+    # what the program keeps for itself; the Start page reads the group
+    ParamBool('FirstStart2024', True,
+        title = "Start: first start",
+        doc = "The Start page still shows its first-start panel, where the\n"
+              "language, the units, the navigation style and the theme are\n"
+              "chosen. The program switches it off when the panel is dismissed."),
 ]
 
 def declare():

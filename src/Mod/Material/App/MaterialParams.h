@@ -381,6 +381,84 @@ public:
     static const char *docMaterialCacheSize();
     //@}
 
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter EditorWidth
+    ///
+    /// Width in pixels the materials editor last had. Stored when the
+    /// editor closes.
+    static const long & getEditorWidth();
+    static const long & defaultEditorWidth();
+    static void removeEditorWidth();
+    static void setEditorWidth(const long &v);
+    static const char *docEditorWidth();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter EditorHeight
+    ///
+    /// Height in pixels the materials editor last had. Stored when the
+    /// editor closes.
+    static const long & getEditorHeight();
+    static const long & defaultEditorHeight();
+    static void removeEditorHeight();
+    static void setEditorHeight(const long &v);
+    static const char *docEditorHeight();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter FavoritesCount
+    ///
+    /// How many favourite materials are kept, in the keys beside this
+    /// one. Stored by the program with the list.
+    static const long & getFavoritesCount();
+    static const long & defaultFavoritesCount();
+    static void removeFavoritesCount();
+    static void setFavoritesCount(const long &v);
+    static const char *docFavoritesCount();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter RecentCount
+    ///
+    /// How many recent materials are kept, in the keys beside this one.
+    /// Stored by the program with the list.
+    static const long & getRecentCount();
+    static const long & defaultRecentCount();
+    static void removeRecentCount();
+    static void setRecentCount(const long &v);
+    static const char *docRecentCount();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter ModelsFavoritesCount
+    ///
+    /// How many favourite material models are kept, in the keys beside
+    /// this one. Stored by the program with the list.
+    static const long & getModelsFavoritesCount();
+    static const long & defaultModelsFavoritesCount();
+    static void removeModelsFavoritesCount();
+    static void setModelsFavoritesCount(const long &v);
+    static const char *docModelsFavoritesCount();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter ModelsRecentCount
+    ///
+    /// How many recent material models are kept, in the keys beside this
+    /// one. Stored by the program with the list.
+    static const long & getModelsRecentCount();
+    static const long & defaultModelsRecentCount();
+    static void removeModelsRecentCount();
+    static void setModelsRecentCount(const long &v);
+    static const char *docModelsRecentCount();
+    //@}
+
 // Auto generated code (Tools/params_utils.py:179)
 }; // class MaterialParams
 } // namespace Materials
