@@ -530,7 +530,26 @@ void ViewProviderBody::updateData(const App::Property* prop)
         checkSiblings();
     }
 
+    // The body's own look, before and after what the object has is taken:
+    // where it is another, the object was given a look, and that is its
+    // tip's as one given to this view provider is (unifyVisualProperty()).
+    const App::Color shape = ShapeColor.getValue();
+    const App::Color line = LineColor.getValue();
+    const App::Color point = PointColor.getValue();
+    const long transparency = Transparency.getValue();
+
     PartGui::ViewProviderPart::updateData(prop);
+
+    if (!mirroringAppearance) {
+        if (ShapeColor.getValue() != shape)
+            unifyVisualProperty(&ShapeColor);
+        if (Transparency.getValue() != transparency)
+            unifyVisualProperty(&Transparency);
+        if (LineColor.getValue() != line)
+            unifyVisualProperty(&LineColor);
+        if (PointColor.getValue() != point)
+            unifyVisualProperty(&PointColor);
+    }
 }
 
 void ViewProviderBody::copyColorsfromTip(App::DocumentObject* tip)
@@ -544,6 +563,16 @@ void ViewProviderBody::copyColorsfromTip(App::DocumentObject* tip)
 }
 
 void ViewProviderBody::onChanged(const App::Property* prop) {
+
+    // A look is the body object's first and its tip's after. These are names
+    // over the object's values (docs/ShapeAppearanceDesign.md sec 14.6.3):
+    // handed to the tip before the object had it, the tip's change made the
+    // body's looks again, the name took the object's value back -- the one
+    // from before the write -- and that was handed to the tip and written to
+    // the object. A colour given to a body's view provider did nothing.
+    const bool look = prop == &ShapeColor || prop == &Transparency || prop == &ShapeMaterial
+        || prop == &ShapeAppearance || prop == &LineColor || prop == &LineMaterial
+        || prop == &PointColor || prop == &PointMaterial;
 
     if (prop == &DisplayModeBody) {
         auto body = Base::freecad_dynamic_cast<PartDesign::Body>(getObject());
@@ -579,16 +608,30 @@ void ViewProviderBody::onChanged(const App::Property* prop) {
         // #0002559: Body becomes visible upon changing DisplayModeBody
         Visibility.touch();
     }
-    else
+    else if (!look)
         unifyVisualProperty(prop);
 
     PartGui::ViewProviderPartExt::onChanged(prop);
+    if (look)
+        unifyVisualProperty(prop);
 }
 
 
 void ViewProviderBody::unifyVisualProperty(const App::Property* prop) {
 
     if (!pcObject || isRestoring()) {
+        return;
+    }
+
+    // Nothing that is being taken from the object is the tip's. What the
+    // body draws is made of what its tip draws, and is taken whenever the
+    // tip changes: handed back, it gave the tip the body's own look in place
+    // of the one the tip was just given, so a colour given to the tip did
+    // nothing either -- and the names of the body's own look pass through
+    // the look of its faces on the way (ViewProviderGeometryObject), which
+    // is a change of them though the look is what it was. A look given to
+    // the body object reaches the tip from updateData().
+    if (mirroringAppearance) {
         return;
     }
 
