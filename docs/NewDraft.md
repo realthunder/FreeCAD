@@ -639,6 +639,9 @@ already does (`OCC_VERSION_HEX`).
 4. Phase 2 of the algorithm: tangent chains and turned cylinders (done
    2026-10-07, section 13).
 5. Performance beyond the local fuse, if the sweep shows the need.
+6. Tangent propagation as an option, off drafting only the picked faces:
+   stage 1 refuses a fillet tangent to the drafted face, stage 2 rebuilds
+   it (section 17).
 
 ## 9. Decisions (2026-10-05)
 
@@ -1384,3 +1387,59 @@ of #474 and the tangent pairs of #631. Face 10 about 11 at 15 deg, which held
 0.38 from the 1e-6 try, comes out at 6.7e-5. Time: the 1222 take 610 s
 against 537 (the full check on the 80 drafts tightening runs for), the 500
 407 against 401; the median draft is unchanged.
+
+## 17. Tangent propagation (2026-10-08)
+
+Drafting one wall of a block whose vertical edges are filleted drafts every
+wall: the face's tangent chain (section 13) runs through the fillets round
+the block. That is what the classic draft does, and what the cell draft
+was built to match. It is not what a user who thinks "draft before fillet"
+expects: that one wall turns, the fillets beside it follow it, and the
+walls beyond them stay as they are.
+
+Other CAD systems make it a choice. SolidWorks' draft has face propagation
+(none, or along tangent faces), Fusion's a tangent chain switch, Onshape's
+tangent propagation; with it on they draft the tangent fillets with the
+face, as we do.
+
+### 17.1 The option
+
+`PartDesign::Draft` gets `TangentPropagation` (bool, default true: today's
+draft; a file from before it restores true), and `Part::CellDraft`
+`SetTangentPropagation(bool)` (default true), passed through
+`TopoShape::makEDraft`.
+
+Off, a face is drafted with the faces coplanar with it beside it (a face
+in pieces, section 4.3) and a curved face with the pieces of its own
+surface (#962's slots), as before, and with the picked faces tangent to
+it -- a wall and the fillets beside it, picked together, draft as one
+chain, which is what the user asked for. A face tangent to the set that
+was not picked is not drafted; what becomes of it is staged:
+
+1. **Stage 1: refuse.** `TangentNeighbour` (the error phase 1 gave every
+   tangent neighbour), saying "a face tangent to the drafted face is not
+   drafted; turn tangent propagation on, or fillet after the draft".
+2. **Stage 2: rebuild the fillet.** The fillet between the drafted face and
+   its untouched neighbour is taken off -- the two faces extended to meet
+   in a sharp edge -- and made again on that edge at its old radius: the
+   "draft before fillet" result. Between two planes the new edge is a line
+   and the fillet a cylinder along it (no longer about the pull
+   direction); other neighbours and fillets are refused at first.
+
+### 17.2 The classic draft always propagates
+
+`BRepOffsetAPI_DraftAngle::Add`'s `Flag` is not a propagation switch: it
+only defers a cylinder's new surface, and the tangent walk
+(`Draft_Modification`) happens either way. So the classic draft cannot be
+told to stop at a fillet. With the option off:
+
+- where no picked face has a tangent face that was not picked, the option
+  changes nothing, and every method runs as it does with it on (a model
+  without fillets drafts as before, the classic draft first under Auto);
+- otherwise `Method = Classic` refuses, saying the classic draft always
+  drafts the tangent chain, and Auto goes straight to the cell draft
+  (`New` takes it anyway).
+
+`CellDraft::TangentFaces(shape, faces)` tells the two apart: the faces of
+the picked faces' tangent chains (`draftChain`) that are neither picked
+nor coplanar pieces of a picked face.
