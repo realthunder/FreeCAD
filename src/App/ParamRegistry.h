@@ -245,6 +245,8 @@ class AppExport ParamRegistry
 public:
     static ParamRegistry& instance();
 
+    /// Register what a generated class describes. An entry whose path and
+    /// entry are described already is left out: the first description stands.
     void add(std::vector<ParamInfo>&& infos);
 
     /** Register a setting described at run time.

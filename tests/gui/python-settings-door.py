@@ -31,6 +31,13 @@ with a title, a documentation and the page's editor each:
     "/param default working plane" Mod/Draft/defaultWP, which is on one;
   - loading the table reported nothing it could not describe.
 
+A setting has one description. Part's and PartGui's generated classes share
+four definitions (the tessellation settings both read), and the omni search
+listed each of the four twice:
+
+  - with both loaded, "/param Mod/Part/MeshDeviation" lists it once, and the
+    registry holds no path and entry twice.
+
 Scored against the tree before the change: see the commit message.
 """
 import os
@@ -146,6 +153,18 @@ def run():
         check("and loading it reported nothing it could not describe",
               "is not described" not in report and "is described already" not in report,
               [line for line in report.splitlines() if "described" in line][:3])
+
+        import Part  # noqa: F401
+        import PartGui  # noqa: F401 -- its class shares four definitions with Part's
+        settle(0.5)
+        rows = [r for r in param_rows("Mod/Part/MeshDeviation") if r.endswith("/MeshDeviation")]
+        seen = {}
+        for r in (FreeCAD.listParams() if hasattr(FreeCAD, "listParams") else []):
+            seen[(r["path"], r["entry"])] = seen.get((r["path"], r["entry"]), 0) + 1
+        twice = sorted(k[1] for k, n in seen.items() if n > 1)
+        check("a setting two classes describe is listed once",
+              rows == ["Preferences/Mod/Part/MeshDeviation"] and seen and not twice,
+              (rows, twice[:6]))
     except Exception:
         note("FAIL the test ran | " + traceback.format_exc().replace("\n", " | "))
     finally:

@@ -178,6 +178,50 @@ TEST_F(ParamRegistryTest, valuesRoundTripThroughTheParameterGroup)
     EXPECT_EQ(reg.getValue(hex), "0x000000FF");
 }
 
+// Two generated classes can describe the same setting (Part's and PartGui's
+// PartParams share four definitions). It is listed once: the first stands.
+TEST_F(ParamRegistryTest, aSettingIsDescribedOnce)
+{
+    auto& reg = ParamRegistry::instance();
+    const std::size_t before = reg.entries().size();
+    std::vector<ParamInfo> first;
+    first.emplace_back("T",
+                       "First",
+                       DocumentPath,
+                       "OmniTestTwice",
+                       "OmniTestTwice",
+                       ParamInfo::Int,
+                       1);
+    first.back().setDoc("Described by the registry's own test.");
+    std::vector<ParamInfo> second;
+    second.emplace_back("T",
+                        "Second",
+                        DocumentPath,
+                        "OmniTestTwice",
+                        "OmniTestTwice",
+                        ParamInfo::Int,
+                        2);
+    second.back().setDoc("Described by the registry's own test.");
+    second.emplace_back("T",
+                        "Second",
+                        DocumentPath,
+                        "OmniTestOnce",
+                        "OmniTestOnce",
+                        ParamInfo::Int,
+                        3);
+    second.back().setDoc("Described by the registry's own test.");
+    ParamRegistry::Registrar a(std::move(first));
+    ParamRegistry::Registrar b(std::move(second));
+
+    EXPECT_EQ(reg.entries().size(), before + 2);
+    const ParamInfo* twice = reg.find(DocumentPath, "OmniTestTwice");
+    ASSERT_NE(twice, nullptr);
+    EXPECT_STREQ(twice->className, "First");
+    EXPECT_EQ(twice->defaultValue, "1");
+    EXPECT_EQ(reg.search({"OmniTestTwice"}).size(), 1u);
+    ASSERT_NE(reg.find(DocumentPath, "OmniTestOnce"), nullptr);
+}
+
 TEST(ParamRegistryValues, normalizeValue)
 {
     std::string res;

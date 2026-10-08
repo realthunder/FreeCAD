@@ -254,7 +254,10 @@ allows transparency.
 `App::ParamRegistry` holds them all: `entries()`, `find(path, entry)`,
 `search(keywords)`, `getValue`/`setValue`/`reset`/`isSet` through the
 `ParameterGrp`, so the generated observer classes (which cache every value)
-see the change. The registry is populated at library load: `params_utils.py`
+see the change. A path and entry has ONE entry: the first description
+stands, whether two generated classes share a definition (Part's and
+PartGui's `PartParams`, for four tessellation settings) or a module
+registers from Python what a class describes. The registry is populated at library load: `params_utils.py`
 `define()` now emits, after the observer class,
 
 ```cpp

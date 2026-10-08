@@ -167,6 +167,13 @@ const ParamInfo* ParamRegistry::insert(ParamInfo&& info)
 void ParamRegistry::add(std::vector<ParamInfo>&& infos)
 {
     for (auto& info : infos) {
+        // One description of a setting. Two generated classes can share a
+        // definition -- Part's and PartGui's PartParams do, for the four
+        // tessellation settings both read -- and a list would show the
+        // setting once for each. The first stands: the library loaded first.
+        if (find(info.path, info.entry)) {
+            continue;
+        }
         insert(std::move(info));
     }
 }
