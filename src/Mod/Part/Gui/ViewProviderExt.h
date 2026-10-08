@@ -23,6 +23,7 @@
 #ifndef PARTGUI_VIEWPROVIDERPARTEXT_H
 #define PARTGUI_VIEWPROVIDERPARTEXT_H
 
+#include <array>
 #include <map>
 #include <memory>
 #include <set>
@@ -850,6 +851,32 @@ protected:
     /// After a document is read: the looks taken from the object, or given
     /// to one that came out of a file with none
     void finishAppearance();
+
+    /** @name The looks kept here
+     *
+     * docs/ShapeAppearanceDesign.md sec 14.6.11. A view provider that shows
+     * a shape of no Part::Feature -- a child view provider on a link -- or
+     * another shape of one has no object to keep its looks, and keeps them
+     * as every view provider did before: its properties are values, the
+     * names of the elements given a colour are the object's ColoredElements
+     * where it has that, their colours MappedColors, and what is drawn of
+     * the names and of the sources is made here and written to the lists.
+     */
+    //@{
+    /// The object's names of the elements given a colour; none where the
+    /// looks are an object's, or the object keeps no such names
+    App::PropertyLinkSub *unboundNames() const;
+    void setUnboundElementColors(const std::map<std::string,App::Color> &info);
+    void updateUnboundColors(App::Document *sourceDoc, bool forceColorMap);
+    /// Which elements the names paint, from the names: a file has the
+    /// lists as painted and not which entries the names painted
+    void rememberUnboundPainted();
+    /// By App::PropertyElementAppearance::Kind: the elements the names
+    /// painted the last time, and whether the sources were asked
+    std::array<std::set<int>, 3> unboundPainted;
+    std::array<bool, 3> unboundMapped {{false, false, false}};
+    bool updatingUnboundColors = false;
+    //@}
     bool highlightFaceEdges = false;
 
     /// Whether the last APPLIED per-face materials diverge in value in a

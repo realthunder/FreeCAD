@@ -299,7 +299,7 @@ App::Color sourceColor(App::Color color,
  * \a subs. A name the shape has not as it is -- its face split, or cut -- is
  * looked up through what it became.
  */
-void namedElements(const Feature *obj,
+void namedElements(const App::DocumentObject *obj,
                    const TopoShape &shape,
                    const std::vector<App::PropertyLinkBase::ShadowSub> &subs,
                    std::array<std::map<int, int>, TopAbs_SHAPE> &named)
@@ -332,7 +332,7 @@ void namedElements(const Feature *obj,
             continue;
         }
 
-        for (auto &names : Feature::getRelatedElements(const_cast<Feature *>(obj),
+        for (auto &names : Feature::getRelatedElements(const_cast<App::DocumentObject *>(obj),
                                                        v.first.c_str())) {
             if (!subMap.insert(names.name).second) {
                 continue;
@@ -405,54 +405,20 @@ void Feature::updateAppearance(App::Document *sourceDoc, bool forceMap, bool whi
                                             MapLineColor.getValue(),
                                             MapPointColor.getValue()};
 
-    std::array<std::map<int, int>, TopAbs_SHAPE> named;
-    namedElements(this, shape, store.getShadowSubs(), named);
+    ElementLooks looks;
+    for (int k = 0; k < Store::KindCount; ++k) {
+        looks.own[k] = store.getBase(static_cast<Kind>(k));
+        looks.fromSources[k] = !noMap && mapKind[k];
+    }
+    looks.sourceTransparency = MapTransparency.getValue();
+    mapElementLooks(this, shape, store.getShadowSubs(), sourceDoc, looks);
 
-    Caches caches;
     bool changed = false;
     for (int k = 0; k < Store::KindCount; ++k) {
         const Kind kind = static_cast<Kind>(k);
-        const TopAbs_ShapeEnum type = KindTypes[k];
-        const int count = static_cast<int>(shape.countSubShapes(type));
-        const std::map<int, int> &names = named[type];
-
-        // What a name does not paint is, with the kind's Map* property, what
-        // its source makes it and no more
-        std::map<int, App::MaterialAppearance> handedOn;
-        if (!noMap && mapKind[k]) {
-            const App::MaterialAppearance own = store.getBase(kind);
-            const App::Color ownColor = colorOf(own);
-            const char *typeName = Store::kindName(kind);
-            for (int i = 0; i < count; ++i) {
-                if (names.count(i)) {
-                    continue;
-                }
-                Data::MappedName mapped =
-                    shape.getMappedName(Data::IndexedName::fromConst(typeName, i + 1));
-                if (!mapped) {
-                    continue;
-                }
-                App::Document *from = sourceDoc;
-                if (auto owner = getElementOwner(mapped)) {
-                    from = owner->getDocument();
-                }
-                App::MaterialAppearance look;
-                bool whole = false;
-                App::Color color =
-                    sourceColor(ownColor, shape, from, kind, mapped, caches, look, whole);
-                // An edge and a vertex are a colour: what a face is seen
-                // through says nothing of them
-                if (kind != Store::Face || !MapTransparency.getValue()) {
-                    color.setTransparency(ownColor.transparency());
-                }
-                if (whole) {
-                    handedOn.emplace(i, inColor(look, color));
-                }
-                else if (color != ownColor) {
-                    handedOn.emplace(i, inColor(own, color));
-                }
-            }
-        }
+        const int count = static_cast<int>(shape.countSubShapes(KindTypes[k]));
+        const std::map<int, int> &names = looks.named[k];
+        std::map<int, App::MaterialAppearance> &handedOn = looks.handedOn[k];
 
         if (forceMap && !handedOn.empty()) {
             // A copy of another object's shape, made once: nothing makes
@@ -475,6 +441,66 @@ void Feature::updateAppearance(App::Document *sourceDoc, bool forceMap, bool whi
         App::AppearanceUpdater::addObject(this);
     }
     mirrorLooks();
+}
+
+void Feature::mapElementLooks(const App::DocumentObject *owner,
+                              const TopoShape &shape,
+                              const std::vector<App::PropertyLinkBase::ShadowSub> &names,
+                              App::Document *sourceDoc,
+                              ElementLooks &looks)
+{
+    std::array<std::map<int, int>, TopAbs_SHAPE> named;
+    namedElements(owner, shape, names, named);
+    auto geo = Base::freecad_dynamic_cast<const App::GeoFeature>(owner);
+
+    Caches caches;
+    for (int k = 0; k < Store::KindCount; ++k) {
+        const Kind kind = static_cast<Kind>(k);
+        const TopAbs_ShapeEnum type = KindTypes[k];
+        looks.named[k] = std::move(named[type]);
+        std::map<int, App::MaterialAppearance> &handedOn = looks.handedOn[k];
+        handedOn.clear();
+        if (!looks.fromSources[k]) {
+            continue;
+        }
+        // What a name does not paint is, with the kind's Map* property, what
+        // its source makes it and no more
+        const int count = static_cast<int>(shape.countSubShapes(type));
+        const App::MaterialAppearance &own = looks.own[k];
+        const App::Color ownColor = colorOf(own);
+        const char *typeName = Store::kindName(kind);
+        for (int i = 0; i < count; ++i) {
+            if (looks.named[k].count(i)) {
+                continue;
+            }
+            Data::MappedName mapped =
+                shape.getMappedName(Data::IndexedName::fromConst(typeName, i + 1));
+            if (!mapped) {
+                continue;
+            }
+            App::Document *from = sourceDoc;
+            if (geo) {
+                if (auto elementOwner = geo->getElementOwner(mapped)) {
+                    from = elementOwner->getDocument();
+                }
+            }
+            App::MaterialAppearance look;
+            bool whole = false;
+            App::Color color =
+                sourceColor(ownColor, shape, from, kind, mapped, caches, look, whole);
+            // An edge and a vertex are a colour: what a face is seen
+            // through says nothing of them
+            if (kind != Store::Face || !looks.sourceTransparency) {
+                color.setTransparency(ownColor.transparency());
+            }
+            if (whole) {
+                handedOn.emplace(i, inColor(look, color));
+            }
+            else if (color != ownColor) {
+                handedOn.emplace(i, inColor(own, color));
+            }
+        }
+    }
 }
 
 void Feature::onAppearanceChanged(const App::Property *prop)

@@ -2195,8 +2195,12 @@ void ViewProviderPartExt::onChanged(const App::Property* prop)
     const bool giving = appearanceBound && !mirroringAppearance && !isRestoring();
     using Looks = App::PropertyElementAppearance;
 
-    if (prop == &MappedColors)
+    if (prop == &MappedColors) {
+        // The colours of the names, where they are kept here
+        if (!appearanceBound && !prop->testStatus(App::Property::User3))
+            updateColors();
         return;
+    }
     if (appearanceBound
             && (prop == &ShapeColor || prop == &Transparency || prop == &ShapeMaterial)) {
         // The object's own look, by the names it has always had. Not
@@ -2223,6 +2227,8 @@ void ViewProviderPartExt::onChanged(const App::Property* prop)
                 give(feat->ForceMapColors, ForceMapColors);
             }
         }
+        else if (!appearanceBound && !prop->testStatus(App::Property::User3))
+            updateColors();
         return;
     }
     
@@ -2280,8 +2286,11 @@ void ViewProviderPartExt::onChanged(const App::Property* prop)
         pcLineMaterial->diffuseColor.setValue(c.r,c.g,c.b);
         if (c != LineMaterial.getValue().diffuseColor)
             LineMaterial.setDiffuseColor(c);
-        if (!appearanceBound)
+        if (!appearanceBound) {
             LineColorArray.setValue(LineColor.getValue());
+            if (!prop->testStatus(App::Property::User3))
+                updateColors();
+        }
         else if (giving)
             writeColours(Looks::Edge, {LineColor.getValue()});
     }
@@ -2290,8 +2299,11 @@ void ViewProviderPartExt::onChanged(const App::Property* prop)
         pcPointMaterial->diffuseColor.setValue(c.r,c.g,c.b);
         if (c != PointMaterial.getValue().diffuseColor)
             PointMaterial.setDiffuseColor(c);
-        if (!appearanceBound)
+        if (!appearanceBound) {
             PointColorArray.setValue(PointColor.getValue());
+            if (!prop->testStatus(App::Property::User3))
+                updateColors();
+        }
         else if (giving)
             writeColours(Looks::Vertex, {PointColor.getValue()});
     }
@@ -2353,6 +2365,12 @@ void ViewProviderPartExt::onChanged(const App::Property* prop)
         // arrays, which is what applyShapeAppearance fills in -- colours
         // alone while diffuse is the only varying field, whole materials
         // once any other field varies per face.
+        //
+        // A named element is the object in the name's colour, and in this
+        // list holds only what of that the object has not: where the names
+        // are kept here they are laid in again ahead of the draw.
+        if (!appearanceBound && MappedColors.getSize() && !isRestoring())
+            updateColors();
         applyShapeAppearance();
         if (!appearanceBound)
             Gui::ColorUpdater::addObject(getObject());
@@ -2369,6 +2387,8 @@ void ViewProviderPartExt::onChanged(const App::Property* prop)
             // mirror only refreshed on a uniform list, and destructive now
             // that it follows the base whatever the faces hold.
             ViewProviderGeometryObject::onChanged(prop);
+            if (!appearanceBound)
+                updateColors();
         }
         return;
     }
@@ -2383,6 +2403,9 @@ void ViewProviderPartExt::onChanged(const App::Property* prop)
             // without the other seeing, then push DiffuseColor by hand --
             // the duplication that store paid for, and the reason it is gone.
             ShapeAppearance.setTransparency(trans);
+            if (!appearanceBound && !prop->testStatus(App::Property::User3)
+                    && (MapTransparency.getValue() || MappedColors.getSize()))
+                updateColors();
         }
     }
     else if (prop == &Lighting) {
@@ -3281,6 +3304,15 @@ std::map<std::string,App::Color> ViewProviderPartExt::getElementColors(const cha
             for(const auto &v : feat->ElementAppearance.getStatedLooks())
                 ret.emplace(v.first, App::AppearanceList::storedDiffuse(v.second));
         }
+        else if(auto names = unboundNames()) {
+            // Kept here: the object's names, in the colours of MappedColors
+            const auto &subs = names->getSubValues();
+            const auto &colors = MappedColors.getValues();
+            if(names->getValue()==pcObject && subs.size()==colors.size()) {
+                for(size_t i=0;i<subs.size();++i)
+                    ret[subs[i]] = colors[i];
+            }
+        }
         return ret;
     }
 
@@ -3385,6 +3417,20 @@ ViewProviderPartExt::getElementAppearances(const char *element) const
             for(const auto &v : feat->ElementAppearance.getStatedLooks())
                 ret.emplace(v.first, v.second);
         }
+        else if(auto names = unboundNames()) {
+            // Kept here, where a name has a colour and no more of a look:
+            // the object in that colour
+            const auto &subs = names->getSubValues();
+            const auto &colors = MappedColors.getValues();
+            if(names->getValue()==pcObject && subs.size()==colors.size()) {
+                for(size_t i=0;i<subs.size();++i) {
+                    App::MaterialAppearance mat = ShapeAppearance.getBase();
+                    mat.diffuseColor = colors[i];
+                    mat.transparency = colors[i].transparency();
+                    ret[subs[i]] = mat;
+                }
+            }
+        }
         return ret;
     }
     // Which elements, and their colours, as the colours are asked: the
@@ -3421,8 +3467,10 @@ void reportUnknownElements(const std::vector<std::string> &names)
 void ViewProviderPartExt::setElementColors(const std::map<std::string,App::Color> &info)
 {
     auto feat = appearanceStore();
-    if(!feat)
+    if(!feat) {
+        setUnboundElementColors(info);
         return;
+    }
     // The object's own first: a name is laid over the object as this call
     // leaves it
     for(auto &v : info) {
@@ -3453,8 +3501,14 @@ void ViewProviderPartExt::setElementAppearances(
         const std::map<std::string,App::MaterialAppearance> &info)
 {
     auto feat = appearanceStore();
-    if(!feat)
+    if(!feat) {
+        // Kept here, where a name has a colour and no more of a look
+        std::map<std::string,App::Color> colors;
+        for(auto &v : info)
+            colors.emplace(v.first, App::AppearanceList::storedDiffuse(v.second));
+        setUnboundElementColors(colors);
         return;
+    }
     using Store = App::PropertyElementAppearance;
     Store &store = feat->ElementAppearance;
     Store::Edit edit(store);
@@ -4148,13 +4202,243 @@ void ViewProviderPartExt::checkColorUpdate()
     // it shows is its view provider's, and nothing told the object
     if(auto feat = appearanceStore())
         feat->onSourceAppearanceChanged();
+    else if(MapFaceColor.getValue() || MapLineColor.getValue()
+            || MapPointColor.getValue() || MapTransparency.getValue())
+        updateUnboundColors(nullptr, false);
 }
 
 void ViewProviderPartExt::updateColors(App::Document *sourceDoc, bool forceColorMap)
 {
     if(auto feat = appearanceStore())
         feat->updateAppearance(sourceDoc, forceColorMap);
+    else
+        updateUnboundColors(sourceDoc, forceColorMap);
 }
+
+/** @name The looks kept here (docs/ShapeAppearanceDesign.md sec 14.6.11)
+ *
+ * Where no Part::Feature keeps them: see the header.
+ */
+//@{
+
+App::PropertyLinkSub *ViewProviderPartExt::unboundNames() const
+{
+    if(appearanceStore() || !pcObject || !pcObject->getNameInDocument())
+        return nullptr;
+    return Base::freecad_dynamic_cast<App::PropertyLinkSub>(
+            pcObject->getPropertyByName("ColoredElements"));
+}
+
+void ViewProviderPartExt::setUnboundElementColors(const std::map<std::string,App::Color> &info)
+{
+    bool touched = false;
+    std::vector<App::Color> colors;
+    std::vector<std::string> subs;
+    colors.reserve(info.size());
+    subs.reserve(info.size());
+    for(auto &v : info) {
+        if(v.first == "Face") {
+            if(ShapeColor.getValue()!=v.second) {
+                touched = true;
+                ShapeColor.setValue(v.second);
+            }
+            if(v.second.transparency()*100 != Transparency.getValue()) {
+                Transparency.setValue(v.second.transparency()*100);
+                touched = true;
+            }
+        } else if(v.first == "Edge") {
+            if(LineColor.getValue()!=v.second) {
+                LineColor.setValue(v.second);
+                touched = true;
+            }
+        } else if(v.first == "Vertex") {
+            if(PointColor.getValue()!=v.second) {
+                PointColor.setValue(v.second);
+                touched = true;
+            }
+        } else {
+            subs.push_back(v.first);
+            colors.push_back(v.second);
+        }
+    }
+    // The names are the object's to keep, and one that keeps none has no
+    // element given a colour by its name
+    auto names = unboundNames();
+    if(!names)
+        return;
+    if(colors != MappedColors.getValues()) {
+        touched = true;
+        // The names follow: what is drawn is made when both are there
+        Base::ObjectStatusLocker<App::Property::Status,App::Property> guard(
+                App::Property::User3, &MappedColors);
+        MappedColors.setValues(colors);
+    }
+    if(subs.empty()) {
+        if(names->getValue() || !names->getSubValues().empty())
+            names->setValue(nullptr);
+        else if(touched)
+            updateColors();
+    }
+    else if(names->getValue() != pcObject || subs != names->getSubValues())
+        names->setValue(pcObject, subs);
+    else if(touched)
+        updateColors();
+}
+
+void ViewProviderPartExt::rememberUnboundPainted()
+{
+    using Kinds = App::PropertyElementAppearance;
+    for(auto &painted : unboundPainted)
+        painted.clear();
+    const bool sources = ForceMapColors.getValue() || hasBaseFeature();
+    unboundMapped = {{sources && MapFaceColor.getValue(), sources && MapLineColor.getValue(),
+                      sources && MapPointColor.getValue()}};
+    auto names = unboundNames();
+    if(!names || names->getSubValues().empty())
+        return;
+    const Part::TopoShape shape = getShape();
+    if(shape.isNull())
+        return;
+    Part::Feature::ElementLooks looks;
+    Part::Feature::mapElementLooks(pcObject, shape, names->getShadowSubs(), nullptr, looks);
+    for(int k=0; k<Kinds::KindCount; ++k) {
+        for(auto &v : looks.named[k])
+            unboundPainted[k].insert(v.first);
+    }
+}
+
+void ViewProviderPartExt::updateUnboundColors(App::Document *sourceDoc, bool forceColorMap)
+{
+    // Not while this is read, whether or not its document still is: a file
+    // has the lists as they were drawn, and half of what they are made of
+    // may not be here yet
+    if(updatingUnboundColors || appearanceStore() || isRestoring()
+            || !pcObject || !pcObject->getNameInDocument() || !pcObject->getDocument()
+            || pcObject->getDocument()->testStatus(App::Document::Restoring))
+        return;
+    using Kinds = App::PropertyElementAppearance;
+
+    // The painted elements and their colours are one list held in two
+    // properties: the names on the object, the colours here. The two do not
+    // change at once, and between the two they differ in length: the other
+    // half is on its way, and its change comes back here.
+    static const std::vector<App::PropertyLinkBase::ShadowSub> none;
+    auto names = unboundNames();
+    const auto &subs = names ? names->getShadowSubs() : none;
+    const std::vector<App::Color> colors = MappedColors.getValues();
+    if(subs.size() != colors.size())
+        return;
+
+    const bool mapKind[Kinds::KindCount] = {MapFaceColor.getValue(), MapLineColor.getValue(),
+                                            MapPointColor.getValue()};
+    bool anything = !subs.empty();
+    for(int k=0; k<Kinds::KindCount && !anything; ++k)
+        anything = mapKind[k] || unboundMapped[k] || !unboundPainted[k].empty();
+    if(!anything)
+        return;   // nothing a name or a source could change, as most are
+
+    const Part::TopoShape shape = getShape();
+    if(shape.isNull())
+        return;
+    Base::StateLocker guard(updatingUnboundColors);
+    if(!sourceDoc)
+        sourceDoc = pcObject->getDocument();
+
+    const bool noMap = !ForceMapColors.getValue() && !forceColorMap && !hasBaseFeature();
+    Part::Feature::ElementLooks looks;
+    looks.own[Kinds::Face] = ShapeAppearance.getBase();
+    looks.own[Kinds::Edge] = LineMaterial.getValue();
+    looks.own[Kinds::Edge].diffuseColor = LineColor.getValue();
+    looks.own[Kinds::Vertex] = PointMaterial.getValue();
+    looks.own[Kinds::Vertex].diffuseColor = PointColor.getValue();
+    for(int k=0; k<Kinds::KindCount; ++k)
+        looks.fromSources[k] = !noMap && mapKind[k];
+    looks.sourceTransparency = MapTransparency.getValue();
+    Part::Feature::mapElementLooks(pcObject, shape, subs, sourceDoc, looks);
+
+    static const TopAbs_ShapeEnum types[Kinds::KindCount] = {TopAbs_FACE, TopAbs_EDGE, TopAbs_VERTEX};
+    for(int k=0; k<Kinds::KindCount; ++k) {
+        const int count = static_cast<int>(shape.countSubShapes(types[k]));
+        const std::map<int,int> &named = looks.named[k];
+        const std::map<int,App::MaterialAppearance> &handedOn = looks.handedOn[k];
+        // What the names painted the last time and paint no more goes back
+        // to the object's look. The list written to does not say which
+        // those are: an element coloured by its number -- a script's, an
+        // import's -- is in it too, and is not the names' to take back.
+        std::set<int> &painted = unboundPainted[k];
+        std::vector<int> unpainted;
+        for(int idx : painted) {
+            if(idx < count && !named.count(idx))
+                unpainted.push_back(idx);
+        }
+        painted.clear();
+        for(auto &v : named) {
+            if(v.first < count)
+                painted.insert(v.first);
+        }
+        // With the sources asked, what no name paints is what its source
+        // makes it and no more: the list is made anew, as it is when the
+        // sources are asked no longer
+        const bool anew = looks.fromSources[k] || unboundMapped[k];
+        unboundMapped[k] = looks.fromSources[k];
+        if(!anew && named.empty() && unpainted.empty())
+            continue;
+
+        if(k == Kinds::Face) {
+            const App::MaterialAppearance base = ShapeAppearance.getBase();
+            App::AppearanceList list = ShapeAppearance.getList();
+            if(anew || list.getSize() != count) {
+                list = App::AppearanceList();
+                list.setSize(count, base);
+            }
+            for(int idx : unpainted)
+                list.set1Value(idx, base);
+            for(auto &v : handedOn) {
+                if(v.first < count)
+                    list.set1Value(v.first, v.second);
+            }
+            for(auto &v : named) {
+                if(v.first >= count)
+                    continue;
+                App::MaterialAppearance look = base;
+                look.diffuseColor = colors[v.second];
+                look.transparency = colors[v.second].transparency();
+                list.set1Value(v.first, look);
+            }
+            // Every face given one look is the object given it, however it
+            // is written, and written a face at a time the list does not
+            // end its follow of a material card as a whole write does
+            if(!named.empty() || !handedOn.empty())
+                list.setFollowMaterial(false);
+            if(!ShapeAppearance.getList().isSame(list))
+                ShapeAppearance.setList(list);
+            continue;
+        }
+
+        App::PropertyColorList &array = k == Kinds::Edge ? LineColorArray : PointColorArray;
+        const App::Color own = k == Kinds::Edge ? LineColor.getValue() : PointColor.getValue();
+        std::vector<App::Color> values = array.getValues();
+        if(anew || static_cast<int>(values.size()) != count)
+            values.assign(count, own);
+        for(int idx : unpainted)
+            values[idx] = own;
+        for(auto &v : handedOn) {
+            if(v.first < count)
+                values[v.first] = App::AppearanceList::storedDiffuse(v.second);
+        }
+        for(auto &v : named) {
+            if(v.first < count)
+                values[v.first] = colors[v.second];
+        }
+        if(std::all_of(values.begin(), values.end(),
+                       [&](const App::Color &c) { return c == own; }))
+            values.assign(1, own);
+        if(array.getValues() != values)
+            array.setValues(values);
+    }
+}
+
+//@}
 
 //@}
 
@@ -4172,11 +4456,17 @@ void ViewProviderPartExt::updateData(const App::Property* prop)
                 mirrorAppearance();
         }
     }
+    // The names of the elements given a colour, where the looks are kept
+    // here: the colours are MappedColors, and what is drawn is made of both
+    if(!appearanceBound && strcmp(propName,"ColoredElements")==0)
+        updateColors();
     if(strcmp(propName,shapeProp)==0
             || strstr(propName,"Touched")!=0)
     {
         TopoDS_Shape cShape = getShape().getShape();
         if(cachedShape.getShape().IsPartner(cShape)) {
+            if(!appearanceBound)
+                updateColors();
             Gui::ViewProviderGeometryObject::updateData(prop);
             return;
         }
@@ -4186,6 +4476,10 @@ void ViewProviderPartExt::updateData(const App::Property* prop)
             updateVisual();
         else
             VisualTouched = true;
+
+        // Kept here, what is drawn of the new shape is made here
+        if(!appearanceBound)
+            updateColors();
 
         // The visual made again is drawn in what is held: what the object
         // makes of the new shape comes by its own change, if it changes
@@ -8311,6 +8605,9 @@ void ViewProviderPartExt::finishRestoring()
     // which hooks its drain instead, and after the first call of a load.
     if (auto obj = getObject())
         preMeshUndeferredLoad(obj->getDocument());
+
+    if(!appearanceBound)
+        rememberUnboundPainted();
 
     if(VisualTouched && (isUpdateForced() || Visibility.getValue()))
         updateVisual();

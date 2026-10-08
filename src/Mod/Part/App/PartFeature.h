@@ -24,6 +24,8 @@
 #ifndef PART_FEATURE_H
 #define PART_FEATURE_H
 
+#include <array>
+#include <map>
 #include <string>
 #include <vector>
 
@@ -163,6 +165,32 @@ public:
                           bool whileRestoring = false);
     bool getDrawnAppearance(int kind, App::AppearanceList &list) const override;
     void onSourceAppearanceChanged() override;
+    /** What the names paint and what the sources hand on
+     *
+     * The part of updateAppearance() that is of a shape and not of where
+     * its looks are kept, for a view provider that keeps them itself as
+     * every one did before the looks were the object's: one that shows a
+     * shape of no Part::Feature, which a child view provider on a link does
+     * (docs/ShapeAppearanceDesign.md sec 14.6.11). Each array is by
+     * App::PropertyElementAppearance::Kind.
+     */
+    struct ElementLooks
+    {
+        /// In: each kind's own look, and whether its sources are asked
+        std::array<App::MaterialAppearance, 3> own;
+        std::array<bool, 3> fromSources {{false, false, false}};
+        /// In: whether a face takes its source's transparency with its colour
+        bool sourceTransparency {false};
+        /// Out: an element's number to the place of its name
+        std::array<std::map<int, int>, 3> named;
+        /// Out: the looks the sources hand on, by element
+        std::array<std::map<int, App::MaterialAppearance>, 3> handedOn;
+    };
+    /// \a owner is the object whose shape \a shape is; \a names its names
+    /// of the elements given a look, in the order of what they are given
+    static void mapElementLooks(const App::DocumentObject *owner, const TopoShape &shape,
+                                const std::vector<App::PropertyLinkBase::ShadowSub> &names,
+                                App::Document *sourceDoc, ElementLooks &looks);
     /** Whether the shape is made from other objects
      *
      * Only then are the looks of the elements it was made from asked for
