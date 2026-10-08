@@ -1877,9 +1877,16 @@ Added to the list for the reporter:
 
 **Entry 41 is done with this step:** 601 settings listed that were not (13
 + 426 + 115 + 47). What is open is the list -- L1 to L12, F1, F3, F4, F6 to
-F12 -- none of which blocks anything. The full suites were started after
-this commit (`full41.cmd` in the entry's script directory); their result is
-written here when they end.
+F12 -- none of which blocks anything.
+
+The full suites on `ff12279ee6`, the first full run since `427ffc8d28`
+(`full41.cmd` in the entry's script directory): ctest 787 of 787 passing
+(796 entries, 9 disabled, 1 skipped; 784 before, +3 from this entry);
+`FreeCADCmd -t 0` 3411 tests, 2 failures, 50 skipped, 6 expected failures
+(3385 before with the same two failures, +26 from this entry). The two are
+`TestThickness.testCase5829ThicknessOnRotatedFillet` and
+`testCase5829RectoVersoThicknessOnRotatedFillet`, red since the OCCT merge
+of 2026-10-05 and not this entry's. `docs/Testing.md` has the counts.
 
 ## 42. State keys through the generator, and listed -- SIZED, the cut agreed; after entry 41
 
