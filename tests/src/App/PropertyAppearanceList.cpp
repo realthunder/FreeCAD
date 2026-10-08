@@ -2791,6 +2791,83 @@ TEST_F(PropertyAppearanceListTest, anOverrideListAFileStatesIsChecked)
     }
 }
 
+TEST_F(PropertyAppearanceListTest, overridingFacesThatFollowOnAreWrittenAsRanges)
+{
+    // An import gives every face a colour by its number, and stated a face
+    // at a time their numbers were half of what its looks cost in the file
+    const int count = 600;
+    auto colour = [](int i) {
+        return packed(((static_cast<uint32_t>(i) * 2654435761U) & 0xffff0000U) | 0x00007fffU);
+    };
+    auto binaryDocFile = [](const App::PropertyAppearanceList& prop) {
+        Base::StringWriter writer;
+        writer.setPreferBinary(true);
+        writer.setSchemaVersion(5);
+        prop.SaveDocFile(writer);
+        return writer.getString();
+    };
+    auto painted = [&](const std::vector<int>& faces) {
+        auto prop = std::make_unique<App::PropertyAppearanceList>();
+        prop->setSize(count, redMaterial());
+        for (int i : faces) {
+            prop->setDiffuseColor(i, colour(i));
+        }
+        return prop;
+    };
+    std::vector<int> all;
+    std::vector<int> other;
+    std::vector<int> spans;
+    for (int i = 0; i < count; ++i) {
+        all.push_back(i);
+        if (i % 2 == 0) {
+            other.push_back(i);
+        }
+        if ((i >= 10 && i < 110) || i >= 300) {
+            spans.push_back(i);
+        }
+    }
+    const auto every = painted(all);
+    const auto scattered = painted(other);
+    const auto two = painted(spans);
+    ASSERT_EQ(every->getOverrides().size(), static_cast<std::size_t>(count));
+
+    // Four bytes a colour and next to nothing for which faces they are of
+    const std::string everyFile = binaryDocFile(*every);
+    EXPECT_LT(everyFile.size(), static_cast<std::size_t>(count) * 4 + 200);
+    // No two of every other face follow on: a face at a time is the shorter
+    const std::string scatteredFile = binaryDocFile(*scattered);
+    EXPECT_GE(scatteredFile.size(), static_cast<std::size_t>(count / 2) * 8);
+    const std::string twoFile = binaryDocFile(*two);
+    EXPECT_LT(twoFile.size(), spans.size() * 4 + 200);
+
+    const std::vector<std::pair<const App::PropertyAppearanceList*, const std::string*>> cases = {
+        {every.get(), &everyFile},
+        {scattered.get(), &scatteredFile},
+        {two.get(), &twoFile},
+    };
+    for (const auto& v : cases) {
+        App::PropertyAppearanceList back;
+        restoreBinaryDocFile(back, *v.second);
+        ASSERT_EQ(back.getSize(), count);
+        EXPECT_EQ(back.getOverrides(), v.first->getOverrides());
+        for (int i = 0; i < count; ++i) {
+            ASSERT_TRUE(back.getDiffuseColor(i) == v.first->getDiffuseColor(i)) << i;
+        }
+    }
+
+    // What a file says of ranges is no more evidence than the rest of it.
+    // The one range of every face is the last 600 in the entry: a face too
+    // many overruns the count the head states, and one too few falls short
+    const auto at = everyFile.rfind(std::string("\x58\x02\x00\x00", 4));
+    ASSERT_NE(at, std::string::npos);
+    for (char length : {'\x59', '\x57'}) {
+        std::string wrong = everyFile;
+        wrong[at] = length;
+        App::PropertyAppearanceList prop;
+        EXPECT_THROW(restoreBinaryDocFile(prop, wrong), Base::Exception);
+    }
+}
+
 TEST_F(PropertyAppearanceListTest, anAppearanceCardKeepsThePaintedFaces)
 {
     // 12.2, and the reason the base exists at all: assigning the object a

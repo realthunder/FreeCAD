@@ -4389,7 +4389,30 @@ enum FieldRunType : uint8_t {
     /// A string field that carries its base value ahead of the column, for
     /// a field RunBase cannot hold (see ExtMaterialX)
     RunStringsBase = 9,
+    /** RunBase, the overriding faces stated as ranges
+     *
+     * How many ranges, a first face and a length for each, then the base as
+     * RunBase has it. An import gives every face a look, or one span of
+     * them after another, and stated a face at a time their numbers were
+     * half of what its looks cost in the file: 4 bytes a face beside the 4
+     * of its colour (docs/ShapeAppearanceDesign.md 14.6.10). Written where
+     * it is the shorter of the two.
+     */
+    RunBaseRanges = 10,
 };
+
+/// The overriding faces as ranges: a first face and how many follow on
+std::vector<std::pair<uint32_t, uint32_t>> overrideRanges(const std::vector<uint32_t> &overrides)
+{
+    std::vector<std::pair<uint32_t, uint32_t>> ranges;
+    for (uint32_t idx : overrides) {
+        if (!ranges.empty() && ranges.back().first + ranges.back().second == idx)
+            ++ranges.back().second;
+        else
+            ranges.emplace_back(idx, 1U);
+    }
+    return ranges;
+}
 
 /// The records of one finish run. Shared by the material list's per field
 /// stream and by PropertySurfaceFinishList, so the two cannot drift apart.
@@ -4878,9 +4901,24 @@ void PropertyAppearanceList::saveFieldStream(Base::OutputStream &str) const
     // The flags ride the PAYLOAD rather than a bit of the mask because the
     // mask has sixteen bits in all and this run already has to be present
     // for anything the flags could say about the base.
-    writeRun(RunBase, d.overrides.size(), [&d, convert](Base::OutputStream &run) {
-        for (uint32_t idx : d.overrides)
-            run << idx;
+    //
+    // The faces a face at a time, or as ranges where that is shorter: two
+    // numbers a range and one to say how many, against one a face.
+    const std::vector<std::pair<uint32_t, uint32_t>> ranges = overrideRanges(d.overrides);
+    const bool ranged = ranges.size() * 2 + 1 < d.overrides.size();
+    writeRun(ranged ? RunBaseRanges : RunBase, d.overrides.size(),
+             [&d, &ranges, ranged, convert](Base::OutputStream &run) {
+        if (ranged) {
+            run << static_cast<uint32_t>(ranges.size());
+            for (const auto &range : ranges) {
+                run << range.first;
+                run << range.second;
+            }
+        }
+        else {
+            for (uint32_t idx : d.overrides)
+                run << idx;
+        }
         run << packedForSave(d.base.ambientColor, convert);
         run << packedForSave(d.base.diffuseColor, convert);
         run << packedForSave(d.base.specularColor, convert);
@@ -5013,10 +5051,36 @@ void PropertyAppearanceList::restoreFieldStream(Base::InputStream &str, unsigned
         case RunExtension:
             str >> ext;   // which extended runs follow the sixteen
             break;
-        case RunBase: {
-            indices.resize(count);
-            for (auto &value : indices)
-                str >> value;
+        case RunBase:
+        case RunBaseRanges: {
+            if (type == RunBaseRanges) {
+                // Both numbers came out of a file: no more faces than the
+                // list has entries, and the ranges are what the head said
+                if (count > uCt)
+                    throw Base::FileException("more overriding faces than the list has entries");
+                uint32_t rangeCount = 0;
+                str >> rangeCount;
+                if (rangeCount > count)
+                    throw Base::FileException("more ranges of overriding faces than faces");
+                indices.reserve(count);
+                for (uint32_t i = 0; i < rangeCount; ++i) {
+                    uint32_t first = 0;
+                    uint32_t length = 0;
+                    str >> first;
+                    str >> length;
+                    if (length > count - indices.size())
+                        throw Base::FileException("ranges of overriding faces overrun their count");
+                    for (uint32_t k = 0; k < length; ++k)
+                        indices.push_back(first + k);
+                }
+                if (indices.size() != count)
+                    throw Base::FileException("ranges of overriding faces fall short of their count");
+            }
+            else {
+                indices.resize(count);
+                for (auto &value : indices)
+                    str >> value;
+            }
             uint32_t packed = 0;
             str >> packed;
             base.ambientColor.setPackedValue(packed);
