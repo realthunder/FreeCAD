@@ -34,7 +34,7 @@ Evidence that does not belong in the repository is under
 | 19 | STAGED `805b5afb25` | every place the audit listed that runs at load, recompute or paint, the three wrong results, and the writer of -1; what is left is listed |
 | 22 | STAGED `5aedd5cf83` | `/word` is an object query; the beginning of a keyword lists modes and objects |
 | 23 | STAGED `c7a27b5a85`, and `08b8f009aa`; the defaults FIXED `02cab053df`, not staged | 574 settings: 221 had no documentation, 94 ran past 400 characters; all have a short text now, and a test keeps it so. The defaults: OK on a fresh profile changed 23 settings and stored 2 under a wrong type -- 14 of them a spin box clamping its default to 99, which the reporter's own profile carries |
-| 24 | C++ SIDE DONE, about 1180 settings listed; the reporter's decisions of 2026-10-08 applied in two rounds, `e21eff05a7` and `427ffc8d28`; not staged | every setting C++ reads is behind a generated class. After both rounds: the editors' font is Courier, Home is Top, the marker size is 7 everywhere, the Asymptote height is empty, CAM's unit default is upstream's; 15 of the 16 findings are fixed or dropped as decided (D4 needs nothing). Still with the reporter: A24 (the accent colours). Entries 41 (Python door) and 42 (state keys, to be listed) are decided and not started |
+| 24 | C++ SIDE DONE, about 1180 settings listed; the reporter's decisions of 2026-10-08 applied in two rounds, `e21eff05a7` and `427ffc8d28`; pushed `b70cc6ebf1`, not staged | every setting C++ reads is behind a generated class. After both rounds: the editors' font is Courier, Home is Top, the marker size is 7 everywhere, the Asymptote height is empty, CAM's unit default is upstream's; 15 of the 16 findings are fixed or dropped as decided (D4 needs nothing). A24: the fork's three accent colours stay ("keep ours"). Nothing is left with the reporter. Entries 41 (Python door) and 42 (state keys, to be listed) are decided and not started |
 | 26 | FIXED `175ffce199`, not staged | the first OK of a profile held the program 11 to 15 s on the reporter's configuration with `scanner.FCStd` open: 780 keys stored for the first time and taken for changes -- stylesheet set again 4.2 s, every Part view provider re-meshed 3.2 s, language activated again 2 s. 0.9 s now |
 | 27 | STAGED `fa2ada985c` | the cell menu made a spreadsheet view by asking for it, listed a page's views, and a pick was placed by the general policy |
 | 31 | FIXED `47b5e72c79`, not staged | "Go to end" is on for a profile that never stored it |
@@ -852,7 +852,7 @@ its own thing, and not started.
 
 Evidence: `..\dl\handson\2026-10-07\msaa-*`, `entry26-first-ok-with-msaa-*`.
 
-## 24. Every setting behind a generated class -- C++ SIDE DONE, both rounds of the decisions applied `e21eff05a7`, `427ffc8d28`; A24 back with the reporter
+## 24. Every setting behind a generated class -- C++ SIDE DONE, both rounds of the decisions applied `e21eff05a7`, `427ffc8d28`; nothing left with the reporter; pushed
 
 The reporter, 2026-10-07, asked which entry "do entry 23 next" meant: "I
 meant entry 24". Not staged.
@@ -1585,3 +1585,10 @@ entry of its own.
   it meant something else.
 - The omni search's highlighted row, white on light blue: an entry of its
   own?
+
+**Answered, 2026-10-08,** in the reporter's words: "A24, keep ours then.
+don't change. and yes it is A5 marker size." So the three accent colours
+of `00d2b684fd` stay, the marker size is 7 everywhere as applied, and the
+highlighted row is entry 43 of the queue. Entry 24 has nothing left with
+the reporter. Pushed: `origin/PartDesignPort` = `b70cc6ebf1`, cycles
+`35a3bd898` first. Not staged.
