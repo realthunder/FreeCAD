@@ -111,6 +111,25 @@ double angleForLevel(uint32_t level)
     }
 }
 
+/// The mesher's call for a level, on a shape that is the caller's alone.
+void meshForLevel(const TopoDS_Shape &copy, double deflection, double angle)
+{
+#if OCC_VERSION_HEX >= 0x070500
+    IMeshTools_Parameters meshParams;
+    meshParams.Deflection = deflection;
+    meshParams.Relative = Standard_False;
+    meshParams.Angle = angle;
+    meshParams.InParallel = Standard_True;
+    // The copied display mesh is far finer than any level wants; this
+    // is what lets the re-mesh replace it instead of keeping it.
+    meshParams.AllowQualityDecrease = Standard_True;
+    BRepMesh_IncrementalMesh(copy, meshParams);
+#else
+    BRepMesh_IncrementalMesh(copy, deflection, Standard_False, angle,
+                             Standard_True);
+#endif
+}
+
 /// The re-meshed copy for a level. A *structure* copy: fresh TShapes
 /// so the coarse triangulation never touches the live shape the GUI
 /// reads, stored meshes carried so purely triangulated faces (no
@@ -149,21 +168,7 @@ TopoDS_Shape meshedCopy(const TopoDS_Shape &shape, double deflection,
         builder.UpdateEdge(edge, Handle(Poly_Polygon3D)());
     }
 
-#if OCC_VERSION_HEX >= 0x070500
-    IMeshTools_Parameters meshParams;
-    meshParams.Deflection = deflection;
-    meshParams.Relative = Standard_False;
-    meshParams.Angle = angle;
-    meshParams.InParallel = Standard_True;
-    // The copied display mesh is far finer than any level wants; this
-    // is what lets the re-mesh replace it instead of keeping it.
-    meshParams.AllowQualityDecrease = Standard_True;
-    BRepMesh_IncrementalMesh(copy, meshParams);
-#else
-    BRepMesh_IncrementalMesh(copy, deflection, Standard_False, angle,
-                             Standard_True);
-#endif
-
+    meshForLevel(copy, deflection, angle);
     return copy;
 }
 
@@ -729,18 +734,18 @@ bool PartGui::buildMeshLevel(const TopoDS_Shape &shape,
     }
 }
 
-TopoDS_Shape PartGui::meshLevelExactCopy(const TopoDS_Shape &shape,
-                                         double deflection, double angle,
-                                         bool *outOfMemory)
+bool PartGui::meshLevelTwin(const TopoDS_Shape &twin, double deflection,
+                            double angle, bool *outOfMemory)
 {
     if (outOfMemory)
         *outOfMemory = false;
-    if (shape.IsNull() || !(deflection > 0))
-        return {};
+    if (twin.IsNull() || !(deflection > 0))
+        return false;
     try {
         const double defl = std::min(
             std::max(deflection, double(Precision::Confusion())), 20.0);
-        return meshedCopy(shape, defl, angle > 0 ? angle : 0.5);
+        meshForLevel(twin, defl, angle > 0 ? angle : 0.5);
+        return true;
     }
     catch (const Standard_Failure &e) {
         // OCCT's own out-of-memory signal travels as a Standard_Failure
@@ -752,12 +757,12 @@ TopoDS_Shape PartGui::meshLevelExactCopy(const TopoDS_Shape &shape,
         if (debugOn())
             std::fprintf(stderr, "mesh refine: OCCT failure: %s\n",
                          e.GetMessageString());
-        return {};
+        return false;
     }
     catch (const std::bad_alloc &) {
         if (outOfMemory)
             *outOfMemory = true;
-        return {};
+        return false;
     }
 }
 

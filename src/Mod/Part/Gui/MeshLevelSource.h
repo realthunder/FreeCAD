@@ -211,13 +211,13 @@ void queueLevelGuiWork(const void *tag, std::function<void()> body,
 /// rebuild ran under is what the instruments could not do).
 bool inLandingPump();
 
-/// Stop the level worker threads -- the refine pool and the reaper --
-/// and join them. Hooked to the application's aboutToQuit and its
-/// post routines the first time a worker starts, so the statics they
-/// wait on are never destroyed under them (glibc's
-/// pthread_cond_destroy blocks on a parked waiter: the exit() hang).
-/// Idempotent, safe to call with no worker started. Queued jobs are
-/// dropped, their descents settled; a build in flight finishes first.
+/// Stop the level work and wait for what is on the compute pool's
+/// threads -- the jobs handed out and the closures being destroyed
+/// there. Hooked to the application's aboutToQuit and its post routines
+/// the first time a job is queued: the pool's threads outlive this, and
+/// must not be inside OCCT when the process takes it down. Idempotent,
+/// safe to call with nothing queued. Queued jobs are dropped, their
+/// descents settled; a build in flight finishes first.
 void shutdownMeshLevelWorkers();
 
 /// The coarse-first tessellation level for display builds; negative
@@ -237,16 +237,18 @@ void shutdownMeshLevelWorkers();
 /// process-wide reading (any serve counts, active view's override).
 int coarseTessellationLevel(App::Document *doc = nullptr);
 
-/// Mesh a structure copy of \a shape at the given display parameters
-/// and return it (null on failure). Pure and thread-safe — the copy
-/// shares geometry but owns fresh TShapes, so the live shape is never
-/// touched; the worker-pool half of the desktop exact refine.
+/// Mesh \a twin at the given display parameters, in place; false on
+/// failure. \a twin is a private copy of the shape -- Part::MeshTwin,
+/// stripped of the mesh it would otherwise keep -- made on the GUI
+/// thread, and this is the worker's half of the desktop exact refine:
+/// any one thread, which touches nothing but the twin. It used to make
+/// the copy as well (meshLevelExactCopy), reading the document's shape
+/// from the worker (docs/DocumentLoad.md sec 18.9).
 /// \a outOfMemory, when given, is set if the failure was an
 /// allocation failure (std::bad_alloc or OCCT's Standard_OutOfMemory)
-/// — the caller's memory-ceiling observation (§13 step 3).
-TopoDS_Shape meshLevelExactCopy(const TopoDS_Shape &shape,
-                                double deflection, double angle,
-                                bool *outOfMemory = nullptr);
+/// -- the caller's memory-ceiling observation (sec 13 step 3).
+bool meshLevelTwin(const TopoDS_Shape &twin, double deflection,
+                   double angle, bool *outOfMemory = nullptr);
 
 /// Move the triangulations of \a from (a meshed structure copy) onto
 /// \a to (the live shape it was copied from): face triangulations,

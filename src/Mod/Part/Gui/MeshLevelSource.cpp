@@ -53,6 +53,7 @@
 
 #include <App/PropertyStandard.h>
 #include <Base/Console.h>
+#include <Base/ThreadPool.h>
 #include <Base/Tools.h>
 #include <Gui/Application.h>
 #include <Gui/RenderParams.h>
@@ -65,6 +66,7 @@
 #include <Gui/View3DInventor.h>
 #include <Gui/View3DInventorViewer.h>
 #include <Gui/ViewParams.h>
+#include <Mod/Part/App/MeshTwin.h>
 
 #include "MeshLevelSource.h"
 
@@ -85,9 +87,13 @@ using LevelSourceStatePtr = std::shared_ptr<LevelSourceState>;
 // The desktop exact refine (docs/SceneStreaming.md §13, step 1).
 //
 // A coarse-first display build on a plain desktop process queues one
-// job here; a worker meshes a structure copy of the shape at the
-// exact display parameters and the caller's callback applies it on
-// the GUI thread. Job identity is a token per tag: re-registering or
+// job here; a worker meshes a private twin of the shape at the exact
+// display parameters and the caller's callback applies it on the GUI
+// thread. The twin is made on the GUI thread, when the job is handed
+// out, and the worker is a thread of the compute pool: no thread but
+// the GUI's reads the document's shape, and none is started here
+// (docs/DocumentLoad.md sec 18.9; it used to be OCCT's copier run on a
+// worker of this file's own). Job identity is a token per tag: re-registering or
 // unregistering the tag invalidates the token, which both cancels a
 // queued job and drops a finished one at the door — the "cancel"
 // leg of the provider seam, at the only granularity the desktop
@@ -131,18 +137,20 @@ std::deque<RefineJob> s_refineQueue;
 /// tag -> the one live token; absent = nothing wanted (canceled).
 std::map<const void *, uint64_t> s_refineTokens;
 uint64_t s_refineCounter = 0;
-/// The refine workers, joinable, joined by shutdownMeshLevelWorkers();
-/// leaked like the primitives so a static destruction that arrives
-/// without the shutdown does not std::terminate on a joinable thread.
-std::vector<std::thread> &s_refineWorkers = *new std::vector<std::thread>;
-/// Set once by the shutdown, under s_refineMutex: the workers leave
-/// their wait and return, and nothing enqueues after it.
+/// Runner tasks on the compute pool, and spent closures a pool thread
+/// has still to destroy: what shutdownMeshLevelWorkers() waits out.
+/// Under s_refineMutex.
+int s_refineRunners = 0;
+int s_reaping = 0;
+/// Set once by the shutdown, under s_refineMutex: a job not started
+/// does nothing, and nothing enqueues after it.
 bool s_refineStop = false;
 
-/// Same sizing rule as the scene server's level threads: modest by
-/// default, because BRepMesh already parallelizes each build over
-/// OCCT's thread pool; the LevelThreads render parameter sets it,
-/// FC_LEVEL_THREADS overrides for the process.
+/// How many jobs run at once. The same sizing rule as the scene server's
+/// level threads: modest by default, because BRepMesh already
+/// parallelizes each build over OCCT's thread pool; the LevelThreads
+/// render parameter sets it, FC_LEVEL_THREADS overrides for the process.
+/// The threads themselves are the compute pool's.
 int refineThreadCap()
 {
     static const int envCap = [] {
@@ -225,54 +233,40 @@ struct LandingItem {
 };
 std::deque<LandingItem> s_landingQueue;
 
-/// Spent pump items go to a reaper thread instead of destructing in
-/// the turn: a landing's closure owns the worker's payload -- the
-/// meshed TopoShape copy of an exact climb chief among it -- and
-/// freeing those measured 0.1-0.2s of a pump window on the GUI
-/// thread (the "frees" split in the pump line). Everything these
-/// closures own is safe to destroy off-thread: OCCT handles carry
-/// atomic refcounts, Coin nodes appear only as raw unowned pointers,
-/// and the detached fill arrays are plain memory.
-/// Leaked, joined and stopped like the refine pool (see s_refineMutex).
-std::mutex &s_reaperMutex = *new std::mutex;
-std::condition_variable &s_reaperCv = *new std::condition_variable;
-std::deque<std::function<void()>> s_reaperQueue;
-std::thread &s_reaperThread = *new std::thread;
-bool s_reaperStop = false;
-
+/// Spent pump items go to a thread of the compute pool instead of
+/// destructing in the turn: a landing's closure owns the worker's
+/// payload -- the meshed twin of an exact climb chief among it -- and
+/// freeing those measured 0.1-0.2s of a pump window on the GUI thread
+/// (the "frees" split in the pump line). Everything these closures own
+/// is safe to destroy off-thread: OCCT handles carry atomic refcounts,
+/// Coin nodes appear only as raw unowned pointers, and the detached
+/// fill arrays are plain memory. Counted, so that the shutdown can wait
+/// for the last of them.
 void reapOffThread(std::function<void()> &&fn)
 {
     if (!fn)
         return;
     {
-        std::lock_guard<std::mutex> lock(s_reaperMutex);
-        if (s_reaperStop) {
-            // Shut down: destroy in place, there is no thread to hand
-            // it to any more.
+        std::lock_guard<std::mutex> lock(s_refineMutex);
+        if (s_refineStop) {
+            // Shut down: destroy in place, nothing more goes to a
+            // thread the process is about to leave under.
             fn = nullptr;
             return;
         }
-        s_reaperQueue.push_back(std::move(fn));
-        if (!s_reaperThread.joinable()) {
-            s_reaperThread = std::thread([]() {
-                for (;;) {
-                    std::deque<std::function<void()>> batch;
-                    {
-                        std::unique_lock<std::mutex> lock(s_reaperMutex);
-                        s_reaperCv.wait(lock, [] {
-                            return s_reaperStop || !s_reaperQueue.empty();
-                        });
-                        if (s_reaperQueue.empty())
-                            return; // stopped, and drained
-                        batch.swap(s_reaperQueue);
-                    }
-                    // The destructions run here, unlocked.
-                    batch.clear();
-                }
-            });
-        }
+        ++s_reaping;
     }
-    s_reaperCv.notify_one();
+    auto spent = std::make_shared<std::function<void()>>(std::move(fn));
+    fn = nullptr;
+    Base::ThreadPool::compute().post([spent]() mutable {
+        // The destruction runs here.
+        spent.reset();
+        {
+            std::lock_guard<std::mutex> lock(s_refineMutex);
+            --s_reaping;
+        }
+        s_refineCv.notify_all();
+    });
 }
 /// Plan-ordered hook bodies deferred out of the plan callback (the
 /// pacing's other half): a sweep fires up to a batch of hooks in ONE
@@ -448,9 +442,12 @@ void purgeLevelGuiWork(const void *tag)
 /// sweep order the landing belongs to (RefineJob::gen).
 void queueLandingFromWorker(std::function<void()> fn, uint64_t gen = 0)
 {
+    QCoreApplication *app = QCoreApplication::instance();
+    if (!app)
+        return;
     auto payload = std::make_shared<std::function<void()>>(std::move(fn));
     QMetaObject::invokeMethod(
-        QCoreApplication::instance(),
+        app,
         [payload, gen]() {
             s_landingQueue.push_back({std::move(*payload), gen});
             scheduleLandingPump();
@@ -458,112 +455,25 @@ void queueLandingFromWorker(std::function<void()> fn, uint64_t gen = 0)
         Qt::QueuedConnection);
 }
 
-void refineLoop()
+void dispatchLevelJobs();
+
+/// One job, on a thread of the compute pool. \a twin is the private copy
+/// the GUI thread made of the job's shape when it handed the job out
+/// (null for a decimation job, which reads no shape at all).
+void runLevelJob(RefineJob job, const std::shared_ptr<Part::MeshTwin> &twin)
 {
-    for (;;) {
-        RefineJob job;
-        {
-            std::unique_lock<std::mutex> lock(s_refineMutex);
-            s_refineCv.wait(
-                lock, [] { return s_refineStop || !s_refineQueue.empty(); });
-            if (s_refineStop)
-                return;
-            job = std::move(s_refineQueue.front());
-            s_refineQueue.pop_front();
-            auto it = s_refineTokens.find(job.tag);
-            if (it == s_refineTokens.end() || it->second != job.token) {
-                // canceled while queued
-                settleDescent(job);
-                continue;
-            }
-        }
-        if (job.work) {
-            // A decimation job clusters arrays it owns: no OCCT, no
-            // fresh tessellation, and NO memory-floor refusal -- it
-            // frees memory, and pressure is exactly when it runs.
-            std::function<void()> landing = job.work();
-            if (!landing) {
-                settleDescent(job);
-                continue;
-            }
-            auto payload = std::make_shared<
-                std::pair<RefineJob, std::function<void()>>>(
-                std::move(job), std::move(landing));
-            const uint64_t gen = payload->first.gen;
-            queueLandingFromWorker([payload]() {
-                settleDescent(payload->first);
-                {
-                    std::lock_guard<std::mutex> lock(s_refineMutex);
-                    auto it = s_refineTokens.find(payload->first.tag);
-                    if (it == s_refineTokens.end()
-                        || it->second != payload->first.token)
-                        return;
-                    s_refineTokens.erase(it);
-                }
-                payload->second();
-            }, gen);
-            continue;
-        }
-        // Pre-build ceiling estimate: a build started under a low
-        // MemAvailable is a bad_alloc that has not happened yet — and
-        // by the time it does, it may be somebody else's. The job is
-        // dropped (its ask stands, so it is not retried into the same
-        // wall); the observation flips the plans to demoting.
-        // The simulation knob (the LevelCeilingSimulateMB parameter):
-        // raise
-        // the floor above whatever the machine actually has free, and
-        // every exact build is refused exactly as it would be on a
-        // machine that had run out -- which is the only way to exercise
-        // this half of the plan on a box with memory to spare, and the
-        // premise of the whole coarse-first design is a model that does
-        // not fit. Read per job, not once, so it can be turned on
-        // against a running viewer.
-        size_t floor = s_memFloorBytes;
-        if (const long simMB = Gui::RenderParams::getLevelCeilingSimulateMB())
-            floor = std::max(floor, size_t(simMB) << 20);
-        const size_t avail = Render::MemoryBudget::availableMemory();
-        if (avail && avail < floor) {
-            // The shortfall travels with the observation: it is the
-            // only place that knows both numbers, and it is what lets
-            // the level plan buy memory back with visible error --
-            // exactly as much as the floor is missing and no more.
-            Render::MeshSourceRegistry::instance().observeMemoryCeiling(
-                floor - avail);
+    if (job.work) {
+        // A decimation job clusters arrays it owns: no OCCT, no
+        // fresh tessellation, and NO memory-floor refusal -- it
+        // frees memory, and pressure is exactly when it runs.
+        std::function<void()> landing = job.work();
+        if (!landing) {
             settleDescent(job);
-            continue;
+            return;
         }
-        bool outOfMemory = false;
-        TopoDS_Shape meshed = PartGui::meshLevelExactCopy(
-            job.st->shape, job.st->params.exactDeflection,
-            job.st->params.exactAngle, &outOfMemory);
-        if (debugCeilingHit()) {
-            outOfMemory = true;
-            meshed.Nullify();
-        }
-        if (outOfMemory) {
-            // A bad_alloc states only "no", never how much: what it
-            // costs to make the next build fit is exactly the number
-            // nobody has. So the shortfall is re-read here rather than
-            // invented -- normally the allocation failed because the
-            // system is under the floor, and that gap is the ask; when
-            // it is not (one outsized build on a machine with room),
-            // 0 says so, and the plan keeps to what the camera cannot
-            // see.
-            const size_t now = Render::MemoryBudget::availableMemory();
-            Render::MeshSourceRegistry::instance().observeMemoryCeiling(
-                now && now < floor ? floor - now : 0);
-            settleDescent(job);
-            continue;
-        }
-        if (meshed.IsNull()) {
-            settleDescent(job);
-            continue;
-        }
-        // The apply reads and writes live document geometry and Coin
-        // nodes: GUI thread only. The token is re-checked there — the
-        // marshalled hop is one more window for a cancellation.
-        auto payload = std::make_shared<std::pair<RefineJob, TopoDS_Shape>>(
-            std::move(job), std::move(meshed));
+        auto payload = std::make_shared<
+            std::pair<RefineJob, std::function<void()>>>(
+            std::move(job), std::move(landing));
         const uint64_t gen = payload->first.gen;
         queueLandingFromWorker([payload]() {
             settleDescent(payload->first);
@@ -573,21 +483,257 @@ void refineLoop()
                 if (it == s_refineTokens.end()
                     || it->second != payload->first.token)
                     return;
-                // Consumed: the callback re-registers (at error 0),
-                // but should that not happen, a second fire is not
-                // an option either.
                 s_refineTokens.erase(it);
             }
-            payload->first.apply(payload->second);
+            payload->second();
         }, gen);
+        return;
     }
+    // Pre-build ceiling estimate: a build started under a low
+    // MemAvailable is a bad_alloc that has not happened yet -- and
+    // by the time it does, it may be somebody else's. The job is
+    // dropped (its ask stands, so it is not retried into the same
+    // wall); the observation flips the plans to demoting.
+    // The simulation knob (the LevelCeilingSimulateMB parameter):
+    // raise
+    // the floor above whatever the machine actually has free, and
+    // every exact build is refused exactly as it would be on a
+    // machine that had run out -- which is the only way to exercise
+    // this half of the plan on a box with memory to spare, and the
+    // premise of the whole coarse-first design is a model that does
+    // not fit. Read per job, not once, so it can be turned on
+    // against a running viewer.
+    size_t floor = s_memFloorBytes;
+    if (const long simMB = Gui::RenderParams::getLevelCeilingSimulateMB())
+        floor = std::max(floor, size_t(simMB) << 20);
+    const size_t avail = Render::MemoryBudget::availableMemory();
+    if (avail && avail < floor) {
+        // The shortfall travels with the observation: it is the
+        // only place that knows both numbers, and it is what lets
+        // the level plan buy memory back with visible error --
+        // exactly as much as the floor is missing and no more.
+        Render::MeshSourceRegistry::instance().observeMemoryCeiling(
+            floor - avail);
+        settleDescent(job);
+        return;
+    }
+    bool outOfMemory = false;
+    // The twin, and nothing of the document's: the copy was made on
+    // the GUI thread when this job was handed out, and its mesh is
+    // carried back to that thread below.
+    TopoDS_Shape meshed;
+    if (PartGui::meshLevelTwin(twin->shape(), job.st->params.exactDeflection,
+                               job.st->params.exactAngle, &outOfMemory))
+        meshed = twin->shape();
+    if (debugCeilingHit()) {
+        outOfMemory = true;
+        meshed.Nullify();
+    }
+    if (outOfMemory) {
+        // A bad_alloc states only "no", never how much: what it
+        // costs to make the next build fit is exactly the number
+        // nobody has. So the shortfall is re-read here rather than
+        // invented -- normally the allocation failed because the
+        // system is under the floor, and that gap is the ask; when
+        // it is not (one outsized build on a machine with room),
+        // 0 says so, and the plan keeps to what the camera cannot
+        // see.
+        const size_t now = Render::MemoryBudget::availableMemory();
+        Render::MeshSourceRegistry::instance().observeMemoryCeiling(
+            now && now < floor ? floor - now : 0);
+        settleDescent(job);
+        return;
+    }
+    if (meshed.IsNull()) {
+        settleDescent(job);
+        return;
+    }
+    // The apply reads and writes live document geometry and Coin
+    // nodes: GUI thread only. The token is re-checked there -- the
+    // marshalled hop is one more window for a cancellation.
+    auto payload = std::make_shared<std::pair<RefineJob, TopoDS_Shape>>(
+        std::move(job), std::move(meshed));
+    const uint64_t gen = payload->first.gen;
+    queueLandingFromWorker([payload]() {
+        settleDescent(payload->first);
+        {
+            std::lock_guard<std::mutex> lock(s_refineMutex);
+            auto it = s_refineTokens.find(payload->first.tag);
+            if (it == s_refineTokens.end()
+                || it->second != payload->first.token)
+                return;
+            // Consumed: the callback re-registers (at error 0),
+            // but should that not happen, a second fire is not
+            // an option either.
+            s_refineTokens.erase(it);
+        }
+        payload->first.apply(payload->second);
+    }, gen);
+}
+
+/// A job with the private twin of its shape: ready for a runner.
+struct ReadyJob {
+    RefineJob job;
+    /// Null for a decimation job, which reads no shape.
+    std::shared_ptr<Part::MeshTwin> twin;
+    /// The faces and edges the twin holds.
+    std::size_t parts = 0;
+};
+/// The line between the GUI thread, which makes the twins, and the
+/// runners, which take the next job from here without waiting for it:
+/// a runner that had to ask the GUI thread for each job would stand idle
+/// exactly when that thread is busy landing the others' results. Under
+/// s_refineMutex.
+std::deque<ReadyJob> s_refineReady;
+/// What the twins standing ready hold, faces and edges.
+std::size_t s_refineReadyParts = 0;
+/// How much stands ready, counted in faces and edges and not in jobs --
+/// the pre-mesh's lesson, learned a second time here (docs/DocumentLoad.md
+/// sec 18.9). One job ready for each runner was the first thing built:
+/// most refines are of small shapes and take milliseconds, a refill
+/// takes a turn of the GUI thread's event loop, and on the reference
+/// assembly some 500 refines had landed a minute into the load where
+/// 5000 had after 40 s.
+/// With 20000, 200000 and two million the reference load's refines
+/// settled as they had before any of this, 40 to 51 s after the open in
+/// every arm, some 5137 landings each: past "not starved" the size of
+/// the line is not what the wave waits on.
+const std::size_t kReadyParts = 20000;
+/// A dispatch is on its way to the GUI thread.
+std::atomic<bool> s_dispatchPosted {false};
+
+/// From any thread: have the GUI thread top the ready line up. One call
+/// on its way at a time.
+void requestLevelDispatch()
+{
+    if (s_dispatchPosted.exchange(true))
+        return;
+    QCoreApplication *app = QCoreApplication::instance();
+    if (!app) {
+        s_dispatchPosted.store(false);
+        return;
+    }
+    QMetaObject::invokeMethod(app, []() {
+        s_dispatchPosted.store(false);
+        dispatchLevelJobs();
+    }, Qt::QueuedConnection);
+}
+
+/// A task of the compute pool: run ready jobs until there is none.
+void levelRunner()
+{
+    for (;;) {
+        ReadyJob next;
+        {
+            std::lock_guard<std::mutex> lock(s_refineMutex);
+            if (s_refineStop || s_refineReady.empty()) {
+                --s_refineRunners;
+                break;
+            }
+            next = std::move(s_refineReady.front());
+            s_refineReady.pop_front();
+            s_refineReadyParts -= std::min(s_refineReadyParts, next.parts);
+            auto it = s_refineTokens.find(next.job.tag);
+            if (it == s_refineTokens.end() || it->second != next.job.token) {
+                // canceled while it stood ready
+                settleDescent(next.job);
+                continue;
+            }
+        }
+        // Its place in the line is free
+        requestLevelDispatch();
+        runLevelJob(std::move(next.job), next.twin);
+    }
+    s_refineCv.notify_all();
+    requestLevelDispatch();
+}
+
+/// GUI thread: move queued jobs to the ready line while it has room, and
+/// see that runners are there to take them -- as many at once as the cap.
+///
+/// The private twin of a job's shape is made HERE, as late as it can be
+/// and on the one thread the document's shape belongs to: a job canceled
+/// while queued is never copied, and the twins alive are the ones
+/// running and the ready line's. Stripped (Part::MeshTwin::Resident::Strip): the mesher does
+/// not coarsen or refine a mesh it finds, it has to find none, and
+/// purely triangulated faces keep the only geometry they have.
+void dispatchLevelJobs()
+{
+    const int cap = refineThreadCap();
+    for (;;) {
+        RefineJob job;
+        {
+            std::lock_guard<std::mutex> lock(s_refineMutex);
+            // Room: a job for each runner whatever its size, and beyond
+            // that as long as the line is light.
+            if (s_refineStop || s_refineQueue.empty()
+                || (int(s_refineReady.size()) >= cap
+                    && s_refineReadyParts >= kReadyParts))
+                break;
+            job = std::move(s_refineQueue.front());
+            s_refineQueue.pop_front();
+            auto it = s_refineTokens.find(job.tag);
+            if (it == s_refineTokens.end() || it->second != job.token) {
+                // canceled while queued
+                settleDescent(job);
+                continue;
+            }
+        }
+        std::shared_ptr<Part::MeshTwin> twin;
+        if (!job.work) {
+            try {
+                twin = std::make_shared<Part::MeshTwin>(
+                    job.st->shape, Part::MeshTwin::Resident::Strip);
+            }
+            catch (const Standard_Failure &) {
+                twin.reset();
+            }
+            catch (const std::bad_alloc &) {
+                twin.reset();
+            }
+            if (!twin || twin->isNull()) {
+                settleDescent(job);
+                continue;
+            }
+        }
+        const std::size_t parts =
+            twin ? twin->faceCount() + twin->edgeCount() : 0;
+        std::lock_guard<std::mutex> lock(s_refineMutex);
+        if (s_refineStop) {
+            settleDescent(job);
+            break;
+        }
+        s_refineReadyParts += parts;
+        // The queue's own order holds in the line: a descent goes ahead
+        // of the climbs standing ready, behind the descents already
+        // there -- freeing memory outranks spending more.
+        auto at = s_refineReady.end();
+        if (job.descent) {
+            at = s_refineReady.begin();
+            while (at != s_refineReady.end() && at->job.descent)
+                ++at;
+        }
+        s_refineReady.insert(at, ReadyJob{std::move(job), std::move(twin), parts});
+    }
+    int start = 0;
+    {
+        std::lock_guard<std::mutex> lock(s_refineMutex);
+        if (!s_refineStop) {
+            const int want = std::min(
+                cap, s_refineRunners + int(s_refineReady.size()));
+            start = std::max(0, want - s_refineRunners);
+            s_refineRunners += start;
+        }
+    }
+    for (int i = 0; i < start; ++i)
+        Base::ThreadPool::compute().post([]() { levelRunner(); });
 }
 
 /// Arm shutdownMeshLevelWorkers() for the application's exit: on
 /// aboutToQuit (the event loop returning) and again as a post routine
 /// (the QCoreApplication's destruction, for an exit that never ran the
 /// loop out). Both before the statics go. GUI thread, once, when the
-/// first worker starts -- the resolveMemFloor pattern.
+/// first job is queued -- the resolveMemFloor pattern.
 void hookWorkerShutdown()
 {
     static bool hooked = false;
@@ -608,31 +754,30 @@ void enqueueLevelJob(RefineJob &&job)
             Render::MeshSourceRegistry::currentDescentGeneration();
         Render::MeshSourceRegistry::instance().noteDescentQueued(job.gen);
     }
-    std::lock_guard<std::mutex> lock(s_refineMutex);
-    if (s_refineStop) {
-        // Shutting down: the job is dropped, its descent settled.
-        settleDescent(job);
-        return;
+    hookWorkerShutdown();
+    {
+        std::lock_guard<std::mutex> lock(s_refineMutex);
+        if (s_refineStop) {
+            // Shutting down: the job is dropped, its descent settled.
+            settleDescent(job);
+            return;
+        }
+        job.token = ++s_refineCounter;
+        s_refineTokens[job.tag] = job.token;
+        if (job.descent) {
+            // Ahead of the climbs, behind descents already queued: under
+            // the pressure that ordered it, freeing memory outranks
+            // spending more, and the plan's own order is kept among peers.
+            auto it = s_refineQueue.begin();
+            while (it != s_refineQueue.end() && it->descent)
+                ++it;
+            s_refineQueue.insert(it, std::move(job));
+        }
+        else {
+            s_refineQueue.push_back(std::move(job));
+        }
     }
-    job.token = ++s_refineCounter;
-    s_refineTokens[job.tag] = job.token;
-    if (job.descent) {
-        // Ahead of the climbs, behind descents already queued: under
-        // the pressure that ordered it, freeing memory outranks
-        // spending more, and the plan's own order is kept among peers.
-        auto it = s_refineQueue.begin();
-        while (it != s_refineQueue.end() && it->descent)
-            ++it;
-        s_refineQueue.insert(it, std::move(job));
-    }
-    else {
-        s_refineQueue.push_back(std::move(job));
-    }
-    if (int(s_refineWorkers.size()) < refineThreadCap()) {
-        hookWorkerShutdown();
-        s_refineWorkers.emplace_back(refineLoop);
-    }
-    s_refineCv.notify_one();
+    dispatchLevelJobs();
 }
 
 void queueExactRefine(const void *tag, const LevelSourceStatePtr &st,
@@ -667,41 +812,26 @@ void cancelExactRefine(const void *tag)
 
 void PartGui::shutdownMeshLevelWorkers()
 {
-    // The refine pool: queued jobs are dropped (each descent settled
-    // exactly once, as on every other exit), the workers told to leave
-    // their wait and joined. A build in flight finishes first -- a
-    // worker inside BRepMesh has no safe interruption point -- and its
-    // landing is posted to an application that no longer runs a loop,
-    // which is fine: the queued event dies with the application, and
-    // the payload it owns (a meshed TopoShape copy) with it.
-    std::vector<std::thread> workers;
-    {
-        std::lock_guard<std::mutex> lock(s_refineMutex);
-        s_refineStop = true;
-        for (const auto &job : s_refineQueue)
-            settleDescent(job);
-        s_refineQueue.clear();
-        s_refineTokens.clear();
-        workers.swap(s_refineWorkers);
-    }
-    s_refineCv.notify_all();
-    for (auto &worker : workers) {
-        if (worker.joinable())
-            worker.join();
-    }
-    // The reaper: drained, then joined.
-    std::thread reaper;
-    {
-        std::lock_guard<std::mutex> lock(s_reaperMutex);
-        s_reaperStop = true;
-        reaper.swap(s_reaperThread);
-    }
-    s_reaperCv.notify_all();
-    if (reaper.joinable())
-        reaper.join();
-    if (!workers.empty())
-        Base::Console().Log("MeshLevelSource: joined %d level worker(s)\n",
-                            int(workers.size()));
+    // Queued jobs and the ones standing ready are dropped (each descent
+    // settled exactly once, as on every other exit) and nothing is
+    // handed out from here. A build in flight finishes first -- a worker
+    // inside BRepMesh has no safe interruption point -- and its landing
+    // is posted to an application that no longer runs a loop, which is
+    // fine: the queued event dies with the application, and the payload
+    // it owns (a meshed twin) with it. Waited for, with the closures a
+    // pool thread is still destroying: the pool's threads outlive this,
+    // and must not be inside OCCT when the process takes it down.
+    std::unique_lock<std::mutex> lock(s_refineMutex);
+    s_refineStop = true;
+    for (const auto &job : s_refineQueue)
+        settleDescent(job);
+    s_refineQueue.clear();
+    for (const auto &ready : s_refineReady)
+        settleDescent(ready.job);
+    s_refineReady.clear();
+    s_refineReadyParts = 0;
+    s_refineTokens.clear();
+    s_refineCv.wait(lock, [] { return s_refineRunners == 0 && s_reaping == 0; });
 }
 
 namespace {
