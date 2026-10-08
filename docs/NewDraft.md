@@ -10,7 +10,8 @@ section 12. Step 4 done 2026-10-07: tangent chains -- walls and the fillets
 between them drafted as one sheet, fillets turned into cones (section 13).
 2026-10-08: past a cone's apex the walls meet in a ridge, and a chain may
 close at a sharp corner between two planes (section 14); a coarse fuzzy
-try for neighbours tangent to each other (section 15).
+try for neighbours tangent to each other (section 15); tolerances the fuse
+widened, brought back (section 16).
 The design below came with a Python prototype (section 5)
 that the earlier measurements come from; the open questions settled
 2026-10-05 (section 9).
@@ -1328,3 +1329,58 @@ valid and clean. The cell draft cuts the sliver's thin end and leaves edges
 boolean check refuses that. Giving the sliver no extension of its own does
 not change it: the draft has to reshape the sliver itself. Left as it is --
 a defect of the input that only a draft keeping the topology gets past.
+
+## 16. Tolerances (2026-10-08)
+
+Section 15 left open whether a result whose tolerances the fuse grew should
+stand. Measured on the 48 drafts of the 1222 whose largest tolerance had
+grown more than 100 times past the input's:
+
+- **The fuse grows them, not the merge.** The chosen cells' solid, before
+  any merge, holds the same tolerance as the result in every case.
+- **The classic draft does not.** On the same drafts its results hold 1e-7
+  to 1.6e-5 (#631's Fillet003 face 12 about 2 at 5 deg aside, 3.3e-3), at
+  the same volumes.
+- **Most of it is not needed.** A copy of the result with every tolerance
+  set to 1e-7 and raised again only as far as its gaps need
+  (`BRepLib::UpdateTolerances`) holds 6e-6 to 3e-5 where the fuse left 1e-3
+  to 1.8e-2, and is valid and clean on 25 of the 48. On the others the gaps
+  are real, or the input fails the whole check by itself (#474's Fillet003,
+  the sliver of section 15).
+
+So a result is now **tightened** (`tightenTolerances`) when its largest
+tolerance passes ten times the input's (and 1e-5): every tolerance above the
+input's largest is set to that, then raised as far as the gaps need. The
+result is kept so only if it passes the whole boolean check as Part's
+`check(true)` runs it (`passesFullCheck`); else every tolerance is put back.
+The check of the drafted region is not enough: #876's face 4 about 7 at 5
+deg, tightened, passed it, and the whole check's small-edge test, which
+judges an edge by its vertices' tolerances, found two edges too small.
+
+Then a result whose largest tolerance still passes the input's by 1e-3 of
+the part's diagonal is refused (`NotASolid`, naming the tolerance), on every
+try; it replaces section 15's bound on the coarse try. 1e-4 was too tight:
+the Fillet003 input of #474, face 26 about 28 at 15 deg, holds a real gap of
+5.3e-3 on a part 40 across and is clean.
+
+On the sweep (the 1222 and the 500, `Method = New`, the stop on), against
+the build of section 15:
+
+| | 1222 | 500 |
+|--------|------:|------:|
+| the same result | 1218 | 500 |
+| tightened (volume, faces and check unchanged) | 41 of them | |
+| refused before, valid now, the classic draft's volume | 2 | 0 |
+| valid before (not boolean-clean), refused now: tolerance 0.09, 0.28 | 2 | 0 |
+
+The 4 are #474's Fillet002, face 10: about 3 at 5 deg, valid and clean now,
+tightened from 0.21 to 1.6e-4; about 9 at 5 deg, valid at 3.6e-2 (it cannot
+be tightened; under the bound, not clean as a whole); about 8 at 5 deg and
+about 11 at 60 deg, refused. The largest tolerances of the 1222's valid
+results: under 1e-5 959, under 1e-4 135, under 1e-3 37, under 1e-2 17, more
+42 (nearly all the input's own: #273's carries 3e-2); grown more than 100
+times past the input's, 22 where there were 44, all on the ramp parts
+of #474 and the tangent pairs of #631. Face 10 about 11 at 15 deg, which held
+0.38 from the 1e-6 try, comes out at 6.7e-5. Time: the 1222 take 610 s
+against 537 (the full check on the 80 drafts tightening runs for), the 500
+407 against 401; the median draft is unchanged.
