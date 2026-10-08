@@ -1831,6 +1831,7 @@ the event loop while everything left on its queue is in flight -- 278753
 slices and 3.98 s of the GUI thread in a batch of 5.3 s. At the batch's
 own speed it is 14 slices for 3000 visuals, so it is the hold's doing and
 not a finding; a load whose batch really ran for seconds would show it.
+(It was a finding, and such a load is three plates: sec 18.10.)
 
 ### 18.9 A worker meshes a private twin, and the threads are a pool's (2026-10-08)
 
@@ -2087,7 +2088,8 @@ to 0.85 s every 32 s (the user saw it first), so an interval read 0.8 s
 short for every step it spanned; and between steps every clock of the
 process, the monotonic one too, ran 2.5 % fast. The drain's own
 "visuals in N slices, T s" is `std::chrono::high_resolution_clock`,
-which is the wall clock in libstdc++, and reads short the same way. What
+which is the wall clock in libstdc++, and reads short the same way (the
+steady clock since sec 18.10). What
 the steps were is in `docs/Testing.md`, "What the wall clock's steps
 were": two time services of the guest correcting each other. The lesson
 for a comparison here is three things at once -- a monotonic clock, the
@@ -2189,6 +2191,147 @@ small parts gives the loop nothing to split whoever schedules it. Not
 tested: a model of a few very large shapes, and our own jobs on TBB as
 well -- one scheduler for both, under which a pool task could leave
 `InParallel` on.
+
+### 18.10 The drains keep their budget: the clock, the wait, the replay (2026-10-08)
+
+Three things about the two drains that fill a document in after its open
+-- the view providers' (`Gui::Document::runDeferredRestoreSlice`) and the
+Part visuals' (`ViewProviderPartExt::runDeferredVisualSlice`). Each works
+in slices of `Render/ProgressiveLoadBudgetMS`, 100 ms, and that budget is
+the load's whole promise to the user. Each of the three broke it.
+
+**A slice was timed by the time of day.** Both loops measured themselves
+with `std::chrono::high_resolution_clock`, which in libstdc++ is the
+system clock. Where that clock is resynced in steps it moves back, and a
+slice with a step in it had a negative time spent: it worked on until it
+had made the step good, and the drain's closing line came out short by
+every step it had seen. `tests/gui/drain-clock-step.py`
+(`GuiDrainClockStep_tests_run`) makes the steps on demand:
+`clock-step-shim.c` now steps `clock_gettime(CLOCK_REALTIME)` as well as
+`gettimeofday()`, on a schedule that is a function of the steady clock, so
+a step falls inside a slice the test cannot interrupt. A document of 2400
+solids, a budget of 10 ms, three loads, the third with the time of day
+going back 0.97 s every 100 ms:
+
+| | plain load | stepping, before | stepping, after |
+|---|---|---|---|
+| view provider drain, slices | 26 to 28 | 2 to 10 | 30 |
+| ... time it says it spent | 0.47 to 0.51 s | -3.4 to -5.3 s | 0.52 s |
+| visual drain, slices | 87 to 88 | 4 to 14 | 90 |
+| ... time it says it spent | 0.88 to 0.90 s | -8.6 to -10.4 s | 0.91 s |
+
+Both read the steady clock now. So do the reporters, which only ever lied
+in their reports: `FC_TIME_CLOCK` in `Base/Console.h` -- the one clock
+behind every `FC_TIME_*` and `FC_DURATION_PLUS` in the tree, and behind
+the elapsed stamp of a log line -- `Gui::ViewProvider::VisualBuildTimer`,
+the mesh and slow-build probes of `ViewProviderExt.cpp`, and
+`PropertyContainer`'s restore statistics. A load of those 2400 objects
+read the time of day 407000 to 418000 times, 174 times an object, and
+reads it 3 times since -- the test's own. The test counts them (the shim
+does), so a timer put back on the time of day anywhere in a load's path
+fails it.
+
+Both closing lines say their longest slice since then, and that number
+found the third thing below.
+
+**The visual drain went round while a pre-mesh was in flight.** A visual
+whose shape a worker still has is put back on the queue (sec 18.9). The
+slice ended there and posted itself again at once, so with nothing else
+left to build the drain did nothing but come round: one pop, one ask, one
+turn of the event loop. Sec 18.8 saw 278753 slices under a preloaded hold
+and called it the hold's doing. It needs no hold, only a shape that takes
+long to mesh and is under the face count of the stand-in path
+(`Render/CoarseDeferFaces`, 1000): a planar face with 1500 round holes is
+ONE face and takes a second. Measured, each at the workers' own speed:
+
+| document | visuals put back | slices | what it cost |
+|---|---|---|---|
+| the reference assembly, 17058 solids (47 loads logged in sec 18.9's runs) | none | 55 to 65 | nothing |
+| 150 solids of 992 faces | each once, in one round | 201 to 213 | nothing to speak of |
+| 2 plates of 1500 holes and 20 spheres | 11400 to 13300 times | as many | the GUI thread busy 1.7 s of 1.8 s |
+
+The third said "22 built of 11617 popped" and stepped its progress bar as
+often. What changed:
+
+- a slice goes on past a visual it put back, to the ones behind it,
+  within its budget -- one behind a slow shape may be ready;
+- a queue that has asked for every visual it has left since it last built
+  one, with no claim ended since BEFORE the first of those asks, has
+  nothing to ask again. `preMeshEnded()` is that count: every way a claim
+  stops answering as in flight goes through one function. The count is
+  read ahead of each ask, never after, or a claim ending between two asks
+  of one round would be missed for good. A waiting queue looks at the
+  count a hundred times a second, and asks again after a second whatever
+  the count says -- the wait rests on the count moving for everything that
+  can end it, and a wait that outlived a mistake in that would be a
+  document that never fills in;
+- a visual can come back parked for the load's own reason, its document
+  gone into a restore again under the slice. The build says which it was
+  (`s_parkedForPreMesh`), and that one is not a wait for any claim;
+- a visual put back is counted as that and not as popped again, the
+  progress bar steps once for each visual, and the closing line says how
+  many were put back.
+
+`tests/gui/drain-waits-for-premesh.py`
+(`GuiDrainWaitsForPreMesh_tests_run`): 8 checks of 14 before, three runs;
+14 of 14 after, 4 or 5 slices, "22 built of 22 popped", the GUI thread
+busy for 0.10 to 0.15 s of 1.7 s. The workers' batch takes the 1.7 s it
+took: the turning burned a core and counted wrong, it did not hold the
+workers up. On the 150 solids, the two libraries alternated, nine loads
+each: 9.2 s against 9.5 s from the submit to the drain's end with a
+spread of a second in both arms, and a longest slice of 0.25 to 0.45 s
+against 0.24 to 0.39 s. No difference I can show, in either number. (I
+first read the longest slice as having grown, from runs made one after
+the other, and blamed the progress bar's event pump having moved behind
+the build; moved back, the number was the same. The pump is where it
+was.)
+
+**One phase of the view provider drain had no budget.** A view provider's
+record that names an archive entry cannot be parked for the drain -- the
+archive is read once, forward -- so it is restored inside the open
+(`restoreCapturedViewProvider`) and replayed in phase three, after the
+sweep of updates, so that the saved state wins over the handlers (sec
+13). A colour array is such an entry. That makes it nearly every record
+of a CAD document, and the replay was a plain loop over all of them: the
+largest phase of the drain, in one slice. 0.16 to 0.32 s for the 2400
+solids under their budget of 0.01 s, some 70 us a record -- over a second
+on the reference assembly, whose every load in sec 18.9's runs showed a
+gap of 1.6 to 2.4 s between two turns of the event loop that nothing then
+explained. The replay keeps its position now (`_deferCapturedPos`) and
+leaves when the budget is spent: 0.012 to 0.046 s, in 38 to 49 slices
+where there were 24 to 30, the drain's total as it was. The same test
+checks it on its plain load; `GuiProgressiveLoadDiff`, which holds a
+progressive load's state against an eager one's, passes as before. Not
+measured on the reference assembly itself.
+
+**Seen and left.**
+
+- **The build of a many-faced solid is GUI-thread time the pre-mesh does
+  not touch.** The 150 solids of 992 faces take 7.5 to 8.2 s of the drain
+  with the pre-mesh and 15.7 to 16.5 s without. With it, one build is
+  0.03 to 0.1 s of which the mesh is 2 to 13 ms: the rest is the
+  traversal that turns the triangulation into the display arrays. That,
+  and not any turning, is why such a document's slices run 0.25 to 0.45 s
+  under a budget of 0.1 s -- two or three such builds, and what the
+  progress bar's pump runs from inside the slice.
+- **The level-of-detail refines land while the drain is still on its
+  first pass.** A refine's landing rebuilds a solid that is already drawn
+  (0.07 to 0.1 s each on those solids) between the builds of solids that
+  have no picture yet. Whether the landings should wait for the drain is
+  a question of order, not put to the user yet.
+- The pre-mesh's work on the GUI thread has no budget of its own: about
+  4 ms to make a twin of such a solid and 4 ms to land one, 5 to 7 of
+  each in a call, up to 0.09 s.
+- A round of asks costs one ask for each visual left, and an ask walks
+  the shape's faces and edges (0.18 ms for a plate of 1500 edges). With
+  thousands of slow shapes in flight a round is long, as it was before.
+  The exact answer -- the claim that ended names the visuals that waited
+  for it -- was not built.
+- The view provider drain's first slice sorts the objects by dependency,
+  13 to 17 ms for the 2400; its sweep begins by copying the archive-entry
+  properties of every captured record in one loop; and what follows its
+  last slice (`finishDeferredRestore`, 12 to 14 ms) is in no slice's
+  time.
 
 ## 19. Progressive load against eager (2026-09-29)
 
