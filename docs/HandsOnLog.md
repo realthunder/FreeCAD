@@ -44,7 +44,7 @@ Evidence that does not belong in the repository is under
 | 38 | FIXED `bb31f8820b`, not staged | the omni search's first bring-up made the icon of every command before showing the box: 1.27 s on the reporter's configuration, 0.22 s now |
 | 39 | FIXED `c7d115e576`, not staged | MSAA has not reached any view since 2026-09-07: the scene depth was built readable at every sample count and bgfx refuses that framebuffer. Write-only under MSAA now; a test asks the view its sample count |
 | 41 | FIXED, all four steps: `a75b43f1d5`, `4a99a978f7`, `48037fbd8c`, `de7bd49797`, `ff12279ee6`, then `aa63b07cc8` and `6a2216d0f0` for the reporter's answers to the list; nothing left with the reporter; not staged, not pushed | the Python-only modules' settings through a door into the registry: 603 settings listed that were not -- Assembly 13, Draft and BIM 426, Fem 47, CAM 27, the Addon Manager 41, Help 14, OpenSCAD 15, ReverseEngineering 11, Tux 5, Material 4. Registration only, the readers keep their code; a test per module holds each described default to its readers' |
-| 42 | STEP 1 of 3 DONE 2026-10-08 (the split key by key: 94 state keys, 114 settings, 44 records, 23 dead, 14 defined after all); nothing generated yet; Q1 to Q5 answered, Q6 not answered | of about 300 keys C++ reads without a definition: about 90 state keys go through the generator and are listed, about 110 settings entry 24 did not reach go in the same entry, about 90 records under names the user makes stay out |
+| 42 | FIXED `aa3e77137c`, `dbadedb7ba`, `7e442e1bc2`, `234572bd87`; not staged, not pushed; Q6 not answered | of the about 300 keys C++ read without a definition, 174 are defined now -- 89 settings and 85 state keys, 213 rows of the registry: the 3D mouse and the expression sandbox with every reader converted, Gui's small groups too, and the state the program keeps defined with its readers left as they are. What stayed out is listed |
 | 44 | FIXED `813d0250f9`, not staged | the C++ DXF exporter was pointed at `Mod/Import` for its options, where nothing stores them; it takes them from `Mod/Draft`, where the DXF page puts them, as upstream does. An ellipse with "as polylines" on was an ELLIPSE before, an LWPOLYLINE after |
 
 **The reporter, 2026-10-07 14:20, on what is open** (said to the build
@@ -1996,7 +1996,7 @@ more, entry 44's); `FreeCADCmd -t 0` 3411 tests, the two `TestThickness`
 5829 failures and nothing else; `-t ModuleSettings` 4 OK. Nothing of the
 entry is open with the reporter. Not staged, not pushed.
 
-## 42. State keys through the generator, and listed -- step 1 DONE (the split key by key), steps 2 and 3 to do; Q1 to Q5 answered, Q6 with the reporter
+## 42. State keys through the generator, and listed -- FIXED, all three steps; Q1 to Q5 answered, Q6 with the reporter
 
 Decided under entry 24 (C2), and the reporter, 2026-10-08: "Entry 42, list
 those keys". Not started. Sized with the same run
@@ -2123,6 +2123,99 @@ don't take plain definition? Q2 fix. Q3 drop. Q4 Drop. Q5 drop."
 So the field is 91 state keys (94 less the token and the two lists) and,
 of the 114 settings, 88 (less the 2 of Q4, the 4 of Q2 and the 20 of Q1),
 and the 2 of entry 44 (`ExportPoints`, `DxfVersionOut` in `Mod/Draft`).
+
+**Steps 2 and 3, the definitions,** 2026-10-08, in four commits. 174 keys
+are defined -- 89 settings and 85 state keys -- which is 213 rows of the
+registry, because each of the 13 keys of an overlay panel is there for
+the four panels. Two groups came first and whole, readers and all; the rest
+went in three batches.
+
+- The 3D mouse (`aa3e77137c`), 32: a new class `Gui::SpaceballParams` for
+  `BaseApp/Spaceball/Motion`, which is not under Preferences -- the 23
+  settings of the Spaceball Motion page, `Remapping`, the 7 the program
+  stores when it calibrates, and `Model` of the group above. The page only
+  shows its widgets while a device is present, so on a machine without one
+  these could be seen nowhere. Every reader asks the class; the motion
+  event read 31 keys from the group at each movement of the device. NOT
+  RUN: there is no device here, the motion path is converted by reading.
+- The expression sandbox (`dbadedb7ba`), 14: a new class
+  `App::SandboxParams` for `Expression/Sandbox` and `Expression/Security`.
+  Every reader asks the class but one: the sandbox host caches the four
+  budgets inside the group's change notice, which the class may not have had
+  yet, and takes its defaults from the class.
+  `ExpressionWasmtimeRuntime.cpp` is not compiled on this machine; its two
+  reads are converted by reading.
+- Gui's small groups, 30, readers converted: the rest of the gizmos' group,
+  the property view (5 settings, 6 state), the panel mirror, the selection
+  view and the feature picker, the DAG view, the custom orientation of a
+  new document's view, `MainWindow/ClearMenuBar`,
+  `View/CursorCrosshairColor`, `DependencyGraph/GeoFeatureSubgraphs` (whose
+  reader is App's and stays). Put right on the way: the property view did
+  not follow a change of `AutoTransactionData`, which was missing from the
+  list it watches.
+- The rest of Gui, 68 keys (107 rows), DEFINED ONLY -- the readers are left
+  on their groups: what the program keeps in `General` (10), `MainWindow`
+  (7), `View` (8), `Macro` (1), `Document` (2), the combo view's two
+  sizes, the Placement dialog's last method, the Transform panel's two
+  increments, the two dock flags read by name, the 13 keys of each overlay
+  panel; and the settings `RecentFiles`, `Websites/DonatePage`,
+  `Paths/Graphviz`, the icon theme's three, the five `DockWindows/*/Enabled`,
+  the Share dialog's five fields and its two one-time flags,
+  `ActivateOverlay` and `CursorMargin`. They are in `GeneralParams`,
+  `MainWindowParams`, `ViewParams`, `MacroParams`, App's `DocumentParams`
+  and `MiscParams`.
+- The modules, 30: Sketcher 9, Material 6, Mesh 3, Start 1 and TechDraw's
+  `SectionLiveUpdate` are state, defined only, in their classes;
+  TechDraw's `TileColor`, Part's `GridLinePattern` and the wire joiner's two
+  ask their class; Part's `MaximumPatternOccurrences` is defined, App reads
+  it. Inspection has no class: `Mod/Inspection/InspectionParams.py`, a
+  definition file as ReverseEngineering's, for the two values its dialog
+  keeps. The three of Draft's group that the C++ DXF code reads
+  (`dxfUseDraftVisGroups`, `ExportPoints`, `DxfVersionOut`) are a new table
+  `IMPORT_READ` of `draftutils/params_registry.py`.
+
+"Defined only" is where this entry stops short of entry 24's way: a state
+key has no default of its own -- the reader passes whatever its widget
+shows -- and its reader was not touched. The value written in the
+definition is what the reader finds on a fresh profile.
+
+NOT defined, and why:
+- the 20 of Q1: 17 without a literal default (the cube's 6 labels, 6 web
+  addresses and `IssuesPage`, the 2 gesture keys, `BitmapFill`,
+  `LogLevels/Default`), `DAGView/Enabled` and `HLR/UsePolygon` (old keys
+  read as a fall-back), `DxfImportMode`;
+- `LogLevels/DebugDefault`, one of Q1's four developer switches, which the
+  reporter agreed to define: it turned out to have no literal default
+  either (the console's level, written when missing) and to exist in debug
+  builds only. The other three are defined. SAID TO THE REPORTER;
+- the share token (Q3), `Workbenches/Ordered` and `Disabled` (Q4), the two
+  recent lists (Q5);
+- the 4 of `Oculus`, whose file no preset compiles;
+- Sketcher's `SelectedConstraintFilters` (its default is a bit per filter
+  entry) and `GridSize/Hist0` (an old key read as a fall-back).
+
+Q6, as met: the readers that store what they have just read are left doing
+so (`AutoShowSelectionView`, the DAG view's three, `DonatePage`, the dock
+flags). Where readers disagree the definition says what a fresh profile
+gets and the readers are unchanged: `DockWindows/PropertyView/Enabled`
+True, `MainWindow/Theme` empty, `General/LastModule` empty.
+
+`tests/gui/state-and-missed-settings.py`
+(`GuiStateAndMissedSettings_tests_run`), claims per group: listed by
+"/param" with their groups outside Preferences; Security/Enforce and the
+property view's `HideHeader` followed at once; what was to stay out is not
+in the registry; nothing is described twice. `preferences-ok-keeps-defaults.py`
+is told of one key: Material's count of recent materials, which closing a
+page's material chooser raises.
+
+Scored: `state-and-missed-settings.py` 21 PASS, `preferences-ok-keeps-defaults.py`
+7 PASS, `module-settings.py` 10 PASS, `python-settings-door.py` 10 PASS (the
+GUI tests do not register with ctest on this machine and were run by
+hand); `-t ModuleSettings` 4 OK, `-t TestDraft` 91 OK, `-t BaseTests` 57 OK.
+Both full suites, three times on the way and last on the tree before the
+final two fixes -- a copy rule for Inspection's file and the note to the
+preferences test: ctest 788 of 788, `FreeCADCmd -t 0` 3411 tests with the
+two `TestThickness` 5829 failures and nothing else. Not staged, not pushed.
 
 ## 44. The DXF page's exporter settings do not reach the C++ DXF exporter -- FIXED `813d0250f9`, not staged
 
