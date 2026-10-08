@@ -136,7 +136,15 @@ QVariant QGIDatumLabel::itemChange(GraphicsItemChange change, const QVariant& va
     }
     else if (change == ItemPositionHasChanged && scene()) {
         setLabelCenter();
-        m_dragState = Dragging;
+        // A drag is a move made with the mouse down on the label. The
+        // label is also put in place by every redraw (setPosFromCenter),
+        // and taking that for a drag left it "dragging" for good: the next
+        // time it lost the selection, or the mouse was released on it, a
+        // drag "finished" -- X and Y written again and the document
+        // recomputed, for a click or for a selection made in the tree.
+        if (m_dragState != NoDrag) {
+            m_dragState = Dragging;
+        }
         Q_EMIT dragging(m_ctrl);
     }
 
@@ -148,6 +156,9 @@ void QGIDatumLabel::mousePressEvent(QGraphicsSceneMouseEvent* event)
     if (event->modifiers() & Qt::ControlModifier) {
         m_ctrl = true;
     }
+    if (event->button() == Qt::LeftButton) {
+        m_dragState = DragStarted;
+    }
 
     QGraphicsItem::mousePressEvent(event);
 }
@@ -156,8 +167,9 @@ void QGIDatumLabel::mouseReleaseEvent(QGraphicsSceneMouseEvent* event)
 {
     //    Base::Console().Message("QGIDL::mouseReleaseEvent()\n");
     m_ctrl = false;
-    if (m_dragState == Dragging) {
-        m_dragState = NoDrag;
+    const bool dragged = (m_dragState == Dragging);
+    m_dragState = NoDrag;
+    if (dragged) {
         Q_EMIT dragFinished();
     }
 
@@ -708,6 +720,11 @@ void QGIViewDimension::datumLabelDragFinished()
     }
 
     double x = Rez::appX(datumLabel->X()), y = Rez::appX(datumLabel->Y());
+    // Dragged away and back: nothing to store, nothing to recompute
+    if (std::fabs(x - dim->X.getValue()) < Precision::Confusion()
+        && std::fabs(-y - dim->Y.getValue()) < Precision::Confusion()) {
+        return;
+    }
     Gui::Command::openCommand(QT_TRANSLATE_NOOP("Command", "Drag Dimension"));
     Gui::cmdAppObject(dim, std::ostringstream() << "X = " << x);
     Gui::cmdAppObject(dim, std::ostringstream() << "Y = " << -y);

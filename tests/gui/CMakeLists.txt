@@ -1573,3 +1573,9 @@ fc_add_gui_test(GuiViewInCellGoesWithItsObject_tests_run
 fc_add_gui_test(GuiTechDrawLastLineStyle_tests_run
                 techdraw-last-line-style.py
                 --timeout 180)
+
+# Selecting a TechDraw dimension, by a click or from the tree, is not a drag
+# of its label: it recomputed the document and dropped the selection.
+fc_add_gui_test(GuiTechDrawDimensionClickNoRecompute_tests_run
+                techdraw-dimension-click-no-recompute.py
+                --timeout 180)
