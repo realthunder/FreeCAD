@@ -3406,9 +3406,10 @@ follow still.
 >
 > **14.4 step 1 is built. 14.6 is ruled after it, the same day, and
 > replaces the rest of 14.4: everything that makes a look is the object's.
-> 14.6.9 is the build order from here, and its steps A and B are built
+> 14.6.9 is the build order from here, and its steps A to E are built
 > (14.6.10): the object makes the looks, and its view provider draws them.
-> What is left of B is listed there; step C is next.**
+> What is left is a body, a link that draws through a view provider of its
+> own, and the merge of what a link holds.**
 > What is filled in beyond the rulings is marked *mine*, and is the user's
 > to overrule.
 
@@ -3932,7 +3933,7 @@ and written in `FreeCADCmd` as its check. *Built* (14.6.10).
 
 **E. Files below schema 5 against upstream and an older build**, each
 opened in the other; and the costs of 14.1 measured again on what was
-built.
+built. *Built* (14.6.10).
 
 #### 14.6.10 Built
 
@@ -4199,7 +4200,7 @@ provider's values in the file are not taken.
 
 *Not built of 14.6.6:* the view provider's names are still written at every
 schema. Schema 4 is what a new document is saved at, for upstream, and
-needs them; leaving them out at 5 goes with step E.
+needs them; leaving them out at 5 goes with step E. *(Done there.)*
 
 *The merge* (`PartFeatureMerge.cpp`). `ElementAppearance` is a merge unit
 of one property -- the log took a unit to be two or more, and takes one
@@ -4400,7 +4401,8 @@ they are meant too*).
   into `MaterialList` and `OverrideMaterialList`, and
   `updateElementList()`, run when the element list is emptied a moment
   later, hands those to elements there are none of and clears them. The
-  store follows the lists, as it should, and has nothing.
+  store follows the lists, as it should, and has nothing. *(Fixed with
+  step E, where it was seen to happen at every read as well.)*
 - **Set Colors' colour for all of an `App::Part` is not taken while its
   view provider's look follows a material card.**
   `setElementColorsTo()` assigns the look with the list still following,
@@ -4457,3 +4459,201 @@ Checks. Python `parttests.ElementAppearanceTest.ElementAppearanceFileTest`,
 blue edges written to a STEP file and read back, each object its colour
 and the face its own; a link's own look beside the colour of what it
 shows.
+
+**Step E, files against upstream and an older build (2026-10-08).** Not
+against files made up to look like theirs: against the two release images,
+run here. Upstream's 1.1.4 and this fork's of 2025-10-15 each ran
+`scripts/appearance-files-make.py` -- one document of looks made through the
+view providers, as a script written for any FreeCAD makes them: a box in a
+colour with a transparency, faces and edges coloured by number and by name,
+a cut, a shape with no history and a colour for every face, links with a
+look of their own and with one face coloured, an array collapsed and one
+shown, an `App::Part`, a body -- and so did this build, at schema 4. Then
+every build opened every file and said what its view providers showed, and
+each file a build had opened it saved again for this build to read.
+
+*What was wrong, and is not.* Eleven things, nine of them older than the
+looks being the object's.
+
+- **A file upstream had saved again crashed this build.** Upstream names a
+  string table that is not empty `<StringHasher2 file="..."/>`, a member the
+  reader serves after the objects. A document that shares its file's hasher
+  reads its table into a hasher of its own and merges it
+  (`Document::Restore`); that one was gone before the reader came to it.
+  The table's file is named for the document to read now, as the member of
+  docs/TransactionLog.md sec 27.50 is.
+- **Every colour of the older build's file came back inverted**, an opaque
+  box wholly transparent. The released images state the day they were built
+  as their version, `2025.1020R14555`, which `Base::alphaIsOpacity` read as
+  a release after 1.1 (sec 7.9). A release number that is a date is this
+  fork's, and older.
+- **A link's own look was dropped**, from upstream's file and the older
+  build's alike: the type of `ShapeMaterial` in the file was compared with
+  the type's name as a string, and the type has been called
+  `App::PropertyAppearance` since it was renamed. The same in
+  `ViewProviderGeometryObject`, where what was lost was the rest of an older
+  `ShapeMaterial` -- ambient, specular, shininess. Compared by the type the
+  name resolves to.
+- **Upstream read no small list of ours.** A list small enough to cost more
+  as an archive entry than as text is written into the XML (sec 4.3's
+  inline rule), and upstream reads a float, vector, colour or material list
+  from its entry and from nowhere else: a link's one face colour, an edge
+  array of one, and outside the looks a polygon of two points, which came
+  back as one point at the origin. Not below schema 5 any more.
+- **Upstream has no `ShapeAppearance` on a link**, so a link given a colour
+  here was the default colour there. `ViewProviderLink` has `ShapeMaterial`
+  again, a name over the look (`Legacy`), written below schema 5 under the
+  type upstream reads -- and what a script written for upstream says,
+  `link.ViewObject.ShapeMaterial`.
+- **What is drawn was not made of what was taken from an older file.**
+  `finishAppearance()` asks for it inside the read, where
+  `updateAppearance()` makes nothing: a cut from the older build's file was
+  drawn in one colour, and the eighteen faces of upstream's import in the
+  first. Asked for by name now (`whileRestoring`), and once more for every
+  object so taken when the document has been read, what the others are made
+  from first (`settleAdopted()`): a flag set after an object's turn, or a
+  source taken after it, changed nothing inside the read.
+- **A colour given to a body's view provider, or to its tip's, did nothing**
+  -- since step B. The body handed the look to its tip before its own object
+  had it; the tip's change made the body's looks again, the name took the
+  object's value back, the one from before, and that was handed on and
+  written. And what the body draws, taken from the object when the tip
+  changed, was handed back to the tip in place of what the tip had just been
+  given. The body's own write goes first; nothing that is being taken from
+  the object is handed on; and a look given to the body *object* reaches
+  the tip where the view provider sees its own look another after taking
+  the object's (`ViewProviderBody::updateData()`).
+- **A file's status took the `Legacy` mark off a name**, where the file was
+  written before the name was one: `ShapeMaterial` was a value again in the
+  log and in an undo. A saved status leaves the mark as it is
+  (`Property::setStatusValue()`); it is set by its name.
+- **The older build read no face colour from a file of this one.**
+  `ShapeColor`, `DiffuseColor` and `ShapeMaterial` are written at schema 4
+  for it, and were written under the types this build has them as --
+  `Gui::_PropertyShapeColor`, `PartGui::_PropertyDiffuseColor`,
+  `Gui::_PropertyShapeMaterial`, since sec 1.1 -- which it takes for a type
+  that changed and steps over. Below schema 5 each is written by the name
+  the reader has the type under, `App::PropertyColor`,
+  `App::PropertyColorList`, `App::PropertyMaterial`
+  (`Base::setOlderTypeName()`, `src/Base/OlderTypeName.h`); this build,
+  reading that back, is handed it as the older file's it is the same as
+  (`handleChangedPropertyType()`). Sec 9.4 owes an older build nothing; the
+  three were being written for it all the same, and read by nobody.
+- **`ShapeMaterial` said the look the object was made with**, whatever it
+  was given since: the mirror asks whether its value is the appearance's by
+  `==`, which calls two appearances that name one material card the same
+  whatever their colours say (sec 7.3), and every look names a card now.
+  Nothing here reads the name; the older build does, saved a file with it,
+  and handed that look back as the object's own. Compared field by field
+  (`PropertyShapeAppearance::mirrorValue()`).
+- **An array collapsed lost the looks of its elements** -- when it was
+  collapsed, and every time its file was read (step C, "found"; the older
+  build does the same, upstream does not). `updateElementList()` hands the
+  two lists to the elements and clears them, and did so with no element to
+  hand them to. Not where there are none.
+
+*At schema 5 the names are not written* (14.6.6). A property that carries
+`Legacy` is left out of a file at schema 5 (`PropertyContainer::beforeSave`):
+the view provider's `ShapeAppearance`, `ShapeColor`, `DiffuseColor`,
+`Transparency`, `ShapeMaterial`, the line and point colours and their
+arrays, `MappedColors`, the five `Map*`; a link's and an `App::Part`'s
+`OverrideMaterial`, `ShapeAppearance`, `ShapeMaterial`, `OverrideColorList`
+and the array's two lists; and on the object a link's `ColoredElements`.
+Each is made of the store when that is read. At schema 4 they are written
+as they were. *A link's look with the override off* is the one thing that
+was nowhere else (step C): at schema 5 it is the preference's colour again
+after a read.
+
+*Found by that.* A view provider whose element in `GuiDocument.xml` names
+no file is parked by a progressive load and made when the event loop gets
+to it (docs/DocumentLoad.md) -- and until now nearly every one named a
+file, an empty colour list at the least. Without the names a document read
+at schema 5 had no view provider on the line after `openDocument()`, and
+`obj.ViewObject`, a property of the object, said None to it.
+`obj.ViewObject` asked for before it is there is needing it now
+(`src/App/ViewObjectRequest.h`): the Gui makes what it parked
+(`Gui::Document::flushDeferredRestore()`), as `Gui.getDocument().getObject()`
+always did. And the end of that making says the document is as modified as
+the load left it, which took the mark off a document a crash recovery had
+brought back and marked in between
+(`scripts/transaction-log-recovery-check.py`): a recovery has what the load
+parked made before it marks the document.
+
+*What each build reads of the others, after.*
+
+| written by | read by | |
+| --- | --- | --- |
+| the older build | this one | everything, as the older build showed it |
+| upstream | this one | everything, and the cut in the colours of what it was made from, which upstream drew in one |
+| this one, schema 4 | upstream | everything upstream has a place for: not the looks an `App::Part` gives, which it has none of |
+| this one, schema 4 | the older build | everything it has a place for, the faces among them; not the looks of a collapsed array's elements, which it loses from its own files too |
+| this one, through upstream, back | this one | everything but what upstream had no place for; an object every face of which is painted has the first face's colour as its own, upstream keeping no other |
+
+*Not done, and known.*
+
+- A collapsed array's two lists say the elements up to the last one given
+  a look and no further: three elements, the second given one, are lists of
+  two. What is drawn is the same; a script that counts them counts two.
+- A datum of a body's origin read by the older build, `App::Point`, is a
+  type it has not. Not a look.
+
+*The costs of 14.1, on what was built.* `cost_e.py`, the same two shapes,
+every face given a colour.
+
+| | shape with an element map, 9,000 faces | shape without one (an import), 12,000 faces |
+| --- | --- | --- |
+| how a face is held | by its name, whichever way it was given (14.3) | by its number |
+| held | 421 B a face, 3.8 MB | 59 B a face, 0.7 MB |
+| the file, compressed, schema 5 | +91 KB, a tenth of it | +17.8 KB, 3% |
+| read back | 229 ms without, 312 ms with | 21.9 ms without, 22.7 ms with |
+| the looks made again | 12 ms without, 20 ms with | 0.1 ms, 0.4 ms |
+| a colour list assigned (`DiffuseColor`) | 48 ms | 24 ms |
+| the same by `setElementColors` | 219 ms | 1.0 s |
+
+At 120,000 faces of an import: 39 B a face held, 4.7 MB; +171 KB of file;
+read back in 116 ms where 106 ms reads it uncoloured; a colour list
+assigned in 0.24 s.
+
+Against 14.1. A shape with names costs what "by name" cost there (430 B a
+face, +96 KB, 20 ms), which is what was chosen: a write by number gets its
+name. An import costs what "by number" cost held and to read, and no longer
+the 6.6 KB a face a name cost it. Two things are dearer than they were, and
+one was:
+
+- *A colour list assigned to an import took 0.7 s at 12,000 faces and 68 s
+  at 120,000* -- found measuring this. Taken apart a face at a time, each
+  face is read out of the list the one before was written to, and a list
+  written to puts itself in order before it answers
+  (`AppearanceList::normalize()`): every entry, for every entry. Where every
+  element is held by its number the faces are read from the list as it was,
+  written to a copy and given back once (`numberedToWrite()`,
+  `PartFeatureAppearance.cpp`), and the edges' and the vertices' colour
+  arrays likewise: 24 ms and 0.24 s. *Not done for `setElementColors`*,
+  which gives a name at a time and is the 1.0 s above.
+- *An import's file is +17.8 KB where the view provider's list was +0.4
+  KB.* The looks by number are written an entry at a time with its number,
+  8 B a face; the list they replace wrote one run of colours, which for the
+  palette of this measurement packs to nothing. Not chased: a file's real
+  colours do not repeat every sixty-four faces.
+- *Schema 4 costs an archive entry more for each small list upstream
+  reads*, three for each object -- `LineColorArray`, `PointColorArray` and
+  `DiffuseColor`, 8 B each: 1,500 boxes are 9,008 entries where schema 5
+  has 1,509, 3.4 MB where it has 0.9, and read in 1.28 s where it reads in
+  0.23. That is what a file upstream reads whole costs; the lists an
+  object's `ElementAppearance` holds are no properties of their own, are
+  stepped over by upstream with the property, and stay in the XML.
+
+Checks. `scripts/appearance-files-check.py`, 96, a GUI run: the two files
+the release images wrote, `data/tests/LooksByUpstream114.FCStd` and
+`LooksByFork2025.FCStd`, read against what each of those builds showed;
+each saved at schema 4 and at 5 and read again, every look as it was, and
+in the file what each reader needs -- no list in the XML and a link's
+`ShapeMaterial` at 4, no name at 5; a body's and its tip's view provider
+and object each given a look; a link's `ShapeMaterial` written; an array
+collapsed, saved and read. Python
+`Document.TransactionBranchCases.testStringTableNamedAsUpstreamNamesIt`,
+which crashes without its fix, and
+`testAListForUpstreamIsInAFileOfItsOwn`; gtest
+`ProgramVersion.aReleaseNumberedByItsDayIsThisForksAndOlder`.
+`scripts/transaction-log-paint-check.py` makes its older files of a
+schema 4 save now, the names being in no other.
