@@ -1137,6 +1137,30 @@ timed waits in `src` -- `PreMesh.cpp`, `CyclesStream.cpp`, two in
 `SceneServer.cpp` -- have no second deadline behind them (read, not run):
 a step makes each late and nothing more.
 
+**What the wall clock's steps were (2026-10-08).** Two time services of
+the guest correcting each other. WSL holds the guest on the WINDOWS
+clock by itself (WSL 3.0.1.0, kernel 6.18.40.1: something adjusts the
+kernel's frequency every few seconds), and `systemd-timesyncd` was
+separately setting it by `ntp.ubuntu.com`. This box's Windows clock stood
+0.51 s ahead of that server -- more than the 0.4 s timesyncd will slew --
+so each of its polls, 32 s apart, was a step back, and the other loop
+answered by running the clock fast: `adjtimex` gave a tick of 10251 to
+10278 us where 10000 is normal, set again every few seconds, and
+`CLOCK_MONOTONIC` gained 23000 ppm on `CLOCK_MONOTONIC_RAW`. So between
+steps EVERY clock of a process ran 2.5 % fast, the monotonic one too.
+Episodic because it only starts while Windows and the server differ by
+more than 0.4 s. With `systemctl stop systemd-timesyncd` the tick was
+10000 at once, the frequency within 1.5 ppm, no step in 100 s and the
+guest 21 ms from its host; `systemctl disable --now systemd-timesyncd`
+is the lasting form. The clock SOURCE is not it: `tsc` to
+`hyperv_clocksource_tsc_page` changed nothing. To see it in half a
+minute, without root: the tick `adjtimex` reports (ten lines of Python
+through ctypes, `modes` 0), `timedatectl timesync-status` for the
+offset, and on Windows `w32tm /stripchart /computer:ntp.ubuntu.com
+/samples:3 /dataonly`. What it did to a measurement, and to one
+comparison that had to be taken again, is `docs/DocumentLoad.md` sec
+18.9.
+
 ### Toolbar paints threw on macOS 12
 
 **Found 2026-09-07 by the echo test's log, fixed the same day** --

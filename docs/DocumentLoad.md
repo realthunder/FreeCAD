@@ -1254,6 +1254,11 @@ serve's own work (sec 14).
 
 ### 18.3 Two rules, and both are load-bearing
 
+*(2026-10-08: sec 18.9 changes what the second rule is FOR -- a worker
+meshes a private twin now, and nothing of the document is written off the
+GUI thread -- and removes the "both go" exclusion below. The text of this
+section is kept as it was written.)*
+
 **The ask has to match, so the claim carries the GEOMETRY box.** The
 display deflection derives from the shape's bounding box, and
 `BRepBndLib::Add` defaults to preferring a resident triangulation over the
@@ -1826,6 +1831,296 @@ the event loop while everything left on its queue is in flight -- 278753
 slices and 3.98 s of the GUI thread in a batch of 5.3 s. At the batch's
 own speed it is 14 slices for 3000 visuals, so it is the hold's doing and
 not a finding; a load whose batch really ran for seconds would show it.
+
+### 18.9 A worker meshes a private twin, and the threads are a pool's (2026-10-08)
+
+Sec 18.8 ended on a ruling -- the private twin -- and on the question it
+left: where the copy is made. Discussed with the user and built the same
+day. What was decided, in the order it was decided:
+
+**Where the copy is made: on the GUI thread, when the shape's turn comes.**
+A request is the shape's handle, its ask and its geometry box, and nothing
+is copied for it; the copy is made when the request is handed to a worker
+(the user: "queue the shape for meshing in gui thread. and do the copy
+right after dequeuing and dispatching"). Late, so that a request nobody
+wants any more is never copied and the twins of a whole document are not
+alive at once. On the GUI thread, because a copy WALKS the document's
+shape -- each edge's list of representations among it, which is the list a
+landing appends to and a re-mesh removes from -- and nothing guards that
+walk here: `BRepBuilderAPI_Copy` and `BRepTools_Modifier` take no
+`BRep_RepresentationLock` (read in the fork's source), and the lock does
+nothing for a TShape that is not Immutable, which is every shape on this
+branch. The level-of-detail pool has that exposure today: `meshedCopy`
+runs OCCT's copier on a refine worker. Moving the copy to a worker is an
+optimization for the day shape values are frozen, and it is one call site.
+
+**The freeze is not used, and not merged for this.** Asked ("are you
+using occt freeze function. do you think it helps to merge that part of
+code"): what it would buy here is the copy off the GUI thread, 0.47 s over
+the whole reference assembly against 16.8 s of meshing, and the switch on
+`Transaction` (`87ef33df5d`, 307 lines) is followed there by a run of its
+fallout -- four regressions, features run again on copies of a frozen
+input, PolarPattern, the pcurve caches of a frozen edge -- on a branch 969
+and 489 commits from this one. What was done instead: the twin and its
+landing take `BRep_RepresentationLock` on every TShape of the original
+they read or edit. On an unfrozen shape that is nothing; frozen, the
+landing is already the edit of a frozen shape's caches the lock is for.
+
+**OCCT has no asynchronous mesh to call, and its pool is not a queue**
+(the user: "check if it is better to use async call into occt mesh instead
+of create thread by ourselfs"). Read in the fork, 8.0.1, which links no
+TBB: `BRepMesh_IncrementalMesh::Perform` returns when the mesh is made --
+its `Message_ProgressRange` is a way to break it, not to leave it running.
+`OSD_ThreadPool` is used through a `Launcher`, which LOCKS whatever pool
+threads are free at the moment it is made, runs one parallel loop on that
+set and waits; the calling thread is always one of the workers (`run()`
+performs the caller's share before it returns, so there is no
+fire-and-return even through the protected half). A batch is fixed when it
+is launched: nothing is added to it, nothing is taken back, nothing goes
+first. And `OSD_Parallel::For` over n items asks for n threads, so the
+pre-mesh's batch held every pool thread until its last shape, with any
+other parallel loop of the process -- a big shape meshed on the GUI
+thread, a refine job -- run on its caller alone meanwhile; launched while
+somebody else held the pool, the batch would have run on one thread to its
+end. (The last two are read, not measured.) What the pre-mesh did --
+one thread of its own as the launcher's caller -- was the only form there
+is.
+
+**So the threads are a pool's, and the pool is a library's** (the user:
+"use something like boost::asio which can configure a thread pool so we do
+not need to hand roll work thread by ourselfs. I bet there are other place
+that require thread pool"). `Base::ThreadPool` (`src/Base/ThreadPool.h`)
+is a thin face on `boost::asio::thread_pool`, which the scene server
+already used: `post`, `stop`, `size`, and `ThreadPool::compute()`, the
+process's pool for compute work, one thread for each hardware thread but
+one, made on first use and never destroyed (its threads sleep on a
+condition variable, and destroying one of those under a sleeper hangs the
+exit -- found here 2026-09-06). An exception that leaves a task is caught
+and reported. What it does not give is said in its header because its
+users have to supply it: no priority and no taking back (whoever needs an
+order keeps their own queue and posts what is to run next), and no waiting
+in a task for another task of the same pool. `src/Base` is also built for
+the single-threaded WASI sandbox image; there a task runs where it is
+posted. `Tests_run`, `ThreadPool.*`, 6 cases. Who else would use it, found
+by looking: the level-of-detail refine threads and their reaper, and three
+places in the renderer's occlusion culling that start threads and join
+them on every call (`MaskedOccluderPass::build` and `cull`,
+`CoarseOccluderCache::build`). None of them is moved yet; the scope ruled
+was meshing first.
+
+**Three queues, not two for each worker.** The user proposed a bounded
+queue and a finish queue per worker, the GUI thread filling whichever has
+room. Kept of it: twins standing ready ahead of the workers, and a finish
+queue with one posted wake. Not kept: the per-worker part -- a worker
+behind a slow shape holds ready twins an idle neighbour cannot take, which
+wants stealing to fix, and a shared queue costs nothing at this job size
+-- so there is one list of requests (the GUI thread's), the pool's own
+queue (bounded by what is out), and one list of results.
+
+**The twin** is `Part::MeshTwin` (`src/Mod/Part/App/MeshTwin.h`), no GUI
+in it:
+
+    MeshTwin twin(shape);                        // the shape's own thread
+    BRepMesh_IncrementalMesh(twin.shape(), ask); // any ONE other thread
+    twin.land();                                 // the shape's own thread
+
+- One new TShape for each of the original's, at every level, made with
+  each kind's `EmptyCopy` and the children added back as the original
+  stores them. A map from the original's TShape keeps a sub-shape held at
+  two places one sub-shape (OCCT's copier makes two of it, sec 18.8), and
+  it is the pairing the landing uses -- no pairing by index.
+- Nothing of the geometry is copied. `EmptyCopy` gives a face its surface,
+  location and tolerance, an edge its curves and curves on surfaces as new
+  entries on the same geometry, a vertex its point and tolerance. Copied
+  by hand beside it: a face's natural-restriction flag, the TShape flags,
+  and a vertex's own list of parameters (a boolean rewrites those).
+- **The mesh the original already holds is carried by handle**, so the
+  mesher finds in the twin exactly what it would have found in the
+  original and decides as it would have there: a face whose mesh answers
+  the ask is left alone, and an edge shared with a meshed face is
+  discretized as that face has it. That is the argument for "the same
+  result as in place", and it is measured below. (`Resident::Strip`, for
+  the level-of-detail path that must find nothing, carries only what has
+  no geometry to mesh from.)
+- **The landing mirrors the twin's mesh onto the original.** A face takes
+  the twin's triangulations if it still holds what it held when the twin
+  was made; one somebody meshed in the meantime is left as it is
+  ("overtaken"). An edge takes the polygons that index a triangulation
+  this landing put on a face and loses those of one it took off -- and no
+  others: the first version took away every polygon the twin did not
+  have, which is every polygon of a mesh made on the original meanwhile.
+- **One thing of the original a worker does reach through a carried
+  mesh.** OCCT keeps a triangulation's "active" bit INSIDE the
+  triangulation object, and a mesher that replaces a carried one clears
+  it there, on an object the original still holds as its active one
+  (`BRep_TFace::Triangulation`). `land()` and `abandon()` put it back, so
+  one of the two is called for every twin that was meshed; the test
+  `abandonPutsBackWhatAMesherReachedThroughACarriedMesh` shows the bit
+  cleared before it. Nothing in FreeCAD reads that bit.
+
+`MeshTwin_tests_run`, 13 cases: new at every level and one for one; the
+order and the geometry kept; the original untouched by the meshing of its
+twin; landed equal to a mesh made in place, complete for OCCT, left alone
+by its mesher at the same ask and replaced at a finer one; a mesh already
+there left alone; a finer ask replacing and leaving no polygon behind; a
+face meshed in the meantime left alone; `abandon`; an edge on no face; the
+stripped twin and a face with no surface; a vertex with its parameters;
+the twin meshed on another thread while the original is written as a save
+writes it.
+
+**What a twin costs**, measured before anything was built, on
+`MiSTer.FCStd` opened headless -- 17058 shapes, one thread, the ask the
+display build makes at the default deviation:
+
+| | in all | mean per shape |
+|---|---|---|
+| making the twin | 0.47 s | 27 us |
+| meshing it | 16.8 s | 988 us |
+| landing it | 0.15 s | 9 us |
+| freeing it | 0.23 s | 13 us |
+| OCCT's own copier, for comparison | 1.77 s | 104 us |
+
+Against the same shapes meshed in place, in the same order: **no shape of
+the 17058 differs** in faces, edges, triangles, nodes or polygons on
+triangulations, and the document's totals are the same (1388486
+triangles, 1207580 nodes, 346191 polygons). An edge's own polygon was not
+in that comparison. The mesh time is a few shapes' -- 57 of the 7505 that
+took a face mesh hold half of it, the slowest 1.02 s, the median 17 us --
+and for none of them was the twin and its landing dearer than the mesh.
+
+**The queue** is the pre-mesh's, rewritten behind the same functions
+(`src/Mod/Part/Gui/PreMesh.cpp`):
+
+- `submitPreMesh` claims each shape and queues it. Every function of the
+  file is the GUI thread's, and each of them first takes what the workers
+  have handed back and hands out what can go -- so the queue moves for as
+  long as anybody asks. That is what carries the load with no drain (sec
+  18.6), which turns no event loop: its builds' own questions and waits
+  do the landing. With an event loop, a worker posts one wake for however
+  many results are behind it (Qt delivers every queued call in one sweep;
+  the level-of-detail pump measured 1 to 2.7 s stalls from that).
+- **A face is in one twin at a time.** A claim that shares a face or an
+  edge with one that is out waits behind it, and its own twin, made when
+  that one has landed, carries the mesh those faces took. So the "both
+  go" exclusion of sec 18.3 is gone: two objects holding one solid, an
+  object and a compound over it, are both claims.
+- A claim whose resident mesh already answers its ask is given no worker.
+  The check is the display build's own (`meshAnswersAsk`, the
+  `tessellationIsRedundant` of sec 18.4's skip), so the queue and the
+  build cannot disagree about a shape.
+- **How much is out at once is counted in faces and edges, 50000 of
+  them, not in twins.** Two twins for each worker was the first thing
+  built, and it made the batch that took 1.1 s in place take 4.8 s: the
+  median shape meshes in 17 us, and seven workers were through fourteen
+  of them long before the GUI thread asked again. Swept on the reference
+  load, two runs each, the batch by a steady clock: 5000 -- 3.5 to 3.8 s
+  progressive and 1.7 s synchronous; 50000 -- 2.7 s and 1.4 to 1.5 s;
+  unbounded -- 2.4 s and 1.3 to 1.4 s, where the submitting slice makes
+  every twin of the document before anything is built and all of them
+  are alive at once. 50000 is where most of the batch's time had been
+  got back.
+- A spent twin is freed by a worker; at the stop it is freed where it is.
+  `stopPreMesh` ends what no worker has, waits for the twins in hand and
+  for the frees, and takes the meshes that are ready.
+
+**What became of the rules of sec 18.3.** The geometry box travels with
+the claim as before. "A shape being meshed must not be touched" is no
+longer what keeps anything safe -- nothing of the document is written off
+its thread -- and stays as what keeps the GUI thread from meshing a shape
+a worker is about to deliver: a build parks on a shape in flight, or
+waits for it. The bounds question no longer waits for anything: a shape
+made of faces a claim is about to deliver is simply read. Everything sec
+18.8 listed under "what is not a build does not ask" -- a copy, a save, a
+boolean on claimed objects, a script's `Shape.BoundBox` -- reads a shape
+no worker writes.
+
+**The load, three ways: twins cost nothing against meshing in place, and
+buy no time either.** `MiSTer.FCStd`, this box (8 hardware threads, 7
+workers), the GUI under xvfb with its own configuration. The two
+PartGui libraries -- this one and the commit before it -- were built
+once each and swapped between runs, so the three arms ALTERNATE; every
+time is a monotonic clock's, read by the script that opens the document;
+two rounds, the wall clock standing still through all of them.
+`ProgressiveLoad` off, the open that returns with everything built:
+
+| | pre-mesh off | meshed in place | twins |
+|---|---|---|---|
+| the open returns after | 21.6, 20.9 s | 17.6, 17.5 s | **17.7, 17.1 s** |
+| the batch | -- | 1.12, 1.16 s | 1.42, 1.34 s |
+
+Progressive, the default path:
+
+| | meshed in place | twins |
+|---|---|---|
+| parked shapes submitted, claimed | 7171, 7171 | 8222, 7416 |
+| the drain's last slice, after the open began | 23.5, 23.6 s | **23.5, 21.7 s** |
+| the drain's own visual build | 8.7, 10.0 s | 10.1, 8.4 s |
+| the batch | 1.06, 1.09 s | 2.5, 3.0 s |
+
+Three more rounds taken the hour before, alternating and monotonic too
+but with the clock running fast (below), say the same: the open returns
+after 19.1, 17.8 and 18.8 s in place and 18.6, 18.0 and 17.9 s with
+twins, 21.4, 22.7 and 22.6 s with the pre-mesh off; the drain's last
+slice at 24.8, 23.8 and 24.8 s against 25.8, 23.8 and 22.9 s.
+
+So the pre-mesh is worth some four seconds of a twenty-one second open
+either way, and the twin is what it costs to have that with no worker
+writing a document's shape: nothing measurable. The two "batch" rows are
+not one measure -- in place it is the parallel loop's own duration, with
+twins the time from the first submit to the last mesh taken, which the
+GUI thread's own work stretches, most where the drain builds visuals
+between two questions. The 1051 more shapes submitted are the ones that
+share a face or an edge with another; 806 of the 8222 are a TShape
+another object had already claimed. The 8832 compounds of this assembly
+are still left out, for the instanced build, as before. Not repeated
+here: sec 18.4's comparison of the settled frame, pixel for pixel, with
+the pre-mesh on and off -- the probe's count of every shape's mesh and
+`GuiProgressiveLoadDiff` are what stands for it.
+
+**The first comparison said twins were faster, and it was the clock.**
+Measured in two blocks -- every run of the new code, then the old code
+rebuilt and every run of that -- and timed by Python's `time.time()`, it
+gave an open of 16.6 to 17.1 s with twins against 17.8 to 17.9 s in
+place, and the drain's last slice at 21.0 to 21.5 s against 23.7 to 24.2
+s. That afternoon the wall clock of this box was stepping back by 0.75
+to 0.85 s every 32 s (the user saw it first), so an interval read 0.8 s
+short for every step it spanned; and between steps every clock of the
+process, the monotonic one too, ran 2.5 % fast. The drain's own
+"visuals in N slices, T s" is `std::chrono::high_resolution_clock`,
+which is the wall clock in libstdc++, and reads short the same way. What
+the steps were is in `docs/Testing.md`, "What the wall clock's steps
+were": two time services of the guest correcting each other. The lesson
+for a comparison here is three things at once -- a monotonic clock, the
+arms run alternately, and a look at whether the clock is being steered
+before a difference under a second is believed.
+
+`PreMesh_tests_run` has seven cases where it had five. The two new ones
+were scored on the tree before: `aWorkerDoesNotWriteTheShape` -- three
+seconds after a submit, with nothing asked of the pre-mesh, the shape has
+no mesh; it had one, made by another thread -- and
+`shapesSharingFacesAreBothMeshedAndEachFaceOnce`, which failed three of
+its checks. One old case says something else now: a compound over a
+claimed shape, submitted, is a claim of its own behind the first, where
+it was refused. Fifteen runs of fifteen, and six of six under glibc's
+malloc checker.
+
+**Seen and left.**
+
+- The level-of-detail pool is not on any of this yet. Its refine jobs
+  copy the document's shape on a worker (`meshLevelExactCopy`), and so do
+  the level builds the scene server's threads run (`buildMeshLevel`, the
+  same `meshedCopy`); its threads and its reaper are still its own. Next.
+- A landing is made wherever the GUI thread is asked or woken, which
+  includes an event run by a progress bar from inside somebody's
+  algorithm. It appends to lists such an algorithm may be walking further
+  up the stack, on the same thread; what would hurt is a removal, which
+  takes a shape that already carried a mesh. The level-of-detail pump
+  lands under the same condition today.
+- A build that waits (sec 18.6) waits for its own shape's turn in the
+  order the claims were made, which is not the order the restore builds
+  in. Nothing is lost -- every claim has to be meshed -- but the claim
+  waited for is not moved to the front.
+- The window is a constant, not a parameter.
 
 ## 19. Progressive load against eager (2026-09-29)
 
