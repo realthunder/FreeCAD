@@ -41,8 +41,10 @@ class ViewAreaHighlight;
 
 /** The splitter used inside a ViewArea.
  *
- * Adds public splitter dragging (for the live resize that follows a
- * corner-drag split) and a context menu on its handles.
+ * Adds public splitter dragging (to put the border of a corner-drag
+ * split where it was released), handles that show a drag as frames and
+ * move on release, and a context menu on them. Its border is thinner
+ * than a splitter's elsewhere in the program.
  */
 class GuiExport ViewAreaSplitter : public QSplitter
 {
@@ -50,6 +52,8 @@ class GuiExport ViewAreaSplitter : public QSplitter
 
 public:
     ViewAreaSplitter(Qt::Orientation orientation, QWidget *parent = nullptr);
+
+    static constexpr int HandleWidth = 3;
 
     void dragSplitter(int pos, int index) { moveSplitter(pos, index); }
 
@@ -104,6 +108,13 @@ public:
     /// Repaint the active-cell border. It lives on a raised child
     /// widget, so update() on the cell does not reach it.
     void updateHighlight();
+    /** The least a border drag or a shrinking window leaves a cell: the
+     * minimum cell size (View/OpenView/MinimumCellSize), in place of the
+     * 400 x 300 every MDIView asks for as a tab -- and never more than
+     * that, so that a large setting refuses splits without pushing the
+     * main window off the screen.
+     */
+    QSize minimumSizeHint() const override;
 
 protected:
     void paintEvent(QPaintEvent *) override;
@@ -159,6 +170,8 @@ protected:
 private:
     void armJoin(ViewAreaCell *target, Qt::Orientation axis, bool after);
     void disarmJoin();
+    void armSplit(const QPoint &global, const QPoint &delta);
+    void disarmSplit();
     void endDrag();
 
     ViewAreaCell *_cell;
@@ -167,13 +180,14 @@ private:
     bool _hint = false;
     bool _dragging = false;
     QPoint _pressGlobal;
-    // live resize of the border created by a split
-    QPointer<ViewAreaSplitter> _resizeSplitter;
-    int _resizeIndex = -1;
-    Qt::Orientation _resizeOrientation = Qt::Horizontal;
+    // armed split: nothing is split until the release; the frames show
+    // the two cells the one will become, the border under the cursor
+    bool _splitArmed = false;
+    bool _splitRefused = false;
+    Qt::Orientation _splitOrientation = Qt::Horizontal;
+    int _splitAt = 0;  // the border, from the cell's leading edge
     // armed join
     QPointer<ViewAreaCell> _joinTarget;
-    QPointer<QWidget> _joinOverlay;
 };
 
 /** A Blender-style tiled container of embedded views.
@@ -220,11 +234,14 @@ public:
 
     /** Split \a cell along \a orientation (Qt::Horizontal = side by
      * side). The new cell hosts \a newChild if given, else a clone of
-     * the cell's current child view (camera copied). Returns the new
-     * cell, or null if the content cannot be cloned.
+     * the cell's current child view (camera copied). \a share, when
+     * not negative, is what \a cell keeps along \a orientation, in
+     * pixels; the default halves it. Returns the new cell, or null if
+     * the content cannot be cloned or a cell would go under the minimum
+     * cell size (canSplitCell; said in the report view).
      */
     ViewAreaCell *splitCell(ViewAreaCell *cell, Qt::Orientation orientation,
-                            MDIView *newChild = nullptr);
+                            MDIView *newChild = nullptr, int share = -1);
     /** Close \a cell: its child view goes through its normal close path
      * (which may refuse), the tile collapses into its neighbors. When
      * the last cell closes the whole container closes.
@@ -240,6 +257,55 @@ public:
      * False if \a view is not hosted here.
      */
     bool removeView(MDIView *view);
+
+    /** One frame of a drag's preview: the place a cell will have once
+     * the drag is released, in this container's coordinates.
+     */
+    struct DragFrame {
+        enum Kind {
+            Kept,     ///< a cell that stays, at the size it will have
+            Fresh,    ///< the cell a split makes
+            Going,    ///< the neighbor a join closes
+            Refused,  ///< a split that would leave a cell too small
+        };
+        QRect rect;
+        Kind kind = Kept;
+        /// For Going: the way the join swallows it
+        Qt::Orientation axis = Qt::Horizontal;
+        bool after = true;
+    };
+    /** Show what a drag under way will do when it is released, as
+     * translucent frames over the cells it changes -- the way an overlay
+     * dock widget shows its drag. \a operation names it ("split",
+     * "join", "resize"); the layout itself is not touched until the
+     * release, so a 3D view is not resized at every mouse move. An
+     * empty list hides the frames (docs/SplitViews.md sec 5.4).
+     */
+    void showDragFrames(const char *operation, const QList<DragFrame> &frames);
+    void hideDragFrames() { showDragFrames("", {}); }
+    /** The frames of a border drag: the handle before widget \a index of
+     * \a splitter moved to \a pos. EVERY cell whose geometry the move
+     * changes gets one -- the cells of a nested splitter on either
+     * side, and the ones a neighbor at its minimum pushes on.
+     */
+    QList<DragFrame> resizeFrames(const QSplitter *splitter, int index, int pos) const;
+    /** The frames of a split of \a cell along \a orientation with the
+     * new border at \a global (clamped so that neither half goes under
+     * the minimum cell size); one Refused frame when the cell cannot be
+     * split. \a at receives the clamped border position, measured from
+     * the cell's leading edge along \a orientation.
+     */
+    QList<DragFrame> splitFrames(ViewAreaCell *cell, Qt::Orientation orientation,
+                                 const QPoint &global, int *at = nullptr) const;
+    /** Whether \a cell can be split along \a orientation without a cell
+     * -- either half, the new one included -- going under the minimum
+     * cell size (View/OpenView/MinimumCellSize). With \a report, a
+     * refusal is said in the report view, not more than once in a while.
+     * A cell that has no geometry yet (a layout being restored) can
+     * always be split.
+     */
+    bool canSplitCell(const ViewAreaCell *cell, Qt::Orientation orientation,
+                      bool report = false) const;
 
     /** Replace \a cell's content with \a view -- the Blender "switch
      * the area's editor" operation. The old child goes through its
@@ -378,6 +444,7 @@ private:
     QPointer<ViewAreaCell> _maximizedCell;
     QPointer<ViewAreaCell> _pendingMaximize;
     std::vector<MaximizeState> _maximizeRestore;
+    QPointer<QWidget> _dragFrames;
     bool _closing = false;
     int _mruCounter = 0;
 

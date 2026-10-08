@@ -57,6 +57,7 @@ ParamGroup = (
         'DocViewTarget',
         'UtilityTarget',
         'SplitDirection',
+        'MinimumCellSize',
     )]),
 
     ('Tree view', [_TreeParams[name] for name in (

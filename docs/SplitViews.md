@@ -188,12 +188,16 @@ Rules:
 ### 5.4 Gestures (Blender parity)
 
 - Corner action zones (~16px, top-right and bottom-left of every cell, cursor
-  feedback): drag inward past a threshold splits along the dominant drag
-  axis, then hands off to live border-resize until release. Drag outward into
-  the sibling cell arms join: the doomed neighbor dims with an overlay arrow
-  (a translucent child widget), release executes, Esc cancels.
-- Splitter borders: native QSplitter resize; right-click on a handle opens
-  Split Horizontal / Split Vertical / Join menu.
+  feedback): drag inward past a threshold arms a split along the dominant
+  drag axis, the new border under the cursor. Drag outward into the sibling
+  cell arms a join. Nothing happens to the layout while the button is down:
+  the drag is shown as frames over the cells it changes, and carried out at
+  the release (sec 21, which replaces the live split and the dim-and-arrow
+  overlay this list first described). Dragging back to the press point
+  cancels.
+- Splitter borders: a drag shows the frames of every cell it resizes and
+  moves the border at the release (sec 21); right-click on a handle opens
+  the Close left / Close right menu.
 - Hovering the per-cell menu button, or any splitter handle, also reveals
   the corner zones (sec 18): the visible chrome is what points at the two
   invisible ones.
@@ -1449,3 +1453,77 @@ sends the main window the activation and starts an edit, and does the
 same with another document's view the active one: 11 PASS, and 8 FAIL on
 the tree before (the container as active view, the edit not bound, the
 sketch not selected on leaving -- in both cases).
+
+## 21. A drag is shown as frames and carried out at the release (2026-10-09)
+
+Asked for in hands-on use (docs/HandsOnQueue.md entry 29): "when resizing
+(either dragging the corner or the split handle) show transparent box of
+the involved cell to track the resizing in real time, just like how overlay
+widget does it", then, with the gestures explained: "just make the frames
+right to hint the operation is enough". Until then a split happened the
+moment the drag passed its threshold, a join announced itself by a dim and
+an arrow over the neighbor only, and a border moved at every mouse move --
+a resize of each 3D view per move.
+
+**One frames widget per container** (`ViewAreaDragFrames`, made on first
+use, a raised child of the `ViewArea` masked to what it draws). A frame is
+a rectangle in the container's coordinates and a kind:
+
+| kind | what it covers | drawn as |
+|---|---|---|
+| kept | a cell that stays, at the size it WILL have | accent border, faint fill |
+| fresh | the cell a split makes | stronger fill, a plus |
+| going | the neighbor a join closes | dimmed, the arrow |
+| refused | a cell that cannot be split (too small) | red, crossed out |
+
+`ViewArea::showDragFrames(operation, frames)`; what is shown is also set as
+dynamic properties (`operation`, `frames`, `kinds`), which is how a test
+reads a class that lives in the .cpp.
+
+**Split** (`ViewAreaZone`): the two cells the one will become, the border
+under the cursor, clamped so that neither goes under the minimum cell
+size. At the release `splitCell()` is given what the cell keeps, in
+pixels. A split is cancelled by dragging back.
+
+**Join**: the cell that stays over the room it will have -- its own and
+the neighbor's -- and the neighbor going.
+
+**Border** (`ViewAreaSplitterHandle` takes the mouse itself):
+`resizeFrames()` gives EVERY cell whose geometry the move changes its
+frame -- "border resize shall track the sizes of all involved cells". The
+side the border moves into gives way from the border outwards, each
+widget down to its least before the next is pushed; a nested splitter on
+either side hands the change on, to all its children across its axis and
+in proportion along it. That is QSplitter's own arithmetic written out
+again (its `doMove` cannot be asked "what if"), so a frame may be a pixel
+or two off the size the cell gets; the legal range of the border itself
+is QSplitter's (`closestLegalPosition`).
+
+**Minimum cell size**, `View/OpenView/MinimumCellSize`, default 200, on the
+preferences' Views group: `canSplitCell()` refuses a split that would
+leave either half of the divided cell narrower than it, or a new cell
+shorter than it the other way -- "if creating a new view will result in
+any existing (or the new) view fall below the limit, the view creation is
+refused". Refusals are said in the report view, not more than once in
+five seconds. Kept in `splitCell()`, so the gesture, the commands and the
+cell menu all meet it; the placement policy takes the refusal for "no
+room" and opens the view in a tab (docs/ViewPlacement.md sec 3.2). Not
+applied to a cell without geometry (a layout coming back with its
+document).
+
+The same number is the cell's own minimum (`ViewAreaCell::
+minimumSizeHint`), which is what stops a dragged border and a shrinking
+window. Until this a cell answered with its view's hint, and every
+`MDIView` asks for 400 x 300 -- a minimum nobody had chosen, twice the one
+asked for, and the reason a split border dropped where the frames said
+snapped somewhere else (found by the test). The cell's answer is capped at
+that old 400 x 300: a large setting refuses splits, it does not push the
+main window off the screen.
+
+**Chrome**: the corner zones, and the menu button while hovered, are drawn
+on an opaque ground (the palette's window colour) -- strokes straight onto
+the scene could not be seen over a busy or like-coloured view. The border
+between cells is 3 pixels (`ViewAreaSplitter::HandleWidth`), thinner than
+a splitter elsewhere, and still takes a drag and a right-click.
+
+Test: `tests/gui/view-cell-drag-frames.py`.

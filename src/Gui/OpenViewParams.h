@@ -118,6 +118,22 @@ public:
     static const char *docSplitDirection();
     //@}
 
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter MinimumCellSize
+    ///
+    /// The least width and height, in pixels, of a cell of a split view.
+    /// A split that would leave a cell smaller than this -- either half of
+    /// the cell divided -- is not made, and says so in the report view; a
+    /// view opening by itself goes to a tab instead. A border dragged
+    /// stops there too, up to 400 by 300. 0 for no limit.
+    static const long & getMinimumCellSize();
+    static const long & defaultMinimumCellSize();
+    static void removeMinimumCellSize();
+    static void setMinimumCellSize(const long &v);
+    static const char *docMinimumCellSize();
+    //@}
+
 // Auto generated code (Tools/params_utils.py:179)
 }; // class OpenViewParams
 } // namespace Gui

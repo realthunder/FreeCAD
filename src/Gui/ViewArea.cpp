@@ -28,6 +28,7 @@
 # include <string>
 # include <QApplication>
 # include <QCloseEvent>
+# include <QElapsedTimer>
 # include <QContextMenuEvent>
 # include <QMdiSubWindow>
 # include <QMenu>
@@ -41,6 +42,7 @@
 
 #include <App/Document.h>
 #include <App/DocumentObject.h>
+#include <Base/Console.h>
 
 #include "ViewArea.h"
 #include "ViewAreaCanvas.h"
@@ -48,6 +50,7 @@
 #include "Application.h"
 #include "Document.h"
 #include "MainWindow.h"
+#include "OpenViewParams.h"
 #include "View3DInventor.h"
 #include "ViewPlacement.h"
 #include "ViewProviderDocumentObject.h"
@@ -108,6 +111,13 @@ protected:
     {
         QPainter p(this);
         p.setRenderHint(QPainter::Antialiasing);
+        // Hovered, on a ground of its own like the corner zones; at rest
+        // it stays the faint mark that does not compete with the scene.
+        if (_hover) {
+            p.setPen(Qt::NoPen);
+            p.setBrush(palette().color(QPalette::Window));
+            p.drawRoundedRect(rect(), 3, 3);
+        }
         QColor c = palette().color(_hover ? QPalette::Highlight
                                           : QPalette::WindowText);
         c.setAlpha(_hover ? 230 : 90);
@@ -188,47 +198,120 @@ private:
 
 namespace {
 
-/// The dim-plus-arrow overlay shown over the cell a join will consume.
-class ViewAreaJoinOverlay : public QWidget
+/** The frames of a drag under way (ViewArea::showDragFrames).
+ *
+ * One widget over the whole container, raised, masked to the frames it
+ * draws so that it overlaps the 3D surfaces underneath by no more than
+ * that. Each frame says what becomes of the place it covers:
+ *   - a cell that stays, at the size it will have: a tinted frame;
+ *   - the cell a split makes: a stronger tint and a plus;
+ *   - the neighbor a join closes: dimmed, under an arrow pointing the
+ *     way it is swallowed;
+ *   - a split that is refused (a cell would go under the minimum size):
+ *     red, crossed out.
+ * What it shows is also set as dynamic properties -- "operation",
+ * "frames" (rectangles) and "kinds" (words) -- which is how a test reads
+ * a class that lives in this file.
+ */
+class ViewAreaDragFrames : public QWidget
 {
 public:
-    ViewAreaJoinOverlay(QWidget *target, Qt::Orientation axis, bool after)
-        : QWidget(target)
-        , axis(axis)
-        , after(after)
+    explicit ViewAreaDragFrames(ViewArea *area)
+        : QWidget(area)
     {
+        setObjectName(QStringLiteral("ViewAreaDragFrames"));
         setAttribute(Qt::WA_TransparentForMouseEvents);
         setAttribute(Qt::WA_NoSystemBackground);
-        setGeometry(target->rect());
+        setFocusPolicy(Qt::NoFocus);
+        hide();
+    }
+
+    void setFrames(const char *operation, const QList<ViewArea::DragFrame> &list)
+    {
+        frames = list;
+        static const char *words[] = {"kept", "fresh", "going", "refused"};
+        QVariantList rects;
+        QStringList kinds;
+        QRegion region;
+        for (const auto &frame : frames) {
+            rects.append(frame.rect);
+            kinds.append(QString::fromLatin1(words[frame.kind]));
+            region += frame.rect;
+        }
+        setProperty("operation", QString::fromLatin1(operation));
+        setProperty("frames", rects);
+        setProperty("kinds", kinds);
+        if (frames.isEmpty()) {
+            hide();
+            return;
+        }
+        setGeometry(parentWidget()->rect());
+        setMask(region);
         show();
         raise();
+        update();
     }
 
 protected:
     void paintEvent(QPaintEvent *) override
     {
         QPainter p(this);
-        p.fillRect(rect(), QColor(0, 0, 0, 96));
-        // Arrow pointing the way the join swallows: from the source
-        // cell into this one.
         p.setRenderHint(QPainter::Antialiasing);
-        QPointF c(width() / 2.0, height() / 2.0);
-        double s = qMin(qMin(width(), height()) / 6.0, 28.0);
-        QPainterPath path;
-        // tip forward along the join direction, tail behind
-        QPointF dir = (axis == Qt::Horizontal)
-            ? QPointF(after ? 1 : -1, 0) : QPointF(0, after ? 1 : -1);
-        QPointF ortho(-dir.y(), dir.x());
-        path.moveTo(c + dir * s);
-        path.lineTo(c - dir * s * 0.4 + ortho * s);
-        path.lineTo(c - dir * s * 0.4 - ortho * s);
-        path.closeSubpath();
-        p.fillPath(path, QColor(255, 255, 255, 200));
+        const QColor accent = palette().color(QPalette::Highlight);
+        for (const auto &frame : frames) {
+            const QRect r = frame.rect.adjusted(1, 1, -1, -1);
+            const QPointF c(r.center());
+            const double s = qMin(qMin(r.width(), r.height()) / 6.0, 28.0);
+            switch (frame.kind) {
+            case ViewArea::DragFrame::Kept:
+            case ViewArea::DragFrame::Fresh: {
+                const bool fresh = (frame.kind == ViewArea::DragFrame::Fresh);
+                QColor fill = accent;
+                fill.setAlpha(fresh ? 120 : 60);
+                p.setPen(QPen(accent, 2));
+                p.setBrush(fill);
+                p.drawRect(r);
+                if (fresh) {
+                    p.setPen(QPen(QColor(255, 255, 255, 220), 3));
+                    p.drawLine(c - QPointF(s, 0), c + QPointF(s, 0));
+                    p.drawLine(c - QPointF(0, s), c + QPointF(0, s));
+                }
+                break;
+            }
+            case ViewArea::DragFrame::Going: {
+                p.fillRect(frame.rect, QColor(0, 0, 0, 110));
+                // Arrow pointing the way the join swallows: from the
+                // cell that stays into this one.
+                QPainterPath path;
+                QPointF dir = (frame.axis == Qt::Horizontal)
+                    ? QPointF(frame.after ? 1 : -1, 0)
+                    : QPointF(0, frame.after ? 1 : -1);
+                QPointF ortho(-dir.y(), dir.x());
+                path.moveTo(c + dir * s);
+                path.lineTo(c - dir * s * 0.4 + ortho * s);
+                path.lineTo(c - dir * s * 0.4 - ortho * s);
+                path.closeSubpath();
+                p.fillPath(path, QColor(255, 255, 255, 200));
+                break;
+            }
+            case ViewArea::DragFrame::Refused: {
+                const QColor red(200, 40, 40);
+                QColor fill = red;
+                fill.setAlpha(70);
+                p.setPen(QPen(red, 2));
+                p.setBrush(fill);
+                p.drawRect(r);
+                p.setPen(QPen(red, 3));
+                p.drawLine(c - QPointF(s, s), c + QPointF(s, s));
+                p.drawLine(c - QPointF(s, -s), c + QPointF(s, -s));
+                break;
+            }
+            }
+        }
     }
 
 private:
-    Qt::Orientation axis;
-    bool after;
+    QList<ViewArea::DragFrame> frames;
 };
 
 /// Splitter handle with a small management menu.
@@ -238,6 +321,45 @@ public:
     using QSplitterHandle::QSplitterHandle;
 
 protected:
+    // A drag of the border is shown, not carried out: frames over every
+    // cell it changes, at the sizes they will have, and the border moves
+    // when the button is released (docs/SplitViews.md sec 5.4). Qt's own
+    // choice is between moving it at every mouse move -- a resize of
+    // each 3D view per move -- and a rubber band that says nothing
+    // about the cells.
+    void mousePressEvent(QMouseEvent *ev) override
+    {
+        if (ev->button() != Qt::LeftButton || !ViewArea::areaOf(splitter()))
+            return QSplitterHandle::mousePressEvent(ev);
+        const QPoint local = ev->position().toPoint();
+        _grab = (orientation() == Qt::Horizontal) ? local.x() : local.y();
+        _pos = (orientation() == Qt::Horizontal) ? x() : y();
+        _dragging = true;
+        ev->accept();
+    }
+    void mouseMoveEvent(QMouseEvent *ev) override
+    {
+        if (!_dragging)
+            return QSplitterHandle::mouseMoveEvent(ev);
+        const QPoint p = splitter()->mapFromGlobal(ev->globalPosition().toPoint());
+        int pos = ((orientation() == Qt::Horizontal) ? p.x() : p.y()) - _grab;
+        _pos = closestLegalPosition(pos);
+        if (ViewArea *area = ViewArea::areaOf(splitter())) {
+            area->showDragFrames("resize",
+                    area->resizeFrames(splitter(), splitter()->indexOf(this), _pos));
+        }
+        ev->accept();
+    }
+    void mouseReleaseEvent(QMouseEvent *ev) override
+    {
+        if (!_dragging || ev->button() != Qt::LeftButton)
+            return QSplitterHandle::mouseReleaseEvent(ev);
+        _dragging = false;
+        if (ViewArea *area = ViewArea::areaOf(splitter()))
+            area->hideDragFrames();
+        moveSplitter(_pos);
+        ev->accept();
+    }
     void enterEvent(QEnterEvent *ev) override
     {
         QSplitterHandle::enterEvent(ev);
@@ -275,6 +397,11 @@ protected:
             area->closeCell(behind);
         ev->accept();
     }
+
+private:
+    bool _dragging = false;
+    int _grab = 0;  // where in the handle it was taken
+    int _pos = 0;   // where the border will go, in the splitter
 };
 
 } // anonymous namespace
@@ -311,6 +438,10 @@ ViewAreaSplitter::ViewAreaSplitter(Qt::Orientation orientation, QWidget *parent)
     : QSplitter(orientation, parent)
 {
     setChildrenCollapsible(false);
+    // Thinner than the style's or the stylesheet's splitter (5 to 7
+    // pixels): a border between views, still wide enough to take and to
+    // right-click for its menu.
+    setHandleWidth(HandleWidth);
 }
 
 QSplitterHandle *ViewAreaSplitter::createHandle()
@@ -371,6 +502,14 @@ ViewAreaCell::~ViewAreaCell()
         _child = nullptr;
         delete view;
     }
+}
+
+QSize ViewAreaCell::minimumSizeHint() const
+{
+    const int least = static_cast<int>(OpenViewParams::getMinimumCellSize());
+    if (least <= 0)
+        return {24, 24};
+    return {qMin(least, 400), qMin(least, 300)};
 }
 
 void ViewAreaCell::updateHighlight()
@@ -678,16 +817,9 @@ void ViewAreaZone::mouseMoveEvent(QMouseEvent *ev)
         return QWidget::mouseMoveEvent(ev);
     QPoint g = ev->globalPosition().toPoint();
 
-    // Once a split happened the rest of the drag adjusts the fresh
-    // border, wherever the cursor goes.
-    if (_resizeSplitter) {
-        int pos = (_resizeOrientation == Qt::Horizontal)
-            ? _resizeSplitter->mapFromGlobal(g).x()
-            : _resizeSplitter->mapFromGlobal(g).y();
-        _resizeSplitter->dragSplitter(pos, _resizeIndex);
-        return;
-    }
-
+    // Nothing is split, joined or resized while the button is down: the
+    // drag is shown as frames over the cells it will change, and
+    // carried out at the release (docs/SplitViews.md sec 5.4).
     QPoint d = g - _pressGlobal;
     ViewArea *area = _cell->area();
     QRect cellRect(_cell->mapToGlobal(QPoint(0, 0)), _cell->size());
@@ -695,24 +827,17 @@ void ViewAreaZone::mouseMoveEvent(QMouseEvent *ev)
         // Back inside always cancels an armed join, even right at the
         // press point where the split threshold below is not met.
         disarmJoin();
-        if (d.manhattanLength() < 12)
+        // ... and back at the press point cancels an armed split.
+        if (d.manhattanLength() < 12) {
+            disarmSplit();
             return;
-        // Inward drag: split along the dominant axis.
-        Qt::Orientation o = (qAbs(d.x()) >= qAbs(d.y()))
-            ? Qt::Horizontal : Qt::Vertical;
-        ViewAreaCell *fresh = area->splitCell(_cell, o);
-        if (fresh) {
-            auto sp = qobject_cast<ViewAreaSplitter*>(fresh->parentWidget());
-            if (sp) {
-                _resizeSplitter = sp;
-                _resizeOrientation = o;
-                // Handle i sits before widget i; the fresh cell's index
-                // names the border between it and the split cell.
-                _resizeIndex = sp->indexOf(fresh);
-            }
         }
+        // Inward drag: a split along the dominant axis, the new border
+        // under the cursor.
+        armSplit(g, d);
     }
     else {
+        disarmSplit();
         // Outward drag: arm a join that consumes the neighbor the
         // cursor entered; dragging back disarms.
         Qt::Orientation axis;
@@ -744,33 +869,71 @@ void ViewAreaZone::mouseReleaseEvent(QMouseEvent *ev)
         return QWidget::mouseReleaseEvent(ev);
     ViewAreaCell *target = _joinTarget;
     ViewArea *area = _cell->area();
+    const bool split = _splitArmed;
+    const Qt::Orientation orientation = _splitOrientation;
+    const int at = _splitAt;
     endDrag();
-    if (target)
+    if (target) {
         area->closeCell(target);
+    }
+    else if (split) {
+        // Refused or not, splitCell answers: it is where the minimum
+        // cell size is kept, and where the refusal is said.
+        area->splitCell(_cell, orientation, nullptr, at);
+    }
     ev->accept();
 }
 
 void ViewAreaZone::armJoin(ViewAreaCell *target, Qt::Orientation axis, bool after)
 {
     _joinTarget = target;
-    // The arrow points the way the source expands -- into the target.
-    _joinOverlay = new ViewAreaJoinOverlay(target, axis, after);
+    // Two frames: the cell that stays, over the room it will have, and
+    // the one that goes, dimmed under an arrow pointing the way the
+    // other expands -- into it.
+    ViewArea *area = _cell->area();
+    const QRect source(_cell->mapTo(area, QPoint(0, 0)), _cell->size());
+    const QRect going(target->mapTo(area, QPoint(0, 0)), target->size());
+    ViewArea::DragFrame kept;
+    kept.rect = source.united(going);
+    ViewArea::DragFrame gone;
+    gone.rect = going;
+    gone.kind = ViewArea::DragFrame::Going;
+    gone.axis = axis;
+    gone.after = after;
+    area->showDragFrames("join", {kept, gone});
 }
 
 void ViewAreaZone::disarmJoin()
 {
-    if (_joinOverlay)
-        _joinOverlay->deleteLater();
-    _joinOverlay = nullptr;
+    if (_joinTarget)
+        _cell->area()->hideDragFrames();
     _joinTarget = nullptr;
+}
+
+void ViewAreaZone::armSplit(const QPoint &global, const QPoint &delta)
+{
+    ViewArea *area = _cell->area();
+    _splitArmed = true;
+    _splitOrientation = (qAbs(delta.x()) >= qAbs(delta.y()))
+        ? Qt::Horizontal : Qt::Vertical;
+    const auto frames = area->splitFrames(_cell, _splitOrientation, global, &_splitAt);
+    _splitRefused = (frames.size() == 1);
+    area->showDragFrames("split", frames);
+}
+
+void ViewAreaZone::disarmSplit()
+{
+    if (_splitArmed)
+        _cell->area()->hideDragFrames();
+    _splitArmed = false;
+    _splitRefused = false;
 }
 
 void ViewAreaZone::endDrag()
 {
     disarmJoin();
+    disarmSplit();
     _dragging = false;
-    _resizeSplitter = nullptr;
-    _resizeIndex = -1;
 }
 
 void ViewAreaZone::setHint(bool on)
@@ -801,6 +964,11 @@ void ViewAreaZone::paintEvent(QPaintEvent *)
         return;  // invisible until hovered, like Blender's action zones
     QPainter p(this);
     p.setRenderHint(QPainter::Antialiasing);
+    // On a ground of its own: a few strokes straight onto whatever the
+    // cell shows cannot be seen over a busy or a like-coloured view.
+    p.setPen(Qt::NoPen);
+    p.setBrush(palette().color(QPalette::Window));
+    p.drawRoundedRect(rect(), 3, 3);
     QColor c = palette().color(QPalette::Highlight);
     if (!_hover)
         c.setAlpha(130);  // a pointed-out zone, not one under the cursor
@@ -1038,12 +1206,19 @@ MDIView *ViewArea::cloneChildFor(ViewAreaCell *cell)
 }
 
 ViewAreaCell *ViewArea::splitCell(ViewAreaCell *cell, Qt::Orientation orientation,
-                                  MDIView *newChild)
+                                  MDIView *newChild, int share)
 {
     if (!cell || cell->area() != this)
         return nullptr;
-    if (_maximizedCell)
+    // Asked of the cell as it stands: one maximized is judged at the
+    // size it has on screen, its own share being unknown until the
+    // layout it comes back to has been done.
+    if (!canSplitCell(cell, orientation, true))
+        return nullptr;
+    if (_maximizedCell) {
         toggleMaximizeCell(_maximizedCell);
+        share = -1;  // measured on the maximized cell
+    }
     MDIView *child = newChild ? newChild : cloneChildFor(cell);
     if (!child)
         return nullptr;
@@ -1052,18 +1227,25 @@ ViewAreaCell *ViewArea::splitCell(ViewAreaCell *cell, Qt::Orientation orientatio
     assert(splitter);
     auto newCell = new ViewAreaCell(this);
     int idx = splitter->indexOf(cell);
+    // What the cell keeps and what the new one gets, of the cell's
+    // extent less the border that comes between them.
+    auto shares = [share](int extent) {
+        const int room = qMax(extent - ViewAreaSplitter::HandleWidth, 2);
+        const int first = share < 0 ? room - room / 2 : qBound(1, share, room - 1);
+        return QList<int>{first, room - first};
+    };
 
     if (splitter->count() < 2 || splitter->orientation() == orientation) {
         // Same direction (or a splitter that has not committed to one
-        // yet): insert as a sibling, halving the split cell's share.
+        // yet): insert as a sibling, dividing the split cell's share.
         if (splitter->count() < 2)
             splitter->setOrientation(orientation);
         QList<int> sizes = splitter->sizes();
         splitter->insertWidget(idx + 1, newCell);
         if (idx < sizes.size()) {
-            int half = sizes[idx] / 2;
-            sizes[idx] -= half;
-            sizes.insert(idx + 1, half);
+            const QList<int> two = shares(sizes[idx]);
+            sizes[idx] = two[0];
+            sizes.insert(idx + 1, two[1]);
             splitter->setSizes(sizes);
         }
     }
@@ -1071,20 +1253,238 @@ ViewAreaCell *ViewArea::splitCell(ViewAreaCell *cell, Qt::Orientation orientatio
         // Crossing direction: nest a new splitter in the cell's place.
         QList<int> sizes = splitter->sizes();
         auto nested = new ViewAreaSplitter(orientation);
-        int half = (orientation == Qt::Horizontal ? cell->width()
-                                                  : cell->height()) / 2;
+        const QList<int> two = shares(orientation == Qt::Horizontal ? cell->width()
+                                                                    : cell->height());
         splitter->replaceWidget(idx, nested);
         nested->addWidget(cell);
         cell->show();  // replaceWidget hides the widget it takes out
         nested->addWidget(newCell);
         splitter->setSizes(sizes);
-        nested->setSizes({half, half});
+        nested->setSizes(two);
+        // ... and once more when the nested splitter has its real place:
+        // sizes set before that are handed out again in equal shares
+        // (see ViewAreaSplitter::initialSizes).
+        if (share >= 0 && (nested->width() <= 0 || nested->height() <= 0
+                           || !nested->isVisible()))
+            nested->initialSizes = two;
     }
 
     newCell->hostView(child);
     setActiveCell(cell, false);
     syncCanvas();
     return newCell;
+}
+
+bool ViewArea::canSplitCell(const ViewAreaCell *cell, Qt::Orientation orientation,
+                            bool report) const
+{
+    if (!cell)
+        return false;
+    const int least = static_cast<int>(OpenViewParams::getMinimumCellSize());
+    // No geometry yet -- a layout coming back with its document, a
+    // container not shown: there is nothing to measure, and a saved
+    // layout is not refused for the size of the window it returns to.
+    if (least <= 0 || !cell->isVisible() || cell->width() <= 0 || cell->height() <= 0)
+        return true;
+    const bool horiz = (orientation == Qt::Horizontal);
+    const int along = horiz ? cell->width() : cell->height();
+    const int across = horiz ? cell->height() : cell->width();
+    // Both halves, and the side the new cell inherits: "any existing (or
+    // the new) view" is not to fall below the limit.
+    if ((along - ViewAreaSplitter::HandleWidth) / 2 >= least && across >= least)
+        return true;
+    if (report) {
+        // Said once in a while: a gesture asks again at every release,
+        // a script in a loop.
+        static QElapsedTimer last;
+        if (!last.isValid() || last.elapsed() > 5000) {
+            last.start();
+            Base::Console().Warning(
+                "A view of %d x %d is not split %s: no view cell is made smaller than "
+                "%d x %d (the minimum view cell size, in the preferences).\n",
+                cell->width(), cell->height(), horiz ? "side by side" : "top and bottom",
+                least, least);
+        }
+    }
+    return false;
+}
+
+QList<ViewArea::DragFrame> ViewArea::splitFrames(ViewAreaCell *cell,
+                                                 Qt::Orientation orientation,
+                                                 const QPoint &global, int *at) const
+{
+    QList<DragFrame> frames;
+    if (!cell || cell->area() != this)
+        return frames;
+    auto self = const_cast<ViewArea*>(this);
+    const QRect place(cell->mapTo(self, QPoint(0, 0)), cell->size());
+    DragFrame kept;
+    kept.rect = place;
+    if (!canSplitCell(cell, orientation)) {
+        kept.kind = DragFrame::Refused;
+        frames.append(kept);
+        return frames;
+    }
+    const bool horiz = (orientation == Qt::Horizontal);
+    const int handle = ViewAreaSplitter::HandleWidth;
+    const int extent = horiz ? place.width() : place.height();
+    // The border follows the cursor as far as the minimum cell size
+    // lets it; with no minimum set, as far as a cell can still be seen.
+    const int least = qMax(static_cast<int>(OpenViewParams::getMinimumCellSize()), 24);
+    const QPoint local = cell->mapFromGlobal(global);
+    int lo = least;
+    int hi = extent - handle - least;
+    if (hi < lo)
+        lo = hi = (extent - handle) / 2;
+    const int border = qBound(lo, horiz ? local.x() : local.y(), hi);
+    if (at)
+        *at = border;
+    DragFrame fresh;
+    fresh.kind = DragFrame::Fresh;
+    if (horiz) {
+        kept.rect.setWidth(border);
+        fresh.rect = QRect(place.left() + border + handle, place.top(),
+                           extent - border - handle, place.height());
+    }
+    else {
+        kept.rect.setHeight(border);
+        fresh.rect = QRect(place.left(), place.top() + border + handle,
+                           place.width(), extent - border - handle);
+    }
+    frames.append(kept);
+    frames.append(fresh);
+    return frames;
+}
+
+namespace {
+
+/// The least a splitter gives a widget along its axis (QSplitter's own
+/// notion, near enough for a preview: a set minimum, else the hint).
+int leastExtent(const QWidget *w, bool horiz)
+{
+    const QSize set = w->minimumSize();
+    const QSize hint = w->minimumSizeHint();
+    const int least = horiz ? (set.width() > 0 ? set.width() : hint.width())
+                            : (set.height() > 0 ? set.height() : hint.height());
+    return qMax(least, 0);
+}
+
+/// The frames of every cell under \a w once \a w has the place \a place
+/// (in the container's coordinates): a cell that changes gets one; a
+/// nested splitter hands the change on -- to all its children across
+/// its axis, in proportion along it, as QSplitter does on a resize.
+void collectFrames(ViewArea *area, QWidget *w, const QRect &place,
+                   QList<ViewArea::DragFrame> &frames)
+{
+    if (auto cell = qobject_cast<ViewAreaCell*>(w)) {
+        const QRect now(cell->mapTo(area, QPoint(0, 0)), cell->size());
+        if (place != now) {
+            ViewArea::DragFrame frame;
+            frame.rect = place;
+            frames.append(frame);
+        }
+        return;
+    }
+    auto sp = qobject_cast<QSplitter*>(w);
+    if (!sp)
+        return;
+    const bool horiz = (sp->orientation() == Qt::Horizontal);
+    QList<QWidget*> shown;
+    for (int i = 0; i < sp->count(); ++i) {
+        if (!sp->widget(i)->isHidden())
+            shown.append(sp->widget(i));
+    }
+    if (shown.isEmpty())
+        return;
+    const int handles = sp->handleWidth() * (shown.size() - 1);
+    const int before = (horiz ? sp->width() : sp->height()) - handles;
+    const int after = (horiz ? place.width() : place.height()) - handles;
+    const double scale = before > 0 ? double(after) / before : 1.0;
+    int at = 0;
+    int left = after;
+    for (int i = 0; i < shown.size(); ++i) {
+        QWidget *child = shown[i];
+        // Changed across its axis only, the splitter keeps every child's
+        // share to the pixel; along it, the last takes what rounding left.
+        int extent = (after == before || i < shown.size() - 1)
+            ? qRound((horiz ? child->width() : child->height()) * scale) : left;
+        left -= extent;
+        const QRect r = horiz
+            ? QRect(place.left() + at, place.top(), extent, place.height())
+            : QRect(place.left(), place.top() + at, place.width(), extent);
+        collectFrames(area, child, r, frames);
+        at += extent + sp->handleWidth();
+    }
+}
+
+} // anonymous namespace
+
+QList<ViewArea::DragFrame> ViewArea::resizeFrames(const QSplitter *sp, int index,
+                                                  int pos) const
+{
+    QList<DragFrame> frames;
+    if (!sp || index <= 0 || index >= sp->count())
+        return frames;
+    const bool horiz = (sp->orientation() == Qt::Horizontal);
+    const int n = sp->count();
+    const QSplitterHandle *handle = sp->handle(index);
+    const int delta = pos - (horiz ? handle->x() : handle->y());
+    if (delta == 0)
+        return frames;
+
+    QList<int> extent;
+    QList<int> least;
+    for (int i = 0; i < n; ++i) {
+        const QWidget *w = sp->widget(i);
+        const bool hidden = w->isHidden();
+        extent.append(hidden ? 0 : (horiz ? w->width() : w->height()));
+        least.append(hidden ? 0 : leastExtent(w, horiz));
+    }
+    // The side the border moves into gives way from the border outwards,
+    // each widget down to its least before the next one is pushed; what
+    // they give, the widget on the other side of the border takes.
+    const int want = qAbs(delta);
+    int given = 0;
+    const int step = delta > 0 ? 1 : -1;
+    for (int i = (delta > 0 ? index : index - 1); i >= 0 && i < n && given < want; i += step) {
+        const int give = qMin(want - given, qMax(extent[i] - least[i], 0));
+        extent[i] -= give;
+        given += give;
+    }
+    extent[delta > 0 ? index - 1 : index] += given;
+
+    auto self = const_cast<ViewArea*>(this);
+    int at = -1;
+    for (int i = 0; i < n; ++i) {
+        QWidget *w = sp->widget(i);
+        if (w->isHidden())
+            continue;
+        const QRect now = w->geometry();
+        if (at < 0)
+            at = horiz ? now.left() : now.top();
+        QRect then = now;
+        if (horiz) {
+            then.moveLeft(at);
+            then.setWidth(extent[i]);
+        }
+        else {
+            then.moveTop(at);
+            then.setHeight(extent[i]);
+        }
+        at += extent[i] + sp->handleWidth();
+        if (then != now)
+            collectFrames(self, w, QRect(sp->mapTo(self, then.topLeft()), then.size()), frames);
+    }
+    return frames;
+}
+
+void ViewArea::showDragFrames(const char *operation, const QList<DragFrame> &frames)
+{
+    if (frames.isEmpty() && !_dragFrames)
+        return;
+    if (!_dragFrames)
+        _dragFrames = new ViewAreaDragFrames(this);
+    static_cast<ViewAreaDragFrames*>(_dragFrames.data())->setFrames(operation, frames);
 }
 
 ViewAreaCell *ViewArea::joinTargetFor(ViewAreaCell *cell, Qt::Orientation axis,

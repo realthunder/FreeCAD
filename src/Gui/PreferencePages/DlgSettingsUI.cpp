@@ -200,6 +200,24 @@ DlgSettingsUI::DlgSettingsUI(QWidget* parent)
     hintSplitDirection->setWordWrap(true);
     layoutViews->addWidget(hintSplitDirection);
 
+    // Auto generated code (Tools/params_utils.py:486)
+    layoutRow = new QHBoxLayout();
+
+    // Auto generated code (Tools/params_utils.py:492)
+    layoutViews->addLayout(layoutRow);
+    labelMinimumCellSize = new QLabel(this);
+    layoutRow->addWidget(labelMinimumCellSize);
+    MinimumCellSize = new Gui::PrefSpinBox(this);
+    layoutRow->addWidget(MinimumCellSize);
+    MinimumCellSize->setValue(Gui::OpenViewParams::defaultMinimumCellSize());
+    MinimumCellSize->setEntryName("MinimumCellSize");
+    MinimumCellSize->setParamGrpPath("View/OpenView");
+    // Auto generated code (Tools/params_utils.py:1360)
+    MinimumCellSize->setMinimum(0);
+    MinimumCellSize->setMaximum(2000);
+    MinimumCellSize->setSingleStep(10);
+    MinimumCellSize->setValue(Gui::OpenViewParams::defaultMinimumCellSize());
+
 
     // Auto generated code (Tools/params_utils.py:473)
     groupTreeview = new QGroupBox(this);
@@ -965,6 +983,7 @@ void DlgSettingsUI::saveSettings()
     DocViewTarget->onSave();
     UtilityTarget->onSave();
     SplitDirection->onSave();
+    MinimumCellSize->onSave();
     ItemBackground->onSave();
     ItemBackgroundPadding->onSave();
     ResizableColumn->onSave();
@@ -1025,6 +1044,7 @@ void DlgSettingsUI::loadSettings()
     DocViewTarget->onRestore();
     UtilityTarget->onRestore();
     SplitDirection->onRestore();
+    MinimumCellSize->onRestore();
     ItemBackground->onRestore();
     ItemBackgroundPadding->onRestore();
     ResizableColumn->onRestore();
@@ -1117,6 +1137,9 @@ void DlgSettingsUI::retranslateUi()
     SplitDirection->setItemText(1, QObject::tr("To the right"));
     SplitDirection->setItemText(2, QObject::tr("Below"));
     hintSplitDirection->setText(QObject::tr("Hold Alt while opening to invert tab/split for that one view."));
+    MinimumCellSize->setToolTip(QApplication::translate("OpenViewParams", Gui::OpenViewParams::docMinimumCellSize()));
+    labelMinimumCellSize->setText(QObject::tr("Minimum view cell size"));
+    labelMinimumCellSize->setToolTip(MinimumCellSize->toolTip());
     groupTreeview->setTitle(QObject::tr("Tree view"));
     ItemBackground->setToolTip(QApplication::translate("TreeParams", Gui::TreeParams::docItemBackground()));
     labelItemBackground->setText(QObject::tr("Item background color"));

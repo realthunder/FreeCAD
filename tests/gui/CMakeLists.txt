@@ -1591,3 +1591,10 @@ fc_add_gui_test(GuiOmniSearchHighlightedRow_tests_run
 fc_add_gui_test(GuiThemeClearsOverlayPresetLeftovers_tests_run
                 theme-clears-overlay-preset-leftovers.py
                 --timeout 180)
+
+# A drag in a split view -- a corner zone or a border -- is shown as frames
+# over the cells it changes and carried out at the release; a split that
+# would leave a cell under the minimum cell size is refused.
+fc_add_gui_test(GuiViewCellDragFrames_tests_run
+                view-cell-drag-frames.py
+                --timeout 180)
