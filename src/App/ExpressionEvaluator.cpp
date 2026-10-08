@@ -34,6 +34,7 @@
 #include <Base/Parameter.h>
 
 #include "Application.h"
+#include "SandboxParams.h"
 #include "Expression.h"
 #include "ExpressionEvaluator.h"
 #include "ObjectIdentifier.h"
@@ -137,20 +138,12 @@ PyObject* evaluateInImage(const Expression* expr, int options)
 
 namespace
 {
-ParameterGrp::handle sandboxParams()
-{
-    static ParameterGrp::handle handle;
-    if (!handle)
-        handle = GetApplication().GetParameterGroupByPath(
-                "User parameter:BaseApp/Preferences/Expression/Sandbox");
-    return handle;
-}
 }  // namespace
 
 ExpressionSandbox::SandboxStatus ExpressionSandbox::sandboxStatus()
 {
     SandboxStatus status;
-    status.enabled = sandboxParams()->GetBool("Evaluate", true);
+    status.enabled = SandboxParams::getEvaluate();
 #ifdef FC_EXPR_IMAGE_HOST
     status.hostBuilt = true;
     auto where = ImageHost::instance().location();
@@ -172,13 +165,13 @@ void ExpressionSandbox::resetSandbox()
 
 void ExpressionSandbox::setEvaluationRouted(bool on)
 {
-    sandboxParams()->SetBool("Evaluate", on);
+    SandboxParams::setEvaluate(on);
 }
 
 bool ExpressionSandbox::evaluationRouted()
 {
 #ifdef FC_EXPR_IMAGE_HOST
-    if (!sandboxParams()->GetBool("Evaluate", true))
+    if (!SandboxParams::getEvaluate())
         return false;
     return ImageHost::instance().available();
 #else

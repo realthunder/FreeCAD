@@ -41,6 +41,7 @@
 #ifdef FC_EXPR_PYODIDE_HOST
 #include <App/ExpressionImageHost.h>
 #include <App/ExpressionPyodide.h>
+#include <App/SandboxParams.h>
 #endif
 
 #include "Renderer/SceneServer.h"
@@ -139,10 +140,8 @@ std::shared_ptr<Served> resolve()
     // release, only with the files it was pinned with.
     const std::string reason = Pyodide::verifyDirectory(dir);
     if (!reason.empty()) {
-        auto hGrp = App::GetApplication().GetParameterGroupByPath(
-            "User parameter:BaseApp/Preferences/Expression/Sandbox");
         const char* env = std::getenv("FCX_PYODIDE_UNPINNED");
-        if (!hGrp->GetBool("PyodideUnpinned", false) && !(env && *env)) {
+        if (!App::SandboxParams::getPyodideUnpinned() && !(env && *env)) {
             s->error = "pyodide runtime refused: " + reason;
             return s;
         }

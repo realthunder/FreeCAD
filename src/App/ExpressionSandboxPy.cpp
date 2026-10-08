@@ -29,6 +29,7 @@
 #include <Base/PyObjectBase.h>
 
 #include "Application.h"
+#include "SandboxParams.h"
 #include "Document.h"
 #include "DocumentObject.h"
 #include "DocumentObjectPy.h"
@@ -67,12 +68,6 @@ App::DocumentObject* ownerArg(PyObject* obj)
     return nullptr;
 }
 
-ParameterGrp::handle sandboxParams()
-{
-    return GetApplication().GetParameterGroupByPath(
-        "User parameter:BaseApp/Preferences/Expression/Sandbox");
-}
-
 PyObject* routedFunc(PyObject*, PyObject*)
 {
     return PyBool_FromLong(ExpressionSandbox::evaluationRouted());
@@ -83,7 +78,7 @@ PyObject* setRoutingFunc(PyObject*, PyObject* args)
     PyObject* on = nullptr;
     if (!PyArg_ParseTuple(args, "O", &on))
         return nullptr;
-    sandboxParams()->SetBool("Evaluate", PyObject_IsTrue(on) == 1);
+    SandboxParams::setEvaluate(PyObject_IsTrue(on) == 1);
     Py_Return;
 }
 

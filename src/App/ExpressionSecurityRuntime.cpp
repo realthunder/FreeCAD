@@ -33,6 +33,7 @@
 #include <Base/PyObjectBase.h>
 
 #include "Application.h"
+#include "SandboxParams.h"
 #include "Document.h"
 #include "DocumentObject.h"
 #include "DocumentObjectPy.h"
@@ -298,11 +299,7 @@ Runtime::Runtime()
 
 bool Runtime::enforced() const
 {
-    static ParameterGrp::handle handle;
-    if (!handle)
-        handle = GetApplication().GetParameterGroupByPath(
-                "User parameter:BaseApp/Preferences/Expression/Security");
-    return handle->GetBool("Enforce", true);
+    return SandboxParams::getEnforce();
 }
 
 static std::string securityDir()

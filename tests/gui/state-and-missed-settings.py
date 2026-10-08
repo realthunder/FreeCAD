@@ -18,6 +18,16 @@ settings could not be seen at all:
     Spaceball/Motion/CalibrationXr;
   - all 32 are in the registry once, each with a title and a documentation.
 
+The expression sandbox, App::SandboxParams (Preferences/Expression/Sandbox
+and Security). Only its switch could be reached from the interface:
+
+  - "/param sandbox time budget" lists Expression/Sandbox/BudgetMs and
+    "/param enforce document permissions" Expression/Security/Enforce;
+  - the class follows its group at once: with Security/Enforce stored off,
+    FreeCAD.ExpressionSecurity.enforced() is False, and True again with the
+    key removed -- the reader asks the class now, where it read the group;
+  - all 14 are in the registry once, each with a title and a documentation.
+
 Scored against the tree before the change: see the commit message.
 """
 import os
@@ -104,9 +114,34 @@ def spaceball():
           len(rows) == 32 and len(keys) == 32 and not bare, (len(rows), len(keys), bare[:4]))
 
 
+def sandbox():
+    found = [param_rows(q) for q in ("sandbox time budget", "enforce document permissions")]
+    check("the omni search lists the expression sandbox's settings",
+          "Preferences/Expression/Sandbox/BudgetMs" in found[0]
+          and "Preferences/Expression/Security/Enforce" in found[1], [f[:3] for f in found])
+    security = FreeCAD.ParamGet("User parameter:BaseApp/Preferences/Expression/Security")
+    had = "Enforce" in security.GetBools()
+    old = security.GetBool("Enforce", True)
+    try:
+        security.SetBool("Enforce", False)
+        off = FreeCAD.ExpressionSecurity.enforced()
+        security.RemBool("Enforce")
+        back = FreeCAD.ExpressionSecurity.enforced()
+    finally:
+        if had:
+            security.SetBool("Enforce", old)
+    check("and the class follows its group at once", off is False and back is True, (off, back))
+    rows = described("SandboxParams")
+    keys = {(r["path"], r["entry"]) for r in rows}
+    bare = [r["entry"] for r in rows if not r["title"] or not 0 < len(r["doc"]) <= 400]
+    check("its 14 are in the registry once, each with a title and a documentation",
+          len(rows) == 14 and len(keys) == 14 and not bare, (len(rows), len(keys), bare[:4]))
+
+
 def run():
     try:
         spaceball()
+        sandbox()
     except Exception:
         note("FAIL the test ran | " + traceback.format_exc().replace("\n", " | "))
     finally:

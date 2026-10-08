@@ -417,6 +417,7 @@ SET(Document_CPP_SRCS
     Document.cpp
     DocumentParams.cpp
     UnitsParams.cpp
+    SandboxParams.cpp
     FileBlobManager.cpp
     FileSet.cpp
     GroupParams.cpp
@@ -496,6 +497,7 @@ SET(Document_HPP_SRCS
     Document.h
     DocumentParams.h
     UnitsParams.h
+    SandboxParams.h
     FileBlobManager.h
     FileSet.h
     GroupParams.h

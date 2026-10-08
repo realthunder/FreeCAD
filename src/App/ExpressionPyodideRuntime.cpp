@@ -59,6 +59,7 @@
 #include <Base/FileInfo.h>
 
 #include "Application.h"
+#include "SandboxParams.h"
 #include "ExpressionImageRuntime.h"
 #include "ExpressionPyodide.h"
 
@@ -246,12 +247,10 @@ public:
         Pyodide::Layout layout = Pyodide::layout();
         p.packages = layout.packages;
         if (p.stdlib.empty() || p.image.empty()) {
-            auto hGrp = GetApplication().GetParameterGroupByPath(
-                    "User parameter:BaseApp/Preferences/Expression/Sandbox");
             if (p.stdlib.empty())
-                p.stdlib = hGrp->GetASCII("PyodideDir", "");
+                p.stdlib = SandboxParams::getPyodideDir();
             if (p.image.empty())
-                p.image = hGrp->GetASCII("PyodideWheel", "");
+                p.image = SandboxParams::getPyodideWheel();
             if (p.stdlib.empty())
                 p.stdlib = envPath("FCX_PYODIDE");
             if (p.image.empty())
@@ -297,9 +296,7 @@ public:
         // (or the PyodideUnpinned preference) and is told so on every
         // boot, until the table is widened.
         {
-            auto hGrp = GetApplication().GetParameterGroupByPath(
-                    "User parameter:BaseApp/Preferences/Expression/Sandbox");
-            const bool unpinned = hGrp->GetBool("PyodideUnpinned", false)
+            const bool unpinned = SandboxParams::getPyodideUnpinned()
                 || !envPath("FCX_PYODIDE_UNPINNED").empty();
             const std::string reason = Pyodide::verifyDirectory(root.string());
             if (!reason.empty()) {

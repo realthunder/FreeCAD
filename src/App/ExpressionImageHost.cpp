@@ -34,6 +34,7 @@
 #include <Base/Interpreter.h>
 
 #include "Application.h"
+#include "SandboxParams.h"
 #include "Document.h"
 #include "DocumentObject.h"
 #include "Expression.h"
@@ -73,9 +74,7 @@ std::string envPath(const char* name)
  */
 std::string runtimeChoice()
 {
-    auto hGrp = GetApplication().GetParameterGroupByPath(
-            "User parameter:BaseApp/Preferences/Expression/Sandbox");
-    std::string name = hGrp->GetASCII("Runtime", "");
+    std::string name = SandboxParams::getRuntime();
     if (name.empty())
         name = envPath("FCX_RUNTIME");
     if (!name.empty())
@@ -146,10 +145,14 @@ struct ImageHost::Private: public ParameterGrp::ObserverType
 
     void readBudget()
     {
-        budgetMs = static_cast<int>(prefs->GetInt("BudgetMs", 5000));
-        graceMs = static_cast<int>(prefs->GetInt("GraceMs", 1000));
-        memoryMB = static_cast<int>(prefs->GetInt("MemoryMB", 1024));
-        engineHeapMB = static_cast<int>(prefs->GetInt("EngineHeapMB", 512));
+        // From the group, not through SandboxParams' own copy: this runs
+        // inside a change notice of the group, which the class may not have
+        // had yet. The defaults are the class's.
+        budgetMs = static_cast<int>(prefs->GetInt("BudgetMs", SandboxParams::defaultBudgetMs()));
+        graceMs = static_cast<int>(prefs->GetInt("GraceMs", SandboxParams::defaultGraceMs()));
+        memoryMB = static_cast<int>(prefs->GetInt("MemoryMB", SandboxParams::defaultMemoryMB()));
+        engineHeapMB = static_cast<int>(
+                prefs->GetInt("EngineHeapMB", SandboxParams::defaultEngineHeapMB()));
     }
 
     ParameterGrp::handle prefs;

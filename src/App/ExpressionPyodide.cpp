@@ -36,6 +36,7 @@
 #include <Base/Console.h>
 
 #include "Application.h"
+#include "SandboxParams.h"
 #include "ExpressionImageHost.h"
 #include "ExpressionPyodide.h"
 #include "ExpressionSecurityRuntime.h"
@@ -59,12 +60,6 @@ std::string envPath(const char* name)
 {
     const char* value = std::getenv(name);
     return value && *value ? std::string(value) : std::string();
-}
-
-ParameterGrp::handle prefs()
-{
-    return GetApplication().GetParameterGroupByPath(
-            "User parameter:BaseApp/Preferences/Expression/Sandbox");
 }
 
 bool readFile(const fs::path& p, std::string& out)
@@ -245,15 +240,14 @@ std::string directoryAbi(const std::string& dir)
 Layout layout()
 {
     Layout l;
-    auto hGrp = prefs();
-    std::string userDir = hGrp->GetASCII("PyodideUserDir", "");
+    std::string userDir = SandboxParams::getPyodideUserDir();
     if (userDir.empty())
         userDir = envPath("FCX_PYODIDE_USER");
     if (userDir.empty())
         userDir = (fs::path(App::Application::getUserAppDataDir()) / "Pyodide").string();
     l.userDir = userDir;
 
-    std::string packages = hGrp->GetASCII("PyodidePackages", "");
+    std::string packages = SandboxParams::getPyodidePackages();
     if (packages.empty())
         packages = envPath("FCX_PYODIDE_PACKAGES");
     if (packages.empty())
