@@ -170,6 +170,15 @@ bool placeInArea(ViewArea *area, MDIView *view, Target target,
     if (auto mc = area->maximizedCell())
         area->toggleMaximizeCell(mc);
 
+    // A cell with nothing in it -- its view went with the object it
+    // showed (ViewArea::removeView leaves the last cell standing) -- is
+    // filled before anything is replaced or split: whatever the target,
+    // a new cell beside an empty one is not what was asked for.
+    if (auto cell = area->lastUsedCell([](MDIView *child) { return !child; })) {
+        if (area->setCellView(cell, view))
+            return true;
+    }
+
     // The reuse step: strictly non-3D content replacing non-3D content
     // -- a 3D view's cell is never taken, and a new 3D view always
     // splits (ruled 2026-08-28). Nor is the cell of a view the caller

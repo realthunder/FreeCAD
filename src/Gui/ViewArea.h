@@ -230,6 +230,16 @@ public:
      * the last cell closes the whole container closes.
      */
     bool closeCell(ViewAreaCell *cell);
+    /** Take \a view away without asking it: what it shows was deleted
+     * or hidden, so there is no close to refuse. The view leaves its
+     * cell now and is deleted when control is back in the event loop
+     * (the caller may be inside one of the view's own handlers); the
+     * cell collapses now -- except the last one, which stays, empty:
+     * closing the container would close its document. What
+     * MainWindow::removeWindow does for a view that sits in a cell.
+     * False if \a view is not hosted here.
+     */
+    bool removeView(MDIView *view);
 
     /** Replace \a cell's content with \a view -- the Blender "switch
      * the area's editor" operation. The old child goes through its

@@ -1560,3 +1560,10 @@ fc_add_gui_test(GuiSheetViewOnRequest_tests_run
 fc_add_gui_test(GuiStateAndMissedSettings_tests_run
                 state-and-missed-settings.py
                 --timeout 180)
+
+# A view kept in a split view cell goes when what it shows is hidden,
+# deleted or closed with its document: a TechDraw page left its view in the
+# cell, and its closing document a write into freed memory (a crash on exit).
+fc_add_gui_test(GuiViewInCellGoesWithItsObject_tests_run
+                view-in-cell-goes-with-its-object.py
+                --timeout 180)

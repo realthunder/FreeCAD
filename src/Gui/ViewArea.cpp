@@ -1255,6 +1255,42 @@ bool ViewArea::closeCell(ViewAreaCell *cell)
     return true;
 }
 
+bool ViewArea::removeView(MDIView *view)
+{
+    ViewAreaCell *cell = cellOf(view);
+    if (!cell)
+        return false;
+    // The container is going down and takes its cells and their views
+    // with it (~ViewAreaCell).
+    if (_closing)
+        return true;
+    if (_maximizedCell)
+        toggleMaximizeCell(_maximizedCell);
+    // Out of the cell first: releaseView drops the `destroyed`
+    // connection that would collapse the cell later, and the collapse
+    // is done here instead, so that the active view is a live one again
+    // by the time the caller goes on -- as it is after an MDI tab was
+    // removed. A view left active for one more turn of the event loop
+    // is one whose view provider may already be freed.
+    const bool wasActive = (getMainWindow()->activeWindow() == view);
+    cell->releaseView();
+    view->hide();
+    view->deleteLater();
+    if (cellCount() > 1) {
+        childViewGone(cell);
+    }
+    else {
+        // The last cell stays, empty, with its menu to fill it again.
+        // Closing the container instead (what childViewGone does when a
+        // last child is destroyed) closes the last view of its document
+        // and with that the document -- for a page that was only hidden.
+        cell->update();
+        if (wasActive)
+            getMainWindow()->setActiveWindow(this);
+    }
+    return true;
+}
+
 void ViewArea::collapseCell(ViewAreaCell *cell)
 {
     auto splitter = qobject_cast<QSplitter*>(cell->parentWidget());

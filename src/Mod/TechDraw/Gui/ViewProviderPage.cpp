@@ -41,6 +41,7 @@
 #include <Gui/BitmapFactory.h>
 #include <Gui/Document.h>
 #include <Gui/MainWindow.h>
+#include <Gui/ViewArea.h>
 #include <Gui/ViewPlacement.h>
 #include <Gui/ViewProviderDocumentObject.h>
 #include <Mod/TechDraw/App/DrawHatch.h>
@@ -325,14 +326,14 @@ void ViewProviderPage::createMDIViewPage()
 {
     Gui::Document* doc = Gui::Application::Instance->getDocument(pcObject->getDocument());
     m_mdiView = new MDIViewPage(this, doc, Gui::getMainWindow());
-    // m_mdiView is a QPointer and clears itself, but m_graphicsView is
-    // raw and dies with the view (it is a Qt child of it). The MDI
-    // removal path below nulls it, but a view embedded in a split view
-    // cell (Gui::ViewArea) is deleted without passing through
-    // removeMDIView, so track destruction directly. Context is the
-    // scene: owned by this view provider, it outlives the view.
-    QObject::connect(m_mdiView, &QObject::destroyed, m_graphicsScene,
-                     [this]() { m_graphicsView = nullptr; });
+    // m_graphicsView dies with the view (it is a Qt child of it), and a
+    // view can go without passing through removeMDIView -- a split view
+    // cell (Gui::ViewArea) closed by the user. Both are QPointers and
+    // clear themselves. Not a `destroyed` handler writing into this
+    // object: the view is deleted by a deferred delete, which runs
+    // after a closing document has freed its view providers, and the
+    // handler then wrote into freed memory (a crash on exit, and heap
+    // corruption at any document closed with its page open).
     if (!m_graphicsView) {
         m_graphicsView = new QGVPage(this, m_graphicsScene, m_mdiView);
         std::string objName = m_pageName + "View";
@@ -354,11 +355,18 @@ void ViewProviderPage::createMDIViewPage()
 void ViewProviderPage::removeMDIView(void)
 {
     if (!m_mdiView.isNull()) {//m_mdiView is a QPointer
+        // The view is one of the main window's own windows, or it sits in
+        // a split view cell (Gui::ViewArea) -- where a page is placed by
+        // default, and which MainWindow::windows() does not list.
+        const bool embedded = Gui::ViewArea::areaOf(m_mdiView) != nullptr;
         QList<QWidget*> wList = Gui::getMainWindow()->windows();
-        if (wList.contains(m_mdiView)) {
+        if (embedded || wList.contains(m_mdiView)) {
             Gui::getMainWindow()->removeWindow(m_mdiView);
             m_mdiView = nullptr;     //m_mdiView will eventually be deleted and
             m_graphicsView = nullptr;//will take m_graphicsView with it
+            if (embedded) {
+                return;
+            }
             Gui::MDIView* aw =
                 Gui::getMainWindow()
                     ->activeWindow();//WF: this bit should be in the remove window logic, not here.
@@ -366,6 +374,17 @@ void ViewProviderPage::removeMDIView(void)
                 aw->showMaximized();
         }
     }
+}
+
+void ViewProviderPage::beforeDelete()
+{
+    ViewProviderDocumentObject::beforeDelete();
+    removeMDIView();
+}
+
+QGVPage* ViewProviderPage::getQGVPage()
+{
+    return m_graphicsView;
 }
 
 MDIViewPage* ViewProviderPage::getMDIViewPage() const

@@ -133,6 +133,7 @@
 #include "SpaceballEvent.h"
 #include "View3DInventor.h"
 #include "View3DInventorViewer.h"
+#include "ViewArea.h"
 #include "DlgObjectSelection.h"
 #include "Tools.h"
 #include <App/Color.h>
@@ -1666,6 +1667,19 @@ void MainWindow::removeWindow(Gui::MDIView* view, bool close)
                 break;
             }
             par = par->parentWidget();
+        }
+    }
+
+    // A view embedded in a split view cell (Gui::ViewArea) has the cell
+    // for a parent, and deleting that -- which is what the rest of this
+    // function would do -- takes a tile out of the area behind its back:
+    // no collapse of the splitter left with one child, no other cell made
+    // active. The area knows how a view leaves it.
+    if (close) {
+        auto area = ViewArea::areaOf(view);
+        if (area && area->removeView(view)) {
+            updateActions();
+            return;
         }
     }
 
