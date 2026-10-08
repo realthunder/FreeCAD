@@ -47,12 +47,14 @@
 #include "TransactionValue.h"
 #include "DocumentObjectExtension.h"
 #include "DocumentObjectGroup.h"
+#include "ElementAppearanceMerge.h"
 #include "Expression.h"
 #include "GeoFeature.h"
 #include "GeoFeatureGroupExtension.h"
 #include "InputStratum.h"
 #include "Link.h"
 #include "ObjectIdentifier.h"
+#include "PropertyElementAppearance.h"
 #include "PropertyExpressionEngine.h"
 #include "PropertyLinks.h"
 
@@ -1507,14 +1509,26 @@ void DocumentObject::onDocumentRestored()
         Visibility.setStatus(Property::NoModify,true);
 }
 
-std::vector<std::string> DocumentObject::getMergeUnit(const char*) const
+std::vector<std::string> DocumentObject::getMergeUnit(const char* prop) const
 {
+    // The looks of an object's elements are one value, merged by what they
+    // are given to: a unit of one property, whatever kind of object holds it
+    // (docs/ShapeAppearanceDesign.md sec 14.6.5).
+    if (prop && Base::freecad_dynamic_cast<PropertyElementAppearance>(getPropertyByName(prop)))
+        return {prop};
     return {};
 }
 
-bool DocumentObject::mergeUnit(const MergeUnitState&, const MergeUnitSide&, const MergeUnitSide&,
-                               MergeUnitState&, std::vector<MergeUnitNote>&) const
+bool DocumentObject::mergeUnit(const MergeUnitState& base, const MergeUnitSide& ours,
+                               const MergeUnitSide& theirs, MergeUnitState& merged,
+                               std::vector<MergeUnitNote>& notes) const
 {
+    if (base.size() == 1) {
+        const std::string& prop = base.begin()->first;
+        if (auto store = Base::freecad_dynamic_cast<PropertyElementAppearance>(
+                    getPropertyByName(prop.c_str())))
+            return mergeElementAppearance(*store, prop, base, ours, theirs, merged, notes);
+    }
     return false;
 }
 

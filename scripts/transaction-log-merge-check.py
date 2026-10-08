@@ -631,6 +631,71 @@ def run():
               and not [o.Name for o in pdoc.Objects if "Invalid" in o.State])
         App.closeDocument(pdoc.Name)
         settle()
+
+        # docs/ShapeAppearanceDesign.md sec 14.6.10, "The merge of a link's
+        # store": what a link lays over what it shows is the link's, and is
+        # merged by what it is given to as a shape's looks are. Theirs
+        # colours a face through the link's view provider; ours gives the
+        # link a look for all it shows. Both are there after, in the object
+        # and in the view provider that draws them.
+        ldoc = App.newDocument("MergeLink")
+        ldoc.UndoMode = 1
+        ldoc.openTransaction("base")
+        lbox = ldoc.addObject("Part::Box", "Box")
+        link = ldoc.addObject("App::Link", "Link")
+        link.LinkedObject = lbox
+        link.Placement.Base = App.Vector(20, 0, 0)
+        ldoc.recompute()
+        ldoc.commitTransaction()
+        settle()
+        ldoc.saveAs(os.path.join(tempfile.mkdtemp(prefix="mergelink-"), "link.FCStd"))
+        ldoc.createTransactionBranch("side")
+        ldoc.openTransaction("theirs: a face")
+        link.ViewObject.setElementColors({"Face6": (1.0, 0.0, 0.0)})
+        ldoc.commitTransaction()
+        settle()
+        ldoc.switchTransactionBranch("main")
+        settle()
+        link = ldoc.getObject("Link")
+        check("link: ours has no face coloured before (%r)" % (link.ElementAppearance.keys(),),
+              link.ElementAppearance.keys() == [] and not link.ViewObject.getElementColors())
+        ldoc.openTransaction("ours: a look for all")
+        link.ViewObject.OverrideMaterial = True
+        over = link.ViewObject.ShapeAppearance.Base
+        over.DiffuseColor = (0.0, 1.0, 0.0, 1.0)
+        link.ViewObject.ShapeAppearance.Base = over
+        ldoc.commitTransaction()
+        settle()
+        preview = ldoc.previewTransactionMerge("side")
+        kinds = {c["key"]: c["kind"] for c in preview["changes"]}
+        check("link: the looks are merged, and no conflict (%r)" % kinds,
+              kinds.get("Link.ElementAppearance") == "merge" and preview["conflicts"] == 0
+              and not [k for k in kinds if k.startswith("view:Link.")])
+        merged = ldoc.mergeTransactionBranch("side")
+        settle()
+        link = ldoc.getObject("Link")
+        lea = link.ElementAppearance
+        shown = {k: tuple(round(c, 3) for c in v[:3])
+                 for k, v in link.ViewObject.getElementColors().items()}
+        check("link: merged with nothing left to ask (%r)" % (merged["unresolved"],),
+              merged["unresolved"] == [] and merged["failed"] == [])
+        check("link: the object has both (%r, %r)" % (lea.keys(), link.OverrideMaterial),
+              lea.keys() == ["Face6"] and link.OverrideMaterial and "Face" in lea
+              and tuple(round(c, 3) for c in lea.Face.DiffuseColor[:3]) == (0.0, 1.0, 0.0)
+              and tuple(round(c, 3) for c in lea["Face6"].DiffuseColor[:3]) == (1.0, 0.0, 0.0))
+        check("link: its view provider draws both (%r, %r)"
+              % (shown, link.ViewObject.OverrideMaterial),
+              shown.get("Face6") == (1.0, 0.0, 0.0) and link.ViewObject.OverrideMaterial
+              and tuple(round(c, 3) for c in link.ViewObject.ShapeAppearance.Base.DiffuseColor[:3])
+              == (0.0, 1.0, 0.0))
+        ldoc.undo()
+        settle()
+        check("link: an undo takes theirs' face back and leaves ours' look (%r)"
+              % (link.ElementAppearance.keys(),),
+              link.ElementAppearance.keys() == [] and link.OverrideMaterial
+              and not [k for k in link.ViewObject.getElementColors() if k != "Face"])
+        App.closeDocument(ldoc.Name)
+        settle()
     except Exception:
         lines.append("FAIL exception\n" + traceback.format_exc())
     finally:

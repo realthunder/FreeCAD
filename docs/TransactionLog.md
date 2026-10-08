@@ -16330,7 +16330,10 @@ own member is as it was: a sketch whose geometry is a file beside the text
 is still one question.
 
 **`Part::Feature`** says `ColoredElements` and `view:MappedAppearance`
-are a unit, and merges it (`PartFeatureMerge.cpp`):
+are a unit, and merges it (`PartFeatureMerge.cpp`; the unit is one
+property, `ElementAppearance`, and the merge any object's that has one,
+`src/App/ElementAppearanceMerge.cpp`, since
+docs/ShapeAppearanceDesign.md sec 14.6.10):
 
 - *by what an element is called on any branch*: its mapped name where
   the saved name has one, else the name it has. The tag it was saved as

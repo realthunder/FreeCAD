@@ -31,6 +31,12 @@
 // which does not depend on how many faces come before -- the numbers by
 // number, and the own looks each as a value.
 //
+// A link's and an App::Part's are merged the same way. Their names are paths
+// (PropertyElementAppearance::setPathNames()), saved with the mapped name of
+// what a path leads to where that has one; they have no looks by number, and
+// beside the own look of the faces -- the look the link gives all it shows --
+// the one it would give while it gives none (setKept()), a value as well.
+//
 // A branch's value is its saved text and there is no object to look its
 // names up in, so they are kept as the text they are; the looks are read
 // into a property that is on no object. What is drawn is left out: it is
@@ -46,22 +52,24 @@
 #include <string>
 #include <vector>
 
-#include <App/Application.h>
-#include <App/Document.h>
-#include <App/PropertyElementAppearance.h>
-#include <App/PropertyStandard.h>
-#include <App/TransactionValue.h>
 #include <Base/Exception.h>
 #include <Base/Parameter.h>
+#include <Base/Persistence.h>
 
-#include "PartFeature.h"
+#include "Application.h"
+#include "Document.h"
+#include "ElementAppearanceMerge.h"
+#include "GeoFeature.h"
+#include "LinkAppearance.h"
+#include "PropertyElementAppearance.h"
+#include "PropertyStandard.h"
+#include "TransactionValue.h"
 
-using namespace Part;
+using namespace App;
 
 namespace
 {
 
-const char* const Looks = "ElementAppearance";
 const std::string EndOfNames("</LinkSub>");
 
 using Store = App::PropertyElementAppearance;
@@ -81,6 +89,49 @@ std::string attribute(const std::string& tag, const char* name)
     return to == std::string::npos ? std::string() : tag.substr(from, to - from);
 }
 
+/// An attribute's value as it was before it was written, or false where it
+/// has something in it this does not read.
+bool decoded(const std::string& text, std::string& out)
+{
+    static const std::pair<const char*, char> known[] = {
+        {"&lt;", '<'}, {"&gt;", '>'}, {"&quot;", '"'}, {"&apos;", '\''}, {"&amp;", '&'}};
+    out.clear();
+    for (std::size_t i = 0; i < text.size();) {
+        if (text[i] != '&') {
+            out += text[i++];
+            continue;
+        }
+        bool found = false;
+        for (const auto& k : known) {
+            const std::size_t len = std::strlen(k.first);
+            if (text.compare(i, len, k.first) == 0) {
+                out += k.second;
+                i += len;
+                found = true;
+                break;
+            }
+        }
+        if (!found)
+            return false;
+    }
+    return true;
+}
+
+/// One saved tag with an attribute of it given another value.
+bool setAttribute(std::string& tag, const char* name, const std::string& value)
+{
+    const std::string key = std::string(" ") + name + "=\"";
+    const std::size_t at = tag.find(key);
+    if (at == std::string::npos)
+        return false;
+    const std::size_t from = at + key.size();
+    const std::size_t to = tag.find('"', from);
+    if (to == std::string::npos)
+        return false;
+    tag.replace(from, to - from, Base::Persistence::encodeAttribute(value));
+    return true;
+}
+
 /// One element given a look by name.
 struct Painted
 {
@@ -97,6 +148,43 @@ bool sameStated(const Painted& a, const Painted& b)
     return a.own == b.own && (Store::differingFields(a.look, b.look) & a.own) == 0;
 }
 
+/** A name the other branch gave, as the element is called here
+ *
+ * A saved name is the element's number in the shape of the branch that
+ * wrote it, with its mapped name beside it where it has one. Here the shape
+ * may count its elements another way -- ours drilled it -- and nothing
+ * looks a name up again until the shape changes: the number is taken from
+ * the mapped name now, in the object as it is. Left as it is where there
+ * is no mapped name, or the shape here has no element by it yet, which is
+ * one theirs made and a recompute brings.
+ */
+void followShape(Painted& p, App::DocumentObject* obj)
+{
+    std::string mapped;
+    if (!obj || !obj->isAttachedToDocument() || !decoded(attribute(p.tag, "shadow"), mapped)
+            || mapped.empty())
+        return;
+    std::pair<std::string, std::string> name;
+    App::GeoFeature* geo = nullptr;
+    try {
+        if (!App::GeoFeature::resolveElement(obj, mapped.c_str(), name, true,
+                                             App::GeoFeature::ElementNameType::Export, nullptr,
+                                             nullptr, &geo))
+            return;
+    }
+    catch (const Base::Exception&) {
+        return;
+    }
+    if (!geo || name.first.empty() || name.second.empty() || name.second == p.shown
+            || App::GeoFeature::hasMissingElement(name.second.c_str()))
+        return;
+    std::string tag = p.tag;
+    if (setAttribute(tag, "value", name.second) && setAttribute(tag, "shadow", name.first)) {
+        p.tag = std::move(tag);
+        p.shown = name.second;
+    }
+}
+
 /// A branch's value at one moment.
 struct Paint
 {
@@ -106,9 +194,9 @@ struct Paint
     /// The looks, in a property on no object
     Store value;
 
-    bool read(const State& state)
+    bool read(const State& state, const std::string& prop)
     {
-        auto found = state.find(Looks);
+        auto found = state.find(prop);
         if (found == state.end())
             return false;
         const std::string& text = found->second;
@@ -232,24 +320,30 @@ bool mergeList(const App::AppearanceList& base, const App::AppearanceList& ours,
     return true;
 }
 
-}  // namespace
-
-std::vector<std::string> Feature::getMergeUnit(const char* prop) const
+/// The look a link would give, as a list: one entry, or none held.
+App::AppearanceList keptOf(const Store& value)
 {
-    static const std::vector<std::string> looks {Looks};
-    if (prop && std::strcmp(prop, Looks) == 0)
-        return looks;
-    return inherited::getMergeUnit(prop);
+    App::AppearanceList list;
+    if (value.hasKept()) {
+        list.setValue(value.getKept());
+        list.setFollowMaterial(false);
+    }
+    return list;
 }
 
-bool Feature::mergeUnit(const MergeUnitState& baseAt, const MergeUnitSide& oursSide,
-                        const MergeUnitSide& theirsSide, MergeUnitState& merged,
-                        std::vector<MergeUnitNote>& notes) const
+}  // namespace
+
+bool App::mergeElementAppearance(const PropertyElementAppearance& store, const std::string& prop,
+                                 const DocumentObject::MergeUnitState& baseAt,
+                                 const DocumentObject::MergeUnitSide& oursSide,
+                                 const DocumentObject::MergeUnitSide& theirsSide,
+                                 DocumentObject::MergeUnitState& merged,
+                                 std::vector<DocumentObject::MergeUnitNote>& notes)
 {
-    if (!baseAt.count(Looks))
-        return inherited::mergeUnit(baseAt, oursSide, theirsSide, merged, notes);
+    auto owner = Base::freecad_dynamic_cast<DocumentObject>(store.getContainer());
     Paint base, ours, theirs;
-    if (!base.read(baseAt) || !ours.read(oursSide.at) || !theirs.read(theirsSide.at))
+    if (!base.read(baseAt, prop) || !ours.read(oursSide.at, prop)
+            || !theirs.read(theirsSide.at, prop))
         return false;
 
     const std::string setting = facePaint();
@@ -257,7 +351,7 @@ bool Feature::mergeUnit(const MergeUnitState& baseAt, const MergeUnitSide& oursS
                     : setting == "asked" ? Keep::Ask : Keep::Ours;
     auto note = [&](const std::string& key, const char* change, const char* side) {
         Note n;
-        n.prop = Looks;
+        n.prop = prop;
         n.key = key;
         n.change = change;
         n.side = side;
@@ -330,8 +424,9 @@ bool Feature::mergeUnit(const MergeUnitState& baseAt, const MergeUnitSide& oursS
         const Painted& t = theirs.at.at(key);
         auto b = base.at.find(key);
         if (b == base.at.end()) {
-            note(t.shown, "added", "theirs");
             out.push_back(t);
+            followShape(out.back(), owner);
+            note(out.back().shown, "added", "theirs");
             continue;
         }
         // Ours took the name away.
@@ -341,13 +436,21 @@ bool Feature::mergeUnit(const MergeUnitState& baseAt, const MergeUnitSide& oursS
         case Keep::Ask:
             return false;
         case Keep::Theirs:
-            note(t.shown, "ruled", "theirs");
             out.push_back(t);
+            followShape(out.back(), owner);
+            note(out.back().shown, "ruled", "theirs");
             break;
         case Keep::Ours:
             note(t.shown, "ruled", "ours");
             break;
         }
+    }
+    // A link's names of elements come before those of an array's own
+    // (App::LinkAppearance), wherever the other branch's were put.
+    if (store.hasPathNames()) {
+        std::stable_partition(out.begin(), out.end(), [](const Painted& p) {
+            return !LinkAppearance::isArrayName(p.shown);
+        });
     }
     bool asOurs = out.size() == ours.order.size();
     for (std::size_t i = 0; asOurs && i < out.size(); ++i) {
@@ -379,14 +482,27 @@ bool Feature::mergeUnit(const MergeUnitState& baseAt, const MergeUnitSide& oursS
                  taken ? "theirs" : "ours");
         asOurs = asOurs && !taken;
     }
+    // The look a link would give while it gives none: held only while it
+    // gives none, whichever branch that is.
+    App::AppearanceList kept;
+    if (own[Store::Face].getSize() == 0) {
+        bool taken = false;
+        bool ruled = false;
+        if (!mergeList(keptOf(base.value), keptOf(ours.value), keptOf(theirs.value), rule, kept,
+                       taken, ruled))
+            return false;
+        if (taken || ruled)
+            note("Kept", ruled ? "ruled" : "changed", taken ? "theirs" : "ours");
+        asOurs = asOurs && !taken;
+    }
 
     // Ours' own text where nothing of it changed, so that what is the same
     // is seen to be.
     if (asOurs) {
-        merged[Looks] = oursSide.at.at(Looks);
+        merged[prop] = oursSide.at.at(prop);
         return true;
     }
-    auto doc = getDocument();
+    auto doc = owner ? owner->getDocument() : nullptr;
     if (!doc)
         return false;
     Store made;
@@ -398,6 +514,8 @@ bool Feature::mergeUnit(const MergeUnitState& baseAt, const MergeUnitSide& oursS
             if (numbered[k].getSize() > 0)
                 made.setNumbered(kind, numbered[k]);
         }
+        if (kept.getSize() > 0)
+            made.setKept(kept.getBase());
         // On no object, with or without names: the looks alone are written
         made.setDetachedNamed(App::AppearanceList());
         if (!out.empty()) {
@@ -431,6 +549,6 @@ bool Feature::mergeUnit(const MergeUnitState& baseAt, const MergeUnitSide& oursS
     for (const auto& p : out)
         text += "    " + p.tag + "\n";
     text += "</LinkSub>\n";
-    merged[Looks] = text + value.fragment;
+    merged[prop] = text + value.fragment;
     return true;
 }

@@ -204,7 +204,6 @@ SET(Features_SRCS
     PartFeature.cpp
     PartFeature.h
     PartFeatureAppearance.cpp
-    PartFeatureMerge.cpp
     PartFeatureReference.cpp
     PartFeatureReference.h
     Part2DObject.cpp

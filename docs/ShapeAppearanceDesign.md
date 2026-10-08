@@ -4219,7 +4219,9 @@ provider's values in the file are not taken.
 schema. Schema 4 is what a new document is saved at, for upstream, and
 needs them; leaving them out at 5 goes with step E. *(Done there.)*
 
-*The merge* (`PartFeatureMerge.cpp`). `ElementAppearance` is a merge unit
+*The merge* (`PartFeatureMerge.cpp`; in App as `ElementAppearanceMerge.cpp`
+since 2026-10-08, "The merge of a link's store" below). `ElementAppearance`
+is a merge unit
 of one property -- the log took a unit to be two or more, and takes one
 now -- merged where both branches wrote it: the names by mapped name, each
 with its look and which of it is its own; the looks by number a face at a
@@ -4407,7 +4409,9 @@ they are meant too*).
   none it does not.
 - **The merge.** A link's `ElementAppearance` written on two branches is a
   conflict of one value. The merge by what the looks are given to is
-  `Part::Feature`'s (`PartFeatureMerge.cpp`) and reads a shape.
+  `Part::Feature`'s (`PartFeatureMerge.cpp`) and reads a shape. *(Built
+  2026-10-08, "The merge of a link's store", below. It read no shape: a
+  branch's value is its saved text.)*
 - **A link made in Python on another kind of object** (Draft's, a
   `Part::FeaturePython` with a link extension) configures no store and is
   as it was: its view provider's properties are values.
@@ -4767,6 +4771,86 @@ provider and what was made from the link drawing none of it; an
 `App::Part` assigned a list of looks, and Set Colors' colour for all of it
 twice and taken away; an import of 240 faces given colours by name, a part
 of them, a few and none, each face held against what it was given.
+
+**The merge of a link's store (2026-10-08).** What a link and an
+`App::Part` lay over what they show, written on two branches, was one
+question -- a side for all of it. It is merged by what it is given to now,
+as a shape's looks are, and by the same code.
+
+*Whose it is.* The merge was `Part::Feature`'s. It never read a shape: a
+branch's value is its saved text, and the names are kept as the text they
+are. So it is `App::DocumentObject`'s (`ElementAppearanceMerge.cpp`,
+`mergeElementAppearance()`): a property that is a
+`PropertyElementAppearance` is a merge unit of one, by its type and
+whatever it is called, on any object that has one. `Part::Feature` overrides
+nothing for it any more; a sketch, which has a unit of its own, hands the
+rest on as before.
+
+*By what a name is.* A link's names are paths -- `Face3`, `2.Face3`,
+`Pad.Face3` -- and are saved with the mapped name of what the path leads
+to where that has one, as a shape's are. So two branches that gave a look
+to one face of a cut seen through a link are seen to have, whatever number
+the face has in each. Where what is shown has no mapped names -- a box, an
+import -- the name is its string, and a face counted another way on the
+other branch is another name. That goes when a primitive's faces have
+names (14.6.8).
+
+*What a link has that a shape has not.* The look it gives all it shows is
+the own look of `Face`, a value three ways like any kind's own look. The
+look it would give while it gives none (`setKept()`) is a value three ways
+too, and held in the merged value only where that gives none: a branch
+that turned the override off and one that gave it another colour leave,
+by the rule, either a link that gives none and would give what it gave, or
+one that gives the other's and holds nothing beside it. The names of one
+of an array, `2.`, are names like the rest, and are put after the names of
+elements whichever branch they came from, as `App::LinkAppearance` keeps
+them. The looks by number, which a link has none of, merge as nothing.
+`TransactionLogMergeFacePaint` rules where both wrote one thing, as for a
+shape.
+
+*A name theirs gave is looked up in ours' shape* (*found building it*). A
+saved name is the element's number in the shape of the branch that wrote
+it. Theirs paints the side of a cut, `Face2`; ours drills the cut, and the
+side is `Face6`. A link's names are found by their strings, and nothing
+looks a name up again until the shape changes, so the merged value painted
+ours' `Face2`, another face. The merge takes the number from the mapped
+name, in the object as it is (`followShape()`): for a name theirs added,
+or changed where ours took it away. Left alone where the shape here has no
+element by that name yet -- one theirs made, which the recompute after the
+merge brings, and the name follows then. A shape's own store did not show
+this: its looks are made through the mapped names. The same is done for
+it, so what it holds says the number that is drawn.
+
+*Found, there before this, and fixed: a link's look for a face went when
+the shape counted its faces another way.* `ColoredElements` is a link to
+elements as the store is, and is told of a shape made again as the store
+is, in the order of two pointers. Told first it said `Face3` where the
+store said `Face6`, which `LinkAppearance::onChanged()` read as a write:
+one name taken away and another, with no look, added. A link's painted
+face lost its colour at the first recompute that renumbered what it shows
+-- with a merge or without, and the 2025 release kept it. The store is
+told of the shape before the names are compared (`followShapes()`).
+
+*Found, and not chased: any reference to an element, taken from the other
+branch, says theirs' number.* A plane attached on theirs to the side of
+the cut, `Face2`, with the cut drilled on ours: the merge takes
+`AttachmentSupport` as theirs wrote it, no conflict, and the plane sits on
+ours' `Face2`, the face opposite. It is what `followShape()` mends for the
+looks, and wants mending where a taken value lands, for every link to an
+element; not this step's.
+
+Checks. Python `parttests.ElementAppearanceTest.ElementAppearanceLinkMergeTest`,
+7, in `FreeCADCmd`: a face named on each branch of a link to a cut, ours
+drilled, each on its face after with what of its look is its own, and an
+undo; one face on both, asked and ruled; the look for all given none by
+theirs beside a face painted by ours; given none by ours and another by
+theirs, by each rule; an array's element and one of the array whole, in
+the order a link keeps; an `App::Part`. `ElementAppearanceLinkTest`, 9
+(+1): a look follows its face through a shape made again.
+`scripts/transaction-log-merge-check.py`, 48 (+6): a face coloured through
+a link's view provider on theirs and a look for all on ours, merged with
+no conflict and no row of the view's, in the object and in what the view
+provider draws, and undone.
 
 #### 14.6.11 A view provider with no object to keep its looks
 

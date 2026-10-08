@@ -717,3 +717,210 @@ class ElementAppearanceMergeTest(unittest.TestCase):
         finally:
             self.setting.RemString("TransactionLogMergeFacePaint")
 
+
+class ElementAppearanceLinkMergeTest(unittest.TestCase):
+    """What a link and an App::Part lay over what they show, given on two
+    branches of the transaction log and merged by what it is given to
+    (docs/ShapeAppearanceDesign.md sec 14.6.5, 14.6.10)."""
+
+    def setUp(self):
+        self.setting = App.ParamGet("User parameter:BaseApp/Preferences/Document")
+        self.log = self.setting.GetInt("TransactionLog", 2)
+        self.setting.SetInt("TransactionLog", 2)
+        self.doc = App.newDocument("ElementAppearanceLinkMerge")
+        self.doc.UndoMode = 1
+        self.doc.openTransaction("base")
+        self.box = self.doc.addObject("Part::Box", "Box")
+        self.cyl = self.doc.addObject("Part::Cylinder", "Cyl")
+        self.cyl.Radius = 2
+        self.cyl.Height = 30
+        self.cyl.Placement.Base = App.Vector(5, 5, -40)
+        self.cut = self.doc.addObject("Part::Cut", "Cut")
+        self.cut.Base = self.box
+        self.cut.Tool = self.cyl
+        self.link = self.doc.addObject("App::Link", "Link")
+        self.link.LinkedObject = self.cut
+        self.link.Placement.Base = App.Vector(20, 0, 0)
+        self.array = self.doc.addObject("App::Link", "Array")
+        self.array.LinkedObject = self.cut
+        self.array.ElementCount = 3
+        self.array.Placement.Base = App.Vector(0, 20, 0)
+        self.inner = self.doc.addObject("Part::Box", "Inner")
+        self.part = self.doc.addObject("App::Part", "Part")
+        self.part.addObject(self.inner)
+        self.part.Placement.Base = App.Vector(0, 0, 20)
+        self.doc.recompute()
+        self.doc.commitTransaction()
+        self.doc.saveAs(os.path.join(tempfile.mkdtemp(prefix="fc-ea-lmerge-"), "merge.FCStd"))
+        self.at = "main"
+
+    def tearDown(self):
+        App.closeDocument(self.doc.Name)
+        self.setting.SetInt("TransactionLog", self.log)
+
+    def fork(self):
+        """A branch beside main, which the document is then on."""
+        self.doc.createTransactionBranch("side")
+        self.at = "side"
+
+    def on(self, branch, name, change):
+        if self.at != branch:
+            self.doc.switchTransactionBranch(branch)
+            self.at = branch
+        self.doc.openTransaction(name)
+        change()
+        self.doc.commitTransaction()
+
+    def merge(self):
+        self.assertEqual(self.doc.previewTransactionMerge("side")["conflicts"], 0)
+        merged = self.doc.mergeTransactionBranch("side")
+        self.assertEqual((merged["unresolved"], merged["failed"]), ([], []))
+
+    def give(self, obj, color):
+        obj.OverrideMaterial = True
+        look = obj.ShapeAppearance.Base
+        look.DiffuseColor = color
+        obj.ShapeAppearance.Base = look
+
+    def testElementsOfALinkOnBothBranches(self):
+        doc, link, cut = self.doc, self.link, self.cut
+        top, side = face(cut, ZMin=10), face(cut, XMin=10)
+        self.fork()
+        self.on(
+            "side", "side: a material", lambda: link.ElementAppearance.setLook(side, material(RED))
+        )
+        self.on("main", "main: nothing", lambda: None)
+        self.assertEqual(link.ElementAppearance.keys(), [])
+
+        # Ours paints another face and drills through what the link shows:
+        # theirs' face is not the one it was by number
+        def ours():
+            link.ElementAppearance[top] = GREEN
+            self.cyl.Placement.Base = App.Vector(5, 5, -10)
+            doc.recompute()
+
+        self.on("main", "main: a colour, and drilled", ours)
+        self.assertEqual(len(cut.Shape.Faces), 7)
+        self.merge()
+        doc.recompute()
+        ea = link.ElementAppearance
+        top, side = face(cut, ZMin=10), face(cut, XMin=10)
+        self.assertEqual(sorted(ea.keys()), sorted([top, side]))
+        self.assertEqual(rgb(ea[side].DiffuseColor), RED[:3])
+        self.assertEqual(rgb(ea[top].DiffuseColor), GREEN[:3])
+        # Each with what of its look is its own, and known by the names a
+        # link has always had
+        self.assertEqual(ea.own(top), ("DiffuseColor",))
+        self.assertIn("Shininess", ea.own(side))
+        self.assertEqual(sorted(link.ColoredElements[1]), sorted([top, side]))
+        doc.undo()
+        self.assertEqual(link.ElementAppearance.keys(), [face(cut, ZMin=10)])
+
+    def testOneElementOnBothBranchesIsRuled(self):
+        doc, link = self.doc, self.link
+        top = face(self.cut, ZMin=10)
+        self.fork()
+        self.on("side", "side: red", lambda: link.ElementAppearance.__setitem__(top, RED))
+        self.on("main", "main: blue", lambda: link.ElementAppearance.__setitem__(top, BLUE))
+        try:
+            self.setting.SetString("TransactionLogMergeFacePaint", "asked")
+            self.assertEqual(doc.previewTransactionMerge("side")["conflicts"], 1)
+            self.setting.SetString("TransactionLogMergeFacePaint", "theirs")
+            self.merge()
+            self.assertEqual(rgb(link.ElementAppearance[top].DiffuseColor), RED[:3])
+        finally:
+            self.setting.RemString("TransactionLogMergeFacePaint")
+
+    def testTheLookALinkGivesAllItShows(self):
+        doc, link = self.doc, self.link
+        top = face(self.cut, ZMin=10)
+        self.on("main", "a look for all", lambda: self.give(link, RED))
+        self.fork()
+        # Theirs gives none any more; ours paints a face
+        self.on("side", "side: none", lambda: setattr(link, "OverrideMaterial", False))
+        self.on("main", "main: a face", lambda: link.ElementAppearance.__setitem__(top, BLUE))
+        self.assertTrue(link.OverrideMaterial)
+        self.merge()
+        ea = link.ElementAppearance
+        self.assertFalse(link.OverrideMaterial)
+        self.assertNotIn("Face", ea)
+        self.assertEqual(ea.keys(), [top])
+        # ... and the look it gave is the one it would give
+        self.assertEqual(rgb(link.ShapeAppearance.Base.DiffuseColor), RED[:3])
+        link.OverrideMaterial = True
+        self.assertEqual(rgb(ea.Face.DiffuseColor), RED[:3])
+
+    def testALookGivenWhereTheOtherBranchGivesNone(self):
+        doc, link = self.doc, self.link
+        self.on("main", "a look for all", lambda: self.give(link, RED))
+        self.fork()
+        self.on("side", "side: green", lambda: self.give(link, GREEN))
+        self.on("main", "main: none", lambda: setattr(link, "OverrideMaterial", False))
+        # Both wrote the look the link gives: ours, which gives none and
+        # would give the red it gave
+        self.merge()
+        self.assertFalse(link.OverrideMaterial)
+        self.assertNotIn("Face", link.ElementAppearance)
+        self.assertEqual(rgb(link.ShapeAppearance.Base.DiffuseColor), RED[:3])
+
+    def testALookGivenIsTheirsWhereTheRuleSaysSo(self):
+        doc, link = self.doc, self.link
+        self.on("main", "a look for all", lambda: self.give(link, RED))
+        self.fork()
+        self.on("side", "side: green", lambda: self.give(link, GREEN))
+        self.on("main", "main: none", lambda: setattr(link, "OverrideMaterial", False))
+        try:
+            self.setting.SetString("TransactionLogMergeFacePaint", "asked")
+            self.assertEqual(doc.previewTransactionMerge("side")["conflicts"], 1)
+            # It gives the green, and holds no other to give
+            self.setting.SetString("TransactionLogMergeFacePaint", "theirs")
+            self.merge()
+            self.assertTrue(link.OverrideMaterial)
+            self.assertEqual(rgb(link.ElementAppearance.Face.DiffuseColor), GREEN[:3])
+            link.OverrideMaterial = False
+            self.assertEqual(rgb(link.ShapeAppearance.Base.DiffuseColor), GREEN[:3])
+        finally:
+            self.setting.RemString("TransactionLogMergeFacePaint")
+
+    def testAnArraysOwnAndTheirElements(self):
+        doc, array = self.doc, self.array
+        top = face(self.cut, ZMin=10)
+        self.fork()
+        # Theirs: a face of one of the array. Ours: a look for another, whole
+        self.on(
+            "side",
+            "side: a face of one",
+            lambda: array.ElementAppearance.__setitem__("1." + top, RED),
+        )
+        self.on(
+            "main",
+            "main: one, whole",
+            lambda: array.ElementAppearance.setLook("2.", material(BLUE)),
+        )
+        self.merge()
+        ea = array.ElementAppearance
+        # The names of elements before those of the array's own, as a link
+        # keeps them
+        self.assertEqual(ea.keys(), ["1." + top, "2."])
+        self.assertEqual(rgb(ea["1." + top].DiffuseColor), RED[:3])
+        self.assertEqual(rgb(ea["2."].DiffuseColor), BLUE[:3])
+        self.assertIn("Shininess", ea.own("2."))
+        self.assertEqual(list(array.ColoredElements[1]), ["1." + top])
+
+    def testAnAppPart(self):
+        doc, part = self.doc, self.part
+        self.fork()
+        self.on(
+            "side", "side: a face", lambda: part.ElementAppearance.__setitem__("Inner.Face6", RED)
+        )
+        self.on(
+            "main",
+            "main: another",
+            lambda: part.ElementAppearance.__setitem__("Inner.Face1", GREEN),
+        )
+        self.merge()
+        ea = part.ElementAppearance
+        self.assertEqual(ea.keys(), ["Inner.Face1", "Inner.Face6"])
+        self.assertEqual(rgb(ea["Inner.Face6"].DiffuseColor), RED[:3])
+        self.assertEqual(rgb(ea["Inner.Face1"].DiffuseColor), GREEN[:3])
+        self.assertEqual(list(part.ColoredElements[1]), ["Inner.Face1", "Inner.Face6"])

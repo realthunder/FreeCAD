@@ -119,20 +119,6 @@ public:
     const char* getViewProviderName() const override;
     const App::PropertyComplexGeoData* getPropertyOfGeometry() const override;
 
-    /** @name The looks of the elements, to a merge
-     *
-     * ElementAppearance is merged by what its looks are given to where two
-     * branches both wrote it: the names by name, the numbers by number, the
-     * own looks each as a value (docs/ShapeAppearanceDesign.md sec 14.6.5,
-     * docs/TransactionLog.md sec 31.20; PartFeatureMerge.cpp).
-     */
-    //@{
-    std::vector<std::string> getMergeUnit(const char* prop) const override;
-    bool mergeUnit(const MergeUnitState& base, const MergeUnitSide& ours,
-                   const MergeUnitSide& theirs, MergeUnitState& merged,
-                   std::vector<MergeUnitNote>& notes) const override;
-    //@}
-
     /// Appearance taken from the assigned material card
     App::MaterialAppearance getMaterialAppearance() const override;
     /// Assign the appearance half of the material card
