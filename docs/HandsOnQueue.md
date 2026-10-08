@@ -77,15 +77,15 @@ test.
 | 25 | 2026-10-06 | the outline of a highlighted face is jagged, MSAA on or off | OPEN |
 | 26 | 2026-10-06 | a long halt after enabling MSAA and pressing OK in the preferences | FIXED `175ffce199`, not staged: the FIRST OK of a profile held the program 11 to 15 s (780 keys stored for the first time and taken for changes: stylesheet set again 4.2 s, every Part view provider re-meshed 3.2 s, language activated again about 2 s); 0.9 s now (`docs/HandsOnLog.md`) |
 | 27 | 2026-10-06 | the view cell menu: opens a spreadsheet nobody asked for, lists every TechDraw object, changes the wrong cell | STAGED 2026-10-07 14:23, fixed `fa2ada985c`: the menu made a spreadsheet view by asking for it, listed a page's views, and placed a pick by the general policy instead of into its cell; all three gone, spreadsheets now listed by type like pages (`docs/HandsOnLog.md`) |
-| 28 | 2026-10-06 | `scanner.FCStd` restores with a wrong colour, sometimes (the motor body light blue for light grey) | OPEN |
-| 29 | 2026-10-07 | view cells: transparent frames that show a split, a join and a resize while dragged (every cell the drag changes); corner handles on an opaque background, the cell menu button too when hovered; a thinner border between cells; a minimum cell size setting, default 200 (change request, decided) | OPEN, in hand by the build session since 2026-10-09 00:26: written, not built yet |
+| 28 | 2026-10-06 | `scanner.FCStd` restores with a wrong colour, sometimes (the motor body light blue for light grey) | OPEN, in hand by the build session since 2026-10-09: six loads in one session gave identical colour properties; measuring across sessions |
+| 29 | 2026-10-07 | view cells: transparent frames that show a split, a join and a resize while dragged (every cell the drag changes); corner handles on an opaque background, the cell menu button too when hovered; a thinner border between cells; a minimum cell size setting, default 200 (change request, decided) | FIXED `dd336be800`, not staged, not pushed; four choices for the reporter to confirm or overrule: a drag of a corner zone or of a border is shown as translucent frames over every cell it changes and is carried out AT THE RELEASE; the setting `View/OpenView/MinimumCellSize`, 200, on the preferences' UI page -- a split that would leave a cell under it is refused with one line in the report view; corner zones (and the menu button when hovered) on an opaque ground; the border 3 pixels. `tests/gui/view-cell-drag-frames.py` 33 PASS (`docs/HandsOnLog.md`, `docs/SplitViews.md` sec 21) |
 | 30 | 2026-10-07 | the dark and light overlay stylesheets integrated into the Dark and Light preference packs (a task asked; what "integrated" covers to confirm); and the long freeze when an overlay stylesheet is applied, to investigate; the Python console's background in both packs, so a theme can take an overlay preset's away again | THIRD TASK FIXED `dad4f5d18a`, not staged, not pushed: Light, Dark and Classic list every colour an overlay preset writes, the console's and the tree's backgrounds as none, so a theme takes the preset's away again; 8 PASS and 10 FAIL before, 18 PASS after. SECOND TASK MEASURED, nothing changed: "Overlay dark theme" holds the program 13.0 s on a fresh profile with `scanner.FCStd` open, 9.6 s of it the APPLICATION's style sheet (`Dark.qss`), 3.3 s the combo view switched off; what to do about it is the reporter's to say. FIRST TASK not started: what "integrated" covers, NOT ANSWERED YET (`docs/HandsOnLog.md`) |
 | 31 | 2026-10-07 | report view: "Go to end" on by default (change request) | FIXED `47b5e72c79`, not staged: "Go to end" is on for a profile that never stored it (`docs/HandsOnLog.md`) |
 | 32 | 2026-10-07 | some sub menus are transparent with blue text (Tools > Command history): find out why; transparent menus off by default | FIXED `b960092ea5`, not staged: the see-through menus are single menu objects shared between a pop-up over the 3D view and an entry of the main menu, and a themed session with no menu sheet chosen took the see-through sheet; now no sheet chosen = an ordinary menu, the see-through ones a choice in Preferences > Theme. A question for the reporter (`docs/HandsOnLog.md`) |
 | 33 | 2026-10-07 | a cmd window pops up briefly at the first document opened after start | FIXED `ef4df215b5` (the cycles submodule at its `35a3bd898`), not staged: the CUDA probe ran `cmd.exe /c where nvcc` through `popen` at the first 3D view; it searches the PATH without a shell now, and the session starts no process at all. Neither commit pushed; the cycles one has to go first (`docs/HandsOnLog.md`) |
 | 34 | 2026-10-07 | TechDraw's preselection colour sometimes does not follow the theme (stays yellow after classic, or is blue) | FIXED `3d7b4c30fd`, not staged, as decided: Dark and Light store TechDraw's `PreSelectColor`, the blue of the 3D view's highlight; a test switches Classic, Dark, Light, Classic (`docs/HandsOnLog.md`) |
 | 35 | 2026-10-07 | TechDraw (`scanner.FCStd`, Page003): now and then a click starts a recompute; a dimension (Dimension134) cannot be selected; selecting it in the tree can recompute and clear the selection. Asked: an audit of TechDraw for unnecessary recomputes | FIXED `bcad1c3982`, not staged, not pushed: a dimension's label took every redraw for a drag under way and "finished" it at the next deselection or mouse release -- X and Y stored again, the document recomputed, the selection dropped. On `scanner.FCStd`, Page003: 27 of 29 dimensions started a recompute when selected and deselected, none now. 7 PASS and 5 FAIL before, 12 PASS after. The audit of what a click in a page can reach found nothing else; the 117 `updateActive()` of commands and panels were NOT gone through -- for the reporter to say (`docs/HandsOnLog.md`) |
-| 36 | 2026-10-07 | TechDraw drawn by the backend: dashed lines do not behave as Qt's do (view frame, section line, hidden line, and so on), zoom above all | OPEN |
+| 36 | 2026-10-07 | TechDraw drawn by the backend: dashed lines do not behave as Qt's do (view frame, section line, hidden line, and so on), zoom above all | OPEN, in hand by the build session since 2026-10-09, measured: zoomed out the backend's dashes shrink until the line looks solid where Qt keeps them, Qt's caps lengthen its dashes, the frame's dashes grow with zoom |
 | 37 | 2026-10-07 | TechDraw: the edge style "Chain" is not drawn dashed, by either renderer, though the style combo box shows it dashed | FIXED `a23d8b069b`, not staged, not pushed: `LineGenerator::getBestPen` refused a line number equal to the count of lines, so the LAST line of every standard (ASME 17 "Chain", ISO 15, ANSI 4) was drawn continuous by both renderers; the combo box uses another function. Upstream has the same line. 15 PASS and 3 FAIL before, 18 PASS after (`docs/HandsOnLog.md`) |
 | 38 | 2026-10-07 | omni search: an obvious freeze the first time it is brought up | FIXED `bb31f8820b`, not staged: the first bring-up loaded and rendered the icon of every command (609) before showing the box, 0.99 s + 0.28 s on the reporter's configuration with `scanner.FCStd` open; 0.15 s + 0.07 s now (`docs/HandsOnLog.md`) |
 | 39 | 2026-10-07 | MSAA has not reached any view since 2026-09-07 (found by the build session on entry 26) | FIXED `c7d115e576`, not staged: with "MSAA 4x" chosen the backend could not create its scene targets and drew without multisampling from then on, on every backend; the depth is write-only under MSAA now. The reporter's case on the fixed tree: 0.75 s in all, both views at 4 samples (`docs/HandsOnLog.md`) |
@@ -2111,7 +2111,11 @@ was pressed. Third note on this menu (16:05, 16:08): here the choice is
 right and the cell it lands in is wrong. Not said yet: which of the two 3D
 views, and which cell was the active one at the time.
 
-## 28. `scanner.FCStd` restores with a wrong colour, sometimes -- OPEN
+## 28. `scanner.FCStd` restores with a wrong colour, sometimes -- OPEN, in hand since 2026-10-09
+
+**2026-10-09 01:15, the build session has it in hand:** six loads in one
+session gave identical colour properties; it is measuring across sessions
+now. Nothing found or changed yet.
 
 **2026-10-06 17:56, `scanner.FCStd` restores with a wrong colour,
 sometimes.** "the scanner file restore sometimes got wrong color, I am
@@ -2129,7 +2133,51 @@ is not that abort. It is a load that reports nothing wrong and still shows
 a colour the file does not have. "Sometimes" points at something that
 depends on order or timing in the load rather than on the file.
 
-## 29. View cells: frames that show a split, a join and a resize while it is dragged; a minimum cell size (a change request) -- OPEN
+## 29. View cells: frames that show a split, a join and a resize while it is dragged; a minimum cell size (a change request) -- FIXED `dd336be800`, not staged; four choices for the reporter (see `docs/HandsOnLog.md`)
+
+**2026-10-09 01:15, the build session: DONE, `dd336be800`** (its message;
+its log, entry 29, `ced89052bf` and `2553c0e792`, local; the design in
+`docs/SplitViews.md` sec 21). Not staged, not pushed.
+- (c) the frames: one translucent widget over the view area shows what the
+  drag will do. A split: the cell that stays and the new one. A join: the
+  cell that stays over the room of both, the neighbour dimmed under its
+  arrow. A border: every cell whose size or place the move changes, nested
+  ones and pushed ones included. A split is cancelled by dragging back to
+  where it was pressed.
+- (d) the minimum cell size: `View/OpenView/MinimumCellSize`, 200, in the
+  preferences (the UI page, group "Views") and so in the omni search. A
+  split that would leave a cell under it is refused, with one line in the
+  report view at most every five seconds.
+- (e) the corner zones are painted on an opaque ground when hovered or
+  pointed at, the menu button when hovered. (f) the border is 3 pixels (it
+  took the style's width, 5 to 7).
+- Found on the way and part of the commit: a cell already HAD a minimum
+  nobody chose, 400 x 300, every view's size hint. So a 3D cell could not
+  be made narrower than 400 by a border. The cell's minimum is the setting
+  now.
+- Scored: `tests/gui/view-cell-drag-frames.py` 33 PASS; the other cell
+  tests as before.
+- Not done, by the log: not tried with the view area's unified canvas on
+  (the preference is off by default); a frame of a border drag can be a
+  pixel or two off the cell's final size where a nested splitter rounds.
+
+**Four choices of the build session, for the reporter to confirm or
+overrule, NOT ANSWERED YET:**
+1. A drag is APPLIED AT THE RELEASE, not live under the frames -- as the
+   overlay does it, and it spares a resize of every 3D view per mouse move
+   (entry 10). It changes the feel of a split, which used to appear at
+   once.
+2. The minimum also stops a dragged border and a shrinking window, not only
+   the creation of a view, which is all the request names. It replaces the
+   hidden 400 x 300 and is capped at that, so a large value refuses splits
+   and cannot push the main window off the screen.
+3. A view that opens BY ITSELF (a page double-clicked) into a split that is
+   refused opens in a tab instead of not opening, with the same line in the
+   report view.
+4. 3 pixels for the border ("how thin was not said").
+And the look of the frames is the build session's own -- accent tint, a
+plus on the new cell, red and crossed out for a refusal; no picture was
+asked for or given.
 
 **2026-10-07 09:32, the view cell's handles, resizing and a minimum size (a
 change request).** "I want change the view cell UI. replace the top right
@@ -2628,7 +2676,12 @@ the one it had); a recompute of the DOCUMENT where one object changed (every
 only repeats one that has just failed, which is what makes it noticed in
 `scanner.FCStd`.
 
-## 36. TechDraw drawn by the backend: dashed lines do not behave as Qt's -- OPEN
+## 36. TechDraw drawn by the backend: dashed lines do not behave as Qt's -- OPEN, in hand since 2026-10-09
+
+**2026-10-09 01:15, the build session has it in hand,** measured so far,
+nothing changed yet: zoomed out, the backend's dashes shrink until the line
+looks solid where Qt keeps them; Qt's caps lengthen its dashes; the view
+frame's dashes grow with zoom.
 
 **2026-10-07 16:18 and 16:30.** First a question, "check if this is queued.
 TechDraw backend renderer draws dash line zoom handling" -- it was not: the
