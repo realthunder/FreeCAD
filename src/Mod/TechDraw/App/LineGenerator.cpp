@@ -76,8 +76,12 @@ QPen LineGenerator::getBestPen(size_t isoNumber, Qt::PenStyle qtStyle, double wi
 //    Base::Console().Message("DLG::getBestPen((%d, %d, %.3f)\n",
 //                            isoNumber, qtStyle, width);
     // TODO: use TechDraw::LineFormat::InvalidLine here
+    // Line numbers run from 1 to the number of definitions, the last one
+    // included (getLinePen): with "<" the last line of every standard --
+    // ASME's 17 "Chain", ISO's 15 -- fell through to the Qt style below and
+    // came out continuous.
     if (isoNumber > 0 &&
-        isoNumber < m_lineDefs.size()) {
+        isoNumber <= m_lineDefs.size()) {
         // we have a valid line number, so use it
         return getLinePen(isoNumber, width);
     }

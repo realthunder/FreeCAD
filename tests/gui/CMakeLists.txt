@@ -1567,3 +1567,9 @@ fc_add_gui_test(GuiStateAndMissedSettings_tests_run
 fc_add_gui_test(GuiViewInCellGoesWithItsObject_tests_run
                 view-in-cell-goes-with-its-object.py
                 --timeout 180)
+
+# The last line of a line standard -- ASME's "Chain" -- is drawn dashed like
+# its sample in the style combo box, not continuous.
+fc_add_gui_test(GuiTechDrawLastLineStyle_tests_run
+                techdraw-last-line-style.py
+                --timeout 180)
