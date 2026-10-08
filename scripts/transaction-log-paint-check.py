@@ -323,6 +323,11 @@ def run():
         check("saved and read: by name (%r)" % named(doc.Box),
               named(doc.Box) == both and stored(doc.Box) == both)
         check("and drawn where they were", shown(doc.Box) == there)
+        # An older build's file has the view provider's names, which this
+        # build writes at schema 4 and not at 5 (sec 14.6.6)
+        path = os.path.join(folder, "PaintStore4.FCStd")
+        doc.SaveSchemaVersion = 4
+        doc.saveAs(path)
         App.closeDocument(doc.Name)
         old = os.path.join(folder, "PaintOlder.FCStd")
         check("an older file made of it", older(path, old, both) == [1, 1])
@@ -794,6 +799,9 @@ def run():
         names = [n for n in ("OverrideMaterial", "ShapeAppearance", "OverrideColorList")
                  if "Legacy" not in link.ViewObject.getPropertyStatus(n)]
         check("its view provider's are names over the link's (%r)" % (names,), not names)
+        path = os.path.join(folder, "PaintLinkSaved4.FCStd")
+        doc.SaveSchemaVersion = 4
+        doc.saveAs(path)
         App.closeDocument(doc.Name)
         old = os.path.join(folder, "PaintLinkOlder.FCStd")
         check("an older file made of it", older_link(path, old, "Link") == 1)

@@ -29,6 +29,7 @@
 #include <Base/PyWrapParseTupleAndKeywords.h>
 
 #include "DocumentObject.h"
+#include "ViewObjectRequest.h"
 #include "Document.h"
 #include "PropertyLinks.h"
 #include "DocumentObserver.h"
@@ -1059,10 +1060,32 @@ PyObject *DocumentObjectPy::getElementMapVersion(PyObject *args) const{
     return Py::new_reference_to(Py::String(getDocumentObjectPtr()->getElementMapVersion(prop, Base::asBoolean(restored))));
 }
 
+namespace {
+std::function<void(const App::DocumentObject&)> _viewObjectRequest;
+}
+
+void App::setViewObjectRequest(std::function<void(const DocumentObject&)> request)
+{
+    _viewObjectRequest = std::move(request);
+}
+
+void App::requestViewObject(const DocumentObject& obj)
+{
+    if (_viewObjectRequest)
+        _viewObjectRequest(obj);
+}
+
 PyObject *DocumentObjectPy::getCustomAttributes(const char* attr) const
 {
     if (boost::equals(attr, "Parents")) {
         return const_cast<DocumentObjectPy*>(this)->getParents(Py::Tuple().ptr());
+    }
+    // A view provider the load has not made yet is made for who asks for it
+    // (ViewObjectRequest.h). The property answers, as it always has.
+    if (boost::equals(attr, "ViewObject")) {
+        auto obj = getDocumentObjectPtr();
+        if (obj->ViewObject.getValue().isNone())
+            requestViewObject(*obj);
     }
     return nullptr;
 }

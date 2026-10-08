@@ -256,8 +256,13 @@ void DocumentRecovery::accept()
                 try {
                     auto doc = App::GetApplication().recoverDocument(
                         info.logDir.toUtf8().constData());
-                    if (auto gdoc = Application::Instance->getDocument(doc))
+                    if (auto gdoc = Application::Instance->getDocument(doc)) {
+                        // After what the load parked is made: the end of
+                        // that says the document is as the load left it,
+                        // and took this mark off (flushDeferredRestore())
+                        gdoc->flushDeferredRestore();
                         gdoc->setModified(true);
+                    }
                     info.status = DocumentRecoveryPrivate::Success;
                     if (item) {
                         item->setText(1, tr("Successfully recovered"));
@@ -331,8 +336,10 @@ void DocumentRecovery::accept()
             }
             else {
                 auto gdoc = Application::Instance->getDocument(docs[i]);
-                if (gdoc)
+                if (gdoc) {
+                    gdoc->flushDeferredRestore();
                     gdoc->setModified(true);
+                }
 
                 info.status = DocumentRecoveryPrivate::Success;
                 if (item) {

@@ -533,6 +533,7 @@ SET(Document_HPP_SRCS
     AppearanceUpdater.h
     LinkAppearance.h
     DocumentObserver.h
+    ViewObjectRequest.h
     DocumentObserverPython.h
     Expression.h
     ExpressionEvaluator.h

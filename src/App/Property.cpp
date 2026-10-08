@@ -394,6 +394,8 @@ unsigned long Property::getStatus() const
 
 void Property::setStatus(const StatusBits &bits, bool on)
 {
+    if(bits.test(Legacy))
+        _StatusBits.set(Legacy, on);
     if(on)
         setStatusValue((_StatusBits | bits).to_ulong());
     else
@@ -410,6 +412,12 @@ void Property::setStatusValue(unsigned long status) {
         |(1<<PropHidden)
         |(1<<PropNoPersist)
         |(1<<PropOwnerValue)
+        // What this build says of the property, not what a saved status
+        // does: a name over a value kept elsewhere. Taken from a file
+        // written before the name was one, from a default or from an undo,
+        // the name was a value again -- in the log, in an undo and, at
+        // schema 5, in the file. Set by name alone (setStatus()).
+        |(1<<Legacy)
         |(1<<Busy);
 
     status &= ~mask;
@@ -434,6 +442,11 @@ void Property::setStatus(Status pos, bool on) {
             touch();
         else
             purgeTouched();
+        return;
+    }
+    if(pos == Legacy) {
+        // Not through setStatusValue(), which leaves it as it is
+        _StatusBits.set(Legacy, on);
         return;
     }
     auto bits = _StatusBits;

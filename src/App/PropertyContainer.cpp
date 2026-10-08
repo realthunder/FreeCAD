@@ -295,10 +295,17 @@ void PropertyContainer::beforeSave(Base::Writer &writer) const
     FC_STATIC std::vector<App::Property*> props;
     props.clear();
     getPropertyList(props);
+    // A name over a value kept elsewhere (Property::Legacy) is written for
+    // the builds that look for it under that name: upstream, at schema 4.
+    // At schema 5, which this fork alone reads, the value is in the file
+    // where it is kept and the name is made of it when that is read
+    // (docs/ShapeAppearanceDesign.md sec 14.6.6).
+    const bool noNames = writer.getSchemaVersion() >= 5;
     for (auto prop : props) {
         if (!prop->getName()
                 || prop->getContainer() != this
-                || prop->testStatus(Property::PropNoPersist))
+                || prop->testStatus(Property::PropNoPersist)
+                || (noNames && prop->testStatus(Property::Legacy)))
             continue;
         auto res = Map.emplace(prop->getName(), prop);
         if (!res.second && FC_LOG_INSTANCE.isEnabled(FC_LOGLEVEL_LOG))

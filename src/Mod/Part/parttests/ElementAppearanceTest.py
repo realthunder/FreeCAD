@@ -384,8 +384,15 @@ class ElementAppearanceLinkTest(unittest.TestCase):
             xml = z.read("Document.xml").decode("utf-8")
         for name in ("OverrideMaterial", "ShapeAppearance"):
             self.assertNotIn('name="%s"' % name, xml)
-        # What upstream knows a link by is written as it always was
-        self.assertIn('name="ColoredElements"', xml)
+        # What upstream knows a link by is a name over the store too, and in
+        # no file this build alone reads; written for upstream, at schema 4,
+        # as it always was
+        self.assertNotIn('name="ColoredElements"', xml)
+        self.doc.SaveSchemaVersion = 4
+        four = os.path.join(folder, "link4.FCStd")
+        self.doc.saveAs(four)
+        with zipfile.ZipFile(four) as z:
+            self.assertIn('name="ColoredElements"', z.read("Document.xml").decode("utf-8"))
         App.closeDocument(self.doc.Name)
         self.doc = App.openDocument(path)
         link = self.doc.getObject("Link")

@@ -66,6 +66,7 @@
 #include <QLoggingCategory>
 
 #include <App/Document.h>
+#include <App/ViewObjectRequest.h>
 #include <App/DocumentObjectPy.h>
 #include <App/DocumentParams.h>
 #include <App/ExpressionSecurityRuntime.h>
@@ -496,6 +497,14 @@ void Application::initStyleParameterManager()
 Application::Application(bool GUIenabled)
 {
     //App::GetApplication().Attach(this);
+    // obj.ViewObject asked for before a progressive load has made it: what
+    // the load parked is made now (App/ViewObjectRequest.h)
+    App::setViewObjectRequest([](const App::DocumentObject &obj) {
+        if (!Application::Instance)
+            return;
+        if (auto doc = Application::Instance->getDocument(obj.getDocument()))
+            doc->flushDeferredRestore();
+    });
     if (GUIenabled) {
         // the sandbox guest's FreeCADGui reaches the host through the
         // gui.* bridge ops (docs/Sandbox.md 7.9)
