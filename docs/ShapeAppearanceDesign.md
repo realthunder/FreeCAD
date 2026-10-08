@@ -4767,3 +4767,124 @@ provider and what was made from the link drawing none of it; an
 `App::Part` assigned a list of looks, and Set Colors' colour for all of it
 twice and taken away; an import of 240 faces given colours by name, a part
 of them, a few and none, each face held against what it was given.
+
+#### 14.6.11 A view provider with no object to keep its looks
+
+Ruled (the user, 2026-10-08): a view provider's look property with no
+pass-through to an object's store behaves as it did before, and a module
+this tree cannot patch that uses `ChildViewProvider` works as it is -- his
+FreeCAD_assembly3 is one. So it was run, and what it found is here with
+what was found beside it.
+
+*Assembly3, measured.* `realthunder/FreeCAD_assembly3` 0.12.3, unpatched,
+in this build, against the same steps in this fork's release image of
+2025-10-15, which carries 0.12.2. It makes one child view provider: on its
+part group, a `Part::FeaturePython` that is a link, where the assembly is
+frozen or builds a shape (`Fuse`, `Cut`, `Common`), with `MapFaceColor`,
+`MapTransparency` and `ForceMapColors` on
+(`ViewProviderAsmPartGroup.showParts()`). That child shows a
+`Part::Feature`'s own shape, so it is a name over the object's looks as
+the object's own view provider would be (14.6.3), and nothing of this
+section's second half is in its way. The workbench loads on Qt 6; through
+fuse, a part given another colour, a face of the group painted by name,
+the parts not asked and asked again, `ShowParts`, cut, frozen and back, the
+group's faces are the image's, face for face; a file at schema 5 and at 4
+reads the same, the image's file reads here and this build's schema 4
+file in the image.
+
+One thing differed: a child just made said `ShapeColor` (0.14, 0.14,
+0.14) where the image said the preference's grey. It was no matter of the
+child. `Document.addObject(type, name, proxy, None, True)` -- the form
+that hands the proxy the object before anything else sees it, which every
+object of Assembly3 and Draft's link arrays are made with -- calls no
+`setupObject()` and never did, and `setupObject()` is where an object is
+given its look (14.6.10): such an object had none, and what has none is
+the default material's steel. Its own view provider, a link's, never
+showed that; the child did, for the faces no part hands a colour, and
+`FreeCADCmd` said (0, 0, 0). `setupObject()` is still not called there --
+it sets a link's and a sketch's version, which no script made this way
+expects -- and the look is given: `GeoFeature::giveDefaultAppearance()`,
+virtual, `Part::Feature`'s the one that does anything, called by
+`DocumentPy::addObject()` for that form.
+
+The same of a file: an object out of one older than its store has no look
+until a view provider gives it what it read (14.6.6), and a link's gives
+none. A part group saved by the image with no child, opened here and then
+made to fuse, was steel too. `Part::Feature::onDocumentRestored()` gives
+the look of a new object where the store has none of its own; a view
+provider that has one to give still gives it after, over that. (In
+`FreeCADCmd` such an object is now the preference's colour and not
+steel: the limit of 14.6.6 stands, and what it shows of it is what a new
+object would be.)
+
+*Not the child's, and the same of a plain box:* `DiffuseColor`'s fourth
+number is how opaque a face is here and was how far it is seen through; a
+face painted by name follows the object's `Transparency`, where the image
+left such a face as it was painted; and a document just read is drawn
+when it is first shown, so its scene has one colour until then.
+
+*The view provider that keeps its looks itself.* Not every
+`ViewProviderPartExt` shows the shape of a `Part::Feature`
+(`appearanceStore()`): a child on an object that is none -- a plain
+`App::Link` -- and the previews, which show another shape of the object
+(`setShapePropertyName()`), have no store, and their properties are
+values as they always were. What step B took with the rest was what such
+a view provider did with them: `setElementColors()` returned at its first
+line, and nothing made what the sources hand on. It is back, for that
+view provider alone and in the terms it had:
+
+- the names of the elements given a colour are the object's
+  `ColoredElements`, where it has that property (a link has), and their
+  colours `MappedColors` (`unboundNames()`,
+  `setUnboundElementColors()`). One list in two properties still: what is
+  drawn is made when both are there;
+- `updateUnboundColors()` writes `ShapeAppearance`, `LineColorArray` and
+  `PointColorArray`: the names, what the sources hand on where they are
+  asked (`ForceMapColors`, or `hasBaseFeature()`), and the list as it is
+  for the rest -- a colour given by number stays. A name taken away takes
+  its paint (`unboundPainted`, made again from the names after a read),
+  and sources asked no more leave the object's own colour;
+- which elements the names mean and what the sources hand on is the
+  object's code, not a second copy of it:
+  `Part::Feature::mapElementLooks()` is that half of `updateAppearance()`
+  with the looks handed in and out, and `updateAppearance()` calls it.
+
+`setElementAppearances()` on such a view provider is the colours of the
+looks: it has nowhere to keep more of a name. The previews turn every
+`Map*` off and name nothing, and this does nothing for them.
+
+Against the image, a child on a plain link: the same faces for a name, an
+edge, another colour for the object, the faces of what the link shows and
+a list by number with a name over it, in a file at both schemas and from
+the image's file. Not the same, and meant: the image left a face in the
+colour of a name taken away, took the sources' colours only when a flag
+was written and kept them when it was told to ask no more. Here a name
+taken away takes its paint and a flag says what is drawn, as for every
+other view provider.
+
+*`Transparency` out of a file with no base* (12.4). A child given a
+transparency of 30 and then a colour for each face read 0 from a schema 4
+file and 30 from a schema 5 one. Below 5 there is no base in the file and
+it is derived: the mirror -- `ShapeColor` with `Transparency` -- named no
+face, each being opaque, so the faces voted and the object became one of
+them. Where the mirror's colour is a face's and its transparency is not,
+the base is now what the mirror says and every face overrides it with
+what it has (`AppearanceList::deriveBase()`). A mirror in a colour no face
+has -- an import's constructor grey -- declines as before.
+
+*Still to rule.* The plan for `ChildViewProvider` of 2026-10-07 -- a store
+of its own for a child, "fused" as a value of the object -- is not built
+and none of this stands in for it: an unbound child keeps what it kept in
+2025, which is why a module that knows nothing of a store works.
+
+Checks. Python `parttests.ElementAppearanceTest.ElementAppearanceMadeTest`,
++1: an object added with its proxy has the look of one added without.
+gtest `PropertyAppearanceList_tests_run`, 109 (+1): the mirror's colour
+with another transparency is the base, where its faces override it and
+where some wear it, and a colour no face has declines.
+`scripts/appearance-child-check.py`, 28, a GUI run of its own
+(`$CHILDCHECK_OUT`): a part group made as Assembly3 makes its own and a
+child on it through the steps above, and a child on a plain link through
+its own, each read back at schema 5 and at 4. Assembly3 itself is not in
+the gates: `~/.cache/txnlog-e/tools/probe_asm3.py` with `run.sh here|fork`
+(`E_ADDON` links the workbench into this build) is the run to repeat.
