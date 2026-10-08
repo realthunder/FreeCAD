@@ -581,9 +581,23 @@ void PropertyLists::Save (Base::Writer &writer) const
     // A class that streams must implement saveXML too -- ForceXML has always
     // required that of it -- so this branch cannot reach the base class throw
     // where the file branch would not have.
+    //
+    // Not below schema 5. "The form the reader has always taken" is this
+    // fork's reader: upstream's reads a list that streams from its entry and
+    // from nowhere else, so a float, vector, colour or material list written
+    // inline at schema 4 -- the format written for upstream -- came back
+    // empty there, a two point polygon as one point at the origin. Schema 0
+    // is no document's (an export, a content dump) and is read by this build;
+    // and so is a list that is no property of its container but held inside
+    // one (the looks an object's ElementAppearance holds), which upstream
+    // steps over with the property it does not know.
     const long inlineLimit = DocumentParams::getInlineListSize();
+    const PropertyContainer *owner = getContainer();
+    const bool forUpstream = writer.getSchemaVersion() > 0 && writer.getSchemaVersion() < 5
+        && owner && hasName() && owner->getPropertyByName(getName()) == this;
     if (writer.isForceXML() || !canSaveStream(writer)
-            || (inlineLimit > 0 && static_cast<long>(getSaveSize(writer)) <= inlineLimit)) {
+            || (inlineLimit > 0 && !forUpstream
+                && static_cast<long>(getSaveSize(writer)) <= inlineLimit)) {
         writer.Stream() << writer.ind() << '<' << element << " count=\"" <<  getSize() <<"\" ";
         if(!saveXML(writer))
             writer.Stream() << writer.ind() << "</" << element << ">\n";

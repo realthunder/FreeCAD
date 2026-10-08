@@ -4174,6 +4174,41 @@ class TransactionBranchCases(unittest.TestCase):
         doc.restore()
         self.assertEqual(doc.getObject("Cut").Shape.ElementMap, em)
 
+    def testAListForUpstreamIsInAFileOfItsOwn(self):
+        # A list small enough to cost more as an archive entry than as text
+        # is written into the XML -- at schema 5. Upstream reads a float,
+        # vector or colour list from its entry and from nowhere else, so at
+        # schema 4, the format written for it, such a list came back empty
+        # there: a polygon of two points as one point at the origin.
+        import zipfile
+
+        doc = self.track(FreeCAD.newDocument("SmallLists"))
+        obj = doc.addObject("App::FeaturePython", "Dyn")
+        obj.addProperty("App::PropertyFloatList", "Floats")
+        obj.Floats = [1.5, 2.5]
+        obj.addProperty("App::PropertyVectorList", "Vectors")
+        obj.Vectors = [FreeCAD.Vector(1, 2, 3)]
+        obj.addProperty("App::PropertyColorList", "Colors")
+        obj.Colors = [(1.0, 0.0, 0.0)]
+        doc.recompute()
+        paths = {}
+        for schema, inline in ((5, True), (4, False)):
+            doc.SaveSchemaVersion = schema
+            paths[schema] = os.path.join(self.dir, "smalllists%d.FCStd" % schema)
+            doc.saveAs(paths[schema])
+            with zipfile.ZipFile(paths[schema]) as z:
+                xml = z.read("Document.xml").decode()
+            for element in ("FloatList", "VectorList", "ColorList"):
+                self.assertEqual(("<%s count=" % element) in xml, inline, (schema, element))
+                self.assertEqual(("<%s file=" % element) in xml, not inline, (schema, element))
+        FreeCAD.closeDocument(doc.Name)
+        for schema in (5, 4):
+            again = self.track(FreeCAD.openDocument(paths[schema]))
+            self.assertEqual(list(again.Dyn.Floats), [1.5, 2.5])
+            self.assertEqual(again.Dyn.Vectors, [FreeCAD.Vector(1, 2, 3)])
+            self.assertEqual([tuple(c[:3]) for c in again.Dyn.Colors], [(1.0, 0.0, 0.0)])
+            FreeCAD.closeDocument(again.Name)
+
     def testSaveCompactsTheStringTable(self):
         # Sec 27.50 item 4, 27.51 Q3-Q4: a save drops every string nothing
         # holds and no retained version or value uses, and keeps the ones
