@@ -35,6 +35,7 @@ try:
 except ModuleNotFoundError:
     pass
 
+from draftutils import params_registry
 from draftutils.translate import translate
 
 if App.GuiUp:
@@ -491,6 +492,11 @@ def _get_shape_string_font_file():
     return ""
 
 
+# The .ui root and the widget of each setting of a preference page, by (path, entry):
+# what params_registry takes a setting's title, tool tip and editor from.
+_PAGE_WIDGETS = {}
+
+
 def _get_param_dictionary():
 
     # print("Creating preferences dictionary...")
@@ -807,6 +813,7 @@ def _get_param_dictionary():
                                            f'{ET.tostring(widget, encoding="unicode")}\n')
 
                 if path is not None:
+                    _PAGE_WIDGETS[(path, entry)] = (root, widget)
                     if path in param_dict:
                         param_dict[path][entry] = (typ, value)
                     else:
@@ -816,6 +823,10 @@ def _get_param_dictionary():
 
 
 PARAM_DICT = _get_param_dictionary()
+
+# Describe the table to the settings registry, where the omni search finds a setting.
+params_registry.register(PARAM_DICT, _PAGE_WIDGETS)
+_PAGE_WIDGETS.clear()
 
 _GRID_DOCUMENT_NAMESPACE = "Draft"
 _GRID_DOCUMENT_SETTINGS = {

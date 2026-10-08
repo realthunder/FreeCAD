@@ -22,6 +22,15 @@ Claims:
     listed beside them, each once: "/param Mod/Assembly/" has the thirteen
     and the seven.
 
+Draft and BIM keep a table of their settings already (draftutils.params),
+part of it read from their preference pages; loading it describes them,
+with a title, a documentation and the page's editor each:
+
+  - with Draft's table loaded, "/param snap range" lists Mod/Draft/snapRange
+    and "/param wall width" Mod/Arch/WallWidth, neither on any page, and
+    "/param default working plane" Mod/Draft/defaultWP, which is on one;
+  - loading the table reported nothing it could not describe.
+
 Scored against the tree before the change: see the commit message.
 """
 import os
@@ -122,6 +131,21 @@ def run():
         want = sorted(ASSEMBLY + n for n in PYTHON_READ + CPP_READ)
         check("with the module loaded its twenty settings are listed, each once",
               sorted(rows) == want, sorted(set(want) ^ set(rows)) or len(rows))
+
+        from draftutils import params  # noqa: F401 -- Draft's and BIM's table
+        settle(0.5)
+        found = [param_rows(q) for q in ("snap range", "wall width", "default working plane")]
+        check("with Draft's table loaded its settings are listed, on a page or not",
+              "Preferences/Mod/Draft/snapRange" in found[0]
+              and "Preferences/Mod/Arch/WallWidth" in found[1]
+              and "Preferences/Mod/Draft/defaultWP" in found[2], [f[:3] for f in found])
+        report = ""
+        for w in QtWidgets.QApplication.allWidgets():
+            if w.metaObject().className() == "Gui::DockWnd::ReportOutput":
+                report += w.toPlainText()
+        check("and loading it reported nothing it could not describe",
+              "is not described" not in report and "is described already" not in report,
+              [line for line in report.splitlines() if "described" in line][:3])
     except Exception:
         note("FAIL the test ran | " + traceback.format_exc().replace("\n", " | "))
     finally:
