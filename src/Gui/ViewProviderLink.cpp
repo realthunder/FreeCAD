@@ -2535,7 +2535,13 @@ void ViewProviderLink::updateDataPrivate(App::LinkBaseExtension *ext, const App:
 
 void ViewProviderLink::updateElementList(App::LinkBaseExtension *ext) {
     const auto &elements = ext->_getElementListValue();
-    if(OverrideMaterialList.getSize() || MaterialList.getSize()) {
+    // The looks of the elements of an array are its elements' where it has
+    // elements, and are handed to them. Collapsed it has none, and the two
+    // lists are where the looks are: handed to nobody and cleared, which is
+    // what this did whenever it ran with none -- when the array was
+    // collapsed, a moment after the lists were filled, and every time its
+    // file was read -- an array lost the looks of its elements.
+    if(!elements.empty() && (OverrideMaterialList.getSize() || MaterialList.getSize())) {
         int i=-1;
         for(auto obj : elements) {
             ++i;
