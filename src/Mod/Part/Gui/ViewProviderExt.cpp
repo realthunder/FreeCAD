@@ -866,6 +866,27 @@ struct DeferredVisualQueue {
     /// The longest stretch one slice spent on this document: what the
     /// slice budget is a promise about.
     std::chrono::duration<double> longest {0};
+    /// Visuals asked for while a pre-mesh worker had their shape, and put
+    /// back on the queue (docs/DocumentLoad.md sec 18.10): how many in
+    /// all, and how many in a row since this queue last built one.
+    std::size_t putBack = 0;
+    std::size_t stalled = 0;
+    /// The pre-mesh's count of ended claims from before the first ask of
+    /// that row. With every visual left asked for and that count where it
+    /// was, nothing has changed that an ask could find.
+    std::uint64_t stallMark = 0;
+    /// Steps the progress bar is owed for visuals that have left the
+    /// queue. Made at the top of the next turn of the loop, and not as the
+    /// visual leaves: the bar runs events when it is stepped, and at the
+    /// top of a slice the event loop has just had its turn, where after a
+    /// build a frame and the refine landings are waiting -- inside the
+    /// slice, they are the slice's time.
+    std::size_t stepsOwed = 0;
+    /// When that row was complete. A queue that waits asks again after a
+    /// second whatever the count says: the wait rests on the count moving
+    /// for everything that can end a wait, and a wait that outlived a
+    /// mistake in that would be a document that never fills in.
+    std::chrono::steady_clock::time_point stalledAt;
     /// Counts the times this queue's document was closed while a slice
     /// was on the stack. The slice reads it before it lets events run
     /// and again after: a different number says that everything it holds
@@ -925,6 +946,13 @@ namespace {
 /// 1.8s single builds, the worst per-item stalls of both the load and
 /// the drop phase.
 bool s_drainVisualBuild = false;
+
+/// Set by a build that parked itself because a pre-mesh worker has its
+/// shape (the gate in updateVisual), for the drain that called it: a
+/// visual can come back parked for the load's own reason too, its
+/// document gone back into a restore under the slice, and that one is
+/// not waiting for any claim.
+bool s_parkedForPreMesh = false;
 
 /// True while a pump item runs the rebuild it deferred out of a
 /// landing (see the gate at the top of updateVisual): the re-entered
@@ -5947,6 +5975,9 @@ void ViewProviderPartExt::runDeferredVisualSlice()
     const double share = budget / ready;
     bool more = false;
     bool builtAny = false;
+    // Whether any queue had something to do. A slice that found every
+    // queue waiting for a pre-mesh does not post itself again at once.
+    bool worked = false;
     for (auto it = visuals.docs.begin(); it != visuals.docs.end(); ) {
         auto &queue = it->second;
         auto doc = eligible(it->first);
@@ -5992,55 +6023,119 @@ void ViewProviderPartExt::runDeferredVisualSlice()
         if (doc->serveDeferredFiles(left)) {
             charge();
             more = true;
+            worked = true;
             ++it;
             continue;
         }
 
+        // Every visual this queue has left was asked for since it last
+        // built one, and each was put back: a pre-mesh worker has its
+        // shape (sec 18.10). If no claim has ended since before the first
+        // of those asks, an ask finds what it found, and the queue waits.
+        // Going round instead was all a drain did whose last shapes were
+        // slow ones -- 13000 to 20000 slices and a pegged GUI thread for
+        // three plates that take two seconds to mesh
+        // (tests/gui/drain-waits-for-premesh.py).
+        if (queue.stalled && queue.stalled >= queue.pending.size()) {
+            if (preMeshEnded() == queue.stallMark
+                    && std::chrono::steady_clock::now() - queue.stalledAt
+                        < std::chrono::seconds(1)) {
+                more = true;
+                ++it;
+                continue;
+            }
+            queue.stalled = 0;
+        }
+
+        worked = true;
         ++queue.slices;
         while (!queue.pending.empty()) {
+            // One step for each visual that has left the queue, and none
+            // for one that was put back on it.
+            if (queue.stepsOwed) {
+                const std::size_t owed = queue.stepsOwed;
+                queue.stepsOwed = 0;
+                for (std::size_t n = 0; n < owed && visuals.seq; ++n)
+                    visuals.seq->next();
+                // The progress bar has just run events. The document may
+                // be closed, and one of its name opened in its place: the
+                // queue was emptied and started over.
+                if (queue.closedUnder != closedUnder)
+                    break;
+                if (queue.pending.empty())
+                    break;
+            }
             const App::DocumentObjectT objT = queue.pending.front();
             queue.pending.pop_front();
-            ++queue.popped;
-            if (visuals.seq)
-                visuals.seq->next();
-            // The progress bar has just run events. The document may be
-            // closed, and one of its name opened in its place: the queue
-            // was emptied and started over, and what was popped above is
-            // an object of a document that is gone.
-            if (queue.closedUnder != closedUnder)
-                break;
-            // Resolved only now, for the same reason: by name, after the
-            // events, never a pointer taken before them.
+            // By name, and with no event run since the pop
             auto obj = objT.getObject();
             auto vp = obj ? Base::freecad_dynamic_cast<ViewProviderPartExt>(
                                 Gui::Application::Instance->getViewProvider(obj))
                           : nullptr;
+            bool putBack = false;
             if (vp && vp->VisualDeferred) {
                 vp->VisualDeferred = false;
                 // Something may have built it in the meantime -- counted
                 // only when this slice is what built it, or the line would
                 // report work it never did.
                 if (vp->VisualTouched) {
-                    // Under the drain flag, so an oversized bare shape
-                    // may take the stand-in path instead of an inline
-                    // tessellation (see s_drainVisualBuild).
-                    Base::StateLocker drainBuild(s_drainVisualBuild);
-                    vp->updateVisual();
-                    if (vp->VisualDeferred) {
-                        // Parked again rather than built: a pre-mesh
-                        // worker still owns this shape's TShape (sec
-                        // 18), and it is back on this very queue.
-                        // Walking the rest of a queue that is all in
-                        // flight would only re-park every item and
-                        // burn the slice, so the next one has it.
+                    // Read ahead of the ask: a claim that ends after this
+                    // is one the ask may have missed.
+                    const std::uint64_t ended = preMeshEnded();
+                    s_parkedForPreMesh = false;
+                    {
+                        // Under the drain flag, so an oversized bare shape
+                        // may take the stand-in path instead of an inline
+                        // tessellation (see s_drainVisualBuild).
+                        Base::StateLocker drainBuild(s_drainVisualBuild);
+                        vp->updateVisual();
+                    }
+                    // A build can run events too
+                    if (queue.closedUnder != closedUnder)
+                        break;
+                    if (vp->VisualDeferred && !s_parkedForPreMesh) {
+                        // Parked again by the load: the document is being
+                        // restored once more, and the next slice finds it
+                        // so.
                         break;
                     }
-                    ++queue.built;
-                    builtAny = true;
+                    if (vp->VisualDeferred) {
+                        // Parked again rather than built: a pre-mesh
+                        // worker still has this shape (sec 18), and the
+                        // visual is at the back of this very queue. The
+                        // slice goes on to the next -- one behind a slow
+                        // shape may be ready -- until it has been round.
+                        putBack = true;
+                        ++queue.putBack;
+                        if (queue.stalled++ == 0)
+                            queue.stallMark = ended;
+                    }
+                    else {
+                        queue.stalled = 0;
+                        ++queue.built;
+                        builtAny = true;
+                    }
                 }
+            }
+            if (!putBack) {
+                ++queue.popped;
+                ++queue.stepsOwed;
+            }
+            else if (queue.stalled >= queue.pending.size()) {
+                // Been round: everything left is in flight.
+                queue.stalledAt = std::chrono::steady_clock::now();
+                break;
             }
             if (elapsed().count() >= limit)
                 break;
+        }
+        // The last visuals of a queue have no next turn to be stepped at.
+        if (queue.pending.empty() && queue.stepsOwed
+                && queue.closedUnder == closedUnder) {
+            const std::size_t owed = queue.stepsOwed;
+            queue.stepsOwed = 0;
+            for (std::size_t n = 0; n < owed && visuals.seq; ++n)
+                visuals.seq->next();
         }
         if (queue.closedUnder != closedUnder) {
             // Closed under this slice. The queue is a new one: whatever
@@ -6066,7 +6161,8 @@ void ViewProviderPartExt::runDeferredVisualSlice()
         FC_LOG("progressive load " << it->first << ": " << queue.built
                 << " of " << queue.popped << " visuals in " << queue.slices
                 << " slices, " << queue.spent.count() << "s, longest "
-                << queue.longest.count() << 's');
+                << queue.longest.count() << "s, " << queue.putBack
+                << " put back for the pre-mesh");
         if (preMeshEnabled()) {
             // What the parallel pre-mesh did for this load (sec 18):
             // the batch's own wall time is what the drain's mesh term
@@ -6105,8 +6201,11 @@ void ViewProviderPartExt::runDeferredVisualSlice()
         clearPreMeshClaims();
     }
 
+    // With every queue waiting for a pre-mesh, look again shortly rather
+    // than at once: the workers' own hand-back wakes this thread to take
+    // their meshes, and the count this looks at is one atomic read.
     if (more)
-        scheduleDeferredVisualSlice();
+        scheduleDeferredVisualSlice(worked ? 0 : 10);
 }
 
 namespace {
@@ -6470,6 +6569,7 @@ void ViewProviderPartExt::updateVisual()
         if (parks
                 || !waitPreMesh(cachedShape.getShape(), 120.0)) {
             parkedBuild.parked = true;
+            s_parkedForPreMesh = true;
             VisualTouched = true;
             if (auto obj = getObject()) {
                 if (auto doc = obj->getDocument())

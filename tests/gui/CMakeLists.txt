@@ -1445,6 +1445,17 @@ fc_add_gui_test(GuiExitWithOpenDocument_tests_run exit-with-open-document.py
 fc_add_gui_test(GuiSyncViewDoesNotMesh_tests_run sync-view-does-not-mesh.py
                 --timeout 200)
 
+# The visual drain waits for a pre-mesh in flight (docs/DocumentLoad.md sec
+# 18.10): a visual whose shape a worker still has is put back on the queue,
+# and with nothing else left to build the drain went round -- one pop, one
+# ask and one turn of the event loop at a time, for as long as the workers
+# took. Two plates that take a second to mesh, and twenty spheres. Scored
+# against the tree before, three runs: 8 checks of 14 each time, 11400 to
+# 13300 slices for 22 visuals ("22 built of 11617 popped"), the GUI thread
+# busy for 1.7 s of 1.8 s.
+fc_add_gui_test(GuiDrainWaitsForPreMesh_tests_run drain-waits-for-premesh.py
+                --timeout 200)
+
 # Making a view the active window makes its cell the view area's active
 # cell and brings the keyboard with it (docs/SplitViews.md sec 21): right
 # after "create new view" the first view can be clicked back into; with

@@ -147,6 +147,9 @@ std::chrono::steady_clock::time_point s_first;
 /// Bumped by clearPreMeshClaims: a claim made before it is counted for
 /// nobody, and leaves the map when it is done.
 std::atomic<uint64_t> s_generation {0};
+/// Claims ended, whichever way and whichever their generation: see
+/// preMeshEnded.
+std::atomic<std::uint64_t> s_ended {0};
 /// Set while stopPreMesh waits: a worker starts no twin it has not
 /// started. One it is in is finished -- nothing interrupts the mesher.
 std::atomic<bool> s_stopping {false};
@@ -269,6 +272,7 @@ void publishLocked(ClaimPtr claim, bool meshed)
         s_outWeight -= std::min(s_outWeight, claim->parts.size());
     }
     s_flying.fetch_sub(1, std::memory_order_acq_rel);
+    s_ended.fetch_add(1, std::memory_order_acq_rel);
     if (claim->generation == s_generation.load(std::memory_order_acquire)) {
         ++(meshed ? s_meshed : s_failed);
         s_wall = std::chrono::duration<double>(
@@ -603,6 +607,12 @@ void preMeshStats(std::size_t &claimed, std::size_t &meshed,
     meshed = s_meshed;
     failed = s_failed;
     wall = s_wall;
+}
+
+std::uint64_t preMeshEnded()
+{
+    service();
+    return s_ended.load(std::memory_order_acquire);
 }
 
 void stopPreMesh()

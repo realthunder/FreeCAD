@@ -24,6 +24,7 @@
 #define PARTGUI_PREMESH_H
 
 #include <cstddef>
+#include <cstdint>
 #include <vector>
 
 #include <Bnd_Box.hxx>
@@ -166,6 +167,14 @@ PartGuiExport bool preMeshBox(const void *tshape, Bnd_Box &box);
 /// first submit to the last mesh taken.
 PartGuiExport void preMeshStats(std::size_t &claimed, std::size_t &meshed,
                                 std::size_t &failed, double &wall);
+
+/// How many claims have ended so far -- meshed, failed, given up or
+/// dropped -- after taking what has come back, as every question here
+/// does. Only ever counts up. Nothing that answers as in flight stops
+/// doing so without this moving, which is what a drain needs to know that
+/// has asked about everything it has left and found all of it in flight:
+/// until the number moves there is nothing to ask again.
+PartGuiExport std::uint64_t preMeshEnded();
 
 /// Forget the claims. One that has not been handed to a worker is
 /// dropped: its callers know that no build is going to ask. One a worker
