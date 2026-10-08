@@ -61,7 +61,7 @@ report views, the reporter's own files -- is kept beside the dev tree under
 | 21 | 2026-10-06 | TechDraw: a click on a section line starts a section, and the line shifts at each recompute | STAGED |
 | 22 | 2026-10-06 | omni search: `/word` with no space is an object query; `/ word` forces it (change request, decided) | STAGED 2026-10-07 14:23, fixed `5aedd5cf83`: "/word" is an object query, "/ word" forces it, a keyword in full is the keyword, the beginning of one lists modes and objects together; the browser viewer's grammar follows (its bundle not rebuilt) |
 | 23 | 2026-10-06 | omni search: every setting it collects has documentation, none of it long (an audit asked) | STAGED 2026-10-07 14:23, fixed `c7a27b5a85` (and `08b8f009aa`): 574 settings audited, 221 had no documentation and 94 ran past 400 characters; all have a short text now and a test keeps it so. Side findings for the reporter in `docs/HandsOnLog.md`. The defaults FIXED `02cab053df`, not staged: OK on a fresh profile changed 23 settings and stored 2 under a wrong type, 14 of them a generated page's spin box clamping its default to 99; a test keeps it so |
-| 24 | 2026-10-06 | every `Base::Parameter` setting behind a cog helper class so the omni search finds it, applied through delayed handlers (change request, application-wide) | C++ SIDE DONE; decisions applied `e21eff05a7`, not staged, not pushed: of 28 defaults chosen on the way 5 went back to upstream's program (editor font, Home, marker sizes, Asymptote height, CAM units); 12 of the 16 open findings fixed; six questions back with the reporter (A24, A28, D1, D8, D13, D14); the Python door (C1) is entry 41 and the state keys (C2) entry 42, decided and not started (`docs/HandsOnLog.md`) |
+| 24 | 2026-10-06 | every `Base::Parameter` setting behind a cog helper class so the omni search finds it, applied through delayed handlers (change request, application-wide) | C++ SIDE DONE; decisions applied in two rounds, `e21eff05a7` and `427ffc8d28`; not staged; push follows the suites: editors' font Courier, Home Top, marker size 7 everywhere, Asymptote height empty, CAM unit default upstream's; 15 of the 16 findings fixed or dropped as decided; A24 (accent colours) still with the reporter (`docs/HandsOnLog.md`) |
 | 25 | 2026-10-06 | the outline of a highlighted face is jagged, MSAA on or off | OPEN |
 | 26 | 2026-10-06 | a long halt after enabling MSAA and pressing OK in the preferences | FIXED `175ffce199`, not staged: the FIRST OK of a profile held the program 11 to 15 s (780 keys stored for the first time and taken for changes: stylesheet set again 4.2 s, every Part view provider re-meshed 3.2 s, language activated again about 2 s); 0.9 s now (`docs/HandsOnLog.md`) |
 | 27 | 2026-10-06 | the view cell menu: opens a spreadsheet nobody asked for, lists every TechDraw object, changes the wrong cell | STAGED 2026-10-07 14:23, fixed `fa2ada985c`: the menu made a spreadsheet view by asking for it, listed a page's views, and placed a pick by the general policy instead of into its cell; all three gone, spreadsheets now listed by type like pages (`docs/HandsOnLog.md`) |
@@ -79,7 +79,8 @@ report views, the reporter's own files -- is kept beside the dev tree under
 | 39 | 2026-10-07 | MSAA has not reached any view since 2026-09-07 (found by the build session on entry 26) | FIXED `c7d115e576`, not staged: with "MSAA 4x" chosen the backend could not create its scene targets and drew without multisampling from then on, on every backend; the depth is write-only under MSAA now. The reporter's case on the fixed tree: 0.75 s in all, both views at 4 samples (`docs/HandsOnLog.md`) |
 | 40 | 2026-10-07 | crash on exit: a TechDraw page in a split view cell is destroyed after its view provider, and writes into it | OPEN (cause read from the stack) |
 | 41 | 2026-10-08 | the Python-only modules' settings in the omni search, through a way into the registry from Python (from entry 24: C1, C4) | OPEN, decided, not started |
-| 42 | 2026-10-08 | state keys (window sizes, recent lists, last directories, first-run flags) through the generator like every other setting (from entry 24: C2) | OPEN, decided, not started |
+| 42 | 2026-10-08 | state keys (window sizes, recent lists, last directories, first-run flags) through the generator like every other setting (from entry 24: C2) | OPEN, decided (and listed by the omni search), not started |
+| 43 | 2026-10-08 | omni search: the highlighted row's text is white on a light blue highlight | OPEN; looked at by the build session, not a side effect of the theme defaults, not fixed |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -1633,7 +1634,7 @@ collects automatically; (b) each must have documentation; (c) none of it
 overly long; (d) pick out the long ones in particular -- text an agent wrote
 as development notes that ended up as a setting's documentation.
 
-## 24. Every setting behind a generated helper class, applied by delayed handlers (a change request) -- C++ side done, decisions applied `e21eff05a7`; six questions back with the reporter (see `docs/HandsOnLog.md`)
+## 24. Every setting behind a generated helper class, applied by delayed handlers (a change request) -- C++ side done, decisions applied in two rounds; A24 still with the reporter (see `docs/HandsOnLog.md`)
 
 **From the build session, started** (passed on 2026-10-07 18:10; its log,
 entry 24, has the method and the inventory):
@@ -1933,6 +1934,26 @@ entry 24, has the method and the inventory):
     at once", what the "continue" switch of D4 is, D8 and D13 to be
     elaborated, "what's with material and import" -- are the build session's
     to answer there.)
+- **The reporter's second answer, 2026-10-08, passed on by the build
+  session at 10:05; applied in `427ffc8d28`; not staged; the push follows
+  the suites.** Verbatim: "D4 keep as upstream. D8 Fix. D13 drop as
+  upstream. D14 Migrate default face color to Material setting. A2 default
+  to Courier. A9 Unify the default to 7. A24 use upstream seed. A28 make it
+  16. D1 follow upstream. D2 you mean DefaultPageScale has no user? then
+  drop it. D12 keep it in Mode/Part, drop the partdesign one. D14, is that
+  what upstream does. follow upstream for this one.  Entry 42, list those
+  keys. Push after done".
+  As the build session reports the outcome (its log, entry 24, "THE SECOND
+  ROUND, 2026-10-08"): the editors' font is Courier, Home goes to Top, the
+  marker size is 7 everywhere, the Asymptote height is empty, CAM's unit
+  default is upstream's; 15 of the 16 findings are fixed or dropped as
+  decided.
+  - **One answer NOT applied, back with the reporter: A24.** "Use upstream
+    seed" would undo `00d2b684fd` ("give the three accent slots three
+    colours"), which the question as put had not mentioned.
+  - One answer taken with a correction, told to the reporter: "A9 ... 7"
+    was taken for A5, the marker size.
+  - "Entry 42, list those keys" is recorded under entry 42.
 - **Three questions for the reporter, NOT ANSWERED YET** (log, entry 24, "To
   decide"):
   1. Modules written in Python only -- BIM, Draft, AddonManager, parts of CAM
@@ -2680,6 +2701,28 @@ through the generator like every other setting.
 Not started. To settle when it is: whether "through the generator" also
 means LISTED by the omni search, or defined there and kept out of its list
 -- the answer says the first and does not mention the list.
+**Settled by the reporter, 2026-10-08** (to the build session, passed on
+10:05): "Entry 42, list those keys". The state keys are defined through the
+generator AND listed by the omni search.
+
+## 43. Omni search: the highlighted row's text is white on a light blue highlight -- OPEN
+
+**2026-10-08, said by the reporter to the build session** and passed on at
+10:05 to be given an entry: "the omni search list box's highlighted text
+color is white, which does not look good with light blue highlight
+background. is this the side affect of the theme default setting change?"
+In the omni search's list the highlighted row has white text on a light blue
+background, which reads badly. And a question: did the change of the theme
+defaults (entry 24) bring it?
+**The build session's answer to the question, looked at, not fixed:** it is
+not a side effect. The row is painted by the style sheet's
+`@AccentBackgroundColor`; the text is the palette's `HighlightedText`, in
+the omni search's row delegate; neither has changed since the stage of
+2026-10-07.
+So the defect stands on its own: the text colour of a highlighted row does
+not go with the accent colour behind it. Possibly touched by entry 24's one
+open point, A24 (the theme's accent colours), since the background is an
+accent colour. Not said yet: under which theme (Light, Dark, Classic).
 
 ## Inbox
 
@@ -2687,4 +2730,4 @@ Notes not sorted into an entry yet. Add a line here at any time, in any words;
 it is read before each entry is started and moved up into the table.
 
 (empty: the notes of 2026-10-06 are entries 20 to 28, those of 2026-10-07
-entries 29 to 40, those of 2026-10-08 so far entries 41 and 42)
+entries 29 to 40, those of 2026-10-08 so far entries 41 to 43)
