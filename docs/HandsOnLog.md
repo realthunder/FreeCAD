@@ -1909,9 +1909,10 @@ stay undescribed, Tux's marker stays described.
 - L11, checked: upstream is the same on both sides -- its
   `DlgSettingsMaterial.ui` has the box checked, its `MaterialEditor.py`
   reads `SortByResources` with False. Nothing changed. What it means in
-  use: until the Preferences dialog has been accepted once the card list
-  is sorted by name, after that by resource, because the page stores its
-  checked box. Recommended, not done: read it with True, the page's.
+  use: the Python card editor sorts its list by name until Material's
+  preference page has been saved once, and by resource after, because the
+  page stores its checked box. Recommended, not done: read it with True,
+  the page's.
 - F10, elaborated. A module directory is initialised in two passes:
   `FreeCADInit.py` runs its `Init.py` in every session, `FreeCADGuiInit.py`
   its `InitGui.py` when there is a GUI. Help and Tux had only the second
@@ -1919,8 +1920,7 @@ stay undescribed, Tux's marker stays described.
   the other three modules of step 4, and Assembly, Fem and CAM before them,
   import it from `Init.py`, so the same was done here by adding the file,
   five lines with the one import. What it changes: the two modules'
-  settings are listed in a session without GUI as well -- `FreeCADCmd`,
-  the headless serve whose browser has the omni search -- and
+  settings are listed in a session without GUI as well (`FreeCADCmd`), and
   `BaseTests.testModulesDefinitions` and `-t ModuleSettings`, which run in
   `FreeCADCmd`, see them. Nothing else of the module is loaded by it:
   `Help.py` and Tux's GUI files are imported by `InitGui.py` as before. The
