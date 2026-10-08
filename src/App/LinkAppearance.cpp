@@ -25,6 +25,7 @@
 #include <algorithm>
 #include <cctype>
 #include <cstdlib>
+#include <set>
 #include <sstream>
 
 #include <boost/algorithm/string/predicate.hpp>
@@ -37,6 +38,7 @@
 #include "Document.h"
 #include "DocumentObject.h"
 #include "ElementNamingUtils.h"
+#include "GeoFeature.h"
 #include "Link.h"
 #include "LinkAppearance.h"
 #include "MappedName.h"
@@ -373,6 +375,37 @@ void mirror(const LinkAppearance::Names &names)
     }
 }
 
+/** The store's names following the shape, before the object's are taken
+ *
+ * ColoredElements is a link to elements as the store is, and is told of a
+ * shape that counts its faces another way as the store is -- in no order
+ * anybody chose. Told first, it says "Face3" where the store still says
+ * "Face6", which read as a write is one name taken away and another, with
+ * no look, added: the look went with the renumbering. So the store is told
+ * of the shapes the new names are of before they are compared with its own.
+ */
+void followShapes(const LinkAppearance::Names &names, DocumentObject *owner)
+{
+    const std::vector<std::string> &given = names.colored->getSubValues();
+    const std::vector<std::string> &held = names.store->getSubValues();
+    std::set<GeoFeature *> shapes;
+    for (const std::string &name : given) {
+        if (name.empty() || std::find(held.begin(), held.end(), name) != held.end()) {
+            continue;
+        }
+        std::pair<std::string, std::string> element;
+        GeoFeature *geo = nullptr;
+        GeoFeature::resolveElement(owner, name.c_str(), element, true,
+                                   GeoFeature::ElementNameType::Export, nullptr, nullptr, &geo);
+        if (geo) {
+            shapes.insert(geo);
+        }
+    }
+    for (GeoFeature *geo : shapes) {
+        names.store->updateElementReference(geo, false, true);
+    }
+}
+
 bool settled(const LinkAppearance::Names &names)
 {
     auto owner = Base::freecad_dynamic_cast<DocumentObject>(names.store->getContainer());
@@ -413,6 +446,7 @@ void LinkAppearance::onChanged(const Names &names, const Property *prop, bool &b
     // An undo puts the store back, and the names follow it
     if (prop != names.store && !owner->getDocument()->isPerformingTransaction()) {
         if (prop == names.colored) {
+            followShapes(names, owner);
             setColored(*names.store, names.colored->getSubValues(), {});
         }
         else {

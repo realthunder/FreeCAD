@@ -396,6 +396,32 @@ class ElementAppearanceLinkTest(unittest.TestCase):
         self.assertIn(RED[:3], colors(cut))
         self.assertNotIn(GREEN[:3], colors(cut))
 
+    def testALookFollowsItsFaceThroughAShapeMadeAgain(self):
+        cyl = self.doc.addObject("Part::Cylinder", "Cyl")
+        cyl.Radius = 2
+        cyl.Height = 30
+        cyl.Placement.Base = App.Vector(5, 5, -40)
+        cut = self.doc.addObject("Part::Cut", "Cut")
+        cut.Base = self.box
+        cut.Tool = cyl
+        self.link.LinkedObject = cut
+        self.doc.recompute()
+        top = face(cut, ZMin=10)
+        ea = self.link.ElementAppearance
+        ea.setLook(top, material(GREEN))
+        # Drilled through: seven faces, and the top is another by number.
+        # ColoredElements is told of that as the store is, and the name it
+        # then says is not a face given no look
+        cyl.Placement.Base = App.Vector(5, 5, -10)
+        self.doc.recompute()
+        self.assertEqual(len(cut.Shape.Faces), 7)
+        self.assertNotEqual(face(cut, ZMin=10), top)
+        top = face(cut, ZMin=10)
+        self.assertEqual(ea.keys(), [top])
+        self.assertEqual(list(self.link.ColoredElements[1]), [top])
+        self.assertEqual(rgb(ea[top].DiffuseColor), GREEN[:3])
+        self.assertIn("Shininess", ea.own(top))
+
     def testTheLooksAreInTheFileAndTheirNamesAreNot(self):
         import zipfile
 
@@ -690,3 +716,4 @@ class ElementAppearanceMergeTest(unittest.TestCase):
             self.assertEqual(self.stated(cut)[top][0], RED[:3])
         finally:
             self.setting.RemString("TransactionLogMergeFacePaint")
+
