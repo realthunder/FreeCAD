@@ -5545,7 +5545,7 @@ TopoShape &TopoShape::makEShape(BRepPrimAPI_MakeHalfSpace &mkShape,
 
 TopoShape &TopoShape::makEDraft(const TopoShape &shape, const std::vector<TopoShape> &_faces,
         const gp_Dir &pullDirection, double angle, const gp_Pln &neutralPlane,
-        bool retry, const char *op, bool cell, bool stopAtBody)
+        bool retry, const char *op, bool cell, bool stopAtBody, bool tangentPropagation)
 {
     if(!op) op = Part::OpCodes::Draft;
 
@@ -5557,6 +5557,7 @@ TopoShape &TopoShape::makEDraft(const TopoShape &shape, const std::vector<TopoSh
             FC_THROWM(Base::CADKernelError,"no faces to draft");
         CellDraft mkDraft(shape.getShape());
         mkDraft.SetStopAtBody(stopAtBody);
+        mkDraft.SetTangentPropagation(tangentPropagation);
         for (const auto &face : _faces)
             mkDraft.Add(TopoDS::Face(face.getShape()), pullDirection, angle, neutralPlane);
         mkDraft.Build();

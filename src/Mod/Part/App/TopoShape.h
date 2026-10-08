@@ -2341,15 +2341,20 @@ public:
      *              faces or fails; retry has no effect.
      * @param stopAtBody: cell draft only: a drafted face does not grow the
      *                    body past a plane that bounds the whole body
+     * @param tangentPropagation: cell draft only: a drafted face takes the
+     *                            faces tangent to it along; off, a face
+     *                            tangent to the drafted ones that is not
+     *                            among \a faces is refused
      *
      * @return The original content of this TopoShape is discarded and replaced
      *         with the new shape. The function returns the TopoShape itself as
      *         a self reference so that multiple operations can be carried out
      *         for the same shape in the same line of code.
      */
-    TopoShape &makEDraft(const TopoShape &source, const std::vector<TopoShape> &faces, 
+    TopoShape &makEDraft(const TopoShape &source, const std::vector<TopoShape> &faces,
            const gp_Dir &pullDirection, double angle, const gp_Pln &neutralPlane,
-           bool retry=true, const char *op=nullptr, bool cell=false, bool stopAtBody=true);
+           bool retry=true, const char *op=nullptr, bool cell=false, bool stopAtBody=true,
+           bool tangentPropagation=true);
     /* Make draft shape
      *
      * @param source: the source shape
@@ -2362,14 +2367,16 @@ public:
      *            the operation
      * @param cell: use the cell draft, see above
      * @param stopAtBody: cell draft only, see above
+     * @param tangentPropagation: cell draft only, see above
      *
      * @return Return the new shape. The TopoShape itself is not modified.
      */
-    TopoShape makEDraft(const std::vector<TopoShape> &faces, 
+    TopoShape makEDraft(const std::vector<TopoShape> &faces,
            const gp_Dir &pullDirection, double angle, const gp_Pln &neutralPlane,
-           bool retry=true, const char *op=nullptr, bool cell=false, bool stopAtBody=true) const {
+           bool retry=true, const char *op=nullptr, bool cell=false, bool stopAtBody=true,
+           bool tangentPropagation=true) const {
         return TopoShape(0,Hasher).makEDraft(*this,faces,pullDirection,angle,neutralPlane,
-                                             retry,op,cell,stopAtBody);
+                                             retry,op,cell,stopAtBody,tangentPropagation);
     }
 
     /* Remove faces and heal the gap they leave, e.g. take a hole, a fillet

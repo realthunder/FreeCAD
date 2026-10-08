@@ -100,6 +100,21 @@ public:
         return myStopAtBody;
     }
 
+    /** Whether a drafted face takes its tangent chain with it (default
+     * true), as BRepOffsetAPI_DraftAngle does. Off, only the faces added
+     * are drafted, with their coplanar pieces and the added faces tangent
+     * to them; a face tangent to them that was not added is refused
+     * (TangentNeighbour; docs/NewDraft.md section 17).
+     */
+    void SetTangentPropagation(bool propagate)
+    {
+        myTangentPropagation = propagate;
+    }
+    bool TangentPropagation() const
+    {
+        return myTangentPropagation;
+    }
+
     void Build(const Message_ProgressRange& theRange = Message_ProgressRange()) override;
 
     ErrorType Error() const
@@ -145,6 +160,14 @@ public:
                                   const std::vector<TopoDS_Face>& faces,
                                   bool stopAtBody);
 
+    /** The faces of \a shape that drafting \a faces would draft with them
+     * only by tangent propagation: the faces of their tangent chains that
+     * are neither among \a faces nor pieces of the surface of one. Empty
+     * when turning propagation off changes nothing.
+     */
+    static std::vector<TopoDS_Face> TangentFaces(const TopoDS_Shape& shape,
+                                                 const std::vector<TopoDS_Face>& faces);
+
     struct FaceDraft
     {
         TopoDS_Face face;
@@ -166,6 +189,7 @@ private:
     TopoDS_Shape myInput;
     std::vector<FaceDraft> myFaces;
     bool myStopAtBody = true;
+    bool myTangentPropagation = true;
     Handle(BRepTools_History) myHistory;
     TopTools_IndexedMapOfShape myResultMap;
     ErrorType myError = NoError;

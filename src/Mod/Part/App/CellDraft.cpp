@@ -400,13 +400,40 @@ bool tangentAlong(const TopoDS_Edge& e, const TopoDS_Face& f, const TopoDS_Face&
     return true;
 }
 
+// Whether two curved faces lie on one surface: a cylinder or a cone in
+// pieces (a fillet split by slots across it), or one surface shared.
+bool sameSurface(const TopoDS_Face& f, const TopoDS_Face& g)
+{
+    BRepAdaptor_Surface sf(f), sg(g);
+    if (sf.GetType() != sg.GetType()) {
+        return false;
+    }
+    const double tol = Precision::Confusion();
+    if (sf.GetType() == GeomAbs_Cylinder) {
+        gp_Cylinder a = sf.Cylinder(), b = sg.Cylinder();
+        return std::abs(a.Radius() - b.Radius()) < tol
+            && a.Axis().IsCoaxial(b.Axis(), Precision::Angular(), tol);
+    }
+    if (sf.GetType() == GeomAbs_Cone) {
+        gp_Cone a = sf.Cone(), b = sg.Cone();
+        return a.Apex().Distance(b.Apex()) < tol
+            && std::abs(a.SemiAngle() - b.SemiAngle()) < Precision::Angular()
+            && a.Axis().IsCoaxial(b.Axis(), Precision::Angular(), tol);
+    }
+    TopLoc_Location lf, lg;
+    return BRep_Tool::Surface(f, lf) == BRep_Tool::Surface(g, lg) && lf == lg;
+}
+
 // The faces drafted with a face: the faces coplanar with it beside it, same
 // side out (a face split in pieces), and the faces joined to those along
 // tangent edges, and so on (a tangent chain: walls and the fillets between
 // them). Neither its geometry nor whether it can be drafted is looked at.
+// Without \a tangent, only the pieces: coplanar faces, and tangent faces on
+// the same surface.
 std::vector<TopoDS_Face> draftChain(const TopoDS_Face& face,
                                     const TopTools_IndexedMapOfShape& solidFaces,
-                                    const TopTools_IndexedDataMapOfShapeListOfShape& edgeFaces)
+                                    const TopTools_IndexedDataMapOfShapeListOfShape& edgeFaces,
+                                    bool tangent = true)
 {
     std::vector<TopoDS_Face> chain;
     TopTools_MapOfShape seen;
@@ -439,7 +466,7 @@ std::vector<TopoDS_Face> draftChain(const TopoDS_Face& face,
                         todo.push_back(g);
                     }
                 }
-                else if (tangentAlong(e, f, g)) {
+                else if (tangentAlong(e, f, g) && (tangent || sameSurface(f, g))) {
                     todo.push_back(g);
                 }
             }
@@ -1136,11 +1163,15 @@ public:
     CellDraftOne(const TopoDS_Shape& solid,
                  const std::vector<TopoDS_Face>& faces,
                  const CellDraft::FaceDraft& draft,
-                 bool stopAtBody)
+                 bool stopAtBody,
+                 bool propagate,
+                 const TopTools_MapOfShape& picked)
         : faces(faces)
         , solid(solid)
         , draft(draft)
         , stopAtBody(stopAtBody)
+        , propagate(propagate)
+        , picked(picked)
     {}
 
     bool run();
@@ -1338,6 +1369,10 @@ private:
     const TopoDS_Shape& solid;
     const CellDraft::FaceDraft& draft;
     bool stopAtBody;
+    // the tangent chain is drafted; else only the faces picked (with the
+    // same draft) join the set along tangent edges
+    bool propagate;
+    const TopTools_MapOfShape& picked;
     // the general fuse's fuzzy value: none, then a little on a second try,
     // then by the part's size
     double fuzzy = 0.0;
@@ -1562,6 +1597,13 @@ bool CellDraftOne::collectMembers(const TopTools_IndexedDataMapOfShapeListOfShap
                         if (coplanar(k) || cosurface(k)) {
                             join = k;
                         }
+                    }
+                    if (join < 0 && !propagate && !picked.Contains(g)) {
+                        return fail(CellDraft::TangentNeighbour,
+                                    "a face tangent to the drafted face is not drafted; turn "
+                                    "tangent propagation on, or fillet after the draft",
+                                    TopoDS_Face(),
+                                    g);
                     }
                     if (join < 0) {
                         if (!addMember(g)) {
@@ -3555,24 +3597,41 @@ void CellDraft::Build(const Message_ProgressRange& /*theRange*/)
                 continue;
             }
 
-            // the face's pieces in the current solid
+            // a face's pieces in the current solid
             TopTools_IndexedMapOfShape curFaces;
             TopExp::MapShapes(cur, TopAbs_FACE, curFaces);
-            std::vector<TopoDS_Face> faces;
-            if (total.IsNull() || !total->IsRemoved(fd.face)) {
+            auto pieces = [&](const TopoDS_Face& face) {
+                std::vector<TopoDS_Face> faces;
+                if (!total.IsNull() && total->IsRemoved(face)) {
+                    return faces;
+                }
                 const TopTools_ListOfShape* mod = nullptr;
                 if (!total.IsNull()) {
-                    mod = &total->Modified(fd.face);
+                    mod = &total->Modified(face);
                 }
                 if (!mod || mod->IsEmpty()) {
-                    if (curFaces.Contains(fd.face)) {
-                        faces.push_back(fd.face);
+                    if (curFaces.Contains(face)) {
+                        faces.push_back(face);
                     }
                 }
                 else {
                     for (const auto& m : *mod) {
                         if (m.ShapeType() == TopAbs_FACE && curFaces.Contains(m)) {
                             faces.push_back(TopoDS::Face(m));
+                        }
+                    }
+                }
+                return faces;
+            };
+            std::vector<TopoDS_Face> faces = pieces(fd.face);
+            // the faces picked with the same draft, which join the set along
+            // tangent edges without propagation
+            TopTools_MapOfShape picked;
+            if (!myTangentPropagation) {
+                for (const auto& other : myFaces) {
+                    if (sameDraft(other, fd)) {
+                        for (const auto& f : pieces(other.face)) {
+                            picked.Add(f);
                         }
                     }
                 }
@@ -3586,7 +3645,7 @@ void CellDraft::Build(const Message_ProgressRange& /*theRange*/)
                 return;
             }
 
-            CellDraftOne one(cur, faces, fd, myStopAtBody);
+            CellDraftOne one(cur, faces, fd, myStopAtBody, myTangentPropagation, picked);
             if (!one.run()) {
                 setError(one.error,
                          fd.face,
@@ -3753,4 +3812,36 @@ std::string CellDraft::CheckDraft(const TopoDS_Shape& input,
         return ss.str();
     }
     return std::string();
+}
+
+std::vector<TopoDS_Face> CellDraft::TangentFaces(const TopoDS_Shape& shape,
+                                                 const std::vector<TopoDS_Face>& faces)
+{
+    TopTools_IndexedMapOfShape shapeFaces;
+    TopExp::MapShapes(shape, TopAbs_FACE, shapeFaces);
+    TopTools_IndexedDataMapOfShapeListOfShape edgeFaces;
+    TopExp::MapShapesAndUniqueAncestors(shape, TopAbs_EDGE, TopAbs_FACE, edgeFaces);
+    std::vector<TopoDS_Face> inShape;
+    TopTools_MapOfShape own;
+    for (const auto& d : faces) {
+        int idx = shapeFaces.FindIndex(d);
+        if (idx == 0) {
+            continue;
+        }
+        TopoDS_Face f = TopoDS::Face(shapeFaces.FindKey(idx));
+        inShape.push_back(f);
+        for (const auto& g : draftChain(f, shapeFaces, edgeFaces, false)) {
+            own.Add(g);
+        }
+    }
+    std::vector<TopoDS_Face> result;
+    TopTools_MapOfShape seen;
+    for (const auto& f : inShape) {
+        for (const auto& g : draftChain(f, shapeFaces, edgeFaces)) {
+            if (!own.Contains(g) && seen.Add(g)) {
+                result.push_back(g);
+            }
+        }
+    }
+    return result;
 }
