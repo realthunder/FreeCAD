@@ -1469,6 +1469,8 @@ void AppearanceList::deriveBase(const Color *hint, const std::vector<double> *we
     // before its faces were painted. On an import it holds the
     // constructor's grey, which occurs in no imported list, so it declines.
     int winner = -1;
+    // The mirror names the colour and no face has its transparency: see below
+    bool mirrorSeenThrough = false;
     if (hint) {
         if (baseScore > 0.0 && d.base.diffuseColor == *hint)
             return;   // the base already is what the mirror names
@@ -1476,8 +1478,29 @@ void AppearanceList::deriveBase(const Color *hint, const std::vector<double> *we
             if (sparseAt(d.diffuse, static_cast<int>(pos), d.base.diffuseColor) == *hint)
                 winner = static_cast<int>(pos);
         }
+        if (winner < 0) {
+            // The colour alone. An object given a transparency and then a
+            // colour for each face, the colours opaque, is in such a file
+            // as both: faces that are not seen through, and a Transparency
+            // that says what the object would be. The vote below made the
+            // object one of its faces and the mirror lost what it said --
+            // 30 came back as 0. The base is what the mirror names, and
+            // every face overrides it with what it has.
+            auto sameRGB = [hint](const Color &c) {
+                return c.r == hint->r && c.g == hint->g && c.b == hint->b;
+            };
+            if (baseScore > 0.0 && sameRGB(d.base.diffuseColor)) {
+                mirrorSeenThrough = true;   // the base's own look, in that colour
+            }
+            for (std::size_t pos = 0; pos < d.overrides.size() && !mirrorSeenThrough; ++pos) {
+                if (sameRGB(sparseAt(d.diffuse, static_cast<int>(pos), d.base.diffuseColor))) {
+                    winner = static_cast<int>(pos);
+                    mirrorSeenThrough = true;
+                }
+            }
+        }
     }
-    if (winner < 0) {
+    if (winner < 0 && !mirrorSeenThrough) {
         // Area, not count: a green board with five hundred gold pads is
         // decided the wrong way by count, and by both the same way when the
         // faces are all of a size. Overrides that say the same thing sum,
@@ -1499,22 +1522,26 @@ void AppearanceList::deriveBase(const Color *hint, const std::vector<double> *we
             }
         }
     }
-    if (winner < 0)
+    if (winner < 0 && !mirrorSeenThrough)
         return;   // the faces already outside the overrides win
 
     MaterialAppearance chosen = d.base;
-    setMaterialType(chosen, sparseAt(d.type, winner, static_cast<int8_t>(d.base.getType())));
-    chosen.ambientColor = sparseAt(d.ambient, winner, d.base.ambientColor);
-    chosen.diffuseColor = sparseAt(d.diffuse, winner, d.base.diffuseColor);
-    chosen.specularColor = sparseAt(d.specular, winner, d.base.specularColor);
-    chosen.emissiveColor = sparseAt(d.emissive, winner, d.base.emissiveColor);
-    chosen.shininess = sparseAt(d.shininess, winner, d.base.shininess);
-    chosen.image = sparseAt(d.image, winner, d.base.image);
-    chosen.imagePath = sparseAt(d.imagePath, winner, d.base.imagePath);
-    chosen.uuid = sparseAt(d.uuid, winner, d.base.uuid);
-    chosen.materialx = sparseAt(d.materialx, winner, d.base.materialx);
-    chosen.finish = sparseAt(d.finish, winner, d.base.finish);
-    chosen.texture = sparseTextureAt(d.texturePalette, d.textureIndex, winner, d.base.texture);
+    if (winner >= 0) {
+        setMaterialType(chosen, sparseAt(d.type, winner, static_cast<int8_t>(d.base.getType())));
+        chosen.ambientColor = sparseAt(d.ambient, winner, d.base.ambientColor);
+        chosen.diffuseColor = sparseAt(d.diffuse, winner, d.base.diffuseColor);
+        chosen.specularColor = sparseAt(d.specular, winner, d.base.specularColor);
+        chosen.emissiveColor = sparseAt(d.emissive, winner, d.base.emissiveColor);
+        chosen.shininess = sparseAt(d.shininess, winner, d.base.shininess);
+        chosen.image = sparseAt(d.image, winner, d.base.image);
+        chosen.imagePath = sparseAt(d.imagePath, winner, d.base.imagePath);
+        chosen.uuid = sparseAt(d.uuid, winner, d.base.uuid);
+        chosen.materialx = sparseAt(d.materialx, winner, d.base.materialx);
+        chosen.finish = sparseAt(d.finish, winner, d.base.finish);
+        chosen.texture = sparseTextureAt(d.texturePalette, d.textureIndex, winner, d.base.texture);
+    }
+    if (mirrorSeenThrough)
+        chosen.diffuseColor = *hint;
     rebase(chosen);
 }
 

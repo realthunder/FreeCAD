@@ -2708,6 +2708,50 @@ TEST_F(PropertyAppearanceListTest, theMirrorWinsWhenTheListNamesIt)
     EXPECT_TRUE(other.getBase() == pad);
 }
 
+// An object given a transparency and then a colour for each face, the colours
+// opaque, is in an older file as both: faces not seen through and a
+// Transparency that says what the object would be. The mirror names the
+// colour and no face has its transparency -- the count made one of the faces
+// the object, and the 30 came back as 0.
+TEST_F(PropertyAppearanceListTest, theMirrorKeepsItsTransparency)
+{
+    const App::MaterialAppearance body = redMaterial();
+    App::MaterialAppearance pad = redMaterial();
+    pad.diffuseColor = packed(0x00ff00ff);
+    std::vector<App::MaterialAppearance> values {body, pad, body, pad, body, pad};
+
+    App::Color hint = body.diffuseColor;
+    hint.setTransparency(0.3F);
+
+    App::PropertyAppearanceList prop;
+    prop.setValues(values);
+    EXPECT_FALSE(prop.namesDiffuse(hint));
+    prop.deriveBase(&hint);
+    // the object is the mirror's colour, seen through as the mirror says,
+    // and every face overrides it with what it has
+    EXPECT_EQ(prop.getBase().diffuseColor, hint);
+    EXPECT_FLOAT_EQ(prop.getBase().transparency, 0.3F);
+    EXPECT_EQ(prop.getOverrides(), std::vector<uint32_t>({0, 1, 2, 3, 4, 5}));
+    expectEntries(prop, values);
+
+    // The same where the faces that are not overrides wear the colour
+    App::PropertyAppearanceList mostly;
+    values = {body, body, body, body, pad, pad};
+    mostly.setValues(values);
+    mostly.deriveBase(&hint);
+    EXPECT_EQ(mostly.getBase().diffuseColor, hint);
+    EXPECT_EQ(mostly.getOverrides(), std::vector<uint32_t>({0, 1, 2, 3, 4, 5}));
+    expectEntries(mostly, values);
+
+    // A mirror in a colour no face has declines still
+    App::PropertyAppearanceList other;
+    other.setValues(values);
+    App::Color grey = App::MaterialAppearance().diffuseColor;
+    grey.setTransparency(0.3F);
+    other.deriveBase(&grey);
+    EXPECT_TRUE(other.getBase() == body);
+}
+
 TEST_F(PropertyAppearanceListTest, theSparseFormRoundTripsBothForkEncodings)
 {
     App::MaterialAppearance painted = fullyPaintedMaterial();
