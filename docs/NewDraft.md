@@ -13,7 +13,9 @@ close at a sharp corner between two planes (section 14); a coarse fuzzy
 try for neighbours tangent to each other (section 15); tolerances the fuse
 widened, brought back (section 16). 2026-10-09: tangent propagation as an
 option; off, only the picked faces turn, and a fillet beside them is made
-again at its radius after the draft (section 17).
+again at its radius after the draft (section 17). The roof -- the chain's
+walls meeting over the body once a wall narrows to nothing -- designed in
+section 18, not built yet.
 The design below came with a Python prototype (section 5)
 that the earlier measurements come from; the open questions settled
 2026-10-05 (section 9).
@@ -644,6 +646,9 @@ already does (`OCC_VERSION_HEX`).
 6. Tangent propagation as an option, off drafting only the picked faces:
    stage 1 refuses a fillet tangent to the drafted face, stage 2 rebuilds
    it (section 17).
+7. The roof: the chain's sheet as a straight skeleton -- edge events,
+   new ridges, the collapse -- and a self-crossing check on the sheet
+   (section 18).
 
 ## 9. Decisions (2026-10-05)
 
@@ -1518,3 +1523,156 @@ The 114 drafts of section 13.5 whose face has a tangent chain, with
   fillet fails there at 49, 40 and 20; it takes 5), #962 at 60 deg (4: the
   wall swings past its sloped top, which it no longer meets), #334 at 60
   deg (1).
+
+## 18. The roof (design, 2026-10-09)
+
+Section 14.1 stops the sheet short of the first place where a plane of the
+chain narrows to nothing, and refuses the draft (`FaceVanishes`, "narrows
+to nothing") if a face of the chain, or where it moves to, lies past it.
+The filleted block (20 x 10 x 10, fillets 2) drafted inward at 30 deg is
+the case in the suite (`new_chain_rbox_a30`): the fillets reach their apex
+at 2 / tan 30 = 3.46, the short walls' ridges meet at 5 / tan 30 = 8.66,
+and the top is at 10. The true result is a hipped roof: the short walls
+are triangles up to 8.66, the long walls trapezoids meeting along a
+horizontal ridge from x = 5 to x = 15 at that height, and the top is gone
+-- the block becomes a roof, 717.723 by the offset outline's area.
+
+This section is the design for building that sheet. It is the straight
+skeleton of the chain's outline, built in 3D from the new planes: no 2D
+offsetting, every edge a line of two new planes and every vertex a point
+of three.
+
+### 18.1 The wavefront
+
+Seen level by level (a level is a height, as in section 14), the sheet's
+section is the chain's outline moved inward (or outward): each plane's line
+moves at its own speed (its slope), each cone's circle shrinks or grows.
+The cyclic (or, for an open chain, linear) list of members whose faces are
+still there at a level is the **wavefront**; two members next to each
+other in it are joined by a **side**: a tangent seam's new line, a sharp
+seam (14.2), a ridge past a cone's apex (14.1), or a new ridge (below).
+Sides of two planes are always the line of their two new planes.
+
+Going up from the neutral plane (and down, the same way), the wavefront
+changes at **events**, in order of level:
+
+1. **Apex**: a cone between two planes reaches its apex; it leaves the
+   wavefront and the two planes meet in a ridge from the apex. Built
+   (14.1).
+2. **Edge event**: a plane `m` between two planes `L` and `R` narrows to
+   nothing where its two sides meet: the point of the three new planes
+   `L`, `m`, `R`, if that lies past the current level the way the sides
+   converge. `m` ends there (its face's last vertex); it leaves the
+   wavefront, and `L` and `R` are joined from that point by the line of
+   their new planes -- a **new ridge**, convex where both sides were
+   convex, concave where both were concave. (Mixed: refused, see 18.4.)
+3. **Collapse**: two members left, joined by both their sides: the
+   wavefront has closed over. Their two sides are the same line, and the
+   last two events' points are its ends (the long walls' horizontal ridge
+   on the block). For three planes meeting at one point (a triangle
+   closing to its apex) the last edge event leaves two members joined at
+   a point: the same.
+4. **The box**: the level reaches the box's end along the seams (`s0`,
+   `s1` today) with the wavefront still open: the sheet stops there as it
+   does now.
+
+Simultaneous events (the block: both short walls at 8.66) are taken one
+after the other at the same level; a degenerate side between two of them
+(length below the confusion) is dropped. On the block the first short
+wall's event joins the long walls by a ridge along x, the second's ends
+that ridge again, and the collapse closes it: 4 apexes, 2 edge events, 1
+collapse.
+
+Each event is found from the members at hand, not by a search over the
+level: a plane's edge event is the intersection of three planes; an apex
+is the cone's apex (as now). After an event only the neighbours of the
+change need new candidates (a priority queue keyed by level, as in the
+usual straight skeleton algorithm).
+
+### 18.2 The sheet
+
+Each plane's face is the polygon its sides trace through the events: up
+one side (seam new line, bent at a cone's apex into the ridge, then a new
+ridge after each edge event beside it) to the plane's own edge event or
+the collapse or the box, and back down the other. This replaces
+`seamSide` and `sidePoint`'s two cases with a list of points per side,
+built while the events run; `width` and the narrowing test of 14.1 go,
+the edge event is that test made exact. A cone's face is unchanged (up to
+its apex, or the box). The faces are sewn as now; a closed roof leaves no
+open end at the top, so the sheet over a collapse is a shell open only at
+the box's other end.
+
+`newDist` and `newNormalAt` take the roof the way 14.1's ridge does: past
+a plane's own edge event, in its region, the new surface is the faces
+that took over there. The member whose face (projected along the pull
+direction) holds the point's projection decides; for a convex chain that
+is also the largest of the planes' distances (the smallest for a concave
+one), which is what `ridgePlane` does for two. `sweptDists`' slabs gain
+the same: a plane's slab ends at its edge event's level.
+
+### 18.3 The faces of the chain past the roof
+
+The test of 14.1 that refuses a face of the chain lying past the first
+crossing goes. A face whose upper part lies above its own edge event (the
+short wall's corner at 10 above its tip at 8.66) has that part in the
+swept region: the fill takes it away (drafted inward) or fills over it
+(outward), as it does for any feature in `K` (section 4). Two cases stay
+refused:
+
+- a member whose face lies entirely past its edge event: the face is not
+  in the result, `FaceVanishes` as before (the check on the result,
+  "every member's new surface must be in the result", already gives it);
+- the sheet crossing itself (18.4).
+
+The top of the block (a neighbour, not a member) is gone in the result:
+the cell draft consumes a neighbour that lies wholly in `K` (section 4),
+and nothing changes there. The check that a neighbour cut away by a
+draft does not leave the solid in pieces (`SplitsSolid`) still holds.
+
+### 18.4 What is still refused
+
+- **A plane narrowing to nothing beside a cone that has not reached its
+  apex** (unequal fillets: a wall between a fillet of 1 and one of 4, its
+  ridge beside the small one meeting the large cone's tangent line). Past
+  that point the cone meets the plane beyond in a conic, not a line. Left
+  as `FaceVanishes` "narrows to nothing", as now.
+- **A split event**: a concave side (a sharp concave seam, a concave
+  ridge, or a concave cone growing) reaching a plane that is not next to
+  it -- the wavefront splits in two (an L-shaped boss drafted inward far
+  enough that the inner corner's valley reaches the far wall). Refused,
+  `UnsupportedSurface` "the drafted chain runs into itself".
+- **Mixed edge events**: a plane between a convex and a concave side. The
+  new ridge between `L` and `R` would be neither; refused the same way
+  until a case shows up.
+
+Split events are found as candidates too (a concave side's line against
+each plane of the wavefront not next to it), but the guard does not rely
+on that alone: the sewn sheet is checked not to cross itself
+(`BOPAlgo_ArgumentAnalyzer`'s self-interference on the sheet, a handful
+of faces) before the fuse. Today's sheet is not checked; the check runs
+on the sweep first to see whether it flags anything that comes out right
+now.
+
+### 18.5 Tests
+
+- `new_chain_rbox_a30` turns valid at 717.723 (the hipped roof, closed
+  form by the area of the offset outline: `(20 - 2d)(10 - 2d)` less the
+  rounded corners while `d < 2`, integrated to `d = 5`), and the same block
+  at 45 deg (past 26.57 deg the walls meet under the top; at 25 they meet
+  at 10.72, over it, and the draft is valid today).
+- A block whose roof ends partway: 20 x 10 x 10 with its corner (20, 10)
+  cut by a 45 deg wall of 6 x 6 and the five vertical edges filleted 1.
+  The end wall `x = 20` (4 long, between a square and a 135 deg corner)
+  narrows to nothing at an offset of 4 / (1 + tan 22.5) = 2.83; the chain
+  closes at 5. At 20 deg that is 7.77 and 13.74: one edge event under the
+  top, the top kept, smaller. Closed form by the offset polygon's area,
+  piecewise between events.
+- The pocket of 14.4 deep enough to close (`new_chain_pocket_apex_*` at a
+  steeper angle): the same roof from the other side, the pocket's walls
+  meeting over its floor.
+- Refusals: the unequal fillets (18.4, first case); an L-shaped boss past
+  its split event.
+- `TestDraft`: the block at 30 deg, valid, its top gone, its volume.
+- The sweep (the 1222 and the 500, `Method = New`): every result
+  unchanged except former `FaceVanishes` "narrows to nothing"; the sheet's
+  self-crossing check counted on its own.
