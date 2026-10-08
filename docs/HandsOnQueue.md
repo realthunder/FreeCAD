@@ -82,7 +82,7 @@ report views, the reporter's own files -- is kept beside the dev tree under
 | 42 | 2026-10-08 | state keys (window sizes, recent lists, last directories, first-run flags) through the generator like every other setting (from entry 24: C2) | STEP 1 OF 3 DONE 2026-10-08, nothing generated yet; Q1 to Q5 answered, Q6 not answered: the 300 candidates read key by key -- 94 state keys, 114 settings, 44 records under run-time names (stay out), 23 dead, 14 defined after all. After the answers: 91 state keys and 88 settings to go through the generator, the 3D mouse first, plus `ExportPoints` and `DxfVersionOut` from entry 44; the share token, the workbench order and the recent lists stay out, and 20 settings without one written default stay out and are listed. Q2 is entry 44, fixed (`docs/HandsOnLog.md`) |
 | 43 | 2026-10-08 | omni search: the highlighted row's text is white on a light blue highlight | OPEN; looked at by the build session, not a side effect of the theme defaults, not fixed |
 | 44 | 2026-10-08 | the DXF page's exporter settings do not reach the C++ DXF exporter: `Import.writeDXFObject`/`writeDXFShape` point it at `Mod/Import`, where nothing stores them (found by the build session on entry 42, Q2) | FIXED `813d0250f9`, not staged: the exporter was pointed at `Mod/Import` for its options, where nothing stores them; it takes them from `Mod/Draft`, where the DXF page puts them, as upstream does. An ellipse written with "Treat ellipses and splines as polylines" on was an ELLIPSE before and is an LWPOLYLINE after (24 points at a segment length of 5, 198 at 0.5). `Import_tests_run` 6 of 6; the full suites not rerun after it (`docs/HandsOnLog.md`) |
-| 45 | 2026-10-08 | a spreadsheet's view provider MAKES its view when asked for it (`ViewProviderSheet::getMDIView()`): one click on a sheet in the tree opens it, show-in-cell closes another sheet's view; a design agreed by the reporter in another session, single click selects and opens nothing (handed over from session x16, branch SketcherPort; goes on from entry 27) | OPEN: measured and ruled in the other session, built nowhere; DECIDED 2026-10-08 20:55: the build session here (dwin) builds it once it finishes what it is doing (entry 42) |
+| 45 | 2026-10-08 | a spreadsheet's view provider MAKES its view when asked for it (`ViewProviderSheet::getMDIView()`): one click on a sheet in the tree opens it, show-in-cell closes another sheet's view; a design agreed by the reporter in another session, single click selects and opens nothing (handed over from session x16, branch SketcherPort; goes on from entry 27) | OPEN: measured and ruled in the other session, built nowhere; DECIDED 2026-10-08 20:55: the build session here (dwin) builds it once it finishes what it is doing (entry 42), on this branch with entry 27's fix |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -3135,6 +3135,9 @@ build it once he finishes what he's doing". The build session of this tree
 the time. Passed on to it by message at once. The note-taker's reading: that
 puts the work on this branch, on top of entry 27's fix; the reporter did not
 name a branch.
+**Confirmed by the reporter, 2026-10-08 21:00**, when that reading was put
+to them: "yes, with entry 27". So it is built on PartDesignPort, on top of
+entry 27's fix (`fa2ada985c`). Passed on to the build session.
 
 **2026-10-08 20:52, handed over by another session at the reporter's
 request** (session x16, "fcad-37", on another machine; branch SketcherPort,
