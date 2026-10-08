@@ -43,7 +43,7 @@ Evidence that does not belong in the repository is under
 | 34 | FIXED `3d7b4c30fd`, not staged | Dark and Light store TechDraw's preselection colour, the blue of the 3D view's |
 | 38 | FIXED `bb31f8820b`, not staged | the omni search's first bring-up made the icon of every command before showing the box: 1.27 s on the reporter's configuration, 0.22 s now |
 | 39 | FIXED `c7d115e576`, not staged | MSAA has not reached any view since 2026-09-07: the scene depth was built readable at every sample count and bgfx refuses that framebuffer. Write-only under MSAA now; a test asks the view its sample count |
-| 41 | FIXED, all four steps: `a75b43f1d5`, `4a99a978f7`, `48037fbd8c`, `de7bd49797`, `ff12279ee6`, and `aa63b07cc8` for the answers to L9 and L10; not staged, not pushed; a list with the reporter (L1-L8, L11, L12, F1, F3, F4, F6-F8; L11 with a recommendation) | the Python-only modules' settings through a door into the registry: 603 settings listed that were not -- Assembly 13, Draft and BIM 426, Fem 47, CAM 27, the Addon Manager 41, Help 14, OpenSCAD 15, ReverseEngineering 11, Tux 5, Material 4. Registration only, the readers keep their code; a test per module holds each described default to its readers' |
+| 41 | FIXED, all four steps: `a75b43f1d5`, `4a99a978f7`, `48037fbd8c`, `de7bd49797`, `ff12279ee6`, then `aa63b07cc8` and `6a2216d0f0` for the reporter's answers to the list; nothing left with the reporter; not staged, not pushed | the Python-only modules' settings through a door into the registry: 603 settings listed that were not -- Assembly 13, Draft and BIM 426, Fem 47, CAM 27, the Addon Manager 41, Help 14, OpenSCAD 15, ReverseEngineering 11, Tux 5, Material 4. Registration only, the readers keep their code; a test per module holds each described default to its readers' |
 | 42 | STEP 1 of 3 DONE 2026-10-08 (the split key by key: 94 state keys, 114 settings, 44 records, 23 dead, 14 defined after all); nothing generated yet; Q1 to Q5 answered, Q6 not answered | of about 300 keys C++ reads without a definition: about 90 state keys go through the generator and are listed, about 110 settings entry 24 did not reach go in the same entry, about 90 records under names the user makes stay out |
 | 44 | FIXED `813d0250f9`, not staged | the C++ DXF exporter was pointed at `Mod/Import` for its options, where nothing stores them; it takes them from `Mod/Draft`, where the DXF page puts them, as upstream does. An ellipse with "as polylines" on was an ELLIPSE before, an LWPOLYLINE after |
 
@@ -1596,7 +1596,7 @@ highlighted row is entry 43 of the queue. Entry 24 has nothing left with
 the reporter. Pushed: `origin/PartDesignPort` = `b70cc6ebf1`, cycles
 `35a3bd898` first. Not staged.
 
-## 41. The Python-only modules' settings, through a door into the registry -- FIXED, all four steps (the way in, Assembly; Draft and BIM; Fem, CAM, the Addon Manager; the small rest); F2 and F5 answered, the rest of the list with the reporter
+## 41. The Python-only modules' settings, through a door into the registry -- FIXED, all four steps (the way in, Assembly; Draft and BIM; Fem, CAM, the Addon Manager; the small rest); the whole list answered and carried out
 
 Decided under entry 24 (C1, C4). Not started. Sized 2026-10-08, static,
 with `inv24.py` run again on the tree of `b70cc6ebf1` and split by who
@@ -1933,6 +1933,68 @@ stay undescribed, Tux's marker stays described.
   out of reach of the two tests. Help's sources and translation suffix are
   read without a GUI too (`Help.show()` prints the page there); Tux's five
   only mean something with one.
+
+**The rest of the list, answered 2026-10-08.** Every open item was put to
+the reporter again with a suggestion each, checked against `upstream/main`
+(`b960974504`) where that could be done. The reporter: "My previous answer
+of 'drop' is meant to not show them from omni search. Agree with your
+suggestions". So "drop" means out of the registry, which F11 had not got,
+and the suggestions are carried out (`6a2216d0f0`):
+
+Readers made to say what their page says -- on a profile that never saved
+the page the reader's default was what one got, and the page's after:
+- L3 NativeIFC `SingleDoc`: the three reads pass False, the page's
+  (`ifc_import.py` passed True in one place; upstream the same).
+- L6 CAM `PostProcessorShowEditor`: read with False, the page's (upstream
+  reads True against an unchecked box too). Described False now.
+- L11 Material `Cards/SortByResources`: read with True, the page's.
+  Described True now.
+- L1 Assembly `BOMOnlyParts` is left: the code reads False and sets the
+  box from it, so the `.ui`'s checked box never shows. Upstream the same.
+
+Defects, each in upstream too:
+- L5 BIM's views manager read its width and height as L9's panel did;
+  read with `GetInt` now, each from its own key, and both described (200,
+  300). NOT shown to change anything on screen: the manager is docked right
+  after it is given the size, and was 278 by 265 before and after with 430
+  and 380 stored (`bim_views_size.py`).
+- F1 `BimProjectManager.py` read and stored `View/DefautShapeLineWidth`;
+  it is `DefaultShapeLineWidth` now, the key the view reads. The three
+  `Mod/Draft` keys it and `BimSetup.py` store are left.
+- F7 Fem's `MeshPreviewSettings.ui` names its entry `previewMeshFactor`,
+  as the code does.
+- L2 was not what the list said. BIM's layers manager did not read
+  Draft's `DefaultPrintColor` with another default: it read a
+  `DefaultPrintColor` of the VIEW group, which nothing stores, so a new
+  layer's print colour was black whatever Draft's setting said -- and 0 and
+  255 are both black to that reader, so the number agreed on would have
+  changed nothing. It reads Draft's setting now, with the line Draft's own
+  layers manager has. This goes further than the words agreed; said to the
+  reporter.
+
+Out of the registry, so not shown by the omni search:
+- F11 Tux `PersistentToolbars/Deprecated`. Tux has 4 settings.
+- L12 Help `optionTab`, which nothing reads. `optionGithub` stays. Help
+  has 13.
+- L4 `LibraryOnline`, L8 Fem's two thread counts, F8 CAM's run-time groups,
+  F9 and F12 were never in it and stay out.
+
+Left as they are: L7 (the Addon Manager's three proxy switches, described
+as switches), F3 (`ScaleRelative`, in Draft's own table), F4 (the titles
+and documentation are English only), F6 (the Addon Manager's defaults file
+is installed).
+
+The entry lists 603 settings after this: Assembly 13, Draft and BIM 428,
+Fem 47, CAM 27, the Addon Manager 41, Help 13, OpenSCAD 15,
+ReverseEngineering 11, Tux 4, Material 4. Counted in `FreeCADCmd` with
+Draft's table loaded (`count_ns.py`), all but one are as said; the Addon
+Manager shows 40 under its own name where its file has 41 rows, which was
+not looked into.
+
+Scored on the tree of `6a2216d0f0`, both full suites: ctest 788 of 788 (one
+more, entry 44's); `FreeCADCmd -t 0` 3411 tests, the two `TestThickness`
+5829 failures and nothing else; `-t ModuleSettings` 4 OK. Nothing of the
+entry is open with the reporter. Not staged, not pushed.
 
 ## 42. State keys through the generator, and listed -- step 1 DONE (the split key by key), steps 2 and 3 to do; Q1 to Q5 answered, Q6 with the reporter
 
