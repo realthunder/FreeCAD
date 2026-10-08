@@ -2106,10 +2106,9 @@ malloc checker.
 
 **Seen and left.**
 
-- The level-of-detail pool is not on any of this yet. Its refine jobs
-  copy the document's shape on a worker (`meshLevelExactCopy`), and so do
-  the level builds the scene server's threads run (`buildMeshLevel`, the
-  same `meshedCopy`); its threads and its reaper are still its own. Next.
+- The level builds a scene server's threads run still copy the
+  document's shape on a worker (`buildMeshLevel`, `meshedCopy`, OCCT's
+  copier) -- see "The level-of-detail refine" below for the ruling.
 - A landing is made wherever the GUI thread is asked or woken, which
   includes an event run by a progress bar from inside somebody's
   algorithm. It appends to lists such an algorithm may be walking further
@@ -2121,6 +2120,75 @@ malloc checker.
   in. Nothing is lost -- every claim has to be meshed -- but the claim
   waited for is not moved to the front.
 - The window is a constant, not a parameter.
+
+**The level-of-detail refine, on the same two things.** The desktop's
+exact refine and its descents (`MeshLevelSource.cpp`) had threads of their
+own -- a pool of `LevelThreads` workers and a reaper that destroyed spent
+closures -- and each job began by copying the document's shape ON its
+worker, with `BRepBuilderAPI_Copy` (`meshLevelExactCopy`). Now:
+
+- The GUI thread hands jobs out (`dispatchLevelJobs`): it checks the
+  job's token, makes a `Part::MeshTwin` of its shape, stripped, and puts
+  the pair on a ready line. The landing is what it was --
+  `transferMeshLevels(twin's shape, live shape)`, the exact rung beside
+  the coarse one.
+- Runner tasks on `Base::ThreadPool::compute()`, as many at once as
+  `LevelThreads` said before, take the next job from that line themselves
+  (the user's bounded queue on the worker's side, used where it fits: a
+  runner that had to ask the GUI thread for each job would stand idle
+  exactly when that thread is landing the others' results). A descent goes
+  ahead of the climbs standing ready, as it does in the queue.
+- Spent closures are destroyed by a pool task. The shutdown drops what is
+  queued and ready and waits for the runners and for those.
+
+**The ready line is counted in faces and edges too, 20000 -- the
+pre-mesh's lesson, learned a second time.** One job ready for each runner
+was the first thing built. Most refines are of small shapes and take
+milliseconds, a refill takes a turn of the GUI thread's event loop, and
+on the reference load some 500 refines had landed 47 to 63 s after the
+open where 4900 to 5100 had after 36 to 42 s. Every test near it passed
+all the same, seventeen of seventeen: what showed it was counting the
+landings (the landing pump's own line under `LevelDebug`) with the two
+libraries alternated. With 20000, 200000 and two million, three rounds
+against the code before: the refines settle 40 to 51 s after the open in
+every arm, the old one included, about 5137 landings each; and the open
+that returns with everything built takes 18.4, 17.6 and 17.5 s against
+18.2, 17.2 and 17.9 s before.
+
+No test tells the old refine from the new one by where the copy is made;
+what is checked is that the refines still run, land and settle as they
+did.
+
+**Ruled 2026-10-08, for the level builds a scene server's threads run**
+(`buildMeshLevel`, reached through the synchronous
+`MeshSourceRegistry::generate`, which copies the document's shape on a
+level thread): left as it is until shape values are frozen, when a copy
+made on a worker under `BRep_RepresentationLock` is a read of a value.
+The other two ways were a blocking hop to the GUI thread from a level
+thread -- which waits for ever the day the GUI thread waits for that
+thread -- and a twin kept for every registered source, which holds every
+registered shape's topology twice. It is a serving process's path, and
+the exposure is not new.
+
+**OCCT built with TBB: no difference here** (the user: "shall we compile
+for the sake of testing"). Neither the development build nor
+`occt-feedstock` uses it (`USE_TBB=OFF`), oneTBB 2023 is in the
+environment already, and `HAVE_TBB` reaches TKernel alone and no
+installed header -- so a second build directory with `USE_TBB=ON`, the
+one target `TKernel`, and that library preloaded into FreeCAD is the whole
+test, with no change to the standard tree. With it OCCT's parallel loops
+are `tbb::parallel_for`, which steals work and nests, instead of a
+launcher that locks threads. The reference load, the two kernel
+libraries alternated, two rounds: the open that returns with everything
+built 18.3 and 17.4 s against 18.7 and 18.4 s with the pre-mesh on, 22.1
+and 21.3 s against 21.5 and 21.5 s with it off (where the GUI thread's
+own meshing, `InParallel` on, is the mesh term); the progressive drain's
+last slice at 25.8 and 24.1 s against 24.9 and 25.1 s. Sec 18.1 said why
+in advance: BRepMesh splits ONE shape over its faces, and an assembly of
+small parts gives the loop nothing to split whoever schedules it. Not
+tested: a model of a few very large shapes, and our own jobs on TBB as
+well -- one scheduler for both, under which a pool task could leave
+`InParallel` on.
 
 ## 19. Progressive load against eager (2026-09-29)
 
