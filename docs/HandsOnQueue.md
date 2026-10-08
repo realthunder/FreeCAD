@@ -3000,7 +3000,8 @@ from `Mod/Draft` in its constructor; `Import.writeDXFObject` and
 `Import.writeDXFShape` then point it at `Mod/Import` and read again
 (`AppImportPy.cpp:486`, `520`), where nothing stores them. So what is set on
 the DXF preference page for the exporter does not reach it by these two
-calls, and it works with its built-in defaults.
+calls. (The note-taker's reading, not checked: it would then work with the
+defaults its reads pass.)
 It touches entry 42: these four are among the 28 settings of its Q1 that do
 not take a plain definition, because they are read from two groups.
 Not said yet by the reporter: whether to fix it, and when.
