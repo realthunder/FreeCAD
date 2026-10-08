@@ -2010,7 +2010,7 @@ For the reporter, before anything is generated:
   the fall-back of their successor (`DAGView/Enabled`,
   `TechDraw/HLR/UsePolygon`); 1 mirrors four radio buttons (`DxfImportMode`);
   4 are the DXF exporter's of Q2.
-- Q2 FOUND, a defect, not fixed: the C++ DXF exporter reads its four
+- Q2 FOUND, a defect, not fixed; it is entry 44 of the queue now: the C++ DXF exporter reads its four
   options (`maxsegmentlength`, `ExportPoints`, `DxfVersionOut`,
   `DiscretizeEllipses`) from `Mod/Draft` in its constructor, and
   `Import.writeDXFObject`/`writeDXFShape` then point it at `Mod/Import` and
