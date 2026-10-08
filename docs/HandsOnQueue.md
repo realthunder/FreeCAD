@@ -79,7 +79,7 @@ report views, the reporter's own files -- is kept beside the dev tree under
 | 39 | 2026-10-07 | MSAA has not reached any view since 2026-09-07 (found by the build session on entry 26) | FIXED `c7d115e576`, not staged: with "MSAA 4x" chosen the backend could not create its scene targets and drew without multisampling from then on, on every backend; the depth is write-only under MSAA now. The reporter's case on the fixed tree: 0.75 s in all, both views at 4 samples (`docs/HandsOnLog.md`) |
 | 40 | 2026-10-07 | crash on exit: a TechDraw page in a split view cell is destroyed after its view provider, and writes into it | OPEN (cause read from the stack) |
 | 41 | 2026-10-08 | the Python-only modules' settings in the omni search, through a way into the registry from Python (from entry 24: C1, C4) | FIXED, all four steps (`a75b43f1d5`, `4a99a978f7`, `48037fbd8c`, `de7bd49797`, `ff12279ee6`) and `aa63b07cc8` for L9 and L10; not staged, not pushed: 603 settings listed that were not -- Assembly 13, Draft and BIM 426 (listed once Draft or BIM has been used, as decided), Fem 47, CAM 27, the Addon Manager 41, Help 14, OpenSCAD 15, ReverseEngineering 11, Tux 5, Material 4, Test none. The whole list answered and carried out, last `6a2216d0f0`: readers made to say what their page says (L3, L6, L11), defects fixed (L5, L9, L10, F1, F7, and L2, which went further than the words agreed), Tux's marker and Help's `optionTab` out of the registry; the counts after it: Draft and BIM 428, Help 13, Tux 4, still 603. Full suites on `6a2216d0f0`: ctest 788 of 788, Python 3411 with the two known thickness failures. NOTHING LEFT WITH THE REPORTER (`docs/HandsOnLog.md`) |
-| 42 | 2026-10-08 | state keys (window sizes, recent lists, last directories, first-run flags) through the generator like every other setting (from entry 24: C2) | STEP 1 OF 3 DONE 2026-10-08, nothing generated yet; Q1 to Q5 answered, Q6 not answered: the 300 candidates read key by key -- 94 state keys, 114 settings, 44 records under run-time names (stay out), 23 dead, 14 defined after all. After the answers: 91 state keys and 88 settings to go through the generator, the 3D mouse first, plus `ExportPoints` and `DxfVersionOut` from entry 44; the share token, the workbench order and the recent lists stay out, and 20 settings without one written default stay out and are listed. Q2 is entry 44, fixed (`docs/HandsOnLog.md`) |
+| 42 | 2026-10-08 | state keys (window sizes, recent lists, last directories, first-run flags) through the generator like every other setting (from entry 24: C2) | FIXED, all three steps (`aa3e77137c`, `dbadedb7ba`, `7e442e1bc2`, `234572bd87`); not staged, not pushed; Q6 not answered: 174 keys defined -- 89 settings and 85 state keys, 213 rows of the registry. The 3D mouse (32) and the expression sandbox (14) with every reader converted, Gui's small groups (30) too; the state the program keeps (window, dialogs, overlay panels, module panels) is defined with its readers left as they are. Not defined, as decided or for cause: Q1's 20, the share token, the workbench order, the recent lists, `LogLevels/DebugDefault` (the fourth developer switch), Oculus's 4, two of Sketcher's. Not run: the 3D mouse's motion path (no device), `ExpressionWasmtimeRuntime.cpp` (not compiled here). ctest 788 of 788, Python 3411 with the two known thickness failures. Q2 is entry 44, fixed (`docs/HandsOnLog.md`) |
 | 43 | 2026-10-08 | omni search: the highlighted row's text is white on a light blue highlight | OPEN; looked at by the build session, not a side effect of the theme defaults, not fixed |
 | 44 | 2026-10-08 | the DXF page's exporter settings do not reach the C++ DXF exporter: `Import.writeDXFObject`/`writeDXFShape` point it at `Mod/Import`, where nothing stores them (found by the build session on entry 42, Q2) | FIXED `813d0250f9`, not staged: the exporter was pointed at `Mod/Import` for its options, where nothing stores them; it takes them from `Mod/Draft`, where the DXF page puts them, as upstream does. An ellipse written with "Treat ellipses and splines as polylines" on was an ELLIPSE before and is an LWPOLYLINE after (24 points at a segment length of 5, 198 at 0.5). `Import_tests_run` 6 of 6; the full suites not rerun after it (`docs/HandsOnLog.md`) |
 | 45 | 2026-10-08 | a spreadsheet's view provider MAKES its view when asked for it (`ViewProviderSheet::getMDIView()`): one click on a sheet in the tree opens it, show-in-cell closes another sheet's view; a design agreed by the reporter in another session, single click selects and opens nothing (handed over from session x16, branch SketcherPort; goes on from entry 27) | OPEN: measured and ruled in the other session, built nowhere; DECIDED 2026-10-08 20:55: the build session here (dwin) builds it once it finishes what it is doing (entry 42), on this branch with entry 27's fix |
@@ -2949,7 +2949,64 @@ their short documentation (entry 23's rule) and a change followed at once
 where that is cheap (C3).
 Not started. Not said yet: the order of the modules.
 
-## 42. State keys through the generator like every other setting -- step 1 of 3 DONE (the split key by key), nothing generated yet; Q1 to Q5 answered, Q6 with the reporter (see `docs/HandsOnLog.md`)
+## 42. State keys through the generator like every other setting -- FIXED, all three steps, not staged; Q1 to Q5 answered, Q6 with the reporter (see `docs/HandsOnLog.md`)
+
+**2026-10-08 21:25, the build session: steps 2 and 3 are done, and with
+them the entry** (its message; code `aa3e77137c`, `dbadedb7ba`,
+`7e442e1bc2`, `234572bd87`; its log, entry 42, "Steps 2 and 3", `31dcc77838`,
+local). Not staged, not pushed.
+
+174 keys are defined -- 89 settings and 85 state keys -- which is 213 rows
+of the registry, because each of the 13 keys of an overlay panel is there
+for the four panels:
+- the 3D mouse, 32, `aa3e77137c`, a new class `Gui::SpaceballParams`; every
+  reader converted. NOT RUN: there is no device here, the motion path is
+  converted by reading;
+- the expression sandbox, 14, `dbadedb7ba`, a new class
+  `App::SandboxParams`; every reader converted but one, for cause.
+  `ExpressionWasmtimeRuntime.cpp` is not compiled on this machine; its two
+  reads are converted by reading;
+- Gui's small groups, 30, readers converted. Put right on the way: the
+  property view did not follow a change of `AutoTransactionData`;
+- the rest of Gui, 68 keys, DEFINED ONLY -- the state the program keeps
+  (window, dialogs, overlay panels) and some settings; their readers are
+  left as they are;
+- the modules, 30: Sketcher, Material, Mesh, Start, TechDraw, Part,
+  Inspection, and the three of Draft's group the C++ DXF code reads.
+
+"Defined only", in the log's words: a state key has no default of its own --
+the reader passes whatever its widget shows -- and its reader was not
+touched; the value written in the definition is what the reader finds on a
+fresh profile.
+
+NOT defined, as decided or for cause:
+- Q1's 20; the share token (Q3); `Workbenches/Ordered` and `Disabled` (Q4);
+  the two recent lists (Q5);
+- **one point for the reporter, said to them already by the build
+  session:** Q1 agreed to define the four developer switches, and THREE are
+  defined. `LogLevels/DebugDefault` is not: it turned out to have no literal
+  default either (the console's level, written when missing) and to exist
+  in debug builds only;
+- the 4 of `Oculus`, whose file no preset compiles;
+- Sketcher's `SelectedConstraintFilters` (its default is a bit per filter
+  entry) and `GridSize/Hist0` (an old key read as a fall-back).
+
+**Q6, still NOT ANSWERED, and how the build session met it meanwhile:** the
+readers that store what they have just read are left doing so
+(`AutoShowSelectionView`, the DAG view's three, `DonatePage`, the dock
+flags). Where readers disagree the definition says what a fresh profile
+gets and the readers are unchanged: `DockWindows/PropertyView/Enabled` True,
+`MainWindow/Theme` empty, `General/LastModule` empty.
+
+Scored: the entry's GUI test (`tests/gui/state-and-missed-settings.py`) 21
+PASS; the three other settings GUI tests 7, 10 and 10 PASS, run by hand
+(the log: the GUI tests do not register with ctest on this machine). Both
+full suites: ctest 788 of 788, Python 3411 tests with the two known
+`TestThickness` 5829 failures only -- by the log, last run on the tree
+BEFORE the final two small fixes (a copy rule for Inspection's file and a
+note to the preferences test).
+
+Next for the build session: entry 45.
 
 **2026-10-08, Q1 answered by the reporter, to the build session** (passed on
 18:12; its log, entry 42, `844cb2f41f`, local). The reporter, verbatim: "Q1
@@ -3128,6 +3185,9 @@ not take a plain definition, because they are read from two groups.
 Not said yet by the reporter: whether to fix it, and when.
 
 ## 45. A spreadsheet's view provider makes its view when it is only asked for it -- OPEN, a design agreed in another session; the build session builds it after entry 42
+
+**2026-10-08 21:25, the build session:** entry 45 is received and is next,
+on this branch on top of `fa2ada985c`. Not started.
 
 **2026-10-08 20:55, decided by the reporter who builds it:** "dwin shall
 build it once he finishes what he's doing". The build session of this tree
