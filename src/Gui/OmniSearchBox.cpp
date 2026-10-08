@@ -24,9 +24,11 @@
 
 #ifndef _PreComp_
 # include <algorithm>
+# include <cmath>
 # include <sstream>
 # include <QAbstractItemView>
 # include <QIcon>
+# include <QImage>
 # include <QApplication>
 # include <QCheckBox>
 # include <QCompleter>
@@ -106,6 +108,51 @@ public:
         return index.data(IsGroupRole).toBool();
     }
 
+    // WCAG contrast of two colours, 1 (none) to 21
+    static double contrast(const QColor &a, const QColor &b)
+    {
+        auto luminance = [](const QColor &c) {
+            auto lin = [](double v) {
+                return v <= 0.03928 ? v / 12.92 : std::pow((v + 0.055) / 1.055, 2.4);
+            };
+            return 0.2126 * lin(c.redF()) + 0.7152 * lin(c.greenF()) + 0.0722 * lin(c.blueF());
+        };
+        double la = luminance(a);
+        double lb = luminance(b);
+        return (std::max(la, lb) + 0.05) / (std::min(la, lb) + 0.05);
+    }
+
+    /* The text colour of the selected row. The palette's HighlightedText
+     * is right only where the style paints the palette's Highlight behind
+     * it. The native Windows style does not: its selected row is a pale
+     * blue panel that the style itself writes on in the ordinary text
+     * colour -- a substitution it makes inside its own item drawing, where
+     * a delegate that lays its text out itself never sees it. So the
+     * panel is painted once more, off screen, and looked at: when the
+     * highlighted text colour does not read on it and the ordinary one
+     * does better, the ordinary one it is.
+     */
+    static QColor selectedTextColor(QStyle *style, const QStyleOptionViewItem &opt,
+                                    const QWidget *widget, QPalette::ColorGroup cg)
+    {
+        const QColor highlighted = opt.palette.color(cg, QPalette::HighlightedText);
+        const QColor ordinary = opt.palette.color(cg, QPalette::Text);
+        QStyleOptionViewItem probe = opt;
+        probe.rect = QRect(0, 0, 48, std::max(8, opt.rect.height()));
+        QImage image(probe.rect.size(), QImage::Format_ARGB32_Premultiplied);
+        image.fill(opt.palette.color(cg, QPalette::Base));
+        {
+            QPainter p(&image);
+            style->drawPrimitive(QStyle::PE_PanelItemViewItem, &probe, &p, widget);
+        }
+        const QColor back = image.pixelColor(probe.rect.center());
+        const double readable = 3.0;
+        const double onHighlighted = contrast(highlighted, back);
+        if (onHighlighted < readable && contrast(ordinary, back) > onHighlighted)
+            return ordinary;
+        return highlighted;
+    }
+
     // A row without a description (the object completer's) is one line high
     QSize sizeHint(const QStyleOptionViewItem &option, const QModelIndex &index) const override
     {
@@ -157,7 +204,8 @@ public:
 
         QPalette::ColorGroup cg = active ? QPalette::Normal : QPalette::Disabled;
         bool selected = opt.state & QStyle::State_Selected;
-        QColor textColor = opt.palette.color(cg, selected ? QPalette::HighlightedText : QPalette::Text);
+        QColor textColor = selected ? selectedTextColor(style, opt, widget, cg)
+                                    : opt.palette.color(cg, QPalette::Text);
         if (!selected) {
             // The expression completer's model flags some rows by colour
             QVariant fg = index.data(Qt::ForegroundRole);

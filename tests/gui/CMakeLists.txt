@@ -1579,3 +1579,9 @@ fc_add_gui_test(GuiTechDrawLastLineStyle_tests_run
 fc_add_gui_test(GuiTechDrawDimensionClickNoRecompute_tests_run
                 techdraw-dimension-click-no-recompute.py
                 --timeout 180)
+
+# The omni search's highlighted row is written in a colour that reads on
+# what the style paints behind it: white on the native style's pale blue.
+fc_add_gui_test(GuiOmniSearchHighlightedRow_tests_run
+                omni-search-highlighted-row.py
+                --timeout 180)
