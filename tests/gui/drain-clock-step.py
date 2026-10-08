@@ -36,6 +36,12 @@ slices, the time they say they spent and their longest slice):
   - no slice of the stepped load ran for anything like a step: the longest
     is under 0.4 s (the plain load's longest is a few times the budget --
     a slice ends after the object that spent it);
+  - with the clock standing still, no slice of the view provider drain
+    runs for ten budgets. One phase of it had no budget at all: the
+    records that name an archive entry -- a colour array, so every solid's
+    -- are restored inside the open and replayed after the sweep of
+    updates, and that replay was one loop over all of them, 0.16 to
+    0.32 s here and growing with the document;
   - every visual is built at the end of each load.
 
 Run through scripts/gui-test.sh (xvfb, isolated configuration, external
@@ -60,6 +66,9 @@ BUDGET_MS = int(os.environ.get("GT_BUDGET", "10"))
 STEP = -0.97
 EVERY = float(os.environ.get("GT_EVERY", "0.1"))
 LONGEST = 0.4
+# Ten budgets: the slice ends after the object that spent the budget, and
+# the progress bar runs events from inside it
+UNSLICED = 0.1
 LOADS = ["warm", "plain", "stepped"]
 
 RESTORE = re.compile(r"progressive restore (\S+): (\d+) view providers in (\d+) slices, "
@@ -203,6 +212,10 @@ def verdict():
                   longest is not None and longest < LONGEST,
                   "longest %s s with the clock stepping, %s s without"
                   % (longest, plain[key + "_longest"]))
+        longest = plain["restore_longest"]
+        check("the view provider drain has no phase without a budget",
+              longest is not None and longest < UNSLICED,
+              "longest slice %s s under a budget of %.3f s" % (longest, BUDGET_MS / 1000.0))
         for kind in LOADS:
             run = runs[kind]
             check("every visual is built after the %s load" % kind,

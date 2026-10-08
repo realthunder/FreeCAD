@@ -270,6 +270,10 @@ struct DocumentP
         std::vector<std::pair<std::string, std::unique_ptr<App::Property>>> fileProps;
     };
     std::vector<CapturedRecord> _deferCaptured;
+    // How far phase three has replayed them. In slices, like every other
+    // phase: these are the records of every view provider that names an
+    // archive entry -- a colour array, so nearly all of a CAD document's.
+    std::size_t _deferCapturedPos = 0;
     bool _deferPhase1 = false;    // creating, not yet restoring
     // Both phases walk the objects the document had when the drain
     // started, by name: the document is live between slices and an index
@@ -1394,6 +1398,7 @@ void Document::beforeDelete() {
     d->_deferStream.reset();
     d->_deferBuf.clear();
     d->_deferCaptured.clear();
+    d->_deferCapturedPos = 0;
     d->_deferCreate.clear();
     d->_deferSweep.clear();
     d->_deferFinish.clear();
@@ -2956,6 +2961,7 @@ void Document::slotStartRestoreDocument(const App::Document& doc)
     d->_deferSwept = false;
     d->_deferCapturedApplied = false;
     d->_deferCaptured.clear();
+    d->_deferCapturedPos = 0;
     // Not snapshotted here: the objects this load owes work to do not all
     // exist yet. The first slice takes it, once the load has let go.
     d->_deferCreate.clear();
@@ -3586,8 +3592,16 @@ void Document::runDeferredRestoreSlice()
         // Phase three: the records -- first those restored at once, set again
         // from their copies, then the parked ones.
         if (!d->_deferCapturedApplied) {
-            d->_deferCapturedApplied = true;
-            for (auto &rec : d->_deferCaptured) {
+            // In slices, by position: replayed in one go, this was the
+            // one phase of the drain without a budget, and the largest --
+            // 0.16 to 0.32 s for 2400 solids under a budget of 0.01 s,
+            // and with it the longest stall of a large load
+            // (tests/gui/drain-clock-step.py). Nothing here runs events,
+            // so the record in hand stays where it is.
+            while (d->_deferCapturedPos < d->_deferCaptured.size()) {
+                if (d->_deferCapturedPos && elapsed().count() >= budget)
+                    break;
+                auto &rec = d->_deferCaptured[d->_deferCapturedPos++];
                 auto obj = d->_pcDocument->getObject(rec.object.c_str());
                 auto vpd = obj ? Base::freecad_dynamic_cast<ViewProviderDocumentObject>(
                         getViewProvider(obj)) : nullptr;
@@ -3635,7 +3649,15 @@ void Document::runDeferredRestoreSlice()
                         prop->Paste(*copy);
                 }
             }
+            if (d->_deferCapturedPos < d->_deferCaptured.size()) {
+                d->_pcDocument->setStatus(App::Document::Restoring, false);
+                spend();
+                scheduleDeferredRestore();
+                return;
+            }
+            d->_deferCapturedApplied = true;
             d->_deferCaptured.clear();
+            d->_deferCapturedPos = 0;
         }
         while (d->_deferCount) {
             --d->_deferCount;

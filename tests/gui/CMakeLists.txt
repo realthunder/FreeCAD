@@ -1033,7 +1033,11 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     # clock. Scored against the tree before, three runs: 7 checks of 15 each
     # time, the view provider drain in 2 to 10 slices against 27 or 28 and
     # saying -3.4 to -5.3 s, the visual drain in 4 to 14 against 88 and
-    # saying -8.6 to -10.4 s.
+    # saying -8.6 to -10.4 s. Its last check is of the view provider drain
+    # with the clock standing still: the replay of the records restored
+    # inside the open was one loop over every one of them, a slice of 0.16
+    # to 0.32 s under the test's budget of 0.01 s, and is 0.012 to 0.046 s
+    # in slices.
     fc_add_gui_test(GuiDrainClockStep_tests_run drain-clock-step.py --timeout 240)
     set_property(TEST GuiDrainClockStep_tests_run APPEND PROPERTY ENVIRONMENT
         "FC_CLOCK_SHIM=$<TARGET_FILE:FCClockStepShim>"
