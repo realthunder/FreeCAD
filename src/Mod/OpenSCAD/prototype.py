@@ -47,7 +47,7 @@ def openscadmesh(doc, scadstr, objname):
 class Node:
     #fnmin = 12 # maximal fn for implicit polygon rendering
     fnmin = FreeCAD.ParamGet(\
-        "User parameter:BaseApp/Preferences/Mod/OpenSCAD").GetInt('useMaxFN')
+        "User parameter:BaseApp/Preferences/Mod/OpenSCAD").GetInt('useMaxFN', 16)
     planedim = 1e10 #size of the square used as x-y-plane
 
     def __init__(self, name, arguments=None, children=None,):

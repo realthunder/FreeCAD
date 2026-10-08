@@ -5,15 +5,12 @@ Help is written in Python and has no generated class: its settings are
 described to the settings registry when Init.py imports this file
 (freecad.params), so that the omni search lists them with the others. Ten
 are on the module's preference page, and the title and the editor of each
-are the page's; Help.py, which reads them, is left as it is. Two more are
-where the help panel was last left.
+are the page's; each default is the one Help.py reads it with. Four more
+are where the help panel was last left, and how large.
 
 The page shows two groups of radio buttons, and each button is a setting of
 its own. Help.py does not read them as groups: it takes the first that is
 on, in the order the documentation of each says.
-
-Not here, because no one value describes them: dockWidgetWidth and
-dockWidgetHeight, which are stored as numbers and read back as switches.
 """
 import sys
 
@@ -114,6 +111,20 @@ Params = [
         True,
         title="Help panel: floating",
         doc="The help panel was last floating, not docked. Stored when the panel is "
+        "moved, read when it is made.",
+    ),
+    ParamInt(
+        "dockWidgetWidth",
+        200,
+        title="Help panel: width",
+        doc="Width, in pixels, the help panel last had. Stored when the panel is "
+        "moved, read when it is made.",
+    ),
+    ParamInt(
+        "dockWidgetHeight",
+        300,
+        title="Help panel: height",
+        doc="Height, in pixels, the help panel last had. Stored when the panel is "
         "moved, read when it is made.",
     ),
 ]
