@@ -181,53 +181,34 @@ uint32_t packColor(const QColor& c)
         | ((uint32_t)c.blue() << 8) | (uint32_t)c.alpha();
 }
 
-// Walk a polyline alternating pen-down/pen-up runs of the given lengths
-// (page units), phase starting pen-down at the path start like Qt.
-void emitDashedPolyline(Page2D::Recorder& rec, const std::vector<Pt>& pts,
-                        float ox, float oy, const std::vector<float>& dashes)
+// A pen's dashes, as the page layer wants them: the pattern in multiples
+// of the unit, not in page units. The lengths are worked out when the page
+// is drawn (Render::Page2D::dashedPolyline), because Qt's depend on the
+// zoom: a pen narrower than a device pixel counts its pattern in pixels.
+struct DashSpec
 {
-    if (pts.size() < 2 || dashes.empty())
+    std::vector<float> pattern;  // dash, gap, dash, ... in units
+    float unit = 0.0f;           // page units; 0 = device pixels (cosmetic)
+    float offset = 0.0f;         // into the pattern at the start, in units
+    bool cap = false;            // round or square caps lengthen the dashes
+    bool empty() const { return pattern.empty(); }
+};
+
+// A polyline cut into the dashes of the spec, into the current path.
+void emitDashedPolyline(Page2D::Recorder& rec, const std::vector<Pt>& pts,
+                        float ox, float oy, const DashSpec& dash)
+{
+    if (pts.size() < 2 || dash.empty())
         return;
-    // a pattern with no length would never get anywhere
-    float period = 0.0f;
-    for (float d : dashes)
-        period += d > 0.0f ? d : 0.0f;
-    if (!(period > 1.0e-4f)) {
-        emitPolyline(rec, pts, ox, oy);
-        return;
+    std::vector<float> xy;
+    xy.reserve(pts.size() * 2);
+    for (const Pt& p : pts) {
+        xy.push_back(ox + p.x);
+        xy.push_back(oy + p.y);
     }
-    size_t di = 0;
-    float remain = dashes[0];
-    bool down = true;
-    float cx = ox + pts[0].x, cy = oy + pts[0].y;
-    rec.moveTo(cx, cy);
-    for (size_t i = 1; i < pts.size(); ++i) {
-        const float ex = ox + pts[i].x, ey = oy + pts[i].y;
-        float segLen = std::hypot(ex - cx, ey - cy);
-        while (segLen > 0.0f) {
-            if (remain <= segLen) {
-                const float t = remain / segLen;
-                cx += (ex - cx) * t;
-                cy += (ey - cy) * t;
-                segLen -= remain;
-                if (down)
-                    rec.lineTo(cx, cy);
-                down = !down;
-                if (down)
-                    rec.moveTo(cx, cy);
-                di = (di + 1) % dashes.size();
-                remain = dashes[di];
-            }
-            else {
-                remain -= segLen;
-                if (down)
-                    rec.lineTo(ex, ey);
-                cx = ex;
-                cy = ey;
-                segLen = 0.0f;
-            }
-        }
-    }
+    rec.dashedPolyline(xy.data(), (uint32_t)pts.size(), dash.pattern.data(),
+                       (uint32_t)dash.pattern.size(), dash.unit, dash.offset,
+                       dash.cap);
 }
 
 // The edge-class show/hide matrix (QGIViewPart::showThisEdge).
@@ -252,7 +233,7 @@ struct EdgeStroke
 {
     uint32_t color = 0x000000ff;
     float width = 6.0f;         // Rez
-    std::vector<float> dashes;  // Rez; empty = solid
+    DashSpec dash;              // empty = solid
     bool show = true;
 };
 
@@ -331,7 +312,16 @@ EdgeStroke resolveEdgeStroke(TechDraw::DrawViewPart* dvp,
 
     if (pen.style() != Qt::SolidLine && es.width > 0.0f) {
         for (qreal d : pen.dashPattern())
-            es.dashes.push_back((float)d * es.width);
+            es.dash.pattern.push_back((float)d);
+        // The unit is the width the Qt page's pen HAS, which is not the
+        // width asked for: its items set the pen's width as a whole number
+        // of scene units (QGIPrimPath::setTools, QPen::setWidth(int)), so
+        // a 0.35 mm hidden line counts its dashes in 0.3 mm -- seven
+        // dashes where 0.35 gives six -- and a width under one unit is a
+        // cosmetic pen, counted in pixels.
+        es.dash.unit = std::floor(es.width);
+        es.dash.offset = (float)pen.dashOffset();
+        es.dash.cap = pen.capStyle() != Qt::FlatCap;
     }
     return es;
 }
@@ -588,16 +578,6 @@ float penWidth(const QPen& pen, const QTransform& t)
     return (float)pen.widthF() * avgScale(t);
 }
 
-// What a pen's dash pattern counts in. Qt counts in pen widths, and a
-// cosmetic pen's in device pixels, which a page has none of: its
-// dashes are the 0.35mm line's.
-float dashUnit(const QPen& pen, const QTransform& t)
-{
-    if (!(pen.widthF() > 0.0))
-        return PageFeed::PageHairline;
-    return (float)pen.widthF() * avgScale(t);
-}
-
 // Replay a QPainterPath's elements into the recorder, mapped to page
 // coordinates. vg keeps the path current across fill and stroke, so
 // one capture serves both.
@@ -634,20 +614,25 @@ void capturePainterPath(Page2D::Recorder& rec, const QPainterPath& path,
     }
 }
 
-// Qt dash patterns are specified in pen-width units.
-std::vector<float> penDashes(const QPen& pen, const QTransform& t)
+// The dashes of a pen taken off a Qt item. Qt counts a pattern in pen
+// widths, and a cosmetic pen's in device pixels: unit 0 says so, and the
+// page layer counts in pixels at whatever zoom it draws at.
+DashSpec penDashes(const QPen& pen, const QTransform& t)
 {
-    std::vector<float> dashes;
+    DashSpec dash;
     if (pen.style() == Qt::SolidLine || pen.style() == Qt::NoPen)
-        return dashes;
-    const float w = dashUnit(pen, t);
+        return dash;
     for (qreal d : pen.dashPattern())
-        dashes.push_back((float)d * w);
-    return dashes;
+        dash.pattern.push_back((float)d);
+    if (pen.widthF() > 0.0 && !pen.isCosmetic())
+        dash.unit = (float)pen.widthF() * avgScale(t);
+    dash.offset = (float)pen.dashOffset();
+    dash.cap = pen.capStyle() != Qt::FlatCap;
+    return dash;
 }
 
 void captureDashedPath(Page2D::Recorder& rec, const QPainterPath& path,
-                       const QTransform& t, const std::vector<float>& dashes)
+                       const QTransform& t, const DashSpec& dashes)
 {
     rec.beginPath();
     for (const QPolygonF& poly : path.toSubpathPolygons(t)) {
@@ -669,7 +654,7 @@ void emitStyledPath(Page2D::Recorder& rec, const QPainterPath& path,
     if (!fill && !stroke)
         return;
 
-    const std::vector<float> dashes = penDashes(pen, t);
+    const DashSpec dashes = penDashes(pen, t);
     if (fill || dashes.empty())
         capturePainterPath(rec, path, t);
     if (fill)
@@ -724,7 +709,7 @@ void captureLineItem(Page2D::Recorder& rec, QGraphicsLineItem* item)
     const QPointF p1 = t.map(item->line().p1());
     const QPointF p2 = t.map(item->line().p2());
     rec.beginPath();
-    const std::vector<float> dashes = penDashes(pen, t);
+    const DashSpec dashes = penDashes(pen, t);
     if (dashes.empty()) {
         rec.moveTo((float)p1.x(), (float)p1.y());
         rec.lineTo((float)p2.x(), (float)p2.y());
@@ -1633,7 +1618,7 @@ void PageFeed::feedViewPart(TechDraw::DrawViewPart* dvp, Page2D& out,
         Page2D::Recorder rec;
         EdgeStroke es = resolveEdgeStroke(dvp, vp, geom, iEdge, style);
         if (es.show && es.width > 0.0f) {
-            if (es.dashes.empty()) {
+            if (es.dash.empty()) {
                 if (emitEdge(rec, geom, ox, oy, style.deflection))
                     rec.stroke(es.color, es.width);
             }
@@ -1644,7 +1629,7 @@ void PageFeed::feedViewPart(TechDraw::DrawViewPart* dvp, Page2D& out,
                 discretize(geom, style.deflection, pts);
                 if (pts.size() >= 2) {
                     rec.beginPath();
-                    emitDashedPolyline(rec, pts, ox, oy, es.dashes);
+                    emitDashedPolyline(rec, pts, ox, oy, es.dash);
                     rec.stroke(es.color, es.width);
                 }
             }

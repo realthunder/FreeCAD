@@ -1598,3 +1598,9 @@ fc_add_gui_test(GuiThemeClearsOverlayPresetLeftovers_tests_run
 fc_add_gui_test(GuiViewCellDragFrames_tests_run
                 view-cell-drag-frames.py
                 --timeout 180)
+
+# A TechDraw page drawn by the backend has the Qt page's dashes at any zoom:
+# zoomed out they closed up, a cosmetic frame's grew with the zoom.
+fc_add_gui_test(GuiTechDrawPageBackendDashes_tests_run
+                techdraw-page-backend-dashes.py
+                --timeout 180)

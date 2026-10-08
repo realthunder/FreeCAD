@@ -295,6 +295,11 @@ if(TARGET FreeCADRenderer)
     target_link_libraries(SceneDump_tests_run gtest_main FreeCADRenderer)
     add_test(NAME SceneDump_tests_run COMMAND SceneDump_tests_run)
 
+    # The dashes of a 2D page: worked out for the zoom drawn at, by Qt's rules.
+    add_executable(Page2DDash_tests_run ${CMAKE_CURRENT_SOURCE_DIR}/Page2DDash.cpp)
+    target_link_libraries(Page2DDash_tests_run gtest_main FreeCADRenderer)
+    add_test(NAME Page2DDash_tests_run COMMAND Page2DDash_tests_run)
+
     # The raster MaterialX generator. It reads the shipped data
     # library, and a bare test binary has no one to seed the renderer's
     # resource path, so the build states where it is.

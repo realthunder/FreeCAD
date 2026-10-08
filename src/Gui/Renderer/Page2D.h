@@ -93,6 +93,22 @@ public:
         void circle(float cx, float cy, float r);
         void ellipse(float cx, float cy, float rx, float ry);
         void polyline(const float* xy, uint32_t numPoints);
+        /// Append a polyline cut into dashes to the current path, the
+        /// way Qt draws a dashed pen; follow with stroke(). \a pattern
+        /// is the pen's: dash, gap, dash, ... in multiples of \a unit,
+        /// the pen's width in page units; \a offset is where in the
+        /// pattern the line starts, in the same multiples. The dashes
+        /// are worked out when the page is drawn, for the zoom it is
+        /// drawn at (Page2D::dashRuns):
+        ///  - the unit is never under one device pixel, so a line too
+        ///    thin for its own dashes keeps dashes that can be told
+        ///    apart, and unit 0 is a cosmetic pen: dashes in device
+        ///    pixels at any zoom;
+        ///  - with \a cap (a round or square cap) every dash is longer
+        ///    by half the unit at each end, as the caps make it.
+        void dashedPolyline(const float* xy, uint32_t numPoints,
+                            const float* pattern, uint32_t numDashes,
+                            float unit, float offset = 0.0f, bool cap = false);
 
         /// Fill the current path. Convex fills tessellate cheaper; a
         /// concave fill goes through libtess2 with the given rule.
@@ -231,6 +247,27 @@ public:
 
     /// The band scale the current view quantizes to (exposed for tests).
     static float bandScale(float zoom);
+
+    /// The dashes a dashedPolyline op draws when replayed at the band
+    /// scale \a band with \a pixel the width of a device pixel in
+    /// band-scaled units: one list of x, y pairs per dash, in page
+    /// coordinates. \a thin, when given, says whether the unit was taken
+    /// from the pixel -- such an item is recorded again when the band
+    /// changes. A pattern with no length gives the whole line.
+    ///
+    /// The rules are Qt's, measured against the Qt-painted page
+    /// (docs/TechDrawPortAndSection.md): a pen at least a pixel wide
+    /// counts its pattern in its own width and its caps lengthen each
+    /// dash by half a width at each end; a thinner or cosmetic pen
+    /// counts in device pixels, without caps. Within a band the page is
+    /// still scaled by up to sqrt(2) either way, and pixel-counted
+    /// dashes with it -- as a hairline's width is. \a trim pulls in
+    /// every dash end that is not an end of the line: the replay asks
+    /// for half a pixel, what vg's anti-aliasing draws past a butt end.
+    static std::vector<std::vector<float>> dashRuns(
+        const float* xy, uint32_t numPoints, const float* pattern,
+        uint32_t numDashes, float unit, float offset, bool cap, float band,
+        float pixel, bool* thin = nullptr, float trim = 0.0f);
 
     /// Register a font file under the registry name text ops refer to.
     /// Legal any time -- before any GPU context exists, and again after

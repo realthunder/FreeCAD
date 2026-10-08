@@ -200,6 +200,7 @@ enum class Op : uint8_t {
     PushTransform,
     PopTransform,
     Image,
+    DashedPolyline, // appended: the codes above are what version 1 pages hold
 };
 
 void putBytes(std::vector<uint8_t>& out, const void* p, size_t n)
@@ -300,6 +301,8 @@ size_t opFixedSize(Op op)
         return 0;
     case Op::Image:
         return 24;
+    case Op::DashedPolyline:
+        return 14; // points, dashes, unit, offset, cap
     }
     return SIZE_MAX; // unknown opcode: newer writer, stop
 }
@@ -396,6 +399,142 @@ void Page2D::Recorder::polyline(const float* xy, uint32_t numPoints)
     putOp(ops, Op::Polyline);
     putU32(ops, numPoints);
     putBytes(ops, xy, sizeof(float) * 2 * numPoints);
+}
+
+void Page2D::Recorder::dashedPolyline(const float* xy, uint32_t numPoints,
+                                      const float* pattern, uint32_t numDashes,
+                                      float unit, float offset, bool cap)
+{
+    if (!xy || numPoints < 2)
+        return;
+    if (!pattern || numDashes == 0 || numDashes > 255) {
+        // no pattern to cut it by: the line itself
+        polyline(xy, numPoints);
+        return;
+    }
+    putOp(ops, Op::DashedPolyline);
+    putU32(ops, numPoints);
+    ops.push_back((uint8_t)numDashes);
+    putF(ops, unit);
+    putF(ops, offset);
+    ops.push_back(cap ? 1 : 0);
+    putBytes(ops, xy, sizeof(float) * 2 * numPoints);
+    putBytes(ops, pattern, sizeof(float) * numDashes);
+}
+
+std::vector<std::vector<float>> Page2D::dashRuns(
+    const float* xy, uint32_t numPoints, const float* pattern,
+    uint32_t numDashes, float unit, float offset, bool cap, float band,
+    float pixel, bool* thinOut, float trim)
+{
+    std::vector<std::vector<float>> runs;
+    if (thinOut)
+        *thinOut = false;
+    if (!xy || numPoints < 2)
+        return runs;
+    if (!(band > 0.0f))
+        band = 1.0f;
+    // Just over a pixel, as for a stroke's width (Op::Stroke).
+    const bool thin = !(unit > 0.0f) || unit * band < pixel * 1.01f;
+    if (thinOut)
+        *thinOut = thin;
+    const float u = thin ? pixel / band : unit;
+    const float half = (cap && !thin) ? 0.5f * u : 0.0f;
+
+    // arc length along the line
+    std::vector<float> at(numPoints, 0.0f);
+    for (uint32_t i = 1; i < numPoints; ++i) {
+        at[i] = at[i - 1] + std::hypot(xy[2 * i] - xy[2 * i - 2],
+                                       xy[2 * i + 1] - xy[2 * i - 1]);
+    }
+    const float length = at[numPoints - 1];
+    if (!(length > 0.0f))
+        return runs;
+
+    // One full turn of the pattern, on and off by turns: a pattern of
+    // odd length changes sides every time round, so two of them make it.
+    std::vector<float> turn;
+    float period = 0.0f;
+    if (pattern) {
+        for (uint32_t rep = 0; rep < ((numDashes & 1) ? 2u : 1u); ++rep) {
+            for (uint32_t i = 0; i < numDashes; ++i) {
+                const float len = pattern[i] > 0.0f ? pattern[i] * u : 0.0f;
+                turn.push_back(len);
+                period += len;
+            }
+        }
+    }
+    // The stretches drawn, as [from, to] in arc length. No pattern to
+    // speak of, or more dashes than anybody could see: the whole line.
+    std::vector<std::pair<float, float>> on;
+    if (!(period > 1.0e-4f) || length / period * (float)turn.size() > 200000.0f) {
+        on.emplace_back(0.0f, length);
+    }
+    else {
+        // where in the pattern the line starts
+        float into = std::fmod(offset * u, period);
+        if (into < 0.0f)
+            into += period;
+        size_t k = 0;
+        for (size_t guard = 0; guard < 2 * turn.size() && into >= turn[k]; ++guard) {
+            into -= turn[k];
+            k = (k + 1) % turn.size();
+        }
+        float s = 0.0f;
+        while (s < length) {
+            const float end = s + (turn[k] - into);
+            if ((k & 1) == 0) {
+                const float from = std::max(0.0f, s - half);
+                const float to = std::min(length, end + half);
+                if (!on.empty() && from <= on.back().second)
+                    on.back().second = std::max(on.back().second, to);
+                else if (to > from || half > 0.0f)
+                    on.emplace_back(from, to);
+            }
+            // a turn of zero-length entries only cannot happen (period > 0)
+            s = end;
+            into = 0.0f;
+            k = (k + 1) % turn.size();
+        }
+    }
+
+    // A dash's end that is not the line's is pulled in by `trim`: the
+    // anti-aliased butt end of a vg stroke is drawn past the point it is
+    // given by about half a pixel's worth of ink, twice per gap, which
+    // closes a gap of two pixels. Never by more than a quarter of the
+    // dash, or a dot would be trimmed away.
+    if (trim > 0.0f) {
+        for (auto& stretch : on) {
+            const float by = std::min(trim, 0.25f * (stretch.second - stretch.first));
+            if (stretch.first > 0.0f)
+                stretch.first += by;
+            if (stretch.second < length)
+                stretch.second -= by;
+        }
+    }
+
+    auto point = [&](float s, uint32_t seg, std::vector<float>& out) {
+        const float span = at[seg + 1] - at[seg];
+        const float t = span > 0.0f ? (s - at[seg]) / span : 0.0f;
+        out.push_back(xy[2 * seg] + (xy[2 * seg + 2] - xy[2 * seg]) * t);
+        out.push_back(xy[2 * seg + 1] + (xy[2 * seg + 3] - xy[2 * seg + 1]) * t);
+    };
+    uint32_t seg = 0;
+    for (const auto& stretch : on) {
+        std::vector<float> run;
+        while (seg + 2 < numPoints && at[seg + 1] <= stretch.first)
+            ++seg;
+        point(stretch.first, seg, run);
+        uint32_t j = seg;
+        while (j + 2 < numPoints && at[j + 1] < stretch.second) {
+            ++j;
+            run.push_back(xy[2 * j]);
+            run.push_back(xy[2 * j + 1]);
+        }
+        point(stretch.second, j, run);
+        runs.push_back(std::move(run));
+    }
+    return runs;
 }
 
 void Page2D::Recorder::fillConvex(uint32_t rgba)
@@ -728,6 +867,42 @@ static void replayOpsInner(vg::Context* ctx, OpReader& r, int& stateDepth,
             vg::rect(ctx, x, y, w, h);
             vg::fillPath(ctx, pattern, vg::color4ub(255, 255, 255, 255),
                          vg::FillFlags::ConvexAA);
+            break;
+        }
+        case Op::DashedPolyline: {
+            const uint32_t n = r.u32();
+            const uint32_t count = r.u8();
+            const float unit = r.f();
+            const float offset = r.f();
+            const bool cap = r.u8() != 0;
+            if (n < 2 || !r.fits(sizeof(float) * (2 * (size_t)n + count)))
+                return;
+            // Copied out of the byte-packed buffer, as for a polyline.
+            std::vector<float> xy(2 * (size_t)n);
+            memcpy(xy.data(), r.p, sizeof(float) * 2 * n);
+            r.p += sizeof(float) * 2 * n;
+            std::vector<float> pattern(count);
+            if (count)
+                memcpy(pattern.data(), r.p, sizeof(float) * count);
+            r.p += sizeof(float) * count;
+            // The dashes are for this band: counted in the pen's width
+            // while that is a pixel or more, in pixels below it. Like a
+            // thin stroke, the item says so and is recorded again when
+            // the band changes.
+            bool thin = false;
+            const auto runs = Page2D::dashRuns(xy.data(), n, pattern.data(), count, unit,
+                                               offset, cap, env.band, env.pixel, &thin,
+                                               0.5f * env.pixel / env.band);
+            if (thin)
+                env.thinStrokes = true;
+            else if (unit < env.thinnestStroke)
+                env.thinnestStroke = unit;
+            for (const auto& run : runs) {
+                if (run.size() < 4)
+                    continue;
+                vg::moveTo(ctx, run[0], run[1]);
+                vg::polyline(ctx, run.data() + 2, (uint32_t)(run.size() / 2 - 1));
+            }
             break;
         }
         default:
@@ -1107,6 +1282,22 @@ bool Page2D::opsBounds(const std::vector<uint8_t>& ops, float box[4])
             r.u64();
             float x = r.f(), y = r.f(), w = r.f(), h = r.f();
             rectBox(x, y, x + w, y + h);
+            break;
+        }
+        case Op::DashedPolyline: {
+            const uint32_t n = r.u32();
+            const uint32_t count = r.u8();
+            r.f();
+            r.f();
+            r.u8();
+            if (!r.fits(sizeof(float) * (2 * (size_t)n + count)))
+                return any;
+            for (uint32_t i = 0; i < n; ++i) {
+                float x = r.f(), y = r.f();
+                point(x, y);
+            }
+            for (uint32_t i = 0; i < count; ++i)
+                r.f();
             break;
         }
         }
