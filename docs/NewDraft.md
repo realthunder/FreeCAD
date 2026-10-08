@@ -8,6 +8,8 @@ result and takes the cell draft where it crosses itself or grows past the
 body (section 11, with pictures); #876's cones and the internal edges in
 section 12. Step 4 done 2026-10-07: tangent chains -- walls and the fillets
 between them drafted as one sheet, fillets turned into cones (section 13).
+2026-10-08: past a cone's apex the walls meet in a ridge, and a chain may
+close at a sharp corner between two planes (section 14).
 The design below came with a Python prototype (section 5)
 that the earlier measurements come from; the open questions settled
 2026-10-05 (section 9).
@@ -1020,6 +1022,17 @@ The drafted face itself may be a fillet: drafting it drafts the same chain.
 A face that is in the chain of a face drafted before (the user picked every
 wall of a boss) is not drafted again.
 
+Pictures (`docs/pictures/NewDraft/`, `make_newdraft.sh`): the block with
+rounded corners, where the cell draft builds the classic draft's solid;
+the pocket drafted through the front, which the classic draft refuses;
+and #962, where the classic draft stops partway along the chain (13.5).
+
+![The filleted block](pictures/NewDraft/chain_rbox_a5.png)
+
+![The pocket through the front](pictures/NewDraft/chain_pocket_break_a10.png)
+
+![#962's chain](pictures/NewDraft/chain_issue962_f57_n29_a5.png)
+
 ### 13.2 The new surface is a sheet
 
 `P'` of sections 4.2-4.5 becomes a sheet: on each member's new surface a face
@@ -1137,3 +1150,123 @@ other. Section 11's eight #876 results "past the envelope" were the plate's
 walls past the planes of the other walls of their own chain; with the chain
 they are not flagged, and the cell draft builds the classic draft's solid
 for them anyway (34 above).
+
+## 14. Past a cone's apex, and a chain that closes at a sharp corner (2026-10-08)
+
+The two topology changes section 13.4 left open.
+
+### 14.1 Past a cone's apex
+
+A fillet between two walls drafted inward turns into a cone that narrows as
+it rises; on a block 10 tall with fillets of 2 at 15 deg it reaches its apex
+at 2 / tan(15) = 7.46. Above that the fillet is gone and the two walls meet
+in a sharp edge -- the ridge, the line of their new planes. It runs from the
+apex: both new planes are tangent to the new cone, so both hold its apex.
+
+A cone member with two seams, both to planes, whose apex lies on both new
+planes and whose ridge is not square to its axis, gets the ridge (`Member::
+ridge`, `apex`, `ridgeDir`, `live` -- the side of the apex its face is on).
+Then:
+
+- **The sheet.** The cone's face stops at the apex (a degenerate edge
+  there). The side of each plane's face along that seam runs up the seam's
+  new line to the apex and on along the ridge (`seamSide`, `ridgeAt`), so the
+  two planes' faces meet along it and the sheet stays closed. The ridge is
+  the same line on either seam: it lies in the plane of symmetry between them.
+- **Distances.** Past the apex, in the cone's own region, the new surface is
+  the two planes: the distance of a point is the larger of its distances to
+  them where the fillet was convex (the solid inside both), the smaller where
+  it was concave (inside either). `newDist` and `newNormalAt` take it, so the
+  seeds, the cells' "between" and the neighbours' reach all see the ridge.
+- **The next event.** A plane narrows along its ridges; where its two sides
+  meet the plane ends too, and the planes beyond its ridges meet in turn --
+  the roof of the chain (a hipped roof on the block). That is not built: the
+  sheet stops short of the first such crossing (`makeSheet`), and if a face
+  of the chain, or where it moves to, lies past it, the draft is refused,
+  `FaceVanishes` ("narrows to nothing"). The block at 30 deg: its short walls
+  meet at 5 / tan(30) = 8.66, under its top.
+
+A cone whose apex the sheet reaches but that has no ridge (a seam to another
+cone, a lone cone, the face all past its apex) is clipped short of the apex
+as before, and refused if its face reaches it.
+
+![The block past the apex](pictures/NewDraft/apex_rbox_a15.png)
+
+### 14.2 A chain that closes at a sharp corner
+
+A boss with three rounded corners and one sharp: the chain from any wall runs
+round to the sharp corner from both sides, and two of its planes meet there
+at a sharp edge. That edge is a **sharp seam**: the new edge is the line of
+the two new planes, through the point where the old edge meets the neutral
+plane (on the hinge of both, which stays). Its new line is not as steep as a
+tangent seam's, so a seam carries how far along its line a level is
+(`Seam::k`; a level is a height, `seamAt`). A sharp seam bounds neither
+plane's region (`inSlab`): across it both planes judge, the first that has a
+point between its old and its new plane takes it, which is the convex
+corner's union and right for the concave one wherever the fill can reach.
+The narrowing of 14.1 is measured along the level line of the plane, so a
+plane between a ridge and a sharp seam ends where they cross.
+
+A cylinder or cone of the chain at a sharp edge is still refused.
+
+![The block with a sharp corner](pictures/NewDraft/sharp_rbox_a15.png)
+
+### 14.3 Two guards
+
+On #876's upper box (faces 26 and 42 drafted about face 5 at 5 deg, section
+13.5's `SplitsSolid` pair) the ridge took the sheet past its corners' apex
+in the larger box of the second try, and the fuse came back with 7 of the
+solid's pieces, 7590 of its 8666: no piece of the drafted faces seeded a
+cell, nothing was swept, and the 7 cells made a valid solid -- the wrong one.
+Two checks now stop that, for every cell draft:
+
+- the solid's pieces must add up to the solid (to 1e-3: the volume
+  integration on B-spline cells is off by up to 8e-5 on the same draft with
+  nothing lost), else `Boolean`, and the fuzzy fuse is tried;
+- a draft that moves its faces must sweep a cell, else `NoClosure`.
+
+The pair of #876 is refused again, as `Boolean`.
+
+### 14.4 Measured
+
+The suite (`occt/tests/fork/draft`), each against its closed-form volume:
+the filleted block inward at 15 and 20 deg (`new_chain_rbox_a15/a20`, the
+first refused before), at 30 deg refused (`FaceVanishes`, the short walls);
+one filleted edge, an open chain, from the wall and from the fillet
+(`new_chain_open_apex*`); the pocket's walls drafted inward, its concave
+corners closing at 7.46 over the floor (`new_chain_pocket_apex_a15`); the
+block with one sharp corner at 5, -5 and 15 deg and from a wall at that
+corner (`new_chain_sharp_*`), and the pocket with one
+(`new_chain_pocket_sharp_a15`). At 15 deg the classic draft refuses both
+sharp-cornered shapes. All to 1e-15 relative; the angles from 5 to 14 deg,
+where the apex lies over the block's top, too. `TestDraft` +1
+(`testDraftNewTangentChainSharpCorner`), and `testDraftNewTangentChain`
+takes the 15 deg block as valid, with its four ridges, and 30 deg as
+refused.
+
+The sweep of section 13.5 again (`Method = New`, the stop on), against the
+build before:
+
+| | 1222 | 500 |
+|--------|------:|------:|
+| the same result | 1219 | 496 |
+| refused before, valid now, at the classic draft's volume | 2 | 0 |
+| refused before and now, for another reason | 1 | 4 |
+| anything else changed | 0 | 0 |
+
+The 2: #474's Fillet003 input, face 11 drafted about faces 9 and 10 at 15
+deg. The first box swept nothing and the result left the face out
+(`FaceVanishes`); now an empty sweep counts as open and the larger box
+drafts it (2006.0216, the classic draft's). The other 5: #876's pair of
+14.3; two of #334's chains through its face 10, which close at a sharp edge
+(`UnsupportedSurface` before) and now do not close (`NoClosure`); and one
+of #334's chains at 60 deg past an apex (`FaceVanishes` both, now from 14.1's
+test). The guard on an empty sweep
+needs a piece of the drafted faces off the new surfaces: #474's face 22
+about 25 at 5 deg moves nothing (the classic draft keeps the volume), and
+stays `FaceVanishes`.
+
+The sweep's input shapes had been cleared out of the scratch directory; they
+were exported again from the models (the features' input shapes) and the
+older scratch, and checked against the last run: on the build before, every
+case gives last session's result.
