@@ -76,6 +76,30 @@ class ElementAppearanceMadeTest(unittest.TestCase):
             self.assertEqual(obj.getGroupOfProperty("ElementAppearance"), "Appearances")
             self.assertEqual(obj.getGroupOfProperty("MapFaceColor"), "Appearances")
 
+    def testAnObjectAddedWithItsProxyIsGivenALookToo(self):
+        # Document.addObject(attach=True), which Assembly3 and Draft's link
+        # arrays make their objects with, calls no setupObject(): the look
+        # is given all the same
+        class Proxy:
+            def attach(self, obj):
+                self.attached = obj.Name
+
+            def execute(self, obj):
+                pass
+
+        plain = self.doc.addObject("Part::FeaturePython", "Plain")
+        proxy = Proxy()
+        made = self.doc.addObject("Part::FeaturePython", "Made", proxy, None, True)
+        self.assertEqual(proxy.attached, made.Name)
+        for name in ("Face", "Edge", "Vertex"):
+            self.assertEqual(
+                getattr(made.ElementAppearance, name).DiffuseColor,
+                getattr(plain.ElementAppearance, name).DiffuseColor,
+                name,
+            )
+        self.assertEqual(made.ShapeColor, plain.ShapeColor)
+        self.assertEqual(made.ElementAppearance.Faces.Count, 1)
+
     def testAFaceTakesTheColourOfTheFaceItWasMadeFrom(self):
         self.box.ElementAppearance.Face = material(RED)
         self.cyl.ElementAppearance.Face = material(BLUE)

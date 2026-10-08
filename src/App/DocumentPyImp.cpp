@@ -37,6 +37,7 @@
 #include "DocumentPy.h"
 #include "DocumentSettings.h"
 #include "DocumentSettingsPy.h"
+#include "GeoFeature.h"
 #include "DocumentPy.cpp"
 #include "TransactionLog.h"
 #include <boost/regex.hpp>
@@ -344,6 +345,22 @@ PyObject*  DocumentPy::addObject(PyObject *args, PyObject *kwd)
 
             if (Base::asBoolean(attach)) {
                 getDocumentPtr()->addObject(pcFtr,sName);
+
+                // setupObject() is not called for an object made this way,
+                // and never was: a version it would set is one the script
+                // does not expect. The look every object is given when it
+                // is made is the one thing of it that is done here -- with
+                // none, a part group of Assembly3 or a link array of Draft
+                // had the colour of no look at all, and so had whatever is
+                // drawn in its looks (docs/ShapeAppearanceDesign.md 14.6.10).
+                if (auto geo = Base::freecad_dynamic_cast<GeoFeature>(pcFtr)) {
+                    try {
+                        geo->giveDefaultAppearance();
+                    }
+                    catch (Base::Exception &e) {
+                        e.ReportException();
+                    }
+                }
 
                 try {
                     Py::Callable method(pyobj.getAttr("attach"));

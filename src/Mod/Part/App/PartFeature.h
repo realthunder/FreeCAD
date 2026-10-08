@@ -186,7 +186,7 @@ public:
      * vertices the preferences' line and vertex colours. Each still counts
      * as a look nobody chose (PropertyElementAppearance::isFollowingMaterial()).
      */
-    void giveDefaultAppearance();
+    void giveDefaultAppearance() override;
     /// Whether there is a card's look to go back to from a chosen one
     bool canResetAppearanceToMaterial() const;
     /// The card's look again, and following it from now on

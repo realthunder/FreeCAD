@@ -234,6 +234,15 @@ public:
     virtual App::MaterialAppearance getMaterialAppearance() const;
     /// Set the feature's material appearance from an App::MaterialAppearance
     virtual void setMaterialAppearance(const App::MaterialAppearance& material);
+    /** The look an object has that nobody gave one
+     *
+     * docs/ShapeAppearanceDesign.md sec 14.6.10: every object is given a look
+     * when it is made, by the object. setupObject() is where, and this is for
+     * whoever makes an object setupObject() is not called for: a script that
+     * adds one with its proxy, Document.addObject(attach=True). Nothing over
+     * a look the object has.
+     */
+    virtual void giveDefaultAppearance() {}
     /** Render_* view properties the feature's material card states
      *
      * The third leg of the same bridge, for what App::MaterialAppearance cannot
