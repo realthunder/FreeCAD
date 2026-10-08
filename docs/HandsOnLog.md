@@ -43,7 +43,7 @@ Evidence that does not belong in the repository is under
 | 34 | FIXED `3d7b4c30fd`, not staged | Dark and Light store TechDraw's preselection colour, the blue of the 3D view's |
 | 38 | FIXED `bb31f8820b`, not staged | the omni search's first bring-up made the icon of every command before showing the box: 1.27 s on the reporter's configuration, 0.22 s now |
 | 39 | FIXED `c7d115e576`, not staged | MSAA has not reached any view since 2026-09-07: the scene depth was built readable at every sample count and bgfx refuses that framebuffer. Write-only under MSAA now; a test asks the view its sample count |
-| 41 | SIZED 2026-10-08, the cut agreed; FIRST in the next session, not started | the Python-only modules' settings through a door into the registry: about 600 keys, 440 of them Draft and BIM, whose own table already defines most. Door first, proved on Assembly; then Draft and BIM; then Fem, CAM, AddonManager; then the rest |
+| 41 | FIXED, all four steps: `a75b43f1d5`, `4a99a978f7`, `48037fbd8c`, `de7bd49797`, `ff12279ee6`; not staged, not pushed; a list with the reporter (L1-L12, F1, F3, F4, F6-F12) | the Python-only modules' settings through a door into the registry: 601 settings listed that were not -- Assembly 13, Draft and BIM 426, Fem 47, CAM 27, the Addon Manager 41, Help 12, OpenSCAD 15, ReverseEngineering 11, Tux 5, Material 4. Registration only, the readers keep their code; a test per module holds each described default to its readers' |
 | 42 | SIZED 2026-10-08, the cut agreed; after entry 41, not started | of about 300 keys C++ reads without a definition: about 90 state keys go through the generator and are listed, about 110 settings entry 24 did not reach go in the same entry, about 90 records under names the user makes stay out |
 
 **The reporter, 2026-10-07 14:20, on what is open** (said to the build
@@ -1595,7 +1595,7 @@ highlighted row is entry 43 of the queue. Entry 24 has nothing left with
 the reporter. Pushed: `origin/PartDesignPort` = `b70cc6ebf1`, cycles
 `35a3bd898` first. Not staged.
 
-## 41. The Python-only modules' settings, through a door into the registry -- steps 1 to 3 of 4 DONE (the way in, Assembly; Draft and BIM; Fem, CAM, the Addon Manager), F2 and F5 answered, the rest of the list with the reporter; step 4 to do
+## 41. The Python-only modules' settings, through a door into the registry -- FIXED, all four steps (the way in, Assembly; Draft and BIM; Fem, CAM, the Addon Manager; the small rest); F2 and F5 answered, the rest of the list with the reporter
 
 Decided under entry 24 (C1, C4). Not started. Sized 2026-10-08, static,
 with `inv24.py` run again on the tree of `b70cc6ebf1` and split by who
@@ -1797,6 +1797,89 @@ Added to the list for the reporter:
 - F8 CAM keeps the place and size of the post processor's dialogues, and
   the versions its asset migration was offered for, in groups named at run
   time: not described. The Inspect window's place and size are kept as text.
+
+**Step 4, the small rest** (`ff12279ee6`), 2026-10-08: 47 settings, where
+the sizing had said about 48 -- Help 12, OpenSCAD 15, ReverseEngineering
+11, Tux 5, Material 4, the Test module none. Each has a definition file
+that its `Init.py` imports, so they are listed from the start of a session:
+
+- Help, 12: `Mod/Help/HelpParams.py`. The ten of its preference page and
+  where the help panel was last docked. The page shows two groups of radio
+  buttons and each button is a setting of its own; `Help.py` does not read
+  them as groups but takes the first that is on (wiki, Markdown, GitHub,
+  custom; browser, dialog, else a tab), and the documentation of each says
+  where it stands in that order.
+- OpenSCAD, 15: `Mod/OpenSCAD/OpenSCADParams.py`. The eleven of its page,
+  and four the count had not seen because the reads run over two lines:
+  `fnForImport`, `meshmaxlength`, `tempmeshmaxpoints`,
+  `usePlaceholderForUnsupported`, on no page.
+- ReverseEngineering, 11: `Mod/ReverseEngineering/ReverseEngineeringParams.py`.
+  What the Fit B-spline surface dialog was last left with: its widgets store
+  them when it closes and read them when it opens, and no code names them.
+  Title, default and range are the dialog's (`Size factor` 1.0: the `.ui`
+  gives the spin box no value and a minimum of 1); the documentation is what
+  `approxSurface()` does with each. Nothing holds these eleven defaults to
+  the dialog: its `.ui` is compiled in, not installed.
+- Tux, 5: `Mod/Tux/TuxParams.py`. Under `User parameter:Tux`, not under
+  Preferences, so the omni search lists them as `/Tux/...`: the navigation
+  indicator's `Enabled`, `Compact` and `Tooltip`, and the persistent tool
+  bars' `Enabled` and `Deprecated`.
+- Material, 4: `Mod/Material/MaterialPyParams.py`, what the card editor
+  written in Python and its card list read, beside the 23 of the generated
+  class.
+- Test: nothing to describe. The keys its own code makes are scratch keys
+  under `System parameter:Test`; everything else its files read is a setting
+  of another module.
+
+`Mod/Test/ModuleSettings.py` (`-t ModuleSettings`, in the list of
+`Mod/Test/Init.py`): every setting of the five files is in the registry as
+described, with a title and at most 400 characters; each described default
+is the one every reader in the module's sources passes, and the test asks
+that it found at least 10 such reads in Help, 12 in OpenSCAD, 5 in Tux and 4
+in Material; Material's generated class still has its 23 rows. Checked that it can fail: with `MaterialEditorWidth` and
+`exportConvexity` changed in the build tree's copies it reported the first.
+
+Scored: `-t ModuleSettings` 4 OK (new), `-t BaseTests` 57 OK,
+`-t TestMaterialsApp` 75 OK; `tests/gui/python-settings-door.py`, one claim
+more, 10 PASS. `docs/OmniSearch.md`, section 3.1, names the definition
+files. Not staged, not pushed.
+
+Added to the list for the reporter:
+
+- L9 Help `dockWidgetWidth`, `dockWidgetHeight`: stored as numbers, read
+  back with `GetBool`, and crossed -- the height from the width's key. The
+  same four lines as BIM's views manager (L5). NOT described.
+- L10 OpenSCAD `useMaxFN`: the page says 16 and `importCSG.py` reads it with
+  16 in four places; `prototype.py` reads it with nothing, so 0, which means
+  no limit. Described: 16.
+- L11 Material `Cards/SortByResources`: the page has the box checked;
+  `MaterialEditor.py` reads it with False. Described: False.
+- L12 Help `optionTab` is stored by the page and read by nothing -- the tab
+  is what is left when neither of the other two is on. And `optionGithub`:
+  the page has the button disabled ("currently not available"), the code
+  honours the setting. Both described, each saying so.
+- F9 OpenSCAD `meshmaxarea` and `meshlocallen` are read only by a branch
+  switched off (`if False: # disabled due to issue 1292`): NOT described.
+  `meshmaxlength` is the tessellation tolerance in the branch that runs;
+  described as that.
+- F10 CHANGED: Help and Tux had no `Init.py`, only an `InitGui.py`. Each has
+  one now, holding the one import, so that their settings are listed without
+  the GUI as well and `BaseTests` sees them.
+- F11 Tux `PersistentToolbars/Deprecated` is a marker more than a setting:
+  1 hands the kept tool bar places over to the main window at the next start
+  and becomes 2, 2 means Tux leaves the tool bars alone, 0 makes Tux keep
+  them itself as it used to. Described, as an integer saying that. The
+  places themselves are in groups named after the workbenches: not
+  described, as with F8.
+- F12 Material `Cards/LegacyEditor` is named only in a commented-out line of
+  `MaterialEditor.py`: not described.
+- F4 again: the 47 titles and documentations are English only.
+
+**Entry 41 is done with this step:** 601 settings listed that were not (13
++ 426 + 115 + 47). What is open is the list -- L1 to L12, F1, F3, F4, F6 to
+F12 -- none of which blocks anything. The full suites were started after
+this commit (`full41.cmd` in the entry's script directory); their result is
+written here when they end.
 
 ## 42. State keys through the generator, and listed -- SIZED, the cut agreed; after entry 41
 
