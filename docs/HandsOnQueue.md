@@ -78,7 +78,7 @@ report views, the reporter's own files -- is kept beside the dev tree under
 | 38 | 2026-10-07 | omni search: an obvious freeze the first time it is brought up | FIXED `bb31f8820b`, not staged: the first bring-up loaded and rendered the icon of every command (609) before showing the box, 0.99 s + 0.28 s on the reporter's configuration with `scanner.FCStd` open; 0.15 s + 0.07 s now (`docs/HandsOnLog.md`) |
 | 39 | 2026-10-07 | MSAA has not reached any view since 2026-09-07 (found by the build session on entry 26) | FIXED `c7d115e576`, not staged: with "MSAA 4x" chosen the backend could not create its scene targets and drew without multisampling from then on, on every backend; the depth is write-only under MSAA now. The reporter's case on the fixed tree: 0.75 s in all, both views at 4 samples (`docs/HandsOnLog.md`) |
 | 40 | 2026-10-07 | crash on exit: a TechDraw page in a split view cell is destroyed after its view provider, and writes into it | OPEN (cause read from the stack) |
-| 41 | 2026-10-08 | the Python-only modules' settings in the omni search, through a way into the registry from Python (from entry 24: C1, C4) | OPEN, sized and the cut agreed 2026-10-08, starts next session, FIRST: about 600 keys; the way in from Python first, then Draft and BIM, then Fem, CAM, AddonManager, then the rest; registration only (`docs/HandsOnLog.md`) |
+| 41 | 2026-10-08 | the Python-only modules' settings in the omni search, through a way into the registry from Python (from entry 24: C1, C4) | STEPS 1 AND 2 OF 4 FIXED, not staged, a list with the reporter: the way in from Python and Assembly through it `a75b43f1d5` (13 settings, listed from the start of a session), Draft and BIM `4a99a978f7` (426 settings through Draft's own table, listed once Draft or BIM has been used); left: Fem, CAM, AddonManager, then the small rest. Ten points for the reporter, L1 to L5 and F1 to F5, nothing of them chosen (`docs/HandsOnLog.md`) |
 | 42 | 2026-10-08 | state keys (window sizes, recent lists, last directories, first-run flags) through the generator like every other setting (from entry 24: C2) | OPEN, sized and the cut agreed 2026-10-08, starts next session after 41: about 90 state keys through the generator and listed, about 110 settings entry 24 did not reach added here, about 90 records under user-made names left out (`docs/HandsOnLog.md`) |
 | 43 | 2026-10-08 | omni search: the highlighted row's text is white on a light blue highlight | OPEN; looked at by the build session, not a side effect of the theme defaults, not fixed |
 
@@ -2684,7 +2684,53 @@ spreadsheet or any other non-3D view kept in a cell is worth the same look.
 Not said yet: what was open at the moment of closing (which pages, in which
 cells), and whether it has happened before on exit.
 
-## 41. The Python-only modules' settings in the omni search, through a way in from Python -- OPEN, sized and agreed, starts next session, first (see `docs/HandsOnLog.md`)
+## 41. The Python-only modules' settings in the omni search, through a way in from Python -- steps 1 and 2 of 4 FIXED, not staged; a list with the reporter (see `docs/HandsOnLog.md`)
+
+**2026-10-08 14:52, the build session: steps 1 and 2 of the 4 are done** (its
+message; its log, entry 41, `8a973dd08f`, local). Not staged, not pushed.
+- Step 1, the way in from Python, and Assembly through it, `a75b43f1d5`:
+  `FreeCAD.registerParam` and `FreeCAD.listParams`, `freecad.params` for
+  definition files, and the 13 settings only Assembly's Python code reads
+  (the count had said 14), listed from the start of a session.
+- Step 2, Draft and BIM, `4a99a978f7`: 426 settings, through Draft's own
+  table in `draftutils/params.py` and the new
+  `draftutils/params_registry.py`. They are listed once Draft or BIM has
+  been used, not from the start, because loading the table costs 1.9 s.
+- Left: step 3 (Fem, CAM, AddonManager) and step 4 (the small rest). Entry
+  42 is not started.
+
+**The build session's list for the reporter, NOT ANSWERED YET** (the log's
+L1 to L5 and F1 to F5, in short here; the build session chose and changed
+nothing of it).
+Defaults that disagree, or that one value cannot describe:
+- L1 Assembly `BOMOnlyParts`: the task panel's `.ui` file has the box
+  checked, the code reads the setting with False. Described: False.
+- L2 `Mod/Draft/DefaultPrintColor`: Draft's table says 255, BIM's layers
+  manager reads it with 0. Described: 255.
+- L3 `Mod/NativeIFC/SingleDoc` ("Always lock new documents"): the page has
+  it off; `ifc_import.py` reads it with True in one place and False in
+  another, `ifc_status.py` with nothing. Described: off, the page's.
+- L4 `Mod/BIM/LibraryOnline`: its default is computed when the library
+  panel opens ("on unless a parts library is installed"). NOT described.
+- L5 `Mod/BIM/BimViewWidth`, `BimViewHeight`: stored as numbers and read
+  back with `GetBool`, and crossed, the height from the width. NOT
+  described.
+
+Seen on the way, and left:
+- F1 `BimProjectManager.py` stores `View/DefautShapeLineWidth` (so spelled,
+  nothing reads it); it and `BimSetup.py` store `Mod/Draft/dimsymbol`,
+  `arrowsize` and `color`, which Draft's table does not have.
+- F2 four of Part's settings are described twice, by `Part::PartParams` and
+  by `PartGui::PartParams` (`MeshDeviation`, `MeshAngularDeflection`,
+  `MinimumDeviation`, `MinimumAngularDeflection`): the omni search lists
+  each of them twice.
+- F3 `Mod/Draft/ScaleRelative` is stored by the Scale task panel and read by
+  nothing.
+- F4 the titles and documentation written for these settings (about 250)
+  are English only: nothing extracts them for translation. A page setting's
+  own title and tool tip are translated.
+- F5 to decide: Draft's and BIM's settings are listed only after the first
+  use of either workbench (the 1.9 s above); Assembly's from the start.
 
 **Sized by the build session and the cut agreed by the reporter, 2026-10-08**
 (passed on 11:50; its log, entry 41, `2d2cc43f1a`, local). The reporter,
