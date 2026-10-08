@@ -3239,6 +3239,11 @@ Not covered by a claim: the expression editor and the link dialog (right
 the reopen claim of the new test stands in for the first.
 The note-taker's remark: the other session (x16, SketcherPort) has not been
 told the outcome; its branch still has its own version of this ground.
+**2026-10-08 23:04, the outcome sent to that session,** on the reporter's
+word ("Send the result"): the commit, that it is not pushed, what was built,
+the two departures from its design, the scores, what is not covered, and
+that both branches changed this ground. Accepted by the relay; that it was
+delivered or read is NOT confirmed (the route reports nothing back).
 
 **2026-10-08 21:25, the build session:** entry 45 is received and is next,
 on this branch on top of `fa2ada985c`. Not started.
