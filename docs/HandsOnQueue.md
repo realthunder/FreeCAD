@@ -79,9 +79,9 @@ report views, the reporter's own files -- is kept beside the dev tree under
 | 39 | 2026-10-07 | MSAA has not reached any view since 2026-09-07 (found by the build session on entry 26) | FIXED `c7d115e576`, not staged: with "MSAA 4x" chosen the backend could not create its scene targets and drew without multisampling from then on, on every backend; the depth is write-only under MSAA now. The reporter's case on the fixed tree: 0.75 s in all, both views at 4 samples (`docs/HandsOnLog.md`) |
 | 40 | 2026-10-07 | crash on exit: a TechDraw page in a split view cell is destroyed after its view provider, and writes into it | OPEN (cause read from the stack) |
 | 41 | 2026-10-08 | the Python-only modules' settings in the omni search, through a way into the registry from Python (from entry 24: C1, C4) | FIXED, all four steps (`a75b43f1d5`, `4a99a978f7`, `48037fbd8c`, `de7bd49797`, `ff12279ee6`) and `aa63b07cc8` for L9 and L10; not staged, not pushed: 603 settings listed that were not -- Assembly 13, Draft and BIM 426 (listed once Draft or BIM has been used, as decided), Fem 47, CAM 27, the Addon Manager 41, Help 14, OpenSCAD 15, ReverseEngineering 11, Tux 5, Material 4, Test none. Registration only, but for the help panel's size read (L9) and OpenSCAD's `useMaxFN` (L10). Full suites on `ff12279ee6`: ctest 787 of 787, Python 3411 with the two known thickness failures. Still with the reporter: L1 to L8, L11 (a recommendation), L12, F1, F3, F4, F6 to F8, none of them blocking (`docs/HandsOnLog.md`) |
-| 42 | 2026-10-08 | state keys (window sizes, recent lists, last directories, first-run flags) through the generator like every other setting (from entry 24: C2) | STEP 1 OF 3 DONE 2026-10-08, nothing generated yet, six points with the reporter (Q1 to Q6): the 300 candidates read key by key -- 94 state keys, 114 settings, 44 records under run-time names (stay out), 23 dead, 14 defined after all; checked against the live registry with every module loaded (1818 rows), none of the 208 is in it. Left: the 94 state keys, then the 114 settings, through the generator. Q2 is entry 44 (`docs/HandsOnLog.md`) |
+| 42 | 2026-10-08 | state keys (window sizes, recent lists, last directories, first-run flags) through the generator like every other setting (from entry 24: C2) | STEP 1 OF 3 DONE 2026-10-08, nothing generated yet; Q2 to Q5 answered, Q1 explained and with the reporter, Q6 not answered: the 300 candidates read key by key -- 94 state keys, 114 settings, 44 records under run-time names (stay out), 23 dead, 14 defined after all. After the answers: 91 state keys and up to 112 settings to go through the generator, the 3D mouse first; the share token, the workbench order and the recent lists stay out. Q2 is entry 44, fixed (`docs/HandsOnLog.md`) |
 | 43 | 2026-10-08 | omni search: the highlighted row's text is white on a light blue highlight | OPEN; looked at by the build session, not a side effect of the theme defaults, not fixed |
-| 44 | 2026-10-08 | the DXF page's exporter settings do not reach the C++ DXF exporter: `Import.writeDXFObject`/`writeDXFShape` point it at `Mod/Import`, where nothing stores them (found by the build session on entry 42, Q2) | FOUND, read in the code, not run; not fixed |
+| 44 | 2026-10-08 | the DXF page's exporter settings do not reach the C++ DXF exporter: `Import.writeDXFObject`/`writeDXFShape` point it at `Mod/Import`, where nothing stores them (found by the build session on entry 42, Q2) | FIXED `813d0250f9`, not staged: the exporter was pointed at `Mod/Import` for its options, where nothing stores them; it takes them from `Mod/Draft`, where the DXF page puts them, as upstream does. An ellipse written with "Treat ellipses and splines as polylines" on was an ELLIPSE before and is an LWPOLYLINE after (24 points at a segment length of 5, 198 at 0.5). `Import_tests_run` 6 of 6; the full suites not rerun after it (`docs/HandsOnLog.md`) |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -2893,7 +2893,40 @@ their short documentation (entry 23's rule) and a change followed at once
 where that is cheap (C3).
 Not started. Not said yet: the order of the modules.
 
-## 42. State keys through the generator like every other setting -- step 1 of 3 DONE (the split key by key), nothing generated yet; six points with the reporter (see `docs/HandsOnLog.md`)
+## 42. State keys through the generator like every other setting -- step 1 of 3 DONE (the split key by key), nothing generated yet; Q2 to Q5 answered, Q1 and Q6 with the reporter (see `docs/HandsOnLog.md`)
+
+**2026-10-08, the reporter answered the six points, to the build session**
+(passed on 18:05; its log, entry 42, "Answered, 2026-10-08", `3dbd35fbba`,
+local). The reporter, verbatim: "Q1 what do you mean don't take plain
+definition? Q2 fix. Q3 drop. Q4 Drop. Q5 drop."
+
+As the build session took it:
+- Q2 "fix": fixed as entry 44, `813d0250f9`.
+- Q3 "drop": `SceneShare/Token` stays out of the registry.
+- Q4 "Drop": `Workbenches/Ordered` and `Disabled` stay out.
+- Q5 "drop": the two recent lists stay out; their length is defined.
+- Q1, asked back by the reporter, explained to them by the build session,
+  **NOT ANSWERED YET.** The explanation, from its log: a definition is one
+  line that gives a setting a name, a type and ONE default written into the
+  file. 28 settings do not fit that:
+  - 17 whose default is worked out when the program runs (the cube's six
+    face labels and six web addresses pass through the translator,
+    `IssuesPage` is the build's, two gesture thresholds are Qt's,
+    `BitmapFill` is a path under the resource directory,
+    `LogLevels/Default` the console's);
+  - 2 old keys read only when their successor is not set;
+  - `DxfImportMode`, which mirrors four radio buttons;
+  - 4 developer switches, which are plain but perhaps not wanted in a list;
+  - the 4 of Q2, which are gone with entry 44's fix.
+  **The build session's proposal:** define the 4 developer switches, leave
+  the other 20 out and list them.
+- Q6 (the defaults written back into `user.cfg`, and the three defaults
+  that disagree between readers): the answer does not name it. NOT ANSWERED
+  YET, by the note-taker's count.
+
+What is to go through the generator after these answers: 91 state keys (94
+less the token and the two lists) and, of the 114 settings, 112 less
+whatever Q1 leaves out; the 3D mouse first.
 
 **2026-10-08 17:35, the build session: step 1, the split key by key, is
 done** (its message; its log, entry 42, `bbde4cf51b` and `e89d5320ae`,
@@ -2989,7 +3022,26 @@ not go with the accent colour behind it. Possibly touched by entry 24's one
 open point, A24 (the theme's accent colours), since the background is an
 accent colour. Not said yet: under which theme (Light, Dark, Classic).
 
-## 44. The DXF page's exporter settings do not reach the C++ DXF exporter -- FOUND, read in the code, not run
+## 44. The DXF page's exporter settings do not reach the C++ DXF exporter -- FIXED `813d0250f9`, not staged (see `docs/HandsOnLog.md`)
+
+**2026-10-08, decided by the reporter and fixed** (to the build session, in
+the answer to entry 42's points, passed on 18:05): "Q2 fix."
+FIXED `813d0250f9`, not staged (its log, entry 44, `3dbd35fbba`, local).
+`Import.writeDXFShape` and `writeDXFObject` pointed the writer at
+`Mod/Import` for its options unless given an option source, and Draft's DXF
+export calls them without one. The default is `Mod/Draft` now, where the DXF
+page stores them, as it is for `readDXF` here and for every DXF function of
+upstream; the line was the fork's own.
+Measured, an ellipse written by `Import.writeDXFShape`: before, one ELLIPSE
+whatever the page said; after, an ELLIPSE with "Treat ellipses and splines
+as polylines" off, an LWPOLYLINE of 24 points with it on at a segment length
+of 5, and of 198 points at 0.5. So the note-taker's reading below held: it
+worked with the defaults its reads passed.
+Test: `ImportErrorsTest.writeDXFShapeTakesTheOptionsOfTheDxfPage`,
+`Import_tests_run` 6 of 6. The full suites were not run again after it.
+Left, by the log: `ExportPoints` and `DxfVersionOut` are read from the same
+group, shown on no page and described nowhere; they are two of entry 42's
+settings now.
 
 **2026-10-08 17:35, found by the build session on entry 42** (its Q2; its
 log, entry 42, `bbde4cf51b`, local) and given a number here. Not reported by
