@@ -9,6 +9,7 @@ endif(BUILD_GUI)
 
 set(Path_Scripts
     Constants.py
+    CAMPyParams.py
     Init.py
     PathCommands.py
     TestCAMApp.py
@@ -596,6 +597,7 @@ SET(Tests_SRCS
     CAMTests/TestPostOutput.py
     CAMTests/TestPathPocket.py
     CAMTests/TestPathPreferences.py
+    CAMTests/TestPathSettingsRegistry.py
     CAMTests/TestPathProfile.py
     CAMTests/TestPathPropertyBag.py
     CAMTests/TestPathRampEntryGenerator.py

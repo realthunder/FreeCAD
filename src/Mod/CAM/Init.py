@@ -49,3 +49,6 @@ ParGrp.SetString("WorkBenchName", "CAM")
 ParGrp.SetString("WorkBenchModule", "PathWorkbench.py")
 
 FreeCAD.__unit_test__ += ["TestCAMApp"]
+
+# The settings CAM's Python code reads, described to the settings registry
+import CAMPyParams

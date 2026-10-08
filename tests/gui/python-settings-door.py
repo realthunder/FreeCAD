@@ -17,6 +17,11 @@ Claims:
     Mod/Assembly/StepLineThickness, neither of which is on any page;
   - "/param rigid sub-assemblies" lists Mod/Assembly/InsertRigidSubAssemblies,
     which a dialogue stores when it closes;
+  - "/param matrix solver" lists Mod/Fem/Ccx/Solver, "/param default post
+    processor" Mod/CAM/PostProcessorDefault and "/param proxy address"
+    Addons/ProxyUrl, with neither Fem's nor CAM's library loaded: Fem and
+    CAM have a definition file each, the Addon Manager registers from its
+    defaults file;
   - a setting registered while the session runs is listed by the next query;
   - with the module loaded, the settings its generated class describes are
     listed beside them, each once: "/param Mod/Assembly/" has the thirteen
@@ -123,6 +128,14 @@ def run():
         rows = param_rows("rigid sub-assemblies")
         check("and what the Insert dialogue was last left with",
               ASSEMBLY + "InsertRigidSubAssemblies" in rows, rows[:5])
+
+        found = [param_rows(q) for q in ("matrix solver", "default post processor", "proxy address")]
+        check("and Fem's, CAM's and the Addon Manager's, at the start",
+              "Preferences/Mod/Fem/Ccx/Solver" in found[0]
+              and "Preferences/Mod/CAM/PostProcessorDefault" in found[1]
+              and "Preferences/Addons/ProxyUrl" in found[2]
+              and not {"Fem", "PathApp"} & set(sys.modules),
+              ([f[:2] for f in found], sorted({"Fem", "PathApp"} & set(sys.modules))))
 
         call = getattr(FreeCAD, "registerParam", None)
         done = call is not None and call(

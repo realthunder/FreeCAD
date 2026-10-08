@@ -27,6 +27,9 @@ import addonmanager_freecad_interface as fci
 from AddonManagerTest.app.test_utilities import (
     TestUtilities as AddonManagerTestUtilities,
 )
+from AddonManagerTest.app.test_params_registry import (
+    TestParamsRegistry as AddonManagerTestParamsRegistry,
+)
 from AddonManagerTest.app.test_addon import (
     TestAddon as AddonManagerTestAddon,
 )
@@ -76,6 +79,7 @@ except ImportError:
     FreeCAD = None
 loaded_gui_tests = [
     AddonManagerTestUtilities,
+    AddonManagerTestParamsRegistry,
     AddonManagerTestAddon,
     AddonManagerTestCache,
     AddonManagerTestMacro,

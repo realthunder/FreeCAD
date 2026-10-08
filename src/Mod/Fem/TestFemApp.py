@@ -26,6 +26,7 @@
 # to get the right order import as is used
 from femtest.app.test_femimport import TestFemImport as FemTest01
 from femtest.app.test_common import TestFemCommon as FemTest02
+from femtest.app.test_settings import TestSettings as FemTestSettings
 from femtest.app.test_object import TestObjectCreate as FemTest03
 from femtest.app.test_object import TestObjectType as FemTest04
 from femtest.app.test_open import TestObjectOpen as FemTest05
@@ -43,6 +44,7 @@ from femtest.app.test_gmsh import TestGMSHRefinements as FemTest16
 # dummy usage to get flake8 and lgtm quiet
 False if FemTest01.__name__ else True
 False if FemTest02.__name__ else True
+False if FemTestSettings.__name__ else True
 False if FemTest03.__name__ else True
 False if FemTest04.__name__ else True
 False if FemTest05.__name__ else True

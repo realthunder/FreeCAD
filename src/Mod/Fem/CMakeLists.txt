@@ -36,6 +36,7 @@ SET(FemBaseModules_SRCS
     coding_conventions.md
     Init.py
     InitGui.py
+    FemPyParams.py
     ObjectsFem.py
     TestFemApp.py
     CreateLabels.py
@@ -394,6 +395,7 @@ SET(FemTestsApp_SRCS
     femtest/app/support_utils.py
     femtest/app/test_ccxtools.py
     femtest/app/test_common.py
+    femtest/app/test_settings.py
     femtest/app/test_femimport.py
     femtest/app/test_material.py
     femtest/app/test_mesh.py

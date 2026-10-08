@@ -115,3 +115,6 @@ if "BUILD_FEM_VTK" in FreeCAD.__cmake__:
         ["vtu", "vtp", "vts", "vtr", "vti", "vtm"],
         "feminout.importVTKResults",
     )
+
+# The settings Fem's Python code reads, described to the settings registry
+import FemPyParams
