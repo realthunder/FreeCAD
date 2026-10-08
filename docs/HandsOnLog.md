@@ -40,6 +40,7 @@ Evidence that does not belong in the repository is under
 | 24 | C++ SIDE DONE, about 1180 settings listed; the reporter's decisions of 2026-10-08 applied in two rounds, `e21eff05a7` and `427ffc8d28`; pushed `b70cc6ebf1`, not staged | every setting C++ reads is behind a generated class. After both rounds: the editors' font is Courier, Home is Top, the marker size is 7 everywhere, the Asymptote height is empty, CAM's unit default is upstream's; 15 of the 16 findings are fixed or dropped as decided (D4 needs nothing). A24: the fork's three accent colours stay ("keep ours"). Nothing is left with the reporter. Entries 41 (Python door) and 42 (state keys, to be listed) are decided and not started |
 | 26 | FIXED `175ffce199`, not staged | the first OK of a profile held the program 11 to 15 s on the reporter's configuration with `scanner.FCStd` open: 780 keys stored for the first time and taken for changes -- stylesheet set again 4.2 s, every Part view provider re-meshed 3.2 s, language activated again 2 s. 0.9 s now |
 | 27 | STAGED `fa2ada985c` | the cell menu made a spreadsheet view by asking for it, listed a page's views, and a pick was placed by the general policy |
+| 29 | DONE `dd336be800`, not staged, not pushed; four choices of mine for the reporter | a drag of a corner zone or of a border is shown as frames over every cell it changes and carried out at the release; the minimum cell size setting (200) refuses a split and stops a border; corner zones and the hovered menu button on an opaque ground; the border 3 pixels |
 | 30 | THIRD TASK FIXED `dad4f5d18a`, not staged, not pushed; the freeze MEASURED, not fixed; the first task waits for the reporter | Light, Dark and Classic list the colours an overlay preset leaves behind, so a theme clears the Python console's background again. The freeze on `scanner.FCStd`: 13 s for the dark overlay preset, of which 9.5 s is the application's style sheet being changed; the same preset a second time, nothing changing, still 4 s |
 | 31 | FIXED `47b5e72c79`, not staged | "Go to end" is on for a profile that never stored it |
 | 32 | FIXED `b960092ea5`, not staged | the menus styled see-through are single objects shared between a pop-up over the 3D view and the main menu; the blue is the palette's bright text, the desktop's accent. No sheet chosen is an ordinary menu now |
@@ -2580,3 +2581,74 @@ of: the packs naming a different pair of overlay sheets; the overlay
 taking its colours from the theme's parameters instead of a sheet of its
 own; or the overlay LAYOUT (which panels float where) coming with the
 theme. Not started without that word.
+
+## 29. View cells: frames that show a split, a join and a resize while it is dragged; a minimum cell size -- DONE `dd336be800`, not staged
+
+The request as the queue has it after the reporter's revisions: (c) the
+frames, for every cell a drag changes; (d) the minimum cell size, default
+200; (e) the corner zones on an opaque ground, the menu button too when
+hovered; (f) a thinner border. (a) and (b), the close button, withdrawn.
+Design and reasons: `docs/SplitViews.md` sec 21.
+
+**(c) The frames.** One translucent widget over the view area shows what
+the drag will do, and nothing happens to the layout until the button is
+released:
+- a split: the cell that stays and the new one, the border under the
+  cursor;
+- a join: the cell that stays over the room of both, the neighbor dimmed
+  under its arrow;
+- a border: every cell whose size or place the move changes -- with two
+  cells stacked on one side all three are framed, and a cell at its
+  minimum hands the push on to the next.
+The split is made and the border moved at the release; a split is
+cancelled by dragging back to where it was pressed.
+
+**(d) The minimum cell size**, `View/OpenView/MinimumCellSize`, 200, in
+the preferences (Display > UI, "Views") and so in the omni search. A split
+that would leave either half under it, or a new cell under it the other
+way, is refused, with one line in the report view at most every five
+seconds.
+
+**Found on the way, and part of the commit:** a cell already HAD a
+minimum nobody chose. It answered with its view's size hint, and every
+`MDIView` asks for 400 x 300. So a 3D cell could not be made narrower than
+400 by a border, twice the 200 asked for, and a split dropped at 305
+pixels snapped to 400 the moment the view was put in (the test caught it:
+frames 672 | 305, cells 577 | 400). The cell's minimum is the setting now.
+
+**(e), (f).** The corner zones are painted on the palette's window colour
+when hovered or pointed at; the menu button when hovered. The border is 3
+pixels (it took the style's width, 5 to 7).
+
+**Choices I made, for the reporter to overrule:**
+1. A drag is APPLIED AT THE RELEASE, not live under the frames. "Just like
+   how overlay widget does it" is that, and it spares a resize of every 3D
+   view per mouse move (entry 10); but it does change the feel of a split,
+   which used to appear at once.
+2. The minimum also stops a dragged border and a shrinking window (it is
+   the cell's own minimum), where the request names only the creation of
+   a view. Capped at the old 400 x 300, so a large value refuses splits
+   and cannot push the main window off the screen.
+3. A view that opens BY ITSELF (a page double-clicked) into a split that
+   is refused opens in a tab instead of not opening, with the same line in
+   the report view.
+4. 3 pixels for the border ("how thin was not said").
+
+Scored: `tests/gui/view-cell-drag-frames.py` 33 PASS -- the frames of each
+gesture read back and compared with where the cells end, nothing changing
+while the button is down, the border stopping at the minimum, the
+refusals and the single line for three of them, a spreadsheet going to a
+tab, the opaque grounds, the 3 pixels. The other cell tests as before:
+`view-cell-menu.py` 15, `sheet-view-on-request.py` 18,
+`view-in-cell-goes-with-its-object.py` 20, `expression-editor.py` 46,
+`portrait-pick-vs-draw.py` 68, `edit-per-view.py` 25,
+`per-view-visibility.py` 45 (the last four on the build before the cell's
+own minimum).
+
+Not done: the frames are not drawn over a view area's unified canvas any
+differently (the pref is off by default; not tried with it on). A frame of
+a border drag can be a pixel or two off the cell's final size where a
+nested splitter rounds (QSplitter's arithmetic written out again; the
+test allows 4). The look of the frames -- accent tint, a plus on the new
+cell, red and crossed out for a refusal -- is mine; no picture was asked
+for or given.
