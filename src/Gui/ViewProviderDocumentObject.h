@@ -163,6 +163,19 @@ public:
     virtual bool isUpdateForced() const {return false;}
     //@}
 
+    /** Whether this object's visual is still to be built.
+     *
+     * For code that would go on from the bounding box to the object's own
+     * geometry -- the triangles of its faces -- to answer a question about
+     * the picture. A shape that has no display mesh yet is MESHED to
+     * answer that (Part::TopoShape::getDomains), which is no business of
+     * such a question; and while a load is still building its visuals the
+     * shape may be in the hands of a pre-mesh worker, so that the
+     * question put a second mesher on it (docs/DocumentLoad.md sec 18.8).
+     * True says: stop at the bounding box.
+     */
+    virtual bool isVisualPending() const {return false;}
+
     /** @name Restoring view provider from document load */
     //@{
     virtual void startRestoring();

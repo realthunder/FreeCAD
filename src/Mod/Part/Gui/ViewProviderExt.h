@@ -372,6 +372,13 @@ protected:
     /// The projection frames are read off the OCCT surfaces and written
     /// into the render material by the visual build, so restating them
     /// means running it again (buildVisualNodes, ~7160).
+    /// Parked by a load, waiting on a pre-mesh worker, hidden and never
+    /// shown: in each case the shape has no display mesh of this visual's
+    /// making, and nobody should make one by asking about it.
+    bool isVisualPending() const override {
+        return VisualTouched;
+    }
+
     void renderMaterialNeedsGeometry() override {
         if (isUpdateForced() || Visibility.getValue()) {
             updateVisual();

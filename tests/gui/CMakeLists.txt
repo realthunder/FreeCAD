@@ -1417,6 +1417,18 @@ fc_add_gui_test(GuiCloseDuringVisualDrain_tests_run close-during-visual-drain.py
 fc_add_gui_test(GuiExitWithOpenDocument_tests_run exit-with-open-document.py
                 --timeout 120)
 
+# The view following a selection does not mesh the object selected
+# (docs/DocumentLoad.md sec 18.8): the tree's sync view has the 3D view make
+# sure a selected object is on the screen, which went from its bounding box
+# on to the triangles of its faces, and a shape without a display mesh --
+# every shape of a load still building its visuals -- was meshed on the GUI
+# thread to answer, under a pre-mesh worker's hands if one had it. Seen by
+# the sphere's bounding box, which is its diameter until it carries a
+# mesh. Scored against the tree before: the question meshes the sphere,
+# three runs of three.
+fc_add_gui_test(GuiSyncViewDoesNotMesh_tests_run sync-view-does-not-mesh.py
+                --timeout 200)
+
 # Making a view the active window makes its cell the view area's active
 # cell and brings the keyboard with it (docs/SplitViews.md sec 21): right
 # after "create new view" the first view can be clicked back into; with

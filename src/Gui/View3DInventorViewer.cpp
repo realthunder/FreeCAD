@@ -7993,6 +7993,22 @@ View3DInventorViewer::Private::checkElementIntersection(ViewProviderDocumentObje
         return res;
     }
 
+    // What follows asks the object's shape for the triangles of its faces,
+    // and a shape without a display mesh is meshed to answer. An object
+    // whose visual is still to be built has none -- a load that is still
+    // building, where the shape may be in a pre-mesh worker's hands at
+    // this moment -- and the tree's sync view brings every selection made
+    // in the tree here. Its bounding box, which does meet the screen, is
+    // its answer: on the screen. The object asked is the one the shape is
+    // of, through a link if there is one, not the provider this walk
+    // started from.
+    if (auto leaf = sobj->getLinkedObject(true)) {
+        auto leafVp = Base::freecad_dynamic_cast<ViewProviderDocumentObject>(
+                Application::Instance->getViewProvider(leaf));
+        if (leafVp && leafVp->isVisualPending())
+            return 1;
+    }
+
     Base::PyGILStateLocker lock;
     PyObject *pyobj = nullptr;
     Base::Matrix4D mat;
