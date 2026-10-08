@@ -1414,17 +1414,18 @@ in pieces, section 4.3) and a curved face with the pieces of its own
 surface (#962's slots), as before, and with the picked faces tangent to
 it -- a wall and the fillets beside it, picked together, draft as one
 chain, which is what the user asked for. A face tangent to the set that
-was not picked is not drafted; what becomes of it is staged:
+was not picked is not drafted; what becomes of it came in two stages:
 
 1. **Stage 1: refuse.** `TangentNeighbour` (the error phase 1 gave every
    tangent neighbour), saying "a face tangent to the drafted face is not
    drafted; turn tangent propagation on, or fillet after the draft".
-2. **Stage 2: rebuild the fillet.** The fillet between the drafted face and
-   its untouched neighbour is taken off -- the two faces extended to meet
-   in a sharp edge -- and made again on that edge at its old radius: the
-   "draft before fillet" result. Between two planes the new edge is a line
-   and the fillet a cylinder along it (no longer about the pull
-   direction); other neighbours and fillets are refused at first.
+2. **Stage 2: rebuild the fillet** (section 17.3). The fillet between the
+   drafted face and its untouched neighbour is taken off -- the two faces
+   extended to meet in a sharp edge -- and made again on that edge at its
+   old radius: the "draft before fillet" result. Between two planes the new
+   edge is a line and the fillet a cylinder along it (no longer about the
+   pull direction). A face tangent to the set that is not such a fillet is
+   still refused as in stage 1.
 
 ### 17.2 The classic draft always propagates
 
@@ -1443,3 +1444,75 @@ told to stop at a fillet. With the option off:
 `CellDraft::TangentFaces(shape, faces)` tells the two apart: the faces of
 the picked faces' tangent chains (`draftChain`) that are neither picked
 nor coplanar pieces of a picked face.
+
+### 17.3 Stage 2: the fillet made again
+
+`CellDraft::Build`, with propagation off, before the first face:
+
+- **Which fillets.** The picked faces' own set is walked as in 17.1 (the
+  picked faces, their coplanar pieces, the pieces of their surfaces, the
+  picked faces tangent to them). A face tangent to the set that is not in
+  it is a fillet to make again when it is a cylinder, tangent along its
+  length to exactly two faces, both planes, and every other face it meets
+  (its ends) is a plane too. The last condition is from #876: its upper
+  box's fillets run on, above the plate, into the cones of its rounded
+  corners, and OCCT takes such a fillet off by extending the cone down and
+  trimming the walls against it -- the walls never meet in an edge to
+  fillet. Anything else stays for the draft to refuse (`TangentNeighbour`,
+  now saying the face is not a fillet between two planes that can be made
+  again).
+- **Off.** All of them at once, by `BRepAlgoAPI_Defeaturing` with its
+  history merged into the draft's. The faces are drafted as before; with
+  the fillets gone they have no tangent neighbour left.
+- **On again.** On the result, the edges between what became of each
+  fillet's two planes (their images in the history), filleted at its
+  radius in one `BRepFilletAPI_MakeFillet`. A fillet split by slots
+  (#962's top edge) is several faces on one cylinder, and the history
+  gives the pieces of the plane each joined to all of them: each edge goes
+  to the fillet nearest to it. The result must be one valid solid.
+- **History.** The fillet of the input is `Modified` into the faces made
+  on its edges (a side map in `CellDraft`, answered by `Modified` and
+  `IsDeleted`), so the new fillet keeps the old one's name: on a block
+  filleted by a `Part::Fillet`, the rebuilt fillets are named as
+  modifications of the old fillet faces (`#4:1;:M;DFT`), as the untouched
+  ones are.
+
+`RefilletFails` is the new error: the fillet could not be taken off, its
+two planes no longer meet after the draft, or OCCT's fillet fails at the
+old radius.
+
+### 17.4 Measured
+
+The block (TestDraft, `new_nopropagate_rbox_*`): one wall picked comes out
+at the closed-form volume (the fillets beside it square to the wall, along
+its slope; the Python prototype of these steps 4.5e-13 from it); two walls
+picked and not the fillet between them, the fillet made between the two
+drafted walls at their new angle, also at the closed-form volume.
+
+The 114 drafts of section 13.5 whose face has a tangent chain, with
+`Method = New`, propagation off, the stop on:
+
+| | |
+|--------|------:|
+| valid, boolean-clean | 47 |
+| `TangentNeighbour`: a tangent face that is not a fillet between two planes ending on planes | 46 |
+| `RefilletFails` | 21 |
+
+- Valid: #962's walls and sloped tops (44: the r=7 fillets along the top
+  edge, which the chain could not take -- section 13.4's cylinders across
+  the pull direction -- now stay fillets), #334's stored draft (3). Five
+  of #962's checked against the same steps done by hand in Python (take
+  off, draft, fillet the edge): the same volume and face count to 1e-6.
+  That check first disagreed on one (51 about 28): the plane the
+  defeaturing leaves where the neutral face was has its normal reversed,
+  and the by-hand draft took its pull direction from it. The cell draft
+  takes the neutral plane from the input, before the fillets come off.
+- `TangentNeighbour`: #876 (26: its fillets run on, above the plate, into
+  the cones or B-spline corners of the upper box; two of its tangent faces
+  are those cones), #474 (12, B-spline fillets), #631's Fillet002/003 (8:
+  the ramp's fillet ends on a cylinder).
+- `RefilletFails`: #631's Fillet001-003 (16: the r=49 ramp fillet, drafted
+  about the ramp's side, ends at a corner where four faces meet, and OCCT's
+  fillet fails there at 49, 40 and 20; it takes 5), #962 at 60 deg (4: the
+  wall swings past its sloped top, which it no longer meets), #334 at 60
+  deg (1).
