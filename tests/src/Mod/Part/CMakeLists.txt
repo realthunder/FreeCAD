@@ -67,6 +67,25 @@ target_compile_definitions(TopoShapeEx_tests_run PRIVATE
 target_link_libraries(TopoShapeEx_tests_run gtest_main Part)
 add_test(NAME TopoShapeEx_tests_run COMMAND TopoShapeEx_tests_run)
 
+# The private twin a worker meshes in place of a document's shape
+# (docs/DocumentLoad.md sec 18.9): what it copies and what it shares, that
+# the original is not touched until the landing, and that the landing leaves
+# what a mesh made in place would have. OCCT and Part only.
+add_executable(MeshTwin_tests_run ${CMAKE_CURRENT_SOURCE_DIR}/App/MeshTwin.cpp)
+target_include_directories(MeshTwin_tests_run PUBLIC
+    ${CMAKE_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/src
+    ${CMAKE_BINARY_DIR}/src
+    ${OCC_INCLUDE_DIR}
+    ${Python3_INCLUDE_DIRS}
+    ${XercesC_INCLUDE_DIRS}
+)
+target_link_directories(MeshTwin_tests_run PRIVATE
+    ${OCC_LIBRARY_DIR}
+)
+target_link_libraries(MeshTwin_tests_run gtest_main Part)
+add_test(NAME MeshTwin_tests_run COMMAND MeshTwin_tests_run)
+
 # The claims of the load's parallel pre-mesh (docs/DocumentLoad.md sec 18.7):
 # a shape a worker is still meshing answers "in flight" until that worker
 # publishes it, whatever is cleared in the meantime, and is not handed to a

@@ -573,6 +573,8 @@ SET(Part_SRCS
     edgecluster.h
     modelRefine.cpp
     modelRefine.h
+    MeshTwin.cpp
+    MeshTwin.h
     Tools.cpp
     Tools.h
     encodeFilename.h
