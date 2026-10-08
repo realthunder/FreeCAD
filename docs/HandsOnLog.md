@@ -46,6 +46,7 @@ Evidence that does not belong in the repository is under
 | 41 | FIXED, all four steps: `a75b43f1d5`, `4a99a978f7`, `48037fbd8c`, `de7bd49797`, `ff12279ee6`, then `aa63b07cc8` and `6a2216d0f0` for the reporter's answers to the list; nothing left with the reporter; not staged, not pushed | the Python-only modules' settings through a door into the registry: 603 settings listed that were not -- Assembly 13, Draft and BIM 426, Fem 47, CAM 27, the Addon Manager 41, Help 14, OpenSCAD 15, ReverseEngineering 11, Tux 5, Material 4. Registration only, the readers keep their code; a test per module holds each described default to its readers' |
 | 42 | FIXED `aa3e77137c`, `dbadedb7ba`, `7e442e1bc2`, `234572bd87`; not staged, not pushed; Q6 not answered | of the about 300 keys C++ read without a definition, 174 are defined now -- 89 settings and 85 state keys, 213 rows of the registry: the 3D mouse and the expression sandbox with every reader converted, Gui's small groups too, and the state the program keeps defined with its readers left as they are. What stayed out is listed |
 | 44 | FIXED `813d0250f9`, not staged | the C++ DXF exporter was pointed at `Mod/Import` for its options, where nothing stores them; it takes them from `Mod/Draft`, where the DXF page puts them, as upstream does. An ellipse with "as polylines" on was an ELLIPSE before, an LWPOLYLINE after |
+| 45 | FIXED `c7fdcf3220`, not staged, not pushed | a spreadsheet's view provider made its view when it was only asked whether it had one: one click on a sheet in the tree opened it. Asking is a question now, and a new request opens the view for the three callers that host it. Show-in-cell also took a stale cell and closed another sheet's view; it takes the active view's cell |
 
 **The reporter, 2026-10-07 14:20, on what is open** (said to the build
 session; the queue has the reporter's own entries):
@@ -2244,3 +2245,68 @@ same group, which no page shows and nothing describes; they are two of
 entry 42's settings now, in `Mod/Draft`. Draft's own export passes the
 version itself (14, or 12 without splines), so `DxfVersionOut` only counts
 for a caller that passes none.
+
+## 45. A spreadsheet's view provider makes its view when it is only asked for it -- FIXED `c7fdcf3220`, not staged
+
+Handed over from another session with a design the reporter had agreed
+to there; the reporter, 2026-10-08: "dwin shall build it once he finishes
+what he's doing", and on the branch: "yes, with entry 27". Built on
+PartDesignPort, on top of entry 27's `fa2ada985c`.
+
+**Tests first.** `tests/gui/sheet-view-on-request.py`, a box and two
+sheets, scored on the tree before the change: 14 PASS, 3 FAIL of 17.
+- One click on a sheet in the tree selected it AND opened its view.
+- `Std_ViewCellShowObject`, a 3D view active beside an open sheet and the
+  other sheet selected: the selected sheet took the open sheet's cell and
+  that view was closed. The other session's third finding; it happens
+  here too.
+- As wanted already: a double click opens; a click on an open sheet brings
+  its view to the front; `setEdit` on a sheet that is not open opens it and
+  leaves it active; a pick from a cell's menu lands in that cell and
+  leaves the other sheet alone; a saved document comes back with its sheet
+  in its cell. Entry 27 had taken the menu's listing off the view
+  providers, so the first finding of the other session does not happen
+  here.
+
+**The change.**
+- `ViewProviderSheet::getMDIView()` answers with its view or nothing. The
+  contract is written at `ViewProvider::getMDIView()`: a question, never a
+  creation.
+- `ViewProviderDocumentObject::getOrCreateMDIView()`, new and virtual: the
+  view for a caller that is going to host it, made if there is none. The
+  default asks, calls `show()` and asks again; the sheet's opens its view.
+  Its users: the cell menu's pick (`ViewArea.cpp`), `Std_ViewCellShowObject`
+  and the layout that comes back with a document (`Document.cpp`). The
+  lookup for a maximized cell stays a question, as do the layout's own
+  naming of its views and the expression editor.
+- The sheet's `doubleClicked`, `setEdit` and "Show spreadsheet" are
+  unchanged.
+- NOT as handed over: the design had the sheet make its view BARE, for the
+  caller to place. On this branch a view opened for a cell is placed into
+  that cell by entry 27's `ViewPlacement::IntoCell`, which the three
+  callers already stood in, so the sheet's request opens the view the way
+  it always did and the scope puts it where it was asked for. The layout
+  that comes back has no such scope: the view is placed by the policy and
+  the layout then takes it into its cell, as it does for a TechDraw page.
+  SAID TO THE REPORTER.
+- The second failure was not the question at all. With the first change in,
+  the selected sheet had no view and a 3D view was the active one when the
+  command ran, and it still went into the open sheet's cell.
+  `Std_ViewCellShowObject` took the view area's OWN active cell, the one
+  last clicked into or filled; `MainWindow::setActiveWindow()` -- the
+  tree's sync view, a script -- changes the active view and does not move
+  that cell. The command takes the cell of the active view now. The two
+  can still differ elsewhere; not looked at.
+
+Scored: `sheet-view-on-request.py` 18 PASS (one check added on the way),
+`view-cell-menu.py` 15 PASS, `spreadsheet-select-all.py` 2 PASS, run by
+hand as the GUI tests do not register with ctest here. Both full suites on
+the tree before the command's line: ctest 788 of 788, `FreeCADCmd -t 0`
+3411 tests with the two `TestThickness` 5829 failures and nothing else.
+
+Not covered: the expression editor and the link dialog ask the same
+question (`ExpressionEditorView.cpp`, about line 905; no `getMDIView()` by
+that spelling in `DlgPropertyLink.cpp` here). They have no claim in the
+test; they are right by the question being one now. The other session's
+`GuiSheetViewReopen` and `GuiTaskPanelKeptSheetView` are not in this
+tree; the reopen claim here stands in for the first.
