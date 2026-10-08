@@ -36,6 +36,15 @@ Evidence that does not belong in the repository -- configuration snapshots,
 report views, the reporter's own files -- is kept beside the dev tree under
 `..\dl\handson\<date>\`, and an entry names what it holds.
 
+**For the next session** (the reporter, 2026-10-08 late, to the build
+session, verbatim): "Next session continue on the notes". The build
+session's reading, told to the reporter and NOT CONFIRMED: it goes on with
+this queue's open entries -- 25, 28, 29, 30, 35, 36, 37, 40, 43. Pushed the
+same evening on the reporter's word ("Push"): origin/PartDesignPort =
+`4d08eacde1`, with entries 41, 42, 44 and 45; the last stage is still that
+of 2026-10-07 14:23, so every entry fixed since is NOT in the copy under
+test.
+
 | # | Reported | Problem | State |
 |---|---|---|---|
 | 1 | 2026-10-06 | idle progress bar in the status bar | STAGED |
@@ -78,11 +87,11 @@ report views, the reporter's own files -- is kept beside the dev tree under
 | 38 | 2026-10-07 | omni search: an obvious freeze the first time it is brought up | FIXED `bb31f8820b`, not staged: the first bring-up loaded and rendered the icon of every command (609) before showing the box, 0.99 s + 0.28 s on the reporter's configuration with `scanner.FCStd` open; 0.15 s + 0.07 s now (`docs/HandsOnLog.md`) |
 | 39 | 2026-10-07 | MSAA has not reached any view since 2026-09-07 (found by the build session on entry 26) | FIXED `c7d115e576`, not staged: with "MSAA 4x" chosen the backend could not create its scene targets and drew without multisampling from then on, on every backend; the depth is write-only under MSAA now. The reporter's case on the fixed tree: 0.75 s in all, both views at 4 samples (`docs/HandsOnLog.md`) |
 | 40 | 2026-10-07 | crash on exit: a TechDraw page in a split view cell is destroyed after its view provider, and writes into it | OPEN (cause read from the stack) |
-| 41 | 2026-10-08 | the Python-only modules' settings in the omni search, through a way into the registry from Python (from entry 24: C1, C4) | FIXED, all four steps (`a75b43f1d5`, `4a99a978f7`, `48037fbd8c`, `de7bd49797`, `ff12279ee6`) and `aa63b07cc8` for L9 and L10; not staged, not pushed: 603 settings listed that were not -- Assembly 13, Draft and BIM 426 (listed once Draft or BIM has been used, as decided), Fem 47, CAM 27, the Addon Manager 41, Help 14, OpenSCAD 15, ReverseEngineering 11, Tux 5, Material 4, Test none. The whole list answered and carried out, last `6a2216d0f0`: readers made to say what their page says (L3, L6, L11), defects fixed (L5, L9, L10, F1, F7, and L2, which went further than the words agreed), Tux's marker and Help's `optionTab` out of the registry; the counts after it: Draft and BIM 428, Help 13, Tux 4, still 603. Full suites on `6a2216d0f0`: ctest 788 of 788, Python 3411 with the two known thickness failures. NOTHING LEFT WITH THE REPORTER (`docs/HandsOnLog.md`) |
-| 42 | 2026-10-08 | state keys (window sizes, recent lists, last directories, first-run flags) through the generator like every other setting (from entry 24: C2) | FIXED, all three steps (`aa3e77137c`, `dbadedb7ba`, `7e442e1bc2`, `234572bd87`); not staged, not pushed; Q6 not answered: 174 keys defined -- 89 settings and 85 state keys, 213 rows of the registry. The 3D mouse (32) and the expression sandbox (14) with every reader converted, Gui's small groups (30) too; the state the program keeps (window, dialogs, overlay panels, module panels) is defined with its readers left as they are. Not defined, as decided or for cause: Q1's 20, the share token, the workbench order, the recent lists, `LogLevels/DebugDefault` (the fourth developer switch), Oculus's 4, two of Sketcher's. Not run: the 3D mouse's motion path (no device), `ExpressionWasmtimeRuntime.cpp` (not compiled here). ctest 788 of 788, Python 3411 with the two known thickness failures. Q2 is entry 44, fixed (`docs/HandsOnLog.md`) |
+| 41 | 2026-10-08 | the Python-only modules' settings in the omni search, through a way into the registry from Python (from entry 24: C1, C4) | FIXED, all four steps (`a75b43f1d5`, `4a99a978f7`, `48037fbd8c`, `de7bd49797`, `ff12279ee6`) and `aa63b07cc8` for L9 and L10; PUSHED 2026-10-08 (origin/PartDesignPort = `4d08eacde1`), not staged: 603 settings listed that were not -- Assembly 13, Draft and BIM 426 (listed once Draft or BIM has been used, as decided), Fem 47, CAM 27, the Addon Manager 41, Help 14, OpenSCAD 15, ReverseEngineering 11, Tux 5, Material 4, Test none. The whole list answered and carried out, last `6a2216d0f0`: readers made to say what their page says (L3, L6, L11), defects fixed (L5, L9, L10, F1, F7, and L2, which went further than the words agreed), Tux's marker and Help's `optionTab` out of the registry; the counts after it: Draft and BIM 428, Help 13, Tux 4, still 603. Full suites on `6a2216d0f0`: ctest 788 of 788, Python 3411 with the two known thickness failures. NOTHING LEFT WITH THE REPORTER (`docs/HandsOnLog.md`) |
+| 42 | 2026-10-08 | state keys (window sizes, recent lists, last directories, first-run flags) through the generator like every other setting (from entry 24: C2) | FIXED, all three steps (`aa3e77137c`, `dbadedb7ba`, `7e442e1bc2`, `234572bd87`); PUSHED 2026-10-08 (origin/PartDesignPort = `4d08eacde1`), not staged; Q6 not answered: 174 keys defined -- 89 settings and 85 state keys, 213 rows of the registry. The 3D mouse (32) and the expression sandbox (14) with every reader converted, Gui's small groups (30) too; the state the program keeps (window, dialogs, overlay panels, module panels) is defined with its readers left as they are. Not defined, as decided or for cause: Q1's 20, the share token, the workbench order, the recent lists, `LogLevels/DebugDefault` (the fourth developer switch), Oculus's 4, two of Sketcher's. Not run: the 3D mouse's motion path (no device), `ExpressionWasmtimeRuntime.cpp` (not compiled here). ctest 788 of 788, Python 3411 with the two known thickness failures. Q2 is entry 44, fixed (`docs/HandsOnLog.md`) |
 | 43 | 2026-10-08 | omni search: the highlighted row's text is white on a light blue highlight | OPEN; looked at by the build session, not a side effect of the theme defaults, not fixed |
-| 44 | 2026-10-08 | the DXF page's exporter settings do not reach the C++ DXF exporter: `Import.writeDXFObject`/`writeDXFShape` point it at `Mod/Import`, where nothing stores them (found by the build session on entry 42, Q2) | FIXED `813d0250f9`, not staged: the exporter was pointed at `Mod/Import` for its options, where nothing stores them; it takes them from `Mod/Draft`, where the DXF page puts them, as upstream does. An ellipse written with "Treat ellipses and splines as polylines" on was an ELLIPSE before and is an LWPOLYLINE after (24 points at a segment length of 5, 198 at 0.5). `Import_tests_run` 6 of 6; the full suites not rerun after it (`docs/HandsOnLog.md`) |
-| 45 | 2026-10-08 | a spreadsheet's view provider MAKES its view when asked for it (`ViewProviderSheet::getMDIView()`): one click on a sheet in the tree opens it, show-in-cell closes another sheet's view; a design agreed by the reporter in another session, single click selects and opens nothing (handed over from session x16, branch SketcherPort; goes on from entry 27) | FIXED `c7fdcf3220`, not staged, not pushed, on this branch on top of entry 27's fix as decided: a sheet's `getMDIView()` answers and no longer opens; a new `ViewProviderDocumentObject::getOrCreateMDIView()` opens the view for the three callers that host it (the cell menu's pick, `Std_ViewCellShowObject`, a layout coming back). One click on a sheet selects and opens nothing. `Std_ViewCellShowObject` also took a stale cell and closed another sheet's view; it takes the active view's cell. Not as handed over in one point: the sheet's view is not made "bare" (`docs/HandsOnLog.md`) |
+| 44 | 2026-10-08 | the DXF page's exporter settings do not reach the C++ DXF exporter: `Import.writeDXFObject`/`writeDXFShape` point it at `Mod/Import`, where nothing stores them (found by the build session on entry 42, Q2) | FIXED `813d0250f9`, PUSHED 2026-10-08, not staged: the exporter was pointed at `Mod/Import` for its options, where nothing stores them; it takes them from `Mod/Draft`, where the DXF page puts them, as upstream does. An ellipse written with "Treat ellipses and splines as polylines" on was an ELLIPSE before and is an LWPOLYLINE after (24 points at a segment length of 5, 198 at 0.5). `Import_tests_run` 6 of 6; the full suites not rerun after it (`docs/HandsOnLog.md`) |
+| 45 | 2026-10-08 | a spreadsheet's view provider MAKES its view when asked for it (`ViewProviderSheet::getMDIView()`): one click on a sheet in the tree opens it, show-in-cell closes another sheet's view; a design agreed by the reporter in another session, single click selects and opens nothing (handed over from session x16, branch SketcherPort; goes on from entry 27) | FIXED `c7fdcf3220`, PUSHED 2026-10-08, not staged, on this branch on top of entry 27's fix as decided: a sheet's `getMDIView()` answers and no longer opens; a new `ViewProviderDocumentObject::getOrCreateMDIView()` opens the view for the three callers that host it (the cell menu's pick, `Std_ViewCellShowObject`, a layout coming back). One click on a sheet selects and opens nothing. `Std_ViewCellShowObject` also took a stale cell and closed another sheet's view; it takes the active view's cell. Not as handed over in one point: the sheet's view is not made "bare" (`docs/HandsOnLog.md`) |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -2686,7 +2695,11 @@ spreadsheet or any other non-3D view kept in a cell is worth the same look.
 Not said yet: what was open at the moment of closing (which pages, in which
 cells), and whether it has happened before on exit.
 
-## 41. The Python-only modules' settings in the omni search, through a way in from Python -- FIXED, all four steps and the whole list, not staged; nothing left with the reporter (see `docs/HandsOnLog.md`)
+## 41. The Python-only modules' settings in the omni search, through a way in from Python -- FIXED, all four steps and the whole list, pushed 2026-10-08, not staged; nothing left with the reporter (see `docs/HandsOnLog.md`)
+
+**2026-10-08 23:06, pushed** on the reporter's word to the build session
+("Push"): origin/PartDesignPort = `4d08eacde1`, with entries 41, 42, 44 and
+45. Nothing is staged.
 
 **2026-10-08, the reporter answered the rest of the list, to the build
 session, and it is carried out** (passed on 19:00; code `6a2216d0f0`, its
@@ -2949,7 +2962,11 @@ their short documentation (entry 23's rule) and a change followed at once
 where that is cheap (C3).
 Not started. Not said yet: the order of the modules.
 
-## 42. State keys through the generator like every other setting -- FIXED, all three steps, not staged; Q1 to Q5 answered, Q6 with the reporter (see `docs/HandsOnLog.md`)
+## 42. State keys through the generator like every other setting -- FIXED, all three steps, pushed 2026-10-08, not staged; Q1 to Q5 answered, Q6 with the reporter (see `docs/HandsOnLog.md`)
+
+**2026-10-08 23:06, pushed** with entries 41, 44 and 45:
+origin/PartDesignPort = `4d08eacde1`. Nothing is staged. Still with the
+reporter: Q6, and `LogLevels/DebugDefault` left undefined.
 
 **2026-10-08 21:25, the build session: steps 2 and 3 are done, and with
 them the entry** (its message; code `aa3e77137c`, `dbadedb7ba`,
@@ -3148,7 +3165,10 @@ not go with the accent colour behind it. Possibly touched by entry 24's one
 open point, A24 (the theme's accent colours), since the background is an
 accent colour. Not said yet: under which theme (Light, Dark, Classic).
 
-## 44. The DXF page's exporter settings do not reach the C++ DXF exporter -- FIXED `813d0250f9`, not staged (see `docs/HandsOnLog.md`)
+## 44. The DXF page's exporter settings do not reach the C++ DXF exporter -- FIXED `813d0250f9`, pushed 2026-10-08, not staged (see `docs/HandsOnLog.md`)
+
+**2026-10-08 23:06, pushed** with entries 41, 42 and 45:
+origin/PartDesignPort = `4d08eacde1`. Nothing is staged.
 
 **2026-10-08, decided by the reporter and fixed** (to the build session, in
 the answer to entry 42's points, passed on 18:05): "Q2 fix."
@@ -3184,7 +3204,11 @@ It touches entry 42: these four are among the 28 settings of its Q1 that do
 not take a plain definition, because they are read from two groups.
 Not said yet by the reporter: whether to fix it, and when.
 
-## 45. A spreadsheet's view provider makes its view when it is only asked for it -- FIXED `c7fdcf3220`, not staged (see `docs/HandsOnLog.md`)
+## 45. A spreadsheet's view provider makes its view when it is only asked for it -- FIXED `c7fdcf3220`, pushed 2026-10-08, not staged (see `docs/HandsOnLog.md`)
+
+**2026-10-08 23:06, pushed** with entries 41, 42 and 44:
+origin/PartDesignPort = `4d08eacde1`, so the session that handed it over
+can fetch it now. Nothing is staged.
 
 **2026-10-08 22:19, the build session: FIXED `c7fdcf3220`** (its message;
 its log, entry 45, `6f24054384`, local). On PartDesignPort, on top of
