@@ -78,8 +78,8 @@ report views, the reporter's own files -- is kept beside the dev tree under
 | 38 | 2026-10-07 | omni search: an obvious freeze the first time it is brought up | FIXED `bb31f8820b`, not staged: the first bring-up loaded and rendered the icon of every command (609) before showing the box, 0.99 s + 0.28 s on the reporter's configuration with `scanner.FCStd` open; 0.15 s + 0.07 s now (`docs/HandsOnLog.md`) |
 | 39 | 2026-10-07 | MSAA has not reached any view since 2026-09-07 (found by the build session on entry 26) | FIXED `c7d115e576`, not staged: with "MSAA 4x" chosen the backend could not create its scene targets and drew without multisampling from then on, on every backend; the depth is write-only under MSAA now. The reporter's case on the fixed tree: 0.75 s in all, both views at 4 samples (`docs/HandsOnLog.md`) |
 | 40 | 2026-10-07 | crash on exit: a TechDraw page in a split view cell is destroyed after its view provider, and writes into it | OPEN (cause read from the stack) |
-| 41 | 2026-10-08 | the Python-only modules' settings in the omni search, through a way into the registry from Python (from entry 24: C1, C4) | OPEN, decided, not started |
-| 42 | 2026-10-08 | state keys (window sizes, recent lists, last directories, first-run flags) through the generator like every other setting (from entry 24: C2) | OPEN, decided (and listed by the omni search), not started |
+| 41 | 2026-10-08 | the Python-only modules' settings in the omni search, through a way into the registry from Python (from entry 24: C1, C4) | OPEN, sized and the cut agreed 2026-10-08, starts next session, FIRST: about 600 keys; the way in from Python first, then Draft and BIM, then Fem, CAM, AddonManager, then the rest; registration only (`docs/HandsOnLog.md`) |
+| 42 | 2026-10-08 | state keys (window sizes, recent lists, last directories, first-run flags) through the generator like every other setting (from entry 24: C2) | OPEN, sized and the cut agreed 2026-10-08, starts next session after 41: about 90 state keys through the generator and listed, about 110 settings entry 24 did not reach added here, about 90 records under user-made names left out (`docs/HandsOnLog.md`) |
 | 43 | 2026-10-08 | omni search: the highlighted row's text is white on a light blue highlight | OPEN; looked at by the build session, not a side effect of the theme defaults, not fixed |
 
 ## 1. Idle progress bar in the status bar -- STAGED
@@ -2684,7 +2684,23 @@ spreadsheet or any other non-3D view kept in a cell is worth the same look.
 Not said yet: what was open at the moment of closing (which pages, in which
 cells), and whether it has happened before on exit.
 
-## 41. The Python-only modules' settings in the omni search, through a way in from Python -- OPEN, decided, not started
+## 41. The Python-only modules' settings in the omni search, through a way in from Python -- OPEN, sized and agreed, starts next session, first (see `docs/HandsOnLog.md`)
+
+**Sized by the build session and the cut agreed by the reporter, 2026-10-08**
+(passed on 11:50; its log, entry 41, `2d2cc43f1a`, local). The reporter,
+verbatim: "start in next session. 41, looks good, go first. 42 leave the
+user-named ones, add those missed ones to generator in the same entry."
+The size: about 600 keys, not the 300 said before -- Draft and BIM alone are
+about 440, most of them already defined by Draft's own table.
+The cut, in order:
+1. the way in first: a call that registers a setting from Python, and a
+   loader for definition files in the C++ classes' format; proved on
+   Assembly's Python page;
+2. Draft and BIM, through Draft's table;
+3. Fem, CAM, AddonManager;
+4. the small rest.
+Registration only: the Python readers keep their code. A default that a
+reader and a page disagree on is LISTED for the reporter, not chosen.
 
 **2026-10-08, split off entry 24 by the reporter's decisions** (C1 "python
 gate", C4 "yes"; passed on by the build session at 08:55, which asked for a
@@ -2700,7 +2716,20 @@ their short documentation (entry 23's rule) and a change followed at once
 where that is cheap (C3).
 Not started. Not said yet: the order of the modules.
 
-## 42. State keys through the generator like every other setting -- OPEN, decided, not started
+## 42. State keys through the generator like every other setting -- OPEN, sized and agreed, starts next session after 41 (see `docs/HandsOnLog.md`)
+
+**Sized by the build session and the cut agreed by the reporter, 2026-10-08**
+(passed on 11:50; its log, entry 42, `2b7eeb10ca`, local). The reporter,
+verbatim, in the same answer as entry 41's: "42 leave the user-named ones,
+add those missed ones to generator in the same entry."
+The size: about 300 keys that C++ reads without a definition. The cut:
+- about 90 state keys go through the generator and are listed by the omni
+  search;
+- about 110 SETTINGS that entry 24 did not reach go into this same entry
+  (the 3D mouse first);
+- about 90 records kept under names the user makes -- macro commands, share
+  grants, custom shortcuts and tool bars, the workbench order -- stay OUT.
+Starts in the next session, after entry 41.
 
 **2026-10-08, split off entry 24 by the reporter's decision** (C2, passed on
 by the build session at 08:55, which asked for a place in the queue). The
