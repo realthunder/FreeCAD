@@ -338,6 +338,7 @@ SET(FreeCADBase_HPP_SRCS
     Persistence.h
     Placement.h
     Precision.h
+    OlderTypeName.h
     ProgramVersion.h
     ProgressIndicatorPy.h
     PyExport.h

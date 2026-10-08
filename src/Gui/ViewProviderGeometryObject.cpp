@@ -51,6 +51,7 @@
 #include <Base/Console.h>
 #include <Base/Reader.h>
 #include <Base/Tools.h>
+#include <Base/OlderTypeName.h>
 #include <Base/Type.h>
 
 #include <App/Document.h>
@@ -335,6 +336,8 @@ void Gui::PropertyShapeColor::init()
 {
     initSubclass(Gui::PropertyShapeColor::classTypeId, "Gui::_PropertyShapeColor",
                  "App::PropertyColor", &Gui::PropertyShapeColor::create);
+    // What an older build has ShapeColor as, and reads it as
+    Base::setOlderTypeName(Gui::PropertyShapeColor::classTypeId, "App::PropertyColor");
 }
 
 TYPESYSTEM_SOURCE_P(Gui::PropertyShapeAppearance)
@@ -348,6 +351,9 @@ void Gui::PropertyShapeAppearance::init()
     // it the restore takes the "type changed" branch and drops the value.
     Base::Type::addLegacyName(Gui::PropertyShapeAppearance::classTypeId,
                               "Gui::_PropertyShapeMaterial");
+    // What an older build has ShapeMaterial as. Under the name above, which
+    // is what was written for it until now, it stepped over the value.
+    Base::setOlderTypeName(Gui::PropertyShapeAppearance::classTypeId, "App::PropertyMaterial");
 }
 
 void PropertyShapeColor::setValue(const Base::Color &col)

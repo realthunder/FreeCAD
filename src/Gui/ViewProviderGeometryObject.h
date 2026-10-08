@@ -119,9 +119,25 @@ public:
     { _appearance = appearance; }
 
     void setValue(const App::MaterialAppearance &mat);
-    /// See PropertyShapeColor::mirrorValue; same no-op rule
+    /** See PropertyShapeColor::mirrorValue; same no-op rule.
+     *
+     * Field by field, and not by ==, which calls two appearances that name
+     * one material card the same whatever their colours say. Every look
+     * names a card now, so a mirror compared that way never moved again:
+     * ShapeMaterial stayed the look the object was made with, was written
+     * to a file so, and an older build that saved the file again handed
+     * that look back as the object's own.
+     */
     void mirrorValue(const App::MaterialAppearance &mat)
-    { if (!(mat == getValue())) App::PropertyAppearance::setValue(mat); }
+    {
+        App::MaterialAppearance mine = getValue();
+        App::MaterialAppearance theirs = mat;
+        const bool sameCard = mine.uuid == theirs.uuid;
+        mine.uuid.clear();
+        theirs.uuid.clear();
+        if (!sameCard || !(mine == theirs))
+            App::PropertyAppearance::setValue(mat);
+    }
 
     void Restore(Base::XMLReader &reader) override;
     /// See PropertyShapeColor::applyToAppearance; same ordering rule

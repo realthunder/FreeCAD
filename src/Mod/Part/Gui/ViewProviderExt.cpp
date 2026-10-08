@@ -115,6 +115,7 @@
 #include <map>
 #include <set>
 #include <Base/Console.h>
+#include <Base/OlderTypeName.h>
 #include <Base/Sequencer.h>
 #include <Base/Parameter.h>
 #include <Base/ProgramVersion.h>
@@ -1592,6 +1593,8 @@ void PartGui::PropertyDiffuseColor::init()
     initSubclass(PartGui::PropertyDiffuseColor::classTypeId,
                  "PartGui::_PropertyDiffuseColor", "App::PropertyColorList",
                  &PartGui::PropertyDiffuseColor::create);
+    // What an older build has DiffuseColor as, and reads the face colours as
+    Base::setOlderTypeName(PartGui::PropertyDiffuseColor::classTypeId, "App::PropertyColorList");
 }
 
 void PropertyDiffuseColor::setAppearance(App::PropertyAppearanceList *appearance,

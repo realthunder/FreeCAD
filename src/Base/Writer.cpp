@@ -24,12 +24,14 @@
 #include "PreCompiled.h"
 
 #include <limits>
+#include <map>
 #include <locale>
 #include <iomanip>
 
 #include <Build/Version.h>
 
 #include "Writer.h"
+#include "OlderTypeName.h"
 #include "Base64.h"
 #include "Base64Filter.h"
 #include "Exception.h"
@@ -212,12 +214,40 @@ int Writer::getSchemaVersion() const
     return schemaVersion;
 }
 
+namespace
+{
+std::map<unsigned int, std::string>& olderTypeNames()
+{
+    static std::map<unsigned int, std::string> names;
+    return names;
+}
+}  // namespace
+
+void Base::setOlderTypeName(const Base::Type& type, const char* name)
+{
+    if (!type.isBad() && name && name[0]) {
+        olderTypeNames()[type.getKey()] = name;
+    }
+}
+
+const char* Base::getOlderTypeName(const Base::Type& type)
+{
+    const auto& names = olderTypeNames();
+    auto it = names.find(type.getKey());
+    return it == names.end() ? nullptr : it->second.c_str();
+}
+
 const char* Writer::typeName(const Base::Type& type) const
 {
     // 0 is "no document schema resolved" -- an object export, a content
     // dump. Nothing there is being written for an older reader, so it gets
     // the current name like schema 5 does.
     if (schemaVersion > 0 && schemaVersion < 5) {
+        // The type the reader has the property under, where this build's
+        // is one of its own made of it (OlderTypeName.h)
+        if (const char* older = getOlderTypeName(type)) {
+            return older;
+        }
         if (const char* legacy = type.getLegacyName()) {
             return legacy;
         }
