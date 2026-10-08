@@ -78,7 +78,7 @@ report views, the reporter's own files -- is kept beside the dev tree under
 | 38 | 2026-10-07 | omni search: an obvious freeze the first time it is brought up | FIXED `bb31f8820b`, not staged: the first bring-up loaded and rendered the icon of every command (609) before showing the box, 0.99 s + 0.28 s on the reporter's configuration with `scanner.FCStd` open; 0.15 s + 0.07 s now (`docs/HandsOnLog.md`) |
 | 39 | 2026-10-07 | MSAA has not reached any view since 2026-09-07 (found by the build session on entry 26) | FIXED `c7d115e576`, not staged: with "MSAA 4x" chosen the backend could not create its scene targets and drew without multisampling from then on, on every backend; the depth is write-only under MSAA now. The reporter's case on the fixed tree: 0.75 s in all, both views at 4 samples (`docs/HandsOnLog.md`) |
 | 40 | 2026-10-07 | crash on exit: a TechDraw page in a split view cell is destroyed after its view provider, and writes into it | OPEN (cause read from the stack) |
-| 41 | 2026-10-08 | the Python-only modules' settings in the omni search, through a way into the registry from Python (from entry 24: C1, C4) | FIXED, all four steps (`a75b43f1d5`, `4a99a978f7`, `48037fbd8c`, `de7bd49797`, `ff12279ee6`); not staged, not pushed: 601 settings listed that were not -- Assembly 13, Draft and BIM 426 (listed once Draft or BIM has been used, as decided), Fem 47, CAM 27, the Addon Manager 41, and step 4's 47: Help 12, OpenSCAD 15, ReverseEngineering 11, Tux 5, Material 4, Test none. Registration only. A list is with the reporter: F2 and F5 answered; L1 to L12, F1, F3, F4 and F6 to F12 are not, none of them blocking (`docs/HandsOnLog.md`) |
+| 41 | 2026-10-08 | the Python-only modules' settings in the omni search, through a way into the registry from Python (from entry 24: C1, C4) | FIXED, all four steps (`a75b43f1d5`, `4a99a978f7`, `48037fbd8c`, `de7bd49797`, `ff12279ee6`) and `aa63b07cc8` for L9 and L10; not staged, not pushed: 603 settings listed that were not -- Assembly 13, Draft and BIM 426 (listed once Draft or BIM has been used, as decided), Fem 47, CAM 27, the Addon Manager 41, Help 14, OpenSCAD 15, ReverseEngineering 11, Tux 5, Material 4, Test none. Registration only, but for the help panel's size read (L9) and OpenSCAD's `useMaxFN` (L10). Full suites on `ff12279ee6`: ctest 787 of 787, Python 3411 with the two known thickness failures. Still with the reporter: L1 to L8, L11 (a recommendation), L12, F1, F3, F4, F6 to F8, none of them blocking (`docs/HandsOnLog.md`) |
 | 42 | 2026-10-08 | state keys (window sizes, recent lists, last directories, first-run flags) through the generator like every other setting (from entry 24: C2) | OPEN, sized and the cut agreed 2026-10-08, starts next session after 41: about 90 state keys through the generator and listed, about 110 settings entry 24 did not reach added here, about 90 records under user-made names left out (`docs/HandsOnLog.md`) |
 | 43 | 2026-10-08 | omni search: the highlighted row's text is white on a light blue highlight | OPEN; looked at by the build session, not a side effect of the theme defaults, not fixed |
 
@@ -2684,7 +2684,50 @@ spreadsheet or any other non-3D view kept in a cell is worth the same look.
 Not said yet: what was open at the moment of closing (which pages, in which
 cells), and whether it has happened before on exit.
 
-## 41. The Python-only modules' settings in the omni search, through a way in from Python -- FIXED, all four steps, not staged; a list with the reporter, F2 and F5 answered (see `docs/HandsOnLog.md`)
+## 41. The Python-only modules' settings in the omni search, through a way in from Python -- FIXED, all four steps, not staged; part of the list answered, the rest with the reporter (see `docs/HandsOnLog.md`)
+
+**2026-10-08, the reporter answered part of the list, to the build session**
+(passed on 17:16; code `aa63b07cc8`, its log, entry 41, "Answered,
+2026-10-08" at the end of the entry, `fdad370b62` and `ade5912ad5`, local).
+The reporter, verbatim: "L9 check with upstream. fix the read side if
+upstream also borken. L10 use 16. L11 check with upstream. F9 drop. F10
+elaborate. F11 drop. F12 drop."
+
+What the build session did with it:
+- L9 FIXED, `aa63b07cc8`: upstream has the same lines (`upstream/main` at
+  `b960974504`), so `Help.py` reads the panel's width and height with
+  `GetInt`, each from its own key. A floating help panel with 520 x 410
+  stored was 82 x 1 before and is 520 x 410 after. Both keys are described
+  now: Help has 14 settings, the entry 603.
+- L10 FIXED, `aa63b07cc8`: OpenSCAD's `prototype.py` passes 16.
+- L11 CHECKED, nothing changed: upstream is the same on both sides, the
+  page checked and the reader False. In use: the Python card editor sorts
+  its list by name until Material's preference page has been saved once,
+  and by resource after. **The build session's recommendation, NOT ANSWERED
+  YET:** read it with True, the page's.
+- F10 elaborated in the log: Help and Tux had only an `InitGui.py`
+  (upstream too); the new `Init.py`, five lines with the one import, lists
+  their settings in a session without GUI as well and lets the two tests
+  that run in `FreeCADCmd` see them. Nothing else of the module is loaded by
+  it. Cost measured: Help's 4.4 ms, Tux's 1.5 ms. The other way would be the
+  import in `InitGui.py`: no new file, listed in GUI sessions only, out of
+  reach of those tests.
+- F9, F11, F12: "drop" read by the build session as closed with nothing to
+  do -- the two dead OpenSCAD keys and `LegacyEditor` stay undescribed,
+  Tux's marker STAYS described. **To confirm, NOT ANSWERED YET:** if "F11
+  drop" meant the marker's description taken out, that is one entry to
+  remove.
+- Noted by the build session for the reporter: BIM's views manager (L5) has
+  the same broken read as L9, in upstream too. L5 is not answered and was
+  not touched.
+
+The full suites on `ff12279ee6`: ctest 787 of 787; Python 3411 tests with
+the two known `TestThickness` 5829 failures only.
+
+Still with the reporter: L1 to L8, L11 (the recommendation), F1, F3, F4, F6
+to F8. And L12 (Help's `optionTab` and `optionGithub`), by the note-taker's
+count: the answer does not name it and the build session's line leaves it
+out.
 
 **2026-10-08 16:38, the build session: step 4 is done, and with it the
 entry** (its message; its log, entry 41, "Step 4", `e24f6db6f4`, local). Not
