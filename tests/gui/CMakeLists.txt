@@ -1461,6 +1461,20 @@ fc_add_gui_test(GuiSyncViewDoesNotMesh_tests_run sync-view-does-not-mesh.py
 fc_add_gui_test(GuiDrainWaitsForPreMesh_tests_run drain-waits-for-premesh.py
                 --timeout 200)
 
+# A load gives every object its first picture before it refines any
+# (docs/DocumentLoad.md sec 18.11, the user's ruling of 2026-10-09: show
+# every object, coarse or not, as soon as possible). The landing of an
+# exact mesh rebuilds a visual that is already drawn, and ran between the
+# builds of visuals that were not: it waits now while visuals are still
+# being built, and the coarse mesh of a shape drawn as a box, which is a
+# first picture, does not. 4 boxed solids, 60 of 992 faces and 60 spheres,
+# everything asking for its exact mesh. Scored against the tree before,
+# three runs: 5 checks of 6, 31 to 44 refinements landed before the
+# drain's closing line, which came 7.8 to 8.5 s after the open began and
+# comes after 5.8 to 5.9 s.
+fc_add_gui_test(GuiFirstPictureFirst_tests_run first-picture-first.py
+                --timeout 280)
+
 # Making a view the active window makes its cell the view area's active
 # cell and brings the keyboard with it (docs/SplitViews.md sec 21): right
 # after "create new view" the first view can be clicked back into; with

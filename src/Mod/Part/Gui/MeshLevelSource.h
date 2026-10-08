@@ -127,6 +127,12 @@ bool buildMeshLevel(const TopoDS_Shape &shape, const MeshLevelJob &job,
 /// would show and the callback is what takes it. Armed only where a
 /// step exists -- past the box-error threshold a shape becomes its
 /// bounding box, which has no step after it.
+///
+/// \a standIn says the source is drawn as a bounding box in place of its
+/// shape, so that its climb is the object's FIRST picture and not the
+/// refinement of one: it goes ahead of every other climb, and it lands
+/// while a load is still building visuals, where a refinement waits
+/// (docs/DocumentLoad.md sec 18.11).
 void registerMeshLevelSource(const TopoDS_Shape &shape, bool normalsFromUV,
                              SoNode *faceTag, SoNode *lineTag,
                              float builtError = 0.0f,
@@ -140,7 +146,8 @@ void registerMeshLevelSource(const TopoDS_Shape &shape, bool normalsFromUV,
                              App::Document *doc = nullptr,
                              const char *origin = nullptr,
                              std::function<void()> onScaleDown = {},
-                             float scaledError = 0.0f);
+                             float scaledError = 0.0f,
+                             bool standIn = false);
 
 /// Drop the registration made under these tags (before the nodes die;
 /// their addresses may be reused).

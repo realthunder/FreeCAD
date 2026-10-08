@@ -80,6 +80,9 @@ namespace {
 struct LevelSourceState {
     TopoDS_Shape shape;
     MeshLevelJob params;
+    /// Drawn as a bounding box in place of the shape: see
+    /// registerMeshLevelSource.
+    bool standIn = false;
 };
 using LevelSourceStatePtr = std::shared_ptr<LevelSourceState>;
 
@@ -116,6 +119,12 @@ struct RefineJob {
     /// memory outranks spending more (the climb hard gate refuses new
     /// climbs anyway, but jobs already queued should not starve it).
     bool descent = false;
+    /// A climb that gives its object its FIRST picture -- the coarse mesh
+    /// of a shape drawn as a bounding box until now -- and not the
+    /// refinement of one it has (docs/DocumentLoad.md sec 18.11). Ahead
+    /// of the other climbs wherever they queue, and never held back by a
+    /// load.
+    bool first = false;
     /// The sweep order this job descends for (0 = none): inherited
     /// from the thread-current generation at enqueue, re-entered
     /// around the landing so chained enqueues inherit it too. What
@@ -230,6 +239,9 @@ void settleDescent(const RefineJob &job)
 struct LandingItem {
     std::function<void()> fn;
     uint64_t gen = 0;
+    /// The refinement of an object that already has a picture: it waits
+    /// while a load is still building visuals (loadFilling).
+    bool waits = false;
 };
 std::deque<LandingItem> s_landingQueue;
 
@@ -288,6 +300,8 @@ struct GuiWorkItem {
 };
 std::deque<GuiWorkItem> s_guiWork;
 bool s_landingScheduled = false;
+/// A look at what the pump is holding back is on its way.
+bool s_landingPollScheduled = false;
 
 void pumpLandings();
 
@@ -298,6 +312,43 @@ void scheduleLandingPump()
     s_landingScheduled = true;
     QTimer::singleShot(0, QCoreApplication::instance(),
                        []() { pumpLandings(); });
+}
+
+/// Whether a load is still giving objects their first picture: the
+/// drain of parked visuals has something left (docs/DocumentLoad.md sec
+/// 18.11). The GUI thread's time is theirs until it has not. What
+/// refines an object that is already drawn -- a climb's landing, which
+/// rebuilds its visual -- waits; what frees memory does not, and neither
+/// does the coarse mesh of a shape drawn as a box, which IS a first
+/// picture. Measured on 528 solids all asking for their exact mesh: the
+/// landings took 5.8 to 7.5 s of this thread while the drain ran, and
+/// the last object had its picture 12 to 20 s after the open, and 8 to
+/// 12 s with them held.
+///
+/// The HAND-OUT of refinements is not held: the workers go on meshing
+/// them while the load fills in, and their results stand on the queue,
+/// in memory, until it has. Holding that too was measured and brought
+/// the first pictures no sooner (10.2 s against 10.3 s on average) and
+/// the refined ones 1.6 s later. Waste of that kind is the price of the
+/// first picture and is paid (the user's ruling, 2026-10-09).
+bool loadFilling()
+{
+    auto app = Gui::Application::Instance;
+    return app && app->isBuildingVisuals();
+}
+
+/// Look again shortly at what a load is holding back. Its own flag: a
+/// landing that may run must not wait behind this timer.
+void scheduleLandingPoll()
+{
+    if (s_landingPollScheduled)
+        return;
+    s_landingPollScheduled = true;
+    QTimer::singleShot(50, QCoreApplication::instance(), []() {
+        s_landingPollScheduled = false;
+        if (!s_landingScheduled)
+            pumpLandings();
+    });
 }
 
 /// What the landing pump actually spends, split by what it ran
@@ -351,11 +402,18 @@ void pumpLandings()
         return since(start, now()) >= budget;
     };
     PumpAccount &acc = s_pumpAccount;
+    // What a load holds back stays on its queue, in its order.
+    const bool filling = loadFilling();
+    std::size_t held = 0;
     // Landings first: they free memory and re-arm sources; the hook
     // bodies behind them typically queue MORE work.
-    while (!s_landingQueue.empty()) {
-        auto item = std::move(s_landingQueue.front());
-        s_landingQueue.pop_front();
+    while (held < s_landingQueue.size()) {
+        if (filling && s_landingQueue[held].waits) {
+            ++held;
+            continue;
+        }
+        auto item = std::move(s_landingQueue[held]);
+        s_landingQueue.erase(s_landingQueue.begin() + held);
         auto t0 = now();
         {
             // The landing's chained enqueues (a pooled fill, a
@@ -378,9 +436,16 @@ void pumpLandings()
     // landings: a steady landing stream must not starve the orders
     // that free memory.
     bool ranGui = false;
-    while (!s_guiWork.empty() && (!ranGui || !spent())) {
-        auto item = std::move(s_guiWork.front());
-        s_guiWork.pop_front();
+    std::size_t heldGui = 0;
+    while (heldGui < s_guiWork.size() && (!ranGui || !spent())) {
+        // A climb's body is a refinement too (a finer rung still
+        // resident, activated with a rebuild).
+        if (filling && !s_guiWork[heldGui].descent) {
+            ++heldGui;
+            continue;
+        }
+        auto item = std::move(s_guiWork[heldGui]);
+        s_guiWork.erase(s_guiWork.begin() + heldGui);
         auto t0 = now();
         {
             Render::MeshSourceRegistry::DescentGenScope scope(item.gen);
@@ -411,8 +476,18 @@ void pumpLandings()
             acc.worstItem * 1000.0, budget * 1000.0);
         acc = PumpAccount{};
     }
-    if (!s_landingQueue.empty() || !s_guiWork.empty())
+    // What is left that may run goes on at once; what a load is holding
+    // is looked at again shortly, which is also how the load's end is
+    // noticed -- nothing tells this queue when the drain is through.
+    bool runnable = false, waiting = false;
+    for (const auto &item : s_landingQueue)
+        (filling && item.waits ? waiting : runnable) = true;
+    for (const auto &item : s_guiWork)
+        (filling && !item.descent ? waiting : runnable) = true;
+    if (runnable)
         scheduleLandingPump();
+    if (waiting)
+        scheduleLandingPoll();
 }
 
 /// Purge every deferred hook body queued under \a tag (the tag is
@@ -440,7 +515,8 @@ void purgeLevelGuiWork(const void *tag)
 
 /// Marshal \a fn from a worker to the paced GUI queue; \a gen is the
 /// sweep order the landing belongs to (RefineJob::gen).
-void queueLandingFromWorker(std::function<void()> fn, uint64_t gen = 0)
+void queueLandingFromWorker(std::function<void()> fn, uint64_t gen = 0,
+                            bool waits = false)
 {
     QCoreApplication *app = QCoreApplication::instance();
     if (!app)
@@ -448,8 +524,8 @@ void queueLandingFromWorker(std::function<void()> fn, uint64_t gen = 0)
     auto payload = std::make_shared<std::function<void()>>(std::move(fn));
     QMetaObject::invokeMethod(
         app,
-        [payload, gen]() {
-            s_landingQueue.push_back({std::move(*payload), gen});
+        [payload, gen, waits]() {
+            s_landingQueue.push_back({std::move(*payload), gen, waits});
             scheduleLandingPump();
         },
         Qt::QueuedConnection);
@@ -554,6 +630,9 @@ void runLevelJob(RefineJob job, const std::shared_ptr<Part::MeshTwin> &twin)
     auto payload = std::make_shared<std::pair<RefineJob, TopoDS_Shape>>(
         std::move(job), std::move(meshed));
     const uint64_t gen = payload->first.gen;
+    // A climb that refines waits for a load; a descent and a first
+    // picture do not.
+    const bool waits = !payload->first.descent && !payload->first.first;
     queueLandingFromWorker([payload]() {
         settleDescent(payload->first);
         {
@@ -568,7 +647,7 @@ void runLevelJob(RefineJob job, const std::shared_ptr<Part::MeshTwin> &twin)
             s_refineTokens.erase(it);
         }
         payload->first.apply(payload->second);
-    }, gen);
+    }, gen, waits);
 }
 
 /// A job with the private twin of its shape: ready for a runner.
@@ -708,9 +787,12 @@ void dispatchLevelJobs()
         // of the climbs standing ready, behind the descents already
         // there -- freeing memory outranks spending more.
         auto at = s_refineReady.end();
-        if (job.descent) {
+        if (job.descent || job.first) {
+            // ...and a first picture goes ahead of the refinements,
+            // behind the descents and the first pictures before it.
             at = s_refineReady.begin();
-            while (at != s_refineReady.end() && at->job.descent)
+            while (at != s_refineReady.end()
+                   && (at->job.descent || (job.first && at->job.first)))
                 ++at;
         }
         s_refineReady.insert(at, ReadyJob{std::move(job), std::move(twin), parts});
@@ -773,6 +855,16 @@ void enqueueLevelJob(RefineJob &&job)
                 ++it;
             s_refineQueue.insert(it, std::move(job));
         }
+        else if (job.first) {
+            // A first picture: behind the descents and the first
+            // pictures already queued, ahead of every refinement. In
+            // the order they came, a shape drawn as a box stood behind
+            // the exact meshes of everything that already had a picture.
+            auto it = s_refineQueue.begin();
+            while (it != s_refineQueue.end() && (it->descent || it->first))
+                ++it;
+            s_refineQueue.insert(it, std::move(job));
+        }
         else {
             s_refineQueue.push_back(std::move(job));
         }
@@ -789,6 +881,7 @@ void queueExactRefine(const void *tag, const LevelSourceStatePtr &st,
     job.st = st;
     job.apply = std::move(apply);
     job.descent = descent;
+    job.first = !descent && st && st->standIn;
     enqueueLevelJob(std::move(job));
 }
 
@@ -1005,7 +1098,8 @@ void PartGui::registerMeshLevelSource(const TopoDS_Shape &shape,
                                       App::Document *doc,
                                       const char *origin,
                                       std::function<void()> onScaleDown,
-                                      float scaledError)
+                                      float scaledError,
+                                      bool standIn)
 {
     if (shape.IsNull() || (!faceTag && !lineTag))
         return;
@@ -1036,6 +1130,7 @@ void PartGui::registerMeshLevelSource(const TopoDS_Shape &shape,
 
     auto st = std::make_shared<LevelSourceState>();
     st->shape = shape;
+    st->standIn = standIn;
     st->params.normalsFromUV = normalsFromUV;
     st->params.exactDeflection = exactDeflection;
     st->params.exactAngle = exactAngle;
