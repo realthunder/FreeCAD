@@ -44,7 +44,8 @@ Evidence that does not belong in the repository is under
 | 38 | FIXED `bb31f8820b`, not staged | the omni search's first bring-up made the icon of every command before showing the box: 1.27 s on the reporter's configuration, 0.22 s now |
 | 39 | FIXED `c7d115e576`, not staged | MSAA has not reached any view since 2026-09-07: the scene depth was built readable at every sample count and bgfx refuses that framebuffer. Write-only under MSAA now; a test asks the view its sample count |
 | 41 | FIXED, all four steps: `a75b43f1d5`, `4a99a978f7`, `48037fbd8c`, `de7bd49797`, `ff12279ee6`, and `aa63b07cc8` for the answers to L9 and L10; not staged, not pushed; a list with the reporter (L1-L8, L11, L12, F1, F3, F4, F6-F8; L11 with a recommendation) | the Python-only modules' settings through a door into the registry: 603 settings listed that were not -- Assembly 13, Draft and BIM 426, Fem 47, CAM 27, the Addon Manager 41, Help 14, OpenSCAD 15, ReverseEngineering 11, Tux 5, Material 4. Registration only, the readers keep their code; a test per module holds each described default to its readers' |
-| 42 | STEP 1 of 3 DONE 2026-10-08 (the split key by key: 94 state keys, 114 settings, 44 records, 23 dead, 14 defined after all); nothing generated yet, six points with the reporter | of about 300 keys C++ reads without a definition: about 90 state keys go through the generator and are listed, about 110 settings entry 24 did not reach go in the same entry, about 90 records under names the user makes stay out |
+| 42 | STEP 1 of 3 DONE 2026-10-08 (the split key by key: 94 state keys, 114 settings, 44 records, 23 dead, 14 defined after all); nothing generated yet; Q2 to Q5 answered, Q1 explained and with the reporter | of about 300 keys C++ reads without a definition: about 90 state keys go through the generator and are listed, about 110 settings entry 24 did not reach go in the same entry, about 90 records under names the user makes stay out |
+| 44 | FIXED `813d0250f9`, not staged | the C++ DXF exporter was pointed at `Mod/Import` for its options, where nothing stores them; it takes them from `Mod/Draft`, where the DXF page puts them, as upstream does. An ellipse with "as polylines" on was an ELLIPSE before, an LWPOLYLINE after |
 
 **The reporter, 2026-10-07 14:20, on what is open** (said to the build
 session; the queue has the reporter's own entries):
@@ -1933,7 +1934,7 @@ stay undescribed, Tux's marker stays described.
   read without a GUI too (`Help.show()` prints the page there); Tux's five
   only mean something with one.
 
-## 42. State keys through the generator, and listed -- step 1 DONE (the split key by key), steps 2 and 3 to do; six points with the reporter
+## 42. State keys through the generator, and listed -- step 1 DONE (the split key by key), steps 2 and 3 to do; Q2 to Q5 answered, Q1 with the reporter
 
 Decided under entry 24 (C2), and the reporter, 2026-10-08: "Entry 42, list
 those keys". Not started. Sized with the same run
@@ -2032,3 +2033,53 @@ For the reporter, before anything is generated:
 
 Left of the entry: (2) the 94 state keys and (3) the 114 settings through
 the generator, the 3D mouse first.
+
+**Answered, 2026-10-08,** in the reporter's words: "Q1 what do you mean
+don't take plain definition? Q2 fix. Q3 drop. Q4 Drop. Q5 drop."
+
+- Q1: asked back, explained to the reporter, NOT ANSWERED YET. A definition
+  is one line that gives a setting a name, a type and ONE default written
+  into the file. 28 settings do not fit that: 17 whose default is worked
+  out when the program runs (the cube's six face labels and six web
+  addresses pass through the translator, `IssuesPage` is the build's, two
+  gesture thresholds are Qt's, `BitmapFill` is a path under the resource
+  directory, `LogLevels/Default` the console's); 2 old keys read only when
+  their successor is not set; `DxfImportMode`, which mirrors four radio
+  buttons; 4 developer switches, which are plain but perhaps not wanted in
+  a list; and the 4 of Q2, which are gone with its fix. Proposed: define
+  the 4 developer switches, leave the 20 out and list them.
+- Q2: fixed as entry 44, below.
+- Q3: `SceneShare/Token` stays out of the registry.
+- Q4: `Workbenches/Ordered` and `Disabled` stay out.
+- Q5: the two recent lists stay out; their length is defined.
+
+So the field is 91 state keys (94 less the token and the two lists) and,
+of the 114 settings, 112 less whatever Q1 leaves out.
+
+## 44. The DXF page's exporter settings do not reach the C++ DXF exporter -- FIXED `813d0250f9`, not staged
+
+Found under entry 42 (Q2); the reporter, 2026-10-08: "Q2 fix."
+
+`Import.writeDXFShape` and `writeDXFObject` pointed the writer at
+`Preferences/Mod/Import` for its options unless given an option source,
+and Draft's DXF export calls them without one. Nothing stores the
+exporter's options there; the DXF preference page stores "Treat ellipses
+and splines as polylines" (`DiscretizeEllipses`) and the segment length
+(`maxsegmentlength`) in `Preferences/Mod/Draft`. The default is `Mod/Draft`
+now, as it is for `readDXF` here and for every DXF function of upstream
+(`upstream/main` at `b960974504`), so the line was the fork's own.
+
+Measured with an ellipse written by `Import.writeDXFShape`
+(`dxf_export_options.py` with entry 41's scripts, `FreeCADCmd`, a profile
+of its own): before, one `ELLIPSE` whatever the page said; after, an
+`ELLIPSE` with the option off, an `LWPOLYLINE` of 24 points with it on at a
+segment length of 5, and of 198 points at 0.5.
+
+Test: `ImportErrorsTest.writeDXFShapeTakesTheOptionsOfTheDxfPage`
+(`Import_tests_run`, 6 of 6). The full suites were not run again after it.
+
+Left: the exporter also reads `ExportPoints` and `DxfVersionOut` from the
+same group, which no page shows and nothing describes; they are two of
+entry 42's settings now, in `Mod/Draft`. Draft's own export passes the
+version itself (14, or 12 without splines), so `DxfVersionOut` only counts
+for a caller that passes none.
