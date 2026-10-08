@@ -40,13 +40,14 @@ Evidence that does not belong in the repository is under
 | 24 | C++ SIDE DONE, about 1180 settings listed; the reporter's decisions of 2026-10-08 applied in two rounds, `e21eff05a7` and `427ffc8d28`; pushed `b70cc6ebf1`, not staged | every setting C++ reads is behind a generated class. After both rounds: the editors' font is Courier, Home is Top, the marker size is 7 everywhere, the Asymptote height is empty, CAM's unit default is upstream's; 15 of the 16 findings are fixed or dropped as decided (D4 needs nothing). A24: the fork's three accent colours stay ("keep ours"). Nothing is left with the reporter. Entries 41 (Python door) and 42 (state keys, to be listed) are decided and not started |
 | 26 | FIXED `175ffce199`, not staged | the first OK of a profile held the program 11 to 15 s on the reporter's configuration with `scanner.FCStd` open: 780 keys stored for the first time and taken for changes -- stylesheet set again 4.2 s, every Part view provider re-meshed 3.2 s, language activated again 2 s. 0.9 s now |
 | 27 | STAGED `fa2ada985c` | the cell menu made a spreadsheet view by asking for it, listed a page's views, and a pick was placed by the general policy |
-| 29 | DONE `dd336be800`, not staged, not pushed; four choices of mine for the reporter | a drag of a corner zone or of a border is shown as frames over every cell it changes and carried out at the release; the minimum cell size setting (200) refuses a split and stops a border; corner zones and the hovered menu button on an opaque ground; the border 3 pixels |
+| 29 | DONE `dd336be800`, and `c9bc1e22c5` for the default of 300 the reporter then asked for; not staged, not pushed; four choices of mine for the reporter | a drag of a corner zone or of a border is shown as frames over every cell it changes and carried out at the release; the minimum cell size setting (300 by default) refuses a split and stops a border; corner zones and the hovered menu button on an opaque ground; the border 3 pixels |
 | 30 | THIRD TASK FIXED `dad4f5d18a`, not staged, not pushed; the freeze MEASURED, not fixed; the first task waits for the reporter | Light, Dark and Classic list the colours an overlay preset leaves behind, so a theme clears the Python console's background again. The freeze on `scanner.FCStd`: 13 s for the dark overlay preset, of which 9.5 s is the application's style sheet being changed; the same preset a second time, nothing changing, still 4 s |
 | 31 | FIXED `47b5e72c79`, not staged | "Go to end" is on for a profile that never stored it |
 | 32 | FIXED `b960092ea5`, not staged | the menus styled see-through are single objects shared between a pop-up over the 3D view and the main menu; the blue is the palette's bright text, the desktop's accent. No sheet chosen is an ordinary menu now |
 | 33 | FIXED `ef4df215b5` (cycles `35a3bd898`), not staged | the path tracer's CUDA probe ran `cmd.exe /c where nvcc` through `popen` at the first 3D view; it searches the PATH without a shell now |
 | 34 | FIXED `3d7b4c30fd`, not staged | Dark and Light store TechDraw's preselection colour, the blue of the 3D view's |
 | 35 | FIXED `bcad1c3982`, not staged, not pushed | a dimension's label took every redraw for a drag under way, and "finished" it at the next deselection or release: X and Y stored again and the document recomputed. On the reporter's document 27 of Page003's 29 dimensions did it when selected and deselected; none now. The audit of what a click can reach: nothing else found |
+| 36 | FIXED `9bf110632e`, not staged, not pushed | the backend cut a dashed line into dashes once, in page units: zoomed out they closed up into a continuous line, a frame's grew with the zoom, and a hidden line had six dashes for Qt's seven. The dashes are worked out for the zoom the page is drawn at, by Qt's rules; at 12 pixels to the millimetre a hidden line and a section line are Qt's to the pixel |
 | 37 | FIXED `a23d8b069b`, not staged, not pushed | the pen of an edge's line number was taken only for a number below the count of lines, so the LAST line of every standard -- ASME's "Chain", ISO's 15, ANSI's 4 -- came out continuous. Upstream has the same line |
 | 38 | FIXED `bb31f8820b`, not staged | the omni search's first bring-up made the icon of every command before showing the box: 1.27 s on the reporter's configuration, 0.22 s now |
 | 39 | FIXED `c7d115e576`, not staged | MSAA has not reached any view since 2026-09-07: the scene depth was built readable at every sample count and bgfx refuses that framebuffer. Write-only under MSAA now; a test asks the view its sample count |
@@ -2582,7 +2583,18 @@ taking its colours from the theme's parameters instead of a sheet of its
 own; or the overlay LAYOUT (which panels float where) coming with the
 theme. Not started without that word.
 
-## 29. View cells: frames that show a split, a join and a resize while it is dragged; a minimum cell size -- DONE `dd336be800`, not staged
+## 29. View cells: frames that show a split, a join and a resize while it is dragged; a minimum cell size -- DONE `dd336be800`, the default 300 `c9bc1e22c5`, not staged
+
+**2026-10-09, later, the reporter to the build session:** "Change default
+minimum cell size to 300". Done, `c9bc1e22c5`: the setting's default is
+300, and with it a cell's own minimum is 300 x 300. What that changes in
+use: a cell under 603 pixels on a side is no longer split along that side
+-- on the test's window, 980 x 538, "split right" still works and "split
+down" is refused, where 200 allowed it. One existing test made a cell 290
+across on purpose (`portrait-pick-vs-draw.py`, 34 PASS and 2 FAIL on the
+new default); it sets the minimum to 200 itself and is back to 68 PASS.
+The six other cell tests pass on the default unchanged. Where the text
+below says 200, that was the value asked for first.
 
 The request as the queue has it after the reporter's revisions: (c) the
 frames, for every cell a drag changes; (d) the minimum cell size, default
@@ -2652,3 +2664,82 @@ nested splitter rounds (QSplitter's arithmetic written out again; the
 test allows 4). The look of the frames -- accent tint, a plus on the new
 cell, red and crossed out for a refusal -- is mine; no picture was asked
 for or given.
+
+## 36. TechDraw drawn by the backend: dashed lines do not behave as Qt's -- FIXED `9bf110632e`, not staged
+
+**Measured first** (`e36.py` in `..\dl\handson\2026-10-08\q2`, then the
+test): one page -- a box with a pocket underneath, so the top view has a
+hidden rectangle; a section through it, so the view has a section line;
+frames on -- drawn by Qt and by the backend at 2, 5 and 12 pixels to the
+millimetre, the dashes counted along each line. What "not said yet" asked,
+kind by kind:
+
+| | Qt | the backend, before |
+|---|---|---|
+| hidden line, 2 px/mm | 4 dashes of 12 px, 3 apart | 6 of 9.5, ONE pixel apart |
+| hidden line, 5 px/mm | 7 of 19.4, 3 apart | 6 of 22.8, 3.4 apart |
+| hidden line, 12 px/mm | 7 of 47, 7 apart | 6 of 52, 11 apart |
+| section line, 5 and 12 px/mm | 19 / 18 and 46.5 / 40 | 20 / 16 and 45.5 / 42 |
+| view frame | 4 px dashes, 2 apart, at every zoom | 8.8, 8 and 18.3 px: growing |
+
+**Four causes**, all in how the feed cut a line into dashes -- once, in
+page units, whatever the zoom:
+1. Zoomed out. Qt counts the pattern of a pen that comes out thinner than
+   a pixel in PIXELS, so its dashes never close up. The backend's shrank
+   with the page: gaps of one pixel, a hidden line that reads as
+   continuous. This is the "zoom above all".
+2. The frame is a cosmetic pen: Qt's dashes are in pixels at any zoom. The
+   backend's were the 0.35 mm line's, so they grew with the zoom (written
+   down before as a known difference; it was the same thing).
+3. Caps. With the round or square caps TechDraw uses, Qt's dashes are a
+   pen width longer and its gaps as much shorter.
+4. The unit. The Qt page sets a pen's width as a whole number of scene
+   units (`QGIPrimPath::setTools` hands `QPen::setWidth` an int), so its
+   0.35 mm hidden line is 0.3 mm wide and counts its dashes in 0.3 mm:
+   seven where 0.35 gives six.
+And a fifth nobody had seen yet: a pen's dash OFFSET, which the line
+standards use for a pattern that starts on a gap, was not read at all.
+
+**The change.** The page layer has a new drawing operation,
+`Page2D::Recorder::dashedPolyline()`: the points, the pattern in multiples
+of a unit, the unit (0 for a cosmetic pen), the offset, whether caps
+lengthen the dashes. The dashes themselves are made when the item is
+recorded for a zoom band (`Page2D::dashRuns`), by the rules above, and an
+item with pixel-counted dashes is recorded again when the band changes --
+what an item with thin strokes already did. The feed hands over patterns
+instead of cutting. vg's anti-aliased ends drew each dash about a pixel
+long at both ends, which closed gaps of two pixels: allowed for.
+
+**Scored.** `tests/src/Gui/Page2DDash.cpp`, 13 cases of the rules
+(`Page2DDash_tests_run`). `tests/gui/techdraw-page-backend-dashes.py`, the
+comparison above as claims: before 17 PASS, 8 FAIL; after 26 PASS:
+
+| | Qt | the backend, after |
+|---|---|---|
+| hidden line, 2 px/mm | 4 of 12, 3 apart | 5 of 10, 2 apart |
+| hidden line, 5 px/mm | 7 of 19.4, 3 apart | 7 of 20.6, 2 apart |
+| hidden line, 12 px/mm | 7 of 47, 7 apart | 7 of 47, 7 apart |
+| section line, 12 px/mm | 46.5 / 40 | 46.5 / 40 |
+| view frame, 2 / 5 / 12 px/mm | 4 px, 2 apart | 3.4 / 4.0 / 5.2 px |
+
+The other backend page tests as before: `techdraw-page-backend-single-
+draw.py` 17, `techdraw-page-backend-switch.py` 11,
+`techdraw-last-line-style.py` 18, `techdraw-section-line-click.py` 10.
+
+**Still different, and why:**
+- Dashes counted in pixels follow the zoom BAND (powers of two), not every
+  zoom step: up to a factor of 1.41 off Qt's either way in between, which
+  is the 3.4 and 5.2 of the frame above. A hairline's width has always
+  done the same. Exact would mean recording those items again at every
+  zoom step.
+- A line's WIDTH: the backend draws the 0.35 mm asked for, the Qt page 0.3
+  (cause 4). Only the dashes were made Qt's. Which of the two widths is
+  wanted is the reporter's to say -- Qt's is an accident of an int.
+- The page wire format went to version 2 for the new operation; the
+  browser viewer's bundle is not rebuilt here, and an old one reloads when
+  it meets a newer page.
+
+**Seen on the way, not looked at:** the hatch of a section's cut face. In
+the same pictures Qt draws a fine grey-green pattern and the backend
+bright green lines far apart (`q2\g-e36m1-dev\qt-z1.0.png` against
+`backend-z1.0.png`). Not a dashed line, so not this entry; for the queue.
