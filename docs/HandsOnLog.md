@@ -44,10 +44,14 @@ Evidence that does not belong in the repository is under
 | 32 | FIXED `b960092ea5`, not staged | the menus styled see-through are single objects shared between a pop-up over the 3D view and the main menu; the blue is the palette's bright text, the desktop's accent. No sheet chosen is an ordinary menu now |
 | 33 | FIXED `ef4df215b5` (cycles `35a3bd898`), not staged | the path tracer's CUDA probe ran `cmd.exe /c where nvcc` through `popen` at the first 3D view; it searches the PATH without a shell now |
 | 34 | FIXED `3d7b4c30fd`, not staged | Dark and Light store TechDraw's preselection colour, the blue of the 3D view's |
+| 35 | FIXED `bcad1c3982`, not staged, not pushed | a dimension's label took every redraw for a drag under way, and "finished" it at the next deselection or release: X and Y stored again and the document recomputed. On the reporter's document 27 of Page003's 29 dimensions did it when selected and deselected; none now. The audit of what a click can reach: nothing else found |
+| 37 | FIXED `a23d8b069b`, not staged, not pushed | the pen of an edge's line number was taken only for a number below the count of lines, so the LAST line of every standard -- ASME's "Chain", ISO's 15, ANSI's 4 -- came out continuous. Upstream has the same line |
 | 38 | FIXED `bb31f8820b`, not staged | the omni search's first bring-up made the icon of every command before showing the box: 1.27 s on the reporter's configuration, 0.22 s now |
 | 39 | FIXED `c7d115e576`, not staged | MSAA has not reached any view since 2026-09-07: the scene depth was built readable at every sample count and bgfx refuses that framebuffer. Write-only under MSAA now; a test asks the view its sample count |
+| 40 | FIXED `f8ceaf20c3`, not staged, not pushed | the page's view provider had a handler write into it when its view was destroyed, and a view is destroyed after a closing document has freed its view providers: a write into freed memory at every document closed with its page open. Reproduced as heap corruption. A view in a cell is now taken away with what it shows -- hidden, deleted or closed |
 | 41 | FIXED, all four steps: `a75b43f1d5`, `4a99a978f7`, `48037fbd8c`, `de7bd49797`, `ff12279ee6`, then `aa63b07cc8` and `6a2216d0f0` for the reporter's answers to the list; nothing left with the reporter; pushed 2026-10-08, not staged | the Python-only modules' settings through a door into the registry: 603 settings listed that were not -- Assembly 13, Draft and BIM 426, Fem 47, CAM 27, the Addon Manager 41, Help 14, OpenSCAD 15, ReverseEngineering 11, Tux 5, Material 4. Registration only, the readers keep their code; a test per module holds each described default to its readers' |
 | 42 | FIXED `aa3e77137c`, `dbadedb7ba`, `7e442e1bc2`, `234572bd87`; pushed 2026-10-08, not staged; Q6 not answered | of the about 300 keys C++ read without a definition, 174 are defined now -- 89 settings and 85 state keys, 213 rows of the registry: the 3D mouse and the expression sandbox with every reader converted, Gui's small groups too, and the state the program keeps defined with its readers left as they are. What stayed out is listed |
+| 43 | FIXED `3b884bfe5d`, not staged, not pushed | on a profile that has chosen no theme: the native Windows style paints a selected row pale blue and the row was written in the palette's highlighted text colour, white; contrast 1.3. The row is written in whichever of the two text colours reads on what is painted. Under Light, Dark and Classic it was right already |
 | 44 | FIXED `813d0250f9`, pushed 2026-10-08, not staged | the C++ DXF exporter was pointed at `Mod/Import` for its options, where nothing stores them; it takes them from `Mod/Draft`, where the DXF page puts them, as upstream does. An ellipse with "as polylines" on was an ELLIPSE before, an LWPOLYLINE after |
 | 45 | FIXED `c7fdcf3220`, pushed 2026-10-08, not staged | a spreadsheet's view provider made its view when it was only asked whether it had one: one click on a sheet in the tree opened it. Asking is a question now, and a new request opens the view for the three callers that host it. Show-in-cell also took a stale cell and closed another sheet's view; it takes the active view's cell |
 
@@ -2313,3 +2317,173 @@ that spelling in `DlgPropertyLink.cpp` here). They have no claim in the
 test; they are right by the question being one now. The other session's
 `GuiSheetViewReopen` and `GuiTaskPanelKeptSheetView` are not in this
 tree; the reopen claim here stands in for the first.
+
+## 40. Crash on exit: a TechDraw page in a view cell outlives its view provider -- FIXED `f8ceaf20c3`, not staged
+
+The reporter, 2026-10-09, on the open entries of the queue: "Continue as
+planned". Started with this one, being a crash.
+
+**Reproduced, and wider than the report.** The queue's reading of the stack
+holds: `ViewProviderPage::createMDIViewPage` connected a handler to its
+view's `destroyed` that wrote `m_graphicsView = nullptr` into the view
+provider. A view is deleted by a deferred delete; a closing document frees
+its view providers first. So the handler wrote into freed memory, and not
+only on exit and not only with a split view: a page is placed in a cell of
+the document's view area BY DEFAULT, and the tab path had the same order
+since the handler was added (`42f8c14dcc`, 2026-08-25). Every document
+closed with its page open did it. Measured from a script: the document was
+already gone when its page's view was destroyed, every time.
+`tests/gui/view-in-cell-goes-with-its-object.py` on the tree before the
+change ended with exit code `0xC0000374` (heap corruption) right after the
+first such document was closed.
+
+**What else the test found on the way** (before: 11 PASS, 5 FAIL, then the
+crash):
+- A page hidden (Visibility off) kept its view in the cell, hidden: an
+  empty-looking cell, and showing the page again brought nothing back.
+  `removeMDIView()` only knew the main window's own windows.
+- A page deleted by a script (`removeObject`) kept its view, in a tab as
+  well: the page had `onDelete()` -- the Delete command's question -- and no
+  `beforeDelete()`.
+- The spreadsheet, the queue's "worth the same look": its view provider
+  calls `MainWindow::removeWindow()`, which deletes the view's parent. For
+  a view in a cell that is the CELL, taken out behind the area's back. The
+  splitter happened to cope in the test's case; it is not left to chance
+  now.
+
+**The change.**
+- `ViewProviderPage`: `m_graphicsView` is a `QPointer`, the handler is
+  gone. `removeMDIView()` takes the view out of a cell too, and the page
+  has a `beforeDelete()`.
+- `ViewArea::removeView()`, new: a view taken away without being asked --
+  what it shows is gone. It leaves its cell now and is deleted when control
+  is back in the event loop (the caller may be inside one of the view's own
+  handlers: Delete pressed in the page); the cell collapses now, so that
+  the active view is a live one by the time the caller goes on.
+  `MainWindow::removeWindow()` uses it for a view that sits in a cell.
+- The LAST cell stays, empty, with its menu. The first version closed the
+  container there, which closes the document's last view and with that the
+  document -- for a page that was only hidden. Found by the test.
+- `ViewPlacement`: an empty cell is filled before anything is split or
+  replaced. Without it a page shown again opened a second cell beside the
+  empty one.
+
+Scored: 20 PASS, exit code 0, the session ending with a page in a cell.
+What the test cannot see is the write itself; it is gone by construction,
+and the crash that stood for it is gone.
+
+Not done: `MDIViewPage`, `QGVPage` and `PagePrinter` keep a plain pointer
+to the view provider. Between the view provider's end and the view's
+deferred delete the view is hidden and out of its cell, and its
+destructors do not use the pointer (read, not instrumented).
+
+## 37. TechDraw: the edge style "Chain" is not drawn dashed -- FIXED `a23d8b069b`, not staged
+
+`LineGenerator::getBestPen()` takes the pen of an edge's line number when
+the number is "valid", and tested `isoNumber < m_lineDefs.size()`. Line
+numbers run from 1 to the number of definitions, the last one included --
+`getLinePen()` right below has it so -- and so the last line of every
+standard was refused and fell through to the edge's Qt style, continuous:
+ASME's 17 "Chain", ISO's 15 "DoubleDashedTripleDotted", ANSI's 4. The
+style combo box draws its samples with `getLinePen()`, hence dashed there.
+Both renderers ask `getBestPen()`, hence both wrong. `<=` now.
+`upstream/main` (`b960974504`) has the same line.
+
+Not the count-and-number mismatch the queue suspected in the definitions:
+all 17 load.
+
+Scored with `tests/gui/techdraw-last-line-style.py`: the top view of a
+box, its four edges decorated through the line decoration panel, the top
+edge's ink counted in runs; under each of the three standards. Before (the
+copy staged 2026-10-07): line 2 dashed, the last line one unbroken run
+under all three -- 15 PASS, 3 FAIL. After: the last line in 9 (ANSI), 5
+(ASME) and 16 (ISO) runs -- 18 PASS. Pictures in
+`..\dl\handson\2026-10-08\q2\g-e37before2-staged` and `g-e37b-dev`.
+
+To the queue's "possibly related" (the Annotation page's line style lists
+storing keys that drawing does not read): not this; not looked at here.
+
+## 35. TechDraw: now and then a click starts a recompute; a dimension that cannot be selected -- FIXED `bcad1c3982`, not staged
+
+**Measured first, on the reporter's document** (`e35.py` in
+`..\dl\handson\2026-10-08\q2`: a copy of `scanner.FCStd`, everything
+recomputed -- `Pad033` and `Fillet011` in error, as expected -- `Page003`
+open, a document observer counting recomputes): `Dimension134` selected
+from outside the page and the selection cleared: one recompute of the
+document. Each of the page's 29 dimensions in turn: 27 started one.
+
+**The cause** is one the queue's inventory pointed at, with a twist.
+`QGIDatumLabel::itemChange` set its state to "dragging" on ANY change of
+the label's position, and every redraw of a dimension puts its label in
+place (`setPosFromCenter`). After that the label was "dragging" for good,
+and the drag "finished" the next time the label lost the selection, or
+the mouse was released on it: `datumLabelDragFinished` writes `X` and `Y`
+under "Drag Dimension" and calls `updateActive()`. That is all three of the
+reporter's symptoms -- a click somewhere else deselects a dimension
+("seemingly random"), a click on a dimension is released on its label and
+the redraw after the recompute drops the selection it made, and a
+selection from the tree ends in the same deselection. In a document with
+nothing in error the recompute found nothing to do and passed unnoticed,
+but the undo stack still took a "Drag Dimension" each time.
+`upstream/main` has the same shape.
+
+**The change.** A drag is a move made between a press on the label and its
+release (`DragStarted` was in the enum, unused). A drag that ends where it
+began stores nothing.
+
+**Scored.** The reporter's document again: no recompute from any of the
+29. `tests/gui/techdraw-dimension-click-no-recompute.py`, a box, a view
+and one dimension: before (the copy staged 2026-10-07) 7 PASS and 5 FAIL
+-- a "Drag Dimension" and a recompute for a selection made from outside
+the page, a second undo step for one drag, a recompute for a click; after,
+12 PASS, the drag itself still one step and one recompute.
+
+**The audit asked for** ("we need to audit Techdraw for unnecessary
+recompute"), as far as it went -- the places a click or a drag IN THE PAGE
+can reach, from the queue's inventory:
+- the dimension label: the defect above;
+- the balloon label: finishes only on a release away from the press, as
+  the mouse grabber. Right;
+- the section line: entry 21;
+- the detail highlight (`QGIHighlight`): finishes after any mouse move
+  between press and release, and stored the anchor again even when the
+  highlight had not moved. It skips that now (not scored: one line, no
+  claim in a test);
+- a view dragged: `DrawView::setPosition` writes `X`, `Y` only when they
+  changed by more than 0.001 mm. Right;
+- a leader's `restoreState`, the page's undo and redo, "Toggle
+  KeepUpdated", deleting a cosmetic: each follows something the user did.
+NOT gone through: the 117 `updateActive()` and 62 `recomputeFeature()` of
+the commands and task panels, where the question is the queue's third --
+a recompute of the document where one object changed. Every one of them
+recomputes only what is touched, plus whatever is in error; whether that
+is worth changing one by one is for the reporter to say.
+
+## 43. Omni search: the highlighted row's text is white on a light blue highlight -- FIXED `3b884bfe5d`, not staged
+
+The queue's "under which theme" answered by measurement (`e43.py`, then
+the test): under NONE. A profile that has chosen no theme runs under the
+native Windows style, and that style does not paint the palette's
+Highlight behind a selected row. It paints a pale blue panel, `#cde8ff`,
+and writes on it in the ordinary text colour -- a substitution it makes
+inside its own item drawing. The omni search's rows are laid out by a
+delegate of the box's own, which lets the style paint the panel and then
+writes the text itself in the palette's `HighlightedText`: white, on pale
+blue, a contrast of 1.3. Under Light, Dark and Classic the row was right
+already (8.9, 7.7, 4.5), so it is not from the theme defaults, as said
+before; and it is not the theme's accent colours (A24) either.
+
+The delegate paints the selection panel once more, off screen, and looks
+at the colour: where the highlighted text colour has a contrast under 3
+on it and the ordinary one does better, the ordinary one is used. One
+small off-screen paint per repaint of the list, for the one selected row.
+
+Scored with `tests/gui/omni-search-highlighted-row.py`, no theme and then
+each of the three, the row's text against what is behind it: before (the
+copy staged 2026-10-07) 1.3, 8.9, 7.7, 4.5 -- 19 PASS, 1 FAIL; after 3.5,
+8.9, 7.7, 4.5 -- 20 PASS. The 3.5 is the GREYED text colour: the row the
+test highlights is a command that cannot run without a document. A row
+that can run is written in black.
+
+Not looked at: other lists with a delegate of their own under the native
+style. The stock delegate is right by the style's own substitution.
