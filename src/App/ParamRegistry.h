@@ -43,7 +43,8 @@ namespace App
  * hints the preference page was generated from (the "proxy"), so that an
  * editor can be built for the parameter outside that page.
  *
- * All strings are literals owned by the generated code.
+ * All strings are literals owned by the generated code -- or, for an entry
+ * added from a ParamSpec, copies the registry owns.
  */
 struct AppExport ParamInfo
 {
@@ -196,6 +197,44 @@ struct AppExport ParamInfo
     std::string searchText() const;
 };
 
+/** A description put together at run time, for a setting that no generated
+ * class describes. The modules written in Python describe theirs this way,
+ * through FreeCAD.registerParam() and the definition files freecad.params
+ * loads. Unlike ParamInfo it owns its strings; ParamRegistry::add() keeps a
+ * copy of them for as long as the registry lives.
+ */
+struct AppExport ParamSpec
+{
+    struct Item
+    {
+        std::string text;
+        std::string tooltip;
+        std::string data;  // the stored value, when comboDataIsString
+    };
+
+    std::string nameSpace;
+    std::string className;  // also the translation context
+    std::string path;
+    std::string name;  // empty: the same as entry
+    std::string entry;
+    ParamInfo::Type type = ParamInfo::Bool;
+    std::string defaultValue;  // in any form ParamRegistry::setValue() takes
+
+    std::string title;
+    std::string doc;
+    bool onChange = false;
+
+    std::string proxy;
+    double minimum = 0.0;
+    double maximum = 0.0;
+    double step = 0.0;
+    int decimals = 0;
+    bool transparency = false;
+    bool comboDataIsString = false;
+    bool translateItems = true;
+    std::vector<Item> items;
+};
+
 /** The registry of every generated parameter in the loaded libraries.
  *
  * Values are read and written through the ParameterGrp so that the
@@ -207,6 +246,16 @@ public:
     static ParamRegistry& instance();
 
     void add(std::vector<ParamInfo>&& infos);
+
+    /** Register a setting described at run time.
+     *
+     * Null, and nothing registered, when the path or the entry is empty,
+     * when the default is not a value of the type, or when the path and
+     * entry are described already: the first description stands, a
+     * generated class's included, so that the entries handed out stay as
+     * they were.
+     */
+    const ParamInfo* add(const ParamSpec& spec);
 
     const std::vector<const ParamInfo*>& entries() const
     {
@@ -233,6 +282,12 @@ public:
     /// Parse text in the same form and store it. False when it does not parse.
     bool setValue(const ParamInfo& info, const std::string& value) const;
 
+    /** Bring text that setValue() would take to the form getValue() returns:
+     * "1" to "true" for a Bool, "255" to "0x000000FF" for a Hex. False when
+     * it is not a value of the type.
+     */
+    static bool normalizeValue(ParamInfo::Type type, const std::string& value, std::string& res);
+
     /// Remove the stored entry so the parameter reads its default again.
     void reset(const ParamInfo& info) const;
 
@@ -248,7 +303,10 @@ public:
 private:
     ParamRegistry() = default;
     static std::string key(const char* path, const char* entry);
+    const ParamInfo* insert(ParamInfo&& info);
+    const char* keep(const std::string& text);
 
+    std::deque<std::string> _strings;  // what an entry added from a ParamSpec points into
     std::deque<ParamInfo> _infos;  // stable addresses
     std::vector<const ParamInfo*> _entries;
     std::unordered_map<std::string, const ParamInfo*> _index;

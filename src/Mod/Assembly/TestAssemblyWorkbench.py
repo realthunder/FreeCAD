@@ -26,9 +26,11 @@ import TestApp
 from AssemblyTests.TestCore import TestCore, TestSubNames
 from AssemblyTests.TestCommandInsertLink import TestCommandInsertLink
 from AssemblyTests.TestSimulationExport import TestSimulationExport
+from AssemblyTests.TestSettings import TestSettings
 
 # Use the modules so that code checkers don't complain (flake8)
 True if TestCore else False
 True if TestSubNames else False
 True if TestCommandInsertLink else False
 True if TestSimulationExport else False
+True if TestSettings else False

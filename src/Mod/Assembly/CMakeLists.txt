@@ -19,6 +19,7 @@ endif(BUILD_GUI)
 
 set(Assembly_Scripts
     Init.py
+    AssemblyPyParams.py
     CommandCreateAssembly.py
     CommandCreateBom.py
     CommandInsertLink.py
@@ -58,6 +59,7 @@ SET(AssemblyTests_SRCS
     AssemblyTests/TestCore.py
     AssemblyTests/TestCommandInsertLink.py
     AssemblyTests/TestSimulationExport.py
+    AssemblyTests/TestSettings.py
     AssemblyTests/mocks/__init__.py
     AssemblyTests/mocks/MockGui.py
 )

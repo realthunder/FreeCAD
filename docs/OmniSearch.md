@@ -276,6 +276,46 @@ custom proxy that *can* be described says so: `OpenViewParams.py`'s
 `ParamTargetCombo` registers as a `ComboBox` whose stored value is the item
 data.
 
+### 3.1 The way in from Python
+
+A module written in Python has no generated class, so nothing registered
+what its Python code reads. Two things let it in:
+
+- `FreeCAD.registerParam(path, entry, type, default, title=, doc=, ...)`
+  describes one setting at run time. It fills an `App::ParamSpec` -- a
+  `ParamInfo` that owns its strings -- and `ParamRegistry::add(spec)` keeps
+  a copy; the entry it makes is like any other. The default is a Python
+  value of the type (`True`, `3`, `0xCC333300`, `0.5`, `"text"`), not text.
+  It returns `False`, registering nothing, when the path and entry are
+  described already: the first description stands, a generated class's
+  included, because the entries handed out are held by pointer. It raises
+  on a type name it does not know, a default of the wrong Python type, and
+  a path that names no parameter set -- every list of settings reads a
+  value through that path. `FreeCAD.listParams(query='')` is the read
+  side: the descriptions as dictionaries.
+- `freecad.params` (`src/Ext/freecad/params.py`) loads a DEFINITION FILE in
+  the form the generated classes use -- `NameSpace`, `ClassName`,
+  `ParamPath`, `Params = [ParamBool(...), ...]` -- with the generator's own
+  classes: `Tools/params_utils.py` is installed beside it as
+  `freecad/params_utils.py` and imported with an empty module standing in
+  for `cog`. `register(module)` maps each entry to the keywords of
+  `registerParam`, what `Param.registry_entry()` writes for a C++ class. A
+  definition that meets an entry something else describes is noted in
+  `freecad.params.conflicts`, which `BaseTests.ParamRegistryTestCase` holds
+  empty, along with the rule that every setting has a title and at most 400
+  characters of documentation.
+
+A module imports its definition file from its `Init.py`, so its settings
+are listed whether or not its workbench was used -- unlike a C++ module's,
+which appear when its library loads. Registering describes; it reads and
+stores nothing, and the Python readers keep their own code and their own
+defaults, so a test of the module holds the two together
+(`Mod/Assembly/AssemblyTests/TestSettings.py` reads the sources for it).
+The first module through is Assembly: `Mod/Assembly/AssemblyPyParams.py`,
+the thirteen settings only its commands and dialogues read, beside the
+seven of `App/AssemblyParams.py`. A module that has a table of its settings
+already (Draft) calls `registerParam` per row instead of a second copy.
+
 Regeneration, after editing a `*Params.py` or the generator (cog is not
 wired into CMake; `pip install cogapp` once):
 
@@ -311,7 +351,12 @@ The line endings in this repository are frozen (`.gitattributes`), so check
 
 - `tests/src/App/ParamRegistry.cpp` (in `Tests_run`): the registrars ran,
   defaults format by type, keyword matching, search over path/name/doc, and
-  get/set/reset round trips through the parameter group.
+  get/set/reset round trips through the parameter group; a setting described
+  at run time, and what `add(spec)` refuses.
+- `BaseTests.ParamRegistryTestCase` (`FreeCADCmd -t BaseTests`): the way in
+  from Python -- `registerParam`, `listParams`, a definition file through
+  `freecad.params` -- and what the modules registered at start.
+  `tests/gui/python-settings-door.py` asks the omni search for them.
 - `tests/src/Gui/OmniSearch.cpp` (`OmniSearch_Tests_run`, a Qt test): the
   grammar, `resolveObject` over a document (name, label, property, pseudo
   property, misses, the `#` forms over one and two documents),

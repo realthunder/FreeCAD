@@ -1542,3 +1542,9 @@ fc_add_gui_test(GuiModuleSettings_tests_run
 fc_add_gui_test(GuiEntry24Decisions_tests_run
                 entry24-decisions.py
                 --timeout 180)
+
+# The settings a module's Python code reads are listed: the way into the
+# settings registry from Python, and Assembly as the first module through it.
+fc_add_gui_test(GuiPythonSettingsDoor_tests_run
+                python-settings-door.py
+                --timeout 180)
