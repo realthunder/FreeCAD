@@ -1668,6 +1668,15 @@ each of these on an object late in the batch:
 | a script: `obj.Shape.tessellate` | read and meshed |
 | an object exported to STEP | read, 17 paths |
 
+**The click is fixed, `f07e17dc68`** (the user: "Fix the tree click
+first"): the on-screen test stops at the bounding box for an object whose
+visual is still to be built (`ViewProviderDocumentObject::isVisualPending`).
+`tests/gui/sync-view-does-not-mesh.py`: the question meshed the sphere in
+three runs of three before, and does not in four of four; under the
+wrapper, two reads and a mesher before, nothing after. The box selection
+of elements goes to the same triangles and is left: the user asks for
+elements. What the click was:
+
 The click is FreeCAD's own doing with every setting at its default: the
 tree's sync view has the view follow the selection (`onItemSelectionChanged`,
 `ViewSelectionExtend`, `viewObjects`, `checkElementIntersection`), which
@@ -1684,6 +1693,31 @@ design question** -- one gate in Part that every reader of a
 the pre-mesh meshing a private twin of each shape and handing the
 triangulations over on the GUI thread, which removes the rule instead of
 enforcing it.
+
+**What a mesher writes, and what freezing would cover** (read from the
+OCCT fork's source, 2026-10-08, on the user's question). A mesher writes
+a face's list of triangulations, an edge's list of representations -- it
+appends a polygon and, re-meshing, removes the old one first -- and the
+modified flag. What is hurt is whoever is in the same list: a second
+mesher; a walker of an edge's representations (every query for its curve,
+its curve on a face, its range; a save, a copy) when a node is REMOVED
+under it, which takes a shape that already carried a mesh; a copy of a
+face's triangulation handle while it is replaced. A shape fresh from a
+file has no mesh, and the worker only appends.
+
+The fork's OCCT has the freeze for this and this branch does not use it.
+An `Immutable` TShape (`5d38403287`) refuses every change but its caches,
+and every edit of an Immutable TShape's representations and every walk
+of them by the BREP and binary writers holds `BRep_RepresentationLock`
+(`890083ee61`, made for the transaction log's writer thread, which had
+walked a node a remesh freed). For any other TShape the lock does
+nothing, and what makes a shape property's value Immutable is on the
+`Transaction` branch (`87ef33df5d`, behind a switch), not here. Frozen,
+a claimed shape's save and copy are covered and two writers of one list
+are serialized; `BRep_Tool`'s readers take no lock and are not covered,
+and two meshers still leave each other's edge polygons behind. The
+private twin covers all of it by taking the worker's writes off the
+document's shape; the freeze then guards the landing.
 
 **Ruled 2026-10-08: the private twin** (the user: "Private copy sounds
 good. It even works out of process."), not built. His question with it --
@@ -1719,9 +1753,18 @@ solid held at two places:
   where the original has 10, and 6874 triangles meshed for 6419 kept. The
   BREP round trip keeps them one. The twin wants a copy of its own, one
   new TShape for each of the original's, which is also the pairing.
-- The fork's level builder already meshes such copies on the pool
-  (`MeshLevelBuild.cpp`, `meshedCopy`) and reads arrays off them; the
-  hand-over is the new part.
+- **The hand-over is not new to this tree, and I said it was.** The
+  level-of-detail machinery already meshes a private copy on its pool and
+  lands the copy's triangulations on the real shape on the GUI thread:
+  `meshLevelExactCopy` on a worker, then `transferMeshLevels(copy, shape)`
+  -- faces and edges paired by index, `UpdateFace`, the edges' polygons
+  riding with their triangulation -- from the stand-in path
+  (`buildCoarseStandIn`, a shape of more than `Render/CoarseDeferFaces`
+  faces, 1000) and from the refine landings. I had read `meshedCopy` and
+  its array-reading callers only. What it leaves to do for the pre-mesh's
+  shapes: the copy is `BRepBuilderAPI_Copy`, with the split of instances
+  measured above, and it is MADE on the worker, which reads the document's
+  shape from that thread.
 - Not tried: a face that is a triangulation and no surface (a glTF
   import), a free edge's `Poly_Polygon3D` (the model has none), a face
   holding several triangulations, and what making the twins costs the GUI
