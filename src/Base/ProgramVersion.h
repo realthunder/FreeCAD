@@ -141,10 +141,20 @@ inline ReleaseNumber getReleaseNumber(std::string_view str)
  * are old-convention documents and it converts its own files on the way in.
  * writerAlphaIsOpacity() below is the same question asked of this build, and
  * the two move together the day PACKAGE_VERSION reaches 1.1.
+ *
+ * A release number that is a date is no release after 1.1: this fork's
+ * released images are numbered by their day ("2025.1020R14555"), and store
+ * transparency as every file of the fork does. Taken for a release newer
+ * than 1.1, every colour of such a file came back inverted -- an opaque
+ * object fully transparent. Found opening the 2025-10-15 image's file here.
  */
 inline bool alphaIsOpacity(std::string_view programVersion)
 {
     const ReleaseNumber release = getReleaseNumber(programVersion);
+    constexpr int firstDatedRelease = 2000;
+    if (release.major >= firstDatedRelease) {
+        return false;
+    }
     return release.major > 1 || (release.major == 1 && release.minor >= 1);
 }
 

@@ -61,6 +61,17 @@ TEST(ProgramVersion, alphaIsTransparencyBeforeEleven)
     EXPECT_FALSE(Base::alphaIsOpacity("0.19"));
 }
 
+TEST(ProgramVersion, aReleaseNumberedByItsDayIsThisForksAndOlder)
+{
+    // This fork's released images state the day they were built, and store
+    // transparency. As a number that is far above 1.1, and read as one every
+    // colour of such a file was inverted.
+    EXPECT_FALSE(Base::alphaIsOpacity("2025.1020R14555 (Git shallow)"));
+    EXPECT_FALSE(Base::alphaIsOpacity("2024.0915"));
+    EXPECT_TRUE(Base::alphaIsOpacity("2.0R1"));
+    EXPECT_TRUE(Base::alphaIsOpacity("27.3"));
+}
+
 TEST(ProgramVersion, anUnreadableVersionIsNotTreatedAsNewer)
 {
     // The whole point of not reusing upstream's table: each of these would
