@@ -43,6 +43,8 @@ Evidence that does not belong in the repository is under
 | 34 | FIXED `3d7b4c30fd`, not staged | Dark and Light store TechDraw's preselection colour, the blue of the 3D view's |
 | 38 | FIXED `bb31f8820b`, not staged | the omni search's first bring-up made the icon of every command before showing the box: 1.27 s on the reporter's configuration, 0.22 s now |
 | 39 | FIXED `c7d115e576`, not staged | MSAA has not reached any view since 2026-09-07: the scene depth was built readable at every sample count and bgfx refuses that framebuffer. Write-only under MSAA now; a test asks the view its sample count |
+| 41 | SIZED 2026-10-08, not started; waits for a yes to the cut | the Python-only modules' settings through a door into the registry: about 600 keys, 440 of them Draft and BIM, whose own table already defines most |
+| 42 | SIZED 2026-10-08, not started; waits for a yes to the cut | state keys through the generator and listed: of about 300 keys C++ reads without a definition, about 90 are state, about 110 are settings entry 24 did not reach, about 90 are records under names the user makes |
 
 **The reporter, 2026-10-07 14:20, on what is open** (said to the build
 session; the queue has the reporter's own entries):
@@ -1592,3 +1594,55 @@ of `00d2b684fd` stay, the marker size is 7 everywhere as applied, and the
 highlighted row is entry 43 of the queue. Entry 24 has nothing left with
 the reporter. Pushed: `origin/PartDesignPort` = `b70cc6ebf1`, cycles
 `35a3bd898` first. Not staged.
+
+## 41. The Python-only modules' settings, through a door into the registry -- SIZED, waits for the reporter's yes to a cut
+
+Decided under entry 24 (C1, C4). Not started. Sized 2026-10-08, static,
+with `inv24.py` run again on the tree of `b70cc6ebf1` and split by who
+reads a key (`..\dl\handson\2026-10-08\entry41-42-sizing\`: `inv24.tsv`,
+`split.py`, `refine.py`, `py-undefined.tsv`, `ui-undefined.tsv`).
+
+About 600 keys, where "about 300" was said under entry 24 -- that number
+had missed what Draft and BIM read through Draft's own table and what a
+page stores without a literal read beside it:
+
+- Draft and BIM, about 440: 234 on their preference pages, 155 in the
+  table of `draftutils/params.py` and on no page, about 50 read by BIM
+  with the key written out. Draft's table holds name, type and default for
+  its 155 and builds the page ones from the `.ui` files when it is first
+  asked: it is a definition file already, in another form.
+- Fem's Python side, about 54. CAM's, about 40 (23 of them named in
+  `Path/Preferences.py`). AddonManager, about 20, with a defaults file of
+  its own. Assembly's Python page, 14. Help, 14. OpenSCAD, 11.
+  ReverseEngineering, 11 (a C++ module whose page stores keys no literal
+  read was found for). Tux, Material, Test: about 12.
+
+These are counts of (group, key) pairs from the sources, not of settings
+checked one by one; the readers that name a key through a variable are
+not seen at all.
+
+## 42. State keys through the generator, and listed -- SIZED, waits for the reporter's yes to a cut
+
+Decided under entry 24 (C2), and the reporter, 2026-10-08: "Entry 42, list
+those keys". Not started. Sized with the same run
+(`entry42-candidates.tsv`).
+
+About 300 keys that C++ reads have no definition (589 pairs by the
+inventory, 289 of which are defined and only read through a group it did
+not resolve). Read through once, by eye, they are three kinds, and only
+the first is what C2 named:
+
+- state, about 90: window and panel geometry and sizes, which panel is
+  expanded or shown, the last directory, filter, tab and increment, the
+  recent lists, first-run flags;
+- settings entry 24 did not reach, about 110: the 3D mouse (about 40),
+  the expression sandbox (11), DXF import and export as C++ reads it
+  (16), the web site addresses (8), and small groups in Gui, Part,
+  TechDraw, Material, MeshPart, Inspection, Raytracing;
+- records under names the user makes, about 90: macro commands, the scene
+  server's grants, clients and doors, custom shortcuts and tool bars, the
+  workbench order. A key of these has no fixed place, so a definition of
+  the generator's kind does not fit it.
+
+The split is by reading the list, not by a rule; the first step of the
+entry is to make it key by key.
