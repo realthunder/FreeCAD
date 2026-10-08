@@ -78,7 +78,7 @@ report views, the reporter's own files -- is kept beside the dev tree under
 | 38 | 2026-10-07 | omni search: an obvious freeze the first time it is brought up | FIXED `bb31f8820b`, not staged: the first bring-up loaded and rendered the icon of every command (609) before showing the box, 0.99 s + 0.28 s on the reporter's configuration with `scanner.FCStd` open; 0.15 s + 0.07 s now (`docs/HandsOnLog.md`) |
 | 39 | 2026-10-07 | MSAA has not reached any view since 2026-09-07 (found by the build session on entry 26) | FIXED `c7d115e576`, not staged: with "MSAA 4x" chosen the backend could not create its scene targets and drew without multisampling from then on, on every backend; the depth is write-only under MSAA now. The reporter's case on the fixed tree: 0.75 s in all, both views at 4 samples (`docs/HandsOnLog.md`) |
 | 40 | 2026-10-07 | crash on exit: a TechDraw page in a split view cell is destroyed after its view provider, and writes into it | OPEN (cause read from the stack) |
-| 41 | 2026-10-08 | the Python-only modules' settings in the omni search, through a way into the registry from Python (from entry 24: C1, C4) | FIXED, all four steps (`a75b43f1d5`, `4a99a978f7`, `48037fbd8c`, `de7bd49797`, `ff12279ee6`) and `aa63b07cc8` for L9 and L10; not staged, not pushed: 603 settings listed that were not -- Assembly 13, Draft and BIM 426 (listed once Draft or BIM has been used, as decided), Fem 47, CAM 27, the Addon Manager 41, Help 14, OpenSCAD 15, ReverseEngineering 11, Tux 5, Material 4, Test none. Registration only, but for the help panel's size read (L9) and OpenSCAD's `useMaxFN` (L10). Full suites on `ff12279ee6`: ctest 787 of 787, Python 3411 with the two known thickness failures. Still with the reporter: L1 to L8, L11 (a recommendation), L12, F1, F3, F4, F6 to F8, none of them blocking (`docs/HandsOnLog.md`) |
+| 41 | 2026-10-08 | the Python-only modules' settings in the omni search, through a way into the registry from Python (from entry 24: C1, C4) | FIXED, all four steps (`a75b43f1d5`, `4a99a978f7`, `48037fbd8c`, `de7bd49797`, `ff12279ee6`) and `aa63b07cc8` for L9 and L10; not staged, not pushed: 603 settings listed that were not -- Assembly 13, Draft and BIM 426 (listed once Draft or BIM has been used, as decided), Fem 47, CAM 27, the Addon Manager 41, Help 14, OpenSCAD 15, ReverseEngineering 11, Tux 5, Material 4, Test none. The whole list answered and carried out, last `6a2216d0f0`: readers made to say what their page says (L3, L6, L11), defects fixed (L5, L9, L10, F1, F7, and L2, which went further than the words agreed), Tux's marker and Help's `optionTab` out of the registry; the counts after it: Draft and BIM 428, Help 13, Tux 4, still 603. Full suites on `6a2216d0f0`: ctest 788 of 788, Python 3411 with the two known thickness failures. NOTHING LEFT WITH THE REPORTER (`docs/HandsOnLog.md`) |
 | 42 | 2026-10-08 | state keys (window sizes, recent lists, last directories, first-run flags) through the generator like every other setting (from entry 24: C2) | STEP 1 OF 3 DONE 2026-10-08, nothing generated yet; Q1 to Q5 answered, Q6 not answered: the 300 candidates read key by key -- 94 state keys, 114 settings, 44 records under run-time names (stay out), 23 dead, 14 defined after all. After the answers: 91 state keys and 88 settings to go through the generator, the 3D mouse first, plus `ExportPoints` and `DxfVersionOut` from entry 44; the share token, the workbench order and the recent lists stay out, and 20 settings without one written default stay out and are listed. Q2 is entry 44, fixed (`docs/HandsOnLog.md`) |
 | 43 | 2026-10-08 | omni search: the highlighted row's text is white on a light blue highlight | OPEN; looked at by the build session, not a side effect of the theme defaults, not fixed |
 | 44 | 2026-10-08 | the DXF page's exporter settings do not reach the C++ DXF exporter: `Import.writeDXFObject`/`writeDXFShape` point it at `Mod/Import`, where nothing stores them (found by the build session on entry 42, Q2) | FIXED `813d0250f9`, not staged: the exporter was pointed at `Mod/Import` for its options, where nothing stores them; it takes them from `Mod/Draft`, where the DXF page puts them, as upstream does. An ellipse written with "Treat ellipses and splines as polylines" on was an ELLIPSE before and is an LWPOLYLINE after (24 points at a segment length of 5, 198 at 0.5). `Import_tests_run` 6 of 6; the full suites not rerun after it (`docs/HandsOnLog.md`) |
@@ -2685,7 +2685,62 @@ spreadsheet or any other non-3D view kept in a cell is worth the same look.
 Not said yet: what was open at the moment of closing (which pages, in which
 cells), and whether it has happened before on exit.
 
-## 41. The Python-only modules' settings in the omni search, through a way in from Python -- FIXED, all four steps, not staged; part of the list answered, the rest with the reporter (see `docs/HandsOnLog.md`)
+## 41. The Python-only modules' settings in the omni search, through a way in from Python -- FIXED, all four steps and the whole list, not staged; nothing left with the reporter (see `docs/HandsOnLog.md`)
+
+**2026-10-08, the reporter answered the rest of the list, to the build
+session, and it is carried out** (passed on 19:00; code `6a2216d0f0`, its
+log, entry 41, "The rest of the list", `d094de4c96`, local). The build
+session had put every open point to the reporter again with a suggestion
+each, as asked ("elaborate entry 41 again", under entry 42). The reporter,
+verbatim: "My previous answer of 'drop' is meant to not show them from omni
+search. Agree with your suggestions"
+
+So "drop" means OUT OF THE SETTINGS REGISTRY, not shown by the omni search
+-- for F9, F11 and F12 here, and (the note-taker's reading) the same word in
+entry 42's Q3 to Q5, which the build session had taken that way already.
+F11 had been read as "stays described" and is corrected by this.
+
+The suggestions agreed to, as the build session carried them out:
+- Readers made to say what their page says:
+  - L3 NativeIFC `SingleDoc`: the three reads pass False;
+  - L6 CAM `PostProcessorShowEditor`: read with False, described False now;
+  - L11 Material `Cards/SortByResources`: read with True, described True
+    now;
+  - L1 Assembly `BOMOnlyParts` is LEFT as it is: the code reads False and
+    sets the box from it, so the `.ui` file's checked box never shows.
+- Defects fixed, each of them in upstream too:
+  - L5 BIM's views manager reads its width and height with `GetInt`, each
+    from its own key, and both are described. No change seen on screen: the
+    manager is docked right after it is sized (278 by 265 before and after,
+    with 430 and 380 stored);
+  - F1 `BimProjectManager.py`'s `DefautShapeLineWidth` is
+    `DefaultShapeLineWidth` now, the key the view reads. The three
+    `Mod/Draft` keys it and `BimSetup.py` store are left;
+  - F7 Fem's `MeshPreviewSettings.ui` names its entry `previewMeshFactor`,
+    as the code does.
+- **L2 was not what the list said, and the fix goes further than the words
+  agreed** (the build session told the reporter): BIM's layers manager did
+  not read Draft's `DefaultPrintColor` with another default, it read a
+  `DefaultPrintColor` of the VIEW group, which nothing stores. So a new
+  layer's print colour was black whatever Draft's setting said, and the
+  agreed "255" would have changed nothing. It reads Draft's setting now,
+  with the line Draft's own layers manager has.
+- Out of the registry: F11, Tux's `PersistentToolbars/Deprecated`, and
+  L12's Help `optionTab`, which nothing reads; `optionGithub` stays. L4, L8,
+  F8, F9 and F12 were never in it and stay out.
+- Left as they are: L7 (the Addon Manager's three proxy switches, described
+  as switches), F3 (`ScaleRelative`), F4 (titles and documentation English
+  only), F6 (the Addon Manager's defaults file is installed).
+
+The entry lists 603 settings after this: Assembly 13, Draft and BIM 428, Fem
+47, CAM 27, the Addon Manager 41, Help 13, OpenSCAD 15, ReverseEngineering
+11, Tux 4, Material 4. One thing the log leaves open: counted in a running
+`FreeCADCmd`, the Addon Manager shows 40 under its own name where its file
+has 41 rows; not looked into.
+The full suites on `6a2216d0f0`: ctest 788 of 788 (one more, entry 44's);
+Python 3411 tests with the two known `TestThickness` 5829 failures only.
+Entry 44's fix is in that run. Not staged, not pushed.
+Nothing of the entry is open with the reporter.
 
 **2026-10-08, the reporter answered part of the list, to the build session**
 (passed on 17:16; code `aa63b07cc8`, its log, entry 41, "Answered,
