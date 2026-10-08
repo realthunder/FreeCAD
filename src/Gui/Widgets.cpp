@@ -966,8 +966,10 @@ StatefulLabel::StatefulLabel(QWidget* parent)
     : QLabel(parent)
     , _overridePreference(false)
 {
-    // Always attach to the parameter group that stores the main FreeCAD stylesheet
-    _stylesheetGroup = App::GetApplication().GetParameterGroupByPath("User parameter:BaseApp/Preferences/General");
+    // Always attach to the parameter group that stores the main FreeCAD
+    // stylesheet. That is MainWindow: this waited in General, where the key
+    // never is, so a change of style sheet left the cached styles as they were.
+    _stylesheetGroup = App::GetApplication().GetParameterGroupByPath("User parameter:BaseApp/Preferences/MainWindow");
     _stylesheetGroup->Attach(this);
 }
 

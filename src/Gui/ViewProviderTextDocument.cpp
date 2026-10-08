@@ -59,13 +59,10 @@ ViewProviderTextDocument::ViewProviderTextDocument()
             "Defines whether the content can be edited.");
 
     QFont font;
-    // The editors' font once it is stored; the application's font and
-    // its size until then, as upstream.
-    auto hEditor = App::GetApplication().GetParameterGroupByPath(
-        "User parameter:BaseApp/Preferences/Editor");
-    font.setFamily(
-        QString::fromUtf8(hEditor->GetASCII("Font", font.family().toUtf8().constData()).c_str()));
-    font.setPointSize(static_cast<int>(hEditor->GetInt("FontSize", font.pointSize())));
+    // the editors' font, with the editors' defaults (it was the
+    // application's font here while the setting was not stored)
+    font.setFamily(QString::fromUtf8(EditorParams::getFont().c_str()));
+    font.setPointSize(static_cast<int>(EditorParams::getFontSize()));
 
     ADD_PROPERTY_TYPE(FontSize,(font.pointSize()), "Editor", App::Prop_None, "Font size");
     ADD_PROPERTY_TYPE(FontName,((const char*)font.family().toUtf8()), "Editor", App::Prop_None, "Font name");

@@ -71,7 +71,6 @@ public:
 
 protected:
     QColor getHighlightColor();
-    Qt::PenStyle getHighlightStyle();
     void makeHighlight();
     void makeReference();
     void updateReferencePos();

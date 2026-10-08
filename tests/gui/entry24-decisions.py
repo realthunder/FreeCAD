@@ -10,18 +10,21 @@ decisions", has every item. This test holds the ones a script can see.
 
 Claims, on a profile with nothing stored:
 
-  - the report view is drawn in the system's fixed-pitch font (A2, as
-    upstream; it was Courier), in a stored family once one is stored, and
-    in the system's again when that is removed;
+  - the report view is drawn in Courier (A2: the reporter kept the fork's
+    default over upstream's system font), in a stored family once one is
+    stored, and in Courier again when that is removed;
   - a mesh written as an Asymptote file says size(500) (A9: the height is
     empty to upstream's program; it was 500 here);
   - "/param" lists TechDraw's preselection and selection colour (D3), the
     Sketcher's label font size and constraint symbol size (D6), Assembly's
     joint highlight colour (D14) and Gmsh's thread count (D16);
-  - "/param datum colour" lists ONE DefaultDatumColor, PartDesign's (D12:
-    Part had a second one, which the binders read);
+  - "/param datum colour" lists ONE DefaultDatumColor, Part's (D12:
+    PartDesign had a second one, which only the datums read);
   - with that colour stored, a new shape binder has it, as a new datum
     plane does;
+  - the section line of a new TechDraw view is line 4 of the line standard,
+    and line 2 with the Annotation page's list stored at its second entry
+    (D1, as upstream: the default came from a key no page stores);
   - choosing Diameter in the Sketcher's radius or diameter button stores
     the choice (D5: path and key were one string, by a missing comma).
 
@@ -88,8 +91,13 @@ def param_rows(query):
     settle(0.8)
     rows = []
     for w in QtWidgets.QApplication.topLevelWidgets():
-        if isinstance(w, QtWidgets.QAbstractItemView) and w.isVisible() and w.model() is not None:
-            rows += [str(w.model().index(i, 0).data()) for i in range(w.model().rowCount())]
+        if not isinstance(w, QtWidgets.QAbstractItemView) or w.model() is None:
+            continue
+        found = [str(w.model().index(i, 0).data()) for i in range(w.model().rowCount())]
+        # The list is not shown while another application is in front, which a
+        # test cannot prevent on a desktop in use; its rows are there all the same.
+        if w.isVisible() or any(r.startswith("Preferences/") for r in found):
+            rows += found
     QtWidgets.QApplication.sendEvent(edit, QtGui.QKeyEvent(QtCore.QEvent.KeyPress, Qt.Key_Escape, Qt.NoModifier))
     settle(0.5)
     return rows
@@ -115,24 +123,22 @@ LISTED = (
 def run():
     doc = None
     editor = FreeCAD.ParamGet(PREFS + "Editor")
-    partdesign = FreeCAD.ParamGet(PREFS + "Mod/PartDesign")
+    part = FreeCAD.ParamGet(PREFS + "Mod/Part")
+    decorations = FreeCAD.ParamGet(PREFS + "Mod/TechDraw/Decorations")
     sketcher = FreeCAD.ParamGet(PREFS + "Mod/Sketcher")
     sweeper = QtCore.QTimer()
     sweeper.timeout.connect(sweep)
     sweeper.start(700)
     try:
-        system = QtGui.QFontDatabase.systemFont(QtGui.QFontDatabase.FixedFont).family()
         unset = report_font()
-        check("with no font stored the report view is drawn in the system's fixed-pitch font",
-              unset == system, (unset, system))
-        other = "Arial" if system != "Arial" else "Verdana"
-        editor.SetString("Font", other)
+        check("with no font stored the report view is drawn in Courier", unset == "Courier", unset)
+        editor.SetString("Font", "Arial")
         settle(0.4)
         stored = report_font()
         editor.RemString("Font")
         settle(0.4)
-        check("in a stored family once one is stored, and in the system's again when it is removed",
-              stored == other and report_font() == system, (stored, report_font()))
+        check("in a stored family once one is stored, and in Courier again when it is removed",
+              stored == "Arial" and report_font() == "Courier", (stored, report_font()))
 
         import Mesh
 
@@ -156,20 +162,36 @@ def run():
 
         settle(0.5)
         rows = [r for r in param_rows("datum colour") if r.endswith("/DefaultDatumColor")]
-        check("the omni search lists one datum colour, PartDesign's",
-              len(rows) == 1 and rows[0].endswith("Mod/PartDesign/DefaultDatumColor"), rows)
+        check("the omni search lists one datum colour, Part's",
+              len(rows) == 1 and rows[0].endswith("Mod/Part/DefaultDatumColor"), rows)
 
         doc = FreeCAD.newDocument("Entry24Decisions")
         settle(0.5)
-        partdesign.SetUnsigned("DefaultDatumColor", 0x00FF00FF)
+        part.SetUnsigned("DefaultDatumColor", 0x00FF00FF)
         settle(0.2)
         binder = doc.addObject("PartDesign::ShapeBinder", "BinderGreen")
         plane = doc.addObject("PartDesign::Plane", "DatumGreen")
         settle(0.3)
         colours = [tuple(round(c, 3) for c in o.ViewObject.ShapeColor[:3]) for o in (binder, plane)]
-        partdesign.RemUnsigned("DefaultDatumColor")
+        part.RemUnsigned("DefaultDatumColor")
         check("with a datum colour stored, a new shape binder has it, as a new datum plane does",
               colours == [(0.0, 1.0, 0.0), (0.0, 1.0, 0.0)], colours)
+
+        import TechDrawGui  # noqa: F401
+
+        def section_line(name):
+            view = doc.addObject("TechDraw::DrawViewPart", name)
+            settle(0.3)
+            names = view.ViewObject.getEnumerationsOfProperty("SectionLineStyle")
+            return names.index(view.ViewObject.SectionLineStyle)
+
+        unset_line = section_line("ViewUnset")
+        decorations.SetInt("LineStyleSection", 1)
+        settle(0.2)
+        stored_line = section_line("ViewStored")
+        decorations.RemInt("LineStyleSection")
+        check("the section line of a new view is line 4 of the standard, and line 2 with the page's list "
+              "stored at its second entry", (unset_line, stored_line) == (4, 2), (unset_line, stored_line))
 
         import SketcherGui  # noqa: F401
 
@@ -190,7 +212,8 @@ def run():
     finally:
         sweeper.stop()
         editor.RemString("Font")
-        partdesign.RemUnsigned("DefaultDatumColor")
+        part.RemUnsigned("DefaultDatumColor")
+        decorations.RemInt("LineStyleSection")
         sketcher.RemInt("CurRadDiaCons")
         if doc is not None:
             FreeCAD.closeDocument(doc.Name)

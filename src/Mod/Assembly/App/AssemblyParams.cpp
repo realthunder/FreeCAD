@@ -62,7 +62,7 @@ public:
         funcs["LeaveEditWithEscape"] = &AssemblyParamsP::updateLeaveEditWithEscape;
         SwitchToWB = this->handle->GetBool("SwitchToWB", true);
         funcs["SwitchToWB"] = &AssemblyParamsP::updateSwitchToWB;
-        JointHighlightColor = this->handle->GetUnsigned("JointHighlightColor", 0xCC1A1AFF);
+        JointHighlightColor = this->handle->GetUnsigned("JointHighlightColor", 0x00000000);
         funcs["JointHighlightColor"] = &AssemblyParamsP::updateJointHighlightColor;
         LogSolverDebug = this->handle->GetBool("LogSolverDebug", false);
         funcs["LogSolverDebug"] = &AssemblyParamsP::updateLogSolverDebug;
@@ -102,7 +102,7 @@ public:
     }
     // Auto generated code (Tools/params_utils.py:314)
     static void updateJointHighlightColor(AssemblyParamsP *self) {
-        self->JointHighlightColor = self->handle->GetUnsigned("JointHighlightColor", 0xCC1A1AFF);
+        self->JointHighlightColor = self->handle->GetUnsigned("JointHighlightColor", 0x00000000);
     }
     // Auto generated code (Tools/params_utils.py:314)
     static void updateLogSolverDebug(AssemblyParamsP *self) {
@@ -141,11 +141,12 @@ static const App::ParamRegistry::Registrar _AssemblyParamsRegistrar({
         .setTitle("Switch to Assembly workbench")
         .setDoc("Switches to the Assembly workbench when an assembly is double-\n"
 "clicked for editing. Takes effect at the next double-click."),
-    App::ParamInfo("Assembly", "AssemblyParams", "User parameter:BaseApp/Preferences/Mod/Assembly", "JointHighlightColor", "JointHighlightColor", App::ParamInfo::Hex, 0xCC1A1AFF)
+    App::ParamInfo("Assembly", "AssemblyParams", "User parameter:BaseApp/Preferences/Mod/Assembly", "JointHighlightColor", "JointHighlightColor", App::ParamInfo::Hex, 0x00000000)
         .setTitle("Joint highlight colour")
         .setDoc("Colour the elements a joint connects are shown in while the\n"
-"joint is selected or edited: a red, unless set. Takes effect at\n"
-"the next highlight.")
+"joint is selected or edited. 0, the value while it is not set,\n"
+"is as upstream: the preselection colour of the 3D view once that\n"
+"is stored, a red until then. Takes effect at the next highlight.")
         .setProxy("Color")
         .setTransparency(false),
     App::ParamInfo("Assembly", "AssemblyParams", "User parameter:BaseApp/Preferences/Mod/Assembly", "LogSolverDebug", "LogSolverDebug", App::ParamInfo::Bool, false)
@@ -286,8 +287,9 @@ void AssemblyParams::removeSwitchToWB() {
 const char *AssemblyParams::docJointHighlightColor() {
     return QT_TRANSLATE_NOOP("AssemblyParams",
 "Colour the elements a joint connects are shown in while the\n"
-"joint is selected or edited: a red, unless set. Takes effect at\n"
-"the next highlight.");
+"joint is selected or edited. 0, the value while it is not set,\n"
+"is as upstream: the preselection colour of the 3D view once that\n"
+"is stored, a red until then. Takes effect at the next highlight.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -297,7 +299,7 @@ const unsigned long & AssemblyParams::getJointHighlightColor() {
 
 // Auto generated code (Tools/params_utils.py:413)
 const unsigned long & AssemblyParams::defaultJointHighlightColor() {
-    const static unsigned long def = 0xCC1A1AFF;
+    const static unsigned long def = 0x00000000;
     return def;
 }
 

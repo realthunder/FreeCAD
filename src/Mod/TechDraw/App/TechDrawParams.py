@@ -45,8 +45,8 @@ ClassDoc = 'Convenient class to obtain the settings of TechDraw'
 # while the key is not stored -- and the page was changed to show it:
 # NewFaceFinder, VertexScale, TemplateDotSize.
 #
-# Not listed: DefaultPageScale and CoarseView, which are read and never
-# written (the pages store DefaultScale and HLR/UsePolygon); ReportProgress,
+# Not listed: CoarseView, which is read and never written (the page stores
+# HLR/UsePolygon); ReportProgress,
 # which nothing reads; SectionLiveUpdate and SectionUpdateDelay, which the
 # section task keeps in a group of another name.
 Params = [
@@ -513,10 +513,12 @@ Params = [
         doc = "Colour of the rubber band lines drawn while a tool tracks the\n"
               "mouse on a page."),
 
-    # --- Line widths, styles and standards. Decorations/LineStyleSection and
-    # LineStyleHighlight are not listed: the Annotation page stores them and
-    # nothing that draws reads them. What draws reads SectionLine and
-    # HighlightStyle, which no page stores. General/EdgeCapStyle was read with
+    # --- Line widths, styles and standards. Decorations/LineStyleHighlight
+    # is not listed: the Annotation page stores it and nothing that draws
+    # reads it, here or upstream. What draws reads HighlightStyle, which no
+    # page stores. LineStyleSection is the default of a new view's section
+    # line, as upstream; the key SectionLine, a pen style no page stored,
+    # is gone. General/EdgeCapStyle was read with
     # 0x20, which is none of its three values and was taken as round, as 0 is.
     ParamInt('LineGroup', 3, subpath='Decorations',
         title = "Line group",
@@ -541,13 +543,11 @@ Params = [
         title = "Break type",
         doc = "How breaks are drawn in new broken views: 0 not at all, 1 zig-zag,\n"
               "2 simple. Applies to views created afterwards."),
-    ParamInt('SectionLine', 2, subpath='Decorations',
+    ParamInt('LineStyleSection', 3, subpath='Decorations',
         title = "Section line style",
-        doc = "Line style of section lines: for a new view the number of a line\n"
-              "of the active line standard, where a section line or a highlight\n"
-              "is drawn a pen style -- 1 solid, 2 dashed, 3 dotted, 4 dash-dot.\n"
-              "The Section Line Style list of the Annotation page stores another\n"
-              "key, which nothing that draws reads."),
+        doc = "Line style of the section line of new views, as an index into the\n"
+              "lines of the active line standard, counted from 0. Applies to\n"
+              "views created afterwards."),
     ParamInt('HighlightStyle', 2, subpath='Decorations',
         title = "Detail highlight style",
         doc = "Line style of the detail highlight in new views, as the number of\n"

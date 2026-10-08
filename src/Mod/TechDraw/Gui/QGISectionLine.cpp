@@ -87,7 +87,6 @@ QGISectionLine::QGISectionLine() :
     addToGroup(m_symbol2);
 
     setWidth(Rez::guiX(0.75));          //a default?
-    setStyle(getSectionStyle());
     setColor(getSectionColor());
 }
 
@@ -552,18 +551,6 @@ void QGISectionLine::setSectionColor(const QColor &c)
 QColor QGISectionLine::getSectionColor()
 {
     return PreferencesGui::sectionLineQColor();
-}
-
-//SectionLineStyle
-void QGISectionLine::setSectionStyle(int style)
-{
-    Qt::PenStyle sectStyle = static_cast<Qt::PenStyle> (style);
-    setStyle(sectStyle);
-}
-
-Qt::PenStyle QGISectionLine::getSectionStyle()
-{
-    return PreferencesGui::sectionLineStyle();
 }
 
 //ASME("traditional") vs ISO("reference arrow method") arrows

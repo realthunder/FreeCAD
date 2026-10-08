@@ -57,6 +57,7 @@
 #include <boost/format.hpp>
 
 #include <App/Application.h>
+#include <App/MaterialAppearance.h>
 #include <App/Document.h>
 #include <App/DocumentObject.h>
 #include <App/DocumentObjectPy.h>
@@ -88,7 +89,10 @@ using namespace Import;
 
 ImportOCAFOptions::ImportOCAFOptions()
 {
-    defaultFaceColor.setPackedValue(0xCCCCCCFF);
+    // The colour of Material's default appearance, which is what a new
+    // shape is given and what the 3D view takes for an unset
+    // DefaultShapeColor. A grey of its own (204,204,204) was written here.
+    defaultFaceColor = App::MaterialAppearance(App::MaterialAppearance::DEFAULT).diffuseColor;
     defaultFaceColor.a = 1.0f;  // opaque
 
     defaultEdgeColor.setPackedValue(421075455UL);  // 0x191919FF

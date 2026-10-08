@@ -263,8 +263,7 @@ void DlgSettingsEditor::saveSettings()
     }
 
     hGrp->SetInt( "FontSize", ui->fontSize->value() );
-    // The family is stored once one is chosen. Until then the editors use
-    // the system's fixed-pitch font, whichever that is where they run.
+    // The family is stored once one is chosen, not at every OK.
     const QString family = ui->fontFamily->currentText();
     if (!hGrp->GetASCII("Font", "").empty()
         || family != editorFont(EditorParams::defaultFont(), 10).family()) {
@@ -322,7 +321,9 @@ void DlgSettingsEditor::loadSettings()
     ui->fontSize->setValue(static_cast<int>(EditorParams::getFontSize()));
 
     // The font shown for a setting that is not stored is the one the
-    // editors use for it: the system's fixed-pitch font (editorFont()).
+    // editors use for it, EditorParams' default. It used to be looked for
+    // under a generic family name no list of fonts has, so the box showed
+    // its first entry and OK stored that font.
     QByteArray defaultMonospaceFont
         = editorFont(EditorParams::defaultFont(), 10).family().toUtf8();
 

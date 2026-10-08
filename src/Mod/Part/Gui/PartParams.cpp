@@ -163,11 +163,9 @@ public:
         handle = App::GetApplication().GetParameterGroupByPath("User parameter:BaseApp/Preferences/Mod/Part");
         handle->Attach(this);
 
-        subHandles.resize(2);
-        subHandles[0] = App::GetApplication().GetParameterGroupByPath("User parameter:BaseApp/Preferences/Mod/PartDesign");
+        subHandles.resize(1);
+        subHandles[0] = handle->GetGroup("CheckGeometry");
         subHandles[0]->Attach(this);
-        subHandles[1] = handle->GetGroup("CheckGeometry");
-        subHandles[1]->Attach(this);
         NormalsFromUVNodes = this->handle->GetBool("NormalsFromUVNodes", true);
         funcs["NormalsFromUVNodes"] = &PartParamsP::updateNormalsFromUVNodes;
         TwoSideRendering = this->handle->GetBool("TwoSideRendering", true);
@@ -210,9 +208,9 @@ public:
         funcs["EditRecomputeWait"] = &PartParamsP::updateEditRecomputeWait;
         AdjustCameraForNewFeature = this->handle->GetBool("AdjustCameraForNewFeature", true);
         funcs["AdjustCameraForNewFeature"] = &PartParamsP::updateAdjustCameraForNewFeature;
-        DefaultDatumColor = this->subHandles[0]->GetUnsigned("DefaultDatumColor", 0xFFD70066);
+        DefaultDatumColor = this->handle->GetUnsigned("DefaultDatumColor", 0xFFD70066);
         funcs["DefaultDatumColor"] = &PartParamsP::updateDefaultDatumColor;
-        DefaultDatumLineColor = this->subHandles[0]->GetUnsigned("DefaultDatumLineColor", 0xFA9600FF);
+        DefaultDatumLineColor = this->handle->GetUnsigned("DefaultDatumLineColor", 0xFA9600FF);
         funcs["DefaultDatumLineColor"] = &PartParamsP::updateDefaultDatumLineColor;
         RespectSystemDPI = this->handle->GetBool("RespectSystemDPI", false);
         funcs["RespectSystemDPI"] = &PartParamsP::updateRespectSystemDPI;
@@ -238,35 +236,35 @@ public:
         funcs["DimensionsFontStyleBold"] = &PartParamsP::updateDimensionsFontStyleBold;
         DimensionsFontStyleItalic = this->handle->GetBool("DimensionsFontStyleItalic", false);
         funcs["DimensionsFontStyleItalic"] = &PartParamsP::updateDimensionsFontStyleItalic;
-        CheckGeometryAutoRun = this->subHandles[1]->GetBool("AutoRun", false);
+        CheckGeometryAutoRun = this->subHandles[0]->GetBool("AutoRun", false);
         funcs["AutoRun"] = &PartParamsP::updateCheckGeometryAutoRun;
-        CheckGeometryRunBOPCheck = this->subHandles[1]->GetBool("RunBOPCheck", false);
+        CheckGeometryRunBOPCheck = this->subHandles[0]->GetBool("RunBOPCheck", false);
         funcs["RunBOPCheck"] = &PartParamsP::updateCheckGeometryRunBOPCheck;
-        CheckGeometryRunSingleThreaded = this->subHandles[1]->GetBool("RunSingleThreaded", false);
+        CheckGeometryRunSingleThreaded = this->subHandles[0]->GetBool("RunSingleThreaded", false);
         funcs["RunSingleThreaded"] = &PartParamsP::updateCheckGeometryRunSingleThreaded;
-        CheckGeometryLogErrors = this->subHandles[1]->GetBool("LogErrors", true);
+        CheckGeometryLogErrors = this->subHandles[0]->GetBool("LogErrors", true);
         funcs["LogErrors"] = &PartParamsP::updateCheckGeometryLogErrors;
-        CheckGeometryExpandShapeContent = this->subHandles[1]->GetBool("ExpandShapeContent", false);
+        CheckGeometryExpandShapeContent = this->subHandles[0]->GetBool("ExpandShapeContent", false);
         funcs["ExpandShapeContent"] = &PartParamsP::updateCheckGeometryExpandShapeContent;
-        CheckGeometryAdvancedShapeContent = this->subHandles[1]->GetBool("AdvancedShapeContent", true);
+        CheckGeometryAdvancedShapeContent = this->subHandles[0]->GetBool("AdvancedShapeContent", true);
         funcs["AdvancedShapeContent"] = &PartParamsP::updateCheckGeometryAdvancedShapeContent;
-        CheckGeometryArgumentTypeMode = this->subHandles[1]->GetBool("ArgumentTypeMode", true);
+        CheckGeometryArgumentTypeMode = this->subHandles[0]->GetBool("ArgumentTypeMode", true);
         funcs["ArgumentTypeMode"] = &PartParamsP::updateCheckGeometryArgumentTypeMode;
-        CheckGeometrySelfInterMode = this->subHandles[1]->GetBool("SelfInterMode", true);
+        CheckGeometrySelfInterMode = this->subHandles[0]->GetBool("SelfInterMode", true);
         funcs["SelfInterMode"] = &PartParamsP::updateCheckGeometrySelfInterMode;
-        CheckGeometrySmallEdgeMode = this->subHandles[1]->GetBool("SmallEdgeMode", true);
+        CheckGeometrySmallEdgeMode = this->subHandles[0]->GetBool("SmallEdgeMode", true);
         funcs["SmallEdgeMode"] = &PartParamsP::updateCheckGeometrySmallEdgeMode;
-        CheckGeometryRebuildFaceMode = this->subHandles[1]->GetBool("RebuildFaceMode", true);
+        CheckGeometryRebuildFaceMode = this->subHandles[0]->GetBool("RebuildFaceMode", true);
         funcs["RebuildFaceMode"] = &PartParamsP::updateCheckGeometryRebuildFaceMode;
-        CheckGeometryContinuityMode = this->subHandles[1]->GetBool("ContinuityMode", true);
+        CheckGeometryContinuityMode = this->subHandles[0]->GetBool("ContinuityMode", true);
         funcs["ContinuityMode"] = &PartParamsP::updateCheckGeometryContinuityMode;
-        CheckGeometryTangentMode = this->subHandles[1]->GetBool("TangentMode", true);
+        CheckGeometryTangentMode = this->subHandles[0]->GetBool("TangentMode", true);
         funcs["TangentMode"] = &PartParamsP::updateCheckGeometryTangentMode;
-        CheckGeometryMergeVertexMode = this->subHandles[1]->GetBool("MergeVertexMode", true);
+        CheckGeometryMergeVertexMode = this->subHandles[0]->GetBool("MergeVertexMode", true);
         funcs["MergeVertexMode"] = &PartParamsP::updateCheckGeometryMergeVertexMode;
-        CheckGeometryMergeEdgeMode = this->subHandles[1]->GetBool("MergeEdgeMode", true);
+        CheckGeometryMergeEdgeMode = this->subHandles[0]->GetBool("MergeEdgeMode", true);
         funcs["MergeEdgeMode"] = &PartParamsP::updateCheckGeometryMergeEdgeMode;
-        CheckGeometryCurveOnSurfaceMode = this->subHandles[1]->GetBool("CurveOnSurfaceMode", true);
+        CheckGeometryCurveOnSurfaceMode = this->subHandles[0]->GetBool("CurveOnSurfaceMode", true);
         funcs["CurveOnSurfaceMode"] = &PartParamsP::updateCheckGeometryCurveOnSurfaceMode;
         ParametricRefine = this->handle->GetBool("ParametricRefine", true);
         funcs["ParametricRefine"] = &PartParamsP::updateParametricRefine;
@@ -394,11 +392,11 @@ public:
     }
     // Auto generated code (Tools/params_utils.py:314)
     static void updateDefaultDatumColor(PartParamsP *self) {
-        self->DefaultDatumColor = self->subHandles[0]->GetUnsigned("DefaultDatumColor", 0xFFD70066);
+        self->DefaultDatumColor = self->handle->GetUnsigned("DefaultDatumColor", 0xFFD70066);
     }
     // Auto generated code (Tools/params_utils.py:314)
     static void updateDefaultDatumLineColor(PartParamsP *self) {
-        self->DefaultDatumLineColor = self->subHandles[0]->GetUnsigned("DefaultDatumLineColor", 0xFA9600FF);
+        self->DefaultDatumLineColor = self->handle->GetUnsigned("DefaultDatumLineColor", 0xFA9600FF);
     }
     // Auto generated code (Tools/params_utils.py:322)
     static void updateRespectSystemDPI(PartParamsP *self) {
@@ -486,63 +484,63 @@ public:
     }
     // Auto generated code (Tools/params_utils.py:314)
     static void updateCheckGeometryAutoRun(PartParamsP *self) {
-        self->CheckGeometryAutoRun = self->subHandles[1]->GetBool("AutoRun", false);
+        self->CheckGeometryAutoRun = self->subHandles[0]->GetBool("AutoRun", false);
     }
     // Auto generated code (Tools/params_utils.py:314)
     static void updateCheckGeometryRunBOPCheck(PartParamsP *self) {
-        self->CheckGeometryRunBOPCheck = self->subHandles[1]->GetBool("RunBOPCheck", false);
+        self->CheckGeometryRunBOPCheck = self->subHandles[0]->GetBool("RunBOPCheck", false);
     }
     // Auto generated code (Tools/params_utils.py:314)
     static void updateCheckGeometryRunSingleThreaded(PartParamsP *self) {
-        self->CheckGeometryRunSingleThreaded = self->subHandles[1]->GetBool("RunSingleThreaded", false);
+        self->CheckGeometryRunSingleThreaded = self->subHandles[0]->GetBool("RunSingleThreaded", false);
     }
     // Auto generated code (Tools/params_utils.py:314)
     static void updateCheckGeometryLogErrors(PartParamsP *self) {
-        self->CheckGeometryLogErrors = self->subHandles[1]->GetBool("LogErrors", true);
+        self->CheckGeometryLogErrors = self->subHandles[0]->GetBool("LogErrors", true);
     }
     // Auto generated code (Tools/params_utils.py:314)
     static void updateCheckGeometryExpandShapeContent(PartParamsP *self) {
-        self->CheckGeometryExpandShapeContent = self->subHandles[1]->GetBool("ExpandShapeContent", false);
+        self->CheckGeometryExpandShapeContent = self->subHandles[0]->GetBool("ExpandShapeContent", false);
     }
     // Auto generated code (Tools/params_utils.py:314)
     static void updateCheckGeometryAdvancedShapeContent(PartParamsP *self) {
-        self->CheckGeometryAdvancedShapeContent = self->subHandles[1]->GetBool("AdvancedShapeContent", true);
+        self->CheckGeometryAdvancedShapeContent = self->subHandles[0]->GetBool("AdvancedShapeContent", true);
     }
     // Auto generated code (Tools/params_utils.py:314)
     static void updateCheckGeometryArgumentTypeMode(PartParamsP *self) {
-        self->CheckGeometryArgumentTypeMode = self->subHandles[1]->GetBool("ArgumentTypeMode", true);
+        self->CheckGeometryArgumentTypeMode = self->subHandles[0]->GetBool("ArgumentTypeMode", true);
     }
     // Auto generated code (Tools/params_utils.py:314)
     static void updateCheckGeometrySelfInterMode(PartParamsP *self) {
-        self->CheckGeometrySelfInterMode = self->subHandles[1]->GetBool("SelfInterMode", true);
+        self->CheckGeometrySelfInterMode = self->subHandles[0]->GetBool("SelfInterMode", true);
     }
     // Auto generated code (Tools/params_utils.py:314)
     static void updateCheckGeometrySmallEdgeMode(PartParamsP *self) {
-        self->CheckGeometrySmallEdgeMode = self->subHandles[1]->GetBool("SmallEdgeMode", true);
+        self->CheckGeometrySmallEdgeMode = self->subHandles[0]->GetBool("SmallEdgeMode", true);
     }
     // Auto generated code (Tools/params_utils.py:314)
     static void updateCheckGeometryRebuildFaceMode(PartParamsP *self) {
-        self->CheckGeometryRebuildFaceMode = self->subHandles[1]->GetBool("RebuildFaceMode", true);
+        self->CheckGeometryRebuildFaceMode = self->subHandles[0]->GetBool("RebuildFaceMode", true);
     }
     // Auto generated code (Tools/params_utils.py:314)
     static void updateCheckGeometryContinuityMode(PartParamsP *self) {
-        self->CheckGeometryContinuityMode = self->subHandles[1]->GetBool("ContinuityMode", true);
+        self->CheckGeometryContinuityMode = self->subHandles[0]->GetBool("ContinuityMode", true);
     }
     // Auto generated code (Tools/params_utils.py:314)
     static void updateCheckGeometryTangentMode(PartParamsP *self) {
-        self->CheckGeometryTangentMode = self->subHandles[1]->GetBool("TangentMode", true);
+        self->CheckGeometryTangentMode = self->subHandles[0]->GetBool("TangentMode", true);
     }
     // Auto generated code (Tools/params_utils.py:314)
     static void updateCheckGeometryMergeVertexMode(PartParamsP *self) {
-        self->CheckGeometryMergeVertexMode = self->subHandles[1]->GetBool("MergeVertexMode", true);
+        self->CheckGeometryMergeVertexMode = self->subHandles[0]->GetBool("MergeVertexMode", true);
     }
     // Auto generated code (Tools/params_utils.py:314)
     static void updateCheckGeometryMergeEdgeMode(PartParamsP *self) {
-        self->CheckGeometryMergeEdgeMode = self->subHandles[1]->GetBool("MergeEdgeMode", true);
+        self->CheckGeometryMergeEdgeMode = self->subHandles[0]->GetBool("MergeEdgeMode", true);
     }
     // Auto generated code (Tools/params_utils.py:314)
     static void updateCheckGeometryCurveOnSurfaceMode(PartParamsP *self) {
-        self->CheckGeometryCurveOnSurfaceMode = self->subHandles[1]->GetBool("CurveOnSurfaceMode", true);
+        self->CheckGeometryCurveOnSurfaceMode = self->subHandles[0]->GetBool("CurveOnSurfaceMode", true);
     }
     // Auto generated code (Tools/params_utils.py:314)
     static void updateParametricRefine(PartParamsP *self) {
@@ -674,7 +672,7 @@ static const App::ParamRegistry::Registrar _PartParamsRegistrar({
         .setDoc("Move the camera to bring a newly created feature into view. Used\n"
 "by Part offset and thickness, by PartDesign features made from a\n"
 "selected profile, and by new bodies."),
-    App::ParamInfo("PartGui", "PartParams", "User parameter:BaseApp/Preferences/Mod/PartDesign", "DefaultDatumColor", "DefaultDatumColor", App::ParamInfo::Hex, 0xFFD70066)
+    App::ParamInfo("PartGui", "PartParams", "User parameter:BaseApp/Preferences/Mod/Part", "DefaultDatumColor", "DefaultDatumColor", App::ParamInfo::Hex, 0xFFD70066)
         .setTitle("Default datum colour")
         .setDoc("Colour and transparency of new datum planes, lines and points, of\n"
 "shape binders, of sub-shape binders shown in binder style, and of\n"
@@ -682,7 +680,7 @@ static const App::ParamRegistry::Registrar _PartParamsRegistrar({
 "set.")
         .setProxy("Color")
         .setTransparency(true),
-    App::ParamInfo("PartGui", "PartParams", "User parameter:BaseApp/Preferences/Mod/PartDesign", "DefaultDatumLineColor", "DefaultDatumLineColor", App::ParamInfo::Hex, 0xFA9600FF)
+    App::ParamInfo("PartGui", "PartParams", "User parameter:BaseApp/Preferences/Mod/Part", "DefaultDatumLineColor", "DefaultDatumLineColor", App::ParamInfo::Hex, 0xFA9600FF)
         .setTitle("Default Datum Line Color")
         .setDoc("Line and point color of a shape binder, darker than DefaultDatumColor\n"
 "so that its outline shows against the model (upstream 5dbb4d7c7e)")
@@ -1465,13 +1463,13 @@ const unsigned long & PartParams::defaultDefaultDatumColor() {
 
 // Auto generated code (Tools/params_utils.py:422)
 void PartParams::setDefaultDatumColor(const unsigned long &v) {
-    instance()->subHandles[0]->SetUnsigned("DefaultDatumColor",v);
+    instance()->handle->SetUnsigned("DefaultDatumColor",v);
     instance()->DefaultDatumColor = v;
 }
 
 // Auto generated code (Tools/params_utils.py:431)
 void PartParams::removeDefaultDatumColor() {
-    instance()->subHandles[0]->RemoveUnsigned("DefaultDatumColor");
+    instance()->handle->RemoveUnsigned("DefaultDatumColor");
 }
 
 // Auto generated code (Tools/params_utils.py:397)
@@ -1494,13 +1492,13 @@ const unsigned long & PartParams::defaultDefaultDatumLineColor() {
 
 // Auto generated code (Tools/params_utils.py:422)
 void PartParams::setDefaultDatumLineColor(const unsigned long &v) {
-    instance()->subHandles[0]->SetUnsigned("DefaultDatumLineColor",v);
+    instance()->handle->SetUnsigned("DefaultDatumLineColor",v);
     instance()->DefaultDatumLineColor = v;
 }
 
 // Auto generated code (Tools/params_utils.py:431)
 void PartParams::removeDefaultDatumLineColor() {
-    instance()->subHandles[0]->RemoveUnsigned("DefaultDatumLineColor");
+    instance()->handle->RemoveUnsigned("DefaultDatumLineColor");
 }
 
 // Auto generated code (Tools/params_utils.py:397)
@@ -1875,13 +1873,13 @@ const bool & PartParams::defaultCheckGeometryAutoRun() {
 
 // Auto generated code (Tools/params_utils.py:422)
 void PartParams::setCheckGeometryAutoRun(const bool &v) {
-    instance()->subHandles[1]->SetBool("AutoRun",v);
+    instance()->subHandles[0]->SetBool("AutoRun",v);
     instance()->CheckGeometryAutoRun = v;
 }
 
 // Auto generated code (Tools/params_utils.py:431)
 void PartParams::removeCheckGeometryAutoRun() {
-    instance()->subHandles[1]->RemoveBool("AutoRun");
+    instance()->subHandles[0]->RemoveBool("AutoRun");
 }
 
 // Auto generated code (Tools/params_utils.py:397)
@@ -1904,13 +1902,13 @@ const bool & PartParams::defaultCheckGeometryRunBOPCheck() {
 
 // Auto generated code (Tools/params_utils.py:422)
 void PartParams::setCheckGeometryRunBOPCheck(const bool &v) {
-    instance()->subHandles[1]->SetBool("RunBOPCheck",v);
+    instance()->subHandles[0]->SetBool("RunBOPCheck",v);
     instance()->CheckGeometryRunBOPCheck = v;
 }
 
 // Auto generated code (Tools/params_utils.py:431)
 void PartParams::removeCheckGeometryRunBOPCheck() {
-    instance()->subHandles[1]->RemoveBool("RunBOPCheck");
+    instance()->subHandles[0]->RemoveBool("RunBOPCheck");
 }
 
 // Auto generated code (Tools/params_utils.py:397)
@@ -1933,13 +1931,13 @@ const bool & PartParams::defaultCheckGeometryRunSingleThreaded() {
 
 // Auto generated code (Tools/params_utils.py:422)
 void PartParams::setCheckGeometryRunSingleThreaded(const bool &v) {
-    instance()->subHandles[1]->SetBool("RunSingleThreaded",v);
+    instance()->subHandles[0]->SetBool("RunSingleThreaded",v);
     instance()->CheckGeometryRunSingleThreaded = v;
 }
 
 // Auto generated code (Tools/params_utils.py:431)
 void PartParams::removeCheckGeometryRunSingleThreaded() {
-    instance()->subHandles[1]->RemoveBool("RunSingleThreaded");
+    instance()->subHandles[0]->RemoveBool("RunSingleThreaded");
 }
 
 // Auto generated code (Tools/params_utils.py:397)
@@ -1961,13 +1959,13 @@ const bool & PartParams::defaultCheckGeometryLogErrors() {
 
 // Auto generated code (Tools/params_utils.py:422)
 void PartParams::setCheckGeometryLogErrors(const bool &v) {
-    instance()->subHandles[1]->SetBool("LogErrors",v);
+    instance()->subHandles[0]->SetBool("LogErrors",v);
     instance()->CheckGeometryLogErrors = v;
 }
 
 // Auto generated code (Tools/params_utils.py:431)
 void PartParams::removeCheckGeometryLogErrors() {
-    instance()->subHandles[1]->RemoveBool("LogErrors");
+    instance()->subHandles[0]->RemoveBool("LogErrors");
 }
 
 // Auto generated code (Tools/params_utils.py:397)
@@ -1990,13 +1988,13 @@ const bool & PartParams::defaultCheckGeometryExpandShapeContent() {
 
 // Auto generated code (Tools/params_utils.py:422)
 void PartParams::setCheckGeometryExpandShapeContent(const bool &v) {
-    instance()->subHandles[1]->SetBool("ExpandShapeContent",v);
+    instance()->subHandles[0]->SetBool("ExpandShapeContent",v);
     instance()->CheckGeometryExpandShapeContent = v;
 }
 
 // Auto generated code (Tools/params_utils.py:431)
 void PartParams::removeCheckGeometryExpandShapeContent() {
-    instance()->subHandles[1]->RemoveBool("ExpandShapeContent");
+    instance()->subHandles[0]->RemoveBool("ExpandShapeContent");
 }
 
 // Auto generated code (Tools/params_utils.py:397)
@@ -2018,13 +2016,13 @@ const bool & PartParams::defaultCheckGeometryAdvancedShapeContent() {
 
 // Auto generated code (Tools/params_utils.py:422)
 void PartParams::setCheckGeometryAdvancedShapeContent(const bool &v) {
-    instance()->subHandles[1]->SetBool("AdvancedShapeContent",v);
+    instance()->subHandles[0]->SetBool("AdvancedShapeContent",v);
     instance()->CheckGeometryAdvancedShapeContent = v;
 }
 
 // Auto generated code (Tools/params_utils.py:431)
 void PartParams::removeCheckGeometryAdvancedShapeContent() {
-    instance()->subHandles[1]->RemoveBool("AdvancedShapeContent");
+    instance()->subHandles[0]->RemoveBool("AdvancedShapeContent");
 }
 
 // Auto generated code (Tools/params_utils.py:397)
@@ -2047,13 +2045,13 @@ const bool & PartParams::defaultCheckGeometryArgumentTypeMode() {
 
 // Auto generated code (Tools/params_utils.py:422)
 void PartParams::setCheckGeometryArgumentTypeMode(const bool &v) {
-    instance()->subHandles[1]->SetBool("ArgumentTypeMode",v);
+    instance()->subHandles[0]->SetBool("ArgumentTypeMode",v);
     instance()->CheckGeometryArgumentTypeMode = v;
 }
 
 // Auto generated code (Tools/params_utils.py:431)
 void PartParams::removeCheckGeometryArgumentTypeMode() {
-    instance()->subHandles[1]->RemoveBool("ArgumentTypeMode");
+    instance()->subHandles[0]->RemoveBool("ArgumentTypeMode");
 }
 
 // Auto generated code (Tools/params_utils.py:397)
@@ -2075,13 +2073,13 @@ const bool & PartParams::defaultCheckGeometrySelfInterMode() {
 
 // Auto generated code (Tools/params_utils.py:422)
 void PartParams::setCheckGeometrySelfInterMode(const bool &v) {
-    instance()->subHandles[1]->SetBool("SelfInterMode",v);
+    instance()->subHandles[0]->SetBool("SelfInterMode",v);
     instance()->CheckGeometrySelfInterMode = v;
 }
 
 // Auto generated code (Tools/params_utils.py:431)
 void PartParams::removeCheckGeometrySelfInterMode() {
-    instance()->subHandles[1]->RemoveBool("SelfInterMode");
+    instance()->subHandles[0]->RemoveBool("SelfInterMode");
 }
 
 // Auto generated code (Tools/params_utils.py:397)
@@ -2103,13 +2101,13 @@ const bool & PartParams::defaultCheckGeometrySmallEdgeMode() {
 
 // Auto generated code (Tools/params_utils.py:422)
 void PartParams::setCheckGeometrySmallEdgeMode(const bool &v) {
-    instance()->subHandles[1]->SetBool("SmallEdgeMode",v);
+    instance()->subHandles[0]->SetBool("SmallEdgeMode",v);
     instance()->CheckGeometrySmallEdgeMode = v;
 }
 
 // Auto generated code (Tools/params_utils.py:431)
 void PartParams::removeCheckGeometrySmallEdgeMode() {
-    instance()->subHandles[1]->RemoveBool("SmallEdgeMode");
+    instance()->subHandles[0]->RemoveBool("SmallEdgeMode");
 }
 
 // Auto generated code (Tools/params_utils.py:397)
@@ -2131,13 +2129,13 @@ const bool & PartParams::defaultCheckGeometryRebuildFaceMode() {
 
 // Auto generated code (Tools/params_utils.py:422)
 void PartParams::setCheckGeometryRebuildFaceMode(const bool &v) {
-    instance()->subHandles[1]->SetBool("RebuildFaceMode",v);
+    instance()->subHandles[0]->SetBool("RebuildFaceMode",v);
     instance()->CheckGeometryRebuildFaceMode = v;
 }
 
 // Auto generated code (Tools/params_utils.py:431)
 void PartParams::removeCheckGeometryRebuildFaceMode() {
-    instance()->subHandles[1]->RemoveBool("RebuildFaceMode");
+    instance()->subHandles[0]->RemoveBool("RebuildFaceMode");
 }
 
 // Auto generated code (Tools/params_utils.py:397)
@@ -2159,13 +2157,13 @@ const bool & PartParams::defaultCheckGeometryContinuityMode() {
 
 // Auto generated code (Tools/params_utils.py:422)
 void PartParams::setCheckGeometryContinuityMode(const bool &v) {
-    instance()->subHandles[1]->SetBool("ContinuityMode",v);
+    instance()->subHandles[0]->SetBool("ContinuityMode",v);
     instance()->CheckGeometryContinuityMode = v;
 }
 
 // Auto generated code (Tools/params_utils.py:431)
 void PartParams::removeCheckGeometryContinuityMode() {
-    instance()->subHandles[1]->RemoveBool("ContinuityMode");
+    instance()->subHandles[0]->RemoveBool("ContinuityMode");
 }
 
 // Auto generated code (Tools/params_utils.py:397)
@@ -2187,13 +2185,13 @@ const bool & PartParams::defaultCheckGeometryTangentMode() {
 
 // Auto generated code (Tools/params_utils.py:422)
 void PartParams::setCheckGeometryTangentMode(const bool &v) {
-    instance()->subHandles[1]->SetBool("TangentMode",v);
+    instance()->subHandles[0]->SetBool("TangentMode",v);
     instance()->CheckGeometryTangentMode = v;
 }
 
 // Auto generated code (Tools/params_utils.py:431)
 void PartParams::removeCheckGeometryTangentMode() {
-    instance()->subHandles[1]->RemoveBool("TangentMode");
+    instance()->subHandles[0]->RemoveBool("TangentMode");
 }
 
 // Auto generated code (Tools/params_utils.py:397)
@@ -2215,13 +2213,13 @@ const bool & PartParams::defaultCheckGeometryMergeVertexMode() {
 
 // Auto generated code (Tools/params_utils.py:422)
 void PartParams::setCheckGeometryMergeVertexMode(const bool &v) {
-    instance()->subHandles[1]->SetBool("MergeVertexMode",v);
+    instance()->subHandles[0]->SetBool("MergeVertexMode",v);
     instance()->CheckGeometryMergeVertexMode = v;
 }
 
 // Auto generated code (Tools/params_utils.py:431)
 void PartParams::removeCheckGeometryMergeVertexMode() {
-    instance()->subHandles[1]->RemoveBool("MergeVertexMode");
+    instance()->subHandles[0]->RemoveBool("MergeVertexMode");
 }
 
 // Auto generated code (Tools/params_utils.py:397)
@@ -2243,13 +2241,13 @@ const bool & PartParams::defaultCheckGeometryMergeEdgeMode() {
 
 // Auto generated code (Tools/params_utils.py:422)
 void PartParams::setCheckGeometryMergeEdgeMode(const bool &v) {
-    instance()->subHandles[1]->SetBool("MergeEdgeMode",v);
+    instance()->subHandles[0]->SetBool("MergeEdgeMode",v);
     instance()->CheckGeometryMergeEdgeMode = v;
 }
 
 // Auto generated code (Tools/params_utils.py:431)
 void PartParams::removeCheckGeometryMergeEdgeMode() {
-    instance()->subHandles[1]->RemoveBool("MergeEdgeMode");
+    instance()->subHandles[0]->RemoveBool("MergeEdgeMode");
 }
 
 // Auto generated code (Tools/params_utils.py:397)
@@ -2272,13 +2270,13 @@ const bool & PartParams::defaultCheckGeometryCurveOnSurfaceMode() {
 
 // Auto generated code (Tools/params_utils.py:422)
 void PartParams::setCheckGeometryCurveOnSurfaceMode(const bool &v) {
-    instance()->subHandles[1]->SetBool("CurveOnSurfaceMode",v);
+    instance()->subHandles[0]->SetBool("CurveOnSurfaceMode",v);
     instance()->CheckGeometryCurveOnSurfaceMode = v;
 }
 
 // Auto generated code (Tools/params_utils.py:431)
 void PartParams::removeCheckGeometryCurveOnSurfaceMode() {
-    instance()->subHandles[1]->RemoveBool("CurveOnSurfaceMode");
+    instance()->subHandles[0]->RemoveBool("CurveOnSurfaceMode");
 }
 
 // Auto generated code (Tools/params_utils.py:397)

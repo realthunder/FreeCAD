@@ -93,7 +93,7 @@ ViewProviderDatum::ViewProviderDatum()
     DisplayMode.setStatus(App::Property::Hidden, true);
 
     // set default color for datums (golden yellow with 60% transparency)
-    // The parameter is stored in 'PartDesign' for historical reason
+    // One setting for datums and binders, Part's (PartGuiParams.py)
     ParameterGrp::handle hGrp = App::GetApplication().GetParameterGroupByPath (
             "User parameter:BaseApp/Preferences/Mod/PartDesign");
     unsigned long shcol = PartGui::PartParams::getDefaultDatumColor();

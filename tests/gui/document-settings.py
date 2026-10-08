@@ -79,8 +79,13 @@ def param_rows(query):
     settle(0.8)
     rows = []
     for w in QtWidgets.QApplication.topLevelWidgets():
-        if isinstance(w, QtWidgets.QAbstractItemView) and w.isVisible() and w.model() is not None:
-            rows += [str(w.model().index(i, 0).data()) for i in range(w.model().rowCount())]
+        if not isinstance(w, QtWidgets.QAbstractItemView) or w.model() is None:
+            continue
+        found = [str(w.model().index(i, 0).data()) for i in range(w.model().rowCount())]
+        # The list is not shown while another application is in front, which a
+        # test cannot prevent on a desktop in use; its rows are there all the same.
+        if w.isVisible() or any(r.startswith("Preferences/") for r in found):
+            rows += found
     QtWidgets.QApplication.sendEvent(edit, QtGui.QKeyEvent(QtCore.QEvent.KeyPress, Qt.Key_Escape, Qt.NoModifier))
     settle(0.5)
     return rows

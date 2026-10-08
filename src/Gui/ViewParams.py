@@ -201,7 +201,7 @@ Params = [
         doc='Pre-selection highlight color', no_label=True),
     ParamHex('SelectionColor', 0x1cad1cff, proxy=ParamColor(transparency=False),
         doc='Selection highlight color', no_label=True),
-    ParamInt('MarkerSize', 9,
+    ParamInt('MarkerSize', 7,
         doc = "Size in pixels of the point markers drawn in the 3D view, such as\n"
               "sketch vertices and the end points of a measurement."),
     ParamHex('DefaultLinkColor', 0x66FFFFFF,

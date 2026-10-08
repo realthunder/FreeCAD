@@ -96,7 +96,7 @@ public:
         handle = App::GetApplication().GetParameterGroupByPath("User parameter:BaseApp/Preferences/Editor");
         handle->Attach(this);
 
-        Font = this->handle->GetASCII("Font", "");
+        Font = this->handle->GetASCII("Font", "Courier");
         funcs["Font"] = &EditorParamsP::updateFont;
         FontSize = this->handle->GetInt("FontSize", 10);
         funcs["FontSize"] = &EditorParamsP::updateFontSize;
@@ -157,7 +157,7 @@ public:
 
     // Auto generated code (Tools/params_utils.py:314)
     static void updateFont(EditorParamsP *self) {
-        self->Font = self->handle->GetASCII("Font", "");
+        self->Font = self->handle->GetASCII("Font", "Courier");
     }
     // Auto generated code (Tools/params_utils.py:314)
     static void updateFontSize(EditorParamsP *self) {
@@ -251,11 +251,11 @@ EditorParamsP *instance() {
 
 // Auto generated code (Tools/params_utils.py:352)
 static const App::ParamRegistry::Registrar _EditorParamsRegistrar({
-    App::ParamInfo("Gui", "EditorParams", "User parameter:BaseApp/Preferences/Editor", "Font", "Font", App::ParamInfo::String, "")
+    App::ParamInfo("Gui", "EditorParams", "User parameter:BaseApp/Preferences/Editor", "Font", "Font", App::ParamInfo::String, "Courier")
         .setTitle("Font family")
         .setDoc("Font family of the macro and Python editors, the Python console\n"
-"and the report view. Empty, the value while it is not set, means\n"
-"the system's fixed-pitch font. Applied at once."),
+"and the report view: Courier unless set. An empty value means the\n"
+"system's fixed-pitch font. Applied at once."),
     App::ParamInfo("Gui", "EditorParams", "User parameter:BaseApp/Preferences/Editor", "FontSize", "FontSize", App::ParamInfo::Int, 10)
         .setTitle("Font size")
         .setDoc("Font size in points of the macro and Python editors, the Python\n"
@@ -379,8 +379,8 @@ void EditorParams::signalAll() {
 const char *EditorParams::docFont() {
     return QT_TRANSLATE_NOOP("EditorParams",
 "Font family of the macro and Python editors, the Python console\n"
-"and the report view. Empty, the value while it is not set, means\n"
-"the system's fixed-pitch font. Applied at once.");
+"and the report view: Courier unless set. An empty value means the\n"
+"system's fixed-pitch font. Applied at once.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -390,7 +390,7 @@ const std::string & EditorParams::getFont() {
 
 // Auto generated code (Tools/params_utils.py:413)
 const std::string & EditorParams::defaultFont() {
-    const static std::string def = "";
+    const static std::string def = "Courier";
     return def;
 }
 

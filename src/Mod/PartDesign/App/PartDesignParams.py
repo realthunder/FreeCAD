@@ -65,8 +65,9 @@ Params = [
         title = 'Show the task panel in PartDesign',
         doc = "Bring the task view to the front when the PartDesign workbench is\n"
               "activated."),
-    # DefaultDatumColor of this group is defined by Part (PartGuiParams.py):
-    # the binders of Part take the same colour.
+    # The colour of new datums is Part's DefaultDatumColor, in Part's group
+    # (PartGuiParams.py): the binders take the same one. There was a second
+    # one here.
     ParamInt('CoordinateSystemFontSize', 10,
         title = 'Local coordinate system font size',
         doc = "Font size of the axis labels of a new local coordinate system."),

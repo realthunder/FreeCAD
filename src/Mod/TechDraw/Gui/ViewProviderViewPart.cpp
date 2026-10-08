@@ -135,7 +135,10 @@ ViewProviderViewPart::ViewProviderViewPart()
 
     //properties that affect Section Line
     ADD_PROPERTY_TYPE(ShowSectionLine ,(true)    ,sgroup, App::Prop_None, "Show/hide section line if applicable");
-    ADD_PROPERTY_TYPE(SectionLineStyle, (PreferencesGui::sectionLineStyle()), sgroup, App::Prop_None,
+    // A line of the line standard, as upstream: the Annotation page's list.
+    // It was the pen style of the key "SectionLine", which no page stores,
+    // taken for a line number.
+    ADD_PROPERTY_TYPE(SectionLineStyle, (Preferences::SectionLineStyle()), sgroup, App::Prop_None,
                         "Set section line style if applicable");
     ADD_PROPERTY_TYPE(SectionLineColor, (prefSectionColor()), sgroup, App::Prop_None,
                         "Set section line color if applicable");

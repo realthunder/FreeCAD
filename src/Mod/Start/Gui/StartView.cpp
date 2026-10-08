@@ -729,13 +729,11 @@ void StartView::fileCardSelected(const QModelIndex& index)
     const std::string path = Base::Tools::pythonLiteral(file);
     const QString extension = QFileInfo(file).suffix().toLower();
 
-    // Which module imports a given extension is a user preference, written by
-    // the import dialog as DefaultImport<ext>. Passing it on is what makes that
-    // choice stick; leaving it empty takes whichever module registered first.
-    auto hGrp = App::GetApplication().GetParameterGroupByPath(
-        "User parameter:BaseApp/Preferences/Mod/Start");
-    const std::string module = Base::Tools::pythonLiteral(QString::fromStdString(
-        hGrp->GetASCII(("DefaultImport" + extension.toStdString()).c_str(), "")));
+    // No module is named: whichever registered first for the extension takes
+    // the file, or the chooser asks (wantsImportChooser). A key per extension,
+    // DefaultImport<ext>, was read here as the old web start page read it;
+    // nothing ever wrote it, and upstream's Start has none.
+    const std::string module = Base::Tools::pythonLiteral(QString());
 
     std::string command;
     if (isImage(extension)) {

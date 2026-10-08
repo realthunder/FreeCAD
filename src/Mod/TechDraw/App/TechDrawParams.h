@@ -1483,18 +1483,16 @@ public:
 
     // Auto generated code (Tools/params_utils.py:139)
     //@{
-    /// Accessor for parameter SectionLine
+    /// Accessor for parameter LineStyleSection
     ///
-    /// Line style of section lines: for a new view the number of a line
-    /// of the active line standard, where a section line or a highlight
-    /// is drawn a pen style -- 1 solid, 2 dashed, 3 dotted, 4 dash-dot.
-    /// The Section Line Style list of the Annotation page stores another
-    /// key, which nothing that draws reads.
-    static const long & getSectionLine();
-    static const long & defaultSectionLine();
-    static void removeSectionLine();
-    static void setSectionLine(const long &v);
-    static const char *docSectionLine();
+    /// Line style of the section line of new views, as an index into the
+    /// lines of the active line standard, counted from 0. Applies to
+    /// views created afterwards.
+    static const long & getLineStyleSection();
+    static const long & defaultLineStyleSection();
+    static void removeLineStyleSection();
+    static void setLineStyleSection(const long &v);
+    static const char *docLineStyleSection();
     //@}
 
     // Auto generated code (Tools/params_utils.py:139)

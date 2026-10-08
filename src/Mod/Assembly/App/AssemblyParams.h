@@ -128,8 +128,9 @@ public:
     /// Accessor for parameter JointHighlightColor
     ///
     /// Colour the elements a joint connects are shown in while the
-    /// joint is selected or edited: a red, unless set. Takes effect at
-    /// the next highlight.
+    /// joint is selected or edited. 0, the value while it is not set,
+    /// is as upstream: the preselection colour of the 3D view once that
+    /// is stored, a red until then. Takes effect at the next highlight.
     static const unsigned long & getJointHighlightColor();
     static const unsigned long & defaultJointHighlightColor();
     static void removeJointHighlightColor();

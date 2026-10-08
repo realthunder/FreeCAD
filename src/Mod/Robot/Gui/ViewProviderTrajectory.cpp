@@ -98,7 +98,7 @@ void ViewProviderTrajectory::attach(App::DocumentObject* pcObj)
         "CROSS",
         App::GetApplication()
             .GetParameterGroupByPath("User parameter:BaseApp/Preferences/View")
-            ->GetInt("MarkerSize", 5));  // upstream's, not the 3D view's 9
+            ->GetInt("MarkerSize", Gui::ViewParams::defaultMarkerSize()));
     linesep->addChild(markcol);
     linesep->addChild(marker);
 

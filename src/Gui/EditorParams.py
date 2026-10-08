@@ -52,11 +52,11 @@ def Color(name, default, title, doc, key=''):
                     title=title, doc=doc)
 
 Params = [
-    ParamString('Font', '',
+    ParamString('Font', 'Courier',
         title = 'Font family',
         doc = "Font family of the macro and Python editors, the Python console\n"
-              "and the report view. Empty, the value while it is not set, means\n"
-              "the system's fixed-pitch font. Applied at once."),
+              "and the report view: Courier unless set. An empty value means the\n"
+              "system's fixed-pitch font. Applied at once."),
     ParamInt('FontSize', 10,
         title = 'Font size',
         doc = "Font size in points of the macro and Python editors, the Python\n"

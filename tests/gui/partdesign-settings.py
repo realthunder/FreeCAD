@@ -70,8 +70,13 @@ def param_rows(query):
     settle(0.8)
     rows = []
     for w in QtWidgets.QApplication.topLevelWidgets():
-        if isinstance(w, QtWidgets.QAbstractItemView) and w.isVisible() and w.model() is not None:
-            rows += [str(w.model().index(i, 0).data()) for i in range(w.model().rowCount())]
+        if not isinstance(w, QtWidgets.QAbstractItemView) or w.model() is None:
+            continue
+        found = [str(w.model().index(i, 0).data()) for i in range(w.model().rowCount())]
+        # The list is not shown while another application is in front, which a
+        # test cannot prevent on a desktop in use; its rows are there all the same.
+        if w.isVisible() or any(r.startswith("Preferences/") for r in found):
+            rows += found
     QtWidgets.QApplication.sendEvent(edit, QtGui.QKeyEvent(QtCore.QEvent.KeyPress, Qt.Key_Escape, Qt.NoModifier))
     settle(0.5)
     return rows
@@ -79,6 +84,7 @@ def param_rows(query):
 
 def run():
     group = FreeCAD.ParamGet(PREFS + "Mod/PartDesign")
+    part = FreeCAD.ParamGet(PREFS + "Mod/Part")  # the datum colour is Part's (entry 24, decision D12)
     doc = None
     try:
         import PartDesign  # noqa: F401  the module registers its settings when it is loaded
@@ -89,7 +95,7 @@ def run():
         check("the omni search lists PartDesign's refine switch",
               any(r.endswith("Mod/PartDesign/RefineModel") for r in rows), rows[:6])
         rows = param_rows("datum colour")
-        check("and the colour of new datums", any(r.endswith("Mod/PartDesign/DefaultDatumColor") for r in rows),
+        check("and the colour of new datums, which is Part's", any(r.endswith("Mod/Part/DefaultDatumColor") for r in rows),
               rows[:6])
 
         doc = FreeCAD.newDocument("Entry24PartDesign")
@@ -103,12 +109,12 @@ def run():
         check("a Pad made with the refine switch on has Refine on, one made without the key has it off",
               on is True and off is False, (on, off))
 
-        group.SetUnsigned("DefaultDatumColor", 0x00FF0000)
+        part.SetUnsigned("DefaultDatumColor", 0x00FF0000)
         settle(0.2)
         plane = doc.addObject("PartDesign::Plane", "DatumGreen")
         settle(0.3)
         colour = tuple(round(c, 3) for c in plane.ViewObject.ShapeColor[:3])
-        group.RemUnsigned("DefaultDatumColor")
+        part.RemUnsigned("DefaultDatumColor")
         check("a datum plane made with a datum colour stored has that colour", colour == (0.0, 1.0, 0.0), colour)
 
         group.SetInt("defaultBaseTypeHole", 2)
@@ -123,7 +129,7 @@ def run():
         note("FAIL the test ran | " + traceback.format_exc().replace("\n", " | "))
     finally:
         group.RemBool("RefineModel")
-        group.RemUnsigned("DefaultDatumColor")
+        part.RemUnsigned("DefaultDatumColor")
         group.RemInt("defaultBaseTypeHole")
         if doc is not None:
             FreeCAD.closeDocument(doc.Name)

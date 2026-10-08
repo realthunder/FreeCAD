@@ -1600,9 +1600,15 @@ void ViewProviderAssembly::highlightJointElements(App::DocumentObject* joint)
 {
     clearJointElementHighlight();
 
-    // A setting of Assembly's own. It used to be the 3D view's
-    // preselection colour when that was stored, and this red when not.
+    // Assembly's own colour once one is set. 0, which is what the setting is
+    // while it is not, is upstream's rule: the 3D view's preselection colour
+    // when that is stored, and this red when it is not.
     uint32_t packedColor = static_cast<uint32_t>(Assembly::AssemblyParams::getJointHighlightColor());
+    if (packedColor == 0) {
+        SbColor defaultHighlightColor(0.8f, 0.1f, 0.1f);
+        ParameterGrp::handle hGrp = Gui::WindowParameter::getDefaultParameter()->GetGroup("View");
+        packedColor = hGrp->GetUnsigned("HighlightColor", defaultHighlightColor.getPackedValue());
+    }
     App::Color highlightColor(packedColor);
 
     std::set<std::string> processedElements;

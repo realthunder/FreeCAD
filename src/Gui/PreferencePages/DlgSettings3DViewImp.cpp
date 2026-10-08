@@ -116,7 +116,10 @@ void DlgSettings3DViewImp::loadSettings()
     ui->boxMarkerSize->addItem(tr("20px"), QVariant(20));
     ui->boxMarkerSize->addItem(tr("25px"), QVariant(25));
     ui->boxMarkerSize->addItem(tr("30px"), QVariant(30));
-    ui->boxMarkerSize->setCurrentIndex(2); // default value 9px
+    // the setting's default: one size for every marker (it was 9 here and
+    // 4, 5 or 7 where a module drew its own)
+    ui->boxMarkerSize->setCurrentIndex(
+        ui->boxMarkerSize->findData(QVariant(static_cast<int>(ViewParams::defaultMarkerSize()))));
     ui->boxMarkerSize->onRestore();
 
 }

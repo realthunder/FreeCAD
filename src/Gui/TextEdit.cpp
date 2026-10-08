@@ -450,13 +450,9 @@ void TextEditor::OnChange(Base::Subject<const char*> &rCaller,const char* sReaso
     Q_UNUSED(rCaller);
     ParameterGrp::handle hPrefGrp = getWindowParameter();
     if (strcmp(sReason, "FontSize") == 0 || strcmp(sReason, "Font") == 0) {
-        // The size is upstream's: 15 on Linux in an editor, EditorParams'
-        // 10 elsewhere and to everything else that shows this font.
-#ifdef FC_OS_LINUX
-        int fontSize = hPrefGrp->GetInt("FontSize", 15);
-#else
+        // The defaults are EditorParams' (the size was 15 on Linux here
+        // and 10 to everything else that shows this font).
         int fontSize = hPrefGrp->GetInt("FontSize", EditorParams::defaultFontSize());
-#endif
         QFont font = editorFont(
             hPrefGrp->GetASCII("Font", EditorParams::defaultFont().c_str()), fontSize);
         setFont(font);

@@ -149,7 +149,7 @@ public:
     long LineStyleHidden;
     long LineStyleBreak;
     long BreakType;
-    long SectionLine;
+    long LineStyleSection;
     long HighlightStyle;
     long CenterLine;
     long CenterLineStyle;
@@ -420,8 +420,8 @@ public:
         funcs["LineStyleBreak"] = &TechDrawParamsP::updateLineStyleBreak;
         BreakType = this->subHandles[1]->GetInt("BreakType", 2);
         funcs["BreakType"] = &TechDrawParamsP::updateBreakType;
-        SectionLine = this->subHandles[1]->GetInt("SectionLine", 2);
-        funcs["SectionLine"] = &TechDrawParamsP::updateSectionLine;
+        LineStyleSection = this->subHandles[1]->GetInt("LineStyleSection", 3);
+        funcs["LineStyleSection"] = &TechDrawParamsP::updateLineStyleSection;
         HighlightStyle = this->subHandles[1]->GetInt("HighlightStyle", 2);
         funcs["HighlightStyle"] = &TechDrawParamsP::updateHighlightStyle;
         CenterLine = this->subHandles[1]->GetInt("CenterLine", 2);
@@ -913,8 +913,8 @@ public:
         self->BreakType = self->subHandles[1]->GetInt("BreakType", 2);
     }
     // Auto generated code (Tools/params_utils.py:314)
-    static void updateSectionLine(TechDrawParamsP *self) {
-        self->SectionLine = self->subHandles[1]->GetInt("SectionLine", 2);
+    static void updateLineStyleSection(TechDrawParamsP *self) {
+        self->LineStyleSection = self->subHandles[1]->GetInt("LineStyleSection", 3);
     }
     // Auto generated code (Tools/params_utils.py:314)
     static void updateHighlightStyle(TechDrawParamsP *self) {
@@ -1510,13 +1510,11 @@ static const App::ParamRegistry::Registrar _TechDrawParamsRegistrar({
         .setTitle("Break type")
         .setDoc("How breaks are drawn in new broken views: 0 not at all, 1 zig-zag,\n"
 "2 simple. Applies to views created afterwards."),
-    App::ParamInfo("TechDraw", "TechDrawParams", "User parameter:BaseApp/Preferences/Mod/TechDraw/Decorations", "SectionLine", "SectionLine", App::ParamInfo::Int, 2)
+    App::ParamInfo("TechDraw", "TechDrawParams", "User parameter:BaseApp/Preferences/Mod/TechDraw/Decorations", "LineStyleSection", "LineStyleSection", App::ParamInfo::Int, 3)
         .setTitle("Section line style")
-        .setDoc("Line style of section lines: for a new view the number of a line\n"
-"of the active line standard, where a section line or a highlight\n"
-"is drawn a pen style -- 1 solid, 2 dashed, 3 dotted, 4 dash-dot.\n"
-"The Section Line Style list of the Annotation page stores another\n"
-"key, which nothing that draws reads."),
+        .setDoc("Line style of the section line of new views, as an index into the\n"
+"lines of the active line standard, counted from 0. Applies to\n"
+"views created afterwards."),
     App::ParamInfo("TechDraw", "TechDrawParams", "User parameter:BaseApp/Preferences/Mod/TechDraw/Decorations", "HighlightStyle", "HighlightStyle", App::ParamInfo::Int, 2)
         .setTitle("Detail highlight style")
         .setDoc("Line style of the detail highlight in new views, as the number of\n"
@@ -4752,35 +4750,33 @@ void TechDrawParams::removeBreakType() {
 }
 
 // Auto generated code (Tools/params_utils.py:397)
-const char *TechDrawParams::docSectionLine() {
+const char *TechDrawParams::docLineStyleSection() {
     return QT_TRANSLATE_NOOP("TechDrawParams",
-"Line style of section lines: for a new view the number of a line\n"
-"of the active line standard, where a section line or a highlight\n"
-"is drawn a pen style -- 1 solid, 2 dashed, 3 dotted, 4 dash-dot.\n"
-"The Section Line Style list of the Annotation page stores another\n"
-"key, which nothing that draws reads.");
+"Line style of the section line of new views, as an index into the\n"
+"lines of the active line standard, counted from 0. Applies to\n"
+"views created afterwards.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
-const long & TechDrawParams::getSectionLine() {
-    return instance()->SectionLine;
+const long & TechDrawParams::getLineStyleSection() {
+    return instance()->LineStyleSection;
 }
 
 // Auto generated code (Tools/params_utils.py:413)
-const long & TechDrawParams::defaultSectionLine() {
-    const static long def = 2;
+const long & TechDrawParams::defaultLineStyleSection() {
+    const static long def = 3;
     return def;
 }
 
 // Auto generated code (Tools/params_utils.py:422)
-void TechDrawParams::setSectionLine(const long &v) {
-    instance()->subHandles[1]->SetInt("SectionLine",v);
-    instance()->SectionLine = v;
+void TechDrawParams::setLineStyleSection(const long &v) {
+    instance()->subHandles[1]->SetInt("LineStyleSection",v);
+    instance()->LineStyleSection = v;
 }
 
 // Auto generated code (Tools/params_utils.py:431)
-void TechDrawParams::removeSectionLine() {
-    instance()->subHandles[1]->RemoveInt("SectionLine");
+void TechDrawParams::removeLineStyleSection() {
+    instance()->subHandles[1]->RemoveInt("LineStyleSection");
 }
 
 // Auto generated code (Tools/params_utils.py:397)

@@ -70,7 +70,7 @@ public:
         funcs["closeStart"] = &StartParamsP::updatecloseStart;
         FileThumbnailIconsSize = this->handle->GetInt("FileThumbnailIconsSize", 128);
         funcs["FileThumbnailIconsSize"] = &StartParamsP::updateFileThumbnailIconsSize;
-        FileCardSpacing = this->handle->GetInt("FileCardSpacing", 20);
+        FileCardSpacing = this->handle->GetInt("FileCardSpacing", 16);
         funcs["FileCardSpacing"] = &StartParamsP::updateFileCardSpacing;
         NewFileIconSize = this->handle->GetInt("NewFileIconSize", 48);
         funcs["NewFileIconSize"] = &StartParamsP::updateNewFileIconSize;
@@ -126,7 +126,7 @@ public:
     }
     // Auto generated code (Tools/params_utils.py:314)
     static void updateFileCardSpacing(StartParamsP *self) {
-        self->FileCardSpacing = self->handle->GetInt("FileCardSpacing", 20);
+        self->FileCardSpacing = self->handle->GetInt("FileCardSpacing", 16);
     }
     // Auto generated code (Tools/params_utils.py:314)
     static void updateNewFileIconSize(StartParamsP *self) {
@@ -197,7 +197,7 @@ static const App::ParamRegistry::Registrar _StartParamsRegistrar({
         .setTitle("Thumbnail size")
         .setDoc("Size in pixels of the file thumbnails on the Start page. Takes\n"
 "effect at the next repaint of the page."),
-    App::ParamInfo("Start", "StartParams", "User parameter:BaseApp/Preferences/Mod/Start", "FileCardSpacing", "FileCardSpacing", App::ParamInfo::Int, 20)
+    App::ParamInfo("Start", "StartParams", "User parameter:BaseApp/Preferences/Mod/Start", "FileCardSpacing", "FileCardSpacing", App::ParamInfo::Int, 16)
         .setTitle("Card spacing")
         .setDoc("Spacing in pixels between the file cards of the Start page. The\n"
 "file lists follow at the next layout. The New File cards and the\n"
@@ -404,7 +404,7 @@ const long & StartParams::getFileCardSpacing() {
 
 // Auto generated code (Tools/params_utils.py:413)
 const long & StartParams::defaultFileCardSpacing() {
-    const static long def = 20;
+    const static long def = 16;
     return def;
 }
 

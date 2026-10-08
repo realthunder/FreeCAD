@@ -76,8 +76,8 @@ public:
     /// Accessor for parameter Font
     ///
     /// Font family of the macro and Python editors, the Python console
-    /// and the report view. Empty, the value while it is not set, means
-    /// the system's fixed-pitch font. Applied at once.
+    /// and the report view: Courier unless set. An empty value means the
+    /// system's fixed-pitch font. Applied at once.
     static const std::string & getFont();
     static const std::string & defaultFont();
     static void removeFont();
@@ -364,8 +364,9 @@ GuiExport std::vector<std::pair<QString, QColor>> editorColorDefaults();
 
 /** The editors' font for a family and a size as they are stored.
  *
- * An empty family, which is what the setting is while nobody chose one, is
- * the system's fixed-pitch font, as upstream has it.
+ * An empty family is the system's fixed-pitch font, as upstream has it for
+ * a family that is not stored. Here the setting is "Courier" until it is
+ * set (the reporter, 2026-10-08), so that takes somebody storing it empty.
  */
 GuiExport QFont editorFont(const std::string& family, int pointSize);
 

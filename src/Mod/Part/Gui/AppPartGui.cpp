@@ -114,25 +114,26 @@ PyObject* initModule()
 
 } // namespace PartGui
 
-// The datum and binder colours are kept in PartDesign's group
-// (PartGuiParams.py). This fork had them in Part's for a while: a value
-// somebody stored there is moved, once, unless PartDesign's is set too.
+// The datum and binder colours are kept in Part's group (PartGuiParams.py).
+// The datums of PartDesign read a key of their own in PartDesign's group,
+// as upstream has it: a value stored there is moved, once, unless Part's
+// is set too.
 static void moveDatumColours()
 {
+    auto hOld = App::GetApplication().GetParameterGroupByPath(
+        "User parameter:BaseApp/Preferences/Mod/PartDesign");
     auto hPart = App::GetApplication().GetParameterGroupByPath(
         "User parameter:BaseApp/Preferences/Mod/Part");
-    auto hPartDesign = App::GetApplication().GetParameterGroupByPath(
-        "User parameter:BaseApp/Preferences/Mod/PartDesign");
     for (const char* key : {"DefaultDatumColor", "DefaultDatumLineColor"}) {
         // stored, not a default: two presets coming back equal
-        const unsigned long value = hPart->GetUnsigned(key, 0);
-        if (value != hPart->GetUnsigned(key, 1)) {
+        const unsigned long value = hOld->GetUnsigned(key, 0);
+        if (value != hOld->GetUnsigned(key, 1)) {
             continue;
         }
-        if (hPartDesign->GetUnsigned(key, 0) != hPartDesign->GetUnsigned(key, 1)) {
-            hPartDesign->SetUnsigned(key, value);
+        if (hPart->GetUnsigned(key, 0) != hPart->GetUnsigned(key, 1)) {
+            hPart->SetUnsigned(key, value);
         }
-        hPart->RemoveUnsigned(key);
+        hOld->RemoveUnsigned(key);
     }
 }
 

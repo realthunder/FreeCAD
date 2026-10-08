@@ -340,7 +340,7 @@ public:
         funcs["HighlightColor"] = &ViewParamsP::updateHighlightColor;
         SelectionColor = this->handle->GetUnsigned("SelectionColor", 0x1CAD1CFF);
         funcs["SelectionColor"] = &ViewParamsP::updateSelectionColor;
-        MarkerSize = this->handle->GetInt("MarkerSize", 9);
+        MarkerSize = this->handle->GetInt("MarkerSize", 7);
         funcs["MarkerSize"] = &ViewParamsP::updateMarkerSize;
         DefaultLinkColor = this->handle->GetUnsigned("DefaultLinkColor", 0x66FFFFFF);
         funcs["DefaultLinkColor"] = &ViewParamsP::updateDefaultLinkColor;
@@ -891,7 +891,7 @@ public:
     }
     // Auto generated code (Tools/params_utils.py:314)
     static void updateMarkerSize(ViewParamsP *self) {
-        self->MarkerSize = self->handle->GetInt("MarkerSize", 9);
+        self->MarkerSize = self->handle->GetInt("MarkerSize", 7);
     }
     // Auto generated code (Tools/params_utils.py:314)
     static void updateDefaultLinkColor(ViewParamsP *self) {
@@ -1940,7 +1940,7 @@ static const App::ParamRegistry::Registrar _ViewParamsRegistrar({
         .setDoc("Selection highlight color")
         .setProxy("Color")
         .setTransparency(false),
-    App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "MarkerSize", "MarkerSize", App::ParamInfo::Int, 9)
+    App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "MarkerSize", "MarkerSize", App::ParamInfo::Int, 7)
         .setTitle("Marker Size")
         .setDoc("Size in pixels of the point markers drawn in the 3D view, such as\n"
 "sketch vertices and the end points of a measurement."),
@@ -3344,7 +3344,7 @@ const long & ViewParams::getMarkerSize() {
 
 // Auto generated code (Tools/params_utils.py:413)
 const long & ViewParams::defaultMarkerSize() {
-    const static long def = 9;
+    const static long def = 7;
     return def;
 }
 

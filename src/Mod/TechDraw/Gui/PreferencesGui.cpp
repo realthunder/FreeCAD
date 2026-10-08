@@ -195,13 +195,6 @@ double PreferencesGui::edgeFuzz()
 }
 
 
-// this is for the iso vs ansi positioning of arrows and text.  rename to sectionLineConvention?
-Qt::PenStyle PreferencesGui::sectionLineStyle()
-{
-    Qt::PenStyle sectStyle = static_cast<Qt::PenStyle> (Preferences::getPreferenceGroup("Decorations")->GetInt("SectionLine", TechDraw::TechDrawParams::defaultSectionLine()));
-    return sectStyle;
-}
-
 bool PreferencesGui::sectionLineMarks()
 {
     return Preferences::getPreferenceGroup("Decorations")->GetBool("SectionLineMarks", TechDraw::TechDrawParams::defaultSectionLineMarks());

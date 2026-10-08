@@ -51,7 +51,8 @@ FileCardView::FileCardView(QWidget* parent)
     setResizeMode(QListView::ResizeMode::Adjust);
     setUniformItemSizes(true);
     setMouseTracking(true);
-    setSpacing(20);
+    // the setting, as upstream has it; 20 was written here
+    setSpacing(static_cast<int>(Start::StartParams::getFileCardSpacing()));
 }
 
 void FileCardView::mouseMoveEvent(QMouseEvent* event)

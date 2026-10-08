@@ -255,12 +255,6 @@ QColor QGIHighlight::getHighlightColor()
     return PreferencesGui::sectionLineQColor();
 }
 
-//obs??
-Qt::PenStyle QGIHighlight::getHighlightStyle()
-{
-    return PreferencesGui::sectionLineStyle();
-}
-
 int QGIHighlight::getHoleStyle()
 {
     return TechDraw::Preferences::mattingStyle();

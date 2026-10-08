@@ -65,7 +65,6 @@ public:
     void setDirection(const Base::Vector3d &dir);
     void setArrowDirections(const Base::Vector3d &dir1, const Base::Vector3d &dir2);
     void setFont(QFont f, double fsize);
-    void setSectionStyle(int style);
     void setSectionColor(const QColor &c);
     void setPathMode(bool mode) { m_pathMode = mode; }
     bool pathMode() { return m_pathMode; }
@@ -86,7 +85,6 @@ protected:
     bool sceneEventFilter(QGraphicsItem *watched, QEvent *event) override;
     void onItemMoved(QGraphicsItem *item, QPointF &oldPos, QGraphicsSceneMouseEvent *) override;
     QColor getSectionColor();
-    Qt::PenStyle getSectionStyle();
     void makeSectionLine();
     void makeExtensionLine();
     void makeArrows();

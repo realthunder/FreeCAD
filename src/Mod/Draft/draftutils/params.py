@@ -715,7 +715,7 @@ def _get_param_dictionary():
         "DefaultSpecularColor":        ("unsigned",  943208703),
         "EnableSelection":             ("bool",      True),
         "Gradient":                    ("bool",      True),
-        "MarkerSize":                  ("int",       9),
+        "MarkerSize":                  ("int",       7),
         "NewDocumentCameraScale":      ("float",     100.0),
     }
     # fmt: on

@@ -37,10 +37,10 @@ ClassDoc = 'Convenient class to obtain the settings of the Start page'
 
 # The Start page has no preference page: none of these could be set but by
 # hand. The colours are packed as 0xRRGGBB00; the last byte is not read.
-# FileCardSpacing is read at four places with three defaults -- 20 between
-# the file cards, which is the one given here, 25 for the height of the New
-# File cards and 15 for the page layout; the last two keep theirs.
-# Not listed: DefaultImport<extension>, a key per file extension.
+# FileCardSpacing is read at four places with three defaults -- 16 between
+# the file cards, which is upstream's and the one given here, 25 for the
+# height of the New File cards and 15 for the page layout; the last two keep
+# theirs.
 Params = [
     ParamBool('ShowOnStartup', True,
         title = "Show Start page",
@@ -59,7 +59,7 @@ Params = [
         title = "Thumbnail size",
         doc = "Size in pixels of the file thumbnails on the Start page. Takes\n"
               "effect at the next repaint of the page."),
-    ParamInt('FileCardSpacing', 20,
+    ParamInt('FileCardSpacing', 16,
         title = "Card spacing",
         doc = "Spacing in pixels between the file cards of the Start page. The\n"
               "file lists follow at the next layout. The New File cards and the\n"

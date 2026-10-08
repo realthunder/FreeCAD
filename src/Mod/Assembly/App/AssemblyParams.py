@@ -56,11 +56,12 @@ Params = [
         title = "Switch to Assembly workbench",
         doc = "Switches to the Assembly workbench when an assembly is double-\n"
               "clicked for editing. Takes effect at the next double-click."),
-    ParamHex('JointHighlightColor', 0xCC1A1AFF, proxy=ParamColor(transparency=False),
+    ParamHex('JointHighlightColor', 0, proxy=ParamColor(transparency=False),
         title = "Joint highlight colour",
         doc = "Colour the elements a joint connects are shown in while the\n"
-              "joint is selected or edited: a red, unless set. Takes effect at\n"
-              "the next highlight."),
+              "joint is selected or edited. 0, the value while it is not set,\n"
+              "is as upstream: the preselection colour of the 3D view once that\n"
+              "is stored, a red until then. Takes effect at the next highlight."),
     ParamBool('LogSolverDebug', False,
         title = "Log dragging steps",
         doc = "Writes the dragging steps of the solver to the files\n"

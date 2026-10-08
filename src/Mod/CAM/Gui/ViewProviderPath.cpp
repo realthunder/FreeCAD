@@ -215,7 +215,7 @@ ViewProviderPath::ViewProviderPath()
     pcMarkerStyle->style = SoDrawStyle::POINTS;
     pcMarkerStyle->pointSize = App::GetApplication()
                                    .GetParameterGroupByPath("User parameter:BaseApp/Preferences/View")
-                                   ->GetInt("MarkerSize", 4);  // upstream's, not the 3D view's 9
+                                   ->GetInt("MarkerSize", Gui::ViewParams::defaultMarkerSize());
 
     pcDrawStyle = new SoDrawStyle();
     pcDrawStyle->ref();

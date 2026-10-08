@@ -5966,8 +5966,7 @@ void ViewProviderSketch::initParams()
     ParameterGrp::handle hGrp = App::GetApplication().GetParameterGroupByPath("User parameter:BaseApp/Preferences/View");
     double viewScalingFactor = hGrp->GetFloat("ViewScalingFactor", Sketcher::SketcherParams::defaultViewScalingFactor());
     viewScalingFactor = Base::clamp<double>(viewScalingFactor, 0.5, 5.0);
-    // 7 while not stored, as upstream: smaller than the 3D view's 9
-    int markersize = hGrp->GetInt("MarkerSize", 7);
+    int markersize = hGrp->GetInt("MarkerSize", Gui::ViewParams::defaultMarkerSize());
 
     int defaultFontSizePixels = QApplication::fontMetrics().height(); // returns height in pixels, not points
     // 0, which is also the definition's default, is the application font's height

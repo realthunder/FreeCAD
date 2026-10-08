@@ -782,7 +782,6 @@ void QGIViewPart::drawSectionLine(TechDraw::DrawViewSection* viewSection, bool b
             sectionLine->setSymbolOffsets(DU::toQPointF(vpSection->SymbolOffset1.getValue()),
                                           DU::toQPointF(vpSection->SymbolOffset2.getValue()));
         }
-        sectionLine->setSectionStyle(vp->SectionLineStyle.getValue());
         App::Color color = Preferences::getAccessibleColor(vp->SectionLineColor.getValue());
         sectionLine->setSectionColor(color.asValue<QColor>());
         sectionLine->setPathMode(false);
@@ -872,7 +871,6 @@ void QGIViewPart::drawComplexSectionLine(TechDraw::DrawViewSection* viewSection,
     sectionLine->setFeature(viewSection);
     addToGroup(sectionLine);
     sectionLine->setSymbol(const_cast<char*>(viewSection->SectionSymbol.getValue()));
-    sectionLine->setSectionStyle(vp->SectionLineStyle.getValue());
     App::Color color = Preferences::getAccessibleColor(vp->SectionLineColor.getValue());
     sectionLine->setSectionColor(color.asValue<QColor>());
     sectionLine->setPathMode(true);

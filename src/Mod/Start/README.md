@@ -44,7 +44,7 @@ case the model is `ExamplesModel` in `App/ExamplesModel.*`. It fetches a read-on
 This Workbench does the minimum amount of design customization, preferring to allow Stylesheet authors control over the
 display via the normal QSS mechanisms in Qt. There are three FreeCAD Parameters that control the spacing between the
 widgets and the size of the icons, all in the `BaseApp/Preferences/Mod/Start/` preferences group:
-* `FileCardSpacing` (default: 20). The space between and around the individual File Cards.
+* `FileCardSpacing` (default: 16). The space between and around the individual File Cards.
 * `FileThumbnailIconsSize` (default: 128). The size of the file thumbnail on the File Cards.
 * `NewFileIconSize` (default: 48). The size of the icons on each of the "new file" buttons.
 

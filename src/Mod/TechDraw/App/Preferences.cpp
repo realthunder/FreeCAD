@@ -118,7 +118,10 @@ double Preferences::scale()
 {
     int prefScaleType = scaleType();
     if (prefScaleType == 0) {//page scale
-        return getPreferenceGroup("General")->GetFloat("DefaultPageScale", 1.0);
+        // the scale of new pages, which is what the Scale page stores. A
+        // key of another name, DefaultPageScale, was read here and upstream;
+        // nothing writes it.
+        return getPreferenceGroup("General")->GetFloat("DefaultScale", TechDraw::TechDrawParams::defaultDefaultScale());
     }
     else if (prefScaleType == 1) {//custom scale
         return getPreferenceGroup("General")->GetFloat("DefaultViewScale", TechDraw::TechDrawParams::defaultDefaultViewScale());
@@ -483,7 +486,7 @@ std::string Preferences::lineElementsLocation()
 int Preferences::SectionLineStyle()
 {
     // default is line #4 long dash dotted, which is index 3
-    return getPreferenceGroup("Decorations")->GetInt("LineStyleSection", 3) + 1;
+    return getPreferenceGroup("Decorations")->GetInt("LineStyleSection", TechDraw::TechDrawParams::defaultLineStyleSection()) + 1;
 }
 
 int Preferences::CenterLineStyle()
