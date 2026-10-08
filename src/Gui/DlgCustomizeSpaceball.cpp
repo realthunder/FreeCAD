@@ -45,6 +45,7 @@
 #include "GuiApplicationNativeEventAware.h"
 #include "PrefWidgets.h"
 #include "SpaceballEvent.h"
+#include "SpaceballParams.h"
 
 
 using GroupVector = std::vector<Base::Reference<ParameterGrp> >;
@@ -734,8 +735,7 @@ void DlgCustomizeSpaceball::setupLayout()
     devModel->addItems(getModels());
 
     // Select the current preference or the first entry
-    QString model = QString::fromStdString(App::GetApplication().GetUserParameter().GetGroup("BaseApp")->
-            GetGroup("Spaceball")->GetASCII("Model",""));
+    QString model = QString::fromStdString(SpaceballParams::getModel());
     if (model.length() > 0) {
         devModel->setCurrentIndex(devModel->findText(model));
     } else {
@@ -784,8 +784,7 @@ void DlgCustomizeSpaceball::goClear()
     //buttonModel->goClear();
 
     QByteArray currentDevice = devModel->currentText().toLocal8Bit();
-    App::GetApplication().GetUserParameter().GetGroup("BaseApp")->
-            GetGroup("Spaceball")->SetASCII("Model", currentDevice.data());
+    SpaceballParams::setModel(currentDevice.data());
     buttonModel->loadConfig(currentDevice.data());
 }
 

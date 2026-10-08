@@ -30,6 +30,7 @@
 #include "Application.h"
 #include "GuiApplicationNativeEventAware.h"
 #include "SpaceballEvent.h"
+#include "SpaceballParams.h"
 
 
 #if defined(_USE_3DCONNEXION_SDK) || defined(SPNAV_FOUND)
@@ -155,10 +156,8 @@ float Gui::GUIApplicationNativeEventAware::convertPrefToSensitivity(int value)
 
 void Gui::GUIApplicationNativeEventAware::importSettings(std::vector<int>& motionDataArray)
 {
-    ParameterGrp::handle group = App::GetApplication().GetUserParameter().GetGroup("BaseApp")->GetGroup("Spaceball")->GetGroup("Motion");
-
     // Remapping of motion data
-    long remap = group->GetInt("Remapping", 12345);
+    long remap = SpaceballParams::getRemapping();
     if (remap != 12345) {
         std::stringstream s;
         s << std::setfill('0') << std::setw(6) << remap;
@@ -180,60 +179,62 @@ void Gui::GUIApplicationNativeEventAware::importSettings(std::vector<int>& motio
         }
     }
 
-    // here I import settings from a dialog. For now they are set as is
-    bool  dominant           = group->GetBool("Dominant"); // Is dominant checked
-    bool  flipXY             = group->GetBool("FlipYZ");; // Is Flip X/Y checked
-    float generalSensitivity = convertPrefToSensitivity(group->GetInt("GlobalSensitivity"));
+    // The settings of the Spaceball Motion page (SpaceballParams)
+    bool  dominant           = SpaceballParams::getDominant();
+    bool  flipXY             = SpaceballParams::getFlipYZ();
+    float generalSensitivity = convertPrefToSensitivity(SpaceballParams::getGlobalSensitivity());
 
     // array that has stored info about "Enabled" checkboxes of all axes
+    bool translations = SpaceballParams::getTranslations();
+    bool rotations = SpaceballParams::getRotations();
     bool enabled[6];
-    enabled[0] = group->GetBool("Translations", true) && group->GetBool("PanLREnable", true);
-    enabled[1] = group->GetBool("Translations", true) && group->GetBool("PanUDEnable", true);
-    enabled[2] = group->GetBool("Translations", true) && group->GetBool("ZoomEnable", true);
-    enabled[3] = group->GetBool("Rotations", true) && group->GetBool("TiltEnable", true);
-    enabled[4] = group->GetBool("Rotations", true) && group->GetBool("RollEnable", true);
-    enabled[5] = group->GetBool("Rotations", true) && group->GetBool("SpinEnable", true);
+    enabled[0] = translations && SpaceballParams::getPanLREnable();
+    enabled[1] = translations && SpaceballParams::getPanUDEnable();
+    enabled[2] = translations && SpaceballParams::getZoomEnable();
+    enabled[3] = rotations && SpaceballParams::getTiltEnable();
+    enabled[4] = rotations && SpaceballParams::getRollEnable();
+    enabled[5] = rotations && SpaceballParams::getSpinEnable();
 
     // array that has stored info about "Reversed" checkboxes of all axes
     bool  reversed[6];
-    reversed[0] = group->GetBool("PanLRReverse");
-    reversed[1] = group->GetBool("PanUDReverse");
-    reversed[2] = group->GetBool("ZoomReverse");
-    reversed[3] = group->GetBool("TiltReverse");
-    reversed[4] = group->GetBool("RollReverse");
-    reversed[5] = group->GetBool("SpinReverse");
+    reversed[0] = SpaceballParams::getPanLRReverse();
+    reversed[1] = SpaceballParams::getPanUDReverse();
+    reversed[2] = SpaceballParams::getZoomReverse();
+    reversed[3] = SpaceballParams::getTiltReverse();
+    reversed[4] = SpaceballParams::getRollReverse();
+    reversed[5] = SpaceballParams::getSpinReverse();
 
     // array that has stored info about sliders - on each slider you need to use method DlgSpaceballSettings::GetValuefromSlider
     // which will convert <-50, 50> linear integers from slider to <0.1, 10> exponential floating values
     float sensitivity[6];
-    sensitivity[0] = convertPrefToSensitivity(group->GetInt("PanLRSensitivity"));
-    sensitivity[1] = convertPrefToSensitivity(group->GetInt("PanUDSensitivity"));
-    sensitivity[2] = convertPrefToSensitivity(group->GetInt("ZoomSensitivity"));
-    sensitivity[3] = convertPrefToSensitivity(group->GetInt("TiltSensitivity"));
-    sensitivity[4] = convertPrefToSensitivity(group->GetInt("RollSensitivity"));
-    sensitivity[5] = convertPrefToSensitivity(group->GetInt("SpinSensitivity"));
+    sensitivity[0] = convertPrefToSensitivity(SpaceballParams::getPanLRSensitivity());
+    sensitivity[1] = convertPrefToSensitivity(SpaceballParams::getPanUDSensitivity());
+    sensitivity[2] = convertPrefToSensitivity(SpaceballParams::getZoomSensitivity());
+    sensitivity[3] = convertPrefToSensitivity(SpaceballParams::getTiltSensitivity());
+    sensitivity[4] = convertPrefToSensitivity(SpaceballParams::getRollSensitivity());
+    sensitivity[5] = convertPrefToSensitivity(SpaceballParams::getSpinSensitivity());
 
-    if (group->GetBool("Calibrate"))
+    if (SpaceballParams::getCalibrate())
     {
-        group->SetInt("CalibrationX",motionDataArray[0]);
-        group->SetInt("CalibrationY",motionDataArray[1]);
-        group->SetInt("CalibrationZ",motionDataArray[2]);
-        group->SetInt("CalibrationXr",motionDataArray[3]);
-        group->SetInt("CalibrationYr",motionDataArray[4]);
-        group->SetInt("CalibrationZr",motionDataArray[5]);
+        SpaceballParams::setCalibrationX(motionDataArray[0]);
+        SpaceballParams::setCalibrationY(motionDataArray[1]);
+        SpaceballParams::setCalibrationZ(motionDataArray[2]);
+        SpaceballParams::setCalibrationXr(motionDataArray[3]);
+        SpaceballParams::setCalibrationYr(motionDataArray[4]);
+        SpaceballParams::setCalibrationZr(motionDataArray[5]);
 
-        group->RemoveBool("Calibrate");
+        SpaceballParams::removeCalibrate();
 
         return;
     }
     else
     {
-        motionDataArray[0] = motionDataArray[0] - group->GetInt("CalibrationX");
-        motionDataArray[1] = motionDataArray[1] - group->GetInt("CalibrationY");
-        motionDataArray[2] = motionDataArray[2] - group->GetInt("CalibrationZ");
-        motionDataArray[3] = motionDataArray[3] - group->GetInt("CalibrationXr");
-        motionDataArray[4] = motionDataArray[4] - group->GetInt("CalibrationYr");
-        motionDataArray[5] = motionDataArray[5] - group->GetInt("CalibrationZr");
+        motionDataArray[0] = motionDataArray[0] - SpaceballParams::getCalibrationX();
+        motionDataArray[1] = motionDataArray[1] - SpaceballParams::getCalibrationY();
+        motionDataArray[2] = motionDataArray[2] - SpaceballParams::getCalibrationZ();
+        motionDataArray[3] = motionDataArray[3] - SpaceballParams::getCalibrationXr();
+        motionDataArray[4] = motionDataArray[4] - SpaceballParams::getCalibrationYr();
+        motionDataArray[5] = motionDataArray[5] - SpaceballParams::getCalibrationZr();
     }
 
     int i;
