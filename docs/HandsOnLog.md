@@ -34,7 +34,7 @@ Evidence that does not belong in the repository is under
 | 19 | STAGED `805b5afb25` | every place the audit listed that runs at load, recompute or paint, the three wrong results, and the writer of -1; what is left is listed |
 | 22 | STAGED `5aedd5cf83` | `/word` is an object query; the beginning of a keyword lists modes and objects |
 | 23 | STAGED `c7a27b5a85`, and `08b8f009aa`; the defaults FIXED `02cab053df`, not staged | 574 settings: 221 had no documentation, 94 ran past 400 characters; all have a short text now, and a test keeps it so. The defaults: OK on a fresh profile changed 23 settings and stored 2 under a wrong type -- 14 of them a spin box clamping its default to 99, which the reporter's own profile carries |
-| 24 | C++ SIDE DONE, about 1180 settings listed; the reporter's decisions of 2026-10-08 applied `e21eff05a7`; not staged, not pushed | every setting C++ reads is behind a generated class. Of 28 defaults chosen on the way, 5 went back to upstream's program (editor font, Home, marker sizes, Asymptote height, CAM units); 12 of the 16 open findings are fixed. Six questions are back with the reporter (A24, A28, D1, D8, D13, D14). The Python door (C1) and the state keys (C2) are decided and not started: each gets a count first |
+| 24 | C++ SIDE DONE, about 1180 settings listed; the reporter's decisions of 2026-10-08 applied in two rounds, `e21eff05a7` and `427ffc8d28`; not staged | every setting C++ reads is behind a generated class. After both rounds: the editors' font is Courier, Home is Top, the marker size is 7 everywhere, the Asymptote height is empty, CAM's unit default is upstream's; 15 of the 16 findings are fixed or dropped as decided (D4 needs nothing). Still with the reporter: A24 (the accent colours). Entries 41 (Python door) and 42 (state keys, to be listed) are decided and not started |
 | 26 | FIXED `175ffce199`, not staged | the first OK of a profile held the program 11 to 15 s on the reporter's configuration with `scanner.FCStd` open: 780 keys stored for the first time and taken for changes -- stylesheet set again 4.2 s, every Part view provider re-meshed 3.2 s, language activated again 2 s. 0.9 s now |
 | 27 | STAGED `fa2ada985c` | the cell menu made a spreadsheet view by asking for it, listed a page's views, and a pick was placed by the general policy |
 | 31 | FIXED `47b5e72c79`, not staged | "Go to end" is on for a profile that never stored it |
@@ -852,7 +852,7 @@ its own thing, and not started.
 
 Evidence: `..\dl\handson\2026-10-07\msaa-*`, `entry26-first-ok-with-msaa-*`.
 
-## 24. Every setting behind a generated class -- C++ SIDE DONE, the decisions applied `e21eff05a7`; six questions back to the reporter
+## 24. Every setting behind a generated class -- C++ SIDE DONE, both rounds of the decisions applied `e21eff05a7`, `427ffc8d28`; A24 back with the reporter
 
 The reporter, 2026-10-07, asked which entry "do entry 23 next" meant: "I
 meant entry 24". Not staged.
@@ -1485,3 +1485,103 @@ failures as before, the `TestThickness` 5829 cases. Logs:
 - Seen by the helpers, not touched: TechDraw `ScrubCount` is 1 upstream
   and 0 here (0 before entry 24 too); upstream replaced `NewFaceFinder`
   by `FaceFinderVersion` with a third finder, not in the fork.
+
+**THE SECOND ROUND, 2026-10-08.** The reporter answered the questions that
+had gone back, in their words:
+
+> D4 keep as upstream. D8 Fix. D13 drop as upstream. D14 Migrate default
+> face color to Material setting. A2 default to Courier. A9 Unify the
+> default to 7. A24 use upstream seed. A28 make it 16. D1 follow upstream.
+> D2 you mean DefaultPageScale has no user? then drop it. D12 keep it in
+> Mode/Part, drop the partdesign one. D14, is that what upstream does.
+> follow upstream for this one.  Entry 42, list those keys. Push after done
+
+Applied in `427ffc8d28`:
+
+- A2: the editors' font is "Courier" again while it is not set, an
+  editor is 10 pt on every platform again and a text document shows in the
+  editors' font again -- the state before the first round. What stays of
+  the first round: `Gui::editorFont()` (an EMPTY family is the system's
+  fixed-pitch font) and the Editor page storing a family only once one is
+  chosen.
+- "A9 Unify the default to 7": READ AS A5, the marker size -- A9 is the
+  Asymptote size, which has no 7 in it, and A5 is the one item whose
+  readers had 4, 5, 7 and 9. Said so to the reporter. The setting's
+  default is 7 and every reader takes it: the 3D view's markers, CAM,
+  Robot, Mesh, the Sketcher, and Draft's own table of the View defaults.
+  The 3D View page shows 7px for an unset key. The Asymptote height stays
+  empty, as decided in the first round.
+- A24: NOT APPLIED, back to the reporter with what the question had left
+  out. The fork gave the three accent slots three colours on purpose
+  (`00d2b684fd`, "give the three accent slots three colours"): the style
+  sheets use slot 2 for focus and pressed and slot 3 as the far stop of a
+  gradient from slot 1, and with upstream's seed -- one colour for 2 and 3,
+  the same as 1 here -- focus paints what hover paints and the gradients
+  go flat. `Application::checkForDeprecatedSettings` rewrites a stored trio
+  of exactly that seed at every start. Taking the seed as the default
+  undoes that commit for a profile that stored nothing.
+- A28: the file card spacing is 16, and the file card view takes its
+  spacing from the setting where 20 was written.
+- D1: a new view's section line is the line of the standard that the
+  Annotation page's list names (`LineStyleSection`, default line 4), as
+  upstream. The port was small: drawing already took the property for a
+  line number (the pen style set before it was overwritten two lines
+  later); only the property's default came from the pen style key
+  `SectionLine`, which no page stores. That key, its reader
+  `PreferencesGui::sectionLineStyle` and three functions nothing else
+  called are gone. Views in saved documents keep their line.
+- D2: `DefaultPageScale` is gone; "page" as the scale type gives the scale
+  of new pages (`DefaultScale`), which is what the Scale page stores.
+- D8: `StatefulLabel` listens in `Preferences/MainWindow`.
+- D12, the other way round from the first round: ONE key,
+  `Mod/Part/DefaultDatumColor`, and `DefaultDatumLineColor` beside it.
+  PartDesign's is dropped; a value stored there is moved once when
+  PartGui loads.
+- D13: Start no longer reads `DefaultImport<extension>`.
+- D14, Import: the default face colour of an import and an export while
+  `View/DefaultShapeColor` is not stored is the colour of Material's
+  default appearance (`App::MaterialAppearance::DEFAULT`, 204,204,230),
+  which is also the 3D view's; a grey of Import's own was written there.
+  Not `MaterialManager::defaultAppearance()`: that one answers with a
+  random colour when "random colour" is on.
+- D14, Assembly: upstream's rule again -- the 3D view's preselection
+  colour once that is stored, the red until then. The setting
+  `JointHighlightColor` stays, 0 while not set, and 0 is that rule.
+- D4: nothing to change.
+- Entry 42: the state keys are to be LISTED by the omni search. Not
+  started.
+
+Scored: `tests/gui/entry24-decisions.py` 13 PASS (one claim more: the
+section line of a new view is line 4, and line 2 with the list stored at
+its second entry); 3 PASS, 10 FAIL staged. The 22 settings GUI tests:
+197 PASS, 0 FAIL.
+
+The tests' row collection changed with it. The first chain of this round
+failed every "/param" claim but the first of each test: the reporter was
+working at the desktop, the test window lost activation after its first
+query, and the omni search's list is not shown then -- the rows were
+there (`entry24-decisions-work\omni-probe.py`: 3 and 2 rows in a list
+that is not visible). `param_rows` of 18 tests and `param_titles` of one
+take the rows of a list that is not shown too.
+
+The full suites on the tree of `427ffc8d28`: C++ 784 of 784, Python 3385
+tests with the same 2 `TestThickness` 5829 failures. Logs as before,
+`..\dl\handson\2026-10-08\entry24-scripts\full-ctest.log`, `full-pytest.log`.
+
+Seen on the way by the reporter, 2026-10-08: "the omni search list box's
+highlighted text color is white, which does not look good with light blue
+highlight background. is this the side affect of the theme default
+setting change?" It is not: the row is painted by the style (the style
+sheets' `@AccentBackgroundColor`, a light blend of accent 1, whose default
+entry 24 did not change), and the delegate takes the palette's
+`HighlightedText` for the text (`OmniSearchBox.cpp`, the row delegate).
+Neither changed since the stage of 2026-10-07. NOT fixed; it wants an
+entry of its own.
+
+**STILL WITH THE REPORTER after the second round:**
+- A24, with what the question left out (above): keep the three colours of
+  `00d2b684fd`, or really take upstream's one colour for slots 2 and 3?
+- "A9 Unify the default to 7" was taken for A5, the marker size. Say if
+  it meant something else.
+- The omni search's highlighted row, white on light blue: an entry of its
+  own?
