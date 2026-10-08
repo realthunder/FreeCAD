@@ -2604,7 +2604,7 @@ The split is made and the border moved at the release; a split is
 cancelled by dragging back to where it was pressed.
 
 **(d) The minimum cell size**, `View/OpenView/MinimumCellSize`, 200, in
-the preferences (Display > UI, "Views") and so in the omni search. A split
+the preferences (the UI page, group "Views") and so in the omni search. A split
 that would leave either half under it, or a new cell under it the other
 way, is refused, with one line in the report view at most every five
 seconds.
