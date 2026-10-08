@@ -2717,6 +2717,13 @@ shorter than the entry count, so a file carrying them is not one it can
 open -- the same standing every schema-5 file already has (sec 4.3), and
 the reason the default cap is 4.
 
+*The 4N bytes are not paid where the faces follow on* (2026-10-08, with
+14.6.10's four left over). In an archive entry the overriding faces are
+stated as ranges, a first face and a length, where that is the shorter:
+every face of an import given a colour is one range, 12 bytes, and not
+4 bytes a face. A run of its own shape (`RunBaseRanges`), read beside the
+other; the `o` line of a list small enough for the XML is as it was.
+
 Schema 4 (upstream's) cannot state either key and keeps writing the dense
 N entries, byte for byte as today: it is written sequentially by index and
 resolves each entry as it goes, which is what the dense-array writer did
@@ -3801,6 +3808,16 @@ action along a path). What moves is what it holds.
 
 The numbered and the drawn lists stay empty for a link.
 
+*The look it would give, where it gives none* (2026-10-08). "Given at all
+is the override on" leaves the own look of `Face` no place for a look that
+is not given: the one a link gave before its override was turned off, or
+one it is given meanwhile, which is what its `ShapeAppearance` goes on
+saying and what it gives when the override is turned on again. That is
+held beside the own look, in a list of the store's that is nothing else's
+(`PropertyElementAppearance::setKept()`): stated, in the file at every
+schema and a change to undo, with nothing made of it and nothing drawn
+from it.
+
 *What upstream knows a link by is kept, as names over the store.*
 `ColoredElements` stays on a link and on `App::Part` as an
 `App::PropertyLinkSubHidden` -- `(obj, [names])` to Python, written to a
@@ -4343,7 +4360,8 @@ second the look, a list of one. With the override off `ShapeAppearance` is
 the look the link would give -- the preference's link colour until one is
 chosen -- kept for as long as the document is open, where the view
 provider kept it in the file (*mine*: "given at all is the override on"
-leaves nowhere else for it). `ColoredElements` stays what it was to a file
+leaves nowhere else for it). *(The store keeps it since 2026-10-08, and it
+is in the file: "the four left over", below.)* `ColoredElements` stays what it was to a file
 and to a script, `(obj, [names])`, and is a name over the store's names: a
 write to it is the names given, each stating nothing until it is given a
 colour, and it carries `Legacy`, so the log has the store's row and not
@@ -4408,7 +4426,9 @@ they are meant too*).
   `setElementColorsTo()` assigns the look with the list still following,
   and `ViewProviderGeometryObject::onChanged()` puts the card's back:
   `ShapeColor` then says the colour and `ShapeAppearance` does not. The
-  part holds what `ShapeAppearance` says.
+  part holds what `ShapeAppearance` says. *(Fixed 2026-10-08, "the four
+  left over", below: an `App::Part` has no card, and was taken to have
+  one.)*
 
 Checks. Python `parttests.ElementAppearanceTest.ElementAppearanceLinkTest`,
 7, in `FreeCADCmd`: a link gives no look until it is given one; the
@@ -4562,7 +4582,7 @@ and the array's two lists; and on the object a link's `ColoredElements`.
 Each is made of the store when that is read. At schema 4 they are written
 as they were. *A link's look with the override off* is the one thing that
 was nowhere else (step C): at schema 5 it is the preference's colour again
-after a read.
+after a read. *(Not any more: the store keeps it, below.)*
 
 *Found by that.* A view provider whose element in `GuiDocument.xml` names
 no file is parked by a progressive load and made when the event loop gets
@@ -4629,12 +4649,14 @@ one was:
   written to a copy and given back once (`numberedToWrite()`,
   `PartFeatureAppearance.cpp`), and the edges' and the vertices' colour
   arrays likewise: 24 ms and 0.24 s. *Not done for `setElementColors`*,
-  which gives a name at a time and is the 1.0 s above.
+  which gives a name at a time and is the 1.0 s above. *(Done, below: 14
+  ms.)*
 - *An import's file is +17.8 KB where the view provider's list was +0.4
   KB.* The looks by number are written an entry at a time with its number,
   8 B a face; the list they replace wrote one run of colours, which for the
   palette of this measurement packs to nothing. Not chased: a file's real
-  colours do not repeat every sixty-four faces.
+  colours do not repeat every sixty-four faces. *(Chased, below: the
+  numbers are ranges, and it is +0.8 KB.)*
 - *Schema 4 costs an archive entry more for each small list upstream
   reads*, three for each object -- `LineColorArray`, `PointColorArray` and
   `DiffuseColor`, 8 B each: 1,500 boxes are 9,008 entries where schema 5
@@ -4657,3 +4679,91 @@ which crashes without its fix, and
 `ProgramVersion.aReleaseNumberedByItsDayIsThisForksAndOlder`.
 `scripts/transaction-log-paint-check.py` makes its older files of a
 schema 4 save now, the names being in no other.
+
+**The four left over (2026-10-08).** What step E measured or found and
+left: two costs and two looks that were not held.
+
+*`setElementColors` gives its names together.* 1.0 s for the 12,000 faces
+of an import, and it was two things, neither of them the names. The
+elements were given a colour one at a time, each read out of the list the
+one before was written to, and a list written to puts itself in order
+before it answers (`AppearanceList::normalize()`): every entry gone over,
+for every entry. And before any of that the Python method walked its
+dictionary with `Py::Dict`'s iterators, which make the list of the keys
+again at every step -- two fifths of the second, found only when the
+first was gone and the time had not moved.
+
+`PropertyElementAppearance::setStatedColors()` and `setStatedLooks()` are
+what `setElementColors()` and `setElementAppearances()` say: what is stated
+of the elements is what the call names and no more. Each list is read as
+it was and made again in the order of its entries, once -- the names in
+one pass, those left out gone with it, where one name taken away made the
+whole list again; the numbers written in the order of the faces, since an
+entry put among those a list holds moves every one behind it, and a map of
+names has `Face10` before `Face2`. A few elements are written where they
+are (`FewElements`, 16): a list of 120,000 is not made again for three. A
+name that is no element's is said and the rest are taken, as before. The
+two Python methods read their dictionary with `PyDict_Next`.
+
+| | before | after |
+| --- | --- | --- |
+| an import, 12,000 faces: every face a colour | 1.02 s | 13.7 ms |
+| ... given other colours | 1.83 s | 39 ms |
+| ... all taken away | 0.85 s | 22 ms |
+| an import, 120,000 faces | not measured: quadratic | 140 ms |
+| a shape with an element map, 9,000 faces | 219 ms | 40 ms |
+
+A colour list assigned (`DiffuseColor`) is 21 ms and 0.23 s at the two
+sizes, as it was: the names cost no more than the list now.
+
+*The numbers of the faces are ranges in the file* (sec 12.3). The looks by
+number are a base and the faces that override it, and an import's faces
+all do: 12,000 numbers, one after the other, beside 12,000 colours.
+`Imp.ElementAppearance.Faces.bin` is 48,180 bytes where it was 96,168, and
+packs to 0.8 KB where it packed to 17.7 -- the numbers were all of it, for
+this palette; at 120,000 faces 4.0 KB where the file was +171. Read back
+in the same 23 ms and 117 ms. The looks of a shape with names gain the
+same (`Named`, `DrawnFaces`: 36 KB each for 9,000 faces, 0.7 KB packed);
+what its names cost, a tenth of the file, is the names.
+
+*Set Colors' colour for all of an `App::Part` is taken.* It was not a
+card. `App::GeoFeature::getMaterialAppearance()` answered the `DEFAULT`
+material where a feature has no card, as upstream's does, and everything
+that asks here holds the answer against the appearance nobody gave
+(`App::MaterialAppearance()`): so every feature that is no `Part::Feature`
+had a card, the default one, and its view provider, following it, put that
+look back over any list of looks it was assigned -- `vp.ShapeAppearance =
+(look,)` on an `App::Part`, and the one `setElementColorsTo()` assigns.
+`ShapeColor` and `ShapeMaterial` went on saying what was assigned, and the
+part held the look that was put back. No card is the appearance nobody
+gave.
+
+*A link's look with the override off is the link's.* `mine`, as the
+choice of step C was: 14.6.4 has it. Turned off, the look the link gave is
+kept; a look written to `ShapeAppearance` -- the object's or the view
+provider's -- while it gives none is kept; turned on, it is given and no
+longer kept. An older file's, which only its view provider read, is kept
+where it is not the look nobody chose (`LinkLooks::keepChosen()`). With
+nothing kept `ShapeAppearance` says the look nobody chose --
+`LinkAppearance::defaultLook()`, the preference's link colour, and for an
+`App::Part` its shape colour -- so an undo of the look takes the name back
+with it, where the name went on saying a look the store no longer had.
+The slot is the last of the store's lists and a file says it has it by a
+bit no older file sets.
+
+Checks. gtest `PropertyElementAppearance_tests_run`, 22 (+5): many
+colours at once against a name at a time, call after call -- more than are
+written where they are, a part of them, a few, none; names left out taken
+away and one that stays stating no more than it did; a name that is no
+element's said and the rest taken; one step to undo; a look held and not
+given, in a copy, in the file at both schemas and undone.
+`PropertyAppearanceList_tests_run`, 108 (+1): every face, every other face
+and two spans written and read back, the first and the last short, and
+ranges that overrun or fall short of their count refused. Python
+`parttests.ElementAppearanceTest.ElementAppearanceLinkTest`, 8 (+1): the
+look a link would give, undone, and read from a file at 5 and at 4.
+`scripts/appearance-parity-check.py`, 98 (+22): the same with a view
+provider and what was made from the link drawing none of it; an
+`App::Part` assigned a list of looks, and Set Colors' colour for all of it
+twice and taken away; an import of 240 faces given colours by name, a part
+of them, a few and none, each face held against what it was given.

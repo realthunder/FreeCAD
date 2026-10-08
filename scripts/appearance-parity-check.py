@@ -415,6 +415,113 @@ def run():
           link.ViewObject.OverrideMaterial
           and rgb(link.ViewObject.ShapeAppearance.Base.DiffuseColor) == YELLOW
           and YELLOW in colours(c))
+    # The look it would give, where it gives none, is the link's to hold as
+    # well: the one it gave, or one it is given meanwhile
+    link.ViewObject.OverrideMaterial = False
+    check("the look it gave is the one it would give (%r)"
+          % (rgb(link.ViewObject.ShapeAppearance.Base.DiffuseColor),),
+          not link.OverrideMaterial and "Face" not in lea
+          and rgb(link.ShapeAppearance.Base.DiffuseColor) == YELLOW
+          and rgb(link.ViewObject.ShapeAppearance.Base.DiffuseColor) == YELLOW)
+    over = link.ViewObject.ShapeAppearance.Base
+    over.DiffuseColor = CYAN
+    link.ViewObject.ShapeAppearance.Base = over
+    step(doc, "a look given through the view provider while the link gives none")
+    check("the object keeps it and gives none (%r)" % (rgb(link.ShapeAppearance.Base.DiffuseColor),),
+          not link.OverrideMaterial and "Face" not in lea
+          and rgb(link.ShapeAppearance.Base.DiffuseColor) == CYAN
+          and RED in colours(c) and CYAN not in colours(c))
+    kept = []
+    for schema in (5, 4):
+        doc.SaveSchemaVersion = schema
+        kept.append(os.path.join(folder, "kept%d.FCStd" % schema))
+        doc.saveAs(kept[-1])
+    App.closeDocument(doc.Name)
+    for schema, path in zip((5, 4), kept):
+        doc = App.openDocument(path)
+        link = doc.getObject("Link")
+        vp = link.ViewObject
+        check("read from a file at schema %d the link would give it still (%r)"
+              % (schema, rgb(vp.ShapeAppearance.Base.DiffuseColor)),
+              not vp.OverrideMaterial and "Face" not in link.ElementAppearance
+              and rgb(vp.ShapeAppearance.Base.DiffuseColor) == CYAN
+              and rgb(link.ShapeAppearance.Base.DiffuseColor) == CYAN)
+        vp.OverrideMaterial = True
+        check("and gives it (%r)" % colours(doc.getObject("Cut")),
+              "Face" in link.ElementAppearance
+              and rgb(link.ElementAppearance.Face.DiffuseColor) == CYAN
+              and CYAN in colours(doc.getObject("Cut")))
+        App.closeDocument(doc.Name)
+
+    # An App::Part, which holds its looks as a link does. It has no material
+    # card, and nothing puts one's look back over what its view provider is
+    # given.
+    doc = App.newDocument("ParityPart")
+    box = doc.addObject("Part::Box", "Box")
+    part = doc.addObject("App::Part", "Part")
+    part.addObject(box)
+    doc.recompute()
+    pvp, pea = part.ViewObject, part.ElementAppearance
+    over = pvp.ShapeAppearance.Base
+    over.DiffuseColor = GREEN
+    pvp.ShapeAppearance = (over,)
+    check("a list of looks assigned to a part's view provider stays (%r)"
+          % (rgb(pvp.ShapeAppearance.Base.DiffuseColor),),
+          rgb(pvp.ShapeAppearance.Base.DiffuseColor) == GREEN and rgb(pvp.ShapeColor) == GREEN
+          and not part.OverrideMaterial and "Face" not in pea)
+    for colour in (RED, BLUE):
+        pvp.setElementColors({"Face": colour})
+        check("Set Colors' colour for all of a part is the part's (%r, %r)"
+              % (rgb(pvp.ShapeAppearance.Base.DiffuseColor),
+                 rgb(pea.Face.DiffuseColor) if "Face" in pea else None),
+              pvp.OverrideMaterial and part.OverrideMaterial
+              and rgb(pvp.ShapeAppearance.Base.DiffuseColor) == colour
+              and rgb(pvp.ShapeColor) == colour
+              and "Face" in pea and rgb(pea.Face.DiffuseColor) == colour
+              and rgb(pvp.getElementColors().get("Face", (0, 0, 0))) == colour)
+    pvp.setElementColors({})
+    check("and taken away it is the one the part would give (%r)"
+          % (rgb(part.ShapeAppearance.Base.DiffuseColor),),
+          not pvp.OverrideMaterial and not part.OverrideMaterial and "Face" not in pea
+          and rgb(part.ShapeAppearance.Base.DiffuseColor) == BLUE
+          and rgb(pvp.ShapeAppearance.Base.DiffuseColor) == BLUE)
+    App.closeDocument(doc.Name)
+
+    # A shape with no history, as an import is: every face held by its
+    # number, and many given a colour in one call.
+    doc = App.newDocument("ParityMany")
+    one = Part.makeBox(1, 1, 1)
+    imp = doc.addObject("Part::Feature", "Imp")
+    imp.Shape = Part.makeCompound([one.translated(V(2 * i, 0, 0)) for i in range(40)])
+    doc.recompute()
+    ivp = imp.ViewObject
+    count = len(imp.Shape.Faces)
+
+    def shade(i, k):
+        return (round((i * 37 + k) % 255 / 255.0, 3), round((i * 91) % 255 / 255.0, 3), 0.5)
+
+    def painted(which, k):
+        return {"Face%d" % (i + 1): shade(i, k) for i in which}
+
+    own = rgb(ivp.ShapeColor)
+    for what, which, k in (("every face of an import given a colour by its name", range(count), 0),
+                           ("other colours for a part of them", range(60, 200), 3),
+                           ("and for a few", (5, 17, 230), 5)):
+        ivp.setElementColors(painted(which, k))
+        step(doc, what)
+        got = [rgb(col) for col in ivp.DiffuseColor]
+        want = [own] * count
+        for i in which:
+            want[i] = rgb(shade(i, k))
+        check("%s: each face is the colour it was given, the rest the object's (%d faces)"
+              % (what, count), got == want or (len(set(want)) == 1 and len(got) == 1))
+        check("%s: held by number" % what,
+              all(isinstance(key, int) or key.startswith("Face") for key in imp.ElementAppearance.keys())
+              and len(imp.ElementAppearance.keys()) == len(list(which)))
+    ivp.setElementColors({})
+    step(doc, "and for none")
+    check("nothing is stated of an element (%r)" % (imp.ElementAppearance.keys()[:3],),
+          imp.ElementAppearance.keys() == [])
     App.closeDocument(doc.Name)
 
     # A body: a pad and a pocket.
