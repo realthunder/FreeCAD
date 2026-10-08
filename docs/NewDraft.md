@@ -11,7 +11,9 @@ between them drafted as one sheet, fillets turned into cones (section 13).
 2026-10-08: past a cone's apex the walls meet in a ridge, and a chain may
 close at a sharp corner between two planes (section 14); a coarse fuzzy
 try for neighbours tangent to each other (section 15); tolerances the fuse
-widened, brought back (section 16).
+widened, brought back (section 16). 2026-10-09: tangent propagation as an
+option; off, only the picked faces turn, and a fillet beside them is made
+again at its radius after the draft (section 17).
 The design below came with a Python prototype (section 5)
 that the earlier measurements come from; the open questions settled
 2026-10-05 (section 9).
