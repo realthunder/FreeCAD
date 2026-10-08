@@ -1037,7 +1037,8 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     # with the clock standing still: the replay of the records restored
     # inside the open was one loop over every one of them, a slice of 0.16
     # to 0.32 s under the test's budget of 0.01 s, and is 0.012 to 0.046 s
-    # in slices.
+    # in slices. And it counts the reads of the time of day a load makes:
+    # 417000 while the timing macros and the build timers read it, 3 since.
     fc_add_gui_test(GuiDrainClockStep_tests_run drain-clock-step.py --timeout 240)
     set_property(TEST GuiDrainClockStep_tests_run APPEND PROPERTY ENVIRONMENT
         "FC_CLOCK_SHIM=$<TARGET_FILE:FCClockStepShim>"

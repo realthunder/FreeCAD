@@ -165,7 +165,7 @@ public:
     private:
         std::chrono::duration<double> &accum;
         std::size_t *counter;
-        std::chrono::high_resolution_clock::time_point start;
+        std::chrono::steady_clock::time_point start;
     };
 
     // returns the root node of the Provider (3D)

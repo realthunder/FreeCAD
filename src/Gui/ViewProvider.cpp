@@ -80,12 +80,12 @@ ViewProvider::VisualBuildTimer::VisualBuildTimer(
         std::chrono::duration<double> &accum, std::size_t *counter)
     : accum(accum)
     , counter(counter)
-    , start(std::chrono::high_resolution_clock::now())
+    , start(std::chrono::steady_clock::now())
 {}
 
 ViewProvider::VisualBuildTimer::~VisualBuildTimer()
 {
-    accum += std::chrono::high_resolution_clock::now() - start;
+    accum += std::chrono::steady_clock::now() - start;
     if (counter)
         ++*counter;
 }

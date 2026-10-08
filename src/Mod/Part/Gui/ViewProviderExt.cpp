@@ -522,7 +522,7 @@ struct MeshCallProbe {
     bool landedClaim = false;
     int trisBefore = 0, facesBefore = 0, facesTotal = 0;
     double residentMin = 0.0, residentMax = 0.0;
-    std::chrono::high_resolution_clock::time_point start;
+    std::chrono::steady_clock::time_point start;
 
     static void sample(const TopoDS_Shape &shape, int &tris, int &faces,
                        int &total, double *dmin, double *dmax)
@@ -559,7 +559,7 @@ struct MeshCallProbe {
             return;
         sample(shape, trisBefore, facesBefore, facesTotal,
                &residentMin, &residentMax);
-        start = std::chrono::high_resolution_clock::now();
+        start = std::chrono::steady_clock::now();
     }
 
     ~MeshCallProbe()
@@ -567,7 +567,7 @@ struct MeshCallProbe {
         if (!active)
             return;
         const double elapsed = std::chrono::duration<double>(
-                std::chrono::high_resolution_clock::now() - start).count();
+                std::chrono::steady_clock::now() - start).count();
         int trisAfter = 0, facesAfter = 0, total = 0;
         sample(shape, trisAfter, facesAfter, total, nullptr, nullptr);
         Stats &st = stats();
@@ -784,7 +784,7 @@ struct VisualSplitReporter {
 /// it on -- which is what decides how its rebuild gets split.
 struct SlowBuildProbe {
     const Gui::ViewProviderDocumentObject *vp;
-    std::chrono::high_resolution_clock::time_point start;
+    std::chrono::steady_clock::time_point start;
     double mesh, fill, prologue, instance, highlight;
     /// Which ladder state decided this build's deflection, filled by
     /// updateVisual once it has decided (empty on the paths that never
@@ -794,7 +794,7 @@ struct SlowBuildProbe {
     std::string note;
     explicit SlowBuildProbe(const Gui::ViewProviderDocumentObject *vp)
         : vp(vp)
-        , start(std::chrono::high_resolution_clock::now())
+        , start(std::chrono::steady_clock::now())
         , mesh(Gui::ViewProvider::VisualMeshTime.count())
         , fill(Gui::ViewProvider::VisualFillTime.count())
         , prologue(Gui::ViewProvider::VisualPrologueTime.count())
@@ -809,7 +809,7 @@ struct SlowBuildProbe {
         if (thresholdMS <= 0)
             return;
         const double total = std::chrono::duration<double>(
-            std::chrono::high_resolution_clock::now() - start).count();
+            std::chrono::steady_clock::now() - start).count();
         if (total * 1000.0 < double(thresholdMS))
             return;
         using VP = Gui::ViewProvider;
@@ -7086,14 +7086,14 @@ bool ViewProviderPartExt::captureVisualFill(const TopoDS_Shape &cShape,
             // than an argument.
             if (skipRedundant || skipInvariant || debugCheck) {
                 const auto checkStart =
-                    std::chrono::high_resolution_clock::now();
+                    std::chrono::steady_clock::now();
                 verdict = tessellationIsRedundant(cShape, deflection,
                         Gui::RenderParams::getMeshSkipFinerResident());
                 if (debugCheck) {
                     MeshCallProbe::Stats &ms = MeshCallProbe::stats();
                     ++ms.checks;
                     ms.timeChecking += std::chrono::duration<double>(
-                        std::chrono::high_resolution_clock::now()
+                        std::chrono::steady_clock::now()
                         - checkStart).count();
                     if (skipRedundant && verdict.redundant())
                         ++ms.skipped;

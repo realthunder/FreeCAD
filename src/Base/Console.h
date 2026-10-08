@@ -401,7 +401,11 @@ using PyMethodDef = struct PyMethodDef;
 #define FC_xyz(_pt) '(' << (_pt).x << ", " << (_pt).y << ", " << (_pt).z << ')'
 
 #ifndef FC_LOG_NO_TIMING
-#define FC_TIME_CLOCK high_resolution_clock
+// The steady clock: every use of these is an interval. In libstdc++
+// high_resolution_clock is the time of day, which moves back where it is
+// resynced in steps, and an interval with a step in it came out short by
+// the step, or below zero.
+#define FC_TIME_CLOCK steady_clock
 #define FC_TIME_POINT std::chrono::FC_TIME_CLOCK::time_point
 #define FC_DURATION std::chrono::duration<double>
 

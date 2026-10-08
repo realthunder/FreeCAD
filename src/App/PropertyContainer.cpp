@@ -585,7 +585,7 @@ bool sameType(const Base::Type &type, const char *savedName)
 
 void PropertyContainer::Restore(Base::XMLReader &reader)
 {
-    auto tRestore = std::chrono::high_resolution_clock::now();
+    auto tRestore = std::chrono::steady_clock::now();
 
     reader.clearPartialRestoreProperty();
     reader.readElement("Properties");
@@ -677,9 +677,9 @@ void PropertyContainer::Restore(Base::XMLReader &reader)
                         && !prop->testStatus(Property::PropTransient))
                 {
                     FC_TRACE("restoring property " << prop->getFullName());
-                    auto tValue = std::chrono::high_resolution_clock::now();
+                    auto tValue = std::chrono::steady_clock::now();
                     prop->Restore(reader);
-                    auto dValue = std::chrono::high_resolution_clock::now() - tValue;
+                    auto dValue = std::chrono::steady_clock::now() - tValue;
                     restoreStats.value += dValue;
                     // Self-selecting: a single property worth tens of
                     // milliseconds is never the parse, it is a reaction to
@@ -745,7 +745,7 @@ void PropertyContainer::Restore(Base::XMLReader &reader)
     reader.readEndElement("Properties");
 
     restoreStats.count += Cnt;
-    restoreStats.total += std::chrono::high_resolution_clock::now() - tRestore;
+    restoreStats.total += std::chrono::steady_clock::now() - tRestore;
 }
 
 void PropertyContainer::onPropertyStatusChanged(const Property &prop, unsigned long oldStatus)

@@ -42,6 +42,12 @@ slices, the time they say they spent and their longest slice):
     -- are restored inside the open and replayed after the sweep of
     updates, and that replay was one loop over all of them, 0.16 to
     0.32 s here and growing with the document;
+  - a load does not time itself by the time of day at all: the shim
+    counts the reads, and there were 417000 of them in one load of these
+    2400 objects, 174 an object, from the timing macros of Base/Console.h,
+    the visual build timers and the restore statistics -- reporters, which
+    a step made lie in what they reported. Three are left, this test's
+    own;
   - every visual is built at the end of each load.
 
 Run through scripts/gui-test.sh (xvfb, isolated configuration, external
@@ -69,6 +75,9 @@ LONGEST = 0.4
 # Ten budgets: the slice ends after the object that spent the budget, and
 # the progress bar runs events from inside it
 UNSLICED = 0.1
+# Reads of the time of day a load may make: none of ours, and room for
+# whatever a library does
+READS = 1000
 LOADS = ["warm", "plain", "stepped"]
 
 RESTORE = re.compile(r"progressive restore (\S+): (\d+) view providers in (\d+) slices, "
@@ -216,6 +225,10 @@ def verdict():
         check("the view provider drain has no phase without a budget",
               longest is not None and longest < UNSLICED,
               "longest slice %s s under a budget of %.3f s" % (longest, BUDGET_MS / 1000.0))
+        check("a load does not time itself by the time of day",
+              plain["reads"] < READS and stepped["reads"] < READS,
+              "%d and %d reads of it in the plain and the stepped load"
+              % (plain["reads"], stepped["reads"]))
         for kind in LOADS:
             run = runs[kind]
             check("every visual is built after the %s load" % kind,
