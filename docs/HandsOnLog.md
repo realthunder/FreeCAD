@@ -1595,7 +1595,7 @@ highlighted row is entry 43 of the queue. Entry 24 has nothing left with
 the reporter. Pushed: `origin/PartDesignPort` = `b70cc6ebf1`, cycles
 `35a3bd898` first. Not staged.
 
-## 41. The Python-only modules' settings, through a door into the registry -- steps 1 and 2 of 4 DONE (the way in, Assembly; Draft and BIM), a list with the reporter; Fem, CAM, AddonManager and the rest to do
+## 41. The Python-only modules' settings, through a door into the registry -- steps 1 to 3 of 4 DONE (the way in, Assembly; Draft and BIM; Fem, CAM, the Addon Manager), F2 and F5 answered, the rest of the list with the reporter; step 4 to do
 
 Decided under entry 24 (C1, C4). Not started. Sized 2026-10-08, static,
 with `inv24.py` run again on the tree of `b70cc6ebf1` and split by who
@@ -1698,11 +1698,10 @@ Scored: `-t TestDraft` 91 OK (6 new), `-t TestArch` 280 OK, `-t BaseTests`
 FAIL on the staged binaries. The full suites were not run again after
 these two commits (last: `427ffc8d28`). Not staged, not pushed.
 
-Left of the entry: step 3 (Fem about 54, CAM about 40, AddonManager about
-20) and step 4 (Help, OpenSCAD, ReverseEngineering, Tux, Material, Test).
-A module with plain reads takes a definition file (`freecad.params`); one
-with a table of its own (CAM's `Path/Preferences.py`, AddonManager's
-defaults file) registers from that.
+Left of the entry after this step: step 3 (Fem, CAM, the Addon Manager;
+done below) and step 4 (Help, OpenSCAD, ReverseEngineering, Tux, Material,
+Test). A module with plain reads takes a definition file
+(`freecad.params`); one with a table of its own registers from that.
 
 **The list for the reporter,** nothing of it chosen or changed:
 
@@ -1737,6 +1736,67 @@ Seen on the way, and left:
   tool tip are translated, through the page's own context.
 - F5 To decide: Draft's and BIM's settings are listed after first use of
   either workbench, because of the 1.9 s above; Assembly's from the start.
+
+**Answered, 2026-10-08,** in the reporter's words: "F2 remove
+PartGui::PartParams duplicates. F5 lazy loading, continue step 3". L1 to
+L5, F1, F3 and F4 are not answered.
+
+- F5: stays as it is, Draft's and BIM's settings are described when their
+  table loads.
+- F2 (`48037fbd8c`): the two classes share the four definitions on purpose
+  -- App reads them, Gui follows a change at once -- so both keep their
+  accessors. The registry keeps ONE description of a path and entry:
+  `ParamRegistry::add()` of a generated class leaves out an entry described
+  already, as the run-time `add()` does. The first stands, here Part's,
+  whose library loads first; PartGui's four are no longer listed. `Tests_run`
+  `ParamRegistry*` 10/10 (1 new); the GUI test's new claim passes (one
+  `MeshDeviation`, no path and entry twice with every module of the test
+  loaded).
+
+**Step 3, Fem, CAM and the Addon Manager** (`de7bd49797`), 2026-10-08: 115 settings,
+listed from the start of a session (each is a plain file read by the
+module's `Init.py`):
+
+- Fem, 47: `Mod/Fem/FemPyParams.py`, a definition file. Fem's preference
+  pages are C++ pages whose settings Python reads, so the file was drafted
+  from the pages' `.ui` files -- title, tool tip, combo items, spin ranges
+  (`gen_ui_defs.py` in the entry's script directory) -- and 17
+  documentations written where a page has no tool tip. Two more are what the
+  mesh preview panel was last left with.
+- CAM, 27: `Mod/CAM/CAMPyParams.py`, a definition file. `Path/Preferences.py`
+  is not a table but constants and functions, so the settings are written
+  out, each with the default its function passes.
+- The Addon Manager, 41: `addonmanager_params_registry.py` reads the
+  module's own `addonmanager_preferences_defaults.json` -- the table -- and
+  adds a title and a documentation to each row.
+
+Each has a test that holds the described defaults to the readers'
+(`femtest/app/test_settings.py`, `CAMTests/TestPathSettingsRegistry.py`,
+`AddonManagerTest/app/test_params_registry.py`), and that the settings of
+the module's generated class are all still listed beside them (8 of Fem's,
+13 of CAM's).
+
+Added to the list for the reporter:
+
+- L6 CAM `PostProcessorShowEditor`: the page has the box unchecked;
+  `Path/Preferences.py` reads it with True. Described: True.
+- L7 The Addon Manager's `NoProxyCheck`, `SystemProxyCheck`,
+  `UserProxyCheck`: its defaults file gives each an empty text; the code
+  stores and reads them as switches, with True, False, False. Described as
+  switches with those.
+- L8 Fem `Ccx/AnalysisNumCPUs` and `Netgen/NumOfThreads`: the default is the
+  number of cores of the machine (and `femtools/ccxtools.py` reads the first
+  with 1). NOT described.
+- F6 CHANGED, one line: `addonmanager_preferences_defaults.json` was not in
+  the Addon Manager's CMake list, so neither the build tree nor the staged
+  copy had it, though `addonmanager_freecad_interface.Preferences` reads it
+  when first made. It is installed now, because the registration reads it.
+  What the Addon Manager did without it was not looked at.
+- F7 Fem's `MeshPreviewSettings.ui` names its spin box's entry
+  `previewFactor`; the code reads and stores `previewMeshFactor`.
+- F8 CAM keeps the place and size of the post processor's dialogues, and
+  the versions its asset migration was offered for, in groups named at run
+  time: not described. The Inspect window's place and size are kept as text.
 
 ## 42. State keys through the generator, and listed -- SIZED, the cut agreed; after entry 41
 
