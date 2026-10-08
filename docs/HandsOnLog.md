@@ -43,7 +43,7 @@ Evidence that does not belong in the repository is under
 | 34 | FIXED `3d7b4c30fd`, not staged | Dark and Light store TechDraw's preselection colour, the blue of the 3D view's |
 | 38 | FIXED `bb31f8820b`, not staged | the omni search's first bring-up made the icon of every command before showing the box: 1.27 s on the reporter's configuration, 0.22 s now |
 | 39 | FIXED `c7d115e576`, not staged | MSAA has not reached any view since 2026-09-07: the scene depth was built readable at every sample count and bgfx refuses that framebuffer. Write-only under MSAA now; a test asks the view its sample count |
-| 41 | FIXED, all four steps: `a75b43f1d5`, `4a99a978f7`, `48037fbd8c`, `de7bd49797`, `ff12279ee6`; not staged, not pushed; a list with the reporter (L1-L12, F1, F3, F4, F6-F12) | the Python-only modules' settings through a door into the registry: 601 settings listed that were not -- Assembly 13, Draft and BIM 426, Fem 47, CAM 27, the Addon Manager 41, Help 12, OpenSCAD 15, ReverseEngineering 11, Tux 5, Material 4. Registration only, the readers keep their code; a test per module holds each described default to its readers' |
+| 41 | FIXED, all four steps: `a75b43f1d5`, `4a99a978f7`, `48037fbd8c`, `de7bd49797`, `ff12279ee6`, and `aa63b07cc8` for the answers to L9 and L10; not staged, not pushed; a list with the reporter (L1-L8, L11, F1, F3, F4, F6-F8; L11 with a recommendation) | the Python-only modules' settings through a door into the registry: 603 settings listed that were not -- Assembly 13, Draft and BIM 426, Fem 47, CAM 27, the Addon Manager 41, Help 14, OpenSCAD 15, ReverseEngineering 11, Tux 5, Material 4. Registration only, the readers keep their code; a test per module holds each described default to its readers' |
 | 42 | SIZED 2026-10-08, the cut agreed; after entry 41, not started | of about 300 keys C++ reads without a definition: about 90 state keys go through the generator and are listed, about 110 settings entry 24 did not reach go in the same entry, about 90 records under names the user makes stay out |
 
 **The reporter, 2026-10-07 14:20, on what is open** (said to the build
@@ -1798,8 +1798,8 @@ Added to the list for the reporter:
   the versions its asset migration was offered for, in groups named at run
   time: not described. The Inspect window's place and size are kept as text.
 
-**Step 4, the small rest** (`ff12279ee6`), 2026-10-08: 47 settings, where
-the sizing had said about 48 -- Help 12, OpenSCAD 15, ReverseEngineering
+**Step 4, the small rest** (`ff12279ee6`), 2026-10-08: 47 settings (49 since
+the answer to L9, below), where the sizing had said about 48 -- Help 12, OpenSCAD 15, ReverseEngineering
 11, Tux 5, Material 4, the Test module none. Each has a definition file
 that its `Init.py` imports, so they are listed from the start of a session:
 
@@ -1887,6 +1887,51 @@ The full suites on `ff12279ee6`, the first full run since `427ffc8d28`
 `TestThickness.testCase5829ThicknessOnRotatedFillet` and
 `testCase5829RectoVersoThicknessOnRotatedFillet`, red since the OCCT merge
 of 2026-10-05 and not this entry's. `docs/Testing.md` has the counts.
+
+**Answered, 2026-10-08,** in the reporter's words: "L9 check with upstream.
+fix the read side if upstream also borken. L10 use 16. L11 check with
+upstream. F9 drop. F10 elaborate. F11 drop. F12 drop." F9, F11 and F12 are
+read as closed with nothing to do: the two dead keys and `LegacyEditor`
+stay undescribed, Tux's marker stays described.
+
+- L9 (`aa63b07cc8`): upstream has the same four lines (`upstream/main` at
+  `b960974504`, 2026-10-01), so the read side is fixed here: width and
+  height are read with `GetInt`, each from its own key, with the defaults
+  the lines had (200 wide, 300 high). What the old read did, measured: a
+  switch read with a default of 200 is True, so the panel was made 1 by 1
+  -- with 520 and 410 stored a new floating help panel was 82 by 1, and is
+  520 by 410 now (`help_panel_size.py` with the entry's scripts, run by
+  hand before and after; not a registered test). Both keys are described
+  now, so Help has 14 settings and the entry 603. BIM's views manager has
+  the same lines (L5), in upstream too; L5 is not answered and was not
+  touched.
+- L10 (`aa63b07cc8`): `prototype.py` passes 16.
+- L11, checked: upstream is the same on both sides -- its
+  `DlgSettingsMaterial.ui` has the box checked, its `MaterialEditor.py`
+  reads `SortByResources` with False. Nothing changed. What it means in
+  use: until the Preferences dialog has been accepted once the card list
+  is sorted by name, after that by resource, because the page stores its
+  checked box. Recommended, not done: read it with True, the page's.
+- F10, elaborated. A module directory is initialised in two passes:
+  `FreeCADInit.py` runs its `Init.py` in every session, `FreeCADGuiInit.py`
+  its `InitGui.py` when there is a GUI. Help and Tux had only the second
+  (upstream too). The definition file has to be imported from one of them;
+  the other three modules of step 4, and Assembly, Fem and CAM before them,
+  import it from `Init.py`, so the same was done here by adding the file,
+  five lines with the one import. What it changes: the two modules'
+  settings are listed in a session without GUI as well -- `FreeCADCmd`,
+  the headless serve whose browser has the omni search -- and
+  `BaseTests.testModulesDefinitions` and `-t ModuleSettings`, which run in
+  `FreeCADCmd`, see them. Nothing else of the module is loaded by it:
+  `Help.py` and Tux's GUI files are imported by `InitGui.py` as before. The
+  cost, measured by running each definition file again in a started
+  session (best of five, `time_init.py`): Help's 4.4 ms, Tux's 1.5 ms; the
+  eight definition files between 1.5 and 4.5 ms each. The first run, which
+  also compiles the file, was not timed apart. The other way would be the
+  import in `InitGui.py`: no new file, listed in GUI sessions only, and
+  out of reach of the two tests. Help's sources and translation suffix are
+  read without a GUI too (`Help.show()` prints the page there); Tux's five
+  only mean something with one.
 
 ## 42. State keys through the generator, and listed -- SIZED, the cut agreed; after entry 41
 
