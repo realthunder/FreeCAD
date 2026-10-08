@@ -82,7 +82,7 @@ report views, the reporter's own files -- is kept beside the dev tree under
 | 42 | 2026-10-08 | state keys (window sizes, recent lists, last directories, first-run flags) through the generator like every other setting (from entry 24: C2) | FIXED, all three steps (`aa3e77137c`, `dbadedb7ba`, `7e442e1bc2`, `234572bd87`); not staged, not pushed; Q6 not answered: 174 keys defined -- 89 settings and 85 state keys, 213 rows of the registry. The 3D mouse (32) and the expression sandbox (14) with every reader converted, Gui's small groups (30) too; the state the program keeps (window, dialogs, overlay panels, module panels) is defined with its readers left as they are. Not defined, as decided or for cause: Q1's 20, the share token, the workbench order, the recent lists, `LogLevels/DebugDefault` (the fourth developer switch), Oculus's 4, two of Sketcher's. Not run: the 3D mouse's motion path (no device), `ExpressionWasmtimeRuntime.cpp` (not compiled here). ctest 788 of 788, Python 3411 with the two known thickness failures. Q2 is entry 44, fixed (`docs/HandsOnLog.md`) |
 | 43 | 2026-10-08 | omni search: the highlighted row's text is white on a light blue highlight | OPEN; looked at by the build session, not a side effect of the theme defaults, not fixed |
 | 44 | 2026-10-08 | the DXF page's exporter settings do not reach the C++ DXF exporter: `Import.writeDXFObject`/`writeDXFShape` point it at `Mod/Import`, where nothing stores them (found by the build session on entry 42, Q2) | FIXED `813d0250f9`, not staged: the exporter was pointed at `Mod/Import` for its options, where nothing stores them; it takes them from `Mod/Draft`, where the DXF page puts them, as upstream does. An ellipse written with "Treat ellipses and splines as polylines" on was an ELLIPSE before and is an LWPOLYLINE after (24 points at a segment length of 5, 198 at 0.5). `Import_tests_run` 6 of 6; the full suites not rerun after it (`docs/HandsOnLog.md`) |
-| 45 | 2026-10-08 | a spreadsheet's view provider MAKES its view when asked for it (`ViewProviderSheet::getMDIView()`): one click on a sheet in the tree opens it, show-in-cell closes another sheet's view; a design agreed by the reporter in another session, single click selects and opens nothing (handed over from session x16, branch SketcherPort; goes on from entry 27) | OPEN: measured and ruled in the other session, built nowhere; DECIDED 2026-10-08 20:55: the build session here (dwin) builds it once it finishes what it is doing (entry 42), on this branch with entry 27's fix |
+| 45 | 2026-10-08 | a spreadsheet's view provider MAKES its view when asked for it (`ViewProviderSheet::getMDIView()`): one click on a sheet in the tree opens it, show-in-cell closes another sheet's view; a design agreed by the reporter in another session, single click selects and opens nothing (handed over from session x16, branch SketcherPort; goes on from entry 27) | FIXED `c7fdcf3220`, not staged, not pushed, on this branch on top of entry 27's fix as decided: a sheet's `getMDIView()` answers and no longer opens; a new `ViewProviderDocumentObject::getOrCreateMDIView()` opens the view for the three callers that host it (the cell menu's pick, `Std_ViewCellShowObject`, a layout coming back). One click on a sheet selects and opens nothing. `Std_ViewCellShowObject` also took a stale cell and closed another sheet's view; it takes the active view's cell. Not as handed over in one point: the sheet's view is not made "bare" (`docs/HandsOnLog.md`) |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -3184,7 +3184,61 @@ It touches entry 42: these four are among the 28 settings of its Q1 that do
 not take a plain definition, because they are read from two groups.
 Not said yet by the reporter: whether to fix it, and when.
 
-## 45. A spreadsheet's view provider makes its view when it is only asked for it -- OPEN, a design agreed in another session; the build session builds it after entry 42
+## 45. A spreadsheet's view provider makes its view when it is only asked for it -- FIXED `c7fdcf3220`, not staged (see `docs/HandsOnLog.md`)
+
+**2026-10-08 22:19, the build session: FIXED `c7fdcf3220`** (its message;
+its log, entry 45, `6f24054384`, local). On PartDesignPort, on top of
+`fa2ada985c`. Not staged, not pushed.
+
+Tests first, as the design asked: `tests/gui/sheet-view-on-request.py`, a
+box and two sheets, on the tree before the change 14 PASS and 3 FAIL of 17.
+What failed there:
+- one click on a sheet in the tree selected it AND opened its view (the
+  other session's second finding);
+- `Std_ViewCellShowObject`, a 3D view active beside an open sheet and the
+  other sheet selected: the selected sheet took the open sheet's cell and
+  that view was closed (the third finding; it does happen here).
+The first finding does not happen here, entry 27 having taken the menu's
+listing off the view providers.
+
+The change:
+- `ViewProviderSheet::getMDIView()` answers with its view or nothing; the
+  contract is written at `ViewProvider::getMDIView()`: a question, never a
+  creation;
+- `ViewProviderDocumentObject::getOrCreateMDIView()`, new and virtual: the
+  view for a caller that is going to host it, made if there is none. Its
+  users: the cell menu's pick, `Std_ViewCellShowObject`, and the layout
+  that comes back with a document. The lookups stay questions;
+- the sheet's `doubleClicked`, `setEdit` and "Show spreadsheet" are
+  unchanged;
+- one click on a sheet selects and opens nothing, as ruled.
+
+**Two points for the reporter, both said to them by the build session:**
+1. NOT as handed over: the design had the sheet make its view BARE, for the
+   caller to place. On this branch a view opened for a cell is placed into
+   that cell by entry 27's `ViewPlacement::IntoCell`, which the three
+   callers already stood in, so the sheet's request opens the view the way
+   it always did and that scope puts it where it was asked for. The layout
+   that comes back has no such scope: the view is placed by the policy and
+   the layout then takes it into its cell, as for a TechDraw page.
+2. The third finding's cause was not the question at all:
+   `Std_ViewCellShowObject` took the view area's OWN active cell, the one
+   last clicked into or filled, and activating a view from the tree or a
+   script changes the active view without moving that cell. The command
+   takes the cell of the active view now. The two can still differ
+   elsewhere; not looked at.
+
+Scored: `sheet-view-on-request.py` 18 PASS (one check added on the way),
+`view-cell-menu.py` 15 PASS, `spreadsheet-select-all.py` 2 PASS, run by
+hand. Both full suites on the tree BEFORE the command's one line: ctest 788
+of 788, Python 3411 tests with the two known `TestThickness` 5829 failures
+only.
+Not covered by a claim: the expression editor and the link dialog (right
+"by the question being one now", in the log's words). The other session's
+`GuiSheetViewReopen` and `GuiTaskPanelKeptSheetView` are not in this tree;
+the reopen claim of the new test stands in for the first.
+The note-taker's remark: the other session (x16, SketcherPort) has not been
+told the outcome; its branch still has its own version of this ground.
 
 **2026-10-08 21:25, the build session:** entry 45 is received and is next,
 on this branch on top of `fa2ada985c`. Not started.
