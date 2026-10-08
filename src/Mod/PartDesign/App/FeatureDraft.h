@@ -77,6 +77,7 @@ public:
     App::PropertyInteger _NeutralSense;
     App::PropertyEnumeration Method;
     App::PropertyBool StopAtBody;
+    App::PropertyBool TangentPropagation;
 
     /** @name methods override feature */
     //@{

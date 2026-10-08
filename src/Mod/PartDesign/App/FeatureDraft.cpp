@@ -97,6 +97,11 @@ Draft::Draft()
             "New draft only: a drafted face stops at the body. Where it\n"
             "leans out, its neighbours grow to meet it, but not past a face\n"
             "of the body that has the whole body on its inner side.");
+    ADD_PROPERTY_TYPE(TangentPropagation,(true),"Draft",App::Prop_None,
+            "A drafted face takes the faces tangent to it along: the fillets\n"
+            "beside it, the walls beyond them, and so on. Off, only the\n"
+            "faces picked are drafted; a face tangent to them that is not\n"
+            "picked is refused. The classic draft always takes them.");
 }
 
 namespace
@@ -288,7 +293,8 @@ short Draft::mustExecute() const
         PullDirection.isTouched() ||
         Reversed.isTouched() ||
         Method.isTouched() ||
-        StopAtBody.isTouched())
+        StopAtBody.isTouched() ||
+        TangentPropagation.isTouched())
         return 1;
     return DressUp::mustExecute();
 }
@@ -433,6 +439,40 @@ App::DocumentObjectExecReturn *Draft::execute()
 
     this->positionByBaseFeature();
 
+    std::vector<TopoDS_Face> pickedFaces;
+    for (const auto& f : faces)
+        pickedFaces.push_back(TopoDS::Face(f.getShape()));
+
+    long method = Method.getValue();
+    bool propagate = TangentPropagation.getValue();
+    if (!propagate) {
+        // The classic draft cannot stop at a fillet: it drafts the tangent
+        // chain whatever it is told (docs/NewDraft.md section 17.2). Where no
+        // picked face has a tangent face that was not picked, the option
+        // changes nothing; else only the cell draft can leave it out.
+        std::vector<TopoDS_Face> tangent;
+        try {
+            tangent = Part::CellDraft::TangentFaces(baseShape.getShape(), pickedFaces);
+        } catch (Standard_Failure &) {
+        }
+        if (tangent.empty())
+            propagate = true;
+        else if (method == MethodClassic) {
+            std::string names;
+            for (const auto& f : tangent) {
+                int idx = baseShape.findShape(f);
+                if (idx > 0)
+                    names += (names.empty() ? "" : ", ") + std::string("Face") + std::to_string(idx);
+            }
+            return new App::DocumentObjectExecReturn(
+                "Tangent propagation is off, but the classic draft always drafts the faces "
+                "tangent to the drafted ones (" + names + "); use the New or Auto method, "
+                "or turn tangent propagation on");
+        }
+        else
+            method = MethodNew;
+    }
+
     // Note:
     // LocOpe_SplitDrafts can split a face with a wire and apply draft to both parts
     //       Not clear though whether the face must have free boundaries
@@ -445,7 +485,7 @@ App::DocumentObjectExecReturn *Draft::execute()
         TopoShape shape(0,getDocument()->getStringHasher());
         try {
             shape.makEDraft(base,draftFaces,pullDirection,angle,neutralPlane,
-                            true,nullptr,cell,StopAtBody.getValue());
+                            true,nullptr,cell,StopAtBody.getValue(),propagate);
             if (shape.isNull()) {
                 error = "Resulting shape is null";
                 return TopoShape();
@@ -470,7 +510,6 @@ App::DocumentObjectExecReturn *Draft::execute()
         return TopoShape();
     };
 
-    long method = Method.getValue();
     std::string error;
     TopoShape result;
     if (method != MethodNew) {
@@ -481,13 +520,10 @@ App::DocumentObjectExecReturn *Draft::execute()
             // grown past a face that bounds it where the cell draft stops
             // (docs/NewDraft.md section 11). Then Auto takes the cell draft,
             // or, if that refuses, keeps the classic result and says why.
-            std::vector<TopoDS_Face> draftFaces;
-            for (const auto& f : faces)
-                draftFaces.push_back(TopoDS::Face(f.getShape()));
             std::string why;
             try {
                 why = Part::CellDraft::CheckDraft(
-                    baseShape.getShape(), result.getShape(), draftFaces, StopAtBody.getValue());
+                    baseShape.getShape(), result.getShape(), pickedFaces, StopAtBody.getValue());
             } catch (Standard_Failure &) {
                 FC_WARN(getFullName() << ": the check of the classic draft failed; kept it");
             }

@@ -238,7 +238,8 @@ class TestDraft(unittest.TestCase):
         finally:
             FreeCAD.closeDocument(doc.Name)
 
-    def makeDraftOn(self, shape, face, neutral, method, angle=5, stop=True, reversed=False):
+    def makeDraftOn(self, shape, face, neutral, method, angle=5, stop=True, reversed=False,
+                    propagate=True):
         """A Draft of the faces picked by <face> about the face picked by
         <neutral>, on a Part::Feature holding <shape> as the body's base."""
         base = self.Doc.addObject("Part::Feature", "Base")
@@ -256,6 +257,7 @@ class TestDraft(unittest.TestCase):
         draft.Method = method
         draft.StopAtBody = stop
         draft.Reversed = reversed
+        draft.TangentPropagation = propagate
         self.Doc.recompute()
         return draft
 
@@ -478,6 +480,42 @@ class TestDraft(unittest.TestCase):
                                  angle=30)
         self.assertIn("Invalid", draft.State)
         self.assertIn("FaceVanishes", draft.getStatusString())
+
+    def testDraftTangentPropagationOff(self):
+        # The block of testDraftNewTangentChain. With tangent propagation
+        # off, only the faces picked are drafted: one wall picked, the
+        # fillets beside it are not drafted, which is refused for now
+        # (docs/NewDraft.md section 17), and the classic draft, which always
+        # drafts the chain, refuses it whatever the method.
+        shape = Part.makeBox(20, 10, 10)
+        shape = shape.makeFillet(2, [e for e in shape.Edges
+                                     if abs(e.Vertexes[0].Z - e.Vertexes[1].Z) > 1])
+        t = math.tan(math.radians(5))
+        volume = (2000 - 30 * t * 100 + 4 * t * t * 1000 / 3
+                  - (4 - math.pi) * (40 - 2 * t * 100 + t * t * 1000 / 3))
+        for method, error in (("Auto", "TangentNeighbour"), ("New", "TangentNeighbour"),
+                              ("Classic", "classic draft always drafts")):
+            draft = self.makeDraftOn(shape, self.planeAt("Y", 0), self.planeAt("Z", 0), method,
+                                     propagate=False)
+            self.assertIn("Invalid", draft.State, method)
+            self.assertIn(error, draft.getStatusString(), method)
+            self.assertIn("tangent propagation", draft.getStatusString(), method)
+        # every wall and fillet picked: the chain itself, drafted as with
+        # propagation on
+        walls = lambda f: abs(f.BoundBox.ZLength - 10) < 1e-9
+        for method in ("Auto", "New"):
+            draft = self.makeDraftOn(shape, walls, self.planeAt("Z", 0), method, propagate=False)
+            self.assertNotIn("Invalid", draft.State, method)
+            self.assertTrue(draft.Shape.isValid(), method)
+            self.assertAlmostEqual(draft.Shape.Volume, volume, 6, method)
+            self.assertEqual(len(draft.Shape.Faces), 10, method)
+        # without fillets the option changes nothing
+        box = Part.makeBox(20, 10, 10)
+        for method in ("Classic", "Auto", "New"):
+            draft = self.makeDraftOn(box, self.planeAt("Y", 0), self.planeAt("Z", 0), method,
+                                     propagate=False)
+            self.assertNotIn("Invalid", draft.State, method)
+            self.assertAlmostEqual(draft.Shape.Volume, 2000 - 1000 * t, 6, method)
 
     @staticmethod
     def roundedRect(x0, y0, w, d, r, z):
