@@ -44,7 +44,7 @@ Evidence that does not belong in the repository is under
 | 38 | FIXED `bb31f8820b`, not staged | the omni search's first bring-up made the icon of every command before showing the box: 1.27 s on the reporter's configuration, 0.22 s now |
 | 39 | FIXED `c7d115e576`, not staged | MSAA has not reached any view since 2026-09-07: the scene depth was built readable at every sample count and bgfx refuses that framebuffer. Write-only under MSAA now; a test asks the view its sample count |
 | 41 | FIXED, all four steps: `a75b43f1d5`, `4a99a978f7`, `48037fbd8c`, `de7bd49797`, `ff12279ee6`, and `aa63b07cc8` for the answers to L9 and L10; not staged, not pushed; a list with the reporter (L1-L8, L11, L12, F1, F3, F4, F6-F8; L11 with a recommendation) | the Python-only modules' settings through a door into the registry: 603 settings listed that were not -- Assembly 13, Draft and BIM 426, Fem 47, CAM 27, the Addon Manager 41, Help 14, OpenSCAD 15, ReverseEngineering 11, Tux 5, Material 4. Registration only, the readers keep their code; a test per module holds each described default to its readers' |
-| 42 | SIZED 2026-10-08, the cut agreed; after entry 41, not started | of about 300 keys C++ reads without a definition: about 90 state keys go through the generator and are listed, about 110 settings entry 24 did not reach go in the same entry, about 90 records under names the user makes stay out |
+| 42 | STEP 1 of 3 DONE 2026-10-08 (the split key by key: 94 state keys, 114 settings, 44 records, 23 dead, 14 defined after all); nothing generated yet, six points with the reporter | of about 300 keys C++ reads without a definition: about 90 state keys go through the generator and are listed, about 110 settings entry 24 did not reach go in the same entry, about 90 records under names the user makes stay out |
 
 **The reporter, 2026-10-07 14:20, on what is open** (said to the build
 session; the queue has the reporter's own entries):
@@ -1933,7 +1933,7 @@ stay undescribed, Tux's marker stays described.
   read without a GUI too (`Help.show()` prints the page there); Tux's five
   only mean something with one.
 
-## 42. State keys through the generator, and listed -- SIZED, the cut agreed; after entry 41
+## 42. State keys through the generator, and listed -- step 1 DONE (the split key by key), steps 2 and 3 to do; six points with the reporter
 
 Decided under entry 24 (C2), and the reporter, 2026-10-08: "Entry 42, list
 those keys". Not started. Sized with the same run
@@ -1965,3 +1965,70 @@ ones to generator in the same entry." So: (1) the split key by key;
 110 missed settings in this entry too, group by group, the 3D mouse
 first; the records under names the user makes stay out. After entry 41,
 and not before the next session.
+
+**Step 1, the split key by key,** 2026-10-08. Nothing in the tree changed.
+Each of the 300 candidates was read at its sites (by a subagent of the
+build session; `..\dl\handson6-10-08\entry41-42-sizing\`:
+`entry42-split.tsv`, a row per path and key with type, the default of each
+reader, kind, where it is set and a note; `entry42-split-summary.txt`).
+Ten candidates were one key name in several groups and became 25 rows; 315
+rows, 289 distinct pairs of path and key:
+
+| kind | pairs | what |
+|---|---|---|
+| state | 94 | the overlay panels' 13, `General` 10, `View` 8, `MainWindow` 7, the 3D mouse's calibration 7, `PropertyView` 6, Sketcher 10, and small groups |
+| setting | 114 | the 3D mouse's motion 24, the expression sandbox 13, the web addresses 8, the cube's face labels 6, gizmos 5, `PropertyView` 5, the scene share 5, and small groups; 58 of them are read and set nowhere |
+| record | 44 | macro commands, share grants and doors, Material's modules and interfaces, printers, 3D mouse buttons, custom tool bars, per-widget geometry and history: stay out |
+| dead | 23 | 5 of `OnlineHelp` whose command is never made, 5 of the cube inside an `#if 0`, 9 that are only comments, 4 written or read to no effect |
+| defined after all | 14 | 2 by a definition file, 9 by Draft's table (the DXF page), 3 by the Addon Manager's |
+
+So the sizing's "about 90" and "about 110" hold: 94 and 114.
+
+Checked by the build session, not taken on trust: the live registry was
+dumped with every module and Draft's table loaded (1818 rows,
+`all-registry.tsv`; `check_split.py`) -- all 14 called defined are in it,
+none of the 208 called state or setting is; and a sample of rows was read
+against the code (the 3D mouse's `Calibrate`, the four `DockWindows/*/Enabled`,
+the main window's `Geometry`, the two `MRU` lists, the share token,
+`PreferCompactFormat`, `SavePicture`, `Workbenches/Disabled`).
+
+Where state ends and setting begins is a judgement for about 25 keys the
+program stores on the user's choice without a page (the overlay panels'
+`AutoHide` and `Transparent`, `UserEditMode`, `SavePicture`, the headlight's
+rotation, the scene share's port and door); the split follows the comments
+the definition files already have ("kept by the program"). Both kinds go
+through the generator, so the line decides nothing but the wording.
+
+For the reporter, before anything is generated:
+
+- Q1 28 of the 114 settings do not take a plain definition: 17 have no
+  literal default (the cube's 6 face labels and 6 of the web addresses are
+  translated texts, `IssuesPage` comes from the build's configuration, two
+  gesture keys from Qt, `BitmapFill` is a resource path, `LogLevels/Default`
+  is computed); 4 are developer switches (`WireJoiner` x2,
+  `PyodideUnpinned`, `LogLevels/DebugDefault`); 2 are old keys read only as
+  the fall-back of their successor (`DAGView/Enabled`,
+  `TechDraw/HLR/UsePolygon`); 1 mirrors four radio buttons (`DxfImportMode`);
+  4 are the DXF exporter's of Q2.
+- Q2 FOUND, a defect, not fixed: the C++ DXF exporter reads its four
+  options (`maxsegmentlength`, `ExportPoints`, `DxfVersionOut`,
+  `DiscretizeEllipses`) from `Mod/Draft` in its constructor, and
+  `Import.writeDXFObject`/`writeDXFShape` then point it at `Mod/Import` and
+  read again (`AppImportPy.cpp:486`, `520`), where nothing stores them: the
+  DXF page's exporter settings do not reach it. Read in the code, not run.
+- Q3 `SceneShare/Token` is a secret kept so that links handed out go on
+  working: defined or not, its value should not show in a search.
+- Q4 `Workbenches/Ordered` and `Disabled` have a fixed path and key and are
+  set on a page, so the split has them as settings; the sizing had listed
+  "the workbench order" with the records that stay out.
+- Q5 The two recent lists are keys `MRU0`, `MRU1`, ... in a group that is
+  cleared and rewritten: counted as state, but a definition per key does not
+  fit them; only their length (`RecentFiles`) can be defined.
+- Q6 Eight commands store the translated default they have just read (the
+  web addresses), freezing it into `user.cfg`; the same write-back is in
+  `AutoShowSelectionView`, three `DAGView` keys and four `DockWindows/*/Enabled`.
+  Defaults that disagree between readers: `DockWindows/PropertyView/Enabled`,
+  `MainWindow/Theme` ("" and "Classic"), `General/LastModule`.
+
+Left of the entry: (2) the 94 state keys and (3) the 114 settings through
+the generator, the 3D mouse first.
