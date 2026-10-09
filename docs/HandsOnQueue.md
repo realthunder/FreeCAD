@@ -126,6 +126,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 47 | 2026-10-09 | `scanner.FCStd`: once in three sessions the FIRST load's 3D view was empty 13 s after opening, background and navigation cube only; the next two loads of that session were complete (seen by the build session on entry 28) | OPEN, seen once, not followed up |
 | 48 | 2026-10-09 | three GUI tests fail the same way on the copy staged 2026-10-07 and on today's tree: `element-color-hide.py` (2 of 624 claims), `per-view-shown-eviction.py` (1 claim), `navicube-per-view.py` (11 claims pass, then it never ends) (found by the build session) | OPEN; read only so far: `navicube-per-view.py` is no defect -- a run-by-hand script that never closes FreeCAD; the other two not looked into |
 | 49 | 2026-10-09 | after "Reset all" in the preferences and then the Light theme from Tools > Preset configurations > Themes, the workbench toolbar is hidden; shown again by hand it sits in the custom title bar as expected; intermittent -- the same steps a second time did not do it | OPEN; the bad and the good run are both in the evidence, and they differ in one thing: a saved main window state was in the configuration when the theme was applied (read, nothing run). Next in the build session's line after entry 46 |
+| 50 | 2026-10-09 | after "Reset all" in the preferences the 3D view is no longer drawn by the render engine's backend (edges jagged; the reporter's guess: render cache 0); and after a change of the MSAA setting a split of a 3D view and a TechDraw page became two tab windows | OPEN; measured in the reporter's live session, read-only: the render cache setting is not the cause (not stored, default 3) -- the renderer TYPE is `Default`, no backend, where the profile had `bgfx - Direct3D11` before the reset, and the view answers "No external renderer active"; the path is chosen only at startup. The two tabs are there as said: one view area with ONE cell, two `scanner` tab windows |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -3924,6 +3925,76 @@ whether anything was clicked or moved between the first reset and the first
 theme (a toolbar, a panel, the window). The second answered 2026-10-09
 09:38, at the top of this entry: nothing was.
 
+## 50. After "Reset all" the 3D view is drawn without the backend; then a change of MSAA turns a split into tabs -- OPEN, measured in the live session
+
+**2026-10-09 09:41, reported:** "new defect. After reset all preference, it
+seems the view is using render cache 0 now. check the my staged live
+session. what I immediately notice after reset is that the edge rendering is
+jagged, which shouldn't be for new renderer because the line shader. then I
+tested changing msaa setting. the view with two splits, one 3d, one techdraw
+turned into two tab window, which got me suspected render cache problem"
+Two things, in the session of entry 49 (the copy staged 2026-10-09 08:40,
+started 09:24:59, "Reset all" at 09:26:03 and 09:27:41, the Light theme
+after each):
+(a) after the reset the edges of the model are jagged, as they are not when
+the render engine draws them (its lines are shaded); the reporter's guess:
+the view is on render cache 0;
+(b) after changing the MSAA setting, the view area that held two cells --
+the 3D view and a TechDraw page -- became two tab windows.
+
+**Looked at in the reporter's live session, as asked ("check the my staged
+live session"), at 09:45: read-only, nothing set and nothing created**
+(`probe50.py`, run through the session's MCP console, pid 75320; it and the
+report log as it then stood are in `..\dl\handson\2026-10-09\entry50\`):
+
+| what | in the live session |
+|---|---|
+| `View/RenderCache` | NOT STORED; the registry's default is 3 |
+| `View/Render/Type` | stored, `Default` |
+| `View/AntiAliasing` | stored, 0 |
+| the 3D view, asked for its backend's statistics | "No external renderer active on this view" |
+| the main window's views | tabbed, three tab windows: `Start`, `scanner : 1[*]`, `scanner : 1[*]` |
+| view areas, cells | one view area, ONE cell |
+| 3D views, TechDraw page views | one of each, both visible |
+| `MainWindow/Theme`, `CustomTitleBar` | `Light`, on |
+
+And the configuration on disk from BEFORE the session (`user-0931.cfg` of
+entry 49, written 09:24): `View/Render/Type` = `bgfx - Direct3D11`. None of
+the four backups made after the resets has a `View/Render` group at all.
+
+**So, for (a): it is not the render cache mode, it is the renderer TYPE.**
+The 3D view has no backend. The render cache setting is not stored, and its
+default is 3; what the reset took away is `View/Render/Type`, which was
+`bgfx - Direct3D11` and is `Default` now -- no backend -- and with no
+backend the cache's own GL renderer draws: unshaded lines, and with
+anti-aliasing at 0, jagged.
+Why nothing puts it back, read from the source, nothing run: the backend is
+chosen ONCE, at startup (`RenderParams::selectRenderPath()`, called from
+`Application.cpp:2479`: it sets the render cache to 3 and the type to the
+preferred backend, D3D11 first on Windows). "Reset all" clears every user
+parameter in the running session (`DlgPreferencesImp::restoreDefaults`,
+`mgr->Clear(true)`), the type falls back to its definition's default,
+`Default`, the open views follow the change and drop their backend, and
+nothing runs the choice again. The stored `Default` is then what the first
+OK of the preferences wrote (entry 26: the first OK of a profile stores
+every key).
+The note-taker's reading, NOT tried: the next start chooses again and should
+bring the backend back; within the session it stays off. Whether a theme
+applied after the reset should have brought it back is not known.
+
+**For (b), seen as said, cause not read:** the view area has one cell left
+and the document has two tab windows. The report log shows the preferences
+dialog opened three times after the document was loaded (09:31:33, 09:31:57,
+09:33:05) -- the MSAA tries. `AntiAliasing` is "read when a view is
+created; a change rebuilds the open views" (its own documentation), so a
+rebuild of the 3D view is where to look for the cell being lost; whether it
+also happens WITH a backend, that is without the reset before it, is not
+known. If it does, it is a defect of its own and gets its own number.
+
+Not said yet by the reporter: which MSAA values were tried and in what
+order, and whether the split was the two cells side by side that a page
+gets by default.
+
 ## Inbox
 
 Notes not sorted into an entry yet. Add a line here at any time, in any words;
@@ -3931,4 +4002,4 @@ it is read before each entry is started and moved up into the table.
 
 (empty: the notes of 2026-10-06 are entries 20 to 28, those of 2026-10-07
 entries 29 to 40, those of 2026-10-08 entries 41 to 45, those of 2026-10-09
-so far entries 46 to 49)
+so far entries 46 to 50)
