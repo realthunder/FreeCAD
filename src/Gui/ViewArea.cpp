@@ -1500,10 +1500,14 @@ ViewAreaCell *ViewArea::splitCell(ViewAreaCell *cell, Qt::Orientation orientatio
         auto nested = new ViewAreaSplitter(orientation);
         const QList<int> two = shares(orientation == Qt::Horizontal ? cell->width()
                                                                     : cell->height());
-        splitter->replaceWidget(idx, nested);
+        // insertWidget, then the cell moved into the nested splitter:
+        // replaceWidget would take the cell out of the window on its way
+        // there (see collapseCell on what that costs a 3D view).
+        splitter->insertWidget(idx, nested);
         nested->addWidget(cell);
-        cell->show();  // replaceWidget hides the widget it takes out
+        cell->show();
         nested->addWidget(newCell);
+        nested->show();
         splitter->setSizes(sizes);
         nested->setSizes(two);
         // ... and once more when the nested splitter has its real place:
@@ -1958,8 +1962,18 @@ void ViewArea::collapseCell(ViewAreaCell *cell)
         QWidget *lone = s->widget(0);
         int idx = parent->indexOf(s);
         QList<int> sizes = parent->sizes();
-        parent->replaceWidget(idx, lone);
+        // Not QSplitter::replaceWidget(): it takes the widget it replaces
+        // out of the window FIRST, and here that is `s` with the lone cell
+        // still inside it. A QOpenGLWidget that leaves its window drops
+        // the texture the window composes it from, and one that is
+        // already initialized gets it back only at its next resize -- so
+        // the view that took the closed cell's room was drawn, correctly,
+        // into a framebuffer nothing put on the screen: black until the
+        // user resized it (docs/HandsOnQueue.md entry 60). Moved straight
+        // into the parent the cell never leaves the window.
+        parent->insertWidget(idx, lone);
         lone->show();
+        s->hide();
         s->setParent(nullptr);
         s->deleteLater();
         parent->setSizes(sizes);

@@ -1672,3 +1672,11 @@ fc_add_gui_test(GuiViewCellDragCancelAndLook_tests_run
 fc_add_gui_test(GuiSplitViewBrowser_tests_run
                 split-view-browser.py
                 --timeout 420)
+
+# A 3D view that takes a closed cell's room is still on the screen: the
+# cell tree was un-nested with QSplitter::replaceWidget, which takes the
+# surviving cell out of the window on the way, and a QOpenGLWidget that
+# leaves its window is composed from nothing until its next resize.
+fc_add_gui_test(GuiViewCellCloseKeepsThePicture_tests_run
+                view-cell-close-keeps-the-picture.py
+                --timeout 240)

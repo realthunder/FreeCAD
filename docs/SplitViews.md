@@ -1660,3 +1660,35 @@ none here), and the 3D view for a cell whose view cannot be shown twice
 Test: `tests/gui/split-view-browser.py`, which drives
 `scripts/splitview-drive.js` in a real browser on the built page, no
 document served.
+
+## 24. A cell tree that never leaves the window (2026-10-09)
+
+**A 3D view black after a cell was closed** (docs/HandsOnQueue.md entry
+60): "surviving resized view is black and will only back to normal if I
+resize it. camera move has no effect". Whenever closing a cell UN-NESTED a
+splitter. `collapseCell()` moved the lone cell up with
+`QSplitter::replaceWidget()`, and that takes the widget it replaces -- the
+nested splitter, the lone cell still inside it -- out of the window before
+it puts the cell in. A `QOpenGLWidget` that leaves its window drops the
+texture the window composes it from; an initialized one, with
+`AA_ShareOpenGLContexts` set as it is here, gets it back at its next
+resize and at nothing else -- not at a paint, a show, or the very resize
+that came with the move. So the view went on drawing, correctly, into a
+framebuffer that nothing put on the screen.
+
+Measured in the reporter's own black window, a session of the dev build
+opened for it: the view's surface read back complete, the same rectangle
+of the screen 100% black; `update()`, a `Show` event, hide-and-show left it
+black, one pixel of resize brought it back.
+
+So the cell tree is rebuilt without any cell leaving the window:
+`insertWidget()` of the cell into the parent, then the emptied splitter
+taken out (`collapseCell`); `insertWidget()` of the new nested splitter,
+then the cell moved into it (`splitCell`, where `replaceWidget()` did the
+same to the cell being split -- hidden there by the resize that always
+follows a split).
+
+! `grabFramebuffer()`, the engine's capture and its statistics all say the
+view is fine while the screen is black. Only the screen can judge this:
+`tests/gui/view-cell-close-keeps-the-picture.py` reads the window's pixels
+with `QScreen::grabWindow`.
