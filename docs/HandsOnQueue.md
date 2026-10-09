@@ -247,7 +247,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 61 | 2026-10-09 | TechDraw drawn by the backend: dashed lines are a little thicker than Qt's (no great matter); but for some lines -- the cosmetic symmetry line in `Page`, `Top` -- the hover and selection highlight is drawn as the THINNER dashed line and is barely visible over the thicker line under it | OPEN; DECIDED by the reporter 14:30 and 14:31: EVERY line the backend draws on a page, dashed or not, at Qt's width -- thinner -- and the highlight at the same width as its line; a view's bounding box line shows it too; nothing run |
 | 62 | 2026-10-09 | omni search, a new feature: when it first pops up, its list holds the last 10 items that were confirmed in it; once typing starts, the recent list is not needed | OPEN; nothing run |
 | 63 | 2026-10-09 | `Std_DrawStyle` (a new request): a new icon suggested for it; its display style options as a combo box with their icons; anti-aliasing and its combo box in the same menu; the light sources configuration moved there from the preferences (not the manipulator), with a button to manipulate the light direction in the active 3D view and a check box to sync all 3D views' light direction; the Light Sources preference page removed | OPEN; answered 14:52: the style combo is for the active view; anti-aliasing and lights apply at once; the manipulation toggles by the button or Esc; the sync check box is a remembered setting and decides whether a light direction goes to the active view or to all open views; one more button saves ALL the current view's light settings for future use (corrected 14:55); three icons to choose from; all of the Light Sources page's settings but the manipulator go into the menu; a change of the lights is stored in the active view's properties, the button saves it into the settings, and the sync check box is for all the light settings (14:59); nothing run |
-| 64 | 2026-10-09 | the cavity option (cavity shading) draws jagged, MSAA on or off; the reporter: to be fixed in its shader | OPEN; nothing run |
+| 64 | 2026-10-09 | the cavity option (cavity shading) draws jagged, MSAA on or off; the reporter: to be fixed in its shader; under both the realistic and the classic shading, more obvious in the Shaded draw style (no edges) and at a slant | OPEN; nothing run |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -5701,9 +5701,24 @@ the note-taker, nothing run.**
   accumulation (`Render/TemporalAccum`, off by default) is said to smooth
   "outlines" and the like in a still picture.
 
-Not said yet by the reporter: under which draw style it was seen (Shaded,
-where the crease is the only edge, or one with edge lines over it); and
-whether it is every crease or the ones at a slant.
+Asked of the reporter: under which draw style it was seen (Shaded, where
+the crease is the only edge, or one with edge lines over it); and whether
+it is every crease or the ones at a slant.
+**Answered by the reporter, 2026-10-09 17:12:** "both realistic and classic.
+it's more obvious in Shaded mode (i.e. no edge rendering). more obvious in
+slanted view"
+- It shows under BOTH shading styles, realistic and classic.
+- It is MORE obvious in the Shaded draw style, where no edges are drawn --
+  there the crease is the only thing along an edge, with no smooth line
+  over it.
+- It is MORE obvious at a slant.
+All three go with the reading above: a crease decided a pixel at a time
+steps most where it runs at an angle to the pixel grid, and shows most
+where no edge line with coverage of its own lies over it.
+(The note-taker takes "realistic and classic" for the engine's two shading
+styles; where they are chosen was not looked up.)
+Nothing of the entry's questions is left with the reporter.
+Passed on to the build session.
 
 ## Inbox
 
