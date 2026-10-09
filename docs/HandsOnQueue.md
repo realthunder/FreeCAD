@@ -188,7 +188,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 60 | 2026-10-09 | after a view cell is deleted, the view that expands into its room is sometimes BLACK until it is RESIZED; a camera move does not bring it back (corrected by the reporter 14:06) (Windows, Direct3D 11 at least) | OPEN, intermittent; nothing run |
 | 61 | 2026-10-09 | TechDraw drawn by the backend: dashed lines are a little thicker than Qt's (no great matter); but for some lines -- the cosmetic symmetry line in `Page`, `Top` -- the hover and selection highlight is drawn as the THINNER dashed line and is barely visible over the thicker line under it | OPEN; DECIDED by the reporter 14:30 and 14:31: EVERY line the backend draws on a page, dashed or not, at Qt's width -- thinner -- and the highlight at the same width as its line; a view's bounding box line shows it too; nothing run |
 | 62 | 2026-10-09 | omni search, a new feature: when it first pops up, its list holds the last 10 items that were confirmed in it; once typing starts, the recent list is not needed | OPEN; nothing run |
-| 63 | 2026-10-09 | `Std_DrawStyle` (a new request): a new icon suggested for it; its display style options as a combo box with their icons; anti-aliasing and its combo box in the same menu; the light sources configuration moved there from the preferences (not the manipulator), with a button to manipulate the light direction in the active 3D view and a check box to sync all 3D views' light direction; the Light Sources preference page removed | OPEN; answered 14:52: the style combo is for the active view; anti-aliasing and lights apply at once; the manipulation toggles by the button or Esc; the sync check box is a remembered setting and decides whether a light direction goes to the active view or to all open views; one more button saves the current light direction for future new views; nothing run |
+| 63 | 2026-10-09 | `Std_DrawStyle` (a new request): a new icon suggested for it; its display style options as a combo box with their icons; anti-aliasing and its combo box in the same menu; the light sources configuration moved there from the preferences (not the manipulator), with a button to manipulate the light direction in the active 3D view and a check box to sync all 3D views' light direction; the Light Sources preference page removed | OPEN; answered 14:52: the style combo is for the active view; anti-aliasing and lights apply at once; the manipulation toggles by the button or Esc; the sync check box is a remembered setting and decides whether a light direction goes to the active view or to all open views; one more button saves ALL the current view's light settings for future use (corrected 14:55); three icons to choose from; all of the Light Sources page's settings but the manipulator go into the menu; nothing run |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -5393,6 +5393,31 @@ The note-taker's reading of what follows from it, to confirm:
   ambient light) are common to all and applied at once.
 Still not said: (a), how many icons to choose from; and (d)/(g), where the
 settings of the removed page that do not fit a menu are reached.
+Passed on to the build session.
+
+**Answered, and (h) CORRECTED, by the reporter, 2026-10-09 14:55:** "three
+choice. all the settings in the current light sources preference, apart from
+the manipulator part. also a correct, that button I wanted, shall save all
+current view light settings for future use"
+- (a): THREE icons to choose from.
+- (d), (g): ALL the settings of the present Light Sources preference page
+  go into the menu -- everything but the manipulator part. So nothing of the
+  page is left needing another place.
+- (h), CORRECTED: the button saves ALL the light settings of the current
+  view for future use -- not the light direction alone, as said at 14:52.
+The note-taker's reading of the correction, and it changes the reading
+above: the lights in the menu are the CURRENT VIEW's (or all open views',
+by the sync check box) -- direction, intensity, colour, the fill and the
+ambient light alike -- applied at once to what is on screen; and what a
+FUTURE new view starts with changes only when the save button is pressed.
+That replaces "the lights' other settings are common to all and stored at
+once", which was the preference page's way.
+**To confirm, NOT ANSWERED YET:** (1) that reading -- a change of the
+lights in the menu is not stored by itself, only by the button; (2) whether
+the sync check box, said of the light DIRECTION, also decides for the
+lights' other settings whether they go to the active view or to all open
+views; (3) whether a view's own lights are kept with the document, or last
+only as long as the view.
 Passed on to the build session.
 
 ## Inbox
