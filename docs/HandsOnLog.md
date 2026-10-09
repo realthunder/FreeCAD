@@ -3637,3 +3637,34 @@ that way once; the test tries such a drag again before calling it missing.
 new cell is told from a kept one by its plus alone; (2) the 12 pixels a
 border goes past the minimum before it means "close"; (3) the active
 cell's border: its width, 2, and its strength.
+
+## 56, once more. A border takes room from the cell next to it only -- DONE `b4004d2635`, not staged
+
+The reporter, on the copy staged 16:42: "when dragging the splitter, do
+not move the other splitter in case the next view size limit is reached.
+change it to view close action when size limit reached".
+
+With three cells in a row the first border, dragged right, took the middle
+cell to its minimum and then pushed the second border along, the third
+cell with it -- `QSplitter`'s own range. So the "close" of point (i) came
+only when the whole row on that side was at its minimum, and the closed
+cell's room was shared out among everything left.
+
+Now, on the desktop: the handle clamps the border to what its two
+neighbours can give; past that by the 12 pixels the drag means closing the
+neighbour (when it is one cell), and the release gives its room to the
+widget across the border. In the browser viewer, where a border is one
+split of a ratio tree: the change is handed down each side to its near
+end, the far parts keeping the pixels they have, and a close is that cell
+squeezed to nothing (`docs/SplitViews.md` sec 22 and 23).
+
+**Scored.** A row of three cells in `view-cell-drag-cancel-and-look.py`:
+on the copy staged 16:42 the third cell is framed and moved, and after the
+close the room is shared (654 and 323 pixels for 735 and 242) -- 91 PASS
+and 3 FAIL; 94 PASS on the tree. `split-view-browser.py` with the same
+row: 44 PASS. `view-cell-drag-frames.py` 38,
+`view-cell-close-keeps-the-picture.py` 17.
+
+**The full suites** on the tree staged 16:42 (`0246b900df`): ctest 790 of
+790. The Python suite was stopped under way to build this change; both
+are run again on the tree with it.
