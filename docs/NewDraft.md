@@ -16,7 +16,9 @@ option; off, only the picked faces turn, and a fillet beside them is made
 again at its radius after the draft (section 17). 2026-10-09: the roof -- the chain's
 walls meeting over the body once a wall narrows to nothing -- built
 (section 18); a fillet across the pull direction in the chain, taken off
-and made again as with propagation off (section 19).
+and made again as with propagation off (section 19); a fillet made again
+with the edges the draft split joined, where OCCT failed on the pieces
+(section 20).
 The design below came with a Python prototype (section 5)
 that the earlier measurements come from; the open questions settled
 2026-10-05 (section 9).
@@ -1933,3 +1935,81 @@ check as the same draft with propagation off (the wall's chain is the
 wall and its pieces). The 4: #962 at 60 deg, where the wall swings past its
 sloped top and the two faces of the fillet no longer meet, as with
 propagation off (17.4).
+
+## 20. The fillet made again on split edges (2026-10-09)
+
+Of the 21 `RefilletFails` of 17.4 (propagation off), 16 are #631's ramp:
+Fillet001-003's inputs, the front wall drafted about a side wall at 5 and
+15 deg, with the r=49 fillet between the wall and the ramp to make again.
+OCCT's fillet failed there at 49, 40 and 20 and worked at 5.
+
+### 20.1 What it was
+
+The undrafted input, the fillet taken off and made again by hand, gives
+the input back exactly (42220.2481): the fillet itself is no problem. What
+the draft adds is topology: **the cell draft leaves edges split for
+nothing** -- at a vertex of two faces only, where its local box cut an edge
+of the solid (#631: 7 such vertices on one draft, the input has none). The
+merge (UnifySameDomain) keeps every edge between faces of different origins,
+so that they are not merged across it, and a kept edge is not joined to its
+other piece either; the vertex rule meant to free such vertices runs on the
+fused solid, where the vertex still has the edges that split the faces
+either side.
+
+OCCT's fillet takes such a piece for an edge of its own. On #631 the
+stripe's end section, 18.7 wide at r=49, reaches past the split vertices
+on the ramp, and `PerformIntersectionAtEnd` builds its walk round the
+vertex from the faces and edges it meets: two faces sharing two collinear
+edges, the far one taken for the near (`cherche_edge1` picks the first
+common edge), and one face met twice along a split edge. Both are bugs in
+OCCT's walk too, fixed and measured on #631's drafted shapes (the end at
+the moving wall then fillets at every radius) -- but with the split edges
+joined, the same shapes fillet with today's OCCT, and the fix changes
+nothing more there. Left out (the fillet sweep that would vet it is gone);
+the patch is kept with the session's notes.
+
+### 20.2 The fix
+
+Joining the split edges on every cell-draft result was tried first and
+dropped: UnifySameDomain changed geometry on fuzzy results (#631 Fillet003
+face 12 about 2 at 15 deg: +0.66 of 35034), turned a clean boolean check
+dirty (#876 face 4 about 6 at 5 deg), and joined away the vertices whose
+tolerance section 16 refuses (#474 Fillet002 face 10: two refusals came out
+"valid", boolean check failing). So the draft's result stays as it is, and
+`makeFilletsAgain` alone does it: when OCCT's fillet fails, it tries once
+more on the shape with the split edges joined (`joinSplitEdges`: a vertex
+of two edges between the same two faces, on a copy, taken only if it is a
+valid solid of as many faces and the same volume to 1e-9), the join's
+history merged in.
+
+### 20.3 Measured
+
+The 114 chain drafts of 17.4, propagation off: 110 the same, 4 refusals
+valid -- #631's Fillet001 face 7 about 2 at 5 and 15 deg (42511.3436,
+42964.2653), face 16 about 15 at 5 deg, Fillet002 face 17 about 16 at 5
+deg. A check on the first: the wedge the wall sweeps about its hinge,
+half of 15 x 1.31 over a height of 30, is 295, and 42220 + 295 = 42515
+against 42511 (the fillet's slice). The sweep with propagation on is not
+touched (no fillet is made again there but section 19's 13, the same).
+
+Still refused (17):
+
+- #631 (12): the wall drafted about the other side wall (the hinge at
+  x=7.5) and the like on Fillet002/003. With the edges joined, OCCT fails
+  in `StartSol`, where the fillet's walk starts: at the moving end the ramp
+  is 1.98 wide and narrows under a loft face, and the r=49 contact line
+  runs onto it (r=45 works at 5 deg, from 35 fails at 15).
+- #962 at 60 deg (4): the wall swings past its sloped top, the two faces
+  the fillet joined no longer meet. Drafted first, there is no edge to
+  fillet; refused, as it should be.
+- #334's stored draft at 60 deg (1): not looked into.
+
+Suite (`occt/tests/fork/draft`): `new_nopropagate_issue631_f7_n2_a{5,15}`
+valid at their volumes, `new_nopropagate_issue631_f7_n5_a5` refused (open);
+the input is `draft/models/issue631_fillet001_base.brep`.
+
+Picture (`make_newdraft.sh`, the "before" column on the build of section
+19): face 7 about 2 at 5 deg, refused before; now the wall turned and the
+r=49 fillet made again onto the ramp, seen from the side.
+
+![#631's ramp fillet made again](pictures/NewDraft/refillet_issue631_f7_n2_a5.png)
