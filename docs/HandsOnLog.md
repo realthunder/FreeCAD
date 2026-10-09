@@ -3696,7 +3696,7 @@ them. Direct3D 11 became the Windows default on 2026-09-10, after the
 Cycles files were last touched.
 
 **Confirmed by a picture** on the copy staged 16:42
-(`..\dl\handson6-10-09\q4\g-c65-staged\cycles.png`): a cone on its
+(`..\dl\handson\2026-10-09\q4\g-c65-staged\cycles.png`): a cone on its
 base comes out apex down in the path tracer's picture, with the host's own
 edge lines over it apex up. The whole frame is turned, the lit background
 with it.
