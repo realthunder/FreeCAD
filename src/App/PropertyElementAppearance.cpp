@@ -1728,8 +1728,16 @@ void PropertyElementAppearance::setStated(const std::vector<Stated> &stated,
         MaterialAppearance look = named.getMaterial(static_cast<int>(pos));
         uint16_t own = getNamedOwn(static_cast<int>(pos));
         if (const Stated *what = toName[pos]) {
-            look = layOver(look, what->over(look), what->own());
-            own |= what->own();
+            // Given what it says already, a name states no more than it
+            // did. The looks are read back whole, the object's fields with
+            // the name's own, and written again with one of them changed:
+            // a face that was only painted is not thereby given the gloss
+            // the object has today for its own.
+            const MaterialAppearance said = getNamedLook(static_cast<int>(pos));
+            if (differingFields(what->over(said), said) != OwnNone) {
+                look = layOver(look, what->over(look), what->own());
+                own |= what->own();
+            }
         }
         looks.set1Value(static_cast<int>(nextNames.size()), look);
         nextNames.push_back(names[pos]);
