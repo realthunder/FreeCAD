@@ -34,7 +34,7 @@ import ViewParams
 ViewParams.declare_begin()
 ]]]*/
 
-// Auto generated code (Gui/ViewParams.py:1071)
+// Auto generated code (Gui/ViewParams.py:1067)
 #include <QString>
 
 // Auto generated code (Tools/params_utils.py:82)
@@ -2934,20 +2934,6 @@ public:
 
     // Auto generated code (Tools/params_utils.py:139)
     //@{
-    /// Accessor for parameter SyncLightSettings
-    ///
-    /// A light changed in the Display style menu, or its direction
-    /// dragged in a 3D view, goes to every open 3D view and not to the
-    /// active one alone.
-    static const bool & getSyncLightSettings();
-    static const bool & defaultSyncLightSettings();
-    static void removeSyncLightSettings();
-    static void setSyncLightSettings(const bool &v);
-    static const char *docSyncLightSettings();
-    //@}
-
-    // Auto generated code (Tools/params_utils.py:139)
-    //@{
     /// Accessor for parameter NavigationStyle
     ///
     /// Mouse navigation style of the 3D views, as a class name such as
@@ -3446,7 +3432,7 @@ public:
     static const char *docHeadlightRotationW();
     //@}
 
-    // Auto generated code (Gui/ViewParams.py:1077)
+    // Auto generated code (Gui/ViewParams.py:1073)
     static const std::vector<QString> AnimationCurveTypes;
 
     static void onViewParamChanged(const char *sReason);
@@ -3477,7 +3463,7 @@ ViewParams.declare_end()
 }; // class ViewParams
 } // namespace Gui
 
-// Auto generated code (Gui/ViewParams.py:1090)
+// Auto generated code (Gui/ViewParams.py:1086)
 namespace Gui {
 /// Obtain all display style names, terminated by nullptr entry.
 GuiExport const char **drawStyleNames();

@@ -282,7 +282,6 @@ public:
     std::string FillLightDirection;
     unsigned long AmbientLightColor;
     long AmbientLightIntensity;
-    bool SyncLightSettings;
     std::string NavigationStyle;
     bool SameStyleForAllViews;
     long OrbitStyle;
@@ -769,8 +768,6 @@ public:
         funcs["AmbientLightColor"] = &ViewParamsP::updateAmbientLightColor;
         AmbientLightIntensity = this->handle->GetInt("AmbientLightIntensity", 20);
         funcs["AmbientLightIntensity"] = &ViewParamsP::updateAmbientLightIntensity;
-        SyncLightSettings = this->handle->GetBool("SyncLightSettings", false);
-        funcs["SyncLightSettings"] = &ViewParamsP::updateSyncLightSettings;
         NavigationStyle = this->handle->GetASCII("NavigationStyle", "Gui::CADNavigationStyle");
         funcs["NavigationStyle"] = &ViewParamsP::updateNavigationStyle;
         SameStyleForAllViews = this->handle->GetBool("SameStyleForAllViews", true);
@@ -1783,10 +1780,6 @@ public:
     // Auto generated code (Tools/params_utils.py:314)
     static void updateAmbientLightIntensity(ViewParamsP *self) {
         self->AmbientLightIntensity = self->handle->GetInt("AmbientLightIntensity", 20);
-    }
-    // Auto generated code (Tools/params_utils.py:314)
-    static void updateSyncLightSettings(ViewParamsP *self) {
-        self->SyncLightSettings = self->handle->GetBool("SyncLightSettings", false);
     }
     // Auto generated code (Tools/params_utils.py:314)
     static void updateNavigationStyle(ViewParamsP *self) {
@@ -2925,11 +2918,6 @@ static const App::ParamRegistry::Registrar _ViewParamsRegistrar({
         .setTitle("Ambient light intensity")
         .setDoc("Intensity of the ambient light of the 3D views in percent, 0 to\n"
 "100. Applies at once."),
-    App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "SyncLightSettings", "SyncLightSettings", App::ParamInfo::Bool, false)
-        .setTitle("Lights of all views together")
-        .setDoc("A light changed in the Display style menu, or its direction\n"
-"dragged in a 3D view, goes to every open 3D view and not to the\n"
-"active one alone."),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "NavigationStyle", "NavigationStyle", App::ParamInfo::String, "Gui::CADNavigationStyle")
         .setTitle("3D navigation style")
         .setDoc("Mouse navigation style of the 3D views, as a class name such as\n"
@@ -9482,36 +9470,6 @@ void ViewParams::removeAmbientLightIntensity() {
 }
 
 // Auto generated code (Tools/params_utils.py:397)
-const char *ViewParams::docSyncLightSettings() {
-    return QT_TRANSLATE_NOOP("ViewParams",
-"A light changed in the Display style menu, or its direction\n"
-"dragged in a 3D view, goes to every open 3D view and not to the\n"
-"active one alone.");
-}
-
-// Auto generated code (Tools/params_utils.py:405)
-const bool & ViewParams::getSyncLightSettings() {
-    return instance()->SyncLightSettings;
-}
-
-// Auto generated code (Tools/params_utils.py:413)
-const bool & ViewParams::defaultSyncLightSettings() {
-    const static bool def = false;
-    return def;
-}
-
-// Auto generated code (Tools/params_utils.py:422)
-void ViewParams::setSyncLightSettings(const bool &v) {
-    instance()->handle->SetBool("SyncLightSettings",v);
-    instance()->SyncLightSettings = v;
-}
-
-// Auto generated code (Tools/params_utils.py:431)
-void ViewParams::removeSyncLightSettings() {
-    instance()->handle->RemoveBool("SyncLightSettings");
-}
-
-// Auto generated code (Tools/params_utils.py:397)
 const char *ViewParams::docNavigationStyle() {
     return QT_TRANSLATE_NOOP("ViewParams",
 "Mouse navigation style of the 3D views, as a class name such as\n"
@@ -10619,7 +10577,7 @@ void ViewParams::removeHeadlightRotationW() {
     instance()->handle->RemoveFloat("HeadlightRotationW");
 }
 
-// Auto generated code (Gui/ViewParams.py:1106)
+// Auto generated code (Gui/ViewParams.py:1102)
 const std::vector<QString> ViewParams::AnimationCurveTypes = {
     QStringLiteral("Linear"),
     QStringLiteral("InQuad"),
@@ -10664,7 +10622,7 @@ const std::vector<QString> ViewParams::AnimationCurveTypes = {
     QStringLiteral("OutInBounce"),
 };
 
-// Auto generated code (Gui/ViewParams.py:1114)
+// Auto generated code (Gui/ViewParams.py:1110)
 static const char *DrawStyleNames[] = {
     QT_TRANSLATE_NOOP("DrawStyle", "As Is"),
     QT_TRANSLATE_NOOP("DrawStyle", "Points"),
@@ -10677,7 +10635,7 @@ static const char *DrawStyleNames[] = {
     nullptr,
 };
 
-// Auto generated code (Gui/ViewParams.py:1124)
+// Auto generated code (Gui/ViewParams.py:1120)
 static const char *DrawStyleDocs[] = {
     QT_TRANSLATE_NOOP("DrawStyle", "Display style, normal display mode"),
     QT_TRANSLATE_NOOP("DrawStyle", "Display style, show points only"),
@@ -10690,13 +10648,13 @@ static const char *DrawStyleDocs[] = {
 };
 
 namespace Gui {
-// Auto generated code (Gui/ViewParams.py:1134)
+// Auto generated code (Gui/ViewParams.py:1130)
 const char **drawStyleNames()
 {
     return DrawStyleNames;
 }
 
-// Auto generated code (Gui/ViewParams.py:1141)
+// Auto generated code (Gui/ViewParams.py:1137)
 const char *drawStyleNameFromIndex(int i)
 {
     if (i < 0 || i>= 8)
@@ -10704,7 +10662,7 @@ const char *drawStyleNameFromIndex(int i)
     return DrawStyleNames[i];
 }
 
-// Auto generated code (Gui/ViewParams.py:1150)
+// Auto generated code (Gui/ViewParams.py:1146)
 int drawStyleIndexFromName(const char *name)
 {
     if (!name)
@@ -10716,7 +10674,7 @@ int drawStyleIndexFromName(const char *name)
     return -1;
 }
 
-// Auto generated code (Gui/ViewParams.py:1163)
+// Auto generated code (Gui/ViewParams.py:1159)
 const char *drawStyleDocumentation(int i)
 {
     if (i < 0 || i>= 8)

@@ -12,32 +12,41 @@ page from preference window." And as answered: the style is the active
 view's; the anti-aliasing and the lights apply at once; the manipulation is
 a toggle, by the button or Escape; the check box is a remembered setting and
 decides for all the light settings; "the chage is store in the active view
-properties. the button is for save it into the settings".
+properties. the button is for save it into the settings". Changed since:
+"change the checkbox 'All view' to a button 'apply all' to apply to all
+views. do the light handle with manipulator", and "use the below icon you
+designed for display style toolbutton icon for now" (the split cube).
 
 The menu is brought to the state it has when shown by its own aboutToShow,
 which is what builds its sections; nothing is popped up.
 
 Claims, with two 3D views of one document open:
+  - the tool button's icon is the command's own, and stays when the style
+    changes;
   - the menu has the style combo, an entry a style with its icon, and none
     of the styles' own rows is shown any more;
   - the combo shows the active view's style, and picking another sets it on
     the active view and leaves the other view's alone;
   - the anti-aliasing combo shows the setting, and picking another stores it;
   - the lights section shows what lights the view: the headlight on, the
-    fill light off, as the preferences have them;
-  - the fill light switched on is a property of the ACTIVE view
-    (Light_EnableFillLight) and of that view alone; the preference is
-    untouched;
-  - "All views" ticked is stored (View/SyncLightSettings), and a headlight
-    intensity set then is on both views;
+    fill light off, as the preferences have them; it has no "All views"
+    check box;
+  - the fill light switched on and an intensity set are properties of the
+    ACTIVE view (Light_EnableFillLight, ...) and of that view alone; the
+    preference is untouched;
+  - "Apply all" gives the other view the active view's lights, stores no
+    setting, and a change after it is the active view's alone again;
   - "Save as default" writes the active view's lights into the preferences;
-  - "Direction" lets the pointer turn the active view's headlight (the
-    button is down the next time the menu comes up): a press in the middle
-    of the view is the light from the eye, a drag up and to the right the
-    light from there, the camera is not moved, the other view's light is
-    not; Escape in the view ends it, and a click then turns nothing;
+  - "Direction" raises a handle in the active view (the button is down the
+    next time the menu comes up): Coin's light dragger, one, in what the
+    view renders, and on the SCREEN, over the model in the middle of the
+    view; a drag of its shaft turns the active view's headlight, the camera
+    is not moved, nothing is selected (a press on the handle is not one on
+    the model behind it), the other view's light is not turned; Escape in
+    the view takes the handle down, and a click then turns nothing;
   - the preferences have no Light Sources page.
 """
+import math
 import os
 import time
 import traceback
@@ -105,6 +114,15 @@ def child(m, kind, name):
     return w
 
 
+def button_image():
+    """The icon the Display style tool button wears"""
+    for button in FreeCADGui.getMainWindow().findChildren(QtWidgets.QToolButton):
+        action = button.defaultAction()
+        if action is not None and action.text().replace("&", "") == "Display style":
+            return button.icon().pixmap(32, 32).toImage()
+    return None
+
+
 def start():
     doc = FreeCAD.newDocument(DOC)
     doc.addObject("Part::Box", "Box")
@@ -135,6 +153,13 @@ def style():
     check("none of the styles' own rows is shown", not rows, rows)
     active, other = S["active"], S["other"]
     before = str(other.DrawStyle)
+    button_icon = button_image()
+    if button_icon is not None:
+        button_icon.save(os.path.join(OUT, "button-icon.png"))
+    styles = [combo.itemIcon(i).pixmap(32, 32).toImage() for i in range(combo.count())]
+    check("the tool button's icon is the command's own, not one of the styles'",
+          button_icon is not None and not button_icon.isNull()
+          and not [i for i in styles if i == button_icon])
     check("the combo shows the active view's style",
           combo.currentText().replace(" ", "") == str(active.DrawStyle).replace(" ", ""),
           "combo %r, the view %r" % (combo.currentText(), str(active.DrawStyle)))
@@ -145,6 +170,8 @@ def style():
           str(active.DrawStyle) == "Wireframe", str(active.DrawStyle))
     check("and leaves the other view's style alone", str(other.DrawStyle) == before,
           "%r, was %r" % (str(other.DrawStyle), before))
+    check("the tool button's icon is the same after the style changed",
+          button_image() == button_icon)
     m2 = menu()
     check("the combo shows it the next time the menu comes up",
           child(m2, QtWidgets.QComboBox, "DrawStyleCombo").currentText() == "Wireframe")
@@ -159,43 +186,106 @@ def lights():
     head = child(m, QtWidgets.QCheckBox, "Light_EnableHeadlight")
     fill = child(m, QtWidgets.QCheckBox, "Light_EnableFillLight")
     intensity = child(m, QtWidgets.QSlider, "Light_HeadlightIntensity")
-    sync = child(m, QtWidgets.QCheckBox, "LightAllViews")
+    apply_all = child(m, QtWidgets.QPushButton, "LightApplyAll")
     prefs = FreeCAD.ParamGet(VIEW)
     check("the lights section shows what lights the view",
-          head.isChecked() and not fill.isChecked() and intensity.value() == 100
-          and not sync.isChecked(),
-          "headlight %s, fill light %s, intensity %d, all views %s" % (
-              head.isChecked(), fill.isChecked(), intensity.value(), sync.isChecked()))
+          head.isChecked() and not fill.isChecked() and intensity.value() == 100,
+          "headlight %s, fill light %s, intensity %d" % (
+              head.isChecked(), fill.isChecked(), intensity.value()))
+    check("there is no \"All views\" check box any more",
+          m.findChild(QtWidgets.QCheckBox, "LightAllViews") is None)
     fill.setChecked(True)
+    intensity.setValue(70)
     settle()
     check("the fill light switched on is a property of the active view",
           prop(active, "Light_EnableFillLight") is True, prop(active, "Light_EnableFillLight"))
-    check("and of that view alone", prop(other, "Light_EnableFillLight") is None,
-          prop(other, "Light_EnableFillLight"))
+    check("and of that view alone, as the headlight's intensity is",
+          prop(other, "Light_EnableFillLight") is None
+          and prop(other, "Light_HeadlightIntensity") is None,
+          "%s, %s" % (prop(other, "Light_EnableFillLight"),
+                      prop(other, "Light_HeadlightIntensity")))
     check("the preference is untouched", "EnableFillLight" not in prefs.GetBools(),
           prefs.GetBools())
 
-    sync.setChecked(True)
+    apply_all.click()
     settle()
-    check("\"All views\" ticked is stored", prefs.GetBool("SyncLightSettings", False) is True)
-    intensity.setValue(70)
+    got = (prop(other, "Light_EnableFillLight"), prop(other, "Light_HeadlightIntensity"))
+    check("\"Apply all\" gives the other view the active view's lights",
+          got[0] is True and got[1] is not None and abs(got[1] - 0.7) < 1e-6, got)
+    check("and stores no setting", "SyncLightSettings" not in prefs.GetBools())
+    intensity.setValue(65)
     settle()
-    got = [prop(v, "Light_HeadlightIntensity") for v in (active, other)]
-    check("a headlight intensity set then is on both views",
-          all(g is not None and abs(g - 0.7) < 1e-6 for g in got), got)
-    sync.setChecked(False)
-    settle()
+    got = (prop(active, "Light_HeadlightIntensity"), prop(other, "Light_HeadlightIntensity"))
+    check("a change after it is the active view's alone again",
+          abs(got[0] - 0.65) < 1e-6 and abs(got[1] - 0.7) < 1e-6, got)
 
     child(m, QtWidgets.QPushButton, "LightSaveButton").click()
     settle()
     check("\"Save as default\" writes the active view's lights into the preferences",
           prefs.GetBool("EnableFillLight", False) is True
-          and prefs.GetInt("HeadlightIntensity", -1) == 70,
+          and prefs.GetInt("HeadlightIntensity", -1) == 65,
           "EnableFillLight %s, HeadlightIntensity %d" % (
               prefs.GetBool("EnableFillLight", False), prefs.GetInt("HeadlightIntensity", -1)))
 
 
+def handles():
+    """How many light handles are in what the active view renders: the
+    annotation the viewer hangs up, with Coin's light dragger under it"""
+    from pivy import coin
+    root = S["active"].getViewer().getSoRenderManager().getSceneGraph()
+    search = coin.SoSearchAction()
+    search.setName(coin.SbName("LightManipulator"))
+    search.setInterest(coin.SoSearchAction.ALL)
+    search.apply(root)
+    found = 0
+    paths = search.getPaths()
+    for i in range(paths.getLength()):
+        node = paths[i].getTail()
+        kinds = [node.getChild(k).getTypeId().getName().getString()
+                 for k in range(node.getNumChildren())]
+        S["handle kinds"] = kinds
+        if [k for k in kinds if k.endswith("FCDirectionalLightDragger")]:
+            found += 1
+    return found
+
+
+def on_screen(tag):
+    """The active view as the backend drew it, overlays and all: the handle
+    is fed to it as one. Not the screen, which may be locked, and not a
+    grab of the widget, which shows nothing of a backend's picture."""
+    path = os.path.join(OUT, tag + ".png")
+    S["active"].saveRenderDump(path, metadata=False)
+    return QtGui.QImage(path)
+
+
+def changed(a, b):
+    """The pixels that differ between two grabs of the view, in the view's
+    own coordinates"""
+    sx = a.width() / float(S["active"].graphicsView().viewport().width())
+    out = []
+    for y in range(0, a.height(), 2):
+        for x in range(0, a.width(), 2):
+            p, q = a.pixel(x, y), b.pixel(x, y)
+            if max(abs(((p >> s) & 255) - ((q >> s) & 255)) for s in (0, 8, 16)) > 40:
+                out.append((x / sx, y / sx))
+    return out
+
+
+def angle(a, b):
+    return math.degrees(a.getAngle(b))
+
+
 def direction_on():
+    mw = FreeCADGui.getMainWindow()
+    mw.raise_()
+    mw.activateWindow()
+    # a light from the side, so that the handle's shaft lies across the view
+    # and not end on: the preference, which a view with no direction of its
+    # own is lit by at once
+    FreeCAD.ParamGet(VIEW).SetString("HeadlightDirection", "(-0.9,0.2,-0.4)")
+    settle(1.0)
+    S["before"] = on_screen("handle-before")
+    check("no handle in the view before \"Direction\" is pressed", handles() == 0, handles())
     m = menu()
     button = child(m, QtWidgets.QPushButton, "LightDirectionButton")
     check("\"Direction\" is there to press, and up", button.isEnabled() and not button.isChecked())
@@ -204,35 +294,76 @@ def direction_on():
     check("pressed, it is down the next time the menu comes up",
           child(menu(), QtWidgets.QPushButton, "LightDirectionButton").isChecked())
     FreeCADGui.updateGui()
-    settle(0.5)
+    settle(0.8)
+    check("the handle is Coin's light dragger, one, in what the view renders",
+          handles() == 1, "%d; under the annotation: %s" % (handles(), S.get("handle kinds")))
+    S["after"] = on_screen("handle-up")
+    S["mask"] = changed(S["before"], S["after"])
+    gl = S["active"].graphicsView().viewport()
+    cx, cy = gl.width() / 2.0, gl.height() / 2.0
+    near = [p for p in S["mask"] if abs(p[0] - cx) < 60 and abs(p[1] - cy) < 60]
+    check("the handle shows over the model, in the middle of the view",
+          len(near) > 40, "%d of the sampled pixels changed, %d of them within 60 px of "
+          "the middle" % (len(S["mask"]), len(near)))
 
 
 def drag_light():
-    """A drag with the left button, from the middle of the view up and to
-    the right: the light stands where the pointer is, so it ends shining
-    from the upper right -- down and to the left, and into the screen"""
-    gl = S["active"].graphicsView().viewport()
-    centre = QtCore.QPoint(gl.width() // 2, gl.height() // 2)
-    camera = S["active"].getCameraOrientation()
-    QTest.mousePress(gl, QtCore.Qt.LeftButton, QtCore.Qt.NoModifier, centre)
-    settle(0.2)
-    first = prop(S["active"], "Light_HeadlightDirection")
-    check("a press in the middle of the view is the light from the eye",
-          first is not None and abs(first.x) < 0.05 and abs(first.y) < 0.05 and first.z < -0.99,
-          first)
-    for i in range(1, 9):
-        QTest.mouseMove(gl, centre + QtCore.QPoint(10 * i, -6 * i))
-        settle(0.03)
-    QTest.mouseRelease(gl, QtCore.Qt.LeftButton, QtCore.Qt.NoModifier,
-                       centre + QtCore.QPoint(80, -48))
-    settle(0.3)
-    got = prop(S["active"], "Light_HeadlightDirection")
-    check("dragged up and to the right, the light shines from there",
-          got is not None and got.x < -0.1 and got.y < -0.05 and got.z < 0, got)
+    """The handle's shaft dragged sideways: where the grab changed furthest
+    from the middle of the view is the end of the shaft; a press most of
+    the way out to it, and a move across it"""
+    active, other = S["active"], S["other"]
+    gl = active.graphicsView().viewport()
+    cx, cy = gl.width() / 2.0, gl.height() / 2.0
+    if not S["mask"]:
+        check("the handle's shaft is found on the screen", False, "nothing changed")
+        return
+    fx, fy = max(S["mask"], key=lambda p: (p[0] - cx) ** 2 + (p[1] - cy) ** 2)
+    reach = math.hypot(fx - cx, fy - cy)
+    if not check("the handle's shaft is found on the screen", reach > 25,
+                 "its end %.0f px from the middle, at (%.0f, %.0f)" % (reach, fx, fy)):
+        return
+    ux, uy = (fx - cx) / reach, (fy - cy) / reach
+    FreeCADGui.Selection.clearSelection()
+    camera = active.getCameraOrientation()
+    had = prop(active, "Light_HeadlightDirection")
+    others = prop(other, "Light_HeadlightDirection")
+    check("the view has no direction of its own before the handle is dragged", had is None, had)
+    turned = None
+    for part in (0.8, 0.65, 0.5, 0.9):
+        px, py = cx + ux * reach * part, cy + uy * reach * part
+        start = QtCore.QPoint(int(round(px)), int(round(py)))
+        QTest.mouseMove(gl, start)
+        settle(0.1)
+        QTest.mousePress(gl, QtCore.Qt.LeftButton, QtCore.Qt.NoModifier, start)
+        settle(0.1)
+        for i in range(1, 9):
+            QTest.mouseMove(gl, start + QtCore.QPoint(int(round(-uy * 6 * i)),
+                                                      int(round(ux * 6 * i))))
+            settle(0.03)
+        QTest.mouseRelease(gl, QtCore.Qt.LeftButton, QtCore.Qt.NoModifier,
+                           start + QtCore.QPoint(int(round(-uy * 48)), int(round(ux * 48))))
+        settle(0.3)
+        turned = prop(active, "Light_HeadlightDirection")
+        note("NOTE a drag from %.0f%% of the shaft: Light_HeadlightDirection %s" % (
+            part * 100, turned))
+        if turned is not None:
+            break
+    on_screen("handle-dragged")
+    was = FreeCAD.Vector(-0.9, 0.2, -0.4)
+    check("a drag of the handle turns the light: the view has a direction of its own",
+          turned is not None and angle(turned, was) > 5.0,
+          "%s, %.1f degrees from where it was" % (
+              turned, angle(turned, was) if turned is not None else 0.0))
     check("the drag turned the light and not the camera",
-          S["active"].getCameraOrientation().isSame(camera, 1e-6))
-    check("and not the other view's light (\"All views\" is off)",
-          prop(S["other"], "Light_HeadlightDirection") is None)
+          active.getCameraOrientation().isSame(camera, 1e-6))
+    check("and selected nothing: a press on the handle is not one on the model behind it",
+          not FreeCADGui.Selection.getSelectionEx(),
+          [s.ObjectName for s in FreeCADGui.Selection.getSelectionEx()])
+    now = prop(other, "Light_HeadlightDirection")
+    check("the other view's light is where it was",
+          (others is None and now is None)
+          or (others is not None and now is not None and (others - now).Length < 1e-9),
+          "%s, then %s" % (others, now))
 
 
 def direction_off():
@@ -240,8 +371,9 @@ def direction_off():
     view.setFocus()
     QTest.keyClick(view, QtCore.Qt.Key_Escape)
     settle(0.5)
-    check("Escape in the view ends the turning",
+    check("Escape in the view takes the handle down: the button is up",
           not child(menu(), QtWidgets.QPushButton, "LightDirectionButton").isChecked())
+    check("and no dragger is left in what the view renders", handles() == 0, handles())
     before = prop(S["active"], "Light_HeadlightDirection")
     gl = view.viewport()
     centre = QtCore.QPoint(gl.width() // 2, gl.height() // 2)
@@ -250,9 +382,11 @@ def direction_off():
                        centre + QtCore.QPoint(-60, 40))
     settle(0.3)
     after = prop(S["active"], "Light_HeadlightDirection")
-    check("and a click in the view no longer turns the light",
-          before is not None and after is not None and (before - after).Length < 1e-9,
+    check("and a click in the view turns no light",
+          (before is None and after is None)
+          or (before is not None and after is not None and (before - after).Length < 1e-9),
           "%s, then %s" % (before, after))
+    FreeCADGui.Selection.clearSelection()
 
 
 def aliasing():

@@ -906,18 +906,20 @@ public:
     /// at this view. It is a property of the view like any other, kept
     /// with the document. False for a viewer with no view to keep it on.
     bool setLightSetting(const char *key, const App::Property &value);
-    /// setLightSetting() on \a viewer, or -- with the setting
-    /// ViewParams::SyncLightSettings on -- on every open 3D view.
-    static void applyLightSetting(View3DInventorViewer *viewer, const char *key,
-                                  const App::Property &value);
+    /// Give every other open 3D view the lights of this one, once: each
+    /// of them is set, as by setLightSetting(), to what lights this view
+    /// now, and nothing ties them together after that. The number of
+    /// views reached.
+    int applyLightSettingsToAllViews() const;
     /// Write what lights this view into the preferences: what a view with
     /// no lights of its own is lit by, a new one for one.
     void saveLightSettings() const;
-    /// Turn the headlight's direction with the pointer in this view, or
-    /// stop: while it is on, a drag with the left button puts the light
-    /// where the pointer is on a ball that fills the view, each move an
-    /// applyLightSetting() of "HeadlightDirection". The other buttons
-    /// still move the camera. Escape in the view ends it too.
+    /// Raise the handle the headlight's direction is turned with in this
+    /// view -- Coin's light dragger, drawn over the model where the
+    /// camera looks -- or take it down. A drag of the handle is a
+    /// setLightSetting() of "HeadlightDirection" with each move; its
+    /// middle drags it aside. Everything else in the view works as ever
+    /// while it is up. Escape in the view takes it down too.
     void setLightManipulator(bool on);
     bool hasLightManipulator() const;
     //@}

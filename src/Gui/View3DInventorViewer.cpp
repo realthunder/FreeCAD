@@ -156,6 +156,7 @@
 #include "SoFCBackgroundGradient.h"
 #include "SoFCBoundingBox.h"
 #include "SoFCDB.h"
+#include "SoFCDirectionalLight.h"
 #include "SoFCInteractiveElement.h"
 #include "SoFCOffscreenRenderer.h"
 #include "SoFCSelection.h"
@@ -317,8 +318,8 @@ public:
             }
         }
         else if (event->type() == QEvent::ShortcutOverride || event->type() == QEvent::KeyPress) {
-            // Escape while the light is being turned with the pointer
-            // (setLightManipulator) ends that, and has to be taken here:
+            // Escape while the light's handle is up (setLightManipulator)
+            // takes it down, and has to be taken here:
             // Escape is a command's shortcut (Std_ToggleNavigation), so
             // unless the override is claimed the key never arrives as a
             // key at all.
@@ -560,13 +561,23 @@ struct View3DInventorViewer::Private
 {
     View3DInventor                    *view;
 
-    /// The headlight's direction is being turned with the pointer
-    /// (setLightManipulator), and the button is down on it
+    /// The handle the headlight's direction is turned with is up
+    /// (setLightManipulator)
     bool                              lightManip = false;
-    bool                              lightDragging = false;
-    /// Turn the headlight to where the pointer is; true for an event the
-    /// manipulation took
-    bool turnLight(const SoEvent *ev);
+    /// The handle is being set to the light, not dragged: nothing to store
+    bool                              lightSyncing = false;
+    /// The handle: Coin's light dragger; the annotation it is drawn under,
+    /// which hangs in the aux root while the handle is up; and the graph
+    /// of the camera and that annotation its events go through
+    CoinPtr<SoFCDirectionalLightDragger> lightDragger;
+    CoinPtr<SoAnnotation>             lightManipNode;
+    CoinPtr<SoSeparator>              lightManipEvents;
+    std::unique_ptr<SoHandleEventAction> lightManipAction;
+    /// Offer an event to the handle; true for one it took
+    bool lightManipEvent(const SoEvent *ev);
+    /// Point the handle where the headlight shines from
+    void syncLightDragger();
+    static void lightDraggedCB(void *data, SoDragger *dragger);
     /// Where the Render_* settings are read from, when that is not the
     /// MDI view above. A viewer with no View3DInventor -- a material
     /// preview, an icon renderer -- otherwise falls through to the
@@ -670,6 +681,9 @@ struct View3DInventorViewer::Private
         // The on-view parameters' root (getOnViewParameterRoot): last, so
         // a tool's dimension and its box are over the highlight too.
         OverlayOnView = 11,
+        // The handle of the headlight (setLightManipulator): over all of
+        // the above, as a thing to grab.
+        OverlayLightManip = 12,
     };
     /// The ids above are per VIEWER. A unified-canvas cell offsets them
     /// by its sub-view id times this stride, because the backend's
@@ -691,6 +705,9 @@ struct View3DInventorViewer::Private
         std::unique_ptr<SoFCRenderCacheManager> manager;
     };
     OverlayCapture foregroundCapture;
+    // The light's handle (lightManipNode), which is in no feed of the
+    // scene's either
+    OverlayCapture lightManipCapture;
     OverlayCapture axisCrossCapture;
     OverlayCapture graphicsItemsCapture;
     OverlayCapture fpsTextCapture;
@@ -1449,6 +1466,20 @@ void View3DInventorViewer::Private::updateOverlayCaptures(SoGLRenderAction *glra
         dropCapture(onViewCapture, OverlayOnView);
         onViewBackendFed = false;
     }
+
+    // The handle of the headlight, as the dimensions: a scene-camera
+    // overlay is drawn over the finished scene with a depth buffer of its
+    // own, which is what the annotation it hangs under asks of Coin.
+    if (lightManip && lightManipNode) {
+        if (!lightManipCapture.manager)
+            initCapture(lightManipCapture, lightManipNode);
+        Render::OverlayAnchor handleAnchor;
+        handleAnchor.sceneCamera = true;
+        feedOverlay(lightManipCapture, OverlayLightManip, handleAnchor);
+    }
+    else {
+        dropCapture(lightManipCapture, OverlayLightManip);
+    }
 }
 
 void View3DInventorViewer::Private::clearOverlayCaptures()
@@ -1457,7 +1488,8 @@ void View3DInventorViewer::Private::clearOverlayCaptures()
                          &graphicsItemsCapture, &fpsTextCapture,
                          &naviCubeCapture, &naviButtonCapture,
                          &editingCapture, &dimensionCapture,
-                         &onViewCapture, &debugLabelCapture}) {
+                         &onViewCapture, &debugLabelCapture,
+                         &lightManipCapture}) {
         if (capture->manager) {
             capture->manager->setExternalOverlay(
                 nullptr, 0, Render::OverlayAnchor());
@@ -6633,25 +6665,29 @@ bool View3DInventorViewer::setLightSetting(const char *key, const App::Property 
     return true;
 }
 
-void View3DInventorViewer::applyLightSetting(View3DInventorViewer *viewer, const char *key,
-                                             const App::Property &value)
+int View3DInventorViewer::applyLightSettingsToAllViews() const
 {
-    bool reached = false;
-    if (ViewParams::getSyncLightSettings()) {
-        for (auto appDoc : App::GetApplication().getDocuments()) {
-            auto doc = Application::Instance->getDocument(appDoc);
-            if (!doc)
-                continue;
-            doc->foreachView<View3DInventor>([&](View3DInventor *view) {
-                if (auto other = view->getViewer()) {
-                    other->setLightSetting(key, value);
-                    reached = reached || other == viewer;
-                }
-            });
-        }
+    int reached = 0;
+    for (auto appDoc : App::GetApplication().getDocuments()) {
+        auto doc = Application::Instance->getDocument(appDoc);
+        if (!doc)
+            continue;
+        doc->foreachView<View3DInventor>([&](View3DInventor *view) {
+            auto other = view->getViewer();
+            if (!other || other == this)
+                return;
+            // What lights this view, whoever says it -- the view, the
+            // preference, the light itself -- becomes the other view's own.
+            for (const auto &def : _lightProperties) {
+                std::unique_ptr<App::Property> value(static_cast<App::Property *>(
+                        Base::Type::createInstanceByName(_lightPropertyType(def.field))));
+                if (value && getLightSetting(def.key, *value))
+                    other->setLightSetting(def.key, *value);
+            }
+            ++reached;
+        });
     }
-    if (viewer && !reached)
-        viewer->setLightSetting(key, value);
+    return reached;
 }
 
 void View3DInventorViewer::saveLightSettings() const
@@ -6696,49 +6732,109 @@ void View3DInventorViewer::saveLightSettings() const
     }
 }
 
-// The headlight turned with the pointer. The view is a ball seen from the
-// front, nine tenths of the view's shorter side across, and where the
-// pointer is on it is where the light stands: in the middle it shines
-// from the eye, as a headlight does when nobody turned it, and towards
-// the rim more and more from the side. The direction is said relative to
-// the camera, as the light's is, so the light keeps its place on the
-// screen when the model is turned.
+// The headlight turned with a handle in the view: Coin's light dragger, as
+// the light of the Shadow style had it (SoFCDirectionalLight; it went with
+// the style, 1175430921) -- "why note use coin light manipulator like what
+// shadow light is using" (docs/HandsOnQueue.md entry 63).
 //
-// Not a handle to grab in the scene, which is what the preference page
-// this replaces had in a little view of its own: in a view with a model in
-// it a handle at the middle is inside the model, where it is neither seen
-// nor picked. The light on the model is what shows where it points.
-bool View3DInventorViewer::Private::turnLight(const SoEvent *ev)
+// Two things made that one usable, and a bare dragger put into the scene
+// has neither. It was drawn as an annotation, over the model it otherwise
+// sits inside. And while it was up the model could not be picked, so a
+// press on the handle was not a press on the face in front of it. The
+// first is the same here. For the second the handle is asked FIRST, by an
+// event action of its own that traverses the camera and the handle and
+// nothing else (lightManipEvent): an event the handle takes reaches neither
+// the navigation nor the scene, and one it does not take goes on as ever
+// -- the camera turns and the model is picked while the handle is up.
+//
+// The handle comes up where the camera looks, the middle of the view, and
+// its own middle drags it aside. Its direction is the light's. The
+// headlight is fixed to the eye, so its direction is kept relative to the
+// camera (Light_HeadlightDirection); the handle stands in the world, and
+// is turned to follow whenever the camera has moved (syncLightDragger,
+// before each frame).
+bool View3DInventorViewer::Private::lightManipEvent(const SoEvent *ev)
 {
-    if (ev->isOfType(SoMouseButtonEvent::getClassTypeId())) {
-        auto button = static_cast<const SoMouseButtonEvent *>(ev);
-        if (button->getButton() != SoMouseButtonEvent::BUTTON1)
-            return false;   // the other buttons and the wheel still move the camera
-        lightDragging = button->getState() == SoButtonEvent::DOWN;
-        if (!lightDragging)
-            return true;
-    }
-    else if (!ev->isOfType(SoLocation2Event::getClassTypeId()) || !lightDragging) {
+    SoCamera *camera = owner->getSoRenderManager()->getCamera();
+    if (!lightManipEvents || !camera)
         return false;
-    }
-    const SbVec2s size = owner->getSoRenderManager()->getViewportRegion().getViewportSizePixels();
-    const SbVec2s at = ev->getPosition();
-    const float radius = 0.45f * float(std::min(size[0], size[1]));
-    if (radius < 1.0f)
-        return true;
-    float x = (float(at[0]) - 0.5f * float(size[0])) / radius;
-    float y = (float(at[1]) - 0.5f * float(size[1])) / radius;
-    const float reach = std::sqrt(x * x + y * y);
-    if (reach > 1.0f) {
-        x /= reach;
-        y /= reach;
-    }
-    const float z = std::sqrt(std::max(0.0f, 1.0f - x * x - y * y));
-    // from where the light stands towards the scene
+    // the pointer only: a key is not the handle's, and Escape ends it
+    if (!ev->isOfType(SoMouseButtonEvent::getClassTypeId())
+            && !ev->isOfType(SoLocation2Event::getClassTypeId()))
+        return false;
+    if (lightManipEvents->getChild(0) != camera)
+        lightManipEvents->replaceChild(0, camera);
+    const SbViewportRegion &region = owner->getSoRenderManager()->getViewportRegion();
+    // One action for as long as the handle is up: it is what remembers
+    // that the handle grabbed the pointer, from the press to the release.
+    if (!lightManipAction)
+        lightManipAction = std::make_unique<SoHandleEventAction>(region);
+    else
+        lightManipAction->setViewportRegion(region);
+    lightManipAction->setEvent(ev);
+    lightManipAction->apply(lightManipEvents);
+    return lightManipAction->isHandled();
+}
+
+void View3DInventorViewer::Private::syncLightDragger()
+{
+    SoCamera *camera = owner->getSoRenderManager()->getCamera();
+    if (!lightDragger || !camera || lightDragger->isActive.getValue())
+        return;
     App::PropertyVector direction;
-    direction.setValue(Base::Vector3d(-x, -y, -z));
-    View3DInventorViewer::applyLightSetting(owner, "HeadlightDirection", direction);
-    return true;
+    if (!owner->getLightSetting("HeadlightDirection", direction))
+        return;
+    const Base::Vector3d eye = direction.getValue();
+    SbVec3f wanted(float(eye.x), float(eye.y), float(eye.z));
+    if (wanted.normalize() == 0.0F)
+        return;
+    camera->orientation.getValue().multVec(wanted, wanted);
+    const SbRotation has = lightDragger->rotation.getValue();
+    SbVec3f shown(0.0F, 0.0F, -1.0F);
+    has.multVec(shown, shown);
+    Base::StateLocker guard(lightSyncing);
+    // Its size, a fixed part of the view where it stands. Worked out here
+    // and not by the dragger as it is traversed (autoScale): the backend's
+    // capture of it has no camera in its state to size it by.
+    const float aspect = owner->getSoRenderManager()->getViewportRegion().getViewportAspectRatio();
+    SbViewVolume volume = camera->getViewVolume(aspect);
+    if (aspect < 1.0F)
+        volume.scale(1.0F / aspect);
+    const float size = volume.getWorldToScreenScale(lightDragger->translation.getValue(), 0.1F)
+        / (5.0F * aspect);
+    const float sized = lightDragger->scaleFactor.getValue()[0];
+    if (size > 0.0F && std::fabs(size - sized) > 1e-4F * size)
+        lightDragger->scaleFactor.setValue(size, size, size);
+    if (shown.equals(wanted, 1e-8F))
+        return;
+    // the least turn that brings it there, so that the handle keeps its roll
+    lightDragger->rotation = has * SbRotation(shown, wanted);
+}
+
+void View3DInventorViewer::Private::lightDraggedCB(void *data, SoDragger *dragger)
+{
+    auto self = static_cast<Private *>(data);
+    SoCamera *camera = self->owner->getSoRenderManager()->getCamera();
+    if (self->lightSyncing || !camera)
+        return;
+    SbVec3f world(0.0F, 0.0F, -1.0F);
+    dragger->getMotionMatrix().multDirMatrix(world, world);
+    if (world.normalize() == 0.0F)
+        return;
+    SbVec3f eye;
+    camera->orientation.getValue().inverse().multVec(world, eye);
+    // Moved aside, not turned: nothing to store, and the view is not to
+    // be given a direction of its own for it.
+    App::PropertyVector had;
+    if (self->owner->getLightSetting("HeadlightDirection", had)) {
+        const Base::Vector3d h = had.getValue();
+        SbVec3f was(float(h.x), float(h.y), float(h.z));
+        if (was.normalize() != 0.0F && was.equals(eye, 1e-8F))
+            return;
+    }
+    App::PropertyVector direction;
+    direction.setValue(Base::Vector3d(eye[0], eye[1], eye[2]));
+    self->owner->setLightSetting("HeadlightDirection", direction);
 }
 
 bool View3DInventorViewer::hasLightManipulator() const
@@ -6750,21 +6846,68 @@ void View3DInventorViewer::setLightManipulator(bool on)
 {
     if (on == _pimpl->lightManip)
         return;
+    SoCamera *camera = getSoRenderManager()->getCamera();
+    SoGroup *aux = inventorSelection ? inventorSelection->getAuxRoot() : nullptr;
+    if (on && (!camera || !aux))
+        return;
     _pimpl->lightManip = on;
-    _pimpl->lightDragging = false;
-    if (auto widget = getWidget()) {
-        if (on)
-            widget->setCursor(Qt::CrossCursor);
-        else
-            widget->unsetCursor();
-    }
     if (on) {
+        if (!_pimpl->lightDragger) {
+            _pimpl->lightDragger = new SoFCDirectionalLightDragger;
+            _pimpl->lightDragger->autoScale = FALSE;
+            // The arrow in a colour of its own: the stock handle is a grey
+            // that is lost on a grey model. Its pieces carry their
+            // materials themselves (the kit's "material" part colours
+            // none of them), and those are shared by every light dragger,
+            // so the arrow is copied and the copy given another.
+            auto rotator = _pimpl->lightDragger->getPart("rotator", FALSE);
+            if (rotator && rotator->isOfType(SoInteractionKit::getClassTypeId())) {
+                auto kit = static_cast<SoInteractionKit *>(rotator);
+                auto arrow = kit->getPart("rotator", FALSE);
+                if (arrow && arrow->isOfType(SoSeparator::getClassTypeId())) {
+                    auto own = static_cast<SoSeparator *>(arrow->copy());
+                    auto material = new SoMaterial;
+                    material->diffuseColor = SbColor(1.0F, 0.55F, 0.0F);
+                    material->emissiveColor = SbColor(1.0F, 0.55F, 0.0F);
+                    if (own->getNumChildren() > 0
+                            && own->getChild(0)->isOfType(SoMaterial::getClassTypeId()))
+                        own->replaceChild(0, material);
+                    else
+                        own->insertChild(material, 0);
+                    kit->setPart("rotator", own);
+                }
+            }
+            _pimpl->lightDragger->addValueChangedCallback(Private::lightDraggedCB,
+                                                          _pimpl.get());
+            _pimpl->lightManipNode = new SoAnnotation;
+            _pimpl->lightManipNode->setName("LightManipulator");
+            _pimpl->lightManipNode->addChild(_pimpl->lightDragger);
+            _pimpl->lightManipEvents = new SoSeparator;
+            _pimpl->lightManipEvents->addChild(camera);
+            _pimpl->lightManipEvents->addChild(_pimpl->lightManipNode);
+        }
+        SbVec3f look;
+        camera->orientation.getValue().multVec(SbVec3f(0.0F, 0.0F, -1.0F), look);
+        {
+            Base::StateLocker guard(_pimpl->lightSyncing);
+            _pimpl->lightDragger->translation =
+                camera->position.getValue() + look * camera->focalDistance.getValue();
+        }
+        _pimpl->syncLightDragger();
+        if (aux->findChild(_pimpl->lightManipNode) < 0)
+            aux->addChild(_pimpl->lightManipNode);
         getMainWindow()->showMessage(
-            QObject::tr("Drag in the view to turn the light. Escape, or Direction again, to end."));
+            QObject::tr("Drag the handle in the view to turn the light. Escape, or Direction "
+                        "again, to end."));
     }
     else {
+        if (aux && _pimpl->lightManipNode)
+            aux->removeChild(_pimpl->lightManipNode);
+        // with it goes a grab the handle may still hold
+        _pimpl->lightManipAction.reset();
         getMainWindow()->showMessage(QString(), 1);
     }
+    redraw();
 }
 
 // #define ENABLE_GL_DEPTH_RANGE
@@ -6781,6 +6924,11 @@ void View3DInventorViewer::renderScene()
     // These scopes are what tell them apart; they cost a relaxed load
     // each while the timing switch is off (Render::FrameOutside).
     Render::FrameOutsideScope outPre(Render::FrameOutside::Pre);
+
+    // The light's handle stands in the world and the headlight is fixed to
+    // the eye: the handle is turned after the camera.
+    if (_pimpl->lightManip)
+        _pimpl->syncLightDragger();
 
     // Must set up the OpenGL viewport manually, as upon resize
     // operations, Coin won't set it up until the SoGLRenderAction is
@@ -7225,7 +7373,9 @@ bool View3DInventorViewer::processSoEvent(const SoEvent* ev)
         return processed;
     }
 
-    if (_pimpl->lightManip && _pimpl->turnLight(ev))
+    // the light's handle before the navigation and the scene: a press on
+    // it is not a press on the model behind it
+    if (_pimpl->lightManip && _pimpl->lightManipEvent(ev))
         return true;
 
     if (ev->getTypeId().isDerivedFrom(SoKeyboardEvent::getClassTypeId())) {
@@ -7234,7 +7384,7 @@ bool View3DInventorViewer::processSoEvent(const SoEvent* ev)
 
         switch (ke->getKey()) {
         case SoKeyboardEvent::ESCAPE:
-            // turning the light ends first of all
+            // the light's handle goes first of all
             if (hasLightManipulator()) {
                 if (ke->getState() == SoButtonEvent::DOWN)
                     setLightManipulator(false);

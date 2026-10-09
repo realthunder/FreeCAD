@@ -102,6 +102,11 @@ public:
   SoFCDirectionalLightDragger(void);
 
   SoSFVec3f scaleFactor;
+  /// Size the dragger by the view volume of whatever action traverses it
+  /// (the default). Off, scaleFactor is the owner's to set: a traversal
+  /// with no camera in its state -- a render cache capture -- has no view
+  /// volume to size it by, and would undo what the last one set.
+  SoSFBool autoScale;
 
   virtual void notify(SoNotList * nl);
   virtual void doAction(SoAction * action);

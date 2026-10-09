@@ -79,16 +79,17 @@ private:
  *
  * A change is the VIEW's: it is stored in the active view's properties
  * (Light_*, View3DInventorViewer::setLightSetting), which a view keeps
- * with its document, and with "All views" ticked in those of every open
- * 3D view. The setting behind that box, View/SyncLightSettings, is
- * remembered. Nothing here writes the preferences but "Save as default",
- * which writes what lights the active view into them: what a view with no
- * lights of its own is lit by.
+ * with its document. "Apply all" gives every other open 3D view the
+ * lights of the active one, once
+ * (View3DInventorViewer::applyLightSettingsToAllViews); nothing ties the
+ * views together after it. Nothing here writes the preferences but "Save
+ * as default", which writes what lights the active view into them: what a
+ * view with no lights of its own is lit by.
  *
  * The direction of the headlight is not a number to type. "Direction"
- * closes the menu and lets the pointer turn it in the active view
- * (View3DInventorViewer::setLightManipulator); pressing it again, or
- * Escape in the view, ends that.
+ * closes the menu and raises a handle in the active view, Coin's light
+ * dragger, to turn it with (View3DInventorViewer::setLightManipulator);
+ * pressing it again, or Escape in the view, takes the handle down.
  */
 class GuiExport LightOptionsWidget : public QWidget
 {
@@ -128,7 +129,7 @@ private:
 
     Row rows[RowCount];
     QPushButton *direction = nullptr;
-    QCheckBox *allViews = nullptr;
+    QPushButton *applyAll = nullptr;
     QPushButton *save = nullptr;
     bool refreshing = false;
 };

@@ -430,15 +430,38 @@ show, in this order:
   intensity each -- which is gone from the preferences. A change is the
   ACTIVE VIEW's: it is written into the view's `Light_*` properties
   (`View3DInventorViewer::setLightSetting`), which a view keeps with its
-  document; with "All views" ticked (the setting `View/SyncLightSettings`)
-  into those of every open 3D view. Nothing there writes the preferences
-  but "Save as default" (`saveLightSettings`). "Direction" lets the
-  pointer turn the headlight in the view (`setLightManipulator`): a drag
-  with the left button puts the light where the pointer is on a ball that
-  fills the view, the other buttons still move the camera, and the button
-  again or Escape ends it. It is not a handle in the scene, as the page
-  had in a little view of its own: at the middle of a view with a model in
-  it, a handle is inside the model.
+  document. "Apply all" gives every other open 3D view the lights of the
+  active one, once (`applyLightSettingsToAllViews`); nothing ties the
+  views together after it. (It was a check box "All views" on a setting
+  `View/SyncLightSettings` for a day; both are gone.) Nothing there writes
+  the preferences but "Save as default" (`saveLightSettings`).
+  "Direction" raises a handle in the view to turn the headlight with
+  (`setLightManipulator`): Coin's light dragger
+  (`SoFCDirectionalLightDragger`), as the light of the retired Shadow style
+  had it, and the button again or Escape takes it down. What made that one
+  usable is kept, by other means:
+  - it is drawn over the model, which at the middle of a view it
+    otherwise sits inside. For Coin that is the `SoAnnotation` it hangs
+    under, in the aux root. For a backend it is a scene-camera overlay of
+    its own (`lightManipCapture`, `OverlayLightManip`), which is drawn
+    over the finished scene with a fresh depth buffer -- and it has to be
+    fed: the shadow light's handle was left to Coin to draw on top (sec 4,
+    stage 1b), and where the backend does not draw into Coin's GL context
+    (Direct3D, the Windows default) nothing Coin draws is seen at all;
+  - the shadow light made the model unpickable while its handle was up.
+    Here the handle is asked FIRST, by an `SoHandleEventAction` of its own
+    over the camera and the handle alone (`Private::lightManipEvent`,
+    before the navigation in `processSoEvent`): an event it takes reaches
+    neither the navigation nor the scene, and every other one goes on as
+    ever, so the camera turns and the model is picked with the handle up.
+  The handle stands in the world and the headlight is fixed to the eye
+  (its direction is kept relative to the camera): the handle is turned
+  after the camera before each frame (`syncLightDragger`). It is sized
+  there too, a fixed part of the view: `SoFCDirectionalLightDragger`
+  sizes itself by the view volume of the action that traverses it, and the
+  backend's capture has no camera in its state (`autoScale` off). Its
+  arrow is orange, a copy of the stock one with a material of its own; the
+  stock grey is lost on a grey model.
 The two rows that must dismiss the menu -- "Direction", since the view
 is under it, and a colour, since a dialog under a menu's grab gets no
 input -- do it by the synthetic press outside the popup that the warning

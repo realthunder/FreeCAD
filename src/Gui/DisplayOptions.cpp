@@ -238,15 +238,16 @@ LightOptionsWidget::LightOptionsWidget(QWidget *parent)
     direction->setObjectName(QStringLiteral("LightDirectionButton"));
     direction->setCheckable(true);
     direction->setToolTip(
-        tr("Turn the headlight in the active 3D view: drag in the view with the left "
-           "button, and the light is where the pointer is -- from the eye in the middle "
-           "of the view, from the side towards its rim. Press this again, or Escape in "
-           "the view, to end."));
+        tr("Turn the headlight in the active 3D view: a handle comes up in the middle of "
+           "the view, and dragging it turns the light. Press this again, or Escape in "
+           "the view, to take the handle away."));
     buttons->addWidget(direction);
-    allViews = new QCheckBox(tr("All views"), this);
-    allViews->setObjectName(QStringLiteral("LightAllViews"));
-    allViews->setToolTip(doc(ViewParams::docSyncLightSettings()));
-    buttons->addWidget(allViews);
+    applyAll = new QPushButton(tr("Apply all"), this);
+    applyAll->setObjectName(QStringLiteral("LightApplyAll"));
+    applyAll->setToolTip(
+        tr("Give every other open 3D view the lights of the active view, as they are "
+           "now. A change made here afterwards is the active view's alone again."));
+    buttons->addWidget(applyAll);
     buttons->addStretch(1);
     save = new QPushButton(tr("Save as default"), this);
     save->setObjectName(QStringLiteral("LightSaveButton"));
@@ -266,9 +267,13 @@ LightOptionsWidget::LightOptionsWidget(QWidget *parent)
         if (on)
             dismiss(this);
     });
-    connect(allViews, &QCheckBox::toggled, this, [this](bool on) {
-        if (!refreshing && ViewParams::getSyncLightSettings() != on)
-            ViewParams::setSyncLightSettings(on);
+    connect(applyAll, &QPushButton::clicked, this, [this]() {
+        if (auto viewer = activeViewer()) {
+            const int reached = viewer->applyLightSettingsToAllViews();
+            getMainWindow()->showMessage(
+                tr("The lights of this view were given to %n other view(s).", nullptr, reached),
+                4000);
+        }
     });
     connect(save, &QPushButton::clicked, this, [this]() {
         if (auto viewer = activeViewer()) {
@@ -303,8 +308,8 @@ void LightOptionsWidget::addRow(int which, int gridRow, const QString &name,
                 return;
             App::PropertyBool value;
             value.setValue(on);
-            View3DInventorViewer::applyLightSetting(activeViewer(), rows[which].enableKey,
-                                                    value);
+            if (auto viewer = activeViewer())
+                viewer->setLightSetting(rows[which].enableKey, value);
             rows[which].intensity->setEnabled(on);
         });
     }
@@ -330,8 +335,8 @@ void LightOptionsWidget::addRow(int which, int gridRow, const QString &name,
             return;
         App::PropertyFloat value;
         value.setValue(percent / 100.0);
-        View3DInventorViewer::applyLightSetting(activeViewer(), rows[which].intensityKey,
-                                                value);
+        if (auto viewer = activeViewer())
+            viewer->setLightSetting(rows[which].intensityKey, value);
     });
 }
 
@@ -365,7 +370,8 @@ void LightOptionsWidget::chooseColour(int which)
         App::Color colour;
         colour.setValue<QColor>(picked);
         value.setValue(colour);
-        View3DInventorViewer::applyLightSetting(viewerInFront(), key.constData(), value);
+        if (auto viewer = viewerInFront())
+            viewer->setLightSetting(key.constData(), value);
     }, Qt::QueuedConnection);
 }
 
@@ -374,7 +380,6 @@ void LightOptionsWidget::refresh()
     auto viewer = activeViewer();
     Base::StateLocker guard(refreshing);
     setEnabled(viewer != nullptr);
-    allViews->setChecked(ViewParams::getSyncLightSettings());
     direction->setChecked(viewer && viewer->hasLightManipulator());
     if (!viewer)
         return;

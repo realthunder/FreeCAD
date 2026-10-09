@@ -792,6 +792,14 @@ public:
     /// the tick does not invoke the command back.
     void syncChecked(const char *mode);
 
+    /// One icon on the button, whatever style the view is in: the menu
+    /// under it sets more than the style now, and the style shows in its
+    /// combo box (docs/HandsOnQueue.md entry 63). The button's tooltip
+    /// still names the active style.
+    void setActionIcon(Action *action, const QIcon &) override {
+        GroupCommand::setActionIcon(action, BitmapFactory().iconFromTheme(getPixmap()));
+    }
+
     virtual Action * createAction() {
         Action * action = GroupCommand::createAction();
         action->setCheckable(false);
@@ -845,6 +853,7 @@ StdCmdDrawStyle::StdCmdDrawStyle()
     sToolTipText  = QT_TR_NOOP("Change the display style and shading of the objects");
     sStatusTip    = QT_TR_NOOP("Change the display style and shading of the objects");
     sWhatsThis    = "Std_DrawStyle";
+    sPixmap       = "Std_DrawStyle";
     eType         = 0;
     bCanLog       = false;
     // One override mode per viewer, so the list is a pick-one: this is

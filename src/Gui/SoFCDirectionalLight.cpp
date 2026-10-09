@@ -331,6 +331,7 @@ SoFCDirectionalLightDragger::SoFCDirectionalLightDragger()
 {
   SO_NODE_CONSTRUCTOR(SoFCDirectionalLightDragger);
   SO_NODE_ADD_FIELD(scaleFactor, (1.0f, 1.0f, 1.0f));
+  SO_NODE_ADD_FIELD(autoScale, (TRUE));
 }
 
 void
@@ -348,10 +349,13 @@ SoFCDirectionalLightDragger::notify(SoNotList * nl)
 void
 SoFCDirectionalLightDragger::doAction(SoAction * action)
 {
-  if (action->getState()->isElementEnabled(SoViewVolumeElement::getClassStackIndex())) {
+  if (this->autoScale.getValue()
+      && action->getState()->isElementEnabled(SoViewVolumeElement::getClassStackIndex())) {
     SbViewVolume vv = SoViewVolumeElement::get(action->getState());
     float aspectRatio = SoViewportRegionElement::get(action->getState()).getViewportAspectRatio();
-    float scale = vv.getWorldToScreenScale(SbVec3f(0.f, 0.f, 0.f), 0.1f) / (5*aspectRatio);
+    // sized where the dragger stands: under a perspective camera the world
+    // origin may be anywhere, behind the eye for one
+    float scale = vv.getWorldToScreenScale(this->translation.getValue(), 0.1f) / (5*aspectRatio);
     SbVec3f sf(scale, scale, scale);
     if (sf != this->scaleFactor.getValue())
       this->scaleFactor = sf;
