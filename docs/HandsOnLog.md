@@ -174,8 +174,13 @@ entries below); five of them, 104 claims, again on the last build, the
 other thirteen one build earlier, before the handle got its colour and the
 page layer the question whether an item is hidden. Tools and results in
 `..\dl\handson\2026-10-10\q1` (the folder is a day ahead of the clock it
-was made by). Both full suites were started on the last build after the GUI
-tests; their result is the next thing written here.
+was made by). Both full suites on the last build, ended 2026-10-10 00:31
+and 00:42: ctest 791 of 791 (800 entries, 9 disabled, 1 skipped;
+`Page2DHidden_tests_run` is the one more); Python 3411 tests with the two
+known thickness failures, 50 skipped, 6 expected failures
+(`..\dl\handson\2026-10-10\q1\full-ctest.log`, `fullpy-pytest.log`). So
+what waits for the push is tested as it stands. PAUSED here for the
+reporter's word on the push and the stage.
 
 Evidence that does not belong in the repository is under
 `..\dl\handson\<date>\`, as before.
