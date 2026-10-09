@@ -98,8 +98,12 @@ public:
     /// the texture. Re-feeding replaces the raster (an edit of the
     /// template's editable texts, or a band crossing); the item id is
     /// stable and the sheet always draws on layer 0, below every view.
+    /// \a everyBand says the host does feed it again at every band
+    /// crossing: the page then keeps no coarser copies of the raster
+    /// (Render::Page2D::setImage), which one fed once needs to be
+    /// drawn from when the page is zoomed out.
     static void feedTemplate(TechDraw::DrawPage* page, Render::Page2D& out,
-                             float rasterScale);
+                             float rasterScale, bool everyBand = false);
     /// Whether feedTemplate left a picture of the template on the page
     /// (it leaves none of a page with no SVG template).
     static bool hasTemplate(const Render::Page2D& out);

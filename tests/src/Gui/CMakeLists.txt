@@ -300,6 +300,12 @@ if(TARGET FreeCADRenderer)
     target_link_libraries(Page2DDash_tests_run gtest_main FreeCADRenderer)
     add_test(NAME Page2DDash_tests_run COMMAND Page2DDash_tests_run)
 
+    # The pictures of a 2D page: the coarser copies one is drawn from when it
+    # comes out smaller than it is, and a hatch as one tile laid side by side.
+    add_executable(Page2DImage_tests_run ${CMAKE_CURRENT_SOURCE_DIR}/Page2DImage.cpp)
+    target_link_libraries(Page2DImage_tests_run gtest_main FreeCADRenderer)
+    add_test(NAME Page2DImage_tests_run COMMAND Page2DImage_tests_run)
+
     # The raster MaterialX generator. It reads the shipped data
     # library, and a bare test binary has no one to seed the renderer's
     # resource path, so the build states where it is.

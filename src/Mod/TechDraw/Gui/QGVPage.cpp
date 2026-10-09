@@ -830,7 +830,7 @@ void QGVPage::drawVgPreview(QPainter* painter)
         }
         if (stamp != m_vgTemplateStamp) {
             m_vgTemplateStamp = stamp;
-            PageFeed::feedTemplate(page, *m_vgPage, band);
+            PageFeed::feedTemplate(page, *m_vgPage, band, /*everyBand*/ true);
         }
         m_vgTemplateCovered = PageFeed::hasTemplate(*m_vgPage);
     }

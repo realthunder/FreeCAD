@@ -1605,6 +1605,13 @@ fc_add_gui_test(GuiTechDrawPageBackendDashes_tests_run
                 techdraw-page-backend-dashes.py
                 --timeout 180)
 
+# A TechDraw page drawn by the backend has the Qt page's hatch on a cut face:
+# zoomed out most of its lines were dropped and the rest drawn at full
+# strength, zoomed in it went soft.
+fc_add_gui_test(GuiTechDrawPageBackendHatch_tests_run
+                techdraw-page-backend-hatch.py
+                --timeout 180)
+
 # The outline of a highlighted face has no staircase on its inner edge: the
 # stencil cut of the face is one sample a pixel, the lines fade in from it.
 fc_add_gui_test(GuiFaceOutlineInnerEdge_tests_run

@@ -445,7 +445,7 @@ bool emitEdge(Page2D::Recorder& rec, const TechDraw::BaseGeomPtr& geom,
 
 // A face's wires as closed view-local contours, stitched with the same
 // nearest-endpoint heuristic the Qt path builder uses. Shared by the
-// even-odd fill, the section-edge stroke and the hatch rasterizer.
+// even-odd fill, the section-edge stroke and the hatch fill.
 std::vector<std::vector<Pt>> faceContours(const TechDraw::FacePtr& face,
                                           float deflection)
 {
@@ -1231,21 +1231,38 @@ struct HatchFill
     std::string file;          // resolved pattern file (SvgIncluded)
     QColor color = Qt::black;  // svg stroke recolor
     double scale = 1.0;
-    double rotation = 0.0;     // degrees, about the face center
+    double rotation = 0.0;     // the property: degrees about the face
+                               // center, counter-clockwise on the page
     Base::Vector3d offset;     // tile-grid shift, scene units
 };
 
-// Rasterize a tiled hatch fill clipped to the face outline into the
-// image registry and emit it over the face bbox. Mirrors QGIFace:
-// SvgFill is an array of 64x64*scale tiles rotated about the face
-// center and shifted by the offset, recolored by replacing the
-// pattern's stroke color; BitmapFill is a texture brush of the
-// (pre-rotated) pixmap anchored at the view origin. Returns false --
-// without touching the image slot -- when nothing could be rasterized,
-// so the caller can fall back to the plain fill.
-bool emitHatchRaster(Page2D& out, Page2D::Recorder& rec, uint64_t imageId,
-                     const std::vector<std::vector<Pt>>& contours, float ox,
-                     float oy, const HatchFill& fill)
+// The pixels of one svg hatch tile: what the Qt tier's QGCustomSvg
+// draws 64 * scale page units across, here at four pixels to the svg's
+// unit whatever the scale -- a pattern line one unit wide is four pixels
+// of it, and the page layer keeps the coarser copies it draws from when
+// the page is zoomed out.
+const int HatchTilePixels = 256;
+
+// Fill the face outline with a hatch: ONE tile registered as an image
+// and laid side by side across the face by the page layer
+// (Page2D::Recorder::fillImage), where this used to rasterize the whole
+// face at a pixel to the tenth of a millimetre -- a picture that was
+// read one pixel in five at the zoom a page opens at, so that most of a
+// pattern's lines were dropped and the rest drawn at full strength, and
+// that went soft as soon as the page was zoomed in.
+//
+// Placed as QGIFace places its tiles. SvgFill: an array of 64 * scale
+// tiles centred on the face -- so whether a tile's edge or its middle is
+// on the centre depends on how many it takes to cover the face
+// (QGIFace::buildSvgHatch) -- shifted by the offset, the whole array
+// turned about the face centre; recolored by replacing the pattern's
+// stroke color. BitmapFill: a texture brush of the (pre-rotated) pixmap
+// anchored at the view origin. Returns false -- without touching the
+// image slot -- when nothing could be made of the file, so the caller
+// can fall back to the plain fill.
+bool emitHatchFill(Page2D& out, Page2D::Recorder& rec, uint64_t imageId,
+                   const std::vector<std::vector<Pt>>& contours, float ox,
+                   float oy, const HatchFill& fill)
 {
     if (contours.empty() || fill.file.empty())
         return false;
@@ -1268,8 +1285,6 @@ bool emitHatchRaster(Page2D& out, Page2D::Recorder& rec, uint64_t imageId,
         return false;
     QByteArray bytes = f.readAll();
 
-    QSvgRenderer renderer;
-    QPixmap pix;
     if (fill.svg) {
         // Recolor exactly like QGIFace::loadSvgHatch: the pattern
         // declares its stroke either as a style property or as an
@@ -1279,66 +1294,88 @@ bool emitHatchRaster(Page2D& out, Page2D::Recorder& rec, uint64_t imageId,
                                       : QByteArrayLiteral("stroke=\"");
         bytes.replace(prefix + QByteArrayLiteral("#000000"),
                       prefix + fill.color.name().toUtf8());
+        QSvgRenderer renderer;
         if (!renderer.load(bytes) || !renderer.isValid())
             return false;
-    }
-    else {
-        if (!pix.loadFromData(bytes) || pix.isNull())
-            return false;
-        if (fill.rotation != 0.0) {
-            QTransform rotator;
-            rotator.rotate(fill.rotation);
-            pix = pix.transformed(rotator);
-        }
-    }
-
-    // Page units are Rez: 1:1 is ~254 dpi on page, capped so a huge
-    // face cannot allocate an unbounded texture.
-    const double k = std::min(1.0, 2048.0 / std::max(w, h));
-    const int ipw = std::max(1, (int)std::lround(w * k));
-    const int iph = std::max(1, (int)std::lround(h * k));
-    QImage image(ipw, iph, QImage::Format_RGBA8888);
-    image.fill(Qt::transparent);
-    {
-        QPainter painter(&image);
-        painter.setRenderHint(QPainter::Antialiasing);
-        painter.scale(k, k);
-        painter.translate(-minX, -minY);
-        QPainterPath clip;
-        clip.setFillRule(Qt::OddEvenFill);
-        for (const std::vector<Pt>& contour : contours) {
-            clip.moveTo(contour[0].x, contour[0].y);
-            for (size_t i = 1; i < contour.size(); ++i)
-                clip.lineTo(contour[i].x, contour[i].y);
-            clip.closeSubpath();
-        }
-        painter.setClipPath(clip);
-        if (fill.svg) {
-            const double tile = 64.0 * (fill.scale > 0.0 ? fill.scale : 1.0);
-            const double cx = minX + w / 2.0, cy = minY + h / 2.0;
-            painter.translate(cx, cy);
-            painter.rotate(fill.rotation);
-            // Tile outward from the face center (the Qt tile array is
-            // centered on the face too); the radius covers the bbox at
-            // any rotation. Same runaway cap as the Qt tier.
-            const double radius = std::hypot(w, h) / 2.0;
-            const int n = (int)std::ceil(radius / tile) + 1;
-            long tiles = 0;
-            for (int ix = -n; ix < n && tiles <= 10000; ++ix) {
-                for (int iy = -n; iy < n && tiles <= 10000; ++iy, ++tiles) {
-                    renderer.render(&painter,
-                                    QRectF(ix * tile + fill.offset.x,
-                                           iy * tile + fill.offset.y, tile,
-                                           tile));
-                }
+        QImage image(HatchTilePixels, HatchTilePixels, QImage::Format_RGBA8888);
+        // The ink's colour in the pixels the pattern leaves empty, at
+        // no opacity: a line's edge is then blended with its own colour
+        // where the tile is drawn enlarged, not with black.
+        image.fill(QColor(fill.color.red(), fill.color.green(),
+                          fill.color.blue(), 0));
+        {
+            // The Qt tier's tiles are not clipped to their 64 units: a
+            // line that ends on a tile's edge has its square end half
+            // outside, and that half is what fills the notch the next
+            // tile's line leaves. So the tile is painted with its eight
+            // neighbours around it, each leaving in it what it lets
+            // stick out -- without them every seam shows as a pinch.
+            QPainter painter(&image);
+            painter.setRenderHint(QPainter::Antialiasing);
+            const double t = HatchTilePixels;
+            for (int ix = -1; ix <= 1; ++ix) {
+                for (int iy = -1; iy <= 1; ++iy)
+                    renderer.render(&painter, QRectF(ix * t, iy * t, t, t));
             }
         }
-        else {
-            painter.fillPath(clip, QBrush(pix));
-        }
+        out.setImage(imageId, (uint16_t)image.width(),
+                     (uint16_t)image.height(), image.constBits(),
+                     /*repeat*/ true);
+
+        const double tile = 64.0 * (fill.scale > 0.0 ? fill.scale : 1.0);
+        const double span = std::ceil(
+            TechDraw::Preferences::svgHatchFactor() * std::max(w, h) / tile)
+            * tile;
+        // The first tile's corner from the face centre, before the
+        // turn. Half a unit short each way: QGCustomRect::centerAt
+        // centres the array by its bounding rect, which has the rect
+        // item's pen of 1 around it.
+        const double lx = -span / 2.0 - 0.5 + fill.offset.x;
+        const double ly = -span / 2.0 - 0.5 + fill.offset.y;
+        // QGIFace::setHatchRotation turns the array by MINUS the
+        // property: a positive HatchRotation is counter-clockwise on the
+        // page. (The raster this replaces turned it the other way.)
+        const double angle = -fill.rotation * M_PI / 180.0;
+        const double cs = std::cos(angle), sn = std::sin(angle);
+        const double cx = minX + w / 2.0, cy = minY + h / 2.0;
+        if (!emitFacePath(rec, contours, ox, oy))
+            return false;
+        rec.fillImage(imageId, (float)(ox + cx + cs * lx - sn * ly),
+                      (float)(oy + cy + sn * lx + cs * ly), (float)tile,
+                      (float)tile, (float)angle, /*evenOdd*/ true);
+        return true;
     }
-    out.setImage(imageId, (uint16_t)ipw, (uint16_t)iph, image.constBits());
-    rec.image(imageId, ox + minX, oy + minY, w, h);
+
+    QImage image;
+    if (!image.loadFromData(bytes) || image.isNull())
+        return false;
+    if (fill.rotation != 0.0) {
+        // minus, as above: QGIFace::textureFromBitmap turns the pixmap
+        // by what setHatchRotation stored
+        QTransform rotator;
+        rotator.rotate(-fill.rotation);
+        image = image.transformed(rotator);
+    }
+    // A pixel of the bitmap is a page unit, as in the brush; a texture
+    // has a largest size, so a huge bitmap is stored smaller and drawn
+    // over the same page units.
+    const float tileW = (float)image.width(), tileH = (float)image.height();
+    const int longest = std::max(image.width(), image.height());
+    if (longest > 4096) {
+        image = image.scaled(std::max(1, image.width() * 4096 / longest),
+                             std::max(1, image.height() * 4096 / longest),
+                             Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
+    }
+    image = image.convertToFormat(QImage::Format_RGBA8888);
+    if (image.isNull())
+        return false;
+    // constBits() rows may be padded to four bytes in other formats;
+    // RGBA8888 rows are tight.
+    out.setImage(imageId, (uint16_t)image.width(), (uint16_t)image.height(),
+                 image.constBits(), /*repeat*/ true);
+    if (!emitFacePath(rec, contours, ox, oy))
+        return false;
+    rec.fillImage(imageId, ox, oy, tileW, tileH, 0.0f, /*evenOdd*/ true);
     return true;
 }
 
@@ -1371,7 +1408,7 @@ void PageFeed::feedViewPart(TechDraw::DrawViewPart* dvp, Page2D& out,
             if (!out.hasItem(id))
                 break;
             out.removeItem(id);
-            // A face item may own a raster hatch image under its id.
+            // A face item may own a hatch tile image under its id.
             if (out.hasImage(id))
                 out.removeImage(id);
         }
@@ -1452,8 +1489,8 @@ void PageFeed::feedViewPart(TechDraw::DrawViewPart* dvp, Page2D& out,
         }
     }
 
-    // Faces: the fill -- or a rasterized SVG/bitmap hatch (DrawHatch)
-    // in its place -- then any PAT geometric hatch as a Decoration
+    // Faces: the fill, an SVG/bitmap hatch (DrawHatch) laid over it as
+    // a tiled image, then any PAT geometric hatch as a Decoration
     // item riding the same index (drawn between fills and edges by
     // Kind order), dashed per its PAT spec.
     std::vector<TechDraw::DrawGeomHatch*> geomHatches = dvp->getGeomHatches();
@@ -1490,7 +1527,7 @@ void PageFeed::feedViewPart(TechDraw::DrawViewPart* dvp, Page2D& out,
                 hf.rotation = hvp->HatchRotation.getValue();
                 hf.offset = hvp->HatchOffset.getValue();
             }
-            rasterized = emitHatchRaster(out, rec, fid, contours, ox, oy, hf);
+            rasterized = emitHatchFill(out, rec, fid, contours, ox, oy, hf);
         }
         if (!rasterized && out.hasImage(fid))
             out.removeImage(fid);
@@ -1575,7 +1612,7 @@ void PageFeed::feedViewPart(TechDraw::DrawViewPart* dvp, Page2D& out,
                     hf.rotation = dvs->HatchRotation.getValue();
                     hf.offset = dvs->HatchOffset.getValue();
                     rasterized =
-                        emitHatchRaster(out, rec, sid, contours, ox, oy, hf);
+                        emitHatchFill(out, rec, sid, contours, ox, oy, hf);
                 }
                 else if (dvs->CutSurfaceDisplay.isValue("PatHatch")) {
                     const double weightMm = svp->WeightPattern.getValue();
@@ -1876,7 +1913,7 @@ QRectF PageFeed::sceneExtent(QGIView* qgiv)
 }
 
 void PageFeed::feedTemplate(TechDraw::DrawPage* page, Page2D& out,
-                            float rasterScale)
+                            float rasterScale, bool everyBand)
 {
     if (!page)
         return;
@@ -1933,7 +1970,11 @@ void PageFeed::feedTemplate(TechDraw::DrawPage* page, Page2D& out,
         // the SVG's default size onto the page.
         renderer.render(&painter, QRectF(0, 0, pw, ph));
     }
-    out.setImage(image, (uint16_t)pw, (uint16_t)ph, raster.constBits());
+    // A host that feeds the sheet again at every band never draws it
+    // much smaller than it is, and would pay for the coarser copies of
+    // a picture this size at each band it crosses.
+    out.setImage(image, (uint16_t)pw, (uint16_t)ph, raster.constBits(),
+                 /*repeat*/ false, /*coarse*/ !everyBand);
 
     // Page coordinates: the sheet spans x in [0, W], y in [-H, 0].
     Page2D::Recorder rec;
