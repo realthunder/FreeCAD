@@ -60,7 +60,12 @@ namespace Render {
 /// - `refine`: the climb — the level plan finds the displayed coarse
 ///   rung too wrong on screen; requestRefine fires it (a standing
 ///   ask, idempotent while it stands) and the producer
-///   builds/activates the exact mesh behind it.
+///   builds/activates the exact mesh behind it. Its argument says how
+///   the ask stands: false for a source the camera sees erring, true for
+///   one asked AT LEISURE (see `firstPictureOwed`), whose work goes
+///   behind everything asked for in view. It is called again when a
+///   standing ask changes from one to the other -- the producer moves
+///   the job it has, it does not queue a second.
 /// - `cancelRefine`: the retraction (step 4) — a plan that no longer
 ///   wants an unbuilt refine un-asks it, and the producer drops the
 ///   job: a tessellation is *work*, not a fetch to ignore
@@ -86,7 +91,7 @@ namespace Render {
 /// default member initializers cannot be a default argument of its
 /// enclosing class's members (incomplete-class context).
 struct LevelHooks {
-    std::function<void()> refine;
+    std::function<void(bool idle)> refine;
     std::function<void()> cancelRefine;
     std::function<void()> demote;
     std::function<void()> downgrade;
@@ -101,6 +106,14 @@ struct LevelHooks {
     /// nothing without this. A visible descent is planMeshDemotes'
     /// business: priced against a camera, never taken blind.
     bool demoteDropsHiddenRung = false;
+    /// The source is drawn as a placeholder -- a bounding box where a
+    /// load would not wait for its mesh -- and `refine` gives it its
+    /// first picture. A plan asks for such a source even where the
+    /// camera does not see it, at leisure, so that the picture is there
+    /// when the camera turns (docs/DocumentLoad.md sec 18.13). Not set
+    /// for a box a descent made: that one is memory given back, and
+    /// asking for it would take it again.
+    bool firstPictureOwed = false;
 };
 
 /// What demoteError/downgradeError answer for a tag the registry has
@@ -243,7 +256,16 @@ public:
     /// and only the first fires; cancelRefine (or a re-registration)
     /// is what re-arms. No-op for unregistered tags and sources
     /// without a callback, so a plan pass may ask blindly.
-    void requestRefine(const void *tag);
+    ///
+    /// \a idle is how the ask stands (LevelHooks::refine). An ask that
+    /// stands the other way is changed and the callback fires again,
+    /// with the new value: a box asked for at leisure that comes into
+    /// view, or one asked for in view that the camera left.
+    void requestRefine(const void *tag, bool idle = false);
+    /// Whether \a tag's source is a placeholder owed its first picture
+    /// (LevelHooks::firstPictureOwed) with a way to get it. False for
+    /// an unregistered tag.
+    bool firstPictureOwed(const void *tag) const;
     /// The level plan stopped wanting \a tag's refine (the camera
     /// moved away before it built): fire the source's cancel callback
     /// and re-arm the ask. Only fires when an ask actually stands, so
@@ -426,6 +448,8 @@ private:
         /// requestRefine sets and cancelRefine clears.
         LevelHooks hooks;
         bool asked = false;
+        /// How the standing ask stands: at leisure, or for the view.
+        bool askedIdle = false;
         /// Registration site, a caller-owned literal (see add()).
         const char *origin = nullptr;
     };

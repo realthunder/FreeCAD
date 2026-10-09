@@ -59,6 +59,7 @@ public:
     long BackgroundReleaseDelay;
     long CoarseTessellation;
     long CoarseDeferFaces;
+    bool CoarseDeferAtLeisure;
     bool PreMeshOnLoad;
     bool MeshSkipRedundant;
     bool MeshSkipFinerResident;
@@ -229,6 +230,8 @@ public:
         funcs["CoarseTessellation"] = &RenderParamsP::updateCoarseTessellation;
         CoarseDeferFaces = this->handle->GetInt("CoarseDeferFaces", 1000);
         funcs["CoarseDeferFaces"] = &RenderParamsP::updateCoarseDeferFaces;
+        CoarseDeferAtLeisure = this->handle->GetBool("CoarseDeferAtLeisure", true);
+        funcs["CoarseDeferAtLeisure"] = &RenderParamsP::updateCoarseDeferAtLeisure;
         PreMeshOnLoad = this->handle->GetBool("PreMeshOnLoad", true);
         funcs["PreMeshOnLoad"] = &RenderParamsP::updatePreMeshOnLoad;
         MeshSkipRedundant = this->handle->GetBool("MeshSkipRedundant", true);
@@ -573,6 +576,10 @@ public:
     // Auto generated code (Tools/params_utils.py:314)
     static void updateCoarseDeferFaces(RenderParamsP *self) {
         self->CoarseDeferFaces = self->handle->GetInt("CoarseDeferFaces", 1000);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateCoarseDeferAtLeisure(RenderParamsP *self) {
+        self->CoarseDeferAtLeisure = self->handle->GetBool("CoarseDeferAtLeisure", true);
     }
     // Auto generated code (Tools/params_utils.py:314)
     static void updatePreMeshOnLoad(RenderParamsP *self) {
@@ -1323,6 +1330,15 @@ static const App::ParamRegistry::Registrar _RenderParamsRegistrar({
 "swapped in when it arrives (docs/SceneStreaming.md #13) - the\n"
 "import stall otherwise scales with the largest single part. -1\n"
 "disables the stand-in so every shape tessellates inline."),
+    App::ParamInfo("Gui", "RenderParams", "User parameter:BaseApp/Preferences/View/Render", "CoarseDeferAtLeisure", "CoarseDeferAtLeisure", App::ParamInfo::Bool, true)
+        .setTitle("Mesh a bounding-box stand-in out of view")
+        .setDoc("A shape drawn as a bounding-box stand-in (CoarseDeferFaces) gets\n"
+"its coarse tessellation also where the camera does not see it, at\n"
+"leisure: behind everything asked for in view, and landed once the\n"
+"load has built its visuals (docs/DocumentLoad.md sec 18.13). Its\n"
+"picture is then there when the camera turns. Off, such a shape\n"
+"stays a box until the camera turns to it, and costs no mesh\n"
+"until then. Takes effect when a shape (re)tessellates."),
     App::ParamInfo("Gui", "RenderParams", "User parameter:BaseApp/Preferences/View/Render", "PreMeshOnLoad", "PreMeshOnLoad", App::ParamInfo::Bool, true)
         .setTitle("Pre-mesh a restored document in parallel")
         .setDoc("Tessellate a restored document's parked shapes on worker\n"
@@ -3336,6 +3352,40 @@ void RenderParams::setCoarseDeferFaces(const long &v) {
 // Auto generated code (Tools/params_utils.py:431)
 void RenderParams::removeCoarseDeferFaces() {
     instance()->handle->RemoveInt("CoarseDeferFaces");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *RenderParams::docCoarseDeferAtLeisure() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"A shape drawn as a bounding-box stand-in (CoarseDeferFaces) gets\n"
+"its coarse tessellation also where the camera does not see it, at\n"
+"leisure: behind everything asked for in view, and landed once the\n"
+"load has built its visuals (docs/DocumentLoad.md sec 18.13). Its\n"
+"picture is then there when the camera turns. Off, such a shape\n"
+"stays a box until the camera turns to it, and costs no mesh\n"
+"until then. Takes effect when a shape (re)tessellates.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const bool & RenderParams::getCoarseDeferAtLeisure() {
+    return instance()->CoarseDeferAtLeisure;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const bool & RenderParams::defaultCoarseDeferAtLeisure() {
+    const static bool def = true;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void RenderParams::setCoarseDeferAtLeisure(const bool &v) {
+    instance()->handle->SetBool("CoarseDeferAtLeisure",v);
+    instance()->CoarseDeferAtLeisure = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void RenderParams::removeCoarseDeferAtLeisure() {
+    instance()->handle->RemoveBool("CoarseDeferAtLeisure");
 }
 
 // Auto generated code (Tools/params_utils.py:397)

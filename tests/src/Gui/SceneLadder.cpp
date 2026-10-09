@@ -841,6 +841,147 @@ TEST(PlanMeshRefines, orthographicErrorIsSizeNotDepth)
 }
 
 //////////////////////////////////////////////////////////////////////
+// What a plan asks for at leisure (docs/DocumentLoad.md sec 18.13): a
+// shape drawn as a box where the camera does not see it.
+
+namespace
+{
+
+std::function<bool(const void *)> owedAmong(
+    const std::vector<const void *> &tags)
+{
+    return [tags](const void *tag) {
+        return std::find(tags.begin(), tags.end(), tag) != tags.end();
+    };
+}
+
+}  // namespace
+
+TEST(PlanMeshIdleFirsts, aBoxOutOfViewIsAskedForAndWhatTheViewWantsIsNot)
+{
+    PlanCamera cam;
+    int seen = 0, aside = 0, behind = 0, coarse = 0, exact = 0;
+    Render::DrawCallList draws;
+    // Boxes: one in view, two out of it.
+    draws.push_back(meshDraw(&seen, 0.5f, 0, 0, -100, 5));
+    draws.push_back(meshDraw(&aside, 0.5f, 500, 0, -100, 5));
+    draws.push_back(meshDraw(&behind, 0.5f, 0, 0, 100, 5));
+    // Out of view too, but with a picture: a coarse mesh, and an exact.
+    draws.push_back(meshDraw(&coarse, 0.03f, 600, 0, -100, 5));
+    draws.push_back(meshDraw(&exact, 0.0f, 700, 0, -100, 5));
+    auto wanted = Render::planMeshRefines(draws, cam.view, cam.proj,
+                                          1000.0f, 2.0f);
+    ASSERT_EQ(wanted.size(), 1u);
+    EXPECT_EQ(wanted[0], &seen);
+    auto idle = Render::planMeshIdleFirsts(
+        draws, wanted, owedAmong({&seen, &aside, &behind}), false,
+        size_t(-1));
+    // In the order of the draws; the one the view asked for is not
+    // asked for twice, and what has a picture is nobody's first.
+    ASSERT_EQ(idle.size(), 2u);
+    EXPECT_EQ(idle[0], &aside);
+    EXPECT_EQ(idle[1], &behind);
+}
+
+TEST(PlanMeshIdleFirsts, eachSourceOnceHoweverManyDrawsCarryIt)
+{
+    int tag = 0;
+    Render::DrawCallList draws;
+    draws.push_back(meshDraw(&tag, 0.5f, 500, 0, -100, 5));
+    draws.push_back(meshDraw(&tag, 0.5f, 900, 0, -100, 5));
+    auto idle = Render::planMeshIdleFirsts(draws, {}, owedAmong({&tag}),
+                                           false, size_t(-1));
+    ASSERT_EQ(idle.size(), 1u);
+    EXPECT_EQ(idle[0], &tag);
+}
+
+TEST(PlanMeshIdleFirsts, nothingUnderPressureAndNoMoreThanThereIsRoomFor)
+{
+    int a = 0, b = 0, c = 0;
+    Render::DrawCallList draws;
+    draws.push_back(meshDraw(&a, 0.5f, 500, 0, -100, 5));
+    draws.push_back(meshDraw(&b, 0.5f, 600, 0, -100, 5));
+    draws.push_back(meshDraw(&c, 0.5f, 700, 0, -100, 5));
+    const auto owed = owedAmong({&a, &b, &c});
+    // A first picture nobody looks at is not worth what the plan is
+    // giving up elsewhere to fit.
+    EXPECT_TRUE(
+        Render::planMeshIdleFirsts(draws, {}, owed, true, size_t(-1))
+            .empty());
+    // What is left of the admission batch, the first of them.
+    auto two = Render::planMeshIdleFirsts(draws, {}, owed, false, 2);
+    ASSERT_EQ(two.size(), 2u);
+    EXPECT_EQ(two[0], &a);
+    EXPECT_EQ(two[1], &b);
+    EXPECT_TRUE(
+        Render::planMeshIdleFirsts(draws, {}, owed, false, 0).empty());
+    EXPECT_EQ(
+        Render::planMeshIdleFirsts(draws, {}, owed, false, size_t(-1))
+            .size(),
+        3u);
+}
+
+TEST(MeshSourceRegistry, anAskStandsOneWayAndTurningItFiresTheHookAgain)
+{
+    auto &reg = Render::MeshSourceRegistry::instance();
+    int tagStorage = 0, plainStorage = 0;
+    const void *tag = &tagStorage;
+    const void *plain = &plainStorage;
+    auto gen = [](uint32_t, const void *, size_t, std::vector<uint8_t> &) {
+        return false;
+    };
+    std::vector<bool> fired;
+    int canceled = 0;
+    Render::LevelHooks hooks;
+    hooks.refine = [&fired](bool idle) { fired.push_back(idle); };
+    hooks.cancelRefine = [&canceled]() { ++canceled; };
+    hooks.firstPictureOwed = true;
+    reg.add(tag, gen, 0.5f, hooks);
+    // A source with a picture, and one that is owed one but has no way
+    // to get it: neither is asked for at leisure.
+    Render::LevelHooks coarse;
+    coarse.refine = [](bool) {};
+    reg.add(plain, gen, 0.03f, coarse);
+    EXPECT_TRUE(reg.firstPictureOwed(tag));
+    EXPECT_FALSE(reg.firstPictureOwed(plain));
+    EXPECT_FALSE(reg.firstPictureOwed(&fired));
+    Render::LevelHooks noWay;
+    noWay.firstPictureOwed = true;
+    reg.add(plain, gen, 0.5f, noWay);
+    EXPECT_FALSE(reg.firstPictureOwed(plain));
+
+    // Asked at leisure: once, however often the plans repeat it.
+    reg.requestRefine(tag, true);
+    reg.requestRefine(tag, true);
+    ASSERT_EQ(fired.size(), 1u);
+    EXPECT_TRUE(fired[0]);
+    // It comes into view: the same ask, turned, and the producer told.
+    reg.requestRefine(tag);
+    reg.requestRefine(tag);
+    ASSERT_EQ(fired.size(), 2u);
+    EXPECT_FALSE(fired[1]);
+    // The camera leaves it again: turned back, not dropped.
+    reg.requestRefine(tag, true);
+    ASSERT_EQ(fired.size(), 3u);
+    EXPECT_TRUE(fired[2]);
+    EXPECT_EQ(canceled, 0);
+    // A cancel re-arms it whichever way it stood.
+    reg.cancelRefine(tag);
+    EXPECT_EQ(canceled, 1);
+    reg.requestRefine(tag, true);
+    ASSERT_EQ(fired.size(), 4u);
+    EXPECT_TRUE(fired[3]);
+    // ...and so does a registration under the same tag.
+    reg.add(tag, gen, 0.5f, hooks);
+    reg.requestRefine(tag);
+    ASSERT_EQ(fired.size(), 5u);
+    EXPECT_FALSE(fired[4]);
+
+    reg.remove(tag);
+    reg.remove(plain);
+}
+
+//////////////////////////////////////////////////////////////////////
 // The way back down (§13 step 3): which exact-resident sources an
 // observed memory ceiling may drop back to their coarse rung.
 

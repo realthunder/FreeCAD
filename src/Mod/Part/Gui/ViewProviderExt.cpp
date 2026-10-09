@@ -5063,7 +5063,8 @@ bool ViewProviderPartExt::buildCoarseStandIn(bool underPressure)
                                 /*builtError*/ 0.5f, deflection, angDefl,
                                 std::move(onCoarse), {}, 0.0f, {},
                                 pcObject ? pcObject->getDocument() : nullptr,
-                                "standin", {}, 0.0f, /*standIn*/ true);
+                                "standin", {}, 0.0f, /*standIn*/ true,
+                                /*owedAtLeisure*/ !underPressure);
     }
     catch (const Standard_Failure &e) {
         // GetMessageString() is empty on the path that actually fails here,

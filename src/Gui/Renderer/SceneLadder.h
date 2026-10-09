@@ -354,6 +354,28 @@ RendererExport std::vector<const void *> planMeshRefines(
     const DrawCallList &draws, const float *viewMatrix,
     const float *projMatrix, float viewportHeightPx, float tolerancePx);
 
+/// What a plan asks for AT LEISURE (docs/DocumentLoad.md sec 18.13):
+/// among the coarse sources of \a draws that the plan does not want
+/// (\a wanted, what planMeshRefines answered, after the admission
+/// trimmed it), those drawn as a placeholder and owed their first
+/// picture -- \a owed says which, MeshSourceRegistry::firstPictureOwed.
+/// A shape a load drew as a bounding box is one, and off screen it
+/// would stay a box until the camera turned to it and then be a box on
+/// the screen for as long as its mesh took.
+///
+/// Nothing under pressure (\a underPressure: a memory ceiling observed
+/// or the GPU budget reached): a first picture nobody looks at is not
+/// worth what the plan is giving up elsewhere to fit. At most \a room
+/// tags, the admission batch's remainder.
+///
+/// In the order of the draws, each tag once. The caller hands them to
+/// MeshSourceRegistry::requestRefine with idle set, and cancels the
+/// coarse sources that are in neither list.
+RendererExport std::vector<const void *> planMeshIdleFirsts(
+    const DrawCallList &draws, const std::vector<const void *> &wanted,
+    const std::function<bool(const void *)> &owed, bool underPressure,
+    size_t room);
+
 /// How much of the screen the drawn objects actually cover
 /// (docs/FarFieldProxies.md §9): the measurement that says whether
 /// aggregating distant parts would pay, before any of it is built.

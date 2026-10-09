@@ -1475,6 +1475,35 @@ fc_add_gui_test(GuiDrainWaitsForPreMesh_tests_run drain-waits-for-premesh.py
 fc_add_gui_test(GuiFirstPictureFirst_tests_run first-picture-first.py
                 --timeout 280)
 
+# A shape drawn as a box gets its mesh in the background when it is out of
+# view (docs/DocumentLoad.md sec 18.13). The level plan asked only for
+# what the camera sees, so a shape a load had drawn as a bounding box
+# stayed one until the camera turned to it. The plan asks for those too
+# now, at leisure: behind everything asked for in view, their landings
+# held while visuals are still being built. 3 boxed solids in view, 5 far
+# to the right of what the saved camera shows, 40 of 992 faces and 20
+# spheres; nothing moves the camera. Scored against the tree before, three
+# runs: 7 checks of 9 each time, none of the 5 ever meshed.
+fc_add_gui_test(GuiBoxesOutOfView_tests_run boxes-out-of-view.py
+                --timeout 280)
+# The same load with Render/CoarseDeferAtLeisure off: the 5 stay boxes.
+fc_add_gui_test(GuiBoxesOutOfViewOff_tests_run boxes-out-of-view.py
+                --timeout 280)
+set_property(TEST GuiBoxesOutOfViewOff_tests_run APPEND PROPERTY
+             ENVIRONMENT "GT_LEISURE=0")
+
+# ...and one asked for at leisure moves to the front when the camera turns
+# to it (docs/DocumentLoad.md sec 18.13): the plan that sees it turns its
+# ask into one for the view, and the job it already has goes ahead of the
+# ones still at leisure. One sphere in view, 8 plates of 1100 holes out of
+# it (1.2 s each to mesh), one worker; the camera is fitted to the last
+# plate as soon as a plan has asked for them. Its mesh is in second, 2.9 s
+# after the open began, one plate being in the worker's hands already.
+# Checked by taking the move out, two runs: 9 checks of 10, the plate's
+# mesh in seventh and eighth of 8, after 8.9 and 10.3 s.
+fc_add_gui_test(GuiBoxesOutOfViewTurn_tests_run boxes-out-of-view-turn.py
+                --timeout 280)
+
 # Making a view the active window makes its cell the view area's active
 # cell and brings the keyboard with it (docs/SplitViews.md sec 21): right
 # after "create new view" the first view can be clicked back into; with

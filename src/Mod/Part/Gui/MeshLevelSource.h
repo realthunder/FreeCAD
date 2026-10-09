@@ -135,6 +135,15 @@ bool buildMeshLevel(const TopoDS_Shape &shape, const MeshLevelJob &job,
 /// refinement of one: it goes ahead of every other climb, and it lands
 /// while a load is still building visuals, where a refinement waits
 /// (docs/DocumentLoad.md sec 18.11).
+///
+/// \a owedAtLeisure says, of such a source, that the box stands for a
+/// picture the object never had -- a load's, not the box a descent put
+/// in the place of a mesh to give its memory back. The level plan asks
+/// for that one even where the camera does not see it, so that it is
+/// there when the camera turns (docs/DocumentLoad.md sec 18.13): behind
+/// every climb asked for in view, its landing held while a load is
+/// still building visuals, and moved to the front when it comes into
+/// view first.
 void registerMeshLevelSource(const TopoDS_Shape &shape, bool normalsFromUV,
                              SoNode *faceTag, SoNode *lineTag,
                              float builtError = 0.0f,
@@ -149,7 +158,8 @@ void registerMeshLevelSource(const TopoDS_Shape &shape, bool normalsFromUV,
                              const char *origin = nullptr,
                              std::function<void()> onScaleDown = {},
                              float scaledError = 0.0f,
-                             bool standIn = false);
+                             bool standIn = false,
+                             bool owedAtLeisure = false);
 
 /// Drop the registration made under these tags (before the nodes die;
 /// their addresses may be reused).

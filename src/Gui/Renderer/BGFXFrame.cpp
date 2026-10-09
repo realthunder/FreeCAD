@@ -928,8 +928,35 @@ bool BGFXRenderer::Private::render(const QColor &col,
                 // not a fetch to ignore. Before the requests, so a
                 // same-pass flip lands wanted. cancelRefine only
                 // fires where an ask actually stands.
+                //
+                // Not de-wanted: a shape drawn as a box that the plan
+                // does not want -- off screen, or too small on it to
+                // err. It is asked for AT LEISURE instead
+                // (docs/DocumentLoad.md sec 18.13), so that its picture
+                // is there when the camera turns: the producer puts
+                // that work behind everything asked for in view, and
+                // an ask standing for the view becomes one at leisure
+                // where it used to be dropped. Under the same gates as
+                // the climbs: none while the plan is giving quality up
+                // to fit, none at the ceiling, and within what is left
+                // of the admission batch.
+                const bool climbGated = climbHardLimitOn && gpuBudget;
+                const size_t idleRoom = !climbGated
+                    ? size_t(-1)
+                    : (tags.size() < size_t(climbAdmitBatch)
+                           ? size_t(climbAdmitBatch) - tags.size()
+                           : 0);
+                const auto idleTags = Render::planMeshIdleFirsts(
+                    scene, tags,
+                    [&reg](const void *tag) {
+                        return reg.firstPictureOwed(tag);
+                    },
+                    underPressure
+                        || (climbGated && gpu.total >= gpuBudget),
+                    idleRoom);
                 std::set<const void *> wanted(tags.begin(),
                                               tags.end());
+                wanted.insert(idleTags.begin(), idleTags.end());
                 for (const auto &draw : scene) {
                     if (!draw.mesh || !draw.mesh->sourceTag
                         || draw.mesh->levelError <= 0.0f)
@@ -939,6 +966,8 @@ bool BGFXRenderer::Private::render(const QColor &col,
                 }
                 for (const void *tag : tags)
                     reg.requestRefine(tag);
+                for (const void *tag : idleTags)
+                    reg.requestRefine(tag, /*idle*/ true);
 
                 // What the plan just decided, and the state it
                 // decided against. Nothing reported any of this
@@ -1014,7 +1043,8 @@ bool BGFXRenderer::Private::render(const QColor &col,
                         "(uploaded %.1fMB, %.1fMB stale in %u of %u "
                         "entries) | cpu resident %.1fMB | displayed "
                         "coarse %zu exact %zu | plan: refine %zu demote %zu "
-                        "downgrade %zu | cpu ceiling %s | refine tolerance "
+                        "downgrade %zu at leisure %zu | cpu ceiling %s | "
+                        "refine tolerance "
                         "%.2fpx%s%s | gates: eligible %zu, suppressed "
                         "%zu point + %zu line draws (%zu by dependency, "
                         "%zu by coarse faces)%s | tiny cutoff %ld: %zu "
@@ -1029,7 +1059,7 @@ bool BGFXRenderer::Private::render(const QColor &col,
                         gpu.staleEntries, gpu.entries,
                         double(cpuResident) / 1048576.0,
                         coarse.size(), exact.size(), tags.size(),
-                        nDemote, nDowngrade,
+                        nDemote, nDowngrade, idleTags.size(),
                         reg.memoryCeilingEpoch() ? "OBSERVED" : "no",
                         refineTolerance,
                         levelPressure.raisedPx > 0.0f

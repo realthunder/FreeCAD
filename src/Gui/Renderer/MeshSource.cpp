@@ -60,6 +60,7 @@ void MeshSourceRegistry::add(const void *tag, Generator gen,
     src.canonicalKey.clear();
     src.hooks = std::move(hooks);
     src.asked = false;
+    src.askedIdle = false;
     // Anyone holding an earlier publishedError() answer re-asks now.
     registryGen.fetch_add(1, std::memory_order_release);
     if (debugOn())
@@ -178,24 +179,36 @@ bool MeshSourceRegistry::knows(const void *tag) const
     return sources.find(tag) != sources.end();
 }
 
-void MeshSourceRegistry::requestRefine(const void *tag)
+void MeshSourceRegistry::requestRefine(const void *tag, bool idle)
 {
     // Copy the callback out under the lock, run it outside: a refine
     // typically queues a worker job under its own mutex, and nothing
     // it does should be able to deadlock back into the registry.
-    std::function<void()> fn;
+    std::function<void(bool)> fn;
     {
         std::lock_guard<std::mutex> guard(mutex);
         auto it = sources.find(tag);
         if (it == sources.end() || !it->second.hooks.refine
-            || it->second.asked)
+            || (it->second.asked && it->second.askedIdle == idle))
             return;
         it->second.asked = true;
+        it->second.askedIdle = idle;
         fn = it->second.hooks.refine;
     }
     if (debugOn())
-        std::fprintf(stderr, "mesh source: refine tag=%p\n", tag);
-    fn();
+        std::fprintf(stderr, "mesh source: refine tag=%p%s\n", tag,
+                     idle ? " at leisure" : "");
+    fn(idle);
+}
+
+bool MeshSourceRegistry::firstPictureOwed(const void *tag) const
+{
+    if (!tag)
+        return false;
+    std::lock_guard<std::mutex> guard(mutex);
+    auto it = sources.find(tag);
+    return it != sources.end() && it->second.hooks.firstPictureOwed
+        && it->second.hooks.refine;
 }
 
 void MeshSourceRegistry::cancelRefine(const void *tag)

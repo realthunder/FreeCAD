@@ -125,12 +125,39 @@ struct RefineJob {
     /// of the other climbs wherever they queue, and never held back by a
     /// load.
     bool first = false;
+    /// Set and true: asked for AT LEISURE -- a first picture of something
+    /// the camera does not see (docs/DocumentLoad.md sec 18.13). Behind
+    /// every other job, and its landing held while a load fills in. The
+    /// registration owns the flag and the plan turns it: a box that comes
+    /// into view moves up with the job it already has (levelJobClass,
+    /// reorderLevelJob).
+    std::shared_ptr<std::atomic<bool>> idle;
     /// The sweep order this job descends for (0 = none): inherited
     /// from the thread-current generation at enqueue, re-entered
     /// around the landing so chained enqueues inherit it too. What
     /// the downgrade ledger's write-off horizon actually rides.
     uint64_t gen = 0;
 };
+
+/// Where a job stands among the others, the lower the sooner, wherever
+/// jobs queue:
+///   0  a descent -- under the pressure that ordered it, freeing memory
+///      outranks spending more;
+///   1  a first picture the camera sees (sec 18.11);
+///   2  the refinement of an object that has a picture;
+///   3  a first picture asked for at leisure (sec 18.13): nothing on the
+///      screen changes when it lands, so everything that does goes first
+///      -- and the shapes it is for are the large ones, a runner's
+///      seconds each.
+/// Within a class, in the order they came.
+int levelJobClass(const RefineJob &job)
+{
+    if (job.descent)
+        return 0;
+    if (job.idle && job.idle->load())
+        return 3;
+    return job.first ? 1 : 2;
+}
 
 /// The mutex and the condition variable are LEAKED on purpose: a
 /// worker waits on them, and glibc's pthread_cond_destroy blocks until
@@ -242,6 +269,15 @@ struct LandingItem {
     /// The refinement of an object that already has a picture: it waits
     /// while a load is still building visuals (loadFilling).
     bool waits = false;
+    /// The job's at-leisure flag (RefineJob::idle), read when the pump
+    /// comes to the item: a first picture of something out of view waits
+    /// like a refinement, and stops waiting if the camera turns to it.
+    std::shared_ptr<std::atomic<bool>> idle;
+
+    bool held(bool filling) const
+    {
+        return filling && (waits || (idle && idle->load()));
+    }
 };
 std::deque<LandingItem> s_landingQueue;
 
@@ -415,7 +451,7 @@ void pumpLandings()
     // Landings first: they free memory and re-arm sources; the hook
     // bodies behind them typically queue MORE work.
     while (held < s_landingQueue.size()) {
-        if (filling && s_landingQueue[held].waits) {
+        if (s_landingQueue[held].held(filling)) {
             ++held;
             continue;
         }
@@ -488,7 +524,7 @@ void pumpLandings()
     // noticed -- nothing tells this queue when the drain is through.
     bool runnable = false, waiting = false;
     for (const auto &item : s_landingQueue)
-        (filling && item.waits ? waiting : runnable) = true;
+        (item.held(filling) ? waiting : runnable) = true;
     for (const auto &item : s_guiWork)
         (filling && !item.descent ? waiting : runnable) = true;
     if (runnable)
@@ -525,7 +561,8 @@ void purgeLevelGuiWork(const void *tag)
 /// Marshal \a fn from a worker to the paced GUI queue; \a gen is the
 /// sweep order the landing belongs to (RefineJob::gen).
 void queueLandingFromWorker(std::function<void()> fn, uint64_t gen = 0,
-                            bool waits = false)
+                            bool waits = false,
+                            std::shared_ptr<std::atomic<bool>> idle = {})
 {
     QCoreApplication *app = QCoreApplication::instance();
     if (!app)
@@ -533,8 +570,9 @@ void queueLandingFromWorker(std::function<void()> fn, uint64_t gen = 0,
     auto payload = std::make_shared<std::function<void()>>(std::move(fn));
     QMetaObject::invokeMethod(
         app,
-        [payload, gen, waits]() {
-            s_landingQueue.push_back({std::move(*payload), gen, waits});
+        [payload, gen, waits, idle]() {
+            s_landingQueue.push_back(
+                {std::move(*payload), gen, waits, idle});
             scheduleLandingPump();
         },
         Qt::QueuedConnection);
@@ -642,6 +680,9 @@ void runLevelJob(RefineJob job, const std::shared_ptr<Part::MeshTwin> &twin)
     // A climb that refines waits for a load; a descent and a first
     // picture do not.
     const bool waits = !payload->first.descent && !payload->first.first;
+    // ...and neither does a first picture asked for at leisure, for as
+    // long as it stands that way: the flag travels with the landing.
+    auto idle = payload->first.idle;
     queueLandingFromWorker([payload]() {
         settleDescent(payload->first);
         {
@@ -656,7 +697,7 @@ void runLevelJob(RefineJob job, const std::shared_ptr<Part::MeshTwin> &twin)
             s_refineTokens.erase(it);
         }
         payload->first.apply(payload->second);
-    }, gen, waits);
+    }, gen, waits, std::move(idle));
 }
 
 /// A job with the private twin of its shape: ready for a runner.
@@ -753,10 +794,16 @@ void dispatchLevelJobs()
         {
             std::lock_guard<std::mutex> lock(s_refineMutex);
             // Room: a job for each runner whatever its size, and beyond
-            // that as long as the line is light.
-            if (s_refineStop || s_refineQueue.empty()
-                || (int(s_refineReady.size()) >= cap
-                    && s_refineReadyParts >= kReadyParts))
+            // that as long as the line is light -- or what stands at its
+            // end is there at leisure and the job waiting is not: a line
+            // full of large shapes nobody is looking at must not keep a
+            // job for the view out until a runner has taken one of them.
+            if (s_refineStop || s_refineQueue.empty())
+                break;
+            if (int(s_refineReady.size()) >= cap
+                && s_refineReadyParts >= kReadyParts
+                && !(levelJobClass(s_refineReady.back().job) == 3
+                     && levelJobClass(s_refineQueue.front()) < 3))
                 break;
             job = std::move(s_refineQueue.front());
             s_refineQueue.pop_front();
@@ -792,18 +839,11 @@ void dispatchLevelJobs()
             break;
         }
         s_refineReadyParts += parts;
-        // The queue's own order holds in the line: a descent goes ahead
-        // of the climbs standing ready, behind the descents already
-        // there -- freeing memory outranks spending more.
-        auto at = s_refineReady.end();
-        if (job.descent || job.first) {
-            // ...and a first picture goes ahead of the refinements,
-            // behind the descents and the first pictures before it.
-            at = s_refineReady.begin();
-            while (at != s_refineReady.end()
-                   && (at->job.descent || (job.first && at->job.first)))
-                ++at;
-        }
+        // The queue's own order holds in the line (levelJobClass).
+        const int cls = levelJobClass(job);
+        auto at = s_refineReady.begin();
+        while (at != s_refineReady.end() && levelJobClass(at->job) <= cls)
+            ++at;
         s_refineReady.insert(at, ReadyJob{std::move(job), std::move(twin), parts});
     }
     int start = 0;
@@ -855,35 +895,70 @@ void enqueueLevelJob(RefineJob &&job)
         }
         job.token = ++s_refineCounter;
         s_refineTokens[job.tag] = job.token;
-        if (job.descent) {
-            // Ahead of the climbs, behind descents already queued: under
-            // the pressure that ordered it, freeing memory outranks
-            // spending more, and the plan's own order is kept among peers.
-            auto it = s_refineQueue.begin();
-            while (it != s_refineQueue.end() && it->descent)
-                ++it;
-            s_refineQueue.insert(it, std::move(job));
-        }
-        else if (job.first) {
-            // A first picture: behind the descents and the first
-            // pictures already queued, ahead of every refinement. In
-            // the order they came, a shape drawn as a box stood behind
-            // the exact meshes of everything that already had a picture.
-            auto it = s_refineQueue.begin();
-            while (it != s_refineQueue.end() && (it->descent || it->first))
-                ++it;
-            s_refineQueue.insert(it, std::move(job));
-        }
-        else {
-            s_refineQueue.push_back(std::move(job));
-        }
+        // By class, and among peers in the order they came -- the
+        // plan's own (levelJobClass). In the order they came alone, a
+        // shape drawn as a box stood behind the exact meshes of
+        // everything that already had a picture.
+        const int cls = levelJobClass(job);
+        auto it = s_refineQueue.begin();
+        while (it != s_refineQueue.end() && levelJobClass(*it) <= cls)
+            ++it;
+        s_refineQueue.insert(it, std::move(job));
     }
     dispatchLevelJobs();
 }
 
+/// GUI thread: the ask behind \a tag's job changed between "for the
+/// view" and "at leisure" (its idle flag is already turned). Put the job
+/// where its class now stands, in the queue or in the ready line; one
+/// that a runner has taken is past moving, and its landing reads the
+/// flag for itself.
+void reorderLevelJob(const void *tag)
+{
+    bool moved = false;
+    {
+        std::lock_guard<std::mutex> lock(s_refineMutex);
+        auto live = s_refineTokens.find(tag);
+        if (live == s_refineTokens.end())
+            return;
+        for (auto it = s_refineQueue.begin(); it != s_refineQueue.end();
+             ++it) {
+            if (it->tag != tag || it->token != live->second)
+                continue;
+            RefineJob job = std::move(*it);
+            s_refineQueue.erase(it);
+            const int cls = levelJobClass(job);
+            auto at = s_refineQueue.begin();
+            while (at != s_refineQueue.end() && levelJobClass(*at) <= cls)
+                ++at;
+            s_refineQueue.insert(at, std::move(job));
+            moved = true;
+            break;
+        }
+        for (auto it = s_refineReady.begin();
+             !moved && it != s_refineReady.end(); ++it) {
+            if (it->job.tag != tag || it->job.token != live->second)
+                continue;
+            ReadyJob ready = std::move(*it);
+            s_refineReady.erase(it);
+            const int cls = levelJobClass(ready.job);
+            auto at = s_refineReady.begin();
+            while (at != s_refineReady.end()
+                   && levelJobClass(at->job) <= cls)
+                ++at;
+            s_refineReady.insert(at, std::move(ready));
+            break;
+        }
+    }
+    // A job moved up in the queue may now have a place in the line.
+    if (moved)
+        dispatchLevelJobs();
+}
+
 void queueExactRefine(const void *tag, const LevelSourceStatePtr &st,
                       std::function<void(const TopoDS_Shape &)> apply,
-                      bool descent = false)
+                      bool descent = false,
+                      std::shared_ptr<std::atomic<bool>> idle = {})
 {
     RefineJob job;
     job.tag = tag;
@@ -891,6 +966,7 @@ void queueExactRefine(const void *tag, const LevelSourceStatePtr &st,
     job.apply = std::move(apply);
     job.descent = descent;
     job.first = !descent && st && st->standIn;
+    job.idle = std::move(idle);
     enqueueLevelJob(std::move(job));
 }
 
@@ -1115,7 +1191,8 @@ void PartGui::registerMeshLevelSource(const TopoDS_Shape &shape,
                                       const char *origin,
                                       std::function<void()> onScaleDown,
                                       float scaledError,
-                                      bool standIn)
+                                      bool standIn,
+                                      bool owedAtLeisure)
 {
     if (shape.IsNull() || (!faceTag && !lineTag))
         return;
@@ -1174,6 +1251,13 @@ void PartGui::registerMeshLevelSource(const TopoDS_Shape &shape,
     if (onExactBuilt && builtError > 0.0f && !sceneServed(doc)) {
         const void *primary = faceTag ? faceTag : lineTag;
         auto fired = std::make_shared<std::atomic<bool>>(false);
+        // How the ask stands, for the job and for its landing: asked at
+        // leisure (a box out of view, sec 18.13), or for the view. The
+        // plan turns it by firing the hook again, and the job it queued
+        // the first time moves.
+        auto atLeisure = std::make_shared<std::atomic<bool>>(false);
+        hooks.firstPictureOwed = standIn && owedAtLeisure
+            && Gui::RenderParams::getCoarseDeferAtLeisure();
         // The climb goes through the worker — unless a finer rung is
         // still resident (a downgraded source): then the apply needs
         // no tessellation at all -- transferMeshLevels reads same-shape
@@ -1186,10 +1270,14 @@ void PartGui::registerMeshLevelSource(const TopoDS_Shape &shape,
         // flag doubles as the cancel -- a de-want resets it and the
         // queued body declines to run -- and the item is not a descent:
         // the settle tally feeds the downgrade ledger.
-        hooks.refine = [primary, st, fired,
-                        apply = std::move(onExactBuilt)]() {
-            if (fired->exchange(true))
+        hooks.refine = [primary, st, fired, atLeisure,
+                        apply = std::move(onExactBuilt)](bool idle) {
+            const bool turned = atLeisure->exchange(idle) != idle;
+            if (fired->exchange(true)) {
+                if (turned)
+                    reorderLevelJob(primary);
                 return;
+            }
             if (meshLevelFinerResident(st->shape)) {
                 queueLevelGuiWork(
                     primary,
@@ -1201,7 +1289,8 @@ void PartGui::registerMeshLevelSource(const TopoDS_Shape &shape,
                     /*descent*/ false);
                 return;
             }
-            queueExactRefine(primary, st, apply);
+            queueExactRefine(primary, st, apply, /*descent*/ false,
+                             atLeisure);
         };
         hooks.cancelRefine = [primary, fired]() {
             if (!fired->exchange(false))

@@ -1128,6 +1128,30 @@ std::vector<const void *> Render::planMeshRefines(
     return out;
 }
 
+std::vector<const void *> Render::planMeshIdleFirsts(
+    const DrawCallList &draws, const std::vector<const void *> &wanted,
+    const std::function<bool(const void *)> &owed, bool underPressure,
+    size_t room)
+{
+    std::vector<const void *> out;
+    if (underPressure || !room || !owed)
+        return out;
+    std::set<const void *> seen(wanted.begin(), wanted.end());
+    for (const auto &draw : draws) {
+        if (!draw.mesh || !draw.mesh->sourceTag
+            || draw.mesh->levelError <= 0.0f)
+            continue;
+        if (!seen.insert(draw.mesh->sourceTag).second)
+            continue;
+        if (!owed(draw.mesh->sourceTag))
+            continue;
+        out.push_back(draw.mesh->sourceTag);
+        if (out.size() >= room)
+            break;
+    }
+    return out;
+}
+
 float Render::PressureTolerance::update(bool underPressure, float acceptedPx,
                                         float cameraTolPx, float viewportPx,
                                         float releaseFraction)

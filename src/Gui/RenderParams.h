@@ -268,6 +268,24 @@ public:
 
     // Auto generated code (Tools/params_utils.py:139)
     //@{
+    /// Accessor for parameter CoarseDeferAtLeisure
+    ///
+    /// A shape drawn as a bounding-box stand-in (CoarseDeferFaces) gets
+    /// its coarse tessellation also where the camera does not see it, at
+    /// leisure: behind everything asked for in view, and landed once the
+    /// load has built its visuals (docs/DocumentLoad.md sec 18.13). Its
+    /// picture is then there when the camera turns. Off, such a shape
+    /// stays a box until the camera turns to it, and costs no mesh
+    /// until then. Takes effect when a shape (re)tessellates.
+    static const bool & getCoarseDeferAtLeisure();
+    static const bool & defaultCoarseDeferAtLeisure();
+    static void removeCoarseDeferAtLeisure();
+    static void setCoarseDeferAtLeisure(const bool &v);
+    static const char *docCoarseDeferAtLeisure();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
     /// Accessor for parameter PreMeshOnLoad
     ///
     /// Tessellate a restored document's parked shapes on worker

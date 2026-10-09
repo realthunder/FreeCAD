@@ -176,6 +176,15 @@ Params = [
         "swapped in when it arrives (docs/SceneStreaming.md #13) - the\n"
         "import stall otherwise scales with the largest single part. -1\n"
         "disables the stand-in so every shape tessellates inline."),
+    ParamBool('CoarseDeferAtLeisure',  True,
+        title='Mesh a bounding-box stand-in out of view',
+        doc="A shape drawn as a bounding-box stand-in (CoarseDeferFaces) gets\n"
+        "its coarse tessellation also where the camera does not see it, at\n"
+        "leisure: behind everything asked for in view, and landed once the\n"
+        "load has built its visuals (docs/DocumentLoad.md sec 18.13). Its\n"
+        "picture is then there when the camera turns. Off, such a shape\n"
+        "stays a box until the camera turns to it, and costs no mesh\n"
+        "until then. Takes effect when a shape (re)tessellates."),
     ParamBool('PreMeshOnLoad',  True, title='Pre-mesh a restored document in parallel',
         doc="Tessellate a restored document's parked shapes on worker\n"
         "threads, before the drain that displays them builds any of them\n"
