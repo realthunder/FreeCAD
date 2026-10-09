@@ -1419,6 +1419,8 @@ void BGFXView::init(bool keepShared)
         ensureProgram(m_progCavity, "vs_fc_comp", "fs_fc_cavity");
         ensureUniform(u_cavityParams, "u_cavityParams",
                       bgfx::UniformType::Vec4);
+        ensureUniform(u_cavityParams2, "u_cavityParams2",
+                      bgfx::UniformType::Vec4);
         ensureUniform(s_texNormalZ, "s_texNormalZ",
                       bgfx::UniformType::Sampler);
         ensureUniform(s_texAONoise, "s_texAONoise",

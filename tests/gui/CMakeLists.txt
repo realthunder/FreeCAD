@@ -1687,3 +1687,10 @@ fc_add_gui_test(GuiViewCellCloseKeepsThePicture_tests_run
 fc_add_gui_test(GuiCyclesViewRightWayUp_tests_run
                 cycles-view-right-way-up.py
                 --timeout 300)
+
+# The crease that cavity shading draws has no staircase: the pass reads one
+# normal a pixel after the scene is resolved, and smooths its creases itself
+# by weighing in the face next to a pixel by the part of it that face covers.
+fc_add_gui_test(GuiCavityCreaseIsSmooth_tests_run
+                cavity-crease-is-smooth.py
+                --timeout 300)

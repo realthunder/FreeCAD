@@ -33,10 +33,27 @@ $input v_texcoord0
  * renderer would add is deliberately not attempted here -- see
  * CavityRidge in RenderParams.py.
  *
- * s_texNormalZ   : prepass oct-normal (xy) + linear view depth (z) +
- *                  coverage (w); background stays untouched
- * u_cavityParams : x = valley strength, y = ridge strength,
- *                  zw = prepass texel size
+ * A hard crease would otherwise come out as a staircase, and one that no
+ * multisampling reaches: the prepass holds one normal a pixel, this pass
+ * runs after the scene is resolved, and a pair of neighbours either
+ * straddles the crease or does not, so the band it darkens is a whole
+ * number of pixels wide everywhere. The pass has to smooth it itself, and
+ * it has what that takes. Each neighbour's normal is read as the AVERAGE
+ * over its pixel: where the pixel next to it lies on another face, the two
+ * faces' planes -- a normal and a view position each, both in the prepass
+ * -- say where their crease crosses the screen, to a fraction of a pixel,
+ * and the far face is weighed in by the part of the pixel it covers
+ * (fc_cavityNormal). The term is then a difference of two box-filtered
+ * normals, which moves smoothly as a crease moves across the pixel grid,
+ * and the darkening a crease holds across its width is what it was.
+ *
+ * s_texNormalZ    : prepass oct-normal (xy) + linear view depth (z) +
+ *                   coverage (w); background stays untouched
+ * u_cavityParams  : x = valley strength, y = ridge strength,
+ *                   zw = the baseline, a whole number of prepass texels
+ * u_cavityParams2 : xy = one prepass texel, z = 1 when the prepass depth
+ *                   is full float (a half-float one cannot place a crease
+ *                   within a pixel, and the normals are read as they are)
  */
 
 #include <bgfx_shader.sh>
@@ -46,6 +63,87 @@ $input v_texcoord0
 SAMPLER2D(s_texNormalZ, 0);
 
 uniform vec4 u_cavityParams;
+uniform vec4 u_cavityParams2;
+
+// The normal of the prepass texel at uv (nz is its content), averaged over
+// the texel's square.
+//
+// Inside a face that is the texel's own normal. Next to a crease the
+// square holds two faces, and which one the single sample fell on is what
+// a staircase is made of. So for each of the four texels beside this one
+// that lies on another face: the two faces are planes, this one through p
+// with normal n and that one through pB with normal nB, and the surface
+// follows the first up to the line where they meet. g is the second
+// plane's equation taken along the first, as a function of the screen
+// position: g0 at this texel's centre, growing by (g.x, g.y) a pixel. It
+// is zero on the crease, so the crease runs |g0| / length(g) pixels from
+// the centre, and the part of a unit square beyond a line at that distance
+// is, to the usual approximation, 0.5 - |g0| / (|g.x| + |g.y|). One crease
+// is taken, the one that takes most of the square.
+//
+// It is a blend of two normals that are both in the prepass, by at most a
+// half, so whatever the geometry it cannot make up a normal that is not
+// there; and it fades out below a turn of a few degrees, where a
+// tessellated curve's interpolated normals and flat facets no longer say
+// where anything meets, which leaves smooth curvature exactly as it was.
+vec3 fc_cavityNormal(vec2 uv, vec4 nz, bool persp)
+{
+	vec3 n = fc_octDecode(nz.xy);
+	if (u_cavityParams2.z < 0.5)
+		return n;
+	vec3 p = fc_prepassViewPos(uv, nz.z, persp);
+	// The line of sight through the texel, scaled to one unit of view
+	// depth, and the view-space size of a pixel at this depth.
+	vec3 ray = persp ? p / nz.z : vec3(0.0, 0.0, -1.0);
+	float nRay = dot(n, ray);
+	// Seen edge-on, the face's plane says nothing about where it goes
+	// across the screen.
+	if (abs(nRay) < 0.02)
+		return n;
+	vec2 pixel = 2.0 * u_cavityParams2.xy * (persp ? nz.z : 1.0)
+	    / vec2(FC_MTX(u_proj, 0, 0), FC_MTX(u_proj, 1, 1));
+
+	vec2 side[4];
+	side[0] = vec2(u_cavityParams2.x, 0.0);
+	side[1] = vec2(-u_cavityParams2.x, 0.0);
+	side[2] = vec2(0.0, u_cavityParams2.y);
+	side[3] = vec2(0.0, -u_cavityParams2.y);
+
+	float most = 0.0;
+	vec3 other = n;
+	for (int k = 0; k < 4; ++k)
+	{
+		vec2 uvB = uv + side[k];
+		vec4 nzB = texture2D(s_texNormalZ, uvB);
+		// The same tests the pairs below make: off the geometry or
+		// across a depth step is not the same surface.
+		if (nzB.w < 0.5 || abs(nzB.z - nz.z) > 0.02 * nz.z)
+			continue;
+		// The same face, read off the encoded normals before anything
+		// is decoded: this is nearly every texel of the frame.
+		vec2 enc = nzB.xy - nz.xy;
+		if (dot(enc, enc) < 1.0e-6)
+			continue;
+		vec3 nB = fc_octDecode(nzB.xy);
+		vec3 dn = nB - n;
+		// 2 to 6 degrees of turn between the two texels.
+		float crease = smoothstep(0.0012, 0.011, dot(dn, dn));
+		if (crease <= 0.0)
+			continue;
+		vec3 pB = fc_prepassViewPos(uvB, nzB.z, persp);
+		float g0 = dot(nB, p - pB);
+		vec2 g = pixel * (nB.xy - n.xy * (dot(nB, ray) / nRay));
+		float part = crease
+		    * clamp(0.5 - abs(g0) / max(abs(g.x) + abs(g.y), 1.0e-20),
+		            0.0, 0.5);
+		if (part > most)
+		{
+			most = part;
+			other = nB;
+		}
+	}
+	return n + (other - n) * most;
+}
 
 void main()
 {
@@ -88,8 +186,8 @@ void main()
 		float len = length(axis);
 		if (len <= 0.0)
 			continue;
-		vec3 nM = fc_octDecode(nzM.xy);
-		vec3 nP = fc_octDecode(nzP.xy);
+		vec3 nM = fc_cavityNormal(uvM, nzM, persp);
+		vec3 nP = fc_cavityNormal(uvP, nzP, persp);
 		curv += dot(nM - nP, axis / len);
 	}
 	curv *= 0.5;

@@ -5472,6 +5472,7 @@ public:
         fn(u_aoParams, LifeProgram);
         fn(u_aoParams2, LifeProgram);
         fn(u_cavityParams, LifeProgram);
+        fn(u_cavityParams2, LifeProgram);
         fn(u_aoKernel, LifeProgram);
         fn(s_texEnv, LifeProgram);
         fn(u_pbrParams, LifeProgram);
@@ -7625,9 +7626,12 @@ public:
     bgfx::UniformHandle u_aoKernel = BGFX_INVALID_HANDLE;
     // Screen-space cavity (curvature) shading: one fullscreen multiply
     // reading the same prepass the AO chain reads. u_cavityParams:
-    // x = valley strength, y = ridge strength, zw = prepass texel size.
+    // x = valley strength, y = ridge strength, zw = the baseline in
+    // prepass texels; u_cavityParams2: xy = one prepass texel, z = 1
+    // when the prepass depth is full float.
     bgfx::ProgramHandle m_progCavity = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle u_cavityParams = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle u_cavityParams2 = BGFX_INVALID_HANDLE;
     // PBR image based lighting: a fixed procedural studio environment
     // built once on demand — a GGX-prefiltered cubemap mip chain for the
     // specular part and its irradiance SH for the diffuse part.
