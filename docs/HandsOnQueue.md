@@ -184,7 +184,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 56 | 2026-10-09 | view cells, after entry 29 (change request): the menu button and the handles shown on hover have no contrast on a light grey or white ground; handles off a view's scroll bar; the drag frames too transparent -- less so, with white borders, in the theme's accent colour (the palette's selection highlight when there is no theme); the same for the overlay's drag frame; Esc and any mouse click cancel a cell drag, only the left release commits | OPEN; nothing run |
 | 57 | 2026-10-09 | the browser viewer's split view gets the same view cell logic as the desktop's (entries 29 and 56): drag frames, commit at the left release, cancel, the minimum cell size, the look (change request) | OPEN; nothing run |
 | 58 | 2026-10-09 | a task, "can do it later": audit every warning shown when `scanner.FCStd` is opened and recomputed, and fix what can be fixed | OPEN, for later; a first count from a kept report log: 208 warnings and 6 errors, about 15 kinds; nothing run |
-| 59 | 2026-10-09 | the program no longer opens the Start page at startup (the reporter: "the startup workbench become the PartDesign"; it used to show Start with the recent files) | FOUND by the note-taker, read and looked at in the live session, nothing changed: the startup workbench was PartDesign all along; "Reset all" removed the Start module's migration flag, so its 2024 migration ran again at the next start and switched the Start page off (`ShowOnStartup` = false) |
+| 59 | 2026-10-09 | the program no longer opens the Start page at startup (the reporter: "the startup workbench become the PartDesign"; it used to show Start with the recent files) | FOUND by the note-taker, read and looked at in the live session, nothing changed: the startup workbench was PartDesign all along; "Reset all" removed the Start module's migration flag, so its 2024 migration ran again at the next start and switched the Start page off (`ShowOnStartup` = false). DECIDED by the reporter 13:42: "Reset all" keeps the migration's flag, as it keeps `SaveUserParameter`; not started |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -4982,7 +4982,7 @@ warnings and errors only; and what "fix" is to mean for a warning that is
 right about the file -- change the file, or say it once instead of ninety
 times.
 
-## 59. The Start page no longer opens at startup: the Start module's migration ran again after "Reset all" -- FOUND, nothing changed
+## 59. The Start page no longer opens at startup: the Start module's migration ran again after "Reset all" -- FOUND; DECIDED: "Reset all" keeps the migration's flag; not started
 
 **2026-10-09 13:33, the reporter:** "check why now the startup workbench
 become the PartDesign. I don't remember setting it. It used to load the
@@ -5056,11 +5056,20 @@ disk at 13:29).
 > Start opens it (`Start_Start`); at its foot is the check box "Don't show
 this Start page again (start with blank screen)", which is this switch.
 
-Not decided: the fix. The note-taker's reading of the choices: "Reset all"
-keeps the migration's flag (as it already keeps `SaveUserParameter`); or
-the migration does not run on a profile that has nothing of the old Start
+The fix, put to the reporter as three choices: "Reset all" keeps the
+migration's flag (as it already keeps `SaveUserParameter`); or the
+migration does not run on a profile that has nothing of the old Start
 workbench in it; or it goes, by upstream's own note ("remove the 2024
 migration code when enough time has passed").
+**DECIDED by the reporter, 2026-10-09 13:42, the first:** "\"Reset all\"
+keeps the migration's flag, as it already keeps one other setting." So
+"Reset all" in the preferences is to leave `Mod/Start/Migration2024Complete`
+as it is, beside `General/SaveUserParameter`, which it keeps today
+(`DlgPreferencesImp::restoreDefaults`). The migration itself stays.
+The note-taker's remark, not asked: the reset is one way to lose the flag;
+a profile whose `Mod/Start` group is cleared some other way would meet the
+same. Not part of the decision.
+Passed on to the build session, which is paused.
 
 ## Inbox
 
