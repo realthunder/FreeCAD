@@ -125,7 +125,8 @@ planned", read as the open entries in the order left at the pause: 64, 66,
 61, 62, 63, 52, entry 30's first task, 58, 47, the two tests of 48; the
 note-taker passed on at 17:52 that entry 66 is a measurement first). Done
 in it so far: 64 (`66ccd277b9`, and a defect found on the way,
-`dfdfc04c5c`). Local: not pushed, not staged. Tools and results in
+`dfdfc04c5c`); 66 measured, and the freeze it found fixed (`6073d32437`);
+61 (`f7408b1f9f`). Local: not pushed, not staged. Tools and results in
 `..\dl\handson\2026-10-09\q5`.
 
 On `dfdfc04c5c`: ctest 790 of 790 (799 entries, 9 disabled). The GUI tests
@@ -182,6 +183,8 @@ Evidence that does not belong in the repository is under
 | 57 | DONE `a50e708959`, and the changes to entry 56 in `dbff5c6378`; pushed 16:41; the browser viewer is not in the staged copy; three choices of mine for the reporter | the browser viewer's split view split, joined and resized live as the pointer moved; it shows a drag as frames and carries it out at the release now, with the desktop's cancel, minimum cell size, closing border, stop sign and look |
 | 65 | STAGED 2026-10-09 17:36, fixed `6a6fa208d6` | the path tracer's frame is an uploaded image drawn with a render target's texture coordinate, which is turned over on every backend but OpenGL: upside down on Direct3D, the Windows default. The fragment shader takes the turn back out. Found by reading by the note-taking session; confirmed and scored by a picture |
 | 64 | FIXED `66ccd277b9`, in its shader as asked; a second defect found on the way FIXED `dfdfc04c5c`; not pushed, not staged | the pass reads one normal a pixel after the scene is resolved, so a crease was a band every pixel was in or out of. It now reads each neighbour's normal as the average over its pixel, the crease placed within the pixel from the two faces' planes: along a straight crease the middle of the darkening strayed 0.18 to 0.26 px rms from its line and strays 0.01 to 0.04, with the same weight of line. On the way: under an orthographic camera the creases of whatever lay near the camera dropped out (the depth test was a fraction of the depth); they are whole now |
+| 66 | MEASURED; the freeze FIXED `6073d32437`, not pushed, not staged; the first opening and what a reset costs under a theme measured and NOT changed, for the reporter | the freeze is not the reset but the dialog being destroyed, which a reset, OK and Cancel all bring about: each of its 11 to 17 file choosers had a file system model with a thread of its own, and the destruction waited on every one -- 11 to 59 s when the dialog was closed within half a minute of opening. One model for all, made when a line is first typed into: 0.0 to 0.9 s. The first opening is 3.5 s for 1.6 to 2.4 later (the Material library read once, 1.8 s; showing 2600 widgets under a theme, 1.2 s) |
+| 61 | FIXED `f7408b1f9f`, not pushed, not staged | the backend drew an edge at the width asked for, 0.35 mm, where Qt cuts the pen to whole tenths, 0.3; and the highlight, read off the Qt item, was the thinner of the two. Edges, cut face outlines and centre marks are fed at Qt's width. Scored with Qt as the reference and the backend switched: 10 PASS and 4 FAIL on the staged copy, 14 PASS |
 | 60 | STAGED 2026-10-09 16:42, fixed `d6f640f4ee` | whenever closing a cell un-nested a splitter: the surviving cell was moved up with `QSplitter::replaceWidget`, which takes it out of the window on the way, and a `QOpenGLWidget` that leaves its window is composed from nothing until its next resize. The view was drawn right all along; only the screen was black. The cell tree is rebuilt without a cell leaving the window |
 | 45 | FIXED `c7fdcf3220`, pushed 2026-10-08, not staged | a spreadsheet's view provider made its view when it was only asked whether it had one: one click on a sheet in the tree opened it. Asking is a question now, and a new request opens the view for the three callers that host it. Show-in-cell also took a stale cell and closed another sheet's view; it takes the active view's cell |
 
@@ -3836,3 +3839,175 @@ more in the test, 47 PASS; the ridge's failed on the commit before.
 Evidence: `..\dl\handson\2026-10-09\q5\entry64\` (the test's results on the
 staged copy and on both commits, the crease and the rim before and after
 four and six times their size, a busier model before and after).
+
+## 66. The preferences dialog: slow the first time, and a freeze of tens of seconds on "Reset all" -- MEASURED; the freeze FIXED `6073d32437`, not staged
+
+The reporter asked for the timing check first (17:52, by the note-taker).
+It was made before anything was changed; the one thing it found that is a
+plain defect is fixed, the rest is laid out for the reporter.
+
+**How.** `e66.py`: the dialog opened by its command, as the menu does it,
+five times in a session, closed after the first two, "Reset all" driven
+through the dialog itself after the third and the fourth. Per step: how
+long the command took (the dialog built, every page with it), the first
+turn of the event loop after it (the dialog shown), and how long the event
+loop was held after. On a copy of the reporter's configuration of
+2026-10-09 18:04 (Dark theme) with `scanner.FCStd` open, on the same with
+no document, and on a fresh profile; the main thread's stack sampled every
+50 ms (`sampler2.py`) for where the time goes.
+
+**(b) The freeze is not the reset. It is the dialog being destroyed.**
+
+| | staged 17:36 | |
+|---|---|---|
+| "Reset all", from the Yes to the end of the click | 0.02 to 1.2 s | 1361 parameters notified |
+| the dialog closed a second after its first opening, no document | 11.5, 13.6, 13.7, 14.1, 14.8, 59.6 s | six runs |
+| the same with `scanner.FCStd` open | 10.9 and 57.5 s | |
+| closed after being left open 40 s | 0.0 s | |
+| a later close or reset in the same session | 0.0 to 59.1 s | no rule found |
+
+Every file chooser of the dialog -- a line with a "..." button, 11 of them
+before a module adds its pages, 17 with TechDraw loaded -- made a
+`QFileSystemModel` of its own at construction, for the completion of what
+is typed into it, rooted at the list of drives. Such a model has a thread
+that reads the file system. Its destructor asks the thread to stop and
+waits a second; a thread that has not stopped is handed to the event loop
+to delete, and THAT waits without limit. The samples show both: a second a
+model inside the dialog's destructor (9.9 s for the 11), then the rest. So
+the program is held for as long as those threads are in the middle of
+something, and for half a minute after the dialog opens they are (what
+they wait on was not looked into: the drives, on a managed laptop).
+"Reset all" closes the dialog; so do OK, Cancel and the close button --
+part of what entry 26 measured after an OK may have been this.
+
+**Fixed.** A chooser's line gets its completer when it first has the focus,
+and all of them share one model, the application's. Opening the
+preferences starts no thread.
+
+| the reporter's configuration | staged 17:36 | now |
+|---|---|---|
+| first close, no document | 13.6, 14.1 s | 0.1 s |
+| last close of the session, no document | 16.9, 59.1 s | 0.0 s |
+| first close, `scanner.FCStd` open | 10.9, 57.5 s | 0.9 s |
+| the second "Reset all", `scanner.FCStd` open | 14.3, 14.4 s (0.0 once) | 0.0 s |
+| threads started by opening the dialog | 10 or 11 | none |
+
+`tests/gui/preferences-close-does-not-wait.py`
+(`GuiPreferencesCloseDoesNotWait_tests_run`): 5 PASS and 4 FAIL on the
+staged copy, 9 PASS now. Also run on the build: `preferences-reset-all.py`
+12, `preferences-ok-reapplies-nothing.py` 13, `preferences-ok-keeps-
+defaults.py` 7, `preferences-cancel-asks-nothing.py` 3, no FAIL.
+
+**What a reset still costs, NOT changed.** With the Dark theme and
+`scanner.FCStd` open the first reset holds the program 7 s (0.6 s in the
+click, one turn of 6.3 s after), before and after the fix alike. That is
+the theme leaving: the application's style sheet replaced and the tree
+remaking the icon of each of its 686 items, most of it in file attribute
+calls. It is entry 30's second task from the other side ("what to do about
+it is the reporter's to say"), and entry 26's last "left" point. With no
+document it is 1.4 s; a reset with no theme to take away, 0.0 s.
+
+**(a) The first opening, NOT changed.**
+
+| | first opening | later ones |
+|---|---|---|
+| the reporter's configuration, no document | 3.5 to 4.0 s (2.3 to 2.6 building, 1.2 shown) | 1.6 s (0.4 + 1.2) |
+| the same, `scanner.FCStd` open | 3.5 s (1.2 + 2.3) | 2.1 to 3.2 s (0.9 to 1.1 + 1.3 to 2.3) |
+| a fresh profile, no theme, no document | 3.2 s (2.1 + 0.1 + 1.0) | 1.0 to 2.3 s |
+
+Where it goes:
+- **1.8 s, once a session: the Material module reads its library.** The
+  default-material page has a material tree, and making it is the first
+  thing in a session to ask for the material manager, which loads every
+  material file. Whoever asks first pays; with `scanner.FCStd` open the
+  document has paid already.
+- **1.2 s at every opening under a theme: showing it.** All 46 to 54 pages
+  are built at every opening (2600 to 3060 widgets) and laid out and
+  polished under the style sheet when the dialog is shown. With no theme
+  that is 0.1 s.
+- **0.5 s at every opening with TechDraw loaded (1.5 the first time):** the
+  Annotation page draws an icon for each line style, and each one lists the
+  folder of line definitions again (`LineGenerator::getAvailableLineStandards`
+  under `getLinePen`, a file attribute call a file). The same call is made
+  for every dashed edge a page draws, so this one is worth fixing for
+  TechDraw's own sake.
+- The first building is also when the files are opened for the first time,
+  each open passing the laptop's security monitor (1.7 s of the first
+  building has its hook on the stack, the material files mostly).
+
+**For the reporter to say** (nothing of it started):
+1. Build a page when it is first shown, not all 54 at the opening. That
+   takes the Material library and the TechDraw icons out of the opening and
+   most of the 1.2 s of showing; OK then saves the pages that were made.
+   The largest gain, and the one with a design to agree.
+2. Cache the list of line standards (it changes when a file is added to a
+   folder). Small, and it speeds up every TechDraw page with dashed lines.
+3. The reset under a theme with a large document (7 s): entry 30's.
+
+**Also seen.**
+- Twice in some forty openings the first turn of the event loop after the
+  command took 21.5 s (once after a reset, once at a second opening), on
+  the staged code. No stack was caught for it; the two lengths agree to a
+  third of a second, which smells of a time-out. It has not appeared on
+  the fixed build in the 12 openings made since, which is not enough to
+  say it is gone.
+- A sampler started through `run.cmd` in the same second as the GUI run
+  never ran (the two trip over `run.cmd`'s vswhere file); the probe's
+  launcher now starts it eight seconds ahead.
+
+Evidence: `..\dl\handson\2026-10-09\q5\entry66\` (every run's result, the
+three sampled runs, `breakdown-r1.txt`, the probe, the launcher and the
+two scripts that read the samples, the test before and after, and the
+copy of the reporter's configuration the runs were seeded with).
+
+## 61. TechDraw drawn by the backend: a dashed line's highlight is thinner than the line under it -- FIXED `f7408b1f9f`, not staged
+
+As decided (14:30, 14:31): every line the backend draws on a page at Qt's
+width, and the highlight the same width as its line.
+
+**The cause, both halves of the report.** The Qt page hands an edge's
+width to `QPen::setWidth(int)` (`QGIPrimPath::setTools`): cut to a whole
+number of scene units, a tenth of a millimetre each. The feed drew the
+width asked for. And what it lays over an edge that is preselected or
+selected is read off the Qt item, pen and all (`feedViewState`) -- so the
+highlight was Qt's width over a line of the feed's.
+
+**Reproduced, Qt's picture the reference and the backend switched** (the
+reporter's point on why it was missed), at 20 pixels to the millimetre, the
+ink across a line added up, fractions of a pixel included
+(`tests/gui/techdraw-page-backend-line-widths.py`):
+
+| | Qt | the backend, staged 17:36 | now |
+|---|---|---|---|
+| a visible edge, 0.7 mm asked | 0.707 mm | 0.700 | 0.700 |
+| a hidden line, 0.375 mm asked | 0.300 | 0.375 | 0.300 |
+| a dashed cosmetic line, 0.35 mm asked | 0.300 | 0.350 | 0.300 |
+| a section line | 0.300 | 0.300 | 0.300 |
+| the cosmetic line selected: the line showing beside its highlight | none | 0.60 px | none |
+
+10 PASS and 4 FAIL on the staged copy, 14 PASS now. (The first cosmetic
+line the test drew had the 0.5 mm a new one is given, a whole number of
+tenths, and showed nothing: the defect needs a width that is not.)
+
+**The fix.** An edge, the outline of a cut face and a centre mark are fed
+at the width Qt draws them (`primPathWidth` in `PageFeed.cpp`): cut to
+whole scene units, and under one unit as Qt's cosmetic pen, a device pixel
+at any zoom, for which `feedViewPart` now takes a hairline like the capture
+tiers (the page view asks for 0, the streamed page keeps its 0.35 mm
+stand-in). What is read off Qt's items -- frames, section lines,
+dimensions, the highlights -- had Qt's width already.
+- An edge asked for at NO width is drawn now, as that hairline, where the
+  feed left it out: Qt draws it. My reading of "the same as qt renderer".
+- A PAT hatch's lines keep the width asked for: Qt's pen for them is set
+  with `setWidthF`, not cut.
+
+**Also run on the build, no FAIL:** `techdraw-page-backend-dashes.py` 24,
+`-hatch.py` 39, `-single-draw.py` 17, `-switch.py` 11, `techdraw-page-
+before-its-view-providers.py` 12, `techdraw-section-line-click.py` 10.
+
+**Not run:** the page streamed to a browser (`PageServe`), which takes the
+same feed with the default hairline.
+
+Evidence: `..\dl\handson\2026-10-09\q5\entry61\` (the test before and
+after, the selected line by Qt, and by the backend before and after, four
+times its size).
