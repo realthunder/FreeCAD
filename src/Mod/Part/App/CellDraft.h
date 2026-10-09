@@ -206,7 +206,8 @@ private:
                         std::vector<Refillet>& refillets);
     bool makeFilletsAgain(TopoDS_Shape& cur,
                           const Handle(BRepTools_History) & total,
-                          const std::vector<Refillet>& refillets);
+                          const std::vector<Refillet>& refillets,
+                          bool retry = true);
 
 private:
     TopoDS_Shape myInput;

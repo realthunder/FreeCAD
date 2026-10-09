@@ -4268,13 +4268,77 @@ bool CellDraft::takeOffFillets(TopoDS_Shape& cur,
     return true;
 }
 
+// The shape with the edges split for nothing joined: at a vertex of two
+// edges between the same two faces, on one curve. The draft leaves such
+// vertices where its local box cut an edge, and OCCT's fillet takes the
+// piece for an edge of its own: #631's ramp fillet, made again at r=49,
+// failed at its ends where the edges beside it were split. Null if there is
+// nothing to join, or the join is not the same valid solid (as many faces,
+// the same volume).
+static TopoDS_Shape joinSplitEdges(const TopoDS_Shape& shape, Handle(BRepTools_History) & history)
+{
+    TopTools_IndexedDataMapOfShapeListOfShape ve, ef;
+    TopExp::MapShapesAndUniqueAncestors(shape, TopAbs_VERTEX, TopAbs_EDGE, ve);
+    TopExp::MapShapesAndUniqueAncestors(shape, TopAbs_EDGE, TopAbs_FACE, ef);
+    auto sameFaces = [&](const TopoDS_Shape& e1, const TopoDS_Shape& e2) {
+        const TopTools_ListOfShape& f1 = ef.FindFromKey(e1);
+        const TopTools_ListOfShape& f2 = ef.FindFromKey(e2);
+        return f1.Extent() == 2 && f2.Extent() == 2
+            && ((f1.First().IsSame(f2.First()) && f1.Last().IsSame(f2.Last()))
+                || (f1.First().IsSame(f2.Last()) && f1.Last().IsSame(f2.First())));
+    };
+    std::vector<TopoDS_Shape> keep;
+    for (int i = 1; i <= ve.Extent(); ++i) {
+        const auto& lst = ve(i);
+        if (lst.Extent() != 2 || !sameFaces(lst.First(), lst.Last())) {
+            keep.push_back(ve.FindKey(i));
+        }
+    }
+    if (static_cast<int>(keep.size()) == ve.Extent()) {
+        return TopoDS_Shape();
+    }
+    try {
+        // on a copy: UnifySameDomain edits the edges it is given
+        BRepBuilderAPI_Copy copier(shape, true, false);
+        TopTools_ListOfShape args;
+        args.Append(shape);
+        Handle(BRepTools_History) copyHistory = new BRepTools_History(args, copier);
+        ShapeUpgrade_UnifySameDomain unify(copier.Shape(), true, false, false);
+        for (const auto& v : keep) {
+            for (const auto& c : copyHistory->Modified(v)) {
+                unify.KeepShape(c);
+            }
+        }
+        unify.Build();
+        TopTools_IndexedMapOfShape before, after;
+        TopExp::MapShapes(shape, TopAbs_FACE, before);
+        TopExp::MapShapes(unify.Shape(), TopAbs_FACE, after);
+        GProp_GProps g0, g1;
+        BRepGProp::VolumeProperties(shape, g0);
+        BRepGProp::VolumeProperties(unify.Shape(), g1);
+        if (after.Extent() != before.Extent()
+            || std::abs(g1.Mass() - g0.Mass()) > 1e-9 * std::abs(g0.Mass())
+            || !BRepCheck_Analyzer(unify.Shape()).IsValid()) {
+            return TopoDS_Shape();
+        }
+        history = new BRepTools_History;
+        history->Merge(copyHistory);
+        history->Merge(unify.History());
+        return unify.Shape();
+    }
+    catch (Standard_Failure&) {
+        return TopoDS_Shape();
+    }
+}
+
 // The fillets taken off, made again at their radius on the edges between
 // what became of the two planes each joined. Pieces of one fillet (split by
 // slots, #962) share their planes' images: an edge goes to the fillet
 // nearest to it.
 bool CellDraft::makeFilletsAgain(TopoDS_Shape& cur,
                                  const Handle(BRepTools_History) & total,
-                                 const std::vector<Refillet>& refillets)
+                                 const std::vector<Refillet>& refillets,
+                                 bool retry)
 {
     TopTools_IndexedMapOfShape curFaces;
     TopExp::MapShapes(cur, TopAbs_FACE, curFaces);
@@ -4356,6 +4420,15 @@ bool CellDraft::makeFilletsAgain(TopoDS_Shape& cur,
         }
     }
     if (nsolids != 1 || !BRepCheck_Analyzer(mk.Shape()).IsValid()) {
+        // once more, the edges the draft split for nothing joined
+        Handle(BRepTools_History) joinHistory;
+        TopoDS_Shape joined = retry ? joinSplitEdges(cur, joinHistory) : TopoDS_Shape();
+        if (!joined.IsNull()) {
+            FC_LOG("fillets again with the split edges joined");
+            total->Merge(joinHistory);
+            cur = joined;
+            return makeFilletsAgain(cur, total, refillets, false);
+        }
         setError(RefilletFails,
                  refillets.front().fillet,
                  TopoDS_Shape(),
