@@ -1475,7 +1475,10 @@ bool CellDraftOne::addMember(const TopoDS_Face& f)
             return fail(CellDraft::UnsupportedSurface,
                         what
                             + " is a cylinder or cone that does not turn about the pull "
-                              "direction square to the neutral plane",
+                              "direction square to the neutral plane"
+                            + (first ? std::string()
+                                     : ", and is not a fillet between two planes that can be "
+                                       "made again"),
                         TopoDS_Face(),
                         other);
         }
@@ -3964,9 +3967,11 @@ void CellDraft::Build(const Message_ProgressRange& /*theRange*/)
         total = new BRepTools_History(args, copier);
         cur = copier.Shape();
         // Without tangent propagation a fillet beside the picked faces stays
-        // a fillet: taken off first, made again on the drafted faces.
+        // a fillet: taken off first, made again on the drafted faces. With
+        // it, so does a fillet in the chain the draft cannot turn (one
+        // across the pull direction).
         std::vector<Refillet> refillets;
-        if (!myTangentPropagation && !takeOffFillets(cur, total, refillets)) {
+        if (!takeOffFillets(cur, total, refillets)) {
             return;
         }
         for (const auto& fd : myFaces) {
@@ -4124,7 +4129,10 @@ bool CellDraft::IsDeleted(const TopoDS_Shape& shape)
 // tangent along its length to two planes, one of them in the set, and ending
 // on planes. Taken off together; the other faces tangent to the set are left
 // for the draft to refuse. (A fillet running on into a cone, #876's corners,
-// is taken off by extending the cone, not the planes.)
+// is taken off by extending the cone, not the planes.) With propagation the
+// set is the tangent chain, short of the cylinders the draft cannot turn,
+// and the fillets taken off are only those (section 19); where there is
+// none, nothing changes.
 bool CellDraft::takeOffFillets(TopoDS_Shape& cur,
                                const Handle(BRepTools_History) & total,
                                std::vector<Refillet>& refillets)
@@ -4148,42 +4156,57 @@ bool CellDraft::takeOffFillets(TopoDS_Shape& cur,
         }
     };
 
+    // With propagation, the fillets made again are the cylinders the draft
+    // cannot turn into cones (section 19): the chain stops at them.
+    auto turns = [](const TopoDS_Face& g, const FaceDraft& fd) {
+        BRepAdaptor_Surface surf(g);
+        if (surf.GetType() != GeomAbs_Cylinder) {
+            return true;
+        }
+        Handle(Geom_Surface) cyl = new Geom_CylindricalSurface(surf.Cylinder());
+        return !newRevolution(cyl, g.Orientation(), fd.direction, fd.angle, fd.neutralPlane)
+                    .IsNull();
+    };
+
     TopTools_MapOfShape picked;
-    std::vector<TopoDS_Face> todo;
+    // a face of the set -> the draft that reaches it
+    std::vector<std::pair<TopoDS_Face, const FaceDraft*>> todo;
     for (const auto& fd : myFaces) {
         for (const auto& m : total->Modified(fd.face)) {
             if (m.ShapeType() == TopAbs_FACE && curFaces.Contains(m) && picked.Add(m)) {
-                todo.push_back(TopoDS::Face(curFaces.FindKey(curFaces.FindIndex(m))));
+                todo.emplace_back(TopoDS::Face(curFaces.FindKey(curFaces.FindIndex(m))), &fd);
             }
         }
     }
     TopTools_MapOfShape own;
+    std::vector<std::pair<TopoDS_Face, const FaceDraft*>> ownDraft;
     while (!todo.empty()) {
-        TopoDS_Face f = todo.back();
+        auto [f, fd] = todo.back();
         todo.pop_back();
         if (!own.Add(f)) {
             continue;
         }
+        ownDraft.emplace_back(f, fd);
         for (const auto& g : draftChain(f, curFaces, edgeFaces, false)) {
-            todo.push_back(g);
+            todo.emplace_back(g, fd);
         }
         across(f, [&](const TopoDS_Edge& e, const TopoDS_Face& g) {
-            if (picked.Contains(g) && tangentAlong(e, f, g)) {
-                todo.push_back(g);
+            if ((myTangentPropagation ? turns(g, *fd) : picked.Contains(g))
+                && tangentAlong(e, f, g)) {
+                todo.emplace_back(g, fd);
             }
         });
     }
 
     TopTools_MapOfShape seen;
     TopTools_ListOfShape remove;
-    for (TopTools_MapOfShape::Iterator it(own); it.More(); it.Next()) {
-        TopoDS_Face f = TopoDS::Face(it.Key());
+    for (const auto& [f, fd] : ownDraft) {
         across(f, [&](const TopoDS_Edge& e, const TopoDS_Face& t) {
             if (own.Contains(t) || !tangentAlong(e, f, t) || !seen.Add(t)) {
                 return;
             }
             BRepAdaptor_Surface surf(t);
-            if (surf.GetType() != GeomAbs_Cylinder) {
+            if (surf.GetType() != GeomAbs_Cylinder || (myTangentPropagation && turns(t, *fd))) {
                 return;
             }
             std::vector<TopoDS_Face> sides;
@@ -4235,8 +4258,8 @@ bool CellDraft::takeOffFillets(TopoDS_Shape& cur,
         setError(RefilletFails,
                  refillets.front().fillet,
                  TopoDS_Shape(),
-                 "a fillet tangent to the drafted face, not drafted, could not be taken off "
-                 "to be made again after the draft");
+                 "a fillet tangent to the drafted face, not drafted with it, could not be "
+                 "taken off to be made again after the draft");
         return false;
     }
     FC_LOG("took off " << refillets.size() << " fillets to make again");

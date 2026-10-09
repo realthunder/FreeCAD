@@ -109,7 +109,9 @@ public:
      * between two planes -- is taken off, the faces drafted, and the fillet
      * made again at its radius on the edge where the two planes now meet
      * (draft before fillet); any other face tangent to them is refused
-     * (TangentNeighbour; docs/NewDraft.md section 17).
+     * (TangentNeighbour; docs/NewDraft.md section 17). On, a fillet in the
+     * chain that cannot turn into a cone (one across the pull direction)
+     * is made again the same way (section 19).
      */
     void SetTangentPropagation(bool propagate)
     {
