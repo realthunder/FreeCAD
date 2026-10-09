@@ -248,7 +248,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 62 | 2026-10-09 | omni search, a new feature: when it first pops up, its list holds the last 10 items that were confirmed in it; once typing starts, the recent list is not needed | OPEN; nothing run |
 | 63 | 2026-10-09 | `Std_DrawStyle` (a new request): a new icon suggested for it; its display style options as a combo box with their icons; anti-aliasing and its combo box in the same menu; the light sources configuration moved there from the preferences (not the manipulator), with a button to manipulate the light direction in the active 3D view and a check box to sync all 3D views' light direction; the Light Sources preference page removed | OPEN; answered 14:52: the style combo is for the active view; anti-aliasing and lights apply at once; the manipulation toggles by the button or Esc; the sync check box is a remembered setting and decides whether a light direction goes to the active view or to all open views; one more button saves ALL the current view's light settings for future use (corrected 14:55); three icons to choose from; all of the Light Sources page's settings but the manipulator go into the menu; a change of the lights is stored in the active view's properties, the button saves it into the settings, and the sync check box is for all the light settings (14:59); nothing run |
 | 64 | 2026-10-09 | the cavity option (cavity shading) draws jagged, MSAA on or off; the reporter: to be fixed in its shader; under both the realistic and the classic shading, more obvious in the Shaded draw style (no edges) and at a slant | OPEN; nothing run |
-| 65 | 2026-10-09 | the Cycles view (the path-traced picture) shows the object MIRRORED -- about the XY plane, by the look of it; "definitly out of place" | OPEN; nothing run |
+| 65 | 2026-10-09 | the Cycles view (the path-traced picture) shows the object MIRRORED -- about the XY plane, by the look of it; "definitly out of place" | FOUND by the note-taker by reading, nothing run: it depends on the backend. The picture is an uploaded image drawn with the engine's full-screen stage, whose texture coordinate is flipped off OpenGL for RENDER TARGETS (`fc_clipToUv`); an uploaded image needs no such flip, so it is right way up on OpenGL (Linux/WSL, the browser) and UPSIDE DOWN on Direct3D 11 (the Windows default since 2026-09-10), Direct3D 12, Vulkan and Metal |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -5721,7 +5721,57 @@ styles; where they are chosen was not looked up.)
 Nothing of the entry's questions is left with the reporter.
 Passed on to the build session.
 
-## 65. The Cycles view shows the object mirrored -- OPEN
+## 65. The Cycles view shows the object mirrored -- FOUND by reading, nothing run: the picture is upside down on every backend but OpenGL
+
+**2026-10-09 17:19, the reporter asks:** "check if this is platform
+dependent. I tried cycles in wsl linux build before, but didn't notice this
+problem"
+**Checked by the note-taker by READING the source; nothing run, on no
+platform. It is dependent -- on the render BACKEND, and through that on the
+platform.** The path the picture takes:
+- Cycles hands over a finished image, a buffer of pixels
+  (`CyclesViewport.cpp`, `drawFrame`: `blit.setImage(px, w, h, ...)`), and
+  `FrameImageConsumer::drawFrame` (`src/Gui/Renderer/FrameImageConsumer.cpp`)
+  uploads it as a texture and draws it over the frame with the program
+  `vs_fc_comp` + `fs_fc_cycles_blit`.
+- `vs_fc_comp` is the engine's shared full-screen vertex stage, and it takes
+  its texture coordinate from `fc_clipToUv` (`bgfx/shaders/fc_screen.sh`):
+
+      vec2 uv = clip * 0.5 + vec2_splat(0.5);
+      #if !BGFX_SHADER_LANGUAGE_GLSL
+          uv.y = 1.0 - uv.y;
+      #endif
+
+  That flip is there for RENDER TARGETS: "a render target's texture origin
+  is bottom-left only under OpenGL", so a pass that reads back what the
+  engine has drawn has to turn its coordinate over everywhere else.
+- The Cycles image is not a render target. It is an UPLOADED buffer, and an
+  uploaded texture has its first row at the same end on every backend. Put
+  through the render target's rule, it comes out one way up under OpenGL
+  and the OTHER way up everywhere the flip is compiled in. Neither
+  `FrameImageConsumer.cpp` nor `fs_fc_cycles_blit.sc` has anything that
+  depends on the backend to undo it.
+So, by the code:
+
+| backend | where it is the default | the Cycles picture |
+|---|---|---|
+| OpenGL (and the browser's WebGL, GLSL too) | Linux, so the WSL build; Windows until 2026-09-10 | right way up -- what the reporter saw in WSL |
+| Direct3D 11 | Windows since 2026-09-10 (`774c149fd3`) | UPSIDE DOWN |
+| Direct3D 12, Vulkan, Metal | Metal on macOS | upside down, by the same lines |
+
+A picture turned top to bottom -- not rotated -- of a model standing with Z
+up is the model mirrored about the XY plane, which is what was reported;
+and the engine's own drawing over it (highlights, the navigation cube)
+stays the right way up, which is the "out of place". The blit dates from
+2026-08-28 (`191d3fdc49`), when OpenGL was the default everywhere, and the
+Cycles files were last touched on 2026-09-05, five days before Windows went
+to Direct3D 11. That fits the guess written below; here it is read in the
+code rather than guessed.
+**Not run. What would confirm it in one look:** the same Cycles view with
+the render type set to `bgfx - OpenGL` (the list on the Render engine
+page, entry 50) -- right way up there, and upside down again under
+`Default`.
+Passed on to the build session.
 
 **2026-10-09 17:15, reported:** "new defect. cycle view mirrors the object.
 looks like mirrored by xy plane. not sure, but definitly out of place"
