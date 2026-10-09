@@ -13,7 +13,10 @@ the helix of entry 8), 2026-10-06 14:44 (`6b1bd3f434`: entry 14), 2026-10-06 17:
 (`f7d3aa0cf2`: entries 16 and 18), 2026-10-07 10:37 (`7e94bff8d0`: entries 9 to 13, 20
 and 21), 2026-10-07 14:23 (`1c8781a7e1`, the code of `c7a27b5a85`: entries 15, 17, 19,
 22, 23 and 27; the build session's smoke test on the staged copy, 41 of 41 GUI
-checks).
+checks), 2026-10-09 08:40 (`9bcbdc191d`, on the reporter's word: everything
+fixed since -- entry 23's defaults, entries 24 to 26, 29, 30's third task, 31
+to 45; the final run of both full suites on that tree was not finished when
+it was staged).
 
 **Two documents since 2026-10-07 11:15, one writer each** (asked for by the
 reporter, agreed between the two sessions). This one is the REQUEST side and
@@ -36,17 +39,31 @@ Evidence that does not belong in the repository -- configuration snapshots,
 report views, the reporter's own files -- is kept beside the dev tree under
 `..\dl\handson\<date>\`, and an entry names what it holds.
 
-**For the next session** (the reporter, 2026-10-08 late, to the build
-session, verbatim): "Next session continue on the notes". The build
-session's reading, told to the reporter and NOT CONFIRMED: it goes on with
-this queue's open entries -- 25, 28, 29, 30, 35, 36, 37, 40, 43. Taken as
-confirmed by the build session: the reporter, 2026-10-09, to it, verbatim,
-"Continue as planned"; entries 40, 37, 35 and 43 were fixed first (local,
-not pushed), entry 30 is in hand, 25, 28, 29 and 36 are not started. Pushed the
-same evening on the reporter's word ("Push"): origin/PartDesignPort =
-`4d08eacde1`, with entries 41, 42, 44 and 45; the last stage is still that
-of 2026-10-07 14:23, so every entry fixed since is NOT in the copy under
-test.
+**Where it stands, 2026-10-09 08:41: pushed, staged, and the build session
+paused** on the reporter's word to it, verbatim: "Pause after this. Push and
+stage".
+- Pushed: origin/PartDesignPort = `9bcbdc191d` (was `4d08eacde1`), 21
+  commits -- entries 40, 37, 35, 43, entry 30's third task, 29 with the
+  default of 300, 36, 25, and both documents up to that commit.
+- Staged: 2026-10-09 08:40:49, the copy under test is at `9bcbdc191d`
+  (its `INSTALLED.txt`, read by the note-taker). So EVERY entry fixed up to
+  now is in it, those of 2026-10-07 and 2026-10-08 that stood as "not
+  staged" included; their rows read STAGED and wait for the reporter to
+  confirm.
+- Not finished when it was staged: the final run of both full suites on
+  that tree (C++ at 638 of 798 when the build session wrote, the Python
+  suite after it); the results go to
+  `..\dl\handson\2026-10-08\q2\final-ctest.log` and `final-pytest.log`. The
+  last complete run, on the first five fixes of that session: ctest 788 of
+  788, Python 3411 with the two known thickness failures.
+- Not worked on: entry 30's first task (waits for the reporter), entry 28
+  (not reproduced; three questions), and entries 46, 47 and 48, which the
+  build session found and the reporter has not spoken on.
+How it got here: the reporter, 2026-10-08 late, to the build session, "Next
+session continue on the notes", read by it as this queue's open entries
+(25, 28, 29, 30, 35, 36, 37, 40, 43) and confirmed 2026-10-09, "Continue as
+planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
+44 and 45).
 
 | # | Reported | Problem | State |
 |---|---|---|---|
@@ -72,29 +89,29 @@ test.
 | 20 | 2026-10-06 | TechDraw: crash when the page is switched to the backend's renderer; and what it then drew | STAGED, the double draw too |
 | 21 | 2026-10-06 | TechDraw: a click on a section line starts a section, and the line shifts at each recompute | STAGED |
 | 22 | 2026-10-06 | omni search: `/word` with no space is an object query; `/ word` forces it (change request, decided) | STAGED 2026-10-07 14:23, fixed `5aedd5cf83`: "/word" is an object query, "/ word" forces it, a keyword in full is the keyword, the beginning of one lists modes and objects together; the browser viewer's grammar follows (its bundle not rebuilt) |
-| 23 | 2026-10-06 | omni search: every setting it collects has documentation, none of it long (an audit asked) | STAGED 2026-10-07 14:23, fixed `c7a27b5a85` (and `08b8f009aa`): 574 settings audited, 221 had no documentation and 94 ran past 400 characters; all have a short text now and a test keeps it so. Side findings for the reporter in `docs/HandsOnLog.md`. The defaults FIXED `02cab053df`, not staged: OK on a fresh profile changed 23 settings and stored 2 under a wrong type, 14 of them a generated page's spin box clamping its default to 99; a test keeps it so |
-| 24 | 2026-10-06 | every `Base::Parameter` setting behind a cog helper class so the omni search finds it, applied through delayed handlers (change request, application-wide) | C++ SIDE DONE AND SETTLED; decisions applied in two rounds, `e21eff05a7` and `427ffc8d28`; PUSHED 2026-10-08 (origin/PartDesignPort = `b70cc6ebf1`, cycles `35a3bd898` first); not staged. Nothing left with the reporter. What remains of the aim is entries 41 and 42 (`docs/HandsOnLog.md`) |
-| 25 | 2026-10-06 | the outline of a highlighted face is jagged, MSAA on or off | FIXED `9c9549d368`, not staged, not pushed, for a face UNDER THE POINTER: the outline was cut along the face by a stencil mark that is one sample a pixel whatever the multisampling; it fades in from the cut now. On a cylinder's top face the outline's middle jumps 0.161 px from column to column where it jumped 0.330; 5 PASS and 1 FAIL before, 6 PASS after. A SELECTED face's outline is left as it was, on purpose. Not scored with multisampling on (`docs/HandsOnLog.md`) |
-| 26 | 2026-10-06 | a long halt after enabling MSAA and pressing OK in the preferences | FIXED `175ffce199`, not staged: the FIRST OK of a profile held the program 11 to 15 s (780 keys stored for the first time and taken for changes: stylesheet set again 4.2 s, every Part view provider re-meshed 3.2 s, language activated again about 2 s); 0.9 s now (`docs/HandsOnLog.md`) |
+| 23 | 2026-10-06 | omni search: every setting it collects has documentation, none of it long (an audit asked) | STAGED 2026-10-07 14:23, fixed `c7a27b5a85` (and `08b8f009aa`): 574 settings audited, 221 had no documentation and 94 ran past 400 characters; all have a short text now and a test keeps it so. Side findings for the reporter in `docs/HandsOnLog.md`. The defaults STAGED 2026-10-09 08:40, fixed `02cab053df`: OK on a fresh profile changed 23 settings and stored 2 under a wrong type, 14 of them a generated page's spin box clamping its default to 99; a test keeps it so |
+| 24 | 2026-10-06 | every `Base::Parameter` setting behind a cog helper class so the omni search finds it, applied through delayed handlers (change request, application-wide) | C++ SIDE DONE AND SETTLED; decisions applied in two rounds, `e21eff05a7` and `427ffc8d28`; PUSHED 2026-10-08 (origin/PartDesignPort = `b70cc6ebf1`, cycles `35a3bd898` first); STAGED 2026-10-09 08:40. Nothing left with the reporter. What remains of the aim is entries 41 and 42 (`docs/HandsOnLog.md`) |
+| 25 | 2026-10-06 | the outline of a highlighted face is jagged, MSAA on or off | STAGED 2026-10-09 08:40, fixed `9c9549d368`, for a face UNDER THE POINTER: the outline was cut along the face by a stencil mark that is one sample a pixel whatever the multisampling; it fades in from the cut now. On a cylinder's top face the outline's middle jumps 0.161 px from column to column where it jumped 0.330; 5 PASS and 1 FAIL before, 6 PASS after. A SELECTED face's outline is left as it was, on purpose. Not scored with multisampling on (`docs/HandsOnLog.md`) |
+| 26 | 2026-10-06 | a long halt after enabling MSAA and pressing OK in the preferences | STAGED 2026-10-09 08:40, fixed `175ffce199`: the FIRST OK of a profile held the program 11 to 15 s (780 keys stored for the first time and taken for changes: stylesheet set again 4.2 s, every Part view provider re-meshed 3.2 s, language activated again about 2 s); 0.9 s now (`docs/HandsOnLog.md`) |
 | 27 | 2026-10-06 | the view cell menu: opens a spreadsheet nobody asked for, lists every TechDraw object, changes the wrong cell | STAGED 2026-10-07 14:23, fixed `fa2ada985c`: the menu made a spreadsheet view by asking for it, listed a page's views, and placed a pick by the general policy instead of into its cell; all three gone, spreadsheets now listed by type like pages (`docs/HandsOnLog.md`) |
 | 28 | 2026-10-06 | `scanner.FCStd` restores with a wrong colour, sometimes (the motor body light blue for light grey) | NOT REPRODUCED 2026-10-09, nothing changed, three questions for the reporter: 15 loads over 4 sessions, every colour property of all 686 objects identical and the frames the same. In the file the solid `Compound` (264 faces) and the cable `Compound001` have LIGHT BLUE as their own stored colour and are drawn light blue on every load; the containers over them carry a light grey material with its override off. So here it is the light GREY that was not seen (`docs/HandsOnLog.md`) |
-| 29 | 2026-10-07 | view cells: transparent frames that show a split, a join and a resize while dragged (every cell the drag changes); corner handles on an opaque background, the cell menu button too when hovered; a thinner border between cells; a minimum cell size setting, default 200 (change request, decided) | FIXED `dd336be800`, the default 300 on the reporter's word `c9bc1e22c5`; not staged, not pushed; four choices for the reporter to confirm or overrule: a drag of a corner zone or of a border is shown as translucent frames over every cell it changes and is carried out AT THE RELEASE; the setting `View/OpenView/MinimumCellSize`, 300 (was 200), on the preferences' UI page -- a split that would leave a cell under it is refused with one line in the report view; corner zones (and the menu button when hovered) on an opaque ground; the border 3 pixels. `tests/gui/view-cell-drag-frames.py` 33 PASS (`docs/HandsOnLog.md`, `docs/SplitViews.md` sec 21) |
-| 30 | 2026-10-07 | the dark and light overlay stylesheets integrated into the Dark and Light preference packs (a task asked; what "integrated" covers to confirm); and the long freeze when an overlay stylesheet is applied, to investigate; the Python console's background in both packs, so a theme can take an overlay preset's away again | THIRD TASK FIXED `dad4f5d18a`, not staged, not pushed: Light, Dark and Classic list every colour an overlay preset writes, the console's and the tree's backgrounds as none, so a theme takes the preset's away again; 8 PASS and 10 FAIL before, 18 PASS after. SECOND TASK MEASURED, nothing changed: "Overlay dark theme" holds the program 13.0 s on a fresh profile with `scanner.FCStd` open, 9.6 s of it the APPLICATION's style sheet (`Dark.qss`), 3.3 s the combo view switched off; what to do about it is the reporter's to say. FIRST TASK not started: what "integrated" covers, NOT ANSWERED YET (`docs/HandsOnLog.md`) |
-| 31 | 2026-10-07 | report view: "Go to end" on by default (change request) | FIXED `47b5e72c79`, not staged: "Go to end" is on for a profile that never stored it (`docs/HandsOnLog.md`) |
-| 32 | 2026-10-07 | some sub menus are transparent with blue text (Tools > Command history): find out why; transparent menus off by default | FIXED `b960092ea5`, not staged: the see-through menus are single menu objects shared between a pop-up over the 3D view and an entry of the main menu, and a themed session with no menu sheet chosen took the see-through sheet; now no sheet chosen = an ordinary menu, the see-through ones a choice in Preferences > Theme. A question for the reporter (`docs/HandsOnLog.md`) |
-| 33 | 2026-10-07 | a cmd window pops up briefly at the first document opened after start | FIXED `ef4df215b5` (the cycles submodule at its `35a3bd898`), not staged: the CUDA probe ran `cmd.exe /c where nvcc` through `popen` at the first 3D view; it searches the PATH without a shell now, and the session starts no process at all. Neither commit pushed; the cycles one has to go first (`docs/HandsOnLog.md`) |
-| 34 | 2026-10-07 | TechDraw's preselection colour sometimes does not follow the theme (stays yellow after classic, or is blue) | FIXED `3d7b4c30fd`, not staged, as decided: Dark and Light store TechDraw's `PreSelectColor`, the blue of the 3D view's highlight; a test switches Classic, Dark, Light, Classic (`docs/HandsOnLog.md`) |
-| 35 | 2026-10-07 | TechDraw (`scanner.FCStd`, Page003): now and then a click starts a recompute; a dimension (Dimension134) cannot be selected; selecting it in the tree can recompute and clear the selection. Asked: an audit of TechDraw for unnecessary recomputes | FIXED `bcad1c3982`, not staged, not pushed: a dimension's label took every redraw for a drag under way and "finished" it at the next deselection or mouse release -- X and Y stored again, the document recomputed, the selection dropped. On `scanner.FCStd`, Page003: 27 of 29 dimensions started a recompute when selected and deselected, none now. 7 PASS and 5 FAIL before, 12 PASS after. The audit of what a click in a page can reach found nothing else; the 117 `updateActive()` of commands and panels were NOT gone through -- for the reporter to say (`docs/HandsOnLog.md`) |
-| 36 | 2026-10-07 | TechDraw drawn by the backend: dashed lines do not behave as Qt's do (view frame, section line, hidden line, and so on), zoom above all | FIXED `9bf110632e`, not staged, not pushed: the backend cut dashes once, in page units; the page layer now works them out for the zoom it draws at, by Qt's rules (pixel-counted under a pixel of pen width and for the frame, caps lengthening the dashes, the dash offset read). At 12 px/mm the hidden line and the section line are Qt's to the pixel; the frame's dashes 3.4 / 4.0 / 5.2 px at the three zooms for Qt's 4. 17 PASS and 8 FAIL before, 26 PASS after. Still different, for the reporter: a line's WIDTH is the 0.35 asked for where Qt draws 0.3 -- which is wanted is the reporter's to say (`docs/HandsOnLog.md`) |
-| 37 | 2026-10-07 | TechDraw: the edge style "Chain" is not drawn dashed, by either renderer, though the style combo box shows it dashed | FIXED `a23d8b069b`, not staged, not pushed: `LineGenerator::getBestPen` refused a line number equal to the count of lines, so the LAST line of every standard (ASME 17 "Chain", ISO 15, ANSI 4) was drawn continuous by both renderers; the combo box uses another function. Upstream has the same line. 15 PASS and 3 FAIL before, 18 PASS after (`docs/HandsOnLog.md`) |
-| 38 | 2026-10-07 | omni search: an obvious freeze the first time it is brought up | FIXED `bb31f8820b`, not staged: the first bring-up loaded and rendered the icon of every command (609) before showing the box, 0.99 s + 0.28 s on the reporter's configuration with `scanner.FCStd` open; 0.15 s + 0.07 s now (`docs/HandsOnLog.md`) |
-| 39 | 2026-10-07 | MSAA has not reached any view since 2026-09-07 (found by the build session on entry 26) | FIXED `c7d115e576`, not staged: with "MSAA 4x" chosen the backend could not create its scene targets and drew without multisampling from then on, on every backend; the depth is write-only under MSAA now. The reporter's case on the fixed tree: 0.75 s in all, both views at 4 samples (`docs/HandsOnLog.md`) |
-| 40 | 2026-10-07 | crash on exit: a TechDraw page in a split view cell is destroyed after its view provider, and writes into it | FIXED `f8ceaf20c3`, not staged, not pushed: the page's view provider had a handler write into it when its view was destroyed, and a view is destroyed after a closing document has freed its view providers -- a write into freed memory at EVERY document closed with its page open, not only on exit; reproduced as heap corruption (exit `0xC0000374`), 20 PASS now. Also: a page hidden or deleted left its view in the cell, and the spreadsheet's removal deleted the cell itself; both go through a new `ViewArea::removeView`. The last cell stays, empty (`docs/HandsOnLog.md`) |
-| 41 | 2026-10-08 | the Python-only modules' settings in the omni search, through a way into the registry from Python (from entry 24: C1, C4) | FIXED, all four steps (`a75b43f1d5`, `4a99a978f7`, `48037fbd8c`, `de7bd49797`, `ff12279ee6`) and `aa63b07cc8` for L9 and L10; PUSHED 2026-10-08 (origin/PartDesignPort = `4d08eacde1`), not staged: 603 settings listed that were not -- Assembly 13, Draft and BIM 426 (listed once Draft or BIM has been used, as decided), Fem 47, CAM 27, the Addon Manager 41, Help 14, OpenSCAD 15, ReverseEngineering 11, Tux 5, Material 4, Test none. The whole list answered and carried out, last `6a2216d0f0`: readers made to say what their page says (L3, L6, L11), defects fixed (L5, L9, L10, F1, F7, and L2, which went further than the words agreed), Tux's marker and Help's `optionTab` out of the registry; the counts after it: Draft and BIM 428, Help 13, Tux 4, still 603. Full suites on `6a2216d0f0`: ctest 788 of 788, Python 3411 with the two known thickness failures. NOTHING LEFT WITH THE REPORTER (`docs/HandsOnLog.md`) |
-| 42 | 2026-10-08 | state keys (window sizes, recent lists, last directories, first-run flags) through the generator like every other setting (from entry 24: C2) | FIXED, all three steps (`aa3e77137c`, `dbadedb7ba`, `7e442e1bc2`, `234572bd87`); PUSHED 2026-10-08 (origin/PartDesignPort = `4d08eacde1`), not staged; Q6 not answered: 174 keys defined -- 89 settings and 85 state keys, 213 rows of the registry. The 3D mouse (32) and the expression sandbox (14) with every reader converted, Gui's small groups (30) too; the state the program keeps (window, dialogs, overlay panels, module panels) is defined with its readers left as they are. Not defined, as decided or for cause: Q1's 20, the share token, the workbench order, the recent lists, `LogLevels/DebugDefault` (the fourth developer switch), Oculus's 4, two of Sketcher's. Not run: the 3D mouse's motion path (no device), `ExpressionWasmtimeRuntime.cpp` (not compiled here). ctest 788 of 788, Python 3411 with the two known thickness failures. Q2 is entry 44, fixed (`docs/HandsOnLog.md`) |
-| 43 | 2026-10-08 | omni search: the highlighted row's text is white on a light blue highlight | FIXED `3b884bfe5d`, not staged, not pushed: it is under NO theme (a profile that never chose one) -- the native Windows style paints a selected row pale blue `#cde8ff` and the omni search wrote on it in the palette's highlighted text colour, white, contrast 1.3. Right already under Light, Dark and Classic. 19 PASS and 1 FAIL before, 20 PASS after (`docs/HandsOnLog.md`) |
-| 44 | 2026-10-08 | the DXF page's exporter settings do not reach the C++ DXF exporter: `Import.writeDXFObject`/`writeDXFShape` point it at `Mod/Import`, where nothing stores them (found by the build session on entry 42, Q2) | FIXED `813d0250f9`, PUSHED 2026-10-08, not staged: the exporter was pointed at `Mod/Import` for its options, where nothing stores them; it takes them from `Mod/Draft`, where the DXF page puts them, as upstream does. An ellipse written with "Treat ellipses and splines as polylines" on was an ELLIPSE before and is an LWPOLYLINE after (24 points at a segment length of 5, 198 at 0.5). `Import_tests_run` 6 of 6; the full suites not rerun after it (`docs/HandsOnLog.md`) |
-| 45 | 2026-10-08 | a spreadsheet's view provider MAKES its view when asked for it (`ViewProviderSheet::getMDIView()`): one click on a sheet in the tree opens it, show-in-cell closes another sheet's view; a design agreed by the reporter in another session, single click selects and opens nothing (handed over from session x16, branch SketcherPort; goes on from entry 27) | FIXED `c7fdcf3220`, PUSHED 2026-10-08, not staged, on this branch on top of entry 27's fix as decided: a sheet's `getMDIView()` answers and no longer opens; a new `ViewProviderDocumentObject::getOrCreateMDIView()` opens the view for the three callers that host it (the cell menu's pick, `Std_ViewCellShowObject`, a layout coming back). One click on a sheet selects and opens nothing. `Std_ViewCellShowObject` also took a stale cell and closed another sheet's view; it takes the active view's cell. Not as handed over in one point: the sheet's view is not made "bare" (`docs/HandsOnLog.md`) |
+| 29 | 2026-10-07 | view cells: transparent frames that show a split, a join and a resize while dragged (every cell the drag changes); corner handles on an opaque background, the cell menu button too when hovered; a thinner border between cells; a minimum cell size setting, default 200 (change request, decided) | STAGED 2026-10-09 08:40, fixed `dd336be800`, the default 300 on the reporter's word `c9bc1e22c5`; four choices for the reporter to confirm or overrule: a drag of a corner zone or of a border is shown as translucent frames over every cell it changes and is carried out AT THE RELEASE; the setting `View/OpenView/MinimumCellSize`, 300 (was 200), on the preferences' UI page -- a split that would leave a cell under it is refused with one line in the report view; corner zones (and the menu button when hovered) on an opaque ground; the border 3 pixels. `tests/gui/view-cell-drag-frames.py` 33 PASS (`docs/HandsOnLog.md`, `docs/SplitViews.md` sec 21) |
+| 30 | 2026-10-07 | the dark and light overlay stylesheets integrated into the Dark and Light preference packs (a task asked; what "integrated" covers to confirm); and the long freeze when an overlay stylesheet is applied, to investigate; the Python console's background in both packs, so a theme can take an overlay preset's away again | THIRD TASK STAGED 2026-10-09 08:40, fixed `dad4f5d18a`: Light, Dark and Classic list every colour an overlay preset writes, the console's and the tree's backgrounds as none, so a theme takes the preset's away again; 8 PASS and 10 FAIL before, 18 PASS after. SECOND TASK MEASURED, nothing changed: "Overlay dark theme" holds the program 13.0 s on a fresh profile with `scanner.FCStd` open, 9.6 s of it the APPLICATION's style sheet (`Dark.qss`), 3.3 s the combo view switched off; what to do about it is the reporter's to say. FIRST TASK not started: what "integrated" covers, NOT ANSWERED YET (`docs/HandsOnLog.md`) |
+| 31 | 2026-10-07 | report view: "Go to end" on by default (change request) | STAGED 2026-10-09 08:40, fixed `47b5e72c79`: "Go to end" is on for a profile that never stored it (`docs/HandsOnLog.md`) |
+| 32 | 2026-10-07 | some sub menus are transparent with blue text (Tools > Command history): find out why; transparent menus off by default | STAGED 2026-10-09 08:40, fixed `b960092ea5`: the see-through menus are single menu objects shared between a pop-up over the 3D view and an entry of the main menu, and a themed session with no menu sheet chosen took the see-through sheet; now no sheet chosen = an ordinary menu, the see-through ones a choice in Preferences > Theme. A question for the reporter (`docs/HandsOnLog.md`) |
+| 33 | 2026-10-07 | a cmd window pops up briefly at the first document opened after start | STAGED 2026-10-09 08:40, fixed `ef4df215b5` (the cycles submodule at its `35a3bd898`): the CUDA probe ran `cmd.exe /c where nvcc` through `popen` at the first 3D view; it searches the PATH without a shell now, and the session starts no process at all. Both pushed since (`docs/HandsOnLog.md`) |
+| 34 | 2026-10-07 | TechDraw's preselection colour sometimes does not follow the theme (stays yellow after classic, or is blue) | STAGED 2026-10-09 08:40, fixed `3d7b4c30fd`, as decided: Dark and Light store TechDraw's `PreSelectColor`, the blue of the 3D view's highlight; a test switches Classic, Dark, Light, Classic (`docs/HandsOnLog.md`) |
+| 35 | 2026-10-07 | TechDraw (`scanner.FCStd`, Page003): now and then a click starts a recompute; a dimension (Dimension134) cannot be selected; selecting it in the tree can recompute and clear the selection. Asked: an audit of TechDraw for unnecessary recomputes | STAGED 2026-10-09 08:40, fixed `bcad1c3982`: a dimension's label took every redraw for a drag under way and "finished" it at the next deselection or mouse release -- X and Y stored again, the document recomputed, the selection dropped. On `scanner.FCStd`, Page003: 27 of 29 dimensions started a recompute when selected and deselected, none now. 7 PASS and 5 FAIL before, 12 PASS after. The audit of what a click in a page can reach found nothing else; the 117 `updateActive()` of commands and panels were NOT gone through -- for the reporter to say (`docs/HandsOnLog.md`) |
+| 36 | 2026-10-07 | TechDraw drawn by the backend: dashed lines do not behave as Qt's do (view frame, section line, hidden line, and so on), zoom above all | STAGED 2026-10-09 08:40, fixed `9bf110632e`: the backend cut dashes once, in page units; the page layer now works them out for the zoom it draws at, by Qt's rules (pixel-counted under a pixel of pen width and for the frame, caps lengthening the dashes, the dash offset read). At 12 px/mm the hidden line and the section line are Qt's to the pixel; the frame's dashes 3.4 / 4.0 / 5.2 px at the three zooms for Qt's 4. 17 PASS and 8 FAIL before, 26 PASS after. Still different, for the reporter: a line's WIDTH is the 0.35 asked for where Qt draws 0.3 -- which is wanted is the reporter's to say (`docs/HandsOnLog.md`) |
+| 37 | 2026-10-07 | TechDraw: the edge style "Chain" is not drawn dashed, by either renderer, though the style combo box shows it dashed | STAGED 2026-10-09 08:40, fixed `a23d8b069b`: `LineGenerator::getBestPen` refused a line number equal to the count of lines, so the LAST line of every standard (ASME 17 "Chain", ISO 15, ANSI 4) was drawn continuous by both renderers; the combo box uses another function. Upstream has the same line. 15 PASS and 3 FAIL before, 18 PASS after (`docs/HandsOnLog.md`) |
+| 38 | 2026-10-07 | omni search: an obvious freeze the first time it is brought up | STAGED 2026-10-09 08:40, fixed `bb31f8820b`: the first bring-up loaded and rendered the icon of every command (609) before showing the box, 0.99 s + 0.28 s on the reporter's configuration with `scanner.FCStd` open; 0.15 s + 0.07 s now (`docs/HandsOnLog.md`) |
+| 39 | 2026-10-07 | MSAA has not reached any view since 2026-09-07 (found by the build session on entry 26) | STAGED 2026-10-09 08:40, fixed `c7d115e576`: with "MSAA 4x" chosen the backend could not create its scene targets and drew without multisampling from then on, on every backend; the depth is write-only under MSAA now. The reporter's case on the fixed tree: 0.75 s in all, both views at 4 samples (`docs/HandsOnLog.md`) |
+| 40 | 2026-10-07 | crash on exit: a TechDraw page in a split view cell is destroyed after its view provider, and writes into it | STAGED 2026-10-09 08:40, fixed `f8ceaf20c3`: the page's view provider had a handler write into it when its view was destroyed, and a view is destroyed after a closing document has freed its view providers -- a write into freed memory at EVERY document closed with its page open, not only on exit; reproduced as heap corruption (exit `0xC0000374`), 20 PASS now. Also: a page hidden or deleted left its view in the cell, and the spreadsheet's removal deleted the cell itself; both go through a new `ViewArea::removeView`. The last cell stays, empty (`docs/HandsOnLog.md`) |
+| 41 | 2026-10-08 | the Python-only modules' settings in the omni search, through a way into the registry from Python (from entry 24: C1, C4) | STAGED 2026-10-09 08:40, fixed, all four steps (`a75b43f1d5`, `4a99a978f7`, `48037fbd8c`, `de7bd49797`, `ff12279ee6`) and `aa63b07cc8` for L9 and L10; PUSHED 2026-10-08 (origin/PartDesignPort = `4d08eacde1`): 603 settings listed that were not -- Assembly 13, Draft and BIM 426 (listed once Draft or BIM has been used, as decided), Fem 47, CAM 27, the Addon Manager 41, Help 14, OpenSCAD 15, ReverseEngineering 11, Tux 5, Material 4, Test none. The whole list answered and carried out, last `6a2216d0f0`: readers made to say what their page says (L3, L6, L11), defects fixed (L5, L9, L10, F1, F7, and L2, which went further than the words agreed), Tux's marker and Help's `optionTab` out of the registry; the counts after it: Draft and BIM 428, Help 13, Tux 4, still 603. Full suites on `6a2216d0f0`: ctest 788 of 788, Python 3411 with the two known thickness failures. NOTHING LEFT WITH THE REPORTER (`docs/HandsOnLog.md`) |
+| 42 | 2026-10-08 | state keys (window sizes, recent lists, last directories, first-run flags) through the generator like every other setting (from entry 24: C2) | STAGED 2026-10-09 08:40, fixed, all three steps (`aa3e77137c`, `dbadedb7ba`, `7e442e1bc2`, `234572bd87`); PUSHED 2026-10-08 (origin/PartDesignPort = `4d08eacde1`); Q6 not answered: 174 keys defined -- 89 settings and 85 state keys, 213 rows of the registry. The 3D mouse (32) and the expression sandbox (14) with every reader converted, Gui's small groups (30) too; the state the program keeps (window, dialogs, overlay panels, module panels) is defined with its readers left as they are. Not defined, as decided or for cause: Q1's 20, the share token, the workbench order, the recent lists, `LogLevels/DebugDefault` (the fourth developer switch), Oculus's 4, two of Sketcher's. Not run: the 3D mouse's motion path (no device), `ExpressionWasmtimeRuntime.cpp` (not compiled here). ctest 788 of 788, Python 3411 with the two known thickness failures. Q2 is entry 44, fixed (`docs/HandsOnLog.md`) |
+| 43 | 2026-10-08 | omni search: the highlighted row's text is white on a light blue highlight | STAGED 2026-10-09 08:40, fixed `3b884bfe5d`: it is under NO theme (a profile that never chose one) -- the native Windows style paints a selected row pale blue `#cde8ff` and the omni search wrote on it in the palette's highlighted text colour, white, contrast 1.3. Right already under Light, Dark and Classic. 19 PASS and 1 FAIL before, 20 PASS after (`docs/HandsOnLog.md`) |
+| 44 | 2026-10-08 | the DXF page's exporter settings do not reach the C++ DXF exporter: `Import.writeDXFObject`/`writeDXFShape` point it at `Mod/Import`, where nothing stores them (found by the build session on entry 42, Q2) | STAGED 2026-10-09 08:40, fixed `813d0250f9`, PUSHED 2026-10-08: the exporter was pointed at `Mod/Import` for its options, where nothing stores them; it takes them from `Mod/Draft`, where the DXF page puts them, as upstream does. An ellipse written with "Treat ellipses and splines as polylines" on was an ELLIPSE before and is an LWPOLYLINE after (24 points at a segment length of 5, 198 at 0.5). `Import_tests_run` 6 of 6; the full suites not rerun after it (`docs/HandsOnLog.md`) |
+| 45 | 2026-10-08 | a spreadsheet's view provider MAKES its view when asked for it (`ViewProviderSheet::getMDIView()`): one click on a sheet in the tree opens it, show-in-cell closes another sheet's view; a design agreed by the reporter in another session, single click selects and opens nothing (handed over from session x16, branch SketcherPort; goes on from entry 27) | STAGED 2026-10-09 08:40, fixed `c7fdcf3220`, PUSHED 2026-10-08, on this branch on top of entry 27's fix as decided: a sheet's `getMDIView()` answers and no longer opens; a new `ViewProviderDocumentObject::getOrCreateMDIView()` opens the view for the three callers that host it (the cell menu's pick, `Std_ViewCellShowObject`, a layout coming back). One click on a sheet selects and opens nothing. `Std_ViewCellShowObject` also took a stale cell and closed another sheet's view; it takes the active view's cell. Not as handed over in one point: the sheet's view is not made "bare" (`docs/HandsOnLog.md`) |
 | 46 | 2026-10-09 | TechDraw drawn by the backend: the hatch of a section's cut face is bright green lines far apart, where Qt draws a fine grey-green pattern (seen by the build session on entry 36) | OPEN, not looked at |
 | 47 | 2026-10-09 | `scanner.FCStd`: once in three sessions the FIRST load's 3D view was empty 13 s after opening, background and navigation cube only; the next two loads of that session were complete (seen by the build session on entry 28) | OPEN, seen once, not followed up |
 | 48 | 2026-10-09 | three GUI tests fail the same way on the copy staged 2026-10-07 and on today's tree: `element-color-hide.py` (2 of 624 claims), `per-view-shown-eviction.py` (1 claim), `navicube-per-view.py` (11 claims pass, then it never ends) (found by the build session) | OPEN, not looked into |
@@ -1624,7 +1641,7 @@ a partial keyword (`/c`, `/par`) lists both -- the matching mode rows and
 the objects matching the word; a full keyword (`/cmd`) is the keyword, and
 an object called `cmd` is reached with the space, `/ cmd`.
 
-## 23. Omni search: the settings it collects (an audit asked) -- STAGED, fixed `c7a27b5a85`; the defaults FIXED `02cab053df`, not staged (see `docs/HandsOnLog.md`)
+## 23. Omni search: the settings it collects (an audit asked) -- STAGED, fixed `c7a27b5a85`; the defaults STAGED 2026-10-09, fixed `02cab053df` (see `docs/HandsOnLog.md`)
 
 **For the reporter, from the build session** (passed on by the build session, 2026-10-07 15:51), two things:
 - their own profile carries the clamped values -- overlay delays 99 for 200,
@@ -1651,7 +1668,7 @@ collects automatically; (b) each must have documentation; (c) none of it
 overly long; (d) pick out the long ones in particular -- text an agent wrote
 as development notes that ended up as a setting's documentation.
 
-## 24. Every setting behind a generated helper class, applied by delayed handlers (a change request) -- C++ side done and settled, PUSHED `b70cc6ebf1`, not staged (see `docs/HandsOnLog.md`)
+## 24. Every setting behind a generated helper class, applied by delayed handlers (a change request) -- C++ side done and settled, PUSHED `b70cc6ebf1`, STAGED 2026-10-09 (see `docs/HandsOnLog.md`)
 
 **From the build session, started** (passed on 2026-10-07 18:10; its log,
 entry 24, has the method and the inventory):
@@ -2023,7 +2040,7 @@ handler asked for in (c) has a precedent in `ParamHandlers::addDelayedHandler`
 (used by `DlgSettings3DViewImp::attachObserver`) and in the generated
 classes' own `on...Changed` hooks.
 
-## 25. The outline of a highlighted face is jagged, MSAA or not -- FIXED `9c9549d368`, not staged, for a face under the pointer (see `docs/HandsOnLog.md`)
+## 25. The outline of a highlighted face is jagged, MSAA or not -- STAGED 2026-10-09, fixed `9c9549d368`, for a face under the pointer (see `docs/HandsOnLog.md`)
 
 **2026-10-09 08:33, the build session: FIXED `9c9549d368`** (its message;
 its log, entry 25, `961d2dcd83`, local). Not staged, not pushed.
@@ -2063,7 +2080,7 @@ outline of a highlighted face is aliased, and switching MSAA on or off makes
 no difference to it. Not said yet: whether this is the hover highlight, the
 selection highlight or both, and which document.
 
-## 26. A long halt after enabling MSAA and pressing OK -- FIXED `175ffce199`, not staged (see `docs/HandsOnLog.md`)
+## 26. A long halt after enabling MSAA and pressing OK -- STAGED 2026-10-09, fixed `175ffce199` (see `docs/HandsOnLog.md`)
 
 **The reporter on what was found** (relayed by the build session, which the reporter said it to on staging, 2026-10-07 14:23): "entry 26 is probably
 not the view provider, because the delay I experience is longer. most likely
@@ -2189,7 +2206,7 @@ is not that abort. It is a load that reports nothing wrong and still shows
 a colour the file does not have. "Sometimes" points at something that
 depends on order or timing in the load rather than on the file.
 
-## 29. View cells: frames that show a split, a join and a resize while it is dragged; a minimum cell size (a change request) -- FIXED `dd336be800`, the default 300 `c9bc1e22c5`, not staged; four choices for the reporter (see `docs/HandsOnLog.md`)
+## 29. View cells: frames that show a split, a join and a resize while it is dragged; a minimum cell size (a change request) -- STAGED 2026-10-09, fixed `dd336be800`, the default 300 `c9bc1e22c5`; four choices for the reporter (see `docs/HandsOnLog.md`)
 
 **2026-10-09, the default changed by the reporter, to the build session**
 (passed on 06:53; code `c9bc1e22c5`, its log `2ff967c2c8`, local), verbatim:
@@ -2326,7 +2343,7 @@ What is asked now:
   and the border still has to be wide enough to grab and to right-click (its
   menu closes a neighbouring view).
 
-## 30. The dark and light overlay stylesheets integrated into the Dark and Light preference packs (a task asked) -- third task FIXED `dad4f5d18a`, not staged; the freeze measured; the first task waits for the reporter (see `docs/HandsOnLog.md`)
+## 30. The dark and light overlay stylesheets integrated into the Dark and Light preference packs (a task asked) -- third task STAGED 2026-10-09, fixed `dad4f5d18a`; the freeze measured; the first task waits for the reporter (see `docs/HandsOnLog.md`)
 
 **2026-10-09 00:26, the build session: the third task is fixed, the second
 measured, the first still waits** (its message; code `dad4f5d18a`, its log,
@@ -2482,7 +2499,7 @@ the preset's other keys that no pack lists -- `TreeView` (`TreeEditColor`,
 `Simple`, `CursorCrosshairColor`): each is left behind the same way. This is
 the first task of this entry seen from the other end.
 
-## 31. Report view: "Go to end" on by default (a change request) -- FIXED `47b5e72c79`, not staged (see `docs/HandsOnLog.md`)
+## 31. Report view: "Go to end" on by default (a change request) -- STAGED 2026-10-09, fixed `47b5e72c79` (see `docs/HandsOnLog.md`)
 
 **2026-10-07 11:21, a change request.** "make console 'go to end' by
 default". The report view's "Go to end" option -- follow the newest line as
@@ -2496,7 +2513,7 @@ the default only reaches a profile that never toggled it. The key is read
 straight from the parameter group, not through `ReportViewParams`, so the
 omni search does not list it (entry 24).
 
-## 32. Sub menus that are transparent with blue text; transparent menus off by default -- FIXED `b960092ea5`, not staged; a question for the reporter (see `docs/HandsOnLog.md`)
+## 32. Sub menus that are transparent with blue text; transparent menus off by default -- STAGED 2026-10-09, fixed `b960092ea5`; a question for the reporter (see `docs/HandsOnLog.md`)
 
 **From the build session** (passed on by the build session, 2026-10-07 16:20), the answer to (a) and a question:
 - Why Tools > Command history was see-through: the menus given the style
@@ -2538,7 +2555,7 @@ Read from the source by the note-taker, nothing changed:
 - There is no switch for it today: the function always applies a sheet.
   (b) needs one -- off unless asked for -- or the default sheet made opaque.
 
-## 33. A cmd window pops up briefly at the first document opened after start -- FIXED `ef4df215b5`, not staged (see `docs/HandsOnLog.md`)
+## 33. A cmd window pops up briefly at the first document opened after start -- STAGED 2026-10-09, fixed `ef4df215b5` (see `docs/HandsOnLog.md`)
 
 **From the build session** (passed on by the build session, 2026-10-07 16:20): the candidate below is the cause,
 watched happening -- at the first document, which brings the first 3D view,
@@ -2574,7 +2591,7 @@ open (which call, by watching for a `cmd.exe` child of `FreeCAD.exe`), and
 whether a session with no 3D view opened -- a TechDraw page or a spreadsheet
 alone -- shows it.
 
-## 34. TechDraw's preselection colour sometimes does not follow the theme -- FIXED `3d7b4c30fd`, not staged (see `docs/HandsOnLog.md`)
+## 34. TechDraw's preselection colour sometimes does not follow the theme -- STAGED 2026-10-09, fixed `3d7b4c30fd` (see `docs/HandsOnLog.md`)
 
 **From the build session, as information** (passed on by the build session, 2026-10-07 15:51): Classic is not the
 only way `Mod/TechDraw/Colors/PreSelectColor` gets set -- the first OK in the
@@ -2621,7 +2638,7 @@ for it -- the blue they give the 3D view, unless the reporter says another --
 and Classic keeps its own. Every theme then owns the key and a switch in
 either direction changes it.
 
-## 35. TechDraw: now and then a click starts a recompute, a dimension that cannot be selected; an audit for unnecessary recomputes -- FIXED `bcad1c3982`, not staged; the rest of the audit for the reporter to say (see `docs/HandsOnLog.md`)
+## 35. TechDraw: now and then a click starts a recompute, a dimension that cannot be selected; an audit for unnecessary recomputes -- STAGED 2026-10-09, fixed `bcad1c3982`; the rest of the audit for the reporter to say (see `docs/HandsOnLog.md`)
 
 **2026-10-09 00:09, the build session: FIXED `bcad1c3982`** (its message;
 its log, entry 35, `5275dddeb1`, local). Not staged, not pushed.
@@ -2742,7 +2759,7 @@ the one it had); a recompute of the DOCUMENT where one object changed (every
 only repeats one that has just failed, which is what makes it noticed in
 `scanner.FCStd`.
 
-## 36. TechDraw drawn by the backend: dashed lines do not behave as Qt's -- FIXED `9bf110632e`, not staged; one point for the reporter (see `docs/HandsOnLog.md`)
+## 36. TechDraw drawn by the backend: dashed lines do not behave as Qt's -- STAGED 2026-10-09, fixed `9bf110632e`; one point for the reporter (see `docs/HandsOnLog.md`)
 
 **2026-10-09 06:53, the build session: FIXED `9bf110632e`** (its message;
 its log, entry 36, `2ff967c2c8`, local). Not staged, not pushed.
@@ -2814,7 +2831,7 @@ Read from the documents and the source by the note-taker, nothing run:
   the proportional or absolute lengths of the ANSI file are three more things
   a second renderer can take differently.
 
-## 37. TechDraw: the edge style "Chain" is not drawn dashed, by either renderer -- FIXED `a23d8b069b`, not staged (see `docs/HandsOnLog.md`)
+## 37. TechDraw: the edge style "Chain" is not drawn dashed, by either renderer -- STAGED 2026-10-09, fixed `a23d8b069b` (see `docs/HandsOnLog.md`)
 
 **2026-10-09 00:09, the build session: FIXED `a23d8b069b`** (its message;
 its log, entry 37, `5275dddeb1`, local). Not staged, not pushed.
@@ -2867,7 +2884,7 @@ Not said yet: which line standard is selected (Chain exists in the ASME list
 only), and where the style was set (the line decoration panel, a cosmetic
 line, a centre line).
 
-## 38. Omni search: an obvious freeze the first time it is brought up -- FIXED `bb31f8820b`, not staged (see `docs/HandsOnLog.md`)
+## 38. Omni search: an obvious freeze the first time it is brought up -- STAGED 2026-10-09, fixed `bb31f8820b` (see `docs/HandsOnLog.md`)
 
 **2026-10-07, said by the reporter to the build session directly** and
 passed on by it at 16:35 to be numbered here: "do entry 23 next. while doing
@@ -2885,7 +2902,7 @@ entry 23 is the settings audit, staged, its defaults fixed since -- and is
 asking the reporter itself whether entry 24 is meant (every setting behind a
 generated class so the omni search finds it) or what is left under 23.
 
-## 39. MSAA has not reached any view since 2026-09-07 -- FIXED `c7d115e576`, not staged (see `docs/HandsOnLog.md`)
+## 39. MSAA has not reached any view since 2026-09-07 -- STAGED 2026-10-09, fixed `c7d115e576` (see `docs/HandsOnLog.md`)
 
 **2026-10-07, found by the build session** while answering the reporter on
 entry 26, and passed on at 17:05 to be numbered here (its log has it under
@@ -2907,7 +2924,7 @@ What it means for two other entries: the reporter's "regardless whether msaa
 is used or not" of entry 25 was said while MSAA was not in effect at all, and
 the toggling of entry 26 was toggling a setting that reached no view.
 
-## 40. Crash on exit: a TechDraw page in a view cell outlives its view provider -- FIXED `f8ceaf20c3`, not staged (see `docs/HandsOnLog.md`)
+## 40. Crash on exit: a TechDraw page in a view cell outlives its view provider -- STAGED 2026-10-09, fixed `f8ceaf20c3` (see `docs/HandsOnLog.md`)
 
 **2026-10-09 00:09, the build session: FIXED `f8ceaf20c3`** (its message;
 its log, entry 40, `5275dddeb1`, local). Not staged, not pushed. Taken first
@@ -2994,7 +3011,7 @@ spreadsheet or any other non-3D view kept in a cell is worth the same look.
 Not said yet: what was open at the moment of closing (which pages, in which
 cells), and whether it has happened before on exit.
 
-## 41. The Python-only modules' settings in the omni search, through a way in from Python -- FIXED, all four steps and the whole list, pushed 2026-10-08, not staged; nothing left with the reporter (see `docs/HandsOnLog.md`)
+## 41. The Python-only modules' settings in the omni search, through a way in from Python -- STAGED 2026-10-09, fixed, all four steps and the whole list, pushed 2026-10-08; nothing left with the reporter (see `docs/HandsOnLog.md`)
 
 **2026-10-08 23:06, pushed** on the reporter's word to the build session
 ("Push"): origin/PartDesignPort = `4d08eacde1`, with entries 41, 42, 44 and
@@ -3261,7 +3278,7 @@ their short documentation (entry 23's rule) and a change followed at once
 where that is cheap (C3).
 Not started. Not said yet: the order of the modules.
 
-## 42. State keys through the generator like every other setting -- FIXED, all three steps, pushed 2026-10-08, not staged; Q1 to Q5 answered, Q6 with the reporter (see `docs/HandsOnLog.md`)
+## 42. State keys through the generator like every other setting -- STAGED 2026-10-09, fixed, all three steps, pushed 2026-10-08; Q1 to Q5 answered, Q6 with the reporter (see `docs/HandsOnLog.md`)
 
 **2026-10-08 23:06, pushed** with entries 41, 44 and 45:
 origin/PartDesignPort = `4d08eacde1`. Nothing is staged. Still with the
@@ -3445,7 +3462,7 @@ means LISTED by the omni search, or defined there and kept out of its list
 10:05): "Entry 42, list those keys". The state keys are defined through the
 generator AND listed by the omni search.
 
-## 43. Omni search: the highlighted row's text is white on a light blue highlight -- FIXED `3b884bfe5d`, not staged (see `docs/HandsOnLog.md`)
+## 43. Omni search: the highlighted row's text is white on a light blue highlight -- STAGED 2026-10-09, fixed `3b884bfe5d` (see `docs/HandsOnLog.md`)
 
 **2026-10-09 00:09, the build session: FIXED `3b884bfe5d`** (its message;
 its log, entry 43, `5275dddeb1`, local). Not staged, not pushed.
@@ -3482,7 +3499,7 @@ not go with the accent colour behind it. Possibly touched by entry 24's one
 open point, A24 (the theme's accent colours), since the background is an
 accent colour. Not said yet: under which theme (Light, Dark, Classic).
 
-## 44. The DXF page's exporter settings do not reach the C++ DXF exporter -- FIXED `813d0250f9`, pushed 2026-10-08, not staged (see `docs/HandsOnLog.md`)
+## 44. The DXF page's exporter settings do not reach the C++ DXF exporter -- STAGED 2026-10-09, fixed `813d0250f9`, pushed 2026-10-08 (see `docs/HandsOnLog.md`)
 
 **2026-10-08 23:06, pushed** with entries 41, 42 and 45:
 origin/PartDesignPort = `4d08eacde1`. Nothing is staged.
@@ -3521,7 +3538,7 @@ It touches entry 42: these four are among the 28 settings of its Q1 that do
 not take a plain definition, because they are read from two groups.
 Not said yet by the reporter: whether to fix it, and when.
 
-## 45. A spreadsheet's view provider makes its view when it is only asked for it -- FIXED `c7fdcf3220`, pushed 2026-10-08, not staged (see `docs/HandsOnLog.md`)
+## 45. A spreadsheet's view provider makes its view when it is only asked for it -- STAGED 2026-10-09, fixed `c7fdcf3220`, pushed 2026-10-08 (see `docs/HandsOnLog.md`)
 
 **2026-10-08 23:06, pushed** with entries 41, 42 and 44:
 origin/PartDesignPort = `4d08eacde1`, so the session that handed it over
