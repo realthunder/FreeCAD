@@ -4908,6 +4908,32 @@ Not said: what "one time" counts -- once for each refused drag, or once in
 a session and silent after; and whether a split refused from the cell menu
 or by a view opening by itself says it too.
 Passed on to the build session.
+**Added by the reporter, 2026-10-09 13:57 -- point (i), a drag that would
+make a cell too small CLOSES it:** "also view cell split drag that would
+make a cell too small shall be interpreted as closing that view. so the
+frame should reflect that along with the red stop sign at the center of the
+removing view"
+A split drag that would leave a cell under the minimum size is to MEAN
+closing that view: the cell that would be too small goes. The frames say so
+while it is dragged -- as for a join in (g): the red stop sign in the middle
+of the view that is going.
+The note-taker's reading, and what it leaves open:
+- the drag meant is, most naturally, the drag of the BORDER between two
+  cells (the splitter): pushed so far that a cell would fall under the
+  minimum, the drag turns into closing that cell, and the neighbour takes
+  its room. Today, by entry 29 (the build session's choice 2, never
+  confirmed), the border STOPS at the minimum; with (i) it does not stop,
+  it closes.
+- NOT SAID, and it decides what is built: whether the drag of a CORNER zone
+  that starts a split is meant as well. There the cell that would be too
+  small may be the NEW one, not yet made -- then "closing" it is no split
+  at all, which is the refusal of (h) with its message -- or the cell that
+  was there, which would then be closed in favour of the new, empty one.
+- So (h) and (i) meet: which drags are still REFUSED with the error
+  message, and which are taken as closing. One reading that keeps both: a
+  split that cannot make its new cell big enough is refused and says why
+  (h); a border pushed past a cell's minimum closes that cell (i).
+Passed on to the build session.
 
 ## 57. The browser viewer's split view: the same view cell logic as the desktop's (a change request) -- OPEN
 
