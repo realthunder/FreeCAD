@@ -4011,3 +4011,64 @@ same feed with the default hairline.
 Evidence: `..\dl\handson\2026-10-09\q5\entry61\` (the test before and
 after, the selected line by Qt, and by the backend before and after, four
 times its size).
+
+## 62. Omni search: the last 10 confirmed items on the list when it first pops up -- DONE `9d354a8c44`, not staged; four choices of mine for the reporter
+
+When the box comes up -- a lone `/`, the three modes -- the items last
+confirmed in it follow the modes: up to ten, the newest first, each once.
+They are gone as soon as anything more is typed. Picking one carries it out
+again.
+
+**What counts as confirmed** (carried out, as the note-taker read it): a
+command run from the box; a parameter whose editor was opened; an object
+selected with Return; a property whose editor was opened. A group
+command's sub menu opened from its arrow is not: nothing says which entry
+was taken.
+
+**How a row looks:** as in its own list. A command with its icon, title,
+tooltip and shortcut; a parameter with its path and value; an object or a
+property by the text it was asked for with (`Crate.Length`). The picture:
+`..\dl\handson\2026-10-09\q5\entry62\recent-list.png`.
+
+**The four points the request left open, decided by me, each easy to turn:**
+1. KEPT from one session to the next, under
+   `Preferences/OmniSearch/Recent` (`Item0` to `Item9`). Not in the
+   parameter registry: state, as the recent files are, which entry 42 left
+   out of it.
+2. An item that cannot be FOUND now is left out of the list and stays kept
+   -- a command of a module that is not loaded, a query that names nothing
+   in what is open (an object of a closed document) -- and is back when it
+   can be found. A command that is only INACTIVE is listed greyed, as the
+   command list shows it, and a pick does nothing.
+3. The same item confirmed again appears ONCE, at the top.
+4. The DESKTOP box only; the browser viewer's has no such list.
+And one about the place: the items come AFTER the three modes, so the row
+Return takes when the box comes up is what it was. Before them, Return
+would repeat the last item, which is quick and a change of habit; for the
+reporter to say.
+
+**Also changed:** the first list shows thirteen rows without scrolling (the
+modes and all ten) for seven.
+
+**Scored.** `tests/gui/omni-search-recent-items.py`
+(`GuiOmniSearchRecentItems_tests_run`), 17 PASS: nothing listed before
+anything is confirmed; a command, a parameter and a property confirmed and
+listed the next time, the newest first; the command run again at the top
+and once; `/c` lists none of them; a picked row runs the command, opens the
+parameter's editor, puts the property's text in the box and opens its
+editor; with the document closed the property is not listed and the other
+two are; three items stored. `OmniSearch_Tests_run` has the store by itself
+(order, once each, ten at most, what is not kept). The other omni search
+tests on the build, no FAIL: `omni-search-slash-word.py` 10,
+`omni-search-highlighted-row.py` 20, `python-settings-door.py` 10,
+`omni-search-first-bring-up.py` 8.
+
+**A test that had gone stale, `eebfc34dd9`.** `omni-search-first-bring-
+up.py` (entry 38) failed one claim on the staged copy and on the tree
+alike: it took the longest of the box's lists for the command list, and
+since entry 41 the parameters outnumber the commands, 1400 to 609. It
+finds the command list by its rows now. Nothing was wrong with the box.
+
+**Not run:** a pick with the mouse (the test picks with Down and Tab); the
+Return key on a recent row (it goes through the same function, and a flag
+keeps the key from being answered twice -- read, not driven).
