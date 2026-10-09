@@ -101,7 +101,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 22 | 2026-10-06 | omni search: `/word` with no space is an object query; `/ word` forces it (change request, decided) | STAGED 2026-10-07 14:23, fixed `5aedd5cf83`: "/word" is an object query, "/ word" forces it, a keyword in full is the keyword, the beginning of one lists modes and objects together; the browser viewer's grammar follows (its bundle not rebuilt) |
 | 23 | 2026-10-06 | omni search: every setting it collects has documentation, none of it long (an audit asked) | STAGED 2026-10-07 14:23, fixed `c7a27b5a85` (and `08b8f009aa`): 574 settings audited, 221 had no documentation and 94 ran past 400 characters; all have a short text now and a test keeps it so. Side findings for the reporter in `docs/HandsOnLog.md`. The defaults STAGED 2026-10-09 08:40, fixed `02cab053df`: OK on a fresh profile changed 23 settings and stored 2 under a wrong type, 14 of them a generated page's spin box clamping its default to 99; a test keeps it so |
 | 24 | 2026-10-06 | every `Base::Parameter` setting behind a cog helper class so the omni search finds it, applied through delayed handlers (change request, application-wide) | C++ SIDE DONE AND SETTLED; decisions applied in two rounds, `e21eff05a7` and `427ffc8d28`; PUSHED 2026-10-08 (origin/PartDesignPort = `b70cc6ebf1`, cycles `35a3bd898` first); STAGED 2026-10-09 08:40. Nothing left with the reporter. What remains of the aim is entries 41 and 42 (`docs/HandsOnLog.md`) |
-| 25 | 2026-10-06 | the outline of a highlighted face is jagged, MSAA on or off | STAGED 2026-10-09 08:40, fixed `9c9549d368`, for a face UNDER THE POINTER: the outline was cut along the face by a stencil mark that is one sample a pixel whatever the multisampling; it fades in from the cut now. On a cylinder's top face the outline's middle jumps 0.161 px from column to column where it jumped 0.330; 5 PASS and 1 FAIL before, 6 PASS after. A SELECTED face's outline is left as it was, on purpose. Not scored with multisampling on. The reporter on the staged copy, 2026-10-09 10:01: a face without an edge (a cylinder's side) is jagged too without MSAA -- seen WITH the backend (the reporter had set the type back by hand; checked 10:05). To check, read from the code and not run: the fix draws NO outline along a curved face's silhouette, and none at all on a face with no boundary (`docs/HandsOnLog.md`) |
+| 25 | 2026-10-06 | the outline of a highlighted face is jagged, MSAA on or off | STAGED 2026-10-09 08:40, fixed `9c9549d368`, for a face UNDER THE POINTER: the outline was cut along the face by a stencil mark that is one sample a pixel whatever the multisampling; it fades in from the cut now. On a cylinder's top face the outline's middle jumps 0.161 px from column to column where it jumped 0.330; 5 PASS and 1 FAIL before, 6 PASS after. A SELECTED face's outline is left as it was, on purpose. Not scored with multisampling on. The reporter on the staged copy, 2026-10-09 10:01: a face without an edge (a cylinder's side) is jagged too without MSAA -- that was about ordinary faces, not the outline, and is entry 51. For the build session to check, a reading of the code that the reporter did NOT report: the fix draws no outline along a curved face's silhouette, and none on a face with no boundary (`docs/HandsOnLog.md`) |
 | 26 | 2026-10-06 | a long halt after enabling MSAA and pressing OK in the preferences | STAGED 2026-10-09 08:40, fixed `175ffce199`: the FIRST OK of a profile held the program 11 to 15 s (780 keys stored for the first time and taken for changes: stylesheet set again 4.2 s, every Part view provider re-meshed 3.2 s, language activated again about 2 s); 0.9 s now (`docs/HandsOnLog.md`) |
 | 27 | 2026-10-06 | the view cell menu: opens a spreadsheet nobody asked for, lists every TechDraw object, changes the wrong cell | STAGED 2026-10-07 14:23, fixed `fa2ada985c`: the menu made a spreadsheet view by asking for it, listed a page's views, and placed a pick by the general policy instead of into its cell; all three gone, spreadsheets now listed by type like pages (`docs/HandsOnLog.md`) |
 | 28 | 2026-10-06 | `scanner.FCStd` restores with a wrong colour, sometimes (the motor body light blue for light grey) | NOT REPRODUCED 2026-10-09, nothing changed, three questions for the reporter: 15 loads over 4 sessions, every colour property of all 686 objects identical and the frames the same. In the file the solid `Compound` (264 faces) and the cable `Compound001` have LIGHT BLUE as their own stored colour and are drawn light blue on every load; the containers over them carry a light grey material with its override off. So here it is the light GREY that was not seen (`docs/HandsOnLog.md`) |
@@ -127,6 +127,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 48 | 2026-10-09 | three GUI tests fail the same way on the copy staged 2026-10-07 and on today's tree: `element-color-hide.py` (2 of 624 claims), `per-view-shown-eviction.py` (1 claim), `navicube-per-view.py` (11 claims pass, then it never ends) (found by the build session) | OPEN; read only so far: `navicube-per-view.py` is no defect -- a run-by-hand script that never closes FreeCAD; the other two not looked into |
 | 49 | 2026-10-09 | after "Reset all" in the preferences and then the Light theme from Tools > Preset configurations > Themes, the workbench toolbar is hidden; shown again by hand it sits in the custom title bar as expected; intermittent -- the same steps a second time did not do it | OPEN; the bad and the good run are both in the evidence, and they differ in one thing: a saved main window state was in the configuration when the theme was applied (read, nothing run). Next in the build session's line after entry 46 |
 | 50 | 2026-10-09 | after "Reset all" in the preferences the 3D view is no longer drawn by the render engine's backend (edges jagged; the reporter's guess: render cache 0); and after a change of the MSAA setting a split of a 3D view and a TechDraw page became two tab windows | OPEN; measured in the reporter's live session, read-only: the render cache setting is not the cause (not stored, default 3) -- the renderer TYPE is `Default`, no backend, where the profile had `bgfx - Direct3D11` before the reset, and the view answers "No external renderer active"; the path is chosen only at startup. The two tabs are there as said: one view area with ONE cell, two `scanner` tab windows. DECIDED by the reporter 2026-10-09 09:48 for the first part: the type `Default` is to mean bgfx on the platform's default backend, and (09:52) a new type `Legacy` the old Coin rendering; (09:53) the type alone decides whether the engine is used -- under `Legacy` the render cache setting keeps its original meaning (default 3), under `Default` it is always 3. The MSAA part, the split turned into tabs, is not decided or read further |
+| 51 | 2026-10-09 | a face's edge that no edge line covers (a cylinder's side against what is behind it) is a staircase with MSAA off; if that is expected, MSAA 4x by default (change request) | OPEN; expected by the note-taker's reading (triangles are not anti-aliased without MSAA, the engine has no other anti-aliasing), for the build session to confirm; then the default of `View/AntiAliasing` goes from 0 to 3 |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -2052,7 +2053,20 @@ handler asked for in (c) has a precedent in `ParamHandlers::addDelayedHandler`
 (used by `DlgSettings3DViewImp::attachObserver`) and in the generated
 classes' own `on...Changed` hooks.
 
-## 25. The outline of a highlighted face is jagged, MSAA or not -- STAGED 2026-10-09, fixed `9c9549d368`, for a face under the pointer; the reporter on the staged copy: a face without an edge is jagged too, to be pinned down (see `docs/HandsOnLog.md`)
+## 25. The outline of a highlighted face is jagged, MSAA or not -- STAGED 2026-10-09, fixed `9c9549d368`, for a face under the pointer; the reporter's remark of 10:01 is entry 51, not this (see `docs/HandsOnLog.md`)
+
+**2026-10-09 10:08, the reporter says what was meant, and it is NOT the
+outline:** "I am not talking about silouette. I am talking about normal face
+drawing for those part that are not bounded by edge, it shows staircase
+without msaa. if that's expected, then I want msaa default to 4x"
+So the observation of 10:01 is about ordinary faces, nothing highlighted:
+where a face ends without an edge line on it -- the side of a cylinder
+against what is behind it -- the face shows a staircase with MSAA off. It is
+not about entry 25's fix, and it goes on as entry 51 (MSAA 4x by default).
+Both readings the note-taker made of it below were beside the point. The
+second -- that the fix draws no outline along a curved face's silhouette
+and none on a face with no boundary -- was NOT reported by the reporter; it
+stays here as a reading of the code for the build session to check, no more.
 
 **2026-10-09 10:05, CORRECTION by the note-taker, after the reporter asked
 back:** "are you sure. I manually change the render type to bgfx. it should
@@ -4162,6 +4176,59 @@ Not said yet by the reporter: which MSAA values were tried and in what
 order, and whether the split was the two cells side by side that a page
 gets by default.
 
+## 51. Faces show a staircase where no edge line covers them, MSAA off; MSAA 4x by default (a change request) -- OPEN
+
+**2026-10-09 10:01 and 10:08, the reporter, on the copy staged 08:40, the
+render engine drawing** (`bgfx - Direct3D11`; checked in the live session):
+"It looks like face without edge (like cylinder) also got jagger without
+msaa." And, when the note-taker had taken that for the highlight's outline:
+"I am not talking about silouette. I am talking about normal face drawing
+for those part that are not bounded by edge, it shows staircase without
+msaa. if that's expected, then I want msaa default to 4x"
+Two things:
+(a) a question: an ordinary face, nothing highlighted, shows a staircase
+along the part of its outline that no edge bounds -- the side of a cylinder
+where it turns away -- when MSAA is off. Is that expected?
+(b) a change request, on that condition: if it is expected, MSAA is to be
+4x by default.
+
+**To (a), the note-taker's reading, read from the source and not run; for
+the build session to confirm:** yes, expected.
+- An edge of the model is drawn by the engine as a shaded line whose rim
+  has computed coverage (the build session's log, entry 25: "the line's
+  outer edge has had analytic coverage for a while"), so an edge looks
+  smooth with or without MSAA, and it covers the rim of the faces it
+  bounds.
+- A face is triangles. Without multisampling a triangle's rim is decided a
+  whole pixel at a time. Where no edge line lies over it -- a curved face
+  seen side-on has no edge there -- that rim is bare, and it is a
+  staircase.
+- Nothing else smooths it: no post-process anti-aliasing was found in the
+  renderer's sources (searched for FXAA, SMAA, TAA).
+So it is how the picture is made with MSAA off, not something a fix broke,
+and the request (b) stands.
+
+**(b) as asked:** `View/AntiAliasing` defaults to 3, "MSAA 4x", where it
+defaults to 0, none (`src/Gui/ViewParams.py`; its values: 0 none, 1 line
+smoothing, 2 MSAA 2x, 3 MSAA 4x, 4 MSAA 8x). No preference pack sets it
+today.
+Pointers for whoever does it, read and not run:
+- MSAA reaches the views again only since entry 39's fix (`c7d115e576`, in
+  the copy staged 2026-10-09); under MSAA the scene depth is write-only.
+- `getRenderStats()` says of itself: "a multisampled view has no depth to
+  read back, and its geometryPixels is -1 (unknown)". The render tests that
+  count geometry pixels would read -1 on the new default unless they set
+  the value themselves.
+- Entry 25's fix was not scored with multisampling on.
+- The setting is "read when a view is created; a change rebuilds the open
+  views" -- and a rebuild of the open views is where entry 50's second part
+  (a split turned into tabs after an MSAA change) is to be looked for.
+- A profile that has the key stored keeps its value; the reporter's own has
+  3 stored now.
+Not said yet by the reporter: whether the default is for the render engine
+only or for the `Legacy` type as well (it is one setting today), and
+whether the browser and other tiers are to follow.
+
 ## Inbox
 
 Notes not sorted into an entry yet. Add a line here at any time, in any words;
@@ -4169,4 +4236,4 @@ it is read before each entry is started and moved up into the table.
 
 (empty: the notes of 2026-10-06 are entries 20 to 28, those of 2026-10-07
 entries 29 to 40, those of 2026-10-08 entries 41 to 45, those of 2026-10-09
-so far entries 46 to 50)
+so far entries 46 to 51)
