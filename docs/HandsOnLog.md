@@ -116,6 +116,18 @@ shader alone). The Python suite was started on the staged tree at 17:37
 -- its first start hung in `run.cmd`'s `chcp` before it ran anything --
 and its result is the next thing written here. Then PAUSED, as told.
 
+That Python suite, on the tree staged 17:36 (`6a6fa208d6`), ended 17:48:
+3411 tests, the two known thickness failures, 50 skipped, 6 expected
+failures (`..\dl\handson\2026-10-09\q4\finalpy-pytest.log`).
+
+The session of 2026-10-09, evening (the reporter, about 17:45: "continue as
+planned", read as the open entries in the order left at the pause: 64, 66,
+61, 62, 63, 52, entry 30's first task, 58, 47, the two tests of 48; the
+note-taker passed on at 17:52 that entry 66 is a measurement first). Done
+in it so far: 64 (`66ccd277b9`, and a defect found on the way,
+`dfdfc04c5c`). Local: not pushed, not staged. Tools and results in
+`..\dl\handson\2026-10-09\q5`.
+
 Evidence that does not belong in the repository is under
 `..\dl\handson\<date>\`, as before.
 
@@ -158,6 +170,7 @@ Evidence that does not belong in the repository is under
 | 59 | STAGED 2026-10-09 15:11, fixed `e9ac624959` | "Reset all" cleared the record of the Start workbench's migration of 2024; the next start ran it again on a profile whose startup workbench was PartDesign and switched the Start page off. The reset keeps the record (the reporter's decision) |
 | 57 | DONE `a50e708959`, and the changes to entry 56 in `dbff5c6378`; pushed 16:41; the browser viewer is not in the staged copy; three choices of mine for the reporter | the browser viewer's split view split, joined and resized live as the pointer moved; it shows a drag as frames and carries it out at the release now, with the desktop's cancel, minimum cell size, closing border, stop sign and look |
 | 65 | STAGED 2026-10-09 17:36, fixed `6a6fa208d6` | the path tracer's frame is an uploaded image drawn with a render target's texture coordinate, which is turned over on every backend but OpenGL: upside down on Direct3D, the Windows default. The fragment shader takes the turn back out. Found by reading by the note-taking session; confirmed and scored by a picture |
+| 64 | FIXED `66ccd277b9`, in its shader as asked; a second defect found on the way FIXED `dfdfc04c5c`; not pushed, not staged | the pass reads one normal a pixel after the scene is resolved, so a crease was a band every pixel was in or out of. It now reads each neighbour's normal as the average over its pixel, the crease placed within the pixel from the two faces' planes: along a straight crease the middle of the darkening strayed 0.18 to 0.26 px rms from its line and strays 0.01 to 0.04, with the same weight of line. On the way: under an orthographic camera the creases of whatever lay near the camera dropped out (the depth test was a fraction of the depth); they are whole now |
 | 60 | STAGED 2026-10-09 16:42, fixed `d6f640f4ee` | whenever closing a cell un-nested a splitter: the surviving cell was moved up with `QSplitter::replaceWidget`, which takes it out of the window on the way, and a `QOpenGLWidget` that leaves its window is composed from nothing until its next resize. The view was drawn right all along; only the screen was black. The cell tree is rebuilt without a cell leaving the window |
 | 45 | FIXED `c7fdcf3220`, pushed 2026-10-08, not staged | a spreadsheet's view provider made its view when it was only asked whether it had one: one click on a sheet in the tree opened it. Asking is a question now, and a new request opens the view for the three callers that host it. Show-in-cell also took a stale cell and closed another sheet's view; it takes the active view's cell |
 
@@ -3714,3 +3727,101 @@ pixels, Cycles 238 and 84 -- 2 PASS and 2 FAIL; on the tree Cycles 84 and
 by the colour at the row's end. The path tracer's background is a lit
 environment, the whole row counted as "model", and the upside-down picture
 passed. The cone is red now and the red is what is counted.
+
+## 64. Cavity shading is jagged, MSAA or not -- FIXED `66ccd277b9`, not staged; and a second defect of the pass, FIXED `dfdfc04c5c`
+
+The note-taker's reading of the cause is right, and the reporter's place for
+the fix is where it went: the pass's own shader, `fs_fc_cavity.sc`.
+
+**The cause.** The pass darkens a pixel by how far the normal turns between
+two opposed neighbours of it, read from a prepass that holds ONE normal and
+one depth a pixel, and it runs after the multisampled scene is resolved. A
+pair of neighbours either straddles a hard crease or does not, so the band a
+crease darkened was a whole number of pixels wide everywhere: a staircase
+along every slanted edge, which no sample count reaches.
+
+**Measured first**, on the multiplier itself: the same camera drawn with the
+pass on and off, one divided by the other in linear light, which leaves the
+crease lines alone. Along a crease, for each column of pixels, how much
+darkening it holds and where the middle of that is, fractions of a pixel
+included; a straight edge's crease is a straight line, and what the middles
+keep after a line is taken out of them is the staircase. On the copy staged
+17:36, the render engine, MSAA 4x, Shaded: the middle strays 0.18 to 0.26 px
+rms from its line (a perfect staircase of one pixel gives 0.29), and the
+darkening a crease holds varies 4 to 13% along it.
+
+**The fix.** Each neighbour's normal is read as the AVERAGE over its pixel.
+Where the pixel beside a neighbour lies on another face, the two faces are
+two planes -- a normal and a view position each, both in the prepass -- and
+where they meet is the crease, placed on the screen to a fraction of a
+pixel; the far face is weighed in by the part of the pixel's square it
+covers (`fc_cavityNormal`). The pass's term is then a difference of two
+box-filtered normals, which moves smoothly as a crease moves across the
+pixel grid. No new pass, no new target: 16 more reads of the prepass a
+pixel, nearly all of which end at "the same face".
+- It needs the full-float prepass (a half-float depth cannot place a crease
+  within a pixel). Where the backend has only the half-float one, the pass
+  draws as before.
+- Smooth curvature is left exactly as it was: the weighing fades out below a
+  turn of 2 to 6 degrees between two pixels.
+- The baseline is a whole number of pixels now: `Render_CavityRadius` is
+  rounded (1.4 is 1, 1.5 is 2). A tap at half a pixel took either of two
+  texels before, and only a tap at a texel's centre has a position of its
+  own. My choice; the setting's text still says "in pixels".
+
+**Scored.** `tests/gui/cavity-crease-is-smooth.py`
+(`GuiCavityCreaseIsSmooth_tests_run`): ridges and valleys of a block on a
+plate at slants of 13, 17 and 43 degrees, orthographic and perspective, the
+rim of a cylinder's top, a valley at radius 3; a flat face's middle stays
+undarkened and a ball at radius 4 is shaded as before. 20 PASS and 21 FAIL
+on the copy staged 17:36; 41 PASS at `66ccd277b9`.
+
+| straight creases, radius 1 | staged 17:36 | now |
+|---|---|---|
+| the middle strays from its line, rms | 0.18 to 0.26 px | 0.01 to 0.04 px |
+| the darkening across the crease varies along it, rms | 4 to 13% | 0.4 to 2.3% |
+| the darkening a ridge holds across it | 0.58 to 0.61 px | 0.57 to 0.59 px |
+| the same for a valley | 1.19 to 1.22 px | 1.18 to 1.20 px |
+| a cylinder's rim, the middle strays (a cubic taken out) | 0.16, 0.20 px | 0.04, 0.06 px |
+
+So the line is as heavy as it was (2% lighter) and no longer steps.
+
+**A second defect, found by the test's radius-3 case, `dfdfc04c5c`.** Under
+an ORTHOGRAPHIC camera the creases of whatever lay near the camera dropped
+out, in dots. The pass tells a slope from a step to another surface by a
+depth tolerance, and that was 2% of the depth itself: a slope under a
+perspective camera, where a pixel's size grows with the depth, and nothing
+of the kind under an orthographic one. At radius 3 the ridges of the test's
+block faded out towards its nearest corner (the darkening along the ridge
+0.86 to 1.82 px); at the default radius the near end of a small block's
+ridge did (`entry64\model-term-before.png`, the block). The tolerance is the
+baseline's own length across the screen times a slope now (16, a face 86
+degrees from facing the eye), which is what the old test came to under a
+perspective camera at radius 1 in a window 1500 pixels wide. Since a slope
+alone lets a small gap through -- a faint stroke up an edge that rises from
+the face it stands on -- two texels on different faces are also asked
+whether they FOLD or one passes behind the other: the two faces of a fold
+lie on the same side of each other's plane (`fc_cavityStep`). Six claims
+more in the test, 47 PASS; the ridge's failed on the commit before.
+
+**Left, and seen.**
+- A LIMB that rests on a face -- a cylinder lying on a plate, a ball on it
+  -- is taken for a valley where the gap behind the limb is small, and
+  comes out in dashes (`entry64\limb-on-a-plate-*.png`). It is not a crease
+  and cannot be placed like one: a surface seen edge-on is consistent with a
+  fold there. A perspective camera always showed it (as dots); an
+  orthographic one shows it now too. Not changed.
+- A cylinder at the default tessellation has a polygon for a rim, and the
+  crease follows the polygon: the rim's middle strays 0.10 px there for the
+  0.04 of a finely tessellated one. The test tessellates finely.
+- The browser viewer shares the shader and the code; its shader pack was
+  compiled (essl) and nothing was run in a browser.
+- One run of the test ended in "Frame capture timed out" at a change of the
+  cavity radius, on the build with the first fix; four runs after it did
+  not. Not followed up.
+- Not run: Vulkan, Metal, OpenGL (the shader compiles for all; the run is
+  Direct3D 11).
+
+Evidence: `..\dl\handson\2026-10-09\q5\entry64\` (the test's results on the
+staged copy and on both commits, the crease and the rim before and after
+four and six times their size, a busier model before and after).
