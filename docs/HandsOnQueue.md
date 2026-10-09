@@ -150,6 +150,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 55 | 2026-10-09 | sometimes the progress bar in the status bar is at the left side; seen once during a recompute; after closing the document and opening one again it was back in its normal place | OPEN, intermittent; nothing run |
 | 56 | 2026-10-09 | view cells, after entry 29 (change request): the menu button and the handles shown on hover have no contrast on a light grey or white ground; handles off a view's scroll bar; the drag frames too transparent -- less so, with white borders, in the theme's accent colour (the palette's selection highlight when there is no theme); the same for the overlay's drag frame; Esc and any mouse click cancel a cell drag, only the left release commits | OPEN; nothing run |
 | 57 | 2026-10-09 | the browser viewer's split view gets the same view cell logic as the desktop's (entries 29 and 56): drag frames, commit at the left release, cancel, the minimum cell size, the look (change request) | OPEN; nothing run |
+| 58 | 2026-10-09 | a task, "can do it later": audit every warning shown when `scanner.FCStd` is opened and recomputed, and fix what can be fixed | OPEN, for later; a first count from a kept report log: 208 warnings and 6 errors, about 15 kinds; nothing run |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -4857,6 +4858,55 @@ desktop's setting carried over to the browser or a value of the viewer's
 own; and whether touch (a finger has no Esc and no second button) gets a
 way to cancel of its own.
 
+## 58. Audit the warnings of opening and recomputing `scanner.FCStd`, and fix what can be fixed (a task, for later) -- OPEN
+
+**2026-10-09 11:37, the reporter:** "new task, can do it later. audit for all
+warning when opening and recomputing the scanner document. fix when
+possible"
+Every warning the program gives while `scanner.FCStd` is opened and while
+it is recomputed is to be gone through: what it means, whether it is right
+to give it, and what can be fixed. Not urgent, by the reporter's word.
+
+**A first count, read by the note-taker from a report log already kept,
+nothing run:** `..\dl\handson\2026-10-09\entry53\mcp_console-1029.log`,
+from its line 483 on -- ONE open of the file (10:12:40, the copy staged
+2026-10-09 08:40) and one recompute after it (10:13:40 to 10:14:22). 208
+lines of warning and 6 of error, of these kinds:
+
+| count | level | what |
+|---|---|---|
+| 90 | Warning | `<TopoShape> ... TopoShapeEx.cpp: hasher mismatch` (82 of them reached through `Ray.py`) |
+| 54 | Warning | `Dimension... value ... is too small for format specifier: %+.Nf` (TechDraw) |
+| about 45 | Warning | `<App> PropertyLinks.cpp: scanner#X.<property> auto change element reference ...`, the property being `Base`, `AttachmentSupport`, `Support`, `ExternalGeometry`, `Profile`, `BaseObject`, `_NeutralEdge` (13 of them through `Ray.py`) |
+| 9 | Warning | `Cannot find icon: Std_Point` |
+| 2 + 2 | Warning | `DVS: SectionOrigin doesn't intersect part in SectionView003`, `DVS::makeSectionCut - prism & input don't intersect` |
+| 2 | Error | `DVS::prepareShape - failed to build shape SectionView003 - Bnd_Box is void` |
+| 1 | Warning | `PolarPattern003.Occurrences: 1024 occurrences, more than MaximumPatternOccurrences allows; set to 1000` |
+| 1 | Warning | `Recomputation required for document 'scanner' on geo element version change ...: 1.15.70200.4 -> 1.15.80001.4` |
+| 1 | Warning | `<Gui> Document.cpp: progressive restore scanner: N document changes suppressed while replaying ...` |
+| 1 | Warning | `Invalid solution from DogLeg solver.` |
+| 1 | Error | `Updating geometry: Error build geometry(1): GC_MakeLine::Value() - no result` |
+| 1 | Error | `<Exception> FeatureDressUp.cpp: Invalid edge link: ?Edge93` (`Fillet011`) |
+| 1 + 1 | Error | `Failed to recompute scanner#Pad033: Sub shape not found: scanner#Sketch043.?InternalFace2`, then `Recompute failed!` |
+| 2 | Warning | Qt's, from a dialog: `QLayout::addChildLayout: layout QHBoxLayout "" already has a parent`, `Empty widget item in QVBoxLayout 'verticalLayout_3'` |
+
+Besides the warnings, the same stretch has messages and log lines the audit
+may want to look at too: `Dimension... - no exact match for changed 2d
+reference` (Message), and the solver's timing lines (Log).
+
+Where it meets other entries: `Pad033` and `Fillet011` in error are the
+known ones (entries 15 and 17, on hold at the reporter's word, and the
+file's own stale sketch); `SectionView003` failing is seen in entry 53's
+log before and after the recompute; the 1024 occurrences cut to 1000 is
+entry 42's `MaximumPatternOccurrences`.
+This is one run on one build; the audit needs its own, and with the
+warnings of the open and of the recompute told apart.
+
+Not said yet by the reporter: whether messages and log lines are in it or
+warnings and errors only; and what "fix" is to mean for a warning that is
+right about the file -- change the file, or say it once instead of ninety
+times.
+
 ## Inbox
 
 Notes not sorted into an entry yet. Add a line here at any time, in any words;
@@ -4864,4 +4914,4 @@ it is read before each entry is started and moved up into the table.
 
 (empty: the notes of 2026-10-06 are entries 20 to 28, those of 2026-10-07
 entries 29 to 40, those of 2026-10-08 entries 41 to 45, those of 2026-10-09
-so far entries 46 to 57)
+so far entries 46 to 58)
