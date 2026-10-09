@@ -57,7 +57,7 @@ Evidence that does not belong in the repository is under
 | 22 | STAGED `5aedd5cf83` | `/word` is an object query; the beginning of a keyword lists modes and objects |
 | 23 | STAGED `c7a27b5a85`, and `08b8f009aa`; the defaults FIXED `02cab053df`, not staged | 574 settings: 221 had no documentation, 94 ran past 400 characters; all have a short text now, and a test keeps it so. The defaults: OK on a fresh profile changed 23 settings and stored 2 under a wrong type -- 14 of them a spin box clamping its default to 99, which the reporter's own profile carries |
 | 24 | C++ SIDE DONE, about 1180 settings listed; the reporter's decisions of 2026-10-08 applied in two rounds, `e21eff05a7` and `427ffc8d28`; pushed `b70cc6ebf1`, not staged | every setting C++ reads is behind a generated class. After both rounds: the editors' font is Courier, Home is Top, the marker size is 7 everywhere, the Asymptote height is empty, CAM's unit default is upstream's; 15 of the 16 findings are fixed or dropped as decided (D4 needs nothing). A24: the fork's three accent colours stay ("keep ours"). Nothing is left with the reporter. Entries 41 (Python door) and 42 (state keys, to be listed) are decided and not started |
-| 25 | FIXED `9c9549d368`, not staged, not pushed | the outline of a face is cut along the face by a stencil mark, one sample a pixel whatever the multisampling: a staircase against the model's dark edge. For a face under the pointer the outline now fades in from the cut -- its middle line wanders 0.16 px from column to column where it wandered 0.33. A SELECTED face's outline is left as it was, on purpose |
+| 25 | STAGED `9c9549d368`; a REGRESSION of it repaired `1ccc6c2f60`, not staged, not pushed (a curved face under the pointer had no highlight at all) | the outline of a face is cut along the face by a stencil mark, one sample a pixel whatever the multisampling: a staircase against the model's dark edge. For a face under the pointer the outline now fades in from the cut -- its middle line wanders 0.16 px from column to column where it wandered 0.33. A SELECTED face's outline is left as it was, on purpose |
 | 26 | FIXED `175ffce199`, not staged | the first OK of a profile held the program 11 to 15 s on the reporter's configuration with `scanner.FCStd` open: 780 keys stored for the first time and taken for changes -- stylesheet set again 4.2 s, every Part view provider re-meshed 3.2 s, language activated again 2 s. 0.9 s now |
 | 27 | STAGED `fa2ada985c` | the cell menu made a spreadsheet view by asking for it, listed a page's views, and a pick was placed by the general policy |
 | 28 | NOT REPRODUCED in 15 loads; nothing changed; a question for the reporter | the part the report fits -- a solid of the imported motor -- has light blue as its OWN stored colour and is drawn light blue on every load here; the light grey is what was not seen. One first load of a session came up with an empty 3D view, not followed up |
@@ -78,6 +78,8 @@ Evidence that does not belong in the repository is under
 | 43 | FIXED `3b884bfe5d`, not staged, not pushed | on a profile that has chosen no theme: the native Windows style paints a selected row pale blue and the row was written in the palette's highlighted text colour, white; contrast 1.3. The row is written in whichever of the two text colours reads on what is painted. Under Light, Dark and Classic it was right already |
 | 44 | FIXED `813d0250f9`, pushed 2026-10-08, not staged | the C++ DXF exporter was pointed at `Mod/Import` for its options, where nothing stores them; it takes them from `Mod/Draft`, where the DXF page puts them, as upstream does. An ellipse with "as polylines" on was an ELLIPSE before, an LWPOLYLINE after |
 | 46 | FIXED `6dacf21b11`, not staged, not pushed | the backend drew the hatch from a picture of the whole face, a pixel to the tenth of a millimetre, read one pixel in five at the zoom a page opens at: at 2 pixels to the millimetre 1.1 lines across a 17 pixel strip at 0.99 of the hatch colour, where Qt has 5.0 at 0.19. A hatch is one tile now, laid side by side into the face, and every picture of a page has coarser copies to be drawn from. Three more found by the test: a turned hatch was turned the wrong way, an image was drawn over all the line work of a page, and the tiles showed their seams |
+| 49 | FIXED `664d57f39b`, not staged, not pushed | it takes a maximized window, and then happens every time: the reset clears the title bar areas' entries, the toolbar manager's timer took the workbench toolbar out of the title bar itself -- a move that hides a toolbar -- and then asked the toolbar whether it was visible. A window that is not maximized swaps its title bar first and moves the toolbar properly |
+| 50 | FIXED `4cb1ee6ad1` (the render type) and `69a2028e23` (the split), not staged, not pushed | (a) as decided: `Default` is the render engine on the platform's backend, `Legacy` the old Coin rendering; the type is a list on the Render engine page and is kept; the render cache setting is not looked at while the engine draws. (b) a Coin-drawn view is replaced by a copy when the anti-aliasing changes, and the copy was given a tab of its own; it takes the old view's cell |
 | 45 | FIXED `c7fdcf3220`, pushed 2026-10-08, not staged | a spreadsheet's view provider made its view when it was only asked whether it had one: one click on a sheet in the tree opened it. Asking is a question now, and a new request opens the view for the three callers that host it. Show-in-cell also took a stale cell and closed another sheet's view; it takes the active view's cell |
 
 **The reporter, 2026-10-07 14:20, on what is open** (said to the build
@@ -2977,3 +2979,155 @@ pass: `techdraw-page-backend-dashes.py` 24, `-single-draw.py` 17,
 - In the browser viewer a picture whose sides are not powers of two was
   read without any smoothing (the vector library's own choice for the
   web); it is read like any other now. Not looked at in a browser.
+
+## 49. After "Reset all" and then the Light theme, the workbench toolbar is hidden -- FIXED `664d57f39b`, not staged
+
+**Reproduced first, every time** (`e49.py` in `..\dl\handson\2026-10-09\q3`,
+then the test): "Reset all" driven through the preferences dialog itself,
+the Light theme 14 and 31 seconds after it, on the staged copy of 08:40 and
+on the dev build. What it takes is a MAXIMIZED window. With the window not
+maximized the toolbar stays shown through reset and theme, at either wait;
+maximized, it is hidden one second after the reset and stays hidden
+through the theme, at either wait. So it is not a race of seconds, and not
+a window state saved in between -- in the runs that failed here nothing
+was saved between the reset and the theme. (The reporter's bad run had a
+maximized window, its backup says `Maximized` = 1; the saved state the
+note-taker found in it came later than the hide.)
+
+**The cause.** The reset clears every parameter at once. Two things follow
+from it, each on a timer:
+- the custom title bar goes (its key is gone): `MainWindow`'s title bar
+  swap, which takes the workbench toolbar out of the title bar properly --
+  it reads whether the toolbar is hidden in its own right, moves it, puts
+  that back. On Windows a maximized window is first taken out of the
+  maximized state and the swap runs 100 ms later (entry 6's fix);
+- the entries of the title bar's toolbar areas are gone too, and the
+  toolbar manager's own timer, 100 ms, lays the toolbars out again
+  (`ToolBarManager::onTimer`). It finds the workbench toolbar in an area it
+  has no entry for, takes it out itself -- a move that hides a toolbar --
+  and THEN asks the toolbar whether it is visible, to know whether to show
+  it. It is not, so it stays hidden.
+A window that is not maximized swaps its title bar at once, so the toolbar
+is out and shown before the manager's timer runs. A maximized one waits
+its 100 ms and the manager gets there first, every time. The swap then
+finds the toolbar docked already and leaves it alone; the theme puts it in
+the title bar as it is, hidden.
+
+**The fix**, in `ToolBarManager`: whether a toolbar is shown is asked
+before it is moved, and of the toolbar alone (`isHidden()`), in the timer's
+layout and in `restoreState()`, which had the same order.
+
+**Scored.** `tests/gui/preferences-reset-all.py` (a maximized window under
+the Light theme, a document open, the reset through the dialog): on the
+staged copy 5 PASS and 4 FAIL -- the toolbar hidden after the reset and
+after the theme, and the two claims of entry 50 below; on the dev build
+9 PASS.
+
+**Not done:** the toolbar that the manager's timer takes out goes to the
+end of its dock area, not to the slot it came from (the title bar swap
+keeps that slot; the timer does not know it). Seen only after a reset.
+
+## 50. After "Reset all" the 3D view is drawn without the backend; then a change of MSAA turns a split into tabs -- both FIXED, `4cb1ee6ad1` and `69a2028e23`, not staged
+
+**(a) The render type, as the reporter decided it** ("Render type Default
+should be bgfx plus a platform dependent default"; "let's make render type
+'Legacy' to mean the old coin rendering"; "Legacy controls whether to use
+engine and render cache keep its original meaning. with 'Default', i.e. new
+render engine, render cache always fixed to 3"; the render cache's default
+stays 3).
+
+What was: `View/Render/Type` = `Default` meant NO backend; the engine was
+chosen once, at startup, by writing a backend's name over the setting; a
+session whose parameters were cleared fell back to `Default` and had no
+engine until the next start.
+
+What is now:
+- the type is read for what it means wherever a backend is made
+  (`RenderParams::engineType()`): `Default` or nothing stored is the
+  render engine on the platform's backend; `Legacy` is no backend; a
+  backend named outright is that backend if this build has it and the
+  platform's if not. Nothing is written at startup any more;
+- with the engine the program draws by render cache 3 whatever
+  `View/RenderCache` holds -- the setting is left as it is and not looked
+  at (`RenderParams::renderCache()` is what everything that asked the
+  setting asks now). Under `Legacy` the setting means what it says again,
+  default 3;
+- on the Render engine preferences page the type is a list to pick from:
+  Default, Legacy, and the backends this build has, by name.
+
+**Three choices of mine, and the reporter's answer to them** (2026-10-09
+10:22: "show render type as combo list to select and preserve the setting
+as usual. render cache is hidden from preference page, but can still be
+set by program mostly for testing pruposer I suppose. but in engine
+rendering, the program shall always go to the cache mode 3 route
+regardless of the setting"):
+1. The type is kept from session to session -- confirmed.
+2. I had a render cache other than 3 put back to 3 under the engine, with
+   a warning line. CHANGED as answered: the setting is not rewritten, it
+   is not looked at. The first version was built and scored and then
+   taken out.
+3. I had left the type a plain text field. OVERRULED: a list.
+The render cache was on no preferences page already (it left the 3D View
+page on 2026-08-16); it stays in the omni search, which lists every
+setting, with a text that says when it counts.
+
+What follows from "not looked at": setting the render cache to 0 and back
+to 3 while the engine draws no longer tears the backend down and builds
+it again -- nothing happens. Three tests did that to compare paths
+(`instanced-face-transparency.py`, `part-tessellation-reload.py`,
+`preferences-ok-reapplies-nothing.py`); they set the type to `Legacy`
+first now. `docs/CoinRetirement.md` and `docs/ViewSettings.md` say what
+changed.
+
+**(b) The split turned into tabs.** A 3D view that Coin draws cannot
+change its sample count in place: the anti-aliasing setting's handler
+makes a copy of the view on a new surface and deletes the old one. The
+copy was handed to the main window like any new view -- a tab -- and the
+cell the old view sat in went with it. With a backend the view changes
+its sample count in place and nothing of this runs: it was seen because
+the reset of (a) had taken the backend away. The copy takes the old
+view's cell now (`ViewArea::setCellView`).
+
+**Scored (b).** `tests/gui/antialiasing-change-keeps-the-cells.py`, a 3D
+view and a page side by side, the anti-aliasing to MSAA 4x and back, under
+`Legacy` and under `Default`: on the staged copy the cells [3D, page]
+became [page] and two tabs three, 11 PASS and 7 FAIL; on the dev build 18
+PASS. **Scored (a).** `tests/gui/render-type-default-and-legacy.py`: 13
+PASS (on the staged copy 5 of its first 10 claims failed); the reset test
+of entry 49 has the claim that the view keeps its backend through "Reset
+all". The tests around it, all passing on the build: `per-view-
+visibility.py` 45, `view-in-cell-goes-with-its-object.py` 20,
+`instanced-face-transparency.py` 5, `part-tessellation-reload.py` 7,
+`preferences-ok-reapplies-nothing.py` 13, `preferences-ok-keeps-
+defaults.py` 7, `msaa-reaches-the-view.py` 11.
+
+**Not done, not run:** the unified split-view canvas with a type changed
+while it is up; the headless serve under `Legacy` (it says it has no
+engine to publish through, as it did under the old `Default`); the Linux
+and macOS builds, where "the platform's backend" is another one.
+
+## 25, again. A REGRESSION of the fix: a curved face under the pointer had no highlight -- REPAIRED `1ccc6c2f60`, not staged
+
+The note-taking session read it out of `9c9549d368` and it was worse than
+read: the faded outline drew the boundary's own edges and RETURNED. A face
+that turns away from the eye ends on a limb, where it has no edge; and
+the side of a cylinder got nothing at all, its two circles included.
+Measured on the staged copy of 2026-10-09 08:40, which has the fix: the
+side of a tall cylinder under the pointer, 0 pixels of outline in the
+picture; a sphere, 0. **So in the copy under test, hovering a cylinder's
+side or a sphere shows nothing.** My test had scored the flat top of a
+cylinder only.
+
+Repaired: the plain passes -- every triangle edge, cut by the stencil --
+run after the faded boundary. What the boundary's lines have drawn carries
+the stencil mark, so the plain passes add the limb and nothing over the
+fade. `tests/gui/face-outline-inner-edge.py` has two more claims, the
+side of a tall cylinder and a sphere: 6 PASS and 2 FAIL on the staged
+copy, 8 PASS on the dev build (the cylinder's side has outline on both
+limbs half way up, 528 pixels of it in the picture; the sphere 630). The
+top face's outline is as smooth as it was: 0.145 px before the repair,
+0.150 after.
+
+Not looked into: why the side face's own two circles were not found as
+its boundary (with the plain passes back they are drawn either way, cut
+and not faded).
