@@ -126,7 +126,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 47 | 2026-10-09 | `scanner.FCStd`: once in three sessions the FIRST load's 3D view was empty 13 s after opening, background and navigation cube only; the next two loads of that session were complete (seen by the build session on entry 28) | OPEN, seen once, not followed up |
 | 48 | 2026-10-09 | three GUI tests fail the same way on the copy staged 2026-10-07 and on today's tree: `element-color-hide.py` (2 of 624 claims), `per-view-shown-eviction.py` (1 claim), `navicube-per-view.py` (11 claims pass, then it never ends) (found by the build session) | OPEN; read only so far: `navicube-per-view.py` is no defect -- a run-by-hand script that never closes FreeCAD; the other two not looked into |
 | 49 | 2026-10-09 | after "Reset all" in the preferences and then the Light theme from Tools > Preset configurations > Themes, the workbench toolbar is hidden; shown again by hand it sits in the custom title bar as expected; intermittent -- the same steps a second time did not do it | OPEN; the bad and the good run are both in the evidence, and they differ in one thing: a saved main window state was in the configuration when the theme was applied (read, nothing run). Next in the build session's line after entry 46 |
-| 50 | 2026-10-09 | after "Reset all" in the preferences the 3D view is no longer drawn by the render engine's backend (edges jagged; the reporter's guess: render cache 0); and after a change of the MSAA setting a split of a 3D view and a TechDraw page became two tab windows | OPEN; measured in the reporter's live session, read-only: the render cache setting is not the cause (not stored, default 3) -- the renderer TYPE is `Default`, no backend, where the profile had `bgfx - Direct3D11` before the reset, and the view answers "No external renderer active"; the path is chosen only at startup. The two tabs are there as said: one view area with ONE cell, two `scanner` tab windows. DECIDED by the reporter 2026-10-09 09:48 for the first part: the type `Default` is to mean bgfx on the platform's default backend, and (09:52) a new type `Legacy` the old Coin rendering; (09:53) the type alone decides whether the engine is used -- under `Legacy` the render cache setting keeps its original meaning, under `Default` it is always 3 |
+| 50 | 2026-10-09 | after "Reset all" in the preferences the 3D view is no longer drawn by the render engine's backend (edges jagged; the reporter's guess: render cache 0); and after a change of the MSAA setting a split of a 3D view and a TechDraw page became two tab windows | OPEN; measured in the reporter's live session, read-only: the render cache setting is not the cause (not stored, default 3) -- the renderer TYPE is `Default`, no backend, where the profile had `bgfx - Direct3D11` before the reset, and the view answers "No external renderer active"; the path is chosen only at startup. The two tabs are there as said: one view area with ONE cell, two `scanner` tab windows. DECIDED by the reporter 2026-10-09 09:48 for the first part: the type `Default` is to mean bgfx on the platform's default backend, and (09:52) a new type `Legacy` the old Coin rendering; (09:53) the type alone decides whether the engine is used -- under `Legacy` the render cache setting keeps its original meaning (default 3), under `Default` it is always 3. The MSAA part, the split turned into tabs, is not decided or read further |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -4022,8 +4022,10 @@ the setting says; and "always fixed to 3" under `Default` is to hold in the
 running session as well, not only by the write at startup, so that a reset
 or a stored value cannot take the engine's feed away (the comment at
 `View3DSettings.cpp:312` tells of exactly that happening before).
-Not said: what the render cache setting is when nothing is stored and the
-type is `Legacy` (its definition's default is 3 today).
+Asked: what the render cache setting is when nothing is stored and the type
+is `Legacy` (its definition's default is 3 today). **Answered by the
+reporter, 2026-10-09 09:55:** "yes default 3". The default stays 3, under
+`Legacy` too. Nothing of (a) is left with the reporter.
 Passed on to the build session.
 
 **2026-10-09 09:41, reported:** "new defect. After reset all preference, it
