@@ -332,6 +332,28 @@ void namedElements(const App::DocumentObject *obj,
             continue;
         }
 
+        // Seen through a link the shape's names are not the ones the
+        // reference has: they are the linked object's with its tag after
+        // them, "Top;:H2a,F" for its "Top". The element is the one the
+        // reference leads to in the object that has it, which counts its
+        // elements as what is seen of it does.
+        {
+            std::pair<std::string, std::string> resolved;
+            App::GeoFeature *geo = nullptr;
+            if (App::GeoFeature::resolveElement(const_cast<App::DocumentObject *>(obj),
+                                                v.first.c_str(), resolved, false,
+                                                App::GeoFeature::Normal, nullptr, nullptr, &geo)
+                && geo && geo != obj && !resolved.first.empty()
+                && !App::GeoFeature::hasMissingElement(resolved.second.c_str())) {
+                const char *found = Data::findElementName(resolved.second.c_str());
+                auto at = shape.shapeTypeAndIndex(Data::IndexedName(found ? found : ""));
+                if (at.second) {
+                    named[at.first][at.second - 1] = i;
+                    continue;
+                }
+            }
+        }
+
         for (auto &names : Feature::getRelatedElements(const_cast<App::DocumentObject *>(obj),
                                                        v.first.c_str())) {
             if (!subMap.insert(names.name).second) {
