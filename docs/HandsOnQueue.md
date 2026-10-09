@@ -114,7 +114,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 26 | 2026-10-06 | a long halt after enabling MSAA and pressing OK in the preferences | STAGED 2026-10-09 08:40, fixed `175ffce199`: the FIRST OK of a profile held the program 11 to 15 s (780 keys stored for the first time and taken for changes: stylesheet set again 4.2 s, every Part view provider re-meshed 3.2 s, language activated again about 2 s); 0.9 s now (`docs/HandsOnLog.md`) |
 | 27 | 2026-10-06 | the view cell menu: opens a spreadsheet nobody asked for, lists every TechDraw object, changes the wrong cell | STAGED 2026-10-07 14:23, fixed `fa2ada985c`: the menu made a spreadsheet view by asking for it, listed a page's views, and placed a pick by the general policy instead of into its cell; all three gone, spreadsheets now listed by type like pages (`docs/HandsOnLog.md`) |
 | 28 | 2026-10-06 | `scanner.FCStd` restores with a wrong colour, sometimes (the motor body light blue for light grey) | NOT REPRODUCED 2026-10-09, nothing changed, three questions for the reporter: 15 loads over 4 sessions, every colour property of all 686 objects identical and the frames the same. In the file the solid `Compound` (264 faces) and the cable `Compound001` have LIGHT BLUE as their own stored colour and are drawn light blue on every load; the containers over them carry a light grey material with its override off. So here it is the light GREY that was not seen (`docs/HandsOnLog.md`) |
-| 29 | 2026-10-07 | view cells: transparent frames that show a split, a join and a resize while dragged (every cell the drag changes); corner handles on an opaque background, the cell menu button too when hovered; a thinner border between cells; a minimum cell size setting, default 200 (change request, decided) | STAGED 2026-10-09 08:40, fixed `dd336be800`, the default 300 on the reporter's word `c9bc1e22c5`; four choices for the reporter to confirm or overrule: a drag of a corner zone or of a border is shown as translucent frames over every cell it changes and is carried out AT THE RELEASE; the setting `View/OpenView/MinimumCellSize`, 300 (was 200), on the preferences' UI page -- a split that would leave a cell under it is refused with one line in the report view; corner zones (and the menu button when hovered) on an opaque ground; the border 3 pixels. `tests/gui/view-cell-drag-frames.py` 33 PASS (`docs/HandsOnLog.md`, `docs/SplitViews.md` sec 21) |
+| 29 | 2026-10-07 | view cells: transparent frames that show a split, a join and a resize while dragged (every cell the drag changes); corner handles on an opaque background, the cell menu button too when hovered; a thinner border between cells; a minimum cell size setting, default 200 (change request, decided) | STAGED 2026-10-09 08:40, fixed `dd336be800`, the default 300 on the reporter's word `c9bc1e22c5`; four choices for the reporter to confirm or overrule: a drag of a corner zone or of a border is shown as translucent frames over every cell it changes and is carried out AT THE RELEASE; the setting `View/OpenView/MinimumCellSize`, 300 (was 200), on the preferences' UI page -- a split that would leave a cell under it is refused with one line in the report view; corner zones (and the menu button when hovered) on an opaque ground; the border 3 pixels. `tests/gui/view-cell-drag-frames.py` 33 PASS (`docs/HandsOnLog.md`, `docs/SplitViews.md` sec 21). The reporter on the staged copy, 2026-10-09 10:51: entry 56 |
 | 30 | 2026-10-07 | the dark and light overlay stylesheets integrated into the Dark and Light preference packs (a task asked; what "integrated" covers to confirm); and the long freeze when an overlay stylesheet is applied, to investigate; the Python console's background in both packs, so a theme can take an overlay preset's away again | THIRD TASK STAGED 2026-10-09 08:40, fixed `dad4f5d18a`: Light, Dark and Classic list every colour an overlay preset writes, the console's and the tree's backgrounds as none, so a theme takes the preset's away again; 8 PASS and 10 FAIL before, 18 PASS after. SECOND TASK MEASURED, nothing changed: "Overlay dark theme" holds the program 13.0 s on a fresh profile with `scanner.FCStd` open, 9.6 s of it the APPLICATION's style sheet (`Dark.qss`), 3.3 s the combo view switched off; what to do about it is the reporter's to say. FIRST TASK DECIDED ANEW by the reporter 2026-10-09 09:47, not started: TWO NEW THEMES under Tools > Preset configurations > Themes -- the Dark theme merged with the "Overlay dark theme" preset, and the same for Light -- so that no combination of switching leaves settings stuck (the Python editor's colours). This replaces the answer of 09:38 (remove the presets, into the existing two themes). Settled 09:50: the two presets GO, and the two new themes are named "Overlay dark theme" and "Overlay light theme" (`docs/HandsOnLog.md`) |
 | 31 | 2026-10-07 | report view: "Go to end" on by default (change request) | STAGED 2026-10-09 08:40, fixed `47b5e72c79`: "Go to end" is on for a profile that never stored it (`docs/HandsOnLog.md`) |
 | 32 | 2026-10-07 | some sub menus are transparent with blue text (Tools > Command history): find out why; transparent menus off by default | STAGED 2026-10-09 08:40, fixed `b960092ea5`: the see-through menus are single menu objects shared between a pop-up over the 3D view and an entry of the main menu, and a themed session with no menu sheet chosen took the see-through sheet; now no sheet chosen = an ordinary menu, the see-through ones a choice in Preferences > Theme. A question for the reporter (`docs/HandsOnLog.md`) |
@@ -141,6 +141,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 53 | 2026-10-09 | `scanner.FCStd`: answered No to the recompute question at opening, the TechDraw page that opens by itself (`Page003`) shows only part of the geometry -- it varies: sometimes none, once only `Top002`, with thickened edges; the dimensions ARE drawn, the views' geometry is what is missing -- with the page drawn by Qt only, it seems; and BOTH renderers draw the lines thickened until a recompute; after a recompute the page is complete and the lines normal | REPRODUCED 2026-10-09 on the staged copy at the first try, cause not found yet: as loaded and drawn by Qt, `Page003` shows its dimensions and the views' labels, NO geometry in the three views of the projection group (`Bottom004`, `Front003`, `Top002`), and `Section002` with thick lines; after a recompute all four are complete and the lines thin. The reporter: the missing geometry is with Qt's drawing only, the thickened lines with both renderers |
 | 54 | 2026-10-09 | a highlight shown on top: under the pointer (preselection) its edges respect the depth against the faces, an edge behind a face is dimmed; a full SELECTION does not, its edges are drawn as if there were no depth test | OPEN; nothing run |
 | 55 | 2026-10-09 | sometimes the progress bar in the status bar is at the left side; seen once during a recompute; after closing the document and opening one again it was back in its normal place | OPEN, intermittent; nothing run |
+| 56 | 2026-10-09 | view cells, after entry 29 (change request): the menu button and the handles shown on hover have no contrast on a light grey or white ground; handles off a view's scroll bar; the drag frames too transparent -- less so, with white borders, in the theme's accent colour (the palette's selection highlight when there is no theme); the same for the overlay's drag frame; Esc and any mouse click cancel a cell drag, only the left release commits | OPEN; nothing run |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -4580,6 +4581,65 @@ the right of the preselection text); whether anything else in the status
 bar looked different at that moment (the preselection text missing, the
 hints or the size label moved); and how often it has been seen.
 
+## 56. View cells: the look of the handles and of the drag frames, and how a drag is cancelled (a change request, after entry 29) -- OPEN
+
+**2026-10-09 10:51, reported, on the copy staged 2026-10-09 08:40, which has
+entry 29:** "new defect. for view cell menu and handle, when shown on hover
+the color does not look good with light gray and white background. no
+contrast. Further more, if the view has scroll bar, move the handles off the
+scroll bar to show it more clearly. Also the frame color when draging does
+not look good. I think it is because the trasnparency is too high. Add some
+white borders for the frame. does the color follow current theme accent
+color? if no theme then use the pallete color for selection highlight. Do
+the same for overlay drag frame. also, view cell drag frame should respond
+to esc and any mouse click to mean cancel. only left release means commit."
+Six things:
+(a) the cell's menu button and its corner handles, as shown on hover: their
+colour has no contrast against a light grey or a white background;
+(b) where the view has a scroll bar, the handles are to be moved OFF the
+scroll bar, so that they show clearly;
+(c) the frames shown while dragging do not look good -- too transparent, the
+reporter thinks; they are to get white borders;
+(d) a question, and the rule: does the frames' colour follow the current
+theme's accent colour? It should; with no theme, the palette's colour for
+the selection highlight;
+(e) the same for the OVERLAY's drag frame;
+(f) a cell drag is to be cancelled by Esc and by any mouse click; only the
+release of the left button commits it.
+
+**To the question in (d), and pointers for the rest: read from the source by
+the note-taker, nothing run.**
+- (d): the frames are painted in the widget PALETTE's highlight colour
+  (`ViewAreaDragFrames::paintEvent`, `src/Gui/ViewArea.cpp`:
+  `palette().color(QPalette::Highlight)`). That is already the colour asked
+  for when there is no theme. Whether it is the theme's accent colour under
+  a theme is not certain: the themes' accent is a style sheet parameter
+  (entry 43's finding names `@AccentBackgroundColor` as what paints a
+  highlighted row, apart from the palette), so the frames follow it only if
+  the theme also sets the palette's highlight to it. Not checked.
+- (c): the fill is that colour at 60 of 255 for a cell that stays and 120
+  for a new one, with a 2 pixel line of the same colour around it and a
+  white plus on the new cell; a refusal is red at 70. No white border.
+- (a): on hover the menu button and the corner zones are painted on the
+  palette's WINDOW colour, their strokes in the palette's highlight colour
+  at 230 of 255 -- an accent-coloured mark on a light ground, which is the
+  low contrast under the Light theme. (That ground was entry 29's (e), the
+  reporter's own request for an opaque background.)
+- (e): the overlay's frame is a fixed blue at 0.3 opacity with a thin
+  outline (`OverlayDragFrame::paintEvent`, `src/Gui/OverlayWidgets.cpp`):
+  it follows neither a theme nor the palette.
+- (f): `ViewArea.cpp` has no handling of Esc or of another mouse button
+  during a drag. By the build session's log, entry 29, a split is cancelled
+  today only by dragging back to where it was pressed.
+- (b): the corner zones are the cell's top right and bottom left (entry
+  29); a TechDraw page or a spreadsheet in a cell has its scroll bars along
+  the right and the bottom edge, where those corners are.
+
+Not said yet by the reporter: how opaque the frames are to be, and how wide
+the white border; under which theme (a) was seen (the session's is Light);
+and for (f) whether "any mouse click" cancels a drag of a BORDER too, where
+a frame is shown as well.
+
 ## Inbox
 
 Notes not sorted into an entry yet. Add a line here at any time, in any words;
@@ -4587,4 +4647,4 @@ it is read before each entry is started and moved up into the table.
 
 (empty: the notes of 2026-10-06 are entries 20 to 28, those of 2026-10-07
 entries 29 to 40, those of 2026-10-08 entries 41 to 45, those of 2026-10-09
-so far entries 46 to 55)
+so far entries 46 to 56)
