@@ -184,6 +184,16 @@ public:
                  std::vector<uint8_t>&& ops);
     void removeItem(ItemId id);
     bool hasItem(ItemId id) const;
+    /// Leave an item out of the drawing, or draw it again, without
+    /// touching its content or its place in the order: what a host does
+    /// with a line while the same line in another colour is laid over
+    /// it (a highlight), so that none of it shows through the soft edge
+    /// of the one on top. The host's own state of ITS page: it is not
+    /// journaled (takeChanges), so a mirror of the page draws the item;
+    /// and defining the item again (setItem) shows it. False for an id
+    /// that is not there.
+    bool setItemHidden(ItemId id, bool hidden);
+    bool itemHidden(ItemId id) const;
     void clear();
 
     /// Wire support (sec 24). The page journals which items and images

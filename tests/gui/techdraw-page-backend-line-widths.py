@@ -1,34 +1,34 @@
-"""A TechDraw page drawn by the backend has the Qt page's line widths.
+"""A TechDraw page drawn by the backend has its lines at the widths asked for,
+fractions included, and a highlight is as wide as the line under it.
 
-docs/HandsOnQueue.md entry 61: "Techdraw bgfx rendering seems to render all
-dashed line slightly thicker than qt [...] for some line, like the cosmetic
-symmetric line in Page, Top, the hover and selection highlight shows the
-thinner dash line, which is barely visible because the underlying thickend
-line"; decided: "better make it the same as qt renderer, whcih is thinner
-and same width for highlight", "every line, dashed or not".
+"change techdraw bgfx rendering to support fractional line width, but make
+sure the highlight shows the same width" (2026-10-09).
 
 The Qt page sets the pen of an edge as a whole number of scene units, a
 tenth of a millimetre each (QGIPrimPath::setTools, QPen::setWidth(int)): a
-line asked for at 0.35 mm is drawn 0.3 mm wide. The backend drew the 0.35
-asked for. What it lays over a line that is preselected or selected is read
-off the Qt item, pen and all, so the highlight was the thinner of the two
-and the line showed either side of it.
+line asked for at 0.35 mm is drawn 0.3 mm wide. The backend draws the 0.35.
+What it lays over a line that is preselected or selected is captured off the
+Qt item; with the item's pen for its width that was the thinner of the two,
+the line showing either side of its highlight (docs/HandsOnQueue.md entry
+61: "the hover and selection highlight shows the thinner dash line, which is
+barely visible because the underlying thickend line"). The width is taken
+off the item now, which knows what it was asked for.
 
-Qt's picture is the reference here and the backend is what is switched (the
-reporter's point: the other way round is how this was missed). The page is
-drawn by Qt and then by the backend at 20 pixels to the millimetre, where a
-twentieth of a millimetre is a pixel, and the ink across four lines is
-added up -- fractions of a pixel included, so the two rasterizers'
-different edges do not count:
-  - a visible edge (0.7 mm asked for, 0.7 drawn), a hidden line (0.375,
-    Qt 0.3), a dashed cosmetic line (0.35, Qt 0.3), a section line: each as
-    wide in the backend's picture as in Qt's, within half a pixel;
-  - with the cosmetic line selected, the line under the highlight does not
-    show beside it: the ink that is neither the paper's colour nor the
-    highlight's, added up across the line, is no more than in Qt's picture
-    plus a quarter of a pixel;
-  - and the highlight itself is as wide as Qt's.
+The page is drawn by Qt and then by the backend at 20 pixels to the
+millimetre, where a twentieth of a millimetre is a pixel, and the ink across
+four lines is added up, fractions of a pixel included:
+  - a visible edge (0.7 mm asked for), a hidden line (0.375), a dashed
+    cosmetic line (0.35), a section line (0.375): each in the backend's
+    picture as wide as was asked, within half a pixel -- and Qt's noted
+    beside it, which is the whole tenths below;
+  - with the cosmetic line selected, and then the hidden line: the line is
+    the highlight's colour, as in Qt's picture; the line under the highlight
+    does not show beside it (the ink that is neither the paper's colour nor
+    the highlight's, added up across the line, is no more than in Qt's
+    picture plus a quarter of a pixel); and the highlight is as wide as the
+    line was before it was selected, within half a pixel.
 """
+import math
 import os
 import traceback
 
@@ -45,9 +45,11 @@ KEYS = (("PageRendererVg", False), ("PageRendererVgComposite", True),
 HAD = [GEN.GetBool(k, d) for k, d in KEYS]
 VIEW_X, VIEW_Y = 110.0, 120.0
 ZOOM = 20.0  # pixels to the millimetre
+COSMETIC_MM = 0.35
 STEPS = []
 SEEN = {}
-EDGE = {}
+EDGES = {}
+ASKED = {}
 
 
 def note(msg):
@@ -95,10 +97,21 @@ def cut(img, x, y, across, half):
     return [rgb(img, x + d, y) for d in range(-half, half + 1)]
 
 
+def away(p, paper):
+    """How far a pixel is from the paper's colour, the furthest channel"""
+    return max(abs(paper[c] - p[c]) for c in range(3)) / 255.0
+
+
 def ink(pixels, paper):
-    """How much of the cut is not paper, in pixels: each pixel by how far it
-    is from the paper's colour towards black, the furthest channel"""
-    return sum(max(paper[c] - p[c] for c in range(3)) / 255.0 for p in pixels)
+    """How much of the cut is not paper, in pixels"""
+    return sum(away(p, paper) for p in pixels)
+
+
+def width(pixels, paper):
+    """How wide the line in the cut is, in pixels, whatever its colour: its
+    ink, with a pixel the line covers whole counted as one"""
+    full = max(away(p, paper) for p in pixels)
+    return ink(pixels, paper) / full if full > 0.2 else 0.0
 
 
 def other_ink(pixels, paper, line):
@@ -125,9 +138,10 @@ LINES = {
     "cosmetic line": ((0.0, -2.5), True, (-6.0, 6.0)),
     "section line": ((0.0, 2.5), True, (-6.0, 6.0)),
 }
+SELECTED = ("cosmetic line", "hidden line")
 
 
-def widest(img, name, measure):
+def widest(img, name, paper):
     """The cut through the line where it holds most ink: a dashed line has
     gaps, and a cut through a dash's end holds part of one"""
     (mx, my), across, (lo, hi) = LINES[name]
@@ -138,10 +152,10 @@ def widest(img, name, measure):
         along = lo + i / ZOOM
         p = at(along, my) if across else at(mx, along)
         px = cut(img, p.x(), p.y(), across, half)
-        value = measure(px)
-        if best is None or value[0] > best[0]:
-            best = value
-    return best
+        total = ink(px, paper)
+        if best is None or total > best[0]:
+            best = (total, px)
+    return best[1]
 
 
 def measure(tag):
@@ -152,13 +166,10 @@ def measure(tag):
     paper = rgb(img, blank.x(), blank.y())
     out = {"paper": paper}
     for name in LINES:
-        def amount(px):
-            mid = px[len(px) // 2]
-            return (ink(px, paper), mid, px)
-        total, mid, px = widest(img, name, amount)
-        out[name] = (total, mid, px)
-        note("NOTE %-8s %-14s %.2f px of ink across it (%.3f mm), its middle %s" % (
-            tag, name, total, total / ZOOM, mid))
+        px = widest(img, name, paper)
+        out[name] = (width(px, paper), px[len(px) // 2])
+        note("NOTE %-8s %-14s %.2f px wide (%.3f mm), its middle %s" % (
+            tag, name, out[name][0], out[name][0] / ZOOM, out[name][1]))
     SEEN[tag] = out
 
 
@@ -212,7 +223,7 @@ def cosmetic():
     # hidden line removal has run, which is some turns after the recompute
     doc = FreeCAD.getDocument(DOC)
     doc.getObject("View").makeCosmeticLine(FreeCAD.Vector(-13, -2.5, 0),
-                                           FreeCAD.Vector(13, -2.5, 0), 2, 0.35)
+                                           FreeCAD.Vector(13, -2.5, 0), 2, COSMETIC_MM)
     doc.recompute()
 
 
@@ -225,8 +236,12 @@ def look():
     v.centerOn(QtCore.QPointF(VIEW_X * 10.0, -VIEW_Y * 10.0))
 
 
-def find_cosmetic():
+def find_edges():
+    """The view's edges that are the cosmetic line and the hidden line: by
+    where they lie, the sign of y left open (both long sides of the pocket
+    are hidden lines, and both are selected)"""
     view = FreeCAD.getDocument(DOC).getObject("View")
+    found = {"cosmetic line": [], "hidden line": []}
     for i in range(64):
         try:
             edge = view.getEdgeByIndex(i)
@@ -234,35 +249,50 @@ def find_cosmetic():
             break
         ys = [v.Point.y for v in edge.Vertexes]
         xs = [v.Point.x for v in edge.Vertexes]
-        if len(ys) == 2 and all(abs(abs(y) - 2.5) < 0.01 for y in ys) and abs(
-                abs(xs[0] - xs[1]) - 26.0) < 0.01:
-            EDGE["name"] = "Edge%d" % i
-            note("NOTE the cosmetic line is %s" % EDGE["name"])
-            return
-    raise RuntimeError("the cosmetic line was not found among the view's edges")
+        if len(ys) != 2:
+            continue
+        length = abs(xs[0] - xs[1])
+        if all(abs(abs(y) - 2.5) < 0.01 for y in ys) and abs(length - 26.0) < 0.01:
+            found["cosmetic line"].append("Edge%d" % i)
+        elif all(abs(abs(y) - 5.0) < 0.01 for y in ys) and abs(length - 16.0) < 0.01:
+            found["hidden line"].append("Edge%d" % i)
+    for name, edges in found.items():
+        if not edges:
+            raise RuntimeError("the %s was not found among the view's edges" % name)
+        note("NOTE the %s is %s" % (name, ", ".join(edges)))
+    EDGES.update(found)
+    vp = FreeCADGui.getDocument(DOC).getObject("View")
+    scale = vp.LineScale
+    ASKED["visible edge"] = float(vp.LineWidth) * scale
+    ASKED["hidden line"] = float(vp.HiddenWidth) * scale
+    ASKED["cosmetic line"] = COSMETIC_MM * scale
+    ASKED["section line"] = float(vp.HiddenWidth) * scale
+    note("NOTE asked for, mm: %s" % ASKED)
 
 
-def select():
-    FreeCADGui.Selection.clearSelection()
-    FreeCADGui.Selection.addSelection(DOC, "View", EDGE["name"])
+def select(name):
+    def run():
+        FreeCADGui.Selection.clearSelection()
+        for edge in EDGES[name]:
+            FreeCADGui.Selection.addSelection(DOC, "View", edge)
+    return run
 
 
 def deselect():
     FreeCADGui.Selection.clearSelection()
 
 
-def measure_selected(tag):
+def measure_selected(tag, name):
     def run():
         img = page_view().grab().toImage()
-        img.save(os.path.join(OUT, tag + "-selected.png"))
+        img.save(os.path.join(OUT, "%s-%s-selected.png" % (tag, name.split()[0])))
         paper = SEEN[tag]["paper"]
-        best = widest(img, "cosmetic line", lambda px: (ink(px, paper), px))
-        px = best[1]
+        px = widest(img, name, paper)
         colour = px[len(px) // 2]
-        SEEN[tag + " selected"] = (best[0], colour, other_ink(px, paper, colour))
-        note("NOTE %-8s the cosmetic line selected: %.2f px of ink across it, its middle %s, "
-             "%.2f px of it neither paper nor that colour" % (
-                 tag, best[0], colour, SEEN[tag + " selected"][2]))
+        SEEN[(tag, name)] = (width(px, paper), colour, other_ink(px, paper, colour))
+        note("NOTE %-8s the %s selected: %.2f px wide, its middle %s, "
+             "%.2f px of ink neither paper nor that colour" % (
+                 tag, name, SEEN[(tag, name)][0], colour, SEEN[(tag, name)][2]))
     return run
 
 
@@ -279,25 +309,32 @@ def compare():
         if not check("the %s is in both pictures" % name, q > 0.5 and v > 0.5,
                      "Qt %.2f px, the backend %.2f px" % (q, v)):
             continue
-        check("the %s is as wide as Qt's" % name, abs(v - q) <= 0.5,
-              "Qt %.2f px (%.3f mm), the backend %.2f px (%.3f mm)" % (
-                  q, q / ZOOM, v, v / ZOOM))
-    qs, vs = SEEN.get("qt selected"), SEEN.get("backend selected")
-    if not check("both pictures of the selected line were taken", qs and vs):
-        return
-    changed = max(abs(qs[1][c] - qt["cosmetic line"][1][c]) for c in range(3)) > 60
-    if not check("Qt's picture shows the line selected", changed,
-                 "its middle %s unselected, %s selected" % (qt["cosmetic line"][1], qs[1])):
-        return
-    check("the selected line is the highlight's colour in the backend's picture",
-          max(abs(vs[1][c] - qs[1][c]) for c in range(3)) < 40,
-          "Qt %s, the backend %s" % (qs[1], vs[1]))
-    check("the line under the highlight does not show beside it",
-          vs[2] <= qs[2] + 0.25,
-          "ink that is neither paper nor highlight: Qt %.2f px, the backend %.2f px" % (
-              qs[2], vs[2]))
-    check("the highlight is as wide as Qt's", abs(vs[0] - qs[0]) <= 0.5,
-          "Qt %.2f px, the backend %.2f px" % (qs[0], vs[0]))
+        asked = ASKED[name]
+        check("the %s is as wide as was asked for" % name,
+              abs(v - asked * ZOOM) <= 0.5,
+              "asked %.3f mm (%.2f px), the backend %.3f mm (%.2f px); Qt %.3f mm, "
+              "which sets whole tenths, %.1f" % (
+                  asked, asked * ZOOM, v / ZOOM, v, q / ZOOM,
+                  math.floor(asked * 10.0 + 1e-6) / 10.0))
+    for name in SELECTED:
+        qs, vs = SEEN.get(("qt", name)), SEEN.get(("backend", name))
+        if not check("both pictures of the selected %s were taken" % name, qs and vs):
+            continue
+        changed = max(abs(qs[1][c] - qt[name][1][c]) for c in range(3)) > 60
+        if not check("Qt's picture shows the %s selected" % name, changed,
+                     "its middle %s unselected, %s selected" % (qt[name][1], qs[1])):
+            continue
+        check("the selected %s is the highlight's colour in the backend's picture" % name,
+              max(abs(vs[1][c] - qs[1][c]) for c in range(3)) < 40,
+              "Qt %s, the backend %s" % (qs[1], vs[1]))
+        check("the %s under its highlight does not show beside it" % name,
+              vs[2] <= qs[2] + 0.25,
+              "ink that is neither paper nor highlight: Qt %.2f px, the backend %.2f px" % (
+                  qs[2], vs[2]))
+        check("the highlight of the %s is as wide as the line" % name,
+              abs(vs[0] - vg[name][0]) <= 0.5,
+              "the line %.2f px, selected %.2f px (Qt's: %.2f and %.2f)" % (
+                  vg[name][0], vs[0], qt[name][0], qs[0]))
 
 
 def finish():
@@ -334,14 +371,16 @@ def advance():
 
 
 def shot(tag):
-    return [(600, look), (1500, lambda: measure(tag)), (300, select),
-            (1500, measure_selected(tag)), (300, deselect)]
+    steps = [(600, look), (1500, lambda: measure(tag))]
+    for name in SELECTED:
+        steps += [(300, select(name)), (1500, measure_selected(tag, name)), (300, deselect)]
+    return steps
 
 
 STEPS.append((1000, make))
 STEPS.append((5000, cosmetic))
 STEPS.append((3000, look))
-STEPS.append((300, find_cosmetic))
+STEPS.append((300, find_edges))
 STEPS.extend(shot("qt"))
 STEPS.append((500, to_backend))
 STEPS.append((4000, look))

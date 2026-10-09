@@ -82,6 +82,8 @@ struct Page2D::Private
         std::vector<uint8_t> ops;
         uint16_t list = kNoList;
         bool recorded = false;
+        // left out of the drawing by the host (setItemHidden)
+        bool hidden = false;
         // Image ops bake the vg image handle into the recorded command
         // list; when any registry handle is recreated (imageEpoch
         // moves), an item that references images re-records.
@@ -1083,6 +1085,8 @@ void Page2D::setItem(ItemId id, Kind kind, uint32_t layer,
     // Damage: keep the command list, re-record it from the new ops at
     // the next render.
     item.recorded = false;
+    // what was hidden was the content this replaces
+    item.hidden = false;
     if (d->drawOrder.empty() || d->items.size() != d->drawOrder.size())
         d->orderDirty = true;
     d->wireItems.insert(id);
@@ -1104,6 +1108,21 @@ void Page2D::removeItem(ItemId id)
 bool Page2D::hasItem(ItemId id) const
 {
     return d->items.count(id) != 0;
+}
+
+bool Page2D::setItemHidden(ItemId id, bool hidden)
+{
+    auto it = d->items.find(id);
+    if (it == d->items.end())
+        return false;
+    it->second.hidden = hidden;
+    return true;
+}
+
+bool Page2D::itemHidden(ItemId id) const
+{
+    auto it = d->items.find(id);
+    return it != d->items.end() && it->second.hidden;
 }
 
 void Page2D::clear()
@@ -1574,7 +1593,7 @@ bool Page2D::render(uint16_t viewId, uint16_t width, uint16_t height)
     for (Private::Item* item : d->drawOrder) {
         // Placeholder items (a feed keeps ids contiguous by storing
         // empty content for skipped geometry) cost nothing here.
-        if (item->ops.empty())
+        if (item->ops.empty() || item->hidden)
             continue;
         if (item->recorded && item->usesImages
             && item->imageEpoch != d->imageEpoch)

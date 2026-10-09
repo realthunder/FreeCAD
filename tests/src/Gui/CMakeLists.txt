@@ -306,6 +306,12 @@ if(TARGET FreeCADRenderer)
     target_link_libraries(Page2DImage_tests_run gtest_main FreeCADRenderer)
     add_test(NAME Page2DImage_tests_run COMMAND Page2DImage_tests_run)
 
+    # An item of a 2D page left out of the drawing while its highlight is
+    # laid over it: the host's own state, not the page's content.
+    add_executable(Page2DHidden_tests_run ${CMAKE_CURRENT_SOURCE_DIR}/Page2DHidden.cpp)
+    target_link_libraries(Page2DHidden_tests_run gtest_main FreeCADRenderer)
+    add_test(NAME Page2DHidden_tests_run COMMAND Page2DHidden_tests_run)
+
     # The raster MaterialX generator. It reads the shipped data
     # library, and a bare test binary has no one to seed the renderer's
     # resource path, so the build states where it is.

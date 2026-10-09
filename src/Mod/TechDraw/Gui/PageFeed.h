@@ -117,10 +117,11 @@ public:
                              double& y);
 
     /// Feed one view's edges/vertices/faces as items at the given layer.
-    /// A line is as wide as the Qt page draws it, which cuts an edge's
-    /// pen to a whole number of scene units (0.35 mm is drawn 0.3 mm
-    /// wide) and draws one under a unit as its cosmetic pen: \a hairline
-    /// is what that is fed as, as for the tiers below.
+    /// A line is as wide as it is asked to be, fractions of a scene unit
+    /// included (the Qt page cuts an edge's pen to a whole number of
+    /// them: its 0.35 mm line is 0.3 mm wide); one asked for at no
+    /// width is a hairline, and \a hairline is what that is fed as, as
+    /// for the tiers below.
     static void feedViewPart(TechDraw::DrawViewPart* dvp, Render::Page2D& out,
                              const Style& style, uint32_t layer,
                              float hairline = PageHairline);
@@ -153,7 +154,10 @@ public:
     /// layer). Everything captured is captured again in the colours it
     /// has now; for a part view, the edges, vertices and faces that
     /// are in the preselect or select colours are laid over the ones
-    /// feedViewPart drew from App data, faces under the edges. Cheap:
+    /// feedViewPart drew from App data, faces under the edges -- and an
+    /// edge that is lit is the same line at the same width as the one
+    /// under it, which is left out of the drawing meanwhile
+    /// (Render::Page2D::setItemHidden). Cheap:
     /// no geometry is computed. A host that mirrors the page somewhere
     /// else (PageServe) does not call this: nothing would tell it when
     /// the state ends.

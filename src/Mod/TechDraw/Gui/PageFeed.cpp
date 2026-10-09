@@ -82,6 +82,7 @@
 #include "PreferencesGui.h"
 #include "QGCustomSvg.h"
 #include "QGIDecoration.h"
+#include "QGIEdge.h"
 #include "QGIFace.h"
 #include "QGIMatting.h"
 #include "QGIPrimPath.h"
@@ -237,25 +238,39 @@ struct EdgeStroke
     bool show = true;
 };
 
-// The width the Qt page draws the pen of an edge at, given the width asked
-// for in scene (Rez) units -- which is not that width. An edge, a centre
-// mark and whatever else is a QGIPrimPath hands its width to
-// QPen::setWidth(int) (QGIPrimPath::setTools): it is cut to a whole number
-// of scene units, a tenth of a millimetre each, so a line asked for at
-// 0.35 mm is drawn 0.3 mm wide; and under one unit it is Qt's cosmetic pen,
-// a device pixel at any zoom, which is what \a hairline stands for here.
+// The width an edge is drawn at, given the width asked for in scene (Rez)
+// units: that width, fractions and all, and a line asked for at no width
+// as a hairline (\a hairline is what that is fed as).
 //
-// The page is to be what Qt draws (docs/HandsOnQueue.md entry 61: "better
-// make it the same as qt renderer, whcih is thinner and same width for
-// highlight", "every line, dashed or not"). It is not a matter of a
-// twentieth of a millimetre alone: what is laid over an edge that is
-// preselected or selected is read off the Qt item, pen and all
-// (feedViewState), and over a line drawn at the width asked for, the
-// highlight was the thinner of the two.
+// Not what the Qt page draws. An edge, a centre mark and whatever else is
+// a QGIPrimPath hands its width to QPen::setWidth(int)
+// (QGIPrimPath::setTools): there it is cut to a whole number of scene
+// units, a tenth of a millimetre each, so a line asked for at 0.35 mm is
+// 0.3 mm wide, and one under a unit is Qt's cosmetic pen. For a while the
+// page was fed that width too (docs/HandsOnQueue.md entry 61); the word
+// since is "change techdraw bgfx rendering to support fractional line
+// width, but make sure the highlight shows the same width". The second
+// half is the reason entry 61 came up at all: what is laid over an edge
+// that is preselected or selected is captured off the Qt item
+// (feedViewState), and with the item's pen for its width the highlight is
+// the thinner of the two. A captured QGIPrimPath is therefore given the
+// width it was ASKED for, as here (capturePrimPath).
+//
+// The dashes are left as Qt counts them, in the width its pen has
+// (wholeUnits): a line has the same dashes in the same places whichever
+// of the two draws the page, and is only as much wider as was asked.
 float primPathWidth(double asked, float hairline)
 {
+    return asked > 0.0 ? (float)asked : hairline;
+}
+
+// What Qt's pen makes of a width asked for, which is what it counts a dash
+// pattern in: whole scene units, and none (0: a cosmetic pen, counted in
+// device pixels) for a width under one.
+float wholeUnits(double asked)
+{
     const float whole = (float)std::floor(asked);
-    return whole >= 1.0f ? whole : hairline;
+    return whole >= 1.0f ? whole : 0.0f;
 }
 
 // Per-edge appearance, mirroring QGIViewPart::drawAllEdges: cosmetic
@@ -337,13 +352,11 @@ EdgeStroke resolveEdgeStroke(TechDraw::DrawViewPart* dvp,
     if (pen.style() != Qt::SolidLine) {
         for (qreal d : pen.dashPattern())
             es.dash.pattern.push_back((float)d);
-        // The unit is the width the Qt page's pen HAS, as the stroke's
-        // is: a 0.35 mm hidden line counts its dashes in 0.3 mm -- seven
+        // The unit is the width the Qt page's pen HAS, not the stroke's:
+        // a 0.35 mm hidden line counts its dashes in 0.3 mm -- seven
         // dashes where 0.35 gives six -- and a width under one unit is a
-        // cosmetic pen, counted in pixels (unit 0), whatever the
-        // hairline is drawn as.
-        const float whole = (float)std::floor(asked);
-        es.dash.unit = whole >= 1.0f ? whole : 0.0f;
+        // cosmetic pen, counted in pixels (unit 0).
+        es.dash.unit = wholeUnits(asked);
         es.dash.offset = (float)pen.dashOffset();
         es.dash.cap = pen.capStyle() != Qt::FlatCap;
     }
@@ -668,8 +681,13 @@ void captureDashedPath(Page2D::Recorder& rec, const QPainterPath& path,
     }
 }
 
+// \a asked, where it is given (not negative), is the stroke's width in the
+// item's own units in place of the pen's: what a QGIPrimPath was asked
+// for, which its pen holds cut to a whole number (primPathWidth). The
+// dashes stay the pen's.
 void emitStyledPath(Page2D::Recorder& rec, const QPainterPath& path,
-                    const QTransform& t, const QPen& pen, const QBrush& brush)
+                    const QTransform& t, const QPen& pen, const QBrush& brush,
+                    double asked = -1.0)
 {
     if (path.isEmpty())
         return;
@@ -687,17 +705,25 @@ void emitStyledPath(Page2D::Recorder& rec, const QPainterPath& path,
     if (stroke) {
         if (!dashes.empty())
             captureDashedPath(rec, path, t, dashes);
-        rec.stroke(packColor(pen.color()), penWidth(pen, t));
+        rec.stroke(packColor(pen.color()),
+                   asked < 0.0 ? penWidth(pen, t)
+                               : primPathWidth(asked * avgScale(t),
+                                               captureHairline));
     }
 }
 
 // TechDraw's own path items (edges, dimension lines, arrows, section
 // marks, ...) derive from QGIPrimPath, which draws from its own
-// pen/brush members on a plain QGraphicsItem.
+// pen/brush members on a plain QGraphicsItem. Its pen has the width cut
+// to a whole number of scene units; the item still knows what it was
+// asked for, and that is what is drawn -- so a dimension line, a section
+// line and a leader have their fractional widths, and the highlight laid
+// over an edge is as wide as the edge feedViewPart drew (primPathWidth).
 void capturePrimPath(Page2D::Recorder& rec, QGIPrimPath* item)
 {
     emitStyledPath(rec, item->path(), item->sceneTransform(),
-                   item->currentPen(), item->currentBrush());
+                   item->currentPen(), item->currentBrush(),
+                   std::max(0.0, item->getWidth()));
 }
 
 void captureShapeItem(Page2D::Recorder& rec, QAbstractGraphicsShapeItem* item)
@@ -1606,7 +1632,7 @@ void PageFeed::feedViewPart(TechDraw::DrawViewPart* dvp, Page2D& out,
                   PreferencesGui::normalQColor()))
             : style.edgeColor;
         // the outline of a cut face is an edge of the Qt page like any
-        // other, its pen cut to whole scene units
+        // other: the width asked for
         const float sectionEdgeWidth = primPathWidth(
             vp ? Rez::guiX(vp->lineWidthScaled()) : style.edgeWidth,
             hairline);
@@ -1742,8 +1768,7 @@ void PageFeed::feedViewPart(TechDraw::DrawViewPart* dvp, Page2D& out,
                 rec.lineTo(vx + arm, vy);
                 rec.moveTo(vx, vy - arm);
                 rec.lineTo(vx, vy + arm);
-                // QGICMark is a QGIPrimPath too: half the line's width,
-                // cut to whole scene units
+                // QGICMark is a QGIPrimPath too: half the line's width
                 rec.stroke(packColor(PreferencesGui::centerQColor()),
                            primPathWidth(Rez::guiX(lineWidthMm) * 0.5,
                                          hairline));
@@ -1896,7 +1921,20 @@ void PageFeed::feedViewState(QGIView* qgiv, Page2D& out, uint32_t layer,
     if (qgiv->isVisible()) {
         for (QGraphicsItem* child : qgiv->childItems()) {
             auto prim = dynamic_cast<QGIPrimPath*>(child);
-            if (!prim || !prim->isPretty() || !child->isVisible())
+            if (!prim)
+                continue;
+            const bool lit = prim->isPretty() && child->isVisible();
+            // An edge that is lit is laid over the edges, and the one
+            // feedViewPart drew is left out of the drawing meanwhile:
+            // the two are the same line at the same width, and where
+            // the upper one's edge is soft the lower one's colour would
+            // come through it, a dark rim to the highlight.
+            if (auto edge = dynamic_cast<QGIEdge*>(child)) {
+                if (edge->getProjIndex() >= 0)
+                    out.setItemHidden(
+                        itemId(name, 'e', (uint32_t)edge->getProjIndex()), lit);
+            }
+            if (!lit)
                 continue;
             if (dynamic_cast<QGIFace*>(child))
                 capturePrimPath(faces, prim);

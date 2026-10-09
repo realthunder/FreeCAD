@@ -2691,20 +2691,34 @@ section 36 has it.
   hidden line's closed up into a continuous line. They are worked out for
   the band the page is drawn at now (`Page2D::dashedPolyline`, by Qt's
   rules: `Page2D::dashRuns`).
-- (No longer different, 2026-10-09, docs/HandsOnQueue.md entry 61.) A line
-  was as wide as it was asked to be, where the Qt page's is a whole number
-  of scene units (`QGIPrimPath::setTools` gives `QPen::setWidth` an int),
-  so that its 0.35 mm line is 0.3 mm wide; only the dashes followed Qt.
-  That showed where it mattered: what is laid over a preselected or
-  selected edge is read off the Qt item, pen and all, so the highlight was
-  the thinner of the two and the line showed either side of it. An edge,
-  the outline of a cut face and a centre mark are now fed at the width Qt
-  draws them (`primPathWidth` in `PageFeed.cpp`): cut to whole scene units,
-  and under one unit as Qt's cosmetic pen, which `feedViewPart` takes a
-  `hairline` for like the capture tiers. A PAT hatch's lines keep the
-  width asked for, as Qt's do (`QPen::setWidthF`).
-  `tests/gui/techdraw-page-backend-line-widths.py`, Qt's picture the
-  reference and the backend switched: 14 claims.
+- A line is as wide as it is ASKED to be, fractions of a scene unit and
+  all, where the Qt page's is a whole number of them
+  (`QGIPrimPath::setTools` gives `QPen::setWidth` an int), so that its
+  0.35 mm line is 0.3 mm wide. Different on purpose: "change techdraw bgfx
+  rendering to support fractional line width, but make sure the highlight
+  shows the same width" (2026-10-09). The second half is what went wrong
+  the first time the feed drew the width asked for (docs/HandsOnQueue.md
+  entry 61): what is laid over a preselected or selected edge is captured
+  off the Qt item, and with the item's PEN for its width the highlight was
+  the thinner of the two, the line showing either side of it. So the
+  width is taken off the item, not its pen, wherever a `QGIPrimPath` is
+  captured (`capturePrimPath`, `QGIPrimPath::getWidth`): an edge's
+  highlight is as wide as the edge `feedViewPart` drew, and dimension
+  lines, section lines and leaders have their fractional widths too. And
+  while an edge is lit, the one `feedViewPart` drew is left out of the
+  drawing (`Page2D::setItemHidden`, by the Qt item's index, in
+  `feedViewState`): two strokes of one width, one over the other, let the
+  lower one's colour through where the upper one's edge is soft -- a dark
+  rim a third of a pixel wide to a highlight, measured. Hidden is the
+  host's own state of its page, not content: it is not on the wire, and
+  feeding the edge again shows it. A
+  line asked for at no width is a hairline, as Qt's cosmetic pen. Only the
+  DASHES still follow Qt (`wholeUnits` in `PageFeed.cpp`): they are counted
+  in the width Qt's pen has, so a dashed line has the same dashes in the
+  same places whichever of the two draws the page. (For one day, entry 61,
+  the feed drew Qt's cut widths instead.)
+  `tests/gui/techdraw-page-backend-line-widths.py`: the widths asked for,
+  measured, and each highlight against the line under it.
 - Vertex dots are a little smaller than Qt's, which strokes them as well
   as fills them.
 - A template colourized for a dark sheet (`QGraphicsColorizeEffect` on
