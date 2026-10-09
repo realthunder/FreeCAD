@@ -2317,8 +2317,8 @@ measured on the reference assembly itself.
 - **The level-of-detail refines land while the drain is still on its
   first pass.** A refine's landing rebuilds a solid that is already drawn
   (0.07 to 0.1 s each on those solids) between the builds of solids that
-  have no picture yet. Whether the landings should wait for the drain is
-  a question of order, not put to the user yet.
+  have no picture yet. Put to the user and ruled the next day: they wait.
+  Sec 18.11.
 - The pre-mesh's work on the GUI thread has no budget of its own: about
   4 ms to make a twin of such a solid and 4 ms to land one, 5 to 7 of
   each in a call, up to 0.09 s.
@@ -2332,6 +2332,111 @@ measured on the reference assembly itself.
   properties of every captured record in one loop; and what follows its
   last slice (`finishDeferredRestore`, 12 to 14 ms) is in no slice's
   time.
+
+### 18.11 First pictures first (2026-10-09)
+
+**Ruled by the user, 2026-10-09**, on the second item sec 18.10 left: "The
+goal is to be able to show object coarse or not as soon as possible. Some
+waste of processing and even memory shall be tolerated." What a load is
+judged by is the moment every object is on the screen in SOME form.
+Refining what is already drawn comes after, and work or memory spent in
+vain on the way is not an argument against a design.
+
+**Two kinds of work want the GUI thread while a load fills in.** The
+drain of parked visuals gives an object its first picture. The landing of
+an exact mesh from the refine pool (`MeshLevelSource.cpp`, `pumpLandings`)
+rebuilds the visual of an object that already has its coarse one. They
+ran as they came. How much that costs depends on how many refinements the
+level plan wants, which is a matter of the camera: with a document's 528
+solids fitted into the view at the default `Render/LevelTolerance` of 2
+it wants almost none, and with the tolerance at 0.01 -- every source
+asking for its exact mesh, as with the camera close -- the landings took
+5.8 to 7.5 s of the GUI thread while the drain was still running.
+
+**A third kind was hidden among the second.** A shape over
+`Render/CoarseDeferFaces` faces (1000) is not tessellated by the drain at
+all: it is drawn as a 12-triangle bounding box, and its coarse mesh comes
+from the refine pool (`buildCoarseStandIn`). That mesh went through the
+same queue as the exact meshes, as one more climb, in the order it came
+-- so a part drawn as a box could stand behind the refinement of
+everything that already had a picture. It is a first picture, and is
+treated as one now.
+
+**What changed.**
+
+- `loadFilling()` is `Gui::Application::isBuildingVisuals()`: the drain
+  of parked visuals has something left. While it is true the pump holds
+  back the landing of a refinement (`LandingItem::waits`) and a climb's
+  body (a finer rung still resident, activated with a rebuild). They stay
+  on their queues, in their order.
+- What frees memory is not held: a descent's landing and its bodies run
+  as before. Holding those would trade the first picture against running
+  out of memory, which is not the waste the ruling tolerates.
+- `registerMeshLevelSource` takes a `standIn` mark, which the stand-in's
+  registration sets. Its climb is a job with `first` set: behind the
+  descents and ahead of every refinement in the queue and in the ready
+  line, and its landing does not wait.
+- The pump looks again every 50 ms at what it is holding
+  (`scheduleLandingPoll`, with a flag of its own, so that a landing that
+  may run never waits behind that timer). That is also how it learns the
+  drain is through: nothing tells it.
+- **The hand-out of refinements to the workers is not held.** They go on
+  meshing while the load fills in -- a twin made on the GUI thread for
+  each, a few milliseconds for a solid of a thousand faces -- and what
+  they make stands in memory until the drain is through. Holding that too
+  was built behind a switch and measured: the first pictures came no
+  sooner (10.2 s against 10.3 s) and the refined ones 1.6 s later. It is
+  the waste the ruling names, and it buys the refined picture being ready
+  when the drain ends.
+
+**Measured.** 8 solids over the threshold, 120 of 992 faces and 400
+spheres, the tolerance at 0.01, the libraries alternated, six loads in
+each arm; seconds from the open's return:
+
+| | every object has a picture | the last refinement has landed |
+|---|---|---|
+| software GL (the test display), before | 12.5 to 19.6, mean 16.6 | mean 21.7 |
+| ... refinements held | 8.2 to 12.3, mean 10.3 | mean 25.8 |
+| D3D12 on the Radeon, before | 17.6 to 23.5, mean 21.0 | mean 23.8 |
+| ... refinements held | 13.3 to 15.5, mean 14.1 | mean 23.5 |
+
+The refined picture is as soon as it was where frames are drawn by the
+graphics card, and 4 s later where they are drawn in software: the pump's
+own account of its work is the same in both arms (some 7 s of landings a
+load), and what grows is the time between its turns, each of which is
+followed by a frame. Held back, the landings have their frames to
+themselves where they used to share them with the drain's. Which display
+a run had was read from the context itself (`GL_RENDERER`: "llvmpipe"
+and "D3D12 (AMD Radeon(TM) Graphics)"), not taken from the variable that
+asks for it. Each later load of a process is slower than the one before
+it in every arm, which is why the ranges are wide and the arms were
+alternated.
+
+`tests/gui/first-picture-first.py` (`GuiFirstPictureFirst_tests_run`): 4
+boxed solids, 60 of 992 faces, 60 spheres, read through the level debug
+lines, which name every rebuild and what ran it. Before, three runs: 5
+checks of 6, 31 to 44 refinements landed before the drain's closing
+line, which came 7.8 to 8.5 s after the open began. After: 6 of 6, none,
+5.8 to 5.9 s. Its check that a boxed shape's coarse mesh lands while the
+drain runs passes before as well as after: it guards the hold against
+taking the first pictures with it, a state no committed tree had.
+
+**Not covered, and left.**
+
+- The order of the jobs on the workers' queue -- a boxed shape's coarse
+  mesh ahead of the refinements standing there -- is not asserted by any
+  test. On these documents the boxes are resolved 3 to 8 s after the
+  open in every arm, the old one included: they are queued early, when
+  few refinements stand before them.
+- The hold is for every document while ANY document's visuals are being
+  built. A second document opened beside one the user is working in
+  holds that one's refinements until its own drain is through.
+- While the drain itself waits for a pre-mesh (sec 18.10) the GUI thread
+  is idle and the held landings could use it. They do not.
+- A landing held is a twin with its exact mesh, alive. Nothing bounds
+  how many stand there but the refine pool's own memory floor, which
+  refuses new exact builds when the machine runs low.
+- Not measured on the reference assembly.
 
 ## 19. Progressive load against eager (2026-09-29)
 
