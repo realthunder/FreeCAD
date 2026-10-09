@@ -4340,6 +4340,40 @@ the viewer draw nothing until a fallback was added. Making it follow is
 engine work of its own; the build session will not change the browser's
 default without that. **For the reporter to say, NOT ANSWERED YET:** leave
 the browser without MSAA for now, or have that engine work done.
+**The reporter asked back, 2026-10-09 11:30:** "you mean use engine to do
+msaa by itself? how does that compare with msaa target"
+The build session did not say what work it means; the question is passed on
+to it. What the note-taker could answer from the sources, read and not run:
+- "The engine doing it by itself" exists already as one thing: idle
+  temporal accumulation (`View/Render/TemporalAccum`, off by default; in
+  the browser `?accum=N`). While the camera holds still each further frame
+  is shifted a fraction of a pixel and averaged in. It needs no
+  multisampled target, so it works on WebGL2.
+- Measured by an earlier session, in the comment of
+  `View3DInventorViewer::getNumSamples()` (`scripts/silhouette_msaa.py`, a
+  sphere's limb, the share of limb rows with real partial coverage):
+
+  | | MSAA off | MSAA 4x |
+  |---|---|---|
+  | camera moving | 0.0% | 58.8% |
+  | camera parked, accumulation on | 75.0% | 98.8% |
+
+  It converges over about 32 samples in about 2.5 s. So against an MSAA
+  target: a parked view comes out BETTER than MSAA 4x does in motion, and a
+  moving view gets nothing at all -- the staircase is there while the
+  camera moves. Its cost is GPU time while idle, which is why it is off by
+  default ("on a laptop or a tablet that is battery").
+- The MSAA target, for its part, fails in the browser on the scene target's
+  FORMAT, not on multisampling as such: "a multisampled RGBA16F colour
+  buffer is not available on every WebGL2 backend" (`docs/ThinClient.md`
+  sec 8.10c). So the other way to make the browser follow is a scene target
+  in a format WebGL2 can multisample; what that costs the picture (the
+  16 bit float target is there for colour management) is the engine work
+  the build session would have to size.
+- The same comment says why the default was 0 from 2026-08 until entry 51:
+  lines and points have computed coverage, so MSAA "stopped being what made
+  an edge-dominated CAD view look drawn rather than aliased"; what it still
+  buys is the limb of a curved face -- the reporter's observation exactly.
 
 **2026-10-09 10:16, the build session confirms (a): yes, expected** (its
 message; read from the parameter definitions, not measured). Without MSAA a
