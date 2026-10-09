@@ -52,6 +52,16 @@ Both full suites on that tree (`c820c3aea1`): ctest 790 of 790 (799
 entries, 9 disabled, 1 skipped), Python 3411 tests with the two known
 thickness failures.
 
+Pushed 2026-10-09 12:24: origin/PartDesignPort at `cc4c34356f`. Staged
+2026-10-09 12:25:13 at the same commit, after the reporter's own FreeCAD
+was closed at their word ("I am out. You close it for me. No need to
+save": its four documents closed unsaved through its console, then quit).
+Smoke-tested on the staged copy right after: `techdraw-page-before-its-
+view-providers.py` 12, `preferences-reset-all.py` 9, `face-outline-inner-
+edge.py` 8, `techdraw-page-backend-hatch.py` 39, `render-type-default-
+and-legacy.py` 13, no FAIL. So the stage has entries 46, 49, 50, 51, 53
+and the repair of entry 25's regression. PAUSED after it, as told.
+
 Evidence that does not belong in the repository is under
 `..\dl\handson\<date>\`, as before.
 
@@ -3254,7 +3264,8 @@ makes a document that opens this way (the page first, 300 objects, the
 view last, a slice of one millisecond) with a line width of 0.18 mm: on
 the staged copy the Qt page has no outline as loaded and the backend's
 lines are 8 pixels wide for the 1.8 asked, 4 claims fail; on the dev build
-14 PASS. `techdraw-page-backend-single-draw.py` 17 and
+12 PASS (the commit's message says 14, a miscount of mine: six claims
+for each renderer). `techdraw-page-backend-single-draw.py` 17 and
 `techdraw-dimension-click-no-recompute.py` 12 as before.
 
 **Kin, not looked at:** entry 47 (the 3D view empty once at the first
