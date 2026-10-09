@@ -390,9 +390,16 @@ void pumpLandings()
 {
     s_landingScheduled = false;
     Base::StateLocker pumping(s_inLandingPump);
-    const double budget =
+    double budget =
         std::max(1L, Gui::RenderParams::getLevelLandBudgetMS()) / 1000.0;
     const auto start = std::chrono::steady_clock::now();
+    // A turn grows with what the event loop costs between turns: see
+    // landingTurnBudget.
+    static std::chrono::steady_clock::time_point s_lastEnd;
+    static bool s_lastBacklog = false;
+    budget = PartGui::landingTurnBudget(
+        budget, std::chrono::duration<double>(start - s_lastEnd).count(),
+        s_lastBacklog);
     auto now = []() { return std::chrono::steady_clock::now(); };
     auto since = [](std::chrono::steady_clock::time_point t0,
                     std::chrono::steady_clock::time_point t1) {
@@ -488,6 +495,8 @@ void pumpLandings()
         scheduleLandingPump();
     if (waiting)
         scheduleLandingPoll();
+    s_lastBacklog = runnable;
+    s_lastEnd = std::chrono::steady_clock::now();
 }
 
 /// Purge every deferred hook body queued under \a tag (the tag is
@@ -1078,6 +1087,13 @@ void PartGui::queueLevelGuiWork(const void *tag, std::function<void()> body,
     }
     s_guiWork.push_back({tag, std::move(body), descent, gen});
     scheduleLandingPump();
+}
+
+double PartGui::landingTurnBudget(double budget, double away, bool backlog)
+{
+    if (!backlog || !(away > 0.0))
+        return budget;
+    return std::max(budget, std::min(0.5 * away, 5.0 * budget));
 }
 
 bool PartGui::inLandingPump()
