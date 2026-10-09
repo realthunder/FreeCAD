@@ -1501,6 +1501,17 @@ its slope; the Python prototype of these steps 4.5e-13 from it); two walls
 picked and not the fillet between them, the fillet made between the two
 drafted walls at their new angle, also at the closed-form volume.
 
+Pictures (`docs/pictures/NewDraft/`, `make_newdraft.sh`), at 15 deg with
+propagation on and off: one wall picked, where on drafts the chain all
+round (past the cones' apex, section 14) and off turns the wall alone, its
+fillets made again along its slope (1697.1089, the closed form); and two
+walls picked without the fillet between them, made again where the two
+drafted walls meet (1587.8127).
+
+![One wall, tangent propagation on and off](pictures/NewDraft/prop_rbox_a15.png)
+
+![Two walls, the fillet between them made again](pictures/NewDraft/prop_rbox_two_a15.png)
+
 The 114 drafts of section 13.5 whose face has a tangent chain, with
 `Method = New`, propagation off, the stop on:
 
