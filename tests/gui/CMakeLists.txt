@@ -1626,6 +1626,12 @@ fc_add_gui_test(GuiPreferencesResetAll_tests_run
                 preferences-reset-all.py
                 --timeout 180)
 
+# Closing the preferences does not freeze the program: each file chooser
+# had a file system model of its own, with a thread, and the dialog's
+# destruction waited for every one of them.
+fc_add_gui_test(GuiPreferencesCloseDoesNotWait_tests_run
+                preferences-close-does-not-wait.py
+                --timeout 180)
 
 # The render type alone says whether the render engine draws: "Default" is
 # the engine on the platform's backend with the render cache always 3,
