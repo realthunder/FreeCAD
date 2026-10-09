@@ -2439,7 +2439,9 @@ taking the first pictures with it, a state no committed tree had.
   few refinements stand before them.
 - The hold is for every document while ANY document's visuals are being
   built. A second document opened beside one the user is working in
-  holds that one's refinements until its own drain is through.
+  holds that one's refinements until its own drain is through. (No
+  longer, sec 18.15: the active view's document is held by its own load
+  only.)
 - While the drain itself waits for a pre-mesh (sec 18.10) the GUI thread
   is idle and the held landings could use it. They do not.
 - A landing held is a twin with its exact mesh, alive. Nothing bounds
@@ -2897,6 +2899,81 @@ the user's word.
   does with an upload, a draw or a window's composition was not
   measured, and every one of the three load-time findings could be this
   driver's alone. The Windows build is where that can be seen.
+
+### 18.15 The hold by document, and the drain in order (2026-10-09)
+
+The third thing ruled for the session after sec 18.12: "about the hold
+is global thing. prioritize on active view and later opened document."
+Read back to the user as two priorities and confirmed: the active
+view's document does not stop refining because another document is
+loading, and the later opened document's first pictures go ahead of an
+earlier load's.
+
+**What was.** Sec 18.11 holds a refinement's landing while "a load is
+still building visuals", and the question was the application's
+(`Gui::Application::isBuildingVisuals()`, true while any document's
+queue of parked visuals is not empty). So a document opened beside the
+one the user was working in stopped that one's refinements until it was
+through. And the visual drain split each slice evenly between the
+documents with visuals to build (`budget / ready`), in the order of
+their names.
+
+**What is.**
+
+- *A landing knows its document* (`LevelSourceState::doc`, from the
+  registration; carried on `LandingItem` and on a paced climb body).
+  `LoadHold`, asked once a turn of the pump, says who is held: a
+  refinement of the ACTIVE VIEW's document waits for that document's own
+  visuals only; one of any other document waits for every load, as
+  before. Whether a document has visuals left is
+  `PartGui::deferredVisualsPending`, asked of the drain's own queues.
+- *The drain serves the documents in order*: the active view's first,
+  then the later opened ahead of the earlier
+  (`DeferredVisualQueue::opened`, counted up as queues are made). The
+  slice is the first one's for as long as it can use it; what it leaves
+  -- its last visuals built, or every one of them waiting for a
+  pre-mesh -- is the next one's.
+- *A document that gets nothing is not left for dead.* One that comes to
+  its turn with nothing left of the slice builds one visual when it has
+  gone a second without (`DeferredVisualQueue::served`).
+
+**Measured**, `tests/gui/hold-per-document.py`: `Old` of 40 solids of
+992 faces, `New` of 80, `Small` of 20, every solid asking for its exact
+mesh. Four sequences, each run once to be thrown away first.
+
+| sequence | | before | after |
+|---|---|---|---|
+| 1. Old settled, New opened, Old's view active | Old's refinements landed while New loaded | 1 to 3 of 40 | 39 to 40 |
+| 2. the same, New's view active | the same | 1 to 3 | 0 to 3 |
+| 3. New then Small opened, Small's view active | visuals New built while Small built its 20 | 24 to 33 | 1 |
+| | Small filled in by | 8.1 to 8.8 s | 6.8 to 7.2 s |
+| 4. the same, New's view made active | which is through first | Small (8.1 to 8.5 s; New 9.9 to 11.5) | New (9.6 to 10.5 s; Small 12.7 to 13.5) |
+| | visuals Small built while New filled in | all 20 | 4 |
+
+The test is 6 checks of 9 on the tree before, in four runs -- its
+window and one clause were corrected between them, and the three checks
+that fail are the same three each time -- and 9 of 9 after.
+
+**What the priority costs.** In sequence 1 the load in the background
+pays for the document in front: Old's 40 landings are some 2 to 3 s of
+the GUI thread, taken while New loads, and New's first visual comes
+4.0 to 4.1 s after its open where it came 1.7 to 1.8 s after it. That is the
+ruling at work, and it is said here so that a slower background load is
+not later read as a regression.
+
+**Left.**
+
+- *The workers do not know the order.* The pre-mesh batches of two
+  loading documents and their first-picture jobs are served as they
+  came; only the GUI thread's side is ordered. A later opened document
+  behind an earlier one's batch of thousands of shapes waits for it.
+- *The view provider drain* (`Gui::Document`, the phase before any
+  visual) has its own slices per document and was not looked at.
+- *"The active view's document" is one document*: with two views of two
+  documents side by side, the one without the keyboard is in the
+  background.
+- A load in the background is slower by what the document in front
+  refines. A cap on that share was not asked for and is not there.
 
 ## 19. Progressive load against eager (2026-09-29)
 
