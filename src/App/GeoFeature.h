@@ -211,6 +211,30 @@ public:
      */
     virtual void onElementReferenceReleased(PropertyLinkBase *prop) { (void)prop; }
 
+    /** Keep a value of the geometry another branch had, for a reference
+     * taken from that branch.
+     *
+     * A reference a merge takes names its element by the number it has in
+     * the other branch's value of the geometry (docs/TransactionLog.md sec
+     * 31.22), which is no generation this feature ever had.  The feature
+     * makes a property of its own to hold that value and returns it for the
+     * caller to fill.  From then on it is what 'referrer' is answered from
+     * (searchElementCache), and it is kept as a generation of the feature's
+     * own is: while the reference is missing.
+     *
+     * @param referrer: the link property that was written against the value
+     * @param evidence: the property an earlier call returned, to answer one
+     * more referrer from; null to make one
+     * @return the property, or null where the feature keeps no such thing
+     */
+    virtual Property *retainElementEvidence(const PropertyLinkBase *referrer,
+                                            Property *evidence = nullptr)
+    {
+        (void)referrer;
+        (void)evidence;
+        return nullptr;
+    }
+
 
     /// Return the object that owns the shape that contains the give element name
     virtual DocumentObject *getElementOwner(const Data::MappedName & /*name*/) const

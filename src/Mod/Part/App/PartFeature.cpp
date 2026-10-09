@@ -1644,6 +1644,69 @@ void Feature::adoptShapeVersions()
         _shapeVersions.push_back(std::move(v.second));
 }
 
+App::Property *Feature::retainElementEvidence(const App::PropertyLinkBase *referrer,
+                                              App::Property *evidence)
+{
+    if (!referrer || !getDocument())
+        return nullptr;
+    const std::string key = referrerKey(referrer, getDocument());
+    if (key.empty())
+        return nullptr;
+    adoptShapeVersions();
+    PropertyPartShape *prop = nullptr;
+    if (evidence) {
+        for (const auto &version : _shapeVersions) {
+            if (version.materialized == evidence)
+                prop = version.materialized;
+        }
+        if (!prop)
+            return nullptr;
+    }
+    else {
+        int next = 0;
+        std::map<std::string, App::Property*> props;
+        getPropertyMap(props);
+        for (const auto &v : props)
+            next = std::max(next, baseShapeOrdinal(v.first.c_str()));
+        std::string name = baseShapePrefix() + std::to_string(++next);
+        prop = Base::freecad_dynamic_cast<PropertyPartShape>(addDynamicProperty(
+                "Part::PropertyPartShape", name.c_str(), "BaseShape",
+                "The Shape another branch had, kept for the references taken "
+                "from that branch that have been missing since",
+                App::Prop_Hidden | App::Prop_ReadOnly | App::Prop_Output | App::Prop_NoRecompute));
+        if (!prop) {
+            FC_ERR("Failed to add " << name << " to " << getFullName());
+            return nullptr;
+        }
+        prop->_publishes = false;
+        bool listed = false;
+        for (const auto &version : _shapeVersions)
+            listed = listed || version.materialized == prop;
+        if (!listed) {
+            // Last, though the list is newest first: it is no shape this
+            // feature had, and answers nobody but the referrers recorded
+            // on it (searchElementCache). The newest of the feature's own
+            // stays the newest.
+            ShapeVersion version;
+            version.prop = &Shape;
+            version.materialized = prop;
+            _shapeVersions.push_back(std::move(version));
+        }
+    }
+    // A referrer holds one generation
+    for (auto &version : _shapeVersions) {
+        if (version.materialized == prop)
+            version.referrers.insert(key);
+        else if (version.prop == &Shape)
+            version.referrers.erase(key);
+    }
+    writeShapeVersionRefs();
+    // Found again by what is kept here, the reference needs it no longer:
+    // asked as for a referrer released
+    _pendingRelease[getDocument()].insert(this);
+    return prop;
+}
+
 void Feature::materializeShapeVersions()
 {
     int next = 0;
@@ -1877,8 +1940,21 @@ Feature::searchElementCache(const std::string &element,
         return none;
     const std::string *prefix = nullptr;
     auto propShape = shapePropertyOfElement(element.c_str(), &prefix);
+    // The generation a referrer is retained on is the one it was resolved
+    // against: the element's number is a position in that one alone
+    std::string key;
+    if (referrer && getDocument()) {
+        key = referrerKey(referrer, getDocument());
+        bool held = false;
+        for (const auto &version : _shapeVersions)
+            held = held || (version.prop == propShape && version.referrers.count(key));
+        if (!held)
+            key.clear();
+    }
     for (const auto &version : _shapeVersions) {
         if (version.prop != propShape)
+            continue;
+        if (!key.empty() && !version.referrers.count(key))
             continue;
         auto res = version.searched.emplace(element, std::vector<std::string>());
         auto &names = res.first->second;

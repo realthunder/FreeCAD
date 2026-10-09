@@ -10588,6 +10588,7 @@ Document::MergeResult Document::_merge(const std::string& branch,
                 c->removeDynamicProperty(std::get<2>(key).c_str());
         });
     }
+    std::vector<Key> landed;
     {
         CaptureConfig config(*this);
         RestoreBatch batch;
@@ -10617,6 +10618,7 @@ Document::MergeResult Document::_merge(const std::string& branch,
                     return;
                 log->restoreBlobsOf(sets[kv.first]);
                 restoreValue(*prop, kv.second);
+                landed.push_back(kv.first);
                 // A label a live object of ours has comes in suffixed, by
                 // the property's own rule (sec 27.41 Q4 (a)).
                 auto obj = Base::freecad_dynamic_cast<DocumentObject>(c);
@@ -10626,6 +10628,64 @@ Document::MergeResult Document::_merge(const std::string& branch,
             });
         }
         batch.finish();
+    }
+    // Sec 31.22: a value that came in names each element by its number in
+    // theirs' shape, and the shapes here are ours', which may count their
+    // elements another way -- ours drilled one. With every value in (a path
+    // may run through a link that came with them), each takes its numbers
+    // from its mapped names, before the recompute below reads it.
+    //
+    // A mapped name ours' shape has not is of an element ours changed -- the
+    // face drilled -- or one that is gone, and is searched for by geometry
+    // as any reference whose element went: in theirs' value of the shape,
+    // which the object is given to keep. That is theirs' where its
+    // recompute wrote one, else the base's, where ours' did.
+    std::map<GeoFeature*, Property*> evidence;
+    auto writtenAgainst = [&](GeoFeature* geo, PropertyLinkBase* referrer) {
+        if (!geo || geo->getDocument() != this)
+            return false;
+        auto held = evidence.find(geo);
+        if (held != evidence.end())
+            return held->second && geo->retainElementEvidence(referrer, held->second);
+        Property*& kept = evidence[geo];
+        kept = nullptr;
+        auto shape = geo->getPropertyOfGeometry();
+        if (!shape || !shape->hasName())
+            return false;
+        const Key key {"obj", geo->getID(), shape->getName()};
+        std::string ref;
+        auto theirs = plan.theirs.values.find(key);
+        if (theirs != plan.theirs.values.end() && theirs->second.atEnd)
+            ref = theirs->second.after;
+        if (ref.empty() && !picked) {
+            auto ours = plan.ours.values.find(key);
+            if (ours != plan.ours.values.end() && ours->second.atStart)
+                ref = ours->second.before;
+        }
+        CapturedValue value;
+        if (ref.empty() || !log->readValue(ref, value))
+            return false;
+        Property* prop = geo->retainElementEvidence(referrer);
+        if (!prop)
+            return false;
+        try {
+            log->restoreBlobsOf(ref);
+            restoreValue(*prop, value);
+        }
+        catch (...) {
+            geo->removeDynamicProperty(prop->getName());
+            throw;
+        }
+        kept = prop;
+        return true;
+    };
+    for (const auto& key : landed) {
+        guarded("element names of", std::get<2>(key), [&]() {
+            auto c = container(key);
+            Property* prop = c ? c->getPropertyByName(std::get<2>(key).c_str()) : nullptr;
+            if (auto link = Base::freecad_dynamic_cast<PropertyLinkBase>(prop))
+                link->followElementReferences(writtenAgainst);
+        });
     }
     if (!moved) {
         for (long cid : removes) {

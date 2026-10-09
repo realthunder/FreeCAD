@@ -286,6 +286,54 @@ PropertyLinkBase::getExternalElementReferences(const Document *doc)
     return res;
 }
 
+namespace {
+/// How _updateElementReference() takes a mapped name the shape does not
+/// have, inside followElementReferences()
+enum class Following {
+    No,     ///< as ever: searched by geometry, else marked missing
+    Names,  ///< left as it is, and said in followMissed
+    Mark,   ///< marked missing, nothing searched
+};
+thread_local Following following = Following::No;
+thread_local bool followMissed = false;
+
+struct FollowingScope
+{
+    explicit FollowingScope(Following how) : before(following) { following = how; }
+    ~FollowingScope() { following = before; }
+    Following before;
+};
+}
+
+void PropertyLinkBase::followElementReferences(const ElementEvidence &evidence)
+{
+    if (!getContainer())
+        return;
+    // Updating one may register or release another
+    const std::vector<DocumentObject*> features(_ElementRefs.begin(), _ElementRefs.end());
+    for (auto feature : features) {
+        if (!feature || !feature->isAttachedToDocument() || !_ElementRefs.count(feature))
+            continue;
+        {
+            FollowingScope byName(Following::Names);
+            followMissed = false;
+            updateElementReference(feature, false, true);
+        }
+        if (!followMissed || !_ElementRefs.count(feature))
+            continue;
+        auto geo = Base::freecad_dynamic_cast<GeoFeature>(feature);
+        if (geo && evidence && evidence(geo, this)) {
+            // The feature has what this was written against: as any
+            // reference whose element went
+            updateElementReference(feature, false, true);
+        }
+        else {
+            FollowingScope marked(Following::Mark);
+            updateElementReference(feature, false, true);
+        }
+    }
+}
+
 void PropertyLinkBase::updateElementReferences(DocumentObject *feature, bool reverse) {
     if(!feature || !feature->isAttachedToDocument())
         return;
@@ -659,7 +707,18 @@ bool PropertyLinkBase::_updateElementReference(DocumentObject *feature,
             return false;
         }
     }
-    if ((feature == geo || restoring) && (missing || reverse)) {
+    // A value another branch wrote, taken by its names first
+    // (followElementReferences)
+    if (following == Following::Names && missing) {
+        if (!GeoFeature::hasMissingElement(sub.c_str()))
+            followMissed = true;
+        return false;
+    }
+    // Nor searched where the feature has not the shape it was written
+    // against: its old element is a number in that branch's shape, and
+    // looked up by position in a shape of this feature it is some other
+    // element.
+    if ((feature == geo || restoring) && (missing || reverse) && following != Following::Mark) {
         // If the referenced element is missing, or we are generating element
         // map for the first time, or we are re-generating the element map due
         // to version change, i.e. 'reverse', try search by geometry first
@@ -6039,6 +6098,12 @@ void PropertyXLinkSubList::afterRestore() {
 void PropertyXLinkSubList::onContainerRestored() {
     for(auto &l : _Links)
         l.onContainerRestored();
+}
+
+void PropertyXLinkSubList::followElementReferences(const ElementEvidence &evidence)
+{
+    for(auto &l : _Links)
+        l.followElementReferences(evidence);
 }
 
 void PropertyXLinkSubList::updateElementReference(DocumentObject *feature, bool reverse,bool notify) {

@@ -16478,6 +16478,105 @@ between the undo and the preview, which waits for them, and the probe had
 not. `undoneMergeAtHead()` waits (`TransactionLog::flush()`), and the test
 no longer reads the log there.
 
+### 31.22 A reference taken says the face it was given (user, 2026-10-09)
+
+31.20 met it and left it: "any PropertyLinkSub value taken from theirs
+keeps theirs' element number". **Asked (user):** "next session fix the
+merge defect".
+
+**The defect** (`probe4.py`). A box with a cylinder cut from it, the
+cylinder clear of the box. Theirs attaches a plane to the side of the cut,
+`Face2`. Ours moves the cylinder through: seven faces, and the side is
+`Face6`. The merge asks nothing, takes `AttachmentSupport` as theirs wrote
+it, and the plane sits on ours' `Face2`, the far side. Nothing fails and
+nothing is touched.
+
+**Why.** A reference is saved as the element's number with its mapped name
+beside it (the shadow). Read back with both, it is registered as it stands
+(`_registerElementReference`): the name is looked up again only when the
+shape it names changes, and a value's own arrival is no such change. On one
+history that is right -- the number and the shape were saved together. A
+merge puts theirs' number beside ours' shape. The looks had the same and
+were mended inside their own merge (31.20, `followShape`); a value merely
+taken goes through no merge of its own.
+
+**Built: by name, then by geometry, as on one history.**
+
+- *When.* In `_merge`, once every value is in and before the recompute:
+  a sub-object path may run through a link that came with the same merge,
+  and the recompute is what reads the reference. Each value that landed
+  and is a `PropertyLinkBase` is told `followElementReferences()`. Not on
+  a branch switch or any other restore: there a property may land before
+  the shape it refers to, and the two were saved together anyway.
+- *By name.* For every feature the value refers into, the ordinary update
+  (`updateElementReference(feature, false, true)`), with a mapped name the
+  shape has not left as it is for now. The side of the cut: `Face2` reads
+  `Face6`.
+- *By geometry.* A name ours' shape has not is of a face ours changed --
+  the one it drilled, `Top` now `Top;:M;CUT` -- or of one that is gone, or
+  of one theirs made and the recompute has yet to bring. On one history
+  such a reference is searched for by its geometry in the shape as it was
+  before (`searchElementCache`, docs/TopoNamingEnhance.md sec 7); measured
+  (`linear.py`), a reference to the top follows the drill so. Here "the
+  shape as it was" is theirs': the value theirs' recompute wrote, else the
+  base's where ours' wrote one. The feature is given it to keep
+  (`GeoFeature::retainElementEvidence`, built in `Part::Feature`): a
+  generation like its own, held in a `_BaseShape<N>` property the merge
+  fills from the log, with the reference recorded on it. Then the
+  ordinary update again, which searches. Found, the reference is of the
+  face found. The cost is one shape read, and only where a name missed.
+- *Missing.* Not found, the reference is marked (`?Face7`) and theirs'
+  shape stays with the feature for it, as a generation stays for any
+  reference that has gone missing: it is what the reference is searched in
+  after a save and a reopen. Found again or let go, the shape goes too,
+  asked at the end of the recompute as for a referrer released -- a merge
+  where everything was found leaves no trace of it, and its row holds the
+  values and nothing else.
+- *No evidence* -- a feature that keeps none, a row picked whose shape the
+  rows do not hold: marked missing and nothing searched. Theirs' number,
+  looked up by position in a shape of ours, is some other face.
+- *A face theirs made* is missing until the merge's recompute computes it,
+  and then found by its name, as any reference is when its shape changes.
+
+**A generation answers for the references recorded on it.**
+`Part::Feature::searchElementCache` took the newest generation holding the
+element, whoever asked. With theirs' shape among them that is wrong both
+ways: theirs' number looked up in ours' older shape, or another reference's
+number in theirs'. It is given the referrer already (7.13); where a
+generation is retained for that referrer, only such a one answers. A
+referrer recorded on none is answered as before.
+
+**Measured first, and what it showed.** The first build stopped at the
+names and marked every miss missing. `hit.py` then had the top -- drilled
+by ours -- as `?Face6`, and on reopening the file the restore searched
+`Face6` by position in the cut's own retained shape, found ours' side
+there, and changed the reference to it with a warning: a wrong face again,
+one save later. The number of a missing reference is read as a position in
+the generation kept for it, so a reference marked missing must have the
+right generation kept, which is what the above is.
+
+**Left.**
+
+- *An expression* that names an element says it in its text, which has no
+  mapped name beside it. Nothing to follow by.
+- *A feature with no element map* (an import): no name, and nothing is
+  searched for it. Its shape does not change by a recompute.
+- *The looks' own merge* (31.20) still leaves a name ours' shape has not as
+  it is. Where the looks are taken or merged, they are a value that landed
+  and are followed here too -- a face painted on theirs and drilled by
+  ours keeps its look (`hit.py`).
+
+**Tests.** Python `testAReferenceTakenNamesTheFaceItWasGiven`: a
+`PropertyLinkSub`, a `PropertyLinkSubList`, their XLink kinds and a plane's
+`AttachmentSupport`, to the side (by name) and the top (by geometry);
+nothing kept, a row of sets alone, undo, redo, the file read again.
+`testAReferenceTakenToAFaceTheirsMadeComesWithIt`: missing until the
+recompute, then the face theirs meant.
+`testAReferenceTakenToAFaceOursHasNotIsMissing`: ours has nine faces where
+theirs had seven; marked, theirs' shape kept, undone and redone, read
+again still missing, and found when the hole is made again. Probes in
+`~/.cache/txnlog-ref/`.
+
 ## 32. A shape diff: seeing what a merge or a pick would take (plan, 2026-10-06)
 
 **Asked (user):** "also plan for another feature. shape diff tool, so that

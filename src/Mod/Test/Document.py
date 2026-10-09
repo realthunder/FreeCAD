@@ -5671,6 +5671,194 @@ class TransactionBranchCases(unittest.TestCase):
         self.assertAlmostEqual(doc.Box.Shape.Volume, 2000.0)
         self.assertIsNotNone(doc.getObject("Cyl"))
 
+    def cutToReferTo(self, name, drilled):
+        # A box with a cylinder cut from it, which drills it or stands
+        # clear of it, and a small box cut from that, clear of it too; a
+        # plane to attach, and a reference of each kind.
+        doc = self.track(FreeCAD.newDocument(name))
+        doc.UndoMode = 1
+        doc.openTransaction("create")
+        box = doc.addObject("Part::Box", "Box")
+        cyl = doc.addObject("Part::Cylinder", "Cyl")
+        cyl.Radius = 2
+        cyl.Height = 30
+        cyl.Placement.Base = FreeCAD.Vector(5, 5, -10 if drilled else -40)
+        cut = doc.addObject("Part::Cut", "Cut")
+        cut.Base, cut.Tool = box, cyl
+        notch = doc.addObject("Part::Box", "Notch")
+        notch.Length = notch.Width = notch.Height = 4
+        notch.Placement.Base = FreeCAD.Vector(50, 0, 0)
+        cut2 = doc.addObject("Part::Cut", "Cut2")
+        cut2.Base, cut2.Tool = cut, notch
+        doc.addObject("Part::Plane", "Plane")
+        ref = doc.addObject("App::FeaturePython", "Ref")
+        ref.addProperty("App::PropertyLinkSub", "One")
+        ref.addProperty("App::PropertyLinkSubList", "Many")
+        ref.addProperty("App::PropertyXLinkSub", "XOne")
+        ref.addProperty("App::PropertyXLinkSubList", "XMany")
+        doc.recompute()
+        doc.commitTransaction()
+        doc.saveAs(os.path.join(self.dir, name + ".FCStd"))
+        return doc
+
+    @staticmethod
+    def faceAt(obj, **at):
+        for i, face in enumerate(obj.Shape.Faces):
+            if all(abs(getattr(face.BoundBox, k) - v) < 1e-6 for k, v in at.items()):
+                return "Face%d" % (i + 1)
+        return None
+
+    @staticmethod
+    def shapesKept(obj):
+        return [p for p in obj.PropertiesList if p.startswith("_BaseShape")]
+
+    def testAReferenceTakenNamesTheFaceItWasGiven(self):
+        # Sec 31.22: a reference theirs gave says its face by the number it
+        # has in theirs' shape, with the mapped name beside it. Ours drilled
+        # the cut, which then counts its faces another way: taken as it was
+        # written, the reference named another face of ours' shape, and the
+        # plane attached to it sat on the far side. The number is taken from
+        # the mapped name, in the shape as it is here -- the side. The top
+        # is the face ours drilled: it has another name here, and is found
+        # by its geometry, in the shape theirs had.
+        doc = self.cutToReferTo("MergeRefers", drilled=False)
+        cut, plane, ref = doc.Cut, doc.Plane, doc.Ref
+        side, top = self.faceAt(cut, XMin=10), self.faceAt(cut, ZMin=10)
+        doc.createTransactionBranch("side")
+        doc.switchTransactionBranch("side")
+        doc.openTransaction("refer")
+        plane.AttachmentSupport = [(cut, side)]
+        plane.MapMode = "FlatFace"
+        ref.One = (cut, [side])
+        ref.Many = [(cut, side), (cut, top)]
+        ref.XOne = (cut, [top])
+        ref.XMany = [(cut, (side, top))]
+        doc.recompute()
+        doc.commitTransaction()
+        self.assertAlmostEqual(plane.Placement.Base.x, 10.0)
+
+        doc.switchTransactionBranch("main")
+        doc.openTransaction("drill")
+        doc.Cyl.Placement.Base = FreeCAD.Vector(5, 5, -10)
+        doc.recompute()
+        doc.commitTransaction()
+        mine, above = self.faceAt(cut, XMin=10), self.faceAt(cut, ZMin=10)
+        self.assertNotEqual(mine, side, "the drill left the numbers as they were")
+        self.assertNotEqual(above, top, "the drill left the numbers as they were")
+
+        preview = doc.previewTransactionMerge("side")
+        self.assertEqual(preview["conflicts"], 0)
+        result = doc.mergeTransactionBranch("side")
+        self.assertEqual((result["unresolved"], result["failed"]), ([], []))
+        self.assertEqual(ref.One, (cut, [mine]))
+        self.assertEqual(ref.Many, [(cut, (mine, above))])
+        self.assertEqual(ref.XOne, (cut, [above]))
+        self.assertEqual(ref.XMany, [(cut, (mine, above))])
+        self.assertEqual(plane.AttachmentSupport, [(cut, (mine,))])
+        self.assertAlmostEqual(plane.Placement.Base.x, 10.0)
+        self.assertFalse([o.Name for o in doc.Objects if "Touched" in o.State])
+        # Theirs' shape was kept to search in, and for no longer: the row
+        # is the values taken.
+        self.assertEqual(self.shapesKept(cut), [])
+        ops = doc.getTransactionOps(result["seq"])
+        self.assertEqual({o["op"] for o in ops}, {"set"})
+        # One step, the numbers in it.
+        doc.undo()
+        self.assertEqual(ref.One, None)
+        self.assertAlmostEqual(plane.Placement.Base.x, 0.0)
+        doc.redo()
+        self.assertEqual(ref.Many, [(cut, (mine, above))])
+        self.assertAlmostEqual(plane.Placement.Base.x, 10.0)
+        # And in the file.
+        doc.save()
+        path = doc.FileName
+        FreeCAD.closeDocument(doc.Name)
+        doc = self.track(FreeCAD.openDocument(path))
+        self.assertEqual(doc.Ref.Many, [(doc.Cut, (mine, above))])
+        self.assertEqual(doc.Plane.AttachmentSupport, [(doc.Cut, (mine,))])
+
+    def testAReferenceTakenToAFaceTheirsMadeComesWithIt(self):
+        # Sec 31.22: theirs moved the notch into the corner and refers to a
+        # wall of it. Ours' shape has no such face until the merge computes
+        # it -- and ours drilled, so it is not the number theirs gave.
+        doc = self.cutToReferTo("MergeRefersToNew", drilled=False)
+        cut2, ref = doc.Cut2, doc.Ref
+        doc.createTransactionBranch("side")
+        doc.switchTransactionBranch("side")
+        doc.openTransaction("notch")
+        doc.Notch.Placement.Base = FreeCAD.Vector(8, -2, 8)
+        doc.recompute()
+        wall = self.faceAt(cut2, XMin=8, XMax=8)
+        ref.One = (cut2, [wall])
+        doc.commitTransaction()
+
+        doc.switchTransactionBranch("main")
+        doc.openTransaction("drill")
+        doc.Cyl.Placement.Base = FreeCAD.Vector(5, 5, -10)
+        doc.recompute()
+        doc.commitTransaction()
+
+        result = doc.mergeTransactionBranch("side")
+        self.assertEqual((result["unresolved"], result["failed"]), ([], []))
+        self.assertEqual(ref.One, (cut2, [self.faceAt(cut2, XMin=8, XMax=8)]))
+        self.assertEqual(self.shapesKept(cut2), [])
+
+    def testAReferenceTakenToAFaceOursHasNotIsMissing(self):
+        # Sec 31.22: theirs refers to the wall of the hole, and ours cut
+        # with the notch in place of the cylinder: there is no such face
+        # here, and the number theirs wrote is a wall of the notch. The
+        # reference is marked missing, not left on that; theirs' shape stays
+        # with the cut, which is what the reference is searched in from then
+        # on -- a file read again, the hole made again.
+        doc = self.cutToReferTo("MergeRefersToNone", drilled=True)
+        cut, ref = doc.Cut, doc.Ref
+        hole = [
+            "Face%d" % (i + 1)
+            for i, face in enumerate(cut.Shape.Faces)
+            if face.Surface.TypeId == "Part::GeomCylinder"
+        ][0]
+        doc.createTransactionBranch("side")
+        doc.switchTransactionBranch("side")
+        doc.openTransaction("refer")
+        ref.One = (cut, [hole])
+        doc.commitTransaction()
+
+        doc.switchTransactionBranch("main")
+        doc.openTransaction("a notch for the hole")
+        doc.Notch.Placement.Base = FreeCAD.Vector(8, -2, 8)
+        cut.Tool = doc.Notch
+        doc.Cut2.Tool = doc.Cyl
+        doc.Cyl.Placement.Base = FreeCAD.Vector(5, 5, -40)
+        doc.recompute()
+        doc.commitTransaction()
+        self.assertGreater(len(cut.Shape.Faces), int(hole[4:]), "theirs' number is no face here")
+
+        result = doc.mergeTransactionBranch("side")
+        self.assertEqual(result["unresolved"], [])
+        self.assertEqual(ref.One, (cut, ["?" + hole]))
+        self.assertEqual(len(self.shapesKept(cut)), 2, "the shape, and who it is kept for")
+        doc.undo()
+        self.assertEqual(self.shapesKept(cut), [])
+        doc.redo()
+        self.assertEqual(ref.One, (cut, ["?" + hole]))
+        doc.save()
+        path = doc.FileName
+        FreeCAD.closeDocument(doc.Name)
+        doc = self.track(FreeCAD.openDocument(path))
+        cut, ref = doc.Cut, doc.Ref
+        self.assertEqual(ref.One, (cut, ["?" + hole]))
+        self.assertEqual(len(self.shapesKept(cut)), 2)
+        doc.openTransaction("the hole again")
+        doc.Cut2.Tool = doc.Notch
+        cut.Tool = doc.Cyl
+        doc.Cyl.Placement.Base = FreeCAD.Vector(5, 5, -10)
+        doc.recompute()
+        doc.commitTransaction()
+        self.assertEqual(len(ref.One[1]), 1)
+        found = cut.getSubObject(ref.One[1][0])
+        self.assertEqual(found.Surface.TypeId, "Part::GeomCylinder")
+        self.assertEqual(self.shapesKept(cut), [])
+
     def testAGroupIsMergedByItsMembers(self):
         # Sec 31.8: a group two branches each put an object in was one value
         # against the other. It is the objects in it: ours, then what theirs

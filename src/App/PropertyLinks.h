@@ -28,6 +28,7 @@
 #include <boost/ptr_container/ptr_vector.hpp>
 
 #include <cinttypes>
+#include <functional>
 #include <list>
 #include <map>
 #include <memory>
@@ -190,6 +191,29 @@ public:
         (void)reverse;
         (void)notify;
     }
+
+    /** Take the element numbers of this value from its mapped names
+     *
+     * For a value written against other shapes than the ones here
+     * (docs/TransactionLog.md sec 31.22): one a merge takes from another
+     * branch names each element by its number in that branch's shape, with
+     * the mapped name beside it. Every reference that has a mapped name is
+     * looked up by it in the object as it is now, and takes the number it
+     * has there.
+     *
+     * A mapped name the shape does not have is one the other branch made,
+     * which a recompute brings, or one of an element changed or gone here.
+     * As for any reference whose element went, the element is searched for
+     * by its geometry -- in the value the reference was written against,
+     * which 'evidence' has the feature keep
+     * (GeoFeature::retainElementEvidence) and says whether it did. Found,
+     * the reference is of the element found; else, and with no evidence, it
+     * is marked missing and nothing is searched: the number is of no shape
+     * this feature ever had, and looked up by position in one of them it is
+     * some other element.
+     */
+    using ElementEvidence = std::function<bool(GeoFeature *feature, PropertyLinkBase *referrer)>;
+    virtual void followElementReferences(const ElementEvidence &evidence = {});
 
     /// Clear internal element reference registration
     void unregisterElementReference();
@@ -1561,6 +1585,8 @@ public:
 
     void updateElementReference(
             DocumentObject *feature,bool reverse=false, bool notify=false) override;
+
+    void followElementReferences(const ElementEvidence &evidence = {}) override;
 
     bool referenceChanged() const override;
 

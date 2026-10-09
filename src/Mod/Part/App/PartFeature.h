@@ -343,7 +343,11 @@ public:
      * it was before each change, newest first.  The request is answered from
      * the newest generation that holds 'element' (a mapped name goes through
      * that generation's own element map, an indexed name is taken by
-     * position), by searching the live shape for the same geometry.
+     * position), by searching the live shape for the same geometry.  Where
+     * the request names its referrer and a generation is retained for it,
+     * only such a generation answers: it is the one the reference was
+     * resolved against, and the element's number is a position in it and in
+     * no other.
      *
      * When no generation of this feature holds the element and the request
      * names its referrer, a referrer in another document is answered from
@@ -356,6 +360,17 @@ public:
                                                        const App::PropertyLinkBase *referrer = nullptr,
                                                        const App::DocumentObject *obj = nullptr,
                                                        const char *subname = nullptr) const override;
+
+    /** The shape another branch had, kept for a reference a merge took
+     * from that branch (docs/TransactionLog.md sec 31.22).
+     *
+     * A generation as any other, with the property that persists it made
+     * at once: the caller fills it. The referrer holds this one and no
+     * other; whether it is still needed is asked once the recompute is
+     * over, or at the next save, as for a referrer released.
+     */
+    App::Property *retainElementEvidence(const App::PropertyLinkBase *referrer,
+                                         App::Property *evidence = nullptr) override;
 
     const std::vector<const char*>& getElementTypes(bool all=false) const override;
 
