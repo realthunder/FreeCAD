@@ -4934,6 +4934,24 @@ The note-taker's reading, and what it leaves open:
   split that cannot make its new cell big enough is refused and says why
   (h); a border pushed past a cell's minimum closes that cell (i).
 Passed on to the build session.
+**Added by the reporter, 2026-10-09 13:58 -- point (j), a split of a view
+that cannot be shown twice:** "also split view on some view type did
+nothing, like techdraw page. for those cases, i.e. the view does not support
+multiple instance, create a 3d view instead"
+Splitting a cell whose view is a TechDraw page does nothing at all. Where
+the view of the cell being split cannot exist a second time, the new cell is
+to get a 3D VIEW instead.
+Confirmed by reading, nothing run (`ViewArea::cloneChildFor`,
+`src/Gui/ViewArea.cpp`, about line 1362): a split fills its new cell with a
+CLONE of the cell's view, and only a 3D view is cloned; for any other view
+it has nothing, and `splitCell` then returns without doing or saying
+anything. So it is not the page alone: a spreadsheet's cell, and any other
+view that is not a 3D view, behaves the same.
+Not said: the 3D view of WHICH document when the cell's view belongs to
+one (the page's own document, by the note-taker's reading); and what the
+frames show for such a split while it is dragged (the new cell as for any
+split, by the same reading).
+Passed on to the build session.
 
 ## 57. The browser viewer's split view: the same view cell logic as the desktop's (a change request) -- OPEN
 
