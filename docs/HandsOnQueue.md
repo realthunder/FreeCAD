@@ -58,6 +58,16 @@ read by the build session; 53 is reproduced, the others not started. Its
 order after 51, "unless the reporter says otherwise": 53, 54, 55, 56 with
 57 after it, 52, 30, 48, 47.
 
+**2026-10-09 22:07, the build session PAUSED; both full suites on the tree
+of `b20c825573`** (entry 63, with 61, 62, 64 and 66's freeze under it)
+ended 21:55 and 22:06: ctest 790 of 790; Python 3411 tests with the two
+known thickness failures. Sixteen GUI tests by hand around entry 63, 243
+claims, no FAIL. Nothing is pushed or staged: origin and the copy under
+test are still `6a6fa208d6`. First things next session, as the reporter
+said to it: entry 63's light handle with the Coin light manipulator, as
+the shadow light has it; the icon when the reporter has chosen; then the
+push and the stage on the reporter's go.
+
 **Where it stands, 2026-10-09 21:50: the build session PAUSES after the
 suites; NOTHING pushed or staged since 17:36**, on the reporter's words to
 it this evening, relayed by it, verbatim and in order:
