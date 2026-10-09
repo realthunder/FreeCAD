@@ -601,7 +601,7 @@ MainWindow::MainWindow(QWidget * parent, Qt::WindowFlags f)
     // Everything in the status bar goes through addStatusBarItem(), this
     // window's own widgets included. The order band is upstream's, so a
     // workbench widget registered at 550-699 lands where its author meant it
-    // to: Preselection(0) and Progress(50) on the left, then Input Hints(100),
+    // to: Preselection(0) on the left, then Progress(50), Input Hints(100),
     // [workbench 550-699], Notifications(800) and Unit System(1000) on the
     // right.
     addStatusBarItem(d->actionLabel,
@@ -616,8 +616,15 @@ MainWindow::MainWindow(QWidget * parent, Qt::WindowFlags f)
     QProgressBar* progressBar = Gui::SequencerBar::instance()->getProgressBar(statusBar());
     progressBar->setWindowTitle(tr("Progress bar"));
     progressBar->setObjectName(QStringLiteral("SB_ProgressBar"));
+    // The first of the right-hand, PERMANENT group, not the left slot that
+    // upstream's band gives it. It lands in the same place -- behind the
+    // preselection label, whose stretch takes the room before it -- but a
+    // left item is hidden by QStatusBar whenever a temporary message is up,
+    // and showStatus() puts one up for every warning and error. A recompute
+    // that warned hid the label, and a progress bar shown then had nothing
+    // before it: it sat at the left end, over the message.
     addStatusBarItem(progressBar,
-                     {"progressBar", QString(), StatusBarSlot::Left, 50, true, 0});
+                     {"progressBar", QString(), StatusBarSlot::Right, 50, true, 0});
     addStatusBarItem(d->hintLabel,
                      {"hintLabel",
                       //: A context menu action showing or hiding the input

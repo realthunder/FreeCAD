@@ -1651,3 +1651,9 @@ fc_add_gui_test(GuiFaceOutlineInnerEdge_tests_run
 fc_add_gui_test(GuiSelectionOnTopHiddenEdges_tests_run
                 selection-on-top-hidden-edges.py
                 --timeout 180)
+
+# The status bar's progress bar keeps its place while a message is up: a
+# left item is hidden with the message, and the bar then sat at the left end.
+fc_add_gui_test(GuiStatusBarProgressPlace_tests_run
+                statusbar-progress-place.py
+                --timeout 180)
