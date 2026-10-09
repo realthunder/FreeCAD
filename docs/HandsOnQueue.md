@@ -39,6 +39,13 @@ Evidence that does not belong in the repository -- configuration snapshots,
 report views, the reporter's own files -- is kept beside the dev tree under
 `..\dl\handson\<date>\`, and an entry names what it holds.
 
+**2026-10-09 11:10:** committed, local, not staged, not pushed: entries 49
+(`664d57f39b`), 50 (`4cb1ee6ad1`, `69a2028e23`) and the repair of entry
+25's regression (`1ccc6c2f60`); entry 51 is in work. Entries 52 to 57 are
+read by the build session; 53 is reproduced, the others not started. Its
+order after 51, "unless the reporter says otherwise": 53, 54, 55, 56 with
+57 after it, 52, 30, 48, 47.
+
 **2026-10-09 10:44:** nothing new committed since `6dacf21b11`; a build of
 entries 49, 50 and the repair of entry 25's regression is running. Entries
 54 and 55 are read by the build session and not started.
@@ -110,7 +117,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 22 | 2026-10-06 | omni search: `/word` with no space is an object query; `/ word` forces it (change request, decided) | STAGED 2026-10-07 14:23, fixed `5aedd5cf83`: "/word" is an object query, "/ word" forces it, a keyword in full is the keyword, the beginning of one lists modes and objects together; the browser viewer's grammar follows (its bundle not rebuilt) |
 | 23 | 2026-10-06 | omni search: every setting it collects has documentation, none of it long (an audit asked) | STAGED 2026-10-07 14:23, fixed `c7a27b5a85` (and `08b8f009aa`): 574 settings audited, 221 had no documentation and 94 ran past 400 characters; all have a short text now and a test keeps it so. Side findings for the reporter in `docs/HandsOnLog.md`. The defaults STAGED 2026-10-09 08:40, fixed `02cab053df`: OK on a fresh profile changed 23 settings and stored 2 under a wrong type, 14 of them a generated page's spin box clamping its default to 99; a test keeps it so |
 | 24 | 2026-10-06 | every `Base::Parameter` setting behind a cog helper class so the omni search finds it, applied through delayed handlers (change request, application-wide) | C++ SIDE DONE AND SETTLED; decisions applied in two rounds, `e21eff05a7` and `427ffc8d28`; PUSHED 2026-10-08 (origin/PartDesignPort = `b70cc6ebf1`, cycles `35a3bd898` first); STAGED 2026-10-09 08:40. Nothing left with the reporter. What remains of the aim is entries 41 and 42 (`docs/HandsOnLog.md`) |
-| 25 | 2026-10-06 | the outline of a highlighted face is jagged, MSAA on or off | STAGED 2026-10-09 08:40, fixed `9c9549d368`, for a face UNDER THE POINTER: the outline was cut along the face by a stencil mark that is one sample a pixel whatever the multisampling; it fades in from the cut now. On a cylinder's top face the outline's middle jumps 0.161 px from column to column where it jumped 0.330; 5 PASS and 1 FAIL before, 6 PASS after. A SELECTED face's outline is left as it was, on purpose. Not scored with multisampling on. The reporter on the staged copy, 2026-10-09 10:01: a face without an edge (a cylinder's side) is jagged too without MSAA -- that was about ordinary faces, not the outline, and is entry 51. For the build session to check, a reading of the code that the reporter did NOT report: the fix draws no outline along a curved face's silhouette, and none on a face with no boundary (`docs/HandsOnLog.md`). REGRESSION in the staged copy, found by the build session 2026-10-09 10:44: a CURVED face under the pointer (a cylinder's side, a sphere) shows NO highlight at all; repaired in its tree, not committed, for the next stage |
+| 25 | 2026-10-06 | the outline of a highlighted face is jagged, MSAA on or off | STAGED 2026-10-09 08:40, fixed `9c9549d368`, for a face UNDER THE POINTER: the outline was cut along the face by a stencil mark that is one sample a pixel whatever the multisampling; it fades in from the cut now. On a cylinder's top face the outline's middle jumps 0.161 px from column to column where it jumped 0.330; 5 PASS and 1 FAIL before, 6 PASS after. A SELECTED face's outline is left as it was, on purpose. Not scored with multisampling on. The reporter on the staged copy, 2026-10-09 10:01: a face without an edge (a cylinder's side) is jagged too without MSAA -- that was about ordinary faces, not the outline, and is entry 51. For the build session to check, a reading of the code that the reporter did NOT report: the fix draws no outline along a curved face's silhouette, and none on a face with no boundary (`docs/HandsOnLog.md`). REGRESSION in the staged copy, found by the build session 2026-10-09 10:44: a CURVED face under the pointer (a cylinder's side, a sphere) shows NO highlight at all; REPAIRED `1ccc6c2f60`, not staged: for the next stage |
 | 26 | 2026-10-06 | a long halt after enabling MSAA and pressing OK in the preferences | STAGED 2026-10-09 08:40, fixed `175ffce199`: the FIRST OK of a profile held the program 11 to 15 s (780 keys stored for the first time and taken for changes: stylesheet set again 4.2 s, every Part view provider re-meshed 3.2 s, language activated again about 2 s); 0.9 s now (`docs/HandsOnLog.md`) |
 | 27 | 2026-10-06 | the view cell menu: opens a spreadsheet nobody asked for, lists every TechDraw object, changes the wrong cell | STAGED 2026-10-07 14:23, fixed `fa2ada985c`: the menu made a spreadsheet view by asking for it, listed a page's views, and placed a pick by the general policy instead of into its cell; all three gone, spreadsheets now listed by type like pages (`docs/HandsOnLog.md`) |
 | 28 | 2026-10-06 | `scanner.FCStd` restores with a wrong colour, sometimes (the motor body light blue for light grey) | NOT REPRODUCED 2026-10-09, nothing changed, three questions for the reporter: 15 loads over 4 sessions, every colour property of all 686 objects identical and the frames the same. In the file the solid `Compound` (264 faces) and the cable `Compound001` have LIGHT BLUE as their own stored colour and are drawn light blue on every load; the containers over them carry a light grey material with its override off. So here it is the light GREY that was not seen (`docs/HandsOnLog.md`) |
@@ -134,9 +141,9 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 46 | 2026-10-09 | TechDraw drawn by the backend: the hatch of a section's cut face is bright green lines far apart, where Qt draws a fine grey-green pattern (seen by the build session on entry 36) | FIXED `6dacf21b11`, not staged, not pushed: the backend drew the hatch from one picture of the whole face, read one pixel in five at the zoom a page opens at (1.1 lines across a 17 px strip at 0.99 strength, Qt 5.0 at 0.19; now 5.0 at 0.33); a hatch is one tile laid side by side now and every picture of a page has coarser copies. Three more found by the test and fixed with it: a hatch with `HatchRotation` turned the WRONG WAY, every image drawn over all the line work of a page, the tiles showing their seams. 22 PASS and 8 FAIL before, 39 PASS after. Left: a hatch line about a pixel wide is paler than Qt's (`docs/HandsOnLog.md`) |
 | 47 | 2026-10-09 | `scanner.FCStd`: once in three sessions the FIRST load's 3D view was empty 13 s after opening, background and navigation cube only; the next two loads of that session were complete (seen by the build session on entry 28) | OPEN, seen once, not followed up |
 | 48 | 2026-10-09 | three GUI tests fail the same way on the copy staged 2026-10-07 and on today's tree: `element-color-hide.py` (2 of 624 claims), `per-view-shown-eviction.py` (1 claim), `navicube-per-view.py` (11 claims pass, then it never ends) (found by the build session) | OPEN; read only so far: `navicube-per-view.py` is no defect -- a run-by-hand script that never closes FreeCAD; the other two still not looked into (2026-10-09 10:16: a plan that runs and never evicts; it needs instrumenting) |
-| 49 | 2026-10-09 | after "Reset all" in the preferences and then the Light theme from Tools > Preset configurations > Themes, the workbench toolbar is hidden; shown again by hand it sits in the custom title bar as expected; intermittent -- the same steps a second time did not do it | FOUND 2026-10-09, reproduced every time by the build session, on the staged copy too; the fix is in its tree, uncommitted: it needs a MAXIMIZED window. The reset clears the title bar areas' entries; the toolbar manager's 100 ms timer then moves the workbench toolbar out of the title bar (a move that hides a toolbar) and asks it afterwards whether it is visible; a maximized window swaps its title bar 100 ms late and loses the race. Fix: asked before the move. The note-taker's guess (a delayed save of the window state) was NOT it |
-| 50 | 2026-10-09 | after "Reset all" in the preferences the 3D view is no longer drawn by the render engine's backend (edges jagged; the reporter's guess: render cache 0); and after a change of the MSAA setting a split of a 3D view and a TechDraw page became two tab windows | OPEN; measured in the reporter's live session, read-only: the render cache setting is not the cause (not stored, default 3) -- the renderer TYPE is `Default`, no backend, where the profile had `bgfx - Direct3D11` before the reset, and the view answers "No external renderer active"; the path is chosen only at startup. The two tabs are there as said: one view area with ONE cell, two `scanner` tab windows. DECIDED by the reporter 2026-10-09 09:48 for the first part: the type `Default` is to mean bgfx on the platform's default backend, and (09:52) a new type `Legacy` the old Coin rendering; (09:53) the type alone decides whether the engine is used -- under `Legacy` the render cache setting keeps its original meaning (default 3), under `Default` it is always 3. 2026-10-09 10:16: part (a) written by the build session and building; its three choices answered by the reporter 10:25 -- the type is a combo list on the preferences page and is kept as usual; the render cache is hidden from the page, settable by program, and ignored (route 3 always) while the engine draws. The MSAA part, the split turned into tabs, is not decided or read further. 2026-10-09 10:44: (a) reworked to that answer; (b) FOUND and fixed in the build session's tree -- the anti-aliasing handler replaces a Coin-drawn 3D view by a copy and gave the copy to the main window as a tab, the cell going with the old view; only without the engine. Nothing committed yet |
-| 51 | 2026-10-09 | a face's edge that no edge line covers (a cylinder's side against what is behind it) is a staircase with MSAA off; if that is expected, MSAA 4x by default (change request) | OPEN; (a) CONFIRMED expected by the build session 2026-10-09 10:16 (read, not measured: only lines have computed coverage; the one other smoothing, idle temporal accumulation, is off by default and smooths a still picture only); so the default of `View/AntiAliasing` goes from 0 to 3 -- for both renderer types, `Legacy` and the engine, and the other tiers follow (answered 10:11) |
+| 49 | 2026-10-09 | after "Reset all" in the preferences and then the Light theme from Tools > Preset configurations > Themes, the workbench toolbar is hidden; shown again by hand it sits in the custom title bar as expected; intermittent -- the same steps a second time did not do it | FIXED `664d57f39b`, not staged, not pushed: it needs a MAXIMIZED window and then happens every time -- the toolbar manager took the workbench toolbar out of the title bar itself (a move that hides it) and only then asked whether it was visible; it asks before the move now. `tests/gui/preferences-reset-all.py`, the reset driven through the dialog: 5 PASS and 4 FAIL on the staged copy, 9 PASS on the dev build (`docs/HandsOnLog.md`) |
+| 50 | 2026-10-09 | after "Reset all" in the preferences the 3D view is no longer drawn by the render engine's backend (edges jagged; the reporter's guess: render cache 0); and after a change of the MSAA setting a split of a 3D view and a TechDraw page became two tab windows | FIXED `4cb1ee6ad1` (a) and `69a2028e23` (b), not staged, not pushed. (a) as decided: `Default` is the engine on the platform's backend, `Legacy` is Coin; the type is a list on the Render engine page (`Default`, `Legacy`, the backends this build has) and is kept; the render cache setting is not looked at while the engine draws and not rewritten; nothing is written at startup; 13 PASS. (b) the copy that replaces a Coin-drawn view on an anti-aliasing change takes the old view's cell; 11 PASS and 7 FAIL on the staged copy, 18 PASS now (`docs/HandsOnLog.md`) |
+| 51 | 2026-10-09 | a face's edge that no edge line covers (a cylinder's side against what is behind it) is a staircase with MSAA off; if that is expected, MSAA 4x by default (change request) | OPEN; (a) CONFIRMED expected by the build session 2026-10-09 10:16 (read, not measured: only lines have computed coverage; the one other smoothing, idle temporal accumulation, is off by default and smooths a still picture only); so the default of `View/AntiAliasing` goes from 0 to 3 -- for both renderer types, `Legacy` and the engine, and the other tiers follow (answered 10:11). IN WORK 2026-10-09 11:10, building. NOT done, for the reporter: the BROWSER viewer does not follow -- on WebGL2 its multisampled scene target cannot be created, and making it follow is engine work of its own |
 | 52 | 2026-10-09 | a benchmark asked: with face rims a staircase without MSAA anyway, is the line shader (lines with computed coverage) still needed, and what does it cost in rendering (from entry 51) | OPEN, a measurement for the build session; nothing run. The reporter's rule, 10:17: if it is what gets a fractional line width right, it is still needed -- no frame-time threshold |
 | 53 | 2026-10-09 | `scanner.FCStd`: answered No to the recompute question at opening, the TechDraw page that opens by itself (`Page003`) shows only part of the geometry -- it varies: sometimes none, once only `Top002`, with thickened edges; the dimensions ARE drawn, the views' geometry is what is missing -- with the page drawn by Qt only, it seems; and BOTH renderers draw the lines thickened until a recompute; after a recompute the page is complete and the lines normal | REPRODUCED 2026-10-09 on the staged copy at the first try, cause not found yet: as loaded and drawn by Qt, `Page003` shows its dimensions and the views' labels, NO geometry in the three views of the projection group (`Bottom004`, `Front003`, `Top002`), and `Section002` with thick lines; after a recompute all four are complete and the lines thin. The reporter: the missing geometry is with Qt's drawing only, the thickened lines with both renderers |
 | 54 | 2026-10-09 | a highlight shown on top: under the pointer (preselection) its edges respect the depth against the faces, an edge behind a face is dimmed; a full SELECTION does not, its edges are drawn as if there were no depth test | OPEN; nothing run |
@@ -2068,7 +2075,13 @@ handler asked for in (c) has a precedent in `ParamHandlers::addDelayedHandler`
 (used by `DlgSettings3DViewImp::attachObserver`) and in the generated
 classes' own `on...Changed` hooks.
 
-## 25. The outline of a highlighted face is jagged, MSAA or not -- STAGED 2026-10-09, fixed `9c9549d368` -- with a REGRESSION in the staged copy: a curved face under the pointer shows no highlight; repaired in the build session's tree, not committed (see `docs/HandsOnLog.md`)
+## 25. The outline of a highlighted face is jagged, MSAA or not -- STAGED 2026-10-09, fixed `9c9549d368` -- with a REGRESSION in the staged copy (a curved face under the pointer shows no highlight), REPAIRED `1ccc6c2f60`, not staged (see `docs/HandsOnLog.md`)
+
+**2026-10-09 11:10, the build session: the regression is REPAIRED,
+`1ccc6c2f60`** (its message; its log, `fe584682e9`, local). Not staged, not
+pushed -- so the copy under test still has it: there a cylinder's side or a
+sphere under the pointer shows no highlight. On the dev build, 8 PASS with
+two new claims for a curved face.
 
 **2026-10-09 10:44, the build session: a REGRESSION of the fix, and it is
 in the staged copy** (its message; found after the note-taker's reading of
@@ -4000,7 +4013,14 @@ copy staged 2026-10-07 as on today's tree. Not looked into.
 - `navicube-per-view.py`: passes 11 claims, then never ends.
 Not said yet by the reporter: whether and when they are to be looked at.
 
-## 49. After "Reset all" and then the Light theme, the workbench toolbar is hidden -- FOUND 2026-10-09, the fix in the build session's tree, uncommitted
+## 49. After "Reset all" and then the Light theme, the workbench toolbar is hidden -- FIXED `664d57f39b`, not staged (see `docs/HandsOnLog.md`)
+
+**2026-10-09 11:10, the build session: FIXED `664d57f39b`** (its message; its log,
+`fe584682e9`, local). Not staged, not pushed. As found: it needs a maximized
+window, and then it happens every time; the toolbar manager is asked whether
+the toolbar is visible BEFORE it moves it out of the title bar.
+Scored: `tests/gui/preferences-reset-all.py`, the reset driven through the
+dialog, 5 PASS and 4 FAIL on the staged copy, 9 PASS on the dev build.
 
 **2026-10-09 10:16, the build session: FOUND, reproduced every time, on the
 staged copy too; its fix is in the tree, not committed yet** (its message).
@@ -4118,7 +4138,19 @@ whether anything was clicked or moved between the first reset and the first
 theme (a toolbar, a panel, the window). The second answered 2026-10-09
 09:38, at the top of this entry: nothing was.
 
-## 50. After "Reset all" the 3D view is drawn without the backend; then a change of MSAA turns a split into tabs -- OPEN, measured in the live session; (a) DECIDED: `Default` means bgfx on the platform's backend, `Legacy` the old Coin rendering
+## 50. After "Reset all" the 3D view is drawn without the backend; then a change of MSAA turns a split into tabs -- FIXED `4cb1ee6ad1` (a) and `69a2028e23` (b), not staged (see `docs/HandsOnLog.md`)
+
+**2026-10-09 11:10, the build session: both parts FIXED, `4cb1ee6ad1` (a) and
+`69a2028e23` (b)** (its message; its log, `fe584682e9`, local). Not staged,
+not pushed.
+- (a), as decided and as answered: `Default` is the engine on the platform's
+  backend, `Legacy` is Coin; the type is a list on the Render engine page
+  and is kept; the render cache setting is not looked at while the engine
+  draws and not rewritten; nothing is written at startup.
+  `tests/gui/render-type-default-and-legacy.py`, 13 PASS.
+- (b): the copy of a Coin-drawn view takes the old view's cell.
+  `tests/gui/antialiasing-change-keeps-the-cells.py`, 11 PASS and 7 FAIL on
+  the staged copy, 18 PASS now.
 
 **2026-10-09 10:44, the build session: (a) reworked to the reporter's
 answer, and (b) FOUND and fixed in its tree; nothing committed yet** (its
@@ -4294,7 +4326,20 @@ Not said yet by the reporter: which MSAA values were tried and in what
 order, and whether the split was the two cells side by side that a page
 gets by default.
 
-## 51. Faces show a staircase where no edge line covers them, MSAA off; MSAA 4x by default (a change request) -- OPEN; (a) confirmed expected, (b) decided, not started
+## 51. Faces show a staircase where no edge line covers them, MSAA off; MSAA 4x by default (a change request) -- OPEN; (a) confirmed expected, (b) decided and in work; the browser viewer does not follow, for the reporter to say
+
+**2026-10-09 11:10, the build session: (b) is in work, building** (its message).
+The default is 3, MSAA 4x, for both render types; the preferences page shows
+it; the GUI test harness and the golden render scenes state "no
+multisampling" for themselves, since their pictures were made without.
+**NOT done, and for the reporter to know -- it goes against "other tiers
+follow too":** the BROWSER viewer does not follow. Its MSAA is off by
+default for a measured reason written in its source: on WebGL2 a
+multisampled RGBA16F scene target cannot be created, and asking for it made
+the viewer draw nothing until a fallback was added. Making it follow is
+engine work of its own; the build session will not change the browser's
+default without that. **For the reporter to say, NOT ANSWERED YET:** leave
+the browser without MSAA for now, or have that engine work done.
 
 **2026-10-09 10:16, the build session confirms (a): yes, expected** (its
 message; read from the parameter definitions, not measured). Without MSAA a
