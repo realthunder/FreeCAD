@@ -3135,6 +3135,20 @@ struct GpuGeometry
     bgfx::VertexBufferHandle creaseEdgeInst = BGFX_INVALID_HANDLE;
     std::vector<uint32_t> creaseEdgeFirst;
     bool creaseEdgeBuilt = false;
+    /// The boundary of ONE part of the mesh -- a face: the triangle edges
+    /// of its index range that only one of its triangles uses, as line
+    /// instances (the triEdgeInst layout), and their end points as
+    /// corner instances (the triCornerInst layout). What the feathered
+    /// face outline draws instead of every triangle edge
+    /// (ensurePartBoundary, BGFXView::submitOutlineEdges). Kept on the
+    /// CPU and uploaded as transient instance data: a part is a face, a
+    /// session highlights thousands of them, and a vertex buffer each
+    /// would drain the handle pool.
+    struct PartBoundary {
+        std::vector<float> edges;
+        std::vector<float> corners;
+    };
+    std::unordered_map<uint64_t, PartBoundary> partBoundary;
     /// Texture-coordinate stream of textured draws, built lazily on
     /// first textured use.
     bgfx::VertexBufferHandle texcoord = BGFX_INVALID_HANDLE;
@@ -3167,6 +3181,7 @@ struct GpuGeometry
         creaseEdgeFirst.clear();
         creaseEdgeFirst.shrink_to_fit();
         creaseEdgeBuilt = false;
+        partBoundary.clear();
         for (auto vb : {&vbh, &triEdgeInst, &triCornerInst, &creaseEdgeInst,
                         &texcoord}) {
             if (bgfx::isValid(*vb)) {
@@ -3314,6 +3329,110 @@ struct GpuGeometry
         triCornerInst = bgfx::createVertexBuffer(
             cmem, LineQuadVertex::ms_pointInstLayout);
         track(cmem->size);
+    }
+
+    /// The boundary of the part whose triangles are the index range
+    /// [start, start + count). An edge is on it when one triangle of the
+    /// range uses it and no other -- compared by POSITION, so the seam of
+    /// a closed face, whose vertices are doubled, is not a boundary.
+    ///
+    /// Why the feathered outline wants this and not every triangle edge:
+    /// its lines fade in from their own centre line (fc_flat_fs.sh), and
+    /// an interior edge reaches past the boundary where it arrives at it
+    /// -- by half the outline's width, at full strength, right where the
+    /// boundary's own line is still fading in. A hard blob at every
+    /// vertex of the boundary, which is what the fade is there to remove.
+    const PartBoundary &ensurePartBoundary(const Render::MeshData &mesh,
+                                           int start, int count)
+    {
+        const uint64_t key = (uint64_t(uint32_t(start)) << 32) | uint32_t(count);
+        auto found = partBoundary.find(key);
+        if (found != partBoundary.end())
+            return found->second;
+        // A handful of highlighted faces at a time; a selection of
+        // everything refills it once and keeps it.
+        if (partBoundary.size() >= 4096)
+            partBoundary.clear();
+        PartBoundary &out = partBoundary[key];
+
+        struct EdgeKey {
+            uint32_t v[6];
+            bool operator==(const EdgeKey &o) const
+            {
+                return std::memcmp(v, o.v, sizeof(v)) == 0;
+            }
+        };
+        struct EdgeHash {
+            size_t operator()(const EdgeKey &k) const
+            {
+                uint64_t h = 1469598103934665603ull;
+                for (uint32_t x : k.v) {
+                    h ^= x;
+                    h *= 1099511628211ull;
+                }
+                return size_t(h);
+            }
+        };
+        auto bits = [&mesh](int32_t iv, uint32_t *dst) {
+            for (int c = 0; c < 3; ++c) {
+                // + 0: a negative zero is the same place as a positive one
+                const float f = mesh.positions[iv*3 + c] + 0.0f;
+                std::memcpy(dst + c, &f, sizeof(f));
+            }
+        };
+
+        const int tris = count / 3;
+        // First index position an edge was seen at; -1 once another
+        // triangle used it too.
+        std::unordered_map<EdgeKey, int32_t, EdgeHash> seen;
+        seen.reserve(size_t(tris) * 3);
+        for (int t = 0; t < tris; ++t) {
+            for (int e = 0; e < 3; ++e) {
+                const int i = start + t*3 + e;
+                const int32_t ia = mesh.triangleIndices[i];
+                const int32_t ib = mesh.triangleIndices[start + t*3 + (e + 1) % 3];
+                uint32_t a[3], b[3];
+                bits(ia, a);
+                bits(ib, b);
+                const int order = std::memcmp(a, b, sizeof(a));
+                if (order == 0)
+                    continue;  // no length: not an edge
+                EdgeKey k;
+                std::memcpy(k.v, order < 0 ? a : b, sizeof(a));
+                std::memcpy(k.v + 3, order < 0 ? b : a, sizeof(a));
+                auto it = seen.find(k);
+                if (it == seen.end())
+                    seen.emplace(k, int32_t(i));
+                else
+                    it->second = -1;
+            }
+        }
+        // In index order, not the hash table's: the outline's lines keep
+        // each other out of the pixels they have drawn, so the order
+        // they come in is part of the picture.
+        std::vector<int32_t> kept;
+        for (const auto &v : seen) {
+            if (v.second >= 0)
+                kept.push_back(v.second);
+        }
+        std::sort(kept.begin(), kept.end());
+        out.edges.reserve(kept.size() * 16);
+        out.corners.reserve(kept.size() * 16);
+        for (int32_t i : kept) {
+            const int t = (i - start) / 3, e = (i - start) % 3;
+            const int32_t ends[2] = {
+                mesh.triangleIndices[i],
+                mesh.triangleIndices[start + t*3 + (e + 1) % 3]};
+            for (int32_t iv : ends) {
+                const float *p = mesh.positions + iv*3;
+                out.edges.insert(out.edges.end(), {p[0], p[1], p[2], 0.0f});
+                out.corners.insert(out.corners.end(),
+                                   {p[0], p[1], p[2], 0.0f, 1.0f, 1.0f, 1.0f, 1.0f});
+            }
+            out.edges.insert(out.edges.end(),
+                             {1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f});
+        }
+        return out;
     }
 
     /// The polygon boundary of the tessellated surface: triEdgeInst
@@ -6177,6 +6296,16 @@ public:
         /// still blend over hidden outlines.
         bool depthWrite = false;
         bool caps = true;               ///< corner point caps
+        /// The outline of ONE face, with an inner edge that is not a
+        /// staircase. The stencil mark that cuts the lines along the
+        /// face's boundary is one sample a pixel, whatever the
+        /// multisampling; with this the lines are the boundary's alone
+        /// (GpuGeometry::ensurePartBoundary), fade in from their centre
+        /// line, and each keeps the others and the caps out of the
+        /// pixels it has drawn. Needs start/count to be the face's
+        /// triangles; falls back to the plain outline when the frame's
+        /// instance data runs out.
+        bool feather = false;
         int start = 0;                  ///< triangle index range;
         int count = 0;                  ///< count 0 = the whole buffer
     };

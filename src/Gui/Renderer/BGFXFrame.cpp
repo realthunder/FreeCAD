@@ -6356,6 +6356,14 @@ bool BGFXRenderer::Private::render(const QColor &col,
         spec.width = draw.material.outlinewidth;
         spec.depthTest = false;
         spec.caps = true;
+        // One face, a known index range: its inner edge can be faded in
+        // instead of being cut to a staircase (docs/HandsOnQueue.md
+        // entry 25) -- where the face's own fill is not drawn over it. With
+        // the fill, as for a selected face by default, the cut and the fill
+        // end on the very same pixels and hide the model's edge between
+        // them; a fade there lets that edge through, as dark dots along
+        // the outline (seen, on the first build of this).
+        spec.feather = draw.indexCount >= 3 && draw.material.outlineonly;
         spec.start = draw.indexStart;
         spec.count = draw.indexCount;
         return spec;

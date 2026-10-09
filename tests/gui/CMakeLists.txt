@@ -1604,3 +1604,9 @@ fc_add_gui_test(GuiViewCellDragFrames_tests_run
 fc_add_gui_test(GuiTechDrawPageBackendDashes_tests_run
                 techdraw-page-backend-dashes.py
                 --timeout 180)
+
+# The outline of a highlighted face has no staircase on its inner edge: the
+# stencil cut of the face is one sample a pixel, the lines fade in from it.
+fc_add_gui_test(GuiFaceOutlineInnerEdge_tests_run
+                face-outline-inner-edge.py
+                --timeout 180)

@@ -736,6 +736,24 @@ Accumulation is the other half: it amortizes samples over *time*, so N
 frames approximate N-times supersampling of the whole pipeline, at a
 constant per-frame cost instead of MSAA's cost in bandwidth and resolve.
 
+**A face's outline does its own.** The outline of a highlighted face is
+the outer half of a thick line along the face's boundary, the inner half
+cut away by a stencil mark of the face (`BGFXView::submitOutline`). The
+line's outer edge has analytic coverage like every line; the cut is one
+sample a pixel, and against the model's dark edge it showed as a
+staircase with or without MSAA ("jagged regardless whether msaa is used
+or not", docs/HandsOnQueue.md entry 25). Where the face's own fill is not
+drawn over it -- a face under the pointer, by default -- the outline is
+drawn feathered (`OutlineSpec::feather`): only the boundary's own edges
+(`GpuGeometry::ensurePartBoundary`; an interior triangle edge reaches
+past the boundary where it meets it), coverage that rises from nothing at
+the cut to whole one pixel out (`fc_flat_fs.sh`, an alpha ceiling of 2 or
+more), and lines that mark the stencil as they draw, so that neither a
+neighbouring line nor a corner cap blends over the fade. A selected face
+is filled as well; there the cut and the fill end on the same pixels and
+hide the model's edge between them, and a fade lets it through as dark
+dots -- so that outline is left cut.
+
 **What MSAA costs the scene depth.** A multisampled depth attachment
 cannot be resolved, and bgfx refuses a framebuffer whose multisampled
 depth is neither write-only nor sampled per sample. So the scene depth is
