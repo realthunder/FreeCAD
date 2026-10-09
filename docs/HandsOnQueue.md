@@ -135,6 +135,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 51 | 2026-10-09 | a face's edge that no edge line covers (a cylinder's side against what is behind it) is a staircase with MSAA off; if that is expected, MSAA 4x by default (change request) | OPEN; (a) CONFIRMED expected by the build session 2026-10-09 10:16 (read, not measured: only lines have computed coverage; the one other smoothing, idle temporal accumulation, is off by default and smooths a still picture only); so the default of `View/AntiAliasing` goes from 0 to 3 -- for both renderer types, `Legacy` and the engine, and the other tiers follow (answered 10:11) |
 | 52 | 2026-10-09 | a benchmark asked: with face rims a staircase without MSAA anyway, is the line shader (lines with computed coverage) still needed, and what does it cost in rendering (from entry 51) | OPEN, a measurement for the build session; nothing run. The reporter's rule, 10:17: if it is what gets a fractional line width right, it is still needed -- no frame-time threshold |
 | 53 | 2026-10-09 | `scanner.FCStd`: answered No to the recompute question at opening, the TechDraw page that opens by itself shows only part of the geometry | OPEN; the report log of the open is kept, nothing run |
+| 54 | 2026-10-09 | a highlight shown on top: under the pointer (preselection) its edges respect the depth against the faces, an edge behind a face is dimmed; a full SELECTION does not, its edges are drawn as if there were no depth test | OPEN; nothing run |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -4422,6 +4423,41 @@ or some of a view's lines, the hidden ones, the dimensions; whether the
 page is complete once the document has been recomputed; and whether it is
 the same with the page drawn by Qt and by the backend.
 
+## 54. A selection shown on top draws its edges as if with no depth test; the preselection dims the ones behind a face -- OPEN
+
+**2026-10-09 10:32, reported:** "new defect. preselection show on top
+highlight will renders edge that respect its depth regarding to the faces.
+so edge behind the face got dimmed. but full selection highlight does not do
+the same. the edges are draw as if no depth test"
+With highlights shown on top of the scene:
+- the highlight under the pointer (preselection) draws its edges with
+  regard to their depth against the faces: an edge that lies behind a face
+  is dimmed;
+- the highlight of a full selection does not: all its edges are drawn alike,
+  front or behind, as if there were no depth test.
+Wanted, as the note-taker reads "new defect": the selection treats its
+hidden edges as the preselection does.
+On the copy staged 2026-10-09 08:40 (`9bcbdc191d`), the render engine
+drawing (`bgfx - Direct3D11`, checked in the live session at 10:05).
+
+**Pointers, read from the source by the note-taker, nothing run:** the
+selection has settings of its own for the hidden part of a line shown on
+top, in `src/Gui/ViewParams.py`: `SelectionLinePattern` ("dash pattern of
+the hidden part of a selected line that is shown on top of the scene ... 0
+draws it solid", default 0) and `SelectionHiddenLineWidth` (default 1.0).
+So the selection does know which part of a line is hidden, and by default
+draws that part SOLID -- which would look exactly like no depth test. The
+preselection's dimming is another means (a fade, not a pattern). Whether
+the selection's hidden part is drawn through these two settings in the
+render engine, and why it is not dimmed like the preselection's, was not
+read. `ShowSelectionOnTop` and `ShowPreSelectedFaceOnTop` are the two
+switches for "on top"; `HiddenLineSelectionOnTop` is beside them.
+
+Not said yet by the reporter: what was selected and what was under the
+pointer (a face, an edge, a whole object); whether the dimming of the
+preselection is the look wanted for the selection too, or a pattern; and
+whether it is the same under the `Legacy` type.
+
 ## Inbox
 
 Notes not sorted into an entry yet. Add a line here at any time, in any words;
@@ -4429,4 +4465,4 @@ it is read before each entry is started and moved up into the table.
 
 (empty: the notes of 2026-10-06 are entries 20 to 28, those of 2026-10-07
 entries 29 to 40, those of 2026-10-08 entries 41 to 45, those of 2026-10-09
-so far entries 46 to 53)
+so far entries 46 to 54)
