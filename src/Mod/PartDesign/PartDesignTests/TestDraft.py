@@ -557,6 +557,58 @@ class TestDraft(unittest.TestCase):
             self.assertNotIn("Invalid", draft.State, method)
             self.assertAlmostEqual(draft.Shape.Volume, 2000 - 1000 * t, 6, method)
 
+    def testDraftFilletAcrossPull(self):
+        # A 20x10x10 block with the top edge of its end wall x=20 filleted 2
+        # by a Part::Fillet. The fillet's axis runs along y, square to the
+        # pull direction: no draft turns it into a cone, and the classic
+        # draft refuses. With tangent propagation on, the new draft takes it
+        # off, drafts the wall and makes it again at its radius where the
+        # wall now meets the top (docs/NewDraft.md section 19). In xz the
+        # profile is the trapezoid less the fillet's corner at phi, the
+        # wall's angle with the top.
+        box = self.Doc.addObject("Part::Box", "Box")
+        box.Length, box.Width, box.Height = 20, 10, 10
+        self.Doc.recompute()
+        edge = [i for i, e in enumerate(box.Shape.Edges, 1)
+                if abs(e.BoundBox.XMin - 20) < 1e-9 and abs(e.BoundBox.XMax - 20) < 1e-9
+                and abs(e.BoundBox.ZMin - 10) < 1e-9]
+        self.assertEqual(len(edge), 1)
+        fillet = self.Doc.addObject("Part::Fillet", "Fillet")
+        fillet.Base = box
+        fillet.Edges = [(edge[0], 2.0, 2.0)]
+        self.Doc.recompute()
+        shape = fillet.Shape
+        body = self.Doc.addObject("PartDesign::Body", "Body")
+        body.BaseFeature = fillet
+        self.Doc.recompute()
+        wall = ["Face%d" % i for i, f in enumerate(shape.Faces, 1) if self.planeAt("X", 20)(f)]
+        floor = ["Face%d" % i for i, f in enumerate(shape.Faces, 1) if self.planeAt("Z", 0)(f)]
+        for method, angle in (("Classic", 5), ("Auto", 5), ("Auto", -15), ("New", 15)):
+            draft = body.newObject("PartDesign::Draft", "Draft")
+            draft.Base = (body.BaseFeature, wall)
+            draft.NeutralPlane = (body.BaseFeature, floor)
+            draft.Angle = angle
+            draft.Method = method
+            self.Doc.recompute()
+            if method == "Classic":
+                self.assertIn("Invalid", draft.State)
+            else:
+                phi = math.pi / 2 + math.radians(angle)
+                volume = 10 * (200 - 50 * math.tan(math.radians(angle))
+                               - 4 * (1 / math.tan(phi / 2) - (math.pi - phi) / 2))
+                self.assertNotIn("Invalid", draft.State, method)
+                self.assertTrue(draft.Shape.isValid(), method)
+                self.assertAlmostEqual(draft.Shape.Volume, volume, 6, method)
+                self.assertEqual(len(draft.Shape.Faces), 7, method)
+                draft.Shape.check(True)
+                # the fillet made again keeps the old fillet's name
+                cylinders = ["Face%d" % i for i, f in enumerate(draft.Shape.Faces, 1)
+                             if f.Surface.__class__.__name__ == "Cylinder"]
+                self.assertEqual(len(cylinders), 1, method)
+                self.assertIn(";:M;DFT", draft.Shape.getElementMappedName(cylinders[0]))
+            body.removeObject(draft)
+            self.Doc.removeObject(draft.Name)
+
     @staticmethod
     def roundedRect(x0, y0, w, d, r, z):
         """A w x d rectangle with corners rounded r, at height z."""
