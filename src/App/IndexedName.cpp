@@ -27,6 +27,7 @@
 
 #ifndef _PreComp_
 # include <cstdlib>
+# include <mutex>
 # include <unordered_set>
 #endif
 
@@ -74,8 +75,11 @@ void IndexedName::set(
     const std::vector<const char*>& allowedNames,
     bool allowOthers)
 {
-    // Storage for names that we weren't given external storage for
-    static std::unordered_set<ByteArray, ByteArrayHasher> NameSet;
+    // Storage for names that we weren't given external storage for. Never
+    // destroyed: the thread that keeps the transaction log writes a shape's
+    // names while the process exits, after the statics of this file would
+    // have gone, and a name's text is pointed at from wherever it was given.
+    static auto& NameSet = *new std::unordered_set<ByteArray, ByteArrayHasher>;
 
     if (length < 0) {
         length = static_cast<int>(std::strlen(name));
@@ -107,6 +111,15 @@ void IndexedName::set(
     // If the type was NOT in the list of allowedNames, but the caller has set the allowOthers flag to
     // true, then add the new type to the static NameSet (if it is not already there).
     if (allowOthers) {
+        // One set for every thread: a shape's names are written by the
+        // thread that keeps the transaction log while the document's own
+        // names a shape, and an insert beside a lookup is a table read while
+        // it is rebuilt. The text a name is given stays where it is, so the
+        // lock is held for the set alone. A mapped name that is letters and
+        // no more -- "Front_Left", a primitive's -- comes here when it is
+        // saved, to be told from one that is a kind and a number.
+        static auto& NameSetLock = *new std::mutex;
+        std::lock_guard<std::mutex> lock(NameSetLock);
         auto res = NameSet.insert(ByteArray(QByteArray::fromRawData(name, suffixPosition)));
         if (res.second /*The insert succeeded (the type was new)*/) {
             // Make sure that the data in the set is a unique (unshared) copy of the text
