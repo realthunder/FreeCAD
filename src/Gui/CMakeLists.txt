@@ -1490,6 +1490,7 @@ SET(FreeCADGui_CPP_SRCS
     Utilities.cpp
     LiveViewInteraction.cpp
     RenderTiming.cpp
+    TurnBudget.cpp
     WaitCursor.cpp
     ManualAlignment.cpp
     TransactionObject.cpp
@@ -1536,6 +1537,7 @@ SET(FreeCADGui_SRCS
     Utilities.h
     LiveViewInteraction.h
     RenderTiming.h
+    TurnBudget.h
     WaitCursor.h
     ManualAlignment.h
     TransactionObject.h

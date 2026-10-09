@@ -37,9 +37,15 @@ What is asserted:
      landing or two get in before the load has parked its first visual);
   3. while Small was filling in, New built few visuals (a quarter of
      Small's 20 at most), and Small was through first;
-  4. with New's view active, New was through first, and Small built half
-     of its 20 at most while New was filling in (one a second keeps it
-     alive).
+  4. with New's view active, New was through first, and Small was not
+     yet built when it was. Small does build while New fills in: what the
+     document in front cannot use of a slice -- its visuals all waiting
+     for a pre-mesh -- is the next one's, and one visual a second keeps
+     it alive besides. It built 4 of its 20 in that time while a slice
+     was still charged for the frame drawn inside it, which mostly left
+     nothing to hand on, and builds 14 or 15 since (docs/DocumentLoad.md
+     sec 18.16): New through after 9.8 to 10.7 s where it took 9.7 to
+     10.0, Small after 10.5 to 11.7 s where it took 13.0 to 13.3.
 
 Run through scripts/gui-test.sh (xvfb, isolated configuration, external
 timeout). Scored against the tree before the change: see the commit
@@ -274,7 +280,7 @@ def verdict():
         check("4 the case arose: New's view is the active one, and it built visuals as such",
               r["new_is_active"] and r["new_while_new"] >= 30, r["new_while_new"])
         check("4 the active view's document goes ahead of the later opened one",
-              r["t_new"] < r["t_small"] and r["small_while_new"] <= FILES["Small"][1] // 2,
+              r["t_new"] < r["t_small"] and r["small_while_new"] < FILES["Small"][1],
               "Small built %d of its %d visuals while New built its %d; New filled in by %.2f s, "
               "Small by %.2f s" % (r["small_while_new"], r["small_built"], r["new_while_new"],
                                    r["t_new"], r["t_small"]))

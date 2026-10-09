@@ -47,6 +47,7 @@
 #include "ProgressDialog.h"
 #include "WaitCursor.h"
 #include "RenderTiming.h"
+#include "TurnBudget.h"
 
 namespace {
 
@@ -58,6 +59,9 @@ void pumpEvents()
 {
     QElapsedTimer timer;
     timer.start();
+    // From inside a slice of work that takes turns with the event loop,
+    // this is the event loop's turn and not the slice's (TurnBudget.h)
+    Gui::TurnPace::Yield yield;
     qApp->processEvents();
     auto& stats = Gui::RenderTiming::loadPumps();
     stats.pumpSec += double(timer.nsecsElapsed()) / 1e9;
@@ -354,6 +358,7 @@ void SequencerBar::checkAbort()
         if(d->checkAbortTime.elapsed() < 500)
             return;
         d->checkAbortTime.restart();
+        Gui::TurnPace::Yield yield;
         qApp->processEvents();
         return;
     }

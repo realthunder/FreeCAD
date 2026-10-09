@@ -232,21 +232,6 @@ void queueLevelGuiWork(const void *tag, std::function<void()> body,
 /// queue, in ViewProviderExt.cpp. GUI thread.
 bool deferredVisualsPending(const std::string &doc);
 
-/// How long a turn of the landing pump may run, in seconds.
-///
-/// \a budget is Render/LevelLandBudgetMS. With work left over from the
-/// turn before (\a backlog), a turn may run half as long as the event
-/// loop then took to give the thread back (\a away), up to five budgets
-/// and never less than one. Every turn ends in a frame, and on a model
-/// whose frame is dear a fixed turn is a fixed, small share of the
-/// thread: the 17058-solid reference assembly gave the pump two turns a
-/// second, and its 5100 landings -- 3.4 s of work -- took 30 s to land
-/// (docs/DocumentLoad.md sec 18.11). A turn that long is no new stall
-/// beside a frame that is longer; where frames are quick the event loop
-/// is back in milliseconds, and the budget is all a turn gets.
-PartGuiExport double landingTurnBudget(double budget, double away,
-                                       bool backlog);
-
 /// Whether the caller is executing inside the landing pump's turn --
 /// diagnostic context for the slow-build attribution (a pump item, a
 /// drain slice and any other queued call all dispatch as the same

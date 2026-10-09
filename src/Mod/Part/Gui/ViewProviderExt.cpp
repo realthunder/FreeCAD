@@ -130,6 +130,7 @@
 #include <Gui/Selection.h>
 #include <Gui/View3DInventorViewer.h>
 #include <Gui/Utilities.h>
+#include <Gui/TurnBudget.h>
 #include <Gui/ViewProviderLink.h>
 #include <Gui/TaskElementColors.h>
 #include <Gui/Inventor/SoFCRenderMaterial.h>
@@ -919,6 +920,9 @@ struct DeferredVisuals {
     /// pumps events -- from which this slice's own timer can fire. The
     /// walk is not re-entrant: it holds an iterator into the map.
     bool running = false;
+    /// What the drain knows of the event loop between its slices: a slice
+    /// grows with what a frame costs (Gui/TurnBudget.h).
+    Gui::TurnPace pace;
     /// The drain's own progress indicator (KeepInteractive: it reports,
     /// it does not take the window away). Created at the first slice
     /// that can work, one step per parked visual popped, reset when the
@@ -5886,18 +5890,30 @@ void ViewProviderPartExt::runDeferredVisualSlice()
         return;
     Base::StateLocker walking(visuals.running);
 
-    const double budget =
+    // The budget is a slice's where the event loop is quick. Where a frame
+    // is dear a slice of it is a small share of the thread: a slice runs
+    // as long as the event loop took to give the thread back, up to five
+    // budgets (Gui/TurnBudget.h, tests/gui/drain-turn-grows.py). With
+    // several documents draining the longer slice is the one in front's
+    // alone (see `mine` below). NOT a gain on the reference assembly,
+    // where this drain takes 16 to 21 s whatever its slices are: its
+    // frames cost by what was built since the last one, the meshes going
+    // up, and not by their number (docs/DocumentLoad.md sec 18.16).
+    const double plain =
         std::max(1L, Gui::RenderParams::getProgressiveLoadBudgetMS()) / 1000.0;
+    Gui::TurnPace::Turn turn(visuals.pace, plain, Gui::loadTurnShare);
+    const double budget = turn.budget();
     // The steady clock, and not the time of day: a slice is an interval,
     // and where the time of day is resynced in steps it moves back -- a
     // slice with a step in it then had a negative time spent and worked on
     // until it had made the step good, a second and more for a budget of a
     // tenth, and the drain's own line said it had spent less than nothing
-    // (tests/gui/drain-clock-step.py).
-    auto start = std::chrono::steady_clock::now();
-    auto elapsed = [&start]() {
-        return std::chrono::duration<double>(
-                std::chrono::steady_clock::now() - start);
+    // (tests/gui/drain-clock-step.py). And the slice's own time: what its
+    // progress bar spends letting events through is the event loop's turn,
+    // a frame as often as not, and a slice charged for that is over its
+    // budget before it has done anything.
+    auto elapsed = [&turn]() {
+        return std::chrono::duration<double>(turn.elapsed());
     };
 
     // Which documents can be worked on at all right now. A document still
@@ -5925,6 +5941,7 @@ void ViewProviderPartExt::runDeferredVisualSlice()
     if (!ready) {
         // Everything left belongs to a document still loading. Wait rather
         // than spin on the events its restore pumps.
+        turn.setBacklog(false);
         scheduleDeferredVisualSlice(100);
         return;
     }
@@ -6021,6 +6038,8 @@ void ViewProviderPartExt::runDeferredVisualSlice()
     // Whether any queue had something to do. A slice that found every
     // queue waiting for a pre-mesh does not post itself again at once.
     bool worked = false;
+    // The first document of the order that may be worked on
+    bool inFront = true;
     for (const std::string &name : order) {
         auto it = visuals.docs.find(name);
         if (it == visuals.docs.end())
@@ -6053,14 +6072,24 @@ void ViewProviderPartExt::runDeferredVisualSlice()
         // without -- unless it has gone without for a second: then it
         // builds one visual (the loop below builds one before it looks at
         // the time), so that a load behind another is seen to be alive.
-        const bool leftOver = mark.count() < budget;
+        //
+        // And what is left is measured by the plain budget for every
+        // document but the one in front: the longer slice is that one's.
+        // Left to the others, a document in front whose visuals are all
+        // waiting for a pre-mesh would hand the one behind it up to five
+        // budgets at a time, and wait as long for its own meshes' turn
+        // when they land. By reasoning, not by measurement: sequence 4 of
+        // tests/gui/hold-per-document.py comes out the same either way.
+        const double mine = inFront ? budget : std::min(budget, plain);
+        inFront = false;
+        const bool leftOver = mark.count() < mine;
         if (!leftOver
                 && std::chrono::steady_clock::now() - queue.served
                     < std::chrono::seconds(1)) {
             more = true;
             continue;
         }
-        const double limit = leftOver ? budget : mark.count();
+        const double limit = leftOver ? mine : mark.count();
         const double left = std::max(0.001, limit - mark.count());
 
         // Deferred shape restore (docs/DocumentLoad.md sec 14): serve this
@@ -6256,7 +6285,9 @@ void ViewProviderPartExt::runDeferredVisualSlice()
 
     // With every queue waiting for a pre-mesh, look again shortly rather
     // than at once: the workers' own hand-back wakes this thread to take
-    // their meshes, and the count this looks at is one atomic read.
+    // their meshes, and the count this looks at is one atomic read. A wait
+    // is not what a frame costs: the slice after it is one budget long.
+    turn.setBacklog(more && worked);
     if (more)
         scheduleDeferredVisualSlice(worked ? 0 : 10);
 }

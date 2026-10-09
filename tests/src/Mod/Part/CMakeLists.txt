@@ -93,10 +93,7 @@ add_test(NAME MeshTwin_tests_run COMMAND MeshTwin_tests_run)
 # wrote into freed memory. No document and no application; PartGui for the
 # pre-mesh itself.
 if(TARGET PartGui)
-    # ...and the rule for how long a turn of the level-of-detail landing
-    # pump may run (LandingTurn.cpp, docs/DocumentLoad.md sec 18.11).
-    add_executable(PreMesh_tests_run ${CMAKE_CURRENT_SOURCE_DIR}/Gui/PreMesh.cpp
-                                     ${CMAKE_CURRENT_SOURCE_DIR}/Gui/LandingTurn.cpp)
+    add_executable(PreMesh_tests_run ${CMAKE_CURRENT_SOURCE_DIR}/Gui/PreMesh.cpp)
     target_include_directories(PreMesh_tests_run PRIVATE
         ${CMAKE_SOURCE_DIR}
         ${CMAKE_SOURCE_DIR}/src

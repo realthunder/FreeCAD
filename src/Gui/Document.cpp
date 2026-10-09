@@ -78,6 +78,7 @@
 #include "TaskOwner.h"
 #include "Thumbnail.h"
 #include "Tree.h"
+#include "TurnBudget.h"
 #include "TaskView/TaskPanelHost.h"
 #include "View3DInventor.h"
 #include "ViewArea.h"
@@ -286,6 +287,9 @@ struct DocumentP
     FC_DURATION _deferSpent {0};
     // The longest of its slices: what the slice budget is a promise about
     FC_DURATION _deferLongest {0};
+    // What the drain knows of the event loop between its slices: a slice
+    // grows with what a frame costs (TurnBudget.h)
+    TurnPace _deferPace;
     // The drain's progress indicator (KeepInteractive -- it reports, it
     // does not take the window away), one step per object unit over all
     // three phases. Without it the stretch between the open returning
@@ -2969,6 +2973,7 @@ void Document::slotStartRestoreDocument(const App::Document& doc)
     d->_deferFinish.clear();
     d->_deferSlices = d->_deferBuilt = 0;
     d->_deferSpent = d->_deferLongest = FC_DURATION(0);
+    d->_deferPace.idle();
     d->_deferReadTime = d->_deferFinishTime = FC_DURATION(0);
     d->_deferSweepTime = d->_deferModeTime = FC_DURATION(0);
     ViewProvider::VisualBuildTime = ViewProvider::VisualMeshTime = FC_DURATION(0);
@@ -3402,21 +3407,34 @@ void Document::runDeferredRestoreSlice()
     // Not while this document is inside another load (a partial reload can
     // follow the open that parked these); ask again shortly.
     if (d->_pcDocument->testStatus(App::Document::Restoring)) {
+        d->_deferPace.idle();
         scheduleDeferredRestore(100);
         return;
     }
 
-    const double budget =
-        std::max(1L, Gui::RenderParams::getProgressiveLoadBudgetMS()) / 1000.0;
+    // The budget is a slice's where the event loop is quick. Where a frame
+    // is dear a slice of it is a small share of the thread, and the drain
+    // takes as long as its slices times a frame: 13.5 to 17.1 s on the
+    // reference assembly in a window on the desktop, in 58 to 65 slices.
+    // So a slice runs as long as the event loop took to give the thread
+    // back, up to five budgets: 11.1 to 11.4 s there, in 20 to 22
+    // (docs/DocumentLoad.md sec 18.16, tests/gui/drain-turn-grows.py).
+    // Every exit below leaves work for the next slice or is the drain's
+    // end.
+    TurnPace::Turn turn(d->_deferPace,
+        std::max(1L, Gui::RenderParams::getProgressiveLoadBudgetMS()) / 1000.0,
+        loadTurnShare);
+    const double budget = turn.budget();
     // The steady clock, and not the time of day: a slice is an interval,
     // and where the time of day is resynced in steps it moves back -- a
     // slice with a step in it then had a negative time spent and worked on
     // until it had made the step good, a second and more for a budget of a
-    // tenth (tests/gui/drain-clock-step.py).
-    auto start = std::chrono::steady_clock::now();
-    auto elapsed = [&start]() {
-        return std::chrono::duration<double>(
-                std::chrono::steady_clock::now() - start);
+    // tenth (tests/gui/drain-clock-step.py). And the slice's own time: what
+    // its progress bar spends letting events through is the event loop's
+    // turn, a frame as often as not, and a slice charged for that is over
+    // its budget before it has done anything.
+    auto elapsed = [&turn]() {
+        return std::chrono::duration<double>(turn.elapsed());
     };
     // Where a slice ends, whichever way it ends
     auto spend = [this, &elapsed]() {
@@ -3833,16 +3851,21 @@ void Document::runDeferredServeSlice()
     // Not while a load is writing into this document: the entries it parks
     // are still arriving, and a partial reload may yet replace them.
     if (d->_pcDocument->testStatus(App::Document::Restoring)) {
+        d->_deferPace.idle();
         scheduleDeferredRestore(100);
         return;
     }
-    const double budget =
-        std::max(1L, Gui::RenderParams::getProgressiveLoadBudgetMS()) / 1000.0;
+    // A slice as the drain's: longer where a frame is dear
+    TurnPace::Turn turn(d->_deferPace,
+        std::max(1L, Gui::RenderParams::getProgressiveLoadBudgetMS()) / 1000.0,
+        loadTurnShare);
     // Deliberately without the drain's restore semantics: phase zero serves
     // entries a parked record is about to read back, while this serves them
     // into a document that is fully live -- an ordinary property change
     // arriving late, which is exactly how its consumers must see it.
-    if (d->_pcDocument->serveDeferredFiles(budget))
+    const bool more = d->_pcDocument->serveDeferredFiles(turn.budget());
+    turn.setBacklog(more);
+    if (more)
         scheduleDeferredRestore();
 }
 

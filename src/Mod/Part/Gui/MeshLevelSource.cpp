@@ -66,6 +66,7 @@
 #include <Gui/Renderer/SceneLadder.h>
 #include <Gui/Renderer/SceneServer.h>
 #include <Gui/SceneServeSource.h>
+#include <Gui/TurnBudget.h>
 #include <Gui/View3DInventor.h>
 #include <Gui/View3DInventorViewer.h>
 #include <Gui/ViewParams.h>
@@ -470,23 +471,25 @@ void pumpLandings()
 {
     s_landingScheduled = false;
     Base::StateLocker pumping(s_inLandingPump);
-    double budget =
-        std::max(1L, Gui::RenderParams::getLevelLandBudgetMS()) / 1000.0;
+    // A turn grows with what the event loop costs between turns
+    // (Gui/TurnBudget.h): every turn ends in a frame, and on the
+    // 17058-solid reference assembly a fixed turn was two turns a second
+    // -- 5100 landings, 3.4 s of work, took 30 s to land
+    // (docs/DocumentLoad.md sec 18.11). Its work runs the clock the
+    // drains' slices run, so that neither takes the other's turns for
+    // the price of a frame.
+    static Gui::TurnPace s_pace;
+    Gui::TurnPace::Turn turn(
+        s_pace, std::max(1L, Gui::RenderParams::getLevelLandBudgetMS()) / 1000.0);
+    const double budget = turn.budget();
     const auto start = std::chrono::steady_clock::now();
-    // A turn grows with what the event loop costs between turns: see
-    // landingTurnBudget.
-    static std::chrono::steady_clock::time_point s_lastEnd;
-    static bool s_lastBacklog = false;
-    budget = PartGui::landingTurnBudget(
-        budget, std::chrono::duration<double>(start - s_lastEnd).count(),
-        s_lastBacklog);
     auto now = []() { return std::chrono::steady_clock::now(); };
     auto since = [](std::chrono::steady_clock::time_point t0,
                     std::chrono::steady_clock::time_point t1) {
         return std::chrono::duration<double>(t1 - t0).count();
     };
-    auto spent = [&start, budget, &now, &since]() {
-        return since(start, now()) >= budget;
+    auto spent = [&turn, budget]() {
+        return turn.elapsed() >= budget;
     };
     PumpAccount &acc = s_pumpAccount;
     // What a load holds back stays on its queue, in its order.
@@ -576,8 +579,7 @@ void pumpLandings()
         scheduleLandingPump();
     if (waiting)
         scheduleLandingPoll();
-    s_lastBacklog = runnable;
-    s_lastEnd = std::chrono::steady_clock::now();
+    turn.setBacklog(runnable);
 }
 
 /// Purge every deferred hook body queued under \a tag (the tag is
@@ -1210,13 +1212,6 @@ void PartGui::queueLevelGuiWork(const void *tag, std::function<void()> body,
     }
     s_guiWork.push_back({tag, std::move(body), descent, gen, std::move(doc)});
     scheduleLandingPump();
-}
-
-double PartGui::landingTurnBudget(double budget, double away, bool backlog)
-{
-    if (!backlog || !(away > 0.0))
-        return budget;
-    return std::max(budget, std::min(0.5 * away, 5.0 * budget));
 }
 
 bool PartGui::inLandingPump()

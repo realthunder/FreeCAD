@@ -90,6 +90,24 @@ if(TARGET FreeCADGui)
     add_test(NAME RenderCacheMaterial_tests_run
              COMMAND RenderCacheMaterial_tests_run)
 
+    # How long a turn of work sliced over the event loop may run -- the
+    # landing pump of the level meshes, the two drains of a progressive
+    # load -- and the account that keeps one party's turns out of what
+    # another takes for the price of a frame (docs/DocumentLoad.md sec
+    # 18.11 and 18.16). Links FreeCADGui for that account; no application,
+    # no event loop.
+    add_executable(TurnBudget_tests_run
+                   ${CMAKE_CURRENT_SOURCE_DIR}/TurnBudget.cpp)
+    target_include_directories(TurnBudget_tests_run PRIVATE
+        ${CMAKE_SOURCE_DIR}
+        ${CMAKE_SOURCE_DIR}/src
+        ${CMAKE_BINARY_DIR}/src
+        ${Python3_INCLUDE_DIRS}
+        ${XercesC_INCLUDE_DIRS})
+    target_link_libraries(TurnBudget_tests_run
+                          gtest_main FreeCADGui FreeCADApp FreeCADBase)
+    add_test(NAME TurnBudget_tests_run COMMAND TurnBudget_tests_run)
+
     # Whether flat_map is the right container for the draw list. A
     # measurement rather than an assertion, so its body is DISABLED and
     # ctest only pays for a process that reports zero tests run.

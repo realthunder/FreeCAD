@@ -1518,6 +1518,23 @@ fc_add_gui_test(GuiBoxesOutOfViewTurn_tests_run boxes-out-of-view-turn.py
 fc_add_gui_test(GuiHoldPerDocument_tests_run hold-per-document.py
                 --timeout 400)
 
+# A slice of a progressive load is not charged for the frame drawn inside
+# it, and grows with what the event loop costs (docs/DocumentLoad.md sec
+# 18.16). Both drains worked a fixed budget and then gave the thread back
+# for a frame -- which is drawn when the next slice steps its progress
+# bar, inside the slice. The slice paid for it out of its budget and gave
+# up after one object, and a frame that is dear left the load a small
+# share of the thread. A slice leaves out what it yields now, and may run
+# as long as the event loop took, up to five budgets. 2400 solids, a
+# budget of 10 ms, loaded as they are and with a frame of 120 ms that the
+# script draws where a frame is drawn. Scored against the tree before,
+# three runs: 10 checks of 12, the two drains through after 10.1 to
+# 10.6 s and 25.4 to 26.3 s in 62 to 65 and 103 to 105 slices, saying
+# they had spent 3.0 and 7.7 to 8.0 s on 0.5 and 0.9 s of work; after,
+# 3.3 to 3.5 s and 6.7 to 7.0 s in 12 to 13 and 16 to 17.
+fc_add_gui_test(GuiDrainTurnGrows_tests_run drain-turn-grows.py
+                --timeout 400)
+
 # Making a view the active window makes its cell the view area's active
 # cell and brings the keyboard with it (docs/SplitViews.md sec 21): right
 # after "create new view" the first view can be clicked back into; with
