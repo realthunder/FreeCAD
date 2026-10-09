@@ -797,6 +797,20 @@ line. They are for the class of defect a gtest binary cannot reach: the
 event loop, the tree widget, a command's guard scope and a document
 being filled, all live at once.
 
+Two options of the driver are for measurements and no ctest entry uses
+them (2026-10-09, `docs/DocumentLoad.md` sec 18.14). `--gl
+nvidia|radeon|sw` picks the GL driver, under Xvfb as well: `sw` is the
+`llvmpipe` every plain run gets, the other two are Mesa's D3D12 driver
+on WSL. `--window` puts the test in a window on the desktop's X server
+in place of Xvfb, with the same isolated configuration and time limit;
+it is the one way a test of this tree shows on the screen, and only on
+request. `scripts/load-timing.py` is the measurement that goes with
+them: one load of one document a process, when each phase ends, how long
+the GUI thread stays away from its loop, and what a settled frame costs.
+On this box Xvfb and a window agree within 6 per cent on a settled
+frame, on both drivers; a LOAD on the D3D12 driver takes longer the
+larger the window is.
+
 | Test | What | Cost |
 |---|---|---|
 | `GuiLiveImportNestedLoop_tests_run` | the live-import nested-loop crash (`docs/DocumentLoad.md` sec 15.2): a command pumps a nested event loop while the chess set is still importing, so the tree populates inside the user-edit guard | 25 s |

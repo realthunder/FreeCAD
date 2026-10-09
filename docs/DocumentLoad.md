@@ -2555,6 +2555,8 @@ The stretches the timer finds are frames:
   D3D12 driver hands each frame back to a framebuffer in memory, and a
   graphics card three times slower than software is what that would look
   like. These are the harness's frames until somebody times a window.
+  (Timed since, sec 18.14: a window on the desktop has them too, and
+  they are frames of the load, not of the settled assembly.)
 
 So the absolute times above are the harness's, and what they are good for
 is the comparison of one build with another.
@@ -2752,6 +2754,149 @@ whole; the pump cannot cut it.
   and whether it is uploaded before it is drawn -- was not measured.
   Under the ruling of sec 18.11 it is the tolerated kind of waste; under
   a budget the descent takes it back.
+
+### 18.14 The reference assembly in a real window (2026-10-09)
+
+The second thing ruled for the session after sec 18.12: "then test with
+big files, mister file first. you can show the window, not with xvfb".
+Every figure of sec 18.10 to 18.13 was taken under Xvfb, and sec 18.12
+ended on a doubt: frames of 6 to 8.6 s on the NVIDIA card with the whole
+assembly in view might be the harness's. They are not.
+
+**How.** `scripts/gui-test.sh --window` runs a test in a window on the
+desktop (WSLg's X server, `xcb`) with the same isolated configuration
+and outer time limit, and `--gl nvidia|radeon|sw` picks the GL driver in
+either mode. The loads are `scripts/load-timing.py`, the script of sec
+18.12 kept: one document a process, times from the open's return on the
+steady clock, the renderer's name read back from a context, and two
+things added -- the renderer's frame-timing readout
+(`Render/DebugTiming`) during the load, and after the load has settled a
+camera rolled about its own axis for 15 s, a step timed each.
+A window on this desktop is 1920x1080 with a view of 1498x703; Xvfb's
+screen gives 1280x1024 and 858x608. The saved close-up camera shows 7
+of the 14 boxed shapes in the one and 5 in the other.
+
+**A real window against Xvfb**, the NVIDIA card through Mesa's D3D12
+driver, alternated, two loads each. Seconds after the open returned:
+
+| | real window | Xvfb |
+|---|---|---|
+| the view provider drain ends | 15.1 to 16.9 | 9.4 to 10.6 |
+| the visual drain ends, close-up | 33.2, 33.9 | 25.5, 25.8 |
+| the visual drain ends, whole assembly | 40.4, 42.1 | 34.3, 34.4 |
+| the last landing, close-up | 58.6, 58.2 | 45.4, 47.0 |
+| longest stretch away after the drain, close-up | 3.5, 3.5 | 3.5, 3.1 |
+| longest stretch away after the drain, whole assembly | 7.6, 7.0 | 6.4, 5.9 |
+
+The seconds-long stretches are in the window on the desktop as well, a
+little longer. Sec 18.12's "NOT CHECKED against a real window ... these
+are the harness's frames until somebody times a window" is answered:
+they are the driver's.
+
+**A settled frame** is another matter, and the two had been read as
+one. Whole assembly in view, everything landed, 32049 draws and 10.5
+million triangles:
+
+| display | a step of the roll | `bgfx::frame` | bgfx's GL calls, per draw | this renderer's own C++ |
+|---|---|---|---|---|
+| NVIDIA, real window | 0.30 s | 174 ms | 5.1 us | 86 ms |
+| Radeon, real window | 0.18 s | 94 ms | 2.6 us | 76 ms |
+| software GL, real window | 1.08 s | 1018 ms | 31 us | 76 ms |
+| NVIDIA, Xvfb | 0.28 s | 170 ms | 4.9 us | 84 ms |
+| software GL, Xvfb | 1.06 s | 995 ms | 31 us | 83 ms |
+
+- Xvfb and a window agree within 6 per cent on both drivers: for what a
+  frame costs the harness can be believed.
+- The integrated Radeon is faster than the NVIDIA card. The cost on
+  hardware is the driver's time on the CPU for each draw, and there are
+  32049 of them; the readout has no GPU time for this driver at all.
+  The instancing line of the same frames says 7034 groups, 739 of them
+  usable and 6295 of a single member, 739 submits standing for 4215
+  draws.
+- The renderer's own share, 76 to 86 ms on every display, is by itself
+  12 frames a second at most.
+
+**The load on hardware takes twice what it takes on software GL** (the
+visual drain ends after 40 to 44 s on either card and 21 s on software,
+a real window each), and the breakdown of its frames says where:
+
+- *New geometry going up.* In the frames that take in freshly built
+  meshes `bgfx::frame` alone is 0.8 to 4.5 s on the NVIDIA card (820,
+  2560, 1826, 1278, 1467, 4497 ms in one load, some 13 s of it
+  together) where the frames between them have 160 to 230 ms. On
+  software GL the same frames cost what a settled frame costs there.
+- *The release of edges and points.* A load holds them back while it
+  fills in and releases them when it ends. On the flattened assembly
+  (`MiSTerFlat.FCStd`, 17058 objects and no links) the frame that takes
+  them in goes from 22557 draws to 37595 and its `bgfx::frame` is ONE
+  call of 8.8 s; the GUI thread is away for 12.3 and 12.8 s in two
+  loads of two, the longest stretch measured anywhere in this section.
+- *A cost by the window's size.* The view provider drain's own work is
+  the same 2.75 s on every display; the drain as a whole takes 4.8 s on
+  software GL, 7.2 s on the NVIDIA card under Xvfb and 10 to 11 s on it
+  in a window, with a scene of 21 draws. The same load on the NVIDIA
+  card in a window a quarter the size:
+
+  | main window | view provider drain ends | visual drain ends | last landing |
+  |---|---|---|---|
+  | 960x540 | 7.4 | 21.4 | 38.6 |
+  | 1920x1080 | 17.2 | 40.2 | 63.1 |
+
+  Some 130 ms a frame at full size and 55 at a quarter before anything
+  is drawn, of which `bgfx::frame` is 21. A settled frame does not pay
+  it (34 ms outside the renderer), so it comes with the rest of the
+  window repainting -- the progress bar, the tree, the status bar. Read
+  as Qt composing the window through GL and the driver being slow at
+  what that takes; NOT shown, nothing was measured inside Qt.
+- *Coin's composite* is 0.35 to 0.96 s of each frame during a load, on
+  hardware and software alike, and 0.24 ms once settled. This is the
+  "work a frame does for 17058 objects before anything is drawn" that
+  sec 18.12 could not name.
+
+**What a larger turn buys.** Both drains do a budget of work, 100 ms,
+and then let the event loop have a turn, which is a frame; where a frame
+costs more than the budget the load mostly waits for frames. The NVIDIA
+card, a window at full size, the close-up, alternated:
+
+| the drains' budget | view provider drain ends | visual drain ends | last landing | longest stretch away, the two drains |
+|---|---|---|---|---|
+| 100 ms | 17.0, 16.0 | 33.6, 36.0 | 59.0, 58.0 | 0.93, 0.66 and 2.9, 3.1 |
+| 500 ms | 8.5, 8.3 | 27.8, 28.5 | 50.4, 49.6 | 0.69, 0.75 and 3.9, 3.9 |
+
+The view provider drain ends 8 s sooner and the GUI is away no longer
+for it -- its stretches were frames already. The visual drain ends 6 to
+8 s sooner and its longest stretch grows by a second.
+
+**An import for comparison**: `AR-15.STEP`, 88 MB, in a window on the
+NVIDIA card. The import call takes 22.9 s, the GUI thread away from its
+loop for 3.9 s at most inside it; 185 objects, 2 of them drawn as boxes
+and both meshed before the call returns; a settled frame is 0.046 s for
+291 draws and 1.3 million triangles. An eighth of the reference
+assembly's triangles at a hundredth of its draws: what the assembly
+costs is the number of its objects. The larger STEP files on this box
+were not imported -- the one of a gigabyte is a stress import and needs
+the user's word.
+
+**Left, in the order of what they would give.**
+
+- *The drains' turn could grow with what a frame costs*, as the landing
+  pump's does since sec 18.12 (half the stretch the event loop just
+  took, one to five budgets): the table above is what there is to gain
+  on a display with slow frames, and on one with fast frames the rule
+  changes nothing. Put to the user, not built.
+- *The edges and points of a load could be released over several
+  frames*, or what a frame uploads be bounded: one call of 8.8 s is the
+  worst stall of the whole load on this driver.
+- *The draw count* is what a settled frame costs on hardware: 32049
+  draws at 2.6 to 5.1 us each in the driver, on top of 76 to 86 ms of
+  our own. `docs/DrawSubmission.md` and `docs/TShapeRenderCache.md` are
+  where that work is.
+- *Coin's composite during a load*, 0.35 to 0.96 s a frame.
+- **All of the hardware figures are Mesa's D3D12 driver under WSL**,
+  which is the only hardware GL this box has. What a native driver
+  does with an upload, a draw or a window's composition was not
+  measured, and every one of the three load-time findings could be this
+  driver's alone. The Windows build is where that can be seen.
 
 ## 19. Progressive load against eager (2026-09-29)
 
