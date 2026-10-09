@@ -81,6 +81,7 @@ Evidence that does not belong in the repository is under
 | 49 | FIXED `664d57f39b`, not staged, not pushed | it takes a maximized window, and then happens every time: the reset clears the title bar areas' entries, the toolbar manager's timer took the workbench toolbar out of the title bar itself -- a move that hides a toolbar -- and then asked the toolbar whether it was visible. A window that is not maximized swaps its title bar first and moves the toolbar properly |
 | 50 | FIXED `4cb1ee6ad1` (the render type) and `69a2028e23` (the split), not staged, not pushed | (a) as decided: `Default` is the render engine on the platform's backend, `Legacy` the old Coin rendering; the type is a list on the Render engine page and is kept; the render cache setting is not looked at while the engine draws. (b) a Coin-drawn view is replaced by a copy when the anti-aliasing changes, and the copy was given a tab of its own; it takes the old view's cell |
 | 51 | DONE `d157abf559`, not staged, not pushed; the browser viewer does not follow | expected, and measured before: a triangle's rim has no coverage of its own, and a limb has no edge over it. The default is MSAA 4x for both render types: on a sphere's limb 0.0% of rows blended without, 85.6% under `Legacy` and 67.0% under the engine with nothing stored. The tests state "no multisampling" for themselves. The browser cannot multisample its scene target on WebGL2 |
+| 53 | FIXED `c820c3aea1`, not staged, not pushed | not the recompute and not the projection: a page that comes back with the window layout is drawn while a progressive load is still building the view providers of its views. Without one the Qt page draws nothing of a view and the backend draws it by fallback widths, 0.6 mm; the view provider's own request to draw came while the document was flagged as restoring and was dropped. It asks again a turn of the event loop later |
 | 45 | FIXED `c7fdcf3220`, pushed 2026-10-08, not staged | a spreadsheet's view provider made its view when it was only asked whether it had one: one click on a sheet in the tree opened it. Asking is a question now, and a new request opens the view for the three callers that host it. Show-in-cell also took a stale cell and closed another sheet's view; it takes the active view's cell |
 
 **The reporter, 2026-10-07 14:20, on what is open** (said to the build
@@ -3196,3 +3197,61 @@ definition; not run here.
 **Not run:** the full GUI test list at the new default (about 130
 scripts; three were, above), and the golden render tests, which do not
 run on this box.
+
+## 53. `scanner.FCStd` not recomputed: Page003 shows only part of its geometry, lines thick -- FIXED `c820c3aea1`, not staged
+
+**Reproduced at the first try** on the staged copy of 08:40, the page
+drawn by Qt, the recompute question answered No (`e53.py` in
+`..\dl\handson\2026-10-09\q3`, pictures in its `g-e53*` directories): 20
+and 40 seconds after the open Page003 has its dimensions and labels, NO
+geometry in the three views of the projection group (Bottom004, Front003,
+Top002) and Section002 with its lines thick. With the page drawn by the
+backend the geometry is there and every line is thick. After a recompute
+both are right.
+
+**What it is not.** Not the recompute question, and not the projection.
+The views' geometry is there as loaded -- 45, 47 and 39 visible edges on
+the three group views, 76 on the section, the same counts after the
+recompute -- it comes back with the file (`ProjectedGeometry`,
+`docs/TechDrawStoredGeometry.md`). And a bare `requestPaint()` on the four
+views, no recompute, put the page right in both renderers.
+
+**What it is.** A progressive load (`View/Render/ProgressiveLoad`, on by
+default) builds the view providers in slices after the document has
+opened, and a page that comes back with the window layout is drawn in
+between:
+- its item for a view whose view provider is not built yet draws nothing
+  -- `QGIViewPart::drawViewPart` returns without one. That is the missing
+  geometry, Qt only;
+- the backend's page layer draws such a view by its fallback style, 0.6 mm
+  for every line. That is the thick lines there; in Qt the section's cut
+  faces are drawn by another path with a default pen, the thick lines
+  there;
+- the view provider, once built, does ask its item to draw
+  (`finishRestoring` shows it) -- but the slice has the document flagged
+  as restoring while it works, and a page item does not draw a view of a
+  restoring document. So that request drew nothing either, and nothing
+  asked again until a recompute did.
+Which views were caught depends on where the slices fell: "sometimes no
+geometry are shown. there's one time I saw Top002".
+
+**The fix.** The view provider asks for its view to be painted one turn of
+the event loop after it is finished -- the slice is over then and the
+flag is off -- where the page already has an item for the view. Both
+renderers listen to that request.
+
+**Scored.** On the reporter's file, opened and not recomputed, the dev
+build: the page as loaded is the page after a repaint and after a
+recompute, drawn by Qt and by the backend (`q3\e53-fixed.png`,
+`e53-section3.png`). `tests/gui/techdraw-page-before-its-view-providers.py`
+makes a document that opens this way (the page first, 300 objects, the
+view last, a slice of one millisecond) with a line width of 0.18 mm: on
+the staged copy the Qt page has no outline as loaded and the backend's
+lines are 8 pixels wide for the 1.8 asked, 4 claims fail; on the dev build
+14 PASS. `techdraw-page-backend-single-draw.py` 17 and
+`techdraw-dimension-click-no-recompute.py` 12 as before.
+
+**Kin, not looked at:** entry 47 (the 3D view empty once at the first
+load) and entry 28 (a colour wrong sometimes) are the same shape of
+report -- something drawn before the slices had built what it needs.
+Neither was reproduced, and this fix is TechDraw's alone.
