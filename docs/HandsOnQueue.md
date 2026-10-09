@@ -136,6 +136,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 52 | 2026-10-09 | a benchmark asked: with face rims a staircase without MSAA anyway, is the line shader (lines with computed coverage) still needed, and what does it cost in rendering (from entry 51) | OPEN, a measurement for the build session; nothing run. The reporter's rule, 10:17: if it is what gets a fractional line width right, it is still needed -- no frame-time threshold |
 | 53 | 2026-10-09 | `scanner.FCStd`: answered No to the recompute question at opening, the TechDraw page that opens by itself (`Page003`) shows only part of the geometry -- it varies: sometimes none, once only `Top002`, with thickened edges; the dimensions ARE drawn, the views' geometry is what is missing -- with the page drawn by Qt only, it seems; and BOTH renderers draw the lines thickened until a recompute; after a recompute the page is complete and the lines normal | OPEN; the report log of the open is kept, nothing run |
 | 54 | 2026-10-09 | a highlight shown on top: under the pointer (preselection) its edges respect the depth against the faces, an edge behind a face is dimmed; a full SELECTION does not, its edges are drawn as if there were no depth test | OPEN; nothing run |
+| 55 | 2026-10-09 | sometimes the progress bar in the status bar is at the left side; seen once during a recompute; after closing the document and opening one again it was back in its normal place | OPEN, intermittent; nothing run |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -4499,6 +4500,38 @@ pointer (a face, an edge, a whole object); whether the dimming of the
 preselection is the look wanted for the selection too, or a pattern; and
 whether it is the same under the `Legacy` type.
 
+## 55. The status bar's progress bar is sometimes at the left side -- OPEN, intermittent
+
+**2026-10-09 10:42, reported:** "new defect, sometimes the progress bar in
+status bar moved to left side. I saw once when recompute. then when I close
+document and open one again it seems back to normal position"
+The progress bar of the status bar showed at the LEFT side, once, during a
+recompute. After the document was closed and one opened again, it was in
+its normal place again. "Sometimes".
+On the copy staged 2026-10-09 08:40 (`9bcbdc191d`), the session of entries
+49 to 54; the recomputes of that session were of `scanner.FCStd` (10:13:40
+to 10:14:22 the last one in the report log kept for entry 53).
+
+**Pointers, read from the source by the note-taker, nothing run** (the
+status bar's item registry is the one entry 1 was fixed in):
+- the progress bar is registered in the status bar's LEFT slot, at order
+  50, with no stretch (`MainWindow.cpp:619`: `{"progressBar", QString(),
+  StatusBarSlot::Left, 50, true, 0}`). The only left item before it is the
+  preselection label, order 0, with stretch 1 (`"actionLabel"`). So where
+  the bar normally sits -- away from the left end -- it sits because that
+  label, stretching, takes the room before it.
+- A guess, not a finding: when the label before it is not shown at the
+  moment the bar appears -- hidden by the user's choice, or not laid out
+  yet -- nothing holds the bar off the left end.
+- `MainWindow::relayoutStatusBar()` takes every item out and puts it back
+  whenever an item is registered or removed, restoring what was visible; a
+  relayout while the bar is running is the other place to look.
+
+Not said yet by the reporter: where the normal place is (by the above: to
+the right of the preselection text); whether anything else in the status
+bar looked different at that moment (the preselection text missing, the
+hints or the size label moved); and how often it has been seen.
+
 ## Inbox
 
 Notes not sorted into an entry yet. Add a line here at any time, in any words;
@@ -4506,4 +4539,4 @@ it is read before each entry is started and moved up into the table.
 
 (empty: the notes of 2026-10-06 are entries 20 to 28, those of 2026-10-07
 entries 29 to 40, those of 2026-10-08 entries 41 to 45, those of 2026-10-09
-so far entries 46 to 54)
+so far entries 46 to 55)
