@@ -128,6 +128,17 @@ in it so far: 64 (`66ccd277b9`, and a defect found on the way,
 `dfdfc04c5c`). Local: not pushed, not staged. Tools and results in
 `..\dl\handson\2026-10-09\q5`.
 
+On `dfdfc04c5c`: ctest 790 of 790 (799 entries, 9 disabled). The GUI tests
+are not among them on this box -- `tests/gui/CMakeLists.txt` registers them
+only where `xvfb-run` is found -- so the ones that read the engine's pixels
+were run by hand, cavity shading being on by default:
+`cavity-crease-is-smooth.py` 47, `face-outline-inner-edge.py` 8,
+`selection-on-top-hidden-edges.py` 18, `msaa-reaches-the-view.py` 12,
+`render-type-default-and-legacy.py` 13, `image-pixels-mode3.py` 16,
+`instanced-face-transparency.py` 5, `cycles-view-right-way-up.py` 4, no
+FAIL. The Python suite was not run again: the two commits are a shader and
+the renderer library.
+
 Evidence that does not belong in the repository is under
 `..\dl\handson\<date>\`, as before.
 
