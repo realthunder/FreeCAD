@@ -126,7 +126,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 47 | 2026-10-09 | `scanner.FCStd`: once in three sessions the FIRST load's 3D view was empty 13 s after opening, background and navigation cube only; the next two loads of that session were complete (seen by the build session on entry 28) | OPEN, seen once, not followed up |
 | 48 | 2026-10-09 | three GUI tests fail the same way on the copy staged 2026-10-07 and on today's tree: `element-color-hide.py` (2 of 624 claims), `per-view-shown-eviction.py` (1 claim), `navicube-per-view.py` (11 claims pass, then it never ends) (found by the build session) | OPEN; read only so far: `navicube-per-view.py` is no defect -- a run-by-hand script that never closes FreeCAD; the other two not looked into |
 | 49 | 2026-10-09 | after "Reset all" in the preferences and then the Light theme from Tools > Preset configurations > Themes, the workbench toolbar is hidden; shown again by hand it sits in the custom title bar as expected; intermittent -- the same steps a second time did not do it | OPEN; the bad and the good run are both in the evidence, and they differ in one thing: a saved main window state was in the configuration when the theme was applied (read, nothing run). Next in the build session's line after entry 46 |
-| 50 | 2026-10-09 | after "Reset all" in the preferences the 3D view is no longer drawn by the render engine's backend (edges jagged; the reporter's guess: render cache 0); and after a change of the MSAA setting a split of a 3D view and a TechDraw page became two tab windows | OPEN; measured in the reporter's live session, read-only: the render cache setting is not the cause (not stored, default 3) -- the renderer TYPE is `Default`, no backend, where the profile had `bgfx - Direct3D11` before the reset, and the view answers "No external renderer active"; the path is chosen only at startup. The two tabs are there as said: one view area with ONE cell, two `scanner` tab windows. DECIDED by the reporter 2026-10-09 09:48 for the first part: the type `Default` is to mean bgfx on the platform's default backend |
+| 50 | 2026-10-09 | after "Reset all" in the preferences the 3D view is no longer drawn by the render engine's backend (edges jagged; the reporter's guess: render cache 0); and after a change of the MSAA setting a split of a 3D view and a TechDraw page became two tab windows | OPEN; measured in the reporter's live session, read-only: the render cache setting is not the cause (not stored, default 3) -- the renderer TYPE is `Default`, no backend, where the profile had `bgfx - Direct3D11` before the reset, and the view answers "No external renderer active"; the path is chosen only at startup. The two tabs are there as said: one view area with ONE cell, two `scanner` tab windows. DECIDED by the reporter 2026-10-09 09:48 for the first part: the type `Default` is to mean bgfx on the platform's default backend, and (09:52) a new type `Legacy` the old Coin rendering |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -3971,7 +3971,7 @@ whether anything was clicked or moved between the first reset and the first
 theme (a toolbar, a panel, the window). The second answered 2026-10-09
 09:38, at the top of this entry: nothing was.
 
-## 50. After "Reset all" the 3D view is drawn without the backend; then a change of MSAA turns a split into tabs -- OPEN, measured in the live session; (a) DECIDED: `Default` means bgfx on the platform's backend
+## 50. After "Reset all" the 3D view is drawn without the backend; then a change of MSAA turns a split into tabs -- OPEN, measured in the live session; (a) DECIDED: `Default` means bgfx on the platform's backend, `Legacy` the old Coin rendering
 
 **2026-10-09 09:48, decided by the reporter for (a),** when the finding
 below was put to them: "Render type Default should be bgfx plus a platform
@@ -3990,6 +3990,20 @@ what it means today. The note-taker's reading:
 - not said, and it follows from it: what a user then chooses to have NO
   backend (the render cache's own GL renderer), which is what `Default`
   gives today. It needs a name of its own if it is to stay selectable.
+Passed on to the build session.
+**Answered by the reporter, 2026-10-09 09:52, to that last point:** "let's
+make render type 'Legacy' to mean the old coin rendering"
+So there are two names now: `Default` is the render engine on the
+platform's backend, and a new type `Legacy` is the old Coin rendering,
+drawn without the engine. The note-taker's reading, and one point it leaves
+open:
+- `Legacy` takes over what `Default` means today: no backend;
+- NOT SAID: how far back "the old coin rendering" goes. With no backend
+  today the render cache (mode 3) still collects the scene and its own GL
+  renderer draws it. Is `Legacy` that, or Coin's own traversal with the
+  render cache out of it (the modes below 3)? `ViewParams`' own text calls
+  the cache mode "NOT a user setting", chosen at startup with the type, so
+  the two would have to be chosen together.
 Passed on to the build session.
 
 **2026-10-09 09:41, reported:** "new defect. After reset all preference, it
