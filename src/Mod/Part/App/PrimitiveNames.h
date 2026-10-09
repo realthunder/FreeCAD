@@ -44,11 +44,18 @@ namespace Part
  *
  * A face is named by its role, read from the finished shape in the frame it
  * is built in: by which way it faces and where it lies. An edge is named by
- * the faces it is between, `Front_Top`, and a vertex by the faces that meet
- * in it, `Front_Left_Top_Corner`. An edge of one face is its seam,
- * `Lateral_Seam`, or where the face closes to a point, at the pole of one
- * end: `Lateral_BottomPole`, and the point `BottomPole`. What is left with
- * the name of another -- the two halves an ellipsoid is split in, the two
+ * the faces it is between and a vertex by the faces that meet in it, the
+ * first of them in full and the rest by a letter: `FrontL` the edge of the
+ * front on the left, `FrontLT` the corner of it at the top. The order of the
+ * roles is what keeps a letter to one meaning: front and rear come first and
+ * are never a letter, so `R` is right and `B` bottom.
+ *
+ * An edge of one face is its seam, `SeamL`, or where the face closes to a
+ * point, at the pole of one end: `BottomPoleL`, and the point `BottomPole`.
+ * A vertex on a seam is told by it, `SeamBL`, and where two seams cross by
+ * both, `SeamsL`. A mapped name is one key for every kind of element, so the
+ * one vertex of a closed edge that has no seam to be told by ends in `V`.
+ * What is still alike -- the two halves an ellipsoid is split in, the two
  * seams of a torus -- is numbered from the second on, in the order of
  * height, then of the angle about the axis, then of the distance from it:
  * `Lateral`, `Lateral2`.
@@ -64,7 +71,7 @@ namespace Part
  *  - a torus: `Lateral`, `Start`, `End`, and where the tube is not whole
  *    `TubeStart` and `TubeEnd`;
  *  - a plane: the face `Plane`, its edges `Front` `Rear` `Left` `Right`,
- *    its vertices by the two edges, `Front_Left`;
+ *    its vertices by the two edges, `FrontL`;
  *  - a line, a circle, an ellipse: the edge by that name, the vertices
  *    `Start` and `End`;
  *  - a helix and a spiral: `Segment1` on, `Start`, `End`, `Joint1` on;

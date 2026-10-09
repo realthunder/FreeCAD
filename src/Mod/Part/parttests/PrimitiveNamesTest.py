@@ -72,16 +72,33 @@ class PrimitiveNamesTest(unittest.TestCase):
             ("Top", ("ZMin", 30)),
         ):
             self.assertAlmostEqual(getattr(face(box, name).BoundBox, at[0]), at[1], msg=name)
-        # An edge by the two faces it is between, a vertex by the three that meet
-        self.assertIn("Front_Top", names(box, "Edge"))
-        self.assertIn("Bottom_Front_Left_Corner", names(box, "Vertex"))
-        self.assertEqual(len(names(box, "Edge")), 12)
+        # An edge by the two faces it is between, a vertex by the three that
+        # meet: the first in full, the rest by a letter. Front and rear come
+        # first, so that R is right and B bottom.
+        self.assertEqual(
+            sorted(names(box, "Edge")),
+            sorted(
+                ["FrontL", "FrontR", "FrontB", "FrontT", "RearL", "RearR", "RearB", "RearT"]
+                + ["LeftB", "LeftT", "RightB", "RightT"]
+            ),
+        )
+        self.assertEqual(
+            sorted(names(box, "Vertex")),
+            sorted(a + b + c for a in ("Front", "Rear") for b in "LR" for c in "BT"),
+        )
+        corner = box.Shape.getElement(indexed(box, "FrontLT")).Point
+        self.assertEqual((corner.x, corner.y, corner.z), (0, 0, 30))
+        edge = box.Shape.getElement(indexed(box, "RightB")).BoundBox
+        self.assertEqual((edge.XMin, edge.ZMax, edge.YLength), (10, 0, 20))
         self.assertAllNamedApart(box)
 
     def testACylinderCutOpenKeepsWhatItHad(self):
         cyl = self.make("Part::Cylinder", Radius=2, Height=10)
         self.assertEqual(sorted(names(cyl, "Face")), ["Bottom", "Lateral", "Top"])
-        self.assertIn("Lateral_Seam", names(cyl, "Edge"))
+        self.assertEqual(sorted(names(cyl, "Edge")), ["BottomL", "SeamL", "TopL"])
+        # The ends of the seam lie in no more faces than the circles they
+        # are on, and are told from those by the seam
+        self.assertEqual(sorted(names(cyl, "Vertex")), ["SeamBL", "SeamTL"])
         top = face(cyl, "Top").BoundBox.ZMin
         self.change(cyl, Angle=90)
         self.assertEqual(sorted(names(cyl, "Face")), ["Bottom", "End", "Lateral", "Start", "Top"])
@@ -91,7 +108,9 @@ class PrimitiveNamesTest(unittest.TestCase):
         start = face(cyl, "Start").BoundBox
         self.assertAlmostEqual(start.YMax, 0)
         self.assertAlmostEqual(start.XMax, 2)
-        self.assertNotIn("Lateral_Seam", names(cyl, "Edge"))
+        self.assertNotIn("SeamL", names(cyl, "Edge"))
+        self.assertIn("BottomLS", names(cyl, "Vertex"))
+        self.assertIn("StartE", names(cyl, "Edge"))
         self.assertAllNamedApart(cyl)
         # Pushed askew, the sides are told by the edge on the floor
         self.change(cyl, Angle=180, FirstAngle=30, SecondAngle=10)
@@ -106,16 +125,14 @@ class PrimitiveNamesTest(unittest.TestCase):
         self.assertEqual(sorted(names(cone, "Face")), ["Lateral", "Top"])
         self.assertAlmostEqual(face(cone, "Top").BoundBox.ZMin, 10)
         self.assertIn("BottomPole", names(cone, "Vertex"))
-        self.assertIn("Lateral_BottomPole", names(cone, "Edge"))
+        self.assertIn("BottomPoleL", names(cone, "Edge"))
         self.assertAllNamedApart(cone)
 
     def testABallsPolesAreOfTheirEnds(self):
         ball = self.make("Part::Sphere", Radius=5)
         self.assertEqual(names(ball, "Face"), ["Lateral"])
         self.assertEqual(sorted(names(ball, "Vertex")), ["BottomPole", "TopPole"])
-        self.assertEqual(
-            sorted(names(ball, "Edge")), ["Lateral_BottomPole", "Lateral_Seam", "Lateral_TopPole"]
-        )
+        self.assertEqual(sorted(names(ball, "Edge")), ["BottomPoleL", "SeamL", "TopPoleL"])
         # A cap at the bottom leaves the pole at the top the one it was
         self.change(ball, Angle1=-30)
         self.assertEqual(sorted(names(ball, "Face")), ["Bottom", "Lateral"])
@@ -128,6 +145,9 @@ class PrimitiveNamesTest(unittest.TestCase):
     def testATorusAndWhatClosesItsTube(self):
         torus = self.make("Part::Torus", Radius1=10, Radius2=2)
         self.assertEqual(names(torus, "Face"), ["Lateral"])
+        # One face, two seams, and the one vertex where they cross
+        self.assertEqual(sorted(names(torus, "Edge")), ["SeamL", "SeamL2"])
+        self.assertEqual(names(torus, "Vertex"), ["SeamsL"])
         self.assertAllNamedApart(torus)
         self.change(torus, Angle3=90)
         self.assertEqual(sorted(names(torus, "Face")), ["End", "Lateral", "Start"])
@@ -152,6 +172,9 @@ class PrimitiveNamesTest(unittest.TestCase):
         first = face(prism, "Side1").CenterOfMass
         self.assertGreater(first.x, 0)
         self.assertGreater(first.y, 0)
+        for name in ("BottomS1", "TopS6", "Side1S2", "Side1S6"):
+            self.assertIn(name, names(prism, "Edge"))
+        self.assertIn("BottomS1S2", names(prism, "Vertex"))
         self.assertAllNamedApart(prism)
 
     def testAWedgeAndWhereItClosesToARidge(self):
@@ -161,7 +184,7 @@ class PrimitiveNamesTest(unittest.TestCase):
         )
         self.change(wedge, X2min=5, X2max=5)
         self.assertEqual(sorted(names(wedge, "Face")), ["Bottom", "Front", "Left", "Right", "Top"])
-        self.assertIn("Left_Right", names(wedge, "Edge"))
+        self.assertIn("LeftR", names(wedge, "Edge"))
         self.assertAllNamedApart(wedge)
 
     def testAnEllipsoidAndItsHalves(self):
@@ -178,9 +201,7 @@ class PrimitiveNamesTest(unittest.TestCase):
         plane = self.make("Part::Plane")
         self.assertEqual(names(plane, "Face"), ["Plane"])
         self.assertEqual(sorted(names(plane, "Edge")), ["Front", "Left", "Rear", "Right"])
-        self.assertEqual(
-            sorted(names(plane, "Vertex")), ["Front_Left", "Front_Right", "Left_Rear", "Rear_Right"]
-        )
+        self.assertEqual(sorted(names(plane, "Vertex")), ["FrontL", "FrontR", "RearL", "RearR"])
         line = self.make("Part::Line")
         self.assertEqual((names(line, "Edge"), names(line, "Vertex")), (["Line"], ["Start", "End"]))
         self.assertEqual(names(self.make("Part::Vertex"), "Vertex"), ["Point"])

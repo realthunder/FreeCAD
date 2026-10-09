@@ -98,7 +98,7 @@ class HLRProjectionTest(unittest.TestCase):
             self.assertTrue(name, "Edge%d unnamed" % (i + 1))
             if abs(edge.Length - cyl.Height.Value) < 1e-6 and isinstance(edge.Curve, Part.Line):
                 silhouettes.append(name.split(";")[0])
-        self.assertEqual(sorted(silhouettes), ["Lateral", "Lateral_Seam"])
+        self.assertEqual(sorted(silhouettes), ["Lateral", "SeamL"])
 
     def testHiddenPiecesOfOneEdgeAreToldApart(self):
         # a post in front of a wide box, seen along Y: the box's top front

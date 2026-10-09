@@ -33,7 +33,10 @@ now, first in a body or later.
 
 `Part::PrimitiveNames` (`src/Mod/Part/App/PrimitiveNames.{h,cpp}`). A
 face is named by its role, an edge by the faces it is between, a vertex by
-the faces that meet in it.
+the faces that meet in it: the first of them in full and the rest by a
+letter. The user, 2026-10-09: "shorten the edge and vertex name then. like
+FrontL for left edge. FrontLT for left top corner. you don't need the word
+'Corner'". (The first build said `Front_Left_Top_Corner`.)
 
 | | faces |
 | --- | --- |
@@ -41,38 +44,53 @@ the faces that meet in it.
 | cylinder, cone, sphere, ellipsoid | `Lateral`, `Bottom`, `Top`; not all the way round, `Start` (at the angle nought) and `End` |
 | prism | `Bottom`, `Top`, `Side1` on, the first from the corner on +X |
 | torus | `Lateral`, `Start`, `End`; the tube not whole, `TubeStart` and `TubeEnd` |
-| plane | the face `Plane`; its edges `Front` `Rear` `Left` `Right`; its vertices by the two edges, `Front_Left` |
+| plane | the face `Plane`; its edges `Front` `Rear` `Left` `Right`; its vertices by the two edges, `FrontL` |
 | line, circle, ellipse | the edge by that name; the vertices `Start`, `End` |
 | helix, spiral | `Segment1` on; `Start`, `End`, `Joint1` on |
 | regular polygon | `Side1` on, `Corner1` on |
 | vertex | `Point` |
 
-- An edge: `Front_Top`, its two faces in the order of the alphabet. An edge
-  of one face is its seam, `Lateral_Seam`, or where the face closes to a
-  point: `Lateral_BottomPole`, `Lateral_TopPole`.
-- A vertex: `Bottom_Front_Left_Corner`. On the axis of a cone, a sphere or
-  an ellipsoid with no cap at that end it is `BottomPole` or `TopPole` --
-  by the end and not by a number, so that a cap put on the other end
-  leaves it the pole it was.
+- An edge: `FrontT`, `LeftB`, `BottomL` (a cylinder's bottom circle),
+  `StartE` (the edge on the axis, between the two sides), `Side1S2`.
+- A vertex: `FrontLT`, `BottomLS`, `BottomS1S2`.
+- *The order of the roles is what keeps a letter to one meaning.* Of a
+  box: front and rear, then left and right, then bottom and top. Front and
+  rear come first and are never a letter, so `R` is right and `B` is
+  bottom -- by the alphabet `BottomR` was two edges, the rear's and the
+  right's. About an axis: the ends, `Bottom` `Top`, then `L` lateral, `S`
+  start, `E` end; a prism's sides `S1` on; a torus' tube ends `TS`, `TE`.
+- An edge of one face is its seam, `SeamL`, or where the face closes to a
+  point: `BottomPoleL`, `TopPoleL`.
+- A vertex on the axis of a cone, a sphere or an ellipsoid with no cap at
+  that end is `BottomPole` or `TopPole` -- by the end and not by a number,
+  so that a cap put on the other end leaves it the pole it was.
+- *An edge and a vertex cannot have one name* (*measured*): a mapped name
+  is one key for every kind of element, and a second element given a name
+  that is taken gets `;D1` after it. On the primitive itself nothing says
+  the kind; `,E` and `,V` come with the first thing made from it. Three
+  faces to a vertex and two to an edge keep them apart nearly everywhere.
+  Where they do not, the vertex is on a seam and says so: a cylinder's
+  seam ends in `SeamBL` and `SeamTL`, beside the circles `BottomL` and
+  `TopL`; where two seams cross, a whole torus' one vertex, `SeamsL`. The
+  one case left is the vertex of a closed edge between two faces that
+  have no seam -- a torus whose tube is closed by two flat rings -- and it
+  ends in `V`: `TubeStartTEV`.
 - What is still alike is numbered from the second on, in the order of
   height, then of the angle about Z, then of the distance from it:
   an ellipsoid split in halves is `Lateral` and `Lateral2`, a whole
-  torus' two seams `Lateral_Seam` and `Lateral_Seam2`.
+  torus' two seams `SeamL` and `SeamL2`.
 - A face that fits no role of its kind is `Other`. None is known to.
 
 `Rear` and not `Back`, and -Y for `Front`: FreeCAD's views, not OCCT's box
-(whose front is +X). *Mine.* So are the pole names, `Seam`, `Corner`,
-`TubeStart`, and the choice that an edge has no mark of its kind while a
-vertex has `_Corner`: a mapped name is one key for every kind of element,
-and a cylinder's seam end lies in the same two faces as the circle it is
-on.
+(whose front is +X). *Mine.* So are the pole names, `Seam`, the letters
+and their order, and the `V`.
 
 *What it holds through.* Measured on every kind
 (`parttests.PrimitiveNamesTest`): a cylinder cut open keeps `Lateral`,
 `Bottom`, `Top` and gains `Start`, `End`; pushed askew
 (`FirstAngle`, `SecondAngle`) the same; a cone without its bottom keeps
 `Lateral` and `Top`; a sphere with a cap keeps the other pole; a wedge
-closed to a ridge has the edge `Left_Right`.
+closed to a ridge has the edge `LeftR`.
 
 *What it does not.* A prism's `Side3` is the third side, and is another
 when `Polygon` changes; a helix' `Segment2` likewise. There is no role to
@@ -103,6 +121,28 @@ Part: every primitive's `execute()` hands `Shape` the named shape
 (`PrimitiveNames::named()`). PartDesign: `FeaturePrimitive::execute()`
 names what the feature adds or takes away before it is tagged and made one
 with the base. Cost, a box: 64 us against 23 us bare, 26 names.
+
+*What the names cost* (*measured*, with none, with the faces' alone and
+with all, `~/.cache/txnlog-link/namecost.py`). In a long history, nothing
+to measure: a plate drilled a hundred times holds 32,900 names with none
+on its primitives and 33,726 with all, the process the same within a
+megabyte, the file 2 KB more in 858. Every element made from a primitive
+had a name before; only what it begins with changed. On the primitives
+themselves: 3,000 boxes with nothing made of them are 422 MB with no
+names, 430 with the faces', 451 with all -- about 10 KB a box, 380 B a
+name, the edges' and the vertices' seven of the ten. Short names halve
+the text (435,000 characters for those boxes where the long ones were
+981,000) and leave the memory where it was, 450 MB: what a name costs is
+its place in two maps, not its letters.
+
+*Could the edges and the vertices go unnamed, and be named from the
+faces?* Asked 2026-10-09, and checked. `makESHAPE` has a pass that names
+a lower element from an upper one, `;:U`, but it names what the first pass
+left with no name, and an input's element with no name is given its number
+there (`getMappedName(..., allowUnmapped)`): a cut of a box with only its
+faces named has `Left;:H64,F` and `Edge1;:H64,E`. The pass is also one
+face and a place in it, `;:U2`, not two faces. So the names are kept, and
+made short.
 
 ## 4. What it changes
 
@@ -144,6 +184,21 @@ the 2025 release was asking already -- its shapes are of OCCT 7 -- and
 what is new is that a file this fork wrote before today asks too, where it
 has a primitive.
 
+*Not by the element map version*, though that is what the version is for
+(asked 2026-10-09; read, not built). Three things are in the way. A
+version of the primitive's own would not prompt: `PropertyPartShape::Restore`
+takes the new version without a word where the shape has no names
+(`PropertyTopoShape.cpp`, "version mismatch"), which is the very state to
+be caught -- the 2025 file warned of its cut and not of its box. A value
+the transaction log captures is written by a property on no object, with
+the property's version and not its owner's (docs/TransactionLog.md sec
+27.72), so a primitive put back from the log would say the old version and
+ask for a recompute at the next open, as every value did before that
+section. And the version of every shape, `OpCodes::Version`, would flag
+every file and still not the box. What a version of its own would buy is
+that a file says which naming it has, where an empty map only says none:
+wanted the day a role is renamed in a released build, and not before.
+
 *The user's answer was "at its next recompute, nothing special at load".*
 It was given when the names were to be `Face3` itself, which changes no
 derived name. With role names the premise is gone, and this is the least
@@ -180,7 +235,7 @@ started.
   of element it has met in a table that is a static of the function:
   gone by then. No mapped name had reached that table before -- a name
   made of anything but letters is turned away earlier, and every name was
-  `Face1;:H64,F` -- and `Front_Left` is letters. The table is never
+  `Face1;:H64,F` -- and `FrontL` is letters. The table is never
   destroyed now, and is written under a lock, the two threads being two.
   *Not looked for:* what else that thread touches after the statics go.
 - **A child view provider on a link to a box painted nothing by name**

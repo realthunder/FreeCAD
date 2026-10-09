@@ -27,6 +27,8 @@
 # include <algorithm>
 # include <cctype>
 # include <cmath>
+# include <cstdlib>
+# include <iterator>
 # include <map>
 # include <set>
 # include <string>
@@ -126,13 +128,85 @@ double angleOf(const gp_Pnt& p)
     return a < 0.0 ? 0.0 : a;
 }
 
-std::string joined(std::vector<std::string> names)
+/** A role, where it stands in a name and how it is said after another
+ *
+ * A name is the first of its roles in full and the rest by a letter:
+ * "FrontL" the edge of the front on the left, "FrontLT" the corner of it at
+ * the top. The order is what keeps a letter from meaning two things: front
+ * and rear come first and are never a letter, so R is right and B bottom.
+ */
+struct Role
 {
-    std::sort(names.begin(), names.end());
-    names.erase(std::unique(names.begin(), names.end()), names.end());
+    const char* name;
+    const char* code;
+};
+
+const Role Roles[] = {
+    // What an element is on, before what it is between
+    {"Seams", "Ss"}, {"Seam", "Sm"}, {"BottomPole", "BP"}, {"TopPole", "TP"},
+    // A box and a wedge: front to rear, left to right, bottom to top
+    {"Front", "F"}, {"Rear", "Re"}, {"Left", "L"}, {"Right", "R"},
+    // About an axis: the ends, then round it
+    {"TubeStart", "TS"}, {"TubeEnd", "TE"}, {"Bottom", "B"}, {"Top", "T"},
+    {"Lateral", "L"}, {"Start", "S"}, {"End", "E"}, {"Side", "S"},
+    {"Plane", "P"}, {"Other", "O"},
+};
+
+/// A role as it was given, "Side3" or "Lateral2": which it is and its number
+struct Said
+{
+    std::string name;
+    int rank {0};
+    int number {0};
+    std::string code;
+
+    explicit Said(const std::string& given)
+        : name(given)
+    {
+        std::size_t end = given.size();
+        while (end > 0 && std::isdigit(static_cast<unsigned char>(given[end - 1])))
+            --end;
+        const std::string base = given.substr(0, end);
+        const std::string digits = given.substr(end);
+        number = digits.empty() ? 0 : std::atoi(digits.c_str());
+        rank = static_cast<int>(std::size(Roles));
+        code = base.substr(0, 1);
+        for (std::size_t r = 0; r < std::size(Roles); ++r) {
+            if (base == Roles[r].name) {
+                rank = static_cast<int>(r);
+                code = Roles[r].code;
+                break;
+            }
+        }
+        code += digits;
+    }
+    bool operator<(const Said& other) const
+    {
+        if (rank != other.rank)
+            return rank < other.rank;
+        if (number != other.number)
+            return number < other.number;
+        return name < other.name;
+    }
+};
+
+/// The name of what lies in, or between, these: "Front", "Left", "Top" is
+/// "FrontLT"
+std::string composed(const std::vector<std::string>& roles)
+{
+    std::vector<Said> said;
+    said.reserve(roles.size());
+    for (const auto& role : roles)
+        said.emplace_back(role);
+    std::sort(said.begin(), said.end());
     std::string res;
-    for (const auto& name : names)
-        res += (res.empty() ? "" : "_") + name;
+    std::string last;
+    for (const Said& role : said) {
+        if (role.name == last)
+            continue;
+        last = role.name;
+        res += res.empty() ? role.name : role.code;
+    }
     return res;
 }
 
@@ -261,8 +335,8 @@ public:
         }
         // A corner by the two edges: the one face says nothing of it
         for (std::size_t i = 0; i < vertexNames.size(); ++i)
-            vertexNames[i] = joined(namesAround(edgesOfVertex, vertices(static_cast<int>(i) + 1),
-                                                edges, edgeNames));
+            vertexNames[i] = composed(namesAround(edgesOfVertex, vertices(static_cast<int>(i) + 1),
+                                                  edges, edgeNames));
     }
 
     /// One edge, by what it is, and its two ends
@@ -332,33 +406,64 @@ public:
         }
         // The faces told apart before anything is named by them
         apart();
+        // An edge by the faces it is between. Of one face alone it is the
+        // face's seam, or where the face closes to a point.
+        std::vector<char> seam(edgeNames.size(), 0);
         for (std::size_t i = 0; i < edgeNames.size(); ++i) {
             if (!edgeNames[i].empty())
                 continue;
             const TopoDS_Edge edge = TopoDS::Edge(edges(static_cast<int>(i) + 1));
-            const auto around = namesAround(facesOfEdge, edge, faces, faceNames);
-            std::string name = joined(around);
-            if (name.empty())
-                name = "Other";
-            else if (name.find('_') != std::string::npos)
-                ;   // between two faces
-            else if (BRep_Tool::Degenerated(edge))
-                name += below(middleOf(edge)) ? "_BottomPole" : "_TopPole";
-            else
-                name += "_Seam";
-            edgeNames[i] = name;
+            auto around = namesAround(facesOfEdge, edge, faces, faceNames);
+            std::sort(around.begin(), around.end());
+            around.erase(std::unique(around.begin(), around.end()), around.end());
+            if (around.empty()) {
+                edgeNames[i] = "Other";
+                continue;
+            }
+            if (around.size() == 1) {
+                if (BRep_Tool::Degenerated(edge)) {
+                    around.emplace_back(below(middleOf(edge)) ? "BottomPole" : "TopPole");
+                }
+                else {
+                    around.emplace_back("Seam");
+                    seam[i] = 1;
+                }
+            }
+            edgeNames[i] = composed(around);
         }
         apart();
+        // A vertex by the faces that meet in it. On a seam it lies in no
+        // more faces than the edge it ends, and is told from that by the
+        // seam; where two seams cross, by both.
+        std::set<std::string> ofEdges(edgeNames.begin(), edgeNames.end());
         for (std::size_t i = 0; i < vertexNames.size(); ++i) {
             if (!vertexNames[i].empty())
                 continue;
             const TopoDS_Shape& vertex = vertices(static_cast<int>(i) + 1);
-            std::string name = joined(namesAround(facesOfVertex, vertex, faces, faceNames));
-            if (!name.empty())
-                name += "_Corner";
-            else
-                name = joined(namesAround(edgesOfVertex, vertex, edges, edgeNames));
-            vertexNames[i] = name.empty() ? "Other" : name;
+            auto around = namesAround(facesOfVertex, vertex, faces, faceNames);
+            if (around.empty()) {
+                const std::string name = composed(namesAround(edgesOfVertex, vertex, edges, edgeNames));
+                vertexNames[i] = name.empty() ? "Other" : name;
+                continue;
+            }
+            std::set<int> seams;
+            const int at = edgesOfVertex.FindIndex(vertex);
+            if (at > 0) {
+                for (TopTools_ListOfShape::Iterator it(edgesOfVertex.FindFromIndex(at)); it.More();
+                     it.Next()) {
+                    const int e = edges.FindIndex(it.Value());
+                    if (e > 0 && seam[static_cast<std::size_t>(e) - 1])
+                        seams.insert(e);
+                }
+            }
+            if (!seams.empty())
+                around.emplace_back(seams.size() > 1 ? "Seams" : "Seam");
+            std::string name = composed(around);
+            // The one vertex of a closed edge between two faces with no seam
+            // lies in what the edge lies in, and one name is one element's
+            if (ofEdges.count(name))
+                name += "V";
+            vertexNames[i] = name;
         }
         apart();
 
