@@ -115,6 +115,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 46 | 2026-10-09 | TechDraw drawn by the backend: the hatch of a section's cut face is bright green lines far apart, where Qt draws a fine grey-green pattern (seen by the build session on entry 36) | OPEN, not looked at |
 | 47 | 2026-10-09 | `scanner.FCStd`: once in three sessions the FIRST load's 3D view was empty 13 s after opening, background and navigation cube only; the next two loads of that session were complete (seen by the build session on entry 28) | OPEN, seen once, not followed up |
 | 48 | 2026-10-09 | three GUI tests fail the same way on the copy staged 2026-10-07 and on today's tree: `element-color-hide.py` (2 of 624 claims), `per-view-shown-eviction.py` (1 claim), `navicube-per-view.py` (11 claims pass, then it never ends) (found by the build session) | OPEN, not looked into |
+| 49 | 2026-10-09 | after "Reset all" in the preferences and then the Light theme from Tools > Preset configurations > Themes, the workbench toolbar is hidden; shown again by hand it sits in the custom title bar as expected; intermittent -- the same steps a second time did not do it | OPEN; the bad and the good run are both in the evidence, and they differ in one thing: a saved main window state was in the configuration when the theme was applied (read, nothing run) |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -3772,6 +3773,84 @@ copy staged 2026-10-07 as on today's tree. Not looked into.
 - `navicube-per-view.py`: passes 11 claims, then never ends.
 Not said yet by the reporter: whether and when they are to be looked at.
 
+## 49. After "Reset all" and then the Light theme, the workbench toolbar is hidden -- OPEN, intermittent
+
+**2026-10-09 09:30, reported:** "new defect. It's intimitent. I choose 'reset
+all' in preference dialog. and then select light theme in tools -> Preset
+configurations -> themes. The theme changed, but the workbench toolbar got
+somehow hidden. When I manually unhide it, it shows in the customized title
+bar as expected. but when I repeat the process it does not occur. so might
+be some race condition here"
+The steps: "Reset all..." in the preferences dialog; then Tools > Preset
+configurations > Themes > Light. The theme is applied, and the workbench
+toolbar is gone. Unhidden by hand it appears in the custom title bar, where
+it belongs. The same steps done again did NOT hide it. The reporter's guess:
+a race.
+On the copy staged 2026-10-09 08:40 (`9bcbdc191d`).
+
+**Evidence**, copied by the note-taker at 09:31 while the session was still
+running, in `..\dl\handson\2026-10-09\entry49\`: `mcp_console-0931.log` (the
+session's report log), `user-0931.cfg` (the configuration on disk, written
+09:24, before the session), and the four configuration backups the session
+made, `user.1791509177.cfg`, `...205.cfg`, `...237.cfg`, `...292.cfg`, with
+`user.cfg.backup`. A backup is written each time a pack is applied and
+holds the configuration as it was just BEFORE.
+
+**What they show: read by the note-taker, nothing run.** The session started
+09:24:59 with `scanner.FCStd` not yet open. The main window logs each time
+it is hidden and shown again, which a swap of the title bar does:
+
+| time | report log | backup | reading |
+|---|---|---|---|
+| 09:25:40 | two layout warnings | | the preferences dialog opened |
+| 09:26:03 | hide, show | none | "Reset all" (it makes no backup) |
+| 09:26:17 | hide, show | `...177`, 8030 bytes | the Light theme, 14 s after the reset: THE BAD RUN |
+| 09:26:45 | nothing | `...205`, has `Theme` = Light | another pack applied: Dark, by the next backup |
+| 09:27:17 | nothing | `...237`, has `Theme` = Dark | another pack applied |
+| 09:27:35 | two layout warnings | | the preferences dialog again |
+| 09:27:41 | hide, show | none | "Reset all", the second time |
+| 09:28:12 | hide, show | `...292`, 5084 bytes | the Light theme, 31 s after the reset: THE GOOD RUN |
+
+The two packs applied at 09:26:45 and 09:27:17 are not in the report; to
+ask. Between them the key `MainWindow/ToolBars/Workbench` = 1 appears (not
+in `...205`, in `...237`): that is the toolbar shown again by hand.
+
+**The one difference between the bad run and the good one** is in what the
+configuration held at the moment the theme was applied (`...177` against
+`...292`): the bad run's has `MainWindow/MainWindowState` (the main
+window's saved layout, which carries which toolbars are shown), with
+`Maximized`, `StatusBar`, `Geometry`, the dock windows' flags and two
+overlay panel sizes. The good run's has none of them. Both have
+`CustomTitleBar` = 0, the reset's value. So in the bad run something SAVED
+the window's state in the 14 seconds between the reset and the theme, and
+in the good run nothing did in 31.
+
+**Where to look, read from the source, nothing run -- a guess, not a
+finding:**
+- The reset clears every user parameter (`DlgPreferencesImp::restoreDefaults`,
+  `mgr->Clear(true)`), and with it `CustomTitleBar`; the title bar is
+  swapped on a zero timer (`MainWindow.cpp`, the `titleBarTimer`). The swap
+  hides widgets on its way and parks the toolbar areas that live in the
+  title bar -- the workbench toolbar's among them -- on the window.
+- `MainWindow::setCustomTitleBar` guards against exactly this with
+  `_restoring` ("the swap hides widgets on its way through ... which would
+  write the transient hide out as the setting -- the same trap the toolbar
+  areas are in"). But a save can be asked for with a delay
+  (`saveWindowSettings(true)` starts a 100 ms timer; the toolbar manager
+  asks so from `ToolBarManager.cpp:880` and `:914`), and a delayed save
+  fires after the guard is gone.
+- A write of `MainWindowState` is answered by restoring it 100 ms later
+  (`restoreStateTimer`, `MainWindow.cpp:521` and `:550`), and applying a
+  pack restores the toolbars as well (`PreferencePackManager.cpp:350`).
+So the guess: a window state saved while the workbench toolbar was out of
+its title bar, then restored when the theme put the custom title bar back.
+What makes it intermittent would be whether that save happened at all --
+the evidence says it did in one run and not in the other.
+
+Not said yet by the reporter: what the two packs applied in between were,
+and whether anything was clicked or moved between the first reset and the
+first theme (a toolbar, a panel, the window).
+
 ## Inbox
 
 Notes not sorted into an entry yet. Add a line here at any time, in any words;
@@ -3779,4 +3858,4 @@ it is read before each entry is started and moved up into the table.
 
 (empty: the notes of 2026-10-06 are entries 20 to 28, those of 2026-10-07
 entries 29 to 40, those of 2026-10-08 entries 41 to 45, those of 2026-10-09
-so far entries 46 to 48)
+so far entries 46 to 49)
