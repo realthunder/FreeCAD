@@ -137,9 +137,13 @@ public:
     void afterRestore();
 
     /// The mapped names a file gave for the element paths of the cell's
-    /// expression go to the paths, once the expression is parsed
-    /// (docs/TransactionLog.md sec 31.22)
+    /// expression, and the string ids they hold, go to the paths, once the
+    /// expression is parsed (docs/TransactionLog.md sec 31.22, 31.24)
     void giveShadows();
+
+    /// The string ids the element paths hold are marked for a save, as a
+    /// link property marks its own (sec 27.75, 31.24)
+    void markShadowIds() const;
 
     void save(Base::Writer &writer) const;
 
@@ -295,7 +299,13 @@ private:
     DisplayUnit displayUnit;
     std::string alias;
     /// Read with the cell and not yet given: the expression is parsed later
-    std::vector<std::string> givenShadows;
+    struct GivenShadow
+    {
+        std::string first;      ///< the mapped name, as saved
+        std::string stored;     ///< the name in the owner's table, of a path into another
+        std::vector<long> ids;  ///< the string ids the name holds
+    };
+    std::vector<GivenShadow> givenShadows;
     Base::Unit computedUnit;
     int rowSpan;
     int colSpan;

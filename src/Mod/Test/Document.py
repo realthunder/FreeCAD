@@ -5061,6 +5061,45 @@ class TransactionBranchCases(unittest.TestCase):
         self.assertEqual({i for i in held if doc.Hasher.getID(i)}, held)
         self.assertEqual({i for i in others if doc.Hasher.getID(i)}, set())
 
+    def testACellHoldsTheStringsItNames(self):
+        # Sec 31.24: a sheet's cell that names an element holds the string
+        # ids of its name across a save, as an object's expression does
+        # (27.77). The cell writes them beside its content, and a reopen
+        # holds them again -- the element missing by then, which is when
+        # nothing else does.
+        import io
+        import re
+        import zipfile
+
+        import Part
+
+        doc, feature, element, held, others = self._heldStringsModel("HeldCell")
+        sheet = doc.addObject("Spreadsheet::Sheet", "Sheet")
+        sheet.set("A1", "=F.<<%s>>._shape.Length" % element)
+        doc.recompute()
+        self.assertGreater(sheet.get("A1"), 0)
+
+        def saved(doc):
+            data = bytes(doc.Sheet.dumpPropertyContent("cells", Compression=0))
+            archive = zipfile.ZipFile(io.BytesIO(data))
+            xml = "".join(archive.read(n).decode() for n in archive.namelist())
+            found = re.search(r'<Cell address="A1"[^>]* sids0="([^"]*)"', xml)
+            return {int(x, 16) for x in found.group(1).split()} if found else set()
+
+        self.assertEqual(saved(doc), held)
+        feature.Shape = Part.makeBox(1, 1, 1)
+        doc.recompute()
+        for prop in [p for p in feature.PropertiesList if p.startswith("_BaseShape")]:
+            feature.removeProperty(prop)
+        doc.save()
+        path = doc.FileName
+        FreeCAD.closeDocument(doc.Name)
+        doc = self.track(FreeCAD.openDocument(path))
+        self.assertEqual(saved(doc), held)
+        doc.save()
+        self.assertEqual({i for i in held if doc.Hasher.getID(i)}, held)
+        self.assertEqual({i for i in others if doc.Hasher.getID(i)}, set())
+
     def testAShapeCrossingDocumentsTakesTheIdsOfItsTable(self):
         # Sec 27.76 items 1-4, 27.77: a shape made from another document's
         # comes into this document's string table -- names, held ids, and the

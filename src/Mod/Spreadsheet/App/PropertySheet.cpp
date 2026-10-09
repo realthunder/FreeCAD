@@ -419,6 +419,14 @@ void PropertySheet::Paste(const Property& from)
     signaller.tryInvoke();
 }
 
+void PropertySheet::beforeSave(Base::Writer& writer) const
+{
+    PropertyExpressionContainer::beforeSave(writer);
+    for (const auto& d : data) {
+        d.second->markShadowIds();
+    }
+}
+
 void PropertySheet::Save(Base::Writer& writer) const
 {
     // Save cell contents

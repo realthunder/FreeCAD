@@ -36,8 +36,10 @@
 
 #include <Base/Reader.h>
 #include <App/Application.h>
+#include <App/Document.h>
 #include <App/ExpressionParser.h>
 #include <App/MaterialAppearance.h>
+#include <App/StringHasher.h>
 #include <App/TransactionValue.h>
 #include <Base/Console.h>
 #include <Base/Parameter.h>
@@ -328,11 +330,49 @@ void Cell::giveShadows()
         return;
     }
     for (std::size_t i = 0; i < paths.size() && i < givenShadows.size(); ++i) {
-        if (!givenShadows[i].empty()) {
-            paths[i]->setGivenShadow(std::move(givenShadows[i]));
+        auto& given = givenShadows[i];
+        // As an expression engine gives its paths theirs (sec 27.77, 27.82):
+        // a path into another table has its shadow and the name stored in
+        // this one, looked up when it registers; one within this table its
+        // ids, and its name beside it until then.
+        if (!given.stored.empty()) {
+            paths[i]->setSavedShadow(std::move(given.first),
+                                     std::move(given.stored),
+                                     std::move(given.ids));
+            continue;
+        }
+        if (!given.ids.empty()) {
+            paths[i]->setSavedShadowIds(std::move(given.ids));
+        }
+        if (!given.first.empty()) {
+            paths[i]->setGivenShadow(std::move(given.first));
         }
     }
     givenShadows.clear();
+}
+
+void Cell::markShadowIds() const
+{
+    if (!expression) {
+        return;
+    }
+    auto sheet = owner->sheet();
+    App::StringHasherRef hasher =
+        sheet && sheet->getDocument() ? sheet->getDocument()->getStringHasher()
+                                      : App::StringHasherRef();
+    if (!hasher) {
+        return;
+    }
+    for (auto path : App::VariableExpression::elementPaths(*expression)) {
+        const auto& shadow = path->getPath().getShadowSub();
+        for (const auto* sids : {&shadow.sids, &shadow.storedIds}) {
+            for (const auto& sid : *sids) {
+                if (sid.isFromSameHasher(hasher)) {
+                    sid.mark();
+                }
+            }
+        }
+    }
 }
 
 void Cell::setContent(const char * value, bool eval)
@@ -851,14 +891,34 @@ void Cell::restore(Base::XMLReader &reader, bool checkAlias, int restoreType)
     givenShadows.clear();
     long shadows = reader.getAttributeAsInteger("shadows", "0");
     for (long i = 0; i < shadows; ++i) {
-        const std::string name = "shadow" + std::to_string(i);
-        std::string shadow = reader.hasAttribute(name.c_str()) ? reader.getAttribute(name.c_str()) : "";
+        const std::string n = std::to_string(i);
+        auto text = [&](const std::string& name) -> std::string {
+            return reader.hasAttribute(name.c_str()) ? reader.getAttribute(name.c_str()) : "";
+        };
+        GivenShadow given;
+        given.first = text("shadow" + n);
+        given.stored = text("stored" + n);
         // A value of another copy of the file names that copy's strings
-        // (sec 30.16)
-        if (auto strings = App::RestoreStrings::current()) {
-            shadow = strings->sub(shadow);
+        // (sec 30.16): each name, and each id, is taken into this file's.
+        auto strings = App::RestoreStrings::current();
+        if (strings) {
+            given.first = strings->sub(given.first);
+            if (!given.stored.empty()) {
+                given.stored = strings->element(given.stored.c_str());
+            }
         }
-        givenShadows.push_back(std::move(shadow));
+        std::istringstream in(text("sids" + n));
+        in >> std::hex;
+        long id;
+        while (in >> id) {
+            if (id > 0 && strings) {
+                id = strings->id(id);
+            }
+            if (id > 0) {
+                given.ids.push_back(id);
+            }
+        }
+        givenShadows.push_back(std::move(given));
     }
 
     std::string _content;
@@ -987,19 +1047,69 @@ void Cell::save(Base::Writer &writer) const {
     // expression's in its engine (docs/TransactionLog.md sec 31.22): a value
     // read where the shape counts another way has only the name to say which
     // element was meant.
+    //
+    // And the string ids the name holds (sec 31.24, as the engine's, sec
+    // 27.77): hex, space separated, the owner's table's, and not when
+    // exporting, the ids being this file's. A path into another table writes
+    // the name stored in this one beside its shadow, with this table's ids
+    // (sec 27.82); another table's numbers are never written.
     if (expression) {
         auto paths = App::VariableExpression::elementPaths(*expression);
-        bool named = false;
+        auto sheet = owner->sheet();
+        const bool exporting = sheet && sheet->isExporting();
+        App::StringHasherRef hasher =
+            sheet && sheet->getDocument() ? sheet->getDocument()->getStringHasher()
+                                          : App::StringHasherRef();
+        struct Entry
+        {
+            std::string shadow, stored, ids;
+        };
+        std::vector<Entry> entries;
+        bool any = false;
         for (auto path : paths) {
-            named = named || !path->getPath().getShadowSub().first.empty();
+            const auto& shadow = path->getPath().getShadowSub();
+            const bool crossing = !shadow.stored.empty();
+            Entry entry;
+            entry.shadow = shadow.first;
+            if (crossing) {
+                entry.stored = shadow.stored;
+            }
+            if (!exporting) {
+                std::ostringstream ids;
+                ids << std::hex;
+                const char* sep = "";
+                for (const auto& sid : crossing ? shadow.storedIds : shadow.sids) {
+                    if (hasher && !sid.isFromSameHasher(hasher)) {
+                        continue;
+                    }
+                    App::StringIDCollector::take(sid);
+                    ids << sep << sid.value();
+                    sep = " ";
+                }
+                // Read from a file and not held yet
+                for (long id : shadow.savedIds) {
+                    ids << sep << id;
+                    sep = " ";
+                }
+                entry.ids = ids.str();
+            }
+            any = any || !entry.shadow.empty() || !entry.ids.empty();
+            entries.push_back(std::move(entry));
         }
-        if (named) {
-            writer.Stream() << "\" shadows=\"" << paths.size();
-            for (std::size_t i = 0; i < paths.size(); ++i) {
-                const auto& shadow = paths[i]->getPath().getShadowSub();
-                if (!shadow.first.empty()) {
+        if (any) {
+            writer.Stream() << "\" shadows=\"" << entries.size();
+            for (std::size_t i = 0; i < entries.size(); ++i) {
+                const auto& e = entries[i];
+                if (!e.shadow.empty()) {
                     writer.Stream() << "\" shadow" << i << "=\""
-                                    << App::Property::encodeAttribute(shadow.first);
+                                    << App::Property::encodeAttribute(e.shadow);
+                }
+                if (!e.stored.empty()) {
+                    writer.Stream() << "\" stored" << i << "=\""
+                                    << App::Property::encodeAttribute(e.stored);
+                }
+                if (!e.ids.empty()) {
+                    writer.Stream() << "\" sids" << i << "=\"" << e.ids;
                 }
             }
         }

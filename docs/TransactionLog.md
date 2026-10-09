@@ -16608,9 +16608,9 @@ side's 600. A cell is saved as its content, with nothing beside it.
   the paths (`ShadowSub::given`), which register with it as an
   expression's do.
 - *Followed* with the rest: the cells are a link property.
-- *Not built: the string ids.* 27.77 (5) gave an engine's paths their ids
-  across a save; a cell's still hold theirs in memory only, as 27.77 found
-  expressions did. Not asked for here.
+- *The string ids* were not built with it -- 27.77 (5) gave an engine's
+  paths their ids across a save, and a cell's held theirs in memory only --
+  and are 31.24.
 
 **Left.**
 
@@ -16693,6 +16693,32 @@ again and merged; undone with something done since, it stays. In the Gui
 (`transaction-log-merge-check.py`): the question answered no leaves the
 rows, answered yes takes them, and with none to roll back nothing is
 asked.
+
+### 31.24 A cell holds the string ids of its element (user, 2026-10-09)
+
+31.22 noted it and left it: an expression engine's element paths hold
+their string ids across a save (27.77 (5)), a sheet's cells did not --
+after an open they held nothing until the reference updated, and a string
+table compacted meanwhile dropped what a missing reference names. **The
+user:** "do 1, 2, 3" -- this is 3.
+
+**Built**, as the engine's and beside the name 31.22 gave a cell: each
+element path of a cell writes `sidsN=`, hex and space separated, the ids
+of the owner's table its name holds; `PropertySheet::beforeSave` marks
+them, as a link property marks what its shadows hold (27.75), so the
+table's save keeps the strings. Not when exporting: the ids are this
+file's. A path into another document writes the name stored in this
+file's table (`storedN=`) beside its shadow, with this table's ids
+(27.82) -- another table's numbers are never written. Read back, the ids
+go to the path with its name (`Cell::giveShadows`), held again when the
+path registers; a value of another copy of the file has each id and name
+taken into this file's table (30.16).
+
+**Test.** Python `testACellHoldsTheStringsItNames`, the engine's test
+with a cell in the expression's place: the ids saved are the ones the
+element's name holds; the shape replaced and the evidence removed, the
+file saved, read again and saved again, the strings are still in the
+table and the rest of the old shape's are not.
 
 ## 32. A shape diff: seeing what a merge or a pick would take (plan, 2026-10-06)
 
