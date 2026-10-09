@@ -44,7 +44,13 @@ with the two known thickness failures, 50 skipped, 6 expected failures.
 
 The session of 2026-10-09, later (the reporter: "continue fixing the issues
 in the notes", read as the entries still open -- 46, 47 and 48; entry 30's
-first task and entry 28 wait for the reporter's answers).
+first task and entry 28 wait for the reporter's answers). The reporter
+added entries 49 to 58 while it ran. Done in it: 46, 49, 50, 51, 53, and
+the repair of a regression of entry 25's fix. Then, about 11:45, the
+reporter: "pause after you fixed this. push and stage" (this = entry 53).
+Both full suites on that tree (`c820c3aea1`): ctest 790 of 790 (799
+entries, 9 disabled, 1 skipped), Python 3411 tests with the two known
+thickness failures.
 
 Evidence that does not belong in the repository is under
 `..\dl\handson\<date>\`, as before.
