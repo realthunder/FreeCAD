@@ -900,8 +900,9 @@ Params = [
             "Applies at once."),
     ParamString('HeadlightDirection', '', title='Headlight direction',
         doc="Direction of the headlight relative to the camera, as (x,y,z).\n"
-            "Empty keeps the built-in direction. Set by dragging the light on\n"
-            "the Light sources page. Applies at once."),
+            "Empty keeps the built-in direction. Turned in a 3D view from the\n"
+            "Display style menu (Direction), and stored here by its Save as\n"
+            "default. Applies at once."),
     ParamString('BacklightDirection', '', title='Backlight direction',
         doc="Direction of the backlight relative to the camera, as (x,y,z).\n"
             "Empty keeps the built-in direction. Applies at once."),
@@ -923,6 +924,10 @@ Params = [
     ParamInt('AmbientLightIntensity', 20, title='Ambient light intensity',
         doc="Intensity of the ambient light of the 3D views in percent, 0 to\n"
             "100. Applies at once."),
+    ParamBool('SyncLightSettings', False, title='Lights of all views together',
+        doc="A light changed in the Display style menu, or its direction\n"
+            "dragged in a 3D view, goes to every open 3D view and not to the\n"
+            "active one alone."),
 
     # --- navigation
     ParamString('NavigationStyle', 'Gui::CADNavigationStyle', title='3D navigation style',

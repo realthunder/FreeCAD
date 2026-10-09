@@ -1640,6 +1640,14 @@ fc_add_gui_test(GuiOmniSearchRecentItems_tests_run
                 omni-search-recent-items.py
                 --timeout 180)
 
+# The Display style menu: the styles as one combo box, the anti-aliasing,
+# and the lights of the active view (stored in the view, or in every open
+# view; saved as the default by a button; the headlight turned with the
+# pointer). The Light Sources preference page is gone.
+fc_add_gui_test(GuiDisplayStyleMenu_tests_run
+                display-style-menu.py
+                --timeout 240)
+
 # The render type alone says whether the render engine draws: "Default" is
 # the engine on the platform's backend with the render cache always 3,
 # "Legacy" the old Coin rendering with the render cache the user's own.

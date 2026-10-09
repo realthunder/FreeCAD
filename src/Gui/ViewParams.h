@@ -34,7 +34,7 @@ import ViewParams
 ViewParams.declare_begin()
 ]]]*/
 
-// Auto generated code (Gui/ViewParams.py:1066)
+// Auto generated code (Gui/ViewParams.py:1071)
 #include <QString>
 
 // Auto generated code (Tools/params_utils.py:82)
@@ -2833,8 +2833,9 @@ public:
     /// Accessor for parameter HeadlightDirection
     ///
     /// Direction of the headlight relative to the camera, as (x,y,z).
-    /// Empty keeps the built-in direction. Set by dragging the light on
-    /// the Light sources page. Applies at once.
+    /// Empty keeps the built-in direction. Turned in a 3D view from the
+    /// Display style menu (Direction), and stored here by its Save as
+    /// default. Applies at once.
     static const std::string & getHeadlightDirection();
     static const std::string & defaultHeadlightDirection();
     static void removeHeadlightDirection();
@@ -2929,6 +2930,20 @@ public:
     static void removeAmbientLightIntensity();
     static void setAmbientLightIntensity(const long &v);
     static const char *docAmbientLightIntensity();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter SyncLightSettings
+    ///
+    /// A light changed in the Display style menu, or its direction
+    /// dragged in a 3D view, goes to every open 3D view and not to the
+    /// active one alone.
+    static const bool & getSyncLightSettings();
+    static const bool & defaultSyncLightSettings();
+    static void removeSyncLightSettings();
+    static void setSyncLightSettings(const bool &v);
+    static const char *docSyncLightSettings();
     //@}
 
     // Auto generated code (Tools/params_utils.py:139)
@@ -3431,7 +3446,7 @@ public:
     static const char *docHeadlightRotationW();
     //@}
 
-    // Auto generated code (Gui/ViewParams.py:1072)
+    // Auto generated code (Gui/ViewParams.py:1077)
     static const std::vector<QString> AnimationCurveTypes;
 
     static void onViewParamChanged(const char *sReason);
@@ -3462,7 +3477,7 @@ ViewParams.declare_end()
 }; // class ViewParams
 } // namespace Gui
 
-// Auto generated code (Gui/ViewParams.py:1085)
+// Auto generated code (Gui/ViewParams.py:1090)
 namespace Gui {
 /// Obtain all display style names, terminated by nullptr entry.
 GuiExport const char **drawStyleNames();

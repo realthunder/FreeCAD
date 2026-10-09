@@ -37,7 +37,6 @@
 #include "PreferencePages/DlgSettingsRender.h"
 #include "PreferencePages/DlgSettingsEditor.h"
 #include "PreferencePages/DlgSettingsGeneral.h"
-#include "PreferencePages/DlgSettingsLightSources.h"
 #include "PreferencePages/DlgSettingsMacroImp.h"
 #include "PreferencePages/DlgSettingsNavigation.h"
 #include "PreferencePages/DlgSettingsNotificationArea.h"
@@ -84,7 +83,6 @@ WidgetFactorySupplier::WidgetFactorySupplier()
     new PrefPageProducer<DlgSettingsPreferencePack>   ( QT_TRANSLATE_NOOP("QObject","General") );
     new PrefPageProducer<DlgSettings3DViewImp>        ( QT_TRANSLATE_NOOP("QObject","Display") );
     DlgSettings3DViewImp::attachObserver();
-    new PrefPageProducer<DlgSettingsLightSources>     ( QT_TRANSLATE_NOOP("QObject","Display") );
     new PrefPageProducer<DlgSettingsUI>               ( QT_TRANSLATE_NOOP("QObject","Display") );
     new PrefPageProducer<DlgSettingsNavigation>       ( QT_TRANSLATE_NOOP("QObject","Display") );
     new PrefPageProducer<DlgSettingsViewColor>        ( QT_TRANSLATE_NOOP("QObject","Display") );

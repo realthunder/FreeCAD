@@ -415,6 +415,39 @@ passed; `docs/RenderDebug.md` section 5.1 records what they were. For
 menu behaviour the user is the only oracle; say that instead of
 reporting a pass.
 
+**The menu since 2026-10-09** (docs/HandsOnQueue.md entry 63,
+`Gui/DisplayOptions.h`). Three sections, built when the menu is about to
+show, in this order:
+- `DrawStyleOptionsWidget`, at the top: the draw styles as ONE combo box,
+  each entry with its style's icon, and the anti-aliasing of the 3D views
+  as another. The styles' own rows are still in the menu, hidden: they are
+  the commands' actions, which the `V,1` to `V,9` shortcuts need (above),
+  and picking an entry of the combo runs the style's command. A combo in
+  a widget row keeps the rule: the menu stays up while styles are tried.
+- `ShadingOptionsWidget`, as before.
+- `LightOptionsWidget`: what the Light Sources preference page held --
+  headlight, fill light and ambient light, a switch, a colour and an
+  intensity each -- which is gone from the preferences. A change is the
+  ACTIVE VIEW's: it is written into the view's `Light_*` properties
+  (`View3DInventorViewer::setLightSetting`), which a view keeps with its
+  document; with "All views" ticked (the setting `View/SyncLightSettings`)
+  into those of every open 3D view. Nothing there writes the preferences
+  but "Save as default" (`saveLightSettings`). "Direction" lets the
+  pointer turn the headlight in the view (`setLightManipulator`): a drag
+  with the left button puts the light where the pointer is on a ball that
+  fills the view, the other buttons still move the camera, and the button
+  again or Escape ends it. It is not a handle in the scene, as the page
+  had in a little view of its own: at the middle of a view with a model in
+  it, a handle is inside the model.
+The two rows that must dismiss the menu -- "Direction", since the view
+is under it, and a colour, since a dialog under a menu's grab gets no
+input -- do it by the synthetic press outside the popup that the warning
+above asks for (`dismiss()` in `DisplayOptions.cpp`).
+`tests/gui/display-style-menu.py` drives the sections through the menu's
+own `aboutToShow`; it pops nothing up, so of the menu's BEHAVIOUR as a
+popup -- staying up, the dismissals, the colour dialog after one -- it
+says nothing.
+
 ### 3.6 Stage 1c: the workbench scene graphs
 
 `wb_audit_probe.py` -- the rest of the first bullet of 3.2. Eleven cases,

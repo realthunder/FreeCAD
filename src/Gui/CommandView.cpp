@@ -92,6 +92,7 @@
 #include "SelectionView.h"
 #include "SoAxisCrossKit.h"
 #include "ShadingOptions.h"
+#include "DisplayOptions.h"
 #include "SoFCOffscreenRenderer.h"
 #include "SoFCUnifiedSelection.h"
 #include "TaskRenderSettings.h"
@@ -819,9 +820,18 @@ public:
         // is built by ActionGroup::addTo -- for the tool button and for
         // the menu bar, and again whenever the toolbar is rebuilt -- so
         // the section is installed on first show of each one.
+        //
+        // Two more ride with it (Gui/DisplayOptions.h): the styles
+        // themselves as one combo box at the top, in place of their rows,
+        // with the anti-aliasing beside it; and the lights of the view
+        // below the shading. In that order: the first hides what is in the
+        // menu when it runs, which has to be the rows and nothing else.
         if (auto group = qobject_cast<Gui::ActionGroup*>(action)) {
-            QObject::connect(group, &Gui::ActionGroup::aboutToShow,
-                             ShadingOptionsWidget::install);
+            QObject::connect(group, &Gui::ActionGroup::aboutToShow, [](QMenu *menu) {
+                DrawStyleOptionsWidget::install(menu);
+                ShadingOptionsWidget::install(menu);
+                LightOptionsWidget::install(menu);
+            });
         }
         return action;
     }

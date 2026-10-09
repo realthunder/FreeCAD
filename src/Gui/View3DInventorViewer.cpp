@@ -52,6 +52,7 @@
 # include <Inventor/errors/SoDebugError.h>
 # include <Inventor/events/SoEvent.h>
 # include <Inventor/events/SoKeyboardEvent.h>
+# include <Inventor/events/SoLocation2Event.h>
 # include <Inventor/events/SoMotion3Event.h>
 # include <Inventor/manips/SoClipPlaneManip.h>
 # include <Inventor/nodes/SoAnnotation.h>
@@ -315,7 +316,23 @@ public:
                 return true;
             }
         }
-        else if (event->type() == QEvent::KeyPress) {
+        else if (event->type() == QEvent::ShortcutOverride || event->type() == QEvent::KeyPress) {
+            // Escape while the light is being turned with the pointer
+            // (setLightManipulator) ends that, and has to be taken here:
+            // Escape is a command's shortcut (Std_ToggleNavigation), so
+            // unless the override is claimed the key never arrives as a
+            // key at all.
+            auto ke = static_cast<QKeyEvent*>(event);  // NOLINT
+            auto viewer = static_cast<View3DInventorViewer*>(obj);
+            if (ke->key() == Qt::Key_Escape && ke->modifiers() == Qt::NoModifier
+                    && viewer->hasLightManipulator()) {
+                if (event->type() == QEvent::KeyPress)
+                    viewer->setLightManipulator(false);
+                ke->accept();
+                return true;
+            }
+        }
+        if (event->type() == QEvent::KeyPress) {
             auto ke = static_cast<QKeyEvent*>(event);  // NOLINT
             if (ke->matches(QKeySequence::SelectAll)) {
                 auto viewer = static_cast<View3DInventorViewer*>(obj);
@@ -542,6 +559,14 @@ static ValueT _hiddenLineParam(View3DInventor *view, const char *_name, const ch
 struct View3DInventorViewer::Private
 {
     View3DInventor                    *view;
+
+    /// The headlight's direction is being turned with the pointer
+    /// (setLightManipulator), and the button is down on it
+    bool                              lightManip = false;
+    bool                              lightDragging = false;
+    /// Turn the headlight to where the pointer is; true for an event the
+    /// manipulation took
+    bool turnLight(const SoEvent *ev);
     /// Where the Render_* settings are read from, when that is not the
     /// MDI view above. A viewer with no View3DInventor -- a material
     /// preview, an icon renderer -- otherwise falls through to the
@@ -6548,6 +6573,200 @@ void View3DInventorViewer::syncLightProperties()
         applyLightPreference(def.key);
 }
 
+bool View3DInventorViewer::getLightSetting(const char *key, App::Property &out) const
+{
+    auto def = _findLightProperty(key);
+    if (!def || !out.isDerivedFrom(Base::Type::fromName(_lightPropertyType(def->field))))
+        return false;
+    if (auto view = _pimpl->view) {
+        auto prop = view->getPropertyByName(_lightPropertyName(*def).c_str());
+        if (prop && prop->getTypeId() == out.getTypeId()) {
+            out.Paste(*prop);
+            return true;
+        }
+    }
+    auto grp = _viewParameterGroup();
+    if (_readPreference(*def, *grp, out))
+        return true;
+    // A direction nobody has set: where the light points
+    if (def->field == FieldDirection) {
+        auto node = _lightNode(const_cast<View3DInventorViewer &>(*this), def->target);
+        if (node) {
+            const SbVec3f dir = node->direction.getValue();
+            static_cast<App::PropertyVector &>(out).setValue(
+                    Base::Vector3d(dir[0], dir[1], dir[2]));
+            return true;
+        }
+    }
+    return false;
+}
+
+bool View3DInventorViewer::setLightSetting(const char *key, const App::Property &value)
+{
+    auto def = _findLightProperty(key);
+    auto view = _pimpl->view;
+    if (!def || !view)
+        return false;
+    const char *type = _lightPropertyType(def->field);
+    if (!value.isDerivedFrom(Base::Type::fromName(type)))
+        return false;
+    const std::string name = _lightPropertyName(*def);
+    auto prop = view->getPropertyByName(name.c_str());
+    if (prop && prop->getTypeId() != value.getTypeId())
+        return false;
+    bool created = false;
+    if (!prop) {
+        prop = view->addDynamicProperty(type, name.c_str(), "Light", def->docu);
+        if (!prop)
+            return false;
+        created = true;
+    }
+    if (prop->isSame(value)) {
+        // A property born holding what was asked for still changed what
+        // lights the view -- until now the preference did -- and nothing
+        // says so: making a property signals nothing.
+        if (created)
+            prop->touch();
+        return true;
+    }
+    prop->Paste(value);
+    return true;
+}
+
+void View3DInventorViewer::applyLightSetting(View3DInventorViewer *viewer, const char *key,
+                                             const App::Property &value)
+{
+    bool reached = false;
+    if (ViewParams::getSyncLightSettings()) {
+        for (auto appDoc : App::GetApplication().getDocuments()) {
+            auto doc = Application::Instance->getDocument(appDoc);
+            if (!doc)
+                continue;
+            doc->foreachView<View3DInventor>([&](View3DInventor *view) {
+                if (auto other = view->getViewer()) {
+                    other->setLightSetting(key, value);
+                    reached = reached || other == viewer;
+                }
+            });
+        }
+    }
+    if (viewer && !reached)
+        viewer->setLightSetting(key, value);
+}
+
+void View3DInventorViewer::saveLightSettings() const
+{
+    auto grp = _viewParameterGroup();
+    for (const auto &def : _lightProperties) {
+        switch (def.field) {
+        case FieldEnable: {
+            App::PropertyBool prop;
+            if (getLightSetting(def.key, prop))
+                grp->SetBool(def.key, prop.getValue());
+            break;
+        }
+        case FieldColor: {
+            App::PropertyColor prop;
+            if (getLightSetting(def.key, prop))
+                grp->SetUnsigned(def.key, prop.getValue().getPackedValue());
+            break;
+        }
+        case FieldDirection: {
+            // Only a direction this view was given: one that neither the
+            // view nor the preference says stays unsaid, the light's own.
+            auto view = _pimpl->view;
+            auto own = view ? Base::freecad_dynamic_cast<App::PropertyVector>(
+                                  view->getPropertyByName(_lightPropertyName(def).c_str()))
+                            : nullptr;
+            if (own) {
+                const Base::Vector3d dir = own->getValue();
+                std::ostringstream text;
+                text << '(' << dir.x << ',' << dir.y << ',' << dir.z << ')';
+                grp->SetASCII(def.key, text.str().c_str());
+            }
+            break;
+        }
+        default: {
+            App::PropertyFloat prop;
+            if (getLightSetting(def.key, prop))
+                grp->SetInt(def.key, std::lround(prop.getValue() * 100.0));
+            break;
+        }
+        }
+    }
+}
+
+// The headlight turned with the pointer. The view is a ball seen from the
+// front, nine tenths of the view's shorter side across, and where the
+// pointer is on it is where the light stands: in the middle it shines
+// from the eye, as a headlight does when nobody turned it, and towards
+// the rim more and more from the side. The direction is said relative to
+// the camera, as the light's is, so the light keeps its place on the
+// screen when the model is turned.
+//
+// Not a handle to grab in the scene, which is what the preference page
+// this replaces had in a little view of its own: in a view with a model in
+// it a handle at the middle is inside the model, where it is neither seen
+// nor picked. The light on the model is what shows where it points.
+bool View3DInventorViewer::Private::turnLight(const SoEvent *ev)
+{
+    if (ev->isOfType(SoMouseButtonEvent::getClassTypeId())) {
+        auto button = static_cast<const SoMouseButtonEvent *>(ev);
+        if (button->getButton() != SoMouseButtonEvent::BUTTON1)
+            return false;   // the other buttons and the wheel still move the camera
+        lightDragging = button->getState() == SoButtonEvent::DOWN;
+        if (!lightDragging)
+            return true;
+    }
+    else if (!ev->isOfType(SoLocation2Event::getClassTypeId()) || !lightDragging) {
+        return false;
+    }
+    const SbVec2s size = owner->getSoRenderManager()->getViewportRegion().getViewportSizePixels();
+    const SbVec2s at = ev->getPosition();
+    const float radius = 0.45f * float(std::min(size[0], size[1]));
+    if (radius < 1.0f)
+        return true;
+    float x = (float(at[0]) - 0.5f * float(size[0])) / radius;
+    float y = (float(at[1]) - 0.5f * float(size[1])) / radius;
+    const float reach = std::sqrt(x * x + y * y);
+    if (reach > 1.0f) {
+        x /= reach;
+        y /= reach;
+    }
+    const float z = std::sqrt(std::max(0.0f, 1.0f - x * x - y * y));
+    // from where the light stands towards the scene
+    App::PropertyVector direction;
+    direction.setValue(Base::Vector3d(-x, -y, -z));
+    View3DInventorViewer::applyLightSetting(owner, "HeadlightDirection", direction);
+    return true;
+}
+
+bool View3DInventorViewer::hasLightManipulator() const
+{
+    return _pimpl->lightManip;
+}
+
+void View3DInventorViewer::setLightManipulator(bool on)
+{
+    if (on == _pimpl->lightManip)
+        return;
+    _pimpl->lightManip = on;
+    _pimpl->lightDragging = false;
+    if (auto widget = getWidget()) {
+        if (on)
+            widget->setCursor(Qt::CrossCursor);
+        else
+            widget->unsetCursor();
+    }
+    if (on) {
+        getMainWindow()->showMessage(
+            QObject::tr("Drag in the view to turn the light. Escape, or Direction again, to end."));
+    }
+    else {
+        getMainWindow()->showMessage(QString(), 1);
+    }
+}
+
 // #define ENABLE_GL_DEPTH_RANGE
 // The calls of glDepthRange inside renderScene() causes problems with transparent objects
 // so that's why it is disabled now: https://forum.freecad.org/viewtopic.php?f=3&t=6037&hilit=transparency
@@ -7006,12 +7225,21 @@ bool View3DInventorViewer::processSoEvent(const SoEvent* ev)
         return processed;
     }
 
+    if (_pimpl->lightManip && _pimpl->turnLight(ev))
+        return true;
+
     if (ev->getTypeId().isDerivedFrom(SoKeyboardEvent::getClassTypeId())) {
         // filter out 'Q' and 'ESC' keys
         const auto ke = static_cast<const SoKeyboardEvent*>(ev);  // NOLINT
 
         switch (ke->getKey()) {
         case SoKeyboardEvent::ESCAPE:
+            // turning the light ends first of all
+            if (hasLightManipulator()) {
+                if (ke->getState() == SoButtonEvent::DOWN)
+                    setLightManipulator(false);
+                return true;
+            }
             if (QApplication::queryKeyboardModifiers() == Qt::ShiftModifier) {
                 if (Selection().hasSelection()) {
                     Selection().clearSelection();

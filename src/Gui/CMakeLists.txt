@@ -352,7 +352,6 @@ SET(Gui_UIC_SRCS
     PreferencePages/DlgSettingsEditor.ui
     PreferencePages/DlgSettingsGeneral.ui
     DlgSettingsImage.ui
-    PreferencePages/DlgSettingsLightSources.ui
     PreferencePages/DlgSettingsMacro.ui
     PreferencePages/DlgSettingsNavigation.ui
     PreferencePages/DlgSettingsNotificationArea.ui
@@ -671,7 +670,6 @@ SET(Dialog_Settings_CPP_SRCS
     PreferencePages/DlgSettingsEditor.cpp
     PreferencePages/DlgSettingsGeneral.cpp
     DlgSettingsImageImp.cpp
-    PreferencePages/DlgSettingsLightSources.cpp
     PreferencePages/DlgSettingsMacroImp.cpp
     PreferencePages/DlgSettingsNavigation.cpp
     PreferencePages/DlgSettingsNotificationArea.cpp
@@ -697,7 +695,6 @@ SET(Dialog_Settings_HPP_SRCS
     PreferencePages/DlgSettingsEditor.h
     PreferencePages/DlgSettingsGeneral.h
     DlgSettingsImageImp.h
-    PreferencePages/DlgSettingsLightSources.h
     PreferencePages/DlgSettingsMacroImp.h
     PreferencePages/DlgSettingsNavigation.h
     PreferencePages/DlgSettingsNotificationArea.h
@@ -725,7 +722,6 @@ SET(Dialog_Settings_SRCS
     PreferencePages/DlgSettingsEditor.ui
     PreferencePages/DlgSettingsGeneral.ui
     DlgSettingsImage.ui
-    PreferencePages/DlgSettingsLightSources.ui
     PreferencePages/DlgSettingsMacro.ui
     PreferencePages/DlgSettingsNavigation.ui
     PreferencePages/DlgSettingsNotificationArea.ui
@@ -956,6 +952,7 @@ SET(View3D_CPP_SRCS
     TouchpadNavigationStyle.cpp
     GestureNavigationStyle.cpp
     ShadingOptions.cpp
+    DisplayOptions.cpp
     SplitView3DInventor.cpp
     View.cpp
     ViewArea.cpp
@@ -992,6 +989,7 @@ SET(View3D_SRCS
     NavigationStyle.h
     GestureNavigationStyle.h
     ShadingOptions.h
+    DisplayOptions.h
     SplitView3DInventor.h
     View.h
     ViewArea.h
