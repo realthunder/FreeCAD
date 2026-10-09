@@ -474,12 +474,26 @@ class TestDraft(unittest.TestCase):
                   and min(v.Z for v in e.Vertexes) > za - 1e-6
                   and max(v.Z for v in e.Vertexes) - min(v.Z for v in e.Vertexes) > 1]
         self.assertEqual(len(ridges), 4)
-        # at 30 deg the short walls narrow to nothing at 5 / tan(30 deg) =
-        # 8.66, under the top too: refused
+        # At 30 deg the short walls narrow to nothing at zt = 5 / tan(30 deg)
+        # = 8.66, under the top too, and the long walls meet between them in
+        # a ridge 10 long: a hipped roof, the top gone.
+        t = math.tan(math.radians(30))
+        za = 2 / t
+        zt = 5 / t
+        volume = (200 * zt - 30 * t * zt ** 2 + 4 * t * t * zt ** 3 / 3
+                  - (4 - math.pi) * (4 * za - 2 * t * za ** 2 + t * t * za ** 3 / 3))
         draft = self.makeDraftOn(shape, self.planeAt("Y", 0), self.planeAt("Z", 0), "New",
                                  angle=30)
-        self.assertIn("Invalid", draft.State)
-        self.assertIn("FaceVanishes", draft.getStatusString())
+        self.assertNotIn("Invalid", draft.State)
+        self.assertTrue(draft.Shape.isValid())
+        self.assertAlmostEqual(draft.Shape.Volume, volume, 6)
+        self.assertEqual(len(draft.Shape.Faces), 9)
+        self.assertAlmostEqual(draft.Shape.BoundBox.ZMax, zt, 6)
+        top = [e for e in draft.Shape.Edges
+               if e.Curve.__class__.__name__ == "Line"
+               and min(v.Z for v in e.Vertexes) > zt - 1e-6]
+        self.assertEqual(len(top), 1)
+        self.assertAlmostEqual(top[0].Length, 10, 6)
 
     def testDraftTangentPropagationOff(self):
         # The block of testDraftNewTangentChain. With tangent propagation
