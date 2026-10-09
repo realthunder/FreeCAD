@@ -188,7 +188,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 60 | 2026-10-09 | after a view cell is deleted, the view that expands into its room is sometimes BLACK until it is RESIZED; a camera move does not bring it back (corrected by the reporter 14:06) (Windows, Direct3D 11 at least) | OPEN, intermittent; nothing run |
 | 61 | 2026-10-09 | TechDraw drawn by the backend: dashed lines are a little thicker than Qt's (no great matter); but for some lines -- the cosmetic symmetry line in `Page`, `Top` -- the hover and selection highlight is drawn as the THINNER dashed line and is barely visible over the thicker line under it | OPEN; DECIDED by the reporter 14:30 and 14:31: EVERY line the backend draws on a page, dashed or not, at Qt's width -- thinner -- and the highlight at the same width as its line; a view's bounding box line shows it too; nothing run |
 | 62 | 2026-10-09 | omni search, a new feature: when it first pops up, its list holds the last 10 items that were confirmed in it; once typing starts, the recent list is not needed | OPEN; nothing run |
-| 63 | 2026-10-09 | `Std_DrawStyle` (a new request): a new icon suggested for it; its display style options as a combo box with their icons; anti-aliasing and its combo box in the same menu; the light sources configuration moved there from the preferences (not the manipulator), with a button to manipulate the light direction in the active 3D view and a check box to sync all 3D views' light direction; the Light Sources preference page removed | OPEN; nothing run |
+| 63 | 2026-10-09 | `Std_DrawStyle` (a new request): a new icon suggested for it; its display style options as a combo box with their icons; anti-aliasing and its combo box in the same menu; the light sources configuration moved there from the preferences (not the manipulator), with a button to manipulate the light direction in the active 3D view and a check box to sync all 3D views' light direction; the Light Sources preference page removed | OPEN; answered 14:52: the style combo is for the active view; anti-aliasing and lights apply at once; the manipulation toggles by the button or Esc; the sync check box is a remembered setting and decides whether a light direction goes to the active view or to all open views; one more button saves the current light direction for future new views; nothing run |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -5348,7 +5348,8 @@ Seven things, all about the `Std_DrawStyle` command and the menu it opens:
   a "Lights" part. The manipulator the request leaves behind is the page's
   own, by the note-taker's reading.
 
-**Not said yet by the reporter, the points that decide what is built:**
+**Asked of the reporter, the points that decide what is built (answered
+14:52, below, but for the last and for where the page's other settings go):**
 - (b): what the combo box sets -- the ACTIVE view's style, as the radio
   rows do today, or the DEFAULT style for new views ("default display
   style options" can be read both ways);
@@ -5362,6 +5363,37 @@ Seven things, all about the `Std_DrawStyle` command and the menu it opens:
   means each view keeps a light direction of its own;
 - (a): how many icons to choose from, and whether the menu's other entries
   keep theirs.
+
+**Answered by the reporter, 2026-10-09 14:52:** "display style combo for
+active view only. anti-aliase and lights, yes at once. manipulator, both esc
+and second press of button can toggle. sync check box as a setting to be
+remembered. the light direction will apply to either the active view, or all
+current opened view depending on the sync option. add another button beside
+to save the current light direction for future new view."
+Point by point:
+- (b): the display style combo box is for the ACTIVE view only, as the
+  radio rows are today.
+- (c), (d): a change of the anti-aliasing or of the lights in the menu
+  applies AT ONCE, to the open views.
+- (e): the manipulation of the light direction is a toggle: a second press
+  of the button ends it, and so does Esc.
+- (f): the sync check box is a SETTING, remembered. What it decides: a
+  light direction that is set goes to the active view alone, or to all the
+  views open at that moment, by the check box.
+- NEW, point (h): ANOTHER BUTTON beside these, which saves the current
+  light direction for future new views.
+The note-taker's reading of what follows from it, to confirm:
+- the light direction becomes something each 3D view has for itself (set
+  by the manipulator, on one view or on all), apart from the DEFAULT a new
+  view starts with -- and the default changes only by the new button (h),
+  not by manipulating;
+- "at once" for (d) then has to say which direction a change of the light
+  SOURCES leaves alone: by this reading the direction stays each view's
+  own, and the lights' other settings (intensity, colour, the fill and the
+  ambient light) are common to all and applied at once.
+Still not said: (a), how many icons to choose from; and (d)/(g), where the
+settings of the removed page that do not fit a menu are reached.
+Passed on to the build session.
 
 ## Inbox
 
