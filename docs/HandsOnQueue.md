@@ -188,6 +188,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 60 | 2026-10-09 | after a view cell is deleted, the view that expands into its room is sometimes BLACK until it is RESIZED; a camera move does not bring it back (corrected by the reporter 14:06) (Windows, Direct3D 11 at least) | OPEN, intermittent; nothing run |
 | 61 | 2026-10-09 | TechDraw drawn by the backend: dashed lines are a little thicker than Qt's (no great matter); but for some lines -- the cosmetic symmetry line in `Page`, `Top` -- the hover and selection highlight is drawn as the THINNER dashed line and is barely visible over the thicker line under it | OPEN; DECIDED by the reporter 14:30 and 14:31: EVERY line the backend draws on a page, dashed or not, at Qt's width -- thinner -- and the highlight at the same width as its line; a view's bounding box line shows it too; nothing run |
 | 62 | 2026-10-09 | omni search, a new feature: when it first pops up, its list holds the last 10 items that were confirmed in it; once typing starts, the recent list is not needed | OPEN; nothing run |
+| 63 | 2026-10-09 | `Std_DrawStyle` (a new request): a new icon suggested for it; its display style options as a combo box with their icons; anti-aliasing and its combo box in the same menu; the light sources configuration moved there from the preferences (not the manipulator), with a button to manipulate the light direction in the active 3D view and a check box to sync all 3D views' light direction; the Light Sources preference page removed | OPEN; nothing run |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -5302,6 +5303,66 @@ same item confirmed twice appears once, the newest first; and whether the
 browser viewer's omni search (it follows the desktop's grammar, entry 22)
 gets the same.
 
+## 63. `Std_DrawStyle`: a new icon, and its menu takes the display style, the anti-aliasing and the lights (a new request) -- OPEN
+
+**2026-10-09 14:43, the reporter:** "New Request, Std_DrawStyle command,
+suggest a new icon to properly represent the Draw Style part. make the
+existing default display style options into a combobox with corresonding
+icons shown in the menu.
+  also put antialising and its combobox in that menu. also move the
+preference page for light sources configuration there, but not the light
+manipulator. add a button (only enabled if active view is 3d) to activate
+light direction manipulate in the active 3d view. also besides the button
+add a checkbox to sync all 3d view's light direction. remove the light
+source configuration page from preference window."
+Seven things, all about the `Std_DrawStyle` command and the menu it opens:
+(a) a NEW ICON is to be suggested for it, one that stands for "draw style"
+    -- suggested, so for the reporter to choose;
+(b) the display style options the menu has today become a COMBO BOX, each
+    style shown with its icon;
+(c) the ANTI-ALIASING setting, with its combo box, goes into the same menu;
+(d) the configuration of the LIGHT SOURCES moves into that menu from its
+    preference page -- but NOT the light manipulator;
+(e) a BUTTON in the menu, enabled only when the active view is a 3D view,
+    that starts the manipulation of the light direction in the active 3D
+    view;
+(f) beside that button a CHECK BOX: sync the light direction of all 3D
+    views;
+(g) the Light Sources page is REMOVED from the preferences window.
+
+**How it stands today, read by the note-taker, nothing run:**
+- `Std_DrawStyle` is a group command, menu text "Display style"
+  (`StdCmdDrawStyle`, `src/Gui/CommandView.cpp`, about line 830). Its menu
+  is a list of the draw styles as radio rows, one per style
+  (`StdCmdDrawStyleBase`, made in a loop over `drawStyleNameFromIndex`),
+  and exclusive -- "one override mode per viewer". Each style has an icon of
+  its own already; the command's icon follows the active view's style. The
+  comments name a "Shading section" with a shadow switch in the same menu.
+- The anti-aliasing is `View/AntiAliasing` (0 none, 1 line smoothing, 2 to
+  4 MSAA 2x, 4x, 8x; default 3 since entry 51), today a combo box on the 3D
+  View preferences page; a change rebuilds or re-targets the open views
+  (entry 50 (b)).
+- The light sources page is `src/Gui/PreferencePages/DlgSettingsLightSources`
+  (title "Light Sources"): the light source, a fill light ("a second light
+  that follows the camera"), an ambient light, each with an intensity, and
+  a "Lights" part. The manipulator the request leaves behind is the page's
+  own, by the note-taker's reading.
+
+**Not said yet by the reporter, the points that decide what is built:**
+- (b): what the combo box sets -- the ACTIVE view's style, as the radio
+  rows do today, or the DEFAULT style for new views ("default display
+  style options" can be read both ways);
+- (c) and (d): these are stored settings, not states of one view; whether
+  a change in the menu applies at once to every open view, as the
+  preference pages do;
+- (d) and (g): with the page gone, where the settings that are on it and
+  do not fit a menu are reached (the omni search lists them; entry 24);
+- (e): how the manipulation ENDS -- a second press, Esc, a click away;
+- (f): whether the check box is a stored setting, and whether unticked
+  means each view keeps a light direction of its own;
+- (a): how many icons to choose from, and whether the menu's other entries
+  keep theirs.
+
 ## Inbox
 
 Notes not sorted into an entry yet. Add a line here at any time, in any words;
@@ -5309,4 +5370,4 @@ it is read before each entry is started and moved up into the table.
 
 (empty: the notes of 2026-10-06 are entries 20 to 28, those of 2026-10-07
 entries 29 to 40, those of 2026-10-08 entries 41 to 45, those of 2026-10-09
-so far entries 46 to 62)
+so far entries 46 to 63)
