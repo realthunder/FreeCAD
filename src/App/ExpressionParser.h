@@ -315,6 +315,10 @@ public:
     void setSavedShadow(std::string first, std::string stored, std::vector<long> ids) {
         var.setSavedShadow(std::move(first), std::move(stored), std::move(ids));
     }
+    /// The mapped name a file gave for a path within one table (sec 31.22)
+    void setGivenShadow(std::string first) {
+        var.setGivenShadow(std::move(first));
+    }
 
     void addComponent(ComponentPtr &&component) override;
 

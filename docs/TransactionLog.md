@@ -16555,10 +16555,44 @@ one save later. The number of a missing reference is read as a position in
 the generation kept for it, so a reference marked missing must have the
 right generation kept, which is what the above is.
 
+**Expressions (user, 2026-10-09).** The first account left them: "an
+expression that names an element says it in its text, which has no mapped
+name beside it." **The user:** "I remember some branch has added
+shadowsubs to expressions. check for that." It is this branch: 27.77 (5)
+gave a path its string ids across a save, and 27.82 (B) its shadow where
+the path goes into another document -- "a path within one table writes
+what it did", which is the ids and no name. Measured (`expr.py`): theirs'
+`Cut.<<Face2>>._shape.Area`, the side, came through the merge as written
+and read 300, ours' second face, with nothing failed; on one history the
+same expression follows the drill (`Face2` -> `Face6`, the top by
+geometry).
+
+- *Saved.* Every element path writes its shadow in its `<Ids>`
+  (`shadow=`), within one table too; `stored=` is still the crossing's
+  alone. A reader that does not know the attribute reads what it did.
+- *Read.* The name is kept beside the path (`ShadowSub::given`) until the
+  path registers, and is then its shadow, with the element the text says
+  as its number -- taken as it is, as a link's is on registering
+  (`_registerElementReference`), not looked up: text and name were saved
+  together. A path saved with no name registers as before, by the name
+  its number has there.
+- *Followed.* The engine is a link property; a value of it that lands in
+  a merge is followed with the rest, by name, then by geometry -- taken
+  whole, or merged by its paths (31.8) where ours gave the object an
+  expression too (`expr3.py`: theirs' two follow, ours' is left). A value
+  the log holds from before this has no name and comes as it did.
+- *Met on the way, a defect of its own* (`expr2.py`): an expression **the
+  log put back was never registered** with the feature it names an
+  element of. The engine installs what it read with `restoring` set, which
+  leaves the registering to `onContainerRestored`; a document's restore
+  calls that for every property afterwards, and a value put back into a
+  live document had nobody to. An expression set on a branch, the branch
+  left and come back to, the cut drilled: `Cut.<<Face2>>` stayed `Face2`
+  and read another face. `afterRestore` registers where the document is
+  not restoring.
+
 **Left.**
 
-- *An expression* that names an element says it in its text, which has no
-  mapped name beside it. Nothing to follow by.
 - *A feature with no element map* (an import): no name, and nothing is
   searched for it. Its shape does not change by a recompute.
 - *The looks' own merge* (31.20) still leaves a name ours' shape has not as
@@ -16574,8 +16608,11 @@ nothing kept, a row of sets alone, undo, redo, the file read again.
 recompute, then the face theirs meant.
 `testAReferenceTakenToAFaceOursHasNotIsMissing`: ours has nine faces where
 theirs had seven; marked, theirs' shape kept, undone and redone, read
-again still missing, and found when the hole is made again. Probes in
-`~/.cache/txnlog-ref/`.
+again still missing, and found when the hole is made again.
+`testAnExpressionTakenNamesTheFaceItWasGiven`: two expressions, the side
+and the top, their text and their values after the merge, undone, redone,
+read again. `testAnExpressionPutBackIsToldOfItsFace`: the branch left and
+come back to, then the drill. Probes in `~/.cache/txnlog-ref/`.
 
 ## 32. A shape diff: seeing what a merge or a pick would take (plan, 2026-10-06)
 

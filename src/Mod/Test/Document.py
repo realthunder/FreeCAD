@@ -5777,6 +5777,105 @@ class TransactionBranchCases(unittest.TestCase):
         self.assertEqual(doc.Ref.Many, [(doc.Cut, (mine, above))])
         self.assertEqual(doc.Plane.AttachmentSupport, [(doc.Cut, (mine,))])
 
+    def testAnExpressionTakenNamesTheFaceItWasGiven(self):
+        # Sec 31.22: an expression says its element in its text, by number,
+        # and looks the name up when it registers -- taken where ours had
+        # drilled, `Cut.<<Face2>>` was ours' second face, and its area
+        # another's. The engine saves the mapped name beside the path, and a
+        # value that lands in a merge follows it as a link does: the side by
+        # its name, the top -- drilled here -- by its geometry.
+        import math
+
+        doc = self.cutToReferTo("MergeEvaluates", drilled=False)
+        cut, ref = doc.Cut, doc.Ref
+        doc.openTransaction("sizes")
+        doc.Box.Width, doc.Box.Height = 20, 30  # each pair of faces its own area
+        doc.Cyl.Height = 60
+        doc.Cyl.Placement.Base = FreeCAD.Vector(5, 5, -80)
+        ref.addProperty("App::PropertyFloat", "Side")
+        ref.addProperty("App::PropertyFloat", "Top")
+        doc.recompute()
+        doc.commitTransaction()
+        side, top = self.faceAt(cut, XMin=10), self.faceAt(cut, ZMin=30)
+        doc.createTransactionBranch("side")
+        doc.switchTransactionBranch("side")
+        doc.openTransaction("refer")
+        ref.setExpression("Side", "Cut.<<%s>>._shape.Area" % side)
+        ref.setExpression("Top", "Cut.<<%s>>._shape.Area" % top)
+        doc.recompute()
+        doc.commitTransaction()
+        self.assertAlmostEqual(ref.Side, 600.0)
+        self.assertAlmostEqual(ref.Top, 200.0)
+
+        doc.switchTransactionBranch("main")
+        doc.openTransaction("drill")
+        doc.Cyl.Placement.Base = FreeCAD.Vector(5, 5, -10)
+        doc.recompute()
+        doc.commitTransaction()
+        mine, above = self.faceAt(cut, XMin=10), self.faceAt(cut, ZMin=30)
+        self.assertNotEqual(mine, side, "the drill left the numbers as they were")
+
+        result = doc.mergeTransactionBranch("side")
+        self.assertEqual((result["unresolved"], result["failed"]), ([], []))
+        said = dict(ref.ExpressionEngine)
+        self.assertEqual(said["Side"], "Cut.<<%s>>._shape.Area" % mine)
+        self.assertEqual(said["Top"], "Cut.<<%s>>._shape.Area" % above)
+        self.assertAlmostEqual(ref.Side, 600.0)
+        self.assertAlmostEqual(ref.Top, 200.0 - math.pi * 4)
+        self.assertEqual(self.shapesKept(cut), [])
+        doc.undo()
+        self.assertEqual(ref.ExpressionEngine, [])
+        doc.redo()
+        self.assertEqual(dict(ref.ExpressionEngine), said)
+        doc.save()
+        path = doc.FileName
+        FreeCAD.closeDocument(doc.Name)
+        doc = self.track(FreeCAD.openDocument(path))
+        self.assertEqual(dict(doc.Ref.ExpressionEngine), said)
+        doc.recompute()
+        self.assertAlmostEqual(doc.Ref.Side, 600.0)
+
+    def testAnExpressionPutBackIsToldOfItsFace(self):
+        # Sec 31.22, met on the way: an expression the log puts back -- a
+        # branch come back to -- was installed and never registered with
+        # the feature it names an element of. The face renumbered after
+        # that, the expression read another face and said nothing.
+        import math
+
+        doc = self.cutToReferTo("PutBackEvaluates", drilled=False)
+        cut, ref = doc.Cut, doc.Ref
+        doc.openTransaction("sizes")
+        doc.Box.Width, doc.Box.Height = 20, 30
+        doc.Cyl.Height = 60
+        doc.Cyl.Placement.Base = FreeCAD.Vector(5, 5, -80)
+        ref.addProperty("App::PropertyFloat", "Side")
+        ref.addProperty("App::PropertyFloat", "Top")
+        doc.recompute()
+        doc.commitTransaction()
+        side, top = self.faceAt(cut, XMin=10), self.faceAt(cut, ZMin=30)
+        doc.createTransactionBranch("side")
+        doc.switchTransactionBranch("side")
+        doc.openTransaction("refer")
+        ref.setExpression("Side", "Cut.<<%s>>._shape.Area" % side)
+        ref.setExpression("Top", "Cut.<<%s>>._shape.Area" % top)
+        doc.recompute()
+        doc.commitTransaction()
+        doc.switchTransactionBranch("main")
+        self.assertEqual(ref.ExpressionEngine, [])
+        doc.switchTransactionBranch("side")
+        self.assertEqual(dict(ref.ExpressionEngine)["Side"], "Cut.<<%s>>._shape.Area" % side)
+        doc.openTransaction("drill")
+        doc.Cyl.Placement.Base = FreeCAD.Vector(5, 5, -10)
+        doc.recompute()
+        doc.commitTransaction()
+        mine, above = self.faceAt(cut, XMin=10), self.faceAt(cut, ZMin=30)
+        self.assertNotEqual(mine, side, "the drill left the numbers as they were")
+        said = dict(ref.ExpressionEngine)
+        self.assertEqual(said["Side"], "Cut.<<%s>>._shape.Area" % mine)
+        self.assertEqual(said["Top"], "Cut.<<%s>>._shape.Area" % above)
+        self.assertAlmostEqual(ref.Side, 600.0)
+        self.assertAlmostEqual(ref.Top, 200.0 - math.pi * 4)
+
     def testAReferenceTakenToAFaceTheirsMadeComesWithIt(self):
         # Sec 31.22: theirs moved the notch into the corner and refers to a
         # wall of it. Ours' shape has no such face until the merge computes

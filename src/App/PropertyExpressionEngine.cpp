@@ -428,9 +428,13 @@ static void saveElementPathIds(Base::Writer &writer, const DocumentObject *owner
                 ids << sep << id;
                 sep = " ";
             }
-            if (!*sep && !crossing)
+            // A path within one table saves its shadow too (sec 31.22): the
+            // text says the element by its number, and a value read where the
+            // shape counts another way -- one a merge takes -- has only the
+            // name to say which element it meant.
+            if (!*sep && shadow.first.empty())
                 continue;
-            entries.push_back({index, ref, ids.str(), crossing ? shadow.first : std::string(),
+            entries.push_back({index, ref, ids.str(), shadow.first,
                                crossing ? shadow.stored : std::string()});
         }
     }
@@ -441,10 +445,10 @@ static void saveElementPathIds(Base::Writer &writer, const DocumentObject *owner
     for (const auto &e : entries) {
         writer.Stream() << writer.ind() << "<Ids index=\"" << e.index << "\" ref=\"" << e.ref
                         << "\" sids=\"" << e.ids;
-        if (!e.stored.empty()) {
-            writer.Stream() << "\" shadow=\"" << Base::Persistence::encodeAttribute(e.shadow)
-                            << "\" stored=\"" << Base::Persistence::encodeAttribute(e.stored);
-        }
+        if (!e.shadow.empty())
+            writer.Stream() << "\" shadow=\"" << Base::Persistence::encodeAttribute(e.shadow);
+        if (!e.stored.empty())
+            writer.Stream() << "\" stored=\"" << Base::Persistence::encodeAttribute(e.stored);
         writer.Stream() << "\"/>\n";
     }
     writer.decInd();
@@ -585,7 +589,8 @@ void PropertyExpressionEngine::Restore(Base::XMLReader &reader)
                 if (!stored.empty())
                     stored = strings->element(stored.c_str());
             }
-            if (index >= 0 && index < count && ref >= 0 && (!ids.empty() || !stored.empty()))
+            if (index >= 0 && index < count && ref >= 0
+                    && (!ids.empty() || !stored.empty() || !shadow.empty()))
                 (*restoredExpressions)[index].ids.push_back(
                         {static_cast<int>(ref), std::move(ids), std::move(shadow), std::move(stored)});
         }
@@ -930,8 +935,10 @@ void PropertyExpressionEngine::afterRestore()
                             for (auto &v : info.ids) {
                                 if (v.ref >= static_cast<int>(vars.size()))
                                     continue;
-                                if (v.stored.empty())
+                                if (v.stored.empty()) {
                                     vars[v.ref]->setSavedShadowIds(std::move(v.ids));
+                                    vars[v.ref]->setGivenShadow(std::move(v.shadow));
+                                }
                                 else
                                     vars[v.ref]->setSavedShadow(std::move(v.shadow),
                                             std::move(v.stored), std::move(v.ids));
@@ -954,6 +961,16 @@ void PropertyExpressionEngine::afterRestore()
 
     if (hasError && docObj && docObj->getDocument())
         docObj->getDocument()->setErrorDescription(docObj, "Failed to restore some expression");
+
+    // Into a live engine -- a value of the transaction log put back -- no
+    // document's restore follows to register the element paths
+    // (onContainerRestored): installed above with 'restoring' set, they
+    // were left out, and a face renumbered afterwards went unfollowed
+    // (docs/TransactionLog.md sec 31.22).
+    auto doc = docObj ? docObj->getDocument() : nullptr;
+    if (doc && docObj->isAttachedToDocument() && !docObj->isRestoring()
+            && !doc->testStatus(Document::Restoring))
+        onContainerRestored();
 }
 
 void PropertyExpressionEngine::hasSetChildValue(Property &prop) {

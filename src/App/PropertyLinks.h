@@ -167,6 +167,15 @@ public:
         /// 'first' is not yet looked up from 'stored': restored and not
         /// registered, or looked up and missing (then 'first' is empty)
         bool pending = false;
+
+        /** The mapped name a file gave beside the element of an
+         * expression's path (docs/TransactionLog.md sec 31.22), until the
+         * path registers. An expression says its element in its text, and
+         * a path with no name beside it takes the one that element has
+         * where it registers; with this, it registers as it was saved, as
+         * a link does.
+         */
+        std::string given;
     };
 
     PropertyLinkBase();

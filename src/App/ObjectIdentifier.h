@@ -425,6 +425,12 @@ public:
             shadowSub.second = subObjectName.getString();
     }
 
+    /// The mapped name a file gave for the element path, which is its
+    /// shadow once the path registers (sec 31.22)
+    void setGivenShadow(std::string first) {
+        shadowSub.given = std::move(first);
+    }
+
     using SubNameMap = std::map<std::pair<App::DocumentObject*,std::string>,std::string>;
     void importSubNames(const SubNameMap &subNameMap);
 

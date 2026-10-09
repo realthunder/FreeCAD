@@ -43,6 +43,7 @@
 #include "Document.h"
 #include "DocumentObject.h"
 #include "ExpressionParser.h"
+#include "GeoFeature.h"
 #include "PropertyLinks.h"
 #include "Range.h"
 
@@ -754,6 +755,23 @@ bool ObjectIdentifier::updateElementReference(ExpressionVisitor &v,
                     shadowSub.sids.push_back(sid);
             }
             shadowSub.savedIds.clear();
+        }
+    }
+    // The name a file gave beside the text's element (sec 31.22): where
+    // the path registers it is taken as it is, as a link's shadow is. The
+    // two were saved together; where the shapes here are not the ones they
+    // were saved with -- a value a merge takes -- the property is told to
+    // follow its names (PropertyLinkBase::followElementReferences).
+    if (!shadowSub.given.empty()) {
+        std::string given = std::move(shadowSub.given);
+        shadowSub.given.clear();
+        if (!feature && !reverse && !shadowSub.pending && result.resolvedDocumentObject
+                && !GeoFeature::hasMissingElement(subObjectName.getString().c_str())) {
+            shadowSub.first = std::move(given);
+            shadowSub.second = subObjectName.getString();
+            v.getPropertyLink()->_registerElementReference(
+                    result.resolvedDocumentObject, subObjectName.str, shadowSub);
+            return false;
         }
     }
     if(!result.resolvedSubObject)
