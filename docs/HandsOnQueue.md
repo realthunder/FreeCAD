@@ -185,7 +185,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 57 | 2026-10-09 | the browser viewer's split view gets the same view cell logic as the desktop's (entries 29 and 56): drag frames, commit at the left release, cancel, the minimum cell size, the look (change request) | OPEN; nothing run |
 | 58 | 2026-10-09 | a task, "can do it later": audit every warning shown when `scanner.FCStd` is opened and recomputed, and fix what can be fixed | OPEN, for later; a first count from a kept report log: 208 warnings and 6 errors, about 15 kinds; nothing run |
 | 59 | 2026-10-09 | the program no longer opens the Start page at startup (the reporter: "the startup workbench become the PartDesign"; it used to show Start with the recent files) | FOUND by the note-taker, read and looked at in the live session, nothing changed: the startup workbench was PartDesign all along; "Reset all" removed the Start module's migration flag, so its 2024 migration ran again at the next start and switched the Start page off (`ShowOnStartup` = false). DECIDED by the reporter 13:42: "Reset all" keeps the migration's flag, as it keeps `SaveUserParameter`; not started |
-| 60 | 2026-10-09 | after a view cell is deleted, the view that expands into its room is sometimes BLACK until it is resized or its camera moved (Windows, Direct3D 11 at least) | OPEN, intermittent; nothing run |
+| 60 | 2026-10-09 | after a view cell is deleted, the view that expands into its room is sometimes BLACK until it is RESIZED; a camera move does not bring it back (corrected by the reporter 14:06) (Windows, Direct3D 11 at least) | OPEN, intermittent; nothing run |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -5148,6 +5148,19 @@ Passed on to the build session, which is paused.
 
 ## 60. After a view cell is deleted, the view that takes its room is sometimes black -- OPEN, intermittent
 
+**2026-10-09 14:06, CORRECTED by the reporter:** "a correction. when closing
+a view. and surviving resized view is black and will only back to normal if
+I resize it. camera move has no effect"
+So: a view is closed; the view that survives and is resized into the room is
+black; and ONLY a resize brings it back. Moving the camera does NOT -- the
+report below said it did.
+That changes the note-taker's reading below, which rested on the camera
+move: a camera move makes the view draw again, and it stays black. So it is
+not a frame that was never asked for. The view draws, into something that
+does not reach the screen at the cell's new size -- a target, a viewport or
+a surface of the backend left at the old size, or gone, that only a resize
+event builds again. Still a reading; nothing read in the source.
+
 **2026-10-09 13:59, reported, with the view cell points of entry 56:** "also
 at least on windows with direct3d11, delete a view sometime resulting the
 expanding old view to be black. must use resize or camera move to make it
@@ -5160,7 +5173,8 @@ On the copy staged 2026-10-09 12:25 (`cc4c34356f`). Given a number of its
 own, apart from entry 56: it is the drawing, not the cells' look or
 gestures.
 
-The note-taker's reading, nothing read in the source for it: a resize or a
+The note-taker's FIRST reading, overtaken by the correction above (it
+rested on the camera move): a resize or a
 camera move puts it right, so the view CAN draw at its new size -- what is
 missing is the frame after the cell grew: either no redraw is asked for
 when the room is taken over, or one is drawn before the backend's target
