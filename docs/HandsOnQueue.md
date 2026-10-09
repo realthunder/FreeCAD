@@ -39,6 +39,11 @@ Evidence that does not belong in the repository -- configuration snapshots,
 report views, the reporter's own files -- is kept beside the dev tree under
 `..\dl\handson\<date>\`, and an entry names what it holds.
 
+**2026-10-09 10:16, the build session's order from here** (its own; "tell me
+if the reporter wants another order"): 49 and 50(a), committed when their
+tests are in; then 51 (the MSAA default), 50(b), 52 (the benchmark), 30,
+48, 47.
+
 **2026-10-09 09:40, the build session is at work again** on the reporter's
 word to it, verbatim: "continue fixing the issues in the notes". Its
 reading, marked as its own: the entries still open, in this order -- 46 (in
@@ -122,12 +127,12 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 43 | 2026-10-08 | omni search: the highlighted row's text is white on a light blue highlight | STAGED 2026-10-09 08:40, fixed `3b884bfe5d`: it is under NO theme (a profile that never chose one) -- the native Windows style paints a selected row pale blue `#cde8ff` and the omni search wrote on it in the palette's highlighted text colour, white, contrast 1.3. Right already under Light, Dark and Classic. 19 PASS and 1 FAIL before, 20 PASS after (`docs/HandsOnLog.md`) |
 | 44 | 2026-10-08 | the DXF page's exporter settings do not reach the C++ DXF exporter: `Import.writeDXFObject`/`writeDXFShape` point it at `Mod/Import`, where nothing stores them (found by the build session on entry 42, Q2) | STAGED 2026-10-09 08:40, fixed `813d0250f9`, PUSHED 2026-10-08: the exporter was pointed at `Mod/Import` for its options, where nothing stores them; it takes them from `Mod/Draft`, where the DXF page puts them, as upstream does. An ellipse written with "Treat ellipses and splines as polylines" on was an ELLIPSE before and is an LWPOLYLINE after (24 points at a segment length of 5, 198 at 0.5). `Import_tests_run` 6 of 6; the full suites not rerun after it (`docs/HandsOnLog.md`) |
 | 45 | 2026-10-08 | a spreadsheet's view provider MAKES its view when asked for it (`ViewProviderSheet::getMDIView()`): one click on a sheet in the tree opens it, show-in-cell closes another sheet's view; a design agreed by the reporter in another session, single click selects and opens nothing (handed over from session x16, branch SketcherPort; goes on from entry 27) | STAGED 2026-10-09 08:40, fixed `c7fdcf3220`, PUSHED 2026-10-08, on this branch on top of entry 27's fix as decided: a sheet's `getMDIView()` answers and no longer opens; a new `ViewProviderDocumentObject::getOrCreateMDIView()` opens the view for the three callers that host it (the cell menu's pick, `Std_ViewCellShowObject`, a layout coming back). One click on a sheet selects and opens nothing. `Std_ViewCellShowObject` also took a stale cell and closed another sheet's view; it takes the active view's cell. Not as handed over in one point: the sheet's view is not made "bare" (`docs/HandsOnLog.md`) |
-| 46 | 2026-10-09 | TechDraw drawn by the backend: the hatch of a section's cut face is bright green lines far apart, where Qt draws a fine grey-green pattern (seen by the build session on entry 36) | FOUND 2026-10-09, a fix written and building, no commit yet: the backend rasterized the hatch once, at a texel per 0.1 mm, and drew it with no coarser copies -- at 2 px/mm 1.1 lines across a 17 px strip at 0.99 strength where Qt shows 5.0 at 0.19. A second defect found by the test: a hatch with `HatchRotation` is turned the WRONG WAY by the backend |
+| 46 | 2026-10-09 | TechDraw drawn by the backend: the hatch of a section's cut face is bright green lines far apart, where Qt draws a fine grey-green pattern (seen by the build session on entry 36) | FIXED `6dacf21b11`, not staged, not pushed: the backend drew the hatch from one picture of the whole face, read one pixel in five at the zoom a page opens at (1.1 lines across a 17 px strip at 0.99 strength, Qt 5.0 at 0.19; now 5.0 at 0.33); a hatch is one tile laid side by side now and every picture of a page has coarser copies. Three more found by the test and fixed with it: a hatch with `HatchRotation` turned the WRONG WAY, every image drawn over all the line work of a page, the tiles showing their seams. 22 PASS and 8 FAIL before, 39 PASS after. Left: a hatch line about a pixel wide is paler than Qt's (`docs/HandsOnLog.md`) |
 | 47 | 2026-10-09 | `scanner.FCStd`: once in three sessions the FIRST load's 3D view was empty 13 s after opening, background and navigation cube only; the next two loads of that session were complete (seen by the build session on entry 28) | OPEN, seen once, not followed up |
-| 48 | 2026-10-09 | three GUI tests fail the same way on the copy staged 2026-10-07 and on today's tree: `element-color-hide.py` (2 of 624 claims), `per-view-shown-eviction.py` (1 claim), `navicube-per-view.py` (11 claims pass, then it never ends) (found by the build session) | OPEN; read only so far: `navicube-per-view.py` is no defect -- a run-by-hand script that never closes FreeCAD; the other two not looked into |
-| 49 | 2026-10-09 | after "Reset all" in the preferences and then the Light theme from Tools > Preset configurations > Themes, the workbench toolbar is hidden; shown again by hand it sits in the custom title bar as expected; intermittent -- the same steps a second time did not do it | OPEN; the bad and the good run are both in the evidence, and they differ in one thing: a saved main window state was in the configuration when the theme was applied (read, nothing run). Next in the build session's line after entry 46 |
-| 50 | 2026-10-09 | after "Reset all" in the preferences the 3D view is no longer drawn by the render engine's backend (edges jagged; the reporter's guess: render cache 0); and after a change of the MSAA setting a split of a 3D view and a TechDraw page became two tab windows | OPEN; measured in the reporter's live session, read-only: the render cache setting is not the cause (not stored, default 3) -- the renderer TYPE is `Default`, no backend, where the profile had `bgfx - Direct3D11` before the reset, and the view answers "No external renderer active"; the path is chosen only at startup. The two tabs are there as said: one view area with ONE cell, two `scanner` tab windows. DECIDED by the reporter 2026-10-09 09:48 for the first part: the type `Default` is to mean bgfx on the platform's default backend, and (09:52) a new type `Legacy` the old Coin rendering; (09:53) the type alone decides whether the engine is used -- under `Legacy` the render cache setting keeps its original meaning (default 3), under `Default` it is always 3. The MSAA part, the split turned into tabs, is not decided or read further |
-| 51 | 2026-10-09 | a face's edge that no edge line covers (a cylinder's side against what is behind it) is a staircase with MSAA off; if that is expected, MSAA 4x by default (change request) | OPEN; expected by the note-taker's reading (triangles are not anti-aliased without MSAA, the engine has no other anti-aliasing), for the build session to confirm; then the default of `View/AntiAliasing` goes from 0 to 3 -- for both renderer types, `Legacy` and the engine, and the other tiers follow (answered 10:11) |
+| 48 | 2026-10-09 | three GUI tests fail the same way on the copy staged 2026-10-07 and on today's tree: `element-color-hide.py` (2 of 624 claims), `per-view-shown-eviction.py` (1 claim), `navicube-per-view.py` (11 claims pass, then it never ends) (found by the build session) | OPEN; read only so far: `navicube-per-view.py` is no defect -- a run-by-hand script that never closes FreeCAD; the other two still not looked into (2026-10-09 10:16: a plan that runs and never evicts; it needs instrumenting) |
+| 49 | 2026-10-09 | after "Reset all" in the preferences and then the Light theme from Tools > Preset configurations > Themes, the workbench toolbar is hidden; shown again by hand it sits in the custom title bar as expected; intermittent -- the same steps a second time did not do it | FOUND 2026-10-09, reproduced every time by the build session, on the staged copy too; the fix is in its tree, uncommitted: it needs a MAXIMIZED window. The reset clears the title bar areas' entries; the toolbar manager's 100 ms timer then moves the workbench toolbar out of the title bar (a move that hides a toolbar) and asks it afterwards whether it is visible; a maximized window swaps its title bar 100 ms late and loses the race. Fix: asked before the move. The note-taker's guess (a delayed save of the window state) was NOT it |
+| 50 | 2026-10-09 | after "Reset all" in the preferences the 3D view is no longer drawn by the render engine's backend (edges jagged; the reporter's guess: render cache 0); and after a change of the MSAA setting a split of a 3D view and a TechDraw page became two tab windows | OPEN; measured in the reporter's live session, read-only: the render cache setting is not the cause (not stored, default 3) -- the renderer TYPE is `Default`, no backend, where the profile had `bgfx - Direct3D11` before the reset, and the view answers "No external renderer active"; the path is chosen only at startup. The two tabs are there as said: one view area with ONE cell, two `scanner` tab windows. DECIDED by the reporter 2026-10-09 09:48 for the first part: the type `Default` is to mean bgfx on the platform's default backend, and (09:52) a new type `Legacy` the old Coin rendering; (09:53) the type alone decides whether the engine is used -- under `Legacy` the render cache setting keeps its original meaning (default 3), under `Default` it is always 3. 2026-10-09 10:16: part (a) written by the build session and building, three choices of its own for the reporter. The MSAA part, the split turned into tabs, is not decided or read further |
+| 51 | 2026-10-09 | a face's edge that no edge line covers (a cylinder's side against what is behind it) is a staircase with MSAA off; if that is expected, MSAA 4x by default (change request) | OPEN; (a) CONFIRMED expected by the build session 2026-10-09 10:16 (read, not measured: only lines have computed coverage; the one other smoothing, idle temporal accumulation, is off by default and smooths a still picture only); so the default of `View/AntiAliasing` goes from 0 to 3 -- for both renderer types, `Legacy` and the engine, and the other tiers follow (answered 10:11) |
 | 52 | 2026-10-09 | a benchmark asked: with face rims a staircase without MSAA anyway, is the line shader (lines with computed coverage) still needed, and what does it cost in rendering (from entry 51) | OPEN, a measurement for the build session; nothing run |
 
 ## 1. Idle progress bar in the status bar -- STAGED
@@ -3901,7 +3906,24 @@ Asked of the reporter at the hand-over: which session builds it and on which
 branch ("build it in next session" was said to the other session, which says
 it will not). Answered 2026-10-08 20:55, at the top of this entry.
 
-## 46. TechDraw drawn by the backend: the hatch of a section's cut face is not Qt's -- FOUND 2026-10-09, a fix written, no commit yet
+## 46. TechDraw drawn by the backend: the hatch of a section's cut face is not Qt's -- FIXED `6dacf21b11`, not staged (see `docs/HandsOnLog.md`)
+
+**2026-10-09 10:16, the build session: FIXED `6dacf21b11`** (its message;
+its log, entry 46, `97bb12163c`, local). Not staged, not pushed.
+- The cause: the backend drew the hatch from ONE picture of the whole face
+  and read one pixel in five of it at the zoom a page opens at: 1.1 lines
+  across a 17 px strip at 0.99 strength, where Qt shows 5.0 at 0.19. Now
+  5.0 at 0.33. A hatch is one tile laid side by side, and every picture of
+  a page has coarser copies.
+- Three more, found by the test and fixed with it: a hatch with
+  `HatchRotation` was turned the WRONG WAY; every image was drawn over all
+  the line work of a page (and text under every fill); the tiles showed
+  their seams.
+- Scored: `tests/gui/techdraw-page-backend-hatch.py`, 22 PASS and 8 FAIL
+  before, 39 PASS after.
+- Left, for the reporter to know: a hatch line about a pixel wide is paler
+  than Qt's (0.70 for 0.94 at 12 px/mm), one under a pixel a little
+  stronger.
 
 **2026-10-09 09:40, the build session: FOUND, a fix written and building,
 no commit yet** (its message; it sends the line when it is committed).
@@ -3954,7 +3976,27 @@ copy staged 2026-10-07 as on today's tree. Not looked into.
 - `navicube-per-view.py`: passes 11 claims, then never ends.
 Not said yet by the reporter: whether and when they are to be looked at.
 
-## 49. After "Reset all" and then the Light theme, the workbench toolbar is hidden -- OPEN, intermittent
+## 49. After "Reset all" and then the Light theme, the workbench toolbar is hidden -- FOUND 2026-10-09, the fix in the build session's tree, uncommitted
+
+**2026-10-09 10:16, the build session: FOUND, reproduced every time, on the
+staged copy too; its fix is in the tree, not committed yet** (its message).
+- What it needs is a MAXIMIZED window -- not a saved window state. **The
+  note-taker's guess further down (a delayed save of the window state
+  restored by the theme) is not what happens.**
+- The cause: the reset clears the title bar areas' entries. The toolbar
+  manager's 100 ms timer then takes the workbench toolbar out of the title
+  bar itself -- a move that hides a toolbar -- and asks the toolbar whether
+  it is visible to know whether to show it: after the move, so the answer
+  is no. A window that is not maximized swaps its title bar at once and
+  moves the toolbar properly first; a maximized one waits 100 ms to leave
+  the maximized state, and loses the race.
+- The fix: the toolbar is asked BEFORE the move.
+- Probe on the fixed build: the toolbar is shown after the reset and after
+  the theme, 2 cycles of 2.
+The note-taker's remark on the evidence below: the bad run's backup has
+`Maximized` = 1 stored and the good run's has no such key, which goes with
+"maximized" being the condition; whether the window was in fact not
+maximized in the good run was not asked.
 
 **2026-10-09 09:38, the reporter, when the two questions at the end of this
 entry were put to them:** "at the start it is a light theme, but with mixed
@@ -4053,6 +4095,20 @@ theme (a toolbar, a panel, the window). The second answered 2026-10-09
 09:38, at the top of this entry: nothing was.
 
 ## 50. After "Reset all" the 3D view is drawn without the backend; then a change of MSAA turns a split into tabs -- OPEN, measured in the live session; (a) DECIDED: `Default` means bgfx on the platform's backend, `Legacy` the old Coin rendering
+
+**2026-10-09 10:16, the build session: part (a) is written and building, no
+commit yet** (its message). As decided: `Default` is the engine on the
+platform's backend, `Legacy` is no engine; the render cache is 3 always
+with the engine and the user's under `Legacy`.
+**Three choices of the build session, for the reporter to overrule, NOT
+ANSWERED YET:**
+1. the type is no longer written at startup, so a stored `Legacy` and a
+   stored backend name ARE kept from session to session (a name this build
+   does not have falls back to the platform's);
+2. a render cache other than 3 set while the engine draws is put back a
+   moment later, with one warning line in the report view;
+3. the Render preferences page keeps its plain text field for the type:
+   `Legacy` is typed, there is no list.
 
 **2026-10-09 09:48, decided by the reporter for (a),** when the finding
 below was put to them: "Render type Default should be bgfx plus a platform
@@ -4177,7 +4233,16 @@ Not said yet by the reporter: which MSAA values were tried and in what
 order, and whether the split was the two cells side by side that a page
 gets by default.
 
-## 51. Faces show a staircase where no edge line covers them, MSAA off; MSAA 4x by default (a change request) -- OPEN
+## 51. Faces show a staircase where no edge line covers them, MSAA off; MSAA 4x by default (a change request) -- OPEN; (a) confirmed expected, (b) decided, not started
+
+**2026-10-09 10:16, the build session confirms (a): yes, expected** (its
+message; read from the parameter definitions, not measured). Without MSAA a
+triangle's rim is not anti-aliased; only lines have computed coverage. The
+one other smoothing the engine has is "Idle temporal accumulation"
+(`View/Render/TemporalAccum`), off by default: it averages jittered frames
+while the camera holds still, so it smooths a still picture and nothing in
+motion. (The note-taker had found none; this is the one there is.)
+So the condition of (b) is met: MSAA 4x by default, as asked. Not started.
 
 **2026-10-09 10:01 and 10:08, the reporter, on the copy staged 08:40, the
 render engine drawing** (`bgfx - Direct3D11`; checked in the live session):
