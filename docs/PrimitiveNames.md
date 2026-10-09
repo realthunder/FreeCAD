@@ -199,11 +199,11 @@ every file and still not the box. What a version of its own would buy is
 that a file says which naming it has, where an empty map only says none:
 wanted the day a role is renamed in a released build, and not before.
 
-*The user's answer was "at its next recompute, nothing special at load".*
-It was given when the names were to be `Face3` itself, which changes no
-derived name. With role names the premise is gone, and this is the least
-that keeps a reference from being lost; it is still the next recompute
-that names them. **To be ruled.**
+*Ruled 2026-10-09: "prompt on load".* The first answer had been "at its
+next recompute, nothing special at load", given when the names were to be
+`Face3` itself, which changes no derived name. With role names that
+premise was gone; the measurement above was put to the user, and the
+prompt stays. It is still the next recompute that names them.
 
 *Not built, and would close it without a prompt:* on a miss, a name whose
 root is a number of an object that now has a name for that element could
