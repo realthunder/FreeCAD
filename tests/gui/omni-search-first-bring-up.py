@@ -80,9 +80,17 @@ def run():
                      "%.0f ms" % (up * 1000)):
             return
         lists = popup_lists()
-        commands = max(lists, key=lambda w: w.model().rowCount()) if lists else None
+        # the list whose rows name commands, "Title (Std_Name)". Not the
+        # longest one: the parameters outnumber the commands since the
+        # Python modules' settings are listed (1400 to some 600), and their
+        # rows have no icon to make.
+        commands = None
+        for w in lists:
+            first = str(w.model().index(0, 0).data(Qt.DisplayRole) or "")
+            if w.model().rowCount() and "_" in first and first.rstrip().endswith(")"):
+                commands = w
         rows = commands.model().rowCount() if commands else 0
-        if not check("the command list is there", rows > 300, "%d lists, the longest %d rows" % (len(lists), rows)):
+        if not check("the command list is there", rows > 300, "%d lists, the commands' %d rows" % (len(lists), rows)):
             return
         t = time.perf_counter()
         with_icon = 0
