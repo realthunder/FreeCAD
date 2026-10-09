@@ -62,6 +62,15 @@ edge.py` 8, `techdraw-page-backend-hatch.py` 39, `render-type-default-
 and-legacy.py` 13, no FAIL. So the stage has entries 46, 49, 50, 51, 53
 and the repair of entry 25's regression. PAUSED after it, as told.
 
+The session of 2026-10-09, afternoon (the reporter: "continue fixing
+issues in the note", read as the entries still open, in the order left at
+the pause: 54, 55, 56 with 57 after it, 52, 30, 58, 47, 48). The reporter
+added entries 59 to 63 and five more points of entry 56 while it ran, and
+asked for one measurement ("I remember now doing that in legacy render
+because of potential effect on rendering speed. measure it", entry 54).
+Done in it so far: 54, 55, 56, 59. All local: not pushed, not staged.
+Tools and results in `..\dl\handson\2026-10-09\q4`.
+
 Evidence that does not belong in the repository is under
 `..\dl\handson\<date>\`, as before.
 
@@ -98,6 +107,11 @@ Evidence that does not belong in the repository is under
 | 50 | FIXED `4cb1ee6ad1` (the render type) and `69a2028e23` (the split), not staged, not pushed | (a) as decided: `Default` is the render engine on the platform's backend, `Legacy` the old Coin rendering; the type is a list on the Render engine page and is kept; the render cache setting is not looked at while the engine draws. (b) a Coin-drawn view is replaced by a copy when the anti-aliasing changes, and the copy was given a tab of its own; it takes the old view's cell |
 | 51 | DONE `d157abf559`, not staged, not pushed; the browser viewer does not follow | expected, and measured before: a triangle's rim has no coverage of its own, and a limb has no edge over it. The default is MSAA 4x for both render types: on a sphere's limb 0.0% of rows blended without, 85.6% under `Legacy` and 67.0% under the engine with nothing stored. The tests state "no multisampling" for themselves. The browser cannot multisample its scene target on WebGL2 |
 | 53 | FIXED `c820c3aea1`, not staged, not pushed | not the recompute and not the projection: a page that comes back with the window layout is drawn while a progressive load is still building the view providers of its views. Without one the Qt page draws nothing of a view and the backend draws it by fallback widths, 0.6 mm; the view provider's own request to draw came while the document was flagged as restoring and was dropped. It asks again a turn of the event loop later |
+| 54 | FIXED `8bb8bd10fa`, not staged, not pushed; the cost measured | a fully selected object shown on top drew every edge at full colour, front or behind: the engine had copied the old Coin renderer's rule, which left the dimming out for speed. Both renderers dim the hidden part now, as for the object under the pointer; an edge selected by itself still shows through. Cost: nothing in the engine; Coin 2.18 to 2.54 ms a frame on 100 heavy spheres all selected, nothing measurable on `scanner.FCStd` |
+| 55 | FIXED `739120f1c7`, not staged, not pushed | a warning or error for the user is QStatusBar's temporary message, which hides every non-permanent widget -- the preselection label whose stretch held the progress bar in its place. A bar that came up with a message showing sat at the left end, over the message. It is a permanent widget now, the first of the right-hand group |
+| 56 | DONE `f5a651b723`, all eleven points, not staged, not pushed; five choices of mine for the reporter | a cell drag is given up by Escape, any other button, or the application losing the front; one look for the overlay's and the cells' drag frames (the accent at 0.3 in a white border); a join's victim has a red stop sign and nothing else; a border pushed past a cell's minimum closes it, a corner still only creates and its refusal is an error; handles on the accent colour; a zone steps off a scroll bar; a page's or a sheet's cell splits with a 3D view |
+| 59 | FIXED `e9ac624959`, not staged, not pushed | "Reset all" cleared the record of the Start workbench's migration of 2024; the next start ran it again on a profile whose startup workbench was PartDesign and switched the Start page off. The reset keeps the record (the reporter's decision) |
+| 60 | NOT REPRODUCED in 27 rounds; not yet followed further | a 3D view split and one of the two cells closed by each of four routes, on the staged copy and on the tree, without multisampling and with the default 4x: the view that takes the room is never black |
 | 45 | FIXED `c7fdcf3220`, pushed 2026-10-08, not staged | a spreadsheet's view provider made its view when it was only asked whether it had one: one click on a sheet in the tree opened it. Asking is a question now, and a new request opens the view for the three callers that host it. Show-in-cell also took a stale cell and closed another sheet's view; it takes the active view's cell |
 
 **The reporter, 2026-10-07 14:20, on what is open** (said to the build
@@ -3272,3 +3286,209 @@ for each renderer). `techdraw-page-backend-single-draw.py` 17 and
 load) and entry 28 (a colour wrong sometimes) are the same shape of
 report -- something drawn before the slices had built what it needs.
 Neither was reproduced, and this fix is TechDraw's alone.
+
+## 54. A selection shown on top draws its edges as if with no depth test -- FIXED `8bb8bd10fa`, not staged
+
+**Reproduced by measurement** on the dev build before the change and on
+the staged copy: a box seen from the isometric side has three hidden
+edges. Under the pointer (the whole object preselected) they come out at
+0.45 to 0.51 of a visible edge's colour over the face in front; with the
+object selected, at 1.00 -- the very colour of the visible ones. Both
+renderers alike.
+
+**What it is.** No defect of the depth test: a rule, and a deliberate one.
+A highlight shown on top draws an object's lines twice -- once with no
+depth test, dimmed to `View/TransparencyOnTop`, and again, solid, where
+the depth test against the object's own faces passes. The old Coin
+renderer (`SoFCRenderer`) took that dimming only for a pass without its
+highlight bit, which a full selection's lines always carry
+(`selslineontop`), and did not put a fully selected object's faces into
+the depth pass at all; the hidden part of a selected line has a setting of
+its own instead, the dash pattern `View/SelectionLinePattern`, solid by
+default. The render engine's bridge (`translateMaterial`) copied the rule,
+with the comment saying so. The reporter, while this was looked at: "I
+remember now doing that in legacy render because of potential effect on
+rendering speed. measure it".
+
+**The fix, in both renderers** -- my reading of "full selection" as the
+whole object selected, which is what the report compares with:
+- the engine: the dimming is kept off only for an ELEMENT picked by
+  itself (the coloured draws of a partial selection). A selected edge
+  behind a face is still drawn at full colour: that is what shows a hidden
+  edge that was picked;
+- Coin: a fully selected object's faces join the depth pass, its lines and
+  points get a bucket of their own (`selsfullontop`), drawn as the lines
+  of the object under the pointer are -- dimmed and thin where hidden,
+  solid and thickened where visible.
+- Found on the way, fixed with it: the bridge handed the backend
+  `TransparencyOnTop` itself as the hidden part's ALPHA where Coin uses one
+  minus it. The two agree at the default of 0.5 and nowhere else.
+
+**The cost, as asked.** What changes in Coin is one more pass over the
+selected object's faces, depth only. The engine already drew that pass and
+both line passes for a full selection, so there the change is one alpha.
+
+Measured with a temporary timer inside `SoFCRenderer::render` (a
+`glFinish` either side, so the GPU's work is in it; not committed), the old
+behaviour switched back by an environment variable in the same binary,
+1500 x 678, vsync off, the camera turning a degree a frame, means over
+windows of 40 frames with the first window of each leg left out:
+
+| Coin (`Legacy`) | on-top pass, old | new | the frame, old | new |
+|---|---|---|---|---|
+| 100 finely meshed spheres, all selected | 1.91 ms | 2.27 ms | 2.18 ms | 2.54 ms |
+| `scanner.FCStd`, its 8 root objects selected | 0.32 ms | 0.34 ms | 0.57 ms | 0.59 ms |
+
+Two runs each way on the spheres, twelve and thirteen windows: the new
+runs averaged 2.38 and 2.15 ms, so the 0.36 ms is good to about a tenth.
+With nothing selected the same spheres cost 1.3 ms a frame. The engine,
+the same spheres all selected, by its own frame report: 3.1 ms of GPU time
+on the staged copy, 3.7 and 2.5 ms in two legs on the tree -- no
+difference to be seen, as expected.
+
+Bounded: only the first 100 selected objects are shown on top
+(`View/MaxOnTopSelections`); the rest get bounding boxes. Seen on the way,
+with 324 spheres selected.
+
+**Two instruments that did not work**, for whoever measures Coin next:
+`QOpenGLWidget.grabFramebuffer()` on a 3D view draws nothing -- the scene
+is painted in the graphics view's paint event, not in `paintGL` -- and
+read 1 ms a frame whatever the scene; and `repaint()` of the viewport
+before it redraws only about one frame in five (counted by comparing a row
+of pixels), so wall-clock time around it is mostly the frames that were
+not drawn. The engine's frames under `waitFrameComplete` came out locked
+at 20.0 ms until `FC_SWAP_INTERVAL=0` was set besides `FC_BGFX_NO_VSYNC`.
+
+**Scored.** `tests/gui/selection-on-top-hidden-edges.py`, both render
+types: 16 PASS and 2 FAIL on the copy staged 12:25, 18 PASS on the tree.
+`face-outline-inner-edge.py` 8 PASS as before.
+
+**For the reporter:** whether Coin keeps the change -- it is the one place
+that pays for it, and dropping that half is a few lines; and whether an
+edge selected by itself, hidden, is to stay at full colour.
+
+## 55. The status bar's progress bar is sometimes at the left side -- FIXED `739120f1c7`, not staged
+
+**Reproduced** on the staged copy once the right kind of message was
+found. A warning printed for a developer (`Console.PrintWarning`) goes to
+the report view only. A warning or an error meant for the USER is also
+shown in the status bar, as `QStatusBar`'s own temporary message, for five
+seconds (`MainWindow::showStatus`) -- and while such a message is up
+`QStatusBar` hides every widget that is not a permanent one.
+
+The item registry (entry 1's) had the progress bar in the LEFT,
+non-permanent slot, behind the preselection label, and it is that label's
+stretch that holds the bar where it normally is. So: a message goes up,
+the label is hidden; a progress bar that shows itself then -- it does two
+seconds into an operation -- has nothing before it. On the staged copy it
+sat at x 2 of a status bar 1920 wide, over the message, where it is at
+1441 without one. The note-taker's guess under the entry was the cause.
+"Sometimes": it needs a message for the user in the five seconds before
+the bar comes up, which a recompute that reports a failure gives.
+
+**The fix.** The bar is registered in the right-hand, permanent group, as
+its first item. It lands where it was, behind the label, and a message no
+longer touches it. That is where it was before the registry was ported
+(`c324d79dfd`), which took upstream's band for it.
+
+**Scored.** `tests/gui/statusbar-progress-place.py`: 4 PASS and 2 FAIL on
+the staged copy, 6 PASS on the tree (the bar at 1406 with the message up:
+the notification area beside it is wider by the warning it counts).
+`statusbar-progress-idle.py` 11 PASS as before.
+
+## 56. View cells: the look of the handles and of the drag frames, and how a drag is cancelled -- DONE `f5a651b723`, not staged
+
+Eleven points by the end of the day, (a) to (k); the design is in
+`docs/SplitViews.md` sec 22. What each came to:
+
+| | asked | done |
+|---|---|---|
+| a | menu button and handles have no contrast on a light ground | painted on the accent colour in a white rim, strokes white |
+| b | handles off a view's scroll bar | a zone steps aside to the edge of a scroll bar its corner would lie on |
+| c | frames too see-through; white borders | the face at 0.3 (the overlay frame's value), a white border 2 px, a thin dark line round it |
+| d | the theme's accent, or the palette's highlight with no theme | `OverlayDragFrame::accentColor`; "a theme" is a sheet chosen in `MainWindow/StyleSheet` |
+| e | the same for the overlay's drag frame | one function paints both, `OverlayDragFrame::paintFrame`; the toolbar's drop placeholder is that widget too |
+| f | Esc and any mouse click cancel, only the left release commits; a border too | an event filter on the application while a drag lasts |
+| g | a join: one frame, a big red stop sign on the cell that goes | no dim, no arrow; a red octagon in a white rim |
+| h | a refused drag says why once, as an error | an error, which the notification area shows too; at most once in five seconds, as before |
+| i | a drag that makes a cell too small closes it -- the BORDER's; a corner only creates | a border more than 12 px past the cell's minimum: "close", the stop sign, closed at the release |
+| j | a split of a page's cell does nothing: a 3D view instead | any view there is only one of gives the new cell a 3D view of its document |
+| k | another program coming up mid-drag leaves the frame on screen | the same filter: the application or window deactivated, or the mouse grab lost, gives the drag up |
+
+**Found by the test, not by reading:**
+- The application has a style sheet of its own in every session, so
+  "a sheet is applied" is no test of a theme; the chosen sheet's setting
+  is. My first build painted the theme's accent with no theme chosen.
+- A message "for the user" alone (`TranslatedUserError`) does not reach
+  the report view, which takes none of those; the refusal is a plain
+  error, which both the report view and the notification area show.
+- A spreadsheet's scroll bars do not run into the cell's corners -- they
+  stand in 10 px and begin below the header -- so only its horizontal one
+  touches a zone, the bottom left. The rule is "a bar the zone's corner
+  would lie on", not "a bar along that edge".
+- `Document::createView3D` marks the document unmodified (it is written
+  for a first view); the split puts the state back.
+
+**Scored.** `tests/gui/view-cell-drag-cancel-and-look.py`, new, 82 claims:
+19 PASS and 26 FAIL on the copy staged 12:25 (it stops early there), 82
+PASS on the tree. `view-cell-drag-frames.py` (entry 29's): its border
+scenario has both behaviours now, at the minimum and past it; 38 PASS.
+`sheet-view-on-request.py` 18 PASS. NOT tested by a script: the overlay's
+own frame and the toolbar placeholder, reached only by a real drag; they
+are painted by the function the test reads through the cells' frames.
+
+**Choices of mine, for the reporter:** (1) a new cell is told from a kept
+one by its plus alone -- both faces are 0.3 now, where they were 0.24 and
+0.47; (2) the stop sign is an octagon without lettering, a quarter of the
+cell's smaller side, 14 to 48 px; (3) nothing dims the cell under it; (4)
+the 12 pixels a border goes past the minimum before it means "close" --
+without them the frames flicker at the limit; (5) "one time" for a
+refusal is read as once per refusal, and two within five seconds are said
+once.
+
+**Entry 57** (the same in the browser viewer) is written -- the gestures
+of `web/src/splitview.tsx` and their styles, type-checked -- and not
+built, run or committed yet.
+
+## 59. After "Reset all" the Start page no longer comes up -- FIXED `e9ac624959`, not staged
+
+The cause was found by the note-taking session, read only, and is as it
+wrote it: the startup workbench did not change (PartDesign is this
+build's default); "Reset all" cleared `Mod/Start/Migration2024Complete`
+with everything else; the next start ran `StartMigrator.py` again, which
+takes a startup workbench other than "StartWorkbench" for the choice not
+to see the Start page, and stored `ShowOnStartup` false.
+
+**The fix**, as the reporter decided ("Reset all" keeps the migration's
+flag, as it already keeps one other setting): `DlgPreferencesImp::
+restoreDefaults` puts the flag back after the clear when it was set. The
+migration is left as it is. Not touched: a profile that ALREADY has the
+Start page switched off this way stays so -- Preferences > Start, or
+`Mod/Start/ShowOnStartup`, switches it on again.
+
+**Scored.** `tests/gui/preferences-reset-all.py` gains three claims, the
+last running the migration the way a next start does: 10 PASS and 2 FAIL
+on the staged copy, 12 PASS on the tree.
+
+## 60. After a view cell is closed the view that takes its room is black -- NOT REPRODUCED
+
+`..\dl\handson\2026-10-09\q4\e60probe.py`: a box, a 3D view split
+right or down, one of the two cells closed by each of four routes -- the
+new one or the old one closed by the command, a join dragged from either
+side -- and what the surviving view holds read off its own surface, at
+once and 1.5 s later. Twelve rounds on the tree without multisampling,
+three on the staged copy without (that run was cut short), twelve on the
+staged copy with the defaults (MSAA 4x), Direct3D 11 in all: no black
+view in 27 rounds.
+
+Read, not proved: the symptom as corrected ("will only back to normal if
+I resize it. camera move has no effect") fits a view whose composite
+texture or whose targets are gone and are rebuilt only by a size change
+-- `BGFXView::blitReadback` re-specifies its GL texture on a resize and
+only then. What takes them away was not found; the deferred GL deletes of
+a closed view run in the library's context, which shares with the
+widgets', and looked right.
+
+**Asked of the reporter:** what was in the two cells (a page, a sheet, two
+3D views of one document or of two), how the cell was closed, and whether
+the unified canvas (`View/UnifiedCanvas`) is on.
