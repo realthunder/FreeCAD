@@ -188,7 +188,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 60 | 2026-10-09 | after a view cell is deleted, the view that expands into its room is sometimes BLACK until it is RESIZED; a camera move does not bring it back (corrected by the reporter 14:06) (Windows, Direct3D 11 at least) | OPEN, intermittent; nothing run |
 | 61 | 2026-10-09 | TechDraw drawn by the backend: dashed lines are a little thicker than Qt's (no great matter); but for some lines -- the cosmetic symmetry line in `Page`, `Top` -- the hover and selection highlight is drawn as the THINNER dashed line and is barely visible over the thicker line under it | OPEN; DECIDED by the reporter 14:30 and 14:31: EVERY line the backend draws on a page, dashed or not, at Qt's width -- thinner -- and the highlight at the same width as its line; a view's bounding box line shows it too; nothing run |
 | 62 | 2026-10-09 | omni search, a new feature: when it first pops up, its list holds the last 10 items that were confirmed in it; once typing starts, the recent list is not needed | OPEN; nothing run |
-| 63 | 2026-10-09 | `Std_DrawStyle` (a new request): a new icon suggested for it; its display style options as a combo box with their icons; anti-aliasing and its combo box in the same menu; the light sources configuration moved there from the preferences (not the manipulator), with a button to manipulate the light direction in the active 3D view and a check box to sync all 3D views' light direction; the Light Sources preference page removed | OPEN; answered 14:52: the style combo is for the active view; anti-aliasing and lights apply at once; the manipulation toggles by the button or Esc; the sync check box is a remembered setting and decides whether a light direction goes to the active view or to all open views; one more button saves ALL the current view's light settings for future use (corrected 14:55); three icons to choose from; all of the Light Sources page's settings but the manipulator go into the menu; nothing run |
+| 63 | 2026-10-09 | `Std_DrawStyle` (a new request): a new icon suggested for it; its display style options as a combo box with their icons; anti-aliasing and its combo box in the same menu; the light sources configuration moved there from the preferences (not the manipulator), with a button to manipulate the light direction in the active 3D view and a check box to sync all 3D views' light direction; the Light Sources preference page removed | OPEN; answered 14:52: the style combo is for the active view; anti-aliasing and lights apply at once; the manipulation toggles by the button or Esc; the sync check box is a remembered setting and decides whether a light direction goes to the active view or to all open views; one more button saves ALL the current view's light settings for future use (corrected 14:55); three icons to choose from; all of the Light Sources page's settings but the manipulator go into the menu; a change of the lights is stored in the active view's properties, the button saves it into the settings, and the sync check box is for all the light settings (14:59); nothing run |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -5418,6 +5418,23 @@ the sync check box, said of the light DIRECTION, also decides for the
 lights' other settings whether they go to the active view or to all open
 views; (3) whether a view's own lights are kept with the document, or last
 only as long as the view.
+Passed on to the build session.
+
+**Answered by the reporter, 2026-10-09 14:59:** "the chage is store in the
+active view properties. the button is for save it into the settings. sync
+button apply to all light settings."
+- to (1): a change of the lights in the menu is stored in the ACTIVE VIEW's
+  PROPERTIES. The button is what saves it into the SETTINGS (the
+  preferences, what a future new view starts from). So the reading holds,
+  with the place named: the view's properties.
+- to (2): the sync check box applies to ALL the light settings, not the
+  direction alone -- ticked, a change goes to every open 3D view.
+- to (3), by the note-taker's reading of "view properties", not said in so
+  many words: a view's lights are properties of the view, so they are kept
+  the way a view's other properties are -- with the document, where those
+  are saved with it.
+Nothing of the entry's questions is left with the reporter but that last
+reading.
 Passed on to the build session.
 
 ## Inbox
