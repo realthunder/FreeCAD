@@ -106,7 +106,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 27 | 2026-10-06 | the view cell menu: opens a spreadsheet nobody asked for, lists every TechDraw object, changes the wrong cell | STAGED 2026-10-07 14:23, fixed `fa2ada985c`: the menu made a spreadsheet view by asking for it, listed a page's views, and placed a pick by the general policy instead of into its cell; all three gone, spreadsheets now listed by type like pages (`docs/HandsOnLog.md`) |
 | 28 | 2026-10-06 | `scanner.FCStd` restores with a wrong colour, sometimes (the motor body light blue for light grey) | NOT REPRODUCED 2026-10-09, nothing changed, three questions for the reporter: 15 loads over 4 sessions, every colour property of all 686 objects identical and the frames the same. In the file the solid `Compound` (264 faces) and the cable `Compound001` have LIGHT BLUE as their own stored colour and are drawn light blue on every load; the containers over them carry a light grey material with its override off. So here it is the light GREY that was not seen (`docs/HandsOnLog.md`) |
 | 29 | 2026-10-07 | view cells: transparent frames that show a split, a join and a resize while dragged (every cell the drag changes); corner handles on an opaque background, the cell menu button too when hovered; a thinner border between cells; a minimum cell size setting, default 200 (change request, decided) | STAGED 2026-10-09 08:40, fixed `dd336be800`, the default 300 on the reporter's word `c9bc1e22c5`; four choices for the reporter to confirm or overrule: a drag of a corner zone or of a border is shown as translucent frames over every cell it changes and is carried out AT THE RELEASE; the setting `View/OpenView/MinimumCellSize`, 300 (was 200), on the preferences' UI page -- a split that would leave a cell under it is refused with one line in the report view; corner zones (and the menu button when hovered) on an opaque ground; the border 3 pixels. `tests/gui/view-cell-drag-frames.py` 33 PASS (`docs/HandsOnLog.md`, `docs/SplitViews.md` sec 21) |
-| 30 | 2026-10-07 | the dark and light overlay stylesheets integrated into the Dark and Light preference packs (a task asked; what "integrated" covers to confirm); and the long freeze when an overlay stylesheet is applied, to investigate; the Python console's background in both packs, so a theme can take an overlay preset's away again | THIRD TASK STAGED 2026-10-09 08:40, fixed `dad4f5d18a`: Light, Dark and Classic list every colour an overlay preset writes, the console's and the tree's backgrounds as none, so a theme takes the preset's away again; 8 PASS and 10 FAIL before, 18 PASS after. SECOND TASK MEASURED, nothing changed: "Overlay dark theme" holds the program 13.0 s on a fresh profile with `scanner.FCStd` open, 9.6 s of it the APPLICATION's style sheet (`Dark.qss`), 3.3 s the combo view switched off; what to do about it is the reporter's to say. FIRST TASK DECIDED ANEW by the reporter 2026-10-09 09:47, not started: TWO NEW THEMES under Tools > Preset configurations > Themes -- the Dark theme merged with the "Overlay dark theme" preset, and the same for Light -- so that no combination of switching leaves settings stuck (the Python editor's colours). This replaces the answer of 09:38 (remove the presets, into the existing two themes). Not said: the new themes' names, and whether the two overlay presets stay (`docs/HandsOnLog.md`) |
+| 30 | 2026-10-07 | the dark and light overlay stylesheets integrated into the Dark and Light preference packs (a task asked; what "integrated" covers to confirm); and the long freeze when an overlay stylesheet is applied, to investigate; the Python console's background in both packs, so a theme can take an overlay preset's away again | THIRD TASK STAGED 2026-10-09 08:40, fixed `dad4f5d18a`: Light, Dark and Classic list every colour an overlay preset writes, the console's and the tree's backgrounds as none, so a theme takes the preset's away again; 8 PASS and 10 FAIL before, 18 PASS after. SECOND TASK MEASURED, nothing changed: "Overlay dark theme" holds the program 13.0 s on a fresh profile with `scanner.FCStd` open, 9.6 s of it the APPLICATION's style sheet (`Dark.qss`), 3.3 s the combo view switched off; what to do about it is the reporter's to say. FIRST TASK DECIDED ANEW by the reporter 2026-10-09 09:47, not started: TWO NEW THEMES under Tools > Preset configurations > Themes -- the Dark theme merged with the "Overlay dark theme" preset, and the same for Light -- so that no combination of switching leaves settings stuck (the Python editor's colours). This replaces the answer of 09:38 (remove the presets, into the existing two themes). Settled 09:50: the two presets GO, and the two new themes are named "Overlay dark theme" and "Overlay light theme" (`docs/HandsOnLog.md`) |
 | 31 | 2026-10-07 | report view: "Go to end" on by default (change request) | STAGED 2026-10-09 08:40, fixed `47b5e72c79`: "Go to end" is on for a profile that never stored it (`docs/HandsOnLog.md`) |
 | 32 | 2026-10-07 | some sub menus are transparent with blue text (Tools > Command history): find out why; transparent menus off by default | STAGED 2026-10-09 08:40, fixed `b960092ea5`: the see-through menus are single menu objects shared between a pop-up over the 3D view and an entry of the main menu, and a themed session with no menu sheet chosen took the see-through sheet; now no sheet chosen = an ordinary menu, the see-through ones a choice in Preferences > Theme. A question for the reporter (`docs/HandsOnLog.md`) |
 | 33 | 2026-10-07 | a cmd window pops up briefly at the first document opened after start | STAGED 2026-10-09 08:40, fixed `ef4df215b5` (the cycles submodule at its `35a3bd898`): the CUDA probe ran `cmd.exe /c where nvcc` through `popen` at the first 3D view; it searches the PATH without a shell now, and the session starts no process at all. Both pushed since (`docs/HandsOnLog.md`) |
@@ -2355,7 +2355,7 @@ What is asked now:
   and the border still has to be wide enough to grab and to right-click (its
   menu closes a neighbouring view).
 
-## 30. The dark and light overlay stylesheets integrated into the Dark and Light preference packs (a task asked) -- third task STAGED 2026-10-09, fixed `dad4f5d18a`; the freeze measured; the first task DECIDED ANEW 2026-10-09 09:47: two new themes, each a theme merged with its overlay preset; not started (see `docs/HandsOnLog.md`)
+## 30. The dark and light overlay stylesheets integrated into the Dark and Light preference packs (a task asked) -- third task STAGED 2026-10-09, fixed `dad4f5d18a`; the freeze measured; the first task DECIDED 2026-10-09: two new themes, "Overlay dark theme" and "Overlay light theme", each a theme merged with its overlay preset, and the two presets go; not started (see `docs/HandsOnLog.md`)
 
 **2026-10-09 09:47, the reporter changed their mind on the first task; THIS
 is the one to do, and it replaces the answer of 09:38 below:** "regarding
@@ -2385,10 +2385,22 @@ The note-taker's reading, to confirm:
   or the "stuck" combinations come back when switching among the four. The
   third task's fix (`dad4f5d18a`) did that for the three themes and the
   colours; the new ones widen it to the layout keys.
-**Not said yet, NOT ANSWERED:** the names of the two new themes; and
-whether the two overlay presets ("Overlay dark theme", "Overlay light
-theme" in Tools > Preset configurations) stay or are removed -- the answer
-of 09:38 removed them, this one does not mention them.
+Asked of the reporter then: the names of the two new themes, and whether
+the two overlay presets ("Overlay dark theme", "Overlay light theme" in
+Tools > Preset configurations) stay or are removed.
+**Answered by the reporter, 2026-10-09 09:50:** "two presets should go. two
+new themes named Overlay dark/light theme"
+- the two presets are REMOVED from Tools > Preset configurations
+  (`data/settings/OverlayDark.FCParam`, `OverlayLight.FCParam`);
+- the two new themes, under Tools > Preset configurations > Themes, are
+  named "Overlay dark theme" and "Overlay light theme" -- the names the
+  presets had. (The note-taker's reading of "Overlay dark/light theme": the
+  two names in full, as the presets are spelled today; the exact
+  capitalisation was not said.)
+So the first task in full: the presets become themes. Each new theme is its
+base theme, Dark or Light, merged with what the preset of that name wrote;
+the presets themselves go. Nothing of the first task is left with the
+reporter but the readings marked above as the note-taker's.
 Passed on to the build session.
 
 **2026-10-09 09:38, the reporter on the first task -- what "integrated"
