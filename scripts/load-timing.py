@@ -15,7 +15,8 @@ and on the steady clock:
   - the GL renderer drawing (read back from a context: say which display a
     number is for), the size of the view and of the main window;
   - the closing lines of the two progressive drains, whole;
-  - when each shape drawn as a bounding box got its mesh;
+  - when each shape drawn as a bounding box got its mesh (negative: inside
+    an import's call, before it returned);
   - the longest stretch the GUI thread stayed away from its event loop, by
     phase (a timer of 10 ms that looks at how late it is);
   - the level-of-detail landing pump's work, with FC_LEVEL_DEBUG=1.
@@ -305,7 +306,7 @@ def start():
         note("INFO at leisure %s, drain budget %d ms, a frame takes in %d sets, %d KB"
              % (render.GetBool("CoarseDeferAtLeisure", True),
                 render.GetInt("ProgressiveLoadBudgetMS", 100),
-                render.GetInt("ElementTakeInSets", 0), render.GetInt("ElementTakeInKB", 0)))
+                render.GetInt("ElementTakeInSets", 1000), render.GetInt("ElementTakeInKB", 0)))
         FreeCAD.setLogLevel("Part", "Log")
         FreeCAD.setLogLevel("Gui", "Log")
         FreeCAD.Console.AttachObserver(observe)
@@ -336,8 +337,12 @@ def start():
         S["t0"] = time.monotonic()
         S["last_event"] = S["t0"]
         S["last_poll"] = 0.0
+        # An import resolves boxes inside the call, timed from its start:
+        # from the return like everything else, and negative for those
+        took = S["t0"] - S["t_call"]
+        S["resolved"] = [t - took for t in S["resolved"]]
         note("INFO open returned after %.2f s, %d objects"
-             % (S["t0"] - S["t_call"], len(doc.Objects)))
+             % (took, len(doc.Objects)))
     except Exception:
         note("ABORT start:\n" + traceback.format_exc())
         finish()

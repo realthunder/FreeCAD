@@ -3297,6 +3297,57 @@ That is how the second paragraph above was found.
   one frame.
 - Only Mesa's D3D12 driver under WSL was measured.
 
+### 18.18 The gigabyte STEP import in a window (2026-10-09)
+
+The third thing ruled for the session after sec 18.15, and allowed by
+that ruling: `00_server-2ou-tla-sku3_power9_asm.stp`, 964 MB, imported
+once (`ImportGui.open`) in a window of 1920x1080 on the desktop, the
+NVIDIA card through Mesa's D3D12 driver, the build of sec 18.17, nothing
+else running, the file read once beforehand so that the disk is not in
+the figure. One run; it is a stress import and was not repeated.
+
+| | |
+|---|---|
+| the import call returns after | 581.5 s |
+| objects | 5455 |
+| the process at its largest | 15.1 GB resident (14.6 GB through the long middle of the call) |
+| longest stretch the GUI thread stayed away from the event loop, inside the call | 7.5 s |
+| the same after the call returned | 1.9 s |
+| frames inside the call | 147 frame lines, 96 of them a second or more after the one before, 11 of them 3 s or more; 107 s between two frames at the longest |
+| shapes drawn as bounding boxes | 177, 60 of them meshed inside the call, 175 by the end of the run |
+| the landing pump | 721 items in 47 s, its worst turn 2.3 s |
+| a settled frame (the camera rolled for 15 s) | 0.56 s a step; 2339 draws, 36.8 million triangles |
+
+- **The import is the wait, not the window.** Nine minutes and forty
+  seconds in the call, during which the event loop is served (7.5 s at
+  the worst) but the picture stands still for up to 107 s at a time:
+  for most of the call there is nothing new to draw. Sec 18.14's 88 MB
+  import took 22.9 s; this file is eleven times the size and twenty-five
+  times the time.
+- **Memory is not the limit on this box**: 15 GB of 39. A watchdog stood
+  by to end the run under 5 GB available and had nothing to do.
+- **The load gate and the take-in of sec 18.17 had nothing to do
+  either.** When the call returned the gate lifted, and all 8713 edge
+  sets and 8713 point sets were still held back in that frame -- which
+  leaves the rule of coarse faces; no frame of the run took in 64 sets. An import builds its visuals as the
+  objects appear and its edges come back as refinements land.
+- **A settled frame is the triangles here, not the draws**: 0.45 s a
+  frame of which this renderer's own C++ is 78 ms and `bgfx::frame`
+  25 ms; the rest is outside both, where the driver presents. The
+  reference assembly has fourteen times the draws and less than a third
+  of the triangles and settles at 0.30 s on the same card (sec 18.14).
+- **One turn of the landing pump took 2.3 s**: a single landing is one
+  item (sec 18.13), and this file has shapes large enough for one to
+  cost that.
+
+**Not measured.** Where the 581 s go inside the call (reading, the
+transfer to shapes, the document) -- `scripts/load-timing.py` times the
+event loop and the frames, not the importer. The times at which the
+boxed shapes got their meshes: for an import the script dated those
+inside the call from the call's start and the rest from its return, in
+one list. It dates them all from the return now; this run's list is not
+quoted.
+
 ## 19. Progressive load against eager (2026-09-29)
 
 ProgressiveLoad (sec 13, default on since `d53ba63848`) builds a restored
