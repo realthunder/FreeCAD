@@ -4661,6 +4661,25 @@ yes"
   stronger than a kept one) is to stay was not said.
 - (2), the theme (a) was seen under, is not answered.
 Passed on to the build session.
+**Added by the reporter, 2026-10-09 11:04, on a JOIN's frames -- point (g):**
+"removed cell shouldn't have any frame right? the frame is the new one and
+occupies the old cell area. draw a big red stop sign in the center of
+removing cell instead of pointed triangle"
+For a join (a corner dragged out into the neighbour, which is then closed):
+- there is ONE frame: the cell that stays, at the size it will have,
+  covering the room of the cell that goes. The cell that goes has no frame
+  of its own;
+- in the middle of the cell that goes, a big red STOP SIGN, in place of the
+  pointed triangle drawn there today.
+What is drawn today (read, not run; `ViewAreaDragFrames::paintEvent`): the
+cell that stays is framed over the room of both, and the cell that goes is
+DIMMED -- black at 110 of 255 over all of it -- with a white triangle
+pointing into it. So the first point holds already as far as frames go; what
+changes is the mark, and, the note-taker's reading of "shouldn't have any
+frame", the dim, which is a covering of that cell's own.
+Not said: whether the dim goes or stays under the stop sign; and the sign's
+shape -- the red octagon of a road sign, or a red disc with a bar.
+Passed on to the build session.
 
 ## Inbox
 
