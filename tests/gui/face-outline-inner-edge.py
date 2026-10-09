@@ -27,7 +27,12 @@ Claims:
     runs smoothly: the mean second difference of its middle, column to
     column, is under 0.22 px (0.33 with the cut, 0.16 with the fade);
   - selected: the outline is there, and nothing dark lies between the
-    face's fill and it.
+    face's fill and it;
+  - a face that ends on a limb, where it has no edge, keeps its outline
+    there: the side of a tall cylinder under the pointer has outline on
+    both limbs half way up, and a sphere, which has no boundary at all, has
+    one. (The first version of the fade drew the boundary's edges and
+    nothing else: a sphere under the pointer showed nothing.)
 """
 import os
 import time
@@ -184,6 +189,69 @@ def measure(view, tag, colour, faded):
               "%d dark pixels in the band over %d columns" % (dark[0], len(centre)))
 
 
+def limb(view, tag, colour, centre):
+    """The outline of a face that ends where it turns away from the eye,
+    where it has no edge: the pixels of the outline's colour on the row of
+    pixels through `centre`, a point of the model the face goes round, to
+    the left and to the right of it; and in the whole picture."""
+    view.redraw()
+    settle(1.0)
+    path = os.path.join(OUT, tag + ".png")
+    view.saveRenderDump(path)
+    image = QtGui.QImage(path)
+    scale = Scale(image, colour)
+    # nothing drawn: the "outline's colour" is then whatever pixel happens to
+    # lean that way, and it does not lean far
+    if scale.outline is None or scale.score(scale.outline) < 100:
+        return (0, 0, 0)
+    x, y = view.getPointOnViewport(centre)
+    row = image.height() - 1 - int(y)
+    hits = [px for px in range(image.width())
+            if apart(rgb_at(image, px, row), scale.outline) < 60]
+    left = sum(1 for px in hits if px < x)
+    return (left, len(hits) - left, scale.count)
+
+
+def curved(hover):
+    """A face under the pointer that has a limb: the side of a cylinder, a
+    sphere. The boundary's own edges are not all of its outline."""
+    doc = FreeCAD.newDocument(DOC + "Curved")
+    tall = doc.addObject("Part::Cylinder", "Tall")
+    tall.Radius = 5
+    tall.Height = 40
+    doc.recompute()
+    view = FreeCADGui.ActiveDocument.ActiveView
+    view.viewIsometric()
+    view.fitAll()
+    settle(3.0)
+    # the side: the face that is not flat
+    side = [i for i, f in enumerate(tall.Shape.Faces) if f.Surface.TypeId != "Part::GeomPlane"][0]
+    FreeCADGui.Selection.clearSelection()
+    FreeCADGui.Selection.setPreselection(tall, "Face%d" % (side + 1))
+    settle(1.0)
+    left, right, count = limb(view, "side", hover, FreeCAD.Vector(0, 0, 20))
+    check("a cylinder's side under the pointer has its outline along both limbs",
+          left >= 1 and right >= 1,
+          "pixels of the outline half way up: %d to the left of the axis, %d to the right; "
+          "%d in the picture" % (left, right, count))
+    FreeCADGui.Selection.clearPreselection()
+    tall.ViewObject.Visibility = False
+    ball = doc.addObject("Part::Sphere", "Ball")
+    ball.Radius = 10
+    doc.recompute()
+    view.fitAll()
+    settle(3.0)
+    FreeCADGui.Selection.setPreselection(ball, "Face1")
+    settle(1.0)
+    left, right, count = limb(view, "ball", hover, FreeCAD.Vector(0, 0, 0))
+    check("a sphere under the pointer has an outline, which is all limb",
+          left >= 1 and right >= 1 and count > 50,
+          "pixels of the outline on the row through its middle: %d to the left, %d to the "
+          "right; %d in the picture" % (left, right, count))
+    FreeCADGui.Selection.clearPreselection()
+    FreeCAD.closeDocument(doc.Name)
+
+
 def run():
     try:
         doc = FreeCAD.newDocument(DOC)
@@ -217,6 +285,7 @@ def run():
         measure(view, "selected", picked, False)
         FreeCADGui.Selection.clearSelection()
         FreeCAD.closeDocument(doc.Name)
+        curved(hover)
     except Exception:
         note("ABORT " + traceback.format_exc().replace("\n", " | "))
     finally:

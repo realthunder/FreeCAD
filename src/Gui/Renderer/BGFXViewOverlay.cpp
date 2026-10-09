@@ -507,6 +507,15 @@ void BGFXView::submitOutlineEdges(const Render::DrawCall &draw,
     // what they draw so that neither a neighbouring line nor a corner cap
     // blends over the fade. Whatever cannot be had this frame leaves the
     // plain passes below to draw the outline as it always was.
+    //
+    // The plain passes run after it in any case. The boundary is not all
+    // of a face's outline: a face that turns away from the eye ends on a
+    // limb where it has no edge -- the side of a cylinder, a sphere, which
+    // has no boundary at all -- and only the triangle edges cut by the
+    // stencil draw the outline there. With the boundary's lines alone a
+    // sphere under the pointer showed nothing, and a cylinder's side two
+    // circles. What the lines here have drawn carries the mark, so the
+    // plain passes add the limb and nothing over the fade.
     if (spec.feather) {
         const auto &boundary = gpu->geom->ensurePartBoundary(mesh, start, count);
         const uint32_t numEdges = uint32_t(boundary.edges.size() / 16);
@@ -514,9 +523,8 @@ void BGFXView::submitOutlineEdges(const Render::DrawCall &draw,
             spec.caps ? uint32_t(boundary.corners.size() / 8) : 0;
         const uint16_t edgeStride = 16 * sizeof(float);
         const uint16_t cornerStride = 8 * sizeof(float);
-        if (numEdges == 0)
-            return;  // a face with no boundary has no outline
-        if (bgfx::getAvailInstanceDataBuffer(numEdges, edgeStride) == numEdges) {
+        if (numEdges > 0
+                && bgfx::getAvailInstanceDataBuffer(numEdges, edgeStride) == numEdges) {
             bgfx::InstanceDataBuffer edges;
             bgfx::allocInstanceDataBuffer(&edges, numEdges, edgeStride);
             std::memcpy(edges.data, boundary.edges.data(),
@@ -572,7 +580,6 @@ void BGFXView::submitOutlineEdges(const Render::DrawCall &draw,
                              clipped ? m_progPointClip : m_progPoint);
                 ++drawcount;
             }
-            return;
         }
     }
 
