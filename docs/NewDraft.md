@@ -1772,6 +1772,21 @@ corners sharp past the fillet's radius, the concave ones growing), checked
 against the drafts to 1e-10. `TestDraft`: the block at 30 deg, valid, 9
 faces, its top 8.66 up with one ridge 10 long.
 
+Pictures (`docs/pictures/NewDraft/`, `make_newdraft.sh`): the block at 30
+deg, the classic draft refusing it and the roof; the block with the corner
+wall at 20 deg, from above the top kept and the end wall a triangle; the
+pocket at 30 deg, the results cut through the middle to show the hollow;
+and the block at 26 deg on the build before (the cones the long way round)
+and now.
+
+![The block at 30 deg](pictures/NewDraft/roof_rbox_a30.png)
+
+![The block with a corner wall](pictures/NewDraft/roof_chamfer_a20.png)
+
+![The pocket closing over](pictures/NewDraft/roof_pocket_a30.png)
+
+![The cones the wrong way round](pictures/NewDraft/roof_rbox_a26.png)
+
 The sweep (the 1222 and the 500, `Method = New`, the stop on), against the
 build before:
 
