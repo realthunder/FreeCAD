@@ -2569,6 +2569,7 @@ is the comparison of one build with another.
   the plan asks for what it sees. Under the ruling of sec 18.11 its
   coarse mesh could be made at leisure, behind everything in view, so
   that it is there when the camera turns. Not built, not put to the user.
+  (Put to him and built since: sec 18.13.)
 - `scripts/interactivity_gate.py`, which holds the pump's turns to 200 ms
   while a budget drops, was not run on the new turn: its model is on
   this box as a STEP file of a gigabyte, not as a document. What stands
@@ -2578,6 +2579,179 @@ is the comparison of one build with another.
   waits for the pump's turn like anything else, and so for a frame: the
   last box has its mesh 0.4 to 3 s after the drain on software GL and 10
   to 15 s after it on the NVIDIA card under Xvfb.
+
+### 18.13 A boxed shape out of view gets its mesh at leisure (2026-10-09)
+
+The first of the three things ruled for the session after sec 18.12:
+"do the boxes out of view first".
+
+**What was.** A shape over `Render/CoarseDeferFaces` faces (1000) is
+drawn by a load as a 12-triangle box, registered as a level source that
+errs by half its diagonal, and its coarse mesh is a job of the refine
+pool that the level plan fires. Two places kept an out-of-view box a box:
+
+- `planMeshRefines` (`SceneLadder.cpp`) answers only for a source whose
+  box is on the screen. "Off-screen never refines -- the residency bill
+  this pass exists to stop paying." Right for a refinement, and the same
+  line decided for a first picture.
+- The pass after it in `BGFXFrame.cpp` cancels every coarse source the
+  plan did not want. So a box that was asked for in view and left the
+  view before a worker came to it lost its job as well.
+
+Scored before anything was changed, `tests/gui/boxes-out-of-view.py`:
+3 boxed solids in view, 5 far to the right of what the saved camera
+shows, 40 solids of 992 faces and 20 spheres, nothing moving the camera.
+7 checks of 9 in three runs of three; the 3 in view have their mesh 1.5
+to 3.1 s after the open began, the 5 never.
+
+**What is.**
+
+1. *The plan asks for them, as its last class.* Not a sweep of its own
+   after the drain: the plan already owns the asking and the un-asking
+   of every source, and a second party's jobs would be cancelled by the
+   pass above; and the plan is the one place that knows the pressure
+   under which no climb may be admitted. `planMeshIdleFirsts`
+   (`SceneLadder.cpp`, pure, unit cases beside the plan's) picks, among
+   the coarse sources the plan does not want, those drawn as a
+   placeholder and owed a first picture
+   (`LevelHooks::firstPictureOwed`); the frame pass asks for them with
+   `MeshSourceRegistry::requestRefine(tag, idle = true)` and leaves them
+   out of the cancelling. "Does not want" is off screen, and also on it
+   but too small to err by the tolerance -- a box of four pixels is a
+   box all the same.
+2. *An ask stands one way or the other, and turns.* The registry keeps
+   how an ask stands; a plan that asks the other way changes it and the
+   source's hook fires again with the new value. The producer does not
+   queue a second job, it moves the one it has
+   (`reorderLevelJob`, `MeshLevelSource.cpp`). A box that comes into view
+   moves to the front; one that leaves the view moves to the back where
+   it used to be dropped.
+3. *One order wherever jobs queue* (`levelJobClass`), the queue and the
+   ready line both, where three hand-written branches stood:
+
+   | class | what | why there |
+   |---|---|---|
+   | 0 | a descent | under the pressure that ordered it, freeing memory outranks spending more |
+   | 1 | a first picture the camera sees | sec 18.11 |
+   | 2 | the refinement of an object that has a picture | |
+   | 3 | a first picture asked for at leisure | nothing on the screen changes when it lands |
+
+   A job of class 0 to 2 goes into a ready line that is full when what
+   stands at the line's end is of class 3: the shapes meshed at leisure
+   are the large ones, and a line full of them would keep a job for the
+   view out until a runner had taken one.
+4. *Its landing waits while a load fills in.* The landing rebuilds a
+   visual on the GUI thread for something nobody is looking at; it is
+   held with the refinements' (sec 18.11) until the application says no
+   visual is left to build, and the hold reads the ask's flag when the
+   pump comes to it, so a box the camera turned to in the meantime is
+   not held. The hand-out to the workers is not held, as for
+   refinements.
+5. *Not for a box a descent made.* Under memory pressure a shape that
+   has a mesh is drawn as its box to give the mesh back; that box is
+   registered without `owedAtLeisure`, or the plan would take the memory
+   again. And nothing is asked for at leisure while the plan is under
+   pressure, at the GPU ceiling, or beyond what is left of a plan's
+   admission batch.
+6. *A switch*, `Render/CoarseDeferAtLeisure`, on by default and read
+   when a shape is drawn as a box: off, a box out of view waits for the
+   camera as it did and costs no mesh until then. It is what the
+   measurement on the reference assembly below alternates, and
+   `GuiBoxesOutOfViewOff_tests_run` holds it to its word.
+
+**Behind the refinements of what is in view, not ahead.** Sec 18.11's
+ruling puts first pictures ahead of refinements, and a box is not a
+picture; read alone it would put class 3 at 1.5. It is behind because
+the two are not competing for the same thing: a refinement in view
+changes what is on the screen, a mesh for a box out of view changes
+nothing until the camera turns, and when it turns the ask turns with it
+and the job is of class 1. What "ahead" would cost is in the turn test
+below: a plate of 1100 holes is 1.2 s of a runner, the reference
+assembly leaves 9 such shapes out of view, and there are two runners on
+this box. Put to the user as a departure from what the handoff note had
+read into his ruling, and ruled the same day: "the order you had is
+fine". One constant in `levelJobClass`, should it ever be wanted the
+other way.
+
+**Measured.**
+
+`tests/gui/boxes-out-of-view.py`, the document above, eight runs: 9
+checks of 9 in seven, and in one of the first three a guard of the
+test's own said the camera had moved. It compared the whole camera,
+clipping distances included, and those follow the bounds of what is
+drawn -- read from the code, not seen in a dump; without them the guard
+has held five runs of five. The 5 out of view have their mesh 0.01 to 0.5 s after the
+drain's closing line, 3.6 to 4.1 s after the open began; none while the
+drain ran; none before the last of the 3 in view.
+
+`tests/gui/boxes-out-of-view-turn.py`: one sphere in view, 8 plates of
+1100 round holes out of it, one worker. Left alone the plates get their
+mesh one every 1.2 s in the order the scene draws them, the last plate
+6th, 7.6 s after the open began. With the camera fitted to the last
+plate as soon as a plan has asked for them (0.6 s), its mesh is in 2nd,
+after 2.9 s, in four runs of four -- the first having been in the
+worker's hands already. The test was written after the change, so the
+move was taken out to see it fail: 9 checks of 10 in two runs of two,
+the plate's mesh in 7th and 8th of 8, after 8.9 and 10.3 s.
+
+In the turned runs the plate the camera is on then asks for its exact
+mesh, 4.7 s of the one worker, and that goes ahead of the six plates
+still at leisure: class 2 before class 3, as intended, and what "behind
+everything in view" costs the ones out of it.
+
+**The reference assembly**, opened with its saved close-up camera (sec
+18.12: 14 shapes drawn as boxes, 5 of them in view), software GL under
+Xvfb, the switch alternated off and on, three loads each after one
+thrown away. Seconds after the open returned:
+
+| | off | on |
+|---|---|---|
+| the visual drain ends | 18.0, 17.6, 17.2 | 17.6, 17.6, 17.9 |
+| the 5 boxes in view have their mesh by | 17.4, 17.0, 16.6 | 15.3, 15.5, 15.6 |
+| the 9 boxes out of view have theirs | never | 31.5 to 33.0, 33.4 to 34.8, 32.1 to 33.6 |
+| the last landing reported | 32.9, 33.1, 30.9 | 33.1, 34.8, 33.6 |
+| landings, and the pump's time for them | 4876 to 5192, 3.5 to 3.9 s | 5111 to 5204, 4.0 to 4.2 s |
+| the worst turn of the pump | 0.28, 0.27, 0.27 | 0.44, 0.30, 0.39 |
+
+Nothing that is in view comes later. The 9 come last, in the 1.5 s
+after the refinements of what is in view have landed: their jobs stood
+behind some 5100 of those, and so did their landings. A camera turned to
+one of them before that is the turn test's case. The script's "every
+object has a picture" reads 17 to 18 s off and 33 to 35 s on, and is no
+comparison: off, it is the time by which the 9 have been given up on.
+
+What it costs is in the last row: the landing of a large shape's mesh is
+one item of the pump, 0.3 to 0.4 s of the GUI thread where the largest
+before was 0.27, and there are 9 more of them. Each is a visual rebuilt
+whole; the pump cannot cut it.
+
+**Left.**
+
+- *A large shape's landing is one item*, 0.3 to 0.4 s of the GUI thread
+  on the reference assembly, and this adds one for each box out of
+  view. Not new in kind -- a box in view lands the same way -- but more
+  of them, and at a moment the user may be working. The stretch is the
+  rebuild of the visual, which no budget interrupts.
+- *Their order is the scene's*, the order the draws stand in, which is
+  not the document's and not the same from one load to the next. Nearest
+  to the view first would be the better guess at where the camera turns.
+- *A frame that owes nothing may still change.* An ask at leisure does
+  not mark the frame as owing (`frameOwes`), rightly for a shape off the
+  screen; a box on the screen too small to err is asked for the same
+  way, and a capture taken at "frame complete" can precede its mesh by a
+  few pixels' worth.
+- *A document nobody draws* has no plan, and its boxes wait for its
+  first frame.
+- *Two views of one document* each plan: the later plan's reading of a
+  shared source stands. It used to cancel the other view's ask; it now
+  turns it, which is the lesser harm and still not right.
+- *A face and line pair split by the admission batch* (a GPU budget
+  set, more climbs wanted than a batch): the half left out is cancelled
+  and takes the pair's job with it. As before this change.
+- What an out-of-view shape's mesh costs once landed -- resident memory,
+  and whether it is uploaded before it is drawn -- was not measured.
+  Under the ruling of sec 18.11 it is the tolerated kind of waste; under
+  a budget the descent takes it back.
 
 ## 19. Progressive load against eager (2026-09-29)
 
