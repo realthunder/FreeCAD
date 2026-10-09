@@ -85,6 +85,14 @@ and is local: the browser viewer is not part of the staged copy. Then
 PAUSED, as told ("pause after this browser split work and resume in next
 session").
 
+Taken up again the same afternoon by the reporter's own messages on the
+staged copy: how the black view of entry 60 came about ("close either by
+cell menu -> close view, or split drag result in a black window"), a
+window to reproduce it in ("you open the window and a let me reproduce
+iit", then "check it now. the 3d view is black"), and three changes to the
+view cells of entry 56. Done: entry 60 fixed `d6f640f4ee`, the view cell
+changes `dbff5c6378`. Local, not pushed, not staged.
+
 Evidence that does not belong in the repository is under
 `..\dl\handson\<date>\`, as before.
 
@@ -123,10 +131,10 @@ Evidence that does not belong in the repository is under
 | 53 | FIXED `c820c3aea1`, not staged, not pushed | not the recompute and not the projection: a page that comes back with the window layout is drawn while a progressive load is still building the view providers of its views. Without one the Qt page draws nothing of a view and the backend draws it by fallback widths, 0.6 mm; the view provider's own request to draw came while the document was flagged as restoring and was dropped. It asks again a turn of the event loop later |
 | 54 | STAGED 2026-10-09 15:11, fixed `8bb8bd10fa`; the cost measured | a fully selected object shown on top drew every edge at full colour, front or behind: the engine had copied the old Coin renderer's rule, which left the dimming out for speed. Both renderers dim the hidden part now, as for the object under the pointer; an edge selected by itself still shows through. Cost: nothing in the engine; Coin 2.18 to 2.54 ms a frame on 100 heavy spheres all selected, nothing measurable on `scanner.FCStd` |
 | 55 | STAGED 2026-10-09 15:11, fixed `739120f1c7` | a warning or error for the user is QStatusBar's temporary message, which hides every non-permanent widget -- the preselection label whose stretch held the progress bar in its place. A bar that came up with a message showing sat at the left end, over the message. It is a permanent widget now, the first of the right-hand group |
-| 56 | STAGED 2026-10-09 15:11, done `f5a651b723`, all eleven points; five choices of mine for the reporter | a cell drag is given up by Escape, any other button, or the application losing the front; one look for the overlay's and the cells' drag frames (the accent at 0.3 in a white border); a join's victim has a red stop sign and nothing else; a border pushed past a cell's minimum closes it, a corner still only creates and its refusal is an error; handles on the accent colour; a zone steps off a scroll bar; a page's or a sheet's cell splits with a 3D view |
+| 56 | STAGED 2026-10-09 15:11, done `f5a651b723`, all eleven points; three changes asked after it done `dbff5c6378`, not staged; choices of mine for the reporter | a cell drag is given up by Escape, any other button, or the application losing the front; one look for the overlay's and the cells' drag frames (the accent at 0.3 in a white border); a join's victim has a red stop sign and nothing else; a border pushed past a cell's minimum closes it, a corner still only creates and its refusal is an error; handles on the accent colour; a zone steps off a scroll bar; a page's or a sheet's cell splits with a 3D view |
 | 59 | STAGED 2026-10-09 15:11, fixed `e9ac624959` | "Reset all" cleared the record of the Start workbench's migration of 2024; the next start ran it again on a profile whose startup workbench was PartDesign and switched the Start page off. The reset keeps the record (the reporter's decision) |
-| 57 | DONE `a50e708959`, not pushed; the browser viewer is not in the staged copy; three choices of mine for the reporter | the browser viewer's split view split, joined and resized live as the pointer moved; it shows a drag as frames and carries it out at the release now, with the desktop's cancel, minimum cell size, closing border, stop sign and look |
-| 60 | NOT REPRODUCED in 27 rounds; not yet followed further | a 3D view split and one of the two cells closed by each of four routes, on the staged copy and on the tree, without multisampling and with the default 4x: the view that takes the room is never black |
+| 57 | DONE `a50e708959`, and the changes to entry 56 in `dbff5c6378`; not pushed; the browser viewer is not in the staged copy; three choices of mine for the reporter | the browser viewer's split view split, joined and resized live as the pointer moved; it shows a drag as frames and carries it out at the release now, with the desktop's cancel, minimum cell size, closing border, stop sign and look |
+| 60 | FIXED `d6f640f4ee`, not staged, not pushed | whenever closing a cell un-nested a splitter: the surviving cell was moved up with `QSplitter::replaceWidget`, which takes it out of the window on the way, and a `QOpenGLWidget` that leaves its window is composed from nothing until its next resize. The view was drawn right all along; only the screen was black. The cell tree is rebuilt without a cell leaving the window |
 | 45 | FIXED `c7fdcf3220`, pushed 2026-10-08, not staged | a spreadsheet's view provider made its view when it was only asked whether it had one: one click on a sheet in the tree opened it. Asking is a question now, and a new request opens the view for the three callers that host it. Show-in-cell also took a stale cell and closed another sheet's view; it takes the active view's cell |
 
 **The reporter, 2026-10-07 14:20, on what is open** (said to the build
@@ -3483,29 +3491,6 @@ Start page switched off this way stays so -- Preferences > Start, or
 last running the migration the way a next start does: 10 PASS and 2 FAIL
 on the staged copy, 12 PASS on the tree.
 
-## 60. After a view cell is closed the view that takes its room is black -- NOT REPRODUCED
-
-`..\dl\handson\2026-10-09\q4\e60probe.py`: a box, a 3D view split
-right or down, one of the two cells closed by each of four routes -- the
-new one or the old one closed by the command, a join dragged from either
-side -- and what the surviving view holds read off its own surface, at
-once and 1.5 s later. Twelve rounds on the tree without multisampling,
-three on the staged copy without (that run was cut short), twelve on the
-staged copy with the defaults (MSAA 4x), Direct3D 11 in all: no black
-view in 27 rounds.
-
-Read, not proved: the symptom as corrected ("will only back to normal if
-I resize it. camera move has no effect") fits a view whose composite
-texture or whose targets are gone and are rebuilt only by a size change
--- `BGFXView::blitReadback` re-specifies its GL texture on a resize and
-only then. What takes them away was not found; the deferred GL deletes of
-a closed view run in the library's context, which shares with the
-widgets', and looked right.
-
-**Asked of the reporter:** what was in the two cells (a page, a sheet, two
-3D views of one document or of two), how the cell was closed, and whether
-the unified canvas (`View/UnifiedCanvas`) is on.
-
 ## 57. The browser viewer's split view: the same view cell logic as the desktop's -- DONE `a50e708959`, not pushed
 
 `src/Gui/Renderer/web/src/splitview.tsx` and its styles; the design is
@@ -3548,3 +3533,97 @@ drag up; (3) the accent is FreeCAD's default blue, the desktop's theme
 not being sent either. Not carried over, for cause: zones stepping off a
 scroll bar (a cell has none here), and the 3D view for a cell that cannot
 be shown twice (a page cell splits into a page cell here).
+
+## 60. After a view cell is closed the view that takes its room is black -- FIXED `d6f640f4ee`, not staged
+
+**Not reproduced at first**, in 39 rounds: a box, a 3D view split right or
+down, one of the two cells closed by each of four routes, on the staged
+copy and on the tree, without multisampling and with the default 4x, and
+on a copy of the reporter's own settings (`..\dl\handson\2026-10-09\q4\
+e60probe.py`). Two reasons, found afterwards: the probe read the view's
+own surface, which is right even when the screen is black; and it never
+nested a splitter.
+
+**The reporter reproduced it** in a session of the dev build opened for
+it, on copies of their settings and of `scanner.FCStd`, its console on
+("you open the window and a let me reproduce iit"; "check it now. the 3d
+view is black"). Looked into while black, read only (`q4\e60look*.py`,
+pictures in `q4\live60b`):
+- the 3D view's surface, read back, holds the complete picture; the
+  engine's own capture too;
+- the same rectangle of the SCREEN is 100% black
+  (`QScreen::grabWindow`); the cell's menu button and zones, drawn by Qt
+  over it, are there;
+- no native child window between the surface and the main window; the
+  surface's framebuffer and its texture names are alive.
+Then, one remedy at a time, the screen read after each (`e60try.py`):
+`update()` of the surface, `update()` of the main window, a
+`WindowChangeInternal` event, a `Show` event, hide-and-show -- black after
+each; the surface one pixel smaller and back -- the picture is there.
+
+**What it is.** Qt composes a `QOpenGLWidget` onto its window from a
+texture that wraps the widget's framebuffer. A widget that leaves its
+window drops that wrapper, and an initialized one -- with
+`AA_ShareOpenGLContexts` set, as it is here -- makes it again at its next
+resize and at nothing else. `ViewArea::collapseCell` un-nested a splitter
+left with one cell by `QSplitter::replaceWidget(index, cell)`, which takes
+the widget it REPLACES out of the window first: the nested splitter, the
+surviving cell still inside it. So: whenever closing a cell un-nested a
+splitter -- a cell split across its splitter's direction, then one of the
+two closed, by the cell menu, the command, a join or a border pushed past
+the minimum. A cell closed in a splitter that keeps two or more never did
+it, which is the "sometimes". Not Direct3D's and not the render backend's:
+the framebuffer is Qt's, and the picture in it was right.
+
+**The fix.** The tree is rebuilt without a cell leaving the window:
+`insertWidget` of the cell into the parent, then the emptied splitter
+taken out; and the same in `splitCell`, where `replaceWidget` took the
+cell being split out of the window on its way into the new nested
+splitter (hidden there by the resize that always follows a split).
+`docs/SplitViews.md` sec 24.
+
+**Scored.** `tests/gui/view-cell-close-keeps-the-picture.py` judges by
+the screen, four ways to nest and close: 9 PASS and 8 FAIL on the copy
+staged 15:11 (the survivor 100% black each time, and once more when closed
+down to one cell), 17 PASS on the tree. `q4\e60nest.py`, the same as a
+probe: 4 of 6 rounds black before.
+
+**Not looked at:** the other places where a view passes through no
+window -- a layout coming back with its document (`applyLayout`), a view
+moved between a tab and a cell. Each ends in a resize, which is what
+brings the wrapper back; none was seen black.
+
+## 56, again. Three changes asked the same afternoon -- DONE `dbff5c6378`, not staged
+
+The reporter, on the copy staged 15:11:
+- "I want to change the red cross and red frame when handle drag is
+  refused into simply a forbidden cursor change. print the error the
+  moment the mouse cursor changes. every change from splitting cursor to
+  forbidden cursor prints one message." -- a refused corner drag shows no
+  frame; the cursor turns to the forbidden one and the reason is said at
+  that turn, each turn; the release does and says nothing more. A split
+  command or a view opening by itself still says it at most once in five
+  seconds.
+- "Also when dragging split to close or handle outward to close, use the
+  red frame and red cross here. I feel this hints more like a close" --
+  the cell that goes is framed red and crossed out; the stop sign of point
+  (g) is gone. The frame of the cell that stays leaves its face off it.
+- "also draw a subtle frame on the active view" -- the active cell's
+  border is two pixels of the frames' accent at about three quarters'
+  strength; it was one pixel of the palette's highlight.
+The browser viewer follows the first two (entry 57).
+
+**Scored.** `view-cell-drag-cancel-and-look.py` 81 PASS and 7 FAIL on the
+copy staged 15:11, 88 PASS on the tree; `view-cell-drag-frames.py` 37 and
+1, then 38; `split-view-browser.py` 39 PASS. The active cell's border is
+not scored by a test.
+
+**A trap of the tests, met here.** A drag is given up when the application
+loses the front, and a test does not own the desktop: somebody working at
+the machine ends a test's drag by clicking elsewhere. One claim failed
+that way once; the test tries such a drag again before calling it missing.
+
+**Choices of mine, for the reporter,** in place of the five above: (1) a
+new cell is told from a kept one by its plus alone; (2) the 12 pixels a
+border goes past the minimum before it means "close"; (3) the active
+cell's border: its width, 2, and its strength.
