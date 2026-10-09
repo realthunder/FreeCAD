@@ -592,12 +592,27 @@ void DlgPreferencesImp::restoreDefaults()
 
         // keep this parameter
         bool saveParameter = GeneralParams::getSaveUserParameter();
+        // ... and the flag of the Start workbench's migration of 2024
+        // (StartMigrator.py). It is not a setting but a record that the
+        // profile has been through it. Without it the next start runs the
+        // migration again, on a profile that has nothing of the old
+        // workbench in it, and the migration reads the startup workbench
+        // the reset has just put back -- PartDesign, not "StartWorkbench"
+        // -- as the user's choice not to see the Start page: it stored
+        // ShowOnStartup false.
+        const char *startPath = "User parameter:BaseApp/Preferences/Mod/Start";
+        bool startMigrated = App::GetApplication().GetParameterGroupByPath(startPath)->
+                              GetBool("Migration2024Complete", false);
 
         ParameterManager* mgr = App::GetApplication().GetParameterSet("User parameter");
         mgr->Clear(true);
 
         App::GetApplication().GetParameterGroupByPath("User parameter:BaseApp/Preferences/General")->
                               SetBool("SaveUserParameter", saveParameter);
+        if (startMigrated) {
+            App::GetApplication().GetParameterGroupByPath(startPath)->
+                                  SetBool("Migration2024Complete", true);
+        }
 
         paramTouched = false;
         reject();
