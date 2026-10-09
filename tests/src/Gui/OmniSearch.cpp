@@ -429,6 +429,59 @@ private Q_SLOTS:
         reg.reset(s);
     }
 
+    // The items last confirmed in the box: the newest first, each once, ten
+    // at most, and kept in the user parameters.
+    void test_recentItems()  // NOLINT
+    {
+        auto group = App::GetApplication().GetParameterGroupByPath(
+            "User parameter:BaseApp/Preferences/OmniSearch/Recent");
+        group->Clear();
+        QVERIFY(recentItems().empty());
+
+        addRecentItem(Mode::Command, QStringLiteral("Std_New"));
+        addRecentItem(Mode::Param, QStringLiteral("User parameter:BaseApp/Preferences/View/X"));
+        addRecentItem(Mode::Object, QStringLiteral("/GroupA.Label"));
+        auto items = recentItems();
+        QCOMPARE(int(items.size()), 3);
+        QCOMPARE(items[0].mode, Mode::Object);
+        QCOMPARE(items[0].key, QStringLiteral("/GroupA.Label"));
+        QCOMPARE(items[1].mode, Mode::Param);
+        QCOMPARE(items[2].mode, Mode::Command);
+        QCOMPARE(items[2].key, QStringLiteral("Std_New"));
+
+        // confirmed again: to the front, and there once
+        addRecentItem(Mode::Command, QStringLiteral("Std_New"));
+        items = recentItems();
+        QCOMPARE(int(items.size()), 3);
+        QCOMPARE(items[0].key, QStringLiteral("Std_New"));
+        QCOMPARE(items[1].key, QStringLiteral("/GroupA.Label"));
+
+        // the same key in another mode is another item
+        addRecentItem(Mode::Object, QStringLiteral("Std_New"));
+        QCOMPARE(int(recentItems().size()), 4);
+
+        // nothing to keep
+        addRecentItem(Mode::Chooser, QStringLiteral("/"));
+        addRecentItem(Mode::Command, QString());
+        addRecentItem(Mode::Command, QStringLiteral("  "));
+        QCOMPARE(int(recentItems().size()), 4);
+
+        // ten at most: the oldest goes
+        for (int i = 0; i < MaxRecentItems + 3; ++i)
+            addRecentItem(Mode::Command, QStringLiteral("Cmd%1").arg(i));
+        items = recentItems();
+        QCOMPARE(int(items.size()), MaxRecentItems);
+        QCOMPARE(items.front().key, QStringLiteral("Cmd%1").arg(MaxRecentItems + 2));
+        QCOMPARE(items.back().key, QStringLiteral("Cmd3"));
+        QCOMPARE(int(group->GetASCIIs().size()), MaxRecentItems);
+
+        // what is stored and is no item is passed over
+        group->SetASCII("Item0", "nonsense");
+        group->SetASCII("Item1", "what:ever");
+        QCOMPARE(int(recentItems().size()), MaxRecentItems - 2);
+        group->Clear();
+    }
+
 private:
     App::Document *doc = nullptr;
 };

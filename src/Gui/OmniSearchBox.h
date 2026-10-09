@@ -124,6 +124,8 @@ protected:
 private:
     void setupChooser();
     void fillChooser();
+    void appendRecentRows();
+    void activateChooserRow(const QModelIndex &index);
     void setupCommands();
     void setupParams();
     void setupMembers();
@@ -144,6 +146,7 @@ private:
 
     QCompleter *chooser = nullptr;
     /// The chooser's rows: the modes the text could be, then the objects
+    /// -- or, before anything is typed, the items last confirmed
     QStandardItemModel *chooserModel = nullptr;
     ExpressionCompleter *objCompleter = nullptr;
     /// Asked for the objects the chooser lists; never shows a popup

@@ -26,6 +26,21 @@ of the active view with `/` already typed and three suggestions:
 Pick one (Enter, Tab or click) or type the prefix; the space ends it. Text
 that does not start with `/` is an object query as typed.
 
+Below the three, while the text is still the lone `/` the box came up with,
+are the items last CONFIRMED in it, the newest first: up to ten, each once.
+Confirmed is carried out, not found -- a command run from the box, a
+parameter whose editor was opened, an object selected or a property whose
+editor was opened. A row looks as it does in its own list (a command with
+its icon, title and shortcut, greyed while it cannot run; a parameter with
+its value; an object or a property by the text it was asked for), and
+picking it carries the item out again: the command runs, the parameter's or
+the property's editor opens, the object is selected. As soon as anything
+more is typed the list is the query's own. The items are kept from one
+session to the next; one that cannot be found at the moment -- a command of
+a module that is not loaded, a query that names nothing in what is open --
+is left out of the list and comes back when it can be found. The desktop
+box only: the browser's has no such list.
+
 The space after the slash is optional for an object: a word that is not a
 keyword is an object query as it stands, so `/Box.Length` is `/ Box.Length`.
 The keywords are `cmd` and `param` (the browser viewer has `cmd` only). A
@@ -212,6 +227,17 @@ property editor. The member completer works the same way
 (`completeMember()`), except that picking a view row (`View1.`) re-runs
 the query to open the next level instead of committing.
 
+The recent items are `OmniSearch::recentItems()` and `addRecentItem()`
+(a mode and a key: a command's name, a parameter's full path, the box's
+text for an object), kept under `Preferences/OmniSearch/Recent` as `Item0`
+to `Item9` -- state, not a setting, and so not in the registry, as the
+recent files are not. The box notes one in the four places that carry
+something out (`onCommandChosen`, `onParamChosen`, `onObjectActivated` for
+a property, `selectObject`), and `OmniSearchEdit::fillChooser()` lists them
+when the text is `/` alone (`appendRecentRows()`, the rows copied from the
+command and parameter models so that they look the same);
+`activateChooserRow()` carries a picked one out.
+
 Keys are handled on the popups, not on the edit: while a popup is up the
 key events go to it, and `QCompleter` forwards them to the edit's `event()`
 directly, past any filter installed on the edit. So `OmniSearchEdit` is an
@@ -371,7 +397,8 @@ The line endings in this repository are frozen (`.gitattributes`), so check
   grammar, `resolveObject` over a document (name, label, property, pseudo
   property, misses, the `#` forms over one and two documents),
   `documentMembers` and `splitMemberQuery`, `searchParams`, the model and
-  filter, and `createParamEditor` for every proxy kind and every value type.
+  filter, `createParamEditor` for every proxy kind and every value type,
+  and the recent items (order, once each, ten at most, what is not kept).
   There is no `Gui::Application` in it, so `ViewObject` and `ActiveView`
   are only checked to resolve to nothing there.
 - `tests/src/Gui/OmniControl.cpp` (`OmniControl_Tests_run`, a Qt test):
@@ -383,6 +410,10 @@ The line endings in this repository are frozen (`.gitattributes`), so check
   for objects, labels, sub-object paths, properties, `#Name`, `#.`
   members and an empty document. Without a `Gui::Application` the
   command ops answer `NoGui` and views are absent, which is asserted.
+- `tests/gui/omni-search-recent-items.py`: the box itself -- a command, a
+  parameter and a property confirmed and listed the next time it comes up,
+  the newest first and once each, gone when more is typed, carried out
+  again when picked, left out when they name nothing.
 - Commands need a `Gui::Application`; they are exercised by hand: `/cmd
   draw` -> `Std_DrawStyle` with its arrow, `/cmd history` -> Enter runs
   `Std_CmdHistory` and it appears in the history.

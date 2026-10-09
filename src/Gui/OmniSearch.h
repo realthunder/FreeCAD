@@ -103,6 +103,42 @@ GuiExport const std::vector<const char*> &modeKeywords();
  */
 GuiExport Input parseInput(const QString &text);
 
+/** One of the items last confirmed in the omni search.
+ *
+ * Confirmed is carried out, not found: a command run, a parameter's editor
+ * opened, an object selected or a property's editor opened. What is kept
+ * is what brings the item back: a command's name, a parameter's full
+ * path, and for an object or a property the box's text ("/Box.Length"),
+ * which is resolved again against whatever is open then.
+ */
+struct RecentItem {
+    /// Mode::Object, Mode::Command or Mode::Param
+    Mode mode = Mode::Object;
+    QString key;
+
+    bool operator==(const RecentItem &other) const
+    {
+        return mode == other.mode && key == other.key;
+    }
+};
+
+/// How many confirmed items are kept
+constexpr int MaxRecentItems = 10;
+
+/** The items last confirmed, the newest first, each once.
+ *
+ * Kept in the user parameters (Preferences/OmniSearch/Recent), so from one
+ * session to the next. State, not a setting: it is not in the parameter
+ * registry, as the recent files are not.
+ */
+GuiExport std::vector<RecentItem> recentItems();
+
+/** Note an item as confirmed: it goes to the front of recentItems(), and
+ * the copy of it further down, if there is one, goes. Nothing is noted for
+ * Mode::Chooser or an empty key.
+ */
+GuiExport void addRecentItem(Mode mode, const QString &key);
+
 /// What an object query resolved to
 struct ObjectMatch {
     /// The (sub-)object named; empty for a document member (doc is set then)

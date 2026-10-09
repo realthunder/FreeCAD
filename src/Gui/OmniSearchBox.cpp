@@ -24,6 +24,7 @@
 
 #ifndef _PreComp_
 # include <algorithm>
+# include <memory>
 # include <cmath>
 # include <sstream>
 # include <QAbstractItemView>
@@ -724,6 +725,10 @@ OmniSearchEdit::~OmniSearchEdit() = default;
 
 // A row of the chooser that names an object: picking it is picking the object
 static const int ChooserObjectRole = Qt::UserRole + 200;
+// A row of the chooser that is an item confirmed before: its mode (an int)
+// and its key, see OmniSearch::RecentItem. Picking it is confirming it again.
+static const int ChooserRecentModeRole = Qt::UserRole + 201;
+static const int ChooserRecentKeyRole = Qt::UserRole + 202;
 
 void OmniSearchEdit::setupChooser()
 {
@@ -734,16 +739,141 @@ void OmniSearchEdit::setupChooser()
     chooser->setWidget(this);
     chooser->setCompletionMode(QCompleter::UnfilteredPopupCompletion);
     chooser->setCaseSensitivity(Qt::CaseInsensitive);
+    // room for the modes and every recent item without scrolling
+    chooser->setMaxVisibleItems(3 + MaxRecentItems);
     makePopup(chooser);
     chooser->popup()->installEventFilter(this);
     connect(chooser, qOverload<const QModelIndex&>(&QCompleter::activated),
             this, [this](const QModelIndex &index) {
-                const bool object = index.data(ChooserObjectRole).toBool();
-                setInputText(index.data(chooser->completionRole()).toString());
-                if (object)
-                    activateObject();
+                const bool recent = index.data(ChooserRecentModeRole).isValid();
+                activateChooserRow(index);
+                // A recent item is carried out by the pick; the Return that
+                // made it must not be taken for a second one. Set after,
+                // since a recent object puts its text into the edit, which
+                // clears the flag.
+                if (recent)
+                    justActivated = true;
             });
     fillChooser();
+}
+
+// A row of the chooser picked, by a click, Return or Tab
+void OmniSearchEdit::activateChooserRow(const QModelIndex &index)
+{
+    const QVariant recent = index.data(ChooserRecentModeRole);
+    if (recent.isValid()) {
+        const QString key = index.data(ChooserRecentKeyRole).toString();
+        switch (static_cast<Mode>(recent.toInt())) {
+        case Mode::Command:
+            if (index.data(IsActiveRole).toBool())
+                Q_EMIT commandChosen(key.toLatin1());
+            break;
+        case Mode::Param:
+            if (const auto info = ParamListModel::infoOf(index))
+                Q_EMIT paramChosen(info);
+            break;
+        default:
+            // The text it was confirmed with, and Return on it
+            setInputText(key);
+            hidePopups();
+            Q_EMIT enterPressed();
+            break;
+        }
+        return;
+    }
+    const bool object = index.data(ChooserObjectRole).toBool();
+    setInputText(index.data(chooser->completionRole()).toString());
+    if (object)
+        activateObject();
+}
+
+/* The items last confirmed in the box, below the modes, while the text is
+ * the lone slash the box comes up with -- "keep the last 10 confirmed
+ * searched items on the list when it first pop up. once typing is going,
+ * then no need for those recent list" (docs/HandsOnQueue.md entry 62).
+ *
+ * A row looks as it does in its own list: a command with its icon, title
+ * and shortcut, greyed while it cannot run; a parameter with its value; an
+ * object or a property by the text it was asked for with. What cannot be
+ * found now is left out -- a command of a module not loaded, a parameter
+ * no longer defined, a query that names nothing in what is open -- and
+ * stays kept: it is back when it can be found again.
+ */
+void OmniSearchEdit::appendRecentRows()
+{
+    if (!cmdModel || !paramModel)
+        return;
+    const std::vector<RecentItem> items = recentItems();
+    if (items.empty())
+        return;
+    bool commandsRead = false, paramsRead = false;
+    const auto locals = localObjects();
+    for (const RecentItem &recent : items) {
+        std::unique_ptr<QStandardItem> item;
+        switch (recent.mode) {
+        case Mode::Command: {
+            if (!commandsRead) {
+                cmdModel->update();
+                commandsRead = true;
+            }
+            const QByteArray name = recent.key.toLatin1();
+            for (int row = 0; row < cmdModel->rowCount(); ++row) {
+                const QModelIndex index = cmdModel->index(row, 0);
+                if (index.data(CommandListModel::CommandNameRole).toByteArray() != name)
+                    continue;
+                const QString title = index.data(TitleRole).toString();
+                item = std::make_unique<QStandardItem>(title);
+                item->setData(title, TitleRole);
+                item->setData(index.data(DescriptionRole), DescriptionRole);
+                item->setData(index.data(ShortcutRole), ShortcutRole);
+                item->setData(index.data(IsActiveRole), IsActiveRole);
+                item->setData(index.data(Qt::DecorationRole), Qt::DecorationRole);
+                break;
+            }
+            break;
+        }
+        case Mode::Param: {
+            if (!paramsRead) {
+                paramModel->refresh();
+                paramsRead = true;
+            }
+            for (int row = 0; row < paramModel->rowCount(); ++row) {
+                const QModelIndex index = paramModel->index(row, 0);
+                if (index.data(ParamPathRole).toString() != recent.key)
+                    continue;
+                const QString title = index.data(TitleRole).toString();
+                item = std::make_unique<QStandardItem>(title);
+                item->setData(title, TitleRole);
+                item->setData(index.data(DescriptionRole), DescriptionRole);
+                item->setData(index.data(ParamValueRole), ShortcutRole);
+                item->setData(index.data(ParamInfoRole), ParamInfoRole);
+                break;
+            }
+            break;
+        }
+        default: {
+            const Input asked = parseInput(recent.key);
+            ObjectMatch match;
+            if (asked.mode != Mode::Object || !owner()
+                    || !resolveObject(asked.query, owner(), match, &locals))
+                break;
+            item = std::make_unique<QStandardItem>(recent.key);
+            item->setData(asked.query, TitleRole);
+            QString what;
+            if (match.prop)
+                what = QString::fromLatin1(match.prop->getTypeId().getName());
+            else if (auto obj = match.obj.getSubObject())
+                what = QString::fromUtf8(obj->Label.getValue());
+            item->setData(what, DescriptionRole);
+            break;
+        }
+        }
+        if (!item)
+            continue;
+        item->setData(static_cast<int>(recent.mode), ChooserRecentModeRole);
+        item->setData(recent.key, ChooserRecentKeyRole);
+        chooserModel->appendRow(item.release());
+    }
 }
 
 /* The chooser's rows for the text as it stands. A mode is listed while the
@@ -773,6 +903,8 @@ void OmniSearchEdit::fillChooser()
         item->setData(prefix, SearchTextRole);
         chooserModel->appendRow(item);
     }
+    if (text() == QLatin1String("/"))
+        appendRecentRows();
     if (!input.withObjects || !listCompleter || !owner())
         return;
     static const int MaxObjects = 50;
@@ -1224,13 +1356,9 @@ bool OmniSearchEdit::chooseCurrentRow()
         return false;
     popup->hide();
     switch (input.mode) {
-    case Mode::Chooser: {
-        const bool object = index.data(ChooserObjectRole).toBool();
-        setInputText(index.data(chooser->completionRole()).toString());
-        if (object)
-            activateObject();
+    case Mode::Chooser:
+        activateChooserRow(index);
         break;
-    }
     case Mode::Object:
         if (c == memberCompleter) {
             QString name = index.data(Qt::EditRole).toString();
@@ -1597,6 +1725,7 @@ void OmniSearchBox::onObjectActivated(const ObjectMatch &match)
 {
     if (!match.prop)
         return;
+    addRecentItem(Mode::Object, lineEdit->text());
     if (!propertyPanel->isFor(match.prop)) {
         propertyPanel->setProperty(match.prop, match.obj, match.props);
         showPanel(propertyPanel);
@@ -1614,6 +1743,7 @@ void OmniSearchBox::onObjectUnresolved()
 
 void OmniSearchBox::selectObject(const ObjectMatch &match)
 {
+    addRecentItem(Mode::Object, lineEdit->text());
     if (auto t = tree())
         t->itemSearch(lineEdit->currentInput().query, true);
     lineEdit->hidePopups();
@@ -1635,6 +1765,7 @@ void OmniSearchBox::onCommandChosen(const QByteArray &name)
     dismiss();
     auto &manager = Application::Instance->commandManager();
     if (name.size()) {
+        addRecentItem(Mode::Command, QString::fromLatin1(name));
         manager.runCommandByName(name.constData());
         CmdHistoryAction::onInvokeCommand(name.constData(), true);
     }
@@ -1662,6 +1793,8 @@ void OmniSearchBox::onGroupExpandRequested(const QByteArray &name, const QRect &
 
 void OmniSearchBox::onParamChosen(const ParamInfo *info)
 {
+    if (info)
+        addRecentItem(Mode::Param, QString::fromUtf8(info->fullPath().c_str()));
     lineEdit->hidePopups();
     paramPanel->setParam(info);
     showPanel(paramPanel);

@@ -1633,6 +1633,13 @@ fc_add_gui_test(GuiPreferencesCloseDoesNotWait_tests_run
                 preferences-close-does-not-wait.py
                 --timeout 180)
 
+# The omni search lists the items last confirmed in it when it comes up: a
+# command run, a parameter or a property opened, the newest first, gone as
+# soon as more is typed, carried out again when picked.
+fc_add_gui_test(GuiOmniSearchRecentItems_tests_run
+                omni-search-recent-items.py
+                --timeout 180)
+
 # The render type alone says whether the render engine draws: "Default" is
 # the engine on the platform's backend with the render cache always 3,
 # "Legacy" the old Coin rendering with the render cache the user's own.
