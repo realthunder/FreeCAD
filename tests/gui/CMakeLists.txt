@@ -1605,6 +1605,13 @@ fc_add_gui_test(GuiTechDrawPageBackendDashes_tests_run
                 techdraw-page-backend-dashes.py
                 --timeout 180)
 
+# A TechDraw page drawn by the backend has the Qt page's line widths: Qt
+# cuts an edge's pen to whole scene units (0.35 mm is drawn 0.3), and the
+# highlight laid over a line, read off the Qt item, was thinner than it.
+fc_add_gui_test(GuiTechDrawPageBackendLineWidths_tests_run
+                techdraw-page-backend-line-widths.py
+                --timeout 180)
+
 # A TechDraw page drawn by the backend has the Qt page's hatch on a cut face:
 # zoomed out most of its lines were dropped and the rest drawn at full
 # strength, zoomed in it went soft.
@@ -1618,6 +1625,7 @@ fc_add_gui_test(GuiTechDrawPageBackendHatch_tests_run
 fc_add_gui_test(GuiPreferencesResetAll_tests_run
                 preferences-reset-all.py
                 --timeout 180)
+
 
 # The render type alone says whether the render engine draws: "Default" is
 # the engine on the platform's backend with the render cache always 3,

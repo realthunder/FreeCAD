@@ -762,7 +762,7 @@ void QGVPage::drawVgPreview(QPainter* painter)
             QGIView* qgiv = it->second.qgiv;
             if (auto dvp = dynamic_cast<TechDraw::DrawViewPart*>(dv)) {
                 PageFeed::feedViewPart(dvp, *m_vgPage, PageFeed::Style(),
-                                       it->second.layer);
+                                       it->second.layer, 0.0f);
             }
             // What is read off the Qt items: all of an annotation (the
             // capture converts the QGI subtree the Qt tier has already

@@ -117,8 +117,13 @@ public:
                              double& y);
 
     /// Feed one view's edges/vertices/faces as items at the given layer.
+    /// A line is as wide as the Qt page draws it, which cuts an edge's
+    /// pen to a whole number of scene units (0.35 mm is drawn 0.3 mm
+    /// wide) and draws one under a unit as its cosmetic pen: \a hairline
+    /// is what that is fed as, as for the tiers below.
     static void feedViewPart(TechDraw::DrawViewPart* dvp, Render::Page2D& out,
-                             const Style& style, uint32_t layer);
+                             const Style& style, uint32_t layer,
+                             float hairline = PageHairline);
 
     /// The annotation tier (dimensions, balloons, annotations, leaders,
     /// ...): capture the view's already-laid-out Qt scene item subtree

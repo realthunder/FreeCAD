@@ -2691,10 +2691,20 @@ section 36 has it.
   hidden line's closed up into a continuous line. They are worked out for
   the band the page is drawn at now (`Page2D::dashedPolyline`, by Qt's
   rules: `Page2D::dashRuns`).
-- A line is as wide as it is asked to be; the Qt page's is a whole number
+- (No longer different, 2026-10-09, docs/HandsOnQueue.md entry 61.) A line
+  was as wide as it was asked to be, where the Qt page's is a whole number
   of scene units (`QGIPrimPath::setTools` gives `QPen::setWidth` an int),
-  so its 0.35 mm line is 0.3 mm wide. Only the DASHES follow Qt there
-  (they are counted in the pen's width, and the count shows).
+  so that its 0.35 mm line is 0.3 mm wide; only the dashes followed Qt.
+  That showed where it mattered: what is laid over a preselected or
+  selected edge is read off the Qt item, pen and all, so the highlight was
+  the thinner of the two and the line showed either side of it. An edge,
+  the outline of a cut face and a centre mark are now fed at the width Qt
+  draws them (`primPathWidth` in `PageFeed.cpp`): cut to whole scene units,
+  and under one unit as Qt's cosmetic pen, which `feedViewPart` takes a
+  `hairline` for like the capture tiers. A PAT hatch's lines keep the
+  width asked for, as Qt's do (`QPen::setWidthF`).
+  `tests/gui/techdraw-page-backend-line-widths.py`, Qt's picture the
+  reference and the backend switched: 14 claims.
 - Vertex dots are a little smaller than Qt's, which strokes them as well
   as fills them.
 - A template colourized for a dark sheet (`QGraphicsColorizeEffect` on

@@ -237,6 +237,27 @@ struct EdgeStroke
     bool show = true;
 };
 
+// The width the Qt page draws the pen of an edge at, given the width asked
+// for in scene (Rez) units -- which is not that width. An edge, a centre
+// mark and whatever else is a QGIPrimPath hands its width to
+// QPen::setWidth(int) (QGIPrimPath::setTools): it is cut to a whole number
+// of scene units, a tenth of a millimetre each, so a line asked for at
+// 0.35 mm is drawn 0.3 mm wide; and under one unit it is Qt's cosmetic pen,
+// a device pixel at any zoom, which is what \a hairline stands for here.
+//
+// The page is to be what Qt draws (docs/HandsOnQueue.md entry 61: "better
+// make it the same as qt renderer, whcih is thinner and same width for
+// highlight", "every line, dashed or not"). It is not a matter of a
+// twentieth of a millimetre alone: what is laid over an edge that is
+// preselected or selected is read off the Qt item, pen and all
+// (feedViewState), and over a line drawn at the width asked for, the
+// highlight was the thinner of the two.
+float primPathWidth(double asked, float hairline)
+{
+    const float whole = (float)std::floor(asked);
+    return whole >= 1.0f ? whole : hairline;
+}
+
 // Per-edge appearance, mirroring QGIViewPart::drawAllEdges: cosmetic
 // edge / centerline formats, GeomFormat overrides, the hidden-line pen
 // and the iso-line width. Dash patterns come from the same
@@ -245,7 +266,7 @@ struct EdgeStroke
 EdgeStroke resolveEdgeStroke(TechDraw::DrawViewPart* dvp,
                              ViewProviderViewPart* vp,
                              const TechDraw::BaseGeomPtr& geom, int iEdge,
-                             const PageFeed::Style& style)
+                             const PageFeed::Style& style, float hairline)
 {
     // Loads the ISO/ANSI line descriptions from disk once.
     static TechDraw::LineGenerator lineGen;
@@ -255,7 +276,9 @@ EdgeStroke resolveEdgeStroke(TechDraw::DrawViewPart* dvp,
     es.color = vp ? packColor(PreferencesGui::getAccessibleQColor(
                         PreferencesGui::normalQColor()))
                   : style.edgeColor;
-    es.width = vp ? (float)Rez::guiX(lineWidthMm) : style.edgeWidth;
+    // The width asked for, in scene units; what is drawn is worked out
+    // of it at the end (primPathWidth).
+    double asked = vp ? Rez::guiX(lineWidthMm) : style.edgeWidth;
     QPen pen(Qt::SolidLine);
     bool formatVisible = true;
 
@@ -286,7 +309,7 @@ EdgeStroke resolveEdgeStroke(TechDraw::DrawViewPart* dvp,
                 .asValue<QColor>());
         pen = lineGen.getBestPen(format->getLineNumber(),
                                  (Qt::PenStyle)format->m_style, weight);
-        es.width = (float)Rez::guiX(weight);
+        asked = Rez::guiX(weight);
         formatVisible = format->m_visible;
     }
 
@@ -294,32 +317,33 @@ EdgeStroke resolveEdgeStroke(TechDraw::DrawViewPart* dvp,
         if (vp) {
             pen = lineGen.getLinePen(TechDraw::Preferences::HiddenLineStyle(),
                                      lineWidthMm);
-            es.width = (float)Rez::guiX(vp->hiddenWidthScaled());
+            asked = Rez::guiX(vp->hiddenWidthScaled());
         }
         else {
             es.color = style.hiddenColor;
-            es.width = style.hiddenWidth;
+            asked = style.hiddenWidth;
         }
     }
 
     if (geom->getClassOfEdge() == TechDraw::ecUVISO && vp) {
         pen = QPen(Qt::SolidLine);
-        es.width = (float)Rez::guiX(vp->isoWidthScaled());
+        asked = Rez::guiX(vp->isoWidthScaled());
     }
 
     es.show = showEdgeClass(dvp, geom)
         && (formatVisible || (vp && vp->ShowAllEdges.getValue()));
+    es.width = primPathWidth(asked, hairline);
 
-    if (pen.style() != Qt::SolidLine && es.width > 0.0f) {
+    if (pen.style() != Qt::SolidLine) {
         for (qreal d : pen.dashPattern())
             es.dash.pattern.push_back((float)d);
-        // The unit is the width the Qt page's pen HAS, which is not the
-        // width asked for: its items set the pen's width as a whole number
-        // of scene units (QGIPrimPath::setTools, QPen::setWidth(int)), so
-        // a 0.35 mm hidden line counts its dashes in 0.3 mm -- seven
+        // The unit is the width the Qt page's pen HAS, as the stroke's
+        // is: a 0.35 mm hidden line counts its dashes in 0.3 mm -- seven
         // dashes where 0.35 gives six -- and a width under one unit is a
-        // cosmetic pen, counted in pixels.
-        es.dash.unit = std::floor(es.width);
+        // cosmetic pen, counted in pixels (unit 0), whatever the
+        // hairline is drawn as.
+        const float whole = (float)std::floor(asked);
+        es.dash.unit = whole >= 1.0f ? whole : 0.0f;
         es.dash.offset = (float)pen.dashOffset();
         es.dash.cap = pen.capStyle() != Qt::FlatCap;
     }
@@ -1382,7 +1406,8 @@ bool emitHatchFill(Page2D& out, Page2D::Recorder& rec, uint64_t imageId,
 } // namespace
 
 void PageFeed::feedViewPart(TechDraw::DrawViewPart* dvp, Page2D& out,
-                            const Style& style, uint32_t layer)
+                            const Style& style, uint32_t layer,
+                            float hairline)
 {
     if (!dvp)
         return;
@@ -1580,8 +1605,11 @@ void PageFeed::feedViewPart(TechDraw::DrawViewPart* dvp, Page2D& out,
             ? packColor(PreferencesGui::getAccessibleQColor(
                   PreferencesGui::normalQColor()))
             : style.edgeColor;
-        const float sectionEdgeWidth =
-            vp ? (float)Rez::guiX(vp->lineWidthScaled()) : style.edgeWidth;
+        // the outline of a cut face is an edge of the Qt page like any
+        // other, its pen cut to whole scene units
+        const float sectionEdgeWidth = primPathWidth(
+            vp ? Rez::guiX(vp->lineWidthScaled()) : style.edgeWidth,
+            hairline);
         for (const TechDraw::FacePtr& face : dvs->getTDFaceGeometry()) {
             const std::vector<std::vector<Pt>> contours =
                 faceContours(face, style.deflection);
@@ -1635,8 +1663,7 @@ void PageFeed::feedViewPart(TechDraw::DrawViewPart* dvp, Page2D& out,
             }
             if (!rasterized && out.hasImage(sid))
                 out.removeImage(sid);
-            if (sectionEdges && sectionEdgeWidth > 0.0f
-                && emitFacePath(rec, contours, ox, oy))
+            if (sectionEdges && emitFacePath(rec, contours, ox, oy))
                 rec.stroke(sectionEdgeColor, sectionEdgeWidth);
             if (out.hasItem(sid))
                 out.removeItem(sid);
@@ -1653,8 +1680,9 @@ void PageFeed::feedViewPart(TechDraw::DrawViewPart* dvp, Page2D& out,
     int iEdge = 0;
     for (const TechDraw::BaseGeomPtr& geom : dvp->getEdgeGeometry()) {
         Page2D::Recorder rec;
-        EdgeStroke es = resolveEdgeStroke(dvp, vp, geom, iEdge, style);
-        if (es.show && es.width > 0.0f) {
+        EdgeStroke es =
+            resolveEdgeStroke(dvp, vp, geom, iEdge, style, hairline);
+        if (es.show) {
             if (es.dash.empty()) {
                 if (emitEdge(rec, geom, ox, oy, style.deflection))
                     rec.stroke(es.color, es.width);
@@ -1714,8 +1742,11 @@ void PageFeed::feedViewPart(TechDraw::DrawViewPart* dvp, Page2D& out,
                 rec.lineTo(vx + arm, vy);
                 rec.moveTo(vx, vy - arm);
                 rec.lineTo(vx, vy + arm);
+                // QGICMark is a QGIPrimPath too: half the line's width,
+                // cut to whole scene units
                 rec.stroke(packColor(PreferencesGui::centerQColor()),
-                           (float)Rez::guiX(lineWidthMm * 0.5));
+                           primPathWidth(Rez::guiX(lineWidthMm) * 0.5,
+                                         hairline));
             }
         }
         else if (showVerts && !vert->isReference()) {
