@@ -46,6 +46,15 @@ read by the build session; 53 is reproduced, the others not started. Its
 order after 51, "unless the reporter says otherwise": 53, 54, 55, 56 with
 57 after it, 52, 30, 48, 47.
 
+**2026-10-09 12:06, the reporter to the build session, verbatim:** "pause
+after you fixed this. push and stage". So after the two full suites that
+are running it pushes, stages and stops; it sends the commit and the stage
+time when both are done. What will be in that stage: entry 46
+(`6dacf21b11`), the repair of entry 25's regression (`1ccc6c2f60`), entry
+50 (`4cb1ee6ad1`, `69a2028e23`), 49 (`664d57f39b`), 51 (`d157abf559`), 53
+(`c820c3aea1`). Not started: 52, 54, 55, 56, 57, 58, 30's first task, 47,
+and the two tests left of 48.
+
 **2026-10-09 10:44:** nothing new committed since `6dacf21b11`; a build of
 entries 49, 50 and the repair of entry 25's regression is running. Entries
 54 and 55 are read by the build session and not started.
@@ -145,7 +154,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 50 | 2026-10-09 | after "Reset all" in the preferences the 3D view is no longer drawn by the render engine's backend (edges jagged; the reporter's guess: render cache 0); and after a change of the MSAA setting a split of a 3D view and a TechDraw page became two tab windows | FIXED `4cb1ee6ad1` (a) and `69a2028e23` (b), not staged, not pushed. (a) as decided: `Default` is the engine on the platform's backend, `Legacy` is Coin; the type is a list on the Render engine page (`Default`, `Legacy`, the backends this build has) and is kept; the render cache setting is not looked at while the engine draws and not rewritten; nothing is written at startup; 13 PASS. (b) the copy that replaces a Coin-drawn view on an anti-aliasing change takes the old view's cell; 11 PASS and 7 FAIL on the staged copy, 18 PASS now (`docs/HandsOnLog.md`) |
 | 51 | 2026-10-09 | a face's edge that no edge line covers (a cylinder's side against what is behind it) is a staircase with MSAA off; if that is expected, MSAA 4x by default (change request) | (b) FIXED `d157abf559` for the desktop, not staged, not pushed: MSAA 4x (`View/AntiAliasing` 3) is the default for both render types; a sphere's limb, rows blended 0.0% without, 85.6% under `Legacy` and 67.0% under the engine with nothing stored. (a) confirmed expected. The BROWSER viewer does not follow: WebGL2 does not create a multisampled RGBA16F scene target. With the reporter: an 8 or 10 bit target there (true MSAA, at a price in the colour pipeline), the engine's idle accumulation (a still picture only), or a post-process pass (does not exist yet); the build session recommends measuring the first, no code needed (`docs/HandsOnLog.md`) |
 | 52 | 2026-10-09 | a benchmark asked: with face rims a staircase without MSAA anyway, is the line shader (lines with computed coverage) still needed, and what does it cost in rendering (from entry 51) | OPEN, a measurement for the build session; nothing run. The reporter's rule, 10:17: if it is what gets a fractional line width right, it is still needed -- no frame-time threshold |
-| 53 | 2026-10-09 | `scanner.FCStd`: answered No to the recompute question at opening, the TechDraw page that opens by itself (`Page003`) shows only part of the geometry -- it varies: sometimes none, once only `Top002`, with thickened edges; the dimensions ARE drawn, the views' geometry is what is missing -- with the page drawn by Qt only, it seems; and BOTH renderers draw the lines thickened until a recompute; after a recompute the page is complete and the lines normal | REPRODUCED 2026-10-09 on the staged copy at the first try, cause not found yet: as loaded and drawn by Qt, `Page003` shows its dimensions and the views' labels, NO geometry in the three views of the projection group (`Bottom004`, `Front003`, `Top002`), and `Section002` with thick lines; after a recompute all four are complete and the lines thin. The reporter: the missing geometry is with Qt's drawing only, the thickened lines with both renderers |
+| 53 | 2026-10-09 | `scanner.FCStd`: answered No to the recompute question at opening, the TechDraw page that opens by itself (`Page003`) shows only part of the geometry -- it varies: sometimes none, once only `Top002`, with thickened edges; the dimensions ARE drawn, the views' geometry is what is missing -- with the page drawn by Qt only, it seems; and BOTH renderers draw the lines thickened until a recompute; after a recompute the page is complete and the lines normal | FIXED `c820c3aea1`, not staged yet: not the recompute -- the page comes back with the window layout and is drawn while the progressive load is still building the view providers of its views; without one the Qt page draws nothing of a view and the backend draws it by fallback widths (0.6 mm), and the view provider's own request to draw was dropped because the document was still flagged as restoring; it asks again a turn later. On the reporter's file the page as loaded is now the page after a recompute, in both renderers. 4 claims fail on the staged copy, 14 PASS now (`docs/HandsOnLog.md`) |
 | 54 | 2026-10-09 | a highlight shown on top: under the pointer (preselection) its edges respect the depth against the faces, an edge behind a face is dimmed; a full SELECTION does not, its edges are drawn as if there were no depth test | OPEN; nothing run |
 | 55 | 2026-10-09 | sometimes the progress bar in the status bar is at the left side; seen once during a recompute; after closing the document and opening one again it was back in its normal place | OPEN, intermittent; nothing run |
 | 56 | 2026-10-09 | view cells, after entry 29 (change request): the menu button and the handles shown on hover have no contrast on a light grey or white ground; handles off a view's scroll bar; the drag frames too transparent -- less so, with white borders, in the theme's accent colour (the palette's selection highlight when there is no theme); the same for the overlay's drag frame; Esc and any mouse click cancel a cell drag, only the left release commits | OPEN; nothing run |
@@ -4559,7 +4568,28 @@ code change (the id pass turns it off by a negated width).
 Not said yet by the reporter: on which models, and what difference in
 frame time would be enough to drop it.
 
-## 53. `scanner.FCStd` opened without the recompute: on the TechDraw page geometry is missing (Qt's drawing) and lines are thickened (both renderers) -- REPRODUCED 2026-10-09 by the build session; cause not found yet
+## 53. `scanner.FCStd` opened without the recompute: on the TechDraw page geometry is missing (Qt's drawing) and lines are thickened (both renderers) -- FIXED `c820c3aea1`, not staged yet (see `docs/HandsOnLog.md`)
+
+**2026-10-09 12:06, the build session: FIXED `c820c3aea1`** (its message; its
+log, entry 53, `0818794d43`, local). Not staged yet.
+- It is NOT the recompute and not the projection: the views' geometry is
+  there as loaded, it comes back with the file.
+- The cause: the page comes back with the window layout and is drawn while
+  the progressive load is still building the VIEW PROVIDERS of its views.
+  Without one, the Qt page draws nothing of a view -- (a) -- and the
+  backend draws it by fallback widths, 0.6 mm -- (b). The view provider's
+  own request to draw, once it existed, came while the document was still
+  flagged as restoring, and was dropped.
+- The fix: it asks again a turn of the event loop later.
+- On the reporter's file, not recomputed: the page as loaded is now the
+  page after a recompute, in both renderers.
+- Scored: `tests/gui/techdraw-page-before-its-view-providers.py`, 4 claims
+  fail on the staged copy, 14 PASS now.
+The build session on the note-taker's reading of (b) further down: "close
+... but the thing missing was the view PROVIDER, not a width or a scale a
+recompute sets". And on kin: entries 47 and 28 "have the same shape
+(something drawn before the slices had built what it needs)"; neither is
+reproduced, and this fix is TechDraw's alone.
 
 **2026-10-09 10:44, the build session: REPRODUCED on the staged copy at the
 first try** (its message; `e53.py` and the pictures in
