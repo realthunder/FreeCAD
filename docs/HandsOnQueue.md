@@ -3943,7 +3943,7 @@ the view is on render cache 0;
 the 3D view and a TechDraw page -- became two tab windows.
 
 **Looked at in the reporter's live session, as asked ("check the my staged
-live session"), at 09:45: read-only, nothing set and nothing created**
+live session"), at 09:42: read-only, nothing set and nothing created**
 (`probe50.py`, run through the session's MCP console, pid 75320; it and the
 report log as it then stood are in `..\dl\handson\2026-10-09\entry50\`):
 
