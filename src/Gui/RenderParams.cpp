@@ -97,6 +97,8 @@ public:
     long ElementGateStagger;
     long TinyElementCutoff;
     bool LoadDropElements;
+    long ElementTakeInSets;
+    long ElementTakeInKB;
     double EffectResolution;
     bool TemporalAccum;
     long TemporalAccumSamples;
@@ -306,6 +308,10 @@ public:
         funcs["TinyElementCutoff"] = &RenderParamsP::updateTinyElementCutoff;
         LoadDropElements = this->handle->GetBool("LoadDropElements", true);
         funcs["LoadDropElements"] = &RenderParamsP::updateLoadDropElements;
+        ElementTakeInSets = this->handle->GetInt("ElementTakeInSets", 1000);
+        funcs["ElementTakeInSets"] = &RenderParamsP::updateElementTakeInSets;
+        ElementTakeInKB = this->handle->GetInt("ElementTakeInKB", 0);
+        funcs["ElementTakeInKB"] = &RenderParamsP::updateElementTakeInKB;
         EffectResolution = this->handle->GetFloat("EffectResolution", 1.0);
         funcs["EffectResolution"] = &RenderParamsP::updateEffectResolution;
         TemporalAccum = this->handle->GetBool("TemporalAccum", false);
@@ -728,6 +734,14 @@ public:
     // Auto generated code (Tools/params_utils.py:314)
     static void updateLoadDropElements(RenderParamsP *self) {
         self->LoadDropElements = self->handle->GetBool("LoadDropElements", true);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateElementTakeInSets(RenderParamsP *self) {
+        self->ElementTakeInSets = self->handle->GetInt("ElementTakeInSets", 1000);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateElementTakeInKB(RenderParamsP *self) {
+        self->ElementTakeInKB = self->handle->GetInt("ElementTakeInKB", 0);
     }
     // Auto generated code (Tools/params_utils.py:314)
     static void updateEffectResolution(RenderParamsP *self) {
@@ -1968,6 +1982,36 @@ static const App::ParamRegistry::Registrar _RenderParamsRegistrar({
 "filling one, or the deferred view-provider drain that follows a\n"
 "restore -- geometry is still being built into the view in all\n"
 "three."),
+    App::ParamInfo("Gui", "RenderParams", "User parameter:BaseApp/Preferences/View/Render", "ElementTakeInSets", "ElementTakeInSets", App::ParamInfo::Int, 1000)
+        .setTitle("Element sets a frame takes in")
+        .setDoc("How many edge and point sets that are not on the GPU yet one\n"
+"frame may take in (docs/DocumentLoad.md sec 18.17). The rest is\n"
+"held back and comes in the frames after, which the view asks\n"
+"for; a frame holding some back is not a finished picture, and a\n"
+"capture waits for the one that is. 0 = no bound of this kind.\n"
+"A load holds every such set back while it fills in\n"
+"(LoadDropElements) and those whose faces were exact by then all\n"
+"came back in the one frame after it: 14600 sets on a\n"
+"17000-object assembly, 8.7 s in a single call into the driver\n"
+"and the thread away for 12 s. A camera fitted to an assembly it\n"
+"showed a corner of does the same, and a document opened whole.\n"
+"What a set costs is the buffer made for it and not its size --\n"
+"0.6 ms a set on Mesa's D3D12 driver under WSL, those 14600 being\n"
+"11 MB together -- which is why the bound is a count. At 1000 the\n"
+"same load has no stretch longer than the 3.3 s its other frames\n"
+"take, and the last edge is in 13 s later than it was.\n"
+"Applies to the sets the element contract counts as attached --\n"
+"the edges and vertices of a shape that has faces -- and never to\n"
+"an on-top or highlight draw, nor to a wire, a sketch or a point\n"
+"cloud, which are the object."),
+    App::ParamInfo("Gui", "RenderParams", "User parameter:BaseApp/Preferences/View/Render", "ElementTakeInKB", "ElementTakeInKB", App::ParamInfo::Int, 0)
+        .setTitle("Element buffers a frame takes in (KB)")
+        .setDoc("The same bound in kilobytes of GPU buffers (ElementTakeInSets):\n"
+"whichever of the two is spent first ends what a frame takes in.\n"
+"One set is always taken, whatever its size. 0 = no bound of\n"
+"this kind, and the default: on the driver measured the bytes\n"
+"were no cost beside the number of buffers. It is here for a\n"
+"model of few and very large edge sets, which was not measured."),
     App::ParamInfo("Gui", "RenderParams", "User parameter:BaseApp/Preferences/View/Render", "EffectResolution", "EffectResolution", App::ParamInfo::Float, 1.0)
         .setTitle("Effect resolution")
         .setDoc("Resolution scale (0.25-1.0) of the expensive screen-space effect\n"
@@ -4940,6 +4984,86 @@ void RenderParams::setLoadDropElements(const bool &v) {
 // Auto generated code (Tools/params_utils.py:431)
 void RenderParams::removeLoadDropElements() {
     instance()->handle->RemoveBool("LoadDropElements");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *RenderParams::docElementTakeInSets() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"How many edge and point sets that are not on the GPU yet one\n"
+"frame may take in (docs/DocumentLoad.md sec 18.17). The rest is\n"
+"held back and comes in the frames after, which the view asks\n"
+"for; a frame holding some back is not a finished picture, and a\n"
+"capture waits for the one that is. 0 = no bound of this kind.\n"
+"A load holds every such set back while it fills in\n"
+"(LoadDropElements) and those whose faces were exact by then all\n"
+"came back in the one frame after it: 14600 sets on a\n"
+"17000-object assembly, 8.7 s in a single call into the driver\n"
+"and the thread away for 12 s. A camera fitted to an assembly it\n"
+"showed a corner of does the same, and a document opened whole.\n"
+"What a set costs is the buffer made for it and not its size --\n"
+"0.6 ms a set on Mesa's D3D12 driver under WSL, those 14600 being\n"
+"11 MB together -- which is why the bound is a count. At 1000 the\n"
+"same load has no stretch longer than the 3.3 s its other frames\n"
+"take, and the last edge is in 13 s later than it was.\n"
+"Applies to the sets the element contract counts as attached --\n"
+"the edges and vertices of a shape that has faces -- and never to\n"
+"an on-top or highlight draw, nor to a wire, a sketch or a point\n"
+"cloud, which are the object.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const long & RenderParams::getElementTakeInSets() {
+    return instance()->ElementTakeInSets;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const long & RenderParams::defaultElementTakeInSets() {
+    const static long def = 1000;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void RenderParams::setElementTakeInSets(const long &v) {
+    instance()->handle->SetInt("ElementTakeInSets",v);
+    instance()->ElementTakeInSets = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void RenderParams::removeElementTakeInSets() {
+    instance()->handle->RemoveInt("ElementTakeInSets");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *RenderParams::docElementTakeInKB() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"The same bound in kilobytes of GPU buffers (ElementTakeInSets):\n"
+"whichever of the two is spent first ends what a frame takes in.\n"
+"One set is always taken, whatever its size. 0 = no bound of\n"
+"this kind, and the default: on the driver measured the bytes\n"
+"were no cost beside the number of buffers. It is here for a\n"
+"model of few and very large edge sets, which was not measured.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const long & RenderParams::getElementTakeInKB() {
+    return instance()->ElementTakeInKB;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const long & RenderParams::defaultElementTakeInKB() {
+    const static long def = 0;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void RenderParams::setElementTakeInKB(const long &v) {
+    instance()->handle->SetInt("ElementTakeInKB",v);
+    instance()->ElementTakeInKB = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void RenderParams::removeElementTakeInKB() {
+    instance()->handle->RemoveInt("ElementTakeInKB");
 }
 
 // Auto generated code (Tools/params_utils.py:397)

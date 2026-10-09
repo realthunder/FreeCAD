@@ -201,6 +201,7 @@ public:
 
     virtual void setElementGates(bool shapeVertices, bool pressureEdges,
                                  bool loadingDrop, int staggerFrames) override;
+    void setElementTakeIn(int sets, int kilobytes) override;
 
     /// Outside the desktop guard for the same reason as the gates above,
     /// and it took a browser session to notice it was not: the flag it

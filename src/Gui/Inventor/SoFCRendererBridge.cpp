@@ -3298,6 +3298,18 @@ RendererBridge::translateTinyElementCutoff(App::PropertyContainer *)
     return int(RenderParams::getTinyElementCutoff());
 }
 
+int
+RendererBridge::translateElementTakeInSets(App::PropertyContainer *)
+{
+    return int(RenderParams::getElementTakeInSets());
+}
+
+int
+RendererBridge::translateElementTakeInKB(App::PropertyContainer *)
+{
+    return int(RenderParams::getElementTakeInKB());
+}
+
 bool
 RendererBridge::translateLoadDropElements(App::PropertyContainer * view)
 {

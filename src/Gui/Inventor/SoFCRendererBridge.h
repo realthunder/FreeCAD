@@ -244,6 +244,11 @@ GuiExport int translateTinyElementCutoff(App::PropertyContainer * view);
 /// right now: Render_LoadDropElements is on, coarse-first is on, and
 /// some document is still arriving (docs/SceneStreaming.md #13b).
 GuiExport bool translateLoadDropElements(App::PropertyContainer * view);
+/// What one frame may take in of the edge and point sets not uploaded
+/// yet: so many sets, so many kilobytes (docs/DocumentLoad.md sec
+/// 18.17). 0 = no bound.
+GuiExport int translateElementTakeInSets(App::PropertyContainer * view);
+GuiExport int translateElementTakeInKB(App::PropertyContainer * view);
 
 } // namespace RendererBridge
 } // namespace Gui

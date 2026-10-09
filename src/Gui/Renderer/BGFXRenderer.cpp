@@ -1483,6 +1483,12 @@ void BGFXRenderer::setElementGates(bool shapeVertices, bool pressureEdges,
     pimpl->elemGateStagger = staggerFrames > 0 ? staggerFrames : 1;
 }
 
+void BGFXRenderer::setElementTakeIn(int sets, int kilobytes)
+{
+    pimpl->elemTakeInSets = sets > 0 ? size_t(sets) : 0;
+    pimpl->elemTakeInBytes = kilobytes > 0 ? uint64_t(kilobytes) * 1024 : 0;
+}
+
 //////////////////////////////////////////////////////////////////////
 
 BGFXRendererLib::BGFXRendererLib()

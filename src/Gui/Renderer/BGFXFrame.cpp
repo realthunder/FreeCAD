@@ -5015,8 +5015,8 @@ bool BGFXRenderer::Private::render(const QColor &col,
     // telling apart: the dependency half is the part that needs
     // objectIncomplete carried to a tier, and a tier need not carry
     // what never fires.
-    auto gatedForMemory = [&](const Render::DrawCall &d,
-                              bool *dependency = nullptr) {
+    auto gatedByContract = [&](const Render::DrawCall &d,
+                               bool *dependency = nullptr) {
         // The measurement instrument (Render_TinyElementCutoff, 0 =
         // off), and it sits ABOVE the contract on purpose: the
         // population it exists to price is the FLOATING sets, which
@@ -5074,6 +5074,90 @@ bool BGFXRenderer::Private::render(const QColor &col,
             return dropLines || coarse;
         }
         return false;
+    };
+    // What this frame takes in of the sets the gates above let through
+    // (docs/DocumentLoad.md sec 18.17). One that is on the GPU costs
+    // nothing to draw; one that is not is a buffer to build and to hand
+    // the driver, and the gates let thousands through in one frame --
+    // every set a load held back whose faces are exact by its end, in
+    // the frame after it: 14613 of them on the flattened reference
+    // assembly, 8.7 s in one bgfx::frame. So the frame takes in what its
+    // bound buys, in the order of the scene, and holds the rest for the
+    // frames after, which it asks for.
+    //
+    // A culled draw is left out: it is not submitted, so it takes
+    // nothing in, and charging it would spend the bound every frame on
+    // sets that never arrive. One set is always taken, whatever it
+    // costs, or a set dearer than the bound would never be drawn.
+    elemTakeInHeld.clear();
+    {
+        const bool bounded = elemTakeInSets || elemTakeInBytes;
+        if (bounded || levelDebug()) {
+            std::unordered_set<uint64_t> asked;
+            size_t sets = 0;
+            uint64_t bytes = 0;
+            for (const auto &d : scene) {
+                if (!d.mesh || !d.mesh->attachedOnly || !d.objectKey
+                        || d.material.ontop || d.material.highlightline)
+                    continue;
+                const bool line = d.material.type == Render::Material::Line;
+                if (!line && d.material.type != Render::Material::Point)
+                    continue;
+                if (culled(d) || gatedByContract(d))
+                    continue;
+                if (!asked.insert(d.mesh->cacheId).second
+                        || view->meshUploaded(*d.mesh))
+                    continue;
+                const uint64_t price = GpuMesh::readmitCost(*d.mesh, line);
+                if (bounded && sets
+                        && ((elemTakeInSets && sets >= elemTakeInSets)
+                            || (elemTakeInBytes
+                                && bytes + price > elemTakeInBytes))) {
+                    elemTakeInHeld.insert(d.mesh->cacheId);
+                    continue;
+                }
+                ++sets;
+                bytes += price;
+            }
+            if (!elemTakeInHeld.empty()) {
+                // The rest is owed: ask for the frame that takes it in,
+                // and this one is not the finished picture.
+                animatedFrame = true;
+                frameOwes = true;
+            }
+            const bool staged = !elemTakeInHeld.empty() || elemTakeInFrames;
+            if (staged) {
+                ++elemTakeInFrames;
+                elemTakeInTotalSets += sets;
+                elemTakeInTotalBytes += bytes;
+            }
+            if (levelDebug() && (staged || sets >= 64))
+                FC_RENDER_MSG(
+                    "render levels: element take-in frame %llu: %zu sets "
+                    "%.2fMB taken in, %zu held\n",
+                    (unsigned long long)view->frame, sets,
+                    double(bytes) / 1048576.0, elemTakeInHeld.size());
+            if (staged && elemTakeInHeld.empty()) {
+                if (levelDebug())
+                    FC_RENDER_MSG(
+                        "render levels: element take-in done: %zu sets "
+                        "%.1fMB over %zu frames (a frame takes %zu sets, "
+                        "%.1fMB)\n",
+                        elemTakeInTotalSets,
+                        double(elemTakeInTotalBytes) / 1048576.0,
+                        elemTakeInFrames, elemTakeInSets,
+                        double(elemTakeInBytes) / 1048576.0);
+                elemTakeInFrames = elemTakeInTotalSets = 0;
+                elemTakeInTotalBytes = 0;
+            }
+        }
+    }
+    auto gatedForMemory = [&](const Render::DrawCall &d,
+                              bool *dependency = nullptr) {
+        if (gatedByContract(d, dependency))
+            return true;
+        return !elemTakeInHeld.empty() && d.mesh
+            && elemTakeInHeld.count(d.mesh->cacheId) != 0;
     };
     // Tallied HERE, once per draw, and not inside the predicate:
     // the predicate is asked by the id pass and the submit loop

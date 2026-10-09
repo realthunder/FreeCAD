@@ -8101,6 +8101,14 @@ public:
     /// state is entered rather than on every frame it persists.
     bool waterNoResponse = false;
     std::unordered_map<uint64_t, GpuMesh> meshes;
+    /// Whether \a data is on the GPU as it stands, so that drawing it
+    /// takes nothing in (getMesh would find it and upload nothing).
+    bool meshUploaded(const Render::MeshData &data) const
+    {
+        auto it = meshes.find(data.cacheId);
+        return it != meshes.end() && it->second.geom
+            && it->second.generation == data.generation;
+    }
     /// Shared colorless geometry buffers keyed by content; GpuMesh::geom
     /// points into this map (values are node-stable).
     std::unordered_map<GeomKey, GpuGeometry, GeomKeyHasher> geometries;
@@ -10581,6 +10589,29 @@ public:
     /// being published (see collectMeshes). Rebuilt each frame by the
     /// gate walk; empty whenever no gate is active.
     std::unordered_set<uint64_t> gatedOnlyMeshes;
+    /// What one frame may take in of the attached edge and point sets
+    /// that are not uploaded yet (docs/DocumentLoad.md sec 18.17): so
+    /// many sets and so many bytes of their buffers, whichever is spent
+    /// first, 0 for no bound. A load holds every such set back while it
+    /// fills in (loadDropElements), and those whose faces were exact by
+    /// then all came back in the frame after it: 14613 sets and ONE
+    /// bgfx::frame of 8.7 s on the flattened reference assembly, 0.6 ms
+    /// a set on that driver whatever its size. So does a camera fitted
+    /// to an assembly it showed a corner of. Bounded, the frame takes in
+    /// what the bound buys and holds the rest (elemTakeInHeld) for the
+    /// next, which it asks for.
+    ///
+    /// Zero by default and set by the host: the standalone viewer is
+    /// handed its meshes by a stream, a few at a time already.
+    size_t elemTakeInSets = 0;
+    uint64_t elemTakeInBytes = 0;
+    /// The sets held back this frame, by mesh. Rebuilt each frame.
+    std::unordered_set<uint64_t> elemTakeInHeld;
+    /// For the readout: the frames a staged take-in has run so far,
+    /// and what it has taken in.
+    size_t elemTakeInFrames = 0;
+    size_t elemTakeInTotalSets = 0;
+    uint64_t elemTakeInTotalBytes = 0;
     // Whether the last rendered frame stood over the GPU budget. Out
     // here because the edge gate reads it; only the desktop half ever
     // writes it (the budget crossing, which also wakes the planner), so

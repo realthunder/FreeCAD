@@ -3703,6 +3703,13 @@ public:
                                  bool loadingDrop, int staggerFrames)
     { (void)shapeVertices; (void)pressureEdges; (void)loadingDrop;
       (void)staggerFrames; }
+    /// How much of the edge and point sets not uploaded yet one frame
+    /// may take in: \a sets of them and \a kilobytes of their buffers,
+    /// whichever is spent first; the rest is held for the frames after
+    /// (docs/DocumentLoad.md sec 18.17). 0 is no bound of that kind, and
+    /// both 0 is every set in the frame that first draws it.
+    virtual void setElementTakeIn(int sets, int kilobytes)
+    { (void)sets; (void)kilobytes; }
     /// Section cap hatch texture pixels; \a nc-component 8-bit rows,
     /// tightly packed. Null data clears the texture. The pixels are copied.
     virtual void setHatchImage(const void *data, int nc,

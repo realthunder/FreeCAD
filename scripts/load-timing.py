@@ -36,6 +36,12 @@ Environment:
               settled frame costs
   LT_LEISURE  0/1: Render/CoarseDeferAtLeisure
   LT_BUDGET   Render/ProgressiveLoadBudgetMS
+  LT_TAKEIN   sets,kilobytes: Render/ElementTakeInSets and ElementTakeInKB,
+              what a frame takes in of the edge and point sets not uploaded
+              yet. With FC_LEVEL_DEBUG=1 the renderer's lines on the load
+              gate and on each frame that takes sets in are written (GATE)
+  LT_SLOW     milliseconds: the frame time from which a frame line is
+              written with its breakdown (1000)
   LT_WINDOW   WxH: the main window's size
   LT_SHOT     a path: save the view there at the end
 
@@ -75,6 +81,10 @@ def note(line):
 def observe(notifier, msg, level):
     try:
         now = time.monotonic()
+        if msg.startswith("render levels: load gate") or msg.startswith(
+                "render levels: element take-in"):
+            note("GATE %.2f %s" % (now - S["t0"], msg.strip()[:300]))
+            return
         if msg.startswith("render "):
             if S["spinning"]:
                 S["spin_frames"].append(msg.strip()[:700])
@@ -132,7 +142,7 @@ def report_load_frames():
     slow = 0
     for i, (t, ln) in enumerate(lines):
         m = FRAME.search(ln)
-        if not m or float(m.group(2)) < 1000.0:
+        if not m or float(m.group(2)) < float(os.environ.get("LT_SLOW", "1000")):
             continue
         slow += 1
         note("SLOW %.1f %s" % (t, ln))
@@ -288,9 +298,14 @@ def start():
             render.SetInt("ProgressiveLoadBudgetMS", int(os.environ["LT_BUDGET"]))
         if os.environ.get("LT_FRAMES"):
             render.SetBool("DebugTiming", True)
-        note("INFO at leisure %s, drain budget %d ms"
+        if os.environ.get("LT_TAKEIN"):
+            sets, kb = os.environ["LT_TAKEIN"].split(",")
+            render.SetInt("ElementTakeInSets", int(sets))
+            render.SetInt("ElementTakeInKB", int(kb))
+        note("INFO at leisure %s, drain budget %d ms, a frame takes in %d sets, %d KB"
              % (render.GetBool("CoarseDeferAtLeisure", True),
-                render.GetInt("ProgressiveLoadBudgetMS", 100)))
+                render.GetInt("ProgressiveLoadBudgetMS", 100),
+                render.GetInt("ElementTakeInSets", 0), render.GetInt("ElementTakeInKB", 0)))
         FreeCAD.setLogLevel("Part", "Log")
         FreeCAD.setLogLevel("Gui", "Log")
         FreeCAD.Console.AttachObserver(observe)

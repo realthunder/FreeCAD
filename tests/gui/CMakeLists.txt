@@ -1535,6 +1535,19 @@ fc_add_gui_test(GuiHoldPerDocument_tests_run hold-per-document.py
 fc_add_gui_test(GuiDrainTurnGrows_tests_run drain-turn-grows.py
                 --timeout 400)
 
+# A frame takes in a bounded number of the edge and point sets that are
+# not on the GPU yet, and the rest in the frames after
+# (docs/DocumentLoad.md sec 18.17). The frame after a load took in every
+# set the load had held back whose faces were exact by then -- 14613 on
+# the flattened reference assembly, one call of 8.7 s into the driver.
+# 1200 boxes opened whole with every mesh exact, a frame allowed 100
+# sets: the edges come in a hundred a frame over 12 frames, a frame that
+# holds some back says it is not a finished picture, and the view comes
+# to one. With the bound not set (GT_SET=0), which is the way it was: 3
+# checks of 6, all 1200 in the first frame.
+fc_add_gui_test(GuiElementTakeIn_tests_run element-take-in.py
+                --timeout 300)
+
 # Making a view the active window makes its cell the view area's active
 # cell and brings the keyboard with it (docs/SplitViews.md sec 21): right
 # after "create new view" the first view can be clicked back into; with

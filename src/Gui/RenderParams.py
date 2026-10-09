@@ -777,6 +777,34 @@ Params = [
         "filling one, or the deferred view-provider drain that follows a\n"
         "restore -- geometry is still being built into the view in all\n"
         "three."),
+    ParamInt('ElementTakeInSets',  1000, title='Element sets a frame takes in',
+        doc="How many edge and point sets that are not on the GPU yet one\n"
+        "frame may take in (docs/DocumentLoad.md sec 18.17). The rest is\n"
+        "held back and comes in the frames after, which the view asks\n"
+        "for; a frame holding some back is not a finished picture, and a\n"
+        "capture waits for the one that is. 0 = no bound of this kind.\n"
+        "A load holds every such set back while it fills in\n"
+        "(LoadDropElements) and those whose faces were exact by then all\n"
+        "came back in the one frame after it: 14600 sets on a\n"
+        "17000-object assembly, 8.7 s in a single call into the driver\n"
+        "and the thread away for 12 s. A camera fitted to an assembly it\n"
+        "showed a corner of does the same, and a document opened whole.\n"
+        "What a set costs is the buffer made for it and not its size --\n"
+        "0.6 ms a set on Mesa's D3D12 driver under WSL, those 14600 being\n"
+        "11 MB together -- which is why the bound is a count. At 1000 the\n"
+        "same load has no stretch longer than the 3.3 s its other frames\n"
+        "take, and the last edge is in 13 s later than it was.\n"
+        "Applies to the sets the element contract counts as attached --\n"
+        "the edges and vertices of a shape that has faces -- and never to\n"
+        "an on-top or highlight draw, nor to a wire, a sketch or a point\n"
+        "cloud, which are the object."),
+    ParamInt('ElementTakeInKB',  0, title='Element buffers a frame takes in (KB)',
+        doc="The same bound in kilobytes of GPU buffers (ElementTakeInSets):\n"
+        "whichever of the two is spent first ends what a frame takes in.\n"
+        "One set is always taken, whatever its size. 0 = no bound of\n"
+        "this kind, and the default: on the driver measured the bytes\n"
+        "were no cost beside the number of buffers. It is here for a\n"
+        "model of few and very large edge sets, which was not measured."),
     ParamFloat('EffectResolution',  1.0, title='Effect resolution',
         doc="Resolution scale (0.25-1.0) of the expensive screen-space effect\n"
         "passes -- the planar/ground reflection scene re-render, the water\n"

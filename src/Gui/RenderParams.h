@@ -1248,6 +1248,54 @@ public:
 
     // Auto generated code (Tools/params_utils.py:139)
     //@{
+    /// Accessor for parameter ElementTakeInSets
+    ///
+    /// How many edge and point sets that are not on the GPU yet one
+    /// frame may take in (docs/DocumentLoad.md sec 18.17). The rest is
+    /// held back and comes in the frames after, which the view asks
+    /// for; a frame holding some back is not a finished picture, and a
+    /// capture waits for the one that is. 0 = no bound of this kind.
+    /// A load holds every such set back while it fills in
+    /// (LoadDropElements) and those whose faces were exact by then all
+    /// came back in the one frame after it: 14600 sets on a
+    /// 17000-object assembly, 8.7 s in a single call into the driver
+    /// and the thread away for 12 s. A camera fitted to an assembly it
+    /// showed a corner of does the same, and a document opened whole.
+    /// What a set costs is the buffer made for it and not its size --
+    /// 0.6 ms a set on Mesa's D3D12 driver under WSL, those 14600 being
+    /// 11 MB together -- which is why the bound is a count. At 1000 the
+    /// same load has no stretch longer than the 3.3 s its other frames
+    /// take, and the last edge is in 13 s later than it was.
+    /// Applies to the sets the element contract counts as attached --
+    /// the edges and vertices of a shape that has faces -- and never to
+    /// an on-top or highlight draw, nor to a wire, a sketch or a point
+    /// cloud, which are the object.
+    static const long & getElementTakeInSets();
+    static const long & defaultElementTakeInSets();
+    static void removeElementTakeInSets();
+    static void setElementTakeInSets(const long &v);
+    static const char *docElementTakeInSets();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter ElementTakeInKB
+    ///
+    /// The same bound in kilobytes of GPU buffers (ElementTakeInSets):
+    /// whichever of the two is spent first ends what a frame takes in.
+    /// One set is always taken, whatever its size. 0 = no bound of
+    /// this kind, and the default: on the driver measured the bytes
+    /// were no cost beside the number of buffers. It is here for a
+    /// model of few and very large edge sets, which was not measured.
+    static const long & getElementTakeInKB();
+    static const long & defaultElementTakeInKB();
+    static void removeElementTakeInKB();
+    static void setElementTakeInKB(const long &v);
+    static const char *docElementTakeInKB();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
     /// Accessor for parameter EffectResolution
     ///
     /// Resolution scale (0.25-1.0) of the expensive screen-space effect
