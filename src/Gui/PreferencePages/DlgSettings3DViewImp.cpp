@@ -104,6 +104,11 @@ void DlgSettings3DViewImp::loadSettings()
     ui->radioOrthographic->onRestore();
     ui->CheckBox_ApplyToViews->onRestore();
     ui->spinPreselectionDelay->onRestore();
+    // The setting's own default, MSAA 4x since 2026-10-09: the box takes
+    // the item it shows before its first restore for what a profile
+    // without the key means, and the form says "None". (The items are in
+    // the order of the setting's values.)
+    ui->comboAliasing->setCurrentIndex(static_cast<int>(ViewParams::defaultAntiAliasing()));
     ui->comboAliasing->onRestore();
 
     ui->checkBoxEnhancedPick->onRestore();

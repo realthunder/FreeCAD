@@ -34,7 +34,7 @@ import ViewParams
 ViewParams.declare_begin()
 ]]]*/
 
-// Auto generated code (Gui/ViewParams.py:1065)
+// Auto generated code (Gui/ViewParams.py:1066)
 #include <QString>
 
 // Auto generated code (Tools/params_utils.py:82)
@@ -2644,8 +2644,9 @@ public:
     /// Accessor for parameter AntiAliasing
     ///
     /// Anti-aliasing of the 3D views: 0 none, 1 line smoothing, 2 MSAA
-    /// 2x, 3 MSAA 4x, 4 MSAA 8x. Read when a view is created; a change
-    /// rebuilds the open views.
+    /// 2x, 3 MSAA 4x, 4 MSAA 8x. Without multisampling the rim of a
+    /// face that no edge runs along is a staircase. A change is taken
+    /// by the open views at once.
     static const long & getAntiAliasing();
     static const long & defaultAntiAliasing();
     static void removeAntiAliasing();
@@ -3430,7 +3431,7 @@ public:
     static const char *docHeadlightRotationW();
     //@}
 
-    // Auto generated code (Gui/ViewParams.py:1071)
+    // Auto generated code (Gui/ViewParams.py:1072)
     static const std::vector<QString> AnimationCurveTypes;
 
     static void onViewParamChanged(const char *sReason);
@@ -3461,7 +3462,7 @@ ViewParams.declare_end()
 }; // class ViewParams
 } // namespace Gui
 
-// Auto generated code (Gui/ViewParams.py:1084)
+// Auto generated code (Gui/ViewParams.py:1085)
 namespace Gui {
 /// Obtain all display style names, terminated by nullptr entry.
 GuiExport const char **drawStyleNames();

@@ -34,6 +34,9 @@ import FreeCADGui
 # Before the first 3D view exists: the MaterialX splice only happens in
 # the bgfx renderer, which only exists in render-cache mode 3.
 FreeCAD.ParamGet("User parameter:BaseApp/Preferences/View").SetInt("RenderCache", 3)
+# The references were taken without multisampling, the default until
+# 2026-10-09 and said here since (render-test-scene.py).
+FreeCAD.ParamGet("User parameter:BaseApp/Preferences/View").SetInt("AntiAliasing", 0)
 # The backend to gate, chosen the same way render-test-scene.py chooses
 # it: macOS caps the compatibility profile Coin needs at GL 2.1 while
 # these shaders need 3.1, so there IS no GL leg there and Metal is the

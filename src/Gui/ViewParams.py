@@ -840,10 +840,11 @@ Params = [
     ParamBool('ApplyCameraTypeToAll', False, title='Apply camera type to existing views',
         doc="When the camera type setting changes, switch every open 3D view\n"
             "to it as well."),
-    ParamInt('AntiAliasing', 0, title='Anti-aliasing',
+    ParamInt('AntiAliasing', 3, title='Anti-aliasing',
         doc="Anti-aliasing of the 3D views: 0 none, 1 line smoothing, 2 MSAA\n"
-            "2x, 3 MSAA 4x, 4 MSAA 8x. Read when a view is created; a change\n"
-            "rebuilds the open views."),
+            "2x, 3 MSAA 4x, 4 MSAA 8x. Without multisampling the rim of a\n"
+            "face that no edge runs along is a staircase. A change is taken\n"
+            "by the open views at once."),
     ParamInt('TransparentObjectRenderType', 0, title='Transparent object render type',
         doc="How Coin draws transparent objects: 0 in one pass, 1 with the back\n"
             "faces of non-solid objects in a pass of their own. Applies at once\n"

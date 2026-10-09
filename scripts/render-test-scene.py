@@ -44,6 +44,10 @@ BACKGROUND = os.environ.get("FC_RENDER_TEST_BG", "1") != "0"
 try:
     view = FreeCAD.ParamGet("User parameter:BaseApp/Preferences/View")
     view.SetInt("RenderCache", 3)                 # the renderer (bgfx) path
+    # The references were taken without multisampling ("msaa": 0 in their
+    # sidecars), which was the default until 2026-10-09 and is said here
+    # since: a multisampled frame differs along every rim.
+    view.SetInt("AntiAliasing", 0)
     # Chrome and counters are pixels in a capture that have nothing to do
     # with the renderer under test.
     view.SetBool("ShowNaviCube", False)

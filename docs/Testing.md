@@ -786,6 +786,16 @@ line. They are for the class of defect a gtest binary cannot reach: the
 event loop, the tree widget, a command's guard scope and a document
 being filled, all live at once.
 
+Ahead of the test's own script the harness hands FreeCAD
+`scripts/gui-test-profile.py`, which states what a test starts from where
+a default would otherwise decide it. One thing so far: no multisampling
+(`View/AntiAliasing` = 0, unless the profile already has the key). The
+default is MSAA 4x since 2026-10-09; the tests that read pixels were
+written against pictures without it, and a multisampled view answers
+`geometryPixels` -1. A test about multisampling sets the value itself.
+The golden render scenes (`scripts/render-test-scene.py`,
+`render-test-chess.py`) say the same for themselves.
+
 | Test | What | Cost |
 |---|---|---|
 | `GuiLiveImportNestedLoop_tests_run` | the live-import nested-loop crash (`docs/DocumentLoad.md` sec 15.2): a command pumps a nested event loop while the chess set is still importing, so the tree populates inside the user-edit guard | 25 s |

@@ -19,7 +19,16 @@ Claims, on a view of a box drawn by the backend:
     pixel count as unknown (-1) instead of a number: a multisampled depth
     cannot be read back;
   - with "MSAA 2x" they are built with 2, and with "None" again with none
-    -- the fallback was not taken on the way.
+    -- the fallback was not taken on the way;
+  - with nothing stored they are built with 4: MSAA 4x is the setting's
+    default since 2026-10-09 (docs/HandsOnQueue.md entry 51: "normal face
+    drawing for those part that are not bounded by edge, it shows staircase
+    without msaa. if that's expected, then I want msaa default to 4x"; the
+    harness itself starts a test without multisampling, see
+    scripts/gui-test-profile.py, so the key is removed here to ask). A
+    view that Coin draws, under the render type "Legacy", takes the same
+    default; that was measured by picture, not here (docs/HandsOnLog.md,
+    entry 51).
 
 Scored against the tree before the change: see the commit message.
 """
@@ -104,6 +113,12 @@ def run():
         again = stats(view, MSAA4)
         check("MSAA 4x a second time is 4 samples again", again.get("msaaSamples") == 4, again.get("msaaSamples"))
         FreeCAD.ParamGet(VIEW).RemInt("AntiAliasing")
+        settle(2.5)
+        view.redraw()
+        settle(0.5)
+        default = view.getRenderStats()
+        check("with nothing stored the targets are built with 4 samples: the default is MSAA 4x",
+              default.get("msaaSamples") == 4, default.get("msaaSamples"))
     except Exception:
         note("FAIL the test ran | " + traceback.format_exc().replace("\n", " | "))
     finally:

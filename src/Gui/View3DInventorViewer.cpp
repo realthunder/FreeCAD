@@ -4382,6 +4382,17 @@ int View3DInventorViewer::getNumSamples()
     //
     // Users who want the moving frames antialiased too can turn it back
     // on.
+    //
+    // ON again by default, 4x, since 2026-10-09 (docs/HandsOnQueue.md
+    // entry 51, the reporter's decision): "normal face drawing for those
+    // part that are not bounded by edge, it shows staircase without msaa.
+    // if that's expected, then I want msaa default to 4x". It is expected,
+    // and for the reason measured above -- the limb. What the paragraph on
+    // a parked view leaves out is that idle accumulation is itself off by
+    // default (Render/TemporalAccum), so with both defaults a bare limb
+    // stayed a staircase parked or moving. The default lives in
+    // ViewParams.py; everything above is why it was 0 from 2026-08 until
+    // then.
     long samples = App::GetApplication().GetParameterGroupByPath
         ("User parameter:BaseApp/Preferences/View")
         ->GetInt("AntiAliasing", Gui::ViewParams::defaultAntiAliasing());

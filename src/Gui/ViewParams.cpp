@@ -724,7 +724,7 @@ public:
         funcs["Perspective"] = &ViewParamsP::updatePerspective;
         ApplyCameraTypeToAll = this->handle->GetBool("ApplyCameraTypeToAll", false);
         funcs["ApplyCameraTypeToAll"] = &ViewParamsP::updateApplyCameraTypeToAll;
-        AntiAliasing = this->handle->GetInt("AntiAliasing", 0);
+        AntiAliasing = this->handle->GetInt("AntiAliasing", 3);
         funcs["AntiAliasing"] = &ViewParamsP::updateAntiAliasing;
         TransparentObjectRenderType = this->handle->GetInt("TransparentObjectRenderType", 0);
         funcs["TransparentObjectRenderType"] = &ViewParamsP::updateTransparentObjectRenderType;
@@ -1695,7 +1695,7 @@ public:
     }
     // Auto generated code (Tools/params_utils.py:314)
     static void updateAntiAliasing(ViewParamsP *self) {
-        self->AntiAliasing = self->handle->GetInt("AntiAliasing", 0);
+        self->AntiAliasing = self->handle->GetInt("AntiAliasing", 3);
     }
     // Auto generated code (Tools/params_utils.py:314)
     static void updateTransparentObjectRenderType(ViewParamsP *self) {
@@ -2809,11 +2809,12 @@ static const App::ParamRegistry::Registrar _ViewParamsRegistrar({
         .setTitle("Apply camera type to existing views")
         .setDoc("When the camera type setting changes, switch every open 3D view\n"
 "to it as well."),
-    App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "AntiAliasing", "AntiAliasing", App::ParamInfo::Int, 0)
+    App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "AntiAliasing", "AntiAliasing", App::ParamInfo::Int, 3)
         .setTitle("Anti-aliasing")
         .setDoc("Anti-aliasing of the 3D views: 0 none, 1 line smoothing, 2 MSAA\n"
-"2x, 3 MSAA 4x, 4 MSAA 8x. Read when a view is created; a change\n"
-"rebuilds the open views."),
+"2x, 3 MSAA 4x, 4 MSAA 8x. Without multisampling the rim of a\n"
+"face that no edge runs along is a staircase. A change is taken\n"
+"by the open views at once."),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "TransparentObjectRenderType", "TransparentObjectRenderType", App::ParamInfo::Int, 0)
         .setTitle("Transparent object render type")
         .setDoc("How Coin draws transparent objects: 0 in one pass, 1 with the back\n"
@@ -8826,8 +8827,9 @@ void ViewParams::removeApplyCameraTypeToAll() {
 const char *ViewParams::docAntiAliasing() {
     return QT_TRANSLATE_NOOP("ViewParams",
 "Anti-aliasing of the 3D views: 0 none, 1 line smoothing, 2 MSAA\n"
-"2x, 3 MSAA 4x, 4 MSAA 8x. Read when a view is created; a change\n"
-"rebuilds the open views.");
+"2x, 3 MSAA 4x, 4 MSAA 8x. Without multisampling the rim of a\n"
+"face that no edge runs along is a staircase. A change is taken\n"
+"by the open views at once.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -8837,7 +8839,7 @@ const long & ViewParams::getAntiAliasing() {
 
 // Auto generated code (Tools/params_utils.py:413)
 const long & ViewParams::defaultAntiAliasing() {
-    const static long def = 0;
+    const static long def = 3;
     return def;
 }
 
@@ -10573,7 +10575,7 @@ void ViewParams::removeHeadlightRotationW() {
     instance()->handle->RemoveFloat("HeadlightRotationW");
 }
 
-// Auto generated code (Gui/ViewParams.py:1100)
+// Auto generated code (Gui/ViewParams.py:1101)
 const std::vector<QString> ViewParams::AnimationCurveTypes = {
     QStringLiteral("Linear"),
     QStringLiteral("InQuad"),
@@ -10618,7 +10620,7 @@ const std::vector<QString> ViewParams::AnimationCurveTypes = {
     QStringLiteral("OutInBounce"),
 };
 
-// Auto generated code (Gui/ViewParams.py:1108)
+// Auto generated code (Gui/ViewParams.py:1109)
 static const char *DrawStyleNames[] = {
     QT_TRANSLATE_NOOP("DrawStyle", "As Is"),
     QT_TRANSLATE_NOOP("DrawStyle", "Points"),
@@ -10631,7 +10633,7 @@ static const char *DrawStyleNames[] = {
     nullptr,
 };
 
-// Auto generated code (Gui/ViewParams.py:1118)
+// Auto generated code (Gui/ViewParams.py:1119)
 static const char *DrawStyleDocs[] = {
     QT_TRANSLATE_NOOP("DrawStyle", "Display style, normal display mode"),
     QT_TRANSLATE_NOOP("DrawStyle", "Display style, show points only"),
@@ -10644,13 +10646,13 @@ static const char *DrawStyleDocs[] = {
 };
 
 namespace Gui {
-// Auto generated code (Gui/ViewParams.py:1128)
+// Auto generated code (Gui/ViewParams.py:1129)
 const char **drawStyleNames()
 {
     return DrawStyleNames;
 }
 
-// Auto generated code (Gui/ViewParams.py:1135)
+// Auto generated code (Gui/ViewParams.py:1136)
 const char *drawStyleNameFromIndex(int i)
 {
     if (i < 0 || i>= 8)
@@ -10658,7 +10660,7 @@ const char *drawStyleNameFromIndex(int i)
     return DrawStyleNames[i];
 }
 
-// Auto generated code (Gui/ViewParams.py:1144)
+// Auto generated code (Gui/ViewParams.py:1145)
 int drawStyleIndexFromName(const char *name)
 {
     if (!name)
@@ -10670,7 +10672,7 @@ int drawStyleIndexFromName(const char *name)
     return -1;
 }
 
-// Auto generated code (Gui/ViewParams.py:1157)
+// Auto generated code (Gui/ViewParams.py:1158)
 const char *drawStyleDocumentation(int i)
 {
     if (i < 0 || i>= 8)
