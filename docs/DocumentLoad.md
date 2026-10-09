@@ -3316,7 +3316,7 @@ the figure. One run; it is a stress import and was not repeated.
 | frames inside the call | 147 frame lines, 96 of them a second or more after the one before, 11 of them 3 s or more; 107 s between two frames at the longest |
 | shapes drawn as bounding boxes | 177, 60 of them meshed inside the call, 175 by the end of the run |
 | the landing pump | 721 items in 47 s, its worst turn 2.3 s |
-| a settled frame (the camera rolled for 15 s) | 0.56 s a step; 2339 draws, 36.8 million triangles |
+| a settled frame (the camera rolled for 15 s) | 0.56 s a step, 0.45 s by the renderer's line; 2339 draws, 36.8 million triangles. Under WSL: see below |
 
 - **The import is the wait, not the window.** Nine minutes and forty
   seconds in the call, during which the event loop is served (7.5 s at
@@ -3331,11 +3331,27 @@ the figure. One run; it is a stress import and was not repeated.
   sets and 8713 point sets were still held back in that frame -- which
   leaves the rule of coarse faces; no frame of the run took in 64 sets. An import builds its visuals as the
   objects appear and its edges come back as refinements land.
-- **A settled frame is the triangles here, not the draws**: 0.45 s a
-  frame of which this renderer's own C++ is 78 ms and `bgfx::frame`
-  25 ms; the rest is outside both, where the driver presents. The
-  reference assembly has fourteen times the draws and less than a third
-  of the triangles and settles at 0.30 s on the same card (sec 18.14).
+- **A settled frame of 0.45 s is this box's display path, not the
+  model's.** Of the 453 ms, this renderer's own C++ is 53 ms,
+  `bgfx::frame` 25 ms and the viewer's timed work around them 3 ms; 372
+  ms are outside every timer there is, and nothing here says what they
+  are. The same model converged on the other machine, a native driver
+  on an RTX 3060, is **50 ms a frame** for 40.6 million triangles in
+  12849 draws, 21.5 ms of it the GPU's (`docs/FarFieldProxies.md` sec
+  10.2): nine times faster, on the slower card. The user's question,
+  and the check made for it:
+  - *It is not software GL.* 600 spheres of 12.8 million triangles,
+    settled and rolled under Xvfb: 65 ms a frame on this driver with the
+    card's utilization (`nvidia-smi`, a sample a second) at 35 to 46 per
+    cent for the 12 s of the roll and 2 to 6 per cent before and after;
+    1080 ms a frame on software GL.
+  - *Nor is it the triangles alone.* At 65 ms for 12.8 million with the
+    card under half used, 36.8 million would be some 190 ms, not 453.
+    The import was timed in a window of the desktop (WSLg) at 1498x677;
+    sec 18.14 found a cost by the window's size on this path. Which part
+    of it the 372 ms are -- the translation to D3D12, the window's way
+    to the screen, something of ours that no timer covers -- was not
+    measured. A native build is where it can be told apart.
 - **One turn of the landing pump took 2.3 s**: a single landing is one
   item (sec 18.13), and this file has shapes large enough for one to
   cost that.
