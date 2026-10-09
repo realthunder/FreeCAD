@@ -131,6 +131,29 @@ struct PropertyElementAppearance::Held
 {
     PropertyAppearanceList list;
     std::string name;
+    /// Its Restore named a file, which is read after everything else of the
+    /// value and by the reader that was told where this list is
+    bool awaited {false};
+
+    /// Whether the file is still to come
+    bool awaits() const
+    {
+        return awaited && list.getList().getSize() == 0;
+    }
+
+    /** Let go of a list that holds nothing
+     *
+     * Not of one that waits for its file. Between the Restore of a value out
+     * of the log and the reading of its files the owner is told of the
+     * change and makes what is drawn, of a value half there; a list dropped
+     * then is one the reader writes into a moment later.
+     */
+    static void drop(std::unique_ptr<Held> &held)
+    {
+        if (held && !held->awaits()) {
+            held.reset();
+        }
+    }
 };
 
 //**************************************************************************
@@ -425,7 +448,7 @@ AppearanceList &PropertyElementAppearance::editList(int slot)
 void PropertyElementAppearance::assign(int slot, const AppearanceList &list, bool hold)
 {
     if (list.getSize() == 0) {
-        _held[slot].reset();
+        Held::drop(_held[slot]);
         return;
     }
     // The old value outlives the assignment: what it holds of stored
@@ -482,7 +505,7 @@ void PropertyElementAppearance::pruneHeld()
     }
     for (auto &held : _held) {
         if (held && held->list.getList().getSize() == 0) {
-            held.reset();
+            Held::drop(held);
         }
     }
     if (std::all_of(_own.begin(), _own.end(), [](uint16_t own) { return own == OwnAll; })) {
@@ -511,7 +534,7 @@ void PropertyElementAppearance::conformNames(bool keepHeld)
     if (count == 0) {
         _own.clear();
         if (!keepHeld) {
-            _held[SlotNamed].reset();
+            Held::drop(_held[SlotNamed]);
         }
         return;
     }
@@ -921,7 +944,7 @@ void PropertyElementAppearance::eraseNamed(int pos)
     _places.reset();
     const AppearanceList before = getNamedLooks();
     if (count == 1 || before.getSize() == 0) {
-        _held[SlotNamed].reset();
+        Held::drop(_held[SlotNamed]);
         return;
     }
     AppearanceList next;
@@ -1020,7 +1043,7 @@ void PropertyElementAppearance::setDrawn(Kind kind, const AppearanceList &list)
         && differingFields(list.getBase(), getBase(kind)) == OwnNone;
     if (list.getSize() == 0 || plain || list.isSameData(stated) || list.isSame(stated)) {
         // What is stated is what is drawn, and is not kept twice
-        if (!_held[slot]) {
+        if (!_held[slot] || _held[slot]->awaits()) {
             return;
         }
         _held[slot].reset();
@@ -1353,7 +1376,7 @@ void PropertyElementAppearance::clear()
     }
     Edit edit(*this);
     for (auto &held : _held) {
-        held.reset();
+        Held::drop(held);
     }
     _own.clear();
     editSubs().clear();
@@ -1952,7 +1975,9 @@ void PropertyElementAppearance::Restore(Base::XMLReader &reader)
             continue;
         }
         editList(slot);
+        const std::size_t files = reader.getFileList().size();
         _held[slot]->list.Restore(reader);
+        _held[slot]->awaited = reader.getFileList().size() > files;
     }
     conformNames(true);
 }
