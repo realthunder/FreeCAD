@@ -126,8 +126,8 @@ planned", read as the open entries in the order left at the pause: 64, 66,
 note-taker passed on at 17:52 that entry 66 is a measurement first). Done
 in it so far: 64 (`66ccd277b9`, and a defect found on the way,
 `dfdfc04c5c`); 66 measured, and the freeze it found fixed (`6073d32437`);
-61 (`f7408b1f9f`). Local: not pushed, not staged. Tools and results in
-`..\dl\handson\2026-10-09\q5`.
+61 (`f7408b1f9f`); 62 (`9d354a8c44`). Local: not pushed, not staged. Tools
+and results in `..\dl\handson\2026-10-09\q5`.
 
 On `dfdfc04c5c`: ctest 790 of 790 (799 entries, 9 disabled). The GUI tests
 are not among them on this box -- `tests/gui/CMakeLists.txt` registers them
@@ -139,6 +139,10 @@ were run by hand, cavity shading being on by default:
 `instanced-face-transparency.py` 5, `cycles-view-right-way-up.py` 4, no
 FAIL. The Python suite was not run again: the two commits are a shader and
 the renderer library.
+
+On `6073d32437` (entries 61 and 66 with it): ctest 790 of 790. The GUI
+tests run by hand on that build are named under the two entries, 171
+claims in twelve tests, no FAIL.
 
 Evidence that does not belong in the repository is under
 `..\dl\handson\<date>\`, as before.
@@ -185,6 +189,7 @@ Evidence that does not belong in the repository is under
 | 64 | FIXED `66ccd277b9`, in its shader as asked; a second defect found on the way FIXED `dfdfc04c5c`; not pushed, not staged | the pass reads one normal a pixel after the scene is resolved, so a crease was a band every pixel was in or out of. It now reads each neighbour's normal as the average over its pixel, the crease placed within the pixel from the two faces' planes: along a straight crease the middle of the darkening strayed 0.18 to 0.26 px rms from its line and strays 0.01 to 0.04, with the same weight of line. On the way: under an orthographic camera the creases of whatever lay near the camera dropped out (the depth test was a fraction of the depth); they are whole now |
 | 66 | MEASURED; the freeze FIXED `6073d32437`, not pushed, not staged; the first opening and what a reset costs under a theme measured and NOT changed, for the reporter | the freeze is not the reset but the dialog being destroyed, which a reset, OK and Cancel all bring about: each of its 11 to 17 file choosers had a file system model with a thread of its own, and the destruction waited on every one -- 11 to 59 s when the dialog was closed within half a minute of opening. One model for all, made when a line is first typed into: 0.0 to 0.9 s. The first opening is 3.5 s for 1.6 to 2.4 later (the Material library read once, 1.8 s; showing 2600 widgets under a theme, 1.2 s) |
 | 61 | FIXED `f7408b1f9f`, not pushed, not staged | the backend drew an edge at the width asked for, 0.35 mm, where Qt cuts the pen to whole tenths, 0.3; and the highlight, read off the Qt item, was the thinner of the two. Edges, cut face outlines and centre marks are fed at Qt's width. Scored with Qt as the reference and the backend switched: 10 PASS and 4 FAIL on the staged copy, 14 PASS |
+| 62 | DONE `9d354a8c44`, not pushed, not staged; four choices of mine for the reporter | the box comes up with the items last confirmed in it below the three modes -- a command run, a parameter or a property opened, an object selected -- ten at most, the newest first, each once, gone when more is typed, carried out again when picked. Kept between sessions; what cannot be found now is left out; the desktop box only |
 | 60 | STAGED 2026-10-09 16:42, fixed `d6f640f4ee` | whenever closing a cell un-nested a splitter: the surviving cell was moved up with `QSplitter::replaceWidget`, which takes it out of the window on the way, and a `QOpenGLWidget` that leaves its window is composed from nothing until its next resize. The view was drawn right all along; only the screen was black. The cell tree is rebuilt without a cell leaving the window |
 | 45 | FIXED `c7fdcf3220`, pushed 2026-10-08, not staged | a spreadsheet's view provider made its view when it was only asked whether it had one: one click on a sheet in the tree opened it. Asking is a question now, and a new request opens the view for the three callers that host it. Show-in-cell also took a stale cell and closed another sheet's view; it takes the active view's cell |
 
