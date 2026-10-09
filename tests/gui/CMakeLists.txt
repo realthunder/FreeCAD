@@ -1633,6 +1633,13 @@ fc_add_gui_test(GuiAntiAliasingChangeKeepsTheCells_tests_run
                 antialiasing-change-keeps-the-cells.py
                 --timeout 180)
 
+# A TechDraw page that comes back with the window layout is drawn before a
+# progressive load has built the view providers of its views; it is drawn
+# again when they exist, not only at the next recompute.
+fc_add_gui_test(GuiTechDrawPageBeforeItsViewProviders_tests_run
+                techdraw-page-before-its-view-providers.py
+                --timeout 240)
+
 # The outline of a highlighted face has no staircase on its inner edge: the
 # stencil cut of the face is one sample a pixel, the lines fade in from it.
 fc_add_gui_test(GuiFaceOutlineInnerEdge_tests_run

@@ -26,10 +26,13 @@
 #ifndef _PreComp_
 #include <fastsignals/signal.h>
 #include <fastsignals/signal.h>
+#include <QApplication>
+#include <QTimer>
 #endif
 
 #include <climits>
 
+#include <App/Application.h>
 #include <App/Document.h>
 #include <App/DocumentObject.h>
 #include <App/PropertyStandard.h>
@@ -271,6 +274,41 @@ void ViewProviderDrawingView::finishRestoring()
         hide();
     }
     Gui::ViewProviderDocumentObject::finishRestoring();
+
+    // A page can be on screen before this view provider exists. A
+    // progressive load builds the view providers in slices after the
+    // document has opened, and a page that comes back with the window
+    // layout is drawn in between: its item for this view found no view
+    // provider and drew nothing (QGIViewPart::drawViewPart), the
+    // backend's page layer drew the view by its fallback widths
+    // (PageFeed::Style), and whatever the view asked to have painted
+    // meanwhile had nobody listening -- that connection is made in
+    // attach(). Nothing asked again until a recompute did, so a document
+    // opened and not recomputed kept such a page, a different one at each
+    // open.
+    //
+    // Asked now that the view provider is whole -- but a turn of the event
+    // loop later. The slice that builds the view providers flags the
+    // document as restoring while it works, and a page item does not draw
+    // a view of a restoring document (QGIViewPart::draw); that is also why
+    // the show() above, which does ask the item to draw, drew nothing. By
+    // name: the view may be gone by then. Only where the page already has
+    // an item for the view; a load that builds its view providers before
+    // any page is shown asks nothing.
+    TechDraw::DrawView* view = getViewObject();
+    if (view && view->isAttachedToDocument() && getQView()) {
+        const std::string docName = view->getDocument()->getName();
+        const std::string viewName = view->getNameInDocument();
+        QTimer::singleShot(0, qApp, [docName, viewName]() {
+            App::Document* doc = App::GetApplication().getDocument(docName.c_str());
+            auto late = doc
+                ? dynamic_cast<TechDraw::DrawView*>(doc->getObject(viewName.c_str()))
+                : nullptr;
+            if (late) {
+                late->requestPaint();
+            }
+        });
+    }
 }
 
 void ViewProviderDrawingView::updateData(const App::Property* prop)
