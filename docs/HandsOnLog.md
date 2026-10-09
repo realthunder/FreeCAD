@@ -68,8 +68,22 @@ the pause: 54, 55, 56 with 57 after it, 52, 30, 58, 47, 48). The reporter
 added entries 59 to 63 and five more points of entry 56 while it ran, and
 asked for one measurement ("I remember now doing that in legacy render
 because of potential effect on rendering speed. measure it", entry 54).
-Done in it so far: 54, 55, 56, 59. All local: not pushed, not staged.
-Tools and results in `..\dl\handson\2026-10-09\q4`.
+Done in it: 54, 55, 56, 59, then 57. Tools and results in
+`..\dl\handson\2026-10-09\q4`.
+
+Pushed 2026-10-09 15:10, on the reporter's word ("push and stage"):
+origin/PartDesignPort at `511c4df9c7`. Staged 2026-10-09 15:11:43 at the
+same commit (the reporter's own FreeCAD was not running). So the stage has
+entries 54, 55, 56 and 59. Smoke-tested on the staged copy right after:
+`preferences-reset-all.py` 12, `selection-on-top-hidden-edges.py` 18,
+`statusbar-progress-place.py` 6, `view-cell-drag-cancel-and-look.py` 82,
+`view-cell-drag-frames.py` 38, no FAIL. NOT run on that tree: the two full
+suites -- the changes are in Gui alone and the GUI tests named here and
+under the entries are what was run; the suites are the first thing owed
+to the next session. Entry 57 (`a50e708959`) was committed after the push
+and is local: the browser viewer is not part of the staged copy. Then
+PAUSED, as told ("pause after this browser split work and resume in next
+session").
 
 Evidence that does not belong in the repository is under
 `..\dl\handson\<date>\`, as before.
@@ -107,10 +121,11 @@ Evidence that does not belong in the repository is under
 | 50 | FIXED `4cb1ee6ad1` (the render type) and `69a2028e23` (the split), not staged, not pushed | (a) as decided: `Default` is the render engine on the platform's backend, `Legacy` the old Coin rendering; the type is a list on the Render engine page and is kept; the render cache setting is not looked at while the engine draws. (b) a Coin-drawn view is replaced by a copy when the anti-aliasing changes, and the copy was given a tab of its own; it takes the old view's cell |
 | 51 | DONE `d157abf559`, not staged, not pushed; the browser viewer does not follow | expected, and measured before: a triangle's rim has no coverage of its own, and a limb has no edge over it. The default is MSAA 4x for both render types: on a sphere's limb 0.0% of rows blended without, 85.6% under `Legacy` and 67.0% under the engine with nothing stored. The tests state "no multisampling" for themselves. The browser cannot multisample its scene target on WebGL2 |
 | 53 | FIXED `c820c3aea1`, not staged, not pushed | not the recompute and not the projection: a page that comes back with the window layout is drawn while a progressive load is still building the view providers of its views. Without one the Qt page draws nothing of a view and the backend draws it by fallback widths, 0.6 mm; the view provider's own request to draw came while the document was flagged as restoring and was dropped. It asks again a turn of the event loop later |
-| 54 | FIXED `8bb8bd10fa`, not staged, not pushed; the cost measured | a fully selected object shown on top drew every edge at full colour, front or behind: the engine had copied the old Coin renderer's rule, which left the dimming out for speed. Both renderers dim the hidden part now, as for the object under the pointer; an edge selected by itself still shows through. Cost: nothing in the engine; Coin 2.18 to 2.54 ms a frame on 100 heavy spheres all selected, nothing measurable on `scanner.FCStd` |
-| 55 | FIXED `739120f1c7`, not staged, not pushed | a warning or error for the user is QStatusBar's temporary message, which hides every non-permanent widget -- the preselection label whose stretch held the progress bar in its place. A bar that came up with a message showing sat at the left end, over the message. It is a permanent widget now, the first of the right-hand group |
-| 56 | DONE `f5a651b723`, all eleven points, not staged, not pushed; five choices of mine for the reporter | a cell drag is given up by Escape, any other button, or the application losing the front; one look for the overlay's and the cells' drag frames (the accent at 0.3 in a white border); a join's victim has a red stop sign and nothing else; a border pushed past a cell's minimum closes it, a corner still only creates and its refusal is an error; handles on the accent colour; a zone steps off a scroll bar; a page's or a sheet's cell splits with a 3D view |
-| 59 | FIXED `e9ac624959`, not staged, not pushed | "Reset all" cleared the record of the Start workbench's migration of 2024; the next start ran it again on a profile whose startup workbench was PartDesign and switched the Start page off. The reset keeps the record (the reporter's decision) |
+| 54 | STAGED 2026-10-09 15:11, fixed `8bb8bd10fa`; the cost measured | a fully selected object shown on top drew every edge at full colour, front or behind: the engine had copied the old Coin renderer's rule, which left the dimming out for speed. Both renderers dim the hidden part now, as for the object under the pointer; an edge selected by itself still shows through. Cost: nothing in the engine; Coin 2.18 to 2.54 ms a frame on 100 heavy spheres all selected, nothing measurable on `scanner.FCStd` |
+| 55 | STAGED 2026-10-09 15:11, fixed `739120f1c7` | a warning or error for the user is QStatusBar's temporary message, which hides every non-permanent widget -- the preselection label whose stretch held the progress bar in its place. A bar that came up with a message showing sat at the left end, over the message. It is a permanent widget now, the first of the right-hand group |
+| 56 | STAGED 2026-10-09 15:11, done `f5a651b723`, all eleven points; five choices of mine for the reporter | a cell drag is given up by Escape, any other button, or the application losing the front; one look for the overlay's and the cells' drag frames (the accent at 0.3 in a white border); a join's victim has a red stop sign and nothing else; a border pushed past a cell's minimum closes it, a corner still only creates and its refusal is an error; handles on the accent colour; a zone steps off a scroll bar; a page's or a sheet's cell splits with a 3D view |
+| 59 | STAGED 2026-10-09 15:11, fixed `e9ac624959` | "Reset all" cleared the record of the Start workbench's migration of 2024; the next start ran it again on a profile whose startup workbench was PartDesign and switched the Start page off. The reset keeps the record (the reporter's decision) |
+| 57 | DONE `a50e708959`, not pushed; the browser viewer is not in the staged copy; three choices of mine for the reporter | the browser viewer's split view split, joined and resized live as the pointer moved; it shows a drag as frames and carries it out at the release now, with the desktop's cancel, minimum cell size, closing border, stop sign and look |
 | 60 | NOT REPRODUCED in 27 rounds; not yet followed further | a 3D view split and one of the two cells closed by each of four routes, on the staged copy and on the tree, without multisampling and with the default 4x: the view that takes the room is never black |
 | 45 | FIXED `c7fdcf3220`, pushed 2026-10-08, not staged | a spreadsheet's view provider made its view when it was only asked whether it had one: one click on a sheet in the tree opened it. Asking is a question now, and a new request opens the view for the three callers that host it. Show-in-cell also took a stale cell and closed another sheet's view; it takes the active view's cell |
 
@@ -3446,9 +3461,7 @@ without them the frames flicker at the limit; (5) "one time" for a
 refusal is read as once per refusal, and two within five seconds are said
 once.
 
-**Entry 57** (the same in the browser viewer) is written -- the gestures
-of `web/src/splitview.tsx` and their styles, type-checked -- and not
-built, run or committed yet.
+**Entry 57** (the same in the browser viewer) is below.
 
 ## 59. After "Reset all" the Start page no longer comes up -- FIXED `e9ac624959`, not staged
 
@@ -3492,3 +3505,46 @@ widgets', and looked right.
 **Asked of the reporter:** what was in the two cells (a page, a sheet, two
 3D views of one document or of two), how the cell was closed, and whether
 the unified canvas (`View/UnifiedCanvas`) is on.
+
+## 57. The browser viewer's split view: the same view cell logic as the desktop's -- DONE `a50e708959`, not pushed
+
+`src/Gui/Renderer/web/src/splitview.tsx` and its styles; the design is
+`docs/SplitViews.md` sec 23. What the browser's split view did was the
+desktop's before entry 29, as the note-taker had read it: a split the
+moment the drag passed its threshold, live from then on; a border moved
+at every pointer move; a join under a dim and an arrow; no way out but
+dragging back.
+
+**Now**, point for point with entries 29 and 56: frames over the cells a
+drag changes and nothing done until the primary button is released; the
+kinds kept, fresh (a plus), going (a red stop sign, no cover) and refused;
+Escape, another mouse button, a second pointer, `pointercancel`, the
+window losing the front or the page hidden give a drag up; a border stops
+at the minimum cell size and closes a cell pushed more than 12 px past it;
+a corner only creates, and a refusal is said once, on the page and as a
+console error; the frame's look is the desktop's.
+
+**Found on the way.** Another button of a mouse already down does not
+arrive as a `pointerdown` but as a MOVE with more buttons held; and the
+right one brings the page's context menu at its release, which has to be
+swallowed. The border's legal range needs every cell of both sides, each
+through the ratios of the splits between it and the border (`minExtent`)
+-- a ratio tree has no QSplitter to ask.
+
+**Scored.** `tests/gui/split-view-browser.py` serves the built page with
+no document and drives it in headless Chrome
+(`scripts/splitview-drive.js`): 7 PASS and 22 FAIL on the bundle before
+the change, 36 PASS with it. Needs `build/wasm`, node, `PUPPETEER_PATH`
+and `CHROME`; `q4\web.cmd` names them for this box. NOT run: a touch
+screen (the second-finger cancel is by reading), Safari, and the page
+with a document served -- the chrome does not depend on one, and the
+layout it pushes to the viewer is the same string as before.
+
+**Choices of mine, for the reporter:** (1) the minimum is the viewer's
+own 300, not the desktop's setting, which is not sent to it; `?mincell=N`
+in the address overrides it, and a phone held upright needs that to split
+side by side at all; (2) a second finger is how a touch screen gives a
+drag up; (3) the accent is FreeCAD's default blue, the desktop's theme
+not being sent either. Not carried over, for cause: zones stepping off a
+scroll bar (a cell has none here), and the 3D view for a cell that cannot
+be shown twice (a page cell splits into a page cell here).
