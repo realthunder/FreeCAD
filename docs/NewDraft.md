@@ -649,6 +649,9 @@ already does (`OCC_VERSION_HEX`).
 7. The roof: the chain's sheet as a straight skeleton -- edge events,
    new ridges, the collapse -- and a self-crossing check on the sheet
    (done 2026-10-09, section 18).
+8. Fillets across the pull direction in a chain, with propagation on:
+   taken off and made again, as stage 2 of tangent propagation does
+   (section 19).
 
 ## 9. Decisions (2026-10-05)
 
@@ -1811,3 +1814,79 @@ narrowed to nothing past the cones' apex (14.1); now the run gets past that
 and finds two of its walls meeting along a level line, under the top. No
 result changed; the self-crossing check flagged nothing the sweep reaches.
 Time: 613 s against 610 for the 1222, 408 against 406 for the 500.
+
+## 19. Fillets across the pull direction (design, 2026-10-09)
+
+With tangent propagation on, a face's chain may run into a cylinder the
+draft cannot turn: its axis is not the pull direction, so there is no cone
+through its circle in the neutral plane (`newRevolution`, as the classic
+draft's `NewSurface`). The draft is refused, `UnsupportedSurface` "a
+cylinder or cone that does not turn about the pull direction" (13.4), and
+the classic draft refuses it too, so Auto has nothing. On the sweep that is
+13 drafts, all with the cylinder along the edge the drafted wall shares
+with a face across the pull:
+
+- #962 (12): the wall `x = 50` (its two pieces between the slots, face 30
+  of the fillet stage, 29 of the chamfer stage) drafted about the slots'
+  floors (25, 27 / 24, 26) at 5, 15 and 60 deg. Its top edge is filleted
+  r=7 (three pieces, cut by the slots), axis along y, onto the sloped top.
+- #334 (1): the stored draft's wall 10 about face 1 at 5 deg, with an r=2
+  fillet along x onto a step (face 19).
+
+Such a fillet is a fillet of an edge the draft moves: the wall turns about
+its line with the neutral plane, and the edge it shares with the face
+across the pull moves with it. The fillet's axis lies along the edge, so it
+is not turned the way a fillet about the pull is (into a cone); the result
+a user expects is the draft before the fillet -- the wall turned, the edge
+filleted again at the same radius where the wall now meets the other face.
+That is stage 2 of tangent propagation (17.3), which with propagation off
+already makes these fillets again: 44 of #962's drafts valid there.
+
+### 19.1 The rule
+
+With propagation on, a cylinder tangent to the drafted set that the draft
+cannot turn is not part of the chain: it is taken off before the draft and
+made again after it, as in 17.3, when it is such a fillet there -- tangent
+along its length to exactly two faces, both planes, ending on planes. The
+chain stops at it; the face on its other side is no longer tangent to
+anything drafted, and is a neighbour like any other (extended to meet the
+turned wall, or cut by it). A cylinder that does not turn and is not such a
+fillet stays in the chain and is refused as today.
+
+The test of "cannot turn" is `newRevolution` itself: a null surface. That
+also covers a neutral plane not square to the pull direction, where no
+cylinder turns -- a fillet about the pull is then made again too, which is
+what propagation off does with it.
+
+`takeOffFillets` runs for both settings. On, it walks the chain as
+`draftChain` does but does not step into a cylinder that does not turn,
+and the fillets to make again are only those. Where there are none -- every
+draft the sweep has today but the 13 -- nothing is taken off and the draft
+runs exactly as before. Everything after (the defeaturing, the edge each
+fillet goes to, `RefilletFails`, the history) is 17.3's.
+
+### 19.2 What is still refused
+
+- A cylinder across the pull that does not end on planes: a block with all
+  its edges filleted, where the top edge's fillet runs into the corner's
+  spherical or toroidal patch. Today's `UnsupportedSurface`.
+- A cone that does not turn (no fillet of 17.3's kind is a cone).
+- What 17.3 refuses: the fillet's faces no longer meeting after the draft
+  (#962 at 60 deg, where the wall swings past its sloped top), OCCT's
+  fillet failing at the old radius.
+
+### 19.3 Tests
+
+- A block 20 x 10 x 10 with the top edge of its end wall `x = 20` filleted
+  r=2, the wall drafted about the bottom at 5 and 15 deg, both ways: the
+  wall turned, the fillet made again between it and the top. Closed form:
+  10 times the profile, `200 + s 50 t - r^2 (cot(phi/2) - (pi - phi)/2)`
+  with `t = tan(a)`, `phi = pi/2 - s a` the angle between wall and top, and
+  `s` +1 where the wall leans out at the top.
+- `TestDraft`: the block under Auto (the classic draft refuses, the cell
+  draft builds it) and under `New`, propagation on; the name of the fillet
+  kept (`Modified` of the old fillet face).
+- The sweep (the 1222 and the 500, `Method = New`, the stop on): the 13 of
+  the table above valid or refused for one of 17.3's reasons, #962's against
+  the same drafts with propagation off (the wall's chain is the wall alone:
+  the results must be the same); nothing else changed.
