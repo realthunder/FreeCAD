@@ -184,6 +184,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 56 | 2026-10-09 | view cells, after entry 29 (change request): the menu button and the handles shown on hover have no contrast on a light grey or white ground; handles off a view's scroll bar; the drag frames too transparent -- less so, with white borders, in the theme's accent colour (the palette's selection highlight when there is no theme); the same for the overlay's drag frame; Esc and any mouse click cancel a cell drag, only the left release commits | OPEN; nothing run |
 | 57 | 2026-10-09 | the browser viewer's split view gets the same view cell logic as the desktop's (entries 29 and 56): drag frames, commit at the left release, cancel, the minimum cell size, the look (change request) | OPEN; nothing run |
 | 58 | 2026-10-09 | a task, "can do it later": audit every warning shown when `scanner.FCStd` is opened and recomputed, and fix what can be fixed | OPEN, for later; a first count from a kept report log: 208 warnings and 6 errors, about 15 kinds; nothing run |
+| 59 | 2026-10-09 | the program no longer opens the Start page at startup (the reporter: "the startup workbench become the PartDesign"; it used to show Start with the recent files) | FOUND by the note-taker, read and looked at in the live session, nothing changed: the startup workbench was PartDesign all along; "Reset all" removed the Start module's migration flag, so its 2024 migration ran again at the next start and switched the Start page off (`ShowOnStartup` = false) |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -4981,6 +4982,86 @@ warnings and errors only; and what "fix" is to mean for a warning that is
 right about the file -- change the file, or say it once instead of ninety
 times.
 
+## 59. The Start page no longer opens at startup: the Start module's migration ran again after "Reset all" -- FOUND, nothing changed
+
+**2026-10-09 13:33, the reporter:** "check why now the startup workbench
+become the PartDesign. I don't remember setting it. It used to load the
+'Start' workbench where I can select the recent file to open"
+On the copy staged 2026-10-09 12:25 (`cc4c34356f`), a session started
+13:30:07. The program comes up in PartDesign with no Start page; it used to
+come up with the Start page and its recent files.
+
+**Checked by the note-taker, as asked: the configuration on disk, the kept
+copies of it, the source, and the reporter's live session read-only
+(`probe59.py`, pid 41816, 13:35). Nothing set, nothing changed.** Evidence
+in `..\dl\handson\2026-10-09\entry59\`.
+
+**The startup WORKBENCH did not change.** It is PartDesign, and was:
+- the build's own default is PartDesign (`src/Main/MainGui.cpp:196`,
+  `Config()["StartWorkbench"] = "PartDesignWorkbench"`, since `a97307cd83`,
+  2026-08-04, "Start: replace the web start page with the QtWidgets one");
+- `General/AutoloadModule` is stored as `PartDesignWorkbench` in EVERY copy
+  of this profile's configuration that was kept, from the first one of
+  2026-10-06 09:25 on. (`link.user.cfg` in the same directory, from another
+  build, has `StartWorkbench`.)
+In this fork "Start" is not a workbench any more. It is a PAGE, a tab the
+Start module opens by itself at startup when `Mod/Start/ShowOnStartup` is
+true, whatever the workbench (`AppStartGui.cpp`, `StartLauncher`).
+
+**What changed is that page's switch.** In the live session:
+
+| setting | on disk, written 13:29 | in the running session, 13:35 |
+|---|---|---|
+| `Mod/Start/ShowOnStartup` | not stored (the default is true) | stored, FALSE |
+| `Mod/Start/Migration2024Complete` | not stored | stored, true |
+| `Mod/Start/CloseStart` | not stored | stored, false |
+| `Mod/Start/FirstStart2024` | not stored | not stored |
+| `General/AutoloadModule` | `PartDesignWorkbench` | `PartDesignWorkbench` |
+| the Start page's view | | none; no tab at all |
+
+This morning's configuration (09:24, before the first "Reset all") had
+`ShowOnStartup` = 1 and `Migration2024Complete` = 1.
+
+**The cause, read from `src/Mod/Start/StartMigrator.py`:** at every start
+the Start module runs `StartMigrator2024` unless
+`Mod/Start/Migration2024Complete` is stored (`InitGui.py:27`). It is
+upstream's clean-up for profiles from the time when Start was a workbench,
+and it decides the page's switch from the startup workbench:
+
+    autoload_module = GetString("AutoloadModule", "StartWorkbench")
+    if autoload_module == "StartWorkbench":
+        ShowOnStartup = True;  AutoloadModule = "PartDesignWorkbench"
+    else:
+        ShowOnStartup = False
+
+It takes a profile without its flag for an OLD profile, in which a startup
+workbench other than Start meant "this user did not want Start". "Reset
+all" (09:26 and 09:27 today, entry 49) removed the flag with everything
+else; the preferences' OK and the theme then stored `AutoloadModule` =
+`PartDesignWorkbench` again, the build's default; and at the next start of
+the program -- the one of 13:30, the first since the reset -- the migration
+ran a second time, found a startup workbench that is not Start, and
+switched the page OFF. The three keys the running session has and the file
+on disk has not are exactly the ones the migration writes.
+A profile that never stored `AutoloadModule` is not hit (the migration's
+own default is `StartWorkbench`); it takes the flag gone AND the workbench
+stored.
+Also in the migration, not checked in the live session: it CLEARS the whole
+`Mod/Start` group before writing its four keys back
+(`_remove_deprecated_parameters`), which takes the theme's colours for the
+Start page with it (`BackgroundColor1`, `PageColor`, and so on -- there on
+disk at 13:29).
+
+**To get the page back meanwhile** (read from the source, not tried): Help
+> Start opens it (`Start_Start`); at its foot is the check box "Don't show
+this Start page again (start with blank screen)", which is this switch.
+
+Not decided: the fix. The note-taker's reading of the choices: "Reset all"
+keeps the migration's flag (as it already keeps `SaveUserParameter`); or
+the migration does not run on a profile that has nothing of the old Start
+workbench in it; or it goes, by upstream's own note ("remove the 2024
+migration code when enough time has passed").
+
 ## Inbox
 
 Notes not sorted into an entry yet. Add a line here at any time, in any words;
@@ -4988,4 +5069,4 @@ it is read before each entry is started and moved up into the table.
 
 (empty: the notes of 2026-10-06 are entries 20 to 28, those of 2026-10-07
 entries 29 to 40, those of 2026-10-08 entries 41 to 45, those of 2026-10-09
-so far entries 46 to 58)
+so far entries 46 to 59)
