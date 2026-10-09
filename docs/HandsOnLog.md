@@ -91,7 +91,17 @@ cell menu -> close view, or split drag result in a black window"), a
 window to reproduce it in ("you open the window and a let me reproduce
 iit", then "check it now. the 3d view is black"), and three changes to the
 view cells of entry 56. Done: entry 60 fixed `d6f640f4ee`, the view cell
-changes `dbff5c6378`. Local, not pushed, not staged.
+changes `dbff5c6378`.
+
+Pushed 2026-10-09 16:41, on the reporter's word ("push and stage"):
+origin/PartDesignPort at `0246b900df`. Staged 2026-10-09 16:42:29 at the
+same commit. So the stage has entry 60, the three changes to entry 56, and
+entry 57's commit (the browser viewer itself is not part of the staged
+copy). Smoke-tested on the staged copy right after:
+`view-cell-close-keeps-the-picture.py` 17, `view-cell-drag-cancel-and-
+look.py` 88, `view-cell-drag-frames.py` 38, no FAIL. The two full suites
+were started on that tree after it; their result is the next thing
+written here.
 
 Evidence that does not belong in the repository is under
 `..\dl\handson\<date>\`, as before.
@@ -131,10 +141,10 @@ Evidence that does not belong in the repository is under
 | 53 | FIXED `c820c3aea1`, not staged, not pushed | not the recompute and not the projection: a page that comes back with the window layout is drawn while a progressive load is still building the view providers of its views. Without one the Qt page draws nothing of a view and the backend draws it by fallback widths, 0.6 mm; the view provider's own request to draw came while the document was flagged as restoring and was dropped. It asks again a turn of the event loop later |
 | 54 | STAGED 2026-10-09 15:11, fixed `8bb8bd10fa`; the cost measured | a fully selected object shown on top drew every edge at full colour, front or behind: the engine had copied the old Coin renderer's rule, which left the dimming out for speed. Both renderers dim the hidden part now, as for the object under the pointer; an edge selected by itself still shows through. Cost: nothing in the engine; Coin 2.18 to 2.54 ms a frame on 100 heavy spheres all selected, nothing measurable on `scanner.FCStd` |
 | 55 | STAGED 2026-10-09 15:11, fixed `739120f1c7` | a warning or error for the user is QStatusBar's temporary message, which hides every non-permanent widget -- the preselection label whose stretch held the progress bar in its place. A bar that came up with a message showing sat at the left end, over the message. It is a permanent widget now, the first of the right-hand group |
-| 56 | STAGED 2026-10-09 15:11, done `f5a651b723`, all eleven points; three changes asked after it done `dbff5c6378`, not staged; choices of mine for the reporter | a cell drag is given up by Escape, any other button, or the application losing the front; one look for the overlay's and the cells' drag frames (the accent at 0.3 in a white border); a join's victim has a red stop sign and nothing else; a border pushed past a cell's minimum closes it, a corner still only creates and its refusal is an error; handles on the accent colour; a zone steps off a scroll bar; a page's or a sheet's cell splits with a 3D view |
+| 56 | STAGED 2026-10-09 15:11, done `f5a651b723`, all eleven points; three changes asked after it done `dbff5c6378`, STAGED 16:42; choices of mine for the reporter | a cell drag is given up by Escape, any other button, or the application losing the front; one look for the overlay's and the cells' drag frames (the accent at 0.3 in a white border); a join's victim has a red stop sign and nothing else; a border pushed past a cell's minimum closes it, a corner still only creates and its refusal is an error; handles on the accent colour; a zone steps off a scroll bar; a page's or a sheet's cell splits with a 3D view |
 | 59 | STAGED 2026-10-09 15:11, fixed `e9ac624959` | "Reset all" cleared the record of the Start workbench's migration of 2024; the next start ran it again on a profile whose startup workbench was PartDesign and switched the Start page off. The reset keeps the record (the reporter's decision) |
-| 57 | DONE `a50e708959`, and the changes to entry 56 in `dbff5c6378`; not pushed; the browser viewer is not in the staged copy; three choices of mine for the reporter | the browser viewer's split view split, joined and resized live as the pointer moved; it shows a drag as frames and carries it out at the release now, with the desktop's cancel, minimum cell size, closing border, stop sign and look |
-| 60 | FIXED `d6f640f4ee`, not staged, not pushed | whenever closing a cell un-nested a splitter: the surviving cell was moved up with `QSplitter::replaceWidget`, which takes it out of the window on the way, and a `QOpenGLWidget` that leaves its window is composed from nothing until its next resize. The view was drawn right all along; only the screen was black. The cell tree is rebuilt without a cell leaving the window |
+| 57 | DONE `a50e708959`, and the changes to entry 56 in `dbff5c6378`; pushed 16:41; the browser viewer is not in the staged copy; three choices of mine for the reporter | the browser viewer's split view split, joined and resized live as the pointer moved; it shows a drag as frames and carries it out at the release now, with the desktop's cancel, minimum cell size, closing border, stop sign and look |
+| 60 | STAGED 2026-10-09 16:42, fixed `d6f640f4ee` | whenever closing a cell un-nested a splitter: the surviving cell was moved up with `QSplitter::replaceWidget`, which takes it out of the window on the way, and a `QOpenGLWidget` that leaves its window is composed from nothing until its next resize. The view was drawn right all along; only the screen was black. The cell tree is rebuilt without a cell leaving the window |
 | 45 | FIXED `c7fdcf3220`, pushed 2026-10-08, not staged | a spreadsheet's view provider made its view when it was only asked whether it had one: one click on a sheet in the tree opened it. Asking is a question now, and a new request opens the view for the three callers that host it. Show-in-cell also took a stale cell and closed another sheet's view; it takes the active view's cell |
 
 **The reporter, 2026-10-07 14:20, on what is open** (said to the build
