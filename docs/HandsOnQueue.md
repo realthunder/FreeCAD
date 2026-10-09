@@ -58,6 +58,14 @@ read by the build session; 53 is reproduced, the others not started. Its
 order after 51, "unless the reporter says otherwise": 53, 54, 55, 56 with
 57 after it, 52, 30, 48, 47.
 
+**2026-10-10 00:26, the build session PAUSED; both full suites on the
+night's three commits** (`f5dc9027e7`, `2649caa38f`, `8fed56f3df`: entries
+62, 61 again, 63): ctest 791 of 791, ended 00:13 (800 entries, 9 disabled;
+the one more is the new `Page2DHidden_tests_run`); Python 3411 tests with
+the two known thickness failures, ended 00:24. Nothing is pushed or staged:
+origin and the copy under test are at `6a6fa208d6`, waiting for the
+reporter's word.
+
 **Where it stands, 2026-10-10 00:12: the build session went on the same
 night** on the reporter's word to it about 22:25, relayed verbatim:
 "continue as planned. also one more request. change techdraw bgfx rendering
