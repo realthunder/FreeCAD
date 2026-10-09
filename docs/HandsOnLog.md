@@ -36,6 +36,16 @@ not from this session and not looked into: `element-color-hide.py` (2 of
 link), `per-view-shown-eviction.py` ("the plan evicts H1, released"), and
 `navicube-per-view.py`, which passes its 11 claims and then does not end.
 
+Pushed and staged 2026-10-09 08:40, on the reporter's word ("Pause after
+this. Push and stage"): origin/PartDesignPort and the copy under test at
+`9bcbdc191d`. Both full suites on that tree, finished after the stage:
+ctest 789 of 789 (798 entries, 9 disabled, 1 skipped), Python 3411 tests
+with the two known thickness failures, 50 skipped, 6 expected failures.
+
+The session of 2026-10-09, later (the reporter: "continue fixing the issues
+in the notes", read as the entries still open -- 46, 47 and 48; entry 30's
+first task and entry 28 wait for the reporter's answers).
+
 Evidence that does not belong in the repository is under
 `..\dl\handson\<date>\`, as before.
 
@@ -67,6 +77,7 @@ Evidence that does not belong in the repository is under
 | 42 | FIXED `aa3e77137c`, `dbadedb7ba`, `7e442e1bc2`, `234572bd87`; pushed 2026-10-08, not staged; Q6 not answered | of the about 300 keys C++ read without a definition, 174 are defined now -- 89 settings and 85 state keys, 213 rows of the registry: the 3D mouse and the expression sandbox with every reader converted, Gui's small groups too, and the state the program keeps defined with its readers left as they are. What stayed out is listed |
 | 43 | FIXED `3b884bfe5d`, not staged, not pushed | on a profile that has chosen no theme: the native Windows style paints a selected row pale blue and the row was written in the palette's highlighted text colour, white; contrast 1.3. The row is written in whichever of the two text colours reads on what is painted. Under Light, Dark and Classic it was right already |
 | 44 | FIXED `813d0250f9`, pushed 2026-10-08, not staged | the C++ DXF exporter was pointed at `Mod/Import` for its options, where nothing stores them; it takes them from `Mod/Draft`, where the DXF page puts them, as upstream does. An ellipse with "as polylines" on was an ELLIPSE before, an LWPOLYLINE after |
+| 46 | FIXED `6dacf21b11`, not staged, not pushed | the backend drew the hatch from a picture of the whole face, a pixel to the tenth of a millimetre, read one pixel in five at the zoom a page opens at: at 2 pixels to the millimetre 1.1 lines across a 17 pixel strip at 0.99 of the hatch colour, where Qt has 5.0 at 0.19. A hatch is one tile now, laid side by side into the face, and every picture of a page has coarser copies to be drawn from. Three more found by the test: a turned hatch was turned the wrong way, an image was drawn over all the line work of a page, and the tiles showed their seams |
 | 45 | FIXED `c7fdcf3220`, pushed 2026-10-08, not staged | a spreadsheet's view provider made its view when it was only asked whether it had one: one click on a sheet in the tree opened it. Asking is a question now, and a new request opens the view for the three callers that host it. Show-in-cell also took a stale cell and closed another sheet's view; it takes the active view's cell |
 
 **The reporter, 2026-10-07 14:20, on what is open** (said to the build
@@ -2864,3 +2875,105 @@ draw.py` 17, `techdraw-page-backend-switch.py` 11,
 the same pictures Qt draws a fine grey-green pattern and the backend
 bright green lines far apart (`q2\g-e36m1-dev\qt-z1.0.png` against
 `backend-z1.0.png`). Not a dashed line, so not this entry; for the queue.
+
+## 46. TechDraw drawn by the backend: the hatch of a section's cut face is not Qt's -- FIXED `6dacf21b11`, not staged
+
+**Measured first** (`tests/gui/techdraw-page-backend-hatch.py`, written
+before anything was changed): the page of entry 36 -- a box with a pocket,
+a section through it, the default hatch (`simple.svg`, lines a tenth of a
+millimetre wide and 1.6 mm apart along a row, bright green on the grey cut
+face) -- drawn by Qt and by the backend at 2, 5, 12 and 30 pixels to the
+millimetre; a strip inside the cut face read back, each pixel placed
+between the face's colour (0) and the hatch's (1).
+
+| | Qt | the backend, before | the backend, after |
+|---|---|---|---|
+| 2 px/mm, lines across a 17 px strip | 5.0 | 1.1 | 5.0 |
+| 2 px/mm, the strongest line | 0.19 | 0.99 | 0.33 |
+| 5 px/mm, the strongest line | 0.25 | 0.47 | 0.35 |
+| 12 px/mm, the strongest line | 0.94 | 0.66 | 0.70 |
+| 12 px/mm, how far the two pictures are apart (1 = no line on a line) | | 0.64 | 0.20 |
+| 30 px/mm, apart | | not taken | 0.03 |
+| turned by 30 degrees, 12 px/mm, lines across a 97 px strip | 6.9 | 1.9 | 6.9 |
+| turned by 30 degrees, 12 px/mm, apart | | 0.87 | 0.19 |
+
+**The cause of what was reported.** The feed rasterized the hatch once,
+over the whole face, a pixel to the tenth of a millimetre, and the page
+layer drew that picture with a plain two-by-two read and nothing coarser
+to read from. At the zoom a page opens at, five pixels of the picture fall
+on one of the screen: four lines in five were skipped and the fifth came
+out at full strength -- "bright green lines far apart". Qt paints the same
+lines a fifth of a pixel wide and a fifth as strong: "a fine grey-green
+pattern".
+
+**The change.**
+- Every picture a page holds has coarser copies now, each half the one
+  before, made when the picture is handed to the graphics card
+  (`Render::Page2D::coarserImages`); the sampler reads the copy whose
+  pixels are nearest the screen's in size. A pixel of a copy is the mean
+  of what it covers, the colour weighted by opacity. That holds for every
+  picture, not the hatch alone: a symbol or a bitmap on a page zoomed out
+  was read the same way. A producer that makes its picture again for every
+  zoom band -- the page's template, in the Qt view -- opts out.
+- A hatch is no longer a picture of the face. It is ONE tile, 256 pixels
+  for the pattern's 64 units, and a new drawing operation fills the face's
+  outline with it laid side by side (`Page2D::Recorder::fillImage`): the
+  same small picture for a face of any size, sharp far into the zoom where
+  the old raster went soft as soon as the page was enlarged (it stopped at
+  a pixel to the tenth of a millimetre, and at 2048 pixels for a large
+  face). The bitmap hatch goes the same way.
+- The page wire format is version 3 for the new operation. The browser
+  viewer's bundle is not rebuilt here; an old one reloads when it meets a
+  newer page, as with version 2.
+
+**Three more defects the test found on the way, fixed in the same commit:**
+1. **A turned hatch was turned the wrong way.** `QGIFace::setHatchRotation`
+   stores MINUS the property, so a positive `HatchRotation` is
+   counter-clockwise on the page; the backend turned it clockwise. With 30
+   degrees the lines were at 15 degrees to the horizontal for Qt's 75.
+2. **An image was drawn over all the line work of a page.** The bgfx view
+   the page layer draws in was left in its default mode, which sorts the
+   draws by shader program, and the vector library has one program for
+   text, one for plain fills and strokes and one for images. So every
+   image -- a hatch, a symbol, a bitmap -- came out on top of every line,
+   whatever layer and kind it was fed on, and text under every fill: the
+   hatch ran over the inner half of the face's outline. The view draws in
+   the order submitted now.
+3. **The tiles showed their seams.** Qt's tiles are not clipped to their 64
+   units: a line that ends on a tile's edge has its square end half
+   outside, which fills the notch the next tile's line leaves. The tile is
+   painted with its eight neighbours around it, each leaving in it what it
+   lets stick out. And the array of tiles is half a unit off the face's
+   centre each way in Qt (`QGCustomRect::centerAt` centres a bounding
+   rect that has a pen of 1 around it); the backend's is too now, so its
+   lines lie on Qt's.
+
+**Scored.** `tests/gui/techdraw-page-backend-hatch.py`: before, 22 PASS and
+8 FAIL of the claims as they then stood (the claim about the outline was
+added after that run); after, 39 PASS. `tests/src/Gui/Page2DImage.cpp`, 8
+cases of the copies and of the new operation (`Page2DImage_tests_run`). The
+other backend page tests, run again because of the drawing order, all
+pass: `techdraw-page-backend-dashes.py` 24, `-single-draw.py` 17,
+`-switch.py` 11, `techdraw-last-line-style.py` 18,
+`techdraw-section-line-click.py` 10.
+
+**Still different, and why:**
+- A line under a pixel wide is not as pale as Qt's. Qt inks such a line by
+  about three quarters of what it covers (0.064 of the face for the 0.088
+  the pattern covers, at 2 and at 5 px/mm); the backend inks what is
+  covered. To the eye the backend's hatch is a little stronger at those
+  zooms.
+- A line about a pixel wide is paler than Qt's: 0.70 for 0.94 at 12 px/mm.
+  The tile is read from the copy whose pixels are nearest the screen's in
+  size, which can be 1.41 screen pixels each, and a line one such pixel
+  wide is spread over two of the screen's. At 30 px/mm both are at full
+  strength. The way out of both would be the pattern's lines as lines
+  rather than as a picture -- an SVG tile turned into strokes, and a clip
+  for the face's outline, neither of which the page layer has.
+- The PAT (geometric) hatch was not touched and not scored; its lines are
+  strokes already.
+- A pattern file whose own size is not 64 units is squeezed into the tile,
+  as before; Qt draws it at its own size with the tiles overlapping.
+- In the browser viewer a picture whose sides are not powers of two was
+  read without any smoothing (the vector library's own choice for the
+  web); it is read like any other now. Not looked at in a browser.
