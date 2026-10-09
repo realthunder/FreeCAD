@@ -138,9 +138,11 @@ copy under test are at `6a6fa208d6`, as they were at 17:36. PAUSED after
 entry 63's commit and the two suites on it.
 
 On the tree of `b20c825573`: sixteen GUI tests by hand, 243 claims, no FAIL
-(named under entry 63). Both full suites were started on it at about 21:40
-(`..\dl\handson\2026-10-09\q5\full-ctest.log`, `fullpy-pytest.log`); their
-result is the next thing written here.
+(named under entry 63). Both full suites on it, ended 21:55 and 22:06:
+ctest 790 of 790; Python 3411 tests with the two known thickness failures,
+50 skipped, 6 expected failures (`..\dl\handson\2026-10-09\q5\full-ctest.log`,
+`fullpy-pytest.log`). So what waits for the push is tested as it stands.
+PAUSED here.
 
 On `dfdfc04c5c`: ctest 790 of 790 (799 entries, 9 disabled). The GUI tests
 are not among them on this box -- `tests/gui/CMakeLists.txt` registers them
