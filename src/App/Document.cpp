@@ -7545,13 +7545,17 @@ struct NetChange
         /// not make it a recompute's value (sec 31.14): a line drawn in a
         /// sketch that a later recompute solved again is still a line drawn.
         bool hand {false};
-        /// The last set was made by the element reference update, and no
-        /// row set it by hand (sec 31.25): see followedOnly().
+        /// The last set followed another value -- a reference its shape,
+        /// a shape its placement -- and no row set it by hand (sec 31.25,
+        /// 31.26): see followedOnly().
         bool followed {false};
+        /// Some row's set was the owner's recompute's. With `followed`, the
+        /// value is that recompute's, moved along since (sec 31.26).
+        bool computed {false};
         /// Whether no side decided this value: every write of it followed
-        /// the shape of the object it refers into, or was its owner's
-        /// recompute's before that. It is no change to a merge (sec 31.25).
-        /// Not for a property the rows added or removed, which somebody did.
+        /// another value, or was its owner's recompute's before that. It
+        /// is no change to a merge (sec 31.25). Not for a property the rows
+        /// added or removed, which somebody did.
         bool followedOnly() const
         {
             return followed && atStart && atEnd;
@@ -7619,6 +7623,7 @@ struct NetChange
                 v.hand = v.hand || (o.op == "set" && !o.derived && !o.followed);
                 v.derived = o.derived && !v.hand;
                 v.followed = o.followed && !v.hand;
+                v.computed = v.computed || (o.op == "set" && o.derived);
             }
         }
     }
@@ -9759,8 +9764,11 @@ void planWeigh(Document& doc, TransactionLog& logRef, MergePlan& plan)
         // Sec 31.25: a reference theirs only followed is no change of
         // theirs. What moved it is a change to the object referred to,
         // which comes by itself, and the merge's recompute then moves ours
-        // the same way.
-        if (v.followedOnly())
+        // the same way. Sec 31.26: nor is a shape theirs' placement was
+        // laid on; where a recompute of theirs wrote it too, it is that
+        // recompute's, and its owner is computed again as for any.
+        const bool computed = v.derived || (v.followedOnly() && v.computed);
+        if (v.followedOnly() && !computed)
             continue;
         if (ckind == "doc" && keptOnRestore(prop.c_str()))
             continue;
@@ -9789,7 +9797,7 @@ void planWeigh(Document& doc, TransactionLog& logRef, MergePlan& plan)
                 // a conflict on the object; what theirs' recompute or its
                 // view did to it is not a change to bring it back for.
                 auto o = plan.ours.objects.find(cid);
-                if (v.derived || ckind == "view" || o == plan.ours.objects.end()
+                if (computed || ckind == "view" || o == plan.ours.objects.end()
                         || o->second.born || o->second.alive || !revived.insert(cid).second)
                     continue;
                 Document::MergeChange r;
@@ -9805,7 +9813,7 @@ void planWeigh(Document& doc, TransactionLog& logRef, MergePlan& plan)
                 continue;
             }
         }
-        if (v.derived) {
+        if (computed) {
             c.derived = true;
             c.kind = pv.fastForward ? "take" : "derived";
             add(std::move(c));
@@ -10669,6 +10677,22 @@ Document::MergeResult Document::_merge(const std::string& branch,
                 c->removeDynamicProperty(std::get<2>(key).c_str());
         });
     }
+    // Sec 31.26: a shape holds its object's placement, and one that lands
+    // gives the object the placement it was saved with. Where the merge
+    // writes no Placement, the one here stands -- ours moved the object,
+    // or was asked and kept it -- and is laid on the shape again below.
+    std::map<long, Base::Placement> placed;
+    for (const auto& kv : want) {
+        if (skipped(kv.first) || std::get<0>(kv.first) != "obj")
+            continue;
+        const long cid = std::get<1>(kv.first);
+        auto geo = Base::freecad_dynamic_cast<GeoFeature>(getObjectByID(cid));
+        auto shape = geo ? geo->getPropertyOfGeometry() : nullptr;
+        if (!shape || !shape->hasName() || std::get<2>(kv.first) != shape->getName()
+                || want.count(Key {"obj", cid, "Placement"}))
+            continue;
+        placed.emplace(cid, geo->Placement.getValue());
+    }
     std::vector<Key> landed;
     {
         CaptureConfig config(*this);
@@ -10709,6 +10733,13 @@ Document::MergeResult Document::_merge(const std::string& branch,
             });
         }
         batch.finish();
+    }
+    for (const auto& kv : placed) {
+        auto geo = Base::freecad_dynamic_cast<GeoFeature>(getObjectByID(kv.first));
+        if (!geo || geo->Placement.getValue() == kv.second)
+            continue;
+        guarded("placement of", geo->getNameInDocument(),
+                [&]() { geo->Placement.setValue(kv.second); });
     }
     // Sec 31.22: a value that came in names each element by its number in
     // theirs' shape, and the shapes here are ours', which may count their

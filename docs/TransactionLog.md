@@ -16792,12 +16792,13 @@ one.
 *Seen in the same probe, not chased:* with a primitive moved on both
 branches `Cyl.Shape` is asked as a conflict beside `Cyl.Placement` -- the
 shape's first write in the transaction is the placement laid on it, by
-hand, before any recompute.
+hand, before any recompute. It is 31.26.
 
 **Built (2026-10-09).**
 
-- *The scope.* `PropertyLinkBase::updateElementReferences` counts itself
-  in and out, per thread, and `isUpdatingElementReferences()` says so.
+- *The scope.* `PropertyLinkBase::updateElementReferences` runs inside an
+  `App::TransactionFollowing`, counted per thread (`active()`; its own
+  class since 31.26, which has a second writer of the kind).
   `followElementReferences` (31.22), which a merge calls on the values it
   took, does not go through it: those are theirs' values, set by hand.
 - *The write.* `TransactionObject::setProperty`, at a property's first
@@ -16845,7 +16846,8 @@ hand, before any recompute.
   import takes the values and the flag as they are.
 
 **Measured.** `derived.py`, the case above: 5 conflicts before, 2 now --
-`Cyl.Placement` and `Cyl.Shape`, the cylinder moved by hand on both.
+`Cyl.Placement` and `Cyl.Shape`, the cylinder moved by hand on both (and
+one since 31.26, the placement).
 `followed.py`, the table, with the references into a cut one branch
 drills and the other notches:
 
@@ -16869,6 +16871,80 @@ of the table. `testAReferenceSetOnBothBranchesIsStillAsked` -- the last.
 
 **Not tested by itself:** the flag taken by the undo of a cold step. It
 goes the way `derived` does there, through the same call.
+
+### 31.26 A shape its placement was laid on is no change either (user, 2026-10-09; built)
+
+31.25 saw it and left it: with a primitive moved on both branches
+`Cyl.Shape` is asked beside `Cyl.Placement`. **Asked (user):** "continue
+1".
+
+**The write.** A Part object's shape holds the object's placement.
+`Part::Feature::onChanged`, told the `Placement` was written (or
+`FixShape`, `ValidateShape`), takes the shape, lays the placement on it
+and sets it. The owner is not recomputing, so the shape is in the row as a
+value set by hand -- and stays one for the row though the recompute that
+follows writes it again, the first write deciding.
+
+**Measured** (`~/.cache/txnlog-ref/shape.py`): a cylinder, and a plain
+`Part::Feature` given a box.
+
+| ours | theirs | asked before | and now |
+| --- | --- | --- | --- |
+| moved | moved | `Shape` and `Placement`, each a conflict of its own | `Placement` |
+| nothing | moved | nothing; both taken | nothing; `Placement` taken |
+| given a shape | moved | `Shape`, a conflict | nothing: ours' shape, where theirs moved it |
+| moved | given a shape | `Shape`, a conflict | nothing: theirs' shape, where ours moved it |
+| given a shape, moved | given a shape | `Shape`, a conflict | the same |
+
+Two answers could be given apart in the first row. In the third and
+fourth neither side was the answer: with theirs picked the box was ours'
+no more (the third), or was back where it started with nothing said (the
+fourth, measured). The fifth is asked rightly, and theirs' shape picked
+went the fourth's way, by the same write.
+
+**It is the third kind of 31.25**: the value follows another -- there the
+shape of the object referred to, here the placement of its own object.
+Nobody set it, the owner's recompute does not make it (a plain feature has
+none that would), and it comes by itself when the value it follows does.
+
+**Built.**
+
+- *One scope for both.* `App::TransactionFollowing` (`Transactions.h`):
+  while one lives, what the thread writes is followed. The reference
+  update holds one, in place of its own count (31.25), and
+  `Part::Feature::onChanged` holds one around the shape it sets. The
+  flag, its column and the weighing are 31.25's, unchanged.
+- *The row.* A move's `Shape` is `followed`, recomputed in the same
+  transaction or not. A shape given is set by hand, and so is the
+  placement it gives its object.
+- *Where a recompute wrote it too.* A cylinder made wider in one row and
+  moved in the next: the shape's last write followed, and the one before
+  was its recompute's. That is the recompute's value, moved along
+  (`NetChange::Val::computed`), and is a `derived` line as any is -- the
+  owner is computed again -- where one that only followed makes none.
+- *The placement decides.* A shape that lands gives its object the
+  placement it was saved with (`onChanged`, the other way round). In a
+  merge that undid ours' move, in the fourth row and the fifth. Where the
+  merge writes a shape (`GeoFeature::getPropertyOfGeometry`) and not the
+  object's `Placement`, the placement the object had stands, and is set
+  again once the values are in -- which lays it on the shape that came. A
+  `Placement` the merge does write is theirs', taken or picked, and
+  decides the same way.
+
+**Seen, and left as it is:** a shape given by hand with no location puts
+the object at the origin -- `Plain.Shape = Part.makeBox(...)` after a move
+undoes the move, in the same row, by hand. That is Part's, on any history.
+Mesh, Points and Fem lay a placement on their data in place, with no
+write the log sees; nothing of theirs is in a row for a move but the
+`Placement`.
+
+**Tests.** Python, `Document.TransactionBranchCases`:
+`testAShapeItsPlacementMovedIsRecordedFollowed` -- the rows, and the
+undo. `testAShapeItsPlacementMovedIsNoChangeToAMerge` -- the first four
+rows of the table, a primitive and a plain feature, each with its undo and
+redo. `testAShapeTakenStandsWhereItsObjectIs` -- the fifth.
+`testAShapeMovedAfterItsRecomputeIsComputedAgain`. `derived.py`, 31.25's
+case, asks `Cyl.Placement` alone now.
 
 ## 32. A shape diff: seeing what a merge or a pick would take (plan, 2026-10-06)
 

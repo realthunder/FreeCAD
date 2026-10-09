@@ -73,6 +73,7 @@ typedef boost::iterator_range<const char*> CharRange;
 #include <App/Link.h>
 #include <App/OriginFeature.h>
 #include <App/Placement.h>
+#include <App/Transactions.h>
 #include <Base/Console.h>
 #include <App/ElementNamingUtils.h>
 #include <Base/Exception.h>
@@ -1855,6 +1856,9 @@ void Feature::onChanged(const App::Property* prop)
         shape.setTransform(this->Placement.getValue().toMatrix());
         Base::ObjectStatusLocker<App::Property::Status, App::Property> guard(
                 App::Property::NoRecompute, &this->Shape);
+        // Nobody sets this shape: it follows the property just written
+        // (docs/TransactionLog.md sec 31.26)
+        App::TransactionFollowing following;
         this->Shape.setValue(shape);
     }
     // if the point data has changed check and adjust the transformation as well

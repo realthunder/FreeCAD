@@ -51,6 +51,26 @@ FC_LOG_LEVEL_INIT("App",true,true)
 using namespace App;
 using namespace std;
 
+namespace {
+/// How deep this thread is in TransactionFollowing
+thread_local int followingDepth = 0;
+}
+
+TransactionFollowing::TransactionFollowing()
+{
+    ++followingDepth;
+}
+
+TransactionFollowing::~TransactionFollowing()
+{
+    --followingDepth;
+}
+
+bool TransactionFollowing::active()
+{
+    return followingDepth > 0;
+}
+
 TYPESYSTEM_SOURCE(App::Transaction, Base::Persistence)
 
 //**************************************************************************
@@ -694,10 +714,10 @@ void TransactionObject::applyChn(Document &Doc, TransactionalObject *pcObj, bool
 void TransactionObject::setProperty(const Property* pcProp)
 {
     auto &data = _PropChangeMap[pcProp->getID()];
-    if (data.followed && !PropertyLinkBase::isUpdatingElementReferences()) {
-        // Followed first and now written outside the update (sec 31.25):
-        // somebody set it after all. Not by its owner's own recompute,
-        // which decides no more than the update did.
+    if (data.followed && !TransactionFollowing::active()) {
+        // Followed first and now written outside any following (sec
+        // 31.25): somebody set it after all. Not by its owner's own
+        // recompute, which decides no more than the following did.
         auto obj = Base::freecad_dynamic_cast<DocumentObject>(pcProp->getContainer());
         if (!obj || !obj->isRecomputing())
             data.followed = false;
@@ -735,9 +755,9 @@ void TransactionObject::setProperty(const Property* pcProp)
         data.propertyType = pcProp->getTypeId();
         if (auto obj = Base::freecad_dynamic_cast<DocumentObject>(pcProp->getContainer())) {
             data.derived = obj->isRecomputing();
-            // Sec 31.25: written by the element reference update, as the
-            // shape of the object referred to changed.
-            data.followed = !data.derived && PropertyLinkBase::isUpdatingElementReferences();
+            // Sec 31.25: written because another value changed -- the
+            // shape a reference names, the placement of a shape's object.
+            data.followed = !data.derived && TransactionFollowing::active();
             // The touched state before this write, for the log (sec 27.58):
             // the object's as it was before the transaction first wrote to
             // it, so every op of the object in the row says the same. None

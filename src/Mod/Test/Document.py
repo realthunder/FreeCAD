@@ -6209,6 +6209,190 @@ class TransactionBranchCases(unittest.TestCase):
         self.assertEqual(preview["conflicts"], 1)
         self.assertNotIn("Plane.AttachmentSupport", asked)
 
+    def shapesToMove(self, name):
+        # Sec 31.26: a primitive, whose recompute makes its shape, and a
+        # plain feature, whose shape is the one it was given.
+        import Part
+
+        doc = self.track(FreeCAD.newDocument(name))
+        doc.UndoMode = 1
+        doc.openTransaction("create")
+        cyl = doc.addObject("Part::Cylinder", "Cyl")
+        cyl.Radius = 2
+        doc.addObject("Part::Feature", "Plain").Shape = Part.makeBox(1, 2, 3)
+        doc.recompute()
+        doc.commitTransaction()
+        doc.saveAs(os.path.join(self.dir, name + ".FCStd"))
+        return doc
+
+    @staticmethod
+    def moveIt(doc, name, x, recompute=True):
+        doc.openTransaction("move")
+        doc.getObject(name).Placement.Base = FreeCAD.Vector(x, 0, 0)
+        if recompute:
+            doc.recompute()
+        doc.commitTransaction()
+
+    @staticmethod
+    def shapeIt(doc, size):
+        import Part
+
+        doc.openTransaction("shape")
+        doc.Plain.Shape = Part.makeBox(size, size, size)
+        doc.recompute()
+        doc.commitTransaction()
+
+    @staticmethod
+    def whereIs(obj):
+        box = obj.Shape.BoundBox
+        return (round(obj.Placement.Base.x, 6), round(box.XMin, 6), round(box.XLength, 6))
+
+    def testAShapeItsPlacementMovedIsRecordedFollowed(self):
+        # Sec 31.26: an object moved, its placement is laid on its shape.
+        # That is the shape's first write in the row, and nobody set it: it
+        # is followed, where it was a value set by hand -- for a primitive
+        # that a recompute then made again, and for a shape given by hand,
+        # recomputed or not. A shape given is one set by hand.
+        doc = self.shapesToMove("ShapeFollows")
+
+        def writers(name):
+            row = [t for t in doc.getTransactionLog() if t["name"] == name][-1]
+            names = {o.ID: o.Name for o in doc.Objects}
+            return {
+                (names[o["cid"]], o["prop"]): (
+                    "followed" if o["followed"] else "derived" if o["derived"] else "hand"
+                )
+                for o in doc.getTransactionOps(row["seq"])
+                if o["op"] == "set" and o["prop"] in ("Shape", "Placement")
+            }
+
+        self.moveIt(doc, "Cyl", 5)
+        self.assertEqual(
+            writers("move"), {("Cyl", "Shape"): "followed", ("Cyl", "Placement"): "hand"}
+        )
+        self.moveIt(doc, "Plain", 5, recompute=False)
+        self.assertEqual(
+            writers("move"), {("Plain", "Shape"): "followed", ("Plain", "Placement"): "hand"}
+        )
+        self.shapeIt(doc, 7)
+        # ... and gives the object the placement it has: both by hand.
+        self.assertEqual(
+            writers("shape"), {("Plain", "Shape"): "hand", ("Plain", "Placement"): "hand"}
+        )
+        self.assertEqual(self.whereIs(doc.Plain), (0.0, 0.0, 7.0))
+        doc.undo()
+        self.assertEqual(self.whereIs(doc.Plain), (5.0, 5.0, 1.0))
+        doc.undo()
+        self.assertEqual(self.whereIs(doc.Plain), (0.0, 0.0, 1.0))
+        doc.redo()
+        self.assertEqual(self.whereIs(doc.Plain), (5.0, 5.0, 1.0))
+
+    def testAShapeItsPlacementMovedIsNoChangeToAMerge(self):
+        # Sec 31.26: an object moved on both branches was asked twice, for
+        # its placement and for its shape, and the two could be answered
+        # apart. The shape is no change of a side that only moved it: the
+        # placement is the one thing asked, and the shape follows the side
+        # taken. And a shape given on one branch to an object the other
+        # moved was a conflict with one right answer, which neither side
+        # had: the shape given, where the object was moved to.
+        def move(name, x, recompute=True):
+            return lambda doc: self.moveIt(doc, name, x, recompute)
+
+        def shape(size):
+            return lambda doc: self.shapeIt(doc, size)
+
+        cases = [
+            # name, object, ours, theirs, the lines, the object after
+            ("MovedBoth", "Cyl", [move("Cyl", 5)], [move("Cyl", 9)], "conflict", (9, 7, 4)),
+            ("MovedThere", "Cyl", [], [move("Cyl", 9)], "take", (9, 7, 4)),
+            ("PlainBoth", "Plain", [move("Plain", 5)], [move("Plain", 9)], "conflict", (9, 9, 1)),
+            ("PlainThere", "Plain", [], [move("Plain", 9, False)], "take", (9, 9, 1)),
+            ("ShapedHere", "Plain", [shape(7)], [move("Plain", 9)], "take", (9, 9, 7)),
+            ("ShapedThere", "Plain", [move("Plain", 5)], [shape(7)], None, (5, 5, 7)),
+        ]
+        for name, obj, ours, theirs, placement, where in cases:
+            with self.subTest(name):
+                doc = self.shapesToMove(name)
+                doc.createTransactionBranch("side")
+                doc.switchTransactionBranch("side")
+                for change in theirs:
+                    change(doc)
+                doc.switchTransactionBranch("main")
+                doc.openTransaction("another thing")
+                doc.Cyl.Label = "Rod"
+                doc.commitTransaction()
+                for change in ours:
+                    change(doc)
+                preview = doc.previewTransactionMerge("side")
+                asked = {c["key"]: c["kind"] for c in preview["changes"]}
+                want = {} if placement is None else {obj + ".Placement": placement}
+                if name == "ShapedThere":
+                    want["Plain.Shape"] = "take"
+                self.assertEqual(asked, want)
+                picks = {key: "theirs" for key, kind in asked.items() if kind == "conflict"}
+                result = doc.mergeTransactionBranch("side", picks)
+                self.assertEqual((result["unresolved"], result["failed"]), ([], []))
+                self.assertEqual(self.whereIs(doc.getObject(obj)), tuple(map(float, where)))
+                self.assertFalse([o.Name for o in doc.Objects if "Touched" in o.State])
+                # One step, the object back where ours had it.
+                before = 5.0 if ours and name != "ShapedHere" else 0.0
+                doc.undo()
+                self.assertEqual(doc.getObject(obj).Placement.Base.x, before)
+                at = self.whereIs(doc.getObject(obj))
+                self.assertEqual(at[1], before - (2.0 if obj == "Cyl" else 0.0))
+                doc.redo()
+                self.assertEqual(self.whereIs(doc.getObject(obj)), tuple(map(float, where)))
+
+    def testAShapeTakenStandsWhereItsObjectIs(self):
+        # Sec 31.26: a shape given on both branches is asked, as it was.
+        # Theirs' taken, it gave the object the placement it was saved
+        # with, and what ours had moved was back where it started, with
+        # nothing said. The placement is the object's own: it is laid on
+        # the shape that came.
+        doc = self.shapesToMove("ShapeStands")
+        doc.createTransactionBranch("side")
+        doc.switchTransactionBranch("side")
+        self.shapeIt(doc, 7)
+        doc.switchTransactionBranch("main")
+        self.shapeIt(doc, 4)
+        self.moveIt(doc, "Plain", 5)
+        preview = doc.previewTransactionMerge("side")
+        self.assertEqual(
+            {c["key"]: c["kind"] for c in preview["changes"]}, {"Plain.Shape": "conflict"}
+        )
+        result = doc.mergeTransactionBranch("side", {"Plain.Shape": "theirs"})
+        self.assertEqual((result["unresolved"], result["failed"]), ([], []))
+        self.assertEqual(self.whereIs(doc.Plain), (5.0, 5.0, 7.0))
+
+    def testAShapeMovedAfterItsRecomputeIsComputedAgain(self):
+        # Sec 31.26: theirs made the cylinder wider, in one row, and moved
+        # it, in the next. The shape's last write is the placement laid on
+        # it, and the recompute's before that: it is the recompute's, and
+        # its owner is computed again with what is taken -- here beside a
+        # height ours gave it.
+        doc = self.shapesToMove("ShapeComputed")
+        doc.createTransactionBranch("side")
+        doc.switchTransactionBranch("side")
+        doc.openTransaction("wider")
+        doc.Cyl.Radius = 3
+        doc.recompute()
+        doc.commitTransaction()
+        self.moveIt(doc, "Cyl", 9)
+        doc.switchTransactionBranch("main")
+        doc.openTransaction("taller")
+        doc.Cyl.Height = 20
+        doc.recompute()
+        doc.commitTransaction()
+        preview = doc.previewTransactionMerge("side")
+        self.assertEqual(
+            {c["key"]: c["kind"] for c in preview["changes"]},
+            {"Cyl.Radius": "take", "Cyl.Placement": "take", "Cyl.Shape": "derived"},
+        )
+        result = doc.mergeTransactionBranch("side")
+        self.assertEqual((result["unresolved"], result["failed"]), ([], []))
+        self.assertEqual(self.whereIs(doc.Cyl), (9.0, 6.0, 6.0))
+        self.assertAlmostEqual(doc.Cyl.Shape.BoundBox.ZLength, 20.0)
+
     def testAGroupIsMergedByItsMembers(self):
         # Sec 31.8: a group two branches each put an object in was one value
         # against the other. It is the objects in it: ours, then what theirs

@@ -45,6 +45,24 @@ class TransactionMeasure;
 class TransactionLog;
 struct Actor;
 
+/** While one of these lives, what this thread writes follows another value:
+ * nobody set it, and its owner's recompute does not make it. A reference
+ * looked up again because the shape it names changed
+ * (PropertyLinkBase::updateElementReferences); a shape its object's
+ * placement is laid on. A transaction records such a write as followed:
+ * kept as a value set by hand is, and no change to a merge
+ * (docs/TransactionLog.md sec 31.25, 31.26).
+ */
+class AppExport TransactionFollowing
+{
+public:
+    TransactionFollowing();
+    ~TransactionFollowing();
+    TransactionFollowing(const TransactionFollowing&) = delete;
+    TransactionFollowing& operator=(const TransactionFollowing&) = delete;
+    /// Whether this thread is inside one
+    static bool active();
+};
 
 /** Represents a atomic transaction of the document
  */
@@ -220,12 +238,12 @@ protected:
         /// output (docs/TransactionLog.md sec 10). Recorded here because
         /// only the write site can tell; a commit-time reader cannot.
         bool derived = false;
-        /// The first write of this transaction was made by the element
-        /// reference update (PropertyLinkBase::updateElementReferences):
-        /// the value follows the shape of the object referred to, and is
-        /// no change to a merge (docs/TransactionLog.md sec 31.25). Never
-        /// with `derived`; a write by hand later in the transaction takes
-        /// it off again.
+        /// The first write of this transaction was made inside a
+        /// TransactionFollowing: the value follows another -- the shape of
+        /// the object a reference names, the placement of a shape's own
+        /// object -- and is no change to a merge (docs/TransactionLog.md
+        /// sec 31.25, 31.26). Never with `derived`; a write by hand later
+        /// in the transaction takes it off again.
         bool followed = false;
         /// Set by the transaction log when it hands `property` to its
         /// writer thread (docs/TransactionLog.md sec 20.2, decision 4):
