@@ -58,6 +58,27 @@ read by the build session; 53 is reproduced, the others not started. Its
 order after 51, "unless the reporter says otherwise": 53, 54, 55, 56 with
 57 after it, 52, 30, 48, 47.
 
+**Where it stands, 2026-10-10 00:12: the build session went on the same
+night** on the reporter's word to it about 22:25, relayed verbatim:
+"continue as planned. also one more request. change techdraw bgfx rendering
+to support fractional line width, but make sure the highlight shows the
+same width". Done and committed, local, NOT pushed, NOT staged:
+- Entry 62, the recent items before the three modes: `f5dc9027e7`.
+- Entry 61, REVERSED by that request -- fractional widths, the highlight
+  as wide as its line: `2649caa38f`.
+- Entry 63, the reporter's three changes -- the split cube icon ("A: split
+  cube (top row)", the reporter's answer), "Apply all", the Coin light
+  dragger: `8fed56f3df`.
+- Tests: 18 GUI tests by hand, 300 claims, no FAIL. Both full suites are
+  running on the last build; the build session sends the result.
+- origin/PartDesignPort and the copy under test are still `6a6fa208d6`
+  (17:36). Local and waiting for the reporter's word to push and stage:
+  entry 64 (`66ccd277b9`, `dfdfc04c5c`), entry 66's freeze (`6073d32437`),
+  entry 61 (`f7408b1f9f`, then `2649caa38f`), entry 62 (`9d354a8c44`,
+  `eebfc34dd9`, `f5dc9027e7`), entry 63 (`b20c825573`, `8fed56f3df`).
+- With the reporter, new: entry 61's dashes; entry 63's handle and menu to
+  try, the orange arrow, and what "Apply all" brings with it.
+
 **2026-10-09 22:28, the reporter's word for the NEXT session**, said to the
 paused build session about 22:15 and relayed by it, verbatim: "next
 session. use the below icon you designed for display style toolbutton icon
@@ -363,9 +384,9 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 58 | 2026-10-09 | a task, "can do it later": audit every warning shown when `scanner.FCStd` is opened and recomputed, and fix what can be fixed | OPEN, for later; a first count from a kept report log: 208 warnings and 6 errors, about 15 kinds; nothing run |
 | 59 | 2026-10-09 | the program no longer opens the Start page at startup (the reporter: "the startup workbench become the PartDesign"; it used to show Start with the recent files) | STAGED 2026-10-09 15:11, fixed `e9ac624959`, as decided: "Reset all" puts `Mod/Start/Migration2024Complete` back when it was set; the migration is untouched. A profile already switched off this way (the reporter's) STAYS off until Preferences > Start or `Mod/Start/ShowOnStartup` switches it on. 10 PASS and 2 FAIL on the staged copy, 12 PASS now (`docs/HandsOnLog.md`) |
 | 60 | 2026-10-09 | after a view cell is deleted, the view that expands into its room is sometimes BLACK until it is RESIZED; a camera move does not bring it back (corrected by the reporter 14:06) (Windows, Direct3D 11 at least) | STAGED 2026-10-09 16:42, fixed `d6f640f4ee`: it happens whenever closing a cell UN-NESTS a splitter (a cell split across its splitter's direction, then one of the two closed, by any route) -- the "sometimes". The surviving cell was moved up with `QSplitter::replaceWidget`, which takes it out of the window on the way, and a `QOpenGLWidget` that leaves its window is composed from nothing until its next resize; the view itself was drawn right all along, so it is neither Direct3D's nor the backend's. The cell tree is rebuilt without a cell leaving the window. A test that reads the SCREEN: 9 PASS and 8 FAIL on the copy staged 15:11, 17 PASS now (`docs/HandsOnLog.md`) |
-| 61 | 2026-10-09 | TechDraw drawn by the backend: dashed lines are a little thicker than Qt's (no great matter); but for some lines -- the cosmetic symmetry line in `Page`, `Top` -- the hover and selection highlight is drawn as the THINNER dashed line and is barely visible over the thicker line under it | FIXED `f7408b1f9f`, not staged, not pushed: the backend drew an edge at the width asked for (0.35 mm) where Qt cuts the pen to whole tenths (0.3), and the highlight, read off the Qt item, was the thinner of the two. Edges, cut face outlines and centre marks are fed at Qt's width; scored with Qt as the reference and the backend switched, as the reporter said: 10 PASS and 4 FAIL on the staged copy, 14 PASS now (hidden line 0.375 -> 0.300 mm for Qt's 0.300; a dashed cosmetic line 0.350 -> 0.300; selected, 0.60 px of line beside the highlight -> none). Two readings of the build session's for the reporter (`docs/HandsOnLog.md`). DECIDED by the reporter 14:30 and 14:31: EVERY line the backend draws on a page, dashed or not, at Qt's width -- thinner -- and the highlight at the same width as its line; a view's bounding box line shows it too |
-| 62 | 2026-10-09 | omni search, a new feature: when it first pops up, its list holds the last 10 items that were confirmed in it; once typing starts, the recent list is not needed | DONE `9d354a8c44`, not staged, not pushed: the box comes up with the items last confirmed in it below the three modes -- a command run from the box, a parameter or a property whose editor was opened, an object selected -- ten at most, the newest first, each once; gone as soon as more is typed; a picked row is carried out again. `tests/gui/omni-search-recent-items.py` 17 PASS, and the store in `OmniSearch_Tests_run`. The four points "not said" and a fifth were decided by the build session, each easy to turn: for the reporter (`docs/HandsOnLog.md`). The fifth DECIDED by the reporter about 22:15, the other way: the recent items come BEFORE the three modes -- for next session, not started; the other four not answered |
-| 63 | 2026-10-09 | `Std_DrawStyle` (a new request): a new icon suggested for it; its display style options as a combo box with their icons; anti-aliasing and its combo box in the same menu; the light sources configuration moved there from the preferences (not the manipulator), with a button to manipulate the light direction in the active 3D view and a check box to sync all 3D views' light direction; the Light Sources preference page removed | DONE `b20c825573`, not pushed, not staged, but for the icon and the way the light's direction is set: the Display style menu has the style as ONE combo box with icons (the active view's), the anti-aliasing as another (applies at once), and a Lights section in place of the Light Sources preference page, which is gone -- headlight, fill light, ambient light, a switch, a colour and an intensity each; a change is stored in the active view's properties (`Light_*`), or in every open 3D view's with "All views" ticked (the remembered setting `View/SyncLightSettings`, for all the light settings); "Save as default" writes the view's lights into the preferences; "Direction" is a toggle (the button or Escape). `tests/gui/display-style-menu.py` 24 PASS; fifteen other GUI tests around it, no FAIL. OPEN in it, by the reporter's words of the evening: (a) the ICON -- the three offered were turned down, two directions offered after a search, not answered; (b) the light's DIRECTION by the Coin light manipulator, as the shadow light has it -- next session. Three things for the reporter to TRY by hand (`docs/HandsOnLog.md`). The reporter about 22:15, for next session, nothing started: one of the build session's three icons goes on the tool button "for now" (WHICH did not reach it -- no picture came; asked); the check box "All views" becomes a BUTTON "Apply all"; the light handle with the manipulator. The request as answered 14:52: the style combo is for the active view; anti-aliasing and lights apply at once; the manipulation toggles by the button or Esc; the sync check box is a remembered setting and decides whether a light direction goes to the active view or to all open views; one more button saves ALL the current view's light settings for future use (corrected 14:55); three icons to choose from; all of the Light Sources page's settings but the manipulator go into the menu; a change of the lights is stored in the active view's properties, the button saves it into the settings, and the sync check box is for all the light settings (14:59) |
+| 61 | 2026-10-09 | TechDraw drawn by the backend: dashed lines are a little thicker than Qt's (no great matter); but for some lines -- the cosmetic symmetry line in `Page`, `Top` -- the hover and selection highlight is drawn as the THINNER dashed line and is barely visible over the thicker line under it | REVERSED by a new request of the reporter's about 22:25 ("support fractional line width, but make sure the highlight shows the same width"), DONE `2649caa38f`, not staged, not pushed: the backend draws every line of a page at the width asked for, fractions included (0.35 mm is 0.35; Qt's page has 0.3), dimension lines, section lines and leaders too; the highlight of an edge is as wide as the edge, and the edge under it is left out of the drawing while it is lit (7.00 px selected for a 7.00 px line, no ink of another colour beside it). `techdraw-page-backend-line-widths.py` 19 PASS. One choice of the build session's for the reporter: the DASHES are still counted as Qt counts them. BEFORE the reversal, superseded: FIXED `f7408b1f9f`, not staged, not pushed: the backend drew an edge at the width asked for (0.35 mm) where Qt cuts the pen to whole tenths (0.3), and the highlight, read off the Qt item, was the thinner of the two. Edges, cut face outlines and centre marks are fed at Qt's width; scored with Qt as the reference and the backend switched, as the reporter said: 10 PASS and 4 FAIL on the staged copy, 14 PASS now (hidden line 0.375 -> 0.300 mm for Qt's 0.300; a dashed cosmetic line 0.350 -> 0.300; selected, 0.60 px of line beside the highlight -> none). Two readings of the build session's for the reporter (`docs/HandsOnLog.md`). DECIDED by the reporter 14:30 and 14:31: EVERY line the backend draws on a page, dashed or not, at Qt's width -- thinner -- and the highlight at the same width as its line; a view's bounding box line shows it too |
+| 62 | 2026-10-09 | omni search, a new feature: when it first pops up, its list holds the last 10 items that were confirmed in it; once typing starts, the recent list is not needed | DONE `9d354a8c44` and, the order turned as the reporter said, `f5dc9027e7`; not staged, not pushed: the recent items are listed BEFORE the three modes and the box comes up on the first of them, so Return on a box just brought up repeats the last item; `omni-search-recent-items.py` 18 PASS. Points 1 to 4 still with the reporter. As first built: the box comes up with the items last confirmed in it below the three modes -- a command run from the box, a parameter or a property whose editor was opened, an object selected -- ten at most, the newest first, each once; gone as soon as more is typed; a picked row is carried out again. `tests/gui/omni-search-recent-items.py` 17 PASS, and the store in `OmniSearch_Tests_run`. The four points "not said" and a fifth were decided by the build session, each easy to turn: for the reporter (`docs/HandsOnLog.md`). The fifth DECIDED by the reporter about 22:15, the other way: the recent items come BEFORE the three modes -- done, as the head of this cell says; the other four not answered |
+| 63 | 2026-10-09 | `Std_DrawStyle` (a new request): a new icon suggested for it; its display style options as a combo box with their icons; anti-aliasing and its combo box in the same menu; the light sources configuration moved there from the preferences (not the manipulator), with a button to manipulate the light direction in the active 3D view and a check box to sync all 3D views' light direction; the Light Sources preference page removed | DONE `b20c825573` and, the reporter's three changes of 22:15, `8fed56f3df`; not pushed, not staged: the tool button wears the split cube (the reporter's pick of the three, "for now"); "All views" and the setting `View/SyncLightSettings` are gone and "Apply all" is a button that copies the active view's lights to every other open 3D view once; "Direction" raises Coin's light dragger in the view, drawn over the model, its arrow orange (the build session's choice). `display-style-menu.py` 34 PASS. For the reporter to TRY: the handle by hand, and the menu as a popup. As first built, with the icon and the way the light's direction is set left open: the Display style menu has the style as ONE combo box with icons (the active view's), the anti-aliasing as another (applies at once), and a Lights section in place of the Light Sources preference page, which is gone -- headlight, fill light, ambient light, a switch, a colour and an intensity each; a change is stored in the active view's properties (`Light_*`), or in every open 3D view's with "All views" ticked (the remembered setting `View/SyncLightSettings`, for all the light settings); "Save as default" writes the view's lights into the preferences; "Direction" is a toggle (the button or Escape). `tests/gui/display-style-menu.py` 24 PASS; fifteen other GUI tests around it, no FAIL. OPEN in it, by the reporter's words of the evening: (a) the ICON -- the three offered were turned down, two directions offered after a search, not answered; (b) the light's DIRECTION by the Coin light manipulator, as the shadow light has it -- next session. Three things for the reporter to TRY by hand (`docs/HandsOnLog.md`). The reporter about 22:15 (all three done since, as the head of this cell says): one of the build session's three icons goes on the tool button "for now" (WHICH did not reach it -- no picture came; asked); the check box "All views" becomes a BUTTON "Apply all"; the light handle with the manipulator. The request as answered 14:52: the style combo is for the active view; anti-aliasing and lights apply at once; the manipulation toggles by the button or Esc; the sync check box is a remembered setting and decides whether a light direction goes to the active view or to all open views; one more button saves ALL the current view's light settings for future use (corrected 14:55); three icons to choose from; all of the Light Sources page's settings but the manipulator go into the menu; a change of the lights is stored in the active view's properties, the button saves it into the settings, and the sync check box is for all the light settings (14:59) |
 | 64 | 2026-10-09 | the cavity option (cavity shading) draws jagged, MSAA on or off; the reporter: to be fixed in its shader; under both the realistic and the classic shading, more obvious in the Shaded draw style (no edges) and at a slant | FIXED `66ccd277b9`, not staged, not pushed: in its shader, as the reporter said. The pass reads one normal a pixel after the scene is resolved, so a crease was a band every pixel was in or out of; it now reads each neighbour's normal as the average over its pixel, the crease placed within the pixel from the two faces' planes. Along a straight crease the middle of the darkening strayed 0.18 to 0.26 px rms from its line (a perfect staircase gives 0.29) and strays 0.01 to 0.04 now, the line as heavy as it was (2% lighter). Found on the way, FIXED `dfdfc04c5c`: under an ORTHOGRAPHIC camera the creases of whatever lay near the camera dropped out, in dots. `tests/gui/cavity-crease-is-smooth.py`: 20 PASS and 21 FAIL on the copy staged 17:36, 47 PASS now. Render engine, MSAA 4x, Shaded, Direct3D 11; not run: a browser, Vulkan, Metal, OpenGL. Three points for the reporter (`docs/HandsOnLog.md`) |
 | 65 | 2026-10-09 | the Cycles view (the path-traced picture) shows the object MIRRORED -- about the XY plane, by the look of it; "definitly out of place" | STAGED 2026-10-09 17:36, fixed `6a6fa208d6`: the note-taker's reading confirmed by a picture -- on the copy staged 16:42 a cone on its base comes out apex DOWN in the path tracer's frame, the host's edge lines over it apex up. The frame is an uploaded image drawn with a render target's texture coordinate, turned over on every backend but OpenGL; the blit's shader takes the turn back out. A shader alone. 2 PASS and 2 FAIL before, 4 PASS now, and the same under `bgfx - OpenGL`. Not run: Vulkan, Metal (`docs/HandsOnLog.md`) |
 | 66 | 2026-10-09 | the preferences dialog is slow to load the first time; and "Reset all" chosen then freezes the program for several tens of seconds | MEASURED before anything was changed; the freeze FIXED `6073d32437`, not staged, not pushed. It is not the reset (0.02 to 1.2 s) but the dialog being DESTROYED, which "Reset all", OK, Cancel and the close button all bring about: each of its 11 file choosers (17 with TechDraw loaded) had a file system model with a thread of its own, and the destruction waited on every one -- 11 to 59 s whenever the dialog was closed within half a minute of opening, nothing when it had been open 40 s. One model for all now, made when a line is first typed into: 0.0 to 0.9 s. `tests/gui/preferences-close-does-not-wait.py`: 5 PASS and 4 FAIL on the copy staged 17:36, 9 PASS now. NOT changed, measured: the first opening (3.5 to 4.0 s for 1.6 to 2.4 later) and a reset under a theme (7 s, entry 30's second task); three proposals and one question for the reporter (`docs/HandsOnLog.md`). The timing check was QUEUED by the reporter 17:52 |
@@ -5582,7 +5603,7 @@ Not said yet by the reporter: how the view was deleted (a join by a corner
 drag, "Close view" in the cell menu, the border's menu); whether the black
 view was a 3D view each time; and how often.
 
-## 61. TechDraw drawn by the backend: a dashed line's highlight is thinner than the line under it -- FIXED `f7408b1f9f`, not staged; two readings for the reporter (see `docs/HandsOnLog.md`)
+## 61. TechDraw drawn by the backend: a dashed line's highlight is thinner than the line under it -- the decision REVERSED by the reporter: fractional widths, the highlight as wide as its line, DONE `2649caa38f`, not staged (it replaces `f7408b1f9f`); one choice for the reporter (see `docs/HandsOnLog.md`)
 
 **2026-10-09 14:26, reported:** "New defect. Techdraw bgfx rendering seems to
 render all dashed line slightly thicker than qt, which is not that big of
@@ -5667,7 +5688,49 @@ YET:**
 (The note-taker's reading: both follow from "the same as qt renderer"; they
 stand unless the reporter says otherwise.)
 
-## 62. Omni search: the last 10 confirmed items on the list when it first pops up (a new feature) -- DONE `9d354a8c44`, not staged; DECIDED after it: the recent items BEFORE the three modes, for next session; four choices of the build session's still with the reporter (see `docs/HandsOnLog.md`)
+**2026-10-09 about 22:25, a NEW REQUEST of the reporter's that REVERSES the
+decision of 14:30, said to the build session and relayed by it verbatim
+(the note-taker did not hear it):** "continue as planned. also one more
+request. change techdraw bgfx rendering to support fractional line width,
+but make sure the highlight shows the same width"
+- The backend is to draw a page's lines at FRACTIONAL widths -- the width
+  asked for, not Qt's whole tenths. That is the other way from "the same
+  as qt renderer, whcih is thinner" (14:30) and "yes, every line, dashed
+  or not" (14:31).
+- What stays of the entry is its reason: the HIGHLIGHT is to be as wide as
+  the line it lights.
+- "continue as planned": the build session, paused at 22:07, went on the
+  same night.
+(The note-taker's pointer: entry 52's rule is "the line shader stays if it
+is what gets fractional widths right"; this request leans on fractional
+widths being right.)
+
+**2026-10-10 00:12, from the build session: DONE `2649caa38f`; local, not
+pushed, not staged.** It replaces the fix of 19:58 (`f7408b1f9f`). The
+account is in `docs/HandsOnLog.md`, "61, again"; in short:
+- An edge, the outline of a cut face and a centre mark are drawn at the
+  width ASKED for: 0.35 mm is 0.35, where the Qt page has 0.3.
+- Dimension lines, arrows, section lines and leaders have their fractional
+  widths too -- which they did not have even before this entry.
+- The highlight of an edge is as wide as the edge. While an edge is lit,
+  the edge under it is left out of the drawing. Measured: 7.00 px selected
+  for a 7.00 px line, no ink of another colour beside it.
+- A line asked for at NO width is a hairline, as before the entry. (So
+  reading (a) of 19:58 above no longer describes what is drawn, by the
+  note-taker's reading of the log.)
+- `techdraw-page-backend-line-widths.py`, rewritten: 19 PASS. Six other
+  TechDraw page tests on the build, no FAIL.
+- Not run: the page streamed to a browser; preselection by the pointer
+  (the test selects).
+
+**For the reporter, a choice of the build session's -- NOT ANSWERED YET:**
+the DASHES are still counted as Qt counts them, in the width Qt's pen has
+(0.3 for a 0.35 line), so a dashed line has the same dashes in the same
+places on both renderers and is only as much wider as was asked. Counted in
+the true width, a 0.35 mm hidden line would have six dashes where Qt has
+seven. "For the reporter to say if that is wanted instead."
+
+## 62. Omni search: the last 10 confirmed items on the list when it first pops up (a new feature) -- DONE `9d354a8c44`, and the recent items BEFORE the three modes `f5dc9027e7`, not staged; four choices of the build session's still with the reporter (see `docs/HandsOnLog.md`)
 
 **2026-10-09 14:32, the reporter:** "new feature. omni search, keep the last
 10 confirmed searched items on the list when it first pop up. once typing is
@@ -5742,7 +5805,19 @@ three modes."
 - Points 1 to 4 are not spoken on: still with the reporter.
 Not started; for next session.
 
-## 63. `Std_DrawStyle`: a new icon, and its menu takes the display style, the anti-aliasing and the lights (a new request) -- DONE `b20c825573`, not staged, but for three things, all for next session: the ICON (one of the three "for now"; which one not known yet), "All views" turned into a button "Apply all", and the light's direction by the Coin light manipulator; three things for the reporter to try (see `docs/HandsOnLog.md`)
+**2026-10-10 00:12, from the build session: DONE `f5dc9027e7`; local, not
+pushed, not staged.** The account is in `docs/HandsOnLog.md`, "62, again";
+in short:
+- The recent items are listed BEFORE the three modes.
+- The box comes up ON the first of them, so Return on a box just brought
+  up carries out again what was confirmed last.
+- With nothing confirmed yet the box is as it was: the three modes, the
+  first of them current.
+- `omni-search-recent-items.py`: 18 PASS; four other omni search tests, no
+  FAIL.
+Points 1 to 4 are still with the reporter, NOT ANSWERED YET.
+
+## 63. `Std_DrawStyle`: a new icon, and its menu takes the display style, the anti-aliasing and the lights (a new request) -- DONE `b20c825573`, and the reporter's three changes `8fed56f3df` (the split cube icon "for now", the button "Apply all", the light's handle a Coin dragger), not staged; the handle and the menu for the reporter to try (see `docs/HandsOnLog.md`)
 
 **2026-10-09 14:43, the reporter:** "New Request, Std_DrawStyle command,
 suggest a new icon to properly represent the Draw Style part. make the
@@ -5947,6 +6022,53 @@ Four things; the last is entry 62's and is recorded there.
   settings".)
 - (e): the light handle with the (Coin) manipulator, as said before.
 Nothing is started. The push and the stage still wait.
+
+**The icon, ANSWERED by the reporter when the build session asked which of
+the three was meant, relayed by it verbatim:** "A: split cube (top row)"
+
+**2026-10-10 00:12, from the build session: all three changes DONE
+`8fed56f3df`; local, not pushed, not staged.** The account is in
+`docs/HandsOnLog.md`, "63, again"; in short:
+- (a) The ICON: `Std_DrawStyle` has one of its own, the cube half solid
+  and half wire, and the tool button wears it whatever style the view is
+  in. "For now": the two directions offered at 21:50 are not decided by
+  it.
+- (f) "Apply all": the check box "All views" is gone, and the setting
+  `View/SyncLightSettings` with it. The button gives every OTHER open 3D
+  view the lights of the active one, ONCE; a change made afterwards is the
+  active view's alone. So the build session's reading of 22:15 is what was
+  built; the reporter has not confirmed it in words.
+- (e) The HANDLE: "Direction" raises Coin's light dragger in the active
+  view -- a ball with an arrow, the arrow the way the light shines, at the
+  middle of the view, drawn over the model. Drag the arrow to turn the
+  light; the ball drags the handle aside. "Direction" again, or Escape in
+  the view, takes it down. The pointer drag of 21:50 is gone.
+  - The shadow light's manipulator the reporter pointed to was no longer
+    in the tree (it went with the Shadow style in August, `1175430921`);
+    it was rebuilt.
+  - The camera still turns and the model is still picked with the handle
+    up.
+- `display-style-menu.py`: 34 PASS; five tests around it, no FAIL.
+  Pictures: `..\dl\handson\2026-10-10\q1\entry63\` (`handle-up.png`,
+  `handle-dragged.png`, `button-icon.png`).
+- Not run: the `Legacy` render type; a drag of the ball; the navigation
+  styles other than the default with the handle up.
+
+**For the reporter, from the build session -- NOT ANSWERED YET:**
+- Its choice: the handle's arrow is ORANGE (the stock handle is a mid
+  grey).
+- What "Apply all" brings with it, "said here because it is not obvious":
+  the lights copied become the other view's OWN, so such a view no longer
+  follows the preferences, and "Save as default" pressed later does not
+  change it.
+- To TRY by hand, since no test can:
+  - the handle: whether it is big enough and easy enough to grab, on
+    `scanner.FCStd`, in a perspective view, and in a view cell beside
+    another;
+  - the menu as a popup, as before: that it stays up while a combo box or
+    a slider is used, and that "Direction" and a colour swatch take it away
+    cleanly.
+(None of this is in the copy under test until the next stage.)
 
 ## 64. Cavity shading is jagged, MSAA or not -- FIXED `66ccd277b9`, not staged; a second defect of the pass FIXED `dfdfc04c5c`; three points for the reporter (see `docs/HandsOnLog.md`)
 
