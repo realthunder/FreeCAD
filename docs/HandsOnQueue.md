@@ -58,6 +58,18 @@ read by the build session; 53 is reproduced, the others not started. Its
 order after 51, "unless the reporter says otherwise": 53, 54, 55, 56 with
 57 after it, 52, 30, 48, 47.
 
+**2026-10-09 18:30, the build session at work again** since about 17:45, on
+the reporter's word to it, verbatim: "continue as planned" -- its reading:
+the open entries in the order left at the pause (64, 66, 61, 62, 63, 52,
+entry 30's first task, 58, 47, the two tests of 48).
+- The Python suite on the tree staged 17:36 (`6a6fa208d6`) ended 17:48:
+  3411 tests, the two known thickness failures only.
+- Entry 64 FIXED (`66ccd277b9`) and a second defect of the same pass
+  (`dfdfc04c5c`); local, not pushed, not staged. Three points of it are
+  with the reporter.
+- The full C++ suite is running on `dfdfc04c5c`. Entry 66 is next, a
+  measurement first, as the reporter queued it.
+
 **Where it stands, 2026-10-09 17:42: pushed and staged a fifth time today, and
 the build session PAUSED** on the reporter's word to it, verbatim: "pause
 after cycle fix, then push and stage".
@@ -277,7 +289,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 61 | 2026-10-09 | TechDraw drawn by the backend: dashed lines are a little thicker than Qt's (no great matter); but for some lines -- the cosmetic symmetry line in `Page`, `Top` -- the hover and selection highlight is drawn as the THINNER dashed line and is barely visible over the thicker line under it | OPEN; DECIDED by the reporter 14:30 and 14:31: EVERY line the backend draws on a page, dashed or not, at Qt's width -- thinner -- and the highlight at the same width as its line; a view's bounding box line shows it too; nothing run |
 | 62 | 2026-10-09 | omni search, a new feature: when it first pops up, its list holds the last 10 items that were confirmed in it; once typing starts, the recent list is not needed | OPEN; nothing run |
 | 63 | 2026-10-09 | `Std_DrawStyle` (a new request): a new icon suggested for it; its display style options as a combo box with their icons; anti-aliasing and its combo box in the same menu; the light sources configuration moved there from the preferences (not the manipulator), with a button to manipulate the light direction in the active 3D view and a check box to sync all 3D views' light direction; the Light Sources preference page removed | OPEN; answered 14:52: the style combo is for the active view; anti-aliasing and lights apply at once; the manipulation toggles by the button or Esc; the sync check box is a remembered setting and decides whether a light direction goes to the active view or to all open views; one more button saves ALL the current view's light settings for future use (corrected 14:55); three icons to choose from; all of the Light Sources page's settings but the manipulator go into the menu; a change of the lights is stored in the active view's properties, the button saves it into the settings, and the sync check box is for all the light settings (14:59); nothing run |
-| 64 | 2026-10-09 | the cavity option (cavity shading) draws jagged, MSAA on or off; the reporter: to be fixed in its shader; under both the realistic and the classic shading, more obvious in the Shaded draw style (no edges) and at a slant | OPEN; nothing run |
+| 64 | 2026-10-09 | the cavity option (cavity shading) draws jagged, MSAA on or off; the reporter: to be fixed in its shader; under both the realistic and the classic shading, more obvious in the Shaded draw style (no edges) and at a slant | FIXED `66ccd277b9`, not staged, not pushed: in its shader, as the reporter said. The pass reads one normal a pixel after the scene is resolved, so a crease was a band every pixel was in or out of; it now reads each neighbour's normal as the average over its pixel, the crease placed within the pixel from the two faces' planes. Along a straight crease the middle of the darkening strayed 0.18 to 0.26 px rms from its line (a perfect staircase gives 0.29) and strays 0.01 to 0.04 now, the line as heavy as it was (2% lighter). Found on the way, FIXED `dfdfc04c5c`: under an ORTHOGRAPHIC camera the creases of whatever lay near the camera dropped out, in dots. `tests/gui/cavity-crease-is-smooth.py`: 20 PASS and 21 FAIL on the copy staged 17:36, 47 PASS now. Render engine, MSAA 4x, Shaded, Direct3D 11; not run: a browser, Vulkan, Metal, OpenGL. Three points for the reporter (`docs/HandsOnLog.md`) |
 | 65 | 2026-10-09 | the Cycles view (the path-traced picture) shows the object MIRRORED -- about the XY plane, by the look of it; "definitly out of place" | STAGED 2026-10-09 17:36, fixed `6a6fa208d6`: the note-taker's reading confirmed by a picture -- on the copy staged 16:42 a cone on its base comes out apex DOWN in the path tracer's frame, the host's edge lines over it apex up. The frame is an uploaded image drawn with a render target's texture coordinate, turned over on every backend but OpenGL; the blit's shader takes the turn back out. A shader alone. 2 PASS and 2 FAIL before, 4 PASS now, and the same under `bgfx - OpenGL`. Not run: Vulkan, Metal (`docs/HandsOnLog.md`) |
 | 66 | 2026-10-09 | the preferences dialog is slow to load the first time; and "Reset all" chosen then freezes the program for several tens of seconds | OPEN, the timing check QUEUED by the reporter 17:52 (measure first); there was no entry for it; nothing measured, nothing run. Kin: entry 26 (the first OK, fixed) and entry 30's second task (a preset's freeze, measured, not changed) |
 
@@ -5722,7 +5734,7 @@ Nothing of the entry's questions is left with the reporter but that last
 reading.
 Passed on to the build session.
 
-## 64. Cavity shading is jagged, MSAA or not -- OPEN
+## 64. Cavity shading is jagged, MSAA or not -- FIXED `66ccd277b9`, not staged; a second defect of the pass FIXED `dfdfc04c5c`; three points for the reporter (see `docs/HandsOnLog.md`)
 
 **2026-10-09 17:07, reported:** "new defect. cavity option shows jagger
 regardless of msaa. I think it should be fixed in its shader"
@@ -5776,6 +5788,37 @@ where no edge line with coverage of its own lies over it.
 styles; where they are chosen was not looked up.)
 Nothing of the entry's questions is left with the reporter.
 Passed on to the build session.
+
+**2026-10-09 18:30, from the build session: FIXED `66ccd277b9`, and a second
+defect of the same pass FIXED `dfdfc04c5c`; local, not pushed, not staged.**
+The account is in `docs/HandsOnLog.md`, entry 64; in short:
+- The cause is the one read above, and the fix is in the pass's own shader
+  (`fs_fc_cavity.sc`), where the reporter put it. A crease was a band every
+  pixel was wholly in or out of; each neighbour's normal is now read as the
+  average over its pixel, and the crease is placed within the pixel from
+  the two faces' planes.
+- Measured on a straight crease: the middle of the darkening strayed 0.18
+  to 0.26 px rms from its line (a perfect staircase gives 0.29) and strays
+  0.01 to 0.04 now. The line is as heavy as it was (2% lighter).
+- Found on the way: under an ORTHOGRAPHIC camera the creases of whatever
+  lay near the camera dropped out, in dots -- at the default radius the
+  near end of a small block's ridge, at radius 3 most of a ridge. The
+  pass's depth test was 2% of the depth itself, which is no measure of a
+  pixel under that camera. Whole now.
+- `tests/gui/cavity-crease-is-smooth.py`: 20 PASS and 21 FAIL on the copy
+  staged 17:36, 41 PASS at the first commit, 47 claims and all PASS at the
+  second. Run with the render engine, MSAA 4x, Shaded, Direct3D 11.
+
+**For the reporter, from the build session -- NOT ANSWERED YET:**
+- (a) Its own choice, to be agreed or not: `Render_CavityRadius` is rounded
+  to a whole pixel now (1.4 is 1, 1.5 is 2).
+- (b) Left as it was: a limb that rests on a face -- a cylinder lying on a
+  plate -- is taken for a valley and comes out in dashes. It is not a
+  crease and cannot be placed like one. A perspective camera always showed
+  it; an orthographic one shows it now too.
+- (c) Nothing run in a browser, on Vulkan, Metal or OpenGL.
+(The note-taker's reading: (a) is a choice to confirm; (b) and (c) are for
+the reporter to know, and to say if either is to be taken further.)
 
 ## 65. The Cycles view shows the object mirrored -- STAGED 2026-10-09 17:36, fixed `6a6fa208d6` (see `docs/HandsOnLog.md`)
 
