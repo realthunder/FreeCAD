@@ -152,6 +152,12 @@ struct LogOp
     std::string vbefore;
     std::string vafter;
     bool derived {false};
+    /// A set the element reference update made (sec 31.25): the value
+    /// follows the shape of the object referred to. Kept as a value set by
+    /// hand is, and no change to a merge. Never with `derived`; the store
+    /// holds the two in one column, so a row from before has neither more
+    /// nor less than it had.
+    bool followed {false};
     /// A set's touched state before it (sec 27.58), DocumentObject::
     /// LogTouchedBit packed: the property's bit and its object's. -1 when
     /// not recorded -- another op, a container that is no object, a write

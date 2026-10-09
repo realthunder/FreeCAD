@@ -176,19 +176,26 @@ void Transaction::inheritDerived(const Transaction& from)
         const auto& theirs = it->second->_PropChangeMap;
         for (auto& kv : info.second->_PropChangeMap) {
             auto found = theirs.find(kv.first);
-            if (found != theirs.end())
+            if (found != theirs.end()) {
                 kv.second.derived = found->second.derived;
+                kv.second.followed = found->second.followed;
+            }
         }
     }
 }
 
 void Transaction::inheritDerived(
-    const std::function<bool(const TransactionalObject*, const Property*)>& derived)
+    const std::function<bool(const TransactionalObject*, const Property*)>& derived,
+    const std::function<bool(const TransactionalObject*, const Property*)>& followed)
 {
     for (auto& info : _Objects.get<0>()) {
         for (auto& kv : info.second->_PropChangeMap) {
-            if (kv.second.propertyOrig && derived(info.first, kv.second.propertyOrig))
+            if (!kv.second.propertyOrig)
+                continue;
+            if (derived(info.first, kv.second.propertyOrig))
                 kv.second.derived = true;
+            else if (followed(info.first, kv.second.propertyOrig))
+                kv.second.followed = true;
         }
     }
 }
@@ -687,6 +694,14 @@ void TransactionObject::applyChn(Document &Doc, TransactionalObject *pcObj, bool
 void TransactionObject::setProperty(const Property* pcProp)
 {
     auto &data = _PropChangeMap[pcProp->getID()];
+    if (data.followed && !PropertyLinkBase::isUpdatingElementReferences()) {
+        // Followed first and now written outside the update (sec 31.25):
+        // somebody set it after all. Not by its owner's own recompute,
+        // which decides no more than the update did.
+        auto obj = Base::freecad_dynamic_cast<DocumentObject>(pcProp->getContainer());
+        if (!obj || !obj->isRecomputing())
+            data.followed = false;
+    }
     if(!data.property && data.name.empty()) {
         static_cast<DynamicProperty::PropData&>(data) = 
             pcProp->getContainer()->getDynamicPropertyData(pcProp);
@@ -720,6 +735,9 @@ void TransactionObject::setProperty(const Property* pcProp)
         data.propertyType = pcProp->getTypeId();
         if (auto obj = Base::freecad_dynamic_cast<DocumentObject>(pcProp->getContainer())) {
             data.derived = obj->isRecomputing();
+            // Sec 31.25: written by the element reference update, as the
+            // shape of the object referred to changed.
+            data.followed = !data.derived && PropertyLinkBase::isUpdatingElementReferences();
             // The touched state before this write, for the log (sec 27.58):
             // the object's as it was before the transaction first wrote to
             // it, so every op of the object in the row says the same. None

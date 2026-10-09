@@ -334,12 +334,30 @@ void PropertyLinkBase::followElementReferences(const ElementEvidence &evidence)
     }
 }
 
+namespace {
+/// How deep this thread is in updateElementReferences()
+thread_local int updatingElementReferences = 0;
+
+struct UpdatingElementReferences
+{
+    UpdatingElementReferences() { ++updatingElementReferences; }
+    ~UpdatingElementReferences() { --updatingElementReferences; }
+};
+}
+
+bool PropertyLinkBase::isUpdatingElementReferences()
+{
+    return updatingElementReferences > 0;
+}
+
 void PropertyLinkBase::updateElementReferences(DocumentObject *feature, bool reverse) {
     if(!feature || !feature->isAttachedToDocument())
         return;
     auto it = _ElementRefMap.find(feature);
     if(it == _ElementRefMap.end())
         return;
+    // What is written from here on is followed, to a transaction
+    UpdatingElementReferences scope;
     std::vector<PropertyLinkBase*> props;
     props.reserve(it->second.size());
     props.insert(props.end(),it->second.begin(),it->second.end());

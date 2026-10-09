@@ -465,6 +465,13 @@ public:
     /// Update all element references in all link properties of \a feature
     static void updateElementReferences(DocumentObject *feature, bool reverse=false);
 
+    /** Whether this thread is inside updateElementReferences(). What is
+     * written there follows the shape of the object referred to: nobody set
+     * it, and its owner's recompute does not make it. A transaction records
+     * such a write as followed (docs/TransactionLog.md sec 31.25).
+     */
+    static bool isUpdatingElementReferences();
+
     /// Obtain link properties that contain element references to a given object
     static const std::unordered_set<PropertyLinkBase*>& getElementReferences(DocumentObject *);
 

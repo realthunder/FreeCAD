@@ -60,6 +60,20 @@ namespace {
     "(entity BLOB, target BLOB, role TEXT, name TEXT, seq INTEGER,"                 \
     " PRIMARY KEY(entity, role, name, target)) WITHOUT ROWID"
 
+/// What the `derived` column of an op holds (sec 31.25): who made the
+/// write. One column for the two flags, which are never both set; a row
+/// from before the second holds 0 or 1 and reads as it did.
+enum OpWriter {
+    OpByHand = 0,
+    OpDerived = 1,
+    OpFollowed = 2,
+};
+
+int opWriter(const LogOp& o)
+{
+    return o.derived ? OpDerived : (o.followed ? OpFollowed : OpByHand);
+}
+
 int hexDigit(char c)
 {
     if (c >= '0' && c <= '9')
@@ -307,7 +321,7 @@ public:
                 bindText(op, 10, o.meta);
                 bindText(op, 11, o.vbefore);
                 bindText(op, 12, o.vafter);
-                sqlite3_bind_int(op, 13, o.derived ? 1 : 0);
+                sqlite3_bind_int(op, 13, opWriter(o));
                 if (o.touched < 0)
                     sqlite3_bind_null(op, 14);
                 else
@@ -574,7 +588,8 @@ public:
             o.meta = text(s, 8);
             o.vbefore = text(s, 9);
             o.vafter = text(s, 10);
-            o.derived = sqlite3_column_int(s, 11) != 0;
+            o.derived = sqlite3_column_int(s, 11) == OpDerived;
+            o.followed = sqlite3_column_int(s, 11) == OpFollowed;
             o.touched = sqlite3_column_type(s, 12) == SQLITE_NULL ? -1 : sqlite3_column_int(s, 12);
             out.push_back(std::move(o));
         }
@@ -633,7 +648,8 @@ public:
         o.meta = text(s, 7);
         o.vbefore = text(s, 8);
         o.vafter = text(s, 9);
-        o.derived = sqlite3_column_int(s, 10) != 0;
+        o.derived = sqlite3_column_int(s, 10) == OpDerived;
+        o.followed = sqlite3_column_int(s, 10) == OpFollowed;
         o.touched = sqlite3_column_type(s, 11) == SQLITE_NULL ? -1 : sqlite3_column_int(s, 11);
         sqlite3_reset(s);
         return true;
@@ -991,7 +1007,7 @@ public:
                 bindText(op, 10, o.meta);
                 bindText(op, 11, o.vbefore);
                 bindText(op, 12, o.vafter);
-                sqlite3_bind_int(op, 13, o.derived ? 1 : 0);
+                sqlite3_bind_int(op, 13, opWriter(o));
                 if (o.touched < 0)
                     sqlite3_bind_null(op, 14);
                 else

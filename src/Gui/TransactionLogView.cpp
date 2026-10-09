@@ -962,7 +962,8 @@ void TransactionLogView::showOps(int64_t seq)
             item->setText(OpBefore, shortRef(op.vbefore));
             item->setText(OpAfter, op.op == "set" && op.vafter.empty()
                                        ? tr("pending") : shortRef(op.vafter));
-            item->setText(OpDerived, op.derived ? QStringLiteral("yes") : QString());
+            item->setText(OpDerived, op.derived ? QStringLiteral("yes")
+                                         : op.followed ? tr("followed") : QString());
             item->setData(OpBefore, Qt::UserRole, QString::fromStdString(op.vbefore));
             item->setData(OpAfter, Qt::UserRole, QString::fromStdString(op.vafter));
             item->setData(OpProp, Qt::UserRole, QString::fromStdString(op.meta));

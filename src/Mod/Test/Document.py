@@ -6050,6 +6050,165 @@ class TransactionBranchCases(unittest.TestCase):
         self.assertEqual(found.Surface.TypeId, "Part::GeomCylinder")
         self.assertEqual(self.shapesKept(cut), [])
 
+    def cutReferredTo(self, name):
+        # Sec 31.25: a reference and an attachment to the side of Cut2,
+        # which one branch counts again by drilling (the cylinder) and the
+        # other by notching (the small box) -- no property set on both.
+        doc = self.cutToReferTo(name, drilled=False)
+        side = self.faceAt(doc.Cut2, XMin=10)
+        doc.openTransaction("refer")
+        doc.Ref.One = (doc.Cut2, [side])
+        doc.Plane.AttachmentSupport = [(doc.Cut2, side)]
+        doc.Plane.MapMode = "FlatFace"
+        doc.recompute()
+        doc.commitTransaction()
+        return doc
+
+    @staticmethod
+    def drillIt(doc):
+        doc.openTransaction("drill")
+        doc.Cyl.Placement.Base = FreeCAD.Vector(5, 5, -10)
+        doc.recompute()
+        doc.commitTransaction()
+
+    @staticmethod
+    def notchIt(doc):
+        doc.openTransaction("notch")
+        doc.Notch.Placement.Base = FreeCAD.Vector(0, 0, 3)
+        doc.recompute()
+        doc.commitTransaction()
+
+    def pointIt(self, doc, **at):
+        doc.openTransaction("point")
+        doc.Ref.One = (doc.Cut2, [self.faceAt(doc.Cut2, **at)])
+        doc.recompute()
+        doc.commitTransaction()
+
+    @staticmethod
+    def writersOf(doc, seq):
+        # Who wrote each reference of a row: followed, derived, or by hand.
+        return {
+            o["prop"]: "followed" if o["followed"] else "derived" if o["derived"] else "hand"
+            for o in doc.getTransactionOps(seq)
+            if o["op"] == "set" and o["prop"] in ("One", "AttachmentSupport", "Support")
+        }
+
+    def testAReferenceARecomputeMovedIsRecordedFollowed(self):
+        # Sec 31.25: the cylinder moved through, the cut counts its faces
+        # another way and every reference into it is looked up again. Nobody
+        # set those, and their owners did not run: the row says followed,
+        # and keeps the values as it keeps one set by hand.
+        doc = self.cutReferredTo("FollowedRecorded")
+        cut2, ref = doc.Cut2, doc.Ref
+        before = ref.One[1]
+        self.drillIt(doc)
+        self.assertNotEqual(ref.One[1], before, "the drill left the numbers as they were")
+        drill = [t for t in doc.getTransactionLog() if t["name"] == "drill"][-1]["seq"]
+        self.assertEqual(
+            self.writersOf(doc, drill),
+            {"One": "followed", "AttachmentSupport": "followed", "Support": "followed"},
+        )
+        kept = [o for o in doc.getTransactionOps(drill) if o["prop"] == "One"][0]
+        self.assertTrue(kept["before"] and kept["after"], "kept as a value set by hand is")
+        # The undo and the redo write it outside the update: it is the
+        # write they put back all the same.
+        doc.undo()
+        self.assertEqual(ref.One[1], before)
+        doc.redo()
+        for row in doc.getTransactionLog()[-2:]:
+            self.assertEqual(self.writersOf(doc, row["seq"]).get("One"), "followed", row["kind"])
+        # Set by hand in the row that moved it too, it is a value set by
+        # hand: whichever came first.
+        doc.openTransaction("clear, and point")
+        doc.Cyl.Placement.Base = FreeCAD.Vector(5, 5, -40)
+        doc.recompute()
+        ref.One = (cut2, [self.faceAt(cut2, ZMax=0)])
+        doc.commitTransaction()
+        first = [t for t in doc.getTransactionLog() if t["name"] == "clear, and point"][-1]["seq"]
+        self.assertEqual(self.writersOf(doc, first)["One"], "hand")
+        doc.openTransaction("point, and drill")
+        ref.One = (cut2, [self.faceAt(cut2, XMin=10)])
+        doc.Cyl.Placement.Base = FreeCAD.Vector(5, 5, -10)
+        doc.recompute()
+        doc.commitTransaction()
+        both = [t for t in doc.getTransactionLog() if t["name"] == "point, and drill"][-1]["seq"]
+        self.assertEqual(self.writersOf(doc, both)["One"], "hand")
+        self.assertEqual(self.writersOf(doc, both)["AttachmentSupport"], "followed")
+        # And it is in the file.
+        doc.save()
+        path = doc.FileName
+        FreeCAD.closeDocument(doc.Name)
+        doc = self.track(FreeCAD.openDocument(path))
+        self.assertEqual(self.writersOf(doc, drill)["One"], "followed")
+        self.assertEqual(self.writersOf(doc, both)["One"], "hand")
+
+    def testAReferenceARecomputeMovedIsNoChangeToAMerge(self):
+        # Sec 31.25: both branches changed the cut and neither touched the
+        # references into it; each side's were moved by its own recompute,
+        # to another number. That was three conflicts. A side whose only
+        # writes of a reference followed has not changed it: ours is kept
+        # and the merge's recompute moves it; where theirs set it by hand,
+        # theirs' is taken, and followed by its name (sec 31.22). Only two
+        # values set by hand are asked.
+        def point(**at):
+            return lambda doc: self.pointIt(doc, **at)
+
+        cases = [
+            # name, ours, theirs, where the reference is in the end
+            ("FollowedNone", [], [self.drillIt], {"XMin": 10}),
+            ("FollowedBoth", [self.notchIt], [self.drillIt], {"XMin": 10}),
+            ("FollowedTheirs", [self.notchIt, point(ZMax=0)], [self.drillIt], {"ZMax": 0}),
+            ("FollowedOurs", [self.notchIt], [point(YMin=10)], {"YMin": 10}),
+        ]
+        for name, ours, theirs, at in cases:
+            with self.subTest(name):
+                doc = self.cutReferredTo(name)
+                cut2, plane, ref = doc.Cut2, doc.Plane, doc.Ref
+                doc.createTransactionBranch("side")
+                doc.switchTransactionBranch("side")
+                for change in theirs:
+                    change(doc)
+                doc.switchTransactionBranch("main")
+                doc.openTransaction("another thing")
+                doc.Box.Label = "Block"
+                doc.commitTransaction()
+                for change in ours:
+                    change(doc)
+                preview = doc.previewTransactionMerge("side")
+                self.assertEqual(preview["conflicts"], 0)
+                asked = {c["key"]: c["kind"] for c in preview["changes"]}
+                self.assertNotIn("Plane.AttachmentSupport", asked)
+                self.assertNotIn("Plane.Support", asked)
+                self.assertEqual(asked.get("Ref.One"), "take" if name == "FollowedOurs" else None)
+                result = doc.mergeTransactionBranch("side")
+                self.assertEqual((result["unresolved"], result["failed"]), ([], []))
+                self.assertEqual(ref.One, (cut2, [self.faceAt(cut2, **at)]))
+                self.assertEqual(plane.AttachmentSupport, [(cut2, (self.faceAt(cut2, XMin=10),))])
+                self.assertAlmostEqual(plane.Placement.Base.x, 10.0)
+                self.assertFalse([o.Name for o in doc.Objects if "Touched" in o.State])
+                # What the merge's recompute moved is followed in its row
+                # too, and the next merge reads it so.
+                if name == "FollowedNone":
+                    self.assertEqual(self.writersOf(doc, result["seq"]).get("One"), "followed")
+
+    def testAReferenceSetOnBothBranchesIsStillAsked(self):
+        # Sec 31.25, the last row of its table: set by hand here and there,
+        # to two faces, it is a conflict as it was -- though each side's
+        # recompute moved it as well.
+        doc = self.cutReferredTo("FollowedNeither")
+        doc.createTransactionBranch("side")
+        doc.switchTransactionBranch("side")
+        self.pointIt(doc, YMin=10)
+        self.drillIt(doc)
+        doc.switchTransactionBranch("main")
+        self.notchIt(doc)
+        self.pointIt(doc, ZMax=0)
+        preview = doc.previewTransactionMerge("side")
+        asked = {c["key"]: c["kind"] for c in preview["changes"]}
+        self.assertEqual(asked.get("Ref.One"), "conflict")
+        self.assertEqual(preview["conflicts"], 1)
+        self.assertNotIn("Plane.AttachmentSupport", asked)
+
     def testAGroupIsMergedByItsMembers(self):
         # Sec 31.8: a group two branches each put an object in was one value
         # against the other. It is the objects in it: ours, then what theirs

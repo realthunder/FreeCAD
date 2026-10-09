@@ -1099,6 +1099,7 @@ PyObject* DocumentPy::getTransactionOps(PyObject *args)
             d.setItem("before", Py::String(o.vbefore));
             d.setItem("after", Py::String(o.vafter));
             d.setItem("derived", Py::Boolean(o.derived));
+            d.setItem("followed", Py::Boolean(o.followed));
             list.append(d);
         }
         return Py::new_reference_to(list);

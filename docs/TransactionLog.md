@@ -16720,7 +16720,7 @@ element's name holds; the shape replaced and the evidence removed, the
 file saved, read again and saved again, the strings are still in the
 table and the rest of the old shape's are not.
 
-### 31.25 A reference a recompute moved is no change to a merge (user, 2026-10-09; ruled, to be built)
+### 31.25 A reference a recompute moved is no change to a merge (user, 2026-10-09; built)
 
 **Asked (user):** "how do you determine which property value is derived.
 for example, the property link element reference auto correction during
@@ -16758,8 +16758,8 @@ again on an undo or a branch come back to -- the owner's recompute does
 not. It is kept as a value set by hand is. What it is not is a decision
 anybody made.
 
-**Proposed, and ruled (user): "Yes the flag." To be built first in the
-next session.**
+**Proposed, and ruled (user): "Yes the flag."** Built the same day, as
+below.
 
 - *Recorded.* `PropertyLinkBase::updateElementReferences` runs in a scope
   the transaction sees. A property whose first write in the transaction
@@ -16793,6 +16793,82 @@ one.
 branches `Cyl.Shape` is asked as a conflict beside `Cyl.Placement` -- the
 shape's first write in the transaction is the placement laid on it, by
 hand, before any recompute.
+
+**Built (2026-10-09).**
+
+- *The scope.* `PropertyLinkBase::updateElementReferences` counts itself
+  in and out, per thread, and `isUpdatingElementReferences()` says so.
+  `followElementReferences` (31.22), which a merge calls on the values it
+  took, does not go through it: those are theirs' values, set by hand.
+- *The write.* `TransactionObject::setProperty`, at a property's first
+  write in the transaction, sets `followed` beside `derived`: inside the
+  scope, and the owner not recomputing -- an owner that is, is writing its
+  own output, and that is derived as before. Never both.
+- *What the owner does about it is followed too.* The update's write
+  reaches the owner's `onChanged`, and what that writes is inside the
+  scope: a plane's `Support`, the old name kept beside
+  `AttachmentSupport`, is in the row followed, and was the third of the
+  conflicts measured above.
+- *Set by hand afterwards* in the same transaction -- the cylinder moved,
+  a recompute, then the reference pointed elsewhere -- it is a value set
+  by hand: the flag comes off at a write outside the scope. The design
+  said "first write decides" of a write by hand that came first; this is
+  the other order, and goes the same way, since being asked once too
+  often is the lesser wrong. A later write by the owner's own recompute
+  leaves the flag: it decides no more than the update did.
+- *Undo and redo* write a reference outside the update. The inverse takes
+  the flag from the step it inverts, as it takes `derived` (24.2,
+  `Transaction::inheritDerived`), for a hot step from its copies and for
+  a cold one from the row.
+- *Stored* in the op's `derived` column: 0 by hand, 1 derived, 2
+  followed. The two are never both, so one column holds them, the table
+  is as it was, and a row from before reads as it did.
+- *Read.* `getTransactionOps` has `followed`; the panel's column that
+  said `yes` for a derived op says `followed` for this one.
+- *Weighed.* The net change of a side (`NetChange::Val`) is followed
+  where its last set was and no row set it by hand, and the property was
+  there before the rows and after (`followedOnly()`): a property the rows
+  added or removed is somebody's doing. Then, in `planWeigh`:
+  - ours' is not a change of ours -- neither for "ours changed nothing",
+    where theirs is moved to as it is, nor for an object "changed here"
+    that theirs removed;
+  - theirs' makes no line: nothing is taken, nothing asked;
+  - theirs' set by hand against ours' followed is `take`;
+  - in a unit (31.5) it is not a property a side moved;
+  - where a property is merged by what it holds (31.8), a followed set is
+    not a side writing a thing, so it does not make that side the last to
+    have written it.
+  A squash keeps the flag on the net op.
+- *Left as they were:* ours for rows picked (31.12) and for a branch with
+  no base (30.22) is what the document holds, and has no rows to say who
+  wrote it; a picked row's followed op is theirs', and makes no line. An
+  import takes the values and the flag as they are.
+
+**Measured.** `derived.py`, the case above: 5 conflicts before, 2 now --
+`Cyl.Placement` and `Cyl.Shape`, the cylinder moved by hand on both.
+`followed.py`, the table, with the references into a cut one branch
+drills and the other notches:
+
+| ours | theirs | asked | the reference after the merge |
+| --- | --- | --- | --- |
+| nothing | followed | nothing | the side, ours' moved by the merge's recompute (`Face2` -> `Face6`), followed in the merge's row |
+| followed | followed | nothing | the side (`Face9` of eleven) |
+| by hand, the bottom | followed | nothing | the bottom |
+| followed | by hand, the back | `Ref.One` taken | the back, by its name |
+| by hand | by hand | `Ref.One`, a conflict | -- |
+
+The plane attached to the side sits on it in all of them, and nothing is
+left touched.
+
+**Tests.** Python, `Document.TransactionBranchCases`:
+`testAReferenceARecomputeMovedIsRecordedFollowed` -- the row, with both
+values kept; the undo's and the redo's rows; set by hand in the same
+transaction, after the recompute and before it; the file read again.
+`testAReferenceARecomputeMovedIsNoChangeToAMerge` -- the first four rows
+of the table. `testAReferenceSetOnBothBranchesIsStillAsked` -- the last.
+
+**Not tested by itself:** the flag taken by the undo of a cold step. It
+goes the way `derived` does there, through the same call.
 
 ## 32. A shape diff: seeing what a merge or a pick would take (plan, 2026-10-06)
 

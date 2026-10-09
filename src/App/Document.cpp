@@ -243,6 +243,8 @@ struct Document::ColdRevert
     std::vector<const LogOp*> ops;
     /// (container id, property) of every derived op, for the inverse.
     std::set<std::pair<long, std::string>> derived;
+    /// And of every followed one (sec 31.25).
+    std::set<std::pair<long, std::string>> followed;
     /// Undo of a row that is not the tip (sec 24.4): checked against the
     /// ops after it, and derived values left to recompute.
     bool selective {false};
@@ -733,6 +735,8 @@ bool Document::_prepareRevert(int64_t seq, const std::string& name, ColdRevert& 
         for (const LogOp* o : revert.ops) {
             if (o->derived && o->ckind != "view")
                 revert.derived.emplace(o->cid, o->prop);
+            if (o->followed && o->ckind != "view")
+                revert.followed.emplace(o->cid, o->prop);
             if (o->ckind == "view") {
                 if (!haveViews || o->cid <= 0) {
                     ++views;
@@ -1271,8 +1275,8 @@ void Document::logInverse(const Transaction& applied, const char* kind, const Co
     if (!log || !d->activeUndoTransaction)
         return;
     if (cold) {
-        d->activeUndoTransaction->inheritDerived(
-            [this, cold](const TransactionalObject* tobj, const Property* prop) {
+        auto among = [this](const std::set<std::pair<long, std::string>>& ops) {
+            return [this, &ops](const TransactionalObject* tobj, const Property* prop) {
                 long cid = 0;
                 const PropertyContainer* container = this;
                 if (auto obj = Base::freecad_dynamic_cast<const DocumentObject>(tobj)) {
@@ -1284,8 +1288,10 @@ void Document::logInverse(const Transaction& applied, const char* kind, const Co
                 }
                 // Safe on a property already destroyed (a dynamic one removed).
                 const char* name = container->getPropertyName(prop);
-                return name && cold->derived.count({cid, name}) != 0;
-            });
+                return name && ops.count({cid, name}) != 0;
+            };
+        };
+        d->activeUndoTransaction->inheritDerived(among(cold->derived), among(cold->followed));
     }
     else
         d->activeUndoTransaction->inheritDerived(applied);
@@ -7539,6 +7545,17 @@ struct NetChange
         /// not make it a recompute's value (sec 31.14): a line drawn in a
         /// sketch that a later recompute solved again is still a line drawn.
         bool hand {false};
+        /// The last set was made by the element reference update, and no
+        /// row set it by hand (sec 31.25): see followedOnly().
+        bool followed {false};
+        /// Whether no side decided this value: every write of it followed
+        /// the shape of the object it refers into, or was its owner's
+        /// recompute's before that. It is no change to a merge (sec 31.25).
+        /// Not for a property the rows added or removed, which somebody did.
+        bool followedOnly() const
+        {
+            return followed && atStart && atEnd;
+        }
     };
     std::map<long, Obj> objects;
     std::vector<long> objectOrder;
@@ -7594,12 +7611,14 @@ struct NetChange
                 v.atEnd = false;
                 v.after.clear();
                 v.derived = o.op == "set" && o.derived;
+                v.followed = false;
             }
             else {
                 v.atEnd = true;
                 v.after = o.vafter;
-                v.hand = v.hand || (o.op == "set" && !o.derived);
+                v.hand = v.hand || (o.op == "set" && !o.derived && !o.followed);
                 v.derived = o.derived && !v.hand;
+                v.followed = o.followed && !v.hand;
             }
         }
     }
@@ -7674,6 +7693,7 @@ struct NetChange
                 s.vbefore = v.before;
                 s.vafter = v.after;
                 s.derived = v.derived;
+                s.followed = v.followedOnly();
                 ops.push_back(s);
             }
             else if (!v.atStart && v.atEnd) {
@@ -9031,7 +9051,7 @@ bool mergeByElement(Document& doc, TransactionLog& log, const MergePlan& plan,
         for (const auto& t : store.chain(head, pv.base + 1)) {
             for (const auto& op : store.ops(t.seq)) {
                 if (op.op != "set" || op.ckind != "obj" || op.cid != c.cid || op.prop != c.prop
-                        || op.derived)
+                        || op.derived || op.followed)
                     continue;
                 Elements before, after;
                 if (!split(op.vbefore, before, side) || !split(op.vafter, after, side))
@@ -9607,6 +9627,10 @@ void planWeigh(Document& doc, TransactionLog& logRef, MergePlan& plan)
         const std::string& ckind = std::get<0>(kv.first);
         if (ckind == "view" || kv.second.derived || !netChanged(kv.second))
             continue;
+        // Nor is a reference that only followed the shape it names (sec
+        // 31.25): ours decided nothing about it.
+        if (kv.second.followedOnly())
+            continue;
         if (ckind == "doc" && keptOnRestore(std::get<2>(kv.first).c_str()))
             continue;
         changed = true;
@@ -9732,6 +9756,12 @@ void planWeigh(Document& doc, TransactionLog& logRef, MergePlan& plan)
         const std::string& prop = std::get<2>(key);
         if (!v.derived && !netChanged(v))
             continue;
+        // Sec 31.25: a reference theirs only followed is no change of
+        // theirs. What moved it is a change to the object referred to,
+        // which comes by itself, and the merge's recompute then moves ours
+        // the same way.
+        if (v.followedOnly())
+            continue;
         if (ckind == "doc" && keptOnRestore(prop.c_str()))
             continue;
         Document::MergeChange c;
@@ -9782,7 +9812,10 @@ void planWeigh(Document& doc, TransactionLog& logRef, MergePlan& plan)
             continue;
         }
         auto o = plan.ours.values.find(key);
-        if (o == plan.ours.values.end() || o->second.derived || !netChanged(o->second)) {
+        // Ours left it alone, or only followed with it (sec 31.25): theirs'
+        // is taken, and followed by name once it is in (sec 31.22).
+        if (o == plan.ours.values.end() || o->second.derived || o->second.followedOnly()
+                || !netChanged(o->second)) {
             c.kind = "take";
         }
         else {
@@ -9941,7 +9974,8 @@ void planWeigh(Document& doc, TransactionLog& logRef, MergePlan& plan)
             auto moved = [&](const NetChange& net) -> const NetChange::Val* {
                 auto it = net.values.find(key);
                 if (it == net.values.end() || it->second.derived || !netChanged(it->second)
-                        || !it->second.atStart || !it->second.atEnd)
+                        || !it->second.atStart || !it->second.atEnd
+                        || it->second.followedOnly())
                     return nullptr;
                 return &it->second;
             };

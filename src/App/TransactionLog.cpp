@@ -2955,6 +2955,7 @@ void TransactionLog::remember(const LogTransaction& t, const std::vector<LogOp>*
             slim.cid = o.cid;
             slim.prop = o.prop;
             slim.derived = o.derived;
+            slim.followed = o.followed;
             slim.touched = o.touched;
             row.ops.push_back(std::move(slim));
         }
@@ -3254,6 +3255,7 @@ int64_t TransactionLog::onCommit(const Transaction& txn, const char* kind, const
                 }
                 auto o = emit("set", name, typeName);
                 o->derived = derived;
+                o->followed = !derived && data.followed;
                 if (!derived)
                     o->touched = data.touchedBefore;
                 if (recordsValue(derived) || waiting)

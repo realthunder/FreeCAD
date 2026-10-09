@@ -114,13 +114,17 @@ public:
      * transaction this one is the inverse of (sec 24.2). The flag is set
      * where the write happens -- the owner is recomputing -- and an undo's
      * writes are never made while recomputing, so without this undoing a
-     * feature would log its own output as an input.
+     * feature would log its own output as an input. The followed flag
+     * (sec 31.25) is taken the same way and for the same reason: an undo
+     * writes a reference outside the update that follows it.
      */
     void inheritDerived(const Transaction& from);
-    /// The same for a cold step, whose copies are gone: `derived` says, per
-    /// container and property, what the log row it reverted recorded.
+    /// The same for a cold step, whose copies are gone: `derived` and
+    /// `followed` say, per container and property, what the log row it
+    /// reverted recorded.
     void inheritDerived(
-        const std::function<bool(const TransactionalObject*, const Property*)>& derived);
+        const std::function<bool(const TransactionalObject*, const Property*)>& derived,
+        const std::function<bool(const TransactionalObject*, const Property*)>& followed);
     /** Past the hot window (docs/TransactionLog.md sec 24.3): the step's
      * copies are gone and only its id, name and LogSeq are left. Applying
      * it reverts that log row from the log (Document::revertFromLog).
@@ -216,6 +220,13 @@ protected:
         /// output (docs/TransactionLog.md sec 10). Recorded here because
         /// only the write site can tell; a commit-time reader cannot.
         bool derived = false;
+        /// The first write of this transaction was made by the element
+        /// reference update (PropertyLinkBase::updateElementReferences):
+        /// the value follows the shape of the object referred to, and is
+        /// no change to a merge (docs/TransactionLog.md sec 31.25). Never
+        /// with `derived`; a write by hand later in the transaction takes
+        /// it off again.
+        bool followed = false;
         /// Set by the transaction log when it hands `property` to its
         /// writer thread (docs/TransactionLog.md sec 20.2, decision 4):
         /// the copy is then co-owned, and outlives this record until it
