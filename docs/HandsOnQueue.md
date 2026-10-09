@@ -142,6 +142,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 54 | 2026-10-09 | a highlight shown on top: under the pointer (preselection) its edges respect the depth against the faces, an edge behind a face is dimmed; a full SELECTION does not, its edges are drawn as if there were no depth test | OPEN; nothing run |
 | 55 | 2026-10-09 | sometimes the progress bar in the status bar is at the left side; seen once during a recompute; after closing the document and opening one again it was back in its normal place | OPEN, intermittent; nothing run |
 | 56 | 2026-10-09 | view cells, after entry 29 (change request): the menu button and the handles shown on hover have no contrast on a light grey or white ground; handles off a view's scroll bar; the drag frames too transparent -- less so, with white borders, in the theme's accent colour (the palette's selection highlight when there is no theme); the same for the overlay's drag frame; Esc and any mouse click cancel a cell drag, only the left release commits | OPEN; nothing run |
+| 57 | 2026-10-09 | the browser viewer's split view gets the same view cell logic as the desktop's (entries 29 and 56): drag frames, commit at the left release, cancel, the minimum cell size, the look (change request) | OPEN; nothing run |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -4681,6 +4682,46 @@ Not said: whether the dim goes or stays under the stop sign; and the sign's
 shape -- the red octagon of a road sign, or a red disc with a bar.
 Passed on to the build session.
 
+## 57. The browser viewer's split view: the same view cell logic as the desktop's (a change request) -- OPEN
+
+**2026-10-09 11:05, the reporter, after the points of entry 56:** "btw, do
+the same view cell logic in browser"
+The browser viewer has split views of its own; they are to behave as the
+desktop's view cells do after entries 29 and 56. Given a number of its own
+because it is another tier and another source: the desktop's cells are
+`src/Gui/ViewArea.cpp`, the browser's are
+`src/Gui/Renderer/web/src/splitview.tsx` (DOM chrome over the one canvas;
+`docs/SplitViews.md` sec 5.7 and sec 9).
+
+**What "the same logic" takes in, the note-taker's list from entries 29 and
+56, to confirm:**
+- a drag of a corner zone or of a border is shown as frames over every cell
+  it changes and is carried out at the release of the left button (entry
+  29; the build session's choice 1 there, still not confirmed by the
+  reporter);
+- Esc and any mouse click cancel the drag, a border's too (entry 56 (f));
+- the minimum cell size, default 300, a split under it refused (entry 29);
+- a join: one frame, the cell that stays over the room of both, and a red
+  stop sign on the cell that goes (entry 56 (g));
+- the look: the frames' colour and how see-through they are, white
+  borders, the handles and the menu button with contrast on a light
+  ground, handles off a scroll bar (entry 56 (a) to (e)).
+
+**How the browser's split view stands today, read from `splitview.tsx` by
+the note-taker, nothing run:** it has the same gestures -- corner zones
+that split on a drag inward and arm a join on a drag outward, border
+handles, a per-cell menu -- but a drag is applied LIVE: the tree changes as
+the pointer moves. There are no frames; a join shows a dim and an arrow on
+its target (`joinMark`); the only limit on a cell's size is a ratio,
+`MIN_RATIO` = 0.05 of the split, not a size in pixels; and nothing in the
+file handles Escape. A join is cancelled by dragging back inside, a split
+by dragging back to the press point, as on the desktop before entry 29.
+
+Not said yet by the reporter: whether the minimum cell size is the
+desktop's setting carried over to the browser or a value of the viewer's
+own; and whether touch (a finger has no Esc and no second button) gets a
+way to cancel of its own.
+
 ## Inbox
 
 Notes not sorted into an entry yet. Add a line here at any time, in any words;
@@ -4688,4 +4729,4 @@ it is read before each entry is started and moved up into the table.
 
 (empty: the notes of 2026-10-06 are entries 20 to 28, those of 2026-10-07
 entries 29 to 40, those of 2026-10-08 entries 41 to 45, those of 2026-10-09
-so far entries 46 to 56)
+so far entries 46 to 57)
