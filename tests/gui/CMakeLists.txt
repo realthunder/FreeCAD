@@ -1680,3 +1680,10 @@ fc_add_gui_test(GuiSplitViewBrowser_tests_run
 fc_add_gui_test(GuiViewCellCloseKeepsThePicture_tests_run
                 view-cell-close-keeps-the-picture.py
                 --timeout 240)
+
+# The live Cycles view is the same way up as the view: its frame is an
+# uploaded image drawn with a render target's texture coordinate, which is
+# upside down on every backend but OpenGL. Skips without Cycles.
+fc_add_gui_test(GuiCyclesViewRightWayUp_tests_run
+                cycles-view-right-way-up.py
+                --timeout 300)
