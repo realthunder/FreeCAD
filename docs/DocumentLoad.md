@@ -2513,7 +2513,7 @@ from the sixth second; held, the whole 30 s comes after it.
 **A turn grows with what a frame costs** (7a0e26be94). With work left over
 from the turn before, a turn may run half as long as the event loop then
 took to give the thread back, up to five budgets and never less than one
-(`PartGui::landingTurnBudget`). A turn over the budget is always shorter
+(`PartGui::landingTurnBudget`; `Gui::turnBudget` since sec 18.16). A turn over the budget is always shorter
 than the stretch the event loop has just taken, so it is no new stall,
 and where frames are quick the budget is all a turn gets. The rows `turn`
 above: the first pictures where sec 18.11 put them, and the refined one
@@ -2869,6 +2869,11 @@ The view provider drain ends 8 s sooner and the GUI is away no longer
 for it -- its stretches were frames already. The visual drain ends 6 to
 8 s sooner and its longest stretch grows by a second.
 
+(Read wrongly, and corrected in sec 18.16: the visual drain ends sooner
+by what the view provider drain in front of it ended sooner, and no
+more. From its own first slice to its last it takes the same time at
+either budget.)
+
 **An import for comparison**: `AR-15.STEP`, 88 MB, in a window on the
 NVIDIA card. The import call takes 22.9 s, the GUI thread away from its
 loop for 3.9 s at most inside it; 185 objects, 2 of them drawn as boxes
@@ -2974,6 +2979,184 @@ not later read as a regression.
   background.
 - A load in the background is slower by what the document in front
   refines. A cap on that share was not asked for and is not there.
+
+### 18.16 The drains' turn, and the frame drawn inside a slice (2026-10-09)
+
+The first thing ruled for the session after sec 18.15: the two drains
+get a turn that grows with what a frame costs, as the landing pump's
+does (sec 18.12), and the rule is measured against the fixed budgets of
+sec 18.14, 100 ms and 500 ms. It was built as ruled, measured, and found
+to buy nothing; what it lacked is the larger part of this section.
+
+**Where the frame is drawn.** A slice ends by posting the next slice,
+and the event loop serves what is posted before it serves the timer that
+would draw the frame. So the frame is not drawn between two slices. It
+is drawn when the next slice steps its progress bar, which lets events
+through a fifth of a second after it last did
+(`SequencerBar::setValue`) -- INSIDE the slice. Two things followed:
+
+- *The slice paid for the frame.* A slice timed itself from its first
+  line, the frame came out of its budget, and a slice whose frame cost
+  the budget or more gave up after one object. On the reference assembly
+  in a window on the desktop the view provider drain said of itself "65
+  slices, 10.2 s" for 4.7 s of work: more than half of what it counted
+  as its own time was frames.
+- *The event loop looked cheap.* Between two slices nothing was left to
+  draw, so a rule that reads the clock between turns saw a quick loop
+  and kept to the budget. The rule alone, built first: the view provider
+  drain through after 15.5 and 16.7 s where the fixed 100 ms has 13.5 to
+  17.1 s.
+
+**What is.**
+
+- `Gui::turnBudget(budget, away, backlog, share)` (`Gui/TurnBudget.h`)
+  is the pump's rule of sec 18.12, moved down from PartGui so that
+  `Gui::Document` can use it, with the share of the event loop's stretch
+  a turn may take as a parameter: one half for the pump, as measured
+  there.
+- `Gui::TurnPace`, one for each party that takes turns -- a document's
+  view provider drain (its slices and the slices that serve its archive
+  entries afterwards), the visual drain, the landing pump. A turn is a
+  scope (`TurnPace::Turn`); it is given its budget as it begins and says
+  as it ends whether it left work for the next. A wait of the work's own
+  accord -- for a pre-mesh, for a document still loading -- is not a
+  backlog, and the turn after it is one budget.
+- *What a turn yields is not its time.* The progress bar's pump is a
+  `TurnPace::Yield`. `Turn::elapsed()` leaves it out, and both drains
+  and the pump measure their slice by that. The drains' closing lines
+  ("... slices, ... s, longest ... s") say work now, where they said
+  work and the frames drawn inside it.
+- *What a turn yielded is what the event loop cost.* It is added to the
+  stretch the next turn is measured by.
+- *Another party's turn is not what the event loop cost.* The work of
+  every turn runs one clock, which stands while a turn is yielded, and a
+  party is away for the time that passed less what that clock ran. Left
+  out, two parties settle (each takes half of the other's turn), and
+  four documents loading at once would each take a share of what the
+  three others took and go to the ceiling with frames that cost nothing.
+  Every `Gui::Document` has a drain of its own, so four is not unusual
+  here.
+- *A load's share is the whole stretch* (`Gui::loadTurnShare`): a slice
+  of a load may run as long as the event loop took, which gives the load
+  half the thread; the ceiling is five budgets as before. A load puts an
+  object on the screen for the first time (sec 18.11), the pump refines
+  one that is drawn.
+
+**Measured**, `MiSTer.FCStd`, a window of 1920x1080 on the desktop, the
+NVIDIA card through Mesa's D3D12 driver, the close-up as saved, one load
+a process and the first of each round thrown away, old and new libraries
+swapped between loads (`scripts/load-timing.py`). Seconds after the open
+returned:
+
+| the drains' turn | view provider drain ends | its slices | visual drain ends | last landing |
+|---|---|---|---|---|
+| fixed, 100 ms (before) | 13.5, 14.5, 16.5, 17.1 | 58 to 65 | 33.1 to 34.1 | 55.4 to 57.1 |
+| the rule alone, half the stretch | 15.5, 16.7 | 50, 53 | 35.4, 35.9 | 57.0, 59.2 |
+| with the yield, half the stretch | 12.9, 12.9, 14.0 | 27 to 32 | 31.4 to 34.4 | 54.3 to 57.7 |
+| with the yield, the whole stretch (as built) | 11.1, 11.3, 11.4 | 20 to 22 | 30.3 to 31.6 | 52.8 to 55.2 |
+| with the yield, twice the stretch | 9.1, 12.2 | 20, 14 | 28.1, 33.6 | 49.0, 55.0 |
+| fixed, 500 ms (before) | 7.9, 8.1, 10.2, 10.4 | 13 to 17 | 27.4 to 30.0 | 49.3 to 54.4 |
+
+- The view provider drain is through 2 to 6 s sooner, and its work is
+  4.6 to 4.9 s in every arm that can say so. The fixed 500 ms is still
+  ahead, by 1 to 3.5 s: it gives the work two thirds of the thread where
+  the whole stretch gives it half. Twice the stretch was tried for that and
+  its two loads are 3 s apart; the share is one constant.
+- The thread's longest stretch away from the event loop during that
+  drain is 0.7 to 1.2 s in every arm, the fixed 100 ms included
+  (0.8 to 1.1 s): the long stretches are frames, not slices.
+- **The visual drain is no sooner through for any of it**, and sec 18.14
+  read its table wrongly. From the view provider drain's end to its own:
+
+  | | visual drain, its own time |
+  |---|---|
+  | fixed, 100 ms | 16.4, 16.8, 19.6, 19.6 |
+  | fixed, 500 ms | 19.0, 19.3, 19.5, 20.0 |
+  | half the stretch | 18.5, 20.3, 20.4 |
+  | the whole stretch | 19.2, 19.8, 20.3 |
+  | twice the stretch | 19.0, 21.4 |
+
+  The "6 to 8 s sooner" of sec 18.14 was the view provider drain's gain
+  carried along. This drain's frames cost by what was built since the
+  last one -- the meshes going up, 0.8 to 4.5 s a frame in sec 18.14 --
+  and not by their number, so cutting it into fewer slices changes
+  nothing. Its work is 5.6 to 6.2 s by its own line; the rest is frames.
+- The last landing follows the visual drain's end by the same 21 to
+  24.5 s in every arm.
+
+**Several documents.** The visual drain serves its documents in order
+(sec 18.15), and the longer slice is the one in front's alone: a
+document behind it has what a plain budget leaves, so that the one in
+front never waits more than a budget behind it. That was reasoned, not
+measured -- the test of sec 18.15 comes out the same without it.
+
+What did move in that test is its last sequence, the active document
+`New` (80 solids) with the later opened `Small` (20) behind it, and it
+moved by the yield: sec 18.15 gives a document "what the one in front
+leaves" of a slice, and with the frame charged to the slice there was
+mostly nothing left to give. Two runs before, three after:
+
+| | before | after |
+|---|---|---|
+| `New`, in front, is through after | 9.7, 10.0 s | 9.8, 10.1, 10.7 s |
+| `Small`, behind it, is through after | 13.0, 13.3 s | 10.5, 11.3, 11.7 s |
+| visuals `Small` built while `New` filled in | 4 | 14 to 15 |
+
+The document behind is through 2 s sooner on time the one in front
+could not use, its visuals waiting for a pre-mesh; the one in front is
+through first in every run and 0 to 0.7 s later than it was, the frames
+that the other's builds bring. The check there said "half of its 20 at
+most", a number taken on the old accounting, and says now what the
+design promises: the document in front is through first. **This is a
+cost to the document the ruling of sec 18.15 puts first**, small, and
+the user's to weigh.
+
+**Tests.** `tests/src/Gui/TurnBudget.cpp` (`TurnBudget_tests_run`, 18
+cases): the rule -- the pump's cases, moved from PartGui, and the load's
+share -- and the pace: a wait, another party's turn, a turn inside
+another, a yield, another party's turn inside a yield.
+`tests/gui/drain-turn-grows.py` (`GuiDrainTurnGrows_tests_run`): 2400
+solids, a budget of 10 ms, loaded as they are and with a frame of 120 ms
+that the script draws the way a frame is drawn -- it runs the event loop
+a turn at a time and arms a timer after each, which fires at the next
+moment events are served, the progress bar's pump included.
+
+| | before, three runs | after, three runs |
+|---|---|---|
+| checks | 10 of 12 | 12 of 12 |
+| view provider drain, the dear load: slices | 62 to 65 | 12 to 13 |
+| ... what it says it spent | 3.0 to 3.1 s | 0.50 to 0.54 s |
+| ... through after | 10.1 to 10.6 s | 3.3 to 3.5 s |
+| visual drain, the dear load: slices | 103 to 105 | 16 to 17 |
+| ... what it says it spent | 7.7 to 8.0 s | 0.74 to 0.81 s |
+| ... through after | 25.4 to 26.3 s | 6.7 to 7.0 s |
+| the plain load: slices | 45 to 48 and 86 to 88 | 36 to 37 and 66 to 77 |
+
+(The plain load has fewer slices too: its budget is 10 ms and a frame
+of software GL takes 10 to 20, which a slice may now match. At the
+default budget of 100 ms a frame under 100 ms changes nothing.)
+
+The first form of this test paid its cost strictly between two turns of
+the event loop, passed on the rule alone, and said nothing of the load
+in the window: a frame is not drawn there. A test of pacing has to put
+the cost where the product pays it.
+
+**Left.**
+
+- *The visual drain's frames*, 13 to 15 s of its 19 to 21 on this
+  display, are uploads: what a frame takes in, not how many frames there
+  are. The next thing ruled, the release of a load's edges and points
+  over several frames, is the same cost at the load's end.
+- *The view provider drain's frame* is the window repainting, some 0.3 s
+  a time at full size on this driver with 21 draws in the scene (sec
+  18.14, "a cost by the window's size"). Nothing here makes it cheaper;
+  the drain only pays it 20 times where it paid it 60.
+- *Other pumps.* Only the progress bar's two say that they yield. A
+  build that lets events through by some other way is still charged for
+  them.
+- *The share* is one constant for both drains, chosen on the view
+  provider drain; the visual drain does not answer to it on this model.
+- All figures are Mesa's D3D12 driver under WSL (sec 18.14, last point).
 
 ## 19. Progressive load against eager (2026-09-29)
 
