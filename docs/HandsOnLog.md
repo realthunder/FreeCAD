@@ -27,6 +27,15 @@ timeout, `docs/Testing.md`). Staged 14:23; not pushed.
 Pushed 2026-10-08 late, on the reporter's word ("Push"): origin/PartDesignPort at
 `8a7e02b37c`, which has entries 41, 42, 44 and 45. Not staged.
 
+The session of 2026-10-09 (the reporter: "Continue as planned", the open
+entries): 40, 37, 35, 43, 29, 36 and 25 fixed, 30 in part, 28 measured and
+not reproduced. All local: not pushed, not staged. Three GUI tests were
+found failing that fail the same way on the copy staged 2026-10-07, so
+not from this session and not looked into: `element-color-hide.py` (2 of
+624 claims, a pick in the other view after a hide through a mirrored
+link), `per-view-shown-eviction.py` ("the plan evicts H1, released"), and
+`navicube-per-view.py`, which passes its 11 claims and then does not end.
+
 Evidence that does not belong in the repository is under
 `..\dl\handson\<date>\`, as before.
 
@@ -38,8 +47,10 @@ Evidence that does not belong in the repository is under
 | 22 | STAGED `5aedd5cf83` | `/word` is an object query; the beginning of a keyword lists modes and objects |
 | 23 | STAGED `c7a27b5a85`, and `08b8f009aa`; the defaults FIXED `02cab053df`, not staged | 574 settings: 221 had no documentation, 94 ran past 400 characters; all have a short text now, and a test keeps it so. The defaults: OK on a fresh profile changed 23 settings and stored 2 under a wrong type -- 14 of them a spin box clamping its default to 99, which the reporter's own profile carries |
 | 24 | C++ SIDE DONE, about 1180 settings listed; the reporter's decisions of 2026-10-08 applied in two rounds, `e21eff05a7` and `427ffc8d28`; pushed `b70cc6ebf1`, not staged | every setting C++ reads is behind a generated class. After both rounds: the editors' font is Courier, Home is Top, the marker size is 7 everywhere, the Asymptote height is empty, CAM's unit default is upstream's; 15 of the 16 findings are fixed or dropped as decided (D4 needs nothing). A24: the fork's three accent colours stay ("keep ours"). Nothing is left with the reporter. Entries 41 (Python door) and 42 (state keys, to be listed) are decided and not started |
+| 25 | FIXED `9c9549d368`, not staged, not pushed | the outline of a face is cut along the face by a stencil mark, one sample a pixel whatever the multisampling: a staircase against the model's dark edge. For a face under the pointer the outline now fades in from the cut -- its middle line wanders 0.16 px from column to column where it wandered 0.33. A SELECTED face's outline is left as it was, on purpose |
 | 26 | FIXED `175ffce199`, not staged | the first OK of a profile held the program 11 to 15 s on the reporter's configuration with `scanner.FCStd` open: 780 keys stored for the first time and taken for changes -- stylesheet set again 4.2 s, every Part view provider re-meshed 3.2 s, language activated again 2 s. 0.9 s now |
 | 27 | STAGED `fa2ada985c` | the cell menu made a spreadsheet view by asking for it, listed a page's views, and a pick was placed by the general policy |
+| 28 | NOT REPRODUCED in 15 loads; nothing changed; a question for the reporter | the part the report fits -- a solid of the imported motor -- has light blue as its OWN stored colour and is drawn light blue on every load here; the light grey is what was not seen. One first load of a session came up with an empty 3D view, not followed up |
 | 29 | DONE `dd336be800`, and `c9bc1e22c5` for the default of 300 the reporter then asked for; not staged, not pushed; four choices of mine for the reporter | a drag of a corner zone or of a border is shown as frames over every cell it changes and carried out at the release; the minimum cell size setting (300 by default) refuses a split and stops a border; corner zones and the hovered menu button on an opaque ground; the border 3 pixels |
 | 30 | THIRD TASK FIXED `dad4f5d18a`, not staged, not pushed; the freeze MEASURED, not fixed; the first task waits for the reporter | Light, Dark and Classic list the colours an overlay preset leaves behind, so a theme clears the Python console's background again. The freeze on `scanner.FCStd`: 13 s for the dark overlay preset, of which 9.5 s is the application's style sheet being changed; the same preset a second time, nothing changing, still 4 s |
 | 31 | FIXED `47b5e72c79`, not staged | "Go to end" is on for a profile that never stored it |
@@ -2582,6 +2593,116 @@ of: the packs naming a different pair of overlay sheets; the overlay
 taking its colours from the theme's parameters instead of a sheet of its
 own; or the overlay LAYOUT (which panels float where) coming with the
 theme. Not started without that word.
+
+## 25. The outline of a highlighted face is jagged, MSAA or not -- FIXED `9c9549d368`, not staged
+
+**What it is.** The outline is the outer half of a thick line along the
+face's boundary; the inner half is cut away by a stencil mark of the face.
+The line's outer edge has had analytic coverage for a while; the cut is
+one sample a pixel whatever the multisampling (the outline is drawn in a
+pass of its own). Enlarged twelve times (`q2\crop-before-pre.png`): the
+yellow of a hovered face steps against the model's black edge a whole
+pixel at a time. That is the jaggedness, and why MSAA did nothing to it.
+(Earlier I wrote the pass is "drawn after the resolve"; it draws into the
+scene target, and the cut is still one sample a pixel -- the pictures of
+2026-10-07 at 4 samples say so. Why multisampling does not reach the
+stencil there was not chased further: the fix does not depend on it.)
+
+**The change**, for the outline of ONE face whose fill is not drawn over
+it -- a face under the pointer:
+- the lines fade in from the cut: no coverage on the boundary, whole one
+  pixel out. That is the coverage of an edge half a pixel further out, so
+  it reads as a straight anti-aliased edge; the line is drawn a pixel
+  wider to keep its weight;
+- only the boundary's own edges are drawn. The pass used to draw every
+  triangle edge of the face and let the stencil hide the inner ones, but
+  an inner edge reaches past the boundary where it meets it, and with a
+  fade that is a hard blob at every vertex;
+- the lines mark the stencil as they go, so that neither the next line
+  nor a corner cap draws over the fade.
+
+**Tried and taken back.** The first build faded twice as steeply (half a
+pixel): half of each step smooth, the other half flat. And it faded the
+outline of a SELECTED face too, which made that one worse: a selected
+face is filled, the fill and the cut end on the very same pixels and hide
+the model's edge between them, and the fade let the edge through as a row
+of dark dots (`q2\crop-b-sel.png` against `crop-before-sel.png`). A
+selected face's outline is left cut. Its staircase is green on a lighter
+green, and much fainter than the hovered one's yellow on black was.
+
+**Scored.** `tests/gui/face-outline-inner-edge.py`: the top face of a
+cylinder seen from the isometric side; over a slanted stretch of the
+outline, 124 pixel columns, the middle of the outline's colour in each
+column and how much it jumps from column to column (mean second
+difference). Multisampling off, the default.
+
+| | before (the copy staged 2026-10-07) | after |
+|---|---|---|
+| hovered: the outline's middle | 0.330 px | 0.161 px |
+| hovered: its thickness | 0.712 px | 0.274 px |
+| selected: dark pixels in the band | 0 | 0 |
+
+Before 5 PASS and 1 FAIL, after 6 PASS (the claim: under 0.22 px).
+`readback-frame-mode.py` 24 PASS and its one known failure, as before;
+`pick-edge-in-face.py` 24 PASS.
+
+Not done: with multisampling ON (not scored); the whole-scene silhouette
+and the hidden-line outlines, which use the same cut and were not asked
+about; a selected face with the fill switched off in the preferences
+takes the faded path by the same rule, not tried.
+
+## 28. `scanner.FCStd` restores with a wrong colour, sometimes -- NOT REPRODUCED; what was measured
+
+Nothing changed. What was tried, on the dev build and a fresh profile
+(`e28.py` in `..\dl\handson\2026-10-08\q2`, pictures in `q2\e28pics`):
+- **Six loads in one session**, each time every view provider's
+  `ShapeColor`, `LineColor`, `Transparency`, `Visibility` and the first
+  entries of `DiffuseColor` recorded for all 686 objects: identical, load
+  to load.
+- **Three sessions of three loads**, the same record and the engine's own
+  frame (`saveRenderDump`) each time, compared within a session and with
+  the first picture of the first session: the properties identical again;
+  the pictures the same but for 2 to 100 pixels along one edge of the
+  black housing (the same edge, a shade lighter or darker -- an edge's
+  blend, not a part's colour).
+So the colour a part is GIVEN did not change in 15 loads, and neither did
+the colour it is drawn in. "Sometimes" was not met.
+
+Two things the pictures did show:
+- In one of the three sessions the FIRST load's frame, taken 13 s after
+  the open, was EMPTY -- the background and the navigation cube, no model;
+  the second and third load of the same session were complete. Not
+  followed up (entry 2 was a file that came up empty, staged since); it
+  may be the model not yet drawn rather than not drawn.
+- My first two ways of taking the picture were wrong and said "identical"
+  of pictures that had no model in them at all: a widget grab and
+  `saveImage` do not go through the render engine. Only `saveRenderDump`
+  does. The first "six loads, no pixel differs" was that.
+
+**The motor, as the file has it** (`e28b.py` to `e28d.py`, the same
+directory): it is a STEP import, an `App::Part` "U3212 3D ... (STEP)"
+(`Part005` > `Part004` > `Part002`, the stator) over plain `Part::Feature`
+solids. Of those, `Compound` (its label is a U3212 part name in Chinese
+ending "_2.STEP"; 264 faces) and `Compound001` (the cable, 21 faces) have
+LIGHT BLUE as their own stored
+colour -- `ShapeColor` (202, 209, 238), one `DiffuseColor` entry, the
+same -- and are drawn light blue in every one of the loads above. The
+three `App::Part` containers over them carry a light GREY material (204,
+204, 204) with `OverrideMaterial` off and no override colours. Nothing
+maps or overrides a colour onto these solids (`MappedColors` empty,
+before and after asking for the mapping again and after a recompute).
+
+So in this build, on this file, the light blue is the part's own colour
+and is what is shown every time; it is the light GREY that I have not
+seen. Two readings, neither measured: the grey is what the reporter's
+other build shows for this part (the file came from it), or it is the
+containers' grey material reaching the solids on some loads. Which, the
+reporter can say at a glance.
+
+What would settle it, from the reporter: the part's name or a click on it
+in the state that looks wrong; whether the property editor shows the same
+colour as the view then; and whether "light grey" is what this build
+shows on the other loads or what the old build showed.
 
 ## 29. View cells: frames that show a split, a join and a resize while it is dragged; a minimum cell size -- DONE `dd336be800`, the default 300 `c9bc1e22c5`, not staged
 
