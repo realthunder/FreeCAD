@@ -161,7 +161,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 33 | 2026-10-07 | a cmd window pops up briefly at the first document opened after start | STAGED 2026-10-09 08:40, fixed `ef4df215b5` (the cycles submodule at its `35a3bd898`): the CUDA probe ran `cmd.exe /c where nvcc` through `popen` at the first 3D view; it searches the PATH without a shell now, and the session starts no process at all. Both pushed since (`docs/HandsOnLog.md`) |
 | 34 | 2026-10-07 | TechDraw's preselection colour sometimes does not follow the theme (stays yellow after classic, or is blue) | STAGED 2026-10-09 08:40, fixed `3d7b4c30fd`, as decided: Dark and Light store TechDraw's `PreSelectColor`, the blue of the 3D view's highlight; a test switches Classic, Dark, Light, Classic (`docs/HandsOnLog.md`) |
 | 35 | 2026-10-07 | TechDraw (`scanner.FCStd`, Page003): now and then a click starts a recompute; a dimension (Dimension134) cannot be selected; selecting it in the tree can recompute and clear the selection. Asked: an audit of TechDraw for unnecessary recomputes | STAGED 2026-10-09 08:40, fixed `bcad1c3982`: a dimension's label took every redraw for a drag under way and "finished" it at the next deselection or mouse release -- X and Y stored again, the document recomputed, the selection dropped. On `scanner.FCStd`, Page003: 27 of 29 dimensions started a recompute when selected and deselected, none now. 7 PASS and 5 FAIL before, 12 PASS after. The audit of what a click in a page can reach found nothing else; the 117 `updateActive()` of commands and panels were NOT gone through -- for the reporter to say (`docs/HandsOnLog.md`) |
-| 36 | 2026-10-07 | TechDraw drawn by the backend: dashed lines do not behave as Qt's do (view frame, section line, hidden line, and so on), zoom above all | STAGED 2026-10-09 08:40, fixed `9bf110632e`: the backend cut dashes once, in page units; the page layer now works them out for the zoom it draws at, by Qt's rules (pixel-counted under a pixel of pen width and for the frame, caps lengthening the dashes, the dash offset read). At 12 px/mm the hidden line and the section line are Qt's to the pixel; the frame's dashes 3.4 / 4.0 / 5.2 px at the three zooms for Qt's 4. 17 PASS and 8 FAIL before, 26 PASS after. Still different, for the reporter: a line's WIDTH is the 0.35 asked for where Qt draws 0.3 -- which is wanted is the reporter's to say (`docs/HandsOnLog.md`) |
+| 36 | 2026-10-07 | TechDraw drawn by the backend: dashed lines do not behave as Qt's do (view frame, section line, hidden line, and so on), zoom above all | STAGED 2026-10-09 08:40, fixed `9bf110632e`: the backend cut dashes once, in page units; the page layer now works them out for the zoom it draws at, by Qt's rules (pixel-counted under a pixel of pen width and for the frame, caps lengthening the dashes, the dash offset read). At 12 px/mm the hidden line and the section line are Qt's to the pixel; the frame's dashes 3.4 / 4.0 / 5.2 px at the three zooms for Qt's 4. 17 PASS and 8 FAIL before, 26 PASS after. Still different, for the reporter: a line's WIDTH is the 0.35 asked for where Qt draws 0.3 -- which is wanted is the reporter's to say (`docs/HandsOnLog.md`). The reporter on the staged copy, 2026-10-09 14:26: the thicker dashed lines are "not that big of deal"; a highlight thinner than its line is entry 61 |
 | 37 | 2026-10-07 | TechDraw: the edge style "Chain" is not drawn dashed, by either renderer, though the style combo box shows it dashed | STAGED 2026-10-09 08:40, fixed `a23d8b069b`: `LineGenerator::getBestPen` refused a line number equal to the count of lines, so the LAST line of every standard (ASME 17 "Chain", ISO 15, ANSI 4) was drawn continuous by both renderers; the combo box uses another function. Upstream has the same line. 15 PASS and 3 FAIL before, 18 PASS after (`docs/HandsOnLog.md`) |
 | 38 | 2026-10-07 | omni search: an obvious freeze the first time it is brought up | STAGED 2026-10-09 08:40, fixed `bb31f8820b`: the first bring-up loaded and rendered the icon of every command (609) before showing the box, 0.99 s + 0.28 s on the reporter's configuration with `scanner.FCStd` open; 0.15 s + 0.07 s now (`docs/HandsOnLog.md`) |
 | 39 | 2026-10-07 | MSAA has not reached any view since 2026-09-07 (found by the build session on entry 26) | STAGED 2026-10-09 08:40, fixed `c7d115e576`: with "MSAA 4x" chosen the backend could not create its scene targets and drew without multisampling from then on, on every backend; the depth is write-only under MSAA now. The reporter's case on the fixed tree: 0.75 s in all, both views at 4 samples (`docs/HandsOnLog.md`) |
@@ -186,6 +186,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 58 | 2026-10-09 | a task, "can do it later": audit every warning shown when `scanner.FCStd` is opened and recomputed, and fix what can be fixed | OPEN, for later; a first count from a kept report log: 208 warnings and 6 errors, about 15 kinds; nothing run |
 | 59 | 2026-10-09 | the program no longer opens the Start page at startup (the reporter: "the startup workbench become the PartDesign"; it used to show Start with the recent files) | FOUND by the note-taker, read and looked at in the live session, nothing changed: the startup workbench was PartDesign all along; "Reset all" removed the Start module's migration flag, so its 2024 migration ran again at the next start and switched the Start page off (`ShowOnStartup` = false). DECIDED by the reporter 13:42: "Reset all" keeps the migration's flag, as it keeps `SaveUserParameter`; not started |
 | 60 | 2026-10-09 | after a view cell is deleted, the view that expands into its room is sometimes BLACK until it is RESIZED; a camera move does not bring it back (corrected by the reporter 14:06) (Windows, Direct3D 11 at least) | OPEN, intermittent; nothing run |
+| 61 | 2026-10-09 | TechDraw drawn by the backend: dashed lines are a little thicker than Qt's (no great matter); but for some lines -- the cosmetic symmetry line in `Page`, `Top` -- the hover and selection highlight is drawn as the THINNER dashed line and is barely visible over the thicker line under it | OPEN; nothing run |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -5205,6 +5206,45 @@ Not said yet by the reporter: how the view was deleted (a join by a corner
 drag, "Close view" in the cell menu, the border's menu); whether the black
 view was a 3D view each time; and how often.
 
+## 61. TechDraw drawn by the backend: a dashed line's highlight is thinner than the line under it -- OPEN
+
+**2026-10-09 14:26, reported:** "New defect. Techdraw bgfx rendering seems to
+render all dashed line slightly thicker than qt, which is not that big of
+deal. BUT, for some line, like the cosmetic symmetric line in Page, Top, the
+hover and selection highlight shows the thinner dash line, which is barely
+visible because the underlying thickend line."
+With a TechDraw page drawn by the backend (bgfx), on the copy staged
+2026-10-09 12:25 (`cc4c34356f`):
+(a) every dashed line comes out a little THICKER than Qt draws it. By the
+reporter's own word, no great matter;
+(b) the defect: for some lines -- the example is the cosmetic symmetry line
+in the page `Page`, view `Top` -- the highlight shown on hover and on
+selection is the THINNER dashed line, drawn over the thicker one, and so it
+can barely be seen.
+
+**Where (a) comes from is known, and it was left with the reporter under
+entry 36:** when the dashes were made Qt's, the build session noted "a
+line's WIDTH: the backend draws the 0.35 mm asked for, the Qt page 0.3 ...
+Only the dashes were made Qt's. Which of the two widths is wanted is the
+reporter's to say -- Qt's is an accident of an int" (the Qt page sets a
+pen's width as a whole number of scene units). So the backend's lines are
+the width that was ASKED for, and Qt's are thinner by rounding. "Not that
+big of deal" is the reporter's answer to that open point as far as it goes:
+the widths may differ. Whether the backend should keep 0.35 or go to Qt's
+0.3 is still not said in so many words.
+
+**(b), the note-taker's reading, nothing read in the source for it:** the
+highlight is drawn at ANOTHER width than the line it highlights -- Qt's
+thinner one, by the look of it, or the pen's width before the backend's own
+-- where it has to be at least as wide as what is under it to show. "For
+some line" and a COSMETIC line as the example suggest the kind of line
+matters (a cosmetic or centre line against a view's own edges), which is
+where to start.
+
+Not said yet by the reporter: which other lines show it and which do not
+(whether a view's ordinary hidden line highlights well); and whether the
+highlight should be as wide as the line under it or wider.
+
 ## Inbox
 
 Notes not sorted into an entry yet. Add a line here at any time, in any words;
@@ -5212,4 +5252,4 @@ it is read before each entry is started and moved up into the table.
 
 (empty: the notes of 2026-10-06 are entries 20 to 28, those of 2026-10-07
 entries 29 to 40, those of 2026-10-08 entries 41 to 45, those of 2026-10-09
-so far entries 46 to 60)
+so far entries 46 to 61)
