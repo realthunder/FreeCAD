@@ -4892,6 +4892,22 @@ frame", the dim, which is a covering of that cell's own.
 Not said: whether the dim goes or stays under the stop sign; and the sign's
 shape -- the red octagon of a road sign, or a red disc with a bar.
 Passed on to the build session.
+**Added by the reporter, 2026-10-09 13:55 -- point (h), the refusal's
+message:** "view cell drag that is refuse because the new view would produce
+a window too small should print a one time error message saying the reason"
+A drag that is refused because the new view would be too small is to print
+an ERROR message, one time, that says why.
+What there is today (read, not run; `ViewArea.cpp`, about line 1479, entry
+29's): a line IS printed, with the reason -- "A view of W x H is not split
+side by side: no view cell is made smaller than N x N (the minimum view
+cell size, in the preferences)." -- but as a WARNING, and at most once every
+five seconds. So what changes is the level, warning to error (the
+note-taker's guess at why it matters: an error is what brings the report
+view or a notification up, a warning passes unseen), and how often.
+Not said: what "one time" counts -- once for each refused drag, or once in
+a session and silent after; and whether a split refused from the cell menu
+or by a view opening by itself says it too.
+Passed on to the build session.
 
 ## 57. The browser viewer's split view: the same view cell logic as the desktop's (a change request) -- OPEN
 
