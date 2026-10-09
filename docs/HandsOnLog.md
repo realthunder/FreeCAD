@@ -174,8 +174,8 @@ entries below); five of them, 104 claims, again on the last build, the
 other thirteen one build earlier, before the handle got its colour and the
 page layer the question whether an item is hidden. Tools and results in
 `..\dl\handson\2026-10-10\q1` (the folder is a day ahead of the clock it
-was made by). Both full suites on the last build, ended 2026-10-10 00:31
-and 00:42: ctest 791 of 791 (800 entries, 9 disabled, 1 skipped;
+was made by). Both full suites on the last build, ended 2026-10-10 00:13
+and 00:24: ctest 791 of 791 (800 entries, 9 disabled, 1 skipped;
 `Page2DHidden_tests_run` is the one more); Python 3411 tests with the two
 known thickness failures, 50 skipped, 6 expected failures
 (`..\dl\handson\2026-10-10\q1\full-ctest.log`, `fullpy-pytest.log`). So
