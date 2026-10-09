@@ -39,7 +39,17 @@ Evidence that does not belong in the repository -- configuration snapshots,
 report views, the reporter's own files -- is kept beside the dev tree under
 `..\dl\handson\<date>\`, and an entry names what it holds.
 
-**Where it stands, 2026-10-09 08:41: pushed, staged, and the build session
+**2026-10-09 09:40, the build session is at work again** on the reporter's
+word to it, verbatim: "continue fixing the issues in the notes". Its
+reading, marked as its own: the entries still open, in this order -- 46 (in
+work), then 49 (the reporter's own), then entry 30's first task as
+answered (the layout point waits for the reporter), then 48 and 47.
+The final suites on the tree staged 08:40 (code at `9c9549d368`) are in:
+ctest 789 of 789, Python 3411 tests with the two known `TestThickness` 5829
+failures only. Everything below this paragraph is as it stood at the
+stage.
+
+**Where it stood, 2026-10-09 08:41: pushed, staged, and the build session
 paused** on the reporter's word to it, verbatim: "Pause after this. Push and
 stage".
 - Pushed: origin/PartDesignPort = `9bcbdc191d` (was `4d08eacde1`), 21
@@ -112,10 +122,10 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 43 | 2026-10-08 | omni search: the highlighted row's text is white on a light blue highlight | STAGED 2026-10-09 08:40, fixed `3b884bfe5d`: it is under NO theme (a profile that never chose one) -- the native Windows style paints a selected row pale blue `#cde8ff` and the omni search wrote on it in the palette's highlighted text colour, white, contrast 1.3. Right already under Light, Dark and Classic. 19 PASS and 1 FAIL before, 20 PASS after (`docs/HandsOnLog.md`) |
 | 44 | 2026-10-08 | the DXF page's exporter settings do not reach the C++ DXF exporter: `Import.writeDXFObject`/`writeDXFShape` point it at `Mod/Import`, where nothing stores them (found by the build session on entry 42, Q2) | STAGED 2026-10-09 08:40, fixed `813d0250f9`, PUSHED 2026-10-08: the exporter was pointed at `Mod/Import` for its options, where nothing stores them; it takes them from `Mod/Draft`, where the DXF page puts them, as upstream does. An ellipse written with "Treat ellipses and splines as polylines" on was an ELLIPSE before and is an LWPOLYLINE after (24 points at a segment length of 5, 198 at 0.5). `Import_tests_run` 6 of 6; the full suites not rerun after it (`docs/HandsOnLog.md`) |
 | 45 | 2026-10-08 | a spreadsheet's view provider MAKES its view when asked for it (`ViewProviderSheet::getMDIView()`): one click on a sheet in the tree opens it, show-in-cell closes another sheet's view; a design agreed by the reporter in another session, single click selects and opens nothing (handed over from session x16, branch SketcherPort; goes on from entry 27) | STAGED 2026-10-09 08:40, fixed `c7fdcf3220`, PUSHED 2026-10-08, on this branch on top of entry 27's fix as decided: a sheet's `getMDIView()` answers and no longer opens; a new `ViewProviderDocumentObject::getOrCreateMDIView()` opens the view for the three callers that host it (the cell menu's pick, `Std_ViewCellShowObject`, a layout coming back). One click on a sheet selects and opens nothing. `Std_ViewCellShowObject` also took a stale cell and closed another sheet's view; it takes the active view's cell. Not as handed over in one point: the sheet's view is not made "bare" (`docs/HandsOnLog.md`) |
-| 46 | 2026-10-09 | TechDraw drawn by the backend: the hatch of a section's cut face is bright green lines far apart, where Qt draws a fine grey-green pattern (seen by the build session on entry 36) | OPEN, not looked at |
+| 46 | 2026-10-09 | TechDraw drawn by the backend: the hatch of a section's cut face is bright green lines far apart, where Qt draws a fine grey-green pattern (seen by the build session on entry 36) | FOUND 2026-10-09, a fix written and building, no commit yet: the backend rasterized the hatch once, at a texel per 0.1 mm, and drew it with no coarser copies -- at 2 px/mm 1.1 lines across a 17 px strip at 0.99 strength where Qt shows 5.0 at 0.19. A second defect found by the test: a hatch with `HatchRotation` is turned the WRONG WAY by the backend |
 | 47 | 2026-10-09 | `scanner.FCStd`: once in three sessions the FIRST load's 3D view was empty 13 s after opening, background and navigation cube only; the next two loads of that session were complete (seen by the build session on entry 28) | OPEN, seen once, not followed up |
-| 48 | 2026-10-09 | three GUI tests fail the same way on the copy staged 2026-10-07 and on today's tree: `element-color-hide.py` (2 of 624 claims), `per-view-shown-eviction.py` (1 claim), `navicube-per-view.py` (11 claims pass, then it never ends) (found by the build session) | OPEN, not looked into |
-| 49 | 2026-10-09 | after "Reset all" in the preferences and then the Light theme from Tools > Preset configurations > Themes, the workbench toolbar is hidden; shown again by hand it sits in the custom title bar as expected; intermittent -- the same steps a second time did not do it | OPEN; the bad and the good run are both in the evidence, and they differ in one thing: a saved main window state was in the configuration when the theme was applied (read, nothing run) |
+| 48 | 2026-10-09 | three GUI tests fail the same way on the copy staged 2026-10-07 and on today's tree: `element-color-hide.py` (2 of 624 claims), `per-view-shown-eviction.py` (1 claim), `navicube-per-view.py` (11 claims pass, then it never ends) (found by the build session) | OPEN; read only so far: `navicube-per-view.py` is no defect -- a run-by-hand script that never closes FreeCAD; the other two not looked into |
+| 49 | 2026-10-09 | after "Reset all" in the preferences and then the Light theme from Tools > Preset configurations > Themes, the workbench toolbar is hidden; shown again by hand it sits in the custom title bar as expected; intermittent -- the same steps a second time did not do it | OPEN; the bad and the good run are both in the evidence, and they differ in one thing: a saved main window state was in the configuration when the theme was applied (read, nothing run). Next in the build session's line after entry 46 |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -3763,7 +3773,17 @@ Asked of the reporter at the hand-over: which session builds it and on which
 branch ("build it in next session" was said to the other session, which says
 it will not). Answered 2026-10-08 20:55, at the top of this entry.
 
-## 46. TechDraw drawn by the backend: the hatch of a section's cut face is not Qt's -- OPEN, not looked at
+## 46. TechDraw drawn by the backend: the hatch of a section's cut face is not Qt's -- FOUND 2026-10-09, a fix written, no commit yet
+
+**2026-10-09 09:40, the build session: FOUND, a fix written and building,
+no commit yet** (its message; it sends the line when it is committed).
+- The cause, measured: the backend rasterized the hatch ONCE, at a texel
+  per 0.1 mm, and drew it with no coarser copies. Zoomed out, at 2 px/mm,
+  it showed 1.1 lines across a 17 px strip at 0.99 strength, where Qt
+  shows 5.0 lines at 0.19 -- the "bright green lines far apart" against
+  the "fine grey-green pattern".
+- A second defect, found by the test: a hatch with `HatchRotation` is
+  turned the WRONG WAY by the backend (Qt negates the property).
 
 **2026-10-09 06:53, seen by the build session on entry 36** and given a
 number here (its log, entry 36, "Seen on the way", `2ff967c2c8`, local). Not
@@ -3791,7 +3811,12 @@ whether this is kin to it is not known.
 Not said yet by the reporter: whether they have seen it, and whether it is
 to be followed up.
 
-## 48. Three GUI tests fail the same way on the staged copy and on today's tree -- OPEN, not looked into
+## 48. Three GUI tests fail the same way on the staged copy and on today's tree -- OPEN; one of the three is no defect
+
+**2026-10-09 09:40, the build session, read only so far:**
+`navicube-per-view.py` passes its 11 claims and "never ends" only because
+it is a run-by-hand script that never closes FreeCAD -- not a defect. The
+other two are not looked into yet.
 
 **2026-10-09 08:33, found by the build session** and given a number here.
 Not from this session's work, in its words: they fail the same way on the
