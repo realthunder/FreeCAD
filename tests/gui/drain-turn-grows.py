@@ -25,7 +25,7 @@ lets events through, a fifth of a second after it last did -- INSIDE the
 slice. The slice charged itself for it, was over its budget before it had
 done anything, and gave up after one object; and to the rule above the
 event loop between two slices cost nothing. So the time a slice spends
-letting events through is not its own (Gui::TurnPace::Yield), and is the
+letting events through is not its own (Gui::TurnPace::Yielded), and is the
 event loop's cost for the slice after.
 
 What is done: a document of 2400 solids is made and saved, then opened

@@ -219,7 +219,7 @@ TEST(TurnPace, whatATurnYieldsIsNotItsOwnTime)
     Gui::TurnPace::Turn turn(pace, 0.01);
     wait(0.03);
     {
-        Gui::TurnPace::Yield yield;
+        Gui::TurnPace::Yielded yielded;
         wait(0.1);
     }
     const double wall = now() - wall0;
@@ -238,7 +238,7 @@ TEST(TurnPace, whatATurnYieldedIsWhatTheEventLoopCost)
     Gui::TurnPace pace;
     {
         Gui::TurnPace::Turn turn(pace, 0.01);
-        Gui::TurnPace::Yield yield;
+        Gui::TurnPace::Yielded yielded;
         wait(0.12);
     }
     EXPECT_DOUBLE_EQ(turnOf(pace, 0.01), 5.0 * 0.01);
@@ -253,7 +253,7 @@ TEST(TurnPace, anothersTurnInsideAYieldIsNotWhatTheEventLoopCost)
     Gui::TurnPace other;
     {
         Gui::TurnPace::Turn turn(one, 0.01);
-        Gui::TurnPace::Yield yield;
+        Gui::TurnPace::Yielded yielded;
         turnOf(other, 0.01, 0.12);
     }
     EXPECT_DOUBLE_EQ(turnOf(one, 0.01), 0.01);
@@ -268,7 +268,7 @@ TEST(TurnPace, aYieldOutsideAnyTurnIsNothing)
     turnOf(pace, 0.05);
     const double worked0 = Gui::TurnPace::worked();
     {
-        Gui::TurnPace::Yield yield;
+        Gui::TurnPace::Yielded yielded;
         wait(0.02);
     }
     EXPECT_DOUBLE_EQ(Gui::TurnPace::worked(), worked0);

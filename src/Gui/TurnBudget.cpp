@@ -117,7 +117,7 @@ double TurnPace::Turn::elapsed() const
     return seconds(_start, Clock::now()) - _yielded;
 }
 
-TurnPace::Yield::Yield()
+TurnPace::Yielded::Yielded()
     : _turn(account().current)
     , _start(Clock::now())
     , _wasWorking(account().working)
@@ -125,7 +125,7 @@ TurnPace::Yield::Yield()
     setWorking(false, _start);
 }
 
-TurnPace::Yield::~Yield()
+TurnPace::Yielded::~Yielded()
 {
     const auto now = Clock::now();
     if (_turn) {

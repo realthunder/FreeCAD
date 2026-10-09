@@ -84,7 +84,7 @@ constexpr double loadTurnShare = 1.0;
 ///
 /// *The events a turn lets through.* A slice of a load reports to the
 /// progress bar, and the bar runs the event loop from inside the slice
-/// every fifth of a second (Yield, in the bar's own pump). The window is
+/// every fifth of a second (Yielded, in the bar's own pump). The window is
 /// repainted THERE, more often than between two slices: the next slice is
 /// already posted when a slice ends, and is served before the timer that
 /// would draw the frame. So the time a turn spent yielded is the event
@@ -140,13 +140,17 @@ public:
     /// The event loop run from inside a turn, from here to the end of
     /// the scope: whoever lets events through says so with one of these.
     /// Outside any turn it is nothing.
-    class GuiExport Yield
+    ///
+    /// Not "Yield": <winbase.h> defines Yield() as a macro that expands
+    /// to nothing, and a class of that name loses its constructor
+    /// wherever the Windows headers come first.
+    class GuiExport Yielded
     {
     public:
-        Yield();
-        ~Yield();
-        Yield(const Yield&) = delete;
-        Yield& operator=(const Yield&) = delete;
+        Yielded();
+        ~Yielded();
+        Yielded(const Yielded&) = delete;
+        Yielded& operator=(const Yielded&) = delete;
 
     private:
         Turn* _turn;
