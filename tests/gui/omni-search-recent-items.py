@@ -6,7 +6,7 @@ no need for those recent list".
 
 Confirmed is carried out: a command run from the box, a parameter's editor
 opened, an object selected or a property's editor opened. The box comes up
-with a lone "/" and the three modes; the items follow them, the newest
+with a lone "/": the items first, the three modes after them, the newest
 first, each once, ten at most, and they are gone as soon as anything more is
 typed. Picking one carries it out again. They are kept in the user
 parameters, so from one session to the next.
@@ -17,6 +17,8 @@ Claims:
   - a parameter opened from the box is listed above it, and a property
     opened from the box above that: the newest first;
   - the command run again moves to the top and is listed once;
+  - Return on the box as it comes up carries out the item at the top again
+    ("omni search recent items come before the three modes");
   - "/c" lists none of them: the list is the query's own;
   - picking the command's row runs it; picking the parameter's opens its
     editor; picking the property's puts its text in the box and opens its
@@ -151,7 +153,7 @@ def run():
         dismiss()
         edit, (view, rows) = bring_up()
         check("a command run from the box is listed the next time, by its title",
-              rows == MODES + [title], rows)
+              rows == [title] + MODES, rows)
 
         # a parameter, opened from its list
         typed(edit, "/param AntiAliasing")
@@ -167,7 +169,8 @@ def run():
 
         # a property, opened with Return
         edit, (view, rows) = bring_up()
-        check("the parameter is listed above the command", rows == MODES + [param, title], rows)
+        check("the parameter is listed above the command, the modes last",
+              rows == [param, title] + MODES, rows)
         typed(edit, "/Crate.Length")
         for w in QtWidgets.QApplication.topLevelWidgets():
             if isinstance(w, QtWidgets.QAbstractItemView) and w.isVisible():
@@ -178,7 +181,7 @@ def run():
         dismiss()
         edit, (view, rows) = bring_up()
         check("the property is listed first: the newest first",
-              rows == MODES + ["/Crate.Length", param, title], rows)
+              rows == ["/Crate.Length", param, title] + MODES, rows)
 
         # typing takes the list away
         typed(edit, "/c")
@@ -197,7 +200,17 @@ def run():
         dismiss()
         edit, (view, rows) = bring_up()
         check("the command run again is at the top, and listed once",
-              rows == MODES + [title, "/Crate.Length", param], rows)
+              rows == [title, "/Crate.Length", param] + MODES, rows)
+
+        # the box comes up on the newest item: Return alone repeats it
+        FreeCADGui.Selection.clearSelection()
+        key(view, QtCore.Qt.Key_Return)
+        settle()
+        check("Return on the box as it comes up carries out the newest item again",
+              len(FreeCADGui.Selection.getSelection()) == 2,
+              len(FreeCADGui.Selection.getSelection()))
+        dismiss()
+        edit, (view, rows) = bring_up()
 
         pick(view, rows, param)
         check("picking the parameter's row opens its editor", shown("OmniParamPanel"))

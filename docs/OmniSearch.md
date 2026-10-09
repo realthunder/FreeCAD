@@ -235,7 +235,9 @@ recent files are not. The box notes one in the four places that carry
 something out (`onCommandChosen`, `onParamChosen`, `onObjectActivated` for
 a property, `selectObject`), and `OmniSearchEdit::fillChooser()` lists them
 when the text is `/` alone (`appendRecentRows()`, the rows copied from the
-command and parameter models so that they look the same);
+command and parameter models so that they look the same), ABOVE the three
+modes: the row the box comes up on is the item confirmed last, so Return
+on a box just brought up carries that out again.
 `activateChooserRow()` carries a picked one out.
 
 Keys are handled on the popups, not on the edit: while a popup is up the

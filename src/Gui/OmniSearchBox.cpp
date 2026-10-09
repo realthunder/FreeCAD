@@ -787,7 +787,7 @@ void OmniSearchEdit::activateChooserRow(const QModelIndex &index)
         activateObject();
 }
 
-/* The items last confirmed in the box, below the modes, while the text is
+/* The items last confirmed in the box, above the modes, while the text is
  * the lone slash the box comes up with -- "keep the last 10 confirmed
  * searched items on the list when it first pop up. once typing is going,
  * then no need for those recent list" (docs/HandsOnQueue.md entry 62).
@@ -886,6 +886,12 @@ void OmniSearchEdit::appendRecentRows()
 void OmniSearchEdit::fillChooser()
 {
     chooserModel->clear();
+    // The recent items first, the modes after them ("omni search recent
+    // items come before the three modes", docs/HandsOnQueue.md entry 62):
+    // the row the box comes up on is then the item confirmed last, and
+    // Return on the box as it comes up carries that out again.
+    if (text() == QLatin1String("/"))
+        appendRecentRows();
     const QString typed = text().startsWith(QLatin1Char('/')) ? text() : QStringLiteral("/");
     struct Row { Mode mode; const char *title; QString desc; };
     const Row rows[] = {
@@ -903,8 +909,6 @@ void OmniSearchEdit::fillChooser()
         item->setData(prefix, SearchTextRole);
         chooserModel->appendRow(item);
     }
-    if (text() == QLatin1String("/"))
-        appendRecentRows();
     if (!input.withObjects || !listCompleter || !owner())
         return;
     static const int MaxObjects = 50;
@@ -1185,10 +1189,19 @@ void OmniSearchEdit::onTextEdited(const QString &text)
         fillChooser();
         chooser->setCompletionPrefix(text);
         showListPopup(chooser, popupRect());
+        auto popup = chooser->popup();
+        // The recent items lead the list, and the box comes up on the
+        // first of them: Return then carries out again what was confirmed
+        // last. The completer by itself goes to the first row that begins
+        // with what is typed -- the "/ " mode, under a recent command.
+        const QModelIndex first = chooser->completionModel()->index(0, 0);
+        if (first.data(ChooserRecentModeRole).isValid() && popup->currentIndex() != first) {
+            popup->setCurrentIndex(first);
+            popup->selectionModel()->select(first, QItemSelectionModel::ClearAndSelect);
+        }
         // The first row selected, not merely current: an unfiltered
         // completer spends the first Down on selecting the current row,
         // and the key would seem to do nothing.
-        auto popup = chooser->popup();
         if (popup->currentIndex().isValid() && !popup->selectionModel()->hasSelection())
             popup->selectionModel()->select(popup->currentIndex(),
                                             QItemSelectionModel::ClearAndSelect);
