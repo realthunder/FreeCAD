@@ -16720,6 +16720,80 @@ element's name holds; the shape replaced and the evidence removed, the
 file saved, read again and saved again, the strings are still in the
 table and the rest of the old shape's are not.
 
+### 31.25 A reference a recompute moved is no change to a merge (user, 2026-10-09; ruled, to be built)
+
+**Asked (user):** "how do you determine which property value is derived.
+for example, the property link element reference auto correction during
+recompute, will you consider those as derived?"
+
+**How it is decided.** A write is derived where the object that owns the
+property is itself recomputing at the property's first write in the
+transaction (`TransactionObject`, `data.derived = obj->isRecomputing()`).
+
+**So no, and measured** (`~/.cache/txnlog-ref/derived.py`). A plane
+attached to the side of a cut, and a `PropertyLinkSub` to the same face;
+the cylinder moved through. The object recomputing is the cut; the owners
+of the two links are not. `Plane.AttachmentSupport` and `Ref.One` are in
+the row `derived=False`, as a value set by hand is. And the consequence:
+with the cylinder moved on both branches and neither reference touched by
+anybody, the preview asks `Plane.AttachmentSupport`, `Plane.Support` and
+`Ref.One` as conflicts.
+
+**What the write is.** When the object a link refers into gets a new
+shape, each reference is looked up again (`updateElementReferences`): the
+face is there under its mapped name and counted at another place (`Face2`
+reads `Face6`); or its name is gone and it is found by its geometry, under
+a new name (`Top`, drilled, is `Top;:M;CUT`); or it is found by neither
+and marked (`?Face2`). Nobody set it, and the owner did not run:
+
+| | who decides the value | made again by the owner's recompute | recorded today |
+| --- | --- | --- | --- |
+| by hand | the user, a script | no | not derived |
+| derived | the owner's recompute | yes | derived |
+| followed | the shape of the object referred to | no | not derived |
+
+It cannot be called derived. A derived value may be left out of the log or
+let go of (10, `TransactionLogDerived`), and nothing would make this one
+again on an undo or a branch come back to -- the owner's recompute does
+not. It is kept as a value set by hand is. What it is not is a decision
+anybody made.
+
+**Proposed, and ruled (user): "Yes the flag." To be built first in the
+next session.**
+
+- *Recorded.* `PropertyLinkBase::updateElementReferences` runs in a scope
+  the transaction sees. A property whose first write in the transaction
+  is made in it has `followed` on its op, beside `derived`; a write by
+  hand earlier in the same transaction leaves it a write by hand. The
+  value is kept as now. Links, expressions and a sheet's cells all go
+  through that one update (31.22).
+- *To a merge:* a side whose only writes to a property were followed has
+  not changed it.
+
+  | ours | theirs | today | to be |
+  | --- | --- | --- | --- |
+  | nothing | followed only | taken, then followed by name (31.22) | ours kept |
+  | followed only | followed only | a conflict | ours kept, nothing asked |
+  | by hand | followed only | a conflict | ours kept |
+  | followed only | by hand | a conflict | theirs taken, and followed by name (31.22) |
+  | by hand | by hand | a conflict | a conflict |
+
+  Ours kept is right because what moved theirs' reference is a change to
+  the object referred to, which comes in by itself, and the merge's
+  recompute then moves ours' the same way.
+- *Rows the log has already* have no flag and are read as they are.
+
+*Not chosen:* comparing two references by their mapped names where a merge
+decides whether a side changed one. No flag, and good for rows already
+there, but it covers the first of the three writes alone: a face found by
+its geometry has another name, and that is the drilled face, the common
+one.
+
+*Seen in the same probe, not chased:* with a primitive moved on both
+branches `Cyl.Shape` is asked as a conflict beside `Cyl.Placement` -- the
+shape's first write in the transaction is the placement laid on it, by
+hand, before any recompute.
+
 ## 32. A shape diff: seeing what a merge or a pick would take (plan, 2026-10-06)
 
 **Asked (user):** "also plan for another feature. shape diff tool, so that

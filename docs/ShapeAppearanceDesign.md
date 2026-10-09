@@ -3941,7 +3941,7 @@ where the object is made; the view providers that are not their object's
 the store.
 
 **C. A link, `App::Part`, a body** (14.6.4). *Built for a link and for
-`App::Part`* (14.6.10); a body is still to do. Until it was built, what a
+`App::Part`* (14.6.10); a body is still to do, and waits (14.6.12). Until it was built, what a
 link lays over a face made from what it shows was asked of its view
 provider through one function the Gui gives App; with no Gui the link is
 asked now, and the function stays for a link that draws through a view
@@ -4976,3 +4976,63 @@ child on it through the steps above, and a child on a plain link through
 its own, each read back at schema 5 and at 4. Assembly3 itself is not in
 the gates: `~/.cache/txnlog-e/tools/probe_asm3.py` with `run.sh here|fork`
 (`E_ADDON` links the workbench into this build) is the run to repeat.
+
+#### 14.6.12 A body's look waits for an object that is the solid (user, 2026-10-09)
+
+Step C left a body (14.6.4, 14.6.9). Asked for a design, one was put, and
+the user paused it before any ruling:
+
+> "Pause on the body first. The body supports multiple solid. Right now it
+> is implicitly groupes the the tip feature if each solid. And it
+> complicates coloring. I want to add a new object to represent the solid
+> and act as an explicit group of all its feature. So the coloring policy
+> shall wait."
+
+**So: nothing of a body's look is built or ruled, and none of it is to be
+until the solid is an object.** A body holds several solids
+(`PartDesign::Feature::NewSolid` starts one; `_Siblings`,
+`Body::getSiblings()`, `Body::AutoGroupSolids`), and what groups the
+features of one solid today is its tip feature, by the view provider
+(`ViewProviderBody::checkSiblings()`, `groupSiblings()`). A look "of the
+body" that is handed to "the tip" has that grouping under it: which tip,
+of which solid. The object to come -- the solid, an explicit group of all
+its features -- is what a look would be given to and fall back to, and
+the policy is written for it, not for what is there now.
+
+What follows is kept so it is not measured twice. It decides nothing.
+
+*What a body does today* (`~/.cache/txnlog-ref/body.py`, one script with
+no Gui and with one; a body of a box and a cylinder cut from it):
+
+| step | no Gui | with a Gui |
+| --- | --- | --- |
+| `body.ShapeColor = red` | the body's own look is red; nothing drawn changes | the tip is red, the tip's `MapFaceColor` is off, the body is drawn red |
+| `body.Transparency = 40` | the body's own is 40; nothing drawn changes | the tip has 40 |
+| `tip.ShapeColor = blue` | the wall of the hole is drawn blue, the rest as it was | the body is drawn blue all over; its own look still says red |
+| the tip moved to the box | nothing of the body's | the body's own look is the box's; the box's `MapFaceColor` is off |
+| the tip moved back | nothing | the body's own look is the cylinder's, blue and 40 |
+
+With a Gui the view provider mirrors both ways -- the body's look to its
+tip (`unifyVisualProperty()`), and the tip's back as the body's own
+whenever the tip changes or is given one (`updateData()`); with none the
+body's own look is a value nothing draws. The two-way sync is where the
+two regressions of 2026-10-08 were.
+
+*The design that was put (mine, not ruled, and to be thought again for a
+solid).* No mirroring: the own look of the thing a feature belongs to is
+what its faces fall back to. A face is drawn with the look given to it;
+else one given along the chain, a painted face or a feature that was
+itself given a look, as the mapping does now; else the look of what it
+belongs to; else the card. The store tells a look that was given from one
+nobody gave (`followMaterial()`, 14.6.10), which is what the third step
+needs; `Part::Feature::updateAppearance()` would ask whose look that is.
+One value in one place, the same with a Gui and without, and one property
+of one object to a merge. It changes three things a Gui does today: a
+body coloured no longer writes its tip nor turns the tip's map off; the
+tip moved no longer replaces the body's own look; a tip coloured whole
+colours the faces that feature made and not the whole body. The other
+way, the mirroring moved as it is into `PartDesign::Body`, keeps today's
+Gui behaviour and the value in two objects.
+
+*Left open with it:* whether the fall back is for faces and transparency
+alone or for lines and points too.
