@@ -2301,8 +2301,17 @@ explained. The replay keeps its position now (`_deferCapturedPos`) and
 leaves when the budget is spent: 0.012 to 0.046 s, in 38 to 49 slices
 where there were 24 to 30, the drain's total as it was. The same test
 checks it on its plain load; `GuiProgressiveLoadDiff`, which holds a
-progressive load's state against an eager one's, passes as before. Not
-measured on the reference assembly itself.
+progressive load's state against an eager one's, passes as before.
+
+**Corrected 2026-10-09: this is not what stalls the reference assembly.**
+The guess above -- "over a second on the reference assembly", and that
+this was its gap of 1.6 to 2.4 s -- was made without loading it, and is
+wrong. Its file holds almost no such records (its drain's closing line
+says "0 view providers"), its view provider drain is never away from the
+event loop for more than 0.27 to 0.42 s in any build, and the 2 s
+stretch is a frame, in the visual drain, in every build (sec 18.12). The
+phase without a budget was real and is sliced; what it cost is what the
+2400 solids show, on a document that has the records.
 
 **Seen and left.**
 
@@ -2436,7 +2445,139 @@ taking the first pictures with it, a state no committed tree had.
 - A landing held is a twin with its exact mesh, alive. Nothing bounds
   how many stand there but the refine pool's own memory floor, which
   refuses new exact builds when the machine runs low.
-- Not measured on the reference assembly.
+- Measured on the reference assembly since: sec 18.12, which also found
+  what this change cost there and what was done about it.
+
+### 18.12 Measured on the reference assembly, and the pump's turn (2026-10-09)
+
+The user: "Do the measurement", and "Also include test on Nvidia gpu".
+The 17058-solid assembly (`MiSTer.FCStd`, 17800 objects), one load to a
+process, the libraries of the builds swapped into one tree and
+alternated, every time from the steady clock and from the open's RETURN.
+Beside the drains' own lines, a 10 ms timer says how long the GUI thread
+stayed away from its event loop in each phase -- it fires inside a
+progress bar's pump as well, so a stretch without it is a stretch in
+which a click would have waited.
+
+**Three displays, each read back from the context** (`GL_RENDERER`), not
+taken from the variables that ask for it: `llvmpipe`, which is what
+`scripts/gui-test.sh` draws with unless told otherwise; "D3D12 (AMD
+Radeon(TM) Graphics)" with `GALLIUM_DRIVER=d3d12` alone, the integrated
+adapter; and "D3D12 (NVIDIA GeForce RTX 3070 Ti Laptop GPU)" with
+`MESA_D3D12_DEFAULT_ADAPTER_NAME=NVIDIA` beside it. All three under Xvfb.
+
+**The camera the file restores is a close-up**, and that was found late:
+a picture saved at the end of a load shows one flat face, an edge and two
+arcs. Every load of this assembly in sec 18.9 to 18.11 was made with it.
+What a drain does is the same whatever the camera sees, so the times of
+the drains stand. What the level plan asks for is not: in the close-up it
+wants some 5100 landings and gives 5 of the 14 boxed shapes their mesh
+(the other 9 are out of view, and have theirs seconds after a fit); with
+the whole assembly in view it wants some 50 landings and all 14.
+
+**The close-up.** `start` is the tree before sec 18.10, `budget` the tree
+after it (e8c60bacfc), `held` is fc74256a24, `turn` is 7a0e26be94. Two
+to four loads in each cell.
+
+| display | build | the visual drain ends | the last landing is reported |
+|---|---|---|---|
+| software GL | start | 20.4, 21.8 | -- |
+| | budget | 21.4 to 22.1 | 33.4 to 37.0 |
+| | held | 17.6 to 18.2 | 50.0 to 54.6 |
+| | turn | 17.5 to 18.3 | 30.7 to 33.2 |
+| AMD Radeon | budget | 30.6, 32.1 | 42.1, 44.5 |
+| | held | 24.5 to 26.6 | 53.7 to 58.6 |
+| | turn | 25.0 to 27.1 | 41.7 to 43.2 |
+| NVIDIA RTX 3070 Ti | budget | 30.0 to 34.1 | 42.9 to 45.8 |
+| | held | 23.6 to 27.1 | 53.3 to 59.3 |
+| | turn | 23.0 to 26.7 | 39.0 to 42.6 |
+
+- **Sec 18.10 made no difference here**: 21.4 to 22.1 s against 20.4 and
+  21.8 s. Nothing of what it fixed arises in this load -- no visual is
+  put back, there are no records to replay, and the clock stood still.
+- **Sec 18.11 brings the first pictures 3.5 to 9 s forward**: where 3605
+  to 4478 landings ran while the drain did, 0 to 7 do.
+- **And it put the refined picture 10 to 17 s back**, on every display --
+  which the 528 solids of sec 18.11 had not shown on a graphics card.
+
+**Why: the pump is bound by frames, and always was.** It takes a turn of
+`Render/LevelLandBudgetMS`, 50 ms, gives the thread back, and takes its
+next turn after the event loop has drawn a frame. On this assembly that
+is about two turns a second, a ninth of the thread: the 5100 landings are
+3.2 to 3.7 s of work by the pump's own account in every arm, and take 30
+s to land whenever they start. Run beside the drain they were under way
+from the sixth second; held, the whole 30 s comes after it.
+
+**A turn grows with what a frame costs** (7a0e26be94). With work left over
+from the turn before, a turn may run half as long as the event loop then
+took to give the thread back, up to five budgets and never less than one
+(`PartGui::landingTurnBudget`). A turn over the budget is always shorter
+than the stretch the event loop has just taken, so it is no new stall,
+and where frames are quick the budget is all a turn gets. The rows `turn`
+above: the first pictures where sec 18.11 put them, and the refined one
+sooner than it had been before either change. The pump's worst turn is
+0.28 to 0.46 s where it was 0.15 to 0.24 s. Half and the whole of the
+stretch were both tried and land in the same place, both reaching the
+five budgets.
+
+**The whole assembly in view** (a fit as the view provider drain ends --
+a fit straight after the open finds no view provider to fit to, and
+twelve loads were spent learning that). One load on software GL, two on
+the NVIDIA card:
+
+| display | build | the visual drain ends | the last boxed shape has its mesh |
+|---|---|---|---|
+| software GL | budget | 21.7 | 24.1 |
+| | held | 21.1 | 21.5 |
+| | turn | 20.7 | 23.6 |
+| NVIDIA RTX 3070 Ti | budget | 29.0, 32.2 | 44.7, 44.3 |
+| | held | 30.9, 35.0 | 42.8, 46.4 |
+| | turn | 30.4, 29.6 | 40.4, 42.8 |
+
+No build can be told from another: 47 to 67 landings is nothing to hold
+and nothing to pace.
+
+**The 528 solids of sec 18.11 on the NVIDIA card**, six loads an arm:
+every object has its picture after 22.1 s before and 13.4 s with the
+refinements held, the last refinement lands after 25.1 and 23.5 s.
+
+**What the stalls are.** No visual build of this assembly takes 200 ms.
+The stretches the timer finds are frames:
+
+- in the close-up, on software GL, 1.0 to 1.4 s at a time, one after the
+  other, from the drain's end until the landings are through -- with
+  almost nothing of the assembly in view, so it is the work a frame does
+  for 17058 objects before anything is drawn, not the drawing;
+- the 2 s at the head of the visual drain, in every build and on every
+  display, is the first frame that has anything in it;
+- with the whole assembly in view, 2 to 3 s on software GL and 6 to 8.6 s
+  on the NVIDIA card. NOT CHECKED against a real window: under Xvfb the
+  D3D12 driver hands each frame back to a framebuffer in memory, and a
+  graphics card three times slower than software is what that would look
+  like. These are the harness's frames until somebody times a window.
+
+So the absolute times above are the harness's, and what they are good for
+is the comparison of one build with another.
+
+**Left.**
+
+- **The frame.** A second of the GUI thread for every frame of a large
+  assembly, whatever is in view, is what bounds everything measured here
+  once the drains are through -- the pump, the boxes, the settle. Not
+  looked into.
+- **A boxed shape out of view stays a box** until the camera turns to it:
+  the plan asks for what it sees. Under the ruling of sec 18.11 its
+  coarse mesh could be made at leisure, behind everything in view, so
+  that it is there when the camera turns. Not built, not put to the user.
+- `scripts/interactivity_gate.py`, which holds the pump's turns to 200 ms
+  while a budget drops, was not run on the new turn: its model is on
+  this box as a STEP file of a gigabyte, not as a document. What stands
+  in for it is the rule's own property (a turn is shorter than the stretch
+  before it) and the worst turns above.
+- A first picture that comes through the pump -- a boxed shape's mesh --
+  waits for the pump's turn like anything else, and so for a frame: the
+  last box has its mesh 0.4 to 3 s after the drain on software GL and 10
+  to 15 s after it on the NVIDIA card under Xvfb.
 
 ## 19. Progressive load against eager (2026-09-29)
 
