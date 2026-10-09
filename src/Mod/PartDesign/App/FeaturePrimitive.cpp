@@ -46,6 +46,7 @@
 #include <Base/Tools.h>
 #include <Mod/Part/App/TopoShapeOpCode.h>
 #include <Mod/Part/App/PartParams.h>
+#include <Mod/Part/App/PrimitiveNames.h>
 
 #include "FeaturePrimitive.h"
 #include "FeaturePy.h"
@@ -69,6 +70,49 @@ FeaturePrimitive::FeaturePrimitive()
     Part::AttachExtension::initExtension(this);
 }
 
+/// The primitive's elements named by what each is to it (Part::PrimitiveNames),
+/// as Part's own primitives are: in the frame it is built in, before it is
+/// placed or made one with what is there.
+static void namePrimitive(Part::TopoShape& shape, FeaturePrimitive::Type type,
+                          const FeaturePrimitive* feature)
+{
+    using Kind = Part::PrimitiveNames::Kind;
+    Part::PrimitiveNames::Tube tube;
+    Kind kind = Kind::Box;
+    switch (type) {
+    case FeaturePrimitive::Box:
+        kind = Kind::Box;
+        break;
+    case FeaturePrimitive::Cylinder:
+        kind = Kind::Cylinder;
+        break;
+    case FeaturePrimitive::Sphere:
+        kind = Kind::Sphere;
+        break;
+    case FeaturePrimitive::Cone:
+        kind = Kind::Cone;
+        break;
+    case FeaturePrimitive::Ellipsoid:
+        kind = Kind::Ellipsoid;
+        break;
+    case FeaturePrimitive::Torus:
+        kind = Kind::Torus;
+        if (auto torus = dynamic_cast<const PartDesign::Torus*>(feature)) {
+            tube.radius = torus->Radius1.getValue();
+            tube.from = torus->Angle1.getValue();
+            tube.to = torus->Angle2.getValue();
+        }
+        break;
+    case FeaturePrimitive::Prism:
+        kind = Kind::Prism;
+        break;
+    case FeaturePrimitive::Wedge:
+        kind = Kind::Wedge;
+        break;
+    }
+    Part::PrimitiveNames::apply(shape, kind, tube);
+}
+
 App::DocumentObjectExecReturn* FeaturePrimitive::execute(const TopoDS_Shape& primitive)
 {
     try {
@@ -77,6 +121,7 @@ App::DocumentObjectExecReturn* FeaturePrimitive::execute(const TopoDS_Shape& pri
 
         TopoShape primitiveShape;
         primitiveShape.setShape(primitive);
+        namePrimitive(primitiveShape, primitiveType, this);
 
         //if we have no base we just add the standard primitive shape
 
@@ -100,6 +145,16 @@ App::DocumentObjectExecReturn* FeaturePrimitive::execute(const TopoDS_Shape& pri
     }
 
     return App::DocumentObject::StdReturn;
+}
+
+void FeaturePrimitive::onDocumentRestored()
+{
+    // As Part::Primitive::onDocumentRestored(): what this adds or takes
+    // away has no names in a file written before it had them
+    const TopoShape& shape = AddSubShape.getShape();
+    if (!shape.isNull() && shape.getElementMapSize() == 0 && getDocument())
+        getDocument()->addRecomputeObject(this);
+    FeatureAddSub::onDocumentRestored();
 }
 
 bool FeaturePrimitive::isElementGenerated(const TopoShape &, const Data::MappedName &name) const

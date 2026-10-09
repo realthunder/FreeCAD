@@ -52,7 +52,9 @@ class TestSketchExternalGeometry(unittest.TestCase):
         # one silhouette is the algorithm's own, from the side face; the
         # other is where the seam lies, and is the seam's projection
         silhouettes = [name for _, name, geo in ext if abs(geo.length() - cyl.Height.Value) < 1e-6]
-        self.assertEqual(sorted(name.split(";")[0] for name in silhouettes), ["Edge1", "Face1"])
+        self.assertEqual(
+            sorted(name.split(";")[0] for name in silhouettes), ["Lateral", "Lateral_Seam"]
+        )
 
     def testIdsFollowTheNameNotThePosition(self):
         cyl, sketch = self.sideSketchOnCylinder()
@@ -127,9 +129,10 @@ class TestSketchExternalGeometry(unittest.TestCase):
         names = [name for _, name, _ in ext]
         self.assertTrue(all(names), names)
         self.assertEqual(len(set(names)), 4)
-        # a primitive's mapped name is its element name
+        # an edge of a box is named by the two faces it is between, and
+        # these are the top's
         for name in names:
-            self.assertRegex(name, r"^Edge\d+$")
+            self.assertIn("Top", name.split("_"), name)
 
     def testPlanarFaceIdsFollowTheName(self):
         notch, sketch = self.notchedTopFace()

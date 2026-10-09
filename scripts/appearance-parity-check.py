@@ -218,9 +218,12 @@ def run():
           not legacy and "Legacy" not in vp.getPropertyStatus("LineWidth"))
     App.closeDocument(doc.Name)
 
-    # Faces coloured by their number, on a shape that has no names for them.
+    # Faces coloured by their number, on a shape that has no names for them:
+    # one nobody modelled, as an import's is. A box has names (Top, Left) and
+    # is held by them.
     doc = App.newDocument("ParityNumber")
-    box = doc.addObject("Part::Box", "Box")
+    box = doc.addObject("Part::Feature", "Box")
+    box.Shape = Part.makeBox(10, 10, 10)
     doc.recompute()
     vp = box.ViewObject
     colors = [vp.ShapeColor[:3] + (1.0,)] * 6

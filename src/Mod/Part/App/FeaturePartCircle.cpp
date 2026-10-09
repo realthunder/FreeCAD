@@ -30,6 +30,7 @@
 #include <Base/Tools.h>
 
 #include "FeaturePartCircle.h"
+#include "PrimitiveNames.h"
 
 
 using namespace Part;
@@ -67,7 +68,7 @@ App::DocumentObjectExecReturn *Circle::execute()
     BRepBuilderAPI_MakeEdge clMakeEdge(circle, Base::toRadians<double>(this->Angle1.getValue()),
                                                Base::toRadians<double>(this->Angle2.getValue()));
     const TopoDS_Edge& edge = clMakeEdge.Edge();
-    this->Shape.setValue(edge,false);
+    this->Shape.setValue(PrimitiveNames::named(edge, PrimitiveNames::Kind::Circle));
     return Primitive::execute();
 }
 

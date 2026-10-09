@@ -48,10 +48,12 @@
 #include <ShapeUpgrade_ShapeDivideClosed.hxx>
 
 #include <App/FeaturePythonPyImp.h>
+#include <App/Document.h>
 #include <Base/Reader.h>
 #include <Base/Tools.h>
 
 #include "PrimitiveFeature.h"
+#include "PrimitiveNames.h"
 #include "PartFeaturePy.h"
 #include "PartParams.h"
 
@@ -88,6 +90,22 @@ short Primitive::mustExecute() const
 
 App::DocumentObjectExecReturn* Primitive::execute() {
     return Part::Feature::execute();
+}
+
+void Primitive::onDocumentRestored()
+{
+    // A file written before a primitive's elements had names
+    // (PrimitiveNames) has its shape with none. The names come when it is
+    // made again, and with them every name made from them changes: what
+    // refers to a face of a cut of this box is then found again by where the
+    // face is, which holds only while the box is the size it was. So the
+    // document is told it wants a recompute before anything is changed, as
+    // it is for a shape whose names are of an older making
+    // (Document::addRecomputeObject()).
+    const TopoShape& shape = Shape.getShape();
+    if (!shape.isNull() && shape.getElementMapSize() == 0 && getDocument())
+        getDocument()->addRecomputeObject(this);
+    Part::Feature::onDocumentRestored();
 }
 
 // suppress warning about tp_print for Py3.8
@@ -187,7 +205,7 @@ App::DocumentObjectExecReturn *Vertex::execute()
 
     BRepBuilderAPI_MakeVertex MakeVertex(point);
     const TopoDS_Vertex& vertex = MakeVertex.Vertex();
-    this->Shape.setValue(vertex, false);
+    this->Shape.setValue(PrimitiveNames::named(vertex, PrimitiveNames::Kind::Vertex));
 
     return Primitive::execute();
 }
@@ -250,7 +268,7 @@ App::DocumentObjectExecReturn *Line::execute()
     if (!mkEdge.IsDone())
         return new App::DocumentObjectExecReturn("Failed to create edge");
     const TopoDS_Edge& edge = mkEdge.Edge();
-    this->Shape.setValue(edge, false);
+    this->Shape.setValue(PrimitiveNames::named(edge, PrimitiveNames::Kind::Line));
 
     return Primitive::execute();
 }
@@ -327,7 +345,7 @@ App::DocumentObjectExecReturn *Plane::execute()
     }
 
     TopoDS_Shape ResultShape = mkFace.Shape();
-    this->Shape.setValue(ResultShape, false);
+    this->Shape.setValue(PrimitiveNames::named(ResultShape, PrimitiveNames::Kind::Plane));
 
     return Primitive::execute();
 }
@@ -370,7 +388,7 @@ App::DocumentObjectExecReturn *Sphere::execute()
                                         Angle2.getValue()/180.0f*M_PI,
                                         Angle3.getValue()/180.0f*M_PI);
         TopoDS_Shape ResultShape = mkSphere.Shape();
-        this->Shape.setValue(ResultShape, false);
+        this->Shape.setValue(PrimitiveNames::named(ResultShape, PrimitiveNames::Kind::Sphere));
     }
     catch (Standard_Failure& e) {
 
@@ -468,7 +486,7 @@ App::DocumentObjectExecReturn *Ellipsoid::execute()
             BRepBuilderAPI_GTransform mkTrsf(mkSphere.Shape(), mat);
             ResultShape = mkTrsf.Shape();
         }
-        this->Shape.setValue(ResultShape, false);
+        this->Shape.setValue(PrimitiveNames::named(ResultShape, PrimitiveNames::Kind::Ellipsoid));
     }
     catch (Standard_Failure& e) {
 
@@ -517,7 +535,7 @@ App::DocumentObjectExecReturn *Cylinder::execute()
         // the direction vector for the prism is the height for z and the given angle
         BRepPrim_Cylinder prim = mkCylr.Cylinder();
         TopoDS_Shape ResultShape = makePrism(Height.getValue(), prim.BottomFace());
-        this->Shape.setValue(ResultShape, false);
+        this->Shape.setValue(PrimitiveNames::named(ResultShape, PrimitiveNames::Kind::Cylinder));
     }
     catch (Standard_Failure& e) {
 
@@ -577,7 +595,7 @@ App::DocumentObjectExecReturn *Prism::execute()
         mkPoly.Add(gp_Pnt(v.x,v.y,v.z));
         BRepBuilderAPI_MakeFace mkFace(mkPoly.Wire());
         // the direction vector for the prism is the height for z and the given angle
-        this->Shape.setValue(makePrism(Height.getValue(), mkFace.Face()), false);
+        this->Shape.setValue(PrimitiveNames::named(makePrism(Height.getValue(), mkFace.Face()), PrimitiveNames::Kind::Prism));
     }
     catch (Standard_Failure& e) {
         return new App::DocumentObjectExecReturn(e.GetMessageString());
@@ -628,7 +646,7 @@ App::DocumentObjectExecReturn *RegularPolygon::execute()
             v = mat * v;
         }
         mkPoly.Add(gp_Pnt(v.x,v.y,v.z));
-        this->Shape.setValue(mkPoly.Shape(), false);
+        this->Shape.setValue(PrimitiveNames::named(mkPoly.Shape(), PrimitiveNames::Kind::RegularPolygon));
     }
     catch (Standard_Failure& e) {
 
@@ -678,7 +696,7 @@ App::DocumentObjectExecReturn *Cone::execute()
                                     Height.getValue(),
                                     Angle.getValue()/180.0f*M_PI);
         TopoDS_Shape ResultShape = mkCone.Shape();
-        this->Shape.setValue(ResultShape,false);
+        this->Shape.setValue(PrimitiveNames::named(ResultShape, PrimitiveNames::Kind::Cone));
     }
     catch (Standard_Failure& e) {
 
@@ -727,11 +745,16 @@ App::DocumentObjectExecReturn *Torus::execute()
         return new App::DocumentObjectExecReturn("Radius of torus too small");
     try {
         TopoShape shape;
-        this->Shape.setValue(shape.makeTorus(Radius1.getValue(),
-                                             Radius2.getValue(),
-                                             Angle1.getValue(),
-                                             Angle2.getValue(),
-                                             Angle3.getValue()));
+        PrimitiveNames::Tube tube;
+        tube.radius = Radius1.getValue();
+        tube.from = Angle1.getValue();
+        tube.to = Angle2.getValue();
+        this->Shape.setValue(PrimitiveNames::named(shape.makeTorus(Radius1.getValue(),
+                                                                   Radius2.getValue(),
+                                                                   Angle1.getValue(),
+                                                                   Angle2.getValue(),
+                                                                   Angle3.getValue()),
+                                                   PrimitiveNames::Kind::Torus, tube));
     }
     catch (Standard_Failure& e) {
         return new App::DocumentObjectExecReturn(e.GetMessageString());
@@ -815,7 +838,7 @@ App::DocumentObjectExecReturn *Helix::execute()
             throw Standard_Failure("Number of turns too high (> 1e4)");
         Standard_Real myRadiusTop = myRadius + myHeight * tan(myAngle/180.0f*M_PI);
 
-        this->Shape.setValue(TopoShape().makeSpiralHelix(myRadius, myRadiusTop, myHeight, nbTurns, mySegLen, myLocalCS), false);
+        this->Shape.setValue(PrimitiveNames::named(TopoShape().makeSpiralHelix(myRadius, myRadiusTop, myHeight, nbTurns, mySegLen, myLocalCS), PrimitiveNames::Kind::Helix));
 
         // props.Mass() may seem a strange way to get the Length, but 
         // https://dev.opencascade.org/doc/refman/html/class_b_rep_g_prop.html#ab1d4bacc290bfaa8df13dd99ae7b8e70
@@ -887,7 +910,7 @@ App::DocumentObjectExecReturn *Spiral::execute()
         if (myNumRot < Precision::Confusion())
             throw Standard_Failure("Number of rotations too small");
 
-        this->Shape.setValue(TopoShape().makeSpiralHelix(myRadius, myRadiusTop, 0, myNumRot, mySegLen, Standard_False), false);
+        this->Shape.setValue(PrimitiveNames::named(TopoShape().makeSpiralHelix(myRadius, myRadiusTop, 0, myNumRot, mySegLen, Standard_False), PrimitiveNames::Kind::Spiral));
 
         GProp_GProps props;
         BRepGProp::LinearProperties(Shape.getShape().getShape(), props);
@@ -974,7 +997,7 @@ App::DocumentObjectExecReturn *Wedge::execute()
             xmax, ymax, zmax, z2max, x2max);
         BRepBuilderAPI_MakeSolid mkSolid;
         mkSolid.Add(mkWedge.Shell());
-        this->Shape.setValue(mkSolid.Solid(), false);
+        this->Shape.setValue(PrimitiveNames::named(mkSolid.Solid(), PrimitiveNames::Kind::Wedge));
     }
     catch (Standard_Failure& e) {
         return new App::DocumentObjectExecReturn(e.GetMessageString());
@@ -1038,7 +1061,7 @@ App::DocumentObjectExecReturn *Ellipse::execute()
     BRepBuilderAPI_MakeEdge clMakeEdge(ellipse, Base::toRadians<double>(this->Angle1.getValue()),
                                                 Base::toRadians<double>(this->Angle2.getValue()));
     const TopoDS_Edge& edge = clMakeEdge.Edge();
-    this->Shape.setValue(edge, false);
+    this->Shape.setValue(PrimitiveNames::named(edge, PrimitiveNames::Kind::Ellipse));
 
     return Primitive::execute();
 }

@@ -73,6 +73,7 @@ set(Part_tests
     parttests/ElementAppearanceTest.py
     parttests/ElementNameTest.py
     parttests/HLRProjectionTest.py
+    parttests/PrimitiveNamesTest.py
 )
 
 add_custom_target(PartScripts ALL SOURCES

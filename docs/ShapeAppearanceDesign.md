@@ -3905,7 +3905,9 @@ file's colours are there in `FreeCADCmd`. An import's faces are numbered
 - The primitives' names (the user, 2026-10-07: a box's and a cylinder's
   elements to have mapped names, their kind and number; recorded, later).
   It changes which of 14.3's two ways a primitive's face is held, and
-  nothing here.
+  nothing here. *(Built 2026-10-09, by what each element is to the
+  primitive and not by its kind and number: docs/PrimitiveNames.md. A
+  box's painted face is held by name.)*
 
 #### 14.6.9 Build order from here
 
@@ -4249,7 +4251,8 @@ it names stored content.
 - A face held by its number states what of its look differs from the
   object's (14.2), so a box's face given the very gloss the object has
   states none and goes with the object after. A face held by a name keeps
-  what it was given. It goes when a primitive's faces have names.
+  what it was given. It goes when a primitive's faces have names. *(They
+  have, 2026-10-09; it is left for a shape nobody named, an import's.)*
 - An object-level write through `ShapeAppearance.Base` on a list every
   face of which states the same look is read against that look, not the
   object's own. `ShapeColor` and the others do not go that way.
@@ -4793,7 +4796,8 @@ to one face of a cut seen through a link are seen to have, whatever number
 the face has in each. Where what is shown has no mapped names -- a box, an
 import -- the name is its string, and a face counted another way on the
 other branch is another name. That goes when a primitive's faces have
-names (14.6.8).
+names (14.6.8) -- *which they have since 2026-10-09
+(docs/PrimitiveNames.md); an import's shape is still by its string.*
 
 *What a link has that a shape has not.* The look it gives all it shows is
 the own look of `Face`, a value three ways like any kind's own look. The

@@ -110,7 +110,7 @@ class Client(threading.Thread):
         raw = ws.next_push("selection", 3.0, since=mark)
         items = []
         if raw is not None:
-            items = [(i.get("obj"), i.get("sub"))
+            items = [(i.get("obj"), plain(i.get("sub")))
                      for i in json.loads(raw.decode("utf-8")).get("items", [])]
         self.told[tag] = items if raw is not None else None
         ws.drain(0.2)
@@ -213,6 +213,14 @@ def poll():
         QtCore.QTimer.singleShot(20, poll)
         return
     QtCore.QTimer.singleShot(300, verify)
+
+def plain(sub):
+    """A picked element as the shape counts it: `Box.;Top.Face6` is
+    `Box.Face6`. A shape that has names for its elements -- a box has, by
+    what each is to it -- is told by them, and what is checked here is which
+    element it was."""
+    at = sub.find(";") if sub else -1
+    return sub if at < 0 else sub[:at] + sub[sub.rindex(".") + 1:]
 
 
 def hits_box(items):

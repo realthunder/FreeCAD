@@ -632,6 +632,8 @@ class ElementAppearanceMergeTest(unittest.TestCase):
         self.cut = self.doc.addObject("Part::Cut", "Cut")
         self.cut.Base = self.box
         self.cut.Tool = self.cyl
+        self.bare = self.doc.addObject("Part::Feature", "Bare")
+        self.bare.Shape = Part.makeBox(10, 10, 10)
         self.doc.recompute()
         self.doc.commitTransaction()
         self.doc.saveAs(os.path.join(tempfile.mkdtemp(prefix="fc-ea-merge-"), "merge.FCStd"))
@@ -684,8 +686,9 @@ class ElementAppearanceMergeTest(unittest.TestCase):
         self.assertEqual(sorted(cut.ElementAppearance.Names), [face(cut, ZMin=10)])
 
     def testFacesNumberedOnBothBranches(self):
-        # A box has no names for its faces: by number, a face at a time
-        doc, box = self.doc, self.box
+        # A shape nobody named -- an import's -- has no names for its faces:
+        # by number, a face at a time
+        doc, box = self.doc, self.bare
         top, bottom = face(box, ZMin=10), face(box, ZMax=0)
         doc.createTransactionBranch("side")
         self.paint("side: a material", box, top, material(RED, 0.25))
@@ -698,6 +701,26 @@ class ElementAppearanceMergeTest(unittest.TestCase):
         stated = self.stated(box)
         self.assertEqual(stated[top], (RED[:3], 0.25))
         self.assertEqual(stated[bottom][0], GREEN[:3])
+
+    def testABranchThatPaintsOneMoreIsLeftAndComeBackTo(self):
+        # A box's faces have names, and what is drawn of them is a list of
+        # its own in the value the log holds, read from a file after the
+        # rest. Put back, the object was told of the value half there and
+        # dropped the list the reader was about to fill: a crash.
+        doc, box = self.doc, self.box
+        top, bottom, front = face(box, ZMin=10), face(box, ZMax=0), face(box, YMax=0)
+        self.paint("red top", box, top, RED)
+        self.paint("green bottom", box, bottom, GREEN)
+        self.assertEqual(sorted(box.ElementAppearance.Names), sorted([top, bottom]))
+        doc.createTransactionBranch("side")
+        self.paint("side: blue front", box, front, BLUE)
+        doc.switchTransactionBranch("main")
+        self.assertEqual(sorted(box.ElementAppearance.keys()), sorted([top, bottom]))
+        self.assertEqual(self.stated(box)[top][0], RED[:3])
+        doc.switchTransactionBranch("side")
+        self.assertEqual(sorted(box.ElementAppearance.keys()), sorted([top, bottom, front]))
+        self.assertEqual(self.stated(box)[front][0], BLUE[:3])
+        self.assertIn(BLUE[:3], colors(box))
 
     def testOneFaceOnBothBranchesIsRuled(self):
         doc, cut = self.doc, self.cut

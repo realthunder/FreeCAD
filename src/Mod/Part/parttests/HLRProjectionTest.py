@@ -40,13 +40,17 @@ class HLRProjectionTest(unittest.TestCase):
         # the box's own edges and are named as such, not after the face
         box = self.doc.addObject("Part::Box", "Box")
         self.doc.recompute()
+        own = {
+            box.Shape.getElementMappedName("Edge%d" % i) for i in range(1, len(box.Shape.Edges) + 1)
+        }
         for hidden in (False, True):
             hlr = box.Shape.makeHLR(Vector(0, 0, 1), Visible=not hidden, Hidden=hidden)
             self.assertEqual(len(hlr.Edges), 4)
             names = mappedNames(hlr)
             self.assertEqual(len(set(names)), 4)
             for name in names:
-                self.assertTrue(name.startswith("Edge"), name)
+                # An edge of a box is named by the two faces it is between
+                self.assertIn(name.split(";")[0], own, name)
 
     def testVisibleAndHiddenSelection(self):
         box = self.doc.addObject("Part::Box", "Box")
@@ -67,7 +71,9 @@ class HLRProjectionTest(unittest.TestCase):
             for name in names:
                 self.assertIn(";HLR", name)
         # the visible and the hidden sets partition the whole
-        self.assertEqual(set(mappedNames(visible)) | set(mappedNames(hidden)), set(mappedNames(both)))
+        self.assertEqual(
+            set(mappedNames(visible)) | set(mappedNames(hidden)), set(mappedNames(both))
+        )
         # no Rg1/RgN edges on a box: the sharp edges are all there is
         hard = shape.makeHLR(Vector(1, 1, 1), EdgeTypes="Hard")
         self.assertEqual(mappedNames(hard), mappedNames(visible))
@@ -81,18 +87,18 @@ class HLRProjectionTest(unittest.TestCase):
         # seen from the side: two silhouette lines (the length of the
         # cylinder) and the two rims seen edge on, from the circles. One
         # silhouette is invented by the algorithm and named from the side
-        # face; the other is where the seam (Edge1, at angle 0) lies, and
-        # that projected edge is the seam's own, an input edge
+        # face; the other is where the seam (at angle 0) lies, and that
+        # projected edge is the seam's own, an input edge
         hlr = shape.makeHLR(Vector(0, 1, 0), EdgeTypes=["Hard", "Outline"])
-        # a primitive's own names are its element names, so the projection's
-        # names start with the source element, then the generated postfix
+        # a primitive's own names say what each element is to it, so the
+        # projection's names start with that, then the generated postfix
         silhouettes = []
         for i, edge in enumerate(hlr.Edges):
             name = hlr.getElementName("Edge%d" % (i + 1), 1)
             self.assertTrue(name, "Edge%d unnamed" % (i + 1))
             if abs(edge.Length - cyl.Height.Value) < 1e-6 and isinstance(edge.Curve, Part.Line):
                 silhouettes.append(name.split(";")[0])
-        self.assertEqual(sorted(silhouettes), ["Edge1", "Face1"])
+        self.assertEqual(sorted(silhouettes), ["Lateral", "Lateral_Seam"])
 
     def testHiddenPiecesOfOneEdgeAreToldApart(self):
         # a post in front of a wide box, seen along Y: the box's top front

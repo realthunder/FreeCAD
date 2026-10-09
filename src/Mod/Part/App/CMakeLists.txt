@@ -210,6 +210,8 @@ SET(Features_SRCS
     Part2DObject.h
     PrimitiveFeature.cpp
     PrimitiveFeature.h
+    PrimitiveNames.cpp
+    PrimitiveNames.h
     FeatureGeometrySet.h
     FeatureGeometrySet.cpp
     CustomFeature.cpp

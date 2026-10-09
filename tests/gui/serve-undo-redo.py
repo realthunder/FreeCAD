@@ -168,9 +168,17 @@ def reply_of(raw):
     except Exception:
         return {}
 
+def plain(sub):
+    """A picked element as the shape counts it: `Box.;Top.Face6` is
+    `Box.Face6`. A shape that has names for its elements -- a box has, by
+    what each is to it -- is told by them, and what is checked here is which
+    element it was."""
+    at = sub.find(";") if sub else -1
+    return sub if at < 0 else sub[:at] + sub[sub.rindex(".") + 1:]
+
 
 def items_of(raw):
-    return [(i.get("obj"), i.get("sub")) for i in reply_of(raw).get("items", [])]
+    return [(i.get("obj"), plain(i.get("sub"))) for i in reply_of(raw).get("items", [])]
 
 
 def sample(tag):

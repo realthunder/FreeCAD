@@ -29,6 +29,7 @@ App = FreeCAD
 
 from parttests.Geom2d_tests import Geom2dTests
 from parttests.regression_tests import RegressionTests
+from parttests.PrimitiveNamesTest import PrimitiveNamesTest, PrimitiveNamesBodyTest
 from parttests.ElementAppearanceTest import ElementAppearanceMadeTest, ElementAppearanceMergeTest, ElementAppearanceNamesTest, ElementAppearanceLinkTest, ElementAppearanceLinkMergeTest, ElementAppearanceFileTest
 from parttests.ElementNameTest import ElementNameTest, LoftCapNameTest
 from parttests.HLRProjectionTest import HLRProjectionTest

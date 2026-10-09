@@ -127,7 +127,9 @@ TEST_F(TransactionLogShapeTest, savedShapeAnswersWithItsBlob)
         if (v.fragment.find("hash=\"" + blobHash + "\"") != std::string::npos) {
             ++referencing;
             EXPECT_TRUE(v.attachments.empty());
-            EXPECT_LT(v.fragment.size(), 512u);
+            // The names of its elements are in the fragment, a box's
+            // twenty-six (Part::PrimitiveNames); its geometry is not
+            EXPECT_LT(v.fragment.size(), 2048u);
         }
         else {
             ++exporting;
