@@ -1499,7 +1499,21 @@ bool PropertyPartShape::canSaveOffThread() const
     // is written under the OCCT fork's lock (sec 27.98). Anything else is
     // shared with whoever else holds it, and may be edited in place.
     ensureRestored();
-    return _Shape.isNull() || _Shape.getShape().Immutable();
+    if (_Shape.isNull())
+        return true;
+    if (!_Shape.getShape().Immutable())
+        return false;
+    // The other thing a copy shares with the live value is the shape's
+    // cache, and an element map not made yet is made from it: Save() asks
+    // for the map (ComplexGeoData::Save, getElementMapSize), which sets it
+    // and clears the sub-shapes the cache holds (resetElementMap) -- on the
+    // worker, while the main thread hands those out (Shape.Faces): a
+    // SIGSEGV in Cache::Info::_getTopoShape, about one frozen run of the
+    // suite in seven (docs/TransactionLog.md sec 31.27). Made here, on the
+    // thread that asks, the worker's Save finds it there and writes
+    // nothing to the cache.
+    _Shape.flushElementMap();
+    return true;
 }
 
 void PropertyPartShape::Paste(const App::Property &from)

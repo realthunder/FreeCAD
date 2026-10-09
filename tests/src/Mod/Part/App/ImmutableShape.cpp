@@ -234,6 +234,36 @@ TEST_F(PropertyShapeImmutableTest, transformGeometryIsANewValue)
 // A boolean on a property's shape must not tolerance-fix its arguments in
 // place: the pave filler goes non-destructive for an Immutable argument as
 // it does for a Locked one (the OCCT fork, BOPAlgo_PaveFiller_10.cxx).
+// The transaction log saves a frozen value's copy on its worker
+// (canSaveOffThread). A copy shares its shape's cache with the live value,
+// and an element map not made yet is made by Save() from that cache, which
+// also clears the sub-shapes the cache holds -- on the worker, while this
+// thread hands them out: a SIGSEGV in Cache::Info::_getTopoShape under
+// Shape.Faces (docs/TransactionLog.md sec 31.27). Asked whether it may be
+// saved off this thread, the copy makes its map here first.
+TEST_F(PropertyShapeImmutableTest, aCopyForTheWorkerHasItsElementMap)
+{
+    const App::StringHasherRef hasher = _doc->getStringHasher();
+    Part::TopoShape one(1, hasher, BRepPrimAPI_MakeBox(10, 20, 30).Shape());
+    Part::TopoShape two(2, hasher, BRepPrimAPI_MakeBox(1, 2, 3).Shape());
+    // Made under the feature's own tag, as its recompute would: a value of
+    // another tag is named again when it is set, and has its map by then.
+    Part::TopoShape both(_feature->getID(), hasher);
+    both.makECompound({one, two});
+    // A part of it names its elements from the whole, when asked.
+    const Part::TopoShape solid = both.getSubTopoShape(TopAbs_SOLID, 1);
+    ASSERT_TRUE(solid.hasPendingElementMap());
+    _feature->Shape.setValue(solid);
+    ASSERT_TRUE(_feature->Shape.getValue().Immutable());
+
+    std::unique_ptr<App::Property> copy(_feature->Shape.Copy());
+    auto value = static_cast<Part::PropertyPartShape*>(copy.get());
+    ASSERT_TRUE(value->getShape().hasPendingElementMap());
+    EXPECT_TRUE(copy->canSaveOffThread());
+    EXPECT_FALSE(value->getShape().hasPendingElementMap());
+    EXPECT_GT(value->getShape().getElementMapSize(false), 0U);
+}
+
 TEST(ImmutableShapeTest, booleanGoesNonDestructive)
 {
     TopoDS_Shape a = BRepPrimAPI_MakeBox(2, 2, 2).Shape();

@@ -16946,6 +16946,72 @@ redo. `testAShapeTakenStandsWhereItsObjectIs` -- the fifth.
 `testAShapeMovedAfterItsRecomputeIsComputedAgain`. `derived.py`, 31.25's
 case, asks `Cyl.Placement` alone now.
 
+### 31.27 The worker made a shape's names from the cache the main thread reads (found by the gates, 2026-10-09; fixed)
+
+**Found.** The gates of 31.26: the Python suite with the freeze on died
+with SIGSEGV in `PartDesignTests.TestChamfer.testChamferCubeToOctahedron`.
+With the freeze off it passed, and so did everything else. Alone the test
+passes; the suite again, three times, passed; under gdb it died on the
+tenth run, in the same test, at the same place.
+
+**Where.** The main thread, in the test's
+`[face for face in self.Chamfer.Shape.Faces ...]` just after a recompute:
+`ShapeList::get` -> `TopoShape::getSubTopoShape` ->
+`Cache::Info::getTopoShape` -> `_getTopoShape` -> `setShape`, a virtual
+call on a `TopoShape` of the cache's own list that had been destroyed --
+its vptr a base's, the jump landing in a typeinfo. Nothing of 31.25 or
+31.26 is in it.
+
+**Made short** (`~/.cache/txnlog-ref/race.py`): the test's steps in a
+loop, a new document each turn. Dead in four runs of four -- the first
+inside 200 turns, nine seconds -- one of them an abort inside `malloc`
+instead.
+
+**Who** -- a breakpoint on `TopoShape::resetElementMap` for any thread
+but the main one, hit in the first turns: the log's worker,
+`TransactionLogCore::run` -> `writeValues` -> `captureValue` ->
+`PropertyPartShape::Save` -> `TopoShape::Save` ->
+`ComplexGeoData::Save` -> `getElementMapSize(flush)` ->
+`flushElementMap` -> `resetElementMap`.
+
+**Why.** A copy of a shape value shares the shape's cache with the live
+value (`TopoShape::operator=`), not only its TShapes. A shape may hold its
+element map *pending*: the cache has it, or the cache of the shape it was
+taken from, and the shape takes it when asked. A value made under its
+feature's own tag is not named again when it is set, and goes into the
+property so. `Save` asks. Taking the map (`resetElementMap`) also clears
+the sub-shapes the cache holds, every kind -- of the cache the live value
+uses, on the worker, while the main thread is handing those sub-shapes
+out. 27.98 put the TShapes' own caches under a lock and 27.99 kept an
+unfrozen value on the main thread; this is the other thing a copy shares,
+and it is FreeCAD's.
+
+**Fixed.** `PropertyPartShape::canSaveOffThread()` is asked on the main
+thread, as the commit takes the copy (`ValueTask::captureNow`). For a
+frozen value it now makes the map first (`flushElementMap`), and then
+says yes: the worker's `Save` finds the map there and writes nothing to
+the cache. Nothing new is paid for a map the cache had -- the clear was
+happening anyway, on the worker; a map made from a parent's
+(`mapSubElement`) is made on the main thread, at the commit, where it was
+the worker's before.
+
+**Measured.** `race.py`, five runs of 1500 turns: none died. The
+breakpoint, twenty turns: not hit off the main thread.
+
+**Test.** gtest `PropertyShapeImmutableTest.aCopyForTheWorkerHasItsElementMap`:
+a part of a compound made under the feature's tag, its map pending in the
+property and in the copy; asked, the copy has it.
+
+**Left.**
+
+- The cache is still shared and has no lock. The worker's `Save` reads it
+  (`isTouched`, the map it holds) and no longer writes it; the main
+  thread may clear its sub-shapes at any time, which `Save` does not
+  read. Anything else that is given a shape to use on another thread
+  meets the same cache.
+- *Since when* is not known: it was not bisected. No gate run before
+  this one recorded such a crash.
+
 ## 32. A shape diff: seeing what a merge or a pick would take (plan, 2026-10-06)
 
 **Asked (user):** "also plan for another feature. shape diff tool, so that
