@@ -80,6 +80,7 @@ Evidence that does not belong in the repository is under
 | 46 | FIXED `6dacf21b11`, not staged, not pushed | the backend drew the hatch from a picture of the whole face, a pixel to the tenth of a millimetre, read one pixel in five at the zoom a page opens at: at 2 pixels to the millimetre 1.1 lines across a 17 pixel strip at 0.99 of the hatch colour, where Qt has 5.0 at 0.19. A hatch is one tile now, laid side by side into the face, and every picture of a page has coarser copies to be drawn from. Three more found by the test: a turned hatch was turned the wrong way, an image was drawn over all the line work of a page, and the tiles showed their seams |
 | 49 | FIXED `664d57f39b`, not staged, not pushed | it takes a maximized window, and then happens every time: the reset clears the title bar areas' entries, the toolbar manager's timer took the workbench toolbar out of the title bar itself -- a move that hides a toolbar -- and then asked the toolbar whether it was visible. A window that is not maximized swaps its title bar first and moves the toolbar properly |
 | 50 | FIXED `4cb1ee6ad1` (the render type) and `69a2028e23` (the split), not staged, not pushed | (a) as decided: `Default` is the render engine on the platform's backend, `Legacy` the old Coin rendering; the type is a list on the Render engine page and is kept; the render cache setting is not looked at while the engine draws. (b) a Coin-drawn view is replaced by a copy when the anti-aliasing changes, and the copy was given a tab of its own; it takes the old view's cell |
+| 51 | DONE `d157abf559`, not staged, not pushed; the browser viewer does not follow | expected, and measured before: a triangle's rim has no coverage of its own, and a limb has no edge over it. The default is MSAA 4x for both render types: on a sphere's limb 0.0% of rows blended without, 85.6% under `Legacy` and 67.0% under the engine with nothing stored. The tests state "no multisampling" for themselves. The browser cannot multisample its scene target on WebGL2 |
 | 45 | FIXED `c7fdcf3220`, pushed 2026-10-08, not staged | a spreadsheet's view provider made its view when it was only asked whether it had one: one click on a sheet in the tree opened it. Asking is a question now, and a new request opens the view for the three callers that host it. Show-in-cell also took a stale cell and closed another sheet's view; it takes the active view's cell |
 
 **The reporter, 2026-10-07 14:20, on what is open** (said to the build
@@ -3131,3 +3132,67 @@ top face's outline is as smooth as it was: 0.145 px before the repair,
 Not looked into: why the side face's own two circles were not found as
 its boundary (with the plain passes back they are drawn either way, cut
 and not faded).
+
+## 51. Faces show a staircase where no edge line covers them, MSAA off; MSAA 4x by default -- DONE `d157abf559`, not staged; the browser does not follow
+
+**(a) Is it expected? Yes, and it had been measured.** Without
+multisampling a triangle's rim is decided a whole pixel at a time; only
+lines have computed coverage. `View3DInventorViewer::getNumSamples`
+carries the measurement that turned MSAA off in August
+(`scripts/silhouette_msaa.py`): on a sphere's limb, the share of rows
+with real partial coverage is 0.0% with MSAA off and 58.8% with 4x while
+the camera moves. Its comment adds that a parked view repairs itself by
+idle accumulation -- which is itself off by default
+(`View/Render/TemporalAccum`), so with both defaults a bare limb was a
+staircase parked or moving.
+
+**(b) The default is MSAA 4x**, `View/AntiAliasing` = 3, for both render
+types as answered ("both legacy and engine"). Measured on the dev build,
+a grey sphere in front of a red plate, the share of limb rows whose limb
+pixel is a blend, read off the view's own surface (`e51.py` in
+`..\dl\handson\2026-10-09\q3`):
+
+| | AntiAliasing 0 | nothing stored (the default) |
+|---|---|---|
+| render type `Legacy` (Coin draws) | 0.0% | 85.6% (and 85.6% with 3 stored) |
+| render type `Default` (the engine) | 0.0% | 67.0% |
+
+What went with it:
+- the 3D View preferences page shows "MSAA 4x" for a profile without the
+  key (its box took "None", the first item, for the default, and OK would
+  have stored that);
+- a profile that has the key keeps its value;
+- the tests. The GUI tests and the golden render scenes were made without
+  multisampling, and a multisampled view answers `geometryPixels` -1. The
+  harness now states "no multisampling" ahead of each test
+  (`scripts/gui-test-profile.py`, handed to FreeCAD by
+  `scripts/gui-test.sh`), and the two golden scene scripts say it for
+  themselves; a test about multisampling sets the value itself.
+  `docs/Testing.md` has the paragraph. So the suites run as they did; what
+  they do not do is run every test at the new default.
+
+**Scored.** `tests/gui/msaa-reaches-the-view.py` has the claim that a view
+is built with 4 samples when nothing is stored: 12 PASS.
+`preferences-ok-keeps-defaults.py` 7 (OK on a fresh profile stores no
+changed anti-aliasing), `antialiasing-change-keeps-the-cells.py` 18. Three
+tests run WITHOUT the harness's statement, that is at the new default:
+`face-outline-inner-edge.py` 8 (entry 25's outline, not scored with
+multisampling before), `per-view-visibility.py` 45,
+`techdraw-page-backend-hatch.py` 39. ctest on the settings and registry
+tests, 19 of 19.
+
+**NOT done: the other tiers.** "other tiers follow too" -- the browser
+viewer does not, and I did not change it. Its MSAA is off by default for
+a reason measured and written in its source (`wasm/main.cpp`): on WebGL2
+a multisampled RGBA16F scene target cannot be created at all, the old
+default asked for it and the viewer drew nothing, and what catches that
+now is a fallback to no multisampling. Setting its default to 4 would
+change nothing on screen there. Making the browser multisample is engine
+work of its own (a target format WebGL2 can multisample, or a resolve of
+its own); for the reporter to say whether and when. The headless serve
+draws nothing itself. Linux and macOS take the default from the same
+definition; not run here.
+
+**Not run:** the full GUI test list at the new default (about 130
+scripts; three were, above), and the golden render tests, which do not
+run on this box.
