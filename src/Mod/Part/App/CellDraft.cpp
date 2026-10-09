@@ -49,6 +49,7 @@
 #include <BOPAlgo_Alerts.hxx>
 #include <BOPAlgo_ArgumentAnalyzer.hxx>
 #include <BOPAlgo_Builder.hxx>
+#include <BOPAlgo_CheckResult.hxx>
 #include <BOPAlgo_CheckerSI.hxx>
 #include <BOPAlgo_ShellSplitter.hxx>
 #include <BOPDS_DS.hxx>
@@ -56,6 +57,7 @@
 #include <BRepAdaptor_Surface.hxx>
 #include <BRepAlgoAPI_Common.hxx>
 #include <BRepAlgoAPI_Defeaturing.hxx>
+#include <BRepAlgoAPI_Section.hxx>
 #include <BRepBndLib.hxx>
 #include <BRepBuilderAPI_Copy.hxx>
 #include <BRepAdaptor_Curve.hxx>
@@ -1263,6 +1265,9 @@ private:
         // the face is on (+1, -1)
         double apexZ = 0.0;
         int live = 0;
+        // a plane of the chain that narrows to nothing under the roof
+        // (section 18)
+        bool roofEnd = false;
     };
 
     // A tangent edge between two members: a straight line that meets the
@@ -1396,6 +1401,10 @@ private:
     // a tangent seam's new line along the neutral plane's normal: the height
     // of a level
     double perLevel = 1.0;
+    // the levels the sheet stops short of, one way and the other, where it
+    // ran into itself (section 18.4)
+    double crossAt[2] = {Precision::Infinite(), -Precision::Infinite()};
+    int crossTries = 0;
     Bnd_Box band;
 };
 
@@ -2807,6 +2816,17 @@ bool CellDraftOne::attempt(double scale)
         }
     }
     for (size_t k = 0; k < members.size(); ++k) {
+        // a face of the chain that was not picked may go under the roof
+        // (section 18.3)
+        if (!hasNewFace[k] && k > 0 && members[k].roofEnd
+            && std::none_of(members[k].faces.begin(),
+                            members[k].faces.end(),
+                            [&](const TopoDS_Face& f) {
+                                return picked.Contains(f);
+                            })) {
+            FC_LOG("Face" << members[k].group << " is gone under the roof");
+            continue;
+        }
         if (!hasNewFace[k]) {
             return fail(CellDraft::FaceVanishes,
                         k == 0 ? "the face is not in the result: its neighbours meet across it"
@@ -3082,6 +3102,36 @@ bool CellDraftOne::attempt(double scale)
     return true;
 }
 
+// A closed polygon without repeated points or points on a straight run.
+static std::vector<gp_Pnt> cleanPolygon(const std::vector<gp_Pnt>& in, double tol)
+{
+    std::vector<gp_Pnt> pts;
+    for (const auto& p : in) {
+        if (pts.empty() || pts.back().Distance(p) > tol) {
+            pts.push_back(p);
+        }
+    }
+    while (pts.size() > 1 && pts.back().Distance(pts.front()) <= tol) {
+        pts.pop_back();
+    }
+    bool again = true;
+    while (again && pts.size() > 3) {
+        again = false;
+        for (size_t i = 0; i < pts.size(); ++i) {
+            const gp_Pnt& a = pts[(i + pts.size() - 1) % pts.size()];
+            const gp_Pnt& b = pts[(i + 1) % pts.size()];
+            gp_Vec u(a, pts[i]);
+            gp_Vec v(pts[i], b);
+            if (u.Dot(v) > 0 && u.Crossed(v).Magnitude() <= tol * (u.Magnitude() + v.Magnitude())) {
+                pts.erase(pts.begin() + i);
+                again = true;
+                break;
+            }
+        }
+    }
+    return pts;
+}
+
 // The new surfaces of a drafted set that is not one plane: on each member's
 // new surface a face between the new lines of its seams, along them past the
 // box (short of a cone's apex), a plane at an open end of the chain across
@@ -3102,46 +3152,31 @@ bool CellDraftOne::makeSheet(const std::vector<gp_Pnt>& corners, TopoDS_Shape& s
         const gp_Ax1& axis = m.newAxial.axis;
         return axis.Location().Translated(m.newAxial.apex() * gp_Vec(axis.Direction()));
     };
-    // where a seam's new line meets the apex of a cone with a ridge
-    auto apexLevel = [&](const Member& c, const Seam& seam) {
-        return gp_Vec(seam.p, c.apex).Dot(gp_Vec(seam.g));
+    const gp_Dir& nn = draft.neutralPlane.Axis().Direction();
+    // a level is a height: every tangent seam's new line makes the draft's
+    // angle with the pull direction
+    auto level = [&](const gp_Pnt& x) {
+        return gp_Vec(draft.neutralPlane.Location(), x).Dot(gp_Vec(nn)) / perLevel;
     };
-    // the point on a cone's ridge at a level along the seams (the same on
-    // either seam: the ridge lies in the plane of symmetry between them)
-    auto ridgeAt = [&](const Member& c, double s) {
-        const Seam& seam = seams[c.seams[0].first];
-        double lambda = (s - apexLevel(c, seam)) / gp_Vec(c.ridgeDir).Dot(gp_Vec(seam.g));
-        return c.apex.Translated(lambda * gp_Vec(c.ridgeDir));
-    };
-    // The point of a plane's side along a seam at a level: on the seam's
-    // new line, or on the ridge past the apex of the cone across it.
-    auto sidePoint = [&](const Member& pm, const Seam& seam, double s) {
-        const Member& c = &members[seam.m1] == &pm ? members[seam.m2] : members[seam.m1];
-        if (c.ridge[0] >= 0) {
-            double sa = apexLevel(c, seam);
-            if ((s - sa) * sa > 0) {
-                return ridgeAt(c, s);
-            }
+    for (const auto& m : members) {
+        if (m.planar && m.seams.size() > 2) {
+            return fail(CellDraft::UnsupportedSurface,
+                        "a plane of the drafted set meets more than two tangent faces",
+                        TopoDS_Face(),
+                        m.faces.front());
         }
-        return seamAt(seam, s);
-    };
-    // The line of a plane's seam from s0 to s1; where the cone across it
-    // ends at its apex, bent there along the ridge.
-    auto seamSide = [&](const Member& pm, const Seam& seam) -> std::vector<gp_Pnt> {
-        const Member& c = &members[seam.m1] == &pm ? members[seam.m2] : members[seam.m1];
-        gp_Pnt e0 = seamAt(seam, s0);
-        gp_Pnt e1 = seamAt(seam, s1);
-        if (c.ridge[0] >= 0) {
-            double sa = apexLevel(c, seam);
-            if (sa > s0 && sa < s1) {
-                if (sa > 0) {
-                    return {e0, c.apex, ridgeAt(c, s1)};
-                }
-                return {ridgeAt(c, s0), c.apex, e1};
-            }
+        if (!m.planar && m.seams.size() != 2 && !m.seams.empty()) {
+            return fail(CellDraft::UnsupportedSurface,
+                        "a cylinder or cone of the drafted set ends at a sharp edge on one "
+                        "side only",
+                        TopoDS_Face(),
+                        m.faces.front());
         }
-        return {e0, e1};
-    };
+    }
+    // The sides of each plane, traced through the roof's events one way and
+    // the other from the neutral plane (section 18): track[way][member][slot]
+    // from the neutral plane out, slot as in the member's seams.
+    std::vector<std::array<std::vector<gp_Pnt>, 2>> track[2];
     if (!seams.empty()) {
         double pad = 0.1 * (s1 - s0);
         s0 -= pad;
@@ -3167,76 +3202,317 @@ bool CellDraftOne::makeSheet(const std::vector<gp_Pnt>& corners, TopoDS_Shape& s
             return fail(CellDraft::FaceVanishes,
                         "a drafted face of the tangent chain shrinks to a point");
         }
-        // A plane between two seams narrows along a ridge; where its sides
-        // meet, the plane ends too and the planes beyond its ridges meet in
-        // turn (the roof of the chain). The sheet stops short of that, past
-        // the faces it is made for, or the draft is refused.
-        const Member* ends = nullptr;
-        double end0 = s0, end1 = s1;
-        for (const auto& m : members) {
-            if (!m.planar || m.seams.size() != 2) {
-                continue;
+        bool crossed = crossAt[0] < s1 || crossAt[1] > s0;
+        s1 = std::min(s1, crossAt[0]);
+        s0 = std::max(s0, crossAt[1]);
+
+        // A side between two members of the wavefront: a line.
+        struct Side
+        {
+            gp_Pnt o;
+            gp_Dir d;
+            // a tangent seam: beside a cone
+            bool tangent = false;
+        };
+        // the point of a side at a level; false for a line along a level
+        auto sideAt = [&](const Side& sd, double s, gp_Pnt& p) {
+            double rate = gp_Vec(sd.d).Dot(gp_Vec(nn)) / perLevel;
+            if (std::abs(rate) < 1e-9) {
+                return false;
             }
-            const Seam& a = seams[m.seams[0].first];
-            const Seam& b = seams[m.seams[1].first];
-            // the width of the plane's face at a level, along the level line
-            // (square to the steepest line of the plane), piecewise linear
-            const gp_Dir& nn = draft.neutralPlane.Axis().Direction();
-            gp_Vec steep = gp_Vec(nn) - gp_Vec(nn).Dot(gp_Vec(m.newNormal)) * gp_Vec(m.newNormal);
-            if (steep.Magnitude() < gp::Resolution()) {
-                continue;
+            p = sd.o.Translated((s - level(sd.o)) / rate * gp_Vec(sd.d));
+            return true;
+        };
+        // where two sides of one plane meet; false if parallel
+        auto meet = [](const Side& a, const Side& b, gp_Pnt& x) {
+            gp_Vec n = gp_Vec(a.d).Crossed(gp_Vec(b.d));
+            double n2 = n.SquareMagnitude();
+            if (n2 < 1e-18) {
+                return false;
             }
-            gp_Vec u = gp_Vec(m.newNormal).Crossed(steep.Normalized());
-            auto width = [&](double s) {
-                return gp_Vec(sidePoint(m, a, s), sidePoint(m, b, s)).Dot(u);
-            };
-            std::vector<double> breaks;
-            for (const Seam* seam : {&a, &b}) {
-                const Member& c =
-                    &members[seam->m1] == &m ? members[seam->m2] : members[seam->m1];
-                if (c.ridge[0] >= 0) {
-                    breaks.push_back(apexLevel(c, *seam));
-                }
-            }
-            double w0 = width(0.0);
-            for (int dir : {1, -1}) {
-                std::vector<double> xs {0.0};
-                for (double x : breaks) {
-                    if (x * dir > 0 && x * dir < (dir > 0 ? s1 : -s0)) {
-                        xs.push_back(x);
-                    }
-                }
-                xs.push_back(dir > 0 ? s1 : s0);
-                std::sort(xs.begin(), xs.end(), [dir](double x, double y) {
-                    return x * dir < y * dir;
-                });
-                for (size_t i = 1; i < xs.size(); ++i) {
-                    double fx = width(xs[i - 1]), fy = width(xs[i]);
-                    if (fy * w0 > 0) {
-                        continue;
-                    }
-                    double root = xs[i - 1] + (xs[i] - xs[i - 1]) * fx / (fx - fy);
-                    double gap = 1e-3 * std::abs(root) + Precision::Confusion();
-                    if (dir > 0 && root - gap < end1) {
-                        end1 = root - gap;
-                        ends = &m;
-                    }
-                    else if (dir < 0 && root + gap > end0) {
-                        end0 = root + gap;
-                        ends = &m;
-                    }
+            gp_Vec w(a.o, b.o);
+            double t = w.Crossed(gp_Vec(b.d)).Dot(n) / n2;
+            x = a.o.Translated(t * gp_Vec(a.d));
+            return true;
+        };
+        auto seamSideOf = [&](int j) {
+            Side sd;
+            sd.o = seams[j].p;
+            sd.d = seams[j].g;
+            sd.tangent = !seams[j].sharp;
+            return sd;
+        };
+
+        // The chain in order: a path from an open end, or a cycle. A node's
+        // slots are the member's seams toward the node before and after it.
+        struct Node
+        {
+            int mem;
+            int slot[2];
+        };
+        std::vector<Node> order;
+        bool closed = false;
+        {
+            int start = 0;
+            for (int k = 0; k < static_cast<int>(members.size()); ++k) {
+                if (members[k].seams.size() == 1) {
+                    start = k;
                     break;
                 }
             }
+            std::vector<char> used(seams.size(), 0);
+            int cur = start;
+            int in = -1;
+            while (static_cast<int>(order.size()) <= static_cast<int>(members.size())) {
+                Node nd {cur, {in, -1}};
+                int next = -1;
+                int nextIn = -1;
+                const Member& m = members[cur];
+                for (int i = 0; i < static_cast<int>(m.seams.size()); ++i) {
+                    int j = m.seams[i].first;
+                    if (used[j]) {
+                        continue;
+                    }
+                    used[j] = 1;
+                    nd.slot[1] = i;
+                    next = seams[j].m1 == cur ? seams[j].m2 : seams[j].m1;
+                    const Member& o = members[next];
+                    for (int k = 0; k < static_cast<int>(o.seams.size()); ++k) {
+                        if (o.seams[k].first == j) {
+                            nextIn = k;
+                        }
+                    }
+                    break;
+                }
+                order.push_back(nd);
+                if (next < 0) {
+                    break;
+                }
+                if (next == start) {
+                    closed = true;
+                    order.front().slot[0] = nextIn;
+                    break;
+                }
+                cur = next;
+                in = nextIn;
+            }
+            if (order.size() != members.size()) {
+                return fail(CellDraft::UnsupportedSurface,
+                            "the faces of the drafted set do not make one chain");
+            }
+        }
+
+        double tolS = (1e-7 * reachLimit + Precision::Confusion()) / std::abs(perLevel);
+        // where a run stopped, short of an event it does not build (section
+        // 18.4): the face it names and why
+        const Member* ends = crossed ? &members.front() : nullptr;
+        const char* why = "the drafted chain runs into itself";
+        CellDraft::ErrorType whyError = CellDraft::UnsupportedSurface;
+        std::vector<char> roofEnd(members.size(), 0);
+        for (int way = 0; way < 2; ++way) {
+            int dir = way == 0 ? 1 : -1;
+            double end = dir > 0 ? s1 : s0;
+            auto& tr = track[way];
+            tr.assign(members.size(), {});
+            if (end * dir <= 0) {
+                continue;  // the box lies the other way
+            }
+            // A run that meets an event it does not build runs again, to just
+            // short of it.
+            for (int pass = 0; pass < 2; ++pass) {
+                tr.assign(members.size(), {});
+                std::vector<char> narrowed(members.size(), 0);
+                std::vector<Node> wf = order;
+                // sides[i] between wf[i] and the node after it
+                std::vector<Side> sides;
+                for (size_t i = 0; i < wf.size(); ++i) {
+                    if (wf[i].slot[1] >= 0) {
+                        sides.push_back(
+                            seamSideOf(members[wf[i].mem].seams[wf[i].slot[1]].first));
+                    }
+                }
+                auto add = [&](const Node& nd, int which, const gp_Pnt& p) {
+                    if (members[nd.mem].planar && nd.slot[which] >= 0) {
+                        tr[nd.mem][nd.slot[which]].push_back(p);
+                    }
+                };
+                for (const auto& nd : wf) {
+                    for (int which : {0, 1}) {
+                        if (nd.slot[which] >= 0) {
+                            add(nd, which, seams[members[nd.mem].seams[nd.slot[which]].first].p);
+                        }
+                    }
+                }
+                if (end * dir <= 0) {
+                    break;  // stopped at the neutral plane
+                }
+                double cur = 0.0;
+                bool collapsed = false;
+                // the level two planes were joined along a level line at, and
+                // the face that narrowed there
+                const Member* flatBy = nullptr;
+                double flatAt = 0.0;
+                const Member* stopBy = nullptr;
+                const char* stopWhy = nullptr;
+                CellDraft::ErrorType stopError = CellDraft::UnsupportedSurface;
+                double stopAt = 0.0;
+                for (size_t guard = 0; guard <= 2 * members.size(); ++guard) {
+                    int n = static_cast<int>(wf.size());
+                    int best = -1;
+                    int kind = 0;
+                    double sBest = end;
+                    gp_Pnt xBest;
+                    for (int i = 0; i < n; ++i) {
+                        if (!closed && (i == 0 || i == n - 1)) {
+                            continue;
+                        }
+                        const Side& left = sides[(i + n - 1) % n];
+                        const Side& right = sides[i];
+                        const Member& m = members[wf[i].mem];
+                        gp_Pnt x;
+                        if (!m.planar) {
+                            // apex: the planes either side meet in its ridge
+                            if (m.ridge[0] < 0) {
+                                continue;
+                            }
+                            x = m.apex;
+                        }
+                        else if ((left.tangent && right.tangent) || !meet(left, right, x)) {
+                            continue;
+                        }
+                        double sx = level(x);
+                        if (sx * dir <= 0 || (sx - cur) * dir < -tolS
+                            || (sx - sBest) * dir >= 0) {
+                            continue;
+                        }
+                        best = i;
+                        sBest = sx;
+                        xBest = x;
+                        kind = !m.planar ? 1 : (left.tangent || right.tangent) ? 3 : 2;
+                    }
+                    // Two planes joined along a level line (opposite walls
+                    // meeting) close the chain over there: only if the rest of
+                    // it closes at the same level.
+                    if (flatBy && (best < 0 || std::abs(sBest - flatAt) > tolS)) {
+                        stopAt = flatAt;
+                        stopBy = flatBy;
+                        stopWhy = "the tangent chain closes over along part of its outline only";
+                        break;
+                    }
+                    if (best < 0) {
+                        break;
+                    }
+                    const Member& mb = members[wf[best].mem];
+                    if (kind == 3) {
+                        // the plane narrows to nothing beside a cone short of
+                        // its apex: the cone would meet the plane beyond in a
+                        // conic
+                        stopAt = sBest;
+                        stopBy = &mb;
+                        stopWhy = "a face of the tangent chain narrows to nothing beside a "
+                                  "fillet that has not shrunk to a point";
+                        stopError = CellDraft::FaceVanishes;
+                        break;
+                    }
+                    int il = (best + n - 1) % n;
+                    int ir = (best + 1) % n;
+                    const Member& a = members[wf[il].mem];
+                    const Member& b = members[wf[ir].mem];
+                    Side ns;
+                    ns.o = xBest;
+                    if (kind == 1) {
+                        ns.d = mb.ridgeDir;
+                    }
+                    else {
+                        gp_Vec d = gp_Vec(a.newNormal).Crossed(gp_Vec(b.newNormal));
+                        if (!a.planar || !b.planar || d.Magnitude() < 1e-9) {
+                            stopAt = sBest;
+                            stopBy = &mb;
+                            stopWhy = "the planes beside a face of the tangent chain that "
+                                      "narrows to nothing do not meet";
+                            break;
+                        }
+                        ns.d = gp_Dir(d);
+                        if (!flatBy && std::abs(d.Dot(gp_Vec(nn))) < 1e-9 * d.Magnitude()) {
+                            flatBy = &mb;
+                            flatAt = sBest;
+                        }
+                        add(wf[best], 0, xBest);
+                        add(wf[best], 1, xBest);
+                        narrowed[wf[best].mem] = 1;
+                    }
+                    add(wf[il], 1, xBest);
+                    add(wf[ir], 0, xBest);
+                    cur = sBest;
+                    sides[il] = ns;
+                    sides.erase(sides.begin() + best);
+                    wf.erase(wf.begin() + best);
+                    if (closed && wf.size() <= 2) {
+                        // the wavefront has closed over: its two sides are one
+                        // line
+                        double tol = 1e-7 * reachLimit + Precision::Confusion();
+                        if (wf.size() == 2
+                            && (!sides[0].d.IsParallel(sides[1].d, 1e-6)
+                                || gp_Lin(sides[0].o, sides[0].d).Distance(sides[1].o) > tol)) {
+                            stopAt = cur;
+                            stopBy = &mb;
+                            stopWhy = "the tangent chain closes over at more than a ridge";
+                            break;
+                        }
+                        collapsed = true;
+                        FC_LOG("the tangent chain closes over at level " << cur);
+                        break;
+                    }
+                }
+                if (stopBy) {
+                    if (pass > 0) {
+                        return fail(CellDraft::UnsupportedSurface, stopWhy);
+                    }
+                    end = stopAt - dir * (1e-3 * std::abs(stopAt) + Precision::Confusion());
+                    ends = stopBy;
+                    why = stopWhy;
+                    whyError = stopError;
+                    continue;
+                }
+                if (!collapsed) {
+                    int n = static_cast<int>(wf.size());
+                    for (int i = 0; i < n; ++i) {
+                        for (int which : {0, 1}) {
+                            if (wf[i].slot[which] < 0) {
+                                continue;
+                            }
+                            const Side& sd = sides[which == 0 ? (i + n - 1) % n : i];
+                            gp_Pnt p;
+                            if (!sideAt(sd, end, p)) {
+                                return fail(CellDraft::UnsupportedSurface,
+                                            "the tangent chain closes over along part of its "
+                                            "outline only");
+                            }
+                            add(wf[i], which, p);
+                        }
+                    }
+                }
+                for (size_t k = 0; k < members.size(); ++k) {
+                    if (narrowed[k]) {
+                        roofEnd[k] = 1;
+                        FC_LOG("Face" << members[k].group << " narrows to nothing");
+                    }
+                }
+                break;
+            }
+            if (dir > 0) {
+                s1 = end;
+            }
+            else {
+                s0 = end;
+            }
+        }
+        for (size_t k = 0; k < members.size(); ++k) {
+            members[k].roofEnd = roofEnd[k] != 0;
         }
         if (ends) {
-            // The faces of the chain and where they move to must lie within
-            // (a level is a height: every tangent seam's new line makes the
-            // draft's angle with the pull direction).
-            const gp_Dir& nn = draft.neutralPlane.Axis().Direction();
-            auto level = [&](const gp_Pnt& x) {
-                return gp_Vec(draft.neutralPlane.Location(), x).Dot(gp_Vec(nn)) / perLevel;
-            };
+            // The faces of the chain and where they move to must lie short of
+            // where a run stopped.
             for (const auto& m : members) {
                 for (const auto& f : m.faces) {
                     for (TopExp_Explorer exp(f, TopAbs_VERTEX); exp.More(); exp.Next()) {
@@ -3245,27 +3521,33 @@ bool CellDraftOne::makeSheet(const std::vector<gp_Pnt>& corners, TopoDS_Shape& s
                                             : p.Translated(-newDist(m, p) * newNormalAt(m, p));
                         for (const gp_Pnt& x : {p, q}) {
                             double s = level(x);
-                            if (s <= end0 || s >= end1) {
-                                return fail(CellDraft::FaceVanishes,
-                                            "a face of the tangent chain narrows to nothing past "
-                                            "the apex of the cones beside it",
+                            if (s <= s0 || s >= s1) {
+                                return fail(whyError,
+                                            why,
                                             TopoDS_Face(),
-                                            ends->faces.front());
+                                            ends == &members.front() ? TopoDS_Face()
+                                                                     : ends->faces.front());
                             }
                         }
                     }
                 }
             }
-            FC_LOG("the sheet stops at " << end0 << ", " << end1 << " (was " << s0 << ", " << s1
-                                         << ")");
-            s0 = end0;
-            s1 = end1;
+            FC_LOG("the sheet stops at " << s0 << ", " << s1);
         }
     }
+    // A side of a plane from one end of the sheet to the other.
+    auto sideOf = [&](int k, int slot) {
+        std::vector<gp_Pnt> pts(track[1][k][slot].rbegin(), track[1][k][slot].rend());
+        const auto& up = track[0][k][slot];
+        pts.insert(pts.end(), up.begin() + (pts.empty() ? 0 : std::min<size_t>(1, up.size())),
+                   up.end());
+        return pts;
+    };
 
     BRepBuilderAPI_Sewing sewing(1e-6);
     TopoDS_Face patch;
-    for (const auto& m : members) {
+    for (int k = 0; k < static_cast<int>(members.size()); ++k) {
+        const Member& m = members[k];
         if (m.planar) {
             std::vector<gp_Pnt> pts;
             if (m.seams.size() == 2) {
@@ -3278,8 +3560,8 @@ bool CellDraftOne::makeSheet(const std::vector<gp_Pnt>& corners, TopoDS_Shape& s
                                 TopoDS_Face(),
                                 m.faces.front());
                 }
-                pts = seamSide(m, a);
-                std::vector<gp_Pnt> other = seamSide(m, b);
+                pts = sideOf(k, 0);
+                std::vector<gp_Pnt> other = sideOf(k, 1);
                 pts.insert(pts.end(), other.rbegin(), other.rend());
             }
             else if (m.seams.size() == 1) {
@@ -3287,7 +3569,7 @@ bool CellDraftOne::makeSheet(const std::vector<gp_Pnt>& corners, TopoDS_Shape& s
                 // way the face lies
                 const Seam& a = seams[m.seams[0].first];
                 gp_Vec w = m.seams[0].second * gp_Vec(a.across);
-                pts = seamSide(m, a);
+                pts = sideOf(k, 0);
                 double reach = 0.0;
                 for (const auto& c : corners) {
                     reach = std::max(reach, gp_Vec(a.p, c).Dot(w));
@@ -3296,8 +3578,10 @@ bool CellDraftOne::makeSheet(const std::vector<gp_Pnt>& corners, TopoDS_Shape& s
                     reach = std::max(reach, gp_Vec(a.p, p).Dot(w));
                 }
                 reach = 1.1 * reach + Precision::Confusion();
-                pts.push_back(seamAt(a, s1).Translated(reach * w));
-                pts.push_back(seamAt(a, s0).Translated(reach * w));
+                gp_Pnt e0 = pts.front();
+                gp_Pnt e1 = pts.back();
+                pts.push_back(e1.Translated(reach * w));
+                pts.push_back(e0.Translated(reach * w));
             }
             else {
                 return fail(CellDraft::UnsupportedSurface,
@@ -3305,6 +3589,7 @@ bool CellDraftOne::makeSheet(const std::vector<gp_Pnt>& corners, TopoDS_Shape& s
                             TopoDS_Face(),
                             m.faces.front());
             }
+            pts = cleanPolygon(pts, 1e-7 * reachLimit + Precision::Confusion());
             BRepBuilderAPI_MakePolygon poly;
             for (const auto& p : pts) {
                 poly.Add(p);
@@ -3345,6 +3630,13 @@ bool CellDraftOne::makeSheet(const std::vector<gp_Pnt>& corners, TopoDS_Shape& s
                 params(b.p, ub, dummy);
                 params(a.p.Translated(s0 * gp_Vec(a.g)), dummy, va0);
                 params(a.p.Translated(s1 * gp_Vec(a.g)), dummy, va1);
+                // the point's way round at the seams' own height: past the
+                // apex it would project onto the other side of the axis
+                const gp_Ax1& axis = m.newAxial.axis;
+                params(q.Translated((m.newAxial.z(a.p) - m.newAxial.z(q))
+                                    * gp_Vec(axis.Direction())),
+                       uq,
+                       dummy);
                 // the way round from one seam to the other that the face takes
                 auto wrap = [](double x) {
                     return x - 2 * M_PI * std::floor(x / (2 * M_PI));
@@ -3423,6 +3715,85 @@ bool CellDraftOne::makeSheet(const std::vector<gp_Pnt>& corners, TopoDS_Shape& s
     sheet = sewing.SewedShape();
     if (sheet.IsNull()) {
         return fail(CellDraft::Boolean, "the new faces of the drafted set do not sew");
+    }
+    // The sheet must not run into itself (section 18.4): a fillet growing
+    // into the wall across, the chain splitting in two. Where it does, it
+    // stops short of that, and the chain's faces must lie short of it too.
+    if (members.size() > 1) {
+        BOPAlgo_ArgumentAnalyzer check;
+        check.SetShape1(sheet);
+        check.SelfInterMode() = true;
+        check.Perform();
+        if (check.HasFaulty()) {
+            const gp_Dir& nn = draft.neutralPlane.Axis().Direction();
+            double hi = Precision::Infinite(), lo = -Precision::Infinite();
+            for (const auto& r : check.GetCheckResult()) {
+                const TopTools_ListOfShape& fs = r.GetFaultyShapes1();
+                if (fs.Extent() != 2) {
+                    continue;
+                }
+                BRepAlgoAPI_Section sec(fs.First(), fs.Last());
+                if (!sec.IsDone()) {
+                    continue;
+                }
+                // the section's level nearest the neutral plane either way,
+                // which can lie inside an edge (a conic's lowest point)
+                auto levelOf = [&](const gp_Pnt& p) {
+                    return gp_Vec(draft.neutralPlane.Location(), p).Dot(gp_Vec(nn)) / perLevel;
+                };
+                for (TopExp_Explorer exp(sec.Shape(), TopAbs_EDGE); exp.More(); exp.Next()) {
+                    BRepAdaptor_Curve c(TopoDS::Edge(exp.Current()));
+                    const int n = 64;
+                    double t0 = c.FirstParameter();
+                    double dt = (c.LastParameter() - t0) / n;
+                    for (int way : {1, -1}) {
+                        auto key = [&](double t) {
+                            return way * levelOf(c.Value(t));
+                        };
+                        int ib = -1;
+                        double vb = 0.0;
+                        for (int i = 0; i <= n; ++i) {
+                            double v = key(t0 + i * dt);
+                            if (v > 0 && (ib < 0 || v < vb)) {
+                                ib = i;
+                                vb = v;
+                            }
+                        }
+                        if (ib < 0) {
+                            continue;
+                        }
+                        double a = t0 + std::max(0, ib - 1) * dt;
+                        double b = t0 + std::min(n, ib + 1) * dt;
+                        for (int it = 0; it < 60; ++it) {
+                            double m1 = a + (b - a) / 3, m2 = b - (b - a) / 3;
+                            if (key(m1) < key(m2)) {
+                                b = m2;
+                            }
+                            else {
+                                a = m1;
+                            }
+                        }
+                        double v = key(0.5 * (a + b));
+                        double s = way * (v > 0 ? std::min(v, vb) : vb);
+                        if (s * way > 0) {
+                            if (way > 0) {
+                                hi = std::min(hi, s);
+                            }
+                            else {
+                                lo = std::max(lo, s);
+                            }
+                        }
+                    }
+                }
+            }
+            if (++crossTries > 3 || (hi >= crossAt[0] && lo <= crossAt[1])) {
+                return fail(CellDraft::UnsupportedSurface, "the drafted chain runs into itself");
+            }
+            FC_LOG("the sheet runs into itself at levels " << lo << ", " << hi);
+            crossAt[0] = std::min(crossAt[0], hi - 1e-3 * std::abs(hi) - Precision::Confusion());
+            crossAt[1] = std::max(crossAt[1], lo + 1e-3 * std::abs(lo) + Precision::Confusion());
+            return makeSheet(corners, sheet);
+        }
     }
     return true;
 }
@@ -3639,14 +4010,12 @@ void CellDraft::Build(const Message_ProgressRange& /*theRange*/)
             };
             std::vector<TopoDS_Face> faces = pieces(fd.face);
             // the faces picked with the same draft, which join the set along
-            // tangent edges without propagation
+            // tangent edges without propagation, and must not go under a roof
             TopTools_MapOfShape picked;
-            if (!myTangentPropagation) {
-                for (const auto& other : myFaces) {
-                    if (sameDraft(other, fd)) {
-                        for (const auto& f : pieces(other.face)) {
-                            picked.Add(f);
-                        }
+            for (const auto& other : myFaces) {
+                if (sameDraft(other, fd)) {
+                    for (const auto& f : pieces(other.face)) {
+                        picked.Add(f);
                     }
                 }
             }
