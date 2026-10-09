@@ -101,7 +101,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 22 | 2026-10-06 | omni search: `/word` with no space is an object query; `/ word` forces it (change request, decided) | STAGED 2026-10-07 14:23, fixed `5aedd5cf83`: "/word" is an object query, "/ word" forces it, a keyword in full is the keyword, the beginning of one lists modes and objects together; the browser viewer's grammar follows (its bundle not rebuilt) |
 | 23 | 2026-10-06 | omni search: every setting it collects has documentation, none of it long (an audit asked) | STAGED 2026-10-07 14:23, fixed `c7a27b5a85` (and `08b8f009aa`): 574 settings audited, 221 had no documentation and 94 ran past 400 characters; all have a short text now and a test keeps it so. Side findings for the reporter in `docs/HandsOnLog.md`. The defaults STAGED 2026-10-09 08:40, fixed `02cab053df`: OK on a fresh profile changed 23 settings and stored 2 under a wrong type, 14 of them a generated page's spin box clamping its default to 99; a test keeps it so |
 | 24 | 2026-10-06 | every `Base::Parameter` setting behind a cog helper class so the omni search finds it, applied through delayed handlers (change request, application-wide) | C++ SIDE DONE AND SETTLED; decisions applied in two rounds, `e21eff05a7` and `427ffc8d28`; PUSHED 2026-10-08 (origin/PartDesignPort = `b70cc6ebf1`, cycles `35a3bd898` first); STAGED 2026-10-09 08:40. Nothing left with the reporter. What remains of the aim is entries 41 and 42 (`docs/HandsOnLog.md`) |
-| 25 | 2026-10-06 | the outline of a highlighted face is jagged, MSAA on or off | STAGED 2026-10-09 08:40, fixed `9c9549d368`, for a face UNDER THE POINTER: the outline was cut along the face by a stencil mark that is one sample a pixel whatever the multisampling; it fades in from the cut now. On a cylinder's top face the outline's middle jumps 0.161 px from column to column where it jumped 0.330; 5 PASS and 1 FAIL before, 6 PASS after. A SELECTED face's outline is left as it was, on purpose. Not scored with multisampling on (`docs/HandsOnLog.md`) |
+| 25 | 2026-10-06 | the outline of a highlighted face is jagged, MSAA on or off | STAGED 2026-10-09 08:40, fixed `9c9549d368`, for a face UNDER THE POINTER: the outline was cut along the face by a stencil mark that is one sample a pixel whatever the multisampling; it fades in from the cut now. On a cylinder's top face the outline's middle jumps 0.161 px from column to column where it jumped 0.330; 5 PASS and 1 FAIL before, 6 PASS after. A SELECTED face's outline is left as it was, on purpose. Not scored with multisampling on. The reporter on the staged copy, 2026-10-09 10:01: a face without an edge (a cylinder's side) is jagged too without MSAA -- to be pinned down: the session it was seen in has no backend (entry 50), and with the backend the fix draws NO outline along a curved face's silhouette (`docs/HandsOnLog.md`) |
 | 26 | 2026-10-06 | a long halt after enabling MSAA and pressing OK in the preferences | STAGED 2026-10-09 08:40, fixed `175ffce199`: the FIRST OK of a profile held the program 11 to 15 s (780 keys stored for the first time and taken for changes: stylesheet set again 4.2 s, every Part view provider re-meshed 3.2 s, language activated again about 2 s); 0.9 s now (`docs/HandsOnLog.md`) |
 | 27 | 2026-10-06 | the view cell menu: opens a spreadsheet nobody asked for, lists every TechDraw object, changes the wrong cell | STAGED 2026-10-07 14:23, fixed `fa2ada985c`: the menu made a spreadsheet view by asking for it, listed a page's views, and placed a pick by the general policy instead of into its cell; all three gone, spreadsheets now listed by type like pages (`docs/HandsOnLog.md`) |
 | 28 | 2026-10-06 | `scanner.FCStd` restores with a wrong colour, sometimes (the motor body light blue for light grey) | NOT REPRODUCED 2026-10-09, nothing changed, three questions for the reporter: 15 loads over 4 sessions, every colour property of all 686 objects identical and the frames the same. In the file the solid `Compound` (264 faces) and the cable `Compound001` have LIGHT BLUE as their own stored colour and are drawn light blue on every load; the containers over them carry a light grey material with its override off. So here it is the light GREY that was not seen (`docs/HandsOnLog.md`) |
@@ -2052,7 +2052,54 @@ handler asked for in (c) has a precedent in `ParamHandlers::addDelayedHandler`
 (used by `DlgSettings3DViewImp::attachObserver`) and in the generated
 classes' own `on...Changed` hooks.
 
-## 25. The outline of a highlighted face is jagged, MSAA or not -- STAGED 2026-10-09, fixed `9c9549d368`, for a face under the pointer (see `docs/HandsOnLog.md`)
+## 25. The outline of a highlighted face is jagged, MSAA or not -- STAGED 2026-10-09, fixed `9c9549d368`, for a face under the pointer; the reporter on the staged copy: a face without an edge is jagged too, to be pinned down (see `docs/HandsOnLog.md`)
+
+**2026-10-09 10:01, the reporter, on the staged copy:** "what did dwin do to
+fix the jagged outline. It looks like face without edge (like cylinder) also
+got jagger without msaa."
+A question and an observation: where a face has no edge -- the side of a
+cylinder, at its silhouette -- it is jagged too with MSAA off.
+
+What the fix did, for the question (`9c9549d368`, read by the note-taker
+from the commit, nothing run): it changed ONE thing, the outline of a face
+UNDER THE POINTER in the render engine's backend. That outline is a thick
+line whose inner half is cut off along the face by a stencil mark; the cut
+was a staircase. Now (1) only the face's own BOUNDARY edges are drawn as
+lines, where every triangle edge of the face used to be drawn and the
+stencil hid the inner ones; (2) the line fades in over one pixel from the
+cut instead of starting hard; (3) the lines mark the stencil so that
+neighbours and corner caps do not draw over the fade. A selected face's
+outline was left as it was. It did nothing to faces, to MSAA, or to how a
+model's own silhouette is drawn.
+
+**Two things that bear on the observation, the note-taker's reading:**
+- **The session it was seen in has NO backend.** The reporter's session is
+  still the one of entries 49 and 50 (started 09:24:59, pid 75320), which
+  lost the render engine at the first "Reset all", 09:26:03; at 09:42 its
+  3D view answered "No external renderer active". Everything drawn there
+  since comes from the render cache's own GL renderer: plain GL lines and
+  triangles, jagged with anti-aliasing at 0, and none of this fix is in
+  play. If the cylinder was looked at in that session, what was seen is
+  entry 50, not this fix.
+- **With the backend, the fix itself changes a curved face, and the test
+  did not look there.** "The boundary's own edges only" means edges used by
+  one triangle of the face; a seam is not one. The side of a cylinder has
+  two boundary edges, its circles, and NONE along its silhouette, where the
+  surface turns away. Before the fix the triangle edges there were drawn
+  and cut by the stencil, so the highlight followed the silhouette (jagged);
+  after it nothing is drawn there, and a face with no boundary at all -- a
+  sphere -- gets no outline at all (`BGFXViewOverlay.cpp`: "a face with no
+  boundary has no outline"). So on a hovered cylinder side the outline
+  should now be MISSING along the silhouette rather than smooth; what shows
+  there is the bare edge of the model's triangles, which no line covers and
+  which is jagged without MSAA. The fix was scored on the TOP face of a
+  cylinder only, a flat face with a full boundary.
+
+**To pin down, NOT ANSWERED YET:** was it the highlight of the cylinder's
+side under the pointer, or the cylinder's own silhouette with nothing
+highlighted; and was it in the session after the reset, or in one started
+fresh (with the backend)?
+Passed on to the build session.
 
 **2026-10-09 08:33, the build session: FIXED `9c9549d368`** (its message;
 its log, entry 25, `961d2dcd83`, local). Not staged, not pushed.
