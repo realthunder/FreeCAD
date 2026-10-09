@@ -207,8 +207,10 @@ Rules:
   restore preserves the layout), Close cell.
 - New splits clone the current cell's content: a 3D cell splits into two 3D
   views on the same document via the `Document::createView` path (camera
-  copied, no `addWindow`); a page cell splits into a second view of the same
-  page. This is Blender's behavior and gives split-then-navigate for free.
+  copied, no `addWindow`). A cell whose view there is only one of -- a page,
+  a spreadsheet -- gives the new cell a 3D view of its document (sec 22; the
+  second view of the same page this list first described was never built).
+  This is Blender's behavior and gives split-then-navigate for free.
 
 ### 5.5 Heterogeneous content (the editor selector)
 
@@ -1528,3 +1530,84 @@ between cells is 3 pixels (`ViewAreaSplitter::HandleWidth`), thinner than
 a splitter elsewhere, and still takes a drag and a right-click.
 
 Test: `tests/gui/view-cell-drag-frames.py`.
+
+## 22. Giving a drag up; the look of frames and chrome; a border that closes (2026-10-09)
+
+Asked for after a morning with sec 21 (docs/HandsOnQueue.md entry 56, ten
+points, a to j).
+
+**Only the release of the left button carries a drag out.** Escape, and
+any other mouse button pressed while the left one is held, give it up: the
+frames go and nothing is split, joined, resized or closed. For a corner
+zone and for a border alike. Escape is not the zone's or the handle's to
+receive -- the keyboard is somewhere else -- so each puts an event filter
+on the application for as long as its drag lasts (`ViewAreaZone::
+eventFilter`, `ViewAreaSplitterHandle::eventFilter`). The same filter gives
+the drag up when the application or its window loses the activation, or
+the mouse grab is taken away: another program coming to the front takes
+the release with it, and the frames stayed on the screen. The right click that gave a
+border drag up does not bring the border's menu (`_swallowMenu`).
+
+**One look for a drag frame**, the overlay's and the cells':
+`OverlayDragFrame::paintFrame()`. The face is the ACCENT at an opacity of
+0.3 (`FaceOpacity`, what the overlay's frame always had), inside a white
+border 2 pixels wide, with a thin dark line round it so that the border
+shows on a white ground. The accent (`OverlayDragFrame::accentColor()`) is
+the theme's -- `Themes/ThemeAccentColor1`, the parameter a theme's style
+sheet is filled in with -- while a theme's sheet is chosen
+(`MainWindow/StyleSheet`), and the palette's selection highlight with none. Until this the overlay's frame
+was a fixed blue and the cells' frames the palette's highlight under any
+theme, at 0.24 for a cell that stays and 0.47 for a new one. A new cell is
+told from a kept one by its plus alone now.
+
+| kind | what it covers | drawn as |
+|---|---|---|
+| kept | a cell that stays, at the size it WILL have | the frame |
+| fresh | the cell a split makes | the frame, a plus |
+| going | a cell that is closed: a join's neighbor, a border's victim | nothing of its own; a red stop sign in its middle |
+| refused | a cell that cannot be split (too small) | red, crossed out |
+
+A cell that goes has no frame and no dim: "the frame is the new one and
+occupies the old cell area". The sign is a red octagon in a white rim, a
+quarter of the cell's smaller side from middle to corner, 14 to 48 pixels.
+
+**A border pushed past a cell's minimum closes that cell** (operation
+"close"). `closestLegalPosition()` is where the border stops; dragged more
+than 12 pixels beyond it (`CloseSlack`, so that the limit itself can be
+held) the cell the border is pushed into is shown as going, the widget on
+the other side of the border framed over the room of both, and the release
+calls `closeCell()`. Only when what is pushed is a single cell -- a nested
+splitter on that side stops at its minimum as before. The CORNER zone keeps
+its meaning: dragged inward it only ever creates, and a split that would
+leave a cell under the minimum is refused ("drag in itself only create and
+never close. so as to not create ambiguity").
+
+**A refusal is said as an error**, which the notification area shows as
+well as the report view, still not more than once in five seconds. (A
+plain error, not one "for the user" alone: the report view takes none of
+those.)
+
+**Chrome on a ground that shows.** The menu button under the cursor and
+the corner zones are painted on the accent colour with a white rim, their
+strokes white (`paintChromeGround`). Sec 21 had given them the palette's
+window colour with strokes in the highlight colour, which on a light grey
+or a white view -- a page, a sheet, a light 3D background -- was a light
+patch on a light ground.
+
+**A zone steps aside from a scroll bar** (`ViewAreaCell::placeChrome`): the
+top right one to the left of a vertical scroll bar of the hosted view that
+its corner would lie on, the bottom left one to above a horizontal bar. A
+page's bars run into the cell's corners; a spreadsheet's stand in from
+the edge, and only its horizontal one reaches the bottom left zone. Looked at on every resize, whenever the cursor comes into the cell,
+and when a scroll bar of the view is shown, hidden, moved or resized (an
+event filter on each).
+
+**Every cell can be split.** `cloneChildFor()` knew how to make a second
+3D view and nothing else, so a split of a page's or a spreadsheet's cell
+did nothing and said nothing. A view there is only one of now gives the
+new cell a 3D view of its document (`Document::createView3D`, the
+document's modified state put back after it). Sec 5.4's "a page cell
+splits into a second view of the same page" was never built.
+
+Tests: `tests/gui/view-cell-drag-cancel-and-look.py`; the border's two
+behaviours at and past the minimum are in `view-cell-drag-frames.py`.

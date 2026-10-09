@@ -408,6 +408,21 @@ public:
     QSize sizeHint() const override;
     QSize minimumSizeHint() const override;
 
+    /** The colour of a drag frame's face: the theme's accent colour
+     * (Themes/ThemeAccentColor1) while a theme's style sheet is applied,
+     * the palette's selection highlight of \a widget with none.
+     */
+    static QColor accentColor(const QWidget *widget);
+    /// How see-through a drag frame's face is: its opacity, 0 to 1.
+    static constexpr double FaceOpacity = 0.3;
+    /** Paint one drag frame into \a rect: the face in \a accent at
+     * FaceOpacity, a white border, and a thin dark line around that so
+     * the border shows on a white ground too. The one look of a frame
+     * that says where something dragged will land -- an overlay panel, a
+     * toolbar, a view cell (ViewArea).
+     */
+    static void paintFrame(QPainter &painter, const QRect &rect, const QColor &accent);
+
 protected:
     void paintEvent(QPaintEvent* ev) override;
 };

@@ -1657,3 +1657,10 @@ fc_add_gui_test(GuiSelectionOnTopHiddenEdges_tests_run
 fc_add_gui_test(GuiStatusBarProgressPlace_tests_run
                 statusbar-progress-place.py
                 --timeout 180)
+
+# A view cell drag is given up by Escape or another mouse button; the look
+# of its frames and handles; a border pushed past a cell's minimum closes
+# it; a cell whose view there is only one of is split with a 3D view.
+fc_add_gui_test(GuiViewCellDragCancelAndLook_tests_run
+                view-cell-drag-cancel-and-look.py
+                --timeout 240)

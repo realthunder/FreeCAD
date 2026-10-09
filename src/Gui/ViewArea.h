@@ -116,10 +116,19 @@ public:
      */
     QSize minimumSizeHint() const override;
 
+    /** Put the menu button and the two corner zones in their places:
+     * the corners, except that a zone steps aside from a scroll bar of
+     * the hosted view it would lie on.
+     */
+    void placeChrome();
+
 protected:
     void paintEvent(QPaintEvent *) override;
     void childEvent(QChildEvent *) override;
     void resizeEvent(QResizeEvent *) override;
+    void enterEvent(QEnterEvent *) override;
+    /// Watches the hosted view's scroll bars come and go (placeChrome).
+    bool eventFilter(QObject *, QEvent *) override;
 
 private:
     ViewArea *_area;
@@ -142,8 +151,9 @@ private:
  * Dragging from it INTO the cell splits it along the dominant drag
  * axis, then keeps adjusting the new border until release; dragging
  * ACROSS the cell border into an adjacent sibling cell arms a join --
- * the doomed neighbor dims under an arrow overlay, releasing commits,
- * dragging back cancels (docs/SplitViews.md sec 5.4).
+ * the doomed neighbor gets a stop sign, releasing the left button
+ * commits; dragging back, Escape or any other mouse button cancels
+ * (docs/SplitViews.md sec 5.4).
  */
 class GuiExport ViewAreaZone : public QWidget
 {
@@ -158,14 +168,19 @@ public:
     /// Paint the grip although the cursor is elsewhere, dimmer than a
     /// real hover. Driven by the cell's menu button (showZoneHint).
     void setHint(bool on);
+    /// Give a drag under way up: nothing is split or joined.
+    void cancelDrag();
 
 protected:
     void mousePressEvent(QMouseEvent *) override;
     void mouseMoveEvent(QMouseEvent *) override;
     void mouseReleaseEvent(QMouseEvent *) override;
+    void contextMenuEvent(QContextMenuEvent *) override;
     void paintEvent(QPaintEvent *) override;
     void enterEvent(QEnterEvent *) override;
     void leaveEvent(QEvent *) override;
+    /// On the application while a drag is under way: Escape cancels it.
+    bool eventFilter(QObject *, QEvent *) override;
 
 private:
     void armJoin(ViewAreaCell *target, Qt::Orientation axis, bool after);

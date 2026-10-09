@@ -20,8 +20,10 @@ gestures with the minimum cell size set to 200, to have room in it):
   border  - the border dragged: no cell changes size while the button is
             down, each of the two cells has a frame at its new size, and
             after the release the cells have the sizes of their frames;
-            dragged further than the cell on that side can give, the frame
-            and then the cell stop at the minimum cell size;
+            dragged a little further than the cell on that side can give,
+            the frame and then the cell stop at the minimum cell size;
+            dragged well past it the cell is shown as going (entry 56: such
+            a drag means closing it), and Escape gives the drag up;
   nested  - with two cells stacked on one side of a border, a drag of that
             border frames all three cells, and all three end at their
             frame;
@@ -215,16 +217,31 @@ def border_scenario():
     check("border: released, the cells have the sizes of their frames",
           frames()[0] == "" and len(fr) == 2 and all_near(rects(), fr),
           (show(rects()), show(fr)))
-    # ... and further than the cell on that side can give
+    # ... and a little further than the cell on that side can give
     least = OPEN_VIEW.GetInt("MinimumCellSize", 200)
-    drag = Drag(handles()[0]).to(700, 0)
+    drag = Drag(handles()[0]).to(rects()[1].width() - least + 6, 0)
     op, fr, kinds = frames()
     fr.sort(key=lambda r: r.left())
-    check("border: dragged past it, the frame stops at the minimum cell size",
-          len(fr) == 2 and fr[1].width() == least, (least, show(fr)))
+    check("border: dragged a little past it, the frame stops at the minimum cell size",
+          op == "resize" and len(fr) == 2 and fr[1].width() == least, (op, least, show(fr)))
     drag.release()
     check("border: ... and so does the cell", len(fr) == 2 and all_near(rects(), fr),
           (show(rects()), show(fr)))
+    # ... and well past it: that means closing the cell (entry 56, point i)
+    before = rects()
+    drag = Drag(handles()[0]).to(300, 0)
+    op, fr, kinds = frames()
+    check("border: dragged well past it, the cell is shown as going, the other framed over both",
+          op == "close" and kinds == ["kept", "going"] and fr[0] == before[0].united(before[1])
+          and fr[1] == before[1], (op, kinds, show(fr)))
+    # given up with Escape: the scenarios after this one want the two cells
+    for kind in (QtCore.QEvent.KeyPress, QtCore.QEvent.KeyRelease):
+        QtWidgets.QApplication.sendEvent(
+            FreeCADGui.getMainWindow(), QtGui.QKeyEvent(kind, Qt.Key_Escape, Qt.NoModifier))
+    settle(0.15)
+    drag.release()
+    check("border: ... and Escape gives that up: two cells, as they were",
+          rects() == before and frames()[0] == "", (show(rects()), frames()[0]))
 
 
 def nested_scenario():

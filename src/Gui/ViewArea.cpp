@@ -24,18 +24,21 @@
 
 #ifndef _PreComp_
 # include <cctype>
+# include <cmath>
 # include <map>
 # include <string>
 # include <QApplication>
 # include <QCloseEvent>
 # include <QElapsedTimer>
 # include <QContextMenuEvent>
+# include <QKeyEvent>
 # include <QMdiSubWindow>
 # include <QMenu>
 # include <QMouseEvent>
 # include <QTimer>
 # include <QPainter>
 # include <QPainterPath>
+# include <QScrollBar>
 # include <QSplitter>
 # include <QVBoxLayout>
 #endif
@@ -51,11 +54,42 @@
 #include "Document.h"
 #include "MainWindow.h"
 #include "OpenViewParams.h"
+#include "OverlayWidgets.h"
 #include "View3DInventor.h"
 #include "ViewPlacement.h"
 #include "ViewProviderDocumentObject.h"
 
 using namespace Gui;
+
+namespace {
+
+/** The ground of a piece of cell chrome that is shown -- the menu button
+ * under the cursor, a corner zone: the accent colour of the drag frames
+ * (OverlayDragFrame::accentColor) with a white rim, to be drawn on in
+ * white. The chrome lies over whatever the cell shows, and a ground in
+ * the window's colour with strokes in the accent could not be told from
+ * a light grey or a white view -- a drawing page, a spreadsheet, a light
+ * 3D background. Filled, it stands out on a light ground by its face and
+ * on a dark or a like-coloured one by its rim.
+ */
+void paintChromeGround(QPainter &p, const QWidget *widget, int alpha = 255)
+{
+    QColor face = Gui::OverlayDragFrame::accentColor(widget);
+    face.setAlpha(alpha);
+    p.setPen(QPen(QColor(255, 255, 255, alpha), 1));
+    p.setBrush(face);
+    p.drawRoundedRect(QRectF(widget->rect()).adjusted(0.5, 0.5, -0.5, -0.5), 3, 3);
+}
+
+/// True while \a ev is the Escape key going down, or asking whether it
+/// is a shortcut.
+bool isEscape(const QEvent *ev)
+{
+    return (ev->type() == QEvent::KeyPress || ev->type() == QEvent::ShortcutOverride)
+        && static_cast<const QKeyEvent*>(ev)->key() == Qt::Key_Escape;
+}
+
+} // namespace
 
 namespace Gui {
 
@@ -113,14 +147,11 @@ protected:
         p.setRenderHint(QPainter::Antialiasing);
         // Hovered, on a ground of its own like the corner zones; at rest
         // it stays the faint mark that does not compete with the scene.
-        if (_hover) {
-            p.setPen(Qt::NoPen);
-            p.setBrush(palette().color(QPalette::Window));
-            p.drawRoundedRect(rect(), 3, 3);
-        }
-        QColor c = palette().color(_hover ? QPalette::Highlight
-                                          : QPalette::WindowText);
-        c.setAlpha(_hover ? 230 : 90);
+        if (_hover)
+            paintChromeGround(p, this);
+        QColor c = _hover ? QColor(Qt::white) : palette().color(QPalette::WindowText);
+        if (!_hover)
+            c.setAlpha(90);
         QPen pen(c);
         pen.setWidth(2);
         p.setPen(pen);
@@ -203,10 +234,13 @@ namespace {
  * One widget over the whole container, raised, masked to the frames it
  * draws so that it overlaps the 3D surfaces underneath by no more than
  * that. Each frame says what becomes of the place it covers:
- *   - a cell that stays, at the size it will have: a tinted frame;
- *   - the cell a split makes: a stronger tint and a plus;
- *   - the neighbor a join closes: dimmed, under an arrow pointing the
- *     way it is swallowed;
+ *   - a cell that stays, at the size it will have: a frame, the look
+ *     of the overlay's drag frame (OverlayDragFrame::paintFrame) -- the
+ *     accent colour, see-through, inside a white border;
+ *   - the cell a split makes: the same frame, and a plus;
+ *   - the neighbor a join closes: no frame of its own -- the frame of
+ *     the cell that stays covers its room -- and a red stop sign in the
+ *     middle of it;
  *   - a split that is refused (a cell would go under the minimum size):
  *     red, crossed out.
  * What it shows is also set as dynamic properties -- "operation",
@@ -257,7 +291,7 @@ protected:
     {
         QPainter p(this);
         p.setRenderHint(QPainter::Antialiasing);
-        const QColor accent = palette().color(QPalette::Highlight);
+        const QColor accent = Gui::OverlayDragFrame::accentColor(this);
         for (const auto &frame : frames) {
             const QRect r = frame.rect.adjusted(1, 1, -1, -1);
             const QPointF c(r.center());
@@ -265,13 +299,9 @@ protected:
             switch (frame.kind) {
             case ViewArea::DragFrame::Kept:
             case ViewArea::DragFrame::Fresh: {
-                const bool fresh = (frame.kind == ViewArea::DragFrame::Fresh);
-                QColor fill = accent;
-                fill.setAlpha(fresh ? 120 : 60);
-                p.setPen(QPen(accent, 2));
-                p.setBrush(fill);
-                p.drawRect(r);
-                if (fresh) {
+                Gui::OverlayDragFrame::paintFrame(p, frame.rect, accent);
+                if (frame.kind == ViewArea::DragFrame::Fresh) {
+                    p.setRenderHint(QPainter::Antialiasing);
                     p.setPen(QPen(QColor(255, 255, 255, 220), 3));
                     p.drawLine(c - QPointF(s, 0), c + QPointF(s, 0));
                     p.drawLine(c - QPointF(0, s), c + QPointF(0, s));
@@ -279,19 +309,30 @@ protected:
                 break;
             }
             case ViewArea::DragFrame::Going: {
-                p.fillRect(frame.rect, QColor(0, 0, 0, 110));
-                // Arrow pointing the way the join swallows: from the
-                // cell that stays into this one.
-                QPainterPath path;
-                QPointF dir = (frame.axis == Qt::Horizontal)
-                    ? QPointF(frame.after ? 1 : -1, 0)
-                    : QPointF(0, frame.after ? 1 : -1);
-                QPointF ortho(-dir.y(), dir.x());
-                path.moveTo(c + dir * s);
-                path.lineTo(c - dir * s * 0.4 + ortho * s);
-                path.lineTo(c - dir * s * 0.4 - ortho * s);
-                path.closeSubpath();
-                p.fillPath(path, QColor(255, 255, 255, 200));
+                // The cell a join closes. Nothing of its own covers it:
+                // the frame over it is that of the cell that stays. In
+                // its middle a stop sign, a red octagon in a white rim.
+                const double radius = qBound(14.0, qMin(r.width(), r.height()) / 4.0, 48.0);
+                auto octagon = [&c](double size) {
+                    QPainterPath path;
+                    for (int i = 0; i < 8; ++i) {
+                        const double a = (22.5 + 45.0 * i) * 3.14159265358979 / 180.0;
+                        const QPointF at(c.x() + size * std::cos(a), c.y() + size * std::sin(a));
+                        if (i == 0)
+                            path.moveTo(at);
+                        else
+                            path.lineTo(at);
+                    }
+                    path.closeSubpath();
+                    return path;
+                };
+                p.setRenderHint(QPainter::Antialiasing);
+                p.setPen(QPen(QColor(0, 0, 0, 160), 1));
+                p.setBrush(Qt::white);
+                p.drawPath(octagon(radius));
+                p.setPen(Qt::NoPen);
+                p.setBrush(QColor(204, 20, 20));
+                p.drawPath(octagon(radius * 0.86));
                 break;
             }
             case ViewArea::DragFrame::Refused: {
@@ -329,13 +370,54 @@ protected:
     // about the cells.
     void mousePressEvent(QMouseEvent *ev) override
     {
+        if (_dragging) {
+            // Any other button while the left one is held gives the drag
+            // up; only the release of the left button carries it out.
+            cancelDrag();
+            _swallowMenu = (ev->button() == Qt::RightButton);
+            ev->accept();
+            return;
+        }
         if (ev->button() != Qt::LeftButton || !ViewArea::areaOf(splitter()))
             return QSplitterHandle::mousePressEvent(ev);
         const QPoint local = ev->position().toPoint();
         _grab = (orientation() == Qt::Horizontal) ? local.x() : local.y();
         _pos = (orientation() == Qt::Horizontal) ? x() : y();
         _dragging = true;
+        _swallowMenu = false;
+        // Escape goes to whatever has the keyboard, not to this handle
+        qApp->installEventFilter(this);
         ev->accept();
+    }
+    /// Give the drag up: the frames go, the border stays where it was.
+    void cancelDrag()
+    {
+        if (!_dragging)
+            return;
+        _dragging = false;
+        _closing = nullptr;
+        qApp->removeEventFilter(this);
+        if (ViewArea *area = ViewArea::areaOf(splitter()))
+            area->hideDragFrames();
+    }
+    bool eventFilter(QObject *watched, QEvent *ev) override
+    {
+        if (_dragging) {
+            if (isEscape(ev)) {
+                if (ev->type() == QEvent::KeyPress)
+                    cancelDrag();
+                ev->accept();
+                return true;
+            }
+            // Another application coming to the front, or anything else
+            // that takes the mouse away, ends the drag without a release
+            // ever arriving here: the frames would stay on the screen.
+            if (ev->type() == QEvent::ApplicationDeactivate
+                    || (ev->type() == QEvent::WindowDeactivate && watched == window())
+                    || (ev->type() == QEvent::UngrabMouse && watched == this))
+                cancelDrag();
+        }
+        return QSplitterHandle::eventFilter(watched, ev);
     }
     void mouseMoveEvent(QMouseEvent *ev) override
     {
@@ -344,21 +426,54 @@ protected:
         const QPoint p = splitter()->mapFromGlobal(ev->globalPosition().toPoint());
         int pos = ((orientation() == Qt::Horizontal) ? p.x() : p.y()) - _grab;
         _pos = closestLegalPosition(pos);
-        if (ViewArea *area = ViewArea::areaOf(splitter())) {
-            area->showDragFrames("resize",
-                    area->resizeFrames(splitter(), splitter()->indexOf(this), _pos));
+        _closing = nullptr;
+        ViewArea *area = ViewArea::areaOf(splitter());
+        if (!area) {
+            ev->accept();
+            return;
         }
+        // Dragged on past what the cells on that side can give -- they are
+        // at the minimum cell size -- the drag means closing the cell the
+        // border is pushed into, and says so as a join does: the frame of
+        // what takes its room, and a stop sign on it. A few pixels past
+        // the limit are still the limit, or the two would flicker there.
+        if (qAbs(pos - _pos) > CloseSlack) {
+            const int idx = splitter()->indexOf(this);  // handle i sits after widget i-1
+            const bool before = pos < _pos;
+            QWidget *taker = splitter()->widget(before ? idx : idx - 1);
+            _closing = qobject_cast<ViewAreaCell*>(splitter()->widget(before ? idx - 1 : idx));
+            if (_closing && taker) {
+                ViewArea::DragFrame gone;
+                gone.rect = QRect(_closing->mapTo(area, QPoint(0, 0)), _closing->size());
+                gone.kind = ViewArea::DragFrame::Going;
+                gone.axis = orientation();
+                gone.after = !before;
+                ViewArea::DragFrame kept;
+                kept.rect = QRect(taker->mapTo(area, QPoint(0, 0)), taker->size())
+                                .united(gone.rect);
+                area->showDragFrames("close", {kept, gone});
+                ev->accept();
+                return;
+            }
+        }
+        area->showDragFrames("resize",
+                area->resizeFrames(splitter(), splitter()->indexOf(this), _pos));
         ev->accept();
     }
     void mouseReleaseEvent(QMouseEvent *ev) override
     {
         if (!_dragging || ev->button() != Qt::LeftButton)
             return QSplitterHandle::mouseReleaseEvent(ev);
-        _dragging = false;
-        if (ViewArea *area = ViewArea::areaOf(splitter()))
-            area->hideDragFrames();
-        moveSplitter(_pos);
+        const int pos = _pos;
+        QPointer<ViewAreaCell> closing = _closing;
+        ViewArea *area = ViewArea::areaOf(splitter());
+        cancelDrag();
         ev->accept();
+        // closing a cell may delete this handle with its splitter: last
+        if (closing && area)
+            area->closeCell(closing);
+        else
+            moveSplitter(pos);
     }
     void enterEvent(QEnterEvent *ev) override
     {
@@ -374,6 +489,12 @@ protected:
     }
     void contextMenuEvent(QContextMenuEvent *ev) override
     {
+        if (_swallowMenu) {
+            // the right click that gave a drag up is not a call for the menu
+            _swallowMenu = false;
+            ev->accept();
+            return;
+        }
         auto sp = splitter();
         ViewArea *area = ViewArea::areaOf(sp);
         if (!area)
@@ -400,8 +521,13 @@ protected:
 
 private:
     bool _dragging = false;
+    bool _swallowMenu = false;  // the right click that cancelled a drag
     int _grab = 0;  // where in the handle it was taken
     int _pos = 0;   // where the border will go, in the splitter
+    /// How far past the limit a drag goes before it means closing a cell
+    static constexpr int CloseSlack = 12;
+    /// The cell the release will close, the border pushed past its minimum
+    QPointer<ViewAreaCell> _closing;
 };
 
 } // anonymous namespace
@@ -581,19 +707,81 @@ void ViewAreaCell::hostView(MDIView *view)
     _zoneTopRight->raise();
     _zoneBottomLeft->raise();
     _menuButton->raise();
+    placeChrome();
     update();
 }
 
 void ViewAreaCell::resizeEvent(QResizeEvent *ev)
 {
     QWidget::resizeEvent(ev);
-    const int z = ViewAreaZone::Size;
-    _zoneTopRight->setGeometry(width() - z, 0, z, z);
-    _zoneBottomLeft->setGeometry(0, height() - z, z, z);
-    _menuButton->setGeometry(0, 0, ViewAreaMenuButton::Size,
-                             ViewAreaMenuButton::Size);
+    placeChrome();
     _highlight->refit();
     _highlight->update();
+}
+
+void ViewAreaCell::placeChrome()
+{
+    const int z = ViewAreaZone::Size;
+    // A view that scrolls -- a drawing page, a spreadsheet -- has its bars
+    // along the right and the bottom edge, which is where the two corner
+    // zones are: on top of a bar's arrow a zone can neither be seen well
+    // nor the arrow be reached. Each steps aside by the bar it would lie
+    // on.
+    int right = 0;
+    int bottom = 0;
+    if (_child) {
+        const QRect topRight(width() - z, 0, z, z);
+        const QRect bottomLeft(0, height() - z, z, z);
+        const auto bars = _child->findChildren<QScrollBar*>();
+        for (QScrollBar *bar : bars) {
+            // told when one comes or goes (eventFilter); once is enough,
+            // Qt keeps a filter installed twice only once
+            bar->installEventFilter(this);
+            if (!bar->isVisibleTo(this))
+                continue;
+            const QRect at(bar->mapTo(this, QPoint(0, 0)), bar->size());
+            // only a bar the zone's corner would lie on: a view's bars
+            // need not run into the cell's corners (a spreadsheet's stand
+            // in from the edge and begin below its header)
+            if (bar->orientation() == Qt::Vertical) {
+                if (at.intersects(topRight) && at.width() < width() / 2)
+                    right = qMax(right, width() - at.left());
+            }
+            else if (at.intersects(bottomLeft) && at.height() < height() / 2) {
+                bottom = qMax(bottom, height() - at.top());
+            }
+        }
+    }
+    _zoneTopRight->setGeometry(width() - z - right, 0, z, z);
+    _zoneBottomLeft->setGeometry(0, height() - z - bottom, z, z);
+    _menuButton->setGeometry(0, 0, ViewAreaMenuButton::Size,
+                             ViewAreaMenuButton::Size);
+}
+
+bool ViewAreaCell::eventFilter(QObject *watched, QEvent *ev)
+{
+    switch (ev->type()) {
+    case QEvent::Show:
+    case QEvent::Hide:
+    case QEvent::Resize:
+    case QEvent::Move:
+        if (qobject_cast<QScrollBar*>(watched)) {
+            // after the view has laid the bar out, not in the middle of it
+            QTimer::singleShot(0, this, &ViewAreaCell::placeChrome);
+        }
+        break;
+    default:
+        break;
+    }
+    return QWidget::eventFilter(watched, ev);
+}
+
+void ViewAreaCell::enterEvent(QEnterEvent *ev)
+{
+    QWidget::enterEvent(ev);
+    // a view makes its scroll bars when it pleases: look again whenever
+    // the cursor comes in, which is before a zone can be reached
+    placeChrome();
 }
 
 MDIView *ViewAreaCell::releaseView()
@@ -804,10 +992,52 @@ ViewAreaZone::ViewAreaZone(ViewAreaCell *cell, Corner corner)
 
 void ViewAreaZone::mousePressEvent(QMouseEvent *ev)
 {
+    if (_dragging) {
+        // Any other button while the left one is held gives the drag up;
+        // only the release of the left button carries it out.
+        cancelDrag();
+        ev->accept();
+        return;
+    }
     if (ev->button() != Qt::LeftButton)
         return QWidget::mousePressEvent(ev);
     _dragging = true;
     _pressGlobal = ev->globalPosition().toPoint();
+    // Escape goes to whatever has the keyboard, not to this zone
+    qApp->installEventFilter(this);
+    ev->accept();
+}
+
+void ViewAreaZone::cancelDrag()
+{
+    if (_dragging)
+        endDrag();
+}
+
+bool ViewAreaZone::eventFilter(QObject *watched, QEvent *ev)
+{
+    if (_dragging) {
+        if (isEscape(ev)) {
+            if (ev->type() == QEvent::KeyPress)
+                cancelDrag();
+            ev->accept();
+            return true;
+        }
+        // Another application coming to the front, or anything else that
+        // takes the mouse away, ends the drag without a release ever
+        // arriving here: the frames would stay on the screen.
+        if (ev->type() == QEvent::ApplicationDeactivate
+                || (ev->type() == QEvent::WindowDeactivate && watched == window())
+                || (ev->type() == QEvent::UngrabMouse && watched == this))
+            cancelDrag();
+    }
+    return QWidget::eventFilter(watched, ev);
+}
+
+void ViewAreaZone::contextMenuEvent(QContextMenuEvent *ev)
+{
+    // A zone has no menu, and the right click that gave a drag up is not
+    // a call for the menu of whatever the zone lies on.
     ev->accept();
 }
 
@@ -867,6 +1097,10 @@ void ViewAreaZone::mouseReleaseEvent(QMouseEvent *ev)
 {
     if (!_dragging)
         return QWidget::mouseReleaseEvent(ev);
+    if (ev->button() != Qt::LeftButton) {
+        ev->accept();
+        return;
+    }
     ViewAreaCell *target = _joinTarget;
     ViewArea *area = _cell->area();
     const bool split = _splitArmed;
@@ -887,9 +1121,9 @@ void ViewAreaZone::mouseReleaseEvent(QMouseEvent *ev)
 void ViewAreaZone::armJoin(ViewAreaCell *target, Qt::Orientation axis, bool after)
 {
     _joinTarget = target;
-    // Two frames: the cell that stays, over the room it will have, and
-    // the one that goes, dimmed under an arrow pointing the way the
-    // other expands -- into it.
+    // One frame: the cell that stays, over the room it will have, which
+    // takes in the cell that goes. That one has no frame of its own; it
+    // is listed for the stop sign drawn in its middle.
     ViewArea *area = _cell->area();
     const QRect source(_cell->mapTo(area, QPoint(0, 0)), _cell->size());
     const QRect going(target->mapTo(area, QPoint(0, 0)), target->size());
@@ -934,6 +1168,7 @@ void ViewAreaZone::endDrag()
     disarmJoin();
     disarmSplit();
     _dragging = false;
+    qApp->removeEventFilter(this);
 }
 
 void ViewAreaZone::setHint(bool on)
@@ -966,13 +1201,10 @@ void ViewAreaZone::paintEvent(QPaintEvent *)
     p.setRenderHint(QPainter::Antialiasing);
     // On a ground of its own: a few strokes straight onto whatever the
     // cell shows cannot be seen over a busy or a like-coloured view.
-    p.setPen(Qt::NoPen);
-    p.setBrush(palette().color(QPalette::Window));
-    p.drawRoundedRect(rect(), 3, 3);
-    QColor c = palette().color(QPalette::Highlight);
-    if (!_hover)
-        c.setAlpha(130);  // a pointed-out zone, not one under the cursor
-    QPen pen(c);
+    // A pointed-out zone is fainter than one under the cursor.
+    const int alpha = _hover ? 255 : 150;
+    paintChromeGround(p, this, alpha);
+    QPen pen(QColor(255, 255, 255, alpha));
     pen.setWidth(2);
     p.setPen(pen);
     // Diagonal grip strokes facing the cell interior.
@@ -1202,6 +1434,19 @@ MDIView *ViewArea::cloneChildFor(ViewAreaCell *cell)
         }
         return clone;
     }
+    // A view there is only one of -- a drawing page, a spreadsheet: the
+    // new cell cannot show it a second time, and a split that did nothing
+    // and said nothing was what that came to. It gets a 3D view of the
+    // same document instead, at the camera of the one the document has.
+    if (Gui::Document *doc = child->getGuiDocument()) {
+        // createView3D is written for a document's first view and marks
+        // the document unmodified; a split is not a save
+        const bool modified = doc->isModified();
+        MDIView *view = doc->createView3D();
+        if (modified)
+            doc->setModified(true);
+        return view;
+    }
     return nullptr;
 }
 
@@ -1294,12 +1539,16 @@ bool ViewArea::canSplitCell(const ViewAreaCell *cell, Qt::Orientation orientatio
     if ((along - ViewAreaSplitter::HandleWidth) / 2 >= least && across >= least)
         return true;
     if (report) {
-        // Said once in a while: a gesture asks again at every release,
-        // a script in a loop.
+        // Said once for a refusal, as an ERROR -- a line of warning in the
+        // report view was not seen by the one whose drag did nothing; an
+        // error is shown by the notification area as well. (Not a
+        // translated message for the user alone: the report view takes
+        // none of those.) Once in a while only: a gesture asks again at
+        // every release, a script in a loop.
         static QElapsedTimer last;
         if (!last.isValid() || last.elapsed() > 5000) {
             last.start();
-            Base::Console().Warning(
+            Base::Console().Error(
                 "A view of %d x %d is not split %s: no view cell is made smaller than "
                 "%d x %d (the minimum view cell size, in the preferences).\n",
                 cell->width(), cell->height(), horiz ? "side by side" : "top and bottom",
