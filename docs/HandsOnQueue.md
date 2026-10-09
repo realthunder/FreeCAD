@@ -133,7 +133,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 49 | 2026-10-09 | after "Reset all" in the preferences and then the Light theme from Tools > Preset configurations > Themes, the workbench toolbar is hidden; shown again by hand it sits in the custom title bar as expected; intermittent -- the same steps a second time did not do it | FOUND 2026-10-09, reproduced every time by the build session, on the staged copy too; the fix is in its tree, uncommitted: it needs a MAXIMIZED window. The reset clears the title bar areas' entries; the toolbar manager's 100 ms timer then moves the workbench toolbar out of the title bar (a move that hides a toolbar) and asks it afterwards whether it is visible; a maximized window swaps its title bar 100 ms late and loses the race. Fix: asked before the move. The note-taker's guess (a delayed save of the window state) was NOT it |
 | 50 | 2026-10-09 | after "Reset all" in the preferences the 3D view is no longer drawn by the render engine's backend (edges jagged; the reporter's guess: render cache 0); and after a change of the MSAA setting a split of a 3D view and a TechDraw page became two tab windows | OPEN; measured in the reporter's live session, read-only: the render cache setting is not the cause (not stored, default 3) -- the renderer TYPE is `Default`, no backend, where the profile had `bgfx - Direct3D11` before the reset, and the view answers "No external renderer active"; the path is chosen only at startup. The two tabs are there as said: one view area with ONE cell, two `scanner` tab windows. DECIDED by the reporter 2026-10-09 09:48 for the first part: the type `Default` is to mean bgfx on the platform's default backend, and (09:52) a new type `Legacy` the old Coin rendering; (09:53) the type alone decides whether the engine is used -- under `Legacy` the render cache setting keeps its original meaning (default 3), under `Default` it is always 3. 2026-10-09 10:16: part (a) written by the build session and building, three choices of its own for the reporter. The MSAA part, the split turned into tabs, is not decided or read further |
 | 51 | 2026-10-09 | a face's edge that no edge line covers (a cylinder's side against what is behind it) is a staircase with MSAA off; if that is expected, MSAA 4x by default (change request) | OPEN; (a) CONFIRMED expected by the build session 2026-10-09 10:16 (read, not measured: only lines have computed coverage; the one other smoothing, idle temporal accumulation, is off by default and smooths a still picture only); so the default of `View/AntiAliasing` goes from 0 to 3 -- for both renderer types, `Legacy` and the engine, and the other tiers follow (answered 10:11) |
-| 52 | 2026-10-09 | a benchmark asked: with face rims a staircase without MSAA anyway, is the line shader (lines with computed coverage) still needed, and what does it cost in rendering (from entry 51) | OPEN, a measurement for the build session; nothing run |
+| 52 | 2026-10-09 | a benchmark asked: with face rims a staircase without MSAA anyway, is the line shader (lines with computed coverage) still needed, and what does it cost in rendering (from entry 51) | OPEN, a measurement for the build session; nothing run. The reporter's rule, 10:17: if it is what gets a fractional line width right, it is still needed -- no frame-time threshold |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -4300,7 +4300,24 @@ serve, mobile) take the same default. Nothing of (b) is left with the
 reporter. The same message asks for a benchmark of the line shader: entry
 52.
 
-## 52. Is the line shader still needed, and what does it cost: a benchmark asked -- OPEN, nothing run
+## 52. Is the line shader still needed, and what does it cost: a benchmark asked -- OPEN, nothing run; the reporter's rule: needed if it is what gets fractional widths right
+
+**2026-10-09 10:17, the reporter, when asked what difference in frame time
+would be enough to drop it:** "not sure about the cost tradeoff part. but if
+it does helps to get the fractional width right, then it is still needed"
+So there is no frame-time threshold, and the rule is the other way round:
+if the lines' computed coverage is what makes a fractional line width come
+out right, it STAYS, whatever it costs.
+The note-taker's reading, from `docs/RenderEngine.md` ("Lines"), not run:
+by the document it is -- "the box filter integrates to exactly the requested
+width at any angle, which also makes fractional widths meaningful: line
+widths are no longer rounded to integers". So by the reporter's rule the
+line shader stays, once the build session confirms that this holds with
+MSAA 4x on as well (with four samples a pixel a plain quad gets its width
+in quarter steps at best). The benchmark is then for KNOWING the cost, not
+for deciding to drop it; whether it is still wanted on those terms was not
+said.
+Passed on to the build session.
 
 **2026-10-09 10:11, the reporter, in the answer that closed entry 51:**
 "also since face staircase is unavoidable, it makes me question whether
