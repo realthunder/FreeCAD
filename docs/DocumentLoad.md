@@ -3371,9 +3371,16 @@ the figure. One run; it is a stress import and was not repeated.
     372 ms are spent after the frame is handed over, on the way from
     Mesa's D3D12 driver through WSLg to the screen, and a native driver
     does not have them. Which step of that way it is was not taken
-    apart. Two differences that are not the reason: bgfx runs on
-    Direct3D 11 there and composes by a readback of 0.8 ms a frame,
-    where it draws into Qt's GL context here.
+    apart. One difference that is not the reason: bgfx does not draw on
+    GL there. Its frames carry the "readback composite" line (0.8 ms a
+    frame), which is the route for a frame bgfx holds as something other
+    than a GL texture (`docs/DeviceAdoption.md` sec 2); here it draws
+    into Qt's GL context. Which Direct3D it is was not read off the
+    renderer: the process had NVIDIA's Direct3D 11 user-mode driver
+    loaded beside its GL one, which says 11 and does not prove it.
+    And the rename of sec 18.16's scope came from that build: the branch
+    as first pushed did not compile on Windows (`Yield()` is a macro of
+    `<winbase.h>`), and does with `TurnPace::Yielded`.
   - **So a frame time taken on this box is not what the user will see
     on a native driver**, and every settled frame of sec 18.12 to 18.18
     is to be read with that beside it. The LOAD figures -- what a slice,
