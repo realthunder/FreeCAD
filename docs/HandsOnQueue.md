@@ -143,7 +143,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 48 | 2026-10-09 | three GUI tests fail the same way on the copy staged 2026-10-07 and on today's tree: `element-color-hide.py` (2 of 624 claims), `per-view-shown-eviction.py` (1 claim), `navicube-per-view.py` (11 claims pass, then it never ends) (found by the build session) | OPEN; read only so far: `navicube-per-view.py` is no defect -- a run-by-hand script that never closes FreeCAD; the other two still not looked into (2026-10-09 10:16: a plan that runs and never evicts; it needs instrumenting) |
 | 49 | 2026-10-09 | after "Reset all" in the preferences and then the Light theme from Tools > Preset configurations > Themes, the workbench toolbar is hidden; shown again by hand it sits in the custom title bar as expected; intermittent -- the same steps a second time did not do it | FIXED `664d57f39b`, not staged, not pushed: it needs a MAXIMIZED window and then happens every time -- the toolbar manager took the workbench toolbar out of the title bar itself (a move that hides it) and only then asked whether it was visible; it asks before the move now. `tests/gui/preferences-reset-all.py`, the reset driven through the dialog: 5 PASS and 4 FAIL on the staged copy, 9 PASS on the dev build (`docs/HandsOnLog.md`) |
 | 50 | 2026-10-09 | after "Reset all" in the preferences the 3D view is no longer drawn by the render engine's backend (edges jagged; the reporter's guess: render cache 0); and after a change of the MSAA setting a split of a 3D view and a TechDraw page became two tab windows | FIXED `4cb1ee6ad1` (a) and `69a2028e23` (b), not staged, not pushed. (a) as decided: `Default` is the engine on the platform's backend, `Legacy` is Coin; the type is a list on the Render engine page (`Default`, `Legacy`, the backends this build has) and is kept; the render cache setting is not looked at while the engine draws and not rewritten; nothing is written at startup; 13 PASS. (b) the copy that replaces a Coin-drawn view on an anti-aliasing change takes the old view's cell; 11 PASS and 7 FAIL on the staged copy, 18 PASS now (`docs/HandsOnLog.md`) |
-| 51 | 2026-10-09 | a face's edge that no edge line covers (a cylinder's side against what is behind it) is a staircase with MSAA off; if that is expected, MSAA 4x by default (change request) | OPEN; (a) CONFIRMED expected by the build session 2026-10-09 10:16 (read, not measured: only lines have computed coverage; the one other smoothing, idle temporal accumulation, is off by default and smooths a still picture only); so the default of `View/AntiAliasing` goes from 0 to 3 -- for both renderer types, `Legacy` and the engine, and the other tiers follow (answered 10:11). IN WORK 2026-10-09 11:10, building. NOT done, for the reporter: the BROWSER viewer does not follow -- on WebGL2 its multisampled scene target cannot be created, and making it follow is engine work of its own |
+| 51 | 2026-10-09 | a face's edge that no edge line covers (a cylinder's side against what is behind it) is a staircase with MSAA off; if that is expected, MSAA 4x by default (change request) | (b) FIXED `d157abf559` for the desktop, not staged, not pushed: MSAA 4x (`View/AntiAliasing` 3) is the default for both render types; a sphere's limb, rows blended 0.0% without, 85.6% under `Legacy` and 67.0% under the engine with nothing stored. (a) confirmed expected. The BROWSER viewer does not follow: WebGL2 does not create a multisampled RGBA16F scene target. With the reporter: an 8 or 10 bit target there (true MSAA, at a price in the colour pipeline), the engine's idle accumulation (a still picture only), or a post-process pass (does not exist yet); the build session recommends measuring the first, no code needed (`docs/HandsOnLog.md`) |
 | 52 | 2026-10-09 | a benchmark asked: with face rims a staircase without MSAA anyway, is the line shader (lines with computed coverage) still needed, and what does it cost in rendering (from entry 51) | OPEN, a measurement for the build session; nothing run. The reporter's rule, 10:17: if it is what gets a fractional line width right, it is still needed -- no frame-time threshold |
 | 53 | 2026-10-09 | `scanner.FCStd`: answered No to the recompute question at opening, the TechDraw page that opens by itself (`Page003`) shows only part of the geometry -- it varies: sometimes none, once only `Top002`, with thickened edges; the dimensions ARE drawn, the views' geometry is what is missing -- with the page drawn by Qt only, it seems; and BOTH renderers draw the lines thickened until a recompute; after a recompute the page is complete and the lines normal | REPRODUCED 2026-10-09 on the staged copy at the first try, cause not found yet: as loaded and drawn by Qt, `Page003` shows its dimensions and the views' labels, NO geometry in the three views of the projection group (`Bottom004`, `Front003`, `Top002`), and `Section002` with thick lines; after a recompute all four are complete and the lines thin. The reporter: the missing geometry is with Qt's drawing only, the thickened lines with both renderers |
 | 54 | 2026-10-09 | a highlight shown on top: under the pointer (preselection) its edges respect the depth against the faces, an edge behind a face is dimmed; a full SELECTION does not, its edges are drawn as if there were no depth test | OPEN; nothing run |
@@ -4326,7 +4326,63 @@ Not said yet by the reporter: which MSAA values were tried and in what
 order, and whether the split was the two cells side by side that a page
 gets by default.
 
-## 51. Faces show a staircase where no edge line covers them, MSAA off; MSAA 4x by default (a change request) -- OPEN; (a) confirmed expected, (b) decided and in work; the browser viewer does not follow, for the reporter to say
+## 51. Faces show a staircase where no edge line covers them, MSAA off; MSAA 4x by default (a change request) -- (b) FIXED `d157abf559` for the desktop, not staged; the browser viewer does not follow -- the reporter's to decide (see `docs/HandsOnLog.md`)
+
+**2026-10-09 11:31, the build session: (b) is DONE for the desktop,
+`d157abf559`** (its message). Not staged, not pushed. The default is MSAA 4x
+(`View/AntiAliasing` 3) for both render types. Measured on a sphere's limb,
+the share of rows blended: 0.0% without; with nothing stored, 85.6% under
+`Legacy` and 67.0% under the engine. The 3D View preferences page shows the
+default; the GUI test harness and the golden scenes state "no
+multisampling" for themselves. The browser viewer does not follow.
+
+**The build session's answer to the reporter's question** ("you mean use
+engine to do msaa by itself? how does that compare with msaa target"). By
+its own word, read from the sources (`docs/ThinClient.md` 8.10c,
+`wasm/main.cpp`) "plus what is generally true of the techniques; NOTHING of
+it was measured today".
+No -- it did not mean the engine doing the anti-aliasing itself. It meant
+what the desktop does, a multisampled scene target resolved by the GPU;
+"engine work" was about the target's FORMAT.
+1. Why the browser cannot do today what the desktop does: with colour
+   management on, the scene target is RGBA16F (half float: the shading is
+   linear and the tone map comes at the end). WebGL2 does not create a
+   multisampled RGBA16F target -- it even answers "supported" to the
+   capability question and then fails every create. So `?msaa=4` falls back
+   to no multisampling.
+2. WAY A, an MSAA target the browser CAN make: the scene target in RGBA8
+   (WebGL2 must multisample that one) or RGB10_A2. The rims: the same as
+   the desktop's MSAA 4x, in motion and parked. The cost: 4 samples of
+   colour and depth in memory and a resolve per frame, as on the desktop;
+   and the price is in the colour pipeline -- an 8 bit linear target bands
+   in the dark tones and cuts highlights off before the tone map, so either
+   the browser's pictures differ from the desktop's, or the tone map and
+   the sRGB encode move into the scene pass, which changes how transparent
+   surfaces blend. That second part is the "work of its own". A cheap first
+   measurement exists: with the output colour transform Off the browser's
+   scene target is already RGBA8, so `?msaa=4` there would show at once
+   whether WebGL2 gives the 4 samples and what a frame then costs.
+3. WAY B, the engine smoothing by itself, three kinds:
+   - idle accumulation, which exists (`Render/TemporalAccum`, `?accum=N` in
+     the browser): no multisampled target, any format; a parked view gets
+     BETTER rims than MSAA 4x (75% of limb rows blended parked with MSAA
+     off, 98.8% parked with both, against 58.8% for MSAA 4x in motion) --
+     but a moving view gets nothing, and it costs GPU time while idle;
+   - a post-process pass (FXAA or SMAA), which does NOT exist in the
+     engine: one full-screen pass over the finished picture, any format,
+     hardly any memory; it smooths rims in motion too, but from the
+     picture, not from the geometry -- softer than MSAA 4x, and it softens
+     thin lines and text a little unless they are kept out of it;
+   - supersampling (draw at twice the size, scale down): the best rims and
+     four times the pixels to shade; too dear for a browser.
+4. In one line each: an MSAA target is exact coverage at the rim, sharp
+   everywhere else, in motion, at 4x the target memory; accumulation is
+   free of format and memory but only for a still picture; a post-process
+   pass is cheap and works in motion but is an estimate.
+**The build session's recommendation, for the reporter to take or leave,
+NOT ANSWERED YET:** measure way A first as in point 2 (one run in a
+browser, no code), and switch idle accumulation on by default in the
+browser meanwhile, if a still picture is what matters most there.
 
 **2026-10-09 11:10, the build session: (b) is in work, building** (its message).
 The default is 3, MSAA 4x, for both render types; the preferences page shows
