@@ -22,7 +22,10 @@ regression; both full suites on that tree before the push, ctest 790 of 790
 and Python 3411 with the two known thickness failures; five GUI tests on the
 staged copy after, no FAIL), 2026-10-09 15:11 (`511c4df9c7`, on the
 reporter's word: entries 54, 55, 56 and 59; five GUI tests on the staged
-copy after, no FAIL; the two full suites NOT run on that tree).
+copy after, no FAIL; the two full suites NOT run on that tree), 2026-10-09
+16:42 (`0246b900df`, on the reporter's word: entry 60 and the three further
+changes to entry 56; three GUI tests on the staged copy after, 17, 88 and
+38 PASS, no FAIL; both full suites started on that tree after the stage).
 
 **Two documents since 2026-10-07 11:15, one writer each** (asked for by the
 reporter, agreed between the two sessions). This one is the REQUEST side and
@@ -51,6 +54,23 @@ report views, the reporter's own files -- is kept beside the dev tree under
 read by the build session; 53 is reproduced, the others not started. Its
 order after 51, "unless the reporter says otherwise": 53, 54, 55, 56 with
 57 after it, 52, 30, 48, 47.
+
+**Where it stands, 2026-10-09 16:46: pushed and staged a fourth time today**
+on the reporter's word to the build session ("push and stage").
+- Pushed 16:41: origin/PartDesignPort = `0246b900df` (was `511c4df9c7`).
+- Staged 16:42:29: the copy under test is at `0246b900df`, a clean tree
+  (its `INSTALLED.txt`, read by the note-taker). New in it: entry 60 and
+  the three further changes to entry 56. Entry 57 is pushed with it; the
+  browser viewer is not part of the staged copy.
+- Smoke test on the staged copy right after: 17, 88 and 38 PASS, no FAIL.
+- Both full suites are running on that tree; the build session sends the
+  result.
+- NOT started: 61, 62, 63, 52, entry 30's first task, 58, 47, the two tests
+  left of 48.
+- With the reporter: entry 56's three choices and entry 57's three; entry
+  54 (whether `Legacy` keeps the dimming); entry 51 (the browser's
+  multisampling); entry 62's "not said"; and the older ones listed further
+  down.
 
 **2026-10-09 16:10, the build session went on, on the reporter's own messages
 to it:** entry 60 FIXED (`d6f640f4ee`) and three changes more to entry 56
@@ -219,11 +239,11 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 53 | 2026-10-09 | `scanner.FCStd`: answered No to the recompute question at opening, the TechDraw page that opens by itself (`Page003`) shows only part of the geometry -- it varies: sometimes none, once only `Top002`, with thickened edges; the dimensions ARE drawn, the views' geometry is what is missing -- with the page drawn by Qt only, it seems; and BOTH renderers draw the lines thickened until a recompute; after a recompute the page is complete and the lines normal | STAGED 2026-10-09 12:25, fixed `c820c3aea1`: not the recompute -- the page comes back with the window layout and is drawn while the progressive load is still building the view providers of its views; without one the Qt page draws nothing of a view and the backend draws it by fallback widths (0.6 mm), and the view provider's own request to draw was dropped because the document was still flagged as restoring; it asks again a turn later. On the reporter's file the page as loaded is now the page after a recompute, in both renderers. 4 claims fail on the copy staged 08:40, 12 PASS now (`docs/HandsOnLog.md`) |
 | 54 | 2026-10-09 | a highlight shown on top: under the pointer (preselection) its edges respect the depth against the faces, an edge behind a face is dimmed; a full SELECTION does not, its edges are drawn as if there were no depth test | STAGED 2026-10-09 15:11, fixed `8bb8bd10fa`: a fully selected object drew every edge at full colour, front or behind -- a rule copied from the old Coin renderer, which left the dimming out for speed. Both renderers dim the hidden part now, as for the object under the pointer; an edge selected BY ITSELF still shows through at full colour. Cost: nothing in the engine; Coin (`Legacy`) 2.18 -> 2.54 ms a frame on 100 heavy spheres all selected. 16 PASS and 2 FAIL on the staged copy, 18 PASS now. For the reporter: whether `Legacy` keeps the change (`docs/HandsOnLog.md`) |
 | 55 | 2026-10-09 | sometimes the progress bar in the status bar is at the left side; seen once during a recompute; after closing the document and opening one again it was back in its normal place | STAGED 2026-10-09 15:11, fixed `739120f1c7`: a warning or an error shown to the user is the status bar's own temporary message, which hides every non-permanent widget -- the preselection label that held the progress bar in place; a bar that came up with a message showing sat at x 2 of 1920 instead of 1441. It is a permanent widget now, first of the right-hand group. 4 PASS and 2 FAIL on the staged copy, 6 PASS now (`docs/HandsOnLog.md`) |
-| 56 | 2026-10-09 | view cells, after entry 29 (change request): the menu button and the handles shown on hover have no contrast on a light grey or white ground; handles off a view's scroll bar; the drag frames too transparent -- less so, with white borders, in the theme's accent colour (the palette's selection highlight when there is no theme); the same for the overlay's drag frame; Esc and any mouse click cancel a cell drag, only the left release commits | STAGED 2026-10-09 15:11, fixed `f5a651b723`, all eleven points (a) to (k); five choices for the reporter: Esc, any other button, or the window losing the front or the mouse give a drag up, a border's too; one look for the overlay's and the cells' frames -- the theme's accent at 0.3, a white border, a thin dark line; a join's cell that goes has a red stop sign and no dim; a border pushed more than 12 px past a cell's minimum closes it, a corner only creates and its refusal is an ERROR; handles on the accent colour and off a scroll bar; a page's or sheet's cell splits with a 3D view of its document. 19 PASS and 26 FAIL on the staged copy, 82 PASS now (`docs/HandsOnLog.md`). CHANGED AGAIN on the reporter's words to the build session, DONE `dbff5c6378`, not staged, not pushed, desktop and browser both: a refused corner drag shows NO frame, only the forbidden cursor, with the error said at each turn from the splitting cursor to the forbidden one; the cell that goes (a join's, a border's) is framed RED and crossed out, the stop sign is gone; the active cell has a subtle border in the frames' accent. 81 PASS and 7 FAIL on the staged copy, 88 PASS now. Three choices left with the reporter |
-| 57 | 2026-10-09 | the browser viewer's split view gets the same view cell logic as the desktop's (entries 29 and 56): drag frames, commit at the left release, cancel, the minimum cell size, the look (change request) | FIXED `a50e708959`, local, NOT pushed, not in the staged copy (the browser viewer is not part of it); three choices for the reporter: the browser's split view shows a drag as frames and carries it out at the release, with the desktop's cancel (Escape, another button, a second finger, the window losing the front), a minimum cell size of 300, a border that closes a cell pushed 12 px past the minimum, the stop sign and the frame look. 7 PASS and 22 FAIL on the old bundle, 36 PASS now, in headless Chrome. Not run: a touch screen, Safari (`docs/HandsOnLog.md`). The view cell changes of `dbff5c6378` (entry 56, points (l) to (n)) are in the browser's too |
+| 56 | 2026-10-09 | view cells, after entry 29 (change request): the menu button and the handles shown on hover have no contrast on a light grey or white ground; handles off a view's scroll bar; the drag frames too transparent -- less so, with white borders, in the theme's accent colour (the palette's selection highlight when there is no theme); the same for the overlay's drag frame; Esc and any mouse click cancel a cell drag, only the left release commits | STAGED 2026-10-09 15:11, fixed `f5a651b723`, all eleven points (a) to (k); five choices for the reporter: Esc, any other button, or the window losing the front or the mouse give a drag up, a border's too; one look for the overlay's and the cells' frames -- the theme's accent at 0.3, a white border, a thin dark line; a join's cell that goes has a red stop sign and no dim; a border pushed more than 12 px past a cell's minimum closes it, a corner only creates and its refusal is an ERROR; handles on the accent colour and off a scroll bar; a page's or sheet's cell splits with a 3D view of its document. 19 PASS and 26 FAIL on the staged copy, 82 PASS now (`docs/HandsOnLog.md`). CHANGED AGAIN on the reporter's words to the build session, DONE `dbff5c6378`, STAGED 2026-10-09 16:42 (the desktop's), desktop and browser both: a refused corner drag shows NO frame, only the forbidden cursor, with the error said at each turn from the splitting cursor to the forbidden one; the cell that goes (a join's, a border's) is framed RED and crossed out, the stop sign is gone; the active cell has a subtle border in the frames' accent. 81 PASS and 7 FAIL on the staged copy, 88 PASS now. Three choices left with the reporter |
+| 57 | 2026-10-09 | the browser viewer's split view gets the same view cell logic as the desktop's (entries 29 and 56): drag frames, commit at the left release, cancel, the minimum cell size, the look (change request) | FIXED `a50e708959`, PUSHED 2026-10-09 16:41; not in the staged copy (the browser viewer is not part of it); three choices for the reporter: the browser's split view shows a drag as frames and carries it out at the release, with the desktop's cancel (Escape, another button, a second finger, the window losing the front), a minimum cell size of 300, a border that closes a cell pushed 12 px past the minimum, the stop sign and the frame look. 7 PASS and 22 FAIL on the old bundle, 36 PASS now, in headless Chrome. Not run: a touch screen, Safari (`docs/HandsOnLog.md`). The view cell changes of `dbff5c6378` (entry 56, points (l) to (n)) are in the browser's too |
 | 58 | 2026-10-09 | a task, "can do it later": audit every warning shown when `scanner.FCStd` is opened and recomputed, and fix what can be fixed | OPEN, for later; a first count from a kept report log: 208 warnings and 6 errors, about 15 kinds; nothing run |
 | 59 | 2026-10-09 | the program no longer opens the Start page at startup (the reporter: "the startup workbench become the PartDesign"; it used to show Start with the recent files) | STAGED 2026-10-09 15:11, fixed `e9ac624959`, as decided: "Reset all" puts `Mod/Start/Migration2024Complete` back when it was set; the migration is untouched. A profile already switched off this way (the reporter's) STAYS off until Preferences > Start or `Mod/Start/ShowOnStartup` switches it on. 10 PASS and 2 FAIL on the staged copy, 12 PASS now (`docs/HandsOnLog.md`) |
-| 60 | 2026-10-09 | after a view cell is deleted, the view that expands into its room is sometimes BLACK until it is RESIZED; a camera move does not bring it back (corrected by the reporter 14:06) (Windows, Direct3D 11 at least) | FIXED `d6f640f4ee`, not staged, not pushed: it happens whenever closing a cell UN-NESTS a splitter (a cell split across its splitter's direction, then one of the two closed, by any route) -- the "sometimes". The surviving cell was moved up with `QSplitter::replaceWidget`, which takes it out of the window on the way, and a `QOpenGLWidget` that leaves its window is composed from nothing until its next resize; the view itself was drawn right all along, so it is neither Direct3D's nor the backend's. The cell tree is rebuilt without a cell leaving the window. A test that reads the SCREEN: 9 PASS and 8 FAIL on the copy staged 15:11, 17 PASS now (`docs/HandsOnLog.md`) |
+| 60 | 2026-10-09 | after a view cell is deleted, the view that expands into its room is sometimes BLACK until it is RESIZED; a camera move does not bring it back (corrected by the reporter 14:06) (Windows, Direct3D 11 at least) | STAGED 2026-10-09 16:42, fixed `d6f640f4ee`: it happens whenever closing a cell UN-NESTS a splitter (a cell split across its splitter's direction, then one of the two closed, by any route) -- the "sometimes". The surviving cell was moved up with `QSplitter::replaceWidget`, which takes it out of the window on the way, and a `QOpenGLWidget` that leaves its window is composed from nothing until its next resize; the view itself was drawn right all along, so it is neither Direct3D's nor the backend's. The cell tree is rebuilt without a cell leaving the window. A test that reads the SCREEN: 9 PASS and 8 FAIL on the copy staged 15:11, 17 PASS now (`docs/HandsOnLog.md`) |
 | 61 | 2026-10-09 | TechDraw drawn by the backend: dashed lines are a little thicker than Qt's (no great matter); but for some lines -- the cosmetic symmetry line in `Page`, `Top` -- the hover and selection highlight is drawn as the THINNER dashed line and is barely visible over the thicker line under it | OPEN; DECIDED by the reporter 14:30 and 14:31: EVERY line the backend draws on a page, dashed or not, at Qt's width -- thinner -- and the highlight at the same width as its line; a view's bounding box line shows it too; nothing run |
 | 62 | 2026-10-09 | omni search, a new feature: when it first pops up, its list holds the last 10 items that were confirmed in it; once typing starts, the recent list is not needed | OPEN; nothing run |
 | 63 | 2026-10-09 | `Std_DrawStyle` (a new request): a new icon suggested for it; its display style options as a combo box with their icons; anti-aliasing and its combo box in the same menu; the light sources configuration moved there from the preferences (not the manipulator), with a button to manipulate the light direction in the active 3D view and a check box to sync all 3D views' light direction; the Light Sources preference page removed | OPEN; answered 14:52: the style combo is for the active view; anti-aliasing and lights apply at once; the manipulation toggles by the button or Esc; the sync check box is a remembered setting and decides whether a light direction goes to the active view or to all open views; one more button saves ALL the current view's light settings for future use (corrected 14:55); three icons to choose from; all of the Light Sources page's settings but the manipulator go into the menu; a change of the lights is stored in the active view's properties, the button saves it into the settings, and the sync check box is for all the light settings (14:59); nothing run |
@@ -4868,7 +4888,12 @@ the right of the preselection text); whether anything else in the status
 bar looked different at that moment (the preselection text missing, the
 hints or the size label moved); and how often it has been seen.
 
-## 56. View cells: the look of the handles and of the drag frames, and how a drag is cancelled (a change request, after entry 29) -- STAGED 2026-10-09 15:11, fixed `f5a651b723`, all eleven points; three changes more DONE `dbff5c6378`, not staged; three choices for the reporter (see `docs/HandsOnLog.md`)
+## 56. View cells: the look of the handles and of the drag frames, and how a drag is cancelled (a change request, after entry 29) -- STAGED 2026-10-09 15:11, fixed `f5a651b723`, all eleven points; three changes more DONE `dbff5c6378`, STAGED 2026-10-09 16:42; three choices for the reporter (see `docs/HandsOnLog.md`)
+
+**2026-10-09 16:42, STAGED** (and pushed 16:41, origin/PartDesignPort =
+`0246b900df`): in the copy under test, for the reporter to confirm. The three
+changes of `dbff5c6378` -- the forbidden cursor for a refused corner drag,
+the red frame and cross on a cell that closes, the active cell's border.
 
 **2026-10-09 16:10, the build session: three changes more, on the reporter's
 own words to it this afternoon; DONE `dbff5c6378`** (its message; its log,
@@ -5123,7 +5148,10 @@ out as it stood; and whether a border drag left the same way was seen to do
 it too (the same frames, so presumably).
 Passed on to the build session.
 
-## 57. The browser viewer's split view: the same view cell logic as the desktop's (a change request) -- FIXED `a50e708959`, local, not pushed; three choices for the reporter (see `docs/HandsOnLog.md`)
+## 57. The browser viewer's split view: the same view cell logic as the desktop's (a change request) -- FIXED `a50e708959`, pushed 2026-10-09 16:41; three choices for the reporter (see `docs/HandsOnLog.md`)
+
+**2026-10-09 16:41, PUSHED** with the stage of 16:42 (origin/PartDesignPort =
+`0246b900df`). The browser viewer is not part of the staged copy.
 
 **2026-10-09 15:21, the build session: DONE `a50e708959`** (its message; its
 log, `74be9e87b0`, local). Committed AFTER the push of 15:10: local, not
@@ -5330,7 +5358,10 @@ a profile whose `Mod/Start` group is cleared some other way would meet the
 same. Not part of the decision.
 Passed on to the build session, which is paused.
 
-## 60. After a view cell is deleted, the view that takes its room is sometimes black -- FIXED `d6f640f4ee`, not staged (see `docs/HandsOnLog.md`)
+## 60. After a view cell is deleted, the view that takes its room is sometimes black -- STAGED 2026-10-09 16:42, fixed `d6f640f4ee` (see `docs/HandsOnLog.md`)
+
+**2026-10-09 16:42, STAGED** (and pushed 16:41, origin/PartDesignPort =
+`0246b900df`): in the copy under test, for the reporter to confirm.
 
 **2026-10-09 16:10, the build session: FIXED `d6f640f4ee`** (its message; its
 log, `b42401c02f`, local). Not staged, not pushed.
