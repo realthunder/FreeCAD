@@ -129,9 +129,10 @@ export function SplitOverlay() {
   onCleanup(() => window.removeEventListener('resize', onResize));
 
   /// The cells and borders of the tree; with `over`, as they would be
-  /// were that split's ratio the one given -- what a border drag shows
-  /// before it changes anything.
-  const layout = (over?: { split: SplitNode; ratio: number }) => {
+  /// were those splits' ratios the ones given -- what a border drag
+  /// shows before it changes anything. A ratio given this way is taken
+  /// as it is: a cell squeezed to nothing is how a close is shown.
+  const layout = (over?: Map<SplitNode, number>) => {
     const { w, h } = size();
     const cells: CellRect[] = [];
     const handles: HandleRect[] = [];
@@ -141,7 +142,9 @@ export function SplitOverlay() {
         cells.push({ node: n, x, y, w: cw, h: ch });
         return;
       }
-      const r = clampRatio(over && over.split === n ? over.ratio : n.ratio);
+      const given = over?.get(n);
+      const r = given === undefined ? clampRatio(n.ratio)
+                                    : Math.min(1, Math.max(0, given));
       if (n.dir === 'h') {
         const aw = cw * r;
         walk(n.a, x, y, aw, ch);
@@ -518,26 +521,91 @@ export function SplitOverlay() {
     return c ? c.getBoundingClientRect().top : 0;
   };
 
-  /// The least a subtree can be along `dir` with every cell in it at
-  /// the minimum cell size or more, its own ratios as they are.
-  const minExtent = (n: Node, dir: 'h' | 'v'): number => {
-    if (n.cell) return MIN_CELL;
+  /// A border takes room from the cell next to it and from no other
+  /// (ViewAreaSplitterHandle, the desktop's rule): "when dragging the
+  /// splitter, do not move the other splitter in case the next view size
+  /// limit is reached. change it to view close action when size limit
+  /// reached". In a tree of ratios a border belongs to one split, and a
+  /// change of that split's ratio alone would scale everything on both
+  /// sides -- so the change is handed down each side to its NEAR end,
+  /// the far parts keeping the pixels they have.
+  ///
+  /// `n` is `extent` long along `dir` and is to become `extent + delta`,
+  /// the change taken at its near end (`nearIsA`: its first child is the
+  /// one at the border). Splits along `dir` get the ratio that leaves
+  /// their far child as it is; a split across it hands the same change
+  /// to both children.
+  const resizeNear = (n: Node, dir: 'h' | 'v', extent: number, delta: number,
+                      nearIsA: boolean, over: Map<SplitNode, number>) => {
+    if (n.cell) return;
+    if (n.dir !== dir) {
+      resizeNear(n.a, dir, extent, delta, nearIsA, over);
+      resizeNear(n.b, dir, extent, delta, nearIsA, over);
+      return;
+    }
+    const ea = extent * clampRatio(n.ratio);
+    const eb = extent - ea;
+    const to = extent + delta;
+    if (to <= 0) return;
+    over.set(n, nearIsA ? (ea + delta) / to : ea / to);
+    resizeNear(nearIsA ? n.a : n.b, dir, nearIsA ? ea : eb, delta,
+               nearIsA, over);
+  };
+  /// How much `n` can give at its near end: the cell there, down to the
+  /// minimum cell size.
+  const canGive = (n: Node, dir: 'h' | 'v', extent: number,
+                   nearIsA: boolean): number => {
+    if (n.cell)
+      return Math.max(0, extent - (MIN_CELL > 0 ? MIN_CELL : 24));
     if (n.dir !== dir)
-      return Math.max(minExtent(n.a, dir), minExtent(n.b, dir));
-    const r = clampRatio(n.ratio);
-    return Math.max(minExtent(n.a, dir) / r, minExtent(n.b, dir) / (1 - r));
+      return Math.min(canGive(n.a, dir, extent, nearIsA),
+                      canGive(n.b, dir, extent, nearIsA));
+    const ea = extent * clampRatio(n.ratio);
+    return canGive(nearIsA ? n.a : n.b, dir, nearIsA ? ea : extent - ea,
+                   nearIsA);
+  };
+  /// The one cell at the near end of `n`, with its extent along `dir`;
+  /// null when a split across `dir` is in the way (several cells lie
+  /// along the border there, and a drag closes none of them).
+  const nearCell = (n: Node, dir: 'h' | 'v', extent: number,
+                    nearIsA: boolean): { cell: CellNode; extent: number } | null => {
+    if (n.cell) return { cell: n, extent };
+    if (n.dir !== dir) return null;
+    const ea = extent * clampRatio(n.ratio);
+    return nearCell(nearIsA ? n.a : n.b, dir, nearIsA ? ea : extent - ea,
+                    nearIsA);
   };
 
-  /// A border. Every cell the move resizes gets a frame at the size it
-  /// will have; the border stops where a cell would go under the
-  /// minimum, and pushed well past that it closes the cell it is pushed
-  /// into (when that side is one cell).
+  /// A border. The two cells it moves between get a frame at the size
+  /// they will have; it stops where the one it is pushed into reaches
+  /// the minimum, and pushed well past that it closes that cell.
   const handleDown = (split: SplitNode, ev: PointerEvent) => {
     if (ev.button !== 0) return;
-    let ratio: number | null = null;
+    let plan: Map<SplitNode, number> | null = null;
     let close: CellNode | null = null;
+    /// The ratios with the border moved by `d` (a's side growing).
+    const moved = (total: number, now: number, d: number) => {
+      const over = new Map<SplitNode, number>();
+      over.set(split, (now + d) / total);
+      resizeNear(split.a, split.dir, now, d, false, over);
+      resizeNear(split.b, split.dir, total - now, -d, true, over);
+      return over;
+    };
+    const framesOf = (over: Map<SplitNode, number>, gone: CellNode | null) => {
+      const then = layout(over).cells;
+      const list: Frame[] = [];
+      for (const c of layout().cells) {
+        if (!contains(split, c.node) || c.node === gone) continue;
+        const t = then.find((k) => k.node === c.node);
+        if (!t) continue;
+        if (Math.abs(t.x - c.x) > 0.5 || Math.abs(t.y - c.y) > 0.5
+            || Math.abs(t.w - c.w) > 0.5 || Math.abs(t.h - c.h) > 0.5)
+          list.push({ x: t.x, y: t.y, w: t.w, h: t.h, kind: 'kept' });
+      }
+      return list;
+    };
     const onMove = (mv: PointerEvent) => {
-      ratio = null;
+      plan = null;
       close = null;
       const un = unionRect(split);
       if (!un) return;
@@ -547,45 +615,38 @@ export function SplitOverlay() {
       const pos = horiz ? mv.clientX - canvasLeft() - un.x
                         : mv.clientY - canvasTop() - un.y;
       const now = total * clampRatio(split.ratio);
-      let lo = Math.max(total * MIN_RATIO, minExtent(split.a, split.dir));
-      let hi = Math.min(total * (1 - MIN_RATIO),
-                        total - minExtent(split.b, split.dir));
-      // No room for both minimums (a small window): the border can
-      // only stay, or give way toward where it already is.
-      if (lo > hi) { lo = Math.min(lo, now); hi = Math.max(hi, now); }
-      if (lo > hi) lo = hi = now;
-      const legal = Math.min(hi, Math.max(lo, pos));
-      if (Math.abs(pos - legal) > CLOSE_SLACK) {
-        const pushed = pos < legal ? split.a : split.b;
-        const going = pushed.cell ? cellRectOf(pushed) : null;
-        if (pushed.cell && going) {
-          close = pushed;
-          showFrames('close', [
-            { x: un.x, y: un.y, w: un.w, h: un.h, kind: 'kept' },
-            { x: going.x, y: going.y, w: going.w, h: going.h,
-              kind: 'going' }]);
+      const want = pos - now;
+      // what the side it is pushed into can give, at the border
+      const give = want >= 0 ? canGive(split.b, split.dir, total - now, true)
+                             : canGive(split.a, split.dir, now, false);
+      const d = want >= 0 ? Math.min(want, give) : -Math.min(-want, give);
+      if (Math.abs(want - d) > CLOSE_SLACK) {
+        const pushed = want >= 0 ? nearCell(split.b, split.dir, total - now, true)
+                                 : nearCell(split.a, split.dir, now, false);
+        const going = pushed ? cellRectOf(pushed.cell) : null;
+        if (pushed && going) {
+          // Shown, and done at the release, as that cell squeezed to
+          // nothing: what is across the border takes its room, and
+          // nothing else moves.
+          close = pushed.cell;
+          plan = moved(total, now, want >= 0 ? pushed.extent : -pushed.extent);
+          const list = framesOf(plan, pushed.cell);
+          list.push({ x: going.x, y: going.y, w: going.w, h: going.h,
+                      kind: 'going' });
+          showFrames('close', list);
           return;
         }
       }
-      ratio = legal / total;
-      const then = layout({ split, ratio }).cells;
-      const list: Frame[] = [];
-      for (const c of layout().cells) {
-        if (!contains(split, c.node)) continue;
-        const t = then.find((k) => k.node === c.node);
-        if (!t) continue;
-        if (Math.abs(t.x - c.x) > 0.5 || Math.abs(t.y - c.y) > 0.5
-            || Math.abs(t.w - c.w) > 0.5 || Math.abs(t.h - c.h) > 0.5)
-          list.push({ x: t.x, y: t.y, w: t.w, h: t.h, kind: 'kept' });
-      }
+      plan = moved(total, now, d);
+      const list = framesOf(plan, null);
       showFrames(list.length ? 'resize' : '', list);
     };
     const onCommit = () => {
+      if (!plan) return;
+      for (const [node, ratio] of plan)
+        node.ratio = close ? ratio : clampRatio(ratio);
       if (close) closeCell(close);
-      else if (ratio !== null) {
-        split.ratio = ratio;
-        changed();
-      }
+      else changed();
     };
     beginDrag(ev, onMove, onCommit);
   };

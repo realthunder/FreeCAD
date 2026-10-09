@@ -36,6 +36,13 @@ spreadsheet in a third, the minimum cell size at 120:
             of the cell that stays is left off it;
   chrome  - a corner zone and the menu button under the cursor are painted
             on the accent colour, their strokes white;
+  row     - three cells in a row: a border takes room from the cell next
+            to it and from no other -- its frames are those two cells', the
+            third has none -- and past that cell's minimum the drag closes
+            it, the first cell taking its room and the third staying where
+            and as wide as it was ("when dragging the splitter, do not move
+            the other splitter in case the next view size limit is reached.
+            change it to view close action when size limit reached");
   close   - "split drag that would make a cell too small shall be
             interpreted as closing that view": the border dragged well past
             a cell's minimum shows that cell as going, red and crossed
@@ -487,6 +494,53 @@ def close_scenario():
           (show(rects()), len(views), frames()[0]))
 
 
+def row_scenario():
+    """Three cells in a row: a border takes room from the cell next to it and from no
+    other; at that cell's minimum the drag closes it"""
+    while len(cells()) > 1:
+        view3d = FreeCADGui.getDocument(DOC).mdiViewsOfType("Gui::View3DInventor")[-1]
+        FreeCADGui.getMainWindow().setActiveWindow(view3d)
+        FreeCADGui.runCommand("Std_ViewSplitClose")
+        settle()
+    for _i in range(2):
+        view3d = FreeCADGui.getDocument(DOC).mdiViewsOfType("Gui::View3DInventor")[-1]
+        FreeCADGui.getMainWindow().setActiveWindow(view3d)
+        FreeCADGui.runCommand("Std_ViewSplitRight")
+        settle(0.8)
+    row = rects()
+    if not check("row: three cells in a row to start from",
+                 len(row) == 3 and len(set(r.top() for r in row)) == 1
+                 and all(r.width() > LEAST + 40 for r in row), show(row)):
+        return
+    border = sorted(handles(), key=lambda h: place(h).left())[0]
+    give = row[1].width() - LEAST
+    drag = Drag(border).to(give + 8, 0)
+    op, fr, kinds = frames()
+    fr.sort(key=lambda r: r.left())
+    check("row: the first border dragged a little past the middle cell's minimum frames the "
+          "two cells beside it, the middle one at the minimum",
+          op == "resize" and len(fr) == 2 and fr[0].left() == row[0].left()
+          and abs(fr[0].width() - (row[0].width() + give)) <= 2
+          and abs(fr[1].width() - LEAST) <= 2, (op, show(fr)))
+    check("row: ... and the third cell has no frame: its border is not pushed along",
+          not any(r.right() > row[2].left() for r in fr), (show(fr), show(row)))
+    drag.to(give + 140, 0)
+    op, fr, kinds = frames()
+    check("row: dragged well past it, the middle cell is the one going, the first framed over "
+          "the room of both",
+          op == "close" and kinds == ["kept", "going"] and fr[1] == row[1]
+          and fr[0] == row[0].united(row[1]), (op, kinds, show(fr)))
+    check("row: nothing is closed while the button is down", len(cells()) == 3, len(cells()))
+    drag.release()
+    settle(0.8)
+    now = rects()
+    check("row: released, the middle cell is closed, the first has its room, the third is "
+          "where and as wide as it was",
+          len(now) == 2 and abs(now[0].width() - row[0].united(row[1]).width()) <= 2
+          and abs(now[1].left() - row[2].left()) <= 2
+          and abs(now[1].width() - row[2].width()) <= 2, (show(row), show(now)))
+
+
 def other_view_scenario():
     """Point (j): a cell whose view there is only one of is split all the same"""
     sheet_cell = None
@@ -583,6 +637,12 @@ def run():
         look_scenario("no theme")
         join_scenario()
         chrome_scenario()
+        row_scenario()
+        while len(cells()) > 2:
+            view3d = FreeCADGui.getDocument(DOC).mdiViewsOfType("Gui::View3DInventor")[-1]
+            mw.setActiveWindow(view3d)
+            FreeCADGui.runCommand("Std_ViewSplitClose")
+            settle()
         close_scenario()
         refusal_scenario()
         view3d = FreeCADGui.getDocument(DOC).mdiViewsOfType("Gui::View3DInventor")[0]

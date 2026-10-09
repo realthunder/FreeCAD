@@ -81,6 +81,10 @@ void paintChromeGround(QPainter &p, const QWidget *widget, int alpha = 255)
     p.drawRoundedRect(QRectF(widget->rect()).adjusted(0.5, 0.5, -0.5, -0.5), 3, 3);
 }
 
+/// The least a splitter gives a widget along its axis (defined with the
+/// frames of a border drag, below).
+int leastExtent(const QWidget *w, bool horiz);
+
 /// True while \a ev is the Escape key going down, or asking whether it
 /// is a shortcut.
 bool isEscape(const QEvent *ev)
@@ -418,7 +422,8 @@ protected:
         if (!_dragging)
             return QSplitterHandle::mouseMoveEvent(ev);
         const QPoint p = splitter()->mapFromGlobal(ev->globalPosition().toPoint());
-        int pos = ((orientation() == Qt::Horizontal) ? p.x() : p.y()) - _grab;
+        const bool horiz = (orientation() == Qt::Horizontal);
+        int pos = (horiz ? p.x() : p.y()) - _grab;
         _pos = closestLegalPosition(pos);
         _closing = nullptr;
         ViewArea *area = ViewArea::areaOf(splitter());
@@ -426,13 +431,31 @@ protected:
             ev->accept();
             return;
         }
-        // Dragged on past what the cells on that side can give -- they are
-        // at the minimum cell size -- the drag means closing the cell the
-        // border is pushed into, and says so as a join does: the frame of
-        // what takes its room, and a stop sign on it. A few pixels past
-        // the limit are still the limit, or the two would flicker there.
+        const int idx = splitter()->indexOf(this);  // handle i sits after widget i-1
+        // A border takes room from the widget next to it and from no
+        // other. QSplitter's own range goes on past that one's minimum
+        // and pushes the next border along, each widget down to its least
+        // in turn -- "when dragging the splitter, do not move the other
+        // splitter in case the next view size limit is reached. change it
+        // to view close action when size limit reached".
+        {
+            QWidget *prev = splitter()->widget(idx - 1);
+            QWidget *next = splitter()->widget(idx);
+            if (prev && next) {
+                const int now = horiz ? x() : y();
+                const int lo = now - qMax(0, (horiz ? prev->width() : prev->height())
+                                             - leastExtent(prev, horiz));
+                const int hi = now + qMax(0, (horiz ? next->width() : next->height())
+                                             - leastExtent(next, horiz));
+                _pos = qBound(lo, _pos, hi);
+            }
+        }
+        // Dragged on past what the cell next to it can give -- it is at
+        // the minimum cell size -- the drag means closing that cell, and
+        // says so as a join does: the frame of what takes its room, and
+        // the cell crossed out. A few pixels past the limit are still the
+        // limit, or the two would flicker there.
         if (qAbs(pos - _pos) > CloseSlack) {
-            const int idx = splitter()->indexOf(this);  // handle i sits after widget i-1
             const bool before = pos < _pos;
             QWidget *taker = splitter()->widget(before ? idx : idx - 1);
             _closing = qobject_cast<ViewAreaCell*>(splitter()->widget(before ? idx - 1 : idx));
@@ -450,8 +473,7 @@ protected:
                 return;
             }
         }
-        area->showDragFrames("resize",
-                area->resizeFrames(splitter(), splitter()->indexOf(this), _pos));
+        area->showDragFrames("resize", area->resizeFrames(splitter(), idx, _pos));
         ev->accept();
     }
     void mouseReleaseEvent(QMouseEvent *ev) override
@@ -463,11 +485,30 @@ protected:
         ViewArea *area = ViewArea::areaOf(splitter());
         cancelDrag();
         ev->accept();
-        // closing a cell may delete this handle with its splitter: last
-        if (closing && area)
-            area->closeCell(closing);
-        else
+        if (!closing || !area) {
             moveSplitter(pos);
+            return;
+        }
+        // The room of the cell that goes is for the widget across the
+        // border, which is what the frames said -- not to be shared out
+        // among everything left in the splitter. Its sizes are worked out
+        // before, and set after if the splitter is still there: closing a
+        // cell may delete this handle, and the splitter with it when one
+        // widget is left.
+        QPointer<QSplitter> sp(splitter());
+        QList<int> sizes = sp->sizes();
+        const int gone = sp->indexOf(closing);
+        const int idx = sp->indexOf(this);
+        const int taker = (gone == idx) ? idx - 1 : idx;
+        if (gone >= 0 && taker >= 0 && taker < sizes.size() && gone < sizes.size()) {
+            sizes[taker] += sizes[gone] + sp->handleWidth();
+            sizes.removeAt(gone);
+        }
+        else {
+            sizes.clear();
+        }
+        if (area->closeCell(closing) && sp && !sizes.isEmpty() && sp->count() == sizes.size())
+            sp->setSizes(sizes);
     }
     void enterEvent(QEnterEvent *ev) override
     {

@@ -239,6 +239,57 @@ const near = (a, b, slack = 2) => Math.abs(a - b) <= slack;
             (await cells()).length === 1 && (await frames()).op === '', await cells());
     }
 
+    // ---- three cells in a row: a border takes room from the cell next to it and from no
+    // other; at that cell's minimum the drag closes it, and the third cell never moves
+    cs = await cells();
+    from = zone(cs[0]);
+    await drag(from, {x: 500, y: from.y + 60});
+    await release();
+    cs = await cells();
+    from = zone(cs[1]);
+    await drag(from, {x: 950, y: from.y + 60});
+    await release();
+    cs = await cells();
+    if (check('row: three cells in a row to start from', cs.length === 3
+              && near(cs[0].w, 500) && near(cs[1].w, 450) && near(cs[2].w, 450), cs)) {
+      const row = cs;
+      const y = Math.round(row[0].h / 2);
+      const stop = row[1].x + (row[1].w - least);       // where the middle cell is 300 wide
+      await drag({x: row[1].x, y}, {x: stop + 8, y});
+      f = await frames();
+      const got = f.list.slice().sort((a, b) => a.x - b.x);
+      check('row: the first border dragged a little past the middle cell\'s minimum frames '
+            + 'the two cells beside it, the middle one at the minimum',
+            f.op === 'resize' && got.length === 2 && near(got[0].w, row[0].w + row[1].w - least)
+            && near(got[1].w, least), f.list);
+      check('row: ... and the third cell has no frame: its border is not pushed along',
+            !f.list.some(x => near(x.x, row[2].x) && near(x.w, row[2].w))
+            && !f.list.some(x => x.x + x.w > row[2].x + 2), f.list);
+      await page.mouse.move(stop + 130, y, {steps: 3});
+      await sleep(150);
+      f = await frames();
+      const kept = f.list.find(x => x.kind === 'kept');
+      const going = f.list.find(x => x.kind === 'going');
+      check('row: dragged well past it, the middle cell is the one going, the first framed '
+            + 'over the room of both, the third untouched',
+            f.op === 'close' && f.list.length === 2 && going && kept && near(going.x, row[1].x)
+            && near(going.w, row[1].w) && going.cross && near(kept.x, row[0].x)
+            && near(kept.w, row[0].w + row[1].w), f.list);
+      await release();
+      now = await cells();
+      check('row: released, the middle cell is closed, the first has its room, '
+            + 'the third is where and as wide as it was',
+            now.length === 2 && near(now[0].w, row[0].w + row[1].w) && near(now[1].x, row[2].x)
+            && near(now[1].w, row[2].w), now);
+      // down to one cell again for what follows
+      cs = await cells();
+      if (cs.length === 2) {
+        from = zone(cs[0]);
+        await drag(from, {x: cs[1].x + Math.round(cs[1].w / 2), y: from.y + 80});
+        await release();
+      }
+    }
+
     // ---- a corner only creates: under the minimum a split is a forbidden cursor and a
     // message at each turn of the cursor, no frame
     await page.setViewport({width: 520, height: 420});

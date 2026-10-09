@@ -25,6 +25,13 @@ are this test's:
   close   - dragged well past that the cell is shown as going, red and
             crossed out, the other framed over both; Escape gives it up;
             released, the cell is closed;
+  row     - three cells in a row: a border takes room from the cell next
+            to it and from no other -- its frames are those two cells', the
+            third has none -- and past that cell's minimum the drag closes
+            it, the first cell taking its room and the third staying where
+            and as wide as it was ("do not move the other splitter in case
+            the next view size limit is reached. change it to view close
+            action when size limit reached");
   join    - a corner dragged out into the neighbor: the cell that stays
             framed over both, the cell that goes framed red and crossed
             out with the other's face left off it; released, one cell;

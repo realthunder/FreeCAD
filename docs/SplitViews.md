@@ -1581,13 +1581,22 @@ turn from the splitting cursor to the forbidden one
 (`ViewArea::reportRefusedSplit`); the release then does nothing and says
 nothing more.
 
+**A border takes room from the widget next to it, and from no other.**
+`QSplitter`'s own range (`closestLegalPosition()`) goes on past that
+widget's minimum and pushes the next border along, each widget down to its
+least in turn; the handle clamps the border to what its two neighbours can
+give. "when dragging the splitter, do not move the other splitter in case
+the next view size limit is reached. change it to view close action when
+size limit reached."
+
 **A border pushed past a cell's minimum closes that cell** (operation
-"close"). `closestLegalPosition()` is where the border stops; dragged more
-than 12 pixels beyond it (`CloseSlack`, so that the limit itself can be
-held) the cell the border is pushed into is shown as going, the widget on
-the other side of the border framed over the room of both, and the release
-calls `closeCell()`. Only when what is pushed is a single cell -- a nested
-splitter on that side stops at its minimum as before. The CORNER zone keeps
+"close"). Dragged more than 12 pixels beyond where it stops (`CloseSlack`,
+so that the limit itself can be held) the cell the border is pushed into
+is shown as going, the widget on the other side of the border framed over
+the room of both, and the release calls `closeCell()` and then gives that
+room to the widget across the border -- the splitter would share it out
+among everything left. Only when what is pushed is a single cell -- a
+nested splitter on that side stops at its minimum as before. The CORNER zone keeps
 its meaning: dragged inward it only ever creates, and a split that would
 leave a cell under the minimum is refused ("drag in itself only create and
 never close. so as to not create ambiguity").
@@ -1655,10 +1664,14 @@ It has secs 21 and 22 now, in the tree's own terms:
   in the page's address overrides it (0 for none), which a phone held
   upright needs to split side by side at all. `MIN_RATIO` stays as the
   floor of a stored layout and of a window that shrank.
-- **A border** stops where a cell would go under the minimum, every cell
-  of both sides counted through the ratios of the splits between
-  (`minExtent`), and more than 12 pixels past that it closes the cell it
-  is pushed into, when that side is one cell. **A corner** only creates:
+- **A border** takes room from the cell next to it and from no other. In
+  a tree of ratios a border belongs to one split, and that split's ratio
+  alone would scale everything on both sides; the change is handed down
+  each side to its near end instead, the far parts keeping the pixels
+  they have (`resizeNear`). It stops where the cell next to it reaches the
+  minimum (`canGive`), and more than 12 pixels past that it closes that
+  cell (`nearCell`) -- shown, and done, as the cell squeezed to nothing, so
+  that what is across the border takes its room and nothing else moves. **A corner** only creates:
   under the minimum there is no frame, the cursor is the forbidden one
   wherever the pointer is (a class on the document, `fc-split-forbidden`),
   and the reason is said at each turn of the cursor, in a line at the
