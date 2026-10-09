@@ -4635,10 +4635,32 @@ the note-taker, nothing run.**
   29); a TechDraw page or a spreadsheet in a cell has its scroll bars along
   the right and the bottom edge, where those corners are.
 
-Not said yet by the reporter: how opaque the frames are to be, and how wide
-the white border; under which theme (a) was seen (the session's is Light);
-and for (f) whether "any mouse click" cancels a drag of a BORDER too, where
-a frame is shown as well.
+Asked of the reporter, three points: (1) how opaque the frames are to be,
+and how wide the white border; (2) under which theme (a) was seen (the
+session's is Light); (3) for (f), whether "any mouse click" cancels a drag
+of a BORDER too, where a frame is shown as well.
+**Answered by the reporter, 2026-10-09 11:01:** "same settings for the
+overlay drag frame, except the color of the face (which the overlay drag
+frame shall be changed to respect the same way as view cell drag frame). 3
+yes"
+- to (3): YES -- Esc and any mouse click cancel a drag of a border as well;
+  only the left release commits, for every cell drag.
+- to (1), as the note-taker reads it: the two kinds of frame are to be ONE
+  look. The view cell's frames take the overlay drag frame's settings --
+  how see-through, the outline -- and the one thing that goes the other way
+  is the colour of the frame's FACE, its fill: there the overlay's frame
+  changes, from its fixed blue to the rule of (d), the theme's accent
+  colour, or the palette's selection highlight with no theme. The white
+  border of (c) then belongs to both.
+  What the overlay's frame is today, for whoever does it (read, not run):
+  a fill at 0.3 opacity and a thin outline in the default pen. The cell's
+  frames are at 60 and 120 of 255, that is 0.24 for a cell that stays and
+  0.47 for a new one -- so "the same settings" makes the kept cell's frame a
+  little LESS see-through and the new cell's MORE, and takes away the
+  difference between the two. Whether that difference (a new cell shown
+  stronger than a kept one) is to stay was not said.
+- (2), the theme (a) was seen under, is not answered.
+Passed on to the build session.
 
 ## Inbox
 
