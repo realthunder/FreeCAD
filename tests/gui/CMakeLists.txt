@@ -1664,3 +1664,11 @@ fc_add_gui_test(GuiStatusBarProgressPlace_tests_run
 fc_add_gui_test(GuiViewCellDragCancelAndLook_tests_run
                 view-cell-drag-cancel-and-look.py
                 --timeout 240)
+
+# The browser viewer's split view follows the desktop's view cells: a drag
+# shown as frames and carried out at the release, given up by Escape or
+# another button, a border that closes a cell pushed under the minimum.
+# Needs the built viewer, node, PUPPETEER_PATH and CHROME; skips without.
+fc_add_gui_test(GuiSplitViewBrowser_tests_run
+                split-view-browser.py
+                --timeout 420)

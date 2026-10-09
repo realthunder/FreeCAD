@@ -1611,3 +1611,52 @@ splits into a second view of the same page" was never built.
 
 Tests: `tests/gui/view-cell-drag-cancel-and-look.py`; the border's two
 behaviours at and past the minimum are in `view-cell-drag-frames.py`.
+
+## 23. The browser viewer follows (2026-10-09)
+
+"btw, do the same view cell logic in browser" (docs/HandsOnQueue.md entry
+57). The chrome of sec 9.4 (`web/src/splitview.tsx`) had the desktop's
+gestures as they were before sec 21: a split happened the moment the drag
+passed its threshold and the rest of the drag moved the new border live, a
+border moved at every pointer move, a join showed a dim and an arrow, and
+nothing could be given up but by dragging back.
+
+It has secs 21 and 22 now, in the tree's own terms:
+
+- **Nothing changes while the button is down.** A drag works out what the
+  release would do (`onMove`), shows it as frames -- DOM elements over the
+  cells, `.fc-split-frame` with `data-kind` kept / fresh / going /
+  refused, the operation in `data-op` on the root -- and the release of
+  the primary button does it (`onCommit`). A border's frames come from the
+  layout worked out with the tentative ratio (`layout({split, ratio})`).
+- **Giving up** (`beginDrag`): Escape; another button of the mouse, which
+  for a pointer already down arrives as a MOVE with more buttons held, and
+  whose context menu is swallowed; a second finger or any other pointer
+  going down -- the way out a touch screen has, my choice; `pointercancel`;
+  the window losing the front or the page being hidden.
+- **The minimum cell size** is 300 CSS pixels, the desktop's default, and
+  the viewer's own: the desktop's setting is not sent to it. `?mincell=N`
+  in the page's address overrides it (0 for none), which a phone held
+  upright needs to split side by side at all. `MIN_RATIO` stays as the
+  floor of a stored layout and of a window that shrank.
+- **A border** stops where a cell would go under the minimum, every cell
+  of both sides counted through the ratios of the splits between
+  (`minExtent`), and more than 12 pixels past that it closes the cell it
+  is pushed into, when that side is one cell. **A corner** only creates:
+  under the minimum the split is shown refused, and the reason is said
+  once, in a line at the bottom of the page and as a console error.
+- **A join** and a close: one frame, the cell that stays over the room of
+  both; the cell that goes has no cover and a red stop sign.
+- **The look** is the desktop's frame in CSS: the accent at 0.3 (a
+  variable of the split root, `--fc-accent-rgb`, FreeCAD's default accent
+  -- the desktop's theme is not sent either), a white border of 2 pixels
+  as an inset shadow, a dark line of 1. A corner zone under the pointer is
+  on the accent in a white rim.
+
+Not carried over, for cause: zones stepping off a scroll bar (a cell has
+none here), and the 3D view for a cell whose view cannot be shown twice
+(a page cell splits into a page cell: the viewer draws a page per cell).
+
+Test: `tests/gui/split-view-browser.py`, which drives
+`scripts/splitview-drive.js` in a real browser on the built page, no
+document served.
