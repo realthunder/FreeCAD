@@ -1564,12 +1564,22 @@ told from a kept one by its plus alone now.
 |---|---|---|
 | kept | a cell that stays, at the size it WILL have | the frame |
 | fresh | the cell a split makes | the frame, a plus |
-| going | a cell that is closed: a join's neighbor, a border's victim | nothing of its own; a red stop sign in its middle |
-| refused | a cell that cannot be split (too small) | red, crossed out |
+| going | a cell that is closed: a join's neighbor, a border's victim | red, crossed out; the kept frame's face is left off it |
 
-A cell that goes has no frame and no dim: "the frame is the new one and
-occupies the old cell area". The sign is a red octagon in a white rim, a
-quarter of the cell's smaller side from middle to corner, 14 to 48 pixels.
+A cell that goes is framed red with a red cross, and the frame of the cell
+that stays -- which covers the room of both -- leaves its face off it: two
+faces one on the other are neither colour. (First built as a red stop
+sign with no frame, on "draw a big red stop sign in the center of removing
+cell"; changed the same day: "use the red frame and red cross here. I feel
+this hints more like a close".)
+
+**A split that cannot be has no frame.** The red frame was the refusal's
+look until it became the closing cell's. A corner drag that would leave a
+cell under the minimum turns the cursor to the forbidden one
+(`ViewAreaZone::armSplit`) and says why at that moment, once for every
+turn from the splitting cursor to the forbidden one
+(`ViewArea::reportRefusedSplit`); the release then does nothing and says
+nothing more.
 
 **A border pushed past a cell's minimum closes that cell** (operation
 "close"). `closestLegalPosition()` is where the border stops; dragged more
@@ -1583,9 +1593,10 @@ leave a cell under the minimum is refused ("drag in itself only create and
 never close. so as to not create ambiguity").
 
 **A refusal is said as an error**, which the notification area shows as
-well as the report view, still not more than once in five seconds. (A
-plain error, not one "for the user" alone: the report view takes none of
-those.)
+well as the report view. (A plain error, not one "for the user" alone:
+the report view takes none of those.) A corner drag says it at each turn
+of its cursor; a split command or a view opening by itself, not more than
+once in five seconds.
 
 **Chrome on a ground that shows.** The menu button under the cursor and
 the corner zones are painted on the accent colour with a white rim, their
@@ -1593,6 +1604,11 @@ strokes white (`paintChromeGround`). Sec 21 had given them the palette's
 window colour with strokes in the highlight colour, which on a light grey
 or a white view -- a page, a sheet, a light 3D background -- was a light
 patch on a light ground.
+
+**The active cell's border** (`ViewAreaHighlight`, sec 16.1) is two pixels
+of the accent the drag frames have, not quite opaque. It was one pixel of
+the palette's highlight, which under a dark theme could not be told from
+the border between cells ("also draw a subtle frame on the active view").
 
 **A zone steps aside from a scroll bar** (`ViewAreaCell::placeChrome`): the
 top right one to the left of a vertical scroll bar of the hosted view that
@@ -1643,10 +1659,13 @@ It has secs 21 and 22 now, in the tree's own terms:
   of both sides counted through the ratios of the splits between
   (`minExtent`), and more than 12 pixels past that it closes the cell it
   is pushed into, when that side is one cell. **A corner** only creates:
-  under the minimum the split is shown refused, and the reason is said
-  once, in a line at the bottom of the page and as a console error.
-- **A join** and a close: one frame, the cell that stays over the room of
-  both; the cell that goes has no cover and a red stop sign.
+  under the minimum there is no frame, the cursor is the forbidden one
+  wherever the pointer is (a class on the document, `fc-split-forbidden`),
+  and the reason is said at each turn of the cursor, in a line at the
+  bottom of the page and as a console error.
+- **A join** and a close: the cell that stays framed over the room of
+  both, the cell that goes framed red and crossed out, the first one's
+  face clipped off it (`clipOf`).
 - **The look** is the desktop's frame in CSS: the accent at 0.3 (a
   variable of the split root, `--fc-accent-rgb`, FreeCAD's default accent
   -- the desktop's theme is not sent either), a white border of 2 pixels

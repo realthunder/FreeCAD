@@ -30,20 +30,23 @@ spreadsheet in a third, the minimum cell size at 120:
             round it; the accent is the palette's selection highlight
             while no theme is applied, and Themes/ThemeAccentColor1 under a
             theme, followed when it changes;
-  join    - the cell that goes has no cover of its own -- away from its
-            middle it shows the face of the frame of the cell that stays
-            -- and a red sign in its middle;
+  join    - the cell that goes is framed red and crossed out ("use the
+            red frame and red cross here. I feel this hints more like a
+            close"; it had a stop sign first), and the face of the frame
+            of the cell that stays is left off it;
   chrome  - a corner zone and the menu button under the cursor are painted
             on the accent colour, their strokes white;
   close   - "split drag that would make a cell too small shall be
             interpreted as closing that view": the border dragged well past
-            a cell's minimum shows that cell as going, under the red sign,
-            and the release closes it;
+            a cell's minimum shows that cell as going, red and crossed
+            out, and the release closes it;
   refusal - "corner drag semantics stay, i.e. drag in itself only create
             and never close": a corner drag that would leave a cell under
-            the minimum is refused, closes nothing, and says why once, as
-            an error ("should print a one time error message saying the
-            reason");
+            the minimum shows NO frame -- "simply a forbidden cursor
+            change. print the error the moment the mouse cursor changes.
+            every change from splitting cursor to forbidden cursor prints
+            one message" -- and the release splits nothing and says
+            nothing more;
   scroll  - in the spreadsheet's cell no zone lies on a scroll bar: the
             one whose corner a bar runs through has stepped aside to the
             bar's edge, the other is in its corner; in a 3D cell both are
@@ -303,11 +306,19 @@ def face_of_kept(tag):
     """The face of the kept frame of a split drag, read off the frames
     themselves: (rgba in its middle, rgba 2 px in from its edge, rgba on its edge)"""
     cell = max(cells(), key=lambda c: c.width() * c.height())
-    if cell.width() >= 2 * LEAST + 20:
-        drag = Drag(zone(cell)).to(-cell.width() // 2, 12)
-    else:
-        drag = Drag(zone(cell)).to(-10, cell.height() // 2)
-    op, fr, kinds = frames()
+    # A drag is given up when the application loses the front, and a test
+    # does not own the desktop: somebody clicking elsewhere ends it. Once
+    # more, then, before it is called missing.
+    for _attempt in range(3):
+        if cell.width() >= 2 * LEAST + 20:
+            drag = Drag(zone(cell)).to(-cell.width() // 2, 12)
+        else:
+            drag = Drag(zone(cell)).to(-10, cell.height() // 2)
+        op, fr, kinds = frames()
+        if op == "split":
+            break
+        drag.release()
+        settle(0.5)
     res = None
     if op == "split" and "kept" in kinds:
         r = fr[kinds.index("kept")]
@@ -358,20 +369,17 @@ def join_scenario():
         image.save(os.path.join(OUT, "join.png"))
         want, _whose = accent()
         middle = rgba(image, goes.center().x(), goes.center().y())
-        check("join: a red sign in the middle of the cell that goes",
-              middle[0] > 170 and middle[1] < 70 and middle[2] < 70 and middle[3] == 255, middle)
+        check("join: a red cross through the middle of the cell that goes",
+              middle[0] > 170 and middle[1] < 90 and middle[2] < 90 and middle[3] > 200, middle)
         corner = rgba(image, goes.left() + goes.width() // 8, goes.top() + goes.height() // 8)
-        check("join: away from the sign that cell shows the face of the frame over it, "
-              "no cover of its own", close_to(corner[:3], want, 8) and abs(corner[3] - 77) <= 3,
-              "painted %s, the accent %s" % (corner, want))
-        # the sign is an octagon: as wide at a third of its height as in the middle
-        radius = 0
-        while radius < 80 and rgba(image, goes.center().x() + radius + 1,
-                                   goes.center().y())[0] > 170 \
-                and rgba(image, goes.center().x() + radius + 1, goes.center().y())[1] < 70:
-            radius += 1
-        check("join: the sign is big, between 12 and 48 pixels from its middle to its side",
-              12 <= radius <= 48, radius)
+        check("join: that cell's face is red, the frame of the cell that stays left off it",
+              close_to(corner[:3], (200, 40, 40), 10) and abs(corner[3] - 70) <= 4, corner)
+        edge = rgba(image, goes.left() + 1, goes.top() + goes.height() // 3)
+        check("join: ... inside a red border", close_to(edge, (200, 40, 40) + (255,), 10), edge)
+        stay = rgba(image, stays.center().x(), stays.center().y())
+        check("join: the cell that stays has the frame's face, the accent at 0.3",
+              close_to(stay[:3], want, 8) and abs(stay[3] - 77) <= 3,
+              "painted %s, the accent %s" % (stay, want))
     escape()
     drag.release()
 
@@ -468,8 +476,8 @@ def close_scenario():
         image = render(frames_widget())
         image.save(os.path.join(OUT, "close.png"))
         middle = rgba(image, before[1].center().x(), before[1].center().y())
-        check("close: a red sign in the middle of the cell that goes",
-              middle[0] > 170 and middle[1] < 70 and middle[2] < 70, middle)
+        check("close: a red cross through the middle of the cell that goes",
+              middle[0] > 170 and middle[1] < 90 and middle[2] < 90, middle)
     check("close: nothing is closed while the button is down", len(cells()) == 2, len(cells()))
     drag.release()
     settle(0.6)
@@ -515,22 +523,35 @@ def listen(notifier, message, level):
 
 
 def refusal_scenario():
-    """Point (h): a split refused for the minimum cell size says so as an error"""
+    """Point (h), as changed: a split refused for the minimum cell size is a forbidden
+    cursor and an error said at each turn of the cursor"""
     cell = max(cells(), key=lambda c: c.width() * c.height())
     count = len(cells())
     OPEN_VIEW.SetInt("MinimumCellSize", 4000)
     settle()
     FreeCAD.Console.AttachObserver(listen)
     try:
-        drag = Drag(zone(cell)).to(-150, 10)
-        op, fr, kinds = frames()
-        check("refusal: a corner drag that would leave a cell under the minimum shows it refused",
-              op == "split" and kinds == ["refused"], (op, kinds))
+        z = zone(cell)
+        check("refusal: a zone's cursor is the splitting cross to start from",
+              z.cursor().shape() == Qt.CrossCursor, z.cursor().shape())
+        drag = Drag(z).to(-150, 10)
+        check("refusal: a corner drag that would leave a cell under the minimum shows no frame",
+              frames()[0] == "", frames())
+        check("refusal: ... the cursor is the forbidden one",
+              z.cursor().shape() == Qt.ForbiddenCursor, z.cursor().shape())
+        check("refusal: ... and the reason is said at once, as an error", SAID == ["Error"], SAID)
+        drag.to(-2, 2)
+        check("refusal: back where it was pressed the cursor is the cross again",
+              z.cursor().shape() == Qt.CrossCursor, z.cursor().shape())
+        drag.to(-150, 10)
+        check("refusal: every turn to the forbidden cursor says it once more",
+              z.cursor().shape() == Qt.ForbiddenCursor and SAID == ["Error", "Error"], SAID)
         drag.release()
         settle(0.6)
-        check("refusal: the release splits nothing and closes nothing", len(cells()) == count,
-              show(rects()))
-        check("refusal: ... and says why once, as an error", SAID == ["Error"], SAID)
+        check("refusal: the release splits nothing, closes nothing and says nothing more",
+              len(cells()) == count and SAID == ["Error", "Error"], (show(rects()), SAID))
+        check("refusal: ... and the cursor is the cross again",
+              z.cursor().shape() == Qt.CrossCursor, z.cursor().shape())
     finally:
         FreeCAD.Console.DetachObserver(listen)
         OPEN_VIEW.SetInt("MinimumCellSize", LEAST)

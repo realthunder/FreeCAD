@@ -22,15 +22,16 @@ are this test's:
   border  - a dragged border changes no cell while the button is down,
             frames both cells at their new sizes, and moves at the release;
   minimum - the border stops where a cell would go under 300 pixels;
-  close   - dragged well past that the cell is shown as going under a stop
-            sign, the other framed over both; Escape gives it up; released,
-            the cell is closed;
-  join    - a corner dragged out into the neighbor: one frame over both and
-            a stop sign on the cell that goes, which has no cover of its
-            own; released, one cell;
+  close   - dragged well past that the cell is shown as going, red and
+            crossed out, the other framed over both; Escape gives it up;
+            released, the cell is closed;
+  join    - a corner dragged out into the neighbor: the cell that stays
+            framed over both, the cell that goes framed red and crossed
+            out with the other's face left off it; released, one cell;
   refusal - a corner only creates: a split that would leave a cell under
-            the minimum is shown refused, splits nothing, and says why on
-            the page and as an error.
+            the minimum shows no frame but the forbidden cursor, says why
+            at each turn of the cursor, on the page and as an error, and
+            splits nothing.
 
 Needs the built viewer with its DOM bundle (build/wasm, `ninja -C
 build/wasm`), node, PUPPETEER_PATH (a puppeteer-core install) and CHROME.

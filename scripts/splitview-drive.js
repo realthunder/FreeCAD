@@ -8,7 +8,8 @@
 // of that needs a scene, so the page is opened with no document served
 // and the layout is read off the DOM: the cells, the frames of the drag
 // under way (.fc-split-frame, data-kind) and what the drag is
-// (.fc-split-root, data-op).
+// (.fc-split-root, data-op). A split that cannot be has no frame: the
+// document has the class fc-split-forbidden, which is the cursor.
 //
 // Usage:  node scripts/splitview-drive.js <url of fcviewer.html> <result.json>
 // Needs PUPPETEER_PATH (a puppeteer-core install) and CHROME.
@@ -57,7 +58,8 @@ const near = (a, b, slack = 2) => Math.abs(a - b) <= slack;
         const r = el.getBoundingClientRect();
         return {kind: el.dataset.kind, x: Math.round(r.left), y: Math.round(r.top),
                 w: Math.round(r.width), h: Math.round(r.height),
-                sign: !!el.querySelector('.fc-split-stop'),
+                cross: !!el.querySelector('.fc-split-cross'),
+                clip: getComputedStyle(el).clipPath,
                 plus: !!el.querySelector('.fc-split-plus')};
       }),
     }));
@@ -193,9 +195,9 @@ const near = (a, b, slack = 2) => Math.abs(a - b) <= slack;
     await page.mouse.move(limit + 120, border.y, {steps: 3});
     await sleep(150);
     f = await frames();
-    check('close: dragged well past it, the cell is shown as going under a stop sign, '
+    check('close: dragged well past it, the cell is shown as going, crossed out, '
           + 'the other framed over both',
-          f.op === 'close' && kinds(f) === 'kept,going' && f.list[1].sign
+          f.op === 'close' && kinds(f) === 'kept,going' && f.list[1].cross
           && near(f.list[0].w, whole.w) && near(f.list[1].x, cs[1].x)
           && near(f.list[1].w, cs[1].w), f);
     check('close: nothing is closed while the button is down', (await cells()).length === 2);
@@ -217,44 +219,65 @@ const near = (a, b, slack = 2) => Math.abs(a - b) <= slack;
       from = zone(cs[0]);
       await drag(from, {x: cs[1].x + Math.round(cs[1].w / 2), y: from.y + 80});
       f = await frames();
-      check('join: the cell that stays is framed over both, the other is going under a stop sign',
+      check('join: the cell that stays is framed over both, the other is going, crossed out',
             f.op === 'join' && kinds(f) === 'kept,going' && near(f.list[0].w, whole.w)
-            && near(f.list[1].x, cs[1].x) && f.list[1].sign, f);
+            && near(f.list[1].x, cs[1].x) && f.list[1].cross, f);
       const going = await page.evaluate(() => {
         const el = document.querySelector('.fc-split-frame-going');
         const s = getComputedStyle(el);
-        const svg = el.querySelector('.fc-split-stop').getBoundingClientRect();
-        return {background: s.backgroundColor, border: s.borderTopWidth, sign: Math.round(svg.width)};
+        return {background: s.backgroundColor, border: s.borderTopWidth,
+                borderColor: s.borderTopColor};
       });
-      check('join: the cell that goes has no cover and no frame of its own',
-            /rgba\(0, 0, 0, 0\)/.test(going.background) && going.border === '0px', going);
-      check('join: the sign is big, 28 to 96 px across', going.sign >= 28 && going.sign <= 96,
-            going.sign);
+      check('join: the cell that goes is framed red',
+            /rgba\(200, 40, 40, 0\.27\)/.test(going.background) && going.border === '2px'
+            && /rgb\(200, 40, 40\)/.test(going.borderColor), going);
+      check('join: the face of the frame of the cell that stays is left off it',
+            /inset\(0px [0-9.]+px 0px 0px\)/.test(f.list[0].clip), f.list[0].clip);
       check('join: nothing is joined while the button is down', (await cells()).length === 2);
       await release();
       check('join: released, one cell and no frames',
             (await cells()).length === 1 && (await frames()).op === '', await cells());
     }
 
-    // ---- a corner only creates: under the minimum the split is refused, and says so
+    // ---- a corner only creates: under the minimum a split is a forbidden cursor and a
+    // message at each turn of the cursor, no frame
     await page.setViewport({width: 520, height: 420});
     await sleep(600);
     cs = await cells();
     from = zone(cs[0]);
-    errors.length = 0;
-    await drag(from, {x: from.x - 200, y: from.y + 20});
-    f = await frames();
-    check('refusal: a corner drag that would leave a cell under the minimum shows it refused',
-          f.op === 'split' && kinds(f) === 'refused', f);
-    await release();
-    const said = await page.evaluate(() => {
+    const forbidden = () => page.evaluate(
+      () => document.documentElement.classList.contains('fc-split-forbidden'));
+    const cursor = () => page.evaluate(() => {
+      const el = document.elementFromPoint(260, 210) || document.body;
+      return getComputedStyle(el).cursor;
+    });
+    const saidNow = () => page.evaluate(() => {
       const el = document.querySelector('.fc-split-note');
       return el ? el.textContent : '';
     });
-    check('refusal: the release splits nothing and closes nothing', (await cells()).length === 1);
-    check('refusal: ... and says why, on the page and as an error',
-          /is not split/.test(said) && errors.some(e => /is not split/.test(e)),
-          {said, errors: errors.slice(0, 3)});
+    const refusals = () => errors.filter(e => /is not split/.test(e)).length;
+    errors.length = 0;
+    await drag(from, {x: from.x - 200, y: from.y + 20});
+    f = await frames();
+    check('refusal: a corner drag that would leave a cell under the minimum shows no frame',
+          f.op === '' && f.list.length === 0, f);
+    check('refusal: ... the cursor is the forbidden one, wherever the pointer is',
+          (await forbidden()) && (await cursor()) === 'not-allowed', await cursor());
+    check('refusal: ... and the reason is said at once, on the page and as an error',
+          /is not split/.test(await saidNow()) && refusals() === 1,
+          {said: await saidNow(), refusals: refusals()});
+    await page.mouse.move(from.x - 2, from.y + 2, {steps: 3});
+    await sleep(120);
+    check('refusal: back where it was pressed the cursor is no longer the forbidden one',
+          !(await forbidden()));
+    await page.mouse.move(from.x - 200, from.y + 20, {steps: 3});
+    await sleep(120);
+    check('refusal: every turn to the forbidden cursor says it once more',
+          (await forbidden()) && refusals() === 2, refusals());
+    await release();
+    check('refusal: the release splits nothing, closes nothing and says nothing more',
+          (await cells()).length === 1 && refusals() === 2 && !(await forbidden()),
+          {cells: (await cells()).length, refusals: refusals()});
   }
   catch (e) {
     check('the drive ran', false, String(e && e.stack || e).slice(0, 600));

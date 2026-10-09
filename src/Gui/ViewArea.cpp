@@ -184,7 +184,7 @@ private:
 class ViewAreaHighlight : public QWidget
 {
 public:
-    static constexpr int Width = 1;
+    static constexpr int Width = 2;
 
     explicit ViewAreaHighlight(ViewAreaCell *cell)
         : QWidget(cell)
@@ -214,11 +214,17 @@ protected:
         ViewArea *area = _cell->area();
         if (!area || area->activeCell() != _cell || area->cellCount() < 2)
             return;
+        // Subtle, and seen: the accent the drag frames have, not quite
+        // opaque, two pixels. One pixel of the palette's highlight could
+        // not be told from the border between cells under a dark theme.
         QPainter p(this);
-        QPen pen(palette().color(QPalette::Highlight));
+        QColor accent = OverlayDragFrame::accentColor(this);
+        accent.setAlpha(190);
+        QPen pen(accent);
         pen.setWidth(Width);
+        pen.setJoinStyle(Qt::MiterJoin);
         p.setPen(pen);
-        p.drawRect(rect().adjusted(0, 0, -Width, -Width));
+        p.drawRect(QRectF(rect()).adjusted(Width / 2.0, Width / 2.0, -Width / 2.0, -Width / 2.0));
     }
 
 private:
@@ -238,11 +244,11 @@ namespace {
  *     of the overlay's drag frame (OverlayDragFrame::paintFrame) -- the
  *     accent colour, see-through, inside a white border;
  *   - the cell a split makes: the same frame, and a plus;
- *   - the neighbor a join closes: no frame of its own -- the frame of
- *     the cell that stays covers its room -- and a red stop sign in the
- *     middle of it;
- *   - a split that is refused (a cell would go under the minimum size):
- *     red, crossed out.
+ *   - a cell that is closed -- a join's neighbor, the cell a border is
+ *     pushed past its minimum: a red frame, crossed out, and the face of
+ *     the frame of the cell that stays is left off it.
+ * A split that is refused shows no frame at all: the cursor says so
+ * (ViewAreaZone::armSplit).
  * What it shows is also set as dynamic properties -- "operation",
  * "frames" (rectangles) and "kinds" (words) -- which is how a test reads
  * a class that lives in this file.
@@ -299,7 +305,17 @@ protected:
             switch (frame.kind) {
             case ViewArea::DragFrame::Kept:
             case ViewArea::DragFrame::Fresh: {
+                // Over a cell that goes the red frame is the one that
+                // speaks: two faces one on the other are neither colour.
+                QRegion own(frame.rect);
+                for (const auto &other : frames) {
+                    if (other.kind == ViewArea::DragFrame::Going)
+                        own -= other.rect;
+                }
+                p.save();
+                p.setClipRegion(own);
                 Gui::OverlayDragFrame::paintFrame(p, frame.rect, accent);
+                p.restore();
                 if (frame.kind == ViewArea::DragFrame::Fresh) {
                     p.setRenderHint(QPainter::Antialiasing);
                     p.setPen(QPen(QColor(255, 255, 255, 220), 3));
@@ -308,33 +324,11 @@ protected:
                 }
                 break;
             }
-            case ViewArea::DragFrame::Going: {
-                // The cell a join closes. Nothing of its own covers it:
-                // the frame over it is that of the cell that stays. In
-                // its middle a stop sign, a red octagon in a white rim.
-                const double radius = qBound(14.0, qMin(r.width(), r.height()) / 4.0, 48.0);
-                auto octagon = [&c](double size) {
-                    QPainterPath path;
-                    for (int i = 0; i < 8; ++i) {
-                        const double a = (22.5 + 45.0 * i) * 3.14159265358979 / 180.0;
-                        const QPointF at(c.x() + size * std::cos(a), c.y() + size * std::sin(a));
-                        if (i == 0)
-                            path.moveTo(at);
-                        else
-                            path.lineTo(at);
-                    }
-                    path.closeSubpath();
-                    return path;
-                };
-                p.setRenderHint(QPainter::Antialiasing);
-                p.setPen(QPen(QColor(0, 0, 0, 160), 1));
-                p.setBrush(Qt::white);
-                p.drawPath(octagon(radius));
-                p.setPen(Qt::NoPen);
-                p.setBrush(QColor(204, 20, 20));
-                p.drawPath(octagon(radius * 0.86));
-                break;
-            }
+            // A cell that is closed, and (not shown any more, see
+            // armSplit) a split that is refused: red, crossed out. "I
+            // feel this hints more like a close" -- it was the refusal's
+            // look, and a stop sign the closing cell's.
+            case ViewArea::DragFrame::Going:
             case ViewArea::DragFrame::Refused: {
                 const QColor red(200, 40, 40);
                 QColor fill = red;
@@ -1103,7 +1097,8 @@ void ViewAreaZone::mouseReleaseEvent(QMouseEvent *ev)
     }
     ViewAreaCell *target = _joinTarget;
     ViewArea *area = _cell->area();
-    const bool split = _splitArmed;
+    // a refused split has said so already, when the cursor turned
+    const bool split = _splitArmed && !_splitRefused;
     const Qt::Orientation orientation = _splitOrientation;
     const int at = _splitAt;
     endDrag();
@@ -1111,8 +1106,6 @@ void ViewAreaZone::mouseReleaseEvent(QMouseEvent *ev)
         area->closeCell(target);
     }
     else if (split) {
-        // Refused or not, splitCell answers: it is where the minimum
-        // cell size is kept, and where the refusal is said.
         area->splitCell(_cell, orientation, nullptr, at);
     }
     ev->accept();
@@ -1121,9 +1114,9 @@ void ViewAreaZone::mouseReleaseEvent(QMouseEvent *ev)
 void ViewAreaZone::armJoin(ViewAreaCell *target, Qt::Orientation axis, bool after)
 {
     _joinTarget = target;
-    // One frame: the cell that stays, over the room it will have, which
-    // takes in the cell that goes. That one has no frame of its own; it
-    // is listed for the stop sign drawn in its middle.
+    // The cell that stays, over the room it will have, which takes in
+    // the cell that goes; and that one, which is drawn red and crossed
+    // out.
     ViewArea *area = _cell->area();
     const QRect source(_cell->mapTo(area, QPoint(0, 0)), _cell->size());
     const QRect going(target->mapTo(area, QPoint(0, 0)), target->size());
@@ -1151,14 +1144,33 @@ void ViewAreaZone::armSplit(const QPoint &global, const QPoint &delta)
     _splitOrientation = (qAbs(delta.x()) >= qAbs(delta.y()))
         ? Qt::Horizontal : Qt::Vertical;
     const auto frames = area->splitFrames(_cell, _splitOrientation, global, &_splitAt);
-    _splitRefused = (frames.size() == 1);
-    area->showDragFrames("split", frames);
+    const bool refused = (frames.size() == 1);
+    if (refused) {
+        // A split that cannot be: no frame, the forbidden cursor, and the
+        // reason said the moment the cursor turns -- at every turn from
+        // the splitting cursor to this one, so once for a drag that stays
+        // refused. (It was a red frame, crossed out; that look now means
+        // a cell that is closed.)
+        area->hideDragFrames();
+        if (!_splitRefused) {
+            setCursor(Qt::ForbiddenCursor);
+            area->reportRefusedSplit(_cell, _splitOrientation, true);
+        }
+    }
+    else {
+        if (_splitRefused)
+            setCursor(Qt::CrossCursor);
+        area->showDragFrames("split", frames);
+    }
+    _splitRefused = refused;
 }
 
 void ViewAreaZone::disarmSplit()
 {
     if (_splitArmed)
         _cell->area()->hideDragFrames();
+    if (_splitRefused)
+        setCursor(Qt::CrossCursor);
     _splitArmed = false;
     _splitRefused = false;
 }
@@ -1542,24 +1554,34 @@ bool ViewArea::canSplitCell(const ViewAreaCell *cell, Qt::Orientation orientatio
     // the new) view" is not to fall below the limit.
     if ((along - ViewAreaSplitter::HandleWidth) / 2 >= least && across >= least)
         return true;
-    if (report) {
-        // Said once for a refusal, as an ERROR -- a line of warning in the
-        // report view was not seen by the one whose drag did nothing; an
-        // error is shown by the notification area as well. (Not a
-        // translated message for the user alone: the report view takes
-        // none of those.) Once in a while only: a gesture asks again at
-        // every release, a script in a loop.
-        static QElapsedTimer last;
-        if (!last.isValid() || last.elapsed() > 5000) {
-            last.start();
-            Base::Console().Error(
-                "A view of %d x %d is not split %s: no view cell is made smaller than "
-                "%d x %d (the minimum view cell size, in the preferences).\n",
-                cell->width(), cell->height(), horiz ? "side by side" : "top and bottom",
-                least, least);
-        }
-    }
+    if (report)
+        reportRefusedSplit(cell, orientation, false);
     return false;
+}
+
+void ViewArea::reportRefusedSplit(const ViewAreaCell *cell, Qt::Orientation orientation,
+                                  bool always) const
+{
+    if (!cell)
+        return;
+    // Said as an ERROR -- a line of warning in the report view was not
+    // seen by the one whose drag did nothing; an error is shown by the
+    // notification area as well. (Not a translated message for the user
+    // alone: the report view takes none of those.)
+    //
+    // A corner drag says it each time its cursor turns to the forbidden
+    // one (`always`). A command or a view opening by itself says it once
+    // in a while only: a script asks in a loop.
+    static QElapsedTimer last;
+    if (!always && last.isValid() && last.elapsed() <= 5000)
+        return;
+    last.start();
+    const int least = static_cast<int>(OpenViewParams::getMinimumCellSize());
+    Base::Console().Error(
+        "A view of %d x %d is not split %s: no view cell is made smaller than "
+        "%d x %d (the minimum view cell size, in the preferences).\n",
+        cell->width(), cell->height(),
+        orientation == Qt::Horizontal ? "side by side" : "top and bottom", least, least);
 }
 
 QList<ViewArea::DragFrame> ViewArea::splitFrames(ViewAreaCell *cell,

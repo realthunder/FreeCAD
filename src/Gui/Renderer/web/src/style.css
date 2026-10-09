@@ -601,26 +601,28 @@
     linear-gradient(#fff, #fff) center / 3px 100% no-repeat;
   opacity: 0.86;
 }
-/* A cell that is closed -- a join's neighbor, a border's victim: no
-   frame and no dim of its own, the frame over it is that of the cell that
-   stays. A red stop sign in its middle. */
-.fc-split-stop,
-.fc-split-cross {
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  transform: translate(-50%, -50%);
-}
-/* A split that is refused: a cell would go under the minimum size. */
-.fc-split-frame-refused {
+/* A cell that is closed -- a join's neighbor, a border's victim: red,
+   crossed out. (This was a refused split's look, and the closing cell had
+   a stop sign: "I feel this hints more like a close".) */
+.fc-split-frame-going {
   background: rgba(200, 40, 40, 0.27);
   border: 2px solid #c82828;
 }
 .fc-split-cross {
+  position: absolute;
+  left: 50%;
+  top: 50%;
   width: 56px;
   height: 56px;
+  transform: translate(-50%, -50%);
 }
-/* The reason of a refusal, said once. */
+/* A split that cannot be -- a cell would go under the minimum size: no
+   frame, the forbidden cursor wherever the pointer is. */
+html.fc-split-forbidden,
+html.fc-split-forbidden * {
+  cursor: not-allowed !important;
+}
+/* The reason of a refusal, said when the cursor turns. */
 .fc-split-note {
   position: absolute;
   left: 50%;

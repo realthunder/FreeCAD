@@ -55,8 +55,9 @@ const clampRatio = (r: number) =>
 
 /// What a drag under way will do, drawn over the cells it changes
 /// (ViewArea::DragFrame): a cell that stays at the size it will have,
-/// the cell a split makes, a cell that is closed, a split refused.
-type FrameKind = 'kept' | 'fresh' | 'going' | 'refused';
+/// the cell a split makes, a cell that is closed (red, crossed out). A
+/// split that is refused has no frame: the cursor says so.
+type FrameKind = 'kept' | 'fresh' | 'going';
 interface Frame {
   x: number; y: number; w: number; h: number;
   kind: FrameKind;
@@ -328,14 +329,11 @@ export function SplitOverlay() {
 
   const showFrames = (op: string, list: Frame[]) => setFrames({ op, list });
 
-  /// Said once for a refusal, not more than once in five seconds --
-  /// the desktop's wording (ViewArea::canSplitCell).
-  let lastRefusal = 0;
+  /// A split that cannot be: said the moment the cursor turns to the
+  /// forbidden one, at every such turn -- the desktop's wording
+  /// (ViewArea::reportRefusedSplit).
   let noteTimer: number | undefined;
   const refuse = (rect: CellRect, dir: 'h' | 'v') => {
-    const now = Date.now();
-    if (now - lastRefusal < 5000) return;
-    lastRefusal = now;
     const text = `A view of ${Math.round(rect.w)} x ${Math.round(rect.h)} `
       + `is not split ${dir === 'h' ? 'side by side' : 'top and bottom'}: `
       + `no view cell is made smaller than ${MIN_CELL} x ${MIN_CELL} `
@@ -345,6 +343,12 @@ export function SplitOverlay() {
     window.clearTimeout(noteTimer);
     noteTimer = window.setTimeout(() => setNote(''), 6000);
   };
+
+  /// The cursor of a split that cannot be, wherever the pointer is: the
+  /// elements under it have cursors of their own, so it is a class on
+  /// the document that overrules them all.
+  const forbid = (on: boolean) =>
+    document.documentElement.classList.toggle('fc-split-forbidden', on);
 
   /// One drag: `onMove` works out what the release would do and shows
   /// it, `onCommit` does it. The listeners are on the WINDOW, not the
@@ -366,6 +370,7 @@ export function SplitOverlay() {
       window.removeEventListener('blur', abort);
       document.removeEventListener('visibilitychange', abort);
       showFrames('', []);
+      forbid(false);
       if (commit) onCommit();
     };
     const abort = () => finish(false);
@@ -418,8 +423,16 @@ export function SplitOverlay() {
     if (!rect) return;
     const startX = ev.clientX;
     const startY = ev.clientY;
-    let split: { dir: 'h' | 'v'; at: number; refused: boolean } | null = null;
+    let split: { dir: 'h' | 'v'; at: number } | null = null;
     let join: CellNode | null = null;
+    let refused = false;
+    /// The cursor follows whether the split under way can be; the turn
+    /// TO the forbidden one says why, each time.
+    const setRefused = (now: boolean, dir: 'h' | 'v') => {
+      if (now && !refused) refuse(rect, dir);
+      if (now !== refused) forbid(now);
+      refused = now;
+    };
     const onMove = (mv: PointerEvent) => {
       split = null;
       join = null;
@@ -432,6 +445,7 @@ export function SplitOverlay() {
       if (inside) {
         // Back at the press point: nothing armed.
         if (Math.abs(dx) + Math.abs(dy) < THRESHOLD) {
+          setRefused(false, 'h');
           showFrames('', []);
           return;
         }
@@ -440,15 +454,16 @@ export function SplitOverlay() {
         const across = dir === 'h' ? rect.h : rect.w;
         // Both halves, and the side the new cell inherits.
         if (MIN_CELL > 0 && (along / 2 < MIN_CELL || across < MIN_CELL)) {
-          split = { dir, at: 0, refused: true };
-          showFrames('split', [{ x: rect.x, y: rect.y, w: rect.w, h: rect.h,
-                                 kind: 'refused' }]);
+          // No frame: the forbidden cursor, and the reason.
+          setRefused(true, dir);
+          showFrames('', []);
           return;
         }
+        setRefused(false, dir);
         const least = MIN_CELL > 0 ? MIN_CELL : along * MIN_RATIO;
         const at = Math.min(along - least, Math.max(
           least, dir === 'h' ? px - rect.x : py - rect.y));
-        split = { dir, at, refused: false };
+        split = { dir, at };
         showFrames('split', dir === 'h'
           ? [{ x: rect.x, y: rect.y, w: at, h: rect.h, kind: 'kept' },
              { x: rect.x + at, y: rect.y, w: rect.w - at, h: rect.h,
@@ -460,6 +475,7 @@ export function SplitOverlay() {
       }
       // Outward: a join that consumes the neighbor the cursor entered;
       // dragging back disarms.
+      setRefused(false, 'h');
       let dir: 'h' | 'v';
       let after: boolean;
       if (px >= rect.x + rect.w) { dir = 'h'; after = true; }
@@ -473,8 +489,8 @@ export function SplitOverlay() {
         return;
       }
       join = target;
-      // One frame: the cell that stays, over the room of both. The one
-      // that goes has no frame of its own; it is listed for its sign.
+      // The cell that stays, over the room of both, and the one that
+      // goes, red and crossed out.
       const x0 = Math.min(rect.x, going.x);
       const y0 = Math.min(rect.y, going.y);
       const x1 = Math.max(rect.x + rect.w, going.x + going.w);
@@ -484,8 +500,8 @@ export function SplitOverlay() {
         { x: going.x, y: going.y, w: going.w, h: going.h, kind: 'going' }]);
     };
     const onCommit = () => {
+      // a refused split has said so already, when the cursor turned
       if (join) closeCell(join);
-      else if (split && split.refused) refuse(rect, split.dir);
       else if (split)
         splitCell(cell, split.dir,
                   split.at / (split.dir === 'h' ? rect.w : rect.h));
@@ -628,18 +644,21 @@ export function SplitOverlay() {
 
   const multi = () => !root().cell;
 
-  /// The stop sign of a cell that goes: a red octagon in a white rim,
-  /// a quarter of the cell's smaller side from middle to corner.
-  const signSize = (f: Frame) =>
-    2 * Math.min(48, Math.max(14, Math.min(f.w, f.h) / 4));
-  const octagon = (radius: number) => {
-    const pts: string[] = [];
-    for (let i = 0; i < 8; ++i) {
-      const a = (22.5 + 45 * i) * Math.PI / 180;
-      pts.push(`${(24 + radius * Math.cos(a)).toFixed(2)},`
-               + `${(24 + radius * Math.sin(a)).toFixed(2)}`);
-    }
-    return pts.join(' ');
+  /// A kept frame's face leaves the room of a cell that goes to that
+  /// cell's own red frame: two faces one on the other are neither
+  /// colour. The going cell lies along one side of the kept frame.
+  const clipOf = (f: Frame): string | undefined => {
+    if (f.kind !== 'kept') return undefined;
+    const g = frames().list.find((o) => o.kind === 'going');
+    if (!g) return undefined;
+    const top = Math.max(0, g.y + g.h - f.y);
+    const left = Math.max(0, g.x + g.w - f.x);
+    const bottom = Math.max(0, f.y + f.h - g.y);
+    const right = Math.max(0, f.x + f.w - g.x);
+    const across = g.w >= f.w - 1;    // one above the other
+    if (across)
+      return g.y <= f.y + 1 ? `inset(${top}px 0 0 0)` : `inset(0 0 ${bottom}px 0)`;
+    return g.x <= f.x + 1 ? `inset(0 0 0 ${left}px)` : `inset(0 ${right}px 0 0)`;
   };
 
   return (
@@ -695,18 +714,10 @@ export function SplitOverlay() {
           <div class={`fc-split-frame fc-split-frame-${f.kind}`}
                data-kind={f.kind}
                style={{ left: `${f.x}px`, top: `${f.y}px`,
-                        width: `${f.w}px`, height: `${f.h}px` }}>
+                        width: `${f.w}px`, height: `${f.h}px`,
+                        'clip-path': clipOf(f) }}>
             {f.kind === 'fresh' && <div class="fc-split-plus" />}
             {f.kind === 'going' && (
-              <svg class="fc-split-stop" viewBox="0 0 48 48"
-                   style={{ width: `${signSize(f)}px`,
-                            height: `${signSize(f)}px` }}>
-                <polygon points={octagon(23.5)} fill="#fff"
-                         stroke="rgba(0,0,0,0.63)" stroke-width="0.6" />
-                <polygon points={octagon(20.2)} fill="#cc1414" />
-              </svg>
-            )}
-            {f.kind === 'refused' && (
               <svg class="fc-split-cross" viewBox="0 0 48 48">
                 <path d="M8 8L40 40M40 8L8 40" fill="none"
                       stroke="#c82828" stroke-width="5"

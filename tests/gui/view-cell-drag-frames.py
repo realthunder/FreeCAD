@@ -31,7 +31,8 @@ gestures with the minimum cell size set to 200, to have room in it):
             is framed over both, the other is "going"; released, one cell
             less;
   minimum - with one cell left and the minimum cell size above half of it
-            either way: the drag shows one "refused" frame, the release splits nothing, the split
+            either way: the drag shows no frame and the forbidden cursor
+            (entry 56, as changed), the release splits nothing, the split
             command splits nothing, the refusal is in the report view once
             for all of them, and a spreadsheet opened then goes to a tab;
   chrome  - a corner zone under the cursor is painted on an opaque ground,
@@ -348,9 +349,9 @@ def minimum_scenario():
         cell = cells()[0]
         drag = Drag(zone(cell)).to(-150, 10)
         op, fr, kinds = frames()
-        check("minimum: the drag shows one frame, refused, over the cell",
-              op == "split" and kinds == ["refused"] and fr == [place(cell)],
-              (op, kinds, show(fr)))
+        check("minimum: the drag shows no frame, and the forbidden cursor",
+              op == "" and zone(cell).cursor().shape() == Qt.ForbiddenCursor,
+              (op, kinds, zone(cell).cursor().shape()))
         drag.release()
         check("minimum: the release splits nothing", len(rects()) == len(before), show(rects()))
         view3d = FreeCADGui.getDocument(DOC).mdiViewsOfType("Gui::View3DInventor")[0]

@@ -321,6 +321,13 @@ public:
      */
     bool canSplitCell(const ViewAreaCell *cell, Qt::Orientation orientation,
                       bool report = false) const;
+    /** Say that \a cell is not split along \a orientation for the
+     * minimum cell size, as an error. With \a always, at once -- a
+     * corner drag says it each time its cursor turns to the forbidden
+     * one; without, not more than once in five seconds.
+     */
+    void reportRefusedSplit(const ViewAreaCell *cell, Qt::Orientation orientation,
+                            bool always) const;
 
     /** Replace \a cell's content with \a view -- the Blender "switch
      * the area's editor" operation. The old child goes through its
