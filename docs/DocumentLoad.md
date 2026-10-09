@@ -3022,7 +3022,7 @@ through a fifth of a second after it last did
   accord -- for a pre-mesh, for a document still loading -- is not a
   backlog, and the turn after it is one budget.
 - *What a turn yields is not its time.* The progress bar's pump is a
-  `TurnPace::Yield`. `Turn::elapsed()` leaves it out, and both drains
+  `TurnPace::Yielded`. `Turn::elapsed()` leaves it out, and both drains
   and the pump measure their slice by that. The drains' closing lines
   ("... slices, ... s, longest ... s") say work now, where they said
   work and the frames drawn inside it.
@@ -3316,7 +3316,7 @@ the figure. One run; it is a stress import and was not repeated.
 | frames inside the call | 147 frame lines, 96 of them a second or more after the one before, 11 of them 3 s or more; 107 s between two frames at the longest |
 | shapes drawn as bounding boxes | 177, 60 of them meshed inside the call, 175 by the end of the run |
 | the landing pump | 721 items in 47 s, its worst turn 2.3 s |
-| a settled frame (the camera rolled for 15 s) | 0.56 s a step, 0.45 s by the renderer's line; 2339 draws, 36.8 million triangles. Under WSL: see below |
+| a settled frame (the camera rolled for 15 s) | 0.56 s a step, 0.45 s by the renderer's line; 2339 draws, 36.8 million triangles. That is WSL's display path: 0.063 s natively, see below |
 
 - **The import is the wait, not the window.** Nine minutes and forty
   seconds in the call, during which the event loop is served (7.5 s at
@@ -3348,10 +3348,41 @@ the figure. One run; it is a stress import and was not repeated.
   - *Nor is it the triangles alone.* At 65 ms for 12.8 million with the
     card under half used, 36.8 million would be some 190 ms, not 453.
     The import was timed in a window of the desktop (WSLg) at 1498x677;
-    sec 18.14 found a cost by the window's size on this path. Which part
-    of it the 372 ms are -- the translation to D3D12, the window's way
-    to the screen, something of ours that no timer covers -- was not
-    measured. A native build is where it can be told apart.
+    sec 18.14 found a cost by the window's size on this path.
+  - *It is the WSL path, and neither the renderer nor the model.* The
+    same import repeated on the Windows side of this laptop (2026-10-10,
+    by the session working there; one run, the same three commits, an
+    empty configuration, a window of 1920x1061 with a view of 1500x671,
+    the driver's own modules loaded and `nvidia-smi` at 21 to 53 per
+    cent for the 15 s of the roll and 0 to 1 around it):
+
+    | a settled frame | under WSL | native |
+    |---|---|---|
+    | draws / triangles | 2339 / 36.8 M | 2323 / 36.4 M |
+    | the frame | 453 ms | **62.8 ms** |
+    | this renderer's C++ and `bgfx::frame` together | 78 ms | 60.7 ms |
+    | `bgfx::frame` | 24.6 ms | 21.3 ms |
+    | the GPU, by the driver's own timer | not reported | 25.2 ms |
+    | outside the renderer | 375 ms | 2.1 ms |
+    | of that, in no timer | 372 ms | 1.2 ms |
+    | steps of the roll in 15 s | 40, median 0.557 s | 237, median 0.063 s |
+
+    What this renderer does is the same 60 to 78 ms on both sides. The
+    372 ms are spent after the frame is handed over, on the way from
+    Mesa's D3D12 driver through WSLg to the screen, and a native driver
+    does not have them. Which step of that way it is was not taken
+    apart. Two differences that are not the reason: bgfx runs on
+    Direct3D 11 there and composes by a readback of 0.8 ms a frame,
+    where it draws into Qt's GL context here.
+  - **So a frame time taken on this box is not what the user will see
+    on a native driver**, and every settled frame of sec 18.12 to 18.18
+    is to be read with that beside it. The LOAD figures -- what a slice,
+    an upload or a release costs -- were not repeated natively.
+  - The native import itself: the call returned after 712.9 s, under a
+    debugger and so not to be set against the 581.5 s here; 10.9 GB of
+    working set at the most; the event loop served within 8.8 s inside
+    the call; 182 shapes drawn as boxes, 176 meshed by the end; the
+    landing pump's worst turn 2.5 s.
 - **One turn of the landing pump took 2.3 s**: a single landing is one
   item (sec 18.13), and this file has shapes large enough for one to
   cost that.
