@@ -159,6 +159,24 @@ On `6073d32437` (entries 61 and 66 with it): ctest 790 of 790. The GUI
 tests run by hand on that build are named under the two entries, 171
 claims in twelve tests, no FAIL.
 
+The session of 2026-10-09, night (the reporter, about 22:25: "continue as
+planned. also one more request. change techdraw bgfx rendering to support
+fractional line width, but make sure the highlight shows the same width").
+The plan is the reporter's four of 22:15 -- the icon, "Apply all", the light
+handle with the manipulator, the recent items before the modes -- and the
+push and the stage wait for their word. Asked which of the three icons was
+meant (the picture had not come with the message): "A: split cube (top
+row)". Done, all five: `f5dc9027e7` (entry 62), `2649caa38f` (the widths:
+entry 61 again), `8fed56f3df` (entry 63). Local: NOT pushed, NOT staged;
+origin and the copy under test are still at `6a6fa208d6`. On the build of
+those: 18 GUI tests by hand, 300 claims, no FAIL (named under the
+entries below); five of them, 104 claims, again on the last build, the
+other thirteen one build earlier, before the handle got its colour and the
+page layer the question whether an item is hidden. Tools and results in
+`..\dl\handson\2026-10-10\q1` (the folder is a day ahead of the clock it
+was made by). Both full suites were started on the last build after the GUI
+tests; their result is the next thing written here.
+
 Evidence that does not belong in the repository is under
 `..\dl\handson\<date>\`, as before.
 
@@ -203,9 +221,9 @@ Evidence that does not belong in the repository is under
 | 65 | STAGED 2026-10-09 17:36, fixed `6a6fa208d6` | the path tracer's frame is an uploaded image drawn with a render target's texture coordinate, which is turned over on every backend but OpenGL: upside down on Direct3D, the Windows default. The fragment shader takes the turn back out. Found by reading by the note-taking session; confirmed and scored by a picture |
 | 64 | FIXED `66ccd277b9`, in its shader as asked; a second defect found on the way FIXED `dfdfc04c5c`; not pushed, not staged | the pass reads one normal a pixel after the scene is resolved, so a crease was a band every pixel was in or out of. It now reads each neighbour's normal as the average over its pixel, the crease placed within the pixel from the two faces' planes: along a straight crease the middle of the darkening strayed 0.18 to 0.26 px rms from its line and strays 0.01 to 0.04, with the same weight of line. On the way: under an orthographic camera the creases of whatever lay near the camera dropped out (the depth test was a fraction of the depth); they are whole now |
 | 66 | MEASURED; the freeze FIXED `6073d32437`, not pushed, not staged; the first opening and what a reset costs under a theme measured and NOT changed, for the reporter | the freeze is not the reset but the dialog being destroyed, which a reset, OK and Cancel all bring about: each of its 11 to 17 file choosers had a file system model with a thread of its own, and the destruction waited on every one -- 11 to 59 s when the dialog was closed within half a minute of opening. One model for all, made when a line is first typed into: 0.0 to 0.9 s. The first opening is 3.5 s for 1.6 to 2.4 later (the Material library read once, 1.8 s; showing 2600 widgets under a theme, 1.2 s) |
-| 61 | FIXED `f7408b1f9f`, not pushed, not staged | the backend drew an edge at the width asked for, 0.35 mm, where Qt cuts the pen to whole tenths, 0.3; and the highlight, read off the Qt item, was the thinner of the two. Edges, cut face outlines and centre marks are fed at Qt's width. Scored with Qt as the reference and the backend switched: 10 PASS and 4 FAIL on the staged copy, 14 PASS |
-| 62 | DONE `9d354a8c44`, not pushed, not staged; four choices of mine for the reporter | the box comes up with the items last confirmed in it below the three modes -- a command run, a parameter or a property opened, an object selected -- ten at most, the newest first, each once, gone when more is typed, carried out again when picked. Kept between sessions; what cannot be found now is left out; the desktop box only |
-| 63 | DONE `b20c825573`, not pushed, not staged; the ICON not chosen (three drawn and turned down, references from other programs shown); the light's direction to be redone with the Coin light manipulator, next session, on the reporter's word | the menu has the style as one combo box with icons, the anti-aliasing as another, and a Lights section in place of the Light Sources preference page: a change is stored in the active view's properties, or in every open view's with "All views" ticked; "Save as default" writes the preferences; "Direction" turns the headlight by a drag in the view |
+| 61 | REVERSED on the reporter's word, `2649caa38f`, not pushed, not staged: the widths asked for, and the highlight its line's | first (`f7408b1f9f`) the backend was fed Qt's cut widths, 0.35 mm as 0.3, so that the highlight, read off the Qt item's pen, was not the thinner of the two. Now the other way: every line at the width asked for, fractions included; a captured item's width is taken off the item and not its pen; and an edge that is lit is left out of the drawing under its highlight |
+| 62 | DONE `9d354a8c44`; the recent items BEFORE the modes `f5dc9027e7`, as the reporter decided; not pushed, not staged; four choices of mine still with the reporter | the box comes up with the items last confirmed in it -- a command run, a parameter or a property opened, an object selected -- ten at most, the newest first, above the three modes, and ON the first of them: Return on a box just brought up repeats the last item |
+| 63 | DONE `b20c825573`, and the reporter's three changes `8fed56f3df`; not pushed, not staged; for the reporter to try: the menu as a popup, and the handle by hand | the menu has the style as a combo, the anti-aliasing and the lights. Since: the tool button wears the split cube; "Apply all" is a button that copies the active view's lights to the other views once; "Direction" raises Coin's light dragger in the view, drawn over the model, asked before the navigation |
 | 60 | STAGED 2026-10-09 16:42, fixed `d6f640f4ee` | whenever closing a cell un-nested a splitter: the surviving cell was moved up with `QSplitter::replaceWidget`, which takes it out of the window on the way, and a `QOpenGLWidget` that leaves its window is composed from nothing until its next resize. The view was drawn right all along; only the screen was black. The cell tree is rebuilt without a cell leaving the window |
 | 45 | FIXED `c7fdcf3220`, pushed 2026-10-08, not staged | a spreadsheet's view provider made its view when it was only asked whether it had one: one click on a sheet in the tree opened it. Asking is a question now, and a new request opens the view for the three callers that host it. Show-in-cell also took a stale cell and closed another sheet's view; it takes the active view's cell |
 
@@ -4186,3 +4204,167 @@ menu left behind went on saying otherwise.)
 **Not run:** the browser viewer (it has no such menu); a document saved and
 reopened with a view's own lights (the properties are ordinary dynamic
 properties of the view, and the views already restored `Light_*`).
+
+## 62, again. The recent items before the three modes -- DONE `f5dc9027e7`, not staged
+
+The reporter, 22:15: "omni search recent items come before the three modes".
+
+The list is the recent items and then the modes. **And the box comes up on
+the first recent item**, so Return on a box just brought up carries out
+again what was confirmed last -- which is what the order was asked for, by
+my reading, and which the order alone does not give: the first build of it
+came up on the `/ ` row, under a recent command. The completer puts its
+current row on the first row that BEGINS with what is typed, and a command's
+title does not begin with a slash. So Return picked the object mode, and
+the test's picks landed a row off. The chooser sets the row itself now when
+a recent item leads (`OmniSearchEdit::onTextEdited`).
+
+With nothing confirmed yet the box is as it was: the three modes, the first
+of them current.
+
+**Scored.** `omni-search-recent-items.py` 18 PASS (three FAIL on the first
+build, as said); the other omni search tests, no FAIL:
+`omni-search-slash-word.py` 10, `omni-search-highlighted-row.py` 20,
+`omni-search-first-bring-up.py` 8, `python-settings-door.py` 10.
+
+**Still with the reporter:** points 1 to 4 of the entry (kept between
+sessions; what cannot be found is left out; once each; the desktop only).
+
+## 61, again. Fractional widths, and the highlight its line's -- DONE `2649caa38f`, not staged
+
+The reporter, about 22:25: "change techdraw bgfx rendering to support
+fractional line width, but make sure the highlight shows the same width".
+The other way from what entry 61 decided ("better make it the same as qt
+renderer, whcih is thinner"), and with the reason for that decision kept:
+the highlight.
+
+**What is drawn now.**
+- An edge, the outline of a cut face and a centre mark at the width ASKED
+  for: 0.35 mm is 0.35, where the Qt page has 0.3. A line asked for at no
+  width is a hairline, as before.
+- Everything captured off a Qt path item -- dimension lines, arrows, section
+  lines, leaders, and the highlights -- takes its width off the ITEM, which
+  knows what it was asked for, and not off its pen, which has it cut to a
+  whole number (`capturePrimPath`). So those have their fractional widths
+  too, which they did not have even before entry 61.
+- The highlight of an edge is that edge captured in the highlight's colour:
+  the same width by construction. And while an edge is lit, the edge under
+  it is left out of the drawing. The first build did not do that and
+  measured 0.30 px of ink that was neither paper nor highlight beside a
+  selected line: two strokes of one width, one over the other, and the dark
+  one comes through the soft edge of the other. A new switch of the page
+  layer does it (`Render::Page2D::setItemHidden`): the host's own state of
+  its page, not on the wire, undone by feeding the item again.
+
+**Left as it was, my choice:** the DASHES. They are still counted as Qt
+counts them, in the width Qt's pen has (0.3 for a 0.35 line), so a dashed
+line has the same dashes in the same places whichever of the two draws the
+page -- entry 36's point -- and is only as much wider as was asked. Counted
+in the true width a 0.35 mm hidden line would have six dashes where Qt has
+seven. For the reporter to say if that is wanted instead.
+
+**Measured** (`techdraw-page-backend-line-widths.py`, rewritten; 20 pixels
+to the millimetre):
+
+| | asked | Qt | the backend |
+|---|---|---|---|
+| a visible edge | 0.7 mm | 0.707 | 0.700 |
+| a dashed cosmetic line | 0.35 | 0.300 | 0.350 |
+| a section line | 0.35 | 0.300 | 0.350 |
+| a hidden line | 0.35 | 0.300 | 0.375 |
+| the cosmetic line selected | | 6.00 px, as the line | 7.00 px, as the line |
+| ink of another colour beside the highlight | | 0.00 px | 0.00 px (0.30 before the edge under it was left out) |
+
+The hidden line's 0.375 is the model's, not the feed's: the pocket has two
+hidden lines on each other, and the second darkens the soft edge of the
+first. (My note of last night, "a hidden line, 0.375 mm asked", was that
+misread: 0.35 is asked.) Selected it is 7.50 px for the line's 7.50.
+
+**Scored.** That test 19 PASS; `Page2DHidden_tests_run`, new, four cases
+(in the C++ suite); and on the build, no FAIL:
+`techdraw-page-backend-dashes.py` 24, `-hatch.py` 39, `-single-draw.py` 17,
+`-switch.py` 11, `techdraw-page-before-its-view-providers.py` 12,
+`techdraw-section-line-click.py` 10.
+
+**Not run:** the page streamed to a browser. It takes the same feed, so its
+edges are the widths asked for as well; it does not call the state feed, so
+nothing is hidden there. Preselection by the pointer (the test selects): it
+is the same code, an item that is "pretty", but it was not driven.
+
+## 63, again. The icon, "Apply all", the light's handle -- DONE `8fed56f3df`, not staged
+
+The reporter, 22:15: "use the below icon you designed for display style
+toolbutton icon for now. for the display style menu. change the checkbox
+'All view' to a button 'apply all' to apply to all views. do the light
+handle with manipulator". Which icon, asked at the start of this session:
+"A: split cube (top row)".
+
+**The icon.** `Std_DrawStyle` has one, the cube half solid and half wire
+(`src/Gui/Icons/Std_DrawStyle.svg`), and the tool button wears it whatever
+style the view is in. The button's tooltip still names the active style;
+the style itself shows in the menu's combo box. "For now", as said: the two
+directions offered last night are not decided by it.
+
+**"Apply all".** The check box "All views" is gone, and the setting
+`View/SyncLightSettings` with it. The button gives every OTHER open 3D view
+the lights of the active one, once; a change made afterwards is the active
+view's alone again. What is copied is what lights the active view, whoever
+says it -- the view, the preference, the light itself -- and it becomes the
+other view's own: such a view no longer follows the preferences, so "Save
+as default" pressed later does not change it. That follows from "apply to
+all views"; said here because it is not obvious.
+
+**The handle.** "Direction" raises Coin's light dragger in the active view:
+a ball with an arrow, the arrow the way the light shines, at the middle of
+the view. Drag the arrow to turn the light; the ball drags the handle
+aside. "Direction" again, or Escape in the view, takes it down. The pointer
+drag of last night is gone.
+
+The shadow light's manipulator the reporter pointed to is no longer in the
+tree -- it went with the Shadow style in August (`1175430921`) -- so it was
+rebuilt from that commit and from `SoFCDirectionalLight`, which still is.
+What it took:
+- **Seen over the model.** Coin draws it under an annotation. The backend
+  has to be FED it, as a scene-camera overlay of its own: on Direct3D, the
+  Windows default, nothing Coin draws by itself reaches the screen. (The
+  handle that "sat inside the model, unseen" last night was most likely
+  this, not the model.)
+- **Picked in front of the model.** The shadow light made the model
+  unpickable while its handle was up. Here the handle is offered the
+  pointer first, before the navigation; what it does not take goes on as
+  ever. So the camera still turns and the model is still picked with the
+  handle up -- the handle does not put the view into a mode.
+- **Its size.** The dragger sized itself from whatever traversed it, and
+  the backend's capture has no camera to size it by; the viewer sizes it
+  (a fixed part of the view) and turns it after the camera, before each
+  frame.
+- **Its colour, my choice.** The arrow is orange. The stock handle is a
+  mid grey with a grey ball; the ball is left as it is.
+
+**Scored.** `display-style-menu.py` 34 PASS: the button's icon is not one of
+the styles' and stays when the style changes; "Apply all" gives the other
+view the fill light and the intensity, stores no setting, and a change
+after it is the active view's alone; with "Direction" pressed one light
+dragger is in what the view renders and it shows in the backend's picture
+over the model; a drag of the arrow turns the headlight (the view gets a
+`Light_HeadlightDirection` of its own, 9.3 degrees from where the light was), moves no
+camera, selects nothing, and leaves the other view's light alone; Escape
+takes the handle down. Pictures: `..\dl\handson\2026-10-10\q1\entry63\`
+(`handle-up.png`, `handle-dragged.png`, `button-icon.png`). Around it, no
+FAIL: `view-settings.py` 7, `general-settings.py` 9, `entry24-decisions.py`
+13, `state-and-missed-settings.py` 21, `selection-on-top-hidden-edges.py`
+18.
+
+**For the reporter to try, since no test here can:**
+- the handle by hand: whether it is big enough and easy enough to grab, on
+  `scanner.FCStd`, in a perspective view, and in a view cell beside
+  another;
+- the menu as a popup, as before: that it stays up while a combo or a
+  slider is used, and that "Direction" and a colour swatch take it away
+  cleanly;
+- the test's pictures are the backend's own (`saveRenderDump`); the screen
+  was locked while it ran, so nothing was read off the screen itself.
+
+**Not run:** the legacy Coin rendering (render type `Legacy`), where Coin
+draws the annotation itself; a drag of the ball; the navigation styles
+other than the default with the handle up.
