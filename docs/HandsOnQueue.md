@@ -185,6 +185,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 57 | 2026-10-09 | the browser viewer's split view gets the same view cell logic as the desktop's (entries 29 and 56): drag frames, commit at the left release, cancel, the minimum cell size, the look (change request) | OPEN; nothing run |
 | 58 | 2026-10-09 | a task, "can do it later": audit every warning shown when `scanner.FCStd` is opened and recomputed, and fix what can be fixed | OPEN, for later; a first count from a kept report log: 208 warnings and 6 errors, about 15 kinds; nothing run |
 | 59 | 2026-10-09 | the program no longer opens the Start page at startup (the reporter: "the startup workbench become the PartDesign"; it used to show Start with the recent files) | FOUND by the note-taker, read and looked at in the live session, nothing changed: the startup workbench was PartDesign all along; "Reset all" removed the Start module's migration flag, so its 2024 migration ran again at the next start and switched the Start page off (`ShowOnStartup` = false). DECIDED by the reporter 13:42: "Reset all" keeps the migration's flag, as it keeps `SaveUserParameter`; not started |
+| 60 | 2026-10-09 | after a view cell is deleted, the view that expands into its room is sometimes BLACK until it is resized or its camera moved (Windows, Direct3D 11 at least) | OPEN, intermittent; nothing run |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -5131,6 +5132,33 @@ a profile whose `Mod/Start` group is cleared some other way would meet the
 same. Not part of the decision.
 Passed on to the build session, which is paused.
 
+## 60. After a view cell is deleted, the view that takes its room is sometimes black -- OPEN, intermittent
+
+**2026-10-09 13:59, reported, with the view cell points of entry 56:** "also
+at least on windows with direct3d11, delete a view sometime resulting the
+expanding old view to be black. must use resize or camera move to make it
+draw"
+A view cell is deleted; the view beside it expands into the room; sometimes
+that view is then BLACK, and stays black until the window or the cell is
+resized or the camera is moved. Seen on Windows with the Direct3D 11
+backend; "at least" -- other backends not tried.
+On the copy staged 2026-10-09 12:25 (`cc4c34356f`). Given a number of its
+own, apart from entry 56: it is the drawing, not the cells' look or
+gestures.
+
+The note-taker's reading, nothing read in the source for it: a resize or a
+camera move puts it right, so the view CAN draw at its new size -- what is
+missing is the frame after the cell grew: either no redraw is asked for
+when the room is taken over, or one is drawn before the backend's target
+has its new size and nothing asks again. Kin, possibly: entries 9 and 10 (a
+3D view slow to take a new size), entry 40's `ViewArea::removeView` (the
+path a view leaves its cell by), and entry 53 (something drawn once, too
+early, and not again).
+
+Not said yet by the reporter: how the view was deleted (a join by a corner
+drag, "Close view" in the cell menu, the border's menu); whether the black
+view was a 3D view each time; and how often.
+
 ## Inbox
 
 Notes not sorted into an entry yet. Add a line here at any time, in any words;
@@ -5138,4 +5166,4 @@ it is read before each entry is started and moved up into the table.
 
 (empty: the notes of 2026-10-06 are entries 20 to 28, those of 2026-10-07
 entries 29 to 40, those of 2026-10-08 entries 41 to 45, those of 2026-10-09
-so far entries 46 to 59)
+so far entries 46 to 60)
