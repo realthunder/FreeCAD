@@ -3158,6 +3158,145 @@ the cost where the product pays it.
   provider drain; the visual drain does not answer to it on this model.
 - All figures are Mesa's D3D12 driver under WSL (sec 18.14, last point).
 
+### 18.17 A frame takes in a bounded number of edge sets (2026-10-09)
+
+The second thing ruled for the session after sec 18.15: a load's edges
+and points released over several frames. Sec 18.14 had found it: on the
+flattened reference assembly the frame after the visual drain went from
+22557 draws to 37595, and its `bgfx::frame` was one call of 8.8 s.
+
+**What that frame was.** While a document is arriving the renderer draws
+no edge and no vertex of a shape that has faces (the load gate,
+`Render/LoadDropElements`, `docs/SceneStreaming.md` 13b). When the load
+lets go the gate lifts in one frame, and what is let through is every
+such set whose faces are EXACT by then -- an edge set is not drawn over
+faces that are still a coarse rung, load or no load. The rest come back
+as their refinements land, a pump's turn at a time. So the release is as
+large as the share of the document that is exact when the load ends: on
+the flattened assembly 14613 sets of 25379, on a document of 1200 boxes
+fitted in one view 12 of 2400 (they never ask for their exact meshes at
+that size).
+
+**What it costs** (`MiSTerFlat.FCStd` fitted, the NVIDIA card through
+Mesa's D3D12 driver, Xvfb; the readout below is new):
+
+| frame | sets taken in | their buffers | `bgfx::frame` |
+|---|---|---|---|
+| the one after the load | 14613 | 11.3 MB | 8746 ms |
+| a later one | 516 | 10.3 MB | 607 ms |
+| seven more, each | 109 to 259 | 2.3 to 3.8 MB | 249 to 474 ms |
+
+(The frames are matched to their lines by the time they were written;
+the first is beyond doubt.) 0.6 ms a set over the 250 ms such a frame
+costs with little to take in, and the megabytes do not show: what costs
+is the buffer made, not its size. A byte budget -- what the pressure latch beside it
+prices a release in -- would have been the wrong currency here.
+
+**What is.** A frame takes in a bounded number of the attached edge and
+point sets that are not on the GPU yet, in the order of the scene, holds
+the rest back and asks for the next frame (`BGFXFrame.cpp`, the walk
+after `gatedByContract`; `elemTakeInHeld`).
+
+- It is not tied to the load. Whatever lets thousands of sets through in
+  one frame is bounded: the frame after a load, a camera fitted to an
+  assembly it showed a corner of, a document opened whole.
+- *On the GPU already* is asked of the uploader (`BGFXView::
+  meshUploaded`: the entry is there and of this generation), so a set
+  that is drawn costs the bound nothing and nothing has to be remembered
+  between frames.
+- *A culled draw is left out.* It is not submitted, so it takes nothing
+  in; charged, it would spend the bound every frame on sets that never
+  arrive.
+- *One set is always taken*, whatever the bound, or a set dearer than a
+  byte bound would never be drawn.
+- *A frame that holds sets back is not a finished picture*
+  (`frameOwes`), so a capture waits for the one that is, and it asks for
+  the frame after (`animatedFrame`).
+- The bound is `Render/ElementTakeInSets`, 1000, and
+  `Render/ElementTakeInKB`, 0 = none, whichever is spent first; both 0
+  is the way it was. Set by the host (`Renderer::setElementTakeIn`); the
+  standalone viewer does not set it, its meshes come by a stream.
+- Picking, highlight and on-top draws are exempt as they are from every
+  gate there, and a wire, a sketch or a point cloud is never held: it is
+  the object.
+- Per frame it costs one walk of the scene that asks the uploader's
+  table once for each edge or point draw that is neither culled nor
+  gated. With both bounds at 0 and the level readout off the walk is not
+  made.
+
+The readout (`Render/LevelDebug`): `render levels: element take-in frame
+N: S sets M MB taken in, H held`, for every frame of a staged take-in
+and for any frame that takes in 64 sets or more, and `element take-in
+done` with the totals.
+
+**Measured**, the same load, the longest stretch the GUI thread stayed
+away from the event loop after the visual drain, and when the last held
+set was in (seconds after the open returned; the gate lifts at 30.5 to
+31.3):
+
+| a frame takes in | longest stretch away | all edges in | frames |
+|---|---|---|---|
+| everything (before) | 11.97 s | 42.4 | 1 |
+| 500 sets | 3.35 s | after the run's end, 57 | over 24 |
+| 1000 sets (the default) | 3.39 s | 55.5 | 16 |
+| 2000 sets | 3.24 s | 48.5 | 8 |
+
+The 12 s are gone at every bound, and what is left, 3.2 to 3.4 s, is
+the load's other frames (sec 18.14). The edges are all in 13 s later at
+1000 than they were: 8.7 s of driver time is spent either way, and each
+frame it is spread over costs a frame besides, about a second in that
+part of the load. 2000 is 7 s sooner through and no worse by the longest
+stretch; 1000 was taken for what one frame adds, 0.6 s on this driver
+against 1.2 s. On a driver that makes a buffer in tens of microseconds
+neither is anything.
+
+**In a window on the desktop**, the same card at 1920x1080, the view
+fitted, one load each after one thrown away:
+
+| a frame takes in | sets in the frame after the load | longest stretch away after the drain | all edges in |
+|---|---|---|---|
+| everything | 14555, 14596 | 12.9, 14.6 s | with that frame |
+| 1000 sets | 1000, 13524 held | 2.2 s | 26.6 s after the gate lifted, 17 frames |
+
+The same picture as under Xvfb, a little slower. What the window shows
+besides: with the whole assembly in view the longest stretch DURING the
+visual drain is 3.9 to 8.8 s, in both arms. Those are the faces going
+up, and they are now the longest stall of the load (see Left).
+
+**Test.** `tests/gui/element-take-in.py` (`GuiElementTakeIn_tests_run`):
+1200 boxes opened whole with every mesh exact (no progressive load,
+`CoarseTessellation` -1), so that the first frame has an edge set a box
+to draw and none uploaded; a frame allowed 100 sets. 6 checks of 6: the
+edges come in a hundred a frame over 12 frames, 10 of 11 frames asked
+while sets were held said they were not a finished picture, and the
+view comes to one. With the bound not set, 3 of 6: all 1200 in the first
+frame. **That is the before-state by construction and not a run of the
+tree before**: the change touches the renderer's interface header, so
+the old tree is not two libraries to swap in, and the bound at 0 takes
+the old path exactly but for the readout.
+
+The first form of the test loaded progressively and waited for the load
+gate to lift, and held nothing to release: its boxes were all coarse.
+That is how the second paragraph above was found.
+
+**Left.**
+
+- *The bound is a count and a constant.* It is right for a driver at
+  0.6 ms a buffer and needlessly small for one at a hundredth of that,
+  where it costs frames and nothing else. A bound that follows what the
+  last frames' take-in cost, as the turns of sec 18.16 follow the event
+  loop, is the better rule and is not built.
+- *Faces are not bounded.* The frames that take in new face meshes
+  during the visual drain are 0.8 to 4.5 s on this driver (sec 18.14),
+  the 13 to 15 s of sec 18.16; an object without its faces is not on the
+  screen at all, so holding them back is a different trade from holding
+  an edge.
+- *The scene's order* is the order of release, not what is nearest or
+  largest on the screen.
+- `Render/LoadDropElements`'s own description still says its way back is
+  one frame.
+- Only Mesa's D3D12 driver under WSL was measured.
+
 ## 19. Progressive load against eager (2026-09-29)
 
 ProgressiveLoad (sec 13, default on since `d53ba63848`) builds a restored
