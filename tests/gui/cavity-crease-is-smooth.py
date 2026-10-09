@@ -31,11 +31,15 @@ style (no edge lines over the creases).
 Claims, for a ridge (a block's edge between two faces that are seen) and a
 valley (where the block stands on a plate), three edges each at three
 slants, under an orthographic and a perspective camera; for the rim of a
-cylinder's top; and for a valley at a cavity radius of 3:
+cylinder's top; and for a ridge and a valley at a cavity radius of 3:
   - the crease is drawn: every column of the stretch holds some darkening;
   - it runs smoothly: its middle strays from the line under SMOOTH px (rms);
   - it is as heavy all the way: the darkening it holds across its width
     varies under EVEN of its mean (rms).
+  - an edge of the block that only stands in front of the plate, where one
+    surface ends before another, is not taken for a crease: nothing is
+    darkened beside it, from a twentieth of its height up (the valley at
+    its foot is a crease).
 And two that the change must leave alone:
   - the middle of a flat face is not darkened at all;
   - a ball at a cavity radius of 4, where the pass shades broad curvature
@@ -124,7 +128,7 @@ def project(view, dark, point):
     return float(x), float(dark.shape[0] - 1 - y)
 
 
-def along(view, dark, tag, points, half, degree):
+def along(view, dark, tag, points, half, degree, across=True):
     """The crease along the polyline of 3D `points`: per column of pixels
     (per row when it is steeper than 45 degrees) the darkening within
     `half` pixels of the line, and the middle of it. Returns the slant, the
@@ -179,8 +183,9 @@ def along(view, dark, tag, points, half, degree):
         # A column cuts a slanted crease askew and holds more of it the
         # steeper the crease: taken across the crease instead, so that the
         # amounts along a curve, whose slant changes, can be compared.
-        slope = np.polyval(np.polyder(fit), where - where[good].mean())
-        amount = amount / np.sqrt(1.0 + slope ** 2)
+        if across:
+            slope = np.polyval(np.polyder(fit), where - where[good].mean())
+            amount = amount / np.sqrt(1.0 + slope ** 2)
     return slant, amount, left, int((~good).sum())
 
 
@@ -231,6 +236,19 @@ RIDGES = (("top front", (0, 0, 40), (40, 0, 40)),
           ("front right", (40, 0, 0), (40, 0, 40)))
 VALLEYS = (("front foot", (0, 0, 0), (40, 0, 0)),
            ("right foot", (40, 0, 0), (40, 40, 0)))
+# an upright edge of the block with the plate behind it: no crease, the
+# block's face ends there in front of the plate
+FRONT = ((0, 0, 0), (0, 0, 40))
+
+
+def no_crease(view, dark, tag, lo=0.05):
+    a, b = FRONT
+    _slant, amount, _left, _empty = along(view, dark, tag + ", edge in front",
+                                          part(a, b, lo, 0.85), 6, 1, across=False)
+    check("%s: an edge that stands in front of the plate is not taken for a crease" % tag,
+          len(amount) > 20 and float(amount.max()) < 0.05,
+          "the most darkening a column holds beside it: %.3f px, over %d columns" % (
+              float(amount.max()) if len(amount) else -1.0, len(amount)))
 
 
 def block():
@@ -250,6 +268,7 @@ def block():
             crease(view, dark, "%s, ridge %s" % (short, name), part(a, b))
         for name, a, b in VALLEYS:
             crease(view, dark, "%s, valley %s" % (short, name), part(a, b))
+        no_crease(view, dark, short)
         if short == "ortho":
             x, y = project(view, dark, (20, 20, 40))
             patch = dark[int(y) - 8:int(y) + 9, int(x) - 8:int(x) + 9]
@@ -258,8 +277,11 @@ def block():
     look(view, "Orthographic")
     setprop(view, "Render_CavityRadius", "App::PropertyFloat", 3.0)
     dark = darkening(view, "block-radius3")
+    name, a, b = RIDGES[0]
+    crease(view, dark, "radius 3, ridge %s" % name, part(a, b), half=10)
     name, a, b = VALLEYS[0]
     crease(view, dark, "radius 3, valley %s" % name, part(a, b), half=10)
+    no_crease(view, dark, "radius 3")
     setprop(view, "Render_CavityRadius", "App::PropertyFloat", 1.0)
     FreeCAD.closeDocument(doc.Name)
 
