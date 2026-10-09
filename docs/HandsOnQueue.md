@@ -74,10 +74,10 @@ test.
 | 22 | 2026-10-06 | omni search: `/word` with no space is an object query; `/ word` forces it (change request, decided) | STAGED 2026-10-07 14:23, fixed `5aedd5cf83`: "/word" is an object query, "/ word" forces it, a keyword in full is the keyword, the beginning of one lists modes and objects together; the browser viewer's grammar follows (its bundle not rebuilt) |
 | 23 | 2026-10-06 | omni search: every setting it collects has documentation, none of it long (an audit asked) | STAGED 2026-10-07 14:23, fixed `c7a27b5a85` (and `08b8f009aa`): 574 settings audited, 221 had no documentation and 94 ran past 400 characters; all have a short text now and a test keeps it so. Side findings for the reporter in `docs/HandsOnLog.md`. The defaults FIXED `02cab053df`, not staged: OK on a fresh profile changed 23 settings and stored 2 under a wrong type, 14 of them a generated page's spin box clamping its default to 99; a test keeps it so |
 | 24 | 2026-10-06 | every `Base::Parameter` setting behind a cog helper class so the omni search finds it, applied through delayed handlers (change request, application-wide) | C++ SIDE DONE AND SETTLED; decisions applied in two rounds, `e21eff05a7` and `427ffc8d28`; PUSHED 2026-10-08 (origin/PartDesignPort = `b70cc6ebf1`, cycles `35a3bd898` first); not staged. Nothing left with the reporter. What remains of the aim is entries 41 and 42 (`docs/HandsOnLog.md`) |
-| 25 | 2026-10-06 | the outline of a highlighted face is jagged, MSAA on or off | OPEN |
+| 25 | 2026-10-06 | the outline of a highlighted face is jagged, MSAA on or off | FIXED `9c9549d368`, not staged, not pushed, for a face UNDER THE POINTER: the outline was cut along the face by a stencil mark that is one sample a pixel whatever the multisampling; it fades in from the cut now. On a cylinder's top face the outline's middle jumps 0.161 px from column to column where it jumped 0.330; 5 PASS and 1 FAIL before, 6 PASS after. A SELECTED face's outline is left as it was, on purpose. Not scored with multisampling on (`docs/HandsOnLog.md`) |
 | 26 | 2026-10-06 | a long halt after enabling MSAA and pressing OK in the preferences | FIXED `175ffce199`, not staged: the FIRST OK of a profile held the program 11 to 15 s (780 keys stored for the first time and taken for changes: stylesheet set again 4.2 s, every Part view provider re-meshed 3.2 s, language activated again about 2 s); 0.9 s now (`docs/HandsOnLog.md`) |
 | 27 | 2026-10-06 | the view cell menu: opens a spreadsheet nobody asked for, lists every TechDraw object, changes the wrong cell | STAGED 2026-10-07 14:23, fixed `fa2ada985c`: the menu made a spreadsheet view by asking for it, listed a page's views, and placed a pick by the general policy instead of into its cell; all three gone, spreadsheets now listed by type like pages (`docs/HandsOnLog.md`) |
-| 28 | 2026-10-06 | `scanner.FCStd` restores with a wrong colour, sometimes (the motor body light blue for light grey) | OPEN, in hand by the build session since 2026-10-09: six loads in one session gave identical colour properties; measuring across sessions |
+| 28 | 2026-10-06 | `scanner.FCStd` restores with a wrong colour, sometimes (the motor body light blue for light grey) | NOT REPRODUCED 2026-10-09, nothing changed, three questions for the reporter: 15 loads over 4 sessions, every colour property of all 686 objects identical and the frames the same. In the file the solid `Compound` (264 faces) and the cable `Compound001` have LIGHT BLUE as their own stored colour and are drawn light blue on every load; the containers over them carry a light grey material with its override off. So here it is the light GREY that was not seen (`docs/HandsOnLog.md`) |
 | 29 | 2026-10-07 | view cells: transparent frames that show a split, a join and a resize while dragged (every cell the drag changes); corner handles on an opaque background, the cell menu button too when hovered; a thinner border between cells; a minimum cell size setting, default 200 (change request, decided) | FIXED `dd336be800`, the default 300 on the reporter's word `c9bc1e22c5`; not staged, not pushed; four choices for the reporter to confirm or overrule: a drag of a corner zone or of a border is shown as translucent frames over every cell it changes and is carried out AT THE RELEASE; the setting `View/OpenView/MinimumCellSize`, 300 (was 200), on the preferences' UI page -- a split that would leave a cell under it is refused with one line in the report view; corner zones (and the menu button when hovered) on an opaque ground; the border 3 pixels. `tests/gui/view-cell-drag-frames.py` 33 PASS (`docs/HandsOnLog.md`, `docs/SplitViews.md` sec 21) |
 | 30 | 2026-10-07 | the dark and light overlay stylesheets integrated into the Dark and Light preference packs (a task asked; what "integrated" covers to confirm); and the long freeze when an overlay stylesheet is applied, to investigate; the Python console's background in both packs, so a theme can take an overlay preset's away again | THIRD TASK FIXED `dad4f5d18a`, not staged, not pushed: Light, Dark and Classic list every colour an overlay preset writes, the console's and the tree's backgrounds as none, so a theme takes the preset's away again; 8 PASS and 10 FAIL before, 18 PASS after. SECOND TASK MEASURED, nothing changed: "Overlay dark theme" holds the program 13.0 s on a fresh profile with `scanner.FCStd` open, 9.6 s of it the APPLICATION's style sheet (`Dark.qss`), 3.3 s the combo view switched off; what to do about it is the reporter's to say. FIRST TASK not started: what "integrated" covers, NOT ANSWERED YET (`docs/HandsOnLog.md`) |
 | 31 | 2026-10-07 | report view: "Go to end" on by default (change request) | FIXED `47b5e72c79`, not staged: "Go to end" is on for a profile that never stored it (`docs/HandsOnLog.md`) |
@@ -96,6 +96,8 @@ test.
 | 44 | 2026-10-08 | the DXF page's exporter settings do not reach the C++ DXF exporter: `Import.writeDXFObject`/`writeDXFShape` point it at `Mod/Import`, where nothing stores them (found by the build session on entry 42, Q2) | FIXED `813d0250f9`, PUSHED 2026-10-08, not staged: the exporter was pointed at `Mod/Import` for its options, where nothing stores them; it takes them from `Mod/Draft`, where the DXF page puts them, as upstream does. An ellipse written with "Treat ellipses and splines as polylines" on was an ELLIPSE before and is an LWPOLYLINE after (24 points at a segment length of 5, 198 at 0.5). `Import_tests_run` 6 of 6; the full suites not rerun after it (`docs/HandsOnLog.md`) |
 | 45 | 2026-10-08 | a spreadsheet's view provider MAKES its view when asked for it (`ViewProviderSheet::getMDIView()`): one click on a sheet in the tree opens it, show-in-cell closes another sheet's view; a design agreed by the reporter in another session, single click selects and opens nothing (handed over from session x16, branch SketcherPort; goes on from entry 27) | FIXED `c7fdcf3220`, PUSHED 2026-10-08, not staged, on this branch on top of entry 27's fix as decided: a sheet's `getMDIView()` answers and no longer opens; a new `ViewProviderDocumentObject::getOrCreateMDIView()` opens the view for the three callers that host it (the cell menu's pick, `Std_ViewCellShowObject`, a layout coming back). One click on a sheet selects and opens nothing. `Std_ViewCellShowObject` also took a stale cell and closed another sheet's view; it takes the active view's cell. Not as handed over in one point: the sheet's view is not made "bare" (`docs/HandsOnLog.md`) |
 | 46 | 2026-10-09 | TechDraw drawn by the backend: the hatch of a section's cut face is bright green lines far apart, where Qt draws a fine grey-green pattern (seen by the build session on entry 36) | OPEN, not looked at |
+| 47 | 2026-10-09 | `scanner.FCStd`: once in three sessions the FIRST load's 3D view was empty 13 s after opening, background and navigation cube only; the next two loads of that session were complete (seen by the build session on entry 28) | OPEN, seen once, not followed up |
+| 48 | 2026-10-09 | three GUI tests fail the same way on the copy staged 2026-10-07 and on today's tree: `element-color-hide.py` (2 of 624 claims), `per-view-shown-eviction.py` (1 claim), `navicube-per-view.py` (11 claims pass, then it never ends) (found by the build session) | OPEN, not looked into |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -2021,7 +2023,32 @@ handler asked for in (c) has a precedent in `ParamHandlers::addDelayedHandler`
 (used by `DlgSettings3DViewImp::attachObserver`) and in the generated
 classes' own `on...Changed` hooks.
 
-## 25. The outline of a highlighted face is jagged, MSAA or not -- OPEN
+## 25. The outline of a highlighted face is jagged, MSAA or not -- FIXED `9c9549d368`, not staged, for a face under the pointer (see `docs/HandsOnLog.md`)
+
+**2026-10-09 08:33, the build session: FIXED `9c9549d368`** (its message;
+its log, entry 25, `961d2dcd83`, local). Not staged, not pushed.
+- What it is: the outline is the outer half of a thick line along the
+  face's boundary; the inner half is cut away by a stencil mark of the
+  face, and that cut is one sample a pixel whatever the multisampling. So
+  the yellow of a hovered face stepped against the model's dark edge a
+  whole pixel at a time. That is why MSAA did nothing to it.
+- The change, for a face UNDER THE POINTER: the outline fades in from the
+  cut over one pixel; only the boundary's own edges are drawn; the lines
+  keep each other and the corner caps out of the fade.
+- Measured on the top face of a cylinder, multisampling off: the outline's
+  middle jumps 0.161 px from pixel column to column where it jumped 0.330;
+  its thickness varies by 0.274 px where it varied by 0.712.
+  `tests/gui/face-outline-inner-edge.py`, 5 PASS and 1 FAIL on the copy
+  staged 2026-10-07, 6 PASS after.
+- A SELECTED face's outline is deliberately left as it was. It is filled
+  too, fill and cut end on the same pixels, and a fade there let the
+  model's edge through as a row of dark dots (tried, taken back). Its
+  staircase is green on a lighter green, much fainter than the hovered
+  one's yellow on black.
+- Not done, by the log: not scored with multisampling ON; the whole-scene
+  silhouette and the hidden-line outlines use the same cut and were not
+  asked about; a selected face with the fill switched off in the
+  preferences takes the faded path, not tried.
 
 **From the build session, a datum and no more** (passed on 2026-10-07 17:05):
 MSAA was not in effect at all when this was reported (entry 39). With MSAA
@@ -2112,7 +2139,35 @@ was pressed. Third note on this menu (16:05, 16:08): here the choice is
 right and the cell it lands in is wrong. Not said yet: which of the two 3D
 views, and which cell was the active one at the time.
 
-## 28. `scanner.FCStd` restores with a wrong colour, sometimes -- OPEN, in hand since 2026-10-09
+## 28. `scanner.FCStd` restores with a wrong colour, sometimes -- NOT REPRODUCED 2026-10-09, nothing changed; three questions for the reporter (see `docs/HandsOnLog.md`)
+
+**2026-10-09 08:33, the build session: measured and NOT reproduced** (its
+message; its log, entry 28, `961d2dcd83`, local). Nothing changed.
+- 15 loads of `scanner.FCStd` over 4 sessions, on the dev build and a fresh
+  profile: every colour property of all 686 objects identical from load to
+  load, and the engine's own frames the same but for a few pixels along one
+  edge of the black housing. "Sometimes" was not met.
+- What the file says about the motor: it is a STEP import, plain solids
+  under three `App::Part` containers. The solid named `Compound` (264 faces;
+  its label is a U3212 part name ending "_2.STEP") and the cable
+  `Compound001` (21 faces) have LIGHT BLUE, (202, 209, 238), as their OWN
+  stored colour, and are drawn light blue on every one of the loads. The
+  containers over them carry a light GREY material (204, 204, 204) with its
+  override off. Nothing maps or overrides a colour onto these solids.
+- So in this build, on this file, the light blue is the part's own colour
+  and is shown every time; it is the light GREY that was not seen. Two
+  readings, neither measured: the grey is what the reporter's other build
+  shows for this part (the file came from it), or it is the containers'
+  grey material reaching the solids on some loads.
+
+**Three questions for the reporter, NOT ANSWERED YET** -- they go with the
+"not said yet" of the report below:
+1. the part's name, or a click on it, when it looks wrong;
+2. whether the property editor shows the same colour as the view then;
+3. whether "light grey" is what THIS build shows on other loads, or what
+   the old build showed.
+
+Seen on the way: once, a first load whose 3D view was empty -- entry 47.
 
 **2026-10-09 01:15, the build session has it in hand:** six loads in one
 session gave identical colour properties; it is measuring across sessions
@@ -3674,11 +3729,37 @@ The pictures: `..\dl\handson\2026-10-08\q2\g-e36m1-dev\qt-z1.0.png` against
 `backend-z1.0.png` (and the same pair at `z2.5` and `z6.0`).
 Not said yet by the reporter: whether and when it is to be worked on.
 
+## 47. `scanner.FCStd`: once, the first load's 3D view was empty -- OPEN, seen once, not followed up
+
+**2026-10-09 08:33, seen by the build session on entry 28** and given a
+number here (its log, entry 28, `961d2dcd83`, local). Not reported by the
+reporter; not followed up, nothing changed.
+In one of three sessions the FIRST load's frame, taken 13 s after the open,
+was EMPTY -- the background and the navigation cube, no model. The second
+and third load of the same session were complete. The frame was the
+engine's own (`saveRenderDump`); the pictures are in
+`..\dl\handson\2026-10-08\q2\e28pics`.
+In the log's words: "it may be the model not yet drawn rather than not
+drawn". Entry 2 was a file that came up empty from the menu, staged since;
+whether this is kin to it is not known.
+Not said yet by the reporter: whether they have seen it, and whether it is
+to be followed up.
+
+## 48. Three GUI tests fail the same way on the staged copy and on today's tree -- OPEN, not looked into
+
+**2026-10-09 08:33, found by the build session** and given a number here.
+Not from this session's work, in its words: they fail the same way on the
+copy staged 2026-10-07 as on today's tree. Not looked into.
+- `element-color-hide.py`: 2 of 624 claims fail;
+- `per-view-shown-eviction.py`: 1 claim fails;
+- `navicube-per-view.py`: passes 11 claims, then never ends.
+Not said yet by the reporter: whether and when they are to be looked at.
+
 ## Inbox
 
 Notes not sorted into an entry yet. Add a line here at any time, in any words;
 it is read before each entry is started and moved up into the table.
 
 (empty: the notes of 2026-10-06 are entries 20 to 28, those of 2026-10-07
-entries 29 to 40, those of 2026-10-08 entries 41 to 45, that of 2026-10-09
-so far entry 46)
+entries 29 to 40, those of 2026-10-08 entries 41 to 45, those of 2026-10-09
+so far entries 46 to 48)
