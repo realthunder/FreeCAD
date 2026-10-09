@@ -1504,6 +1504,20 @@ set_property(TEST GuiBoxesOutOfViewOff_tests_run APPEND PROPERTY
 fc_add_gui_test(GuiBoxesOutOfViewTurn_tests_run boxes-out-of-view-turn.py
                 --timeout 280)
 
+# While one document loads, the active view's document goes on refining,
+# and of two documents filling in at once the one in front is filled in
+# first (docs/DocumentLoad.md sec 18.15, the user's ruling: priority to
+# the active view and to the later opened document). Any document's load
+# held every document's refinements, and the visual drain split its slice
+# evenly. Four sequences over documents of 40, 80 and 20 solids of 992
+# faces. Scored against the tree before, three runs: 6 checks of 9 where
+# it counts -- none of the active document's refinements landed while the
+# other filled in, the earlier load built 24 to 33 visuals while the later
+# opened built its 20, and with the earlier one's view active it was
+# still through last.
+fc_add_gui_test(GuiHoldPerDocument_tests_run hold-per-document.py
+                --timeout 400)
+
 # Making a view the active window makes its cell the view area's active
 # cell and brings the keyboard with it (docs/SplitViews.md sec 21): right
 # after "create new view" the first view can be clicked back into; with

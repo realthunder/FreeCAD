@@ -858,6 +858,14 @@ struct DeferredVisualQueue {
     /// batch is submitted at the first slice that may work, when every
     /// shape is served and nothing has been built yet.
     bool preMeshed = false;
+    /// Which load this is, counted up as queues are made: of two
+    /// documents filling in, the later opened is served first
+    /// (docs/DocumentLoad.md sec 18.15).
+    unsigned long opened = 0;
+    /// When a slice last built for this queue. One that gets nothing of
+    /// the slices, a document in front of it using them whole, builds
+    /// one visual a second all the same.
+    std::chrono::steady_clock::time_point served;
     /// Counted per drain, for the one line the queue reports itself with.
     std::size_t built = 0;
     std::size_t popped = 0;
@@ -904,6 +912,8 @@ struct DeferredVisualQueue {
 /// that described neither.
 struct DeferredVisuals {
     std::map<std::string, DeferredVisualQueue> docs;
+    /// The last DeferredVisualQueue::opened given out.
+    unsigned long openedCount = 0;
     bool scheduled = false;
     /// A serve inside a slice reports progress, and a progress indicator
     /// pumps events -- from which this slice's own timer can fire. The
@@ -5636,13 +5646,23 @@ bool ViewProviderPartExt::deferVisualForLoad()
     return true;
 }
 
+bool PartGui::deferredVisualsPending(const std::string &doc)
+{
+    const auto &docs = deferredVisuals().docs;
+    return docs.find(doc) != docs.end();
+}
+
 void ViewProviderPartExt::parkVisualForLoad(App::Document *doc,
                                             App::DocumentObject *obj)
 {
     VisualTouched = true;
     if (!VisualDeferred) {
         VisualDeferred = true;
-        deferredVisuals().docs[doc->getName()].pending.emplace_back(obj);
+        auto &visuals = deferredVisuals();
+        auto &queue = visuals.docs[doc->getName()];
+        if (!queue.opened)
+            queue.opened = ++visuals.openedCount;
+        queue.pending.emplace_back(obj);
         syncBuildingVisuals();
     }
     // The restore pumps events through its progress sequencer, so a slice
@@ -5966,20 +5986,45 @@ void ViewProviderPartExt::runDeferredVisualSlice()
                     Base::SequencerLauncher::KeepInteractive);
     }
 
-    // One budget for the slice, split evenly between the documents that can
-    // use it: what has to stay bounded is the time before the event loop
-    // gets its turn back, and that is per slice however many documents are
-    // draining. An even split is also what keeps two loads progressing at
-    // once -- with the whole budget to the first document, a large one
-    // would hold the others up until it finished, which is the
-    // serialization the single shared queue used to impose.
-    const double share = budget / ready;
+    // One budget for the slice however many documents are draining: what
+    // has to stay bounded is the time before the event loop gets its turn
+    // back. It goes to the documents IN ORDER (docs/DocumentLoad.md sec
+    // 18.15, the user's ruling): the active view's document first, then
+    // the later opened ahead of the earlier; each takes what it can use,
+    // and what it leaves -- its last visuals built, or every one of them
+    // waiting for a pre-mesh -- is the next one's. The slice used to be
+    // split evenly, so that a document opened beside a large one filled
+    // in at half speed, and the one in front of the user no sooner than
+    // the one behind. A document that gets nothing is not left for dead:
+    // see `served`.
+    std::string activeName;
+    if (auto gdoc = Gui::Application::Instance->activeDocument()) {
+        if (auto adoc = gdoc->getDocument())
+            activeName = adoc->getName();
+    }
+    std::vector<std::string> order;
+    order.reserve(visuals.docs.size());
+    for (const auto &e : visuals.docs)
+        order.push_back(e.first);
+    std::stable_sort(order.begin(), order.end(),
+                     [&visuals, &activeName](const std::string &a,
+                                             const std::string &b) {
+                         const bool aActive = a == activeName;
+                         const bool bActive = b == activeName;
+                         if (aActive != bActive)
+                             return aActive;
+                         return visuals.docs.at(a).opened
+                             > visuals.docs.at(b).opened;
+                     });
     bool more = false;
     bool builtAny = false;
     // Whether any queue had something to do. A slice that found every
     // queue waiting for a pre-mesh does not post itself again at once.
     bool worked = false;
-    for (auto it = visuals.docs.begin(); it != visuals.docs.end(); ) {
+    for (const std::string &name : order) {
+        auto it = visuals.docs.find(name);
+        if (it == visuals.docs.end())
+            continue;
         auto &queue = it->second;
         auto doc = eligible(it->first);
         if (!doc) {
@@ -5987,11 +6032,10 @@ void ViewProviderPartExt::runDeferredVisualSlice()
                 // Closed while its builds were queued: nothing left to build
                 // them for, and nothing of it may resolve against a document
                 // reopened under the same name.
-                it = visuals.docs.erase(it);
+                visuals.docs.erase(it);
                 continue;
             }
             more = true;
-            ++it;
             continue;
         }
         auto mark = elapsed();
@@ -6004,8 +6048,19 @@ void ViewProviderPartExt::runDeferredVisualSlice()
         // Whether this document is closed under this slice, by an event
         // the progress bar runs (see the delete observer)
         const unsigned closedUnder = queue.closedUnder;
-        // This document's share, never past the slice's own end.
-        const double limit = std::min(budget, mark.count() + share);
+        // What is left of the slice is this document's, to the slice's
+        // own end. One that comes to its turn with nothing left goes
+        // without -- unless it has gone without for a second: then it
+        // builds one visual (the loop below builds one before it looks at
+        // the time), so that a load behind another is seen to be alive.
+        const bool leftOver = mark.count() < budget;
+        if (!leftOver
+                && std::chrono::steady_clock::now() - queue.served
+                    < std::chrono::seconds(1)) {
+            more = true;
+            continue;
+        }
+        const double limit = leftOver ? budget : mark.count();
         const double left = std::max(0.001, limit - mark.count());
 
         // Deferred shape restore (docs/DocumentLoad.md sec 14): serve this
@@ -6025,7 +6080,6 @@ void ViewProviderPartExt::runDeferredVisualSlice()
             charge();
             more = true;
             worked = true;
-            ++it;
             continue;
         }
 
@@ -6042,7 +6096,6 @@ void ViewProviderPartExt::runDeferredVisualSlice()
                     && std::chrono::steady_clock::now() - queue.stalledAt
                         < std::chrono::seconds(1)) {
                 more = true;
-                ++it;
                 continue;
             }
             queue.stalled = 0;
@@ -6050,6 +6103,7 @@ void ViewProviderPartExt::runDeferredVisualSlice()
 
         worked = true;
         ++queue.slices;
+        queue.served = std::chrono::steady_clock::now();
         while (!queue.pending.empty()) {
             // One step for each visual that has left the queue, and none
             // for one that was put back on it.
@@ -6144,11 +6198,10 @@ void ViewProviderPartExt::runDeferredVisualSlice()
             // same name, and its turn is the next slice's; nothing on it,
             // and the entry goes as a closed document's does.
             if (queue.pending.empty()) {
-                it = visuals.docs.erase(it);
+                visuals.docs.erase(it);
             }
             else {
                 more = true;
-                ++it;
             }
             continue;
         }
@@ -6156,7 +6209,6 @@ void ViewProviderPartExt::runDeferredVisualSlice()
 
         if (!queue.pending.empty()) {
             more = true;
-            ++it;
             continue;
         }
         FC_LOG("progressive load " << it->first << ": " << queue.built
@@ -6175,7 +6227,7 @@ void ViewProviderPartExt::runDeferredVisualSlice()
                     << claimed << " claimed shapes meshed in " << wall
                     << "s, " << failed << " failed");
         }
-        it = visuals.docs.erase(it);
+        visuals.docs.erase(it);
     }
 
     // A box asked for while a visual was parked came from its shape

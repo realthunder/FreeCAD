@@ -42,6 +42,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <functional>
+#include <string>
 #include <vector>
 
 #include <Mod/Part/PartGlobal.h>
@@ -219,9 +220,17 @@ void cancelMeshLevelWork(const void *tag);
 /// the downgrade ledger's write-off horizon covers the deferral; a
 /// climb body passes \a descent false, because the settle counter it
 /// would advance is what the ledger judges its ORDERS' completion by,
-/// and a climb settling is not a downgrade landing.
+/// and a climb settling is not a downgrade landing. \a doc names the
+/// document a climb body works on: a load holds such a body back by
+/// document (docs/DocumentLoad.md sec 18.15), and one that names none
+/// waits for every load.
 void queueLevelGuiWork(const void *tag, std::function<void()> body,
-                       bool descent = true);
+                       bool descent = true, std::string doc = {});
+
+/// Whether the load of the document named \a doc still has visuals to
+/// build: its queue of parked visuals is not empty. Defined with that
+/// queue, in ViewProviderExt.cpp. GUI thread.
+bool deferredVisualsPending(const std::string &doc);
 
 /// How long a turn of the landing pump may run, in seconds.
 ///

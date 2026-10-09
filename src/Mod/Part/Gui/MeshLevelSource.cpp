@@ -45,17 +45,20 @@
 #include <map>
 #include <memory>
 #include <mutex>
+#include <string>
 #include <thread>
 #include <vector>
 
 #include <QCoreApplication>
 #include <QTimer>
 
+#include <App/Document.h>
 #include <App/PropertyStandard.h>
 #include <Base/Console.h>
 #include <Base/ThreadPool.h>
 #include <Base/Tools.h>
 #include <Gui/Application.h>
+#include <Gui/Document.h>
 #include <Gui/RenderParams.h>
 #include <Gui/Renderer/MeshSource.h>
 #include <Gui/Renderer/Renderer.h>
@@ -83,6 +86,10 @@ struct LevelSourceState {
     /// Drawn as a bounding box in place of the shape: see
     /// registerMeshLevelSource.
     bool standIn = false;
+    /// The document the shape is of, by name; empty when the
+    /// registration named none. What a load holds back, it holds back
+    /// by document (LoadHold).
+    std::string doc;
 };
 using LevelSourceStatePtr = std::shared_ptr<LevelSourceState>;
 
@@ -259,6 +266,28 @@ void settleDescent(const RefineJob &job)
 // GUI thread only, all of it -- the workers reach it through one
 // queued hop that does nothing but enqueue.
 
+/// What the loads going on hold back, asked once a turn of the pump
+/// (docs/DocumentLoad.md sec 18.11, and sec 18.15 for "by document").
+///
+/// A load gives every object its first picture before it refines any,
+/// and the question used to be the application's: any document's load
+/// held every document's refinements. So the document a user was
+/// working in stopped refining for as long as another took to load
+/// behind it. Now the ACTIVE VIEW's document is held by its own load
+/// only; any other document waits for every load, as before -- the GUI
+/// thread's time is the first pictures' and then what is in front.
+struct LoadHold {
+    /// Some document still has visuals to build.
+    bool any = false;
+    /// The active view's document, when it has none left to build.
+    std::string free;
+
+    bool holds(const std::string &doc) const
+    {
+        return any && (doc.empty() || doc != free);
+    }
+};
+
 /// A worker landing and the sweep order it descends for: the pump
 /// re-enters the generation while running it, so what the landing
 /// queues in turn (a pooled fill, a deferred rebuild) counts under
@@ -267,16 +296,18 @@ struct LandingItem {
     std::function<void()> fn;
     uint64_t gen = 0;
     /// The refinement of an object that already has a picture: it waits
-    /// while a load is still building visuals (loadFilling).
+    /// while a load is still building visuals (LoadHold).
     bool waits = false;
     /// The job's at-leisure flag (RefineJob::idle), read when the pump
     /// comes to the item: a first picture of something out of view waits
     /// like a refinement, and stops waiting if the camera turns to it.
     std::shared_ptr<std::atomic<bool>> idle;
+    /// The document it lands in (LevelSourceState::doc).
+    std::string doc;
 
-    bool held(bool filling) const
+    bool held(const LoadHold &hold) const
     {
-        return filling && (waits || (idle && idle->load()));
+        return (waits || (idle && idle->load())) && hold.holds(doc);
     }
 };
 std::deque<LandingItem> s_landingQueue;
@@ -333,6 +364,8 @@ struct GuiWorkItem {
     bool descent = true;
     /// The sweep order this body descends for (see RefineJob::gen).
     uint64_t gen = 0;
+    /// The document it works on, for a climb body (LoadHold).
+    std::string doc;
 };
 std::deque<GuiWorkItem> s_guiWork;
 bool s_landingScheduled = false;
@@ -367,10 +400,21 @@ void scheduleLandingPump()
 /// the first pictures no sooner (10.2 s against 10.3 s on average) and
 /// the refined ones 1.6 s later. Waste of that kind is the price of the
 /// first picture and is paid (the user's ruling, 2026-10-09).
-bool loadFilling()
+LoadHold loadHold()
 {
+    LoadHold hold;
     auto app = Gui::Application::Instance;
-    return app && app->isBuildingVisuals();
+    hold.any = app && app->isBuildingVisuals();
+    if (!hold.any)
+        return hold;
+    // The active view's document is held by its own load only.
+    if (auto gdoc = app->activeDocument()) {
+        if (auto doc = gdoc->getDocument()) {
+            if (!PartGui::deferredVisualsPending(doc->getName()))
+                hold.free = doc->getName();
+        }
+    }
+    return hold;
 }
 
 /// Look again shortly at what a load is holding back. Its own flag: a
@@ -446,12 +490,12 @@ void pumpLandings()
     };
     PumpAccount &acc = s_pumpAccount;
     // What a load holds back stays on its queue, in its order.
-    const bool filling = loadFilling();
+    const LoadHold hold = loadHold();
     std::size_t held = 0;
     // Landings first: they free memory and re-arm sources; the hook
     // bodies behind them typically queue MORE work.
     while (held < s_landingQueue.size()) {
-        if (s_landingQueue[held].held(filling)) {
+        if (s_landingQueue[held].held(hold)) {
             ++held;
             continue;
         }
@@ -483,7 +527,8 @@ void pumpLandings()
     while (heldGui < s_guiWork.size() && (!ranGui || !spent())) {
         // A climb's body is a refinement too (a finer rung still
         // resident, activated with a rebuild).
-        if (filling && !s_guiWork[heldGui].descent) {
+        if (!s_guiWork[heldGui].descent
+            && hold.holds(s_guiWork[heldGui].doc)) {
             ++heldGui;
             continue;
         }
@@ -524,9 +569,9 @@ void pumpLandings()
     // noticed -- nothing tells this queue when the drain is through.
     bool runnable = false, waiting = false;
     for (const auto &item : s_landingQueue)
-        (item.held(filling) ? waiting : runnable) = true;
+        (item.held(hold) ? waiting : runnable) = true;
     for (const auto &item : s_guiWork)
-        (filling && !item.descent ? waiting : runnable) = true;
+        (!item.descent && hold.holds(item.doc) ? waiting : runnable) = true;
     if (runnable)
         scheduleLandingPump();
     if (waiting)
@@ -562,7 +607,8 @@ void purgeLevelGuiWork(const void *tag)
 /// sweep order the landing belongs to (RefineJob::gen).
 void queueLandingFromWorker(std::function<void()> fn, uint64_t gen = 0,
                             bool waits = false,
-                            std::shared_ptr<std::atomic<bool>> idle = {})
+                            std::shared_ptr<std::atomic<bool>> idle = {},
+                            std::string doc = {})
 {
     QCoreApplication *app = QCoreApplication::instance();
     if (!app)
@@ -570,9 +616,9 @@ void queueLandingFromWorker(std::function<void()> fn, uint64_t gen = 0,
     auto payload = std::make_shared<std::function<void()>>(std::move(fn));
     QMetaObject::invokeMethod(
         app,
-        [payload, gen, waits, idle]() {
+        [payload, gen, waits, idle, doc = std::move(doc)]() {
             s_landingQueue.push_back(
-                {std::move(*payload), gen, waits, idle});
+                {std::move(*payload), gen, waits, idle, doc});
             scheduleLandingPump();
         },
         Qt::QueuedConnection);
@@ -683,6 +729,7 @@ void runLevelJob(RefineJob job, const std::shared_ptr<Part::MeshTwin> &twin)
     // ...and neither does a first picture asked for at leisure, for as
     // long as it stands that way: the flag travels with the landing.
     auto idle = payload->first.idle;
+    std::string doc = payload->first.st->doc;
     queueLandingFromWorker([payload]() {
         settleDescent(payload->first);
         {
@@ -697,7 +744,7 @@ void runLevelJob(RefineJob job, const std::shared_ptr<Part::MeshTwin> &twin)
             s_refineTokens.erase(it);
         }
         payload->first.apply(payload->second);
-    }, gen, waits, std::move(idle));
+    }, gen, waits, std::move(idle), std::move(doc));
 }
 
 /// A job with the private twin of its shape: ready for a runner.
@@ -1152,7 +1199,7 @@ void PartGui::cancelMeshLevelWork(const void *tag)
 }
 
 void PartGui::queueLevelGuiWork(const void *tag, std::function<void()> body,
-                                bool descent)
+                                bool descent, std::string doc)
 {
     if (!body)
         return;
@@ -1161,7 +1208,7 @@ void PartGui::queueLevelGuiWork(const void *tag, std::function<void()> body,
         gen = Render::MeshSourceRegistry::currentDescentGeneration();
         Render::MeshSourceRegistry::instance().noteDescentQueued(gen);
     }
-    s_guiWork.push_back({tag, std::move(body), descent, gen});
+    s_guiWork.push_back({tag, std::move(body), descent, gen, std::move(doc)});
     scheduleLandingPump();
 }
 
@@ -1224,6 +1271,8 @@ void PartGui::registerMeshLevelSource(const TopoDS_Shape &shape,
     auto st = std::make_shared<LevelSourceState>();
     st->shape = shape;
     st->standIn = standIn;
+    if (doc)
+        st->doc = doc->getName();
     st->params.normalsFromUV = normalsFromUV;
     st->params.exactDeflection = exactDeflection;
     st->params.exactAngle = exactAngle;
@@ -1286,7 +1335,7 @@ void PartGui::registerMeshLevelSource(const TopoDS_Shape &shape,
                             return;
                         apply(st->shape);
                     },
-                    /*descent*/ false);
+                    /*descent*/ false, st->doc);
                 return;
             }
             queueExactRefine(primary, st, apply, /*descent*/ false,
