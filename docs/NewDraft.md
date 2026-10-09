@@ -15,7 +15,8 @@ widened, brought back (section 16). 2026-10-09: tangent propagation as an
 option; off, only the picked faces turn, and a fillet beside them is made
 again at its radius after the draft (section 17). 2026-10-09: the roof -- the chain's
 walls meeting over the body once a wall narrows to nothing -- built
-(section 18).
+(section 18); a fillet across the pull direction in the chain, taken off
+and made again as with propagation off (section 19).
 The design below came with a Python prototype (section 5)
 that the earlier measurements come from; the open questions settled
 2026-10-05 (section 9).
@@ -1102,7 +1103,7 @@ before.
 
 | Error | When | Sweep |
 |-------|------|------:|
-| `UnsupportedSurface` | a face of the chain is a cylinder or cone whose axis is not the pull direction (#962's fillets along the top edge of a wall drafted about its end; #334) | 13 |
+| `UnsupportedSurface` | a face of the chain is a cylinder or cone whose axis is not the pull direction (#962's fillets along the top edge of a wall drafted about its end; #334) -- made again since section 19 | 13 |
 | `UnsupportedSurface` | a face of the chain is a B-spline (#474's fillets along its ramp) | 12 |
 | `UnsupportedSurface` | the chain closes on itself at a sharp edge; a cone of the chain ends at a sharp edge on one side; a tangent edge is not straight or runs along the neutral plane; the new faces would not stay tangent | 2 |
 | `FaceVanishes` | a cone reaches its apex within its face: a fillet drafted inward shrinks to a point (a 2 fillet on a 10 tall block at 15 deg) | 1 |
@@ -1890,3 +1891,45 @@ fillet goes to, `RefilletFails`, the history) is 17.3's.
   the table above valid or refused for one of 17.3's reasons, #962's against
   the same drafts with propagation off (the wall's chain is the wall alone:
   the results must be the same); nothing else changed.
+
+### 19.4 Built (2026-10-09)
+
+As designed: `takeOffFillets` runs whatever the setting, and with
+propagation on it walks the tangent chain from the picked faces, not
+stepping into a cylinder whose `newRevolution` is null for the draft that
+reached it; those are the only candidates, and 17.3's test (two planes
+tangent along it, planes at its ends) picks the fillets among them. The
+`UnsupportedSurface` of a cylinder that does not turn now says it is not
+a fillet between two planes that can be made again either.
+
+The block of 19.3 at 5 and 15 deg, both ways, under `New` and Auto, with
+propagation on and off: 7 faces, valid, the closed form to 5e-13; the
+classic draft refuses ("no faces can be used"). On a box filleted by a
+`Part::Fillet` the fillet made again is named as a modification of the old
+fillet face, as in 17.3.
+
+Pictures (`docs/pictures/NewDraft/`, `make_newdraft.sh`): the block at 15
+deg, the classic draft refusing it and the cell draft's wall with the
+fillet made again along its top; and #962's wall 30 at 15 deg about a
+slot's floor, the r=7 fillets of its three fins made again onto the sloped
+top.
+
+![A fillet across the pull direction](pictures/NewDraft/across_tbox_a15.png)
+
+![#962's fins](pictures/NewDraft/across_issue962_f30_n25_a15.png)
+
+The sweep (the 1222 and the 500, `Method = New`, the stop on), against the
+build before:
+
+| | 1222 | 500 |
+|--------|------:|------:|
+| the same result | 1222 | 487 |
+| `UnsupportedSurface` before, valid now | 0 | 9 |
+| `UnsupportedSurface` before, `RefilletFails` now | 0 | 4 |
+
+The 9: #962's wall at 5 and 15 deg (8, both stages, both slot floors) and
+#334's wall 10 at 5 deg -- each the same volume, face count and boolean
+check as the same draft with propagation off (the wall's chain is the
+wall and its pieces). The 4: #962 at 60 deg, where the wall swings past its
+sloped top and the two faces of the fillet no longer meet, as with
+propagation off (17.4).
