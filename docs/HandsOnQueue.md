@@ -58,6 +58,21 @@ read by the build session; 53 is reproduced, the others not started. Its
 order after 51, "unless the reporter says otherwise": 53, 54, 55, 56 with
 57 after it, 52, 30, 48, 47.
 
+**2026-10-09 19:58, from the build session:** entry 66 MEASURED and its
+freeze FIXED (`6073d32437`), entry 61 FIXED (`f7408b1f9f`); local, not
+pushed, not staged. Ahead of origin and of the copy staged 17:36 (both
+`6a6fa208d6`): entry 64 (`66ccd277b9`, `dfdfc04c5c`), entry 61, entry 66.
+- The full C++ suite on the cavity change (`dfdfc04c5c`): 790 of 790. It
+  is running again on the tree with entries 61 and 66.
+- **What "ctest 790 of 790" covers, learnt by the build session and true of
+  every stage note above:** on this box ctest runs NO GUI test -- they
+  register only where `xvfb-run` exists -- so that count never covered
+  them. The build session runs the relevant ones by hand and names them in
+  `docs/HandsOnLog.md`.
+- Next: entry 62 (the omni search's recent items).
+- With the reporter, new: entry 64's three points, entry 61's two
+  readings, entry 66's three proposals and its question.
+
 **2026-10-09 18:30, the build session at work again** since about 17:45, on
 the reporter's word to it, verbatim: "continue as planned" -- its reading:
 the open entries in the order left at the pause (64, 66, 61, 62, 63, 52,
@@ -286,12 +301,12 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 58 | 2026-10-09 | a task, "can do it later": audit every warning shown when `scanner.FCStd` is opened and recomputed, and fix what can be fixed | OPEN, for later; a first count from a kept report log: 208 warnings and 6 errors, about 15 kinds; nothing run |
 | 59 | 2026-10-09 | the program no longer opens the Start page at startup (the reporter: "the startup workbench become the PartDesign"; it used to show Start with the recent files) | STAGED 2026-10-09 15:11, fixed `e9ac624959`, as decided: "Reset all" puts `Mod/Start/Migration2024Complete` back when it was set; the migration is untouched. A profile already switched off this way (the reporter's) STAYS off until Preferences > Start or `Mod/Start/ShowOnStartup` switches it on. 10 PASS and 2 FAIL on the staged copy, 12 PASS now (`docs/HandsOnLog.md`) |
 | 60 | 2026-10-09 | after a view cell is deleted, the view that expands into its room is sometimes BLACK until it is RESIZED; a camera move does not bring it back (corrected by the reporter 14:06) (Windows, Direct3D 11 at least) | STAGED 2026-10-09 16:42, fixed `d6f640f4ee`: it happens whenever closing a cell UN-NESTS a splitter (a cell split across its splitter's direction, then one of the two closed, by any route) -- the "sometimes". The surviving cell was moved up with `QSplitter::replaceWidget`, which takes it out of the window on the way, and a `QOpenGLWidget` that leaves its window is composed from nothing until its next resize; the view itself was drawn right all along, so it is neither Direct3D's nor the backend's. The cell tree is rebuilt without a cell leaving the window. A test that reads the SCREEN: 9 PASS and 8 FAIL on the copy staged 15:11, 17 PASS now (`docs/HandsOnLog.md`) |
-| 61 | 2026-10-09 | TechDraw drawn by the backend: dashed lines are a little thicker than Qt's (no great matter); but for some lines -- the cosmetic symmetry line in `Page`, `Top` -- the hover and selection highlight is drawn as the THINNER dashed line and is barely visible over the thicker line under it | OPEN; DECIDED by the reporter 14:30 and 14:31: EVERY line the backend draws on a page, dashed or not, at Qt's width -- thinner -- and the highlight at the same width as its line; a view's bounding box line shows it too; nothing run |
+| 61 | 2026-10-09 | TechDraw drawn by the backend: dashed lines are a little thicker than Qt's (no great matter); but for some lines -- the cosmetic symmetry line in `Page`, `Top` -- the hover and selection highlight is drawn as the THINNER dashed line and is barely visible over the thicker line under it | FIXED `f7408b1f9f`, not staged, not pushed: the backend drew an edge at the width asked for (0.35 mm) where Qt cuts the pen to whole tenths (0.3), and the highlight, read off the Qt item, was the thinner of the two. Edges, cut face outlines and centre marks are fed at Qt's width; scored with Qt as the reference and the backend switched, as the reporter said: 10 PASS and 4 FAIL on the staged copy, 14 PASS now (hidden line 0.375 -> 0.300 mm for Qt's 0.300; a dashed cosmetic line 0.350 -> 0.300; selected, 0.60 px of line beside the highlight -> none). Two readings of the build session's for the reporter (`docs/HandsOnLog.md`). DECIDED by the reporter 14:30 and 14:31: EVERY line the backend draws on a page, dashed or not, at Qt's width -- thinner -- and the highlight at the same width as its line; a view's bounding box line shows it too |
 | 62 | 2026-10-09 | omni search, a new feature: when it first pops up, its list holds the last 10 items that were confirmed in it; once typing starts, the recent list is not needed | OPEN; nothing run |
 | 63 | 2026-10-09 | `Std_DrawStyle` (a new request): a new icon suggested for it; its display style options as a combo box with their icons; anti-aliasing and its combo box in the same menu; the light sources configuration moved there from the preferences (not the manipulator), with a button to manipulate the light direction in the active 3D view and a check box to sync all 3D views' light direction; the Light Sources preference page removed | OPEN; answered 14:52: the style combo is for the active view; anti-aliasing and lights apply at once; the manipulation toggles by the button or Esc; the sync check box is a remembered setting and decides whether a light direction goes to the active view or to all open views; one more button saves ALL the current view's light settings for future use (corrected 14:55); three icons to choose from; all of the Light Sources page's settings but the manipulator go into the menu; a change of the lights is stored in the active view's properties, the button saves it into the settings, and the sync check box is for all the light settings (14:59); nothing run |
 | 64 | 2026-10-09 | the cavity option (cavity shading) draws jagged, MSAA on or off; the reporter: to be fixed in its shader; under both the realistic and the classic shading, more obvious in the Shaded draw style (no edges) and at a slant | FIXED `66ccd277b9`, not staged, not pushed: in its shader, as the reporter said. The pass reads one normal a pixel after the scene is resolved, so a crease was a band every pixel was in or out of; it now reads each neighbour's normal as the average over its pixel, the crease placed within the pixel from the two faces' planes. Along a straight crease the middle of the darkening strayed 0.18 to 0.26 px rms from its line (a perfect staircase gives 0.29) and strays 0.01 to 0.04 now, the line as heavy as it was (2% lighter). Found on the way, FIXED `dfdfc04c5c`: under an ORTHOGRAPHIC camera the creases of whatever lay near the camera dropped out, in dots. `tests/gui/cavity-crease-is-smooth.py`: 20 PASS and 21 FAIL on the copy staged 17:36, 47 PASS now. Render engine, MSAA 4x, Shaded, Direct3D 11; not run: a browser, Vulkan, Metal, OpenGL. Three points for the reporter (`docs/HandsOnLog.md`) |
 | 65 | 2026-10-09 | the Cycles view (the path-traced picture) shows the object MIRRORED -- about the XY plane, by the look of it; "definitly out of place" | STAGED 2026-10-09 17:36, fixed `6a6fa208d6`: the note-taker's reading confirmed by a picture -- on the copy staged 16:42 a cone on its base comes out apex DOWN in the path tracer's frame, the host's edge lines over it apex up. The frame is an uploaded image drawn with a render target's texture coordinate, turned over on every backend but OpenGL; the blit's shader takes the turn back out. A shader alone. 2 PASS and 2 FAIL before, 4 PASS now, and the same under `bgfx - OpenGL`. Not run: Vulkan, Metal (`docs/HandsOnLog.md`) |
-| 66 | 2026-10-09 | the preferences dialog is slow to load the first time; and "Reset all" chosen then freezes the program for several tens of seconds | OPEN, the timing check QUEUED by the reporter 17:52 (measure first); there was no entry for it; nothing measured, nothing run. Kin: entry 26 (the first OK, fixed) and entry 30's second task (a preset's freeze, measured, not changed) |
+| 66 | 2026-10-09 | the preferences dialog is slow to load the first time; and "Reset all" chosen then freezes the program for several tens of seconds | MEASURED before anything was changed; the freeze FIXED `6073d32437`, not staged, not pushed. It is not the reset (0.02 to 1.2 s) but the dialog being DESTROYED, which "Reset all", OK, Cancel and the close button all bring about: each of its 11 file choosers (17 with TechDraw loaded) had a file system model with a thread of its own, and the destruction waited on every one -- 11 to 59 s whenever the dialog was closed within half a minute of opening, nothing when it had been open 40 s. One model for all now, made when a line is first typed into: 0.0 to 0.9 s. `tests/gui/preferences-close-does-not-wait.py`: 5 PASS and 4 FAIL on the copy staged 17:36, 9 PASS now. NOT changed, measured: the first opening (3.5 to 4.0 s for 1.6 to 2.4 later) and a reset under a theme (7 s, entry 30's second task); three proposals and one question for the reporter (`docs/HandsOnLog.md`). The timing check was QUEUED by the reporter 17:52 |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -5505,7 +5520,7 @@ Not said yet by the reporter: how the view was deleted (a join by a corner
 drag, "Close view" in the cell menu, the border's menu); whether the black
 view was a 3D view each time; and how often.
 
-## 61. TechDraw drawn by the backend: a dashed line's highlight is thinner than the line under it -- OPEN; DECIDED: Qt's widths, and the highlight as wide as its line
+## 61. TechDraw drawn by the backend: a dashed line's highlight is thinner than the line under it -- FIXED `f7408b1f9f`, not staged; two readings for the reporter (see `docs/HandsOnLog.md`)
 
 **2026-10-09 14:26, reported:** "New defect. Techdraw bgfx rendering seems to
 render all dashed line slightly thicker than qt, which is not that big of
@@ -5569,6 +5584,26 @@ Passed on to the build session.
 not". Every line the backend draws on a page takes Qt's width, and its
 highlight the same width. Nothing of the entry is left with the reporter.
 Passed on to the build session.
+
+**2026-10-09 19:58, from the build session: FIXED `f7408b1f9f`; local, not
+pushed, not staged.** The account is in `docs/HandsOnLog.md`, entry 61; in
+short:
+- The backend drew an edge at the width asked for (0.35 mm) where Qt cuts
+  the pen to whole tenths (0.3); the highlight, read off the Qt item, was
+  the thinner of the two.
+- Edges, cut face outlines and centre marks are fed at Qt's width now.
+- Scored with Qt as the reference and the backend switched, the way round
+  the reporter said: 10 PASS and 4 FAIL on the staged copy, 14 PASS now. A
+  hidden line 0.375 -> 0.300 mm for Qt's 0.300; a dashed cosmetic line
+  0.350 -> 0.300; selected, 0.60 px of line beside the highlight -> none.
+
+**For the reporter, two readings of the build session's -- NOT ANSWERED
+YET:**
+- (a) An edge asked for at NO width is now drawn as Qt's one-pixel line,
+  where the backend left it out before.
+- (b) A PAT hatch's lines keep the width asked for: Qt does not cut those.
+(The note-taker's reading: both follow from "the same as qt renderer"; they
+stand unless the reporter says otherwise.)
 
 ## 62. Omni search: the last 10 confirmed items on the list when it first pops up (a new feature) -- OPEN
 
@@ -5918,7 +5953,45 @@ which document); whether the whole picture is turned -- background and all
 -- or the object alone against a right-way-up view; and whether it is
 mirrored top to bottom or left to right on the screen.
 
-## 66. The preferences dialog loads slowly the first time, and "Reset all" then freezes for tens of seconds -- OPEN; the timing check QUEUED by the reporter
+## 66. The preferences dialog loads slowly the first time, and "Reset all" then freezes for tens of seconds -- MEASURED; the freeze FIXED `6073d32437`, not staged; the first opening and a reset under a theme not changed, three proposals and one question for the reporter (see `docs/HandsOnLog.md`)
+
+**2026-10-09 19:58, from the build session: MEASURED before anything was
+changed, and the freeze FIXED `6073d32437`; local, not pushed, not staged.**
+The account is in `docs/HandsOnLog.md`, entry 66; in short:
+- (b) The freeze is NOT the reset, which takes 0.02 to 1.2 s. It is the
+  dialog being DESTROYED -- which "Reset all", OK, Cancel and the close
+  button all bring about. Each of its 11 file choosers (17 with TechDraw
+  loaded) had a file system model with a thread of its own, and the
+  destruction waited on every one: 11 to 59 s whenever the dialog was
+  closed within half a minute of opening, nothing when it had been open
+  40 s. (So the note-taker's "where to look" for (b), below, was wrong.)
+- The fix: one model for all the choosers, made when a line is first typed
+  into. Closing takes 0.0 to 0.9 s.
+- `tests/gui/preferences-close-does-not-wait.py`: 5 PASS and 4 FAIL on the
+  copy staged 17:36, 9 PASS now.
+
+**NOT changed, measured, for the reporter to say -- NOT ANSWERED YET:**
+- (a) The first opening: 3.5 to 4.0 s, for 1.6 to 2.4 s later.
+  - 1.8 s is the Material module reading its library, once a session (its
+    preference page is the first to ask).
+  - 1.2 s at EVERY opening is showing the dialog's 2600 to 3060 widgets
+    under a theme (0.1 s with none): all 46 to 54 pages are built at every
+    opening.
+  - 0.5 s at every opening with TechDraw loaded is its line style icons
+    listing a folder again for each.
+- What a reset still costs: with the Dark theme and `scanner.FCStd` open,
+  7 s -- the theme leaving (the style sheet and the tree's 686 icons).
+  That is entry 30's second task.
+- The build session's three proposals, none started:
+  1. build a page when it is first shown instead of all at the opening
+     (the largest gain; a design to agree);
+  2. cache TechDraw's list of line standards (small; speeds up every page
+     with dashed lines too);
+  3. the reset under a theme is entry 30's.
+- Its question, verbatim: "I fixed the freeze without asking although the
+  reporter's word was a timing check -- it is a plain defect with nothing
+  to decide (a completion nobody sees until they type). Say if it should
+  have waited."
 
 **2026-10-09 17:52, the reporter:** "queue the preference dialog timing
 check"
