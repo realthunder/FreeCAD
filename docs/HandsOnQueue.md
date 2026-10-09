@@ -96,7 +96,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 27 | 2026-10-06 | the view cell menu: opens a spreadsheet nobody asked for, lists every TechDraw object, changes the wrong cell | STAGED 2026-10-07 14:23, fixed `fa2ada985c`: the menu made a spreadsheet view by asking for it, listed a page's views, and placed a pick by the general policy instead of into its cell; all three gone, spreadsheets now listed by type like pages (`docs/HandsOnLog.md`) |
 | 28 | 2026-10-06 | `scanner.FCStd` restores with a wrong colour, sometimes (the motor body light blue for light grey) | NOT REPRODUCED 2026-10-09, nothing changed, three questions for the reporter: 15 loads over 4 sessions, every colour property of all 686 objects identical and the frames the same. In the file the solid `Compound` (264 faces) and the cable `Compound001` have LIGHT BLUE as their own stored colour and are drawn light blue on every load; the containers over them carry a light grey material with its override off. So here it is the light GREY that was not seen (`docs/HandsOnLog.md`) |
 | 29 | 2026-10-07 | view cells: transparent frames that show a split, a join and a resize while dragged (every cell the drag changes); corner handles on an opaque background, the cell menu button too when hovered; a thinner border between cells; a minimum cell size setting, default 200 (change request, decided) | STAGED 2026-10-09 08:40, fixed `dd336be800`, the default 300 on the reporter's word `c9bc1e22c5`; four choices for the reporter to confirm or overrule: a drag of a corner zone or of a border is shown as translucent frames over every cell it changes and is carried out AT THE RELEASE; the setting `View/OpenView/MinimumCellSize`, 300 (was 200), on the preferences' UI page -- a split that would leave a cell under it is refused with one line in the report view; corner zones (and the menu button when hovered) on an opaque ground; the border 3 pixels. `tests/gui/view-cell-drag-frames.py` 33 PASS (`docs/HandsOnLog.md`, `docs/SplitViews.md` sec 21) |
-| 30 | 2026-10-07 | the dark and light overlay stylesheets integrated into the Dark and Light preference packs (a task asked; what "integrated" covers to confirm); and the long freeze when an overlay stylesheet is applied, to investigate; the Python console's background in both packs, so a theme can take an overlay preset's away again | THIRD TASK STAGED 2026-10-09 08:40, fixed `dad4f5d18a`: Light, Dark and Classic list every colour an overlay preset writes, the console's and the tree's backgrounds as none, so a theme takes the preset's away again; 8 PASS and 10 FAIL before, 18 PASS after. SECOND TASK MEASURED, nothing changed: "Overlay dark theme" holds the program 13.0 s on a fresh profile with `scanner.FCStd` open, 9.6 s of it the APPLICATION's style sheet (`Dark.qss`), 3.3 s the combo view switched off; what to do about it is the reporter's to say. FIRST TASK not started: what "integrated" covers, NOT ANSWERED YET (`docs/HandsOnLog.md`) |
+| 30 | 2026-10-07 | the dark and light overlay stylesheets integrated into the Dark and Light preference packs (a task asked; what "integrated" covers to confirm); and the long freeze when an overlay stylesheet is applied, to investigate; the Python console's background in both packs, so a theme can take an overlay preset's away again | THIRD TASK STAGED 2026-10-09 08:40, fixed `dad4f5d18a`: Light, Dark and Classic list every colour an overlay preset writes, the console's and the tree's backgrounds as none, so a theme takes the preset's away again; 8 PASS and 10 FAIL before, 18 PASS after. SECOND TASK MEASURED, nothing changed: "Overlay dark theme" holds the program 13.0 s on a fresh profile with `scanner.FCStd` open, 9.6 s of it the APPLICATION's style sheet (`Dark.qss`), 3.3 s the combo view switched off; what to do about it is the reporter's to say. FIRST TASK ANSWERED by the reporter 2026-10-09 09:38, not started: the two overlay presets ("Overlay dark theme", "Overlay light theme") are to be REMOVED and what they give integrated into the existing Dark and Light themes; one point open, whether the themes then set the overlay LAYOUT too (`docs/HandsOnLog.md`) |
 | 31 | 2026-10-07 | report view: "Go to end" on by default (change request) | STAGED 2026-10-09 08:40, fixed `47b5e72c79`: "Go to end" is on for a profile that never stored it (`docs/HandsOnLog.md`) |
 | 32 | 2026-10-07 | some sub menus are transparent with blue text (Tools > Command history): find out why; transparent menus off by default | STAGED 2026-10-09 08:40, fixed `b960092ea5`: the see-through menus are single menu objects shared between a pop-up over the 3D view and an entry of the main menu, and a themed session with no menu sheet chosen took the see-through sheet; now no sheet chosen = an ordinary menu, the see-through ones a choice in Preferences > Theme. A question for the reporter (`docs/HandsOnLog.md`) |
 | 33 | 2026-10-07 | a cmd window pops up briefly at the first document opened after start | STAGED 2026-10-09 08:40, fixed `ef4df215b5` (the cycles submodule at its `35a3bd898`): the CUDA probe ran `cmd.exe /c where nvcc` through `popen` at the first 3D view; it searches the PATH without a shell now, and the session starts no process at all. Both pushed since (`docs/HandsOnLog.md`) |
@@ -2344,7 +2344,35 @@ What is asked now:
   and the border still has to be wide enough to grab and to right-click (its
   menu closes a neighbouring view).
 
-## 30. The dark and light overlay stylesheets integrated into the Dark and Light preference packs (a task asked) -- third task STAGED 2026-10-09, fixed `dad4f5d18a`; the freeze measured; the first task waits for the reporter (see `docs/HandsOnLog.md`)
+## 30. The dark and light overlay stylesheets integrated into the Dark and Light preference packs (a task asked) -- third task STAGED 2026-10-09, fixed `dad4f5d18a`; the freeze measured; the first task ANSWERED 2026-10-09: the two overlay presets go, into the two themes; not started (see `docs/HandsOnLog.md`)
+
+**2026-10-09 09:38, the reporter on the first task -- what "integrated"
+covers:** "BTW, put that in notes, I want to remove overlay dark/light them
+and integrate to the existing two themes. I think there is already an entry
+for that."
+This is that entry, and it answers the question that stood since
+2026-10-07:
+- the two presets "Overlay dark theme" and "Overlay light theme" (Tools >
+  Preset configurations; `data/settings/OverlayDark.FCParam` and
+  `OverlayLight.FCParam`) are to be REMOVED;
+- what they give is to come with the existing two themes, Dark and Light.
+So it is none of the three readings alone: not a different pair of overlay
+sheets, not something wrong on screen -- the presets themselves go, and the
+themes take their place.
+What it comes from, in the reporter's words of the same message (entry 49):
+"at the start it is a light theme, but with mixed settings in python editor
+resulting from applying the overlay dark theme, which is why I want to reset
+it" -- a preset that leaves a theme half changed.
+**One point this leaves open, the note-taker's question, NOT ANSWERED YET:**
+a preset writes more than colours. By the build session's measurement it
+also names the APPLICATION's style sheet (`Dark.qss`), switches the combo
+view off for separate tree and property panels, and sets the 26 keys that
+put the panels into overlay mode -- the LAYOUT. The build session left
+those out of the themes on purpose ("a theme is not a layout"). With the
+presets gone: do Dark and Light then switch the panels to overlay as well,
+or do they only carry the overlay's look, the layout staying whatever the
+user has?
+Passed on to the build session, which is paused; not started.
 
 **2026-10-09 00:26, the build session: the third task is fixed, the second
 measured, the first still waits** (its message; code `dad4f5d18a`, its log,
@@ -3775,6 +3803,25 @@ Not said yet by the reporter: whether and when they are to be looked at.
 
 ## 49. After "Reset all" and then the Light theme, the workbench toolbar is hidden -- OPEN, intermittent
 
+**2026-10-09 09:38, the reporter, when the two questions at the end of this
+entry were put to them:** "at the start it is a light theme, but with mixed
+settings in python editor resulting from applying the overlay dark theme,
+which is why I want to reset it. [...] and no I didn't more any toolbar,
+panel or window"
+- Where it started from: the Light theme, with the Python editor's settings
+  mixed in from an "Overlay dark theme" preset applied before. That is why
+  the reset was made (it is entry 30's third task seen from the user's
+  side: the staged copy of 08:40 has the fix by which a THEME takes those
+  away again; the reporter reached for "Reset all").
+- Nothing was moved or clicked between the first reset and the first theme
+  -- no toolbar, no panel, not the window. So the window state that was
+  saved in those 14 seconds (below) was saved by the program on its own.
+  The note-taker's reading: that fits a save set off by the reset's own
+  title bar swap, and takes away the other explanation, a save set off by
+  the user.
+- Still not said: what the two packs applied at 09:26:45 and 09:27:17
+  were. The backups say the first was Dark.
+
 **2026-10-09 09:30, reported:** "new defect. It's intimitent. I choose 'reset
 all' in preference dialog. and then select light theme in tools -> Preset
 configurations -> themes. The theme changed, but the workbench toolbar got
@@ -3847,9 +3894,10 @@ its title bar, then restored when the theme put the custom title bar back.
 What makes it intermittent would be whether that save happened at all --
 the evidence says it did in one run and not in the other.
 
-Not said yet by the reporter: what the two packs applied in between were,
-and whether anything was clicked or moved between the first reset and the
-first theme (a toolbar, a panel, the window).
+Asked of the reporter: what the two packs applied in between were, and
+whether anything was clicked or moved between the first reset and the first
+theme (a toolbar, a panel, the window). The second answered 2026-10-09
+09:38, at the top of this entry: nothing was.
 
 ## Inbox
 
