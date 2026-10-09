@@ -186,7 +186,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 58 | 2026-10-09 | a task, "can do it later": audit every warning shown when `scanner.FCStd` is opened and recomputed, and fix what can be fixed | OPEN, for later; a first count from a kept report log: 208 warnings and 6 errors, about 15 kinds; nothing run |
 | 59 | 2026-10-09 | the program no longer opens the Start page at startup (the reporter: "the startup workbench become the PartDesign"; it used to show Start with the recent files) | FOUND by the note-taker, read and looked at in the live session, nothing changed: the startup workbench was PartDesign all along; "Reset all" removed the Start module's migration flag, so its 2024 migration ran again at the next start and switched the Start page off (`ShowOnStartup` = false). DECIDED by the reporter 13:42: "Reset all" keeps the migration's flag, as it keeps `SaveUserParameter`; not started |
 | 60 | 2026-10-09 | after a view cell is deleted, the view that expands into its room is sometimes BLACK until it is RESIZED; a camera move does not bring it back (corrected by the reporter 14:06) (Windows, Direct3D 11 at least) | OPEN, intermittent; nothing run |
-| 61 | 2026-10-09 | TechDraw drawn by the backend: dashed lines are a little thicker than Qt's (no great matter); but for some lines -- the cosmetic symmetry line in `Page`, `Top` -- the hover and selection highlight is drawn as the THINNER dashed line and is barely visible over the thicker line under it | OPEN; DECIDED by the reporter 14:30: the backend draws these lines as Qt does -- thinner -- and the highlight at the same width as the line; a view's bounding box line shows it too; nothing run |
+| 61 | 2026-10-09 | TechDraw drawn by the backend: dashed lines are a little thicker than Qt's (no great matter); but for some lines -- the cosmetic symmetry line in `Page`, `Top` -- the hover and selection highlight is drawn as the THINNER dashed line and is barely visible over the thicker line under it | OPEN; DECIDED by the reporter 14:30 and 14:31: EVERY line the backend draws on a page, dashed or not, at Qt's width -- thinner -- and the highlight at the same width as its line; a view's bounding box line shows it too; nothing run |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -5265,6 +5265,10 @@ The note-taker's reading, to confirm: "the same as qt renderer" is for the
 WIDTH of every line the backend draws on a page, dashed or not, the frame's
 included -- the reporter named the dashed ones because that is where it was
 seen; and the entry 36 fix that made the DASHES Qt's stays.
+Passed on to the build session.
+**CONFIRMED by the reporter, 2026-10-09 14:31:** "yes, every line, dashed or
+not". Every line the backend draws on a page takes Qt's width, and its
+highlight the same width. Nothing of the entry is left with the reporter.
 Passed on to the build session.
 
 ## Inbox
