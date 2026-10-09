@@ -16591,6 +16591,27 @@ geometry).
   and read another face. `afterRestore` registers where the document is
   not restoring.
 
+**A sheet's cells (user, 2026-10-09).** "So, does spreadsheet got the
+same feature." It had not (`sheet.py`): a cell `=Cut.<<Face2>>._shape.Area`
+follows the drill on one history, and after the log has put it back -- the
+sheet registers at the end of its restore, so it had not the engine's
+defect -- but taken in a merge it came as written and read 300 for the
+side's 600. A cell is saved as its content, with nothing beside it.
+
+- *Saved.* A cell whose expression names elements writes how many
+  (`shadows=`) and the mapped name of each that has one (`shadow0=`,
+  `shadow1=`, in the order a visit meets the paths --
+  `VariableExpression::elementPaths`, which the engine keys its own by).
+  Before the content, which may be the element's character data.
+- *Read.* Kept on the cell until its content is parsed -- at once for a
+  value the log puts back, in `afterRestore` for a file -- then given to
+  the paths (`ShadowSub::given`), which register with it as an
+  expression's do.
+- *Followed* with the rest: the cells are a link property.
+- *Not built: the string ids.* 27.77 (5) gave an engine's paths their ids
+  across a save; a cell's still hold theirs in memory only, as 27.77 found
+  expressions did. Not asked for here.
+
 **Left.**
 
 - *A feature with no element map* (an import): no name, and nothing is
@@ -16612,7 +16633,18 @@ again still missing, and found when the hole is made again.
 `testAnExpressionTakenNamesTheFaceItWasGiven`: two expressions, the side
 and the top, their text and their values after the merge, undone, redone,
 read again. `testAnExpressionPutBackIsToldOfItsFace`: the branch left and
-come back to, then the drill. Probes in `~/.cache/txnlog-ref/`.
+come back to, then the drill. `testACellTakenNamesTheFaceItWasGiven`: two
+cells, one naming two faces, their content and values after the merge and
+read again. Probes in `~/.cache/txnlog-ref/`.
+
+*Met on the way: this box's clock.* `testExpressionsAreMergedByTheirPaths`
+failed once in a dozen runs, the width decided ours'. It decides by the
+time of the rows, 50 ms apart, and the rows of a failing run (`flake2.py`)
+had the later one 127 s earlier: the wall clock here steps forward 126.87
+s and back every five seconds, for a third of a second, measured against
+the monotonic clock with no FreeCAD in it (`systemd-timesyncd` and WSL's
+own sync, it seems). 2 in 60 and 2 in 120 since. Nothing in the test or
+the merge is wrong; a row's time is the wall clock's.
 
 ## 32. A shape diff: seeing what a merge or a pick would take (plan, 2026-10-06)
 

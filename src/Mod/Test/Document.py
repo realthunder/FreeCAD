@@ -5835,6 +5835,59 @@ class TransactionBranchCases(unittest.TestCase):
         doc.recompute()
         self.assertAlmostEqual(doc.Ref.Side, 600.0)
 
+    def testACellTakenNamesTheFaceItWasGiven(self):
+        # Sec 31.22: a sheet's cell is an expression too, and says its
+        # element by number in its content. The cell saves the mapped name
+        # beside it, and a sheet a merge takes follows it: the side by its
+        # name, the top -- drilled here -- by its geometry.
+        import math
+
+        doc = self.cutToReferTo("MergeTabulates", drilled=False)
+        cut = doc.Cut
+        doc.openTransaction("sizes")
+        doc.Box.Width, doc.Box.Height = 20, 30  # each pair of faces its own area
+        doc.Cyl.Height = 60
+        doc.Cyl.Placement.Base = FreeCAD.Vector(5, 5, -80)
+        sheet = doc.addObject("Spreadsheet::Sheet", "Sheet")
+        doc.recompute()
+        doc.commitTransaction()
+        side, top = self.faceAt(cut, XMin=10), self.faceAt(cut, ZMin=30)
+        doc.createTransactionBranch("side")
+        doc.switchTransactionBranch("side")
+        doc.openTransaction("refer")
+        sheet.set("A1", "=Cut.<<%s>>._shape.Area" % side)
+        sheet.set("A2", "=Cut.<<%s>>._shape.Area + Cut.<<%s>>._shape.Area" % (top, side))
+        doc.recompute()
+        doc.commitTransaction()
+        self.assertAlmostEqual(sheet.get("A1"), 600.0)
+        self.assertAlmostEqual(sheet.get("A2"), 800.0)
+
+        doc.switchTransactionBranch("main")
+        doc.openTransaction("drill")
+        doc.Cyl.Placement.Base = FreeCAD.Vector(5, 5, -10)
+        doc.recompute()
+        doc.commitTransaction()
+        mine, above = self.faceAt(cut, XMin=10), self.faceAt(cut, ZMin=30)
+        self.assertNotEqual(mine, side, "the drill left the numbers as they were")
+
+        result = doc.mergeTransactionBranch("side")
+        self.assertEqual((result["unresolved"], result["failed"]), ([], []))
+        self.assertEqual(sheet.getContents("A1"), "=Cut.<<%s>>._shape.Area" % mine)
+        self.assertEqual(
+            sheet.getContents("A2"),
+            "=Cut.<<%s>>._shape.Area + Cut.<<%s>>._shape.Area" % (above, mine),
+        )
+        self.assertAlmostEqual(sheet.get("A1"), 600.0)
+        self.assertAlmostEqual(sheet.get("A2"), 800.0 - math.pi * 4)
+        self.assertEqual(self.shapesKept(cut), [])
+        doc.save()
+        path = doc.FileName
+        FreeCAD.closeDocument(doc.Name)
+        doc = self.track(FreeCAD.openDocument(path))
+        self.assertEqual(doc.Sheet.getContents("A1"), "=Cut.<<%s>>._shape.Area" % mine)
+        doc.recompute()
+        self.assertAlmostEqual(doc.Sheet.get("A2"), 800.0 - math.pi * 4)
+
     def testAnExpressionPutBackIsToldOfItsFace(self):
         # Sec 31.22, met on the way: an expression the log puts back -- a
         # branch come back to -- was installed and never registered with

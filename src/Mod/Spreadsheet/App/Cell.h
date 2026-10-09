@@ -136,6 +136,11 @@ public:
 
     void afterRestore();
 
+    /// The mapped names a file gave for the element paths of the cell's
+    /// expression go to the paths, once the expression is parsed
+    /// (docs/TransactionLog.md sec 31.22)
+    void giveShadows();
+
     void save(Base::Writer &writer) const;
 
     bool isUsed() const;
@@ -289,6 +294,8 @@ private:
     App::Color backgroundColor;
     DisplayUnit displayUnit;
     std::string alias;
+    /// Read with the cell and not yet given: the expression is parsed later
+    std::vector<std::string> givenShadows;
     Base::Unit computedUnit;
     int rowSpan;
     int colSpan;

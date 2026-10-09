@@ -329,9 +329,6 @@ void PropertyExpressionEngine::Paste(const Property &from)
 
 namespace {
 
-/// The variables of an expression that name a sub-object, in the order a
-/// visit meets them: what the ids saved beside the expressions are keyed by
-/// (docs/TransactionLog.md sec 27.77).
 class ElementPathCollector : public ExpressionVisitor
 {
 public:
@@ -346,12 +343,17 @@ public:
 
 std::vector<VariableExpression*> elementPaths(Expression &expr)
 {
+    return VariableExpression::elementPaths(expr);
+}
+
+} // namespace
+
+std::vector<VariableExpression*> VariableExpression::elementPaths(Expression &expr)
+{
     ElementPathCollector collector;
     expr.visit(collector);
     return std::move(collector.vars);
 }
-
-} // namespace
 
 void PropertyExpressionEngine::beforeSave(Base::Writer &writer) const
 {

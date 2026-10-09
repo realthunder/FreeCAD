@@ -300,6 +300,11 @@ class AppExport VariableExpression : public Expression {
 public:
     static ExpressionPtr create(const App::DocumentObject *owner, ObjectIdentifier &&var);
 
+    /// The variables of \a expr that name a sub-object, in the order a visit
+    /// meets them: what is saved beside an expression for each is keyed by
+    /// its place here (docs/TransactionLog.md sec 27.77, 31.22).
+    static std::vector<VariableExpression*> elementPaths(Expression &expr);
+
     bool isTouched() const override;
 
     std::string name() const;

@@ -762,10 +762,12 @@ bool ObjectIdentifier::updateElementReference(ExpressionVisitor &v,
     // two were saved together; where the shapes here are not the ones they
     // were saved with -- a value a merge takes -- the property is told to
     // follow its names (PropertyLinkBase::followElementReferences).
-    if (!shadowSub.given.empty()) {
+    // (Kept while the object it is an element of is not there to register
+    // with.)
+    if (!shadowSub.given.empty() && result.resolvedDocumentObject) {
         std::string given = std::move(shadowSub.given);
         shadowSub.given.clear();
-        if (!feature && !reverse && !shadowSub.pending && result.resolvedDocumentObject
+        if (!feature && !reverse && !shadowSub.pending
                 && !GeoFeature::hasMissingElement(subObjectName.getString().c_str())) {
             shadowSub.first = std::move(given);
             shadowSub.second = subObjectName.getString();

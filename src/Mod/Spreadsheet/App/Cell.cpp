@@ -38,6 +38,7 @@
 #include <App/Application.h>
 #include <App/ExpressionParser.h>
 #include <App/MaterialAppearance.h>
+#include <App/TransactionValue.h>
 #include <Base/Console.h>
 #include <Base/Parameter.h>
 #include <Base/Quantity.h>
@@ -312,6 +313,26 @@ void Cell::afterRestore()
     if (expr) {
         setContent(expr->getText().c_str());
     }
+    giveShadows();
+}
+
+void Cell::giveShadows()
+{
+    if (givenShadows.empty() || !expression) {
+        return;
+    }
+    auto paths = App::VariableExpression::elementPaths(*expression);
+    // None: the content waits to be parsed (afterRestore), or names no
+    // element after all
+    if (paths.empty()) {
+        return;
+    }
+    for (std::size_t i = 0; i < paths.size() && i < givenShadows.size(); ++i) {
+        if (!givenShadows[i].empty()) {
+            paths[i]->setGivenShadow(std::move(givenShadows[i]));
+        }
+    }
+    givenShadows.clear();
 }
 
 void Cell::setContent(const char * value, bool eval)
@@ -824,6 +845,22 @@ void Cell::restore(Base::XMLReader &reader, bool checkAlias, int restoreType)
     if(!(restoreType & (PasteFormula|PasteValue)))
         return;
 
+    // The mapped name of each element the expression names, in the order a
+    // visit meets its paths (docs/TransactionLog.md sec 31.22). Read before
+    // the content, which may be the element's character data.
+    givenShadows.clear();
+    long shadows = reader.getAttributeAsInteger("shadows", "0");
+    for (long i = 0; i < shadows; ++i) {
+        const std::string name = "shadow" + std::to_string(i);
+        std::string shadow = reader.hasAttribute(name.c_str()) ? reader.getAttribute(name.c_str()) : "";
+        // A value of another copy of the file names that copy's strings
+        // (sec 30.16)
+        if (auto strings = App::RestoreStrings::current()) {
+            shadow = strings->sub(shadow);
+        }
+        givenShadows.push_back(std::move(shadow));
+    }
+
     std::string _content;
     const char* content = reader.hasAttribute("content") ? reader.getAttribute("content") : 0;
     if (!content) {
@@ -837,6 +874,7 @@ void Cell::restore(Base::XMLReader &reader, bool checkAlias, int restoreType)
         }
     }
     setContent(content, (restoreType & PasteValue)?true:false);
+    giveShadows();
 }
 
 void Cell::restoreFormat(Base::XMLReader &reader, bool checkAlias)
@@ -942,6 +980,29 @@ void Cell::save(Base::Writer &writer) const {
     if(!isUsed(EXPRESSION_SET)) {
         writer.Stream() << "\"/>\n";
         return;
+    }
+
+    // An element the expression names is said in the content by its number;
+    // the mapped name it has is saved beside it, as a link's shadow is and an
+    // expression's in its engine (docs/TransactionLog.md sec 31.22): a value
+    // read where the shape counts another way has only the name to say which
+    // element was meant.
+    if (expression) {
+        auto paths = App::VariableExpression::elementPaths(*expression);
+        bool named = false;
+        for (auto path : paths) {
+            named = named || !path->getPath().getShadowSub().first.empty();
+        }
+        if (named) {
+            writer.Stream() << "\" shadows=\"" << paths.size();
+            for (std::size_t i = 0; i < paths.size(); ++i) {
+                const auto& shadow = paths[i]->getPath().getShadowSub();
+                if (!shadow.first.empty()) {
+                    writer.Stream() << "\" shadow" << i << "=\""
+                                    << App::Property::encodeAttribute(shadow.first);
+                }
+            }
+        }
     }
 
     std::string content;
