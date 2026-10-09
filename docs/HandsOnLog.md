@@ -126,8 +126,21 @@ planned", read as the open entries in the order left at the pause: 64, 66,
 note-taker passed on at 17:52 that entry 66 is a measurement first). Done
 in it so far: 64 (`66ccd277b9`, and a defect found on the way,
 `dfdfc04c5c`); 66 measured, and the freeze it found fixed (`6073d32437`);
-61 (`f7408b1f9f`); 62 (`9d354a8c44`). Local: not pushed, not staged. Tools
-and results in `..\dl\handson\2026-10-09\q5`.
+61 (`f7408b1f9f`); 62 (`9d354a8c44`); 63 but for its icon and its light
+handle (`b20c825573`). Local: not pushed, not staged. Tools and results in
+`..\dl\handson\2026-10-09\q5`.
+
+The reporter, about 21:05: "pause after you've fixed the current issue.
+push and stage. we'll resume in next session" (the current issue: entry
+63); then, 21:28: "hold on the push and stage. let's do that in next
+session". So NOTHING of this session is pushed or staged: origin and the
+copy under test are at `6a6fa208d6`, as they were at 17:36. PAUSED after
+entry 63's commit and the two suites on it.
+
+On the tree of `b20c825573`: sixteen GUI tests by hand, 243 claims, no FAIL
+(named under entry 63). Both full suites were started on it at about 21:40
+(`..\dl\handson\2026-10-09\q5\full-ctest.log`, `fullpy-pytest.log`); their
+result is the next thing written here.
 
 On `dfdfc04c5c`: ctest 790 of 790 (799 entries, 9 disabled). The GUI tests
 are not among them on this box -- `tests/gui/CMakeLists.txt` registers them
@@ -190,6 +203,7 @@ Evidence that does not belong in the repository is under
 | 66 | MEASURED; the freeze FIXED `6073d32437`, not pushed, not staged; the first opening and what a reset costs under a theme measured and NOT changed, for the reporter | the freeze is not the reset but the dialog being destroyed, which a reset, OK and Cancel all bring about: each of its 11 to 17 file choosers had a file system model with a thread of its own, and the destruction waited on every one -- 11 to 59 s when the dialog was closed within half a minute of opening. One model for all, made when a line is first typed into: 0.0 to 0.9 s. The first opening is 3.5 s for 1.6 to 2.4 later (the Material library read once, 1.8 s; showing 2600 widgets under a theme, 1.2 s) |
 | 61 | FIXED `f7408b1f9f`, not pushed, not staged | the backend drew an edge at the width asked for, 0.35 mm, where Qt cuts the pen to whole tenths, 0.3; and the highlight, read off the Qt item, was the thinner of the two. Edges, cut face outlines and centre marks are fed at Qt's width. Scored with Qt as the reference and the backend switched: 10 PASS and 4 FAIL on the staged copy, 14 PASS |
 | 62 | DONE `9d354a8c44`, not pushed, not staged; four choices of mine for the reporter | the box comes up with the items last confirmed in it below the three modes -- a command run, a parameter or a property opened, an object selected -- ten at most, the newest first, each once, gone when more is typed, carried out again when picked. Kept between sessions; what cannot be found now is left out; the desktop box only |
+| 63 | DONE `b20c825573`, not pushed, not staged; the ICON not chosen (three drawn and turned down, references from other programs shown); the light's direction to be redone with the Coin light manipulator, next session, on the reporter's word | the menu has the style as one combo box with icons, the anti-aliasing as another, and a Lights section in place of the Light Sources preference page: a change is stored in the active view's properties, or in every open view's with "All views" ticked; "Save as default" writes the preferences; "Direction" turns the headlight by a drag in the view |
 | 60 | STAGED 2026-10-09 16:42, fixed `d6f640f4ee` | whenever closing a cell un-nested a splitter: the surviving cell was moved up with `QSplitter::replaceWidget`, which takes it out of the window on the way, and a `QOpenGLWidget` that leaves its window is composed from nothing until its next resize. The view was drawn right all along; only the screen was black. The cell tree is rebuilt without a cell leaving the window |
 | 45 | FIXED `c7fdcf3220`, pushed 2026-10-08, not staged | a spreadsheet's view provider made its view when it was only asked whether it had one: one click on a sheet in the tree opened it. Asking is a question now, and a new request opens the view for the three callers that host it. Show-in-cell also took a stale cell and closed another sheet's view; it takes the active view's cell |
 
@@ -4077,3 +4091,96 @@ finds the command list by its rows now. Nothing was wrong with the box.
 **Not run:** a pick with the mouse (the test picks with Down and Tab); the
 Return key on a recent row (it goes through the same function, and a flag
 keeps the key from being answered twice -- read, not driven).
+
+## 63. `Std_DrawStyle`: its menu takes the display style, the anti-aliasing and the lights -- DONE `b20c825573` but for the icon, which the reporter has not chosen
+
+Built as answered at 14:52, 14:55 and 14:59. The menu, top to bottom
+(`..\dl\handson\2026-10-09\q5\entry63\menu.png`, `menu-dark.png`):
+
+- **Display style**, one combo box, an entry a style with its icon; it shows
+  and sets the ACTIVE view's style. The eight rows it replaces are still in
+  the menu, hidden: they are the commands' own actions, which the `V,1` to
+  `V,9` shortcuts need, and picking an entry runs the style's command (so
+  Ctrl held still sets every view, as it did for a row).
+- **Anti-aliasing**, a combo box on the setting `View/AntiAliasing`: the
+  open views take a change at once.
+- **Shading**, as it was.
+- **Lights**: headlight, fill light, ambient light -- a switch, a colour and
+  an intensity each: everything the Light Sources page had but its little
+  view with the light to drag. A change is stored in the active view's
+  properties (`Light_EnableFillLight`, `Light_HeadlightIntensity`, ...; the
+  per-view lights the views already had), kept with the document as a
+  view's other properties are.
+  - **Direction**: a button that stays down while it is on. The menu goes
+    away and a drag with the left button in the view turns the headlight:
+    the light is where the pointer is on a ball that fills the view --
+    from the eye in the middle, from the side at the rim. The middle button
+    and the wheel still move the camera. The button again, or Escape in
+    the view, ends it. Greyed with the rest when the active view is not a
+    3D view.
+  - **All views**: the setting `View/SyncLightSettings`, remembered.
+    Ticked, a change of ANY of the lights -- the direction too -- goes to
+    every open 3D view.
+  - **Save as default**: writes what lights the active view into the
+    preferences, which is what a view with no lights of its own is lit by.
+    Nothing else in the section writes them.
+- The **Light Sources page** is gone from the preferences.
+
+**Choices of mine, for the reporter:**
+1. **The direction is turned with the pointer, not with a handle in the
+   view.** A handle (the arrow the page had) was built first: at the middle
+   of a view with a model in it it is inside the model, neither seen nor
+   picked. The light on the model is what shows where it points.
+   ANSWERED by the reporter, 21:25: "about the light handle, why note use
+   coin light manipulator like what shadow light is using. do that in next
+   session". So the pointer drag is a stand-in: the next session puts the
+   Coin light manipulator there, as the shadow light has it. Not looked at
+   yet: how the shadow light's is placed and drawn (my bare dragger was
+   not).
+2. Ticking "All views" does not push the active view's lights to the
+   others at that moment; the next change does.
+3. "Save as default" changes at once every open view that has no lights
+   of its own, since those follow the preferences -- that is what the
+   preferences were before, too.
+4. Escape ends the turning only while the view has the keyboard.
+5. A colour is chosen in the colour dialog, for which the menu goes away
+   (a dialog under a menu gets no input).
+
+**The icon: NOT settled.** Three were drawn in the look of the style icons
+(`entry63\icon-candidates.png`: a cube half solid and half wire; a wire
+cube behind a solid one; a cube with a face each solid, lined and dotted).
+The reporter, 21:10: "Your three icons don't click for me. search web for
+similar functions like display mode / appearance especially from other 3d
+app and show me". Searched and shown: `entry63\refs\` (96 pictures,
+`manifest.txt` says where each is from) and three sheets, `entry63\overview-style-icons-cad.png`, `-dcc.png` and `overview-icon-sets.png`.
+The command's icon is unchanged until one is chosen: the tool button shows
+the active view's style, as before.
+
+**Scored.** `tests/gui/display-style-menu.py`
+(`GuiDisplayStyleMenu_tests_run`), two views of one document open, the
+sections driven through the menu's own `aboutToShow`: 24 PASS. It pops
+nothing up -- and `docs/CoinRetirement.md` sec 3.5 says what that means:
+no harness here can see how a menu behaves as a popup. NOT verified, and
+the reporter's to try: that the menu stays up while a combo or a slider is
+used; that "Direction" and a colour swatch take the menu away cleanly,
+from the tool button's menu and from View > Display style in the menu bar
+alike; that the colour dialog comes up after it and takes input.
+
+**Also run on the build, no FAIL:** `view-settings.py` 7, `general-settings.py` 9, `entry24-decisions.py` 13,
+`state-and-missed-settings.py` 21, `antialiasing-change-keeps-the-cells.py`
+18, `msaa-reaches-the-view.py` 12, `render-type-default-and-legacy.py` 13,
+`preferences-reset-all.py` 12, `preferences-ok-keeps-defaults.py` 7,
+`preferences-ok-reapplies-nothing.py` 13, `preferences-cancel-asks-
+nothing.py` 3, `preferences-close-does-not-wait.py` 9, `omni-search-recent-
+items.py` 17, `selection-on-top-hidden-edges.py` 18, `cavity-crease-is-
+smooth.py` 47.
+
+**Found on the way.** The tool bars are rebuilt now and then, each time
+with a new Display style menu, and the old menu object stays in the window
+unused; a test that takes "the" menu has to take the last one. (It cost an
+hour: Escape ended the turning from the first build, and a button of a
+menu left behind went on saying otherwise.)
+
+**Not run:** the browser viewer (it has no such menu); a document saved and
+reopened with a view's own lights (the properties are ordinary dynamic
+properties of the view, and the views already restored `Light_*`).
