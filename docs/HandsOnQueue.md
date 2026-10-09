@@ -127,7 +127,8 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 48 | 2026-10-09 | three GUI tests fail the same way on the copy staged 2026-10-07 and on today's tree: `element-color-hide.py` (2 of 624 claims), `per-view-shown-eviction.py` (1 claim), `navicube-per-view.py` (11 claims pass, then it never ends) (found by the build session) | OPEN; read only so far: `navicube-per-view.py` is no defect -- a run-by-hand script that never closes FreeCAD; the other two not looked into |
 | 49 | 2026-10-09 | after "Reset all" in the preferences and then the Light theme from Tools > Preset configurations > Themes, the workbench toolbar is hidden; shown again by hand it sits in the custom title bar as expected; intermittent -- the same steps a second time did not do it | OPEN; the bad and the good run are both in the evidence, and they differ in one thing: a saved main window state was in the configuration when the theme was applied (read, nothing run). Next in the build session's line after entry 46 |
 | 50 | 2026-10-09 | after "Reset all" in the preferences the 3D view is no longer drawn by the render engine's backend (edges jagged; the reporter's guess: render cache 0); and after a change of the MSAA setting a split of a 3D view and a TechDraw page became two tab windows | OPEN; measured in the reporter's live session, read-only: the render cache setting is not the cause (not stored, default 3) -- the renderer TYPE is `Default`, no backend, where the profile had `bgfx - Direct3D11` before the reset, and the view answers "No external renderer active"; the path is chosen only at startup. The two tabs are there as said: one view area with ONE cell, two `scanner` tab windows. DECIDED by the reporter 2026-10-09 09:48 for the first part: the type `Default` is to mean bgfx on the platform's default backend, and (09:52) a new type `Legacy` the old Coin rendering; (09:53) the type alone decides whether the engine is used -- under `Legacy` the render cache setting keeps its original meaning (default 3), under `Default` it is always 3. The MSAA part, the split turned into tabs, is not decided or read further |
-| 51 | 2026-10-09 | a face's edge that no edge line covers (a cylinder's side against what is behind it) is a staircase with MSAA off; if that is expected, MSAA 4x by default (change request) | OPEN; expected by the note-taker's reading (triangles are not anti-aliased without MSAA, the engine has no other anti-aliasing), for the build session to confirm; then the default of `View/AntiAliasing` goes from 0 to 3 |
+| 51 | 2026-10-09 | a face's edge that no edge line covers (a cylinder's side against what is behind it) is a staircase with MSAA off; if that is expected, MSAA 4x by default (change request) | OPEN; expected by the note-taker's reading (triangles are not anti-aliased without MSAA, the engine has no other anti-aliasing), for the build session to confirm; then the default of `View/AntiAliasing` goes from 0 to 3 -- for both renderer types, `Legacy` and the engine, and the other tiers follow (answered 10:11) |
+| 52 | 2026-10-09 | a benchmark asked: with face rims a staircase without MSAA anyway, is the line shader (lines with computed coverage) still needed, and what does it cost in rendering (from entry 51) | OPEN, a measurement for the build session; nothing run |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -4225,9 +4226,59 @@ Pointers for whoever does it, read and not run:
   (a split turned into tabs after an MSAA change) is to be looked for.
 - A profile that has the key stored keeps its value; the reporter's own has
   3 stored now.
-Not said yet by the reporter: whether the default is for the render engine
-only or for the `Legacy` type as well (it is one setting today), and
-whether the browser and other tiers are to follow.
+Asked of the reporter: whether the default is for the render engine only or
+for the `Legacy` type as well (it is one setting today), and whether the
+browser and other tiers are to follow. **Answered, 2026-10-09 10:11:** "both
+legacy and engine, other tiers follow too." So MSAA 4x is the default for
+both renderer types, and the other tiers (the browser viewer, the headless
+serve, mobile) take the same default. Nothing of (b) is left with the
+reporter. The same message asks for a benchmark of the line shader: entry
+52.
+
+## 52. Is the line shader still needed, and what does it cost: a benchmark asked -- OPEN, nothing run
+
+**2026-10-09 10:11, the reporter, in the answer that closed entry 51:**
+"also since face staircase is unavoidable, it makes me question whether
+previous line shader effort is still needed. whether it adds cost in
+rendering. do some benchmark"
+The reasoning: a face's bare rim is a staircase without MSAA whatever the
+lines do (entry 51), so MSAA is going to be on by default; with MSAA on,
+is the work that made lines smooth by themselves -- the line shader --
+still worth having, and does it cost frame time? Asked: measure it.
+This is a measurement for the build session; the note-taking session does
+not build or run. Passed on.
+
+**What "the line shader" is, read from `docs/RenderEngine.md` ("Lines") by
+the note-taker, nothing run:**
+- every line is drawn as a screen-space quad per segment (`vs_fc_line*`),
+  never a hardware line -- "modern APIs give those no width, no stipple and
+  no control over coverage". That part is not optional;
+- the part in question is the coverage: `fs_fc_line` widens the quad half a
+  pixel a side and takes the alpha from the distance to the line's middle
+  ("resolves the coverage analytically"). Its stated point: without it "an
+  edge visibly breathes between crisp and soft as the model turns -- MSAA
+  hides some of that and none of it with MSAA off"; and it makes fractional
+  line widths mean something;
+- its stated cost: "Line draws blend, since coverage is an alpha ramp, so
+  they no longer contribute to early-Z ... the cost is small but it is not
+  nothing on a full wireframe."
+
+**What the measurement would have to say, the note-taker's proposal, for
+the build session and the reporter to change:**
+- frame time on a large model (`scanner.FCStd`; the load benchmarks' model)
+  and on a full wireframe, the worst case the document names, with the
+  harness that exists (`scripts/render-bench.py`):
+  1. MSAA off, coverage on -- today's default;
+  2. MSAA 4x, coverage on -- entry 51's default as asked;
+  3. MSAA 4x, coverage OFF -- plain quads, no blend, lines back in early-Z;
+  4. MSAA off, coverage off -- what MSAA off looks like without it;
+- and the picture beside the number: an edge at several angles and at a
+  fractional width, under 2 and 3, to see what is lost if coverage goes
+  once MSAA is on (the "breathing", the widths rounding to whole pixels).
+Not known to the note-taker: whether coverage can be switched off without a
+code change (the id pass turns it off by a negated width).
+Not said yet by the reporter: on which models, and what difference in
+frame time would be enough to drop it.
 
 ## Inbox
 
@@ -4236,4 +4287,4 @@ it is read before each entry is started and moved up into the table.
 
 (empty: the notes of 2026-10-06 are entries 20 to 28, those of 2026-10-07
 entries 29 to 40, those of 2026-10-08 entries 41 to 45, those of 2026-10-09
-so far entries 46 to 51)
+so far entries 46 to 52)
