@@ -381,6 +381,9 @@ public:
   SbFCVector<std::size_t> selstriangleontop;
   SbFCVector<std::size_t> selsontop; // include only non-explicitly selected lines and points
   SbFCVector<std::size_t> selslineontop; // include only explicitly selected lines
+  // the lines and points of a fully selected object: dimmed where a face
+  // hides them, like those of an object under the pointer (opaquelineshighlight)
+  SbFCVector<std::size_t> selsfullontop;
   SbFCVector<std::size_t> selspointontop; // include only explicitly selected points
   SbFCVector<std::size_t> seloutline; // include all explicitly selected triangles for outline rendering
   SbFCVector<std::size_t> highlightlinesontop; // include pre-selected lines and points
@@ -1271,6 +1274,7 @@ SoFCRenderer::clear()
   PRIVATE(this)->transpselectionsfaceontop.clear();
   PRIVATE(this)->selstriangleontop.clear();
   PRIVATE(this)->selslineontop.clear();
+  PRIVATE(this)->selsfullontop.clear();
   PRIVATE(this)->selspointontop.clear();
   PRIVATE(this)->selsontop.clear();
   PRIVATE(this)->selectionkeys.clear();
@@ -1662,6 +1666,7 @@ SoFCRendererP::updateSelection()
   this->transpselectionsfaceontop.clear();
   this->selstriangleontop.clear();
   this->selslineontop.clear();
+  this->selsfullontop.clear();
   this->selspointontop.clear();
   this->selsontop.clear();
   this->slentries.clear();
@@ -1721,7 +1726,11 @@ SoFCRendererP::updateSelection()
               this->transpselectionsfaceontop.emplace_back(idx);
             } else
               this->transpselectionsontop.emplace_back(idx);
-            if (!(sel.first & SoFCRenderer::SelIdSelected) || material.partialhighlight)
+            // The faces whose depth tells a hidden line from a visible
+            // one. A fully selected object's are among them since
+            // 2026-10-09: its lines are dimmed where it hides them itself.
+            if (!(sel.first & SoFCRenderer::SelIdSelected) || material.partialhighlight
+                || (!(sel.first & SoFCRenderer::SelIdPartial) && ventry.partidx < 0))
               this->selstriangleontop.emplace_back(idx);
             break;
           case Material::Line:
@@ -1730,7 +1739,7 @@ SoFCRendererP::updateSelection()
             else if (!(sel.first & SoFCRenderer::SelIdFull) || material.partialhighlight)
               this->selsontop.emplace_back(idx);
             else
-              this->selslineontop.emplace_back(idx);
+              this->selsfullontop.emplace_back(idx);
             break;
           case Material::Point:
             if (sel.first & SoFCRenderer::SelIdPartial)
@@ -1738,7 +1747,7 @@ SoFCRendererP::updateSelection()
             else if (!(sel.first & SoFCRenderer::SelIdFull) || material.partialhighlight)
               this->selsontop.emplace_back(idx);
             else
-              this->selslineontop.emplace_back(idx);
+              this->selsfullontop.emplace_back(idx);
             break;
         }
       }
@@ -3071,6 +3080,7 @@ SoFCRenderer::render(SoGLRenderAction * action)
   }
 
   bool hassel = PRIVATE(this)->selsontop.size()
+                        || PRIVATE(this)->selsfullontop.size()
                         || PRIVATE(this)->selslineontop.size();
   bool hasontop = PRIVATE(this)->trianglesontop.size()
                       && PRIVATE(this)->linesontop.size();
@@ -3132,6 +3142,15 @@ SoFCRenderer::render(SoGLRenderAction * action)
                               PRIVATE(this)->selsontop,
                               pass);
 
+  // A fully selected object's lines: without the highlight bit here, so
+  // that what a face hides is dimmed (applyMaterial), as for the object
+  // under the pointer below; the pass after this one draws the visible
+  // part solid and thickened.
+  PRIVATE(this)->renderOpaque(action,
+                              PRIVATE(this)->slentries,
+                              PRIVATE(this)->selsfullontop,
+                              pass);
+
   PRIVATE(this)->renderOpaque(action,
                               PRIVATE(this)->slentries,
                               PRIVATE(this)->selslineontop,
@@ -3160,6 +3179,11 @@ SoFCRenderer::render(SoGLRenderAction * action)
                                   PRIVATE(this)->slentries,
                                   PRIVATE(this)->selsontop,
                                   pass);
+
+      PRIVATE(this)->renderOpaque(action,
+                                  PRIVATE(this)->slentries,
+                                  PRIVATE(this)->selsfullontop,
+                                  pass | RenderPassHighlight);
 
       PRIVATE(this)->renderOpaque(action,
                                   PRIVATE(this)->slentries,

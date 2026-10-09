@@ -1645,3 +1645,9 @@ fc_add_gui_test(GuiTechDrawPageBeforeItsViewProviders_tests_run
 fc_add_gui_test(GuiFaceOutlineInnerEdge_tests_run
                 face-outline-inner-edge.py
                 --timeout 180)
+
+# A selected object shown on top dims the edges its own faces hide, as the
+# object under the pointer does; by the render engine and by Coin.
+fc_add_gui_test(GuiSelectionOnTopHiddenEdges_tests_run
+                selection-on-top-hidden-edges.py
+                --timeout 180)
