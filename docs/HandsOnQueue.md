@@ -279,7 +279,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 63 | 2026-10-09 | `Std_DrawStyle` (a new request): a new icon suggested for it; its display style options as a combo box with their icons; anti-aliasing and its combo box in the same menu; the light sources configuration moved there from the preferences (not the manipulator), with a button to manipulate the light direction in the active 3D view and a check box to sync all 3D views' light direction; the Light Sources preference page removed | OPEN; answered 14:52: the style combo is for the active view; anti-aliasing and lights apply at once; the manipulation toggles by the button or Esc; the sync check box is a remembered setting and decides whether a light direction goes to the active view or to all open views; one more button saves ALL the current view's light settings for future use (corrected 14:55); three icons to choose from; all of the Light Sources page's settings but the manipulator go into the menu; a change of the lights is stored in the active view's properties, the button saves it into the settings, and the sync check box is for all the light settings (14:59); nothing run |
 | 64 | 2026-10-09 | the cavity option (cavity shading) draws jagged, MSAA on or off; the reporter: to be fixed in its shader; under both the realistic and the classic shading, more obvious in the Shaded draw style (no edges) and at a slant | OPEN; nothing run |
 | 65 | 2026-10-09 | the Cycles view (the path-traced picture) shows the object MIRRORED -- about the XY plane, by the look of it; "definitly out of place" | STAGED 2026-10-09 17:36, fixed `6a6fa208d6`: the note-taker's reading confirmed by a picture -- on the copy staged 16:42 a cone on its base comes out apex DOWN in the path tracer's frame, the host's edge lines over it apex up. The frame is an uploaded image drawn with a render target's texture coordinate, turned over on every backend but OpenGL; the blit's shader takes the turn back out. A shader alone. 2 PASS and 2 FAIL before, 4 PASS now, and the same under `bgfx - OpenGL`. Not run: Vulkan, Metal (`docs/HandsOnLog.md`) |
-| 66 | 2026-10-09 | the preferences dialog is slow to load the first time; and "Reset all" chosen then freezes the program for several tens of seconds | OPEN: there was no entry for it; nothing measured, nothing run. Kin: entry 26 (the first OK, fixed) and entry 30's second task (a preset's freeze, measured, not changed) |
+| 66 | 2026-10-09 | the preferences dialog is slow to load the first time; and "Reset all" chosen then freezes the program for several tens of seconds | OPEN, the timing check QUEUED by the reporter 17:52 (measure first); there was no entry for it; nothing measured, nothing run. Kin: entry 26 (the first OK, fixed) and entry 30's second task (a preset's freeze, measured, not changed) |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -5875,7 +5875,21 @@ which document); whether the whole picture is turned -- background and all
 -- or the object alone against a right-way-up view; and whether it is
 mirrored top to bottom or left to right on the screen.
 
-## 66. The preferences dialog loads slowly the first time, and "Reset all" then freezes for tens of seconds -- OPEN
+## 66. The preferences dialog loads slowly the first time, and "Reset all" then freezes for tens of seconds -- OPEN; the timing check QUEUED by the reporter
+
+**2026-10-09 17:52, the reporter:** "queue the preference dialog timing
+check"
+So the first step of this entry is asked for and in the queue: MEASURE it --
+how long the preferences dialog takes to come up the first time, and how
+long "Reset all" holds the program, and where the time goes -- before
+anything is changed. For the build session when it resumes (it is paused
+since the stage of 17:36). Not said: where in its order.
+The note-taker's suggestion for the measurement, from how entries 26 and 30
+were done, for the build session to change: the reporter's own
+configuration and `scanner.FCStd` open, as well as a fresh profile with no
+document; the first opening against the second; the event loop's hold and a
+sampled stack of the long turn, so that the pages or the handlers that take
+the time are named.
 
 **2026-10-09 17:40, the reporter asks whether it is in the queue and
 fixed:** "is there any entry for 'first time preference dialog loads slow.
