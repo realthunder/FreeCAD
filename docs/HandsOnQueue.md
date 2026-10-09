@@ -58,6 +58,13 @@ read by the build session; 53 is reproduced, the others not started. Its
 order after 51, "unless the reporter says otherwise": 53, 54, 55, 56 with
 57 after it, 52, 30, 48, 47.
 
+**2026-10-09 20:29, from the build session:** entry 62 DONE (`9d354a8c44`),
+and a test of entry 38's mended (`eebfc34dd9`); local, not pushed, not
+staged. The C++ suite on the tree with entries 61 and 66 (`6073d32437`):
+790 of 790. Next: entry 63 (`Std_DrawStyle`'s menu), "the largest of what
+is left"; it reads the reporter's answers of 14:52, 14:55 and 14:59 as
+final. With the reporter, new: entry 62's five choices.
+
 **2026-10-09 19:58, from the build session:** entry 66 MEASURED and its
 freeze FIXED (`6073d32437`), entry 61 FIXED (`f7408b1f9f`); local, not
 pushed, not staged. Ahead of origin and of the copy staged 17:36 (both
@@ -302,7 +309,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 59 | 2026-10-09 | the program no longer opens the Start page at startup (the reporter: "the startup workbench become the PartDesign"; it used to show Start with the recent files) | STAGED 2026-10-09 15:11, fixed `e9ac624959`, as decided: "Reset all" puts `Mod/Start/Migration2024Complete` back when it was set; the migration is untouched. A profile already switched off this way (the reporter's) STAYS off until Preferences > Start or `Mod/Start/ShowOnStartup` switches it on. 10 PASS and 2 FAIL on the staged copy, 12 PASS now (`docs/HandsOnLog.md`) |
 | 60 | 2026-10-09 | after a view cell is deleted, the view that expands into its room is sometimes BLACK until it is RESIZED; a camera move does not bring it back (corrected by the reporter 14:06) (Windows, Direct3D 11 at least) | STAGED 2026-10-09 16:42, fixed `d6f640f4ee`: it happens whenever closing a cell UN-NESTS a splitter (a cell split across its splitter's direction, then one of the two closed, by any route) -- the "sometimes". The surviving cell was moved up with `QSplitter::replaceWidget`, which takes it out of the window on the way, and a `QOpenGLWidget` that leaves its window is composed from nothing until its next resize; the view itself was drawn right all along, so it is neither Direct3D's nor the backend's. The cell tree is rebuilt without a cell leaving the window. A test that reads the SCREEN: 9 PASS and 8 FAIL on the copy staged 15:11, 17 PASS now (`docs/HandsOnLog.md`) |
 | 61 | 2026-10-09 | TechDraw drawn by the backend: dashed lines are a little thicker than Qt's (no great matter); but for some lines -- the cosmetic symmetry line in `Page`, `Top` -- the hover and selection highlight is drawn as the THINNER dashed line and is barely visible over the thicker line under it | FIXED `f7408b1f9f`, not staged, not pushed: the backend drew an edge at the width asked for (0.35 mm) where Qt cuts the pen to whole tenths (0.3), and the highlight, read off the Qt item, was the thinner of the two. Edges, cut face outlines and centre marks are fed at Qt's width; scored with Qt as the reference and the backend switched, as the reporter said: 10 PASS and 4 FAIL on the staged copy, 14 PASS now (hidden line 0.375 -> 0.300 mm for Qt's 0.300; a dashed cosmetic line 0.350 -> 0.300; selected, 0.60 px of line beside the highlight -> none). Two readings of the build session's for the reporter (`docs/HandsOnLog.md`). DECIDED by the reporter 14:30 and 14:31: EVERY line the backend draws on a page, dashed or not, at Qt's width -- thinner -- and the highlight at the same width as its line; a view's bounding box line shows it too |
-| 62 | 2026-10-09 | omni search, a new feature: when it first pops up, its list holds the last 10 items that were confirmed in it; once typing starts, the recent list is not needed | OPEN; nothing run |
+| 62 | 2026-10-09 | omni search, a new feature: when it first pops up, its list holds the last 10 items that were confirmed in it; once typing starts, the recent list is not needed | DONE `9d354a8c44`, not staged, not pushed: the box comes up with the items last confirmed in it below the three modes -- a command run from the box, a parameter or a property whose editor was opened, an object selected -- ten at most, the newest first, each once; gone as soon as more is typed; a picked row is carried out again. `tests/gui/omni-search-recent-items.py` 17 PASS, and the store in `OmniSearch_Tests_run`. The four points "not said" and a fifth were decided by the build session, each easy to turn: for the reporter (`docs/HandsOnLog.md`) |
 | 63 | 2026-10-09 | `Std_DrawStyle` (a new request): a new icon suggested for it; its display style options as a combo box with their icons; anti-aliasing and its combo box in the same menu; the light sources configuration moved there from the preferences (not the manipulator), with a button to manipulate the light direction in the active 3D view and a check box to sync all 3D views' light direction; the Light Sources preference page removed | OPEN; answered 14:52: the style combo is for the active view; anti-aliasing and lights apply at once; the manipulation toggles by the button or Esc; the sync check box is a remembered setting and decides whether a light direction goes to the active view or to all open views; one more button saves ALL the current view's light settings for future use (corrected 14:55); three icons to choose from; all of the Light Sources page's settings but the manipulator go into the menu; a change of the lights is stored in the active view's properties, the button saves it into the settings, and the sync check box is for all the light settings (14:59); nothing run |
 | 64 | 2026-10-09 | the cavity option (cavity shading) draws jagged, MSAA on or off; the reporter: to be fixed in its shader; under both the realistic and the classic shading, more obvious in the Shaded draw style (no edges) and at a slant | FIXED `66ccd277b9`, not staged, not pushed: in its shader, as the reporter said. The pass reads one normal a pixel after the scene is resolved, so a crease was a band every pixel was in or out of; it now reads each neighbour's normal as the average over its pixel, the crease placed within the pixel from the two faces' planes. Along a straight crease the middle of the darkening strayed 0.18 to 0.26 px rms from its line (a perfect staircase gives 0.29) and strays 0.01 to 0.04 now, the line as heavy as it was (2% lighter). Found on the way, FIXED `dfdfc04c5c`: under an ORTHOGRAPHIC camera the creases of whatever lay near the camera dropped out, in dots. `tests/gui/cavity-crease-is-smooth.py`: 20 PASS and 21 FAIL on the copy staged 17:36, 47 PASS now. Render engine, MSAA 4x, Shaded, Direct3D 11; not run: a browser, Vulkan, Metal, OpenGL. Three points for the reporter (`docs/HandsOnLog.md`) |
 | 65 | 2026-10-09 | the Cycles view (the path-traced picture) shows the object MIRRORED -- about the XY plane, by the look of it; "definitly out of place" | STAGED 2026-10-09 17:36, fixed `6a6fa208d6`: the note-taker's reading confirmed by a picture -- on the copy staged 16:42 a cone on its base comes out apex DOWN in the path tracer's frame, the host's edge lines over it apex up. The frame is an uploaded image drawn with a render target's texture coordinate, turned over on every backend but OpenGL; the blit's shader takes the turn back out. A shader alone. 2 PASS and 2 FAIL before, 4 PASS now, and the same under `bgfx - OpenGL`. Not run: Vulkan, Metal (`docs/HandsOnLog.md`) |
@@ -5605,7 +5612,7 @@ YET:**
 (The note-taker's reading: both follow from "the same as qt renderer"; they
 stand unless the reporter says otherwise.)
 
-## 62. Omni search: the last 10 confirmed items on the list when it first pops up (a new feature) -- OPEN
+## 62. Omni search: the last 10 confirmed items on the list when it first pops up (a new feature) -- DONE `9d354a8c44`, not staged; five choices of the build session's for the reporter (see `docs/HandsOnLog.md`)
 
 **2026-10-09 14:32, the reporter:** "new feature. omni search, keep the last
 10 confirmed searched items on the list when it first pop up. once typing is
@@ -5634,6 +5641,39 @@ of a document no longer open -- is shown greyed or left out; whether the
 same item confirmed twice appears once, the newest first; and whether the
 browser viewer's omni search (it follows the desktop's grammar, entry 22)
 gets the same.
+
+**2026-10-09 20:29, from the build session: DONE `9d354a8c44`; local, not
+pushed, not staged.** The account is in `docs/HandsOnLog.md`, entry 62; in
+short:
+- The box comes up with the items last confirmed in it, BELOW the three
+  modes: a command run from the box, a parameter or a property whose
+  editor was opened, an object selected. Ten at most, the newest first,
+  each once.
+- They are gone as soon as more is typed. A picked row is carried out
+  again.
+- `tests/gui/omni-search-recent-items.py`: 17 PASS; the store is covered in
+  `OmniSearch_Tests_run`.
+- The first list shows thirteen rows without scrolling, for seven before.
+- Picture: `..\dl\handson\2026-10-09\q5\entry62\recent-list.png`.
+
+**For the reporter: the four points "not said" above, decided by the build
+session, "each easy to turn", and a fifth of its own -- NOT ANSWERED YET:**
+1. KEPT from one session to the next (`Preferences/OmniSearch/Recent`;
+   state, not in the registry, as the recent files are not).
+2. An item that cannot be FOUND now -- a command of a module not loaded, an
+   object of a closed document -- is left out, and stays kept. A command
+   that is only inactive is listed greyed, as the command list shows it.
+3. An item confirmed twice appears ONCE, at the top.
+4. The DESKTOP box only; the browser viewer's does not get it.
+5. The items come AFTER the three modes, so the row Return takes when the
+   box comes up is unchanged; before them, Return would repeat the last
+   item.
+
+**Found on the way, `eebfc34dd9`, a test only:**
+`tests/gui/omni-search-first-bring-up.py` (entry 38's) had been failing one
+claim, on the staged copy too: it took the longest list for the command
+list, and since entry 41 the parameters outnumber the commands. Nothing
+wrong with the box.
 
 ## 63. `Std_DrawStyle`: a new icon, and its menu takes the display style, the anti-aliasing and the lights (a new request) -- OPEN
 
