@@ -248,6 +248,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 62 | 2026-10-09 | omni search, a new feature: when it first pops up, its list holds the last 10 items that were confirmed in it; once typing starts, the recent list is not needed | OPEN; nothing run |
 | 63 | 2026-10-09 | `Std_DrawStyle` (a new request): a new icon suggested for it; its display style options as a combo box with their icons; anti-aliasing and its combo box in the same menu; the light sources configuration moved there from the preferences (not the manipulator), with a button to manipulate the light direction in the active 3D view and a check box to sync all 3D views' light direction; the Light Sources preference page removed | OPEN; answered 14:52: the style combo is for the active view; anti-aliasing and lights apply at once; the manipulation toggles by the button or Esc; the sync check box is a remembered setting and decides whether a light direction goes to the active view or to all open views; one more button saves ALL the current view's light settings for future use (corrected 14:55); three icons to choose from; all of the Light Sources page's settings but the manipulator go into the menu; a change of the lights is stored in the active view's properties, the button saves it into the settings, and the sync check box is for all the light settings (14:59); nothing run |
 | 64 | 2026-10-09 | the cavity option (cavity shading) draws jagged, MSAA on or off; the reporter: to be fixed in its shader; under both the realistic and the classic shading, more obvious in the Shaded draw style (no edges) and at a slant | OPEN; nothing run |
+| 65 | 2026-10-09 | the Cycles view (the path-traced picture) shows the object MIRRORED -- about the XY plane, by the look of it; "definitly out of place" | OPEN; nothing run |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -5720,6 +5721,41 @@ styles; where they are chosen was not looked up.)
 Nothing of the entry's questions is left with the reporter.
 Passed on to the build session.
 
+## 65. The Cycles view shows the object mirrored -- OPEN
+
+**2026-10-09 17:15, reported:** "new defect. cycle view mirrors the object.
+looks like mirrored by xy plane. not sure, but definitly out of place"
+In the Cycles view -- the path-traced picture of a 3D view -- the object
+comes out MIRRORED. By the look of it, mirrored about the XY plane; the
+reporter is not sure of the plane, but sure the object is not where it
+belongs.
+On the copy staged 2026-10-09 16:42 (`0246b900df`); Windows, the render
+engine on Direct3D 11.
+
+Pointers and a guess, read by the note-taker, nothing run:
+- the Cycles view is `src/Gui/Renderer/Cycles*.cpp` (`CyclesRenderer`,
+  `CyclesScene`, `CyclesViewport`, `CyclesStream`;
+  `docs/CyclesIntegration.md`). None of these files has changed since
+  2026-09-05, so nothing done in these hands-on days touched it directly.
+- A GUESS, not a finding: for a model standing with Z up, a picture turned
+  UPSIDE DOWN reads exactly as "mirrored about the XY plane", and out of
+  place against the rest of the view. Cycles hands its picture over as a
+  buffer filled from the top left (`CyclesViewport.cpp`, about line 67),
+  and it is put on screen through the render engine's backend. Direct3D 11
+  became the Windows default on 2026-09-10 (`774c149fd3`), AFTER the Cycles
+  files were last touched; Direct3D and OpenGL disagree about which row of
+  a texture is the top. So a picture composed right under OpenGL may be
+  drawn flipped under Direct3D. Whether the Cycles view was ever looked at
+  on Direct3D 11 is not known to the note-taker.
+- What would tell at once: the same view under `bgfx - OpenGL` (the render
+  type's list, entry 50) -- right there and mirrored on Direct3D 11 would
+  be the flip.
+
+Not said yet by the reporter: how the Cycles view was started (the command,
+which document); whether the whole picture is turned -- background and all
+-- or the object alone against a right-way-up view; and whether it is
+mirrored top to bottom or left to right on the screen.
+
 ## Inbox
 
 Notes not sorted into an entry yet. Add a line here at any time, in any words;
@@ -5727,4 +5763,4 @@ it is read before each entry is started and moved up into the table.
 
 (empty: the notes of 2026-10-06 are entries 20 to 28, those of 2026-10-07
 entries 29 to 40, those of 2026-10-08 entries 41 to 45, those of 2026-10-09
-so far entries 46 to 64)
+so far entries 46 to 65)
