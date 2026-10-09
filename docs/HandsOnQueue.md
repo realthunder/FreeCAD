@@ -4935,6 +4935,20 @@ The note-taker's reading, and what it leaves open:
   split that cannot make its new cell big enough is refused and says why
   (h); a border pushed past a cell's minimum closes that cell (i).
 Passed on to the build session.
+**Answered by the reporter, 2026-10-09 14:00, whether a corner drag that
+starts a split is meant by (i) too:** "about your previous question. no,
+corner drag semantics stay, i.e. drag in itself only create and never close.
+so as to not create ambiguity"
+So the line between (h) and (i) is drawn:
+- a CORNER zone dragged inward only ever CREATES a view; it never closes
+  one. A split that would leave a cell under the minimum is refused, with
+  the error message of (h);
+- (i), "too small means close", is for the drag of the BORDER between
+  cells: pushed past a cell's minimum, it closes that cell, and the frames
+  show the stop sign on it.
+(The corner dragged OUTWARD, into a neighbour, stays the join of (g); the
+answer is about the drag inward -- "drag in".)
+Passed on to the build session.
 **Added by the reporter, 2026-10-09 13:58 -- point (j), a split of a view
 that cannot be shown twice:** "also split view on some view type did
 nothing, like techdraw page. for those cases, i.e. the view does not support
