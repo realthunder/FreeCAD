@@ -6243,6 +6243,88 @@ class TransactionBranchCases(unittest.TestCase):
         doc.redo()
         self.assertEqual(state(), (20.0, 4.0))
 
+    def testAMergeUndoneIsRolledBackWhenAsked(self):
+        # Sec 31.23 (ruled 31.21: "a command of its own"): what the next
+        # merge does to a merge undone at the head, asked for by itself.
+        # Nothing where the head is no such thing -- a merge standing, or
+        # something done since the undo.
+        doc = self.track(FreeCAD.newDocument("MergeRolledBack"))
+        doc.UndoMode = 1
+        doc.openTransaction("create")
+        doc.addObject("Part::Box", "Box")
+        doc.addObject("Part::Cylinder", "Cyl")
+        doc.recompute()
+        doc.commitTransaction()
+        doc.saveAs(os.path.join(self.dir, "merge-rolled-back.FCStd"))
+        doc.createTransactionBranch("side")
+        doc.switchTransactionBranch("side")
+        doc.openTransaction("theirs")
+        doc.Box.Length = 20
+        doc.recompute()
+        doc.commitTransaction()
+        doc.switchTransactionBranch("main")
+        doc.openTransaction("ours")
+        doc.Cyl.Radius = 3
+        doc.recompute()
+        doc.commitTransaction()
+
+        def state():
+            return (doc.Box.Length.Value, doc.Cyl.Radius.Value)
+
+        def rows(kind):
+            return [t["seq"] for t in doc.getTransactionLog() if t["kind"] == kind]
+
+        self.assertIsNone(doc.previewTransactionRollBack())
+        self.assertIsNone(doc.rollBackTransactionMerge())
+        head = doc.getTransactionCursor()["head"]
+        versions = len(doc.getTransactionVersions())
+        result = doc.mergeTransactionBranch("side")
+        self.assertEqual((result["unresolved"], result["failed"]), ([], []))
+        self.assertEqual(state(), (20.0, 3.0))
+        self.assertEqual(doc.previewTransactionMerge("side")["changes"], [])
+        # A merge that stands is not rolled back.
+        self.assertIsNone(doc.previewTransactionRollBack())
+        self.assertIsNone(doc.rollBackTransactionMerge())
+        self.assertEqual(rows("merge"), [result["seq"]])
+        doc.undo()
+        self.assertEqual(state(), (10.0, 3.0))
+        undone = doc.previewTransactionRollBack()
+        self.assertEqual((undone["seq"], undone["branch"]), (result["seq"], "side"))
+        # (The row the merge was made on: the head then, or the record of
+        # the version taken before it.)
+        self.assertGreaterEqual(undone["before"], head)
+        self.assertLess(undone["before"], undone["seq"])
+        self.assertGreaterEqual(undone["rows"], 2, "the merge and its undo")
+        self.assertEqual(rows("merge"), [result["seq"]], "a preview takes nothing out")
+        self.assertNotEqual(doc.previewTransactionMerge("side")["changes"], [])
+
+        done = doc.rollBackTransactionMerge()
+        self.assertEqual(done, undone)
+        self.assertEqual(state(), (10.0, 3.0), "the document is where it was")
+        self.assertEqual(rows("merge"), [])
+        self.assertEqual(rows("undo"), [])
+        self.assertEqual(doc.getTransactionCursor()["head"], undone["before"])
+        self.assertLessEqual(len(doc.getTransactionVersions()), versions + 1)
+        self.assertIsNone(doc.previewTransactionRollBack())
+        # Not there to redo; the steps are the branch's rows again.
+        self.assertEqual(doc.RedoCount, 0)
+        doc.undo()
+        self.assertEqual(state(), (10.0, 2.0))
+        doc.redo()
+        self.assertEqual(state(), (10.0, 3.0))
+        # The other branch is no longer merged: everything is asked again.
+        self.assertIn("Box.Length", [c["key"] for c in doc.previewTransactionMerge("side")["changes"]])
+        result = doc.mergeTransactionBranch("side")
+        self.assertEqual(state(), (20.0, 3.0))
+        # Something done since the undo: the merge stays (ruled, 31.21).
+        doc.undo()
+        doc.openTransaction("since")
+        doc.Cyl.Height = 12
+        doc.commitTransaction()
+        self.assertIsNone(doc.previewTransactionRollBack())
+        self.assertIsNone(doc.rollBackTransactionMerge())
+        self.assertEqual(rows("merge"), [result["seq"]])
+
     def testASheetIsMergedByItsCells(self):
         # Sec 31.8: a sheet's cells are known by their address. A cell each
         # side set is in the merge; one both set is the later's; an alias

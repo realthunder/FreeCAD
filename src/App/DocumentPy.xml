@@ -590,6 +590,32 @@ nothing of the document, so is no undo step. 'failed' names the objects whose re
 failed on the merged state. The other branch is left as it is.</UserDocu>
       </Documentation>
     </Methode>
+    <Methode Name="previewTransactionRollBack">
+      <Documentation>
+        <UserDocu>previewTransactionRollBack() -> dict or None
+
+The merge undone at the head of this branch, with nothing done since,
+which rollBackTransactionMerge() would take out (docs/TransactionLog.md
+sec 31.21): {'seq', 'before', 'branch', 'rows'} -- the merge's row, the row
+it was made on, the branch it merged, and how many rows it and its undoing
+are. None where the head is anything else, or the rows cannot go: another
+document of the file stands on one, a branch was made from one, or a
+version with a name was taken at one. Read only.</UserDocu>
+      </Documentation>
+    </Methode>
+    <Methode Name="rollBackTransactionMerge">
+      <Documentation>
+        <UserDocu>rollBackTransactionMerge() -> dict or None
+
+Roll back the merge undone at the head of this branch
+(docs/TransactionLog.md sec 31.21): the branch is put back on the row the
+merge was made on, the rows of the merge and of its undoing leave the log,
+and the other branch is no longer merged -- merging it again asks
+everything again. The document does not change; the merge can no longer be
+redone. Returns what was rolled back, as previewTransactionRollBack() says
+it, or None where there was nothing to roll back.</UserDocu>
+      </Documentation>
+    </Methode>
     <Methode Name="previewTransactionPick">
       <Documentation>
         <UserDocu>previewTransactionPick(rows) -> dict

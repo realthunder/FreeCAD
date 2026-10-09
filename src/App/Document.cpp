@@ -10120,6 +10120,82 @@ Document::MergeResult Document::mergeBranch(const std::string& branch,
     return _merge(branch, picks, fallback, version, nullptr);
 }
 
+Document::UndoneMerge Document::undoneMerge()
+{
+    UndoneMerge out;
+    TransactionLog* log = getTransactionLog();
+    if (!log)
+        return out;
+    if (d->activeUndoTransaction)
+        commitImplicitTransaction();
+    log->resolvePending();
+    std::vector<int64_t> evict;
+    const std::vector<int64_t> seqs = undoneMergeAtHead(*log, out.before, evict);
+    if (seqs.empty()) {
+        out.before = 0;
+        return out;
+    }
+    out.seq = seqs.front();
+    out.rows = seqs.size();
+    // The merge's row says what it merged (its annotation, `merge`).
+    for (const auto& t : log->store().transactions(out.seq, 1)) {
+        if (t.seq != out.seq)
+            continue;
+        const auto j = nlohmann::json::parse(t.script, nullptr, false);
+        if (j.is_object() && j.contains("merge") && j["merge"].is_object())
+            out.branch = j["merge"].value("branch", std::string());
+    }
+    return out;
+}
+
+Document::UndoneMerge Document::rollBackMerge()
+{
+    OperationScope scope;   // sec 27.38
+    checkNotFrozen("roll back a merge");
+    UndoneMerge out = undoneMerge();
+    if (out.seq <= 0)
+        return out;
+    _checkBranchable("roll back a merge");
+    if (!_rollBackUndoneMerge())
+        out = UndoneMerge();
+    return out;
+}
+
+bool Document::_rollBackUndoneMerge()
+{
+    // Sec 31.21: the branch put back on the row it was merged on, the
+    // document moved there with nothing recorded (it is in that state
+    // already, and the version taken before the merge is there to read if
+    // the rows will not fold), and the merge's rows trimmed.
+    TransactionLog* log = getTransactionLog();
+    if (!log)
+        return false;
+    if (d->activeUndoTransaction)
+        commitImplicitTransaction();
+    log->resolvePending();
+    int64_t before = 0;
+    std::vector<int64_t> evict;
+    const std::vector<int64_t> seqs = undoneMergeAtHead(*log, before, evict);
+    if (seqs.empty())
+        return false;
+    auto& store = log->store();
+    const int64_t head = log->head();
+    FC_LOG(getName() << ": the merge undone at row " << seqs.front() << " rolled back to row "
+                     << before << ", " << seqs.size() << " row(s) trimmed");
+    clearUndos();
+    _clearRedos();
+    store.forwardBranch(log->branch(), before, {});
+    log->moveHead(before);
+    _followHead(head);
+    if (!evict.empty())
+        store.evictVersions(evict);
+    store.removeTransactions(seqs);
+    _arriveOnBranch();
+    refreshVersionNames();
+    signalBranchesChanged(*this);
+    return true;
+}
+
 Document::MergeResult Document::_merge(const std::string& branch,
                                        const std::map<std::string, std::string>& picks,
                                        const std::string& fallback, int64_t version,
@@ -10160,38 +10236,9 @@ Document::MergeResult Document::_merge(const std::string& branch,
     }
 
     // Sec 31.21: a merge undone, and nothing since, is rolled back before
-    // another is made -- the branch put back on the row it was merged on,
-    // the document moved there with nothing recorded (it is in that state
-    // already, and the version taken before the merge is there to read if
-    // the rows will not fold), and the merge's rows trimmed. While they
-    // stand the other branch counts as merged, and this merge would bring
-    // nothing.
-    {
-        if (d->activeUndoTransaction)
-            commitImplicitTransaction();
-        log->resolvePending();
-        int64_t before = 0;
-        std::vector<int64_t> evict;
-        const std::vector<int64_t> seqs = undoneMergeAtHead(*log, before, evict);
-        if (!seqs.empty()) {
-            auto& store = log->store();
-            const int64_t head = log->head();
-            FC_LOG(getName() << ": the merge undone at row " << seqs.front()
-                             << " rolled back to row " << before << ", " << seqs.size()
-                             << " row(s) trimmed");
-            clearUndos();
-            _clearRedos();
-            store.forwardBranch(log->branch(), before, {});
-            log->moveHead(before);
-            _followHead(head);
-            if (!evict.empty())
-                store.evictVersions(evict);
-            store.removeTransactions(seqs);
-            _arriveOnBranch();
-            refreshVersionNames();
-            signalBranchesChanged(*this);
-        }
-    }
+    // another is made. While its rows stand the other branch counts as
+    // merged, and this merge would bring nothing.
+    _rollBackUndoneMerge();
 
     MergePlan plan;
     if (rows && d->activeUndoTransaction)

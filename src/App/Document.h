@@ -680,6 +680,37 @@ public:
                        const std::string& fallback, int64_t version,
                        const std::vector<int64_t>* rows);
 
+    /// A merge undone at the head of this branch, with nothing since
+    /// (docs/TransactionLog.md sec 31.21).
+    struct UndoneMerge
+    {
+        int64_t seq {0};      ///< the merge's row; 0 where there is none
+        int64_t before {0};   ///< the row the merge was made on
+        std::string branch;   ///< the branch it merged
+        size_t rows {0};      ///< the merge's rows and those of its undoing
+    };
+    /** The merge undone at the head, which rollBackMerge() would take out:
+     * the head of the branch is a merge, what was computed after it, its
+     * undo, and any redo and undo of it again that leave it undone. None
+     * where the head is anything else, and where the rows cannot go --
+     * another document of the file stands on one, a branch was made from
+     * one, a version somebody named was taken at one.
+     */
+    UndoneMerge undoneMerge();
+    /** Roll the merge undone at the head back (sec 31.21, 31.23): the
+     * branch is put back on the row the merge was made on, the rows of the
+     * merge and of its undoing leave the log with the unnamed versions
+     * taken at them, and the other branch is no longer merged -- a merge
+     * of it asks everything again. The document is in that state already
+     * and does not change; its undo steps are the branch's rows again, and
+     * the merge is no longer there to redo. What the next merge does of
+     * itself, as an operation of its own. Returns what was rolled back,
+     * `seq` 0 where there was nothing to.
+     */
+    UndoneMerge rollBackMerge();
+    /// rollBackMerge() and _merge(): the rows out, where there are any.
+    bool _rollBackUndoneMerge();
+
     /// A branch of another copy of the file, as importFork() can take it.
     struct ForkBranch
     {

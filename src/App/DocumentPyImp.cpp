@@ -1529,6 +1529,38 @@ PyObject* DocumentPy::mergeTransactionBranch(PyObject *args)
     } PY_CATCH;
 }
 
+namespace {
+Py::Object undoneMergeToPy(const App::Document::UndoneMerge& m)
+{
+    if (m.seq <= 0)
+        return Py::None();
+    Py::Dict d;
+    d.setItem("seq", Py::Long(static_cast<long>(m.seq)));
+    d.setItem("before", Py::Long(static_cast<long>(m.before)));
+    d.setItem("branch", Py::String(m.branch));
+    d.setItem("rows", Py::Long(static_cast<long>(m.rows)));
+    return d;
+}
+}
+
+PyObject* DocumentPy::previewTransactionRollBack(PyObject *args)
+{
+    if (!PyArg_ParseTuple(args, ""))
+        return nullptr;
+    PY_TRY {
+        return Py::new_reference_to(undoneMergeToPy(getDocumentPtr()->undoneMerge()));
+    } PY_CATCH;
+}
+
+PyObject* DocumentPy::rollBackTransactionMerge(PyObject *args)
+{
+    if (!PyArg_ParseTuple(args, ""))
+        return nullptr;
+    PY_TRY {
+        return Py::new_reference_to(undoneMergeToPy(getDocumentPtr()->rollBackMerge()));
+    } PY_CATCH;
+}
+
 PyObject* DocumentPy::previewTransactionPick(PyObject *args)
 {
     PyObject* pyRows = nullptr;

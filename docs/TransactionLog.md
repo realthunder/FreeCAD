@@ -16646,6 +16646,54 @@ the monotonic clock with no FreeCAD in it (`systemd-timesyncd` and WSL's
 own sync, it seems). 2 in 60 and 2 in 120 since. Nothing in the test or
 the merge is wrong; a row's time is the wall clock's.
 
+### 31.23 A merge undone is rolled back when asked (user, 2026-10-09)
+
+31.21 left it ruled and unbuilt: "*A command of its own.* The roll back is
+what the next merge does; there is nothing to ask for it by. **Ruled: 'a
+command of its own', to be built next.**" The link merge and the
+primitives' names came in between. **The user, asked what was next:**
+"do 1, 2, 3" -- this is 2.
+
+**Built.**
+
+- *One function for both.* What `_merge` did to a merge undone at the head
+  before making another is `Document::_rollBackUndoneMerge()`: the branch
+  put back on the row the merge was made on, the document moved there with
+  nothing recorded, the rows of the merge and of its undoing out of the
+  log with the unnamed versions taken at them. `_merge` calls it as it
+  did.
+- *Asked for:* `Document::rollBackMerge()`, which checks what a merge
+  checks (not frozen, a branch that can be written) and says what it took
+  out; `Document::undoneMerge()`, read only, says what it would -- the
+  merge's row, the row it was made on, the branch it merged (read from the
+  merge row's own annotation), and how many rows. Python:
+  `rollBackTransactionMerge()` and `previewTransactionRollBack()`, a dict
+  or `None`.
+- *In the panel:* a row's menu has "Roll back the merge of *side*..." where
+  there is such a merge, and not otherwise. It is asked when the menu
+  opens and not kept on a button: the rows are written behind the
+  document, and asking waits for them (31.21, "met on the way"). A
+  question first -- the rows leave the log and the merge can no longer be
+  redone -- then the status line says what went. The slot is
+  `rollBackMerge()`, for a script to call.
+
+**What it does not do**, as 31.21 has it: a merge that stands is not
+undone by it (undo is the step for that, and can be redone); a merge
+undone with something done since stays, and its branch counts as merged
+("consider as merged"); rows another document stands on, a branch was
+made from, or a named version was taken at do not go. In each
+`previewTransactionRollBack()` is `None` and the roll back does nothing.
+
+**Tests.** Python `testAMergeUndoneIsRolledBackWhenAsked`: nothing to roll
+back before a merge and while one stands; undone, the preview names it and
+takes nothing out; rolled back, the document where it was, no merge and no
+undo among the rows, the head on the row the merge was made on, nothing to
+redo, the branch's own steps undone and redone, the other branch to merge
+again and merged; undone with something done since, it stays. In the Gui
+(`transaction-log-merge-check.py`): the question answered no leaves the
+rows, answered yes takes them, and with none to roll back nothing is
+asked.
+
 ## 32. A shape diff: seeing what a merge or a pick would take (plan, 2026-10-06)
 
 **Asked (user):** "also plan for another feature. shape diff tool, so that

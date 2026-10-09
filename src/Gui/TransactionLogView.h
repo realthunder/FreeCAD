@@ -112,6 +112,10 @@ public Q_SLOTS:
     /// own (docs/TransactionLog.md sec 31.12): `seqs` is their numbers,
     /// comma-separated. The preview, a side for each conflict, the pick.
     void applyRows(const QString& seqs);
+    /// Roll back the merge undone at the head of the branch the document
+    /// is on (docs/TransactionLog.md sec 31.21, 31.23): asked first, since
+    /// the rows leave the log and the merge can no longer be redone.
+    void rollBackMerge();
     /** Squash the rows up to version `version` (docs/TransactionLog.md
      * sec 16.7): the version to squash from is chosen from those behind it
      * on its history, and after a confirmation the rows between the two

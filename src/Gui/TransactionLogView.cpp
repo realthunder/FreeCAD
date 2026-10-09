@@ -1610,6 +1610,38 @@ void TransactionLogView::mergeBranch(const QString& name)
     }
 }
 
+void TransactionLogView::rollBackMerge()
+{
+    if (!_doc)
+        return;
+    try {
+        const auto undone = _doc->undoneMerge();
+        if (undone.seq <= 0) {
+            _status->setText(tr("No merge undone at the head to roll back"));
+            return;
+        }
+        const QString name = QString::fromStdString(undone.branch);
+        if (QMessageBox::question(
+                this, tr("Roll back a merge"),
+                tr("Roll back the merge of %1?\n\nIts %2 rows -- the merge and its undo -- "
+                   "leave the log, and the merge can no longer be redone. The document does "
+                   "not change. %1 is then no longer merged: merging it again asks everything "
+                   "again.").arg(name).arg(undone.rows))
+                != QMessageBox::Yes)
+            return;
+        const auto done = _doc->rollBackMerge();
+        if (done.seq > 0)
+            _status->setText(tr("Merge of %1 rolled back to row %2: %3 rows taken out")
+                                 .arg(name).arg(done.before).arg(done.rows));
+        else
+            _status->setText(tr("Merge of %1 not rolled back").arg(name));
+    }
+    catch (Base::Exception& e) {
+        FC_ERR("roll back of a merge: " << e.what());
+        _status->setText(tr("Merge not rolled back -- the report view says why"));
+    }
+}
+
 void TransactionLogView::applyRows(const QString& seqs)
 {
     // docs/TransactionLog.md sec 31.12: rows of another branch, picked in
@@ -2196,9 +2228,34 @@ void TransactionLogView::transactionMenu(QTreeWidgetItem* item, const QPoint& gl
     auto branchHere = menu.addAction(tr("Branch from here..."));
     branchHere->setToolTip(tr("A new branch whose history ends at this row, switched to (sec 26)"));
     branchHere->setEnabled(_doc != nullptr);
+    // Sec 31.21: a merge undone at the head, and nothing since, taken out
+    // of the log -- asked when the menu opens, not kept: the rows are
+    // written behind the document, and asking waits for them.
+    App::Document::UndoneMerge undone;
+    if (_doc) {
+        try {
+            undone = _doc->undoneMerge();
+        }
+        catch (Base::Exception& e) {
+            FC_LOG("merge undone at the head: " << e.what());
+        }
+    }
+    QAction* rollBack = nullptr;
+    if (undone.seq > 0) {
+        menu.addSeparator();
+        rollBack = menu.addAction(
+            tr("Roll back the merge of %1...").arg(QString::fromStdString(undone.branch)));
+        rollBack->setToolTip(tr("The merge undone at the head leaves the log with its undo: "
+                                "%1 is no longer merged, and merging it asks everything again "
+                                "(sec 31.21)").arg(QString::fromStdString(undone.branch)));
+    }
     auto chosen = menu.exec(global);
     if (chosen == branchHere) {
         createBranch(0, seq);
+        return;
+    }
+    if (rollBack && chosen == rollBack) {
+        rollBackMerge();
         return;
     }
     if (chosen == applyHere) {

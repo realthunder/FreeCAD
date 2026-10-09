@@ -694,6 +694,53 @@ def run():
               % (link.ElementAppearance.keys(),),
               link.ElementAppearance.keys() == [] and link.OverrideMaterial
               and not [k for k in link.ViewObject.getElementColors() if k != "Face"])
+
+        # Sec 31.23: that merge undone at the head, rolled back from the
+        # panel -- asked first, since its rows leave the log.
+        App.setActiveDocument(ldoc.Name)
+        settle()
+        ldock, _ = panel()
+        undone = ldoc.previewTransactionRollBack()
+        check("roll back: the merge undone is there to roll back (%r)" % (undone,),
+              undone is not None and undone["branch"] == "side" and undone["seq"] == merged["seq"])
+
+        def answer(seen, button):
+            box = QtWidgets.QApplication.activeModalWidget()
+            seen["asked"] = isinstance(box, QtWidgets.QMessageBox)
+            if seen["asked"]:
+                seen["text"] = box.text()
+                box.button(button).click()
+            elif box is not None:
+                box.reject()
+
+        def kinds():
+            return [t["kind"] for t in ldoc.getTransactionLog()]
+
+        seen = {}
+        QtCore.QTimer.singleShot(300, lambda: answer(seen, QtWidgets.QMessageBox.No))
+        QtCore.QMetaObject.invokeMethod(ldock, "rollBackMerge", QtCore.Qt.DirectConnection)
+        settle()
+        check("roll back: asked, and answered no it leaves the rows (%r)" % (seen.get("text"),),
+              seen.get("asked") is True and "side" in (seen.get("text") or "") and "merge" in kinds())
+        seen = {}
+        QtCore.QTimer.singleShot(300, lambda: answer(seen, QtWidgets.QMessageBox.Yes))
+        QtCore.QMetaObject.invokeMethod(ldock, "rollBackMerge", QtCore.Qt.DirectConnection)
+        settle()
+        check("roll back: answered yes, the merge and its undo are out (%r)" % (kinds(),),
+              seen.get("asked") is True and "merge" not in kinds() and "undo" not in kinds())
+        check("roll back: the document is as it was, and side is to merge again",
+              link.ElementAppearance.keys() == [] and link.OverrideMaterial
+              and ldoc.previewTransactionRollBack() is None
+              and ldoc.previewTransactionMerge("side")["changes"] != [])
+        seen = {}
+        QtCore.QTimer.singleShot(300, lambda: answer(seen, QtWidgets.QMessageBox.Yes))
+        QtCore.QMetaObject.invokeMethod(ldock, "rollBackMerge", QtCore.Qt.DirectConnection)
+        # No question's event loop to run the timer in: wait it out.
+        wait = QtCore.QEventLoop()
+        QtCore.QTimer.singleShot(500, wait.quit)
+        wait.exec()
+        check("roll back: with none to roll back nothing is asked (%r)" % (seen,),
+              seen.get("asked") is False)
         App.closeDocument(ldoc.Name)
         settle()
     except Exception:
